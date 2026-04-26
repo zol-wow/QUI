@@ -380,7 +380,6 @@ local function FindTrackedAuraData(
     if CandidateMatches(auraData) then
         return auraData
     end
-
     local secretAura = FindSecretTrackedAura(unit, spellID, helpfulAuras, onlyMine)
     if secretAura then
         return secretAura

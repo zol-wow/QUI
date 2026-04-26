@@ -534,6 +534,30 @@ function QUI:BackwardsCompat()
         end
     end
 
+    -----------------------------------------------------------------------
+    -- Scrub removed char-level keys
+    -- Mirrors the StampOldDefaults/Migrations.Run pattern of iterating
+    -- every stored character table, not just db:GetCurrentProfile()'s
+    -- char. That way alt characters get cleaned up on first load of any
+    -- character, without requiring us to log in on each alt.
+    --
+    -- devOptionsV2 (removed in Options V2 Phase 5): was a char-level
+    -- scaffolding flag that toggled between V1 and V2 options panels.
+    -- V2 is now the only panel, so nil the key from raw SV on every
+    -- stored character.
+    -----------------------------------------------------------------------
+    if self.db and self.db.sv and type(self.db.sv.chars) == "table" then
+        for _, rawChar in pairs(self.db.sv.chars) do
+            if type(rawChar) == "table" then
+                rawset(rawChar, "devOptionsV2", nil)
+            end
+        end
+    elseif self.db and self.db.char then
+        -- Stub/fallback path: no sv.chars table available, scrub the
+        -- active char proxy directly.
+        self.db.char.devOptionsV2 = nil
+    end
+
     -- Check if old profile-based imports exist
     if QUI_DB and QUI_DB.profiles and QUI_DB.profiles.Default then
         self:DebugPrint("Profiles.Default.imports Exists: " .. tostring(not (not QUI_DB.profiles.Default.imports)))

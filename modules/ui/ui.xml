@@ -4,4 +4,6 @@
     <Include file="buffborders_template.xml"/>
     <Script file="buffborders.lua"/>
     <Script file="minimap.lua"/>
+    <Script file="settings/minimap.lua"/>
+    <Script file="settings/minimap_providers.lua"/>
 </Ui>

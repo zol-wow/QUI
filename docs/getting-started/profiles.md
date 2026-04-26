@@ -7,115 +7,66 @@ nav_order: 3
 
 # Profiles
 
-QUI uses the **AceDB** profile system to manage your settings. Profiles let you save, switch, copy, and share complete configurations.
+Profiles are how QUI remembers your setup. If you understand this page, you can experiment much more freely without worrying about losing your preferred layout.
 
-## How Profiles Work
+## The Simple Version
 
-- **Default profile:** When you first log in, QUI creates a `Default` profile that all characters share.
-- **Per-character profiles:** You can create a profile for a specific character. That character will use its own settings while others continue using the Default profile.
-- **Copying and resetting:** You can copy settings from one profile to another, or reset a profile back to defaults.
+- Use **one shared profile** if you want multiple characters to look the same.
+- Use a **character-specific profile** if one character needs a different layout or role setup.
+- Use **spec-based switching** if you want a healing layout in one spec and a damage layout in another.
 
-Manage your profiles in `/qui` under the **Profiles** tab.
+Manage your profiles in `/qui` under **General > Profiles**.
 
-## Spec-Based Profile Switching
+## When To Use Each Option
 
-QUI integrates with **LibDualSpec** to automatically switch profiles when you change specializations. This is useful if you want different UI layouts for healing versus DPS, for example.
+- **Shared profile**: best for players who want one consistent UI everywhere.
+- **Character profile**: best when one class needs unique spacing, trackers, or bars.
+- **Spec profile**: best when your roles are very different, like healing versus damage.
+
+## Spec-Based Switching
+
+QUI can automatically switch profiles when you change specializations. This is one of the best quality-of-life features in the addon if you play multiple roles.
 
 To set this up:
 
-1. Open `/qui` and go to the **Profiles** tab.
+1. Open `/qui` and go to **General > Profiles**.
 2. Enable dual-spec profile switching.
 3. Assign a profile to each of your specializations.
 4. When you change specs, QUI will automatically load the associated profile.
 
 ## Import and Export
 
-QUI supports importing and exporting profiles as compressed text strings, using **LibDeflate** for compression. This makes it easy to share your setup with others or back up your configuration.
+Profiles can be imported and exported as shareable strings. This is the easiest way to:
 
-1. Open `/qui` and go to the **Import & Export Strings** tab.
+- try a new setup without rebuilding everything manually
+- share your UI with a friend
+- keep a backup before a big redesign
+
+1. Open `/qui` and go to **General > Import / Export**.
 2. To **export**, select the data you want to export and copy the generated string.
 3. To **import**, paste a profile string into the import field and click Import.
 
-Profile strings include validation checks (maximum depth of 20, maximum of 50,000 nodes, and type checking) to ensure safe imports.
-
 ## Partial Imports
 
-Since v2.53.0, QUI supports importing only specific parts of a profile string. When importing, you can select individual categories to apply:
+You do not always need to replace your whole setup. QUI can import only specific parts of a profile.
 
 - **Theme / Fonts / Colors** -- Update visual settings without moving frame positions.
 - **Layout / Positions** -- Update frame positions without changing visual settings.
-- **Module-specific** -- Import settings for specific modules (loot, skinning, etc.) independently.
+- **Module-specific** -- Update only the area you care about.
 
-This is useful when you want to adopt someone else's color scheme without losing your carefully positioned frame layout, or vice versa.
+This is especially useful when you like someone else's style but want to keep your own frame placement.
 
 ## Bundled Presets
 
-QUI ships with one built-in import preset in the **Import & Export Strings** tab:
+QUI includes bundled imports so you have a stable place to start:
 
-| Preset | Description |
-|--------|-------------|
-| **QUI Edit Mode Base** | The base Blizzard Edit Mode layout string (for Blizzard Edit Mode import). |
+- **QUI Edit Mode Base** for the base layout import.
+- Bundled profile presets for players who want a ready-made starting point.
 
 ## Reset All Movers
 
 If you have repositioned QUI frames and want to return them all to their default positions, use the **Reset All Movers** button found in the Profiles or Anchoring tab. This resets frame positions without affecting your other profile settings.
 
-## SavedVariables
+## Backup Tip
 
-QUI stores its data in two SavedVariables files:
-
-- **QUI_DB** -- Primary database (AceDB profiles, per-character settings, global settings).
-- **QUIDB** -- Secondary storage.
-
-These files are located in your WoW installation at:
-```
-World of Warcraft\_retail_\WTF\Account\<ACCOUNT>\SavedVariables\QUI.lua
-```
-
-They are saved automatically when you log out or reload the UI.
-
-## Migration Test Matrix
-
-Use this checklist when validating changes to profile import, layout migration, or SavedVariables upgrades.
-
-### Required Fixtures
-
-- One `main`-era healing profile with non-default frame positions.
-- One `main`-era `QUI1:` export string from the same character/profile.
-- One old SavedVariables file copied before installing the next-version addon.
-
-### Scenario 1: Old SavedVariables Upgrade
-
-1. Install the next-version addon over the old SavedVariables file.
-2. Log in on the healing character and let the addon load normally.
-3. Verify that these elements still match the `main` branch look before touching any settings:
-   - player, target, focus, pet, boss, and ToT frames
-   - party and raid frame placement
-   - cast bars and power bars
-   - CDM essential and utility containers
-   - loot window, loot history, and loot roll spacing
-   - minimap, micro menu, and bag bar visibility
-   - objective tracker, alert toasts, and ready-check/consumable anchors
-   - addon accent/theme output
-
-### Scenario 2: Old Profile Import
-
-1. Start from a clean or throwaway next-version profile.
-2. Import the `main`-era `QUI1:` string as a full profile replacement.
-3. Repeat the same visual checks from Scenario 1.
-4. Import the same string again into a named target profile and confirm the result is identical.
-
-### Scenario 3: Selective Import Guardrails
-
-1. From a customized next-version profile, selectively import only `Theme / Fonts / Colors`.
-2. Confirm colors/fonts update without moving anchors.
-3. Selectively import only `Layout / Positions`.
-4. Confirm anchors move without replacing unrelated theme choices.
-5. Selectively import loot/skinning-related categories and confirm old `general.skinLoot*` payloads land in `loot`, `lootRoll`, and `lootResults`.
-
-### Pass Criteria
-
-- No frame snaps back to next-version defaults unless the old profile also used those defaults.
-- Old loot, roll-frame, and minimap visibility choices survive both upgrade paths.
-- Old mint-accent profiles do not silently become sky blue.
-- Re-importing or relogging is idempotent: the second load looks the same as the first.
+If you have a setup you really love, export it before making major changes. That gives you an easy rollback point even if you later decide to rebuild from scratch.

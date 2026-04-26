@@ -5,71 +5,71 @@ nav_order: 4
 has_children: true
 ---
 
-# Settings Reference
+# Settings Guide
 
-This section documents every configurable setting in QUI, organized to mirror the in-game `/qui` options panel. Each page corresponds to a tab in the settings UI.
+This section mirrors the current in-game `/qui` options panel and is best used once you already know which parts of QUI you want to tune more deeply.
 
-Settings are stored in `QUI.db.profile` (profile-level, shared across characters using the same profile) or `QUI.db.char` (character-level, unique per character). Most changes take effect immediately; some require `/rl` (reload UI).
+If you are still setting up, start with [Getting Started](../getting-started/) or the [Features](../features/) section first. Come back here when you want the detailed reference view.
 
-## In-Game Tabs
+![Actual QUI settings window]({{ '/assets/images/qui-group-frames-full.png' | relative_url }})
+_The current `/qui` window uses a left-hand feature sidebar, breadcrumbs across the top, and page-specific tabs inside each tile._
 
-The QUI options panel (`/qui`) contains the following tabs:
+![Actual QUI Appearance page]({{ '/assets/images/qui-appearance-ui-scale.png' | relative_url }})
+_The Appearance tile is where theme, panel scale, fonts, skinning, and other shared presentation controls live._
 
-| # | Tab | Description |
+## Most-Visited Tiles
+
+- **General** for profiles, import/export, third-party links, and click-cast bindings
+- **Unit Frames** and **Group Frames** for combat frame setup
+- **Action Bars** and **Cooldown Manager** for your main combat HUD
+- **Minimap & Datatext** for corner utility panels
+- **Appearance** for UI scale, fonts, autohide, HUD visibility, and frame levels
+- **Quality of Life** for session helpers and automation
+
+## Main Feature Tiles
+
+The main sidebar in `/qui` currently contains these top-level tiles:
+
+| # | Tile | Description |
 |---|-----|-------------|
 | 1 | **Welcome** | First-time setup wizard and version info |
-| 2 | **General & QoL** | Global appearance, automation, skinning, and quality-of-life features |
-| 3 | **Frame Positioning** | Frame anchoring relationships and positioning |
-| 4 | **Unit Frames** | Player, Target, ToT, Pet, Focus, and Boss unit frames |
-| 5 | **Click-Cast** | Click-casting bindings for group frames and unit frames |
-| 6 | **Action Bars** | Button skinning, mouseover fade, per-bar overrides |
-| 7 | **Skinning & Autohide** | Blizzard frame skinning and conditional frame hiding |
-| 8 | **Custom CDM Bars** | User-defined spell and item tracking bars |
-| 9 | **Frame Levels** | HUD layering priority for all QUI frames |
-| 10 | **Profiles** | AceDB profile management (create, copy, delete, switch) |
-| 11 | **Import & Export Strings** | Profile import/export and bundled preset strings |
-| 12 | **Search** | Search across all settings |
-| 13 | **Help** | Help and documentation pages |
+| 2 | **General** | Profiles, import/export, third-party integration, and click-cast setup |
+| 3 | **Unit Frames** | Player, target, focus, pet, boss, and aura presentation |
+| 4 | **Group Frames** | Party and raid frame configuration with preview and layout tools |
+| 5 | **Action Bars** | Global action bar behavior, buff/debuff styling, and per-bar overrides |
+| 6 | **Cooldown Manager** | CDM containers, tracked spells, appearance, effects, and keybind overlays |
+| 7 | **Resource Bars** | Class resources and related combat bars |
+| 8 | **Minimap & Datatext** | Minimap controls plus datatext panel settings |
+| 9 | **Appearance** | UI scale, fonts, skinning, autohide, HUD visibility, frame levels, Blizzard mover |
+| 10 | **Chat & Tooltips** | Chat styling, tooltip behavior, and related readability settings |
+| 11 | **Gameplay** | XP tracker, keystones, skyriding, combat helpers, raid buffs, and more |
+| 12 | **Quality of Life** | FPS preset, automation, popups, salvage, consumables, panel, and reload behavior |
+| 13 | **Help** | Built-in help content and quick reference |
 
-### Layout Mode Settings
+## General Tile Pages
 
-The following settings have been moved out of the main options panel and into **Layout Mode** (`/qui layout`):
+The **General** tile is where the cross-feature setup pages now live:
 
-| Module | Access |
-|--------|--------|
-| **Cooldown Manager** | Layout Mode toolbar and settings panels |
-| **Group Frames** | Layout Mode toolbar and drawer (Composer + settings panels) |
-| **Minimap & Datatext** | Layout Mode toolbar and settings panels |
+| Page | Use it for |
+|------|------------|
+| **Profiles** | Creating, copying, deleting, and auto-switching profiles |
+| **Import / Export** | Bundled presets and shareable setup strings |
+| **Third-party** | Integration and anchoring setup for compatible addons |
+| **Click-Cast** | Mouse-binding setup for unit and group frame interactions |
 
-### Action Buttons
+## Common Page Tabs
 
-The options panel sidebar also includes quick-access action buttons:
+Many tiles then split again across a page-level tab strip. The most common examples are:
 
-- **CDM Settings** -- Opens the CDM settings panel directly
-- **Blizz Edit Mode** -- Opens Blizzard's Edit Mode
-- **QUI Edit Mode** -- Toggles QUI Layout Mode
+| Tile | Typical page tabs |
+|------|-------------------|
+| **Action Bars** | General, Buff/Debuff, Per-Bar |
+| **Minimap & Datatext** | Minimap, Datatext |
+| **Appearance** | UI Scale, Fonts, Skinning, Autohide, HUD Visibility, Frame Levels, Blizzard Mover |
+| **Quality of Life** | FPS Preset, Combat Text, Automation, Popups, Salvage, Consumables, Macros, Distance, Panel, Reload |
 
-## How Settings Are Organized
+## How To Use This Section
 
-Each settings page in this section uses tables with the following columns:
-
-| Column | Description |
-|--------|-------------|
-| **Setting** | The database key path relative to `QUI.db.profile` (or noted if `db.char`) |
-| **Type** | Data type: `boolean`, `number`, `string`, `color` (RGBA table), `table` |
-| **Default** | The default value as defined in the addon source |
-| **Description** | What the setting controls |
-
-## Accessing Settings in Code
-
-```lua
--- Profile-level (shared across characters on the same profile)
-local value = QUI.db.profile.general.uiScale
-
--- Character-level (unique per character)
-local debug = QUI.db.char.debug.reload
-
--- Using the module pattern with CreateDBGetter
-local GetDB = ns.Helpers.CreateDBGetter("general")
-local db = GetDB()  -- returns QUI.db.profile.general
-```
+- Use it when you want the detailed toggle-by-toggle reference.
+- Use the [Features](../features/) pages when you want plain-language guidance first.
+- Use `/qui layout` when you need to drag or place frames on screen; use `/qui` when you want feature settings, toggles, styling, and behavior.

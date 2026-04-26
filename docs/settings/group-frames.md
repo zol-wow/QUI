@@ -9,7 +9,7 @@ nav_order: 4
 
 QUI Group Frames replace Blizzard's default party and raid frames with a fully custom secure header system. They support class colors, absorb shields, heal prediction, dispel overlays, range checking, role icons, threat borders, target highlights, click-casting, and automatic scaling based on group size.
 
-Group Frames are **opt-in** and disabled by default. Enable them through **Layout Mode** (`/qui layout`) -- Group Frames settings have been moved out of the main options panel. Click-casting settings are in the dedicated **Click-Cast** tab in `/qui`. Party and raid frame settings are stored separately.
+Group Frames are **opt-in** and disabled by default. Enable them in `/qui` under **Group Frames**, then use **Edit in Layout Mode** when you want to move them on screen. Click-casting settings live under **General > Click-Cast**. Party and raid frame settings are stored separately.
 
 **DB path:** `db.profile.quiGroupFrames`
 

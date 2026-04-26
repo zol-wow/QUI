@@ -7,19 +7,26 @@ nav_order: 11
 
 # Quality of Life
 
-QUI includes a broad collection of automation and convenience features that reduce repetitive tasks and surface important information. From auto-selling junk and auto-repairing to consumable checks before pulls and popup blocking, these features streamline your gameplay experience without requiring separate addons for each function.
+QUI's Quality of Life section is the quiet hero of the addon. It bundles the small conveniences, reminders, and automation features that save time every single session.
 
-## Overview
+![Actual QUI Quality of Life page]({{ '/assets/images/qui-quality-of-life-fps-preset.png' | relative_url }})
+_The Quality of Life tile is split into focused pages like FPS Preset, Combat Text, Automation, Popups, Consumables, and more._
 
-The Quality of Life module is a catch-all for features that improve daily gameplay but do not fit neatly into other QUI categories. These range from simple one-toggle automations (sell junk, auto repair) to more sophisticated systems like the consumable checker that verifies your buffs before boss pulls, the focus cast alert that warns you about enemy casts, and the popup blocker that suppresses unwanted Blizzard notifications. Each feature is independently toggled.
+## Great First Picks
+
+- Auto-sell junk
+- Auto-repair
+- Fast auto loot
+- Consumable check for group content
+- Popup or toast cleanup if you like a quieter screen
 
 ## How to Enable
 
 Most QoL features are individually toggled. To configure them:
 
-- Open `/qui` and navigate to the **QoL** tab.
+- Open `/qui` and navigate to **Quality of Life**.
 
-## Key Features
+## What Lives Here
 
 ### Vendor Automation
 
@@ -135,7 +142,7 @@ For details, see the [Blizzard Frame Mover]({% link features/blizzard-frame-move
 | Focus cast alert | Warn about focus target casts | Disabled |
 | Missing raid buffs | Show missing group buff icons | Enabled |
 
-## Tips
+## Recommended Setup Ideas
 
 {: .note }
 The consumable check is invaluable for Mythic Plus and raiding. Set it to trigger on ready check so you get a clear reminder of any missing buffs before every pull. The preferred consumable selection ensures you are warned if you accidentally used a lower-tier flask or food.

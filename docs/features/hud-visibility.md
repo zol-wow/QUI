@@ -23,8 +23,8 @@ Each group uses the same set of visibility rules, but is configured independentl
 
 Visibility rules are configured in the QUI options panel:
 
-- HUD visibility settings for CDM are accessed through **Layout Mode** (`/qui layout`).
-- Unit Frame and Custom Tracker visibility settings are in the **General & QoL** tab in `/qui`.
+- Open `/qui` and go to **Appearance > HUD Visibility**.
+- Configure CDM, Unit Frames, and Custom Trackers from there.
 
 ## Key Features
 

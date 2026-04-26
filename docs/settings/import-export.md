@@ -7,7 +7,7 @@ nav_order: 12
 
 # Import & Export Strings
 
-The Import & Export Strings tab handles profile import/export and bundled presets. Profiles are serialized with AceSerializer, compressed with LibDeflate, and validated on import with strict limits to prevent malformed data from corrupting your settings.
+The **General > Import / Export** page handles profile import/export and bundled presets. Profiles are serialized with AceSerializer, compressed with LibDeflate, and validated on import with strict limits to prevent malformed data from corrupting your settings.
 
 ## Profile Import/Export
 
@@ -33,7 +33,7 @@ The **QUI Edit Mode Base** preset configures Blizzard's built-in Edit Mode so th
 
 ## How to Import
 
-1. Open `/qui` and navigate to the **Import & Export Strings** tab
+1. Open `/qui` and navigate to **General > Import / Export**
 2. Click the desired bundled preset button, or paste a profile string into the import text box
 3. Follow the confirmation dialog to apply the profile
 4. Type `/rl` to reload your UI and fully apply the changes

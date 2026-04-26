@@ -1,5 +1,5 @@
 title: QUI Documentation
-description: "Documentation for QUI -- a comprehensive World of Warcraft UI addon for Midnight (12.0+)."
+description: "Friendly setup guides and feature walkthroughs for QUI, a customizable World of Warcraft UI addon for Midnight (12.0+)."
 url: "https://zol-wow.github.io"
 baseurl: "/QUI"
 
@@ -40,6 +40,7 @@ exclude:
   - "*.lua"
   - "*.xml"
   - "*.toc"
+  - superpowers/
   - libs/
   - modules/
   - core/

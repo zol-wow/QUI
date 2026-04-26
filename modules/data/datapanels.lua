@@ -440,194 +440,62 @@ end)
 -- LAYOUT MODE REGISTRATION
 ---------------------------------------------------------------------------
 
---- Register a settings provider for a custom datapanel in layout mode.
---- Called from both startup registration and dynamic "Add Datapanel" button.
-local function RegisterDatapanelProvider(panelID, elementKey)
-    local settingsPanel = ns.QUI_LayoutMode_Settings
-    local um = ns.QUI_LayoutMode
-    if not settingsPanel then return end
+local SETTINGS_FEATURE_ID = "datatextPanel"
+local registeredSettingsLookups = {}
 
-    settingsPanel:RegisterProvider(elementKey, { build = function(content, key, width)
-        local panelDB = nil
-        local dtDB = QUICore.db and QUICore.db.profile and QUICore.db.profile.quiDatatexts
-        if dtDB and dtDB.panels then
-            for _, pc in ipairs(dtDB.panels) do
-                if pc.id == panelID then panelDB = pc; break end
-            end
-        end
-        if not panelDB then return 80 end
-
-        local GUI = QUI and QUI.GUI
-        if not GUI then return 80 end
-
-        local U = ns.QUI_LayoutMode_Utils
-        if not U then return 80 end
-        local P = U.PlaceRow
-        local FORM_ROW = U.FORM_ROW
-
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
-        local function Refresh()
-            Datapanels:UpdatePanel(panelID)
-            if QUICore.Datatexts and QUICore.Datatexts.UpdateAll then
-                QUICore.Datatexts:UpdateAll()
-            end
-        end
-
-        -- Lightweight preview: resize the panel frame (child overlay auto-follows)
-        local function PreviewSize()
-            local panel = Datapanels.activePanels[panelID]
-            if panel then
-                panel:SetSize(panelDB.width or 300, panelDB.height or 22)
-            end
-        end
-        local DEFER = { deferOnDrag = true }
-        local DEFER_SIZE = { deferOnDrag = true, onDragPreview = PreviewSize }
-
-        -- Panel Settings
-        U.CreateCollapsible(content, "Panel Settings", 7 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormSlider(body, "Width", 100, 800, 1, "width", panelDB, Refresh, DEFER_SIZE), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Height", 16, 60, 1, "height", panelDB, Refresh, DEFER_SIZE), body, sy)
-            local numSlotsSlider = GUI:CreateFormSlider(body, "Number of Slots", 1, 6, 1, "numSlots", panelDB, Refresh, DEFER)
-            if GUI.SetWidgetProviderSyncOptions then
-                GUI:SetWidgetProviderSyncOptions(numSlotsSlider, { auto = true, structural = true })
-            end
-            sy = P(numSlotsSlider, body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Background Opacity", 0, 100, 5, "bgOpacity", panelDB, Refresh, DEFER), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Border Size (0=hidden)", 0, 8, 1, "borderSize", panelDB, Refresh, DEFER), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Border Color", "borderColor", panelDB, Refresh), body, sy)
-            P(GUI:CreateFormSlider(body, "Font Size", 8, 18, 1, "fontSize", panelDB, Refresh, DEFER), body, sy)
-        end, sections, relayout)
-
-        -- Slot Configuration
-        local numSlots = panelDB.numSlots or 3
-        local dtOptions = {{value = "", text = "(empty)"}}
-        if QUICore and QUICore.Datatexts then
-            local allDatatexts = QUICore.Datatexts:GetAll()
-            for _, datatextDef in ipairs(allDatatexts) do
-                table.insert(dtOptions, {value = datatextDef.id, text = datatextDef.displayName})
-            end
-        end
-
-        if not panelDB.slots then panelDB.slots = {} end
-
-        U.CreateCollapsible(content, "Slot Configuration", numSlots * FORM_ROW + 8, function(body)
-            local sy = -4
-            for s = 1, numSlots do
-                local slotDD = GUI:CreateFormDropdown(body, "Slot " .. s, dtOptions, nil, nil, function(val)
-                    panelDB.slots[s] = val; Refresh()
-                end)
-                if slotDD.SetValue then slotDD:SetValue(panelDB.slots[s] or "", true) end
-                sy = P(slotDD, body, sy)
-            end
-        end, sections, relayout)
-
-        -- Contextual sections
-        local dtGlobal = QUICore.db and QUICore.db.profile and QUICore.db.profile.datatext
-        if dtGlobal then
-            local hasSpec, hasTime = false, false
-            for s = 1, numSlots do
-                local slotVal = panelDB.slots[s]
-                if slotVal == "playerspec" then hasSpec = true end
-                if slotVal == "time" then hasTime = true end
-            end
-
-            if hasSpec then
-                U.CreateCollapsible(content, "Spec Display", 1 * FORM_ROW + 20, function(body)
-                    local sy = -4
-                    P(GUI:CreateFormDropdown(body, "Spec Display Mode", {
-                        {value = "icon", text = "Icon Only"},
-                        {value = "loadout", text = "Icon + Loadout"},
-                        {value = "full", text = "Full (Spec / Loadout)"},
-                    }, "specDisplayMode", dtGlobal, Refresh), body, sy)
-                    local note = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    note:SetPoint("TOPLEFT", 4, sy - FORM_ROW)
-                    note:SetPoint("RIGHT", body, "RIGHT", -4, 0)
-                    note:SetTextColor(0.6, 0.6, 0.6, 0.8)
-                    note:SetText("Applies to all panels with Spec datatext")
-                    note:SetJustifyH("LEFT")
-                end, sections, relayout)
-            end
-
-            if hasTime then
-                U.CreateCollapsible(content, "Time Options", 3 * FORM_ROW + 20, function(body)
-                    local sy = -4
-                    sy = P(GUI:CreateFormDropdown(body, "Time Format", {
-                        {value = "local", text = "Local Time"},
-                        {value = "server", text = "Server Time"},
-                    }, "timeFormat", dtGlobal, Refresh), body, sy)
-                    sy = P(GUI:CreateFormDropdown(body, "Clock Format", {
-                        {value = true, text = "24-Hour Clock"},
-                        {value = false, text = "AM/PM"},
-                    }, "use24Hour", dtGlobal, Refresh), body, sy)
-                    P(GUI:CreateFormSlider(body, "Lockout Refresh (minutes)", 1, 30, 1, "lockoutCacheMinutes", dtGlobal, nil), body, sy)
-                    local note = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                    note:SetPoint("TOPLEFT", 4, sy - FORM_ROW)
-                    note:SetPoint("RIGHT", body, "RIGHT", -4, 0)
-                    note:SetTextColor(0.6, 0.6, 0.6, 0.8)
-                    note:SetText("Applies to all panels with Time datatext")
-                    note:SetJustifyH("LEFT")
-                end, sections, relayout)
-            end
-        end
-
-        -- Delete Panel button
-        local deleteSection = CreateFrame("Frame", nil, content)
-        deleteSection:SetHeight(FORM_ROW + 8)
-        local deleteBtn = CreateFrame("Button", nil, deleteSection)
-        deleteBtn:SetSize(width - 20, 24)
-        deleteBtn:SetPoint("CENTER", 0, 0)
-        deleteBtn:SetNormalFontObject("GameFontNormal")
-        deleteBtn:SetText("|cffFF4444Delete Panel|r")
-        deleteBtn:SetScript("OnClick", function()
-            local dtDB2 = QUICore.db and QUICore.db.profile and QUICore.db.profile.quiDatatexts
-            if dtDB2 and dtDB2.panels then
-                for idx, pc in ipairs(dtDB2.panels) do
-                    if pc.id == panelID then
-                        table.remove(dtDB2.panels, idx)
-                        break
-                    end
-                end
-            end
-            Datapanels:DeletePanel(panelID)
-            if settingsPanel then settingsPanel:Reset() end
-            if um then
-                -- Remove handle
-                local handle = um._handles and um._handles[elementKey]
-                if handle then
-                    handle:Hide()
-                    handle:SetParent(nil)
-                    um._handles[elementKey] = nil
-                end
-                -- Unregister element
-                if um._elements then
-                    um._elements[elementKey] = nil
-                end
-                if um._elementOrder then
-                    for idx, k in ipairs(um._elementOrder) do
-                        if k == elementKey then
-                            table.remove(um._elementOrder, idx)
-                            break
-                        end
-                    end
-                end
-                -- Rebuild drawer to remove the entry
-                local uiModule = ns.QUI_LayoutMode_UI
-                if uiModule and uiModule._RebuildDrawer then
-                    uiModule:_RebuildDrawer()
-                end
-            end
-        end)
-        table.insert(sections, deleteSection)
-
-        U.BuildPositionCollapsible(content, elementKey, { autoWidth = true }, sections, relayout)
-        relayout() return content:GetHeight()
-    end })
+local function GetSettingsRegistry()
+    local Settings = ns.Settings
+    local Registry = Settings and Settings.Registry
+    if not Registry
+        or type(Registry.GetFeature) ~= "function"
+        or type(Registry.RegisterLookupKey) ~= "function"
+        or type(Registry.UnregisterLookupKey) ~= "function" then
+        return nil
+    end
+    if not Registry:GetFeature(SETTINGS_FEATURE_ID) then
+        return nil
+    end
+    return Registry
 end
 
--- Expose for dynamic registration from layout mode UI
-Datapanels.RegisterProvider = RegisterDatapanelProvider
+local function RegisterDatapanelSettingsLookup(panelID, elementKey)
+    local Registry = GetSettingsRegistry()
+    if not Registry then
+        return false
+    end
+
+    if type(elementKey) ~= "string" or elementKey == "" then
+        if type(panelID) ~= "string" or panelID == "" then
+            return false
+        end
+        elementKey = "datapanel_" .. panelID
+    end
+
+    Registry:RegisterLookupKey(SETTINGS_FEATURE_ID, elementKey)
+    registeredSettingsLookups[elementKey] = true
+    return true
+end
+
+local function UnregisterDatapanelSettingsLookup(panelID, elementKey)
+    local Registry = GetSettingsRegistry()
+    if not Registry then
+        return false
+    end
+
+    if type(elementKey) ~= "string" or elementKey == "" then
+        if type(panelID) ~= "string" or panelID == "" then
+            return false
+        end
+        elementKey = "datapanel_" .. panelID
+    end
+
+    Registry:UnregisterLookupKey(SETTINGS_FEATURE_ID, elementKey)
+    registeredSettingsLookups[elementKey] = nil
+    return true
+end
+
+Datapanels.RegisterSettingsLookup = RegisterDatapanelSettingsLookup
+Datapanels.UnregisterSettingsLookup = UnregisterDatapanelSettingsLookup
 
 do
     local function RegisterLayoutModeElements()
@@ -635,12 +503,20 @@ do
         if not um then return end
 
         local db = QUICore.db and QUICore.db.profile and QUICore.db.profile.quiDatatexts
-        if not db or not db.panels then return end
+        if not db or not db.panels then
+            for elementKey in pairs(registeredSettingsLookups) do
+                UnregisterDatapanelSettingsLookup(nil, elementKey)
+            end
+            return
+        end
+
+        local desiredLookups = {}
 
         for i, panelConfig in ipairs(db.panels) do
             local panelID = panelConfig.id
             if panelID then
                 local elementKey = "datapanel_" .. panelID
+                desiredLookups[elementKey] = true
 
                 um:RegisterElement({
                     key = elementKey,
@@ -694,8 +570,13 @@ do
                     end
                 end
 
-                -- Register settings provider
-                RegisterDatapanelProvider(panelID, elementKey)
+                RegisterDatapanelSettingsLookup(panelID, elementKey)
+            end
+        end
+
+        for elementKey in pairs(registeredSettingsLookups) do
+            if not desiredLookups[elementKey] then
+                UnregisterDatapanelSettingsLookup(nil, elementKey)
             end
         end
     end

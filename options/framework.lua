@@ -19,47 +19,53 @@ local GUI = QUI.GUI
 ---------------------------------------------------------------------------
 GUI.Colors = {
     -- Backgrounds
-    bg = {0.067, 0.094, 0.153, 0.97},         -- #111827 Deep Cool Grey
-    bgLight = {0.122, 0.161, 0.216, 1},       -- #1F2937 Dark Slate (inactive tabs)
-    bgDark = {0.04, 0.06, 0.1, 1},            -- Even darker for contrast
-    bgContent = {0.122, 0.161, 0.216, 0.5},   -- #1F2937 with alpha
-    
-    -- Accent colors (Mint)
-    accent = {0.204, 0.827, 0.6, 1},          -- #34D399 Soft Mint (active border)
-    accentLight = {0.431, 0.906, 0.718, 1},   -- #6EE7B7 Lighter Mint (headers)
+    bg = {0.051, 0.067, 0.09, 0.97},          -- #0d1117 deep dark
+    bgLight = {0.094, 0.11, 0.14, 1},         -- slightly lighter for inactive tabs
+    bgDark = {0.03, 0.04, 0.06, 1},
+    bgContent = {1, 1, 1, 0.02},              -- card surface (white 2% alpha)
+    bgSidebar = {0, 0, 0, 0.25},              -- sidebar panel background
+    bgFooter = {0, 0, 0, 0.15},               -- footer bar surface
+
+    -- Accent colors (Mint - derived from ApplyAccentColor)
+    accent = {0.204, 0.827, 0.6, 1},          -- #34D399 Soft Mint
+    accentLight = {0.431, 0.906, 0.718, 1},
     accentDark = {0.1, 0.5, 0.35, 1},
     accentHover = {0.3, 0.9, 0.65, 1},
-    
-    -- Tab colors
-    tabSelected = {0.204, 0.827, 0.6, 1},     -- #34D399 Soft Mint
-    tabSelectedText = {0.067, 0.094, 0.153, 1}, -- Dark text on selected
-    tabNormal = {0.7, 0.75, 0.78, 1},         -- Slightly cool grey
-    tabHover = {0.95, 0.96, 0.96, 1},
-    
-    -- Text colors
-    text = {0.953, 0.957, 0.965, 1},          -- #F3F4F6 Off-White
-    textBright = {1, 1, 1, 1},
-    textMuted = {0.6, 0.65, 0.7, 1},
-    
-    -- Borders
-    border = {0.2, 0.25, 0.3, 1},
-    borderLight = {0.3, 0.35, 0.4, 1},
-    borderAccent = {0.204, 0.827, 0.6, 1},    -- #34D399 Mint border
-    
-    -- Section headers
-    sectionHeader = {0.431, 0.906, 0.718, 1}, -- #6EE7B7 Lighter Mint
+    accentFaint = {0.204, 0.827, 0.6, 0.07},  -- active tile bg
+    accentGlow = {0.204, 0.827, 0.6, 0.06},   -- content-area radial gradient
 
-    -- Slider colors (Premium redesign)
-    sliderTrack = {0.15, 0.17, 0.22, 1},       -- Slightly lighter track background
-    sliderThumb = {1, 1, 1, 1},                -- White thumb
-    sliderThumbBorder = {0.3, 0.35, 0.4, 1},   -- Subtle border on thumb
+    -- Tab colors
+    tabSelected = {0.204, 0.827, 0.6, 1},
+    tabSelectedText = {1, 1, 1, 1},
+    tabNormal = {1, 1, 1, 0.55},
+    tabHover = {1, 1, 1, 0.85},
+
+    -- Text colors
+    text = {1, 1, 1, 1},
+    textBright = {1, 1, 1, 1},
+    textMuted = {1, 1, 1, 0.45},
+    textDim = {1, 1, 1, 0.6},
+    sectionLabel = {1, 1, 1, 0.42},
+
+    -- Borders
+    border = {1, 1, 1, 0.06},
+    borderStrong = {1, 1, 1, 0.1},
+    borderAccent = {0.204, 0.827, 0.6, 1},
+
+    -- Section headers (legacy key kept for compat)
+    sectionHeader = {0.431, 0.906, 0.718, 1},   -- legacy V1 section header (lighter mint) — alpha 1 required by CreateSectionHeader
+
+    -- Slider colors
+    sliderTrack = {1, 1, 1, 0.12},
+    sliderThumb = {1, 1, 1, 1},
+    sliderThumbBorder = {0, 0, 0, 0.2},
 
     -- Toggle switch colors
-    toggleOff = {0.176, 0.216, 0.282, 1},      -- #2D3748 Dark grey track
-    toggleThumb = {1, 1, 1, 1},                -- White circle
+    toggleOff = {1, 1, 1, 0.12},
+    toggleThumb = {1, 1, 1, 1},
 
     -- Warning/secondary accent
-    warning = {0.961, 0.620, 0.043, 1},        -- #F59E0B Amber
+    warning = {0.961, 0.620, 0.043, 1},
 }
 
 local C = GUI.Colors
@@ -88,12 +94,45 @@ end
 GUI.RefreshCachedColors = RefreshCachedColors
 
 ---------------------------------------------------------------------------
+-- TOOLTIP: per-option on-hover explanation
+-- Attaches a GameTooltip hover to any frame, gated by
+-- QUI.db.profile.general.showOptionTooltips (default true).
+-- Safe to call multiple times; HookScript is additive.
+---------------------------------------------------------------------------
+function GUI:AttachTooltip(frame, description, label)
+    if not frame or type(description) ~= "string" or description == "" then return end
+    if type(frame.HookScript) ~= "function" then return end
+    frame._quiHasBaseTooltip = true
+    frame:HookScript("OnEnter", function(self)
+        local db = _G.QUI and _G.QUI.db and _G.QUI.db.profile
+        if db and db.general and db.general.showOptionTooltips == false then return end
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if type(label) == "string" and label ~= "" then
+            GameTooltip:SetText(label, C.accent[1], C.accent[2], C.accent[3], 1)
+            GameTooltip:AddLine(description, 1, 1, 1, true)
+        else
+            GameTooltip:SetText(description, 1, 1, 1, 1, true)
+        end
+        if type(self._quiTooltipAugment) == "function" then
+            pcall(self._quiTooltipAugment, self, GameTooltip)
+        end
+        GameTooltip:Show()
+    end)
+    frame:HookScript("OnLeave", function()
+        if GameTooltip then GameTooltip:Hide() end
+    end)
+end
+
+---------------------------------------------------------------------------
 -- ACCENT COLOR - Derive theme colors from a base accent color
 ---------------------------------------------------------------------------
 function GUI:ApplyAccentColor(r, g, b)
     local function lerp(a, b, t) return a + (b - a) * t end
     -- Update in-place to preserve existing table references
     C.accent[1], C.accent[2], C.accent[3], C.accent[4] = r, g, b, 1
+    C.accentFaint[1], C.accentFaint[2], C.accentFaint[3] = r, g, b
+    C.accentGlow[1], C.accentGlow[2], C.accentGlow[3] = r, g, b
     C.accentLight[1] = lerp(r, 1, 0.3)
     C.accentLight[2] = lerp(g, 1, 0.3)
     C.accentLight[3] = lerp(b, 1, 0.3)
@@ -165,12 +204,35 @@ GUI.SIDEBAR_WIDTH = 190
 GUI.CONTENT_WIDTH = 800  -- Panel width minus sidebar and padding
 
 -- Settings Registry for search functionality
+-- SettingsRegistry entry schema (all fields optional unless noted):
+--   label         (string, required)   - user-visible setting name, also search-keyed
+--   widgetType    (string)              - "toggle" | "slider" | "dropdown" | etc.
+--   tabIndex      (number, required)    - top-level tab/category index
+--   tabName       (string, required)    - top-level tab display name
+--   subTabIndex   (number)              - sub-tab index within the tab
+--   subTabName    (string)              - sub-tab display name
+--   sectionName   (string)              - collapsible section the widget lives in
+--   widgetBuilder (function, required)  - (parent) -> widget; used when rendering in
+--                                         the Search results list
+--   keywords      (array<string>)       - extra tokens to match (e.g. synonyms local
+--                                         to this setting). Scored lower than label.
+--   description   (string)              - (Phase 3+) one-line explanation shown under
+--                                         the breadcrumb in search results.
+--   synonyms      (array<string>)       - (Phase 3+) populated automatically from
+--                                         the global synonym table; not typically set
+--                                         by callers.
+--   relatedTo     (array<string>)       - (Phase 3+) labels of other settings to
+--                                         surface in this setting's "Related" footer.
 GUI.SettingsRegistry = {}
+GUI.StaticSettingsRegistry = GUI.StaticSettingsRegistry or {}
+GUI.StaticSettingsRegistryKeys = GUI.StaticSettingsRegistryKeys or {}
 
 -- Navigation Registry for searchable categories, subtabs, and sections
 -- Allows users to search for tab names, subtab names, and section names directly
 GUI.NavigationRegistry = {}
 GUI.NavigationRegistryKeys = {}  -- Deduplication keys
+GUI.StaticNavigationRegistry = GUI.StaticNavigationRegistry or {}
+GUI.StaticNavigationRegistryKeys = GUI.StaticNavigationRegistryKeys or {}
 
 -- Search context (auto-populated by page builders)
 GUI._searchContext = {
@@ -179,6 +241,13 @@ GUI._searchContext = {
     subTabIndex = nil,
     subTabName = nil,
     sectionName = nil,
+    tileId = nil,
+    subPageIndex = nil,
+    featureId = nil,
+    providerKey = nil,
+    category = nil,
+    surfaceTabKey = nil,
+    surfaceUnitKey = nil,
 }
 
 -- Suppress auto-registration when rebuilding widgets for search results
@@ -194,7 +263,377 @@ GUI.WidgetInstances = {}
 -- Nested format: SectionRegistry[tabIndex * 10000 + subTabIndex][sectionName] -> {frame, scrollParent}
 GUI.SectionRegistry = {}
 GUI.SectionRegistryOrder = {}
-GUI.SectionNavigateHandlers = {}
+
+local function CopySearchRegistryEntry(entry)
+    local copy = {}
+    if type(entry) ~= "table" then
+        return copy
+    end
+    for key, value in pairs(entry) do
+        copy[key] = value
+    end
+    return copy
+end
+
+local function BuildStaticRegistryKey(entry, extra)
+    local parts = {
+        extra or "",
+        entry and entry.label or "",
+        entry and entry.navType or "",
+        entry and entry.tileId or "",
+        tostring(entry and entry.subPageIndex or 0),
+        entry and entry.tabName or "",
+        entry and entry.subTabName or "",
+        entry and entry.sectionName or "",
+    }
+    return table.concat(parts, "\31")
+end
+
+local function BuildSearchRouteLabels(info)
+    if type(info) ~= "table" then
+        return nil, nil, nil
+    end
+
+    local tabLabel = info.tabName
+    if (type(tabLabel) ~= "string" or tabLabel == "")
+        and type(info.tileId) == "string" and info.tileId ~= "" then
+        tabLabel = info.tileId
+    end
+
+    local subTabLabel = info.subTabName
+    if (type(subTabLabel) ~= "string" or subTabLabel == "")
+        and info.subPageIndex ~= nil then
+        subTabLabel = "Page " .. tostring(info.subPageIndex)
+    end
+
+    local sectionLabel = info.sectionName
+    if type(sectionLabel) ~= "string" or sectionLabel == "" then
+        sectionLabel = nil
+    end
+
+    return tabLabel, subTabLabel, sectionLabel
+end
+
+local function BuildSearchNavigationLabel(navType, info)
+    local tabLabel, subTabLabel, sectionLabel = BuildSearchRouteLabels(info)
+    if navType == "tab" then
+        return tabLabel or sectionLabel
+    end
+
+    local parts = {}
+    if tabLabel and tabLabel ~= "" then
+        parts[#parts + 1] = tabLabel
+    end
+
+    if navType == "subtab" then
+        if subTabLabel and subTabLabel ~= "" then
+            parts[#parts + 1] = subTabLabel
+        end
+        return #parts > 0 and table.concat(parts, " > ") or nil
+    end
+
+    if subTabLabel and subTabLabel ~= "" then
+        parts[#parts + 1] = subTabLabel
+    end
+    if sectionLabel and sectionLabel ~= "" then
+        parts[#parts + 1] = sectionLabel
+    end
+
+    return #parts > 0 and table.concat(parts, " > ") or nil
+end
+
+local function BuildSearchNavigationKeywords(info)
+    local tabLabel, subTabLabel, sectionLabel = BuildSearchRouteLabels(info)
+    local keywords = {}
+    if tabLabel and tabLabel ~= "" then
+        keywords[#keywords + 1] = tabLabel
+    end
+    if subTabLabel and subTabLabel ~= "" then
+        keywords[#keywords + 1] = subTabLabel
+    end
+    if sectionLabel and sectionLabel ~= "" then
+        keywords[#keywords + 1] = sectionLabel
+    end
+    return keywords
+end
+
+function GUI:ResetStaticSearchIndex()
+    self.StaticSettingsRegistry = {}
+    self.StaticSettingsRegistryKeys = {}
+    self.StaticNavigationRegistry = {}
+    self.StaticNavigationRegistryKeys = {}
+end
+
+function GUI:ApplyGeneratedSearchCache(cache)
+    self:ResetStaticSearchIndex()
+
+    if type(cache) ~= "table" then
+        return false
+    end
+
+    for _, entry in ipairs(cache.navigation or {}) do
+        self:RegisterStaticNavigationEntry(entry)
+    end
+    for _, entry in ipairs(cache.settings or {}) do
+        self:RegisterStaticSettingEntry(entry)
+    end
+
+    self._generatedSearchCacheVersion = cache.version
+    return true
+end
+
+function GUI:RegisterStaticNavigationEntry(entry)
+    if type(entry) ~= "table" or type(entry.label) ~= "string" or entry.label == "" then
+        return nil
+    end
+
+    local regKey = BuildStaticRegistryKey(entry, "nav")
+    if self.StaticNavigationRegistryKeys[regKey] then
+        return nil
+    end
+
+    self.StaticNavigationRegistryKeys[regKey] = true
+
+    local stored = CopySearchRegistryEntry(entry)
+    stored.navType = stored.navType or "tab"
+    table.insert(self.StaticNavigationRegistry, stored)
+    return stored
+end
+
+function GUI:RegisterStaticSettingEntry(entry)
+    if type(entry) ~= "table" or type(entry.label) ~= "string" or entry.label == "" then
+        return nil
+    end
+
+    local regKey = BuildStaticRegistryKey(entry, "setting")
+    if self.StaticSettingsRegistryKeys[regKey] then
+        return nil
+    end
+
+    self.StaticSettingsRegistryKeys[regKey] = true
+
+    local stored = CopySearchRegistryEntry(entry)
+    table.insert(self.StaticSettingsRegistry, stored)
+    return stored
+end
+
+GUI._dbPathCache = GUI._dbPathCache or setmetatable({}, { __mode = "k" })
+
+local function CopySerializableValue(value, depth, seen)
+    local valueType = type(value)
+    if valueType == "nil" or valueType == "string" or valueType == "number" or valueType == "boolean" then
+        return value
+    end
+    if valueType ~= "table" then
+        return nil
+    end
+
+    depth = (depth or 0) + 1
+    if depth > 6 then
+        return nil
+    end
+
+    seen = seen or {}
+    if seen[value] then
+        return nil
+    end
+    seen[value] = true
+
+    local copy = {}
+    for key, nested in pairs(value) do
+        local keyType = type(key)
+        if keyType == "string" or keyType == "number" then
+            local nestedCopy = CopySerializableValue(nested, depth, seen)
+            if nestedCopy ~= nil then
+                copy[key] = nestedCopy
+            end
+        end
+    end
+
+    seen[value] = nil
+    return copy
+end
+
+local function FindDBTablePath(target, current, prefix, seen, depth)
+    if target == nil or current == nil or type(current) ~= "table" then
+        return nil
+    end
+    if current == target then
+        return prefix
+    end
+
+    depth = (depth or 0) + 1
+    if depth > 12 then
+        return nil
+    end
+
+    seen = seen or {}
+    if seen[current] then
+        return nil
+    end
+    seen[current] = true
+
+    for key, value in pairs(current) do
+        if type(key) == "string" and type(value) == "table" then
+            local path = FindDBTablePath(target, value, prefix .. "." .. key, seen, depth)
+            if path then
+                seen[current] = nil
+                return path
+            end
+        end
+    end
+
+    seen[current] = nil
+    return nil
+end
+
+function GUI:ResolveSearchDBTablePath(dbTable)
+    if type(dbTable) ~= "table" then
+        return nil
+    end
+
+    local cached = self._dbPathCache and self._dbPathCache[dbTable]
+    if type(cached) == "string" and cached ~= "" then
+        return cached
+    end
+
+    local db = QUI and QUI.db
+    if not db then
+        return nil
+    end
+
+    local roots = {
+        { path = "profile", value = db.profile },
+        { path = "char", value = db.char },
+        { path = "global", value = db.global },
+    }
+
+    for _, root in ipairs(roots) do
+        local path = FindDBTablePath(dbTable, root.value, root.path)
+        if path then
+            self._dbPathCache[dbTable] = path
+            return path
+        end
+    end
+
+    return nil
+end
+
+function GUI:ResolveSearchDBTable(dbPath)
+    if type(dbPath) ~= "string" or dbPath == "" then
+        return nil
+    end
+
+    local db = QUI and QUI.db
+    if not db then
+        return nil
+    end
+
+    local segments = {}
+    for part in dbPath:gmatch("[^%.]+") do
+        segments[#segments + 1] = part
+    end
+
+    local current = db
+    for _, segment in ipairs(segments) do
+        if type(current) ~= "table" then
+            return nil
+        end
+        current = current[segment]
+    end
+
+    return type(current) == "table" and current or nil
+end
+
+local function BuildSearchSettingsRegistryKey(context, label)
+    return table.concat({
+        label or "",
+        tostring(context and context.tabIndex or 0),
+        tostring(context and context.subTabIndex or 0),
+        context and context.sectionName or "",
+        context and context.tileId or "",
+        tostring(context and context.subPageIndex or 0),
+        context and context.featureId or "",
+        context and context.surfaceTabKey or "",
+        context and context.surfaceUnitKey or "",
+    }, "\31")
+end
+
+function GUI:BuildSearchWidgetDescriptor(kind, dbKey, dbTable, extra)
+    if type(dbKey) ~= "string" or dbKey == "" then
+        return nil
+    end
+
+    local dbPath = self:ResolveSearchDBTablePath(dbTable)
+    if not dbPath then
+        return nil
+    end
+
+    local descriptor = {
+        kind = kind,
+        dbKey = dbKey,
+        dbPath = dbPath,
+        featureId = self._searchContext.featureId,
+        providerKey = self._searchContext.providerKey,
+        category = self._searchContext.category,
+    }
+
+    if type(extra) == "table" then
+        for key, value in pairs(extra) do
+            local copied = CopySerializableValue(value)
+            if copied ~= nil then
+                descriptor[key] = copied
+            end
+        end
+    end
+
+    return descriptor
+end
+
+function GUI:RegisterSearchSettingWidget(entry)
+    local context = self._searchContext or {}
+    if self._suppressSearchRegistration
+        or type(entry) ~= "table"
+        or type(entry.label) ~= "string"
+        or entry.label == "" then
+        return nil
+    end
+
+    local stored = {
+        label = entry.label,
+        widgetType = entry.widgetType,
+        tabIndex = context.tabIndex,
+        tabName = context.tabName,
+        subTabIndex = context.subTabIndex,
+        subTabName = context.subTabName,
+        sectionName = context.sectionName,
+        tileId = context.tileId,
+        subPageIndex = context.subPageIndex,
+        featureId = context.featureId,
+        providerKey = context.providerKey,
+        category = context.category,
+        surfaceTabKey = context.surfaceTabKey,
+        surfaceUnitKey = context.surfaceUnitKey,
+        widgetBuilder = entry.widgetBuilder,
+        widgetDescriptor = entry.widgetDescriptor,
+        keywords = entry.keywords,
+        description = entry.description,
+        relatedTo = entry.relatedTo,
+    }
+
+    local regKey = BuildSearchSettingsRegistryKey(context, entry.label)
+    if self.SettingsRegistryKeys[regKey] then
+        return nil
+    end
+
+    self.SettingsRegistryKeys[regKey] = true
+    table.insert(self.SettingsRegistry, stored)
+    return stored
+end
+
+function GUI:RegisterSearchNavigation(navType, info)
+    return self:RegisterNavigationItem(navType, info)
+end
 
 -- Sidebar tree animation/layout config
 GUI._sidebarAnimDuration = 0.16
@@ -279,8 +718,8 @@ local function NotifyProviderChangedForWidget(widget, options)
     local context = widget._providerSyncContext or GetProviderSyncContext(widget)
     if not context or not context.providerKey then return end
 
-    local builders = ns.SettingsBuilders
-    if not builders or type(builders.NotifyProviderChanged) ~= "function" then return end
+    local compat = ns.Settings and ns.Settings.RenderAdapters
+    if not compat or type(compat.NotifyProviderChanged) ~= "function" then return end
 
     local providerOptions = widget._providerSyncOptions or {}
     local structural = options and options.structural
@@ -292,7 +731,7 @@ local function NotifyProviderChangedForWidget(widget, options)
         end
     end
 
-    builders.NotifyProviderChanged(context.providerKey, {
+    compat.NotifyProviderChanged(context.providerKey, {
         sourceSurfaceId = context.surfaceId,
         structural = structural == true,
     })
@@ -311,6 +750,87 @@ local function MaybeAutoNotifyProviderSync(widget, options)
     if not auto then return end
 
     NotifyProviderChangedForWidget(widget, options)
+end
+
+local function BuildPinnedWidgetDescriptor(binding)
+    if type(binding) ~= "table" then
+        return nil
+    end
+
+    return {
+        kind = binding.kind,
+        label = binding.label,
+        pinLabel = binding.pinLabel,
+        tabIndex = binding.tabIndex,
+        tabName = binding.tabName,
+        subTabIndex = binding.subTabIndex,
+        subTabName = binding.subTabName,
+        sectionName = binding.sectionName,
+        tileId = binding.tileId,
+        subPageIndex = binding.subPageIndex,
+        featureId = binding.featureId,
+        surfaceTabKey = binding.surfaceTabKey,
+        surfaceUnitKey = binding.surfaceUnitKey,
+    }
+end
+
+local function MaybeBindPinnedWidget(widget, kind, label, dbKey, dbTable, interactiveFrame, registryInfo)
+    local pins = ns.Settings and ns.Settings.Pins
+    if not pins or type(pins.BindWidget) ~= "function" then
+        return
+    end
+    if registryInfo and registryInfo.pinnable == false then
+        return
+    end
+
+    local searchContext = GUI._searchContext or {}
+    pins:BindWidget(widget, {
+        kind = kind,
+        label = label,
+        pinLabel = registryInfo and registryInfo.pinLabel or nil,
+        pinPath = registryInfo and registryInfo.pinPath or nil,
+        dbKey = dbKey,
+        dbTable = dbTable,
+        interactiveFrame = interactiveFrame,
+        tabIndex = searchContext.tabIndex,
+        tabName = searchContext.tabName,
+        subTabIndex = searchContext.subTabIndex,
+        subTabName = searchContext.subTabName,
+        sectionName = searchContext.sectionName,
+        tileId = searchContext.tileId,
+        subPageIndex = searchContext.subPageIndex,
+        featureId = searchContext.featureId,
+        surfaceTabKey = searchContext.surfaceTabKey,
+        surfaceUnitKey = searchContext.surfaceUnitKey,
+    })
+
+    if label and type(pins.AttachWidgetChrome) == "function" then
+        pins:AttachWidgetChrome(widget, widget, interactiveFrame, label)
+    end
+end
+
+local function MaybeUpdatePinnedWidgetValue(widget, value)
+    local pins = ns.Settings and ns.Settings.Pins
+    if not pins or type(pins.UpdatePinnedValue) ~= "function" then
+        return
+    end
+
+    local binding = widget and widget._quiPinBinding or nil
+    if type(binding) ~= "table" then
+        return
+    end
+
+    local path = binding.path
+    if (type(path) ~= "string" or path == "") and type(pins.GetResolvedWidgetPath) == "function" then
+        path = pins:GetResolvedWidgetPath(binding)
+        binding.path = path
+    end
+
+    if type(path) ~= "string" or path == "" or not pins:IsPinned(path) then
+        return
+    end
+
+    pins:UpdatePinnedValue(path, value, BuildPinnedWidgetDescriptor(binding))
 end
 
 function GUI:SetWidgetProviderSyncOptions(widget, options)
@@ -339,12 +859,19 @@ function GUI:SetSearchContext(info)
     self._searchContext.subTabIndex = info.subTabIndex or nil
     self._searchContext.subTabName = info.subTabName or nil
     self._searchContext.sectionName = info.sectionName or nil
+    self._searchContext.tileId = info.tileId or nil
+    self._searchContext.subPageIndex = info.subPageIndex or nil
+    self._searchContext.featureId = info.featureId or nil
+    self._searchContext.providerKey = info.providerKey or nil
+    self._searchContext.category = info.category or nil
+    self._searchContext.surfaceTabKey = info.surfaceTabKey or nil
+    self._searchContext.surfaceUnitKey = info.surfaceUnitKey or nil
 
     -- Auto-register navigation items for tabs and subtabs
-    if info.tabIndex and info.tabName then
-        self:RegisterNavigationItem("tab", info)
-        if info.subTabIndex and info.subTabName then
-            self:RegisterNavigationItem("subtab", info)
+    if (info.tabIndex or info.tileId or info.tabName) and (info.tabName or info.tileId) then
+        self:RegisterSearchNavigation("tab", info)
+        if (info.subTabIndex or info.subPageIndex or info.subTabName) and (info.subTabName or info.subPageIndex) then
+            self:RegisterSearchNavigation("subtab", info)
         end
     end
 end
@@ -354,13 +881,18 @@ function GUI:SetSearchSection(sectionName)
     self._searchContext.sectionName = sectionName
 
     -- Auto-register section as navigation item
-    if sectionName and sectionName ~= "" and self._searchContext.tabIndex then
-        self:RegisterNavigationItem("section", {
+    if sectionName and sectionName ~= "" and (self._searchContext.tabIndex or self._searchContext.tileId or self._searchContext.tabName) then
+        self:RegisterSearchNavigation("section", {
             tabIndex = self._searchContext.tabIndex,
             tabName = self._searchContext.tabName,
             subTabIndex = self._searchContext.subTabIndex,
             subTabName = self._searchContext.subTabName,
             sectionName = sectionName,
+            tileId = self._searchContext.tileId,
+            subPageIndex = self._searchContext.subPageIndex,
+            featureId = self._searchContext.featureId,
+            surfaceTabKey = self._searchContext.surfaceTabKey,
+            surfaceUnitKey = self._searchContext.surfaceUnitKey,
         })
     end
 end
@@ -373,6 +905,13 @@ function GUI:ClearSearchContext()
         subTabIndex = nil,
         subTabName = nil,
         sectionName = nil,
+        tileId = nil,
+        subPageIndex = nil,
+        featureId = nil,
+        providerKey = nil,
+        category = nil,
+        surfaceTabKey = nil,
+        surfaceUnitKey = nil,
     }
 end
 
@@ -380,199 +919,59 @@ local function GetSectionRegistryKey(tabIndex, subTabIndex)
     return (tabIndex or 0) * 10000 + (subTabIndex or 0)
 end
 
-function GUI:RegisterSectionNavigateHandler(tabIndex, subTabIndex, sectionName, handler)
-    if not tabIndex or not subTabIndex or not sectionName or sectionName == "" then return end
-    if type(handler) ~= "function" then return end
-    local key = GetSectionRegistryKey(tabIndex, subTabIndex)
-    self.SectionNavigateHandlers[key] = self.SectionNavigateHandlers[key] or {}
-    self.SectionNavigateHandlers[key][sectionName] = handler
+local function GetRegisteredSection(tabIndex, subTabIndex, sectionName)
+    if not sectionName or sectionName == "" then return nil end
+    local registry = GUI.SectionRegistry[GetSectionRegistryKey(tabIndex, subTabIndex)]
+    return registry and registry[sectionName] or nil
 end
 
-function GUI:RunSectionNavigateHandler(tabIndex, subTabIndex, sectionName)
-    if not tabIndex or not subTabIndex or not sectionName or sectionName == "" then return false end
-    local key = GetSectionRegistryKey(tabIndex, subTabIndex)
-    local handlers = self.SectionNavigateHandlers[key]
-    local handler = handlers and handlers[sectionName]
-    if type(handler) ~= "function" then return false end
-    local ok, handled = pcall(handler)
-    if not ok then return false end
-    return handled ~= false
-end
+function GUI:ScrollToRegisteredSection(tabIndex, subTabIndex, sectionName, opts)
+    local entry = GetRegisteredSection(tabIndex, subTabIndex, sectionName)
+    if not entry or not entry.frame then return false end
 
-function GUI:GetOrderedSections(tabIndex, subTabIndex)
-    local key = GetSectionRegistryKey(tabIndex, subTabIndex)
-    local order = self.SectionRegistryOrder[key] or {}
-    local registry = self.SectionRegistry[key] or {}
-    local out = {}
-    for _, sectionName in ipairs(order) do
-        if registry[sectionName] then
-            table.insert(out, sectionName)
+    local scroll = entry.scrollParent or self:_findAncestorScroll(entry.frame)
+    if scroll and scroll.SetVerticalScroll and entry.frame.GetTop and scroll.GetTop then
+        local sectionTop = entry.frame:GetTop()
+        local scrollTop = scroll:GetTop()
+        if sectionTop and scrollTop then
+            local offset = math.max(0, (scrollTop - sectionTop) + 10)
+            pcall(scroll.SetVerticalScroll, scroll, offset)
         end
     end
-    return out
-end
 
-function GUI:ScrollToSection(tabIndex, subTabIndex, sectionName)
-    if not tabIndex or not sectionName or sectionName == "" then return false end
-    local key = GetSectionRegistryKey(tabIndex, subTabIndex or 0)
-    local subReg = self.SectionRegistry[key]
-    local sectionInfo = subReg and subReg[sectionName]
-    if not sectionInfo or not sectionInfo.scrollParent or not sectionInfo.frame then
-        return false
+    if not opts or opts.pulse ~= false then
+        self:PulseWidget(entry.frame)
     end
 
-    local scrollFrame = sectionInfo.scrollParent
-    local sectionFrame = sectionInfo.frame
-    local contentParent = sectionInfo.contentParent
-    if not contentParent or not sectionFrame:IsVisible() then
-        return false
-    end
-
-    local sectionTop = sectionFrame:GetTop()
-    local contentTop = contentParent:GetTop()
-    if not sectionTop or not contentTop then
-        return false
-    end
-
-    local sectionOffset = contentTop - sectionTop
-    local scrollPos = math.max(0, sectionOffset - 20)
-    local maxScroll = (type(ns.GetSafeVerticalScrollRange) == "function")
-        and ns.GetSafeVerticalScrollRange(scrollFrame)
-        or 0
-    scrollPos = math.min(scrollPos, maxScroll)
-    scrollFrame:SetVerticalScroll(scrollPos)
     return true
 end
 
+-- Search jump-to-setting uses _findWidgetByLabel + per-widget scroll
+-- (see options/framework_v2.lua).
+
+-- Search results emit (tabIndex, subTabIndex) coordinates. Translate
+-- through the nav map and dispatch to SelectFeatureTile so clicks from
+-- nav rows, "Go >" buttons, and breadcrumbs all land on the right tile.
 function GUI:NavigateTo(tabIndex, subTabIndex, sectionName)
     local frame = self.MainFrame
     if not frame then return end
     if not tabIndex then return end
-    local hasSectionTarget = (sectionName and sectionName ~= "" and subTabIndex)
 
-    frame._sidebarExpandedTabs = frame._sidebarExpandedTabs or {}
-    frame._sidebarExpandedSubTabs = frame._sidebarExpandedSubTabs or {}
-    frame._sidebarExpandedTabs[tabIndex] = true
-    if subTabIndex then
-        frame._sidebarExpandedSubTabs[tabIndex] = frame._sidebarExpandedSubTabs[tabIndex] or {}
-        frame._sidebarExpandedSubTabs[tabIndex][subTabIndex] = true
+    local route = GUI.ResolveV2Navigation and GUI:ResolveV2Navigation(tabIndex, subTabIndex)
+    if not route then route = { tileId = "welcome", subPageIndex = nil } end
+    local _, idx = GUI:FindV2TileByID(frame, route.tileId)
+    if not idx then idx = 1 end
+    if frame._searchBox and frame._searchBox.editBox then
+        frame._searchBox.editBox:SetText("")
     end
-    if hasSectionTarget then
-        frame._sidebarActiveSectionKey = tabIndex .. ":" .. subTabIndex .. ":" .. sectionName
-    else
-        frame._sidebarActiveSectionKey = nil
-    end
-    frame._sidebarPendingSectionSelection = hasSectionTarget and true or nil
-
-    self:SelectTab(frame, tabIndex)
-
-    if subTabIndex then
-        C_Timer.After(0, function()
-            if not self.MainFrame then return end
-            local page = frame.pages and frame.pages[tabIndex]
-            if page and page._subTabGroup and page._subTabGroup.SelectTab then
-                page._subTabGroup.SelectTab(subTabIndex)
-            end
-            if sectionName and sectionName ~= "" then
-                local handled = self:RunSectionNavigateHandler(tabIndex, subTabIndex, sectionName)
-                if handled then
-                    frame._sidebarPendingSectionSelection = nil
-                else
-                    C_Timer.After(0.05, function()
-                        self:ScrollToSection(tabIndex, subTabIndex, sectionName)
-                        frame._sidebarPendingSectionSelection = nil
-                    end)
-                end
-            else
-                frame._sidebarPendingSectionSelection = nil
-            end
-        end)
-    elseif sectionName and sectionName ~= "" then
-        C_Timer.After(0.05, function()
-            self:ScrollToSection(tabIndex, 0, sectionName)
-            frame._sidebarPendingSectionSelection = nil
-        end)
-    else
-        frame._sidebarPendingSectionSelection = nil
-    end
-end
-
-function GUI:UpdateSidebarSectionHighlightFromScroll(scrollFrame)
-    local frame = self.MainFrame
-    if not frame or not scrollFrame then return end
-    if frame._sidebarPendingSectionSelection then return end
-    if frame._sidebarManualSectionSelection then return end
-
-    local tabIndex = frame.activeTab
-    if not tabIndex then return end
-    local page = frame.pages and frame.pages[tabIndex]
-    local subTabIndex = page and page._subTabGroup and page._subTabGroup.selectedTab
-    if not subTabIndex then return end
-
-    local key = GetSectionRegistryKey(tabIndex, subTabIndex)
-    local order = self.SectionRegistryOrder[key]
-    local registry = self.SectionRegistry[key]
-    if not order or #order == 0 or not registry then return end
-
-    local currentScroll = scrollFrame:GetVerticalScroll() or 0
-
-    -- At the top — no section should be highlighted
-    if currentScroll <= 5 then
-        if frame._sidebarActiveSectionKey then
-            frame._sidebarActiveSectionKey = nil
-            self:RefreshSidebarTree(frame)
-        end
-        return
-    end
-
-    local threshold = currentScroll + 28
-    local activeName
-    local bestOffset = -math.huge
-
-    for _, sectionName in ipairs(order) do
-        local info = registry[sectionName]
-        if info and info.scrollParent == scrollFrame and info.frame and info.contentParent and info.frame:IsVisible() then
-            local sectionTop = info.frame:GetTop()
-            local contentTop = info.contentParent:GetTop()
-            if sectionTop and contentTop then
-                local sectionOffset = contentTop - sectionTop
-                if sectionOffset <= threshold and sectionOffset > bestOffset then
-                    bestOffset = sectionOffset
-                    activeName = sectionName
-                end
-            end
-        end
-    end
-
-    if not activeName then
-        for _, sectionName in ipairs(order) do
-            local info = registry[sectionName]
-            if info and info.scrollParent == scrollFrame then
-                activeName = sectionName
-                break
-            end
-        end
-    end
-
-    if activeName then
-        local nextKey = tabIndex .. ":" .. subTabIndex .. ":" .. activeName
-        if frame._sidebarActiveSectionKey ~= nextKey then
-            frame._sidebarActiveSectionKey = nextKey
-            self:RefreshSidebarTree(frame)
-        end
-    end
-end
-
-function GUI:AttachSidebarSectionScrollSpy(scrollFrame)
-    if not scrollFrame or scrollFrame._quiSidebarSectionSpyHooked then return end
-    scrollFrame._quiSidebarSectionSpyHooked = true
-    scrollFrame:HookScript("OnVerticalScroll", function(self)
-        local now = (type(GetTime) == "function") and GetTime() or 0
-        local last = self._quiSidebarSectionSpyLast or 0
-        if now - last < 0.05 then return end
-        self._quiSidebarSectionSpyLast = now
-        GUI:UpdateSidebarSectionHighlightFromScroll(self)
-    end)
+    if frame._searchResultsArea then frame._searchResultsArea:Hide() end
+    if frame._tileContent then frame._tileContent:Show() end
+    GUI:SelectFeatureTile(frame, idx, {
+        subPageIndex = route.subPageIndex,
+        sectionName = sectionName,
+        searchTabIndex = tabIndex,
+        searchSubTabIndex = subTabIndex,
+    })
 end
 
 -- Register a navigation item (tab, subtab, or section) for search
@@ -588,9 +987,15 @@ function GUI:RegisterNavigationItem(navType, info)
         regKey = info.tabIndex * 100000
     elseif navType == "subtab" then
         regKey = info.tabIndex * 100000 + (info.subTabIndex or 0)
+        if type(info.surfaceTabKey) == "string" and info.surfaceTabKey ~= "" then
+            regKey = tostring(regKey) .. ":" .. info.surfaceTabKey
+        end
     elseif navType == "section" then
         -- Section keys include a string name; keep string concat
         regKey = info.tabIndex * 100000 + (info.subTabIndex or 0) + 50000
+        if type(info.surfaceTabKey) == "string" and info.surfaceTabKey ~= "" then
+            regKey = tostring(regKey) .. ":" .. info.surfaceTabKey
+        end
         local sectionKeys = self._navSectionKeys
         if not sectionKeys then
             sectionKeys = {}
@@ -636,151 +1041,20 @@ function GUI:RegisterNavigationItem(navType, info)
         subTabIndex = info.subTabIndex,
         subTabName = info.subTabName,
         sectionName = info.sectionName,
+        tileId = info.tileId,
+        subPageIndex = info.subPageIndex,
+        featureId = info.featureId,
+        surfaceTabKey = info.surfaceTabKey,
+        surfaceUnitKey = info.surfaceUnitKey,
         keywords = keywords,
     }
 
     table.insert(self.NavigationRegistry, entry)
 end
 
--- Flag to track if search index has been built
-GUI._searchIndexBuilt = false
-GUI._searchIndexProgress = 0   -- Number of tabs indexed so far
-GUI._searchIndexTotal = 0      -- Total tabs to index
-GUI._searchIndexTicker = nil   -- Background ticker reference
-
-function GUI:CancelBackgroundIndexBuild()
-    if self._searchIndexTicker then
-        self._searchIndexTicker:Cancel()
-        self._searchIndexTicker = nil
-    end
-end
-
-function GUI:RefreshSearchIndexProgress()
-    local frame = self.MainFrame
-    if not frame or not frame.pages then
-        self._searchIndexProgress = 0
-        self._searchIndexTotal = 0
-        return 0, 0
-    end
-
-    local total = 0
-    local progress = 0
-    for tabIndex, page in pairs(frame.pages) do
-        if tabIndex ~= self._searchTabIndex and page and page.createFunc then
-            total = total + 1
-            if page.built then
-                progress = progress + 1
-            end
-        end
-    end
-
-    self._searchIndexTotal = total
-    self._searchIndexProgress = progress
-    self._searchIndexBuilt = total == 0 or progress >= total
-
-    return progress, total
-end
-
--- Build a single tab's search index (creates hidden frame, runs builder).
--- Returns true if a tab was built, false if nothing left to build.
-function GUI:BuildNextTabIndex()
-    local frame = self.MainFrame
-    if not frame or not frame.pages then return false end
-
-    -- Initialize registry if needed
-    if not self.SettingsRegistry then self.SettingsRegistry = {} end
-    if not self.SettingsRegistryKeys then self.SettingsRegistryKeys = {} end
-
-    -- Find the next unbuilt tab
-    for tabIndex, page in pairs(frame.pages) do
-        if tabIndex ~= self._searchTabIndex then
-            if page and page.createFunc and not page.built then
-                -- Create hidden frame if needed
-                if not page.frame then
-                    page.frame = CreateFrame("Frame", nil, frame.contentArea)
-                    page.frame:SetAllPoints()
-                    page.frame:EnableMouse(false)
-                end
-                page.frame:Hide()
-
-                -- Run the builder to register widgets
-                local loadTab = frame.tabs[tabIndex]
-                if loadTab and loadTab.name then
-                    self:SetSearchContext({
-                        tabIndex = tabIndex,
-                        tabName = loadTab.name,
-                    })
-                end
-                page.createFunc(page.frame)
-                page.built = true
-
-                -- Capture sub-tab group created during page build
-                if GUI._lastSubTabGroup then
-                    page._subTabGroup = GUI._lastSubTabGroup
-                    page._subTabDefs = page._subTabGroup.subTabDefs
-                    GUI._lastSubTabGroup = nil
-                end
-
-                self._searchIndexProgress = self._searchIndexProgress + 1
-                return true  -- Built one tab this tick
-            end
-        end
-    end
-
-    return false  -- Nothing left to build
-end
-
--- Start background incremental index building (1 tab per tick).
--- Called once after all tabs have been added to the options panel.
-function GUI:StartBackgroundIndexBuild()
-    if self._searchIndexBuilt then return end
-    if self._searchIndexTicker then return end  -- Already running
-
-    local frame = self.MainFrame
-    if not frame or not frame.pages or not frame:IsShown() then return end
-
-    self:RefreshSearchIndexProgress()
-    if self._searchIndexBuilt then return end
-
-    -- Build one tab per tick using chained C_Timer.NewTimer(0) so each
-    -- handle is cancellable and only one tab builds per frame.
-    local function BuildNextTick()
-        -- Abort if panel was destroyed, rebuilt, or hidden.
-        if not self.MainFrame or self.MainFrame ~= frame or not frame:IsShown() then
-            self:CancelBackgroundIndexBuild()
-            return
-        end
-
-        local built = self:BuildNextTabIndex()
-        if built then
-            -- Schedule next tab for next frame
-            self._searchIndexTicker = C_Timer.NewTimer(0, BuildNextTick)
-        else
-            -- All done
-            self:RefreshSearchIndexProgress()
-            self._searchIndexTicker = nil
-        end
-    end
-
-    -- Start after a short delay so login/reload UI work completes first
-    self._searchIndexTicker = C_Timer.NewTimer(0.5, BuildNextTick)
-end
-
--- Force-complete any remaining unbuilt tabs synchronously.
--- Only called as a fallback if user opens Search before background build finishes.
-function GUI:ForceLoadAllTabs()
-    -- Cancel background builder if running
-    self:CancelBackgroundIndexBuild()
-
-    local frame = self.MainFrame
-    if not frame or not frame.pages then return end
-    if not self.SettingsRegistry then self.SettingsRegistry = {} end
-    if not self.SettingsRegistryKeys then self.SettingsRegistryKeys = {} end
-
-    while self:BuildNextTabIndex() do end  -- Build all remaining
-
-    self:RefreshSearchIndexProgress()
-end
+-- Tiles are eagerly built into a hidden parent on login (see
+-- GUI:BuildTilePage in options/framework_v2.lua) to populate the search
+-- index up-front.
 
 ---------------------------------------------------------------------------
 -- FONT PATH (uses bundled Quazii font for consistent panel formatting)
@@ -873,77 +1147,103 @@ function GUI:CreateLabel(parent, text, size, color, anchor, x, y)
 end
 
 ---------------------------------------------------------------------------
--- WIDGET: THEMED BUTTON (Neutral style - accent border on hover only)
+-- WIDGET: THEMED BUTTON (ghost/primary variants, transparent background)
 ---------------------------------------------------------------------------
-function GUI:CreateButton(parent, text, width, height, onClick)
+function GUI:CreateButton(parent, text, width, height, onClick, variant)
+    variant = variant or "ghost"
     local UIKit = ns.UIKit
-    local useUIKitBorders = UIKit
-        and UIKit.CreateBackground
-        and UIKit.CreateBorderLines
-        and UIKit.UpdateBorderLines
 
-    local btn = CreateFrame("Button", nil, parent, useUIKitBorders and nil or "BackdropTemplate")
-    btn:SetSize(width or 120, height or 26)
-    if useUIKitBorders then
-        btn.bg = UIKit.CreateBackground(btn, 0.15, 0.15, 0.15, 1)
-        UIKit.CreateBorderLines(btn)
-        UIKit.UpdateBorderLines(btn, 1, C.border[1], C.border[2], C.border[3], 1, false)
-    else
-        -- Normal state: dark background with grey border (neutral)
-        local px = QUICore:GetPixelSize(btn)
-        btn:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
-        btn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+    local button = CreateFrame("Button", nil, parent)
+    button:SetSize(width or 120, height or 22)
+
+    if UIKit and UIKit.CreateBorderLines and not button._pixelBorderReady then
+        UIKit.CreateBorderLines(button)
+        button._pixelBorderReady = true
     end
 
-    -- Button text (off-white, not accent)
-    local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    btnText:SetFont(GetFontPath(), 12, "")
-    btnText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+    local hoverBg = button:CreateTexture(nil, "BACKGROUND")
+    hoverBg:SetAllPoints(button)
+    hoverBg:SetColorTexture(1, 1, 1, 0.06)
+    hoverBg:Hide()
+    button._hoverBg = hoverBg
+
+    local btnText = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     btnText:SetPoint("CENTER", 0, 0)
     btnText:SetText(text or "Button")
-    btn.text = btnText
+    button.text = btnText
 
-    local function SetButtonBorderColor(r, g, b, a)
-        if useUIKitBorders then
-            UIKit.UpdateBorderLines(btn, 1, r, g, b, a or 1, false)
+    local function ApplyButtonVariant(btn, variantName)
+        if variantName == "primary" then
+            if UIKit and UIKit.UpdateBorderLines then
+                UIKit.UpdateBorderLines(btn, 1, C.accent[1], C.accent[2], C.accent[3], 0.5)
+            end
+            if btn.text then btn.text:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1) end
         else
-            pcall(btn.SetBackdropBorderColor, btn, r, g, b, a or 1)
+            if UIKit and UIKit.UpdateBorderLines then
+                UIKit.UpdateBorderLines(btn, 1, 1, 1, 1, 0.2)
+            end
+            if btn.text then btn.text:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 1) end
         end
     end
+    ApplyButtonVariant(button, variant)
 
-    -- Hover effect: accent border only (no background change)
-    btn:SetScript("OnEnter", function()
-        SetButtonBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
-    end)
-
-    btn:SetScript("OnLeave", function()
-        SetButtonBorderColor(C.border[1], C.border[2], C.border[3], 1)
-    end)
-
-    -- Click handler
-    if onClick then
-        btn:SetScript("OnClick", onClick)
+    local f, _, flags = button.text:GetFont()
+    button.text:SetFont(f or (UIKit and UIKit.ResolveFontPath and UIKit.ResolveFontPath(GUI:GetFontPath())) or GetFontPath(), 10, flags or "")
+    button:SetHeight(height or 22)
+    if not width or width <= 0 then
+        button:SetWidth((button.text:GetStringWidth() or 0) + 24)
     end
 
-    -- Method to update text
-    function btn:SetText(newText)
+    button:SetScript("OnEnter", function(self)
+        if variant == "primary" then
+            if UIKit and UIKit.UpdateBorderLines then
+                UIKit.UpdateBorderLines(self, 1, C.accent[1], C.accent[2], C.accent[3], 1)
+            end
+            self._hoverBg:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.08)
+        else
+            if self.text then self.text:SetTextColor(C.text[1], C.text[2], C.text[3], 1) end
+            self._hoverBg:SetColorTexture(1, 1, 1, 0.06)
+        end
+        self._hoverBg:Show()
+    end)
+    button:SetScript("OnLeave", function(self)
+        if variant == "primary" then
+            if UIKit and UIKit.UpdateBorderLines then
+                UIKit.UpdateBorderLines(self, 1, C.accent[1], C.accent[2], C.accent[3], 0.5)
+            end
+        else
+            if self.text then self.text:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 1) end
+        end
+        self._hoverBg:Hide()
+    end)
+    button:SetScript("OnMouseDown", function(self)
+        if self.text then self.text:SetPoint("CENTER", 0, -1) end
+        self._hoverBg:SetAlpha(1.4)
+    end)
+    button:SetScript("OnMouseUp", function(self)
+        if self.text then self.text:SetPoint("CENTER", 0, 0) end
+        self._hoverBg:SetAlpha(1)
+    end)
+
+    if onClick then
+        button:SetScript("OnClick", onClick)
+    end
+
+    function button:SetText(newText)
         btnText:SetText(newText)
     end
 
-    -- Public method for callers that need custom hover colors.
-    function btn:SetBorderColor(r, g, b, a)
-        SetButtonBorderColor(r, g, b, a)
+    -- Public method for callers that need custom border colors.
+    function button:SetBorderColor(r, g, b, a)
+        if UIKit and UIKit.UpdateBorderLines then
+            UIKit.UpdateBorderLines(self, 1, r, g, b, a or 1, false)
+        end
     end
 
     -- Backward-compatible alias used by some option tabs.
-    btn.SetFieldBorderColor = btn.SetBorderColor
+    button.SetFieldBorderColor = button.SetBorderColor
 
-    return btn
+    return button
 end
 
 ---------------------------------------------------------------------------
@@ -1136,6 +1436,7 @@ function GUI:ShowConfirmation(options)
         confirmDialog:SetPoint("CENTER")
         confirmDialog:SetFrameStrata("FULLSCREEN_DIALOG")
         confirmDialog:SetFrameLevel(500)
+        confirmDialog:SetToplevel(true)
         confirmDialog:EnableMouse(true)
         confirmDialog:SetMovable(true)
         confirmDialog:RegisterForDrag("LeftButton")
@@ -1266,8 +1567,23 @@ function GUI:ShowConfirmation(options)
         if options.onCancel then options.onCancel() end
     end)
 
+    local anchorFrame = self.MainFrame
+    confirmDialog:ClearAllPoints()
+    if anchorFrame and anchorFrame ~= confirmDialog and anchorFrame.IsShown and anchorFrame:IsShown() then
+        confirmDialog:SetPoint("CENTER", anchorFrame, "CENTER", 0, 0)
+        if anchorFrame.GetFrameLevel and confirmDialog.SetFrameLevel then
+            confirmDialog:SetFrameLevel(math.max((anchorFrame:GetFrameLevel() or 0) + 20, 500))
+        end
+    else
+        confirmDialog:SetPoint("CENTER")
+        if confirmDialog.SetFrameLevel then
+            confirmDialog:SetFrameLevel(500)
+        end
+    end
+
     -- Show and enable keyboard
     confirmDialog:Show()
+    confirmDialog:Raise()
     confirmDialog:EnableKeyboard(true)
 end
 
@@ -1364,9 +1680,6 @@ function GUI:CreateSectionHeader(parent, text)
                     scrollParent = scrollParent,
                     contentParent = parent,
                 }
-                if scrollParent then
-                    GUI:AttachSidebarSectionScrollSpy(scrollParent)
-                end
             end
         end
     end
@@ -1374,278 +1687,18 @@ function GUI:CreateSectionHeader(parent, text)
     return container
 end
 
----------------------------------------------------------------------------
--- WIDGET: SECTION BOX (Bordered group like old GUI)
--- Auto-calculates height based on content added via box:AddElement()
----------------------------------------------------------------------------
-function GUI:CreateSectionBox(parent, title)
-    local box = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    local px = QUICore:GetPixelSize(box)
-    box:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    })
-    box:SetBackdropColor(0.05, 0.05, 0.08, 0.8)
-    box:SetBackdropBorderColor(0.3, 0.3, 0.35, 1)
-    
-    -- Title (mint colored, positioned at top-left inside border)
-    if title and title ~= "" then
-        local titleText = box:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        titleText:SetFont(GetFontPath(), 12, "")
-        titleText:SetTextColor(C_accentLight_r, C_accentLight_g, C_accentLight_b, C_accentLight_a)
-        titleText:SetText(title)
-        titleText:SetPoint("TOPLEFT", 10, -8)
-        box.title = titleText
-    end
-    
-    -- Track current Y position for auto-layout
-    box.currentY = -30  -- Starting Y position for content inside the box
-    box.padding = 12    -- Left/right padding
-    box.elementSpacing = 8  -- Default spacing between elements
-    
-    -- Helper to add element and auto-position it
-    function box:AddElement(element, height, spacing)
-        local sp = spacing or self.elementSpacing
-        element:SetPoint("TOPLEFT", self.padding, self.currentY)
-        if element.SetPoint then
-            -- If element supports right anchor, stretch it
-            element:SetPoint("TOPRIGHT", -self.padding, self.currentY)
-        end
-        self.currentY = self.currentY - (height or 25) - sp
-    end
-    
-    -- Call this after adding all elements to set the box height
-    function box:FinishLayout(bottomPadding)
-        local pad = bottomPadding or 12
-        self:SetHeight(math.abs(self.currentY) + pad)
-        return math.abs(self.currentY) + pad  -- Return height for parent tracking
-    end
-    
-    return box
-end
+-- Legacy GUI:CreateSectionBox and GUI:CreateCollapsibleSection were
+-- retired in Phase 4d. Use ns.QUI_Options.CreateInlineCollapsible and
+-- the V3 body helpers (CreateAccentDotLabel + CreateSettingsCardGroup)
+-- in options/shared.lua instead.
 
----------------------------------------------------------------------------
--- WIDGET: COLLAPSIBLE SECTION
--- Expandable/collapsible container with clickable header
----------------------------------------------------------------------------
-function GUI:CreateCollapsibleSection(parent, title, isExpandedByDefault, badgeConfig)
-    local container = CreateFrame("Frame", nil, parent)
-    local isExpanded = isExpandedByDefault ~= false  -- Default true
-
-    -- Header (clickable, full width)
-    local header = CreateFrame("Button", nil, container, "BackdropTemplate")
-    header:SetHeight(28)
-    header:SetPoint("TOPLEFT", 0, 0)
-    header:SetPoint("TOPRIGHT", 0, 0)
-    local px = QUICore:GetPixelSize(header)
-    header:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    })
-    header:SetBackdropColor(C.bgLight[1], C.bgLight[2], C.bgLight[3], 0.6)
-    header:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 0.5)
-
-    -- Chevron indicator
-    local chevron
-    if UIKit and UIKit.CreateChevronCaret then
-        chevron = UIKit.CreateChevronCaret(header, {
-            point = "LEFT",
-            relativeTo = header,
-            relativePoint = "LEFT",
-            xPixels = 10,
-            yPixels = 0,
-            sizePixels = 10,
-            lineWidthPixels = 6,
-            lineHeightPixels = 1,
-            expanded = isExpanded,
-            collapsedDirection = "right",
-            r = C.accent[1],
-            g = C.accent[2],
-            b = C.accent[3],
-            a = 1,
-        })
-    else
-        chevron = CreateVectorCaret(header, 0)
-        chevron:ClearAllPoints()
-        chevron:SetPoint("LEFT", header, "LEFT", 10, 0)
-    end
-
-    -- Title text
-    local titleText = header:CreateFontString(nil, "OVERLAY")
-    SetFont(titleText, 12, "", C.accent)
-    titleText:SetText(title or "Section")
-    titleText:SetPoint("LEFT", chevron, "RIGHT", 6, 0)
-
-    -- Optional badge (e.g., "Override" indicator)
-    local badge = nil
-    if badgeConfig and badgeConfig.text then
-        badge = CreateFrame("Frame", nil, header, "BackdropTemplate")
-        badge:SetHeight(18)
-        badge:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        badge:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.2)
-        badge:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
-
-        local badgeText = badge:CreateFontString(nil, "OVERLAY")
-        badgeText:SetFont(GetFontPath(), 10, "")
-        badgeText:SetText(badgeConfig.text)
-        badgeText:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
-        badgeText:SetPoint("CENTER", 0, 0)
-
-        -- Auto-width based on text
-        local textWidth = badgeText:GetStringWidth() or 40
-        badge:SetWidth(textWidth + 12)
-        badge:SetPoint("RIGHT", header, "RIGHT", -10, 0)
-
-        -- Initial visibility based on showFunc
-        if badgeConfig.showFunc then
-            badge:SetShown(badgeConfig.showFunc())
-        end
-    end
-
-    -- Content area
-    local contentClip = CreateFrame("ScrollFrame", nil, container)
-    contentClip:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -4)
-    contentClip:SetPoint("RIGHT", container, "RIGHT", 0, 0)
-    contentClip:SetHeight(0)
-    contentClip:SetShown(isExpanded)
-
-    local content = CreateFrame("Frame", nil, contentClip)
-    content:SetHeight(1)
-    content:SetWidth(1)
-    contentClip:SetScrollChild(content)
-    contentClip:SetScript("OnSizeChanged", function(self, width)
-        content:SetWidth(math.max(width or 1, 1))
-    end)
-    content._hasContent = false
-    content:SetAlpha(isExpanded and 1 or 0)
-
-    local function UpdateChevronVisual()
-        if UIKit and UIKit.SetChevronCaretExpanded and UIKit.SetChevronCaretColor then
-            UIKit.SetChevronCaretExpanded(chevron, isExpanded)
-            UIKit.SetChevronCaretColor(chevron, C.accent[1], C.accent[2], C.accent[3], 1)
-        elseif chevron and chevron.SetText then
-            chevron:SetText(isExpanded and "v" or ">")
-            chevron:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
-        end
-    end
-
-    -- Update function
-    local function ApplyState(currentHeight)
-        local height = math.max(0, currentHeight or 0)
-        contentClip:SetHeight(height)
-        container:SetHeight(header:GetHeight() + height + (height > 0 and 4 or 0))
-    end
-
-    local function NotifyExpandChanged()
-        if container.OnExpandChanged then
-            container.OnExpandChanged(isExpanded)
-        end
-    end
-
-    local function UpdateState(skipAnimation)
-        local targetHeight = isExpanded and (content:GetHeight() or 0) or 0
-        UpdateChevronVisual()
-        if isExpanded then
-            contentClip:Show()
-        end
-
-        if skipAnimation or not (UIKit and UIKit.AnimateValue and UIKit.CancelValueAnimation) then
-            if UIKit and UIKit.CancelValueAnimation then
-                UIKit.CancelValueAnimation(container, "helpCollapsible")
-            end
-            ApplyState(targetHeight)
-            content:SetAlpha(isExpanded and 1 or 0)
-            if not isExpanded then
-                contentClip:Hide()
-            end
-            NotifyExpandChanged()
-            return
-        end
-
-        UIKit.CancelValueAnimation(container, "helpCollapsible")
-        UIKit.AnimateValue(container, "helpCollapsible", {
-            fromValue = contentClip:GetHeight() or 0,
-            toValue = targetHeight,
-            duration = (GUI._sidebarAnimDuration or 0.16),
-            onUpdate = function(_, progressHeight)
-                local totalRange = math.max(content:GetHeight() or 0, 1)
-                local ratio = math.max(0, math.min(1, progressHeight / totalRange))
-                ApplyState(progressHeight)
-                content:SetAlpha(ratio)
-                NotifyExpandChanged()
-            end,
-            onFinish = function(_, finalHeight)
-                ApplyState(finalHeight)
-                content:SetAlpha(isExpanded and 1 or 0)
-                if not isExpanded then
-                    contentClip:Hide()
-                end
-                NotifyExpandChanged()
-            end,
-        })
-    end
-
-    -- Click handler
-    header:SetScript("OnClick", function()
-        isExpanded = not isExpanded
-        UpdateState()
-    end)
-
-    -- Hover effects
-    header:SetScript("OnEnter", function(self)
-        self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.8)
-        if UIKit and UIKit.SetChevronCaretColor then
-            UIKit.SetChevronCaretColor(chevron, 1, 1, 1, 1)
-        end
-    end)
-    header:SetScript("OnLeave", function(self)
-        self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 0.5)
-        UpdateChevronVisual()
-    end)
-
-    -- API methods
-    container.SetExpanded = function(self, expanded, skipAnimation)
-        isExpanded = expanded
-        UpdateState(skipAnimation)
-    end
-
-    container.GetExpanded = function()
-        return isExpanded
-    end
-
-    container.UpdateHeight = function()
-        UpdateState(true)
-    end
-
-    container.SetTitle = function(self, newTitle)
-        titleText:SetText(newTitle)
-    end
-
-    -- Badge update method
-    container.UpdateBadge = function()
-        if badge and badgeConfig and badgeConfig.showFunc then
-            badge:SetShown(badgeConfig.showFunc())
-        end
-    end
-
-    container.content = content
-    container.header = header
-    container.badge = badge
-
-    UpdateState(true)
-    return container
-end
+-- (Old CreateCollapsibleSection implementation removed — use
+-- ns.QUI_Options.CreateInlineCollapsible instead.)
 
 ---------------------------------------------------------------------------
 -- WIDGET: COLOR PICKER
 ---------------------------------------------------------------------------
-function GUI:CreateColorPicker(parent, label, dbKey, dbTable, onChange)
+function GUI:CreateColorPicker(parent, label, dbKey, dbTable, onChange, description)
     local container = CreateFrame("Frame", nil, parent)
     container:SetSize(200, 20)
     
@@ -1729,7 +1782,8 @@ function GUI:CreateColorPicker(parent, label, dbKey, dbTable, onChange)
     swatch:SetScript("OnLeave", function(self)
         pcall(self.SetBackdropBorderColor, self, 0.4, 0.4, 0.4, 1)
     end)
-    
+
+    GUI:AttachTooltip(swatch, description, label)
     return container
 end
 
@@ -2002,9 +2056,6 @@ function GUI:CreateSubTabs(parent, tabs)
     -- Initial layout (deferred to ensure bar has width)
     C_Timer.After(0, RelayoutSubTabs)
 
-    -- Store as last sub-tab group so SelectTab can capture it
-    GUI._lastSubTabGroup = buttonGroup
-
     return container
 end
 
@@ -2031,13 +2082,17 @@ function GUI:CreateAccentCheckbox(parent, options)
 
     local UIKit = ns.UIKit
     if UIKit and UIKit.CreateAccentCheckbox then
-        return UIKit.CreateAccentCheckbox(parent, options)
+        local widget = UIKit.CreateAccentCheckbox(parent, options)
+        if widget and options.description then
+            GUI:AttachTooltip(widget, options.description, options.label)
+        end
+        return widget
     end
 
     return nil
 end
 
-function GUI:CreateCheckbox(parent, label, dbKey, dbTable, onChange)
+function GUI:CreateCheckbox(parent, label, dbKey, dbTable, onChange, description)
     local container = CreateFrame("Frame", nil, parent)
     container:SetSize(300, 20)
 
@@ -2052,7 +2107,7 @@ function GUI:CreateCheckbox(parent, label, dbKey, dbTable, onChange)
     })
     box:SetBackdropColor(0.1, 0.1, 0.1, 1)
     box:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-    
+
     -- Checkmark (mint-colored using standard check but tinted)
     box.check = box:CreateTexture(nil, "OVERLAY")
     box.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
@@ -2103,14 +2158,15 @@ function GUI:CreateCheckbox(parent, label, dbKey, dbTable, onChange)
             pcall(self.SetBackdropBorderColor, self, C_border_r, C_border_g, C_border_b, C_border_a)
         end
     end)
-    
+
+    GUI:AttachTooltip(box, description, label)
     return container
 end
 
 ---------------------------------------------------------------------------
 -- WIDGET: CHECKBOX CENTERED (label centered above checkbox)
 ---------------------------------------------------------------------------
-function GUI:CreateCheckboxCentered(parent, label, dbKey, dbTable, onChange)
+function GUI:CreateCheckboxCentered(parent, label, dbKey, dbTable, onChange, description)
     local container = CreateFrame("Frame", nil, parent)
     container:SetSize(100, 40)  -- Taller to fit label above
     
@@ -2178,14 +2234,15 @@ function GUI:CreateCheckboxCentered(parent, label, dbKey, dbTable, onChange)
             pcall(self.SetBackdropBorderColor, self, C_border_r, C_border_g, C_border_b, C_border_a)
         end
     end)
-    
+
+    GUI:AttachTooltip(box, description, label)
     return container
 end
 
 ---------------------------------------------------------------------------
 -- WIDGET: COLOR PICKER CENTERED (label centered above swatch)
 ---------------------------------------------------------------------------
-function GUI:CreateColorPickerCentered(parent, label, dbKey, dbTable, onChange)
+function GUI:CreateColorPickerCentered(parent, label, dbKey, dbTable, onChange, description)
     local container = CreateFrame("Frame", nil, parent)
     container:SetSize(100, 40)  -- Taller to fit label above
     
@@ -2264,7 +2321,8 @@ function GUI:CreateColorPickerCentered(parent, label, dbKey, dbTable, onChange)
     swatch:SetScript("OnLeave", function(self)
         pcall(self.SetBackdropBorderColor, self, 0.4, 0.4, 0.4, 1)
     end)
-    
+
+    GUI:AttachTooltip(swatch, description, label)
     return container
 end
 
@@ -2272,7 +2330,7 @@ end
 -- Inverted Checkbox: checked = false in DB, unchecked = true in DB
 -- Use for "Hide X" options where DB stores "showX"
 ---------------------------------------------------------------------------
-function GUI:CreateCheckboxInverted(parent, label, dbKey, dbTable, onChange)
+function GUI:CreateCheckboxInverted(parent, label, dbKey, dbTable, onChange, description)
     local container = CreateFrame("Frame", nil, parent)
     container:SetSize(300, 20)
 
@@ -2287,7 +2345,7 @@ function GUI:CreateCheckboxInverted(parent, label, dbKey, dbTable, onChange)
     })
     box:SetBackdropColor(0.1, 0.1, 0.1, 1)
     box:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-    
+
     box.check = box:CreateTexture(nil, "OVERLAY")
     box.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
     box.check:SetPoint("CENTER", 0, 0)
@@ -2343,7 +2401,8 @@ function GUI:CreateCheckboxInverted(parent, label, dbKey, dbTable, onChange)
             pcall(self.SetBackdropBorderColor, self, C_border_r, C_border_g, C_border_b, C_border_a)
         end
     end)
-    
+
+    GUI:AttachTooltip(box, description, label)
     return container
 end
 
@@ -2602,6 +2661,7 @@ function GUI:CreateSlider(parent, label, min, max, step, dbKey, dbTable, onChang
         SetValue(GetValue(), true)
     end)
 
+    GUI:AttachTooltip(slider, options.description, label)
     return container
 end
 
@@ -2719,7 +2779,7 @@ local function CreateDropdownScrollBody(menuFrame)
     return scrollFrame, scrollContent, scrollBar, UpdateThumb
 end
 
-function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange)
+function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange, description)
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(60)  -- Match slider height for vertical alignment
     container:SetWidth(200)  -- Default width, can be overridden by SetWidth()
@@ -2732,78 +2792,61 @@ function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange)
         text:SetPoint("TOP", container, "TOP", 0, 0)  -- Centered
     end
 
-    -- Dropdown button (same width as slider track - inset 35px on each side)
-    local dropdown = CreateFrame("Button", nil, container, "BackdropTemplate")
-    dropdown:SetHeight(24)  -- Increased from 20 for better tap target
+    -- Dropdown button (same width as slider track - inset 35px on each side) — V3 widget surface
+    local UIKit = ns.UIKit
+    local useUIKitBorders = UIKit
+        and UIKit.CreateBackground
+        and UIKit.CreateBorderLines
+        and UIKit.UpdateBorderLines
+    local dropdown = CreateFrame("Button", nil, container, useUIKitBorders and nil or "BackdropTemplate")
+    dropdown:SetHeight(22)
     dropdown:SetPoint("TOPLEFT", container, "TOPLEFT", 35, -16)
     dropdown:SetPoint("RIGHT", container, "RIGHT", -35, 0)
     local px = QUICore:GetPixelSize(dropdown)
-    dropdown:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
+    if useUIKitBorders then
+        dropdown.bg = UIKit.CreateBackground(dropdown, C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
+        UIKit.CreateBorderLines(dropdown)
+        UIKit.UpdateBorderLines(dropdown, 1, 1, 1, 1, 0.2, false)
+    else
+        dropdown:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = px,
+        })
+        dropdown:SetBackdropColor(C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
+        dropdown:SetBackdropBorderColor(1, 1, 1, 0.2)
+    end
+
+    local function SetDropdownBorderColor(r, g, b, a)
+        if useUIKitBorders then
+            UIKit.UpdateBorderLines(dropdown, 1, r, g, b, a or 1, false)
+        else
+            pcall(dropdown.SetBackdropBorderColor, dropdown, r, g, b, a or 1)
+        end
+    end
+
+    local chevron = UIKit.CreateChevronCaret(dropdown, {
+        point = "RIGHT", relativeTo = dropdown, relativePoint = "RIGHT",
+        xPixels = -8, sizePixels = 10, lineWidthPixels = 6,
+        r = C.textMuted[1], g = C.textMuted[2], b = C.textMuted[3], a = 1,
+        expanded = true,
     })
-    dropdown:SetBackdropColor(0.08, 0.08, 0.08, 1)
-    dropdown:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)  -- Increased from 0.25 for better visibility
+    dropdown.chevron = chevron
 
-    -- Chevron zone (right side with accent tint)
-    local chevronZone = CreateFrame("Frame", nil, dropdown, "BackdropTemplate")
-    chevronZone:SetWidth(CHEVRON_ZONE_WIDTH)
-    chevronZone:SetPoint("TOPRIGHT", dropdown, "TOPRIGHT", -1, -1)
-    chevronZone:SetPoint("BOTTOMRIGHT", dropdown, "BOTTOMRIGHT", -1, 1)
-    chevronZone:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-    })
-    chevronZone:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], CHEVRON_BG_ALPHA)
-
-    -- Separator line (left edge of chevron zone)
-    local separator = chevronZone:CreateTexture(nil, "ARTWORK")
-    separator:SetWidth(1)
-    separator:SetPoint("TOPLEFT", chevronZone, "TOPLEFT", 0, 0)
-    separator:SetPoint("BOTTOMLEFT", chevronZone, "BOTTOMLEFT", 0, 0)
-    separator:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.3)
-
-    -- Line chevron (two angled lines forming a V pointing DOWN)
-    local chevronLeft = chevronZone:CreateTexture(nil, "OVERLAY")
-    chevronLeft:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], CHEVRON_TEXT_ALPHA)
-    chevronLeft:SetSize(7, 2)
-    chevronLeft:SetPoint("CENTER", chevronZone, "CENTER", -2, -1)
-    chevronLeft:SetRotation(math.rad(-45))
-
-    local chevronRight = chevronZone:CreateTexture(nil, "OVERLAY")
-    chevronRight:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], CHEVRON_TEXT_ALPHA)
-    chevronRight:SetSize(7, 2)
-    chevronRight:SetPoint("CENTER", chevronZone, "CENTER", 2, -1)
-    chevronRight:SetRotation(math.rad(45))
-
-    dropdown.chevronLeft = chevronLeft
-    dropdown.chevronRight = chevronRight
-    dropdown.chevronZone = chevronZone
-    dropdown.separator = separator
-
-    -- Selected text - centered, accounting for chevron zone
     dropdown.selected = dropdown:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(dropdown.selected, 11, "", C.text)
-    dropdown.selected:SetPoint("LEFT", 8, 0)
-    dropdown.selected:SetPoint("RIGHT", chevronZone, "LEFT", -5, 0)
-    dropdown.selected:SetJustifyH("CENTER")
+    SetFont(dropdown.selected, 10, "", C.text)
+    dropdown.selected:SetPoint("LEFT", dropdown, "LEFT", 8, 0)
+    dropdown.selected:SetPoint("RIGHT", chevron, "LEFT", -4, 0)
+    dropdown.selected:SetJustifyH("LEFT")
 
-    -- Hover effect
+    -- Hover effect: border brightens
     dropdown:SetScript("OnEnter", function(self)
-        pcall(self.SetBackdropBorderColor, self, C_accent_r, C_accent_g, C_accent_b, C_accent_a)
-        chevronZone:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], CHEVRON_BG_ALPHA_HOVER)
-        separator:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.5)
-        chevronLeft:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
-        chevronRight:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
+        SetDropdownBorderColor(1, 1, 1, 0.35)
     end)
     dropdown:SetScript("OnLeave", function(self)
-        pcall(self.SetBackdropBorderColor, self, 0.35, 0.35, 0.35, 1)
-        chevronZone:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], CHEVRON_BG_ALPHA)
-        separator:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.3)
-        chevronLeft:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], CHEVRON_TEXT_ALPHA)
-        chevronRight:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], CHEVRON_TEXT_ALPHA)
+        SetDropdownBorderColor(1, 1, 1, 0.2)
     end)
-    
+
     container.dropdown = dropdown
     
     -- Normalize options to {value, text} format
@@ -2849,15 +2892,21 @@ function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange)
     -- Initialize with current value
     SetValue(GetValue(), true)
     
-    -- Dropdown menu frame (parented to UIParent to avoid scroll frame clipping)
-    local menuFrame = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
-    menuFrame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    })
-    menuFrame:SetBackdropColor(0.08, 0.08, 0.08, 0.98)
-    menuFrame:SetBackdropBorderColor(C_accent_r, C_accent_g, C_accent_b, C_accent_a)
+    -- Dropdown menu frame (parented to UIParent to avoid scroll frame clipping) — V3 surface
+    local menuFrame = CreateFrame("Frame", nil, UIParent, useUIKitBorders and nil or "BackdropTemplate")
+    if useUIKitBorders then
+        menuFrame.bg = UIKit.CreateBackground(menuFrame, C.bg[1], C.bg[2], C.bg[3], 1)
+        UIKit.CreateBorderLines(menuFrame)
+        UIKit.UpdateBorderLines(menuFrame, 1, 1, 1, 1, 0.2, false)
+    else
+        menuFrame:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = px,
+        })
+        menuFrame:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], 1)
+        menuFrame:SetBackdropBorderColor(1, 1, 1, 0.2)
+    end
     menuFrame:SetFrameStrata("TOOLTIP")
     menuFrame:SetClipsChildren(true)
     menuFrame:Hide()
@@ -2871,27 +2920,57 @@ function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange)
     local menuButtons = {}
     local buttonHeight = DROPDOWN_ITEM_HEIGHT
 
+    local function RefreshMenuSelection()
+        for i, opt in ipairs(container.options) do
+            local row = menuButtons[i]
+            if row then
+                if opt.value == container.value then
+                    row._selectedBg:Show()
+                    row._selectedBar:Show()
+                    row.text:SetTextColor(C_accent_r, C_accent_g, C_accent_b, 1)
+                else
+                    row._selectedBg:Hide()
+                    row._selectedBar:Hide()
+                    row.text:SetTextColor(C_text_r, C_text_g, C_text_b, 1)
+                end
+            end
+        end
+    end
+    container.RefreshMenuSelection = RefreshMenuSelection
+
     for i, opt in ipairs(container.options) do
-        local btn = CreateFrame("Button", nil, scrollContent, "BackdropTemplate")
+        local btn = CreateFrame("Button", nil, scrollContent)
         btn:SetHeight(buttonHeight)
         btn:SetPoint("TOPLEFT", 2, -2 - (i-1) * buttonHeight)
         btn:SetPoint("TOPRIGHT", -2, -2 - (i-1) * buttonHeight)
 
+        btn._selectedBg = btn:CreateTexture(nil, "BACKGROUND")
+        btn._selectedBg:SetAllPoints(btn)
+        btn._selectedBg:SetColorTexture(0.204, 0.827, 0.6, 0.04)
+        btn._selectedBg:Hide()
+
+        btn._hoverBg = btn:CreateTexture(nil, "BACKGROUND", nil, 1)
+        btn._hoverBg:SetAllPoints(btn)
+        btn._hoverBg:SetColorTexture(0.204, 0.827, 0.6, 0.08)
+        btn._hoverBg:Hide()
+
+        btn._selectedBar = btn:CreateTexture(nil, "OVERLAY")
+        btn._selectedBar:SetWidth(2)
+        btn._selectedBar:SetPoint("TOPLEFT", btn, "TOPLEFT", 0, 0)
+        btn._selectedBar:SetPoint("BOTTOMLEFT", btn, "BOTTOMLEFT", 0, 0)
+        btn._selectedBar:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
+        btn._selectedBar:Hide()
+
         btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        SetFont(btn.text, 11, "", C.text)
+        SetFont(btn.text, 10, "", C.text)
         btn.text:SetText(opt.text)
         btn.text:SetPoint("LEFT", 8, 0)
 
         btn:SetScript("OnEnter", function(self)
-            pcall(function()
-                self:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8"})
-                self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.25)
-            end)
+            self._hoverBg:Show()
         end)
         btn:SetScript("OnLeave", function(self)
-            pcall(function()
-                self:SetBackdrop(nil)
-            end)
+            self._hoverBg:Hide()
         end)
         btn:SetScript("OnClick", function()
             SetValue(opt.value)
@@ -2920,6 +2999,7 @@ function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange)
         if menuFrame:IsShown() then
             menuFrame:Hide()
         else
+            RefreshMenuSelection()
             PositionDropdownMenu(menuFrame, dropdown, menuFrame:GetHeight())
             scrollContent:SetWidth(dropdown:GetWidth() - 4)
             menuFrame:Show()
@@ -2958,14 +3038,15 @@ function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange)
         menuFrame:SetScript("OnUpdate", nil)
         closeTimer = 0
     end)
-    
+
+    GUI:AttachTooltip(dropdown, description, label)
     return container
 end
 
 ---------------------------------------------------------------------------
 -- WIDGET: DROPDOWN FULL WIDTH (For pages like Spec Profiles - no inset)
 ---------------------------------------------------------------------------
-function GUI:CreateDropdownFullWidth(parent, label, options, dbKey, dbTable, onChange)
+function GUI:CreateDropdownFullWidth(parent, label, options, dbKey, dbTable, onChange, description)
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(45)  -- Compact height for full-width dropdowns
     container:SetWidth(200)  -- Default width, can be overridden by SetWidth()
@@ -2978,76 +3059,59 @@ function GUI:CreateDropdownFullWidth(parent, label, options, dbKey, dbTable, onC
         text:SetPoint("TOP", container, "TOP", 0, 0)
     end
 
-    -- Dropdown button (full width, no inset)
-    local dropdown = CreateFrame("Button", nil, container, "BackdropTemplate")
-    dropdown:SetHeight(24)
+    -- Dropdown button (full width, no inset) — V3 widget surface
+    local UIKit = ns.UIKit
+    local useUIKitBorders = UIKit
+        and UIKit.CreateBackground
+        and UIKit.CreateBorderLines
+        and UIKit.UpdateBorderLines
+    local dropdown = CreateFrame("Button", nil, container, useUIKitBorders and nil or "BackdropTemplate")
+    dropdown:SetHeight(22)
     dropdown:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -18)
     dropdown:SetPoint("RIGHT", container, "RIGHT", 0, 0)
     local px = QUICore:GetPixelSize(dropdown)
-    dropdown:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    })
-    dropdown:SetBackdropColor(0.08, 0.08, 0.08, 1)
-    dropdown:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)  -- Increased from 0.25
+    if useUIKitBorders then
+        dropdown.bg = UIKit.CreateBackground(dropdown, C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
+        UIKit.CreateBorderLines(dropdown)
+        UIKit.UpdateBorderLines(dropdown, 1, 1, 1, 1, 0.2, false)
+    else
+        dropdown:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = px,
+        })
+        dropdown:SetBackdropColor(C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
+        dropdown:SetBackdropBorderColor(1, 1, 1, 0.2)
+    end
 
-    -- Chevron zone (right side with accent tint)
-    local chevronZone = CreateFrame("Frame", nil, dropdown, "BackdropTemplate")
-    chevronZone:SetWidth(CHEVRON_ZONE_WIDTH)
-    chevronZone:SetPoint("TOPRIGHT", dropdown, "TOPRIGHT", -1, -1)
-    chevronZone:SetPoint("BOTTOMRIGHT", dropdown, "BOTTOMRIGHT", -1, 1)
-    chevronZone:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-    })
-    chevronZone:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], CHEVRON_BG_ALPHA)
+    local function SetDropdownBorderColor(r, g, b, a)
+        if useUIKitBorders then
+            UIKit.UpdateBorderLines(dropdown, 1, r, g, b, a or 1, false)
+        else
+            pcall(dropdown.SetBackdropBorderColor, dropdown, r, g, b, a or 1)
+        end
+    end
 
-    -- Separator line (left edge of chevron zone)
-    local separator = chevronZone:CreateTexture(nil, "ARTWORK")
-    separator:SetWidth(1)
-    separator:SetPoint("TOPLEFT", chevronZone, "TOPLEFT", 0, 0)
-    separator:SetPoint("BOTTOMLEFT", chevronZone, "BOTTOMLEFT", 0, 0)
-    separator:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.3)
+    -- Chevron glyph on right edge
+    local chevron = dropdown:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    SetFont(chevron, 10, "", C.textMuted)
+    chevron:SetText("\226\150\190")  -- ▾
+    chevron:SetPoint("RIGHT", dropdown, "RIGHT", -8, 0)
+    dropdown.chevron = chevron
 
-    -- Line chevron (two angled lines forming a V pointing DOWN)
-    local chevronLeft = chevronZone:CreateTexture(nil, "OVERLAY")
-    chevronLeft:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], CHEVRON_TEXT_ALPHA)
-    chevronLeft:SetSize(7, 2)
-    chevronLeft:SetPoint("CENTER", chevronZone, "CENTER", -2, -1)
-    chevronLeft:SetRotation(math.rad(-45))
-
-    local chevronRight = chevronZone:CreateTexture(nil, "OVERLAY")
-    chevronRight:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], CHEVRON_TEXT_ALPHA)
-    chevronRight:SetSize(7, 2)
-    chevronRight:SetPoint("CENTER", chevronZone, "CENTER", 2, -1)
-    chevronRight:SetRotation(math.rad(45))
-
-    dropdown.chevronLeft = chevronLeft
-    dropdown.chevronRight = chevronRight
-    dropdown.chevronZone = chevronZone
-    dropdown.separator = separator
-
-    -- Selected text - centered, accounting for chevron zone
+    -- Selected text label
     dropdown.selected = dropdown:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(dropdown.selected, 11, "", C.text)
-    dropdown.selected:SetPoint("LEFT", 10, 0)
-    dropdown.selected:SetPoint("RIGHT", chevronZone, "LEFT", -5, 0)
-    dropdown.selected:SetJustifyH("CENTER")
+    SetFont(dropdown.selected, 10, "", C.text)
+    dropdown.selected:SetPoint("LEFT", dropdown, "LEFT", 8, 0)
+    dropdown.selected:SetPoint("RIGHT", chevron, "LEFT", -4, 0)
+    dropdown.selected:SetJustifyH("LEFT")
 
-    -- Hover effect
+    -- Hover effect: border brightens
     dropdown:SetScript("OnEnter", function(self)
-        pcall(self.SetBackdropBorderColor, self, C_accent_r, C_accent_g, C_accent_b, C_accent_a)
-        chevronZone:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], CHEVRON_BG_ALPHA_HOVER)
-        separator:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.5)
-        chevronLeft:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
-        chevronRight:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
+        SetDropdownBorderColor(1, 1, 1, 0.35)
     end)
     dropdown:SetScript("OnLeave", function(self)
-        pcall(self.SetBackdropBorderColor, self, 0.35, 0.35, 0.35, 1)
-        chevronZone:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], CHEVRON_BG_ALPHA)
-        separator:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.3)
-        chevronLeft:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], CHEVRON_TEXT_ALPHA)
-        chevronRight:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], CHEVRON_TEXT_ALPHA)
+        SetDropdownBorderColor(1, 1, 1, 0.2)
     end)
 
     container.dropdown = dropdown
@@ -3190,6 +3254,7 @@ function GUI:CreateDropdownFullWidth(parent, label, options, dbKey, dbTable, onC
         closeTimer = 0
     end)
 
+    GUI:AttachTooltip(dropdown, description, label)
     return container
 end
 
@@ -3200,70 +3265,69 @@ end
 local FORM_ROW_HEIGHT = 28
 
 ---------------------------------------------------------------------------
--- WIDGET: iOS-STYLE TOGGLE SWITCH (Premium)
--- Track: 40x20px, fully rounded
--- OFF: Dark grey track, white circle on left
--- ON: Mint track, white circle slides to right
+-- WIDGET: TOGGLE SWITCH (V3)
+-- Track: 26x14 pill. Knob: 10x10, 2px inset.
+-- OFF: C.toggleOff track, knob anchored LEFT +2.
+-- ON:  C.accent track, knob anchored RIGHT -2.
 ---------------------------------------------------------------------------
 function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryInfo)
     if parent._hasContent ~= nil then parent._hasContent = true end
     local container = CreateFrame("Frame", nil, parent)
-    container:SetHeight(FORM_ROW_HEIGHT)
-    local UIKit = ns.UIKit
+    container._widgetLabel = label  -- For search jump-to-setting (V2)
     ApplyWidgetSyncContext(container, dbTable, dbKey)
 
-    -- Label on left (off-white text, constrained to not overlap toggle)
-    local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(text, 12, "", C.text)
-    text:SetText(label or "Option")
-    text:SetPoint("LEFT", 0, 0)
-    text:SetWidth(170)
-    text:SetWordWrap(true)
-    text:SetNonSpaceWrap(true)
-    text:SetJustifyH("LEFT")
-
-    local useUIKitBorders = UIKit
-        and UIKit.CreateBackground
-        and UIKit.CreateBorderLines
-        and UIKit.UpdateBorderLines
-
-    -- Toggle track (the pill-shaped background)
-    local track = CreateFrame("Button", nil, container, useUIKitBorders and nil or "BackdropTemplate")
-    track:SetSize(40, 20)
-    track:SetPoint("LEFT", container, "LEFT", 180, 0)
-    if useUIKitBorders then
-        track._bg = UIKit.CreateBackground(track, C.toggleOff[1], C.toggleOff[2], C.toggleOff[3], 1)
-        UIKit.CreateBorderLines(track)
+    -- Bare mode: when label is nil, skip the built-in label FontString and
+    -- shrink container to just the toggle control. Used by V3 BuildSettingRow
+    -- which provides its own label + cell-level layout.
+    local text
+    local toggleLeftOffset = 180  -- default for labeled widget
+    if label then
+        container:SetHeight(FORM_ROW_HEIGHT)
+        -- Label on left (off-white text, constrained to not overlap toggle)
+        text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        SetFont(text, 12, "", C.text)
+        text:SetText(label)
+        text:SetPoint("LEFT", 0, 0)
+        text:SetWidth(170)
+        text:SetWordWrap(true)
+        text:SetNonSpaceWrap(true)
+        text:SetJustifyH("LEFT")
     else
-        local px = QUICore:GetPixelSize(track)
-        track:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
+        container:SetSize(26, 14)
+        toggleLeftOffset = 0
     end
 
-    -- Thumb (the sliding circle)
-    local thumb = CreateFrame("Frame", nil, track, useUIKitBorders and nil or "BackdropTemplate")
-    thumb:SetSize(16, 16)
-    if useUIKitBorders then
-        thumb._bg = UIKit.CreateBackground(thumb, C.toggleThumb[1], C.toggleThumb[2], C.toggleThumb[3], 1)
-        UIKit.CreateBorderLines(thumb)
-        UIKit.UpdateBorderLines(thumb, 1, 0.85, 0.85, 0.85, 1, false)
-    else
-        local px = QUICore:GetPixelSize(track)
-        thumb:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        thumb:SetBackdropColor(C.toggleThumb[1], C.toggleThumb[2], C.toggleThumb[3], 1)
-        thumb:SetBackdropBorderColor(0.85, 0.85, 0.85, 1)
-    end
-    thumb:SetFrameLevel(track:GetFrameLevel() + 1)
+    local toggle = CreateFrame("Button", nil, container)
+    toggle:SetSize(26, 14)
+    toggle:SetPoint("LEFT", container, "LEFT", toggleLeftOffset, 0)
 
-    container.track = track
-    container.thumb = thumb
+    local track = toggle:CreateTexture(nil, "ARTWORK")
+    track:SetAllPoints(toggle)
+    track:SetColorTexture(C.toggleOff[1], C.toggleOff[2], C.toggleOff[3], C.toggleOff[4])
+    toggle.track = track
+
+    local trackMask = toggle:CreateMaskTexture()
+    trackMask:SetTexture(ns.Helpers.AssetPath .. "pill_mask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    trackMask:SetAllPoints(track)
+    track:AddMaskTexture(trackMask)
+    toggle._trackMask = trackMask
+
+    local knob = toggle:CreateTexture(nil, "OVERLAY")
+    knob:SetSize(10, 10)
+    knob:SetColorTexture(C.toggleThumb[1], C.toggleThumb[2], C.toggleThumb[3], C.toggleThumb[4])
+    knob:ClearAllPoints()
+    knob:SetPoint("LEFT", toggle, "LEFT", 2, 0)
+    toggle.knob = knob
+
+    -- Knob mask (circular at 10x10)
+    local knobMask = toggle:CreateMaskTexture()
+    knobMask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    knobMask:SetAllPoints(knob)
+    knob:AddMaskTexture(knobMask)
+    toggle._knobMask = knobMask
+
+    container.track = toggle
+    container.thumb = toggle
     container.label = text
 
     local function GetValue()
@@ -3271,43 +3335,33 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
         return container.checked
     end
 
-    local function SetTrackVisual(bgR, bgG, bgB, bgA, borderR, borderG, borderB, borderA)
-        if useUIKitBorders then
-            if track._bg then
-                track._bg:SetVertexColor(bgR, bgG, bgB, bgA)
-            end
-            UIKit.UpdateBorderLines(track, 1, borderR, borderG, borderB, borderA, false)
-            return
-        end
-        track:SetBackdropColor(bgR, bgG, bgB, bgA)
-        track:SetBackdropBorderColor(borderR, borderG, borderB, borderA)
-    end
+    local isHovered = false
 
-    local function SetThumbAnchor(isOn)
-        thumb:ClearAllPoints()
+    local function SetToggleVisual(t, isOn)
+        local hoverBoost = isHovered and 0.06 or 0
         if isOn then
-            thumb:SetPoint("RIGHT", track, "RIGHT", -2, 0)
+            t.track:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], math.min(1, C.accent[4] + hoverBoost))
+            t.knob:ClearAllPoints()
+            t.knob:SetPoint("RIGHT", t, "RIGHT", -2, 0)
         else
-            thumb:SetPoint("LEFT", track, "LEFT", 2, 0)
+            t.track:SetColorTexture(C.toggleOff[1], C.toggleOff[2], C.toggleOff[3], math.min(1, C.toggleOff[4] + hoverBoost))
+            t.knob:ClearAllPoints()
+            t.knob:SetPoint("LEFT", t, "LEFT", 2, 0)
         end
+        if t._knobMask then t._knobMask:SetAllPoints(t.knob) end
     end
 
     local function UpdateVisual(val)
-        if val then
-            -- ON state: Mint track, thumb on right
-            SetTrackVisual(C.accent[1], C.accent[2], C.accent[3], 1, C.accent[1] * 0.8, C.accent[2] * 0.8, C.accent[3] * 0.8, 1)
-            SetThumbAnchor(true)
-        else
-            -- OFF state: Dark grey track, thumb on left
-            SetTrackVisual(C.toggleOff[1], C.toggleOff[2], C.toggleOff[3], 1, 0.12, 0.14, 0.18, 1)
-            SetThumbAnchor(false)
-        end
+        SetToggleVisual(toggle, val and true or false)
     end
 
     local function SetValue(val, skipCallback)
         container.checked = val
         UpdateVisual(val)
         if dbTable and dbKey then dbTable[dbKey] = val end
+        if not skipCallback then
+            MaybeUpdatePinnedWidgetValue(container, val)
+        end
         BroadcastToSiblings(container, val)
         if onChange and not skipCallback then onChange(val) end
         if not skipCallback then
@@ -3321,84 +3375,59 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
 
     -- Register for cross-widget sync
     RegisterWidgetInstance(container, dbTable, dbKey)
+    MaybeBindPinnedWidget(container, "checkbox", label, dbKey, dbTable, toggle, registryInfo)
 
     SetValue(GetValue(), true)  -- Skip callback on init
 
-    if useUIKitBorders and UIKit.RegisterScaleRefresh then
-        UIKit.RegisterScaleRefresh(track, "formToggleScale", function()
-            track:SetSize(40, 20)
-            track:ClearAllPoints()
-            track:SetPoint("LEFT", container, "LEFT", 180, 0)
-            thumb:SetSize(16, 16)
-            UIKit.UpdateBorderLines(thumb, 1, 0.85, 0.85, 0.85, 1, false)
+    if ns.UIKit and ns.UIKit.RegisterScaleRefresh then
+        ns.UIKit.RegisterScaleRefresh(toggle, "formToggleScale", function()
+            toggle:SetSize(26, 14)
+            toggle:ClearAllPoints()
+            toggle:SetPoint("LEFT", container, "LEFT", toggleLeftOffset, 0)
+            knob:SetSize(10, 10)
             UpdateVisual(GetValue())
         end)
     end
 
-    -- Click to toggle
-    track:SetScript("OnClick", function() SetValue(not GetValue()) end)
+    toggle:SetScript("OnClick", function() SetValue(not GetValue()) end)
 
-    -- Hover effects
-    track:SetScript("OnEnter", function()
-        if GetValue() then
-            if useUIKitBorders then
-                UIKit.UpdateBorderLines(track, 1, C.accentHover[1], C.accentHover[2], C.accentHover[3], 1, false)
-            else
-                track:SetBackdropBorderColor(C.accentHover[1], C.accentHover[2], C.accentHover[3], 1)
-            end
-        else
-            if useUIKitBorders then
-                UIKit.UpdateBorderLines(track, 1, 0.25, 0.28, 0.35, 1, false)
-            else
-                track:SetBackdropBorderColor(0.25, 0.28, 0.35, 1)
-            end
-        end
+    toggle:SetScript("OnEnter", function()
+        isHovered = true
+        SetToggleVisual(toggle, GetValue() and true or false)
     end)
-    track:SetScript("OnLeave", function()
-        UpdateVisual(GetValue())
+    toggle:SetScript("OnLeave", function()
+        isHovered = false
+        SetToggleVisual(toggle, GetValue() and true or false)
     end)
 
     -- Enable/disable the toggle (for conditional UI)
     container.SetEnabled = function(self, enabled)
-        track:EnableMouse(enabled)
-        -- Visual feedback: dim when disabled
+        toggle:EnableMouse(enabled)
         container:SetAlpha(enabled and 1 or 0.4)
     end
 
-    -- Auto-register for search using current context (if context is set)
-    if GUI._searchContext.tabIndex and label and not GUI._suppressSearchRegistration then
-        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
-        if not GUI.SettingsRegistryKeys[regKey] then
-            GUI.SettingsRegistryKeys[regKey] = true
-            local entry = {
-                label = label,
-                widgetType = "toggle",
-                tabIndex = GUI._searchContext.tabIndex,
-                tabName = GUI._searchContext.tabName,
-                subTabIndex = GUI._searchContext.subTabIndex,
-                subTabName = GUI._searchContext.subTabName,
-                sectionName = GUI._searchContext.sectionName,
-                widgetBuilder = function(p)
-                    return GUI:CreateFormToggle(p, label, dbKey, dbTable, onChange)
-                end,
-            }
-            -- Add keywords from registryInfo if provided
-            if registryInfo and registryInfo.keywords then
-                entry.keywords = registryInfo.keywords
-            end
-            table.insert(GUI.SettingsRegistry, entry)
-        end
-    end
+    GUI:RegisterSearchSettingWidget({
+        label = label,
+        widgetType = "toggle",
+        widgetBuilder = function(p)
+            return GUI:CreateFormToggle(p, label, dbKey, dbTable, onChange)
+        end,
+        widgetDescriptor = GUI:BuildSearchWidgetDescriptor("toggle", dbKey, dbTable),
+        keywords = registryInfo and registryInfo.keywords or nil,
+        description = registryInfo and registryInfo.description or nil,
+        relatedTo = registryInfo and registryInfo.relatedTo or nil,
+    })
 
+    GUI:AttachTooltip(toggle, registryInfo and registryInfo.description or nil, label)
     return container
 end
 
 -- Inverted toggle: checked = DB false, unchecked = DB true (for "Hide X" options)
-function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange)
+function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange, registryInfo)
     if parent._hasContent ~= nil then parent._hasContent = true end
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
-    local UIKit = ns.UIKit
+    container._widgetLabel = label
     ApplyWidgetSyncContext(container, dbTable, dbKey)
 
     -- Label on left (off-white text, constrained to not overlap toggle)
@@ -3411,48 +3440,37 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange)
     text:SetNonSpaceWrap(true)
     text:SetJustifyH("LEFT")
 
-    local useUIKitBorders = UIKit
-        and UIKit.CreateBackground
-        and UIKit.CreateBorderLines
-        and UIKit.UpdateBorderLines
+    local toggle = CreateFrame("Button", nil, container)
+    toggle:SetSize(26, 14)
+    toggle:SetPoint("LEFT", container, "LEFT", 180, 0)
 
-    -- Toggle track
-    local track = CreateFrame("Button", nil, container, useUIKitBorders and nil or "BackdropTemplate")
-    track:SetSize(40, 20)
-    track:SetPoint("LEFT", container, "LEFT", 180, 0)
-    if useUIKitBorders then
-        track._bg = UIKit.CreateBackground(track, C.toggleOff[1], C.toggleOff[2], C.toggleOff[3], 1)
-        UIKit.CreateBorderLines(track)
-    else
-        local px = QUICore:GetPixelSize(track)
-        track:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-    end
+    local track = toggle:CreateTexture(nil, "ARTWORK")
+    track:SetAllPoints(toggle)
+    track:SetColorTexture(C.toggleOff[1], C.toggleOff[2], C.toggleOff[3], C.toggleOff[4])
+    toggle.track = track
 
-    -- Thumb
-    local thumb = CreateFrame("Frame", nil, track, useUIKitBorders and nil or "BackdropTemplate")
-    thumb:SetSize(16, 16)
-    if useUIKitBorders then
-        thumb._bg = UIKit.CreateBackground(thumb, C.toggleThumb[1], C.toggleThumb[2], C.toggleThumb[3], 1)
-        UIKit.CreateBorderLines(thumb)
-        UIKit.UpdateBorderLines(thumb, 1, 0.85, 0.85, 0.85, 1, false)
-    else
-        local px = QUICore:GetPixelSize(track)
-        thumb:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        thumb:SetBackdropColor(C.toggleThumb[1], C.toggleThumb[2], C.toggleThumb[3], 1)
-        thumb:SetBackdropBorderColor(0.85, 0.85, 0.85, 1)
-    end
-    thumb:SetFrameLevel(track:GetFrameLevel() + 1)
+    local trackMask = toggle:CreateMaskTexture()
+    trackMask:SetTexture(ns.Helpers.AssetPath .. "pill_mask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    trackMask:SetAllPoints(track)
+    track:AddMaskTexture(trackMask)
+    toggle._trackMask = trackMask
 
-    container.track = track
-    container.thumb = thumb
+    local knob = toggle:CreateTexture(nil, "OVERLAY")
+    knob:SetSize(10, 10)
+    knob:SetColorTexture(C.toggleThumb[1], C.toggleThumb[2], C.toggleThumb[3], C.toggleThumb[4])
+    knob:ClearAllPoints()
+    knob:SetPoint("LEFT", toggle, "LEFT", 2, 0)
+    toggle.knob = knob
+
+    -- Knob mask (circular at 10x10)
+    local knobMask = toggle:CreateMaskTexture()
+    knobMask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    knobMask:SetAllPoints(knob)
+    knob:AddMaskTexture(knobMask)
+    toggle._knobMask = knobMask
+
+    container.track = toggle
+    container.thumb = toggle
     container.label = text
 
     -- INVERTED: DB true = toggle OFF, DB false = toggle ON
@@ -3465,35 +3483,24 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange)
         return not GetDBValue()  -- Invert for display
     end
 
-    local function SetTrackVisual(bgR, bgG, bgB, bgA, borderR, borderG, borderB, borderA)
-        if useUIKitBorders then
-            if track._bg then
-                track._bg:SetVertexColor(bgR, bgG, bgB, bgA)
-            end
-            UIKit.UpdateBorderLines(track, 1, borderR, borderG, borderB, borderA, false)
-            return
-        end
-        track:SetBackdropColor(bgR, bgG, bgB, bgA)
-        track:SetBackdropBorderColor(borderR, borderG, borderB, borderA)
-    end
+    local isHovered = false
 
-    local function SetThumbAnchor(isOn)
-        thumb:ClearAllPoints()
+    local function SetToggleVisual(t, isOn)
+        local hoverBoost = isHovered and 0.06 or 0
         if isOn then
-            thumb:SetPoint("RIGHT", track, "RIGHT", -2, 0)
+            t.track:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], math.min(1, C.accent[4] + hoverBoost))
+            t.knob:ClearAllPoints()
+            t.knob:SetPoint("RIGHT", t, "RIGHT", -2, 0)
         else
-            thumb:SetPoint("LEFT", track, "LEFT", 2, 0)
+            t.track:SetColorTexture(C.toggleOff[1], C.toggleOff[2], C.toggleOff[3], math.min(1, C.toggleOff[4] + hoverBoost))
+            t.knob:ClearAllPoints()
+            t.knob:SetPoint("LEFT", t, "LEFT", 2, 0)
         end
+        if t._knobMask then t._knobMask:SetAllPoints(t.knob) end
     end
 
     local function UpdateVisual(isOn)
-        if isOn then
-            SetTrackVisual(C.accent[1], C.accent[2], C.accent[3], 1, C.accent[1] * 0.8, C.accent[2] * 0.8, C.accent[3] * 0.8, 1)
-            SetThumbAnchor(true)
-        else
-            SetTrackVisual(C.toggleOff[1], C.toggleOff[2], C.toggleOff[3], 1, 0.12, 0.14, 0.18, 1)
-            SetThumbAnchor(false)
-        end
+        SetToggleVisual(toggle, isOn and true or false)
     end
 
     local function SetOn(isOn, skipCallback)
@@ -3501,6 +3508,9 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange)
         local dbVal = not isOn  -- Invert for storage
         UpdateVisual(isOn)
         if dbTable and dbKey then dbTable[dbKey] = dbVal end
+        if not skipCallback then
+            MaybeUpdatePinnedWidgetValue(container, dbVal)
+        end
         BroadcastToSiblings(container, isOn)
         if onChange and not skipCallback then onChange(dbVal) end
         if not skipCallback then
@@ -3514,48 +3524,50 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange)
 
     -- Register for cross-widget sync
     RegisterWidgetInstance(container, dbTable, dbKey)
+    MaybeBindPinnedWidget(container, "checkbox", label, dbKey, dbTable, toggle, registryInfo)
 
     SetOn(IsOn(), true)  -- Skip callback on init
 
-    if useUIKitBorders and UIKit.RegisterScaleRefresh then
-        UIKit.RegisterScaleRefresh(track, "formToggleInvertedScale", function()
-            track:SetSize(40, 20)
-            track:ClearAllPoints()
-            track:SetPoint("LEFT", container, "LEFT", 180, 0)
-            thumb:SetSize(16, 16)
-            UIKit.UpdateBorderLines(thumb, 1, 0.85, 0.85, 0.85, 1, false)
+    if ns.UIKit and ns.UIKit.RegisterScaleRefresh then
+        ns.UIKit.RegisterScaleRefresh(toggle, "formToggleInvertedScale", function()
+            toggle:SetSize(26, 14)
+            toggle:ClearAllPoints()
+            toggle:SetPoint("LEFT", container, "LEFT", 180, 0)
+            knob:SetSize(10, 10)
             UpdateVisual(IsOn())
         end)
     end
 
-    track:SetScript("OnClick", function() SetOn(not IsOn()) end)
+    toggle:SetScript("OnClick", function() SetOn(not IsOn()) end)
 
-    track:SetScript("OnEnter", function()
-        if IsOn() then
-            if useUIKitBorders then
-                UIKit.UpdateBorderLines(track, 1, C.accentHover[1], C.accentHover[2], C.accentHover[3], 1, false)
-            else
-                track:SetBackdropBorderColor(C.accentHover[1], C.accentHover[2], C.accentHover[3], 1)
-            end
-        else
-            if useUIKitBorders then
-                UIKit.UpdateBorderLines(track, 1, 0.25, 0.28, 0.35, 1, false)
-            else
-                track:SetBackdropBorderColor(0.25, 0.28, 0.35, 1)
-            end
-        end
+    toggle:SetScript("OnEnter", function()
+        isHovered = true
+        SetToggleVisual(toggle, IsOn() and true or false)
     end)
-    track:SetScript("OnLeave", function()
-        UpdateVisual(IsOn())
+    toggle:SetScript("OnLeave", function()
+        isHovered = false
+        SetToggleVisual(toggle, IsOn() and true or false)
     end)
 
     -- Enable/disable the toggle (for conditional UI)
     container.SetEnabled = function(self, enabled)
-        track:EnableMouse(enabled)
-        -- Visual feedback: dim when disabled
+        toggle:EnableMouse(enabled)
         container:SetAlpha(enabled and 1 or 0.4)
     end
 
+    GUI:RegisterSearchSettingWidget({
+        label = label,
+        widgetType = "toggle",
+        widgetBuilder = function(p)
+            return GUI:CreateFormToggleInverted(p, label, dbKey, dbTable, onChange, registryInfo)
+        end,
+        widgetDescriptor = GUI:BuildSearchWidgetDescriptor("toggle_inverted", dbKey, dbTable),
+        keywords = registryInfo and registryInfo.keywords or nil,
+        description = registryInfo and registryInfo.description or nil,
+        relatedTo = registryInfo and registryInfo.relatedTo or nil,
+    })
+
+    GUI:AttachTooltip(toggle, registryInfo and registryInfo.description or nil, label)
     return container
 end
 
@@ -3568,7 +3580,7 @@ function GUI:CreateFormCheckbox(parent, label, dbKey, dbTable, onChange, registr
 end
 
 -- Keep original checkbox available for multi-select scenarios
-function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange)
+function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange, registryInfo)
     if parent._hasContent ~= nil then parent._hasContent = true end
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
@@ -3584,51 +3596,42 @@ function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange)
     text:SetJustifyH("LEFT")
 
     -- Checkbox aligned with other widgets (starts at 180px from left)
-    local box = CreateFrame("Button", nil, container, "BackdropTemplate")
-    box:SetSize(18, 18)
-    box:SetPoint("LEFT", container, "LEFT", 180, 0)
-    local px = QUICore:GetPixelSize(box)
-    box:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    })
-    box:SetBackdropColor(0.1, 0.1, 0.1, 1)
-    box:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-
-    -- Checkmark
-    box.check = box:CreateTexture(nil, "OVERLAY")
-    box.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
-    box.check:SetPoint("CENTER", 0, 0)
-    box.check:SetSize(22, 22)
-    box.check:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
-    box.check:SetDesaturated(true)
-    box.check:Hide()
-
-    container.box = box
-    container.label = text
-
+    -- V3 accent checkbox primitive owns visuals (14x14, accent fill + ✓ glyph + hover).
     local function GetValue()
         if dbTable and dbKey then return dbTable[dbKey] end
         return container.checked
     end
 
+    local SetValue  -- forward declaration; referenced by the primitive's onChange
+
+    local box = UIKit.CreateAccentCheckbox(container, {
+        checked = GetValue() and true or false,
+        onChange = function(val)
+            -- User click path: primitive already flipped its visual state; we forward
+            -- through SetValue semantics (DB write, broadcast, provider sync) but skip
+            -- the redundant primitive SetChecked (SetValue is called with skipVisual=true).
+            if SetValue then SetValue(val, false, true) end
+        end,
+    })
+    box:ClearAllPoints()
+    box:SetPoint("LEFT", container, "LEFT", 180, 0)
+
+    container.box = box
+    container.label = text
+
     local function UpdateVisual(val)
-        if val then
-            box.check:Show()
-            box:SetBackdropBorderColor(C_accent_r, C_accent_g, C_accent_b, C_accent_a)
-            box:SetBackdropColor(0.1, 0.2, 0.15, 1)
-        else
-            box.check:Hide()
-            box:SetBackdropBorderColor(C_border_r, C_border_g, C_border_b, C_border_a)
-            box:SetBackdropColor(0.1, 0.1, 0.1, 1)
-        end
+        box:SetChecked(val and true or false, true)  -- skipOnChange so we don't re-enter SetValue
     end
 
-    local function SetValue(val, skipCallback)
+    SetValue = function(val, skipCallback, skipVisual)
         container.checked = val
-        UpdateVisual(val)
+        if not skipVisual then
+            UpdateVisual(val)
+        end
         if dbTable and dbKey then dbTable[dbKey] = val end
+        if not skipCallback then
+            MaybeUpdatePinnedWidgetValue(container, val)
+        end
         BroadcastToSiblings(container, val)
         if onChange and not skipCallback then onChange(val) end
         if not skipCallback then
@@ -3642,26 +3645,18 @@ function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange)
 
     -- Register for cross-widget sync
     RegisterWidgetInstance(container, dbTable, dbKey)
+    MaybeBindPinnedWidget(container, "checkbox", label, dbKey, dbTable, box, registryInfo)
 
     SetValue(GetValue(), true)
 
-    box:SetScript("OnClick", function() SetValue(not GetValue()) end)
-    box:SetScript("OnEnter", function(self) pcall(self.SetBackdropBorderColor, self, C_accentHover_r, C_accentHover_g, C_accentHover_b, C_accentHover_a) end)
-    box:SetScript("OnLeave", function(self)
-        if GetValue() then
-            pcall(self.SetBackdropBorderColor, self, C_accent_r, C_accent_g, C_accent_b, C_accent_a)
-        else
-            pcall(self.SetBackdropBorderColor, self, C_border_r, C_border_g, C_border_b, C_border_a)
-        end
-    end)
-
+    GUI:AttachTooltip(box, registryInfo and registryInfo.description or nil, label)
     return container
 end
 
 -- Form Checkbox Inverted: checked = DB false, unchecked = DB true (for "Hide X" options)
-function GUI:CreateFormCheckboxInverted(parent, label, dbKey, dbTable, onChange)
+function GUI:CreateFormCheckboxInverted(parent, label, dbKey, dbTable, onChange, registryInfo)
     -- Redirect to toggle inverted for the premium look
-    return GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange)
+    return GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange, registryInfo)
 end
 
 function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options, registryInfo)
@@ -3671,6 +3666,7 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
 
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(FORM_ROW_HEIGHT)
+    container._widgetLabel = label  -- For search jump-to-setting (V2)
     ApplyWidgetSyncContext(container, dbTable, dbKey)
 
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -3692,12 +3688,12 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
 
     local fieldBg
     if UIKit and UIKit.CreateBackground then
-        fieldBg = UIKit.CreateBackground(field, 0.08, 0.08, 0.08, 1)
+        fieldBg = UIKit.CreateBackground(field, C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
     else
         fieldBg = field:CreateTexture(nil, "BACKGROUND")
         fieldBg:SetAllPoints()
         fieldBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-        fieldBg:SetVertexColor(0.08, 0.08, 0.08, 1)
+        fieldBg:SetVertexColor(C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
     end
 
     local function UpdateFallbackBorder(r, g, b, a)
@@ -3751,14 +3747,18 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
             UpdateFallbackBorder(r, g, b, a)
         end
     end
-    SetFieldBorderColor(0.35, 0.35, 0.35, 1)
+    SetFieldBorderColor(1, 1, 1, 0.2)
 
     local editBox = CreateFrame("EditBox", nil, field)
     editBox:SetPoint("TOPLEFT", field, "TOPLEFT", 6, -2)
     editBox:SetPoint("BOTTOMRIGHT", field, "BOTTOMRIGHT", -6, 2)
     editBox:SetAutoFocus(false)
-    editBox:SetFont(GetFontPath(), 11, "")
-    editBox:SetTextColor(C_text_r, C_text_g, C_text_b, C_text_a)
+    do
+        local f, _, flags = editBox:GetFont()
+        editBox:SetFont(f or UIKit.ResolveFontPath(GUI:GetFontPath()), 10, flags or "")
+    end
+    editBox:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+    editBox:SetTextInsets(4, 4, 0, 0)
     editBox:SetJustifyH("LEFT")
 
     if options.maxLetters and options.maxLetters > 0 then
@@ -3856,14 +3856,14 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
     end)
 
     editBox:SetScript("OnEditFocusGained", function(self)
-        SetFieldBorderColor(C_accent_r, C_accent_g, C_accent_b, C_accent_a)
+        SetFieldBorderColor(C.borderAccent[1], C.borderAccent[2], C.borderAccent[3], 1)
         if options.onEditFocusGained then
             options.onEditFocusGained(self)
         end
     end)
 
     editBox:SetScript("OnEditFocusLost", function(self)
-        SetFieldBorderColor(0.35, 0.35, 0.35, 1)
+        SetFieldBorderColor(1, 1, 1, 0.2)
         if commitOnFocusLost then
             SetValue(self:GetText(), false, self)
         end
@@ -3884,39 +3884,31 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
     end
     container.isEnabled = true
 
-    if GUI._searchContext.tabIndex and label and not GUI._suppressSearchRegistration then
-        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
-        if not GUI.SettingsRegistryKeys[regKey] then
-            GUI.SettingsRegistryKeys[regKey] = true
-            local entry = {
-                label = label,
-                widgetType = "editbox",
-                tabIndex = GUI._searchContext.tabIndex,
-                tabName = GUI._searchContext.tabName,
-                subTabIndex = GUI._searchContext.subTabIndex,
-                subTabName = GUI._searchContext.subTabName,
-                sectionName = GUI._searchContext.sectionName,
-                widgetBuilder = function(p)
-                    return GUI:CreateFormEditBox(p, label, dbKey, dbTable, onChange, options)
-                end,
-            }
-            if registryInfo and registryInfo.keywords then
-                entry.keywords = registryInfo.keywords
-            end
-            table.insert(GUI.SettingsRegistry, entry)
-        end
-    end
+    GUI:RegisterSearchSettingWidget({
+        label = label,
+        widgetType = "editbox",
+        widgetBuilder = function(p)
+            return GUI:CreateFormEditBox(p, label, dbKey, dbTable, onChange, options)
+        end,
+        widgetDescriptor = GUI:BuildSearchWidgetDescriptor("editbox", dbKey, dbTable, {
+            options = options,
+        }),
+        keywords = registryInfo and registryInfo.keywords or nil,
+        description = registryInfo and registryInfo.description or nil,
+        relatedTo = registryInfo and registryInfo.relatedTo or nil,
+    })
 
+    GUI:AttachTooltip(editBox, registryInfo and registryInfo.description or nil, label)
     return container
 end
 
 function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onChange, options, registryInfo)
     if parent._hasContent ~= nil then parent._hasContent = true end
+    options = options or {}
     local container = CreateFrame("Frame", nil, parent)
-    container:SetHeight(FORM_ROW_HEIGHT)
+    container._widgetLabel = label  -- For search jump-to-setting (V2)
     container:EnableMouse(true)  -- Block clicks from passing through to frames behind
 
-    options = options or {}
     local UIKit = ns.UIKit
     ApplyWidgetSyncContext(container, dbTable, dbKey)
     local useUIKitBorders = UIKit
@@ -3928,102 +3920,81 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     local precision = options.precision
     local formatStr = precision and string.format("%%.%df", precision) or (step < 1 and "%.2f" or "%d")
 
-    -- Label on left (off-white text, constrained to not overlap slider track)
-    local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(text, 12, "", C.text)
-    text:SetText(label or "Setting")
-    text:SetPoint("LEFT", 0, 0)
-    text:SetWidth(170)
-    text:SetWordWrap(true)
-    text:SetNonSpaceWrap(true)
-    text:SetJustifyH("LEFT")
-    text:SetWidth(170)
-    text:SetWordWrap(true)
-    text:SetJustifyH("LEFT")
-    container.label = text
-
-    -- Track container (for the filled + unfilled portions)
-    local trackContainer = CreateFrame("Frame", nil, container)
-    trackContainer:SetHeight(6)  -- Thicker track (was 14, now 6 for cleaner look)
-    trackContainer:SetPoint("LEFT", container, "LEFT", 180, 0)
-    trackContainer:SetPoint("RIGHT", container, "RIGHT", -86, 0)
-
-    -- Unfilled track (background) - rounded appearance via backdrop
-    local trackBg = CreateFrame("Frame", nil, trackContainer, useUIKitBorders and nil or "BackdropTemplate")
-    trackBg:SetAllPoints()
-    local px = QUICore:GetPixelSize(trackBg)
-    if useUIKitBorders then
-        trackBg.bg = UIKit.CreateBackground(trackBg, C.sliderTrack[1], C.sliderTrack[2], C.sliderTrack[3], 1)
-        UIKit.CreateBorderLines(trackBg)
-        UIKit.UpdateBorderLines(trackBg, 1, 0.1, 0.12, 0.15, 1, false)
+    -- Bare mode: label=nil skips the internal label and shrinks the container
+    -- to just the slider + edit cluster — V3 BuildSettingRow provides the label.
+    local text
+    local sliderLeftOffset = 180
+    if label then
+        container:SetHeight(FORM_ROW_HEIGHT)
+        text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        SetFont(text, 12, "", C.text)
+        text:SetText(label)
+        text:SetPoint("LEFT", 0, 0)
+        text:SetWidth(170)
+        text:SetWordWrap(true)
+        text:SetNonSpaceWrap(true)
+        text:SetJustifyH("LEFT")
+        container.label = text
     else
-        trackBg:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-            insets = {left = 0, right = 0, top = 0, bottom = 0},
-        })
-        trackBg:SetBackdropColor(C.sliderTrack[1], C.sliderTrack[2], C.sliderTrack[3], 1)
-        trackBg:SetBackdropBorderColor(0.1, 0.12, 0.15, 1)
+        container:SetSize(180, FORM_ROW_HEIGHT)
+        sliderLeftOffset = 0
     end
 
-    -- Filled track (mint portion from left to thumb)
-    local trackFill = CreateFrame("Frame", nil, trackContainer, useUIKitBorders and nil or "BackdropTemplate")
-    trackFill:SetPoint("TOPLEFT", px, -px)
-    trackFill:SetPoint("BOTTOMLEFT", px, px)
-    trackFill:SetWidth(1)  -- Will be updated dynamically
-    if useUIKitBorders then
-        trackFill.bg = UIKit.CreateBackground(trackFill, C.accent[1], C.accent[2], C.accent[3], 1)
-    else
-        trackFill:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-        })
-        trackFill:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 1)
-    end
+    local SLIDER_TRACK_WIDTH = (options and options.width) or 120
+    local SLIDER_TRACK_HEIGHT = 4
+    local SLIDER_THUMB_SIZE = 10
 
-    -- Actual slider (invisible, just for interaction)
-    local slider = CreateFrame("Slider", nil, trackContainer)
-    slider:SetAllPoints()
+    -- Slider frame doubles as the track; textures paint the visual state
+    local slider = CreateFrame("Slider", nil, container)
+    slider:SetSize(SLIDER_TRACK_WIDTH, SLIDER_TRACK_HEIGHT)
+    slider:SetPoint("LEFT", container, "LEFT", sliderLeftOffset, 0)
     slider:SetOrientation("HORIZONTAL")
-    slider:SetHitRectInsets(0, 0, -10, -10)  -- Expand hit area 10px above/below for reliable hover detection
+    slider:SetHitRectInsets(0, 0, -10, -10)
 
-    -- Thumb frame (white circle with border)
-    local thumbFrame = CreateFrame("Frame", nil, slider, useUIKitBorders and nil or "BackdropTemplate")
-    thumbFrame:SetSize(14, 14)
-    if useUIKitBorders then
-        thumbFrame.bg = UIKit.CreateBackground(thumbFrame, C.sliderThumb[1], C.sliderThumb[2], C.sliderThumb[3], 1)
-        UIKit.CreateBorderLines(thumbFrame)
-        UIKit.UpdateBorderLines(thumbFrame, 1, C.sliderThumbBorder[1], C.sliderThumbBorder[2], C.sliderThumbBorder[3], 1, false)
-    else
-        thumbFrame:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        thumbFrame:SetBackdropColor(C.sliderThumb[1], C.sliderThumb[2], C.sliderThumb[3], 1)
-        thumbFrame:SetBackdropBorderColor(C.sliderThumbBorder[1], C.sliderThumbBorder[2], C.sliderThumbBorder[3], 1)
-    end
-    thumbFrame:SetFrameLevel(slider:GetFrameLevel() + 2)
-    thumbFrame:EnableMouse(false)  -- Let clicks pass through to slider
+    local trackBg = slider:CreateTexture(nil, "BACKGROUND")
+    trackBg:SetAllPoints(slider)
+    trackBg:SetColorTexture(C.sliderTrack[1], C.sliderTrack[2], C.sliderTrack[3], C.sliderTrack[4])
+    slider.trackBg = trackBg
+    slider.track = trackBg
 
-    -- Round the thumb corners using a mask texture overlay
-    local thumbRound = thumbFrame:CreateTexture(nil, "OVERLAY")
-    thumbRound:SetAllPoints()
-    thumbRound:SetColorTexture(1, 1, 1, 0)  -- Invisible, just for structure
+    local trackFill = slider:CreateTexture(nil, "ARTWORK")
+    trackFill:SetPoint("TOPLEFT", slider, "TOPLEFT", 0, 0)
+    trackFill:SetPoint("BOTTOMLEFT", slider, "BOTTOMLEFT", 0, 0)
+    trackFill:SetWidth(1)
+    trackFill:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], C.accent[4])
+    slider.fill = trackFill
 
-    -- Use the thumb frame as the visual, position it manually
-    slider.thumbFrame = thumbFrame
+    local thumb = slider:CreateTexture(nil, "OVERLAY")
+    thumb:SetSize(SLIDER_THUMB_SIZE, SLIDER_THUMB_SIZE)
+    thumb:SetColorTexture(C.sliderThumb[1], C.sliderThumb[2], C.sliderThumb[3], C.sliderThumb[4])
+    slider.thumb = thumb
 
-    -- Hidden thumb texture for slider mechanics
+    local thumbMask = slider:CreateMaskTexture()
+    thumbMask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    thumbMask:SetAllPoints(thumb)
+    thumb:AddMaskTexture(thumbMask)
+    slider._thumbMask = thumbMask
+
+    -- Suppress native Slider thumb so our custom texture alone renders
     slider:SetThumbTexture("Interface\\Buttons\\WHITE8x8")
-    local thumb = slider:GetThumbTexture()
-    thumb:SetSize(14, 14)
-    thumb:SetAlpha(0)  -- Hide the actual thumb, we use thumbFrame instead
+    local nativeThumb = slider:GetThumbTexture()
+    nativeThumb:SetSize(SLIDER_THUMB_SIZE, SLIDER_THUMB_SIZE)
+    nativeThumb:SetAlpha(0)
+
+    -- Aliases for legacy identifiers consumed elsewhere in this file
+    local thumbFrame = thumb
+    local trackContainer = slider
+    local px = QUICore:GetPixelSize(slider)
 
     -- Nudge button (decrement) — left of editbox
     local nudgeMinus = CreateFrame("Button", nil, container, useUIKitBorders and nil or "BackdropTemplate")
     nudgeMinus:SetSize(16, 22)
     nudgeMinus:SetPoint("RIGHT", container, "RIGHT", -64, 0)
+
+    -- Now that the nudge cluster's left edge is anchored, make the slider
+    -- track shrink to fit — previously the fixed 120px track would collide
+    -- with the nudge buttons in narrow containers (e.g. Layout Mode drawer).
+    slider:SetPoint("RIGHT", nudgeMinus, "LEFT", -8, 0)
     if useUIKitBorders then
         nudgeMinus.bg = UIKit.CreateBackground(nudgeMinus, 0.08, 0.08, 0.08, 1)
         UIKit.CreateBorderLines(nudgeMinus)
@@ -4044,24 +4015,25 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
 
     -- Editbox for value (between nudge buttons)
     local editBox = CreateFrame("EditBox", nil, container, useUIKitBorders and nil or "BackdropTemplate")
-    editBox:SetSize(46, 22)
+    editBox:SetSize((options and options.editWidth) or 36, 18)
     editBox:SetPoint("LEFT", nudgeMinus, "RIGHT", 1, 0)
     if useUIKitBorders then
-        editBox.bg = UIKit.CreateBackground(editBox, 0.08, 0.08, 0.08, 1)
+        editBox.bg = UIKit.CreateBackground(editBox, C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
         UIKit.CreateBorderLines(editBox)
-        UIKit.UpdateBorderLines(editBox, 1, 0.25, 0.25, 0.25, 1, false)
+        UIKit.UpdateBorderLines(editBox, 1, C.border[1], C.border[2], C.border[3], C.border[4], false)
     else
         editBox:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = px,
         })
-        editBox:SetBackdropColor(0.08, 0.08, 0.08, 1)
-        editBox:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+        editBox:SetBackdropColor(C.bgContent[1], C.bgContent[2], C.bgContent[3], 1)
+        editBox:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], C.border[4])
     end
-    editBox:SetFont(GetFontPath(), 11, "")
-    editBox:SetTextColor(C_text_r, C_text_g, C_text_b, C_text_a)
+    editBox:SetFont(GetFontPath(), 10, "")
+    editBox:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
     editBox:SetJustifyH("CENTER")
+    editBox:SetTextInsets(4, 4, 0, 0)
     editBox:SetAutoFocus(false)
 
     -- Nudge button (increment) — right of editbox
@@ -4085,14 +4057,6 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     SetFont(nudgePlusText, 11, "", C.text)
     nudgePlusText:SetText("+")
     nudgePlusText:SetPoint("CENTER", 0, 0)
-
-    local function SetThumbBorderColor(r, g, b, a)
-        if useUIKitBorders then
-            UIKit.UpdateBorderLines(thumbFrame, 1, r, g, b, a or 1, false)
-        else
-            thumbFrame:SetBackdropBorderColor(r, g, b, a or 1)
-        end
-    end
 
     local function SetEditBoxBorderColor(r, g, b, a)
         if useUIKitBorders then
@@ -4122,16 +4086,18 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     -- Update filled track and thumb position
     local function UpdateTrackFill(value)
         local minVal, maxVal = container.min, container.max
-        local pct = (value - minVal) / (maxVal - minVal)
+        local pct = (maxVal > minVal) and ((value - minVal) / (maxVal - minVal)) or 0
         pct = math.max(0, math.min(1, pct))
 
-        local trackWidth = trackContainer:GetWidth() - 2  -- Account for border
-        local fillWidth = math.max(1, pct * trackWidth)
-        trackFill:SetWidth(fillWidth)
+        local trackWidth = slider:GetWidth()
+        local x = trackWidth * pct
+        trackFill:SetWidth(math.max(1, x))
 
-        -- Position the thumb frame
-        local thumbX = pct * (trackWidth - 14) + 7  -- Center thumb on fill edge
-        thumbFrame:SetPoint("CENTER", trackContainer, "LEFT", thumbX + 1, 0)
+        thumb:ClearAllPoints()
+        thumb:SetPoint("CENTER", slider, "LEFT", x, 0)
+        if slider._thumbMask then
+            slider._thumbMask:SetAllPoints(thumb)
+        end
     end
 
     local function GetValue()
@@ -4160,6 +4126,9 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         container.value = val
         UpdateVisual(val)
         if dbTable and dbKey then dbTable[dbKey] = val end
+        if not skipOnChange then
+            MaybeUpdatePinnedWidgetValue(container, val)
+        end
         BroadcastToSiblings(container, val)
         if not skipOnChange and onChange then onChange(val) end
         if not skipOnChange then
@@ -4206,6 +4175,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
 
     -- Register for cross-widget sync
     RegisterWidgetInstance(container, dbTable, dbKey)
+    MaybeBindPinnedWidget(container, "slider", label, dbKey, dbTable, slider, registryInfo)
 
     slider:SetScript("OnValueChanged", function(self, value, userInput)
         -- Ignore user input if slider is disabled
@@ -4216,6 +4186,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         UpdateTrackFill(value)
         if dbTable and dbKey then dbTable[dbKey] = value end
         if userInput then
+            MaybeUpdatePinnedWidgetValue(container, value)
             BroadcastToSiblings(container, value)
             if deferOnDrag and isDragging then
                 if onDragPreview then onDragPreview(value) end
@@ -4236,12 +4207,10 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         isDragging = false
     end)
 
-    -- Hover effects on thumb
-    slider:SetScript("OnEnter", function()
-        SetThumbBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
-    end)
-    slider:SetScript("OnLeave", function()
-        SetThumbBorderColor(C.sliderThumbBorder[1], C.sliderThumbBorder[2], C.sliderThumbBorder[3], 1)
+    -- Track fills a dynamic width now (bounded by the nudge cluster on the
+    -- right). Re-render fill + thumb positions when the slider resizes.
+    slider:SetScript("OnSizeChanged", function()
+        UpdateTrackFill(GetValue())
     end)
 
     editBox:SetScript("OnEnterPressed", function(self)
@@ -4254,24 +4223,24 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         self:ClearFocus()
     end)
 
-    -- Hover effect on editbox
+    -- Hover / focus accent on editbox border
     editBox:SetScript("OnEnter", function(self)
-        SetEditBoxBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+        SetEditBoxBorderColor(C.borderAccent[1], C.borderAccent[2], C.borderAccent[3], C.borderAccent[4])
     end)
     editBox:SetScript("OnEditFocusGained", function(self)
-        SetEditBoxBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+        SetEditBoxBorderColor(C.borderAccent[1], C.borderAccent[2], C.borderAccent[3], C.borderAccent[4])
     end)
     editBox:SetScript("OnEditFocusLost", function(self)
-        SetEditBoxBorderColor(0.25, 0.25, 0.25, 1)
+        SetEditBoxBorderColor(C.border[1], C.border[2], C.border[3], C.border[4])
     end)
     editBox:SetScript("OnLeave", function(self)
         if not self:HasFocus() then
-            SetEditBoxBorderColor(0.25, 0.25, 0.25, 1)
+            SetEditBoxBorderColor(C.border[1], C.border[2], C.border[3], C.border[4])
         end
     end)
 
-    -- Re-update track fill when container size changes (fixes initial layout timing)
-    trackContainer:SetScript("OnSizeChanged", function(self, width, height)
+    -- Re-update track fill when slider size changes (fixes initial layout timing)
+    slider:SetScript("OnSizeChanged", function(self, width, height)
         if width and width > 0 then
             UpdateTrackFill(GetValue())
         end
@@ -4313,26 +4282,24 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     -- Initialize enabled state
     container.isEnabled = true
 
-    -- Auto-register for search using current context (if context is set)
-    if GUI._searchContext.tabIndex and label and not GUI._suppressSearchRegistration then
-        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
-        if not GUI.SettingsRegistryKeys[regKey] then
-            GUI.SettingsRegistryKeys[regKey] = true
-            table.insert(GUI.SettingsRegistry, {
-                label = label,
-                widgetType = "slider",
-                tabIndex = GUI._searchContext.tabIndex,
-                tabName = GUI._searchContext.tabName,
-                subTabIndex = GUI._searchContext.subTabIndex,
-                subTabName = GUI._searchContext.subTabName,
-                sectionName = GUI._searchContext.sectionName,
-                widgetBuilder = function(p)
-                    return GUI:CreateFormSlider(p, label, min, max, step, dbKey, dbTable, onChange, options)
-                end,
-            })
-        end
-    end
+    GUI:RegisterSearchSettingWidget({
+        label = label,
+        widgetType = "slider",
+        widgetBuilder = function(p)
+            return GUI:CreateFormSlider(p, label, min, max, step, dbKey, dbTable, onChange, options)
+        end,
+        widgetDescriptor = GUI:BuildSearchWidgetDescriptor("slider", dbKey, dbTable, {
+            min = min,
+            max = max,
+            step = step,
+            options = options,
+        }),
+        keywords = registryInfo and registryInfo.keywords or nil,
+        description = registryInfo and registryInfo.description or nil,
+        relatedTo = registryInfo and registryInfo.relatedTo or nil,
+    })
 
+    GUI:AttachTooltip(slider, registryInfo and registryInfo.description or nil, label)
     return container
 end
 
@@ -4348,33 +4315,42 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         and UIKit.CreateBorderLines
         and UIKit.UpdateBorderLines
     local container = CreateFrame("Frame", nil, parent)
-    container:SetHeight(FORM_ROW_HEIGHT)
+    container._widgetLabel = label  -- For search jump-to-setting (V2)
     ApplyWidgetSyncContext(container, dbTable, dbKey)
 
-    -- Label on left (off-white text)
-    local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(text, 12, "", C.text)
-    text:SetText(label or "Setting")
-    text:SetPoint("LEFT", 0, 0)
+    -- Bare mode: label=nil skips the internal label and shrinks container
+    -- to just the dropdown — V3 BuildSettingRow provides the label.
+    local text
+    local dropdownLeftOffset = 180
+    if label then
+        container:SetHeight(FORM_ROW_HEIGHT)
+        text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        SetFont(text, 12, "", C.text)
+        text:SetText(label)
+        text:SetPoint("LEFT", 0, 0)
+    else
+        container:SetSize(180, FORM_ROW_HEIGHT)
+        dropdownLeftOffset = 0
+    end
 
-    -- Dropdown button (right side)
+    -- Dropdown button (right side) — V3 widget surface
     local dropdown = CreateFrame("Button", nil, container, useUIKitBorders and nil or "BackdropTemplate")
-    dropdown:SetHeight(24)  -- Increased from 22
-    dropdown:SetPoint("LEFT", container, "LEFT", 180, 0)
+    dropdown:SetHeight(22)
+    dropdown:SetPoint("LEFT", container, "LEFT", dropdownLeftOffset, 0)
     dropdown:SetPoint("RIGHT", container, "RIGHT", 0, 0)
     local px = QUICore:GetPixelSize(dropdown)
     if useUIKitBorders then
-        dropdown.bg = UIKit.CreateBackground(dropdown, 0.08, 0.08, 0.08, 1)
+        dropdown.bg = UIKit.CreateBackground(dropdown, C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
         UIKit.CreateBorderLines(dropdown)
-        UIKit.UpdateBorderLines(dropdown, 1, 0.35, 0.35, 0.35, 1, false)
+        UIKit.UpdateBorderLines(dropdown, 1, 1, 1, 1, 0.2, false)
     else
         dropdown:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = px,
         })
-        dropdown:SetBackdropColor(0.08, 0.08, 0.08, 1)
-        dropdown:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)  -- Increased from 0.25
+        dropdown:SetBackdropColor(C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
+        dropdown:SetBackdropBorderColor(1, 1, 1, 0.2)
     end
 
     local function SetDropdownBorderColor(r, g, b, a)
@@ -4385,78 +4361,42 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         end
     end
 
-    -- Chevron zone (right side with accent tint)
-    local chevronZone = CreateFrame("Frame", nil, dropdown)
-    chevronZone:SetWidth(CHEVRON_ZONE_WIDTH)
-    chevronZone:SetPoint("TOPRIGHT", dropdown, "TOPRIGHT", -1, -1)
-    chevronZone:SetPoint("BOTTOMRIGHT", dropdown, "BOTTOMRIGHT", -1, 1)
-    local chevronZoneBg = chevronZone:CreateTexture(nil, "BACKGROUND")
-    chevronZoneBg:SetAllPoints()
-    chevronZoneBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    chevronZoneBg:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], CHEVRON_BG_ALPHA)
+    local chevron = UIKit.CreateChevronCaret(dropdown, {
+        point = "RIGHT", relativeTo = dropdown, relativePoint = "RIGHT",
+        xPixels = -8, sizePixels = 10, lineWidthPixels = 6,
+        r = C.textMuted[1], g = C.textMuted[2], b = C.textMuted[3], a = 1,
+        expanded = true,
+    })
+    dropdown.chevron = chevron
 
-    -- Separator line (left edge of chevron zone)
-    local separator = chevronZone:CreateTexture(nil, "ARTWORK")
-    separator:SetWidth(1)
-    separator:SetPoint("TOPLEFT", chevronZone, "TOPLEFT", 0, 0)
-    separator:SetPoint("BOTTOMLEFT", chevronZone, "BOTTOMLEFT", 0, 0)
-    separator:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.3)
-
-    -- Line chevron (two angled lines forming a V pointing DOWN)
-    local chevronLeft = chevronZone:CreateTexture(nil, "OVERLAY")
-    chevronLeft:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], CHEVRON_TEXT_ALPHA)
-    chevronLeft:SetSize(7, 2)
-    chevronLeft:SetPoint("CENTER", chevronZone, "CENTER", -2, -1)
-    chevronLeft:SetRotation(math.rad(-45))
-
-    local chevronRight = chevronZone:CreateTexture(nil, "OVERLAY")
-    chevronRight:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], CHEVRON_TEXT_ALPHA)
-    chevronRight:SetSize(7, 2)
-    chevronRight:SetPoint("CENTER", chevronZone, "CENTER", 2, -1)
-    chevronRight:SetRotation(math.rad(45))
-
-    dropdown.chevronLeft = chevronLeft
-    dropdown.chevronRight = chevronRight
-    dropdown.chevronZone = chevronZone
-    dropdown.separator = separator
-
-    -- Selected text, accounting for chevron zone
     dropdown.selected = dropdown:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(dropdown.selected, 11, "", C.text)
-    dropdown.selected:SetPoint("LEFT", 8, 0)
-    dropdown.selected:SetPoint("RIGHT", chevronZone, "LEFT", -5, 0)
+    SetFont(dropdown.selected, 10, "", C.text)
+    dropdown.selected:SetPoint("LEFT", dropdown, "LEFT", 8, 0)
+    dropdown.selected:SetPoint("RIGHT", chevron, "LEFT", -4, 0)
     dropdown.selected:SetJustifyH("LEFT")
 
-    -- Hover effect
+    -- Hover effect: border brightens
     dropdown:SetScript("OnEnter", function(self)
-        SetDropdownBorderColor(C_accent_r, C_accent_g, C_accent_b, C_accent_a)
-        chevronZoneBg:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], CHEVRON_BG_ALPHA_HOVER)
-        separator:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.5)
-        chevronLeft:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
-        chevronRight:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
+        SetDropdownBorderColor(1, 1, 1, 0.35)
     end)
     dropdown:SetScript("OnLeave", function(self)
-        SetDropdownBorderColor(0.35, 0.35, 0.35, 1)
-        chevronZoneBg:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], CHEVRON_BG_ALPHA)
-        separator:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.3)
-        chevronLeft:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], CHEVRON_TEXT_ALPHA)
-        chevronRight:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], CHEVRON_TEXT_ALPHA)
+        SetDropdownBorderColor(1, 1, 1, 0.2)
     end)
 
     -- Menu frame (parented to UIParent to avoid scroll frame clipping)
     local menuFrame = CreateFrame("Frame", nil, UIParent, useUIKitBorders and nil or "BackdropTemplate")
     if useUIKitBorders then
-        menuFrame.bg = UIKit.CreateBackground(menuFrame, 0.1, 0.1, 0.1, 0.98)
+        menuFrame.bg = UIKit.CreateBackground(menuFrame, C.bg[1], C.bg[2], C.bg[3], 1)
         UIKit.CreateBorderLines(menuFrame)
-        UIKit.UpdateBorderLines(menuFrame, 1, 0.3, 0.3, 0.3, 1, false)
+        UIKit.UpdateBorderLines(menuFrame, 1, 1, 1, 1, 0.2, false)
     else
         menuFrame:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = px,
         })
-        menuFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.98)
-        menuFrame:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+        menuFrame:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], 1)
+        menuFrame:SetBackdropBorderColor(1, 1, 1, 0.2)
     end
     menuFrame:SetFrameStrata("TOOLTIP")
     menuFrame:SetClipsChildren(true)
@@ -4556,6 +4496,9 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         container.selectedValue = val
         if dbTable and dbKey then dbTable[dbKey] = val end
         UpdateVisual(val)
+        if not skipOnChange then
+            MaybeUpdatePinnedWidgetValue(container, val)
+        end
         BroadcastToSiblings(container, val)
         if not skipOnChange and onChange then onChange(val) end
         if not skipOnChange then
@@ -4601,8 +4544,22 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         local f = buttonPool[buttonPoolIdx]
         if not f then
             f = CreateFrame("Button", nil, scrollContent)
+            f._selectedBg = f:CreateTexture(nil, "BACKGROUND")
+            f._selectedBg:SetAllPoints(f)
+            f._selectedBg:SetColorTexture(0.204, 0.827, 0.6, 0.04)
+            f._selectedBg:Hide()
+            f._hoverBg = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+            f._hoverBg:SetAllPoints(f)
+            f._hoverBg:SetColorTexture(0.204, 0.827, 0.6, 0.08)
+            f._hoverBg:Hide()
+            f._selectedBar = f:CreateTexture(nil, "OVERLAY")
+            f._selectedBar:SetWidth(2)
+            f._selectedBar:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
+            f._selectedBar:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
+            f._selectedBar:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
+            f._selectedBar:Hide()
             f._btnText = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            f._btnText:SetPoint("LEFT", 4, 0)
+            f._btnText:SetPoint("LEFT", 8, 0)
             buttonPool[buttonPoolIdx] = f
         end
         f:ClearAllPoints()
@@ -4620,7 +4577,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         for _, child in ipairs({scrollContent:GetChildren()}) do child:Hide() end
 
         local yOff = -4
-        local itemHeight = 20
+        local itemHeight = 22
         local headerHeight = 18
         local maxVisibleItems = DROPDOWN_MAX_VISIBLE_ITEMS
         local filterText = searchable and container.searchText and container.searchText:lower() or ""
@@ -4749,15 +4706,33 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
                     btn:SetHeight(itemHeight)
                     btn:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 4, yOff)
                     btn:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -4, yOff)
-                    SetFont(btn._btnText, 11, "", C.text)
+                    btn._btnText:ClearAllPoints()
+                    btn._btnText:SetPoint("LEFT", btn, "LEFT", 8, 0)
+                    SetFont(btn._btnText, 10, "", C.text)
                     btn._btnText:SetText(opt.text)
-                    btn._btnText:SetPoint("LEFT", 4, 0)
+
+                    local isSelected = (container.selectedValue == opt.value)
+                    if isSelected then
+                        btn._selectedBg:Show()
+                        btn._selectedBar:Show()
+                        btn._btnText:SetTextColor(C_accent_r, C_accent_g, C_accent_b, 1)
+                    else
+                        btn._selectedBg:Hide()
+                        btn._selectedBar:Hide()
+                        btn._btnText:SetTextColor(C_text_r, C_text_g, C_text_b, 1)
+                    end
+                    btn._hoverBg:Hide()
+
                     btn:SetScript("OnClick", function()
                         SetValue(opt.value)
                         menuFrame:Hide()
                     end)
-                    btn:SetScript("OnEnter", function() btn._btnText:SetTextColor(C_accent_r, C_accent_g, C_accent_b, C_accent_a) end)
-                    btn:SetScript("OnLeave", function() btn._btnText:SetTextColor(C_text_r, C_text_g, C_text_b, C_text_a) end)
+                    btn:SetScript("OnEnter", function(self)
+                        self._hoverBg:Show()
+                    end)
+                    btn:SetScript("OnLeave", function(self)
+                        self._hoverBg:Hide()
+                    end)
                     yOff = yOff - itemHeight
                     visibleCount = visibleCount + 1
                 end
@@ -4770,9 +4745,13 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
             noMatch:SetHeight(itemHeight)
             noMatch:SetPoint("TOPLEFT", scrollContent, "TOPLEFT", 4, -10)
             noMatch:SetPoint("TOPRIGHT", scrollContent, "TOPRIGHT", -4, -10)
-            SetFont(noMatch._btnText, 11, "", mutedColor)
-            noMatch._btnText:SetText("No matches")
+            noMatch._selectedBg:Hide()
+            noMatch._selectedBar:Hide()
+            noMatch._hoverBg:Hide()
+            noMatch._btnText:ClearAllPoints()
             noMatch._btnText:SetPoint("CENTER", 0, 0)
+            SetFont(noMatch._btnText, 10, "", mutedColor)
+            noMatch._btnText:SetText("No matches")
             noMatch:SetScript("OnClick", nil)
             noMatch:SetScript("OnEnter", nil)
             noMatch:SetScript("OnLeave", nil)
@@ -4891,6 +4870,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
 
     -- Register for cross-widget sync
     RegisterWidgetInstance(container, dbTable, dbKey)
+    MaybeBindPinnedWidget(container, "dropdown", label, dbKey, dbTable, dropdown, registryInfo)
 
     SetValue(GetValue(), true)
 
@@ -4902,30 +4882,26 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     end
     container.isEnabled = true
 
-    -- Auto-register for search using current context (if context is set)
-    if GUI._searchContext.tabIndex and label and not GUI._suppressSearchRegistration then
-        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
-        if not GUI.SettingsRegistryKeys[regKey] then
-            GUI.SettingsRegistryKeys[regKey] = true
-            table.insert(GUI.SettingsRegistry, {
-                label = label,
-                widgetType = "dropdown",
-                tabIndex = GUI._searchContext.tabIndex,
-                tabName = GUI._searchContext.tabName,
-                subTabIndex = GUI._searchContext.subTabIndex,
-                subTabName = GUI._searchContext.subTabName,
-                sectionName = GUI._searchContext.sectionName,
-                widgetBuilder = function(p)
-                    return GUI:CreateFormDropdown(p, label, options, dbKey, dbTable, onChange, nil, opts)
-                end,
-            })
-        end
-    end
+    GUI:RegisterSearchSettingWidget({
+        label = label,
+        widgetType = "dropdown",
+        widgetBuilder = function(p)
+            return GUI:CreateFormDropdown(p, label, options, dbKey, dbTable, onChange, nil, opts)
+        end,
+        widgetDescriptor = GUI:BuildSearchWidgetDescriptor("dropdown", dbKey, dbTable, {
+            options = options,
+            dropdownOptions = opts,
+        }),
+        keywords = registryInfo and registryInfo.keywords or nil,
+        description = registryInfo and registryInfo.description or nil,
+        relatedTo = registryInfo and registryInfo.relatedTo or nil,
+    })
 
+    GUI:AttachTooltip(dropdown, registryInfo and registryInfo.description or nil, label)
     return container
 end
 
-function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, options)
+function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, options, registryInfo)
     options = options or {}
     local noAlpha = options.noAlpha or false
     local UIKit = ns.UIKit
@@ -4936,35 +4912,44 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
 
     if parent._hasContent ~= nil then parent._hasContent = true end
     local container = CreateFrame("Frame", nil, parent)
-    container:SetHeight(FORM_ROW_HEIGHT)
+    container._widgetLabel = label  -- For search jump-to-setting (V2)
     ApplyWidgetSyncContext(container, dbTable, dbKey)
 
-    -- Label on left (off-white text)
-    local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(text, 12, "", C.text)
-    text:SetText(label or "Color")
-    text:SetPoint("LEFT", 0, 0)
-    text:SetWidth(170)
-    text:SetWordWrap(true)
-    text:SetNonSpaceWrap(true)
-    text:SetJustifyH("LEFT")
+    -- Bare mode: label=nil skips the internal label and shrinks container
+    -- to just the swatch — V3 BuildSettingRow provides the label.
+    local text
+    local swatchLeftOffset = 180
+    if label then
+        container:SetHeight(FORM_ROW_HEIGHT)
+        text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        SetFont(text, 12, "", C.text)
+        text:SetText(label)
+        text:SetPoint("LEFT", 0, 0)
+        text:SetWidth(170)
+        text:SetWordWrap(true)
+        text:SetNonSpaceWrap(true)
+        text:SetJustifyH("LEFT")
+    else
+        container:SetSize(18, 18)
+        swatchLeftOffset = 0
+    end
 
-    -- Color swatch aligned with other widgets (starts at 180px from left)
+    -- Color swatch
     local swatch = CreateFrame("Button", nil, container, useUIKitBorders and nil or "BackdropTemplate")
-    swatch:SetSize(50, 18)
-    swatch:SetPoint("LEFT", container, "LEFT", 180, 0)
+    swatch:SetSize(18, 18)
+    swatch:SetPoint("LEFT", container, "LEFT", swatchLeftOffset, 0)
     local px = QUICore:GetPixelSize(swatch)
     if useUIKitBorders then
         swatch.bg = UIKit.CreateBackground(swatch, 1, 1, 1, 1)
         UIKit.CreateBorderLines(swatch)
-        UIKit.UpdateBorderLines(swatch, 1, 0.4, 0.4, 0.4, 1, false)
+        UIKit.UpdateBorderLines(swatch, 1, 1, 1, 1, 0.35, false)
     else
         swatch:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = px,
         })
-        swatch:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+        swatch:SetBackdropBorderColor(1, 1, 1, 0.35)
     end
 
     container.swatch = swatch
@@ -4999,11 +4984,13 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
     local function SetColor(r, g, b, a)
         local finalAlpha = noAlpha and 1 or (a or 1)
         SetSwatchColor(r, g, b, finalAlpha)
+        local nextValue = {r, g, b, finalAlpha}
         if dbTable and dbKey then
-            dbTable[dbKey] = {r, g, b, finalAlpha}
+            dbTable[dbKey] = nextValue
         end
+        MaybeUpdatePinnedWidgetValue(container, nextValue)
         if onChange then onChange(r, g, b, finalAlpha) end
-        BroadcastToSiblings(container, {r, g, b, finalAlpha})
+        BroadcastToSiblings(container, nextValue)
         MaybeAutoNotifyProviderSync(container)
     end
 
@@ -5021,6 +5008,7 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
     container.UpdateVisual = UpdateVisual
 
     RegisterWidgetInstance(container, dbTable, dbKey)
+    MaybeBindPinnedWidget(container, "color", label, dbKey, dbTable, swatch, registryInfo)
 
     local r, g, b, a = GetColor()
     SetSwatchColor(r, g, b, a)
@@ -5028,22 +5016,35 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
     swatch:SetScript("OnClick", function()
         local currentR, currentG, currentB, currentA = GetColor()
         local originalA = currentA
-        ColorPickerFrame:SetupColorPickerAndShow({
-            r = currentR, g = currentG, b = currentB, opacity = currentA,
-            hasOpacity = not noAlpha,
-            swatchFunc = function()
-                local r, g, b = ColorPickerFrame:GetColorRGB()
-                local a = noAlpha and 1 or ColorPickerFrame:GetColorAlpha()
-                SetColor(r, g, b, a)
-            end,
-            cancelFunc = function(prev)
-                SetColor(prev.r, prev.g, prev.b, noAlpha and 1 or originalA)
-            end,
-        })
+        local function OpenPicker()
+            ColorPickerFrame:SetupColorPickerAndShow({
+                r = currentR, g = currentG, b = currentB, opacity = currentA,
+                hasOpacity = not noAlpha,
+                swatchFunc = function()
+                    local r, g, b = ColorPickerFrame:GetColorRGB()
+                    local a = noAlpha and 1 or ColorPickerFrame:GetColorAlpha()
+                    SetColor(r, g, b, a)
+                end,
+                cancelFunc = function(prev)
+                    SetColor(prev.r, prev.g, prev.b, noAlpha and 1 or originalA)
+                end,
+            })
+            ColorPickerFrame:SetFrameStrata("TOOLTIP")
+            ColorPickerFrame:Raise()
+        end
+        -- When switching swatches mid-session, the existing picker must finish
+        -- its hide cycle (including any cancelFunc side effects) before the new
+        -- Setup call, or ShowUIPanel's own toggle logic turns our call into a close.
+        if ColorPickerFrame:IsShown() then
+            HideUIPanel(ColorPickerFrame)
+            C_Timer.After(0, OpenPicker)
+        else
+            OpenPicker()
+        end
     end)
 
-    swatch:SetScript("OnEnter", function() SetSwatchBorderColor(C_accent_r, C_accent_g, C_accent_b, C_accent_a) end)
-    swatch:SetScript("OnLeave", function() SetSwatchBorderColor(0.4, 0.4, 0.4, 1) end)
+    swatch:HookScript("OnEnter", function() SetSwatchBorderColor(C.accent[1], C.accent[2], C.accent[3], 1) end)
+    swatch:HookScript("OnLeave", function() SetSwatchBorderColor(1, 1, 1, 0.35) end)
 
     -- Enable/disable (for conditional UI)
     container.SetEnabled = function(self, enabled)
@@ -5051,26 +5052,21 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
         container:SetAlpha(enabled and 1 or 0.4)
     end
 
-    -- Auto-register for search using current context (if context is set)
-    if GUI._searchContext.tabIndex and label and not GUI._suppressSearchRegistration then
-        local regKey = label .. "_" .. (GUI._searchContext.tabIndex or 0) .. "_" .. (GUI._searchContext.subTabIndex or 0) .. "_" .. (GUI._searchContext.sectionName or "")
-        if not GUI.SettingsRegistryKeys[regKey] then
-            GUI.SettingsRegistryKeys[regKey] = true
-            table.insert(GUI.SettingsRegistry, {
-                label = label,
-                widgetType = "colorpicker",
-                tabIndex = GUI._searchContext.tabIndex,
-                tabName = GUI._searchContext.tabName,
-                subTabIndex = GUI._searchContext.subTabIndex,
-                subTabName = GUI._searchContext.subTabName,
-                sectionName = GUI._searchContext.sectionName,
-                widgetBuilder = function(p)
-                    return GUI:CreateFormColorPicker(p, label, dbKey, dbTable, onChange, options)
-                end,
-            })
-        end
-    end
+    GUI:RegisterSearchSettingWidget({
+        label = label,
+        widgetType = "colorpicker",
+        widgetBuilder = function(p)
+            return GUI:CreateFormColorPicker(p, label, dbKey, dbTable, onChange, options)
+        end,
+        widgetDescriptor = GUI:BuildSearchWidgetDescriptor("colorpicker", dbKey, dbTable, {
+            options = options,
+        }),
+        keywords = registryInfo and registryInfo.keywords or nil,
+        description = registryInfo and registryInfo.description or nil,
+        relatedTo = registryInfo and registryInfo.relatedTo or nil,
+    })
 
+    GUI:AttachTooltip(swatch, registryInfo and registryInfo.description or nil, label)
     return container
 end
 
@@ -5079,9 +5075,9 @@ local CreateFormEditBoxModern = GUI.CreateFormEditBox
 ---------------------------------------------------------------------------
 -- FORM EDIT BOX (single-line text input with label and DB binding)
 ---------------------------------------------------------------------------
-function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options)
+function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options, registryInfo)
     if CreateFormEditBoxModern then
-        return CreateFormEditBoxModern(self, parent, label, dbKey, dbTable, onChange, options)
+        return CreateFormEditBoxModern(self, parent, label, dbKey, dbTable, onChange, options, registryInfo)
     end
     return nil
 end
@@ -5227,41 +5223,307 @@ local SEARCH_DEBOUNCE = 0.15  -- 150ms debounce
 local SEARCH_MIN_CHARS = 2    -- Minimum characters before searching
 local SEARCH_MAX_RESULTS = 30 -- Cap results to prevent UI overload
 
+local function NormalizeSearchText(text)
+    text = (text or ""):lower()
+    text = text:gsub("[%z\1-\31]", " ")
+    text = text:gsub("[_%-%./\\&]+", " ")
+    text = text:gsub("%s+", " ")
+    text = text:gsub("^%s+", "")
+    text = text:gsub("%s+$", "")
+    return text
+end
+
+local function TokenizeSearchText(text)
+    local out = {}
+    local seen = {}
+    for token in NormalizeSearchText(text):gmatch("%S+") do
+        if not seen[token] then
+            seen[token] = true
+            table.insert(out, token)
+        end
+    end
+    return out
+end
+
+local function ContainsWholeWord(haystack, needle)
+    if haystack == "" or needle == "" then return false end
+    return (" " .. haystack .. " "):find(" " .. needle .. " ", 1, true) ~= nil
+end
+
+-- Returns true if the Damerau-Levenshtein distance between a and b is <= 1.
+-- Cheap for short strings. Does NOT compute the full matrix — early-exits.
+local function DL1(a, b)
+    local la, lb = #a, #b
+    if math.abs(la - lb) > 1 then return false end
+    if la == lb then
+        -- same length: count mismatches; also allow a single transposition.
+        local diffs, firstDiffI = 0, nil
+        for i = 1, la do
+            if a:byte(i) ~= b:byte(i) then
+                diffs = diffs + 1
+                if diffs == 1 then firstDiffI = i end
+                if diffs > 2 then return false end
+            end
+        end
+        if diffs <= 1 then return true end
+        -- diffs == 2: must be an adjacent transposition
+        local i = firstDiffI
+        return i < la
+            and a:byte(i) == b:byte(i + 1)
+            and a:byte(i + 1) == b:byte(i)
+    end
+    -- lengths differ by 1: walk both, allow one skip.
+    local s, l = a, b
+    if la > lb then s, l = b, a end
+    local si, li, skipped = 1, 1, false
+    while si <= #s and li <= #l do
+        if s:byte(si) == l:byte(li) then
+            si = si + 1
+            li = li + 1
+        elseif not skipped then
+            li = li + 1
+            skipped = true
+        else
+            return false
+        end
+    end
+    return true
+end
+
+local function BuildSearchTerms(searchTerm)
+    local synExpand = ns.QUI_SearchSynonyms and ns.QUI_SearchSynonyms.Expand
+    local raw = (searchTerm or ""):lower()
+    local normalized = NormalizeSearchText(searchTerm)
+    local seen = {}
+    local out = {}
+
+    local function AddTerm(term, penalty)
+        local rawTerm = (term or ""):lower()
+        local normalizedTerm = NormalizeSearchText(term)
+        if rawTerm == "" and normalizedTerm == "" then return end
+
+        local key = rawTerm .. "\31" .. normalizedTerm
+        if seen[key] then return end
+        seen[key] = true
+
+        table.insert(out, {
+            raw = rawTerm,
+            normalized = normalizedTerm,
+            tokens = TokenizeSearchText(term),
+            penalty = penalty or 1.0,
+        })
+    end
+
+    AddTerm(searchTerm, 1.0)
+    if normalized ~= "" and normalized ~= raw then
+        AddTerm(normalized, 1.0)
+    end
+
+    local expanded = synExpand and synExpand(normalized ~= "" and normalized or raw) or { normalized ~= "" and normalized or raw }
+    for idx, term in ipairs(expanded) do
+        AddTerm(term, idx == 1 and 1.0 or 0.82)
+    end
+
+    return out
+end
+
+local function ScoreSearchText(text, term)
+    local rawText = (text or ""):lower()
+    if rawText == "" or not term then return 0 end
+
+    local normalizedText = NormalizeSearchText(text)
+    local score = 0
+
+    if term.raw ~= "" then
+        if rawText == term.raw then
+            score = math.max(score, 260)
+        end
+        if rawText:sub(1, #term.raw) == term.raw then
+            score = math.max(score, 225)
+        end
+        if rawText:find(term.raw, 1, true) then
+            score = math.max(score, 170)
+        end
+    end
+
+    if term.normalized ~= "" then
+        if normalizedText == term.normalized then
+            score = math.max(score, 250)
+        end
+        if normalizedText:sub(1, #term.normalized) == term.normalized then
+            score = math.max(score, 220)
+        end
+        if normalizedText:find(term.normalized, 1, true) then
+            score = math.max(score, 165)
+        end
+
+        local tokenHits = 0
+        local allTokens = (#term.tokens > 0)
+        for _, token in ipairs(term.tokens) do
+            if ContainsWholeWord(normalizedText, token) then
+                tokenHits = tokenHits + 1
+            else
+                allTokens = false
+            end
+        end
+        if allTokens and #term.tokens > 0 then
+            score = math.max(score, 210 + math.min(#term.tokens, 4) * 6)
+        elseif tokenHits > 0 then
+            score = math.max(score, 110 + tokenHits * 8)
+        end
+
+        if score == 0 and #term.tokens == 1 and #term.normalized >= 4 then
+            for token in normalizedText:gmatch("%S+") do
+                if DL1(term.normalized, token) then
+                    score = math.max(score, 60)
+                    break
+                end
+            end
+        end
+    end
+
+    return score * (term.penalty or 1.0)
+end
+
+local function BuildMergedSearchIdentity(gui, entry)
+    if type(entry) ~= "table" then
+        return ""
+    end
+
+    local crumbText = ""
+    if gui and type(gui.GetSearchBreadcrumb) == "function" then
+        local crumb = gui:GetSearchBreadcrumb(entry)
+        if type(crumb) == "table" and #crumb > 0 then
+            crumbText = table.concat(crumb, " ")
+        end
+    end
+
+    if crumbText == "" then
+        local parts = {}
+        if entry.tileId and entry.tileId ~= "" then
+            parts[#parts + 1] = entry.tileId
+        end
+        if entry.subPageIndex then
+            parts[#parts + 1] = tostring(entry.subPageIndex)
+        end
+        if entry.tabName and entry.tabName ~= "" then
+            parts[#parts + 1] = entry.tabName
+        end
+        if entry.subTabName and entry.subTabName ~= "" then
+            parts[#parts + 1] = entry.subTabName
+        end
+        if entry.sectionName and entry.sectionName ~= "" then
+            parts[#parts + 1] = entry.sectionName
+        end
+        crumbText = table.concat(parts, " ")
+    end
+
+    return NormalizeSearchText((entry.label or "") .. "\31" .. crumbText)
+end
+
+local function MergeSearchHit(gui, mergedResults, mergedByKey, entry, score)
+    if type(entry) ~= "table" or type(score) ~= "number" or score <= 0 then
+        return
+    end
+
+    local key = BuildMergedSearchIdentity(gui, entry)
+    if key == "" then
+        key = NormalizeSearchText(entry.label or "")
+    end
+
+    local existing = mergedByKey[key]
+    if not existing then
+        local stored = { data = CopySearchRegistryEntry(entry), score = score }
+        mergedByKey[key] = stored
+        table.insert(mergedResults, stored)
+        return
+    end
+
+    if score > existing.score then
+        existing.score = score
+    end
+
+    local current = existing.data
+    if entry.widgetBuilder and not current.widgetBuilder then
+        local replacement = CopySearchRegistryEntry(entry)
+        if replacement.tileId == nil then replacement.tileId = current.tileId end
+        if replacement.subPageIndex == nil then replacement.subPageIndex = current.subPageIndex end
+        if replacement.tabName == nil or replacement.tabName == "" then replacement.tabName = current.tabName end
+        if replacement.subTabName == nil or replacement.subTabName == "" then replacement.subTabName = current.subTabName end
+        if replacement.sectionName == nil or replacement.sectionName == "" then replacement.sectionName = current.sectionName end
+        if replacement.keywords == nil then replacement.keywords = current.keywords end
+        if replacement.description == nil then replacement.description = current.description end
+        existing.data = replacement
+        current = replacement
+    end
+
+    if (not current.tileId or current.tileId == "") and entry.tileId and entry.tileId ~= "" then
+        current.tileId = entry.tileId
+    end
+    if current.subPageIndex == nil and entry.subPageIndex ~= nil then
+        current.subPageIndex = entry.subPageIndex
+    end
+    if (not current.tabName or current.tabName == "") and entry.tabName and entry.tabName ~= "" then
+        current.tabName = entry.tabName
+    end
+    if (not current.subTabName or current.subTabName == "") and entry.subTabName and entry.subTabName ~= "" then
+        current.subTabName = entry.subTabName
+    end
+    if (not current.sectionName or current.sectionName == "") and entry.sectionName and entry.sectionName ~= "" then
+        current.sectionName = entry.sectionName
+    end
+    if current.keywords == nil and entry.keywords ~= nil then
+        current.keywords = entry.keywords
+    end
+    if current.description == nil and entry.description ~= nil then
+        current.description = entry.description
+    end
+end
+
 -- Search timer reference (for cleanup)
 GUI._searchTimer = nil
 
 -- Create the search box widget for the top bar
 function GUI:CreateSearchBox(parent)
     local container = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    container:SetSize(160, 20)
-    local px = QUICore:GetPixelSize(container)
-    container:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    })
-    container:SetBackdropColor(0.08, 0.10, 0.14, 1)
-    container:SetBackdropBorderColor(0.25, 0.28, 0.32, 1)
+    container:SetSize(160, 28)
 
-    -- Search icon (magnifying glass character)
-    local icon = container:CreateFontString(nil, "OVERLAY")
-    SetFont(icon, 11, "", C.textMuted)
-    icon:SetText("|TInterface\\Common\\UI-Searchbox-Icon:12:12:0:0|t")
-    icon:SetPoint("LEFT", 6, 0)
+    -- V3 visuals: white bg @ 6% + pixel border lines @ 20%
+    if UIKit and UIKit.CreateBackground then
+        UIKit.CreateBackground(container, C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
+    end
+    if UIKit and UIKit.CreateBorderLines and not container._pixelBorderReady then
+        UIKit.CreateBorderLines(container)
+        container._pixelBorderReady = true
+    end
+    if UIKit and UIKit.UpdateBorderLines then
+        UIKit.UpdateBorderLines(container, 1, 1, 1, 1, 0.2)
+    end
+
+    -- Magnifier icon (texture, not glyph — Friz Quadrata can't render Unicode)
+    local icon = container:CreateTexture(nil, "OVERLAY")
+    icon:SetSize(12, 12)
+    icon:SetPoint("LEFT", container, "LEFT", 8, 0)
+    local atlasOk = pcall(function() icon:SetAtlas("common-search-magnifier") end)
+    if not atlasOk or not icon:GetAtlas() then
+        icon:SetTexture("Interface\\FriendsFrame\\UI-Searchbox-Icon")
+    end
+    icon:SetVertexColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+    container._icon = icon
 
     -- EditBox for search input
     local editBox = CreateFrame("EditBox", nil, container)
-    editBox:SetPoint("LEFT", 24, 0)
+    editBox:SetPoint("LEFT", icon, "RIGHT", 6, 0)
     editBox:SetPoint("RIGHT", container, "RIGHT", -24, 0)
     editBox:SetHeight(16)
     editBox:SetAutoFocus(false)
-    editBox:SetFont(GetFontPath(), 11, "")
+    editBox:SetFont(GetFontPath(), 10, "")
     editBox:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
     editBox:SetMaxLetters(50)
 
     -- Placeholder text
     local placeholder = editBox:CreateFontString(nil, "OVERLAY")
-    SetFont(placeholder, 11, "", {C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.6})
+    SetFont(placeholder, 10, "", {C.textMuted[1], C.textMuted[2], C.textMuted[3], 1})
     placeholder:SetText("Search settings...")
     placeholder:SetPoint("LEFT", 0, 0)
 
@@ -5311,7 +5573,7 @@ function GUI:CreateSearchBox(parent)
                     container.onSearch(text)
                 end
             end)
-        elseif text == "" then
+        else
             if container.onClear then
                 container.onClear()
             end
@@ -5324,6 +5586,16 @@ function GUI:CreateSearchBox(parent)
     end)
     editBox:SetScript("OnEditFocusLost", function()
         container:SetBackdropBorderColor(0.25, 0.28, 0.32, 1)
+    end)
+    editBox:HookScript("OnEditFocusGained", function()
+        if UIKit and UIKit.UpdateBorderLines then
+            UIKit.UpdateBorderLines(container, 1, C.borderAccent[1], C.borderAccent[2], C.borderAccent[3], 1)
+        end
+    end)
+    editBox:HookScript("OnEditFocusLost", function()
+        if UIKit and UIKit.UpdateBorderLines then
+            UIKit.UpdateBorderLines(container, 1, 1, 1, 1, 0.2)
+        end
     end)
 
     -- ESC clears search
@@ -5355,80 +5627,68 @@ function GUI:ExecuteSearch(searchTerm)
 
     local results = {}
     local navResults = {}
-    local lowerSearch = searchTerm:lower()
+    local searchTerms = BuildSearchTerms(searchTerm)
 
-    -- Search navigation items (tabs, subtabs, sections)
-    for _, entry in ipairs(self.NavigationRegistry or {}) do
-        local score = 0
-
-        -- Check keywords (tab name, subtab name, section name)
-        if entry.keywords then
-            for _, keyword in ipairs(entry.keywords) do
-                local lowerKeyword = (keyword or ""):lower()
-                if lowerKeyword ~= "" and lowerKeyword:find(lowerSearch, 1, true) then
-                    -- Higher score for exact/starts-with matches
-                    if lowerKeyword == lowerSearch then
-                        score = math.max(score, 200)
-                    elseif lowerKeyword:sub(1, lowerSearch:len()) == lowerSearch then
-                        score = math.max(score, 180)
-                    else
-                        score = math.max(score, 150)
-                    end
+    local function ScoreEntry(entry, keywordWeight, contextWeight)
+        local bestScore = 0
+        for _, term in ipairs(searchTerms) do
+            local score = ScoreSearchText(entry.label, term)
+            if entry.keywords then
+                for _, keyword in ipairs(entry.keywords) do
+                    score = math.max(score, ScoreSearchText(keyword, term) * keywordWeight)
                 end
             end
+            if contextWeight and (entry.tabName or entry.subTabName or entry.sectionName) then
+                local contextText = table.concat({
+                    entry.tabName or "",
+                    entry.subTabName or "",
+                    entry.sectionName or "",
+                }, " ")
+                score = math.max(score, ScoreSearchText(contextText, term) * contextWeight)
+            end
+            bestScore = math.max(bestScore, score)
         end
+        return bestScore
+    end
 
-        if score > 0 then
-            table.insert(navResults, {data = entry, score = score, isNavigation = true})
+    local mergedNavResults = {}
+    local mergedNavByKey = {}
+    for _, registry in ipairs({
+        self.StaticNavigationRegistry or {},
+        self.NavigationRegistry or {},
+    }) do
+        for _, entry in ipairs(registry) do
+            MergeSearchHit(self, mergedNavResults, mergedNavByKey, entry, ScoreEntry(entry, 0.9))
         end
     end
 
-    -- Sort navigation results by specificity (sections > subtabs > tabs), then score
-    table.sort(navResults, function(a, b)
-        -- Navigation type priority: section (most specific) > subtab > tab
+    -- Sort navigation results by score, then specificity.
+    table.sort(mergedNavResults, function(a, b)
+        if a.score ~= b.score then
+            return a.score > b.score
+        end
         local typeOrder = {section = 1, subtab = 2, tab = 3}
         local aOrder = typeOrder[a.data.navType] or 4
         local bOrder = typeOrder[b.data.navType] or 4
         if aOrder ~= bOrder then
             return aOrder < bOrder
         end
-        if a.score ~= b.score then
-            return a.score > b.score
-        end
         return (a.data.label or "") < (b.data.label or "")
     end)
 
-    -- Search settings registry
-    for _, entry in ipairs(self.SettingsRegistry) do
-        local score = 0
-
-        -- Label match (highest priority)
-        local lowerLabel = (entry.label or ""):lower()
-        if lowerLabel:find(lowerSearch, 1, true) then
-            score = 100
-            -- Bonus for starts-with match
-            if lowerLabel:sub(1, lowerSearch:len()) == lowerSearch then
-                score = score + 50
-            end
-        end
-
-        -- Keyword match (secondary)
-        if score == 0 and entry.keywords then
-            for _, keyword in ipairs(entry.keywords) do
-                if keyword:lower():find(lowerSearch, 1, true) then
-                    score = 50
-                    break
-                end
-            end
-        end
-
-        if score > 0 then
-            table.insert(results, {data = entry, score = score})
+    local mergedSettingsResults = {}
+    local mergedSettingsByKey = {}
+    for _, registry in ipairs({
+        self.StaticSettingsRegistry or {},
+        self.SettingsRegistry or {},
+    }) do
+        for _, entry in ipairs(registry) do
+            MergeSearchHit(self, mergedSettingsResults, mergedSettingsByKey, entry, ScoreEntry(entry, 0.72, 0.45))
         end
     end
 
     -- Sort settings results by score (highest first), then alphabetically
-    table.sort(results, function(a, b)
+    table.sort(mergedSettingsResults, function(a, b)
         if a.score ~= b.score then
             return a.score > b.score
         end
@@ -5436,21 +5696,143 @@ function GUI:ExecuteSearch(searchTerm)
     end)
 
     -- Limit settings results
-    if #results > SEARCH_MAX_RESULTS then
-        for i = SEARCH_MAX_RESULTS + 1, #results do
-            results[i] = nil
+    if #mergedSettingsResults > SEARCH_MAX_RESULTS then
+        for i = SEARCH_MAX_RESULTS + 1, #mergedSettingsResults do
+            mergedSettingsResults[i] = nil
         end
     end
 
     -- Limit navigation results (keep fewer since they're shown prominently)
     local NAV_MAX_RESULTS = 10
-    if #navResults > NAV_MAX_RESULTS then
-        for i = NAV_MAX_RESULTS + 1, #navResults do
-            navResults[i] = nil
+    if #mergedNavResults > NAV_MAX_RESULTS then
+        for i = NAV_MAX_RESULTS + 1, #mergedNavResults do
+            mergedNavResults[i] = nil
         end
     end
 
+    for _, result in ipairs(mergedSettingsResults) do
+        table.insert(results, result)
+    end
+    for _, result in ipairs(mergedNavResults) do
+        result.isNavigation = true
+        table.insert(navResults, result)
+    end
+
     return results, navResults
+end
+
+function GUI:HandleSearchDescriptorChange(descriptor)
+    if type(descriptor) ~= "table" then
+        return
+    end
+
+    local settings = ns.Settings
+    local registry = settings and settings.Registry
+    local feature = registry
+        and type(registry.GetFeature) == "function"
+        and descriptor.featureId
+        and registry:GetFeature(descriptor.featureId)
+        or nil
+
+    if feature and type(feature.apply) == "function" then
+        pcall(feature.apply)
+    end
+
+    local compat = settings and settings.RenderAdapters
+    if descriptor.providerKey
+        and compat
+        and type(compat.NotifyProviderChanged) == "function" then
+        compat.NotifyProviderChanged(descriptor.providerKey, { source = "search" })
+    end
+
+    if feature and feature.category and ns.Registry and type(ns.Registry.RefreshAll) == "function" then
+        ns.Registry:RefreshAll(feature.category)
+    end
+end
+
+function GUI:CreateSearchWidgetFromDescriptor(parent, entry)
+    local descriptor = entry and entry.widgetDescriptor
+    if type(descriptor) ~= "table" then
+        return nil
+    end
+
+    local dbTable = self:ResolveSearchDBTable(descriptor.dbPath)
+    if not dbTable then
+        return nil
+    end
+
+    local label = entry.label
+    local registryInfo = {
+        keywords = entry.keywords,
+        description = entry.description,
+        relatedTo = entry.relatedTo,
+    }
+
+    if descriptor.kind == "toggle" then
+        return self:CreateFormToggle(parent, label, descriptor.dbKey, dbTable, function()
+            GUI:HandleSearchDescriptorChange(descriptor)
+        end, registryInfo)
+    end
+
+    if descriptor.kind == "toggle_inverted" then
+        return self:CreateFormToggleInverted(parent, label, descriptor.dbKey, dbTable, function()
+            GUI:HandleSearchDescriptorChange(descriptor)
+        end, registryInfo)
+    end
+
+    if descriptor.kind == "editbox" then
+        return self:CreateFormEditBox(parent, label, descriptor.dbKey, dbTable, function()
+            GUI:HandleSearchDescriptorChange(descriptor)
+        end, descriptor.options or {}, registryInfo)
+    end
+
+    if descriptor.kind == "slider" then
+        return self:CreateFormSlider(
+            parent,
+            label,
+            descriptor.min,
+            descriptor.max,
+            descriptor.step,
+            descriptor.dbKey,
+            dbTable,
+            function()
+                GUI:HandleSearchDescriptorChange(descriptor)
+            end,
+            descriptor.options or {},
+            registryInfo
+        )
+    end
+
+    if descriptor.kind == "dropdown" and type(descriptor.options) == "table" then
+        return self:CreateFormDropdown(
+            parent,
+            label,
+            descriptor.options,
+            descriptor.dbKey,
+            dbTable,
+            function()
+                GUI:HandleSearchDescriptorChange(descriptor)
+            end,
+            registryInfo,
+            descriptor.dropdownOptions or {}
+        )
+    end
+
+    if descriptor.kind == "colorpicker" then
+        return self:CreateFormColorPicker(
+            parent,
+            label,
+            descriptor.dbKey,
+            dbTable,
+            function()
+                GUI:HandleSearchDescriptorChange(descriptor)
+            end,
+            descriptor.options or {},
+            registryInfo
+        )
+    end
+
+    return nil
 end
 
 -- Render search results into a content frame (for Search tab)
@@ -5484,6 +5866,15 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
     end
     content._textures = {}
 
+    -- Clear previous breadcrumb click buttons (search jump-to-setting)
+    if content._clickButtons then
+        for _, btn in ipairs(content._clickButtons) do
+            btn:Hide()
+            btn:SetParent(nil)
+        end
+    end
+    content._clickButtons = {}
+
     local y = -10
     local PADDING = 15
     local FORM_ROW = 32
@@ -5491,58 +5882,35 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
     -- Check if we have any results at all (either settings or navigation)
     local hasResults = (results and #results > 0) or (navResults and #navResults > 0)
 
-    -- Index progress info
-    local isIndexing = not GUI._searchIndexBuilt and GUI._searchIndexTotal > 0
-    local indexProgress = GUI._searchIndexProgress or 0
-    local indexTotal = GUI._searchIndexTotal or 0
-
     -- No results message
     if not hasResults then
         if searchTerm and searchTerm ~= "" then
             local noResults = content:CreateFontString(nil, "OVERLAY")
             SetFont(noResults, 12, "", C.textMuted)
-            noResults:SetText("No settings found for \"" .. searchTerm .. "\"")
+            noResults:SetText("No settings match \"" .. searchTerm .. "\"")
             noResults:SetPoint("TOPLEFT", PADDING, y)
             table.insert(content._fontStrings, noResults)
             y = y - 30
 
-            if isIndexing then
-                local tip = content:CreateFontString(nil, "OVERLAY")
-                SetFont(tip, 10, "", {C.accent[1], C.accent[2], C.accent[3], 0.8})
-                tip:SetText("Indexing settings... (" .. indexProgress .. "/" .. indexTotal .. " tabs) — more results may appear shortly")
-                tip:SetPoint("TOPLEFT", PADDING, y)
-                table.insert(content._fontStrings, tip)
-                y = y - 30
-            else
-                local tip = content:CreateFontString(nil, "OVERLAY")
-                SetFont(tip, 10, "", {C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.7})
-                tip:SetText("Try different keywords")
-                tip:SetPoint("TOPLEFT", PADDING, y)
-                table.insert(content._fontStrings, tip)
-                y = y - 30
-            end
+            local tip = content:CreateFontString(nil, "OVERLAY")
+            SetFont(tip, 10, "", {C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.7})
+            tip:SetText("Try different keywords")
+            tip:SetPoint("TOPLEFT", PADDING, y)
+            table.insert(content._fontStrings, tip)
+            y = y - 30
         else
-            -- Empty state - show instructions
             local instructions = content:CreateFontString(nil, "OVERLAY")
             SetFont(instructions, 12, "", C.textMuted)
-            instructions:SetText("Type at least 2 characters to search settings")
+            instructions:SetText("Search settings — try 'cooldown', 'party', 'action bars'")
             instructions:SetPoint("TOPLEFT", PADDING, y)
             table.insert(content._fontStrings, instructions)
-            y = y - 30
+            y = y - 20
 
-            if isIndexing then
-                local tip2 = content:CreateFontString(nil, "OVERLAY")
-                SetFont(tip2, 10, "", {C.accent[1], C.accent[2], C.accent[3], 0.8})
-                tip2:SetText("Indexing settings... (" .. indexProgress .. "/" .. indexTotal .. " tabs)")
-                tip2:SetPoint("TOPLEFT", PADDING, y)
-                table.insert(content._fontStrings, tip2)
-            else
-                local tip2 = content:CreateFontString(nil, "OVERLAY")
-                SetFont(tip2, 10, "", {C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.7})
-                tip2:SetText("All settings indexed and ready to search")
-                tip2:SetPoint("TOPLEFT", PADDING, y)
-                table.insert(content._fontStrings, tip2)
-            end
+            local hint = content:CreateFontString(nil, "OVERLAY")
+            SetFont(hint, 10, "", {C.textMuted[1], C.textMuted[2], C.textMuted[3], 0.6})
+            hint:SetText("Shortcut: / or Ctrl+F to focus")
+            hint:SetPoint("TOPLEFT", PADDING, y)
+            table.insert(content._fontStrings, hint)
             y = y - 20
         end
 
@@ -5612,7 +5980,13 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
             local targetSubTabIndex = entry.subTabIndex
             local targetSectionName = entry.sectionName
             navRow:SetScript("OnClick", function()
-                GUI:NavigateTo(targetTabIndex, targetSubTabIndex, targetSectionName)
+                GUI:NavigateSearchResult({
+                    tabIndex = targetTabIndex,
+                    subTabIndex = targetSubTabIndex,
+                    sectionName = targetSectionName,
+                    tabName = entry.tabName,
+                    subTabName = entry.subTabName,
+                })
             end)
 
             y = y - 30
@@ -5637,8 +6011,14 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
         return
     end
 
-    -- Build composite group key from available metadata
+    -- Build composite group key from available metadata. Translate the
+    -- registered tab/subtab names through the nav map to tile/sub-page
+    -- names so headers reflect the current sidebar taxonomy.
     local function GetGroupKey(entry)
+        if GUI.GetSearchBreadcrumb then
+            local v2 = GUI:GetSearchBreadcrumb(entry)
+            if v2 and #v2 > 0 then return table.concat(v2, " > ") end
+        end
         local parts = {entry.tabName or "Other"}
         if entry.subTabName and entry.subTabName ~= "" then
             table.insert(parts, entry.subTabName)
@@ -5679,7 +6059,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
         table.insert(content._fontStrings, header)
 
         -- "Go >" navigation button
-        if groupData.tabIndex then
+        if GUI.ResolveSearchNavigation and GUI:ResolveSearchNavigation(groupData) then
             local goBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
             goBtn:SetSize(36, 16)
             goBtn:SetPoint("LEFT", header, "RIGHT", 8, 0)
@@ -5706,11 +6086,9 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                 self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
             end)
 
-            local targetTabIndex = groupData.tabIndex
-            local targetSubTabIndex = groupData.subTabIndex
-            local targetSectionName = groupData.sectionName
+            local clickEntry = groupData
             goBtn:SetScript("OnClick", function()
-                GUI:NavigateTo(targetTabIndex, targetSubTabIndex, targetSectionName)
+                GUI:NavigateSearchResult(clickEntry)
             end)
         end
 
@@ -5728,21 +6106,132 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
         for _, result in ipairs(group.entries) do
             local entry = result.data
 
-            if entry.widgetBuilder then
-                local widget = entry.widgetBuilder(content)
+            local widget = nil
+            if entry.widgetBuilder or entry.widgetDescriptor then
+                -- Breadcrumb: "Tile » Sub-page » Section" above the widget.
+                -- In V2, prefer names from the V2 tile/sub-page taxonomy.
+                local crumbParts
+                if GUI.GetSearchBreadcrumb then
+                    crumbParts = GUI:GetSearchBreadcrumb(entry)
+                end
+                if not crumbParts then
+                    crumbParts = {}
+                    if entry.tabName and entry.tabName ~= "" then
+                        table.insert(crumbParts, entry.tabName)
+                    end
+                    if entry.subTabName and entry.subTabName ~= "" then
+                        table.insert(crumbParts, entry.subTabName)
+                    end
+                    if entry.sectionName and entry.sectionName ~= "" then
+                        table.insert(crumbParts, entry.sectionName)
+                    end
+                end
+                local crumbText = table.concat(crumbParts, " \194\187 ")
+
+                local CRUMB_HEIGHT = 14
+                local DESC_HEIGHT = 16
+
+                if crumbText ~= "" then
+                    local crumbBtn = CreateFrame("Button", nil, content)
+                    crumbBtn:SetPoint("TOPLEFT", content, "TOPLEFT", PADDING + 4, y - 2)
+                    crumbBtn:SetHeight(14)
+                    crumbBtn:SetWidth(content:GetWidth() - (PADDING * 2) - 8)
+
+                    local crumb = crumbBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    crumb:SetPoint("LEFT", crumbBtn, "LEFT", 0, 0)
+                    crumb:SetText(crumbText)
+                    crumb:SetTextColor(0.55, 0.55, 0.6, 1)
+                    crumb:SetJustifyH("LEFT")
+
+                    crumbBtn:SetScript("OnEnter", function() crumb:SetTextColor(1, 1, 1, 1) end)
+                    crumbBtn:SetScript("OnLeave", function() crumb:SetTextColor(0.55, 0.55, 0.6, 1) end)
+
+                    local clickEntry = entry
+                    crumbBtn:SetScript("OnClick", function()
+                        GUI:NavigateSearchResult(clickEntry, {
+                            scrollToLabel = clickEntry.label,
+                            pulse = true,
+                        })
+                    end)
+
+                    table.insert(content._fontStrings, crumb)
+                    table.insert(content._clickButtons, crumbBtn)
+                    y = y - CRUMB_HEIGHT
+                end
+
+                if entry.widgetBuilder then
+                    widget = entry.widgetBuilder(content)
+                else
+                    widget = GUI:CreateSearchWidgetFromDescriptor(content, entry)
+                end
                 if widget then
                     widget:SetPoint("TOPLEFT", PADDING, y)
                     widget:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
                     y = y - FORM_ROW
                 end
-            else
-                -- Fallback: show label if no builder
-                local fallbackLabel = content:CreateFontString(nil, "OVERLAY")
-                SetFont(fallbackLabel, 11, "", C.textMuted)
-                fallbackLabel:SetText(entry.label or "Unknown setting")
-                fallbackLabel:SetPoint("TOPLEFT", PADDING, y)
-                table.insert(content._fontStrings, fallbackLabel)
-                y = y - 24
+
+                -- Description: muted one-liner under the widget
+                if entry.description and entry.description ~= "" then
+                    local desc = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    desc:SetPoint("TOPLEFT", PADDING + 4, y)
+                    desc:SetPoint("RIGHT", content, "RIGHT", -(PADDING + 4), 0)
+                    desc:SetText(entry.description)
+                    desc:SetTextColor(0.7, 0.7, 0.72, 1)
+                    desc:SetJustifyH("LEFT")
+                    desc:SetWordWrap(true)
+                    table.insert(content._fontStrings, desc)
+                    y = y - DESC_HEIGHT
+                end
+            end
+
+            if not widget then
+                local hasRoute = GUI.ResolveSearchNavigation and GUI:ResolveSearchNavigation(entry)
+                if hasRoute then
+                    local fallbackRow = CreateFrame("Button", nil, content, "BackdropTemplate")
+                    fallbackRow:SetSize(content:GetWidth() - (PADDING * 2), 24)
+                    fallbackRow:SetPoint("TOPLEFT", PADDING, y)
+                    local rowPx = QUICore:GetPixelSize(fallbackRow)
+                    fallbackRow:SetBackdrop({
+                        bgFile = "Interface\\BUTTONS\\WHITE8X8",
+                        edgeFile = "Interface\\BUTTONS\\WHITE8X8",
+                        edgeSize = rowPx,
+                    })
+                    fallbackRow:SetBackdropColor(0.12, 0.14, 0.17, 0.55)
+                    fallbackRow:SetBackdropBorderColor(0.2, 0.22, 0.25, 0.45)
+
+                    local fallbackLabel = fallbackRow:CreateFontString(nil, "OVERLAY")
+                    SetFont(fallbackLabel, 11, "", C.textMuted)
+                    fallbackLabel:SetPoint("LEFT", 8, 0)
+                    fallbackLabel:SetPoint("RIGHT", -8, 0)
+                    fallbackLabel:SetJustifyH("LEFT")
+                    fallbackLabel:SetText(entry.label or "Unknown setting")
+
+                    fallbackRow:SetScript("OnEnter", function(self)
+                        self:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.12)
+                        self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.45)
+                        fallbackLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+                    end)
+                    fallbackRow:SetScript("OnLeave", function(self)
+                        self:SetBackdropColor(0.12, 0.14, 0.17, 0.55)
+                        self:SetBackdropBorderColor(0.2, 0.22, 0.25, 0.45)
+                        fallbackLabel:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+                    end)
+                    fallbackRow:SetScript("OnClick", function()
+                        GUI:NavigateSearchResult(entry, {
+                            scrollToLabel = entry.label,
+                            pulse = true,
+                        })
+                    end)
+                    y = y - 28
+                else
+                    -- Fallback: show label if no builder
+                    local fallbackLabel = content:CreateFontString(nil, "OVERLAY")
+                    SetFont(fallbackLabel, 11, "", C.textMuted)
+                    fallbackLabel:SetText(entry.label or "Unknown setting")
+                    fallbackLabel:SetPoint("TOPLEFT", PADDING, y)
+                    table.insert(content._fontStrings, fallbackLabel)
+                    y = y - 24
+                end
             end
         end
 
@@ -5753,17 +6242,6 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
     -- Re-enable auto-registration (guaranteed even if widget builder errored)
     GUI._suppressSearchRegistration = false
 
-    -- Show indexing progress note at the bottom if still building
-    if isIndexing then
-        y = y - 10
-        local progressNote = content:CreateFontString(nil, "OVERLAY")
-        SetFont(progressNote, 10, "", {C.accent[1], C.accent[2], C.accent[3], 0.7})
-        progressNote:SetText("Indexing... (" .. indexProgress .. "/" .. indexTotal .. " tabs) — more results may appear")
-        progressNote:SetPoint("TOPLEFT", PADDING, y)
-        table.insert(content._fontStrings, progressNote)
-        y = y - 20
-    end
-
     content:SetHeight(math.abs(y) + 20)
 end
 
@@ -5772,590 +6250,6 @@ function GUI:ClearSearchInTab(content)
     self:RenderSearchResults(content, nil, nil, nil)
 end
 
-local function EnsureTable(t, key)
-    if not t[key] then
-        t[key] = {}
-    end
-    return t[key]
-end
-
-function GUI:GetSidebarSubTabs(frame, tabIndex)
-    if not frame or not frame.pages then return {} end
-    local page = frame.pages[tabIndex]
-    if not page then return {} end
-    if page._subTabDefs then return page._subTabDefs end
-
-    local group = page._subTabGroup
-    if group and group.subTabDefs then
-        page._subTabDefs = group.subTabDefs
-        return page._subTabDefs
-    end
-    return {}
-end
-
-function GUI:IsSidebarSubTabSectionsHidden(frame, tabIndex, subTabIndex)
-    if not frame or not tabIndex or not subTabIndex then return false end
-    return frame._sidebarHiddenSections
-        and frame._sidebarHiddenSections[tabIndex]
-        and frame._sidebarHiddenSections[tabIndex][subTabIndex]
-        and true or false
-end
-
-function GUI:SetSidebarSubTabSectionsHidden(frame, tabIndex, subTabIndex, hidden)
-    if not frame or not tabIndex or not subTabIndex then return end
-    frame._sidebarHiddenSections = frame._sidebarHiddenSections or {}
-    frame._sidebarHiddenSections[tabIndex] = frame._sidebarHiddenSections[tabIndex] or {}
-    frame._sidebarHiddenSections[tabIndex][subTabIndex] = hidden and true or nil
-    self:RefreshSidebarTree(frame)
-end
-
-function GUI:RelayoutSidebarBottomItems(frame)
-    if not frame or not frame.sidebar then return end
-    local itemStride = 28
-    for i, item in ipairs(frame._sidebarBottomItems or {}) do
-        local y = (i - 1) * itemStride
-        item:ClearAllPoints()
-        item:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 0, y)
-        item:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -1, y)
-    end
-
-    local bottomCount = #(frame._sidebarBottomItems or {})
-    local reserved = bottomCount > 0 and (bottomCount * itemStride + 8) or 6
-
-    if frame.sidebarBottomSeparator then
-        frame.sidebarBottomSeparator:ClearAllPoints()
-        frame.sidebarBottomSeparator:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 8, reserved)
-        frame.sidebarBottomSeparator:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -8, reserved)
-    end
-
-    if frame.sidebarTreeScroll then
-        frame.sidebarTreeScroll:ClearAllPoints()
-        frame.sidebarTreeScroll:SetPoint("TOPLEFT", frame.sidebar, "TOPLEFT", 0, -5)
-        frame.sidebarTreeScroll:SetPoint("TOPRIGHT", frame.sidebar, "TOPRIGHT", -1, -5)
-        frame.sidebarTreeScroll:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 0, reserved + 8)
-        frame.sidebarTreeScroll:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -1, reserved + 8)
-    end
-end
-
-local function PlayCaretToggleAnimation(caret)
-    if not caret then return end
-    if not caret._toggleAnim then
-        local ag = caret:CreateAnimationGroup()
-        local fadeDown = ag:CreateAnimation("Alpha")
-        fadeDown:SetOrder(1)
-        fadeDown:SetFromAlpha(1)
-        fadeDown:SetToAlpha(0.45)
-        fadeDown:SetDuration(0.06)
-        local fadeUp = ag:CreateAnimation("Alpha")
-        fadeUp:SetOrder(2)
-        fadeUp:SetFromAlpha(0.45)
-        fadeUp:SetToAlpha(1)
-        fadeUp:SetDuration(0.08)
-        caret._toggleAnim = ag
-    end
-    if caret._toggleAnim:IsPlaying() then
-        caret._toggleAnim:Stop()
-    end
-    caret._toggleAnim:Play()
-end
-
-local function CreateVectorCaret(parent, xOffset)
-    if UIKit and UIKit.CreateChevronCaret then
-        return UIKit.CreateChevronCaret(parent, {
-            point = "RIGHT",
-            relativeTo = parent,
-            relativePoint = "RIGHT",
-            xPixels = xOffset or -8,
-            yPixels = 0,
-            sizePixels = 10,
-            lineWidthPixels = 6,
-            lineHeightPixels = 1,
-        })
-    end
-
-    local caret = CreateFrame("Frame", nil, parent)
-    local function Pixels(value)
-        if QUICore and QUICore.Pixels then
-            return QUICore:Pixels(value, caret)
-        end
-        return value
-    end
-
-    caret:SetSize(Pixels(10), Pixels(10))
-    if QUICore and QUICore.SetSnappedPoint then
-        QUICore:SetSnappedPoint(caret, "RIGHT", parent, "RIGHT", xOffset or -8, 0)
-    else
-        caret:SetPoint("RIGHT", parent, "RIGHT", xOffset or -8, 0)
-    end
-
-    caret.line1 = caret:CreateTexture(nil, "OVERLAY")
-    caret.line1:SetSize(Pixels(6), Pixels(1))
-    caret.line1:SetColorTexture(1, 1, 1, 1)
-
-    caret.line2 = caret:CreateTexture(nil, "OVERLAY")
-    caret.line2:SetSize(Pixels(6), Pixels(1))
-    caret.line2:SetColorTexture(1, 1, 1, 1)
-
-    return caret
-end
-
-local function SetCaretVisual(caret, isExpanded, useAccent)
-    if not caret then return end
-    if UIKit and UIKit.SetChevronCaretExpanded and UIKit.SetChevronCaretColor then
-        UIKit.SetChevronCaretExpanded(caret, isExpanded)
-        if useAccent then
-            UIKit.SetChevronCaretColor(caret, C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
-        else
-            UIKit.SetChevronCaretColor(caret, C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
-        end
-        return
-    end
-
-    local function Pixels(value)
-        if QUICore and QUICore.Pixels then
-            return QUICore:Pixels(value, caret)
-        end
-        return value
-    end
-
-    caret:SetSize(Pixels(10), Pixels(10))
-    if caret.line1 then
-        caret.line1:SetSize(Pixels(6), Pixels(1))
-    end
-    if caret.line2 then
-        caret.line2:SetSize(Pixels(6), Pixels(1))
-    end
-
-    if caret.line1 and caret.line2 then
-        if isExpanded then
-            -- Down chevron (v)
-            caret.line1:SetRotation(math.rad(-45))
-            caret.line1:ClearAllPoints()
-            caret.line1:SetPoint("CENTER", caret, "CENTER", -Pixels(2), 0)
-            caret.line2:SetRotation(math.rad(45))
-            caret.line2:ClearAllPoints()
-            caret.line2:SetPoint("CENTER", caret, "CENTER", Pixels(2), 0)
-        else
-            -- Right chevron (>)
-            caret.line1:SetRotation(math.rad(45))
-            caret.line1:ClearAllPoints()
-            caret.line1:SetPoint("CENTER", caret, "CENTER", -Pixels(1), Pixels(2))
-            caret.line2:SetRotation(math.rad(-45))
-            caret.line2:ClearAllPoints()
-            caret.line2:SetPoint("CENTER", caret, "CENTER", -Pixels(1), -Pixels(2))
-        end
-    end
-    if useAccent then
-        if caret.line1 then
-            caret.line1:SetVertexColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
-        end
-        if caret.line2 then
-            caret.line2:SetVertexColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
-        end
-    else
-        if caret.line1 then
-            caret.line1:SetVertexColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
-        end
-        if caret.line2 then
-            caret.line2:SetVertexColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
-        end
-    end
-end
-
-local function CreateSidebarTreeRow(frame, rowType, key)
-    local row = CreateFrame("Button", nil, frame.sidebarTreeContent)
-    row._treeKey = key
-    row._treeType = rowType
-    row._treeProgress = 0
-    row._treeTarget = 0
-    row:Hide()
-
-    row.hoverBg = row:CreateTexture(nil, "BACKGROUND")
-    row.hoverBg:SetAllPoints()
-    row.hoverBg:SetColorTexture(1, 1, 1, 0.04)
-    row.hoverBg:Hide()
-
-    row.activeBg = row:CreateTexture(nil, "ARTWORK")
-    row.activeBg:SetAllPoints()
-    row.activeBg:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.12)
-    row.activeBg:Hide()
-
-    row.text = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    if rowType == "subtab" then
-        SetFont(row.text, 10, "", C.textMuted)
-        row.text:SetPoint("LEFT", row, "LEFT", 26, 0)
-    else
-        SetFont(row.text, 10, "", C.textMuted)
-        row.text:SetPoint("LEFT", row, "LEFT", 40, 0)
-    end
-    row.text:SetJustifyH("LEFT")
-
-    row.expandText = CreateVectorCaret(row, -8)
-    row.expandText:Hide()
-
-    row:SetScript("OnEnter", function(self)
-        if not self._isActive then
-            self.hoverBg:Show()
-        end
-    end)
-    row:SetScript("OnLeave", function(self)
-        if not self._isActive then
-            self.hoverBg:Hide()
-        end
-    end)
-
-    table.insert(frame._sidebarDynamicRows, row)
-    return row
-end
-
-function GUI:StartSidebarTreeAnimation(frame)
-    if not frame then return end
-    if not frame._sidebarAnimFrame then
-        frame._sidebarAnimFrame = CreateFrame("Frame", nil, frame)
-    end
-
-    local anim = frame._sidebarAnimFrame
-    anim:SetScript("OnUpdate", function(self, elapsed)
-        local host = self._hostFrame
-        if not host then
-            self:SetScript("OnUpdate", nil)
-            return
-        end
-
-        local duration = GUI._sidebarAnimDuration or 0.16
-        local step = (duration > 0) and (elapsed / duration) or 1
-        local anyActive = false
-
-        for _, row in ipairs(host._sidebarDynamicRows or {}) do
-            local target = row._treeTarget or 0
-            local progress = row._treeProgress or 0
-            if math.abs(progress - target) > 0.001 then
-                if target > progress then
-                    progress = math.min(target, progress + step)
-                else
-                    progress = math.max(target, progress - step)
-                end
-                row._treeProgress = progress
-                if progress > 0 then
-                    row:Show()
-                elseif target <= 0 then
-                    row:Hide()
-                end
-                anyActive = true
-            end
-        end
-
-        GUI:RelayoutSidebarTree(host)
-        if not anyActive then
-            self:SetScript("OnUpdate", nil)
-        end
-    end)
-    anim._hostFrame = frame
-end
-
-function GUI:RelayoutSidebarTree(frame)
-    if not frame or not frame.sidebarTreeContent then return end
-    local y = -5
-    local spacing = 2
-    local h1 = GUI._sidebarRowHeights.level1
-    local h2 = GUI._sidebarRowHeights.level2
-    local h3 = GUI._sidebarRowHeights.level3
-
-    local function IsRowAnimating(row)
-        if not row then return false end
-        local p = row._treeProgress or 0
-        local t = row._treeTarget or 0
-        return p > 0.001 or t > 0.001
-    end
-
-    for _, tab in ipairs(frame._sidebarTopTabs or {}) do
-        tab:ClearAllPoints()
-        tab:SetPoint("TOPLEFT", frame.sidebarTreeContent, "TOPLEFT", 0, y)
-        tab:SetPoint("TOPRIGHT", frame.sidebarTreeContent, "TOPRIGHT", -1, y)
-        tab:SetHeight(h1)
-        y = y - h1 - spacing
-
-        local subDefs = self:GetSidebarSubTabs(frame, tab.index)
-        local subRowsByTab = frame._sidebarTreeSubRows and frame._sidebarTreeSubRows[tab.index]
-        local sectionRowsByTab = frame._sidebarTreeSectionRows and frame._sidebarTreeSectionRows[tab.index]
-        local isTabExpanded = frame._sidebarExpandedTabs and frame._sidebarExpandedTabs[tab.index]
-        local hasAnimatingSubRows = false
-
-        for _, subDef in ipairs(subDefs) do
-            local subRow = subRowsByTab and subRowsByTab[subDef.index]
-            if IsRowAnimating(subRow) then
-                hasAnimatingSubRows = true
-                break
-            end
-        end
-
-        if isTabExpanded or hasAnimatingSubRows then
-            for _, subDef in ipairs(subDefs) do
-                local subRow = subRowsByTab and subRowsByTab[subDef.index]
-                if IsRowAnimating(subRow) then
-                    local p = math.max(0, math.min(1, subRow._treeProgress or 0))
-                    local rowH = math.max(1, h2 * p)
-                    subRow:ClearAllPoints()
-                    subRow:SetPoint("TOPLEFT", frame.sidebarTreeContent, "TOPLEFT", 0, y)
-                    subRow:SetPoint("TOPRIGHT", frame.sidebarTreeContent, "TOPRIGHT", -1, y)
-                    subRow:SetHeight(rowH)
-                    subRow:SetAlpha(p)
-                    y = y - rowH - (spacing * p)
-
-                    local sectionRowsBySub = sectionRowsByTab and sectionRowsByTab[subDef.index]
-                    local isSubExpanded = frame._sidebarExpandedSubTabs
-                        and frame._sidebarExpandedSubTabs[tab.index]
-                        and frame._sidebarExpandedSubTabs[tab.index][subDef.index]
-                    local hasAnimatingSections = false
-                    if sectionRowsBySub then
-                        for _, secRow in pairs(sectionRowsBySub) do
-                            if IsRowAnimating(secRow) then
-                                hasAnimatingSections = true
-                                break
-                            end
-                        end
-                    end
-
-                    if isSubExpanded or hasAnimatingSections then
-                        local sectionNames = self:GetOrderedSections(tab.index, subDef.index)
-                        local seenNames = {}
-                        for _, sectionName in ipairs(sectionNames) do
-                            seenNames[sectionName] = true
-                            local secRow = sectionRowsBySub and sectionRowsBySub[sectionName]
-                            if IsRowAnimating(secRow) then
-                                local sp = math.max(0, math.min(1, secRow._treeProgress or 0))
-                                local secH = math.max(1, h3 * sp)
-                                secRow:ClearAllPoints()
-                                secRow:SetPoint("TOPLEFT", frame.sidebarTreeContent, "TOPLEFT", 0, y)
-                                secRow:SetPoint("TOPRIGHT", frame.sidebarTreeContent, "TOPRIGHT", -1, y)
-                                secRow:SetHeight(secH)
-                                secRow:SetAlpha(sp)
-                                y = y - secH - (spacing * sp)
-                            end
-                        end
-
-                        -- Fallback for any animated section row not present in current ordered list.
-                        if sectionRowsBySub then
-                            for sectionName, secRow in pairs(sectionRowsBySub) do
-                                if not seenNames[sectionName] and IsRowAnimating(secRow) then
-                                    local sp = math.max(0, math.min(1, secRow._treeProgress or 0))
-                                    local secH = math.max(1, h3 * sp)
-                                    secRow:ClearAllPoints()
-                                    secRow:SetPoint("TOPLEFT", frame.sidebarTreeContent, "TOPLEFT", 0, y)
-                                    secRow:SetPoint("TOPRIGHT", frame.sidebarTreeContent, "TOPRIGHT", -1, y)
-                                    secRow:SetHeight(secH)
-                                    secRow:SetAlpha(sp)
-                                    y = y - secH - (spacing * sp)
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    frame.sidebarTreeContent:SetHeight(math.max(1, math.abs(y) + 12))
-end
-
-function GUI:RefreshSidebarTree(frame)
-    frame = frame or self.MainFrame
-    if not frame or not frame.sidebarTreeContent then return end
-
-    frame._sidebarExpandedTabs = frame._sidebarExpandedTabs or {}
-    frame._sidebarExpandedSubTabs = frame._sidebarExpandedSubTabs or {}
-    frame._sidebarTreeSubRows = frame._sidebarTreeSubRows or {}
-    frame._sidebarTreeSectionRows = frame._sidebarTreeSectionRows or {}
-    frame._sidebarDynamicRows = frame._sidebarDynamicRows or {}
-
-    local activeTab = frame.activeTab
-    local activeSubTab
-    if activeTab and frame.pages and frame.pages[activeTab] and frame.pages[activeTab]._subTabGroup then
-        activeSubTab = frame.pages[activeTab]._subTabGroup.selectedTab
-    end
-
-    local activeSectionKey = frame._sidebarActiveSectionKey
-    local touched = {}
-
-    for _, tab in ipairs(frame._sidebarTopTabs or {}) do
-        local page = frame.pages and frame.pages[tab.index]
-        local subDefs = self:GetSidebarSubTabs(frame, tab.index)
-        local hasSubTabs = (#subDefs > 0) or (tab._hasSubTabsHint and true or false)
-
-        if tab.expandText then
-            if hasSubTabs then
-                local isExpanded = frame._sidebarExpandedTabs and frame._sidebarExpandedTabs[tab.index]
-                if tab._lastCaretExpanded ~= isExpanded then
-                    tab._lastCaretExpanded = isExpanded
-                    PlayCaretToggleAnimation(tab.expandText)
-                end
-                SetCaretVisual(tab.expandText, isExpanded, isExpanded)
-                tab.expandText:Show()
-            else
-                tab.expandText:Hide()
-            end
-        end
-
-        if hasSubTabs and frame._sidebarExpandedTabs[tab.index] then
-            local tabSubRows = EnsureTable(frame._sidebarTreeSubRows, tab.index)
-            local tabSectionRows = EnsureTable(frame._sidebarTreeSectionRows, tab.index)
-            local expandedSubs = EnsureTable(frame._sidebarExpandedSubTabs, tab.index)
-
-            for _, subDef in ipairs(subDefs) do
-                local rowKey = tab.index .. ":" .. subDef.index
-                local subRow = tabSubRows[subDef.index]
-                if not subRow then
-                    subRow = CreateSidebarTreeRow(frame, "subtab", rowKey)
-                    tabSubRows[subDef.index] = subRow
-                    subRow:SetScript("OnClick", function(selfRow)
-                        local tabIndex = selfRow.tabIndex
-                        local subTabIndex = selfRow.subTabIndex
-                        if not tabIndex or not subTabIndex then return end
-                        frame._sidebarExpandedTabs[tabIndex] = true
-                        frame._sidebarExpandedSubTabs[tabIndex] = frame._sidebarExpandedSubTabs[tabIndex] or {}
-                        local isExpanded = frame._sidebarExpandedSubTabs[tabIndex][subTabIndex] and true or false
-                        -- Read current active state at click time, not from stale closure
-                        local curActiveTab = frame.activeTab
-                        local curActiveSubTab
-                        if curActiveTab and frame.pages and frame.pages[curActiveTab] and frame.pages[curActiveTab]._subTabGroup then
-                            curActiveSubTab = frame.pages[curActiveTab]._subTabGroup.selectedTab
-                        end
-                        local isActive = (curActiveTab == tabIndex and curActiveSubTab == subTabIndex)
-                        if isExpanded and isActive then
-                            -- Check if content is scrolled away from top
-                            local regKey = GetSectionRegistryKey(tabIndex, subTabIndex)
-                            local order = GUI.SectionRegistryOrder[regKey]
-                            local registry = GUI.SectionRegistry[regKey]
-                            local scrollFrame
-                            if order and order[1] and registry and registry[order[1]] then
-                                scrollFrame = registry[order[1]].scrollParent
-                            end
-                            local currentScroll = scrollFrame and scrollFrame.GetVerticalScroll and scrollFrame:GetVerticalScroll() or 0
-                            if currentScroll > 5 then
-                                -- Not at top — scroll to top and clear section highlight
-                                frame._sidebarManualSectionSelection = true
-                                scrollFrame:SetVerticalScroll(0)
-                                frame._sidebarActiveSectionKey = nil
-                                GUI:RefreshSidebarTree(frame)
-                                C_Timer.After(0.1, function()
-                                    frame._sidebarManualSectionSelection = nil
-                                end)
-                                return
-                            end
-                            -- Already at top (or no sections) — collapse
-                            frame._sidebarExpandedSubTabs[tabIndex][subTabIndex] = false
-                            frame._sidebarActiveSectionKey = nil
-                            GUI:RefreshSidebarTree(frame)
-                            return
-                        end
-                        frame._sidebarExpandedSubTabs[tabIndex][subTabIndex] = true
-                        frame._sidebarActiveSectionKey = nil
-                        GUI:NavigateTo(tabIndex, subTabIndex, nil)
-                    end)
-                end
-
-                subRow.tabIndex = tab.index
-                subRow.subTabIndex = subDef.index
-                subRow.text:SetText(subDef.name or ("Sub Tab " .. subDef.index))
-                subRow._isActive = (activeTab == tab.index and activeSubTab == subDef.index)
-                if subRow._isActive then
-                    subRow.text:SetTextColor(C_accent_r, C_accent_g, C_accent_b, C_accent_a)
-                    subRow.activeBg:Show()
-                    subRow.hoverBg:Hide()
-                else
-                    subRow.text:SetTextColor(C_text_r, C_text_g, C_text_b, 0.9)
-                    subRow.activeBg:Hide()
-                end
-
-                local sectionsHidden = self:IsSidebarSubTabSectionsHidden(frame, tab.index, subDef.index)
-                local sectionNames = sectionsHidden and {} or self:GetOrderedSections(tab.index, subDef.index)
-                local hasSections = (not sectionsHidden) and (#sectionNames > 0)
-                if hasSections then
-                    local isExpanded = expandedSubs[subDef.index] and true or false
-                    if subRow._lastCaretExpanded ~= isExpanded then
-                        subRow._lastCaretExpanded = isExpanded
-                        PlayCaretToggleAnimation(subRow.expandText)
-                    end
-                    SetCaretVisual(subRow.expandText, isExpanded, isExpanded)
-                    subRow.expandText:Show()
-                else
-                    subRow.expandText:Hide()
-                end
-
-                subRow._treeTarget = 1
-                touched[subRow] = true
-                if subRow._treeProgress <= 0 then
-                    subRow._treeProgress = 0
-                    subRow:Show()
-                end
-
-                if hasSections and expandedSubs[subDef.index] then
-                    local sectionRowBySub = EnsureTable(tabSectionRows, subDef.index)
-                    for _, sectionName in ipairs(sectionNames) do
-                        local sectionKey = tab.index .. ":" .. subDef.index .. ":" .. sectionName
-                        local secRow = sectionRowBySub[sectionName]
-                        if not secRow then
-                            secRow = CreateSidebarTreeRow(frame, "section", sectionKey)
-                            sectionRowBySub[sectionName] = secRow
-                            secRow:SetScript("OnClick", function(selfRow)
-                                if not selfRow.tabIndex or not selfRow.subTabIndex or not selfRow.sectionName then return end
-                                frame._sidebarExpandedTabs[selfRow.tabIndex] = true
-                                frame._sidebarExpandedSubTabs[selfRow.tabIndex] = frame._sidebarExpandedSubTabs[selfRow.tabIndex] or {}
-                                frame._sidebarExpandedSubTabs[selfRow.tabIndex][selfRow.subTabIndex] = true
-                                frame._sidebarActiveSectionKey = selfRow._treeKey
-                                GUI:NavigateTo(selfRow.tabIndex, selfRow.subTabIndex, selfRow.sectionName)
-                                GUI:RefreshSidebarTree(frame)
-                            end)
-                        end
-
-                        secRow.tabIndex = tab.index
-                        secRow.subTabIndex = subDef.index
-                        secRow.sectionName = sectionName
-                        secRow.text:SetText(sectionName)
-                        secRow.expandText:Hide()
-                        secRow._isActive = (activeSectionKey == secRow._treeKey)
-                        if secRow._isActive then
-                            secRow.text:SetTextColor(C_accent_r, C_accent_g, C_accent_b, C_accent_a)
-                            secRow.activeBg:Show()
-                            secRow.hoverBg:Hide()
-                        else
-                            secRow.text:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
-                            secRow.activeBg:Hide()
-                        end
-
-                        secRow._treeTarget = 1
-                        touched[secRow] = true
-                        if secRow._treeProgress <= 0 then
-                            secRow._treeProgress = 0
-                            secRow:Show()
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    for _, row in ipairs(frame._sidebarDynamicRows or {}) do
-        if not touched[row] then
-            row._treeTarget = 0
-        end
-    end
-
-    self:StartSidebarTreeAnimation(frame)
-    self:RelayoutSidebarTree(frame)
-end
-
-function GUI:ToggleSidebarTabExpanded(frame, tabIndex, forceExpanded)
-    if not frame then return end
-    frame._sidebarExpandedTabs = frame._sidebarExpandedTabs or {}
-    local current = frame._sidebarExpandedTabs[tabIndex]
-    local nextValue = (forceExpanded ~= nil) and forceExpanded or (not current)
-    frame._sidebarExpandedTabs[tabIndex] = nextValue
-    if not nextValue and frame._sidebarExpandedSubTabs then
-        frame._sidebarExpandedSubTabs[tabIndex] = nil
-    end
-    self:RefreshSidebarTree(frame)
-end
 
 ---------------------------------------------------------------------------
 -- MAIN OPTIONS FRAME
@@ -6370,7 +6264,6 @@ function GUI:CreateMainFrame()
     -- from leaking into the current options tree.
     self.SectionRegistry = {}
     self.SectionRegistryOrder = {}
-    self.SectionNavigateHandlers = {}
     self:ClearSearchContext()
 
     -- Initialize accent colors from saved DB before creating any widgets
@@ -6407,6 +6300,7 @@ function GUI:CreateMainFrame()
     frame:SetClampedToScreen(true)
     frame:SetToplevel(true)
     frame:EnableMouse(true)
+    frame:Hide()
 
     -- Apply saved panel alpha
     local savedAlpha = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile.configPanelAlpha or 0.97
@@ -6880,10 +6774,11 @@ function GUI:CreateMainFrame()
     sidebar:SetPoint("BOTTOMLEFT", 10, 10)
     sidebar:SetWidth(SIDEBAR_W)
 
-    -- Sidebar background
+    -- Sidebar background (slightly darker than main frame bg)
     local sidebarBg = sidebar:CreateTexture(nil, "BACKGROUND")
     sidebarBg:SetAllPoints()
-    sidebarBg:SetColorTexture(unpack(C.bgContent))
+    sidebarBg:SetColorTexture(C.bgSidebar[1], C.bgSidebar[2], C.bgSidebar[3], C.bgSidebar[4])
+    sidebar._bg = sidebarBg
 
     -- Right border on sidebar
     local sidebarBorder = sidebar:CreateTexture(nil, "ARTWORK")
@@ -6891,59 +6786,52 @@ function GUI:CreateMainFrame()
     sidebarBorder:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", 0, 0)
     sidebarBorder:SetWidth(1)
     sidebarBorder:SetColorTexture(C_border_r, C_border_g, C_border_b, C_border_a)
+    sidebar._divider = sidebarBorder
 
     frame.sidebar = sidebar
-    frame._sidebarItems = {}       -- All sidebar items (tabs + bottom items)
-    frame._sidebarTopTabs = {}     -- Top-level tab rows rendered in the tree
-    frame._sidebarBottomItems = {} -- Bottom section items (search, action buttons)
-    frame._sidebarDynamicRows = {} -- Level 2/3 rows (subtabs + sections)
-    frame._sidebarExpandedTabs = {}
-    frame._sidebarExpandedSubTabs = {}
 
-    local sidebarTreeScroll = CreateFrame("ScrollFrame", nil, sidebar, "UIPanelScrollFrameTemplate")
-    sidebarTreeScroll:SetPoint("TOPLEFT", sidebar, "TOPLEFT", 0, -5)
-    sidebarTreeScroll:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", -1, -5)
-    sidebarTreeScroll:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMLEFT", 0, 40)
-    sidebarTreeScroll:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", -1, 40)
-    ns.ApplyScrollWheel(sidebarTreeScroll)
+    ---------------------------------------------------------------------------
+    -- FOOTER BAR (spans content area width, 36px tall at bottom)
+    ---------------------------------------------------------------------------
+    local footer = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    footer:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMRIGHT", 1, 0)
+    footer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    footer:SetHeight(36)
 
-    local sidebarTreeContent = CreateFrame("Frame", nil, sidebarTreeScroll)
-    sidebarTreeContent:SetWidth(SIDEBAR_W - 1)
-    sidebarTreeContent:SetHeight(1)
-    sidebarTreeScroll:SetScrollChild(sidebarTreeContent)
-    sidebarTreeScroll:SetScript("OnSizeChanged", function(self, width)
-        sidebarTreeContent:SetWidth(width)
-        GUI:RelayoutSidebarTree(frame)
-    end)
+    local footerBg = footer:CreateTexture(nil, "BACKGROUND")
+    footerBg:SetAllPoints(footer)
+    footerBg:SetColorTexture(C.bgFooter[1], C.bgFooter[2], C.bgFooter[3], C.bgFooter[4])
 
-    local treeScrollBar = sidebarTreeScroll.ScrollBar
-    if treeScrollBar then
-        treeScrollBar:SetPoint("TOPLEFT", sidebarTreeScroll, "TOPRIGHT", 2, -16)
-        treeScrollBar:SetPoint("BOTTOMLEFT", sidebarTreeScroll, "BOTTOMRIGHT", 2, 16)
-        treeScrollBar:SetWidth(7)
-        if treeScrollBar.Track then
-            treeScrollBar.Track:SetAlpha(0)
+    local footerDivider = footer:CreateTexture(nil, "OVERLAY")
+    footerDivider:SetPoint("TOPLEFT", footer, "TOPLEFT", 0, 0)
+    footerDivider:SetPoint("TOPRIGHT", footer, "TOPRIGHT", 0, 0)
+    footerDivider:SetHeight(1)
+    footerDivider:SetColorTexture(C.border[1], C.border[2], C.border[3], C.border[4])
+
+    frame.footerBar = footer
+
+    -- Left cluster: Reset to Defaults + Reload UI (ghost variant, auto-sized)
+    local resetBtn = GUI:CreateButton(footer, "Reset to Defaults", 0, 22, function()
+        local tileIndex = frame._lastTileIndex
+        local tile = tileIndex and frame._tiles and frame._tiles[tileIndex]
+        if tile and tile.config and tile.config.onReset then
+            tile.config.onReset()
+        else
+            print("|cff34D399QUI|r: No reset hook registered for this page.")
         end
-        local thumb = treeScrollBar:GetThumbTexture()
-        if thumb then
-            thumb:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.7)
-            thumb:SetWidth(3)
-            thumb:SetHeight(26)
+    end, "ghost")
+    resetBtn:SetPoint("LEFT", footer, "LEFT", 18, 0)
+    frame._footerResetBtn = resetBtn
+
+    local reloadBtn = GUI:CreateButton(footer, "Reload UI", 0, 22, function()
+        if QUI and QUI.SafeReload then
+            QUI:SafeReload()
+        else
+            ReloadUI()
         end
-        local scrollUp = treeScrollBar.ScrollUpButton or treeScrollBar.Back
-        local scrollDown = treeScrollBar.ScrollDownButton or treeScrollBar.Forward
-        if scrollUp then scrollUp:Hide(); scrollUp:SetAlpha(0) end
-        if scrollDown then scrollDown:Hide(); scrollDown:SetAlpha(0) end
-    end
-
-    local sidebarBottomSeparator = sidebar:CreateTexture(nil, "ARTWORK")
-    sidebarBottomSeparator:SetHeight(1)
-    sidebarBottomSeparator:SetColorTexture(C.border[1], C.border[2], C.border[3], 0.6)
-
-    frame.sidebarTreeScroll = sidebarTreeScroll
-    frame.sidebarTreeContent = sidebarTreeContent
-    frame.sidebarBottomSeparator = sidebarBottomSeparator
-    self:RelayoutSidebarBottomItems(frame)
+    end, "ghost")
+    reloadBtn:SetPoint("LEFT", resetBtn, "RIGHT", 8, 0)
+    frame._footerReloadBtn = reloadBtn
 
     ---------------------------------------------------------------------------
     -- SUB-TAB BAR (sticky bar above scroll content, hidden by default)
@@ -6975,13 +6863,31 @@ function GUI:CreateMainFrame()
     ---------------------------------------------------------------------------
     local contentArea = CreateFrame("Frame", nil, frame)
     contentArea:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", 5, 0)
-    contentArea:SetPoint("BOTTOMRIGHT", -10, 10)
+    contentArea:SetPoint("BOTTOMRIGHT", -10, 36)
     contentArea:EnableMouse(false)
 
     -- Content background
     local contentBg = contentArea:CreateTexture(nil, "BACKGROUND")
     contentBg:SetAllPoints()
     contentBg:SetColorTexture(unpack(C.bgContent))
+
+    -- Decorative accent wash across the full content area.
+    local glow = contentArea:CreateTexture(nil, "BACKGROUND")
+    glow:SetAllPoints(contentArea)
+    glow:SetTexture("Interface\\BUTTONS\\WHITE8x8")
+    if glow.SetGradient then
+        local ok = pcall(function()
+            glow:SetGradient("HORIZONTAL",
+                CreateColor(C.accentGlow[1], C.accentGlow[2], C.accentGlow[3], C.accentGlow[4]),
+                CreateColor(C.accentGlow[1], C.accentGlow[2], C.accentGlow[3], 0))
+        end)
+        if not ok then
+            glow:SetColorTexture(C.accentGlow[1], C.accentGlow[2], C.accentGlow[3], C.accentGlow[4])
+        end
+    else
+        glow:SetColorTexture(C.accentGlow[1], C.accentGlow[2], C.accentGlow[3], C.accentGlow[4])
+    end
+    contentArea._accentGlow = glow
 
     frame.contentArea = contentArea
 
@@ -7098,320 +7004,6 @@ function GUI:CreateMainFrame()
 end
 
 ---------------------------------------------------------------------------
--- ADD TAB (Sidebar item style - vertical list on left)
----------------------------------------------------------------------------
-function GUI:AddTab(frame, name, pageCreateFunc, isBottomItem)
-    local index = #frame.tabs + 1
-
-    -- Create sidebar item button
-    local tabParent = isBottomItem and frame.sidebar or frame.sidebarTreeContent
-    local tab = CreateFrame("Button", nil, tabParent)
-    tab:SetHeight(26)
-    tab.index = index
-    tab.name = name
-    tab.isBottomItem = isBottomItem
-
-    -- Left active indicator bar (3px wide, hidden by default)
-    tab.indicator = tab:CreateTexture(nil, "OVERLAY")
-    tab.indicator:SetPoint("TOPLEFT", 0, 0)
-    tab.indicator:SetPoint("BOTTOMLEFT", 0, 0)
-    tab.indicator:SetWidth(3)
-    tab.indicator:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
-    tab.indicator:Hide()
-
-    -- Hover/active background
-    tab.hoverBg = tab:CreateTexture(nil, "BACKGROUND")
-    tab.hoverBg:SetAllPoints()
-    tab.hoverBg:SetColorTexture(1, 1, 1, 0.05)
-    tab.hoverBg:Hide()
-
-    -- Tab text - left-aligned with padding after indicator
-    tab.text = tab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(tab.text, 11, "", C.tabNormal)
-    tab.text:SetText(name)
-    tab.text:SetPoint("LEFT", tab, "LEFT", 15, 0)
-    tab.text:SetJustifyH("LEFT")
-
-    if not isBottomItem then
-        tab.expandText = CreateVectorCaret(tab, -8)
-        tab.expandText:Hide()
-    end
-
-    -- Position in sidebar
-    if isBottomItem then
-        table.insert(frame._sidebarBottomItems, tab)
-        self:RelayoutSidebarBottomItems(frame)
-    else
-        table.insert(frame._sidebarTopTabs, tab)
-    end
-
-    frame.tabs[index] = tab
-    frame.pages[index] = {
-        createFunc = pageCreateFunc,
-        frame = nil
-    }
-    frame._sidebarItems[index] = tab
-
-    -- Click handler
-    tab:SetScript("OnClick", function()
-        if not isBottomItem then
-            frame._sidebarExpandedTabs = frame._sidebarExpandedTabs or {}
-            local isExpanded = frame._sidebarExpandedTabs[index] and true or false
-            if isExpanded then
-                GUI:ToggleSidebarTabExpanded(frame, index, false)
-                return
-            end
-
-            -- Select first so lazy-built pages can expose sub-tab metadata immediately.
-            GUI:SelectTab(frame, index)
-            local subTabs = GUI:GetSidebarSubTabs(frame, index)
-            if #subTabs > 0 then
-                -- Opening a level-1 branch should not auto-cascade to level-3.
-                if frame._sidebarExpandedSubTabs then
-                    frame._sidebarExpandedSubTabs[index] = nil
-                end
-                GUI:ToggleSidebarTabExpanded(frame, index, true)
-            else
-                GUI:RefreshSidebarTree(frame)
-            end
-        else
-            GUI:SelectTab(frame, index)
-        end
-    end)
-
-    tab:SetScript("OnEnter", function(self)
-        if frame.activeTab ~= self.index then
-            self.text:SetTextColor(C_tabHover_r, C_tabHover_g, C_tabHover_b, C_tabHover_a)
-            self.hoverBg:Show()
-        end
-    end)
-
-    tab:SetScript("OnLeave", function(self)
-        if frame.activeTab ~= self.index then
-            self.text:SetTextColor(C_tabNormal_r, C_tabNormal_g, C_tabNormal_b, C_tabNormal_a)
-            self.hoverBg:Hide()
-        end
-    end)
-
-    -- Select first tab by default
-    if index == 1 then
-        GUI:SelectTab(frame, 1)
-        frame._sidebarExpandedTabs[index] = true
-        GUI:RefreshSidebarTree(frame)
-    elseif not isBottomItem then
-        GUI:RefreshSidebarTree(frame)
-    end
-
-    return tab
-end
-
----------------------------------------------------------------------------
--- ADD ACTION BUTTON (Sidebar bottom item - executes action, no page)
----------------------------------------------------------------------------
-function GUI:AddActionButton(frame, name, onClick, accentColor)
-    local index = #frame.tabs + 1
-
-    -- Create sidebar item in bottom section
-    local btn = CreateFrame("Button", nil, frame.sidebar)
-    btn:SetHeight(26)
-    btn.index = index
-    btn.name = name
-    btn.isActionButton = true
-
-    local borderColor = {C.accent[1], C.accent[2], C.accent[3], 1}
-    btn.borderColor = borderColor
-    btn.bgColor = {0.05, 0.08, 0.12, 1}
-
-    -- Hover background
-    btn.hoverBg = btn:CreateTexture(nil, "BACKGROUND")
-    btn.hoverBg:SetAllPoints()
-    btn.hoverBg:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.08)
-    btn.hoverBg:Hide()
-
-    -- Button text - left-aligned, mint colored
-    btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(btn.text, 11, "", borderColor)
-    btn.text:SetText(name)
-    btn.text:SetPoint("LEFT", btn, "LEFT", 15, 0)
-    btn.text:SetJustifyH("LEFT")
-
-    -- Position at bottom of sidebar, anchored upward
-    table.insert(frame._sidebarBottomItems, btn)
-    self:RelayoutSidebarBottomItems(frame)
-
-    -- Store in tabs array but mark as action button
-    frame.tabs[index] = btn
-    frame.pages[index] = nil
-    frame._sidebarItems[index] = btn
-
-    -- Click handler - execute action
-    btn:SetScript("OnClick", function()
-        if onClick then
-            onClick()
-        end
-    end)
-
-    btn:SetScript("OnEnter", function(self)
-        self.hoverBg:Show()
-        self.text:SetTextColor(C.accentHover[1], C.accentHover[2], C.accentHover[3], 1)
-    end)
-
-    btn:SetScript("OnLeave", function(self)
-        self.hoverBg:Hide()
-        self.text:SetTextColor(unpack(self.borderColor))
-    end)
-
-    return btn
-end
-
----------------------------------------------------------------------------
--- SELECT TAB
----------------------------------------------------------------------------
-function GUI:SelectTab(frame, index)
-    -- Skip if this is an action button (no page to show)
-    local targetTab = frame.tabs[index]
-    if targetTab and targetTab.isActionButton then
-        return
-    end
-
-    -- Start background index build if not done yet (non-blocking)
-    if index == self._searchTabIndex and self._allTabsAdded and not self._searchIndexBuilt then
-        self:StartBackgroundIndexBuild()
-    end
-
-    -- Auto-focus search input when navigating to Search tab
-    if index == self._searchTabIndex then
-        C_Timer.After(0, function()
-            local page = frame.pages[index]
-            if page and page.frame and page.frame.searchBox and page.frame.searchBox.editBox then
-                page.frame.searchBox.editBox:SetFocus()
-            end
-        end)
-    end
-
-    -- Clear search if active
-    if frame._searchActive then
-        if frame.searchBox and frame.searchBox.editBox then
-            frame.searchBox.editBox:SetText("")
-        end
-        self:ClearSearchResults()
-    end
-
-    -- Deselect previous sidebar item
-    if frame.activeTab then
-        local prevTab = frame.tabs[frame.activeTab]
-        if prevTab and not prevTab.isActionButton then
-            prevTab.text:SetTextColor(C_tabNormal_r, C_tabNormal_g, C_tabNormal_b, C_tabNormal_a)
-            if prevTab.indicator then prevTab.indicator:Hide() end
-            if prevTab.hoverBg then prevTab.hoverBg:Hide() end
-        end
-
-        if frame.pages[frame.activeTab] and frame.pages[frame.activeTab].frame then
-            frame.pages[frame.activeTab].frame:Hide()
-        end
-    end
-
-    -- Select new sidebar item
-    frame.activeTab = index
-    local tab = frame.tabs[index]
-    if tab and not tab.isActionButton then
-        tab.text:SetTextColor(C_accent_r, C_accent_g, C_accent_b, C_accent_a)
-        if tab.indicator then tab.indicator:Show() end
-        if tab.hoverBg then tab.hoverBg:Show() end
-    end
-
-    -- Create/show page
-    local page = frame.pages[index]
-    if page then
-        if not page.frame then
-            page.frame = CreateFrame("Frame", nil, frame.contentArea)
-            page.frame:SetAllPoints()
-            page.frame:EnableMouse(false)
-            if page.createFunc then
-                local activeTopTab = frame.tabs[index]
-                if activeTopTab and activeTopTab.name then
-                    GUI:SetSearchContext({
-                        tabIndex = index,
-                        tabName = activeTopTab.name,
-                    })
-                end
-                page.createFunc(page.frame)
-                page.built = true
-            end
-        end
-
-        -- Capture sub-tab group created during page build
-        if GUI._lastSubTabGroup then
-            page._subTabGroup = GUI._lastSubTabGroup
-            page._subTabDefs = page._subTabGroup.subTabDefs
-            GUI._lastSubTabGroup = nil
-        end
-
-        if page._subTabGroup then
-            page._subTabDefs = page._subTabGroup.subTabDefs or page._subTabDefs
-            page._subTabGroup._onSelect = function(subIndex)
-                if not frame then return end
-                if not frame._sidebarPendingSectionSelection then
-                    frame._sidebarActiveSectionKey = nil
-                end
-                GUI:RefreshSidebarTree(frame)
-                if not frame._sidebarPendingSectionSelection then
-                    C_Timer.After(0, function()
-                        local key = GetSectionRegistryKey(index, subIndex)
-                        local order = GUI.SectionRegistryOrder[key]
-                        local reg = GUI.SectionRegistry[key]
-                        if order and order[1] and reg and reg[order[1]] and reg[order[1]].scrollParent then
-                            GUI:UpdateSidebarSectionHighlightFromScroll(reg[order[1]].scrollParent)
-                        end
-                    end)
-                end
-            end
-        end
-
-        page.frame:Show()
-
-        -- Legacy top sub-tab bar is deprecated; sidebar tree is now the sole navigator.
-        if frame._activeSubTabGroup then
-            frame._activeSubTabGroup:Hide()
-        end
-        if page._subTabGroup then
-            page._subTabGroup:Hide()
-        end
-        frame._activeSubTabGroup = nil
-        frame.subTabBar:Hide()
-        frame.contentArea:ClearAllPoints()
-        frame.contentArea:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", 5, 0)
-        frame.contentArea:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 10)
-
-        -- Force OnShow scripts to fire on all children (for refresh purposes)
-        -- Uses select() to avoid temporary table allocations on each recursion level
-        local function TriggerOnShow(f)
-            if f.GetScript and f:GetScript("OnShow") then
-                f:GetScript("OnShow")(f)
-            end
-            if f.GetNumChildren then
-                local n = f:GetNumChildren()
-                for i = 1, n do
-                    TriggerOnShow(select(i, f:GetChildren()))
-                end
-            end
-        end
-        TriggerOnShow(page.frame)
-        GUI:ApplyTabFont(page.frame)
-
-        -- Some tab widgets build rows asynchronously after OnShow; apply a second pass.
-        C_Timer.After(0, function()
-            if page.frame and page.frame:IsShown() then
-                GUI:ApplyTabFont(page.frame)
-                GUI:RefreshSidebarTree(frame)
-            end
-        end)
-    end
-
-    GUI:RefreshSidebarTree(frame)
-end
-
----------------------------------------------------------------------------
 -- SHOW FUNCTION
 ---------------------------------------------------------------------------
 function GUI:Show()
@@ -7430,9 +7022,6 @@ function GUI:Show()
     end
     self.MainFrame:Show()
     self.MainFrame:Raise()
-    if self._allTabsAdded and not self._searchIndexBuilt then
-        self:StartBackgroundIndexBuild()
-    end
 end
 
 ---------------------------------------------------------------------------
@@ -7440,7 +7029,6 @@ end
 ---------------------------------------------------------------------------
 function GUI:Hide()
     if self.MainFrame then
-        self:CancelBackgroundIndexBuild()
         self.MainFrame:Hide()
     end
 end
@@ -7450,40 +7038,28 @@ end
 ---------------------------------------------------------------------------
 function GUI:RefreshAccentColor()
     if not self.MainFrame then return end
-    -- Save current state
-    local savedTab = self.MainFrame.activeTab or 1
     local wasShown = self.MainFrame:IsShown()
+    local prevTileIndex = self.MainFrame._lastTileIndex
 
-    -- Save current position so the window doesn't jump back to center
     local point, _, relPoint, xOfs, yOfs = self.MainFrame:GetPoint()
 
-    self:CancelBackgroundIndexBuild()
-
-    -- Tear down old frame
     self.MainFrame:Hide()
     self.MainFrame:SetParent(nil)
     self.MainFrame = nil
 
-    -- Reset search index state (will be rebuilt from dedup keys)
-    self._searchIndexBuilt = false
-    self._searchIndexProgress = 0
-    self._searchIndexTotal = 0
-    self._allTabsAdded = false
+    -- Registry re-seeds from the tile builders on re-init.
     self.SettingsRegistry = {}
     self.SettingsRegistryKeys = {}
 
-    -- Recreate
     self:InitializeOptions()
 
-    -- Restore position
     if point and self.MainFrame then
         self.MainFrame:ClearAllPoints()
         self.MainFrame:SetPoint(point, UIParent, relPoint, xOfs, yOfs)
     end
 
-    -- Restore tab
-    if savedTab and self.MainFrame then
-        GUI:SelectTab(self.MainFrame, savedTab)
+    if prevTileIndex and self.MainFrame and self.MainFrame._tiles and self.MainFrame._tiles[prevTileIndex] then
+        self:SelectFeatureTile(self.MainFrame, prevTileIndex)
     end
 
     if wasShown and self.MainFrame then
@@ -7810,6 +7386,1317 @@ function GUI:Toggle()
         self:Hide()
     else
         self:Show()
+    end
+end
+
+---------------------------------------------------------------------------
+-- V2 EXTENSIONS — feature-tile sidebar, horizontal sub-page tabs,
+-- inline search, tools strip, V2 navigation routes, breadcrumbs,
+-- pulse-on-jump widget highlight.
+-- (Previously options/framework_v2.lua, merged into framework.lua.)
+---------------------------------------------------------------------------
+
+local C = GUI.Colors
+local Helpers = ns.Helpers
+
+ns.QUI_Framework = ns.QUI_Framework or {}
+local FW2 = ns.QUI_Framework
+
+--[[
+    GUI:AddFeatureTile(frame, config)
+
+    Registers a sidebar feature tile. config fields:
+        id        (string, required) - stable key, e.g. "minimap"
+        iconTexture (string, optional) - texture path shown left of name
+        icon      (string, optional) - legacy single-char fallback shown left of name
+        name      (string, required) - display name in sidebar
+        subtitle  (string, optional) - shown under page title in content area
+        subPages  (array, required if using sub-pages) - list of { name, buildFunc }
+                  buildFunc(contentArea) builds the sub-page body
+        buildFunc (function, optional) - for tiles with no sub-pages
+        isBottomItem (boolean, optional) - render in bottom sidebar section (Help, etc.)
+
+    Returns the tile registration table so callers can attach extra metadata.
+]]
+function GUI:AddFeatureTile(frame, config)
+    assert(type(config) == "table", "AddFeatureTile: config required")
+    assert(config.id, "AddFeatureTile: config.id required")
+    assert(config.name, "AddFeatureTile: config.name required")
+
+    frame._tiles = frame._tiles or {}
+    frame._topTiles = frame._topTiles or {}
+    frame._bottomTiles = frame._bottomTiles or {}
+
+    local index = #frame._tiles + 1
+    local bucket = config.isBottomItem and frame._bottomTiles or frame._topTiles
+    local bucketIndex = #bucket + 1
+
+    -- Tiles parent directly to frame.sidebar and lay themselves out in the
+    -- sidebar column (no intermediate scroll/tree container).
+    local tile = CreateFrame("Button", nil, frame.sidebar)
+    tile:SetHeight(26)
+    tile.index = index
+    tile.id = config.id
+    tile.config = config
+
+    -- Vertical layout within bucket. Top bucket stacks down from below the
+    -- sidebar search bar (search bar eats ~44px at the top: -10 offset + 28
+    -- height + 6 gap). Bottom bucket stacks up from above the Tools strip
+    -- (~146px reserved: 24 bottom offset + 116 strip height + 6 gap).
+    if config.isBottomItem then
+        if bucketIndex == 1 then
+            tile:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 6, 146)
+            tile:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -6, 146)
+        else
+            local prev = bucket[bucketIndex - 1]
+            tile:SetPoint("BOTTOMLEFT", prev, "TOPLEFT", 0, 2)
+            tile:SetPoint("BOTTOMRIGHT", prev, "TOPRIGHT", 0, 2)
+        end
+    else
+        if bucketIndex == 1 then
+            tile:SetPoint("TOPLEFT", frame.sidebar, "TOPLEFT", 6, -44)
+            tile:SetPoint("TOPRIGHT", frame.sidebar, "TOPRIGHT", -6, -44)
+        else
+            local prev = bucket[bucketIndex - 1]
+            tile:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -2)
+            tile:SetPoint("TOPRIGHT", prev, "BOTTOMRIGHT", 0, -2)
+        end
+    end
+    bucket[bucketIndex] = tile
+
+    -- Left active indicator bar
+    tile.indicator = tile:CreateTexture(nil, "OVERLAY")
+    tile.indicator:SetPoint("TOPLEFT", 0, 0)
+    tile.indicator:SetPoint("BOTTOMLEFT", 0, 0)
+    tile.indicator:SetWidth(3)
+    tile.indicator:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
+    tile.indicator:Hide()
+
+    -- Hover/active background
+    tile.hoverBg = tile:CreateTexture(nil, "BACKGROUND")
+    tile.hoverBg:SetAllPoints()
+    tile.hoverBg:SetColorTexture(1, 1, 1, 0.03)
+    tile.hoverBg:Hide()
+
+    -- Icon (optional)
+    local textX = 15
+    local iconTexturePath = config.iconTexture
+    if iconTexturePath == nil and config.id then
+        iconTexturePath = Helpers.AssetPath .. "sidebar\\" .. config.id
+    end
+    if iconTexturePath then
+        local SIDEBAR_ICON_SIZE = 20
+        tile.iconTexture = tile:CreateTexture(nil, "OVERLAY")
+        tile.iconTexture:SetSize(SIDEBAR_ICON_SIZE, SIDEBAR_ICON_SIZE)
+        tile.iconTexture:SetPoint("LEFT", tile, "LEFT", 10, 0)
+        tile.iconTexture:SetTexture(iconTexturePath)
+        tile.iconTexture:SetVertexColor(C.textDim[1], C.textDim[2], C.textDim[3], 0.75)
+        textX = 37
+    elseif config.icon then
+        tile.icon = tile:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        tile.icon:SetText(config.icon)
+        tile.icon:SetPoint("LEFT", tile, "LEFT", 10, 0)
+        tile.icon:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 0.55)
+        textX = 28
+    end
+
+    -- Name text
+    tile.text = tile:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    tile.text:SetFont(tile.text:GetFont(), 11)
+    tile.text:SetText(config.name)
+    tile.text:SetPoint("LEFT", tile, "LEFT", textX, 0)
+    tile.text:SetJustifyH("LEFT")
+    tile.text:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 1)
+
+    -- Store so V2 init can lay them out (Task 8)
+    frame._tiles[index] = tile
+
+    -- Click handler stub — real selection logic added in Task 8
+    tile:SetScript("OnClick", function(self)
+        GUI:SelectFeatureTile(frame, self.index)
+    end)
+
+    tile:SetScript("OnEnter", function(self)
+        if not self._isActive then self.hoverBg:SetColorTexture(1, 1, 1, 0.03); self.hoverBg:Show() end
+    end)
+    tile:SetScript("OnLeave", function(self)
+        if not self._isActive then self.hoverBg:Hide() end
+    end)
+
+    return tile
+end
+
+--[[
+    GUI:BuildTilePage(frame, tile)
+
+    Builds the tile's page frame (title, sub-page tabs, body) into a hidden
+    parent without changing the current selection or touching visibility.
+    Idempotent: re-entry is a no-op once `tile._built` is set.
+
+    This is the single build path — SelectFeatureTile calls it before
+    showing, and the indexer calls it during login to eagerly populate the
+    search registry without any visible flicker (build into a hidden
+    frame, then attach to the visible content area on first select).
+]]
+function GUI:BuildTilePage(frame, tile)
+    if not tile or tile._built then return end
+
+    -- Ensure content container exists (shared parent for all tile pages).
+    if not frame._tileContent then
+        frame._tileContent = CreateFrame("Frame", nil, frame.contentArea)
+        frame._tileContent:SetAllPoints(frame.contentArea)
+    end
+    local content = frame._tileContent
+
+    -- Build the page hidden. Callers decide when (if ever) to Show it.
+    tile._pageFrame = CreateFrame("Frame", nil, content)
+    tile._pageFrame:SetAllPoints(content)
+    tile._pageFrame:Hide()
+
+    local header = CreateFrame("Frame", nil, tile._pageFrame)
+    header:SetPoint("TOPLEFT", tile._pageFrame, "TOPLEFT", 18, -14)
+    header:SetPoint("TOPRIGHT", tile._pageFrame, "TOPRIGHT", -18, -14)
+    header:SetHeight(48)
+    tile._header = header
+
+    local crumb = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local fpath = ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(GUI:GetFontPath())
+    crumb:SetFont(fpath or select(1, crumb:GetFont()), 10, "")
+    crumb:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+    crumb:SetPoint("TOPLEFT", header, "TOPLEFT", 0, 0)
+    crumb:SetText("Settings  >  " .. (tile.config.name or ""))
+    tile._crumb = crumb
+
+    local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetFont(fpath or select(1, title:GetFont()), 15, "")
+    title:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+    title:SetPoint("TOPLEFT", crumb, "BOTTOMLEFT", 0, -4)
+    title:SetText(tile.config.name or "")
+    tile._title = title
+
+    if tile.config.subtitle and tile.config.subtitle ~= "" then
+        local subtitle = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        subtitle:SetFont(fpath or select(1, subtitle:GetFont()), 11, "")
+        subtitle:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
+        subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3)
+        subtitle:SetPoint("RIGHT", header, "RIGHT", 0, 0)
+        subtitle:SetJustifyH("LEFT")
+        subtitle:SetText(tile.config.subtitle)
+        tile._subtitle = subtitle
+        header:SetHeight(54)
+    end
+
+    local pins = ns.Settings and ns.Settings.Pins
+    if pins and type(pins.AttachCountChip) == "function" then
+        pins:AttachCountChip(header)
+    end
+
+    -- Anchor body/sub-tabs to the header's bottom so a taller header
+    -- (subtitle present) pushes content down instead of overlapping.
+    -- When an Advanced drawer is declared, reserve 40px at the bottom for
+    -- its collapsed-state header row (expanded state grows upward and
+    -- overlays the scroll viewport without shifting the content).
+    local drawerReserve = tile.config.advancedDrawer and 40 or 0
+
+    -- Persistent preview area (tile-level). If tile.config.preview is set,
+    -- build a preview frame below the header. The sub-tab strip and all
+    -- sub-page bodies anchor below this preview, so the preview stays
+    -- visible as the user switches sub-tabs. Used by feature tiles where
+    -- a live preview of the configured element (action buttons, unit
+    -- frame, nameplate, etc.) applies across every sub-tab.
+    local anchorFrame = header
+    if tile.config.preview and type(tile.config.preview.build) == "function" then
+        local pv = CreateFrame("Frame", nil, tile._pageFrame)
+        pv:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -10)
+        pv:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -10)
+        pv:SetHeight(tile.config.preview.height or 90)
+        tile.config.preview.build(pv)
+        tile._preview = pv
+        anchorFrame = pv
+    end
+
+    if tile.config.subPages and #tile.config.subPages > 0 then
+        GUI:RenderSubPageTabs(tile, tile._pageFrame, tile.config.subPages, function(sp, body)
+            if type(sp.buildFunc) == "function" then sp.buildFunc(body) end
+        end, anchorFrame, drawerReserve)
+    elseif type(tile.config.buildFunc) == "function" then
+        local container = CreateFrame("Frame", nil, tile._pageFrame)
+        local footerReserve = tile.config.relatedSettings and 32 or 0
+        container:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", -18, -10)
+        container:SetPoint("TOPRIGHT", anchorFrame, "BOTTOMRIGHT", 18, -10)
+        container:SetPoint("BOTTOMRIGHT", tile._pageFrame, "BOTTOMRIGHT", 0, footerReserve + drawerReserve)
+        if tile.config.noScroll then
+            tile.config.buildFunc(container)
+        elseif ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
+            local _, body = ns.QUI_Options.CreateScrollableContent(container)
+            tile.config.buildFunc(body)
+        else
+            tile.config.buildFunc(container)
+        end
+    end
+
+    if tile.config.relatedSettings and ns.QUI_RenderRelatedFooter then
+        ns.QUI_RenderRelatedFooter(tile._pageFrame, tile.config.relatedSettings, frame)
+    end
+
+    -- Bottom-docked Advanced drawer. Declared by the tile config as:
+    --   advancedDrawer = { build = function(body, setCount, relayout) ... end }
+    -- The builder receives the drawer body frame and populates it with
+    -- tier-3 widgets. The drawer's collapsed height (28px + 12px margin) is
+    -- reserved at the bottom of the content container above (see
+    -- drawerReserve). Expansion grows the drawer upward and overlays the
+    -- scroll viewport temporarily — acceptable because the viewport can
+    -- scroll its content out from under the drawer.
+    if tile.config.advancedDrawer and ns.QUI_Options and ns.QUI_Options.CreateTileAdvancedDrawer
+        and not tile._advancedDrawer then
+        local reserve = 0
+        if tile.config.relatedSettings then reserve = reserve + 32 end
+        local drawerBody, setCount, drawerRelayout =
+            ns.QUI_Options.CreateTileAdvancedDrawer(tile._pageFrame, reserve + 8)
+        tile._advancedDrawer = { body = drawerBody, setCount = setCount, relayout = drawerRelayout }
+        if type(tile.config.advancedDrawer.build) == "function" then
+            tile.config.advancedDrawer.build(drawerBody, setCount, drawerRelayout)
+        end
+    end
+
+    -- Per-tile primary CTA docked at the right edge of the footer bar.
+    -- Config shape: { label, onClick }  or  { label, moverKey = "<key>" }
+    -- When moverKey is set (and no explicit onClick), the button closes the
+    -- options panel, opens Layout Mode, and selects the named mover handle.
+    if tile.config.primaryCTA and frame.footerBar and not tile._primaryBtn then
+        local cta = tile.config.primaryCTA
+        local onClick = cta.onClick
+        if not onClick and cta.moverKey ~= nil then
+            local moverKey = cta.moverKey
+            onClick = function()
+                if InCombatLockdown and InCombatLockdown() then
+                    print("|cff60A5FAQUI:|r Cannot open Layout Mode during combat.")
+                    return
+                end
+                if GUI and GUI.Hide then pcall(GUI.Hide, GUI) end
+                if _G.QUI_OpenLayoutMode then _G.QUI_OpenLayoutMode() end
+                if moverKey ~= "" and _G.QUI_LayoutModeSelectMover then
+                    -- SelectMover works once handles are created. Open is
+                    -- synchronous but handle creation happens via a C_Timer
+                    -- callback chain; defer one tick so the key is found.
+                    C_Timer.After(0.05, function()
+                        _G.QUI_LayoutModeSelectMover(moverKey)
+                    end)
+                end
+            end
+        end
+        tile._primaryBtn = GUI:CreateButton(
+            frame.footerBar,
+            cta.label or "",
+            0, 22,
+            onClick,
+            "primary"
+        )
+        tile._primaryBtn:ClearAllPoints()
+        tile._primaryBtn:SetPoint("RIGHT", frame.footerBar, "RIGHT", -18, 0)
+        tile._primaryBtn:Hide()
+    end
+
+    tile._built = true
+end
+
+local function FindStaticNavigationRoute(gui, navType, tileId, subPageIndex)
+    for _, entry in ipairs(gui and gui.StaticNavigationRegistry or {}) do
+        if entry.navType == navType
+            and entry.tileId == tileId
+            and entry.subPageIndex == subPageIndex then
+            return entry
+        end
+    end
+
+    return nil
+end
+
+function GUI:SeedStaticSearchRoutesFromTiles(frame)
+    if not frame or not frame._tiles then
+        return
+    end
+
+    local tilesById = {}
+    for _, tile in ipairs(frame._tiles) do
+        if tile and type(tile.id) == "string" and tile.id ~= "" then
+            tilesById[tile.id] = tile
+        end
+    end
+
+    local function BackfillRoute(entry)
+        if type(entry) ~= "table" then
+            return
+        end
+
+        local tile = entry.tileId and tilesById[entry.tileId] or nil
+        if not tile then
+            return
+        end
+
+        local tileName = tile.config and tile.config.name or nil
+        if type(tileName) == "string" and tileName ~= "" then
+            if type(entry.tabName) ~= "string" or entry.tabName == "" or entry.tabName == entry.tileId then
+                entry.tabName = tileName
+            end
+        end
+
+        local subPage = entry.subPageIndex
+            and tile.config
+            and tile.config.subPages
+            and tile.config.subPages[entry.subPageIndex]
+            or nil
+        local subPageName = subPage and subPage.name or nil
+        if type(subPageName) == "string" and subPageName ~= "" then
+            local defaultSubPageLabel = "Page " .. tostring(entry.subPageIndex)
+            if type(entry.subTabName) ~= "string" or entry.subTabName == "" or entry.subTabName == defaultSubPageLabel then
+                entry.subTabName = subPageName
+            end
+        end
+
+        if entry.navType then
+            local label = BuildSearchNavigationLabel(entry.navType, entry)
+            if type(label) == "string" and label ~= "" then
+                entry.label = label
+            end
+            local keywords = BuildSearchNavigationKeywords(entry)
+            if #keywords > 0 then
+                entry.keywords = keywords
+            end
+        end
+    end
+
+    for _, entry in ipairs(self.StaticSettingsRegistry or {}) do
+        BackfillRoute(entry)
+    end
+    for _, entry in ipairs(self.StaticNavigationRegistry or {}) do
+        BackfillRoute(entry)
+    end
+
+    for _, tile in ipairs(frame._tiles) do
+        if tile and tile.config then
+            if not FindStaticNavigationRoute(self, "tab", tile.id, nil) then
+                self:RegisterStaticNavigationEntry({
+                    navType = "tab",
+                    label = tile.config.name,
+                    tabName = tile.config.name,
+                    tileId = tile.id,
+                    keywords = BuildSearchNavigationKeywords({
+                        tabName = tile.config.name,
+                        tileId = tile.id,
+                    }),
+                })
+            end
+
+            for subPageIndex, subPage in ipairs(tile.config.subPages or {}) do
+                if type(subPage) == "table"
+                    and type(subPage.name) == "string"
+                    and subPage.name ~= ""
+                    and not FindStaticNavigationRoute(self, "subtab", tile.id, subPageIndex) then
+                    self:RegisterStaticNavigationEntry({
+                        navType = "subtab",
+                        label = BuildSearchNavigationLabel("subtab", {
+                            tabName = tile.config.name,
+                            subTabName = subPage.name,
+                            tileId = tile.id,
+                            subPageIndex = subPageIndex,
+                        }),
+                        tabName = tile.config.name,
+                        subTabName = subPage.name,
+                        tileId = tile.id,
+                        subPageIndex = subPageIndex,
+                        keywords = BuildSearchNavigationKeywords({
+                            tabName = tile.config.name,
+                            subTabName = subPage.name,
+                            tileId = tile.id,
+                            subPageIndex = subPageIndex,
+                        }),
+                    })
+                end
+            end
+        end
+    end
+end
+
+function GUI:SelectFeatureTile(frame, index, opts)
+    frame._tiles = frame._tiles or {}
+    local tile = frame._tiles[index]
+    if not tile then return end
+
+    -- Update sidebar active state
+    for i, t in ipairs(frame._tiles) do
+        local active = (i == index)
+        t._isActive = active
+        t.indicator:SetShown(active)
+        if active then
+            t.hoverBg:Show()
+            t.hoverBg:SetColorTexture(C.accentFaint[1], C.accentFaint[2], C.accentFaint[3], C.accentFaint[4])
+            t.text:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+            if t.iconTexture then t.iconTexture:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1) end
+            if t.icon then t.icon:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1) end
+        else
+            t.hoverBg:Hide()
+            t.hoverBg:SetColorTexture(1, 1, 1, 0.03)
+            t.text:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 1)
+            if t.iconTexture then t.iconTexture:SetVertexColor(C.textDim[1], C.textDim[2], C.textDim[3], 0.75) end
+            if t.icon then t.icon:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 0.55) end
+        end
+    end
+    frame._lastTileIndex = index
+
+    -- Build the tile's page (hidden) if not yet done. Eager indexer
+    -- usually has this already built — it's a no-op for cached tiles.
+    GUI:BuildTilePage(frame, tile)
+
+    -- Ensure content container is visible and search overlay is hidden.
+    local content = frame._tileContent
+    if content then content:Show() end
+    if frame._searchResultsArea then frame._searchResultsArea:Hide() end
+
+    -- Hide every other tile's page frame; show this one.
+    for _, t in ipairs(frame._tiles) do
+        if t._pageFrame and t ~= tile then t._pageFrame:Hide() end
+    end
+    tile._pageFrame:Show()
+
+    -- Swap footer primary CTA to the newly selected tile's button (if any).
+    if frame._tiles then
+        for _, t in ipairs(frame._tiles) do
+            if t._primaryBtn then t._primaryBtn:Hide() end
+        end
+    end
+    if tile._primaryBtn then tile._primaryBtn:Show() end
+
+    -- Switch sub-page if requested (search jump-to-setting).
+    if opts and opts.subPageIndex and tile._subPageSelect then
+        tile._subPageSelect(opts.subPageIndex)
+    end
+
+    if opts and type(opts.searchEntry) == "table" then
+        self:ApplyFeatureSearchNavigation(tile, opts.searchEntry, opts)
+    end
+
+    -- Scroll to and pulse a specific widget (search jump-to-setting).
+    if opts and (opts.scrollToPath or opts.scrollToLabel) then
+        C_Timer.After(0, function()
+            local root = opts.searchRoot or tile._pageFrame
+            local target = nil
+            if opts.scrollToPath then
+                target = GUI:_findWidgetByPinnedPath(root, opts.scrollToPath)
+            end
+            if not target and opts.scrollToLabel then
+                target = GUI:_findWidgetByLabel(root, opts.scrollToLabel)
+            end
+            if target then
+                local scroll = GUI:_findAncestorScroll(target)
+                if scroll then
+                    local _, y = target:GetCenter()
+                    local _, sTop = scroll:GetCenter()
+                    if y and sTop then
+                        local offset = (sTop - y) - 50
+                        if scroll.SetVerticalScroll then
+                            pcall(scroll.SetVerticalScroll, scroll, math.max(0, offset))
+                        end
+                    end
+                end
+                if opts.pulse then GUI:PulseWidget(target) end
+            end
+        end)
+    elseif opts and opts.sectionName and opts.searchTabIndex then
+        C_Timer.After(0, function()
+            GUI:ScrollToRegisteredSection(
+                opts.searchTabIndex,
+                opts.searchSubTabIndex,
+                opts.sectionName
+            )
+        end)
+    end
+
+end
+
+--[[
+    GUI:AddSidebarSearchBar(frame)
+
+    Creates an inline search box at the top of the sidebar. Uses the existing
+    search index (ExecuteSearch / RenderSearchResults). Typing switches the
+    content area to a results view; clearing restores the last selected tile.
+]]
+function GUI:AddSidebarSearchBar(frame)
+    local container = CreateFrame("Frame", nil, frame.sidebar)
+    container:SetPoint("TOPLEFT", frame.sidebar, "TOPLEFT", 8, -10)
+    container:SetPoint("TOPRIGHT", frame.sidebar, "TOPRIGHT", -8, -10)
+    container:SetHeight(28)
+
+    local box = GUI:CreateSearchBox(container)
+    box:SetAllPoints(container)
+
+    box.onSearch = function(text)
+        if not text or text == "" then
+            if frame._lastTileIndex then
+                GUI:SelectFeatureTile(frame, frame._lastTileIndex)
+            end
+            return
+        end
+        frame._searchResultsArea = frame._searchResultsArea or GUI:_CreateV2SearchResultsArea(frame)
+        frame._searchResultsArea:Show()
+        if frame._tileContent then frame._tileContent:Hide() end
+        local results, navResults = GUI:ExecuteSearch(text)
+        -- Render into the scroll child so content is clipped to the viewport.
+        GUI:RenderSearchResults(frame._searchResultsArea.inner, results, text, navResults)
+    end
+    box.onClear = function()
+        if frame._searchResultsArea then frame._searchResultsArea:Hide() end
+        if frame._tileContent then frame._tileContent:Show() end
+    end
+
+    frame._searchBox = box
+    return box
+end
+
+-- Lazy-creates a results area that overlays the tile content area.
+-- Uses shared CreateScrollableContent so the scrollbar matches QUI's
+-- standard skinned scrollbar (thumb color, hidden arrows, auto-hide).
+function GUI:_CreateV2SearchResultsArea(frame)
+    -- Outer wrapper fills the content area; CreateScrollableContent's
+    -- inset anchors handle the 5/5/28/5 padding to match other panels.
+    local wrapper = CreateFrame("Frame", nil, frame.contentArea)
+    wrapper:SetAllPoints(frame.contentArea)
+
+    local scrollFrame, inner
+    if ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
+        scrollFrame, inner = ns.QUI_Options.CreateScrollableContent(wrapper)
+    else
+        scrollFrame = CreateFrame("ScrollFrame", nil, wrapper, "UIPanelScrollFrameTemplate")
+        scrollFrame:SetPoint("TOPLEFT", 5, -5)
+        scrollFrame:SetPoint("BOTTOMRIGHT", -28, 5)
+        inner = CreateFrame("Frame", nil, scrollFrame)
+        inner:SetSize(math.max(1, scrollFrame:GetWidth()), 1)
+        scrollFrame:SetScrollChild(inner)
+    end
+
+    wrapper.inner = inner
+    wrapper.scrollFrame = scrollFrame
+    wrapper:Hide()
+    return wrapper
+end
+
+--[[
+    GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect)
+
+    Renders a horizontal tab bar at the top of contentArea with one button
+    per subPage. Clicking a tab calls onSelect(subPage, tabBody) where
+    tabBody is the area below the tab bar into which subPage.buildFunc
+    should render its widgets. Clears tabBody between switches.
+]]
+function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFrame, drawerReserve)
+    if not subPages or #subPages == 0 then return end
+
+    -- Tab bar — anchor to header bottom when provided so a taller header
+    -- (with subtitle) shifts the tabs down instead of overlapping.
+    local bar = CreateFrame("Frame", nil, contentArea)
+    if headerFrame then
+        bar:SetPoint("TOPLEFT", headerFrame, "BOTTOMLEFT", 0, -8)
+        bar:SetPoint("TOPRIGHT", headerFrame, "BOTTOMRIGHT", 0, -8)
+    else
+        bar:SetPoint("TOPLEFT", contentArea, "TOPLEFT", 18, -70)
+        bar:SetPoint("TOPRIGHT", contentArea, "TOPRIGHT", -18, -70)
+    end
+    bar:SetHeight(28)
+    drawerReserve = drawerReserve or 0
+
+    -- Underline beneath the bar
+    local underline = bar:CreateTexture(nil, "OVERLAY")
+    underline:SetPoint("BOTTOMLEFT", 0, 0)
+    underline:SetPoint("BOTTOMRIGHT", 0, 0)
+    underline:SetHeight(1)
+    underline:SetColorTexture(C.border[1], C.border[2], C.border[3], C.border[4])
+
+    -- Tab body below. Reserve 32px at the bottom when the tile has a
+    -- related-settings footer so sub-page content doesn't sit under it.
+    local body = CreateFrame("Frame", nil, contentArea)
+    local footerReserve = tile and tile.config and tile.config.relatedSettings and 32 or 0
+    body:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -8)
+    body:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", 0, footerReserve + drawerReserve)
+
+    local tabs = {}
+    local currentIndex = 1
+
+    -- Per-sub-page body cache. Build once, then Hide/Show on switch.
+    -- Prevents widget-instance leaks and preserves ephemeral state.
+    tile._subPageBodies = tile._subPageBodies or {}
+
+    local function select(i)
+        currentIndex = i
+        tile._activeSubPageIndex = i
+        for j, t in ipairs(tabs) do
+            if j == i then
+                t.label:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
+                t.activeBar:Show()
+            else
+                t.label:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 1)
+                t.activeBar:Hide()
+            end
+        end
+
+        if tile and tile._crumb and tile.config then
+            local crumbText = "Settings  >  " .. (tile.config.name or "")
+            if tile.config.subPages and tile.config.subPages[i] and tile.config.subPages[i].name then
+                crumbText = crumbText .. "  >  " .. tile.config.subPages[i].name
+            end
+            tile._crumb:SetText(crumbText)
+        end
+
+        -- Hide every cached sub-page body unconditionally. Must run BEFORE
+        -- the lazy-build branch below: CreateFrame defaults a new frame to
+        -- Shown, so a freshly-built container sits on top of any previously
+        -- built-and-still-shown bodies in the shared body area. Registering
+        -- the container in _subPageBodies BEFORE running the builder also
+        -- prevents orphans leaking on builder error.
+        for _, sub in pairs(tile._subPageBodies) do
+            sub:Hide()
+        end
+
+        -- Lazily build this sub-page's body the first time it's selected.
+        -- Each sub-page gets its own container. If the sub-page's builder
+        -- doesn't self-wrap (BuildXxxTab pattern), we wrap it in a QUI-skinned
+        -- scroll frame. If it DOES self-wrap (CreateXxxPage pattern → calls
+        -- CreateScrollableContent internally), set noScroll=true on the
+        -- sub-page entry so we don't nest scroll frames.
+        if not tile._subPageBodies[i] then
+            local sp = subPages[i]
+            local container = CreateFrame("Frame", nil, body)
+            container:SetAllPoints(body)
+            container:Hide()
+            tile._subPageBodies[i] = container
+            if sp.noScroll then
+                onSelect(sp, container)
+            elseif ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
+                local _, content = ns.QUI_Options.CreateScrollableContent(container)
+                onSelect(sp, content)
+            else
+                onSelect(sp, container)
+            end
+        end
+
+        tile._subPageBodies[i]:Show()
+    end
+
+    local ROW_HEIGHT = 28
+    local TAB_GAP_X = 16
+    local TAB_GAP_Y = 4
+
+    for i, sp in ipairs(subPages) do
+        local btn = CreateFrame("Button", nil, bar)
+        btn:SetHeight(ROW_HEIGHT)
+
+        btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        btn.label:SetText(sp.name)
+        btn.label:SetPoint("CENTER", 0, 0)
+        local f, _, fl = btn.label:GetFont()
+        btn.label:SetFont(f or (ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(GUI:GetFontPath())) or f, 11, fl or "")
+
+        local labelW = btn.label:GetStringWidth() + 24
+        btn:SetWidth(labelW)
+
+        btn.activeBar = btn:CreateTexture(nil, "OVERLAY")
+        btn.activeBar:SetPoint("BOTTOMLEFT", 4, 0)
+        btn.activeBar:SetPoint("BOTTOMRIGHT", -4, 0)
+        btn.activeBar:SetHeight(2)
+        btn.activeBar:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
+        btn.activeBar:Hide()
+
+        btn:SetScript("OnClick", function() select(i) end)
+
+        tabs[i] = btn
+    end
+
+    -- Flow tabs onto multiple rows when the bar is too narrow to hold them
+    -- all on one line. Re-runs on OnSizeChanged so resizing the settings
+    -- window (or populating during layout) reflows correctly.
+    local function LayoutTabs()
+        local barWidth = bar:GetWidth()
+        if not barWidth or barWidth <= 0 then return end
+
+        local x, y = 0, 0
+        local rows = 1
+        for _, btn in ipairs(tabs) do
+            local w = btn:GetWidth()
+            if x > 0 and (x + w) > barWidth then
+                x = 0
+                y = y - (ROW_HEIGHT + TAB_GAP_Y)
+                rows = rows + 1
+            end
+            btn:ClearAllPoints()
+            btn:SetPoint("TOPLEFT", bar, "TOPLEFT", x, y)
+            x = x + w + TAB_GAP_X
+        end
+        bar:SetHeight(rows * ROW_HEIGHT + math.max(rows - 1, 0) * TAB_GAP_Y)
+    end
+    bar:SetScript("OnSizeChanged", LayoutTabs)
+    LayoutTabs()
+
+    tile._subPageSelect = select
+    -- Auto-select first sub-page
+    select(1)
+
+    return body, select
+end
+
+--[[
+    GUI:AddToolsStripButton(frame, config)
+
+    Registers an action button in the sidebar Tools strip. The strip is
+    created lazily on first call. Each button is a tool, not a tab — clicks
+    fire config.onClick without changing the selected tile.
+
+    config fields:
+        id       (string, required)
+        iconTexture (string, optional) - texture path shown before label
+        icon     (string, optional) - legacy text prefix fallback
+        label    (string, required)
+        onClick  (function, required)
+]]
+function GUI:AddToolsStripButton(frame, config)
+    assert(type(config) == "table", "AddToolsStripButton: config required")
+    assert(config.id, "config.id required")
+    assert(config.label, "config.label required")
+    assert(type(config.onClick) == "function", "config.onClick required")
+
+    frame._tools = frame._tools or {}
+
+    if not frame._toolsStrip then
+        local strip = CreateFrame("Frame", nil, frame.sidebar)
+        -- Single-column layout: strip holds the TOOLS heading plus a stack
+        -- of full-width buttons. Height is tall enough for up to ~4 rows.
+        strip:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 6, 24)
+        strip:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -6, 24)
+        strip:SetHeight(116)
+
+        local sep = strip:CreateTexture(nil, "OVERLAY")
+        sep:SetPoint("TOPLEFT", 2, 0)
+        sep:SetPoint("TOPRIGHT", -2, 0)
+        sep:SetHeight(1)
+        sep:SetColorTexture(C.border[1], C.border[2], C.border[3], C.border[4])
+
+        local heading = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        heading:SetPoint("TOPLEFT", 4, -6)
+        heading:SetText("TOOLS")
+        heading:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 0.5)
+
+        frame._toolsStrip = strip
+    end
+
+    local strip = frame._toolsStrip
+    local idx = #frame._tools + 1
+
+    local btn = CreateFrame("Button", nil, strip, "BackdropTemplate")
+    btn:SetHeight(24)
+    -- Full-width, one button per row. strip:GetWidth() returns 0 at build
+    -- time because the strip itself is anchored (not sized), so we derive
+    -- the width from the strip's left/right anchors via dual anchoring.
+    local yOffset = -20 - (idx - 1) * 26
+    btn:SetPoint("TOPLEFT", strip, "TOPLEFT", 4, yOffset)
+    btn:SetPoint("TOPRIGHT", strip, "TOPRIGHT", -4, yOffset)
+
+    QUICore.SafeSetBackdrop(btn, {
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    btn:SetBackdropColor(1, 1, 1, 0.06)
+    btn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], C.border[4])
+
+    local iconTexturePath = config.iconTexture
+    if iconTexturePath == nil and config.id then
+        iconTexturePath = Helpers.AssetPath .. "sidebar_tools\\" .. config.id
+    end
+
+    if iconTexturePath then
+        local ICON_SIZE = 14
+        local GAP = 7
+
+        local content = CreateFrame("Frame", nil, btn)
+        content:SetHeight(ICON_SIZE)
+        content:SetPoint("CENTER", btn, "CENTER", 0, 0)
+
+        local icon = content:CreateTexture(nil, "OVERLAY")
+        icon:SetSize(ICON_SIZE, ICON_SIZE)
+        icon:SetPoint("LEFT", content, "LEFT", 0, 0)
+        icon:SetTexture(iconTexturePath)
+        icon:SetVertexColor(C.textDim[1], C.textDim[2], C.textDim[3], 0.9)
+        btn.iconTexture = icon
+
+        local label = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        label:SetPoint("LEFT", icon, "RIGHT", GAP, 0)
+        label:SetText(config.label)
+        label:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 1)
+        btn.label = label
+        btn._content = content
+
+        local contentWidth = ICON_SIZE + GAP + math.ceil(label:GetStringWidth())
+        content:SetWidth(contentWidth)
+    else
+        local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        label:SetPoint("CENTER", 0, 0)
+        label:SetText(((config.icon and (config.icon .. " ")) or "") .. config.label)
+        label:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 1)
+        btn.label = label
+    end
+
+    btn:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(C.accentFaint[1], C.accentFaint[2], C.accentFaint[3], 0.12)
+        self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.3)
+        if self.iconTexture then
+            self.iconTexture:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
+        end
+    end)
+    btn:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(1, 1, 1, 0.06)
+        self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], C.border[4])
+        if self.iconTexture then
+            self.iconTexture:SetVertexColor(C.textDim[1], C.textDim[2], C.textDim[3], 0.9)
+        end
+    end)
+    btn:SetScript("OnClick", function() config.onClick() end)
+
+    frame._tools[idx] = btn
+    return btn
+end
+
+--[[
+    Navigation mapping: (tabIndex, subTabIndex) -> (tileId, subPageIndex).
+
+    Each tile's Register() declares which (tabIndex, subTabIndex)
+    coordinates it absorbs. Search entries are keyed by those coordinates;
+    this map translates them to (tileId, subPageIndex) for jump-to-setting.
+
+    Key format: "tabIndex:subTabIndex" (subTabIndex may be 0 for tiles
+    that absorbed a top-level tab with no sub-tabs).
+]]
+GUI._navMap = GUI._navMap or {}
+
+function GUI:RegisterV2NavRoute(tabIndex, subTabIndex, tileId, subPageIndex)
+    local key = (tabIndex or 0) .. ":" .. (subTabIndex or 0)
+    -- Preserve nil subPageIndex (tile-only route with no sub-page target).
+    -- Fallback registrations use this so the breadcrumb shows just the
+    -- tile name rather than an arbitrary sub-page name.
+    GUI._navMap[key] = { tileId = tileId, subPageIndex = subPageIndex }
+end
+
+function GUI:ResolveV2Navigation(tabIndex, subTabIndex)
+    local key = (tabIndex or 0) .. ":" .. (subTabIndex or 0)
+    local match = GUI._navMap[key]
+    if not match and subTabIndex then
+        match = GUI._navMap[(tabIndex or 0) .. ":0"]
+    end
+    return match
+end
+
+function GUI:FindV2TileByID(frame, tileId)
+    if not frame or not frame._tiles then return nil end
+    for i, tile in ipairs(frame._tiles) do
+        if tile.id == tileId then
+            return tile, i
+        end
+    end
+end
+
+function GUI:IsSearchRouteCompatible(route, entry)
+    if not route or not entry then return false end
+
+    local frame = self.MainFrame
+    if not frame then return false end
+
+    local tile = self:FindV2TileByID(frame, route.tileId)
+    if not tile then return false end
+
+    local tileName = NormalizeSearchText(tile.config and tile.config.name or route.tileId)
+    local subPageName = ""
+    if route.subPageIndex and tile.config and tile.config.subPages then
+        local subPage = tile.config.subPages[route.subPageIndex]
+        subPageName = NormalizeSearchText(subPage and subPage.name or "")
+    end
+
+    local expectedSub = NormalizeSearchText(entry.subTabName)
+    if expectedSub ~= "" then
+        return expectedSub == subPageName or expectedSub == tileName
+    end
+
+    local expectedTab = NormalizeSearchText(entry.tabName)
+    if expectedTab ~= "" then
+        return expectedTab == subPageName or expectedTab == tileName
+    end
+
+    return true
+end
+
+function GUI:FindSearchRouteByName(entry)
+    if not entry then return nil end
+
+    local frame = self.MainFrame
+    if not frame or not frame._tiles then return nil end
+
+    local function FindUniqueSubPage(name)
+        local normalized = NormalizeSearchText(name)
+        if normalized == "" then return nil end
+
+        local matches = {}
+        for _, tile in ipairs(frame._tiles) do
+            local subPages = tile.config and tile.config.subPages
+            if subPages then
+                for idx, subPage in ipairs(subPages) do
+                    if NormalizeSearchText(subPage and subPage.name or "") == normalized then
+                        matches[#matches + 1] = { tileId = tile.id, subPageIndex = idx }
+                    end
+                end
+            end
+        end
+
+        if #matches == 1 then
+            return matches[1]
+        end
+        return nil
+    end
+
+    local route = FindUniqueSubPage(entry.subTabName)
+    if route then return route end
+
+    route = FindUniqueSubPage(entry.tabName)
+    if route then return route end
+
+    local normalizedTab = NormalizeSearchText(entry.tabName)
+    if normalizedTab ~= "" then
+        local match = nil
+        for _, tile in ipairs(frame._tiles) do
+            local tileName = NormalizeSearchText(tile.config and tile.config.name or tile.id)
+            if tileName == normalizedTab then
+                if match then
+                    return nil
+                end
+                match = { tileId = tile.id }
+            end
+        end
+        return match
+    end
+
+    return nil
+end
+
+local function AreSearchRoutesEquivalent(a, b)
+    if not a or not b then
+        return false
+    end
+    if a.tileId ~= b.tileId then
+        return false
+    end
+    if a.subPageIndex ~= nil and b.subPageIndex ~= nil and a.subPageIndex ~= b.subPageIndex then
+        return false
+    end
+    return true
+end
+
+function GUI:ResolveSearchNavigation(entry)
+    if not entry then return nil end
+
+    local directRoute = nil
+    if type(entry.tileId) == "string" and entry.tileId ~= "" then
+        directRoute = {
+            tileId = entry.tileId,
+            subPageIndex = entry.subPageIndex,
+        }
+    end
+
+    local tabIndex = entry.tabIndex or 0
+    local subTabIndex = entry.subTabIndex or 0
+    local exactRoute = GUI._navMap and GUI._navMap[tabIndex .. ":" .. subTabIndex]
+    local fallbackRoute = self:ResolveV2Navigation(entry.tabIndex, entry.subTabIndex)
+    local nameRoute = self:FindSearchRouteByName(entry)
+    local tabRoute = exactRoute or fallbackRoute
+
+    if directRoute then
+        if tabRoute and not AreSearchRoutesEquivalent(directRoute, tabRoute) then
+            directRoute = nil
+        elseif tabRoute then
+            -- When the saved explicit route agrees with the legacy tab route,
+            -- trust it even if the V2 tile does not expose a matching human
+            -- sub-page label (for example legacy "General" subtabs now living
+            -- inside a single tile surface).
+            return directRoute
+        elseif not self:IsSearchRouteCompatible(directRoute, entry) then
+            directRoute = nil
+        else
+            return directRoute
+        end
+    end
+
+    if exactRoute then
+        -- Explicit nav-map registrations are authoritative. Name matching is
+        -- only a heuristic fallback and can misroute generic labels like
+        -- "General" to the wrong tile.
+        return exactRoute
+    end
+
+    if fallbackRoute then
+        -- Fallback tab routes are also more reliable than fuzzy name lookup
+        -- for tiles that absorbed several legacy subtabs into one page.
+        return fallbackRoute
+    end
+
+    return nameRoute
+end
+
+function GUI:GetSearchBreadcrumb(entry)
+    if not entry then return nil end
+
+    local frame = self.MainFrame
+    if not frame then return nil end
+
+    local route = self:ResolveSearchNavigation(entry)
+    if route then
+        local tile = self:FindV2TileByID(frame, route.tileId)
+        if tile then
+            local parts = { tile.config and tile.config.name or route.tileId }
+            if route.subPageIndex and tile.config and tile.config.subPages then
+                local subPage = tile.config.subPages[route.subPageIndex]
+                if subPage and subPage.name then
+                    table.insert(parts, subPage.name)
+                end
+            end
+            if entry.sectionName and entry.sectionName ~= "" then
+                table.insert(parts, entry.sectionName)
+            end
+            return parts
+        end
+    end
+
+    local parts = {}
+    if entry.tabName and entry.tabName ~= "" then table.insert(parts, entry.tabName) end
+    if entry.subTabName and entry.subTabName ~= "" then table.insert(parts, entry.subTabName) end
+    if entry.sectionName and entry.sectionName ~= "" then table.insert(parts, entry.sectionName) end
+    if #parts > 0 then return parts end
+
+    return self:GetV2Breadcrumb(entry.tabIndex, entry.subTabIndex, entry.sectionName)
+end
+
+function GUI:NavigateSearchResult(entry, opts)
+    local frame = self.MainFrame
+    if not frame or not entry then return end
+
+    local route = self:ResolveSearchNavigation(entry)
+    if not route then return end
+
+    local _, idx = self:FindV2TileByID(frame, route.tileId)
+    if not idx then return end
+
+    if frame._searchBox and frame._searchBox.editBox then
+        frame._searchBox.editBox:SetText("")
+    end
+    if frame._searchResultsArea then
+        frame._searchResultsArea:Hide()
+    end
+    if frame._tileContent then
+        frame._tileContent:Show()
+    end
+
+    local selectOpts = {
+        subPageIndex = route.subPageIndex,
+        sectionName = entry.sectionName,
+        searchTabIndex = entry.tabIndex,
+        searchSubTabIndex = entry.subTabIndex,
+        searchEntry = entry,
+    }
+    if opts then
+        for key, value in pairs(opts) do
+            selectOpts[key] = value
+        end
+    end
+
+    self:SelectFeatureTile(frame, idx, selectOpts)
+end
+
+function GUI:ApplyFeatureSearchNavigation(tile, entry, opts)
+    if not tile or type(entry) ~= "table" then
+        return false
+    end
+
+    local featureId = entry.featureId
+    if (type(featureId) ~= "string" or featureId == "") and tile.config then
+        featureId = tile.config.featureId
+    end
+    if type(featureId) ~= "string" or featureId == "" then
+        return false
+    end
+
+    local settings = ns.Settings
+    local registry = settings and settings.Registry
+    local feature = registry
+        and type(registry.GetFeature) == "function"
+        and registry:GetFeature(featureId)
+        or nil
+    if not feature or type(feature.searchNavigate) ~= "function" then
+        return false
+    end
+
+    local ok, handled = pcall(feature.searchNavigate, entry, {
+        tile = tile,
+        pageFrame = tile._pageFrame,
+        opts = opts,
+    })
+    return ok and handled ~= false
+end
+
+--[[
+    GUI:GetV2Breadcrumb(tabIndex, subTabIndex, sectionName)
+
+    Resolves a (tab, subtab) coordinate through the nav map and returns
+    breadcrumb parts using tile/sub-page display names.
+
+    Always returns a non-nil table when a main frame exists. Resolution
+    tiers:
+      1. Exact (tab, subtab) match → tile + sub-page
+      2. (tab, 0) fallback → tile only
+      3. First tile that registered any route for this tab → tile only
+      4. Final fallback → "Settings" + sectionName
+
+    Returns nil only if the main frame hasn't been created yet.
+]]
+function GUI:GetV2Breadcrumb(tabIndex, subTabIndex, sectionName)
+    local frame = self.MainFrame
+    if not frame then return nil end
+
+    -- Tier 1 + 2: direct map lookup (ResolveV2Navigation already does the :0 fallback).
+    local route = self:ResolveV2Navigation(tabIndex, subTabIndex)
+
+    -- Tier 3: no exact or :0 match — find ANY route for this tab so at
+    -- least the tile name is sensible.
+    if not route and tabIndex and GUI._navMap then
+        local prefix = tabIndex .. ":"
+        for key, mapping in pairs(GUI._navMap) do
+            if key:sub(1, #prefix) == prefix then
+                route = { tileId = mapping.tileId }  -- drop subPageIndex: we don't know which
+                break
+            end
+        end
+    end
+
+    local tile = route and self:FindV2TileByID(frame, route.tileId)
+
+    -- Tier 4: still nothing — synthesize a generic breadcrumb so the caller
+    -- always has something sensible to display.
+    if not tile then
+        local parts = { "Settings" }
+        if sectionName and sectionName ~= "" then table.insert(parts, sectionName) end
+        return parts
+    end
+
+    local parts = { tile.config and tile.config.name or route.tileId }
+    if route.subPageIndex and tile.config and tile.config.subPages then
+        local sp = tile.config.subPages[route.subPageIndex]
+        if sp and sp.name then table.insert(parts, sp.name) end
+    end
+    if sectionName and sectionName ~= "" then
+        table.insert(parts, sectionName)
+    end
+    return parts
+end
+
+--[[
+    GUI:PulseWidget(widget)
+
+    Briefly flashes an accent-colored overlay over `widget` to draw the user's
+    eye after a search jump-to-setting navigation. Reuses a cached overlay
+    texture per widget to avoid leaking textures on repeat pulses.
+]]
+function GUI:PulseWidget(widget)
+    if not widget then return end
+    local pulse = widget._pulseOverlay
+    if not pulse then
+        pulse = widget:CreateTexture(nil, "OVERLAY")
+        pulse:SetAllPoints(widget)
+        pulse:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.45)
+        pulse:SetAlpha(0)
+        widget._pulseOverlay = pulse
+    end
+    if pulse._anim then pulse._anim:Stop() end
+    local ag = pulse:CreateAnimationGroup()
+    local fadeIn = ag:CreateAnimation("Alpha")
+    fadeIn:SetFromAlpha(0); fadeIn:SetToAlpha(1); fadeIn:SetDuration(0.1); fadeIn:SetOrder(1)
+    local hold = ag:CreateAnimation("Alpha")
+    hold:SetFromAlpha(1); hold:SetToAlpha(1); hold:SetDuration(0.2); hold:SetOrder(2)
+    local fadeOut = ag:CreateAnimation("Alpha")
+    fadeOut:SetFromAlpha(1); fadeOut:SetToAlpha(0); fadeOut:SetDuration(0.3); fadeOut:SetOrder(3)
+    pulse._anim = ag
+    ag:Play()
+end
+
+-- Walk the descendant tree under `root` and return the first frame whose
+-- stored `_widgetLabel` equals `label`. Falls back to matching FontString
+-- child text as a last resort.
+function GUI:_findWidgetByLabel(root, label)
+    if not root or not label then return nil end
+    if root._widgetLabel == label then return root end
+    local n = root.GetNumChildren and root:GetNumChildren() or 0
+    for i = 1, n do
+        local child = select(i, root:GetChildren())
+        if child then
+            local match = GUI:_findWidgetByLabel(child, label)
+            if match then return match end
+        end
+    end
+    local r = root.GetNumRegions and root:GetNumRegions() or 0
+    for i = 1, r do
+        local region = select(i, root:GetRegions())
+        if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+            if region.GetText and region:GetText() == label then return root end
+        end
+    end
+    return nil
+end
+
+function GUI:_findWidgetByPinnedPath(root, path)
+    if not root or type(path) ~= "string" or path == "" then
+        return nil
+    end
+
+    local binding = root._quiPinBinding
+    if type(binding) == "table" and binding.path == path then
+        return root
+    end
+
+    local n = root.GetNumChildren and root:GetNumChildren() or 0
+    for i = 1, n do
+        local child = select(i, root:GetChildren())
+        if child then
+            local match = GUI:_findWidgetByPinnedPath(child, path)
+            if match then
+                return match
+            end
+        end
+    end
+
+    return nil
+end
+
+function GUI:_findAncestorScroll(frame)
+    local p = frame and frame.GetParent and frame:GetParent()
+    while p do
+        if p.GetObjectType and p:GetObjectType() == "ScrollFrame" then return p end
+        p = p.GetParent and p:GetParent() or nil
+    end
+end
+
+--[[
+    GUI:FocusSearchBox()
+    Puts keyboard focus on the V2 sidebar search box and highlights any
+    existing text. Used by the `/` and `Ctrl+F` keyboard shortcuts.
+]]
+function GUI:FocusSearchBox()
+    local frame = self.MainFrame
+    if not frame or not frame._searchBox then return end
+    local box = frame._searchBox.editBox or frame._searchBox
+    if box and box.SetFocus then
+        box:SetFocus()
+        if box.HighlightText then pcall(box.HighlightText, box) end
     end
 end
 

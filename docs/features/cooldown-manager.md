@@ -7,78 +7,52 @@ nav_order: 1
 
 # Cooldown Manager
 
-The Cooldown Manager (CDM) is QUI's core feature. It displays your ability cooldowns as icon rows near your character, giving you at-a-glance visibility of what is ready, what is cooling down, and what is about to come off cooldown -- all without looking at your action bars.
+The Cooldown Manager, or **CDM**, is the feature most players think of first when they think of QUI. It keeps your most important abilities, buffs, and procs near the center of your screen so you can stop glancing down at action bars every few seconds.
 
-## Overview
+![Actual QUI Cooldown Manager Entries page]({{ '/assets/images/qui-cdm-entries.png' | relative_url }})
+_The Entries tab is where you confirm what each container tracks and add or remove spells from the live preview list._
 
-The CDM organizes your abilities into **containers**, each with its own layout, icon size, and behavior. It knows your class and spec, automatically populating the containers with relevant spells. You can further customize what appears through per-character custom entries and the **Composer** interface in Layout Mode.
+## Why Players Use It
 
-## How to Access Settings
+- Your core rotation is easier to track near your character.
+- Important utility and defensive cooldowns get their own space.
+- Tracked buffs, debuffs, and aura bars can live in the same visual system.
+- It works well for DPS, healing, support, and utility-heavy playstyles.
 
-CDM settings are accessed through **Layout Mode** or the `/cdm` shortcut:
+## Where To Configure It
 
-- Type `/qui layout` to enter Layout Mode, then use the toolbar and drawer to access CDM settings.
-- Type `/cdm` in chat to open CDM settings directly.
+- Open `/qui` and select **Cooldown Manager**.
+- Type `/cdm` if you want to jump straight there.
+- Use **Edit in Layout Mode** only when you want to move the container on screen.
 
-## Engines
+## Best First Setup
 
-QUI ships with two CDM engines:
+1. Move the **Essential** container to the spot your eyes naturally return to.
+2. Place **Utility** close enough to read, but far enough away that it does not compete with your main rotation.
+3. Open the **Entries** page and confirm the spells you care about are present.
+4. Adjust icon size before you change anything more advanced.
+5. Add custom entries only after the core setup already feels good.
 
-- **Owned** (default) -- Addon-created frames managed entirely by QUI. This is the active, maintained engine and the one you should use. It supports the full container system, Composer, per-spell settings, aura containers, and all modern features.
-- **Classic** -- A legacy engine that hooks into Blizzard frames. It exists for backward compatibility but is no longer actively developed.
+## How CDM Is Organized
 
-The engine is set in your profile and defaults to "owned."
+- **Essential** is your main combat bar for rotation and high-priority abilities.
+- **Utility** is usually where defensives, movement tools, interrupts, and situational buttons go.
+- **Aura containers** track buffs and debuffs as icons.
+- **Aura bars** track longer effects as bars when that reads better than icons.
 
-## Container System
+The system automatically knows your class and specialization, then lets you refine the list from there.
 
-The owned engine uses a flexible **container** system. Each container has a type that determines what it tracks and how it displays:
+## What You Can Customize
 
-- **Cooldown** -- Tracks ability cooldowns. The Essential and Utility bars are cooldown containers.
-- **Aura** -- Tracks buffs and debuffs as icon displays (replaces the old "Buff Icons" concept).
-- **Aura Bar** -- Tracks buffs as status bars with progress indicators (replaces the old "Tracked Bar" concept).
+- Container size, rows, spacing, and growth direction
+- Which spells appear, and in what order, through the **Entries** page
+- Per-spell overrides for visibility and effects
+- Glow, swipe, range, usability, and desaturation behaviors
+- Keybind display and optional click interaction
+- Visibility rules so bars appear only when you want them
 
-```mermaid
-graph LR
-    subgraph Cooldown["Cooldown Containers"]
-        ESS["Essential<br/>8 icons/row, 39px"]
-        UTIL["Utility<br/>6 icons/row, 30px"]
-    end
-
-    subgraph Aura["Aura Containers"]
-        ICONS["Aura Icons<br/>Buff/debuff tracking"]
-        BARS["Aura Bars<br/>Status bar display"]
-    end
-
-    SPELL["Spell Data<br/>+ Custom Entries"] --> Cooldown
-    HOOKS["Blizzard Viewer<br/>Hooks"] --> Aura
-    COMPOSER["Composer<br/>(Layout Mode)"] --> Cooldown
-    COMPOSER --> Aura
-
-    style Cooldown fill:#1a1a2e,stroke:#34D399,color:#fff
-    style Aura fill:#1a1a2e,stroke:#34D399,color:#fff
-```
-
-Containers can be positioned independently in Layout Mode and each has its own layout settings (icon count, icon size, growth direction, rows, etc.).
-
-## Key Features
-
-- **Essential Container** -- Your primary rotation abilities. Defaults to 8 icons per row with up to 3 rows. Default icon size is 39px.
-- **Utility Container** -- Defensive and utility cooldowns. Defaults to 6 icons per row (row 1 only; rows 2-3 are disabled by default). Default icon size is 30px.
-- **Aura Containers** -- Tracked buff and aura display with customizable shape, growth direction, and duration/stack text.
-- **Aura Bar Containers** -- Status bars for tracked buffs with inactive mode options: always visible, fade out, or hide entirely. Supports custom fill colors for individual bar entries.
-- **Composer** -- A Layout Mode interface for managing what spells appear in each container, reordering them, enabling/disabling individual spells, and configuring per-spell settings.
-- **Custom Entries** -- Per-character spell or item additions to the Essential or Utility containers. Stored in your character-specific database (`db.char`), so each character can have unique additions.
-- **Spec-specific custom entries** -- Custom CDM entries can be configured per-specialization, allowing different tracked spells for each spec.
-- **Per-Spell Settings** -- Individual spells in the Composer can have per-entry overrides for enabled/disabled state, glow behavior, and other display options.
-- **Effects** -- Glow types (Pixel Glow, Autocast Shine, Button Glow) and swipe overlays for GCD, cooldown, and buff duration visualization. Separate swipe color defaults for aura and cooldown swipes.
-- **Range Indicator** -- Tints icons red when your target is out of range for that ability.
-- **Usability Indicator** -- Shows when abilities cannot currently be used (insufficient resources, wrong stance, etc.).
-- **Desaturation** -- Icons go desaturated while on cooldown for clear visual distinction.
-- **Keybind Display** -- Shows your keybind text on each icon so you always know which key to press.
-- **Click-to-Cast** -- CDM icons can function as clickable buttons with macro resolution and secure overlays.
-- **Rotation Helper Overlay** -- Integrates with WoW's `C_AssistedCombat` API to highlight suggested abilities.
-- **Growth Direction** -- Configurable growth direction for containers (horizontal/vertical, left/right, up/down, center).
-- **Target Debuff Tracking** -- Aura containers can track debuffs on your target using `auraDataUnit` and `linkedSpellIDs` for ability-to-debuff mapping.
+![Actual QUI Cooldown Manager Appearance page]({{ '/assets/images/qui-cdm-appearance.png' | relative_url }})
+_The Appearance tab is where you change icon size, layout direction, padding, text placement, and other container-level presentation choices._
 
 ## Important Settings
 
@@ -95,27 +69,24 @@ Containers can be positioned independently in Layout Mode and each has its own l
 | Show keybinds | Display keybind text on icons | Enabled |
 | Clickable icons | Enable click-to-cast on CDM icons | Disabled |
 
-## Visibility Rules
-
-The CDM supports several visibility modes that control when containers appear:
-
-- Always visible
-- In combat only
-- When you have a target
-- While in a group
-- On mouseover
-- Custom combinations of the above
-- Hide when mounted, flying, skyriding, or in a vehicle
-
-Configure these in the CDM visibility settings or via the HUD Visibility tab.
-
-## Tips
+## Common CDM Styles
 
 {: .note }
-Custom entries are stored per-character, not per-profile. If you add a trinket to your Essential container on one character, it will not appear on another character even if they share the same profile.
+- **Minimal combat HUD**: one Essential row, one Utility row, very little else.
 
 {: .note }
-You can add both spells and items as custom entries. This is especially useful for tracking trinket cooldowns or on-use items alongside your rotation abilities.
+- **Aura-heavy setup**: add icon or bar containers for tracked buffs and debuffs.
 
 {: .note }
-The Composer in Layout Mode is the primary tool for managing your CDM spell list. Use it to reorder spells, enable/disable individual entries, and adjust per-spell settings without leaving Layout Mode.
+- **Role-based setup**: keep healing or support cooldowns in Utility so the main bar stays readable.
+
+## Good To Know
+
+{: .note }
+Custom entries are stored per character, so a trinket or utility spell you add on one character will not automatically appear on another.
+
+{: .note }
+The **Entries** page is the fastest way to make CDM feel personal. Use it before chasing tiny spacing tweaks.
+
+{: .note }
+If you are unsure whether to track something as an icon or a bar, start with icons. Move to aura bars when duration readability matters more than button-like recognition.

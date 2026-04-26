@@ -796,7 +796,7 @@ local PROFILE_IMPORT_CATEGORIES = {
     {
         id = "layout",
         label = "Layout / Positions",
-        description = "Mover positions, HUD anchors, frame placement, and tracked element offsets.",
+                description = "Mover positions, frame placement, and tracked element offsets.",
         recommended = false,
         topLevelKeys = { "frameAnchoring", "dandersFrames", "abilityTimeline" },
         paths = PROFILE_LAYOUT_PATHS,
@@ -1558,6 +1558,15 @@ local function ApplyFullProfilePayload(core, importedProfile)
         end
     end
 
+    local pins = ns.Settings and ns.Settings.Pins
+    if pins and type(pins.HandleFullImportSnapshot) == "function" then
+        local migratedImport = CloneValue(importedProfile)
+        if ns.Migrations and type(ns.Migrations.RunOnProfile) == "function" then
+            ns.Migrations.RunOnProfile(migratedImport)
+        end
+        pins:HandleFullImportSnapshot(core.db, migratedImport)
+    end
+
     -- Run backward-compatibility migrations on the freshly imported data
     -- so that legacy keys (castBar, unitFrames, etc.) are moved to their
     -- current locations before any module tries to read them.
@@ -1715,6 +1724,11 @@ local function RunImportProfileSelection(core, payloadOrErr, selectedCategoryIDs
         RestorePathList(profile, previousProfile, PROFILE_LAYOUT_PATHS)
         RestoreCustomTrackerLayout(profile, previousProfile)
         RestoreDatatextPanelLayout(profile, previousProfile)
+    end
+
+    local pins = ns.Settings and ns.Settings.Pins
+    if pins and type(pins.HandleSelectiveImport) == "function" then
+        pins:HandleSelectiveImport(core.db, selectedSpecs)
     end
 
     if ns.Registry then

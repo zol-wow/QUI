@@ -39,6 +39,7 @@ local defaults = {
             skinKeystoneFrame = true,  -- Skin keystone insertion window
             skinGameMenu = true,  -- Skin ESC menu (opt-in)
             allowReloadInCombat = false,  -- Allow /reload during combat (bypass SafeReload)
+            showOptionTooltips = true,  -- Show on-hover explanations over each option in the settings panel
             addQUIButton = true,  -- Add QUI button to ESC menu (opt-in)
             addEditModeButton = true,  -- Add QUI Edit Mode button to ESC menu
             gameMenuFontSize = 12,  -- Game menu button font size
@@ -4166,6 +4167,11 @@ local defaults = {
     global = {
         -- Gold tracking per character (realm-name = copper)
         goldData = {},
+        pinnedSettings = {
+            _version = 1,
+            _updatedAt = 0,
+            entries = {},
+        },
         -- Spell Scanner: cross-character spell/item duration mappings
         spellScanner = {
             spells = {},   -- [castSpellID] = { buffSpellID, duration, icon, name, scannedAt }

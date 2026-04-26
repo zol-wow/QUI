@@ -7,18 +7,18 @@ nav_order: 1
 
 # Installation
 
-QUI requires **World of Warcraft Midnight (12.0+)**. It supports Interface versions `120000`, `120001`, and `120005`.
+QUI requires **World of Warcraft Midnight (12.0+)**.
 
-## Option 1: CurseForge or WoWUp App
+## Fastest Option: Addon Manager
 
-The easiest way to install QUI is through an addon manager.
+For most players, the easiest path is an addon manager.
 
 1. Open the **CurseForge** or **WoWUp** application.
 2. Search for **"QUI Community Edition"**.
 3. Click **Install**.
 4. The app handles updates automatically.
 
-## Option 2: Manual Installation
+## Manual Install
 
 1. Download the latest release from one of these sources:
    - [GitHub Releases](https://github.com/zol-wow/QUI/releases)
@@ -30,7 +30,7 @@ The easiest way to install QUI is through an addon manager.
    ```
 4. Make sure the folder structure is correct -- `QUI.toc` should be directly inside the `QUI` folder, not nested in a subfolder.
 
-## Verifying the Installation
+## Confirm It Loaded Correctly
 
 1. Launch World of Warcraft.
 2. On the character select screen, click **AddOns** in the lower-left corner.
@@ -38,13 +38,10 @@ The easiest way to install QUI is through an addon manager.
 4. Log in to a character and type `/rl` to reload the UI.
 5. Type `/qui` to open the options panel and confirm QUI is running.
 
-## Optional Dependencies
+## If Something Looks Wrong
 
-QUI works as a standalone addon, but it can integrate with the following addons if they are installed:
+- If QUI does not appear in the addon list, check that the folder is not nested twice.
+- If `/qui` does nothing, reload once and try again.
+- If the addon loads but the screen looks unfinished, continue to [First Setup](first-setup) before assuming anything is broken.
 
-| Addon | Integration |
-|-------|-------------|
-| **DandersFrames** | Frame anchoring integration for enhanced layout control. |
-| **BigWigs** | Anchoring integration and pull timer coordination. |
-
-These addons are not required. QUI will detect them automatically and enable integration features when they are present.
+Compatible integrations are detected automatically when they are present, but QUI does not need extra addons to work.

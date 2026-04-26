@@ -778,6 +778,7 @@ local function SetupPrivateAuras()
         local slot = paSlots[i]
         if not slot then
             slot = CreateFrame("Frame", "QUI_PlayerPrivateAura" .. i, debuffContainer)
+            slot:SetIgnoreParentAlpha(true)
             paSlots[i] = slot
         end
         slot:SetSize(iconSize, iconSize)

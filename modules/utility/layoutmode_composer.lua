@@ -7,9 +7,6 @@
 
 local ADDON_NAME, ns = ...
 
-local QUI_LayoutMode_Composer = {}
-ns.QUI_LayoutMode_Composer = QUI_LayoutMode_Composer
-
 ---------------------------------------------------------------------------
 -- CONSTANTS
 ---------------------------------------------------------------------------
@@ -466,16 +463,40 @@ local FAKE_PRIVATE_AURA_ICON = 136116  -- generic aura
 local FAKE_CLASS = "PALADIN"
 local FAKE_NAME = "Healena"
 local FAKE_HP_PCT = 65
+local PREVIEW_ROLE_ATLAS = {
+    TANK = "roleicon-tiny-tank",
+    HEALER = "roleicon-tiny-healer",
+    DAMAGER = "roleicon-tiny-dps",
+}
+local PREVIEW_ROLE_ORDER = {
+    { role = "HEALER", toggleKey = "showRoleHealer" },
+    { role = "TANK", toggleKey = "showRoleTank" },
+    { role = "DAMAGER", toggleKey = "showRoleDPS" },
+}
 
 ---------------------------------------------------------------------------
 -- DYNAMIC LAYOUT
 ---------------------------------------------------------------------------
+-- Dual-column mode (set by the V2 Group Frames tile while rendering an
+-- element tab). Pairs consecutive visible non-header rows into a
+-- CreateSettingsCardGroup-style two-column layout: left cell on LEFT→CENTER,
+-- right cell on CENTER→RIGHT, 1px center divider, alternating row-tint
+-- background. Header rows remain full-width. Unpaired trailing row gets
+-- full width too. Conditional (condFn) rows reflow on every Relayout so
+-- visibility toggles re-pair cleanly.
+local _composerDualColumn = false
+
+local CARD_ROW_HEIGHT = 32
+
 local function CreateDynamicLayout(content, onRelayout)
     local rows = {}
+    local dualColumn = _composerDualColumn
     local L = {}
     function L:Row(widget, height, condFn, isHeader)
         rows[#rows + 1] = { widget = widget, height = height, condFn = condFn, isHeader = isHeader }
-        if not isHeader then widget:SetPoint("RIGHT", content, "RIGHT", -PAD, 0) end
+        if not isHeader and not dualColumn then
+            widget:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+        end
     end
     function L:Header(widget) self:Row(widget, widget.gap, nil, true) end
     function L:Finish()
@@ -483,7 +504,35 @@ local function CreateDynamicLayout(content, onRelayout)
         for _, row in ipairs(rows) do
             if row.condFn then hasCondRows = true; break end
         end
-        local function Relayout()
+
+        -- Card-style row chrome pooled across Relayout calls so the bg/divider
+        -- textures aren't leaked on every visibility toggle.
+        local rowFrames = {}
+        local function AcquireRowFrame(idx)
+            local rf = rowFrames[idx]
+            if not rf then
+                rf = CreateFrame("Frame", nil, content)
+                rf._bg = rf:CreateTexture(nil, "BACKGROUND")
+                rf._bg:SetAllPoints(rf)
+                rf._bg:Hide()
+                rf._divider = rf:CreateTexture(nil, "ARTWORK")
+                rf._divider:SetWidth(1)
+                rf._divider:SetColorTexture(1, 1, 1, 0.05)
+                rf._divider:Hide()
+                rowFrames[idx] = rf
+            end
+            return rf
+        end
+
+        local function HideAllRowFrames()
+            for _, rf in pairs(rowFrames) do
+                rf:Hide()
+                rf._divider:Hide()
+                rf._bg:Hide()
+            end
+        end
+
+        local function RelayoutFullWidth()
             local ly = -10
             for _, row in ipairs(rows) do
                 local visible = true
@@ -499,15 +548,105 @@ local function CreateDynamicLayout(content, onRelayout)
                 end
             end
             content:SetHeight(math.abs(ly) + 10)
+        end
+
+        local function RelayoutDualColumn()
+            HideAllRowFrames()
+
+            -- First pass: collect visible rows in order; build a layout plan
+            -- that pairs non-header rows and keeps headers full-width.
+            -- condFn is intentionally ignored here: V2 tile paradigm keeps
+            -- every option visible regardless of related enable toggles
+            -- (the old hide-when-disabled behavior lived in the legacy
+            -- composer panel). Rows stay in the layout; the user sees
+            -- the full surface and can flip toggles without settings
+            -- disappearing.
+            local plan = {}
+            local pending  -- the row waiting to be paired
+            for _, row in ipairs(rows) do
+                if row.isHeader then
+                    if pending then
+                        plan[#plan + 1] = { left = pending }
+                        pending = nil
+                    end
+                    plan[#plan + 1] = { header = row }
+                else
+                    if pending then
+                        plan[#plan + 1] = { left = pending, right = row }
+                        pending = nil
+                    else
+                        pending = row
+                    end
+                end
+            end
+            if pending then plan[#plan + 1] = { left = pending } end
+
+            -- Second pass: place each plan entry.
+            local ly = -10
+            local rowIdx = 0
+            for _, entry in ipairs(plan) do
+                if entry.header then
+                    local w = entry.header.widget
+                    w:ClearAllPoints()
+                    w:SetPoint("TOPLEFT", PAD, ly)
+                    w:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, ly)
+                    w:Show()
+                    ly = ly - entry.header.height
+                else
+                    rowIdx = rowIdx + 1
+                    local rf = AcquireRowFrame(rowIdx)
+                    rf:ClearAllPoints()
+                    rf:SetPoint("TOPLEFT", content, "TOPLEFT", PAD - 2, ly)
+                    rf:SetPoint("TOPRIGHT", content, "TOPRIGHT", -(PAD - 2), ly)
+                    rf:SetHeight(CARD_ROW_HEIGHT)
+                    rf:Show()
+
+                    -- Alternating bg tint — odd rows (zero-indexed) pick up a
+                    -- subtle 2% white fill, even rows stay unfilled.
+                    if (rowIdx % 2) == 0 then
+                        rf._bg:SetColorTexture(1, 1, 1, 0.02)
+                        rf._bg:Show()
+                    end
+
+                    local left = entry.left.widget
+                    left:ClearAllPoints()
+                    left:SetPoint("LEFT", rf, "LEFT", 12, 0)
+                    if entry.right then
+                        left:SetPoint("RIGHT", rf, "CENTER", -12, 0)
+                        local right = entry.right.widget
+                        right:ClearAllPoints()
+                        right:SetPoint("LEFT", rf, "CENTER", 12, 0)
+                        right:SetPoint("RIGHT", rf, "RIGHT", -12, 0)
+                        right:Show()
+                        -- Center divider between columns
+                        rf._divider:ClearAllPoints()
+                        rf._divider:SetPoint("TOP", rf, "TOP", 0, -6)
+                        rf._divider:SetPoint("BOTTOM", rf, "BOTTOM", 0, 6)
+                        rf._divider:Show()
+                    else
+                        left:SetPoint("RIGHT", rf, "RIGHT", -12, 0)
+                    end
+                    left:Show()
+                    ly = ly - CARD_ROW_HEIGHT
+                end
+            end
+            content:SetHeight(math.abs(ly) + 10)
+        end
+
+        local function Relayout()
+            if dualColumn then
+                RelayoutDualColumn()
+            else
+                RelayoutFullWidth()
+            end
             if onRelayout then onRelayout() end
         end
+
         for _, row in ipairs(rows) do
             if row.widget.track and not row.condFn then
                 row.widget.track:HookScript("OnClick", Relayout)
             end
         end
-        -- Register relayout on the content frame so onChange can re-evaluate
-        -- conditional row visibility without depending solely on HookScript
         if hasCondRows then
             if not content._relayouts then content._relayouts = {} end
             content._relayouts[#content._relayouts + 1] = Relayout
@@ -525,7 +664,121 @@ local GUI  -- forward-declared, set on Open()
 local C    -- forward-declared, set on Open()
 local COLLAPSIBLE_HEADER_H = 24
 
+-- When the V2 Group Frames tile renders an element tab, it sets this
+-- flag so composer collapsibles open by default instead of showing as
+-- collapsed section headers. Renderer-hosted tabs get the same flat-content
+-- treatment via headerless/borderless markers —
+-- this mirrors that behavior for element-builder tabs, which use
+-- CreateComposerCollapsible instead of U.CreateCollapsible.
+local _composerAutoExpand = false
+
+-- Flat section renderer. Produces the same visual chrome U.CreateCollapsible
+-- renders in borderless mode: accent dot + title label +
+-- 1px accent underline, then body content. Keeps the element-tab visuals
+-- consistent with the sliced-provider tabs (Range & Pet, Appearance, etc.)
+-- inside the same Group Frames tile. Returns a frame satisfying the
+-- collapsible-section contract (SetPoint/ClearAllPoints/GetHeight, ._title,
+-- ._body, ._updateHeight) so RelayoutComposerSections can stack these
+-- among regular sections.
+local FLAT_HEADER_H = 24       -- matches Utils.HEADER_HEIGHT
+local FLAT_HEADER_GAP = 6      -- matches Utils CARD_GAP so widgets line up
+local FLAT_BODY_TOP_PAD = 8    -- matches Utils CARD_PAD
+
+local function BuildFlatSection(parent, title, buildFn, sections, masterRelayout)
+    local section = CreateFrame("Frame", nil, parent)
+    section:SetHeight(1)
+    section._title = title
+    section._flat = true
+
+    -- Accent color from GUI theme (falls back to the V2 mint default).
+    local r, g, b = 0.2, 0.83, 0.6
+    local colors = GUI and GUI.Colors
+    if colors and colors.accent then
+        r, g, b = colors.accent[1], colors.accent[2], colors.accent[3]
+    end
+
+    -- Accent dot
+    local dot = section:CreateTexture(nil, "OVERLAY")
+    dot:SetSize(4, 4)
+    dot:SetPoint("TOPLEFT", section, "TOPLEFT", 2, -((FLAT_HEADER_H - 4) / 2))
+    dot:SetColorTexture(r, g, b, 1)
+
+    -- Title label (accent-colored)
+    local label = section:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    label:SetPoint("LEFT", dot, "RIGHT", 8, 0)
+    label:SetTextColor(r, g, b, 1)
+    label:SetText(title)
+
+    -- 1px accent underline spanning the section width
+    local underline = section:CreateTexture(nil, "ARTWORK")
+    underline:SetHeight(1)
+    underline:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -FLAT_HEADER_H)
+    underline:SetPoint("TOPRIGHT", section, "TOPRIGHT", 0, -FLAT_HEADER_H)
+    underline:SetColorTexture(r, g, b, 0.3)
+
+    local bodyTop = FLAT_HEADER_H + FLAT_HEADER_GAP + FLAT_BODY_TOP_PAD
+    local body = CreateFrame("Frame", nil, section)
+    body:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -bodyTop)
+    body:SetPoint("TOPRIGHT", section, "TOPRIGHT", 0, -bodyTop)
+    body:SetHeight(1)
+    section._body = body
+
+    -- Measures the tallest child/region descending from body, same math as
+    -- the collapsible path's MeasureBodyContentHeight. buildFn layers can
+    -- also set body._contentHeight to short-circuit the measure.
+    local function MeasureBody()
+        local contentHeight = 0
+        if type(body._contentHeight) == "number" and body._contentHeight > 0 then
+            contentHeight = body._contentHeight
+            body._contentHeight = nil
+        end
+        local bodyTop = body.GetTop and body:GetTop()
+        if bodyTop then
+            local maxOffset = 0
+            local function Accumulate(region)
+                if not region or not region.GetBottom then return end
+                if region.IsShown and not region:IsShown() then return end
+                local bottom = region:GetBottom()
+                if bottom then
+                    maxOffset = math.max(maxOffset, bodyTop - bottom)
+                end
+            end
+            local childCount = body.GetNumChildren and body:GetNumChildren() or 0
+            for i = 1, childCount do
+                Accumulate(select(i, body:GetChildren()))
+            end
+            local regionCount = body.GetNumRegions and body:GetNumRegions() or 0
+            for i = 1, regionCount do
+                Accumulate(select(i, body:GetRegions()))
+            end
+            if maxOffset > 0 then
+                contentHeight = math.max(contentHeight, math.ceil(maxOffset + 8))
+            end
+        end
+        if contentHeight <= 0 then contentHeight = 1 end
+        return contentHeight
+    end
+
+    local function UpdateFlatHeight()
+        local h = MeasureBody()
+        body:SetHeight(h)
+        section:SetHeight(bodyTop + h)
+        if masterRelayout then masterRelayout() end
+    end
+    section._updateHeight = UpdateFlatHeight
+
+    buildFn(body, UpdateFlatHeight)
+    UpdateFlatHeight()
+    C_Timer.After(0, UpdateFlatHeight)
+
+    if sections then sections[#sections + 1] = section end
+    return section
+end
+
 local function CreateComposerCollapsible(parent, title, buildFn, sections, masterRelayout)
+    if _composerAutoExpand then
+        return BuildFlatSection(parent, title, buildFn, sections, masterRelayout)
+    end
     local section = CreateFrame("Frame", nil, parent)
     section:SetHeight(COLLAPSIBLE_HEADER_H)
     section._title = title
@@ -1034,52 +1287,52 @@ local function BuildHealthSettings(content, gfdb, onChange)
 
     CreateComposerCollapsible(content, "Health Bar", function(body, updateH)
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormDropdown(body, "Health Texture", GetTextureList(), "texture", general, onChange), DROP_ROW)
-        L:Row(GUI:CreateFormSlider(body, "Health Opacity", 0, 1, 0.05, "defaultHealthOpacity", general, onChange), SLIDER_HEIGHT)
-        L:Row(GUI:CreateFormDropdown(body, "Fill Direction", HEALTH_FILL_OPTIONS, "healthFillDirection", health, onChange), DROP_ROW)
+        L:Row(GUI:CreateFormDropdown(body, "Health Texture", GetTextureList(), "texture", general, onChange, { description = "Statusbar texture used for the health bar. Supports SharedMedia — install the SharedMedia addon to add more." }), DROP_ROW)
+        L:Row(GUI:CreateFormSlider(body, "Health Opacity", 0, 1, 0.05, "defaultHealthOpacity", general, onChange, nil, { description = "Opacity of the filled portion of the health bar. 1.0 is fully opaque." }), SLIDER_HEIGHT)
+        L:Row(GUI:CreateFormDropdown(body, "Fill Direction", HEALTH_FILL_OPTIONS, "healthFillDirection", health, onChange, { description = "Direction the health fill drains toward as the unit loses health." }), DROP_ROW)
         L:Finish()
     end, sections, relayout)
 
     CreateComposerCollapsible(content, "Health Text", function(body, updateH)
         local cond = function() return health.showHealthText end
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Health Text", "showHealthText", health, onChange), FORM_ROW)
-        L:Row(GUI:CreateFormDropdown(body, "Display Style", HEALTH_DISPLAY_OPTIONS, "healthDisplayStyle", health, onChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormSlider(body, "Font Size", 6, 24, 1, "healthFontSize", health, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "healthAnchor", health, onChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormDropdown(body, "Text Justify", TEXT_JUSTIFY_OPTIONS, "healthJustify", health, onChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "healthOffsetX", health, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "healthOffsetY", health, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormColorPicker(body, "Text Color", "healthTextColor", health, onChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Health Text", "showHealthText", health, onChange, { description = "Show the unit's health as text on this frame. Use Display Style below to pick the format." }), FORM_ROW)
+        L:Row(GUI:CreateFormDropdown(body, "Display Style", HEALTH_DISPLAY_OPTIONS, "healthDisplayStyle", health, onChange, { description = "How health is formatted: percent only, raw value, value-plus-percent (either order), or missing health as a negative percent/value." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "Font Size", 6, 24, 1, "healthFontSize", health, onChange, nil, { description = "Font size used for the health text." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "healthAnchor", health, onChange, { description = "Where on the frame the health text is anchored. X/Y Offset below nudges it from this anchor point." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Text Justify", TEXT_JUSTIFY_OPTIONS, "healthJustify", health, onChange, { description = "Horizontal text alignment within the health text region (left, center, right)." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "healthOffsetX", health, onChange, nil, { description = "Horizontal pixel offset for the health text from its anchor. Positive moves right, negative moves left." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "healthOffsetY", health, onChange, nil, { description = "Vertical pixel offset for the health text from its anchor. Positive moves up, negative moves down." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormColorPicker(body, "Text Color", "healthTextColor", health, onChange, nil, { description = "Color used for the health text when class/reaction coloring is not applied to health text." }), FORM_ROW, cond)
         L:Finish()
     end, sections, relayout)
 
     CreateComposerCollapsible(content, "Absorb Shield", function(body, updateH)
         local absorbCond = function() return absorbs.enabled end
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Absorb Shield", "enabled", absorbs, onChange), FORM_ROW)
-        L:Row(GUI:CreateFormCheckbox(body, "Use Class Color", "useClassColor", absorbs, onChange), FORM_ROW, absorbCond)
-        L:Row(GUI:CreateFormColorPicker(body, "Absorb Color", "color", absorbs, onChange), FORM_ROW, function() return absorbs.enabled and not absorbs.useClassColor end)
-        L:Row(GUI:CreateFormSlider(body, "Absorb Opacity", 0.1, 1, 0.05, "opacity", absorbs, onChange), SLIDER_HEIGHT, absorbCond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Absorb Shield", "enabled", absorbs, onChange, { description = "Overlay an indicator on the health bar showing the size of incoming damage absorbs." }), FORM_ROW)
+        L:Row(GUI:CreateFormCheckbox(body, "Use Class Color", "useClassColor", absorbs, onChange, { description = "Tint the absorb overlay with the unit's class color instead of the Absorb Color swatch below." }), FORM_ROW, absorbCond)
+        L:Row(GUI:CreateFormColorPicker(body, "Absorb Color", "color", absorbs, onChange, nil, { description = "Tint used for the absorb overlay when Use Class Color is off." }), FORM_ROW, function() return absorbs.enabled and not absorbs.useClassColor end)
+        L:Row(GUI:CreateFormSlider(body, "Absorb Opacity", 0.1, 1, 0.05, "opacity", absorbs, onChange, nil, { description = "Opacity of the absorb shield overlay." }), SLIDER_HEIGHT, absorbCond)
         L:Finish()
     end, sections, relayout)
 
     CreateComposerCollapsible(content, "Heal Absorb", function(body, updateH)
         local haCond = function() return healAbsorbs.enabled end
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Heal Absorb", "enabled", healAbsorbs, onChange), FORM_ROW)
-        L:Row(GUI:CreateFormColorPicker(body, "Heal Absorb Color", "color", healAbsorbs, onChange), FORM_ROW, haCond)
-        L:Row(GUI:CreateFormSlider(body, "Heal Absorb Opacity", 0.1, 1, 0.05, "opacity", healAbsorbs, onChange), SLIDER_HEIGHT, haCond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Heal Absorb", "enabled", healAbsorbs, onChange, { description = "Overlay an indicator on the health bar showing active heal-absorb effects that must be healed through before real healing lands." }), FORM_ROW)
+        L:Row(GUI:CreateFormColorPicker(body, "Heal Absorb Color", "color", healAbsorbs, onChange, nil, { description = "Tint used for the heal-absorb overlay." }), FORM_ROW, haCond)
+        L:Row(GUI:CreateFormSlider(body, "Heal Absorb Opacity", 0.1, 1, 0.05, "opacity", healAbsorbs, onChange, nil, { description = "Opacity of the heal-absorb overlay." }), SLIDER_HEIGHT, haCond)
         L:Finish()
     end, sections, relayout)
 
     CreateComposerCollapsible(content, "Heal Prediction", function(body, updateH)
         local healCond = function() return healPred.enabled end
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Heal Prediction", "enabled", healPred, onChange), FORM_ROW)
-        L:Row(GUI:CreateFormCheckbox(body, "Use Class Color", "useClassColor", healPred, onChange), FORM_ROW, healCond)
-        L:Row(GUI:CreateFormColorPicker(body, "Heal Prediction Color", "color", healPred, onChange), FORM_ROW, function() return healPred.enabled and not healPred.useClassColor end)
-        L:Row(GUI:CreateFormSlider(body, "Heal Prediction Opacity", 0.1, 1, 0.05, "opacity", healPred, onChange), SLIDER_HEIGHT, healCond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Heal Prediction", "enabled", healPred, onChange, { description = "Overlay an indicator on the health bar showing heals being cast on this unit before they land." }), FORM_ROW)
+        L:Row(GUI:CreateFormCheckbox(body, "Use Class Color", "useClassColor", healPred, onChange, { description = "Tint the heal-prediction overlay with the caster's class color instead of the Heal Prediction Color swatch below." }), FORM_ROW, healCond)
+        L:Row(GUI:CreateFormColorPicker(body, "Heal Prediction Color", "color", healPred, onChange, nil, { description = "Tint used for the incoming-heal overlay when Use Class Color is off." }), FORM_ROW, function() return healPred.enabled and not healPred.useClassColor end)
+        L:Row(GUI:CreateFormSlider(body, "Heal Prediction Opacity", 0.1, 1, 0.05, "opacity", healPred, onChange, nil, { description = "Opacity of the incoming-heal overlay." }), SLIDER_HEIGHT, healCond)
         L:Finish()
     end, sections, relayout)
 
@@ -1094,12 +1347,12 @@ local function BuildPowerSettings(content, gfdb, onChange)
     CreateComposerCollapsible(content, "Power Bar", function(body, updateH)
         local cond = function() return power.showPowerBar end
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Power Bar", "showPowerBar", power, onChange), FORM_ROW)
-        L:Row(GUI:CreateFormSlider(body, "Height", 1, 12, 1, "powerBarHeight", power, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Only Show for Healers", "powerBarOnlyHealers", power, onChange), FORM_ROW, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Only Show for Tanks", "powerBarOnlyTanks", power, onChange), FORM_ROW, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Use Power Type Color", "powerBarUsePowerColor", power, onChange), FORM_ROW, cond)
-        L:Row(GUI:CreateFormColorPicker(body, "Custom Color", "powerBarColor", power, onChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Power Bar", "showPowerBar", power, onChange, { description = "Show a power bar (mana/rage/energy/focus/runic power) below the health bar on this frame." }), FORM_ROW)
+        L:Row(GUI:CreateFormSlider(body, "Height", 1, 12, 1, "powerBarHeight", power, onChange, nil, { description = "Height of the power bar in pixels. Counted as part of the overall frame height." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Only Show for Healers", "powerBarOnlyHealers", power, onChange, { description = "Restrict the power bar to units specced as healers. Useful for focusing attention on mana pools in party/raid." }), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Only Show for Tanks", "powerBarOnlyTanks", power, onChange, { description = "Restrict the power bar to units specced as tanks. Useful when you only care about rage/runic-power/focus on your frontline." }), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Use Power Type Color", "powerBarUsePowerColor", power, onChange, { description = "Color the power bar by power type (blue mana, red rage, yellow energy, etc.). Disables the Custom Color swatch below while on." }), FORM_ROW, cond)
+        L:Row(GUI:CreateFormColorPicker(body, "Custom Color", "powerBarColor", power, onChange, nil, { description = "Solid color for the power bar when Use Power Type Color is off." }), FORM_ROW, cond)
         L:Finish()
     end, sections, relayout)
 
@@ -1114,15 +1367,15 @@ local function BuildNameSettings(content, gfdb, onChange)
     CreateComposerCollapsible(content, "Name Text", function(body, updateH)
         local cond = function() return name.showName end
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Name", "showName", name, onChange), FORM_ROW)
-        L:Row(GUI:CreateFormSlider(body, "Font Size", 6, 24, 1, "nameFontSize", name, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "nameAnchor", name, onChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormDropdown(body, "Text Justify", TEXT_JUSTIFY_OPTIONS, "nameJustify", name, onChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormSlider(body, "Max Name Length (0 = unlimited)", 0, 20, 1, "maxNameLength", name, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "nameOffsetX", name, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "nameOffsetY", name, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Use Class Color", "nameTextUseClassColor", name, onChange), FORM_ROW, cond)
-        L:Row(GUI:CreateFormColorPicker(body, "Text Color", "nameTextColor", name, onChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Name", "showName", name, onChange, { description = "Show the unit's name on this frame." }), FORM_ROW)
+        L:Row(GUI:CreateFormSlider(body, "Font Size", 6, 24, 1, "nameFontSize", name, onChange, nil, { description = "Font size used for the unit's name." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "nameAnchor", name, onChange, { description = "Where on the frame the name text is anchored. X/Y Offset below nudges it from this anchor point." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Text Justify", TEXT_JUSTIFY_OPTIONS, "nameJustify", name, onChange, { description = "Horizontal text alignment within the name text region (left, center, right)." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "Max Name Length (0 = unlimited)", 0, 20, 1, "maxNameLength", name, onChange, nil, { description = "Truncate names longer than this many characters. Set to 0 to disable truncation entirely." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "nameOffsetX", name, onChange, nil, { description = "Horizontal pixel offset for the name text from its anchor. Positive moves right, negative moves left." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "nameOffsetY", name, onChange, nil, { description = "Vertical pixel offset for the name text from its anchor. Positive moves up, negative moves down." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Use Class Color", "nameTextUseClassColor", name, onChange, { description = "Color the name text by the unit's class or reaction instead of the Text Color swatch below." }), FORM_ROW, cond)
+        L:Row(GUI:CreateFormColorPicker(body, "Text Color", "nameTextColor", name, onChange, nil, { description = "Color used for the name when Use Class Color is off." }), FORM_ROW, cond)
         L:Finish()
     end, sections, relayout)
 
@@ -1167,17 +1420,17 @@ local function BuildBuffsSettings(content, gfdb, onChange)
         local cond = function() return auras.showBuffs end
         local reverseCond = function() return auras.showBuffs and not auras.buffHideSwipe end
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Buffs", "showBuffs", auras, syncedOnChange), FORM_ROW)
-        L:Row(GUI:CreateFormSlider(body, "Max Buffs", 0, 8, 1, "maxBuffs", auras, syncedOnChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 64, 1, "buffIconSize", auras, syncedOnChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Hide Duration Swipe", "buffHideSwipe", auras, syncedOnChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Buffs", "showBuffs", auras, syncedOnChange, { description = "Show buff icons on this unit frame." }), FORM_ROW)
+        L:Row(GUI:CreateFormSlider(body, "Max Buffs", 0, 8, 1, "maxBuffs", auras, syncedOnChange, nil, { description = "Hard cap on how many buff icons this frame displays at once." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 64, 1, "buffIconSize", auras, syncedOnChange, nil, { description = "Pixel size of each buff icon." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Hide Duration Swipe", "buffHideSwipe", auras, syncedOnChange, { description = "Hide the clockwise cooldown swipe animation drawn over buff icons. Duration text (if enabled) keeps working." }), FORM_ROW, cond)
         AddAuraDurationTextRows(body, L, auras, "buff", "Buff", syncedOnChange, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "buffReverseSwipe", auras, syncedOnChange), FORM_ROW, reverseCond)
-        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "buffAnchor", auras, syncedOnChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "buffGrowDirection", auras, syncedOnChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "buffSpacing", auras, syncedOnChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "buffOffsetX", auras, syncedOnChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "buffOffsetY", auras, syncedOnChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "buffReverseSwipe", auras, syncedOnChange, { description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as time passes." }), FORM_ROW, reverseCond)
+        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "buffAnchor", auras, syncedOnChange, { description = "Which corner of the frame the first buff icon is anchored to." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "buffGrowDirection", auras, syncedOnChange, { description = "Direction additional buff icons are added in after the first." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "buffSpacing", auras, syncedOnChange, nil, { description = "Pixel gap between adjacent buff icons." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "buffOffsetX", auras, syncedOnChange, nil, { description = "Horizontal pixel offset for the buff block from its anchor corner." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "buffOffsetY", auras, syncedOnChange, nil, { description = "Vertical pixel offset for the buff block from its anchor corner." }), SLIDER_HEIGHT, cond)
         sectionRelayouts[#sectionRelayouts + 1] = L:Finish()
     end, sections, relayout)
 
@@ -1187,16 +1440,16 @@ local function BuildBuffsSettings(content, gfdb, onChange)
         local classificationContainer = CreateFrame("Frame", nil, body)
         classificationContainer:SetPoint("RIGHT", body, "RIGHT", -PAD, 0)
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormDropdown(body, "Filter Mode", FILTER_MODE_OPTIONS, "filterMode", auras, syncedOnChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Only My Buffs", "buffFilterOnlyMine", auras, syncedOnChange), FORM_ROW, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Hide Permanent Buffs", "buffHidePermanent", auras, syncedOnChange), FORM_ROW, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Deduplicate Defensives/Indicators", "buffDeduplicateDefensives", auras, syncedOnChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Filter Mode", FILTER_MODE_OPTIONS, "filterMode", auras, syncedOnChange, { description = "Choose how buffs are filtered: off shows everything, classification only shows the categories selected below, whitelist only shows listed spells." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Only My Buffs", "buffFilterOnlyMine", auras, syncedOnChange, { description = "Only show buffs cast by you. Hides buffs applied by other players or NPCs." }), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Hide Permanent Buffs", "buffHidePermanent", auras, syncedOnChange, { description = "Hide buffs with no remaining duration (e.g. class auras, flasks). Reduces visual noise on raid frames." }), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Deduplicate Defensives/Indicators", "buffDeduplicateDefensives", auras, syncedOnChange, { description = "Hide buff icons that are already shown by the defensive indicator or an aura indicator, preventing the same buff from appearing twice." }), FORM_ROW, cond)
         L:Row(classificationContainer, FORM_ROW * 3, classCond)
         local classY = 0
         local buffClass = auras.buffClassifications; if not buffClass then auras.buffClassifications = {} buffClass = auras.buffClassifications end
-        local c1 = GUI:CreateFormCheckbox(classificationContainer, "Raid", "raid", buffClass, syncedOnChange); c1:SetPoint("TOPLEFT", 0, classY); c1:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
-        local c2 = GUI:CreateFormCheckbox(classificationContainer, "Cancelable", "cancelable", buffClass, syncedOnChange); c2:SetPoint("TOPLEFT", 0, classY); c2:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
-        local c5 = GUI:CreateFormCheckbox(classificationContainer, "Important", "important", buffClass, syncedOnChange); c5:SetPoint("TOPLEFT", 0, classY); c5:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
+        local c1 = GUI:CreateFormCheckbox(classificationContainer, "Raid", "raid", buffClass, syncedOnChange, { description = "Include buffs flagged by Blizzard as raid-relevant (e.g. healing cooldowns, external buffs)." }); c1:SetPoint("TOPLEFT", 0, classY); c1:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
+        local c2 = GUI:CreateFormCheckbox(classificationContainer, "Cancelable", "cancelable", buffClass, syncedOnChange, { description = "Include buffs you can right-click to cancel (mostly your own player buffs)." }); c2:SetPoint("TOPLEFT", 0, classY); c2:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
+        local c5 = GUI:CreateFormCheckbox(classificationContainer, "Important", "important", buffClass, syncedOnChange, { description = "Include buffs flagged by Blizzard as important (key cooldowns and notable effects)." }); c5:SetPoint("TOPLEFT", 0, classY); c5:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
         classificationContainer:SetHeight(math.abs(classY))
         sectionRelayouts[#sectionRelayouts + 1] = L:Finish()
     end, sections, relayout)
@@ -1240,17 +1493,17 @@ local function BuildDebuffsSettings(content, gfdb, onChange)
         local cond = function() return auras.showDebuffs end
         local reverseCond = function() return auras.showDebuffs and not auras.debuffHideSwipe end
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Debuffs", "showDebuffs", auras, syncedOnChange), FORM_ROW)
-        L:Row(GUI:CreateFormSlider(body, "Max Debuffs", 0, 8, 1, "maxDebuffs", auras, syncedOnChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 64, 1, "debuffIconSize", auras, syncedOnChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Hide Duration Swipe", "debuffHideSwipe", auras, syncedOnChange), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Debuffs", "showDebuffs", auras, syncedOnChange, { description = "Show debuff icons on this unit frame." }), FORM_ROW)
+        L:Row(GUI:CreateFormSlider(body, "Max Debuffs", 0, 8, 1, "maxDebuffs", auras, syncedOnChange, nil, { description = "Hard cap on how many debuff icons this frame displays at once." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 64, 1, "debuffIconSize", auras, syncedOnChange, nil, { description = "Pixel size of each debuff icon." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Hide Duration Swipe", "debuffHideSwipe", auras, syncedOnChange, { description = "Hide the clockwise cooldown swipe animation drawn over debuff icons. Duration text (if enabled) keeps working." }), FORM_ROW, cond)
         AddAuraDurationTextRows(body, L, auras, "debuff", "Debuff", syncedOnChange, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "debuffReverseSwipe", auras, syncedOnChange), FORM_ROW, reverseCond)
-        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "debuffAnchor", auras, syncedOnChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "debuffGrowDirection", auras, syncedOnChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "debuffSpacing", auras, syncedOnChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "debuffOffsetX", auras, syncedOnChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "debuffOffsetY", auras, syncedOnChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "debuffReverseSwipe", auras, syncedOnChange, { description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as time passes." }), FORM_ROW, reverseCond)
+        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "debuffAnchor", auras, syncedOnChange, { description = "Which corner of the frame the first debuff icon is anchored to." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "debuffGrowDirection", auras, syncedOnChange, { description = "Direction additional debuff icons are added in after the first." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "debuffSpacing", auras, syncedOnChange, nil, { description = "Pixel gap between adjacent debuff icons." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "debuffOffsetX", auras, syncedOnChange, nil, { description = "Horizontal pixel offset for the debuff block from its anchor corner." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "debuffOffsetY", auras, syncedOnChange, nil, { description = "Vertical pixel offset for the debuff block from its anchor corner." }), SLIDER_HEIGHT, cond)
         sectionRelayouts[#sectionRelayouts + 1] = L:Finish()
     end, sections, relayout)
 
@@ -1260,13 +1513,13 @@ local function BuildDebuffsSettings(content, gfdb, onChange)
         local classificationContainer = CreateFrame("Frame", nil, body)
         classificationContainer:SetPoint("RIGHT", body, "RIGHT", -PAD, 0)
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormDropdown(body, "Filter Mode", FILTER_MODE_OPTIONS, "filterMode", auras, syncedOnChange), DROP_ROW, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Filter Mode", FILTER_MODE_OPTIONS, "filterMode", auras, syncedOnChange, { description = "Choose how debuffs are filtered: off shows everything, classification only shows the categories selected below, whitelist only shows listed spells." }), DROP_ROW, cond)
         L:Row(classificationContainer, FORM_ROW * 3, classCond)
         local classY = 0
         local debuffClass = auras.debuffClassifications; if not debuffClass then auras.debuffClassifications = {} debuffClass = auras.debuffClassifications end
-        local d1 = GUI:CreateFormCheckbox(classificationContainer, "Raid", "raid", debuffClass, syncedOnChange); d1:SetPoint("TOPLEFT", 0, classY); d1:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
-        local d2 = GUI:CreateFormCheckbox(classificationContainer, "Crowd Control", "crowdControl", debuffClass, syncedOnChange); d2:SetPoint("TOPLEFT", 0, classY); d2:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
-        local d3 = GUI:CreateFormCheckbox(classificationContainer, "Important", "important", debuffClass, syncedOnChange); d3:SetPoint("TOPLEFT", 0, classY); d3:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
+        local d1 = GUI:CreateFormCheckbox(classificationContainer, "Raid", "raid", debuffClass, syncedOnChange, { description = "Include debuffs flagged by Blizzard as raid-relevant (boss mechanics, dispellables, incoming damage effects)." }); d1:SetPoint("TOPLEFT", 0, classY); d1:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
+        local d2 = GUI:CreateFormCheckbox(classificationContainer, "Crowd Control", "crowdControl", debuffClass, syncedOnChange, { description = "Include crowd-control debuffs (stuns, fears, roots, silences, etc.)." }); d2:SetPoint("TOPLEFT", 0, classY); d2:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
+        local d3 = GUI:CreateFormCheckbox(classificationContainer, "Important", "important", debuffClass, syncedOnChange, { description = "Include debuffs flagged by Blizzard as important (key mechanics and notable effects)." }); d3:SetPoint("TOPLEFT", 0, classY); d3:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
         classificationContainer:SetHeight(math.abs(classY))
         sectionRelayouts[#sectionRelayouts + 1] = L:Finish()
     end, sections, relayout)
@@ -1302,14 +1555,14 @@ local function BuildIndicatorsSettings(content, gfdb, onChange)
     CreateComposerCollapsible(content, "Role Icon", function(body, updateH)
         local roleCond = function() return ind.showRoleIcon end
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Role Icon", "showRoleIcon", ind, onChange), FORM_ROW)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Tank", "showRoleTank", ind, onChange), FORM_ROW, roleCond)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Healer", "showRoleHealer", ind, onChange), FORM_ROW, roleCond)
-        L:Row(GUI:CreateFormCheckbox(body, "Show DPS", "showRoleDPS", ind, onChange), FORM_ROW, roleCond)
-        L:Row(GUI:CreateFormSlider(body, "Icon Size", 6, 24, 1, "roleIconSize", ind, onChange), SLIDER_HEIGHT, roleCond)
-        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "roleIconAnchor", ind, onChange), DROP_ROW, roleCond)
-        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "roleIconOffsetX", ind, onChange), SLIDER_HEIGHT, roleCond)
-        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "roleIconOffsetY", ind, onChange), SLIDER_HEIGHT, roleCond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Role Icon", "showRoleIcon", ind, onChange, { description = "Show the unit's assigned group role icon (tank/healer/DPS) on this frame." }), FORM_ROW)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Tank", "showRoleTank", ind, onChange, { description = "Include the tank role icon on units specced as tanks." }), FORM_ROW, roleCond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Healer", "showRoleHealer", ind, onChange, { description = "Include the healer role icon on units specced as healers." }), FORM_ROW, roleCond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show DPS", "showRoleDPS", ind, onChange, { description = "Include the DPS role icon on units specced as damage dealers." }), FORM_ROW, roleCond)
+        L:Row(GUI:CreateFormSlider(body, "Icon Size", 6, 24, 1, "roleIconSize", ind, onChange, nil, { description = "Pixel size of the role icon." }), SLIDER_HEIGHT, roleCond)
+        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "roleIconAnchor", ind, onChange, { description = "Where on the frame the role icon is anchored. X/Y Offset below nudges it from this anchor point." }), DROP_ROW, roleCond)
+        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "roleIconOffsetX", ind, onChange, nil, { description = "Horizontal pixel offset for the role icon from its anchor. Positive moves right, negative moves left." }), SLIDER_HEIGHT, roleCond)
+        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "roleIconOffsetY", ind, onChange, nil, { description = "Vertical pixel offset for the role icon from its anchor. Positive moves up, negative moves down." }), SLIDER_HEIGHT, roleCond)
         L:Finish()
     end, sections, relayout)
 
@@ -1317,11 +1570,11 @@ local function BuildIndicatorsSettings(content, gfdb, onChange)
         CreateComposerCollapsible(content, label, function(body, updateH)
             local cond = function() return ind[showKey] end
             local L = CreateDynamicLayout(body, updateH)
-            L:Row(GUI:CreateFormCheckbox(body, "Enable", showKey, ind, onChange), FORM_ROW)
-            L:Row(GUI:CreateFormSlider(body, "Icon Size", 6, 32, 1, sizeKey, ind, onChange), SLIDER_HEIGHT, cond)
-            L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, anchorKey, ind, onChange), DROP_ROW, cond)
-            L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, offXKey, ind, onChange), SLIDER_HEIGHT, cond)
-            L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, offYKey, ind, onChange), SLIDER_HEIGHT, cond)
+            L:Row(GUI:CreateFormCheckbox(body, "Enable", showKey, ind, onChange, { description = "Show the " .. label .. " indicator on this unit frame." }), FORM_ROW)
+            L:Row(GUI:CreateFormSlider(body, "Icon Size", 6, 32, 1, sizeKey, ind, onChange, nil, { description = "Pixel size of the " .. label .. " indicator." }), SLIDER_HEIGHT, cond)
+            L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, anchorKey, ind, onChange, { description = "Where on the frame the " .. label .. " indicator is anchored. X/Y Offset below nudges it from this anchor point." }), DROP_ROW, cond)
+            L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, offXKey, ind, onChange, nil, { description = "Horizontal pixel offset for the " .. label .. " indicator from its anchor." }), SLIDER_HEIGHT, cond)
+            L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, offYKey, ind, onChange, nil, { description = "Vertical pixel offset for the " .. label .. " indicator from its anchor." }), SLIDER_HEIGHT, cond)
             L:Finish()
         end, sections, relayout)
     end
@@ -1336,10 +1589,10 @@ local function BuildIndicatorsSettings(content, gfdb, onChange)
     CreateComposerCollapsible(content, "Threat", function(body, updateH)
         local threatCond = function() return ind.showThreatBorder end
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Threat Border", "showThreatBorder", ind, onChange), FORM_ROW)
-        L:Row(GUI:CreateFormSlider(body, "Border Size", 1, 16, 1, "threatBorderSize", ind, onChange), SLIDER_HEIGHT, threatCond)
-        L:Row(GUI:CreateFormColorPicker(body, "Threat Color", "threatColor", ind, onChange), FORM_ROW, threatCond)
-        L:Row(GUI:CreateFormSlider(body, "Threat Fill Opacity", 0, 0.5, 0.05, "threatFillOpacity", ind, onChange), SLIDER_HEIGHT, threatCond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Threat Border", "showThreatBorder", ind, onChange, { description = "Outline the frame border when the unit has aggro on an NPC, making threat changes easy to spot at a glance." }), FORM_ROW)
+        L:Row(GUI:CreateFormSlider(body, "Border Size", 1, 16, 1, "threatBorderSize", ind, onChange, nil, { description = "Pixel thickness of the threat border." }), SLIDER_HEIGHT, threatCond)
+        L:Row(GUI:CreateFormColorPicker(body, "Threat Color", "threatColor", ind, onChange, nil, { description = "Color used for the threat border and optional fill tint." }), FORM_ROW, threatCond)
+        L:Row(GUI:CreateFormSlider(body, "Threat Fill Opacity", 0, 0.5, 0.05, "threatFillOpacity", ind, onChange, nil, { description = "Opacity of a color tint applied across the health bar when the unit has aggro. Set to 0 to keep only the border." }), SLIDER_HEIGHT, threatCond)
         L:Finish()
     end, sections, relayout)
 
@@ -1363,23 +1616,23 @@ local function BuildHealerSettings(content, gfdb, onChange)
         local L = CreateDynamicLayout(body, updateH)
         local desc = GUI:CreateLabel(body, "Colors the frame border when a dispellable debuff is active, including Blizzard private dispels when available.", 11, C and C.textMuted); desc:SetJustifyH("LEFT")
         L:Row(desc, 26)
-        L:Row(GUI:CreateFormCheckbox(body, "Enable Dispel Overlay", "enabled", dispel, onChange), FORM_ROW)
-        L:Row(GUI:CreateFormSlider(body, "Border Size", 1, 16, 1, "borderSize", dispel, onChange), SLIDER_HEIGHT, dispelCond)
-        L:Row(GUI:CreateFormSlider(body, "Border Opacity", 0.1, 1, 0.05, "opacity", dispel, onChange), SLIDER_HEIGHT, dispelCond)
-        L:Row(GUI:CreateFormSlider(body, "Fill Opacity", 0, 0.5, 0.05, "fillOpacity", dispel, onChange), SLIDER_HEIGHT, dispelCond)
-        L:Row(GUI:CreateFormColorPicker(body, "Magic Color", "Magic", dispelColors, onChange), FORM_ROW, dispelCond)
-        L:Row(GUI:CreateFormColorPicker(body, "Curse Color", "Curse", dispelColors, onChange), FORM_ROW, dispelCond)
-        L:Row(GUI:CreateFormColorPicker(body, "Disease Color", "Disease", dispelColors, onChange), FORM_ROW, dispelCond)
-        L:Row(GUI:CreateFormColorPicker(body, "Poison Color", "Poison", dispelColors, onChange), FORM_ROW, dispelCond)
+        L:Row(GUI:CreateFormCheckbox(body, "Enable Dispel Overlay", "enabled", dispel, onChange, { description = "Outline the frame border in the dispel type's color when a dispellable debuff is active on the unit." }), FORM_ROW)
+        L:Row(GUI:CreateFormSlider(body, "Border Size", 1, 16, 1, "borderSize", dispel, onChange, nil, { description = "Pixel thickness of the dispel border." }), SLIDER_HEIGHT, dispelCond)
+        L:Row(GUI:CreateFormSlider(body, "Border Opacity", 0.1, 1, 0.05, "opacity", dispel, onChange, nil, { description = "Opacity of the dispel-type colored border." }), SLIDER_HEIGHT, dispelCond)
+        L:Row(GUI:CreateFormSlider(body, "Fill Opacity", 0, 0.5, 0.05, "fillOpacity", dispel, onChange, nil, { description = "Opacity of a color tint applied across the health bar when a dispellable debuff is active. Set to 0 to keep only the border." }), SLIDER_HEIGHT, dispelCond)
+        L:Row(GUI:CreateFormColorPicker(body, "Magic Color", "Magic", dispelColors, onChange, nil, { description = "Color used when the active dispellable debuff is of Magic type." }), FORM_ROW, dispelCond)
+        L:Row(GUI:CreateFormColorPicker(body, "Curse Color", "Curse", dispelColors, onChange, nil, { description = "Color used when the active dispellable debuff is of Curse type." }), FORM_ROW, dispelCond)
+        L:Row(GUI:CreateFormColorPicker(body, "Disease Color", "Disease", dispelColors, onChange, nil, { description = "Color used when the active dispellable debuff is of Disease type." }), FORM_ROW, dispelCond)
+        L:Row(GUI:CreateFormColorPicker(body, "Poison Color", "Poison", dispelColors, onChange, nil, { description = "Color used when the active dispellable debuff is of Poison type." }), FORM_ROW, dispelCond)
         L:Finish()
     end, sections, relayout)
 
     CreateComposerCollapsible(content, "Target Highlight", function(body, updateH)
         local targetCond = function() return targetHL.enabled end
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormCheckbox(body, "Enable Target Highlight", "enabled", targetHL, onChange), FORM_ROW)
-        L:Row(GUI:CreateFormColorPicker(body, "Highlight Color", "color", targetHL, onChange), FORM_ROW, targetCond)
-        L:Row(GUI:CreateFormSlider(body, "Fill Opacity", 0, 0.5, 0.05, "fillOpacity", targetHL, onChange), SLIDER_HEIGHT, targetCond)
+        L:Row(GUI:CreateFormCheckbox(body, "Enable Target Highlight", "enabled", targetHL, onChange, { description = "Highlight the frame representing your current target so it stands out in party/raid at a glance." }), FORM_ROW)
+        L:Row(GUI:CreateFormColorPicker(body, "Highlight Color", "color", targetHL, onChange, nil, { description = "Color used for the target highlight border and optional fill tint." }), FORM_ROW, targetCond)
+        L:Row(GUI:CreateFormSlider(body, "Fill Opacity", 0, 0.5, 0.05, "fillOpacity", targetHL, onChange, nil, { description = "Opacity of a color tint applied across the targeted unit's health bar. Set to 0 to keep only the border highlight." }), SLIDER_HEIGHT, targetCond)
         L:Finish()
     end, sections, relayout)
 
@@ -1395,15 +1648,15 @@ local function BuildDefensiveSettings(content, gfdb, onChange)
     CreateComposerCollapsible(content, "Defensive Indicator", function(body, updateH)
         local cond = function() return def.enabled end
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormCheckbox(body, "Enable Defensive Indicator", "enabled", def, onChange), FORM_ROW)
-        L:Row(GUI:CreateFormSlider(body, "Max Icons", 1, 5, 1, "maxIcons", def, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "iconSize", def, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "reverseSwipe", def, onChange), FORM_ROW, cond)
-        L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "growDirection", def, onChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "spacing", def, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormDropdown(body, "Position", NINE_POINT_OPTIONS, "position", def, onChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "offsetX", def, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "offsetY", def, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Enable Defensive Indicator", "enabled", def, onChange, { description = "Show a dedicated icon strip for active defensive cooldowns (Ironbark, Pain Suppression, etc.) on this frame." }), FORM_ROW)
+        L:Row(GUI:CreateFormSlider(body, "Max Icons", 1, 5, 1, "maxIcons", def, onChange, nil, { description = "Hard cap on how many defensive icons this frame displays at once." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "iconSize", def, onChange, nil, { description = "Pixel size of each defensive icon." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "reverseSwipe", def, onChange, { description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as the defensive ticks down." }), FORM_ROW, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "growDirection", def, onChange, { description = "Direction additional defensive icons are added in after the first." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "spacing", def, onChange, nil, { description = "Pixel gap between adjacent defensive icons." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Position", NINE_POINT_OPTIONS, "position", def, onChange, { description = "Where on the frame the defensive icon strip is anchored. X/Y Offset below nudges it from this anchor point." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "offsetX", def, onChange, nil, { description = "Horizontal pixel offset for the defensive icons from their anchor." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "offsetY", def, onChange, nil, { description = "Vertical pixel offset for the defensive icons from their anchor." }), SLIDER_HEIGHT, cond)
         L:Finish()
     end, sections, relayout)
 
@@ -1418,21 +1671,21 @@ local function BuildPrivateAurasSettings(content, gfdb, onChange)
     CreateComposerCollapsible(content, "Private Auras", function(body, updateH)
         local cond = function() return pa.enabled end
         local L = CreateDynamicLayout(body, updateH)
-        L:Row(GUI:CreateFormCheckbox(body, "Enable Private Auras", "enabled", pa, onChange), FORM_ROW)
-        L:Row(GUI:CreateFormSlider(body, "Max Per Frame", 1, 5, 1, "maxPerFrame", pa, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Icon Size", 10, 40, 1, "iconSize", pa, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "growDirection", pa, onChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "spacing", pa, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "anchor", pa, onChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "anchorOffsetX", pa, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "anchorOffsetY", pa, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Border Scale", -100, 10, 0.5, "borderScale", pa, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Countdown", "showCountdown", pa, onChange), FORM_ROW, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Countdown Numbers", "showCountdownNumbers", pa, onChange), FORM_ROW, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "reverseSwipe", pa, onChange), FORM_ROW, cond)
-        L:Row(GUI:CreateFormSlider(body, "Stack & Countdown Scale", 0.5, 5, 0.5, "textScale", pa, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Stack & Countdown X Offset", -20, 20, 1, "textOffsetX", pa, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Stack & Countdown Y Offset", -20, 20, 1, "textOffsetY", pa, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Enable Private Auras", "enabled", pa, onChange, { description = "Anchor Blizzard private aura indicators (only visible to the afflicted player, e.g. raid mechanic markers) to this frame." }), FORM_ROW)
+        L:Row(GUI:CreateFormSlider(body, "Max Per Frame", 1, 5, 1, "maxPerFrame", pa, onChange, nil, { description = "Hard cap on how many private aura slots this frame displays at once." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Icon Size", 10, 40, 1, "iconSize", pa, onChange, nil, { description = "Pixel size of each private aura icon." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "growDirection", pa, onChange, { description = "Direction additional private aura icons are added in after the first." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "spacing", pa, onChange, nil, { description = "Pixel gap between adjacent private aura icons." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "anchor", pa, onChange, { description = "Where on the frame the first private aura icon is anchored. X/Y Offset below nudges it from this anchor point." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "anchorOffsetX", pa, onChange, nil, { description = "Horizontal pixel offset for the private aura block from its anchor." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "anchorOffsetY", pa, onChange, nil, { description = "Vertical pixel offset for the private aura block from its anchor." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Border Scale", -100, 10, 0.5, "borderScale", pa, onChange, nil, { description = "Scale applied to the Blizzard-drawn border around each private aura icon. Negative values shrink, positive values enlarge." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Countdown", "showCountdown", pa, onChange, { description = "Show the cooldown swipe animation over private aura icons." }), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Countdown Numbers", "showCountdownNumbers", pa, onChange, { description = "Show the remaining-duration countdown text over private aura icons." }), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "reverseSwipe", pa, onChange, { description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as the aura ticks down." }), FORM_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "Stack & Countdown Scale", 0.5, 5, 0.5, "textScale", pa, onChange, nil, { description = "Scale multiplier for the stack count and countdown number text on private aura icons." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Stack & Countdown X Offset", -20, 20, 1, "textOffsetX", pa, onChange, nil, { description = "Horizontal pixel offset for the stack count and countdown number text on private aura icons." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Stack & Countdown Y Offset", -20, 20, 1, "textOffsetY", pa, onChange, nil, { description = "Vertical pixel offset for the stack count and countdown number text on private aura icons." }), SLIDER_HEIGHT, cond)
         L:Finish()
     end, sections, relayout)
 
@@ -1452,16 +1705,16 @@ local function BuildAuraIndicatorsSettings(content, gfdb, onChange)
         local L = CreateDynamicLayout(body, updateH)
         local desc = GUI:CreateLabel(body, "Icon indicators still use the shared strip settings below. Bars and health-bar tints are configured per aura entry.", 11, C and C.textMuted); desc:SetJustifyH("LEFT")
         L:Row(desc, 40)
-        L:Row(GUI:CreateFormCheckbox(body, "Enable Aura Indicators", "enabled", ai, onChange), FORM_ROW)
-        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "iconSize", ai, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Max Indicators", 1, 10, 1, "maxIndicators", ai, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Hide Duration Swipe", "hideSwipe", ai, onChange), FORM_ROW, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "reverseSwipe", ai, onChange), FORM_ROW, reverseCond)
-        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "anchor", ai, onChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "growDirection", ai, onChange), DROP_ROW, cond)
-        L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "spacing", ai, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "anchorOffsetX", ai, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "anchorOffsetY", ai, onChange), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Enable Aura Indicators", "enabled", ai, onChange, { description = "Track specific buffs/debuffs and display them as icons, bars, or health-bar tints on this frame. Configure tracked auras in the section below." }), FORM_ROW)
+        L:Row(GUI:CreateFormSlider(body, "Icon Size", 8, 32, 1, "iconSize", ai, onChange, nil, { description = "Pixel size of each aura-indicator icon in the shared icon strip." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Max Indicators", 1, 10, 1, "maxIndicators", ai, onChange, nil, { description = "Hard cap on how many aura-indicator icons this frame displays in the shared icon strip." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Hide Duration Swipe", "hideSwipe", ai, onChange, { description = "Hide the clockwise cooldown swipe animation drawn over aura-indicator icons." }), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "reverseSwipe", ai, onChange, { description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as the aura ticks down." }), FORM_ROW, reverseCond)
+        L:Row(GUI:CreateFormDropdown(body, "Anchor", NINE_POINT_OPTIONS, "anchor", ai, onChange, { description = "Where on the frame the aura-indicator icon strip is anchored. X/Y Offset below nudges it from this anchor point." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormDropdown(body, "Grow Direction", AURA_GROW_OPTIONS, "growDirection", ai, onChange, { description = "Direction additional aura-indicator icons are added in after the first." }), DROP_ROW, cond)
+        L:Row(GUI:CreateFormSlider(body, "Spacing", 0, 8, 1, "spacing", ai, onChange, nil, { description = "Pixel gap between adjacent aura-indicator icons." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "X Offset", -100, 100, 1, "anchorOffsetX", ai, onChange, nil, { description = "Horizontal pixel offset for the aura-indicator icon strip from its anchor." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Y Offset", -100, 100, 1, "anchorOffsetY", ai, onChange, nil, { description = "Vertical pixel offset for the aura-indicator icon strip from its anchor." }), SLIDER_HEIGHT, cond)
         L:Finish()
     end, sections, relayout)
 
@@ -2245,48 +2498,48 @@ local function BuildAuraIndicatorsSettings(content, gfdb, onChange)
                     AddDetailWidget(GUI:CreateFormCheckbox(detailArea, "Aura Enabled", "enabled", selectedEntry, function()
                         NotifyChanged()
                         RebuildAuraList()
-                    end), FORM_ROW)
+                    end, { description = "Toggle tracking of this aura. When off, none of its attached indicators display." }), FORM_ROW)
                     AddDetailWidget(GUI:CreateFormCheckbox(detailArea, "Only My Cast", "onlyMine", selectedEntry, function()
                         NotifyChanged()
                         RebuildAuraList()
-                    end), FORM_ROW)
+                    end, { description = "Only track this aura when you applied it. Useful for personal HoTs and dots so teammates' copies don't trigger your indicator." }), FORM_ROW)
                     AddDetailWidget(GUI:CreateFormDropdown(detailArea, "Indicator Type", AURA_INDICATOR_TYPE_OPTIONS, "type", selectedIndicator, function()
                         if normalizeAuraIndicators then normalizeAuraIndicators(ai) end
                         NotifyChanged()
                         RebuildAuraList()
-                    end), DROP_ROW)
+                    end, { description = "How this indicator displays: icon in the shared strip, a standalone bar, or a tint applied across the health bar." }), DROP_ROW)
 
                     AddDetailWidget(GUI:CreateFormCheckbox(detailArea, "Indicator Enabled", "enabled", selectedIndicator, function()
                         NotifyChanged()
                         RebuildAuraList()
-                    end), FORM_ROW)
+                    end, { description = "Toggle just this indicator without removing it. Useful for quickly disabling a bar/tint while keeping its configuration." }), FORM_ROW)
 
                     if selectedIndicator.type == "bar" then
                         AddDetailWidget(GUI:CreateFormDropdown(detailArea, "Orientation", BAR_ORIENTATION_OPTIONS, "orientation", selectedIndicator, function()
                             NotifyChanged()
                             RebuildAuraList()
-                        end), DROP_ROW)
-                        AddDetailWidget(GUI:CreateFormSlider(detailArea, "Thickness", 1, 20, 1, "thickness", selectedIndicator, onChange), SLIDER_HEIGHT)
-                        AddDetailWidget(GUI:CreateFormSlider(detailArea, "Width / Height", 4, 200, 1, "length", selectedIndicator, onChange), SLIDER_HEIGHT)
+                        end, { description = "Whether the bar drains horizontally or vertically as the tracked aura ticks down." }), DROP_ROW)
+                        AddDetailWidget(GUI:CreateFormSlider(detailArea, "Thickness", 1, 20, 1, "thickness", selectedIndicator, onChange, nil, { description = "Pixel thickness of the bar (height for horizontal bars, width for vertical)." }), SLIDER_HEIGHT)
+                        AddDetailWidget(GUI:CreateFormSlider(detailArea, "Width / Height", 4, 200, 1, "length", selectedIndicator, onChange, nil, { description = "Pixel length of the bar (width for horizontal, height for vertical)." }), SLIDER_HEIGHT)
                         AddDetailWidget(GUI:CreateFormCheckbox(detailArea, "Match Frame Width / Height", "matchFrameSize", selectedIndicator, function()
                             NotifyChanged()
                             RebuildAuraList()
-                        end), FORM_ROW)
-                        AddDetailWidget(GUI:CreateFormDropdown(detailArea, "Anchor", NINE_POINT_OPTIONS, "anchor", selectedIndicator, onChange), DROP_ROW)
-                        AddDetailWidget(GUI:CreateFormSlider(detailArea, "X Offset", -100, 100, 1, "offsetX", selectedIndicator, onChange), SLIDER_HEIGHT)
-                        AddDetailWidget(GUI:CreateFormSlider(detailArea, "Y Offset", -100, 100, 1, "offsetY", selectedIndicator, onChange), SLIDER_HEIGHT)
-                        AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Bar Color", "color", selectedIndicator, onChange), FORM_ROW)
-                        AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Background Color", "backgroundColor", selectedIndicator, onChange), FORM_ROW)
+                        end, { description = "Stretch the bar to match the frame's width (horizontal bars) or height (vertical bars), overriding the Width / Height slider above." }), FORM_ROW)
+                        AddDetailWidget(GUI:CreateFormDropdown(detailArea, "Anchor", NINE_POINT_OPTIONS, "anchor", selectedIndicator, onChange, { description = "Where on the frame the bar is anchored. X/Y Offset below nudges it from this anchor point." }), DROP_ROW)
+                        AddDetailWidget(GUI:CreateFormSlider(detailArea, "X Offset", -100, 100, 1, "offsetX", selectedIndicator, onChange, nil, { description = "Horizontal pixel offset for the bar from its anchor." }), SLIDER_HEIGHT)
+                        AddDetailWidget(GUI:CreateFormSlider(detailArea, "Y Offset", -100, 100, 1, "offsetY", selectedIndicator, onChange, nil, { description = "Vertical pixel offset for the bar from its anchor." }), SLIDER_HEIGHT)
+                        AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Bar Color", "color", selectedIndicator, onChange, nil, { description = "Fill color of the bar while the tracked aura is active and above the low-time threshold." }), FORM_ROW)
+                        AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Background Color", "backgroundColor", selectedIndicator, onChange, nil, { description = "Color drawn behind the bar fill, visible in the drained portion." }), FORM_ROW)
                         AddDetailWidget(GUI:CreateFormCheckbox(detailArea, "Hide Border", "hideBorder", selectedIndicator, function()
                             NotifyChanged()
                             RebuildAuraList()
-                        end), FORM_ROW)
-                        AddDetailWidget(GUI:CreateFormSlider(detailArea, "Border Size", 1, 8, 1, "borderSize", selectedIndicator, onChange), SLIDER_HEIGHT, function() return selectedIndicator.hideBorder ~= true end)
-                        AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Border Color", "borderColor", selectedIndicator, onChange), FORM_ROW)
-                        AddDetailWidget(GUI:CreateFormSlider(detailArea, "Low-Time Seconds", 0, 30, 0.5, "lowTimeThreshold", selectedIndicator, onChange, { precision = 1 }), SLIDER_HEIGHT)
-                        AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Low-Time Color", "lowTimeColor", selectedIndicator, onChange), FORM_ROW)
+                        end, { description = "Remove the border drawn around the bar for a cleaner look." }), FORM_ROW)
+                        AddDetailWidget(GUI:CreateFormSlider(detailArea, "Border Size", 1, 8, 1, "borderSize", selectedIndicator, onChange, nil, { description = "Pixel thickness of the bar's border." }), SLIDER_HEIGHT, function() return selectedIndicator.hideBorder ~= true end)
+                        AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Border Color", "borderColor", selectedIndicator, onChange, nil, { description = "Color of the bar's border." }), FORM_ROW)
+                        AddDetailWidget(GUI:CreateFormSlider(detailArea, "Low-Time Seconds", 0, 30, 0.5, "lowTimeThreshold", selectedIndicator, onChange, { precision = 1 }, { description = "When the remaining duration drops below this many seconds, the bar switches to the Low-Time Color. Set to 0 to disable." }), SLIDER_HEIGHT)
+                        AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Low-Time Color", "lowTimeColor", selectedIndicator, onChange, nil, { description = "Bar fill color used once the remaining duration crosses the Low-Time Seconds threshold." }), FORM_ROW)
                     elseif selectedIndicator.type == "healthBarColor" then
-                        AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Tint Color", "color", selectedIndicator, onChange), FORM_ROW)
+                        AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Tint Color", "color", selectedIndicator, onChange, nil, { description = "Color tint applied across the health bar while the tracked aura is active." }), FORM_ROW)
                     else
                         local note = GUI:CreateLabel(detailArea, "Icon indicators use the shared icon-strip settings in the section above.", 11, C and C.textMuted)
                         note:SetJustifyH("LEFT")
@@ -2539,11 +2792,11 @@ local function BuildPinnedAurasSettings(content, gfdb, onChange)
         local L = CreateDynamicLayout(body, updateH)
         local desc = GUI:CreateLabel(body, "Per-spec aura indicators anchored to positions on group frames. Each spell gets its own anchor point.", 11, C and C.textMuted); desc:SetJustifyH("LEFT")
         L:Row(desc, 36)
-        L:Row(GUI:CreateFormCheckbox(body, "Enable Pinned Auras", "enabled", pa, onChange), FORM_ROW)
-        L:Row(GUI:CreateFormSlider(body, "Slot Size", 4, 20, 1, "slotSize", pa, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Edge Inset", 0, 10, 1, "edgeInset", pa, onChange), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Show Cooldown Swipe", "showSwipe", pa, onChange), FORM_ROW, cond)
-        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "reverseSwipe", pa, onChange), FORM_ROW, function() return pa.enabled and pa.showSwipe end)
+        L:Row(GUI:CreateFormCheckbox(body, "Enable Pinned Auras", "enabled", pa, onChange, { description = "Enable per-spec pinned aura slots on group frames. Each tracked spell gets a dedicated anchor point, letting you place key auras at fixed positions." }), FORM_ROW)
+        L:Row(GUI:CreateFormSlider(body, "Slot Size", 4, 20, 1, "slotSize", pa, onChange, nil, { description = "Pixel size of each pinned aura slot." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormSlider(body, "Edge Inset", 0, 10, 1, "edgeInset", pa, onChange, nil, { description = "Pixel inset from the frame edge when placing pinned aura slots. Higher values tuck the slots further inside the frame." }), SLIDER_HEIGHT, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Show Cooldown Swipe", "showSwipe", pa, onChange, { description = "Show the clockwise cooldown swipe animation over pinned aura slots." }), FORM_ROW, cond)
+        L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "reverseSwipe", pa, onChange, { description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as the aura ticks down." }), FORM_ROW, function() return pa.enabled and pa.showSwipe end)
         L:Finish()
     end, sections, relayout)
 
@@ -2894,20 +3147,8 @@ local function BuildPinnedAurasSettings(content, gfdb, onChange)
 end
 
 ---------------------------------------------------------------------------
--- ELEMENT TABLES
+-- ELEMENT BUILDERS — dispatch table for QUI_BuildGroupFrameElement.
 ---------------------------------------------------------------------------
-local COMPOSER_ELEMENT_KEYS = {
-    "health", "power", "name", "buffs", "debuffs",
-    "indicators", "healer", "defensive", "auraIndicators", "pinnedAuras", "privateAuras",
-}
-
-local ELEMENT_LABELS = {
-    health = "Health", power = "Power", name = "Name",
-    buffs = "Buffs", debuffs = "Debuffs", indicators = "Indicators",
-    healer = "Healer", defensive = "Defensive",
-    auraIndicators = "Aura Ind.", pinnedAuras = "Pinned", privateAuras = "Priv. Auras",
-}
-
 local ELEMENT_BUILDERS = {
     health = BuildHealthSettings, power = BuildPowerSettings,
     name = BuildNameSettings, buffs = BuildBuffsSettings,
@@ -2916,129 +3157,6 @@ local ELEMENT_BUILDERS = {
     auraIndicators = BuildAuraIndicatorsSettings, pinnedAuras = BuildPinnedAurasSettings,
     privateAuras = BuildPrivateAurasSettings,
 }
-
----------------------------------------------------------------------------
--- WIDGET BAR
----------------------------------------------------------------------------
-local function CreateWidgetBar(container, selectElementFunc, state)
-    local bar = CreateFrame("Frame", nil, container)
-    bar:SetHeight(1)
-    bar:SetPoint("TOPLEFT", 0, 0)
-    bar:SetPoint("RIGHT", container, "RIGHT", 0, 0)
-    local buttons, orderedButtons = {}, {}
-    local fontPath = (GUI and GUI.FONT_PATH) or "Fonts\\FRIZQT__.TTF"
-    local btnHeight, btnSpacing, rowGap = 24, 4, 4
-    for _, key in ipairs(COMPOSER_ELEMENT_KEYS) do
-        local label = ELEMENT_LABELS[key]
-        local btn = CreateFrame("Button", nil, bar, "BackdropTemplate")
-        btn:SetHeight(RoundVirtual(btnHeight, btn))
-        ApplyPixelBackdrop(btn, 1, true)
-        btn:SetBackdropColor(0.12, 0.12, 0.12, 1)
-        btn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
-        local text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        text:SetFont(fontPath, 11, "")
-        text:SetTextColor(C.text[1], C.text[2], C.text[3])
-        text:SetText(label)
-        text:SetPoint("CENTER")
-        btn:SetWidth(RoundVirtual((text:GetStringWidth() or 40) + 16, btn))
-        btn.elementKey = key
-        btn.text = text
-        btn:SetScript("OnClick", function() selectElementFunc(key) end)
-        btn:SetScript("OnEnter", function(self)
-            if state.selectedElement ~= key then self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.6) end
-        end)
-        btn:SetScript("OnLeave", function(self)
-            if state.selectedElement ~= key then self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1) end
-        end)
-        buttons[key] = btn
-        orderedButtons[#orderedButtons + 1] = btn
-    end
-    local function RelayoutBar()
-        local x, y = 0, 0
-        local barWidth = container:GetWidth() - (PAD * 2)
-        if barWidth < 100 then barWidth = 560 end
-        barWidth = RoundVirtual(barWidth, bar)
-        for _, btn in ipairs(orderedButtons) do
-            local btnWidth = RoundVirtual((btn.text:GetStringWidth() or 40) + 16, btn)
-            if x + btnWidth > barWidth and x > 0 then x = 0; y = RoundVirtual(y - (btnHeight + rowGap), bar) end
-            btn:SetWidth(btnWidth)
-            btn:ClearAllPoints()
-            SetSnappedPoint(btn, "TOPLEFT", bar, "TOPLEFT", x, y)
-            x = RoundVirtual(x + btnWidth + btnSpacing, bar)
-        end
-        local totalHeight = RoundVirtual(math.abs(y) + btnHeight, bar)
-        bar:SetHeight(totalHeight)
-        return totalHeight
-    end
-    local totalHeight = RelayoutBar()
-    bar:SetScript("OnSizeChanged", function() totalHeight = RelayoutBar() end)
-    state.widgetBarButtons = buttons
-    return bar, totalHeight
-end
-
----------------------------------------------------------------------------
--- POPUP FRAME
----------------------------------------------------------------------------
-local composerFrame = nil
-
-local function GetOrCreateFrame()
-    if composerFrame then return composerFrame end
-
-    GUI = QUI and QUI.GUI
-    C = GUI and GUI.Colors or {}
-
-    composerFrame = CreateFrame("Frame", "QUI_ComposerPopup", UIParent, "BackdropTemplate")
-    composerFrame:SetSize(620, 720)
-    composerFrame:SetPoint("CENTER")
-    composerFrame:SetFrameStrata("FULLSCREEN_DIALOG")
-    composerFrame:SetFrameLevel(900)
-    composerFrame:SetToplevel(true)
-    composerFrame:SetMovable(true)
-    composerFrame:SetClampedToScreen(true)
-    composerFrame:EnableMouse(true)
-    composerFrame:RegisterForDrag("LeftButton")
-    composerFrame:SetScript("OnDragStart", composerFrame.StartMoving)
-    composerFrame:SetScript("OnDragStop", composerFrame.StopMovingOrSizing)
-    composerFrame:Hide()
-
-    composerFrame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    composerFrame:SetBackdropColor(0.08, 0.08, 0.10, 0.97)
-    local GUI = _G.QUI and _G.QUI.GUI
-    local C = GUI and GUI.Colors
-    local ar = C and C.accent and C.accent[1] or 0.376
-    local ag = C and C.accent and C.accent[2] or 0.647
-    local ab = C and C.accent and C.accent[3] or 0.980
-    composerFrame:SetBackdropBorderColor(ar, ag, ab, 0.8)
-
-    -- Title bar
-    local titleBar = CreateFrame("Frame", nil, composerFrame)
-    titleBar:SetHeight(28)
-    titleBar:SetPoint("TOPLEFT", 0, 0)
-    titleBar:SetPoint("TOPRIGHT", 0, 0)
-
-    local titleText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    titleText:SetPoint("LEFT", 10, 0)
-    titleText:SetText("Group Frame Composer")
-    titleText:SetTextColor(1, 1, 1, 1)
-    composerFrame._titleText = titleText
-
-    -- Close button
-    CreateQUIStyleCloseButton(titleBar, titleBar, "RIGHT", -6, 0, function()
-        QUI_LayoutMode_Composer:Close()
-    end)
-
-    -- Content area
-    local contentArea = CreateFrame("Frame", nil, composerFrame)
-    contentArea:SetPoint("TOPLEFT", PAD, -32)
-    contentArea:SetPoint("BOTTOMRIGHT", -PAD, PAD)
-    composerFrame._contentArea = contentArea
-
-    return composerFrame
-end
 
 ---------------------------------------------------------------------------
 -- PREVIEW FRAME BUILDER (2x scaled replica of group frame)
@@ -3141,6 +3259,13 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         childRefs.powerBar = powerBar
         healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerH)
     end
+    local previewBottomPad = powerH + borderSize
+    local function PreviewBottomPadY(anchor, offY)
+        if anchor and anchor:find("BOTTOM") then
+            return offY + previewBottomPad
+        end
+        return offY
+    end
 
     -- Text frame
     local textFrame = CreateFrame("Frame", nil, frame)
@@ -3204,49 +3329,77 @@ local function CreateDesignerPreview(container, previewType, childRefs)
 
     -- Role icon
     local indDB = db.indicators or {}
+    local roleAtlas = nil
     if indDB.showRoleIcon ~= false then
+        for _, previewRole in ipairs(PREVIEW_ROLE_ORDER) do
+            if indDB[previewRole.toggleKey] ~= false then
+                roleAtlas = PREVIEW_ROLE_ATLAS[previewRole.role]
+                break
+            end
+        end
+    end
+    if roleAtlas then
         local roleSize = (indDB.roleIconSize or 12) * PREVIEW_SCALE
         local roleAnchor = indDB.roleIconAnchor or "TOPLEFT"
         local roleOffX = (indDB.roleIconOffsetX or 2) * PREVIEW_SCALE
         local roleOffY = (indDB.roleIconOffsetY or -2) * PREVIEW_SCALE
         local roleIcon = textFrame:CreateTexture(nil, "OVERLAY")
         roleIcon:SetSize(roleSize, roleSize)
-        roleIcon:SetPoint(roleAnchor, textFrame, roleAnchor, roleOffX, roleOffY)
-        roleIcon:SetAtlas("roleicon-tiny-healer")
+        roleIcon:SetPoint(roleAnchor, frame, roleAnchor, roleOffX, PreviewBottomPadY(roleAnchor, roleOffY))
+        roleIcon:SetAtlas(roleAtlas)
         childRefs.roleIcon = roleIcon
     end
 
     -- Helper: create a single indicator icon preview
-    local function CreateIndicatorPip(showKey, sizeKey, anchorKey, offXKey, offYKey, atlas, refKey, texCoord)
+    local function CreateIndicatorPip(showKey, sizeKey, anchorKey, offXKey, offYKey, refKey, config)
         if not indDB[showKey] then return end
+        config = config or {}
         local pipSize = (indDB[sizeKey] or 12) * PREVIEW_SCALE
         local pipAnchor = indDB[anchorKey] or "TOPLEFT"
         local pipOffX = (indDB[offXKey] or 0) * PREVIEW_SCALE
         local pipOffY = (indDB[offYKey] or 0) * PREVIEW_SCALE
         local pip = textFrame:CreateTexture(nil, "OVERLAY")
         pip:SetSize(pipSize, pipSize)
-        pip:SetPoint(pipAnchor, textFrame, pipAnchor, pipOffX, pipOffY)
-        if atlas then
-            pip:SetAtlas(atlas)
+        pip:SetPoint(pipAnchor, frame, pipAnchor, pipOffX, PreviewBottomPadY(pipAnchor, pipOffY))
+        if config.atlas then
+            pip:SetAtlas(config.atlas)
         end
-        if texCoord then pip:SetTexCoord(unpack(texCoord)) end
+        if config.texture then
+            pip:SetTexture(config.texture)
+        end
+        if config.setup then
+            config.setup(pip)
+        end
+        if config.texCoord then pip:SetTexCoord(unpack(config.texCoord)) end
         childRefs[refKey] = pip
     end
 
-    CreateIndicatorPip("showReadyCheck", "readyCheckSize", "readyCheckAnchor", "readyCheckOffsetX", "readyCheckOffsetY", "readycheck-ready", "readyCheck")
-    CreateIndicatorPip("showResurrection", "resurrectionSize", "resurrectionAnchor", "resurrectionOffsetX", "resurrectionOffsetY", "Raid-Icon-Rez", "resurrection")
-    CreateIndicatorPip("showSummonPending", "summonSize", "summonAnchor", "summonOffsetX", "summonOffsetY", "Raid-Icon-SummonPending", "summon")
-    CreateIndicatorPip("showLeaderIcon", "leaderSize", "leaderAnchor", "leaderOffsetX", "leaderOffsetY", "groupfinder-icon-leader", "leader")
-    CreateIndicatorPip("showTargetMarker", "targetMarkerSize", "targetMarkerAnchor", "targetMarkerOffsetX", "targetMarkerOffsetY", "UI-RaidTargetingIcon_6", "targetMarker")
-    CreateIndicatorPip("showPhaseIcon", "phaseSize", "phaseAnchor", "phaseOffsetX", "phaseOffsetY", "nameplates-icon-flag-horde", "phase")
+    CreateIndicatorPip("showReadyCheck", "readyCheckSize", "readyCheckAnchor", "readyCheckOffsetX", "readyCheckOffsetY", "readyCheck", {
+        texture = "INTERFACE\\RAIDFRAME\\ReadyCheck-Ready",
+    })
+    CreateIndicatorPip("showResurrection", "resurrectionSize", "resurrectionAnchor", "resurrectionOffsetX", "resurrectionOffsetY", "resurrection", {
+        texture = "Interface\\RaidFrame\\Raid-Icon-Rez",
+    })
+    CreateIndicatorPip("showSummonPending", "summonSize", "summonAnchor", "summonOffsetX", "summonOffsetY", "summon", {
+        atlas = "RaidFrame-Icon-SummonPending",
+    })
+    CreateIndicatorPip("showLeaderIcon", "leaderSize", "leaderAnchor", "leaderOffsetX", "leaderOffsetY", "leader", {
+        atlas = "groupfinder-icon-leader",
+    })
+    CreateIndicatorPip("showTargetMarker", "targetMarkerSize", "targetMarkerAnchor", "targetMarkerOffsetX", "targetMarkerOffsetY", "targetMarker", {
+        texture = "Interface\\TargetingFrame\\UI-RaidTargetingIcons",
+        setup = function(texture)
+            if SetRaidTargetIconTexture then
+                SetRaidTargetIconTexture(texture, 6)
+            end
+        end,
+    })
+    CreateIndicatorPip("showPhaseIcon", "phaseSize", "phaseAnchor", "phaseOffsetX", "phaseOffsetY", "phase", {
+        texture = "Interface\\TargetingFrame\\UI-PhasingIcon",
+    })
 
     -- Buff icons
     local auraDB = db.auras or {}
-    local previewBottomPad = powerH + borderSize
-    local function PreviewBottomPadY(anchor, offY)
-        if anchor:find("BOTTOM") then return offY + previewBottomPad end
-        return offY
-    end
 
     local function CalculatePreviewSlotOffset(index, iconSize, spacing, direction, totalCount)
         local step = (index - 1) * (iconSize + spacing)
@@ -3762,531 +3915,114 @@ local function CreateDesignerPreview(container, previewType, childRefs)
     return wrapper
 end
 
----------------------------------------------------------------------------
--- HIT OVERLAY + DRAG CONFIG
----------------------------------------------------------------------------
-local function CreateHitOverlay(parent, previewFrame, elementKey, anchorFrame, mode, width, height, anchorPoint, anchorRelPoint, offX, offY, frameLevel)
-    local overlay = CreateFrame("Button", nil, parent)
-    overlay:SetFrameLevel(frameLevel or (previewFrame:GetFrameLevel() + 10))
-    overlay.elementKey = elementKey
-    if mode == "fill" then overlay:SetAllPoints(anchorFrame)
-    elseif mode == "fixed" then
-        overlay:SetSize(width or 30, height or 20)
-        overlay:SetPoint(anchorPoint or "CENTER", anchorFrame, anchorRelPoint or anchorPoint or "CENTER", offX or 0, offY or 0)
-    end
-    local highlight = CreateFrame("Frame", nil, overlay, "BackdropTemplate")
-    highlight:SetAllPoints()
-    ApplyPixelBackdrop(highlight, 2, false)
-    highlight:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
-    highlight:Hide()
-    overlay.highlight = highlight
-    return overlay
-end
-
-local DRAG_CONFIG = {
-    name        = { sub = "name",       xKey = "nameOffsetX",       yKey = "nameOffsetY" },
-    healthText  = { sub = "health",     xKey = "healthOffsetX",     yKey = "healthOffsetY" },
-    role        = { sub = "indicators", xKey = "roleIconOffsetX",   yKey = "roleIconOffsetY" },
-    buffs       = { sub = "auras",      xKey = "buffOffsetX",       yKey = "buffOffsetY" },
-    debuffs     = { sub = "auras",      xKey = "debuffOffsetX",     yKey = "debuffOffsetY" },
-    privateAuras    = { sub = "privateAuras",    xKey = "anchorOffsetX", yKey = "anchorOffsetY" },
-    auraIndicators  = { sub = "auraIndicators",  xKey = "anchorOffsetX", yKey = "anchorOffsetY" },
-    defensive       = { sub = "healer",          xKey = "offsetX",       yKey = "offsetY",  nested = "defensiveIndicator" },
-    readyCheck      = { sub = "indicators", xKey = "readyCheckOffsetX",    yKey = "readyCheckOffsetY" },
-    resurrection    = { sub = "indicators", xKey = "resurrectionOffsetX",  yKey = "resurrectionOffsetY" },
-    summon          = { sub = "indicators", xKey = "summonOffsetX",        yKey = "summonOffsetY" },
-    leader          = { sub = "indicators", xKey = "leaderOffsetX",        yKey = "leaderOffsetY" },
-    targetMarker    = { sub = "indicators", xKey = "targetMarkerOffsetX",  yKey = "targetMarkerOffsetY" },
-    phase           = { sub = "indicators", xKey = "phaseOffsetX",         yKey = "phaseOffsetY" },
-}
-
-local CLICK_TARGET = {
-    frame = "health", healthText = "health", absorbs = "health", healAbsorbs = "health",
-    role = "indicators",
-    readyCheck = "indicators", resurrection = "indicators",
-    summon = "indicators", leader = "indicators",
-    targetMarker = "indicators", phase = "indicators",
-}
-
-local SUB_ELEMENT_MAP = {
-    readyCheck = "indicators", resurrection = "indicators",
-    summon = "indicators", leader = "indicators",
-    targetMarker = "indicators", phase = "indicators",
-}
 
 ---------------------------------------------------------------------------
--- BUILD COMPOSER CONTENT (preview + widget bar + scrollable element settings)
+-- V2 TILE HOISTS — the Group Frames tile owns the preview block (dropdown
+-- + hoisted preview) and element-level inner tabs; frame-level tabs render
+-- through the shared schema surface.
+--
+-- QUI_BuildGroupFramePreview(host, contextMode)   — one-time setup of
+--     the tile's preview block; creates a non-interactive preview.
+-- QUI_RefreshGroupFramePreview([contextMode])     — rebuild the preview
+--     with the current or newly-specified context.
+-- QUI_BuildGroupFrameElement(host, elementKey, contextMode)
+--     — dispatch to the element builder for one composer element
+--     (health, power, name, buffs, debuffs, indicators, etc.).
 ---------------------------------------------------------------------------
-local function BuildComposerContent(contentArea, contextMode)
-    local gfdb = GetGFDB()
-    if not gfdb then return end
 
-    local proxyGFDB = CreateVisualProxy(gfdb, contextMode)
+local hoistedPreview = { host = nil, contextMode = "party", childRefs = nil }
 
-    local state = {
-        selectedElement = nil, settingsPanels = {},
-        childRefs = {}, hitOverlays = {}, widgetBarButtons = {},
-    }
-
-    local function RefreshSettingsScroll(resetToTop)
-        local scrollFrame = state.scrollFrame
-        if not scrollFrame then return end
-
-        local function ApplyScrollState(forceTop)
-            local currentScroll = forceTop and 0 or SafeGetVerticalScroll(scrollFrame)
-            local maxScroll = SafeGetVerticalScrollRange(scrollFrame)
-            if currentScroll <= 2 then
-                currentScroll = 0
-            end
-            local clampedScroll = math.max(0, math.min(currentScroll, maxScroll))
-            pcall(scrollFrame.SetVerticalScroll, scrollFrame, clampedScroll)
-            if state.refreshScrollBar then state.refreshScrollBar() end
-            ComposerDebugPrint(
-                string.format(
-                    "scroll-sync panel=%s forceTop=%s current=%.1f max=%.1f clamped=%.1f settingsAreaH=%s",
-                    state.selectedElement or "?",
-                    forceTop and "1" or "0",
-                    currentScroll,
-                    maxScroll,
-                    clampedScroll,
-                    ComposerFrameHeight(state.settingsArea)
-                )
-            )
-        end
-
-        state._scrollSyncSerial = (state._scrollSyncSerial or 0) + 1
-        local serial = state._scrollSyncSerial
-        ApplyScrollState(resetToTop)
-        C_Timer.After(0, function()
-            if state._scrollSyncSerial ~= serial then return end
-            ApplyScrollState(resetToTop)
-        end)
-    end
-
-    -- Preview frame (rebuilt on settings change)
-    local previewContainer = CreateFrame("Frame", nil, contentArea)
-    previewContainer:SetPoint("TOPLEFT", 0, 0)
-    previewContainer:SetPoint("RIGHT", contentArea, "RIGHT", 0, 0)
-    previewContainer:SetHeight(1)
-
-    -- Helper: show/hide highlights on overlays belonging to a tab key
-    local function SetOverlayHighlights(tabKey, show)
-        local overlay = state.hitOverlays[tabKey]
-        if overlay then if show then overlay.highlight:Show() else overlay.highlight:Hide() end end
-        for subKey, parentKey in pairs(SUB_ELEMENT_MAP) do
-            if parentKey == tabKey then
-                local subOverlay = state.hitOverlays[subKey]
-                if subOverlay then if show then subOverlay.highlight:Show() else subOverlay.highlight:Hide() end end
-            end
-        end
-    end
-
-    local function RebuildPreviewImmediate()
-        -- Stash previous children for cleanup only after successful rebuild
-        local prevOverlays = {}
-        for k, v in pairs(state.hitOverlays) do prevOverlays[k] = v end
-        local prevChildren = {previewContainer:GetChildren()}
-        local prevHeight = previewContainer:GetHeight()
-
-        wipe(state.hitOverlays)
-        wipe(state.childRefs)
-
-        local childRefs = state.childRefs
-        local ok, preview = pcall(CreateDesignerPreview, previewContainer, contextMode, childRefs)
-        if not ok or not preview then
-            -- Restore previous state on failure
-            for k, v in pairs(prevOverlays) do state.hitOverlays[k] = v end
-            previewContainer:SetHeight(prevHeight)
-            return
-        end
-
-        -- Success — clean up previous
-        for _, overlay in pairs(prevOverlays) do overlay:Hide(); overlay:SetParent(nil) end
-        for _, child in pairs(prevChildren) do
-            if child ~= preview then child:Hide(); child:SetParent(nil) end
-        end
-        previewContainer:SetHeight(preview:GetHeight())
-
-        local frame = childRefs.frame
-        if not frame then return end
-
-        -- Create hit overlays on the preview
-        local baseFLvl = frame:GetFrameLevel() + 10
-        local subFLvl = baseFLvl + 2
-        local elemFLvl = baseFLvl + 4
-        local QUICore = ns.Addon
-
-        local function MakeOverlay(key, anchorFrame, mode, fLvl, w, h, aPoint, arPoint, oX, oY)
-            local selectKey = CLICK_TARGET[key] or key
-            local overlay = CreateHitOverlay(previewContainer, frame, key, anchorFrame, mode, w, h, aPoint, arPoint, oX, oY, fLvl)
-            overlay:SetScript("OnEnter", function(self)
-                self.highlight:Show()
-                GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
-                GameTooltip:SetText(ELEMENT_LABELS[selectKey] or key)
-                if DRAG_CONFIG[key] then GameTooltip:AddLine("Drag to reposition", 0.7, 0.7, 0.7) end
-                GameTooltip:Show()
-            end)
-            overlay:SetScript("OnLeave", function(self)
-                if state.selectedElement ~= selectKey then self.highlight:Hide() end
-                GameTooltip:Hide()
-            end)
-            overlay:SetScript("OnClick", function(self)
-                if self._dragFired then self._dragFired = false; return end
-                if state.selectElement then state.selectElement(selectKey) end
-            end)
-
-            -- Drag support
-            local dragCfg = DRAG_CONFIG[key]
-            if dragCfg then
-                overlay:RegisterForDrag("LeftButton")
-                overlay:SetScript("OnDragStart", function(self)
-                    self._dragFired = true
-                    local gfdb2 = GetGFDB()
-                    if not gfdb2 then return end
-                    local proxy = CreateVisualProxy(gfdb2, contextMode)
-                    local dbTbl = proxy[dragCfg.sub]
-                    if not dbTbl then return end
-                    if dragCfg.nested then dbTbl = dbTbl[dragCfg.nested] end
-                    if not dbTbl then return end
-                    GameTooltip:Hide()
-                    self.highlight:Show()
-                    local cx, cy = GetCursorPosition()
-                    local scale = self:GetEffectiveScale()
-                    self._dragStartCX = cx / scale
-                    self._dragStartCY = cy / scale
-                    self._dragStartValX = dbTbl[dragCfg.xKey] or 0
-                    self._dragStartValY = dbTbl[dragCfg.yKey] or 0
-                    self._dragDBTbl = dbTbl
-                    for oKey, oFrame in pairs(state.hitOverlays) do
-                        if oFrame ~= self then oFrame:EnableMouse(false) end
-                    end
-                    local ghost = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
-                    ghost:SetFrameStrata("TOOLTIP")
-                    local ow, oh = self:GetSize()
-                    local sourcePx = QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(self) or 1
-                    SetSizePx(ghost, math.max((ow or 0) / sourcePx, 8), math.max((oh or 0) / sourcePx, 8))
-                    ApplyPixelBackdrop(ghost, 1, false)
-                    ghost:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.8)
-                    local olCX, olCY = self:GetCenter()
-                    ghost:SetPoint("CENTER", UIParent, "BOTTOMLEFT", olCX, olCY)
-                    ghost:EnableMouse(false)
-                    self._dragGhost = ghost
-                    self._dragOlCX = olCX
-                    self._dragOlCY = olCY
-                end)
-                overlay:SetScript("OnDragStop", function(self)
-                    if self._dragGhost then self._dragGhost:Hide(); self._dragGhost:SetParent(nil); self._dragGhost = nil end
-                    for _, oFrame in pairs(state.hitOverlays) do oFrame:EnableMouse(true) end
-                    if not self._dragDBTbl then return end
-                    local cx, cy = GetCursorPosition()
-                    local scale = self:GetEffectiveScale()
-                    local dx = (cx / scale - self._dragStartCX) / PREVIEW_SCALE
-                    local dy = (cy / scale - self._dragStartCY) / PREVIEW_SCALE
-                    self._dragDBTbl[dragCfg.xKey] = math.floor(self._dragStartValX + dx + 0.5)
-                    self._dragDBTbl[dragCfg.yKey] = math.floor(self._dragStartValY + dy + 0.5)
-                    self._dragDBTbl = nil
-                    RebuildPreviewImmediate()
-                    RefreshGF()
-                    -- Refresh slider visuals in-place so they reflect the
-                    -- new offset values without destroying/recreating the
-                    -- settings panel (which would collapse all sections).
-                    local panel = state.settingsPanels[selectKey]
-                    if panel then
-                        local function RefreshSliders(frame)
-                            for _, child in pairs({frame:GetChildren()}) do
-                                if child.UpdateVisual and child.GetValue then
-                                    child.UpdateVisual(child.GetValue())
-                                end
-                                RefreshSliders(child)
-                            end
-                        end
-                        RefreshSliders(panel)
-                    end
-                    -- Ensure the element is selected (highlights + panel visible)
-                    if not state.selectedElement or state.selectedElement ~= selectKey then
-                        if state.selectElement then state.selectElement(selectKey) end
-                    end
-                end)
-                overlay:SetScript("OnUpdate", function(self)
-                    if not self._dragGhost then return end
-                    local cx, cy = GetCursorPosition()
-                    local scale = self:GetEffectiveScale()
-                    self._dragGhost:ClearAllPoints()
-                    self._dragGhost:SetPoint("CENTER", UIParent, "BOTTOMLEFT", self._dragOlCX + (cx / scale - self._dragStartCX), self._dragOlCY + (cy / scale - self._dragStartCY))
-                end)
-            end
-            state.hitOverlays[key] = overlay
-        end
-
-        -- Create overlays for each element
-        MakeOverlay("frame", frame, "fill", baseFLvl)
-        if childRefs.healthBar then MakeOverlay("health", childRefs.healthBar, "fill", subFLvl) end
-        if childRefs.powerBar then MakeOverlay("power", childRefs.powerBar, "fill", subFLvl) end
-        if childRefs.nameText then
-            MakeOverlay("name", childRefs.nameText, "fixed", elemFLvl, (childRefs.nameText:GetStringWidth() or 60) + 4, 20, "LEFT", "LEFT", -2, 0)
-        end
-        if childRefs.healthText then
-            MakeOverlay("healthText", childRefs.healthText, "fixed", elemFLvl, (childRefs.healthText:GetStringWidth() or 40) + 4, 20, "RIGHT", "RIGHT", 2, 0)
-        end
-        if childRefs.buffContainer then MakeOverlay("buffs", childRefs.buffContainer, "fill", elemFLvl) end
-        if childRefs.debuffContainer then MakeOverlay("debuffs", childRefs.debuffContainer, "fill", elemFLvl) end
-        if childRefs.roleIcon then MakeOverlay("role", childRefs.roleIcon, "fill", elemFLvl) end
-        if childRefs.defensiveContainer then MakeOverlay("defensive", childRefs.defensiveContainer, "fill", elemFLvl) end
-        if childRefs.auraIndicatorContainer then MakeOverlay("auraIndicators", childRefs.auraIndicatorContainer, "fill", elemFLvl) end
-        if childRefs.privateAuraContainer then MakeOverlay("privateAuras", childRefs.privateAuraContainer, "fill", elemFLvl) end
-        if childRefs.readyCheck then MakeOverlay("readyCheck", childRefs.readyCheck, "fill", elemFLvl) end
-        if childRefs.resurrection then MakeOverlay("resurrection", childRefs.resurrection, "fill", elemFLvl) end
-        if childRefs.summon then MakeOverlay("summon", childRefs.summon, "fill", elemFLvl) end
-        if childRefs.leader then MakeOverlay("leader", childRefs.leader, "fill", elemFLvl) end
-        if childRefs.targetMarker then MakeOverlay("targetMarker", childRefs.targetMarker, "fill", elemFLvl) end
-        if childRefs.phase then MakeOverlay("phase", childRefs.phase, "fill", elemFLvl) end
-
-        -- Re-highlight selected element
-        if state.selectedElement then SetOverlayHighlights(state.selectedElement, true) end
-    end
-
-    local rebuildTimer
-    local function RebuildPreview()
-        if rebuildTimer then return end
-        rebuildTimer = C_Timer.After(0.05, function()
-            rebuildTimer = nil
-            RebuildPreviewImmediate()
-        end)
-    end
-
-    RebuildPreviewImmediate()
-
-    local function onChangeHandler()
-        RefreshGF()
-        RebuildPreview()
-        -- RefreshGF() calls QUI_RefreshGroupFrames which already triggers
-        -- RefreshTestMode internally — don't call it again here to avoid
-        -- a double rebuild that destroys and recreates test frames (causes flash).
-
-        -- Re-evaluate conditional row visibility on the active panel.
-        -- The HookScript on toggle tracks should handle this, but as a safety
-        -- net we run all registered relayout functions for the active panel's
-        -- collapsible bodies so that show/hide state stays in sync after any
-        -- setting change (toggles, sliders, dropdowns, etc.).
-        local activeKey = state.selectedElement
-        local activePanel = activeKey and state.settingsPanels[activeKey]
-        if activePanel then
-            for _, section in ipairs({activePanel:GetChildren()}) do
-                local body = section._body
-                if body and body._relayouts then
-                    for _, fn in ipairs(body._relayouts) do fn() end
-                end
-            end
-            ComposerDebugPrint(
-                string.format(
-                    "change-handler panel=%s panelH=%s settingsAreaH=%s",
-                    activeKey or "?",
-                    ComposerFrameHeight(activePanel),
-                    ComposerFrameHeight(state.settingsArea)
-                )
-            )
-        end
-    end
-
-    local y = -(previewContainer:GetHeight() + 8)
-
-    -- Widget bar
-    local function SelectElement(key)
-        -- Deselect previous
-        if state.selectedElement then
-            local prevBtn = state.widgetBarButtons[state.selectedElement]
-            if prevBtn then
-                prevBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
-                prevBtn:SetBackdropColor(0.12, 0.12, 0.12, 1)
-            end
-            SetOverlayHighlights(state.selectedElement, false)
-        end
-        -- Hide all panels
-        for _, panel in pairs(state.settingsPanels) do panel:Hide() end
-        state.selectedElement = key
-        -- Highlight button
-        if state.widgetBarButtons and state.widgetBarButtons[key] then
-            state.widgetBarButtons[key]:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
-            state.widgetBarButtons[key]:SetBackdropColor(C.accent[1] * 0.2, C.accent[2] * 0.2, C.accent[3] * 0.2, 1)
-        end
-        -- Highlight overlays
-        SetOverlayHighlights(key, true)
-        -- Show or create panel
-        local panel = state.settingsPanels[key]
-        if not panel then
-            local builder = ELEMENT_BUILDERS[key]
-            if not builder then return end
-            panel = CreateFrame("Frame", nil, state.settingsArea)
-            panel:SetPoint("TOPLEFT", 0, 0)
-            panel:SetPoint("RIGHT", state.settingsArea, "RIGHT", 0, 0)
-            panel._composerElementKey = key
-            builder(panel, proxyGFDB, onChangeHandler)
-            state.settingsPanels[key] = panel
-        end
-        panel:Show()
-        -- Refresh editbox text — panels are pre-built while hidden, and
-        -- WoW doesn't re-render EditBox text set inside hidden hierarchies.
-        C_Timer.After(0, function()
-            local function walk(f)
-                for _, child in pairs({f:GetChildren()}) do
-                    if child._refreshEditBox then child._refreshEditBox() end
-                    walk(child)
-                end
-            end
-            walk(panel)
-        end)
-        -- Resize scroll area to match panel, and keep in sync when collapsibles toggle
-        local function SyncScrollHeight(resetToTop)
-            local h = panel:GetHeight()
-            if h and h > 0 then state.settingsArea:SetHeight(h) end
-            ComposerDebugPrint(
-                string.format(
-                    "panel-sync panel=%s reset=%s panelH=%s settingsAreaH=%s",
-                    key,
-                    resetToTop and "1" or "0",
-                    ComposerFrameHeight(panel),
-                    ComposerFrameHeight(state.settingsArea)
-                )
-            )
-            RefreshSettingsScroll(resetToTop)
-        end
-        if not panel._scrollSyncHooked then
-            panel._scrollSyncHooked = true
-            panel:HookScript("OnSizeChanged", function()
-                SyncScrollHeight(false)
-            end)
-        end
-        SyncScrollHeight(true)
-    end
-
-    state.selectElement = SelectElement
-    local widgetBar, widgetBarHeight = CreateWidgetBar(contentArea, SelectElement, state)
-    widgetBar:SetPoint("TOPLEFT", 0, y)
-    y = y - widgetBarHeight - 8
-
-    -- Scroll frame for settings
-    local SCROLL_STEP = 40
-    local scrollFrame = CreateFrame("ScrollFrame", nil, contentArea, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 0, y)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -18, 0)
-
-    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-    scrollChild:SetWidth(contentArea:GetWidth() - 24)
-    scrollChild:SetHeight(1)
-    scrollFrame:SetScrollChild(scrollChild)
-    state.settingsArea = scrollChild
-    state.scrollFrame = scrollFrame
-
-    -- Auto-resize scroll child width
-    contentArea:HookScript("OnSizeChanged", function(self, w)
-        if w and w > 0 then scrollChild:SetWidth(w - 24) end
-    end)
-
-    -- Style scrollbar to match QUI theme
-    local scrollBar = scrollFrame.ScrollBar
-    if scrollBar then
-        scrollBar:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT", 2, -2)
-        scrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", 2, 2)
-        local thumb = scrollBar:GetThumbTexture()
-        if thumb then thumb:SetColorTexture(0.35, 0.45, 0.5, 0.8) end
-        local scrollUp = scrollBar.ScrollUpButton or scrollBar.Back
-        local scrollDown = scrollBar.ScrollDownButton or scrollBar.Forward
-        if scrollUp then scrollUp:Hide(); scrollUp:SetAlpha(0) end
-        if scrollDown then scrollDown:Hide(); scrollDown:SetAlpha(0) end
-    end
-
-    -- Mouse wheel scrolling
-    scrollFrame:EnableMouseWheel(true)
-    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
-        local currentScroll = SafeGetVerticalScroll(self)
-        local maxScroll = SafeGetVerticalScrollRange(self)
-        local newScroll = math.max(0, math.min(currentScroll - (delta * SCROLL_STEP), maxScroll))
-        pcall(self.SetVerticalScroll, self, newScroll)
-    end)
-
-    state.refreshScrollBar = function()
-        if scrollBar and scrollBar.SetShown then
-            local maxScroll = SafeGetVerticalScrollRange(scrollFrame)
-            scrollBar:SetShown(maxScroll > 1)
-        end
-    end
-
-    -- Pre-build all panels for search
-    for _, key in ipairs(COMPOSER_ELEMENT_KEYS) do
-        if not state.settingsPanels[key] then
-            local builder = ELEMENT_BUILDERS[key]
-            if builder then
-                local panel = CreateFrame("Frame", nil, scrollChild)
-                panel:SetPoint("TOPLEFT", 0, 0)
-                panel:SetPoint("RIGHT", scrollChild, "RIGHT", 0, 0)
-                panel._composerElementKey = key
-                builder(panel, proxyGFDB, onChangeHandler)
-                panel:Hide()
-                state.settingsPanels[key] = panel
-            end
-        end
-    end
-
-    -- Select first element
-    SelectElement("health")
-end
-
----------------------------------------------------------------------------
--- PUBLIC API
----------------------------------------------------------------------------
-function QUI_LayoutMode_Composer:Open(contextMode)
-    GUI = QUI and QUI.GUI
-    C = GUI and GUI.Colors or {}
-
-    local frame = GetOrCreateFrame()
-    local layoutUI = ns.QUI_LayoutMode_UI
-    if layoutUI and layoutUI.ApplyConfigPanelScale then
-        layoutUI:ApplyConfigPanelScale(frame)
-    end
-    frame:SetFrameStrata("FULLSCREEN_DIALOG")
-    frame:SetFrameLevel(900)
-    frame:SetToplevel(true)
-
-    -- Refresh border accent color
-    if C.accent then
-        frame:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.8)
-    end
-
-    -- Clear previous content
-    local contentArea = frame._contentArea
-    for _, child in pairs({contentArea:GetChildren()}) do
+local function ClearHoistedPreviewChildren(host)
+    if not host then return end
+    for _, child in pairs({host:GetChildren()}) do
         child:Hide()
         child:SetParent(nil)
+        child:ClearAllPoints()
     end
-
-    frame._contextMode = contextMode
-    frame._titleText:SetText((contextMode == "raid" and "Raid" or "Party") .. " Composer")
-
-    BuildComposerContent(contentArea, contextMode)
-    frame:Show()
-    frame:Raise()
-    C_Timer.After(0, function()
-        if frame and frame:IsShown() then
-            frame:SetFrameStrata("FULLSCREEN_DIALOG")
-            frame:SetFrameLevel(900)
-            frame:Raise()
-        end
-    end)
 end
 
-function QUI_LayoutMode_Composer:Close()
-    if composerFrame then composerFrame:Hide() end
+local function BuildHoistedPreview()
+    local host = hoistedPreview.host
+    if not host or not host:IsShown() then return end
+    -- Same GUI/C hoist the element dispatcher performs — CreateDesignerPreview
+    -- and downstream helpers read these module locals.
+    GUI = QUI and QUI.GUI
+    C = (GUI and GUI.Colors) or {}
+    ClearHoistedPreviewChildren(host)
+    local childRefs = {}
+    local ok, preview = pcall(CreateDesignerPreview, host, hoistedPreview.contextMode, childRefs)
+    if not ok or not preview then return end
+    hoistedPreview.childRefs = childRefs
+    hoistedPreview.preview = preview
+
+    -- CreateDesignerPreview anchors the wrapper TOPLEFT at (0,0); re-anchor
+    -- vertically centered so elements that extend outside the mock's
+    -- bounding box (buff/debuff containers hanging below, portrait on the
+    -- side) have equal headroom top and bottom.
+    preview:ClearAllPoints()
+    preview:SetPoint("CENTER", host, "CENTER", 0, 0)
+    preview:SetPoint("LEFT", host, "LEFT", 0, 0)
+    preview:SetPoint("RIGHT", host, "RIGHT", 0, 0)
 end
 
+_G.QUI_BuildGroupFramePreview = function(host, contextMode)
+    if not host then return end
+    hoistedPreview.host = host
+    if contextMode then hoistedPreview.contextMode = contextMode end
+    BuildHoistedPreview()
+end
 
----------------------------------------------------------------------------
--- AUTO-CLOSE ON LAYOUT MODE EXIT
----------------------------------------------------------------------------
-C_Timer.After(2, function()
-    local um = ns.QUI_LayoutMode
-    if um and um._exitCallbacks then
-        um._exitCallbacks[#um._exitCallbacks + 1] = function()
-            QUI_LayoutMode_Composer:Close()
-        end
+_G.QUI_RefreshGroupFramePreview = function(contextMode)
+    if contextMode then hoistedPreview.contextMode = contextMode end
+    BuildHoistedPreview()
+end
+
+-- Widget-bar element settings. Each element's builder uses the composer's
+-- own CreateComposerCollapsible (not U.CreateCollapsible), so the tile calls
+-- this global directly per tab instead. All group-frame element data is context-aware, so the
+-- Party/Raid switch should always route through the visual proxy.
+local function MakeElementOnChange()
+    return function()
+        RefreshGF()
     end
-end)
+end
+
+_G.QUI_BuildGroupFrameElement = function(host, elementKey, contextMode)
+    if not host or not elementKey then return false end
+    local gfdb = GetGFDB()
+    if not gfdb then return false end
+
+    local builder = ELEMENT_BUILDERS[elementKey]
+    if not builder then return false end
+
+    -- GUI and C are forward-declared module locals that Composer:Embed
+    -- populates on open. Element builders consume them directly, so we
+    -- must initialise before dispatching — otherwise they silently no-op
+    -- on every GUI:CreateFormX call.
+    GUI = QUI and QUI.GUI
+    C = (GUI and GUI.Colors) or {}
+    if not GUI then return false end
+
+    local target = CreateVisualProxy(gfdb, contextMode or "party")
+
+    -- Flat render + dual-column rows — same visual language as the sliced
+    -- provider tabs (Range & Pet, Appearance, etc.) and the other tiles
+    -- (Action Bars, Unit Frames, CDM). Collapsibles become accent-dot
+    -- sections; each section's rows pair into two columns.
+    _composerAutoExpand = true
+    _composerDualColumn = true
+    local ok, err = pcall(builder, host, target, MakeElementOnChange())
+    _composerAutoExpand = false
+    _composerDualColumn = false
+    if not ok then
+        if geterrorhandler then geterrorhandler()(err) end
+        return false
+    end
+    return true
+end
+
+-- Back-compat alias — Indicators tab was wired through this before the
+-- generic dispatch landed. Callers can migrate to QUI_BuildGroupFrameElement.
+_G.QUI_BuildGroupFrameIndicators = function(host)
+    return _G.QUI_BuildGroupFrameElement(host, "indicators", "party")
+end

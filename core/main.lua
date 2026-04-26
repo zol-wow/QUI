@@ -222,16 +222,30 @@ function QUICore:OnProfileChanged(event, db, profileKey)
     end
     if inChallengeMode then return end
 
+    -- Normalize callback payloads that don't pass the active destination profile.
+    local currentProfile = self.db:GetCurrentProfile()
+    local effectiveProfileKey = profileKey
+    if event == "OnProfileCopied" or event == "OnProfileReset" then
+        effectiveProfileKey = currentProfile
+    end
+    if type(effectiveProfileKey) ~= "string" or effectiveProfileKey == "" then
+        effectiveProfileKey = currentProfile
+    end
+
     -- Skip if "switching" to the same profile (happens during M+ entry false events)
     -- LibDualSpec triggers profile switch even when already on correct profile
-    local currentProfile = self.db:GetCurrentProfile()
-    if profileKey == self._lastKnownProfile and profileKey == currentProfile then
+    if effectiveProfileKey == self._lastKnownProfile and effectiveProfileKey == currentProfile then
         return  -- No actual change happening - skip all UI modifications
     end
-    self._lastKnownProfile = profileKey
+    self._lastKnownProfile = effectiveProfileKey
 
     -- Update spec tracking (kept for reference)
     self._lastKnownSpec = GetSpecialization() or 0
+
+    local pins = ns.Settings and ns.Settings.Pins
+    if pins and type(pins.HandleProfileEvent) == "function" then
+        pins:HandleProfileEvent(event, self.db, effectiveProfileKey)
+    end
 
     -- Run migrations on the newly-activated profile
     local addon = _G.QUI
@@ -357,8 +371,6 @@ function QUICore:OnProfileChanged(event, db, profileKey)
         pcall(QUI.GUI.MainFrame.Hide, QUI.GUI.MainFrame)
         pcall(QUI.GUI.MainFrame.SetParent, QUI.GUI.MainFrame, nil)
         QUI.GUI.MainFrame = nil
-        QUI.GUI._searchIndexBuilt = false
-        QUI.GUI._allTabsAdded = false
         QUI.GUI.SettingsRegistry = {}
         QUI.GUI.SettingsRegistryKeys = {}
     end

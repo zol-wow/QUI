@@ -7,14 +7,24 @@ nav_order: 6
 
 # Troubleshooting
 
-Common issues and solutions for QUI.
+If something feels off, start here before rebuilding your whole UI.
+
+## Quick Problem Finder
+
+| Problem | Most likely fix |
+|---------|-----------------|
+| A frame is missing | Check visibility rules and Layout Mode placement |
+| Action bars are gone | Mouseover fade is hiding them |
+| Group frames will not appear | Enable them, then reload |
+| A move or toggle will not apply | Leave combat and try again |
+| Profile import failed | Recopy the full string and try a fresh profile |
 
 ## Frames Are Invisible or Missing
 
-**Cause:** HUD Visibility rules may be hiding your frames.
+The most common cause is a visibility rule hiding the frame when you do not meet its conditions.
 
-1. Open `/qui` and check the **General & QoL** tab for Unit Frame visibility settings.
-2. Enter **Layout Mode** (`/qui layout`) and check CDM visibility settings.
+1. Open `/qui` and check **Appearance > HUD Visibility** for the visibility rules affecting CDM, Unit Frames, and trackers.
+2. Open the feature page itself and confirm the module is enabled.
 3. Temporarily set visibility to "Show Always" to confirm frames exist.
 4. If frames appear, adjust the visibility rules to your preferred conditions.
 
@@ -23,16 +33,16 @@ The "Fade Out Alpha" setting at 0 makes hidden frames completely invisible. Set 
 
 ## CDM Icons Not Showing
 
-**Cause:** The CDM may not have spell data for your spec, or containers may be disabled.
+Usually this means the container is hidden, misplaced, or not populated the way you expect for your spec.
 
-1. Enter Layout Mode (`/qui layout`) and check CDM settings.
-2. Open the **Composer** to verify spells are populated for your spec.
+1. Open `/qui` > **Cooldown Manager** or type `/cdm`.
+2. Open the **Entries** page to verify spells are populated for your spec.
 3. Check that containers (Essential, Utility) are enabled.
 4. Check visibility rules -- CDM may be hidden outside of combat.
 
 ## Action Bars Seem to Have Disappeared
 
-**Cause:** Mouseover fade is enabled by default in many profiles.
+This is usually normal behavior, not a broken install.
 
 1. Move your mouse to where the action bars should be -- they will appear on hover.
 2. To disable fade: open `/qui` > **Action Bars** tab > disable **Mouseover Fade**.
@@ -40,10 +50,10 @@ The "Fade Out Alpha" setting at 0 makes hidden frames completely invisible. Set 
 
 ## Click-Casting Not Working
 
-**Cause:** Click-casting requires group frames to be enabled and the Click-Cast tab configured.
+Click-casting depends on both the right frames and the right bindings.
 
-1. Verify QUI Group Frames are enabled (Layout Mode > Group Frames > Enable).
-2. Open `/qui` > **Click-Cast** tab and configure your bindings.
+1. Verify QUI Group Frames are enabled (`/qui` > **Group Frames** > enable toggle).
+2. Open `/qui` > **General** > **Click-Cast** and configure your bindings.
 3. Click-casting bindings are per-specialization -- switch to the correct spec.
 4. A UI reload (`/rl`) may be required after enabling group frames for the first time.
 
@@ -52,25 +62,22 @@ Click-casting only works on secure frames (group frames, unit frames). It cannot
 
 ## Frames Cannot Be Moved During Combat
 
-**Cause:** WoW's taint protection prevents frame manipulation during combat.
-
-This is a game limitation, not a QUI bug. Frame positioning, visibility changes, and other protected operations are automatically deferred until combat ends. Type `/qui layout` after leaving combat to reposition frames.
+This is expected. WoW blocks many protected frame changes during combat. Leave combat, then try again.
 
 ## Tooltip Issues or Errors
 
-**Cause:** Tooltip taint from other addons or WoW API changes.
+If tooltips are acting strangely:
 
-1. QUI uses Blizzard hooks (not a custom tooltip engine) to minimize taint risk.
-2. If tooltips disappear or show errors, try disabling other addons that modify tooltips.
-3. The **Combat Hiding** feature (enabled by default) hides tooltips during combat -- hold SHIFT to force-show them.
-4. If OPie is installed and causing tooltip issues, ensure both QUI and OPie are updated to the latest versions.
+1. Check whether **Combat Hiding** is active.
+2. Hold **SHIFT** to force-show a tooltip in combat.
+3. If the issue only happens with another tooltip-heavy addon enabled, test with that addon off once.
 
 ## Group Frames Not Appearing
 
-**Cause:** Group frames are opt-in and disabled by default.
+Group Frames are disabled until you explicitly turn them on.
 
-1. Enter Layout Mode (`/qui layout`).
-2. Access Group Frames settings through the toolbar or drawer.
+1. Open `/qui`.
+2. Select **Group Frames**.
 3. Enable QUI Group Frames.
 4. **Reload the UI** with `/rl` -- this is required when first enabling group frames.
 
@@ -79,7 +86,7 @@ Group frames replace Blizzard's secure group frame headers, which can only be sw
 
 ## Performance Issues in Large Groups
 
-If frame rates drop in 20-40 player raids:
+If performance drops in large raids:
 
 1. Disable group frame **castbars** (they update frequently and are disabled by default for a reason).
 2. Disable group frame **portraits** if enabled.
@@ -92,7 +99,7 @@ If frame rates drop in 20-40 player raids:
 1. Ensure the import string starts with `QUI1:` -- this is the format marker.
 2. Check that the string was copied completely (no truncation from chat or clipboard limits).
 3. Try importing into a fresh profile rather than overwriting an existing one.
-4. Profile strings include validation (max depth 20, max 50,000 nodes) -- strings exceeding these limits are rejected for safety.
+4. If a selective import behaves strangely, retry as a full import in a throwaway profile to verify the string itself is valid.
 
 ## Safe Reload
 

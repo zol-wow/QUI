@@ -647,6 +647,74 @@ local function GetEntryTexture(entry)
 end
 
 ---------------------------------------------------------------------------
+-- PROFESSION QUALITY OVERLAY
+-- Renders a crafted/reagent quality badge atop item/trinket/slot icons when
+-- the container opts in via showProfessionQuality.
+---------------------------------------------------------------------------
+local function GetProfessionQualityInfoForItem(itemIDOrLink)
+    if not itemIDOrLink or not C_TradeSkillUI then return nil end
+    if C_TradeSkillUI.GetItemReagentQualityInfo then
+        local info = C_TradeSkillUI.GetItemReagentQualityInfo(itemIDOrLink)
+        if info then return info end
+    end
+    if C_TradeSkillUI.GetItemCraftedQualityInfo then
+        return C_TradeSkillUI.GetItemCraftedQualityInfo(itemIDOrLink)
+    end
+    return nil
+end
+
+local function ClearIconProfessionQuality(icon)
+    if icon and icon._professionQualityOverlay then
+        icon._professionQualityOverlay:Hide()
+    end
+end
+
+local function UpdateIconProfessionQuality(icon)
+    if not icon or not icon._spellEntry then
+        ClearIconProfessionQuality(icon)
+        return
+    end
+    local entry = icon._spellEntry
+    local etype = entry.type
+    if etype ~= "item" and etype ~= "trinket" and etype ~= "slot" then
+        ClearIconProfessionQuality(icon)
+        return
+    end
+
+    local ncdm = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
+    local vt = entry.viewerType
+    local containerDB = ncdm and vt and (ncdm[vt] or (ncdm.containers and ncdm.containers[vt]))
+    if containerDB and containerDB.showProfessionQuality == false then
+        ClearIconProfessionQuality(icon)
+        return
+    end
+
+    local lookupID
+    if etype == "item" then
+        lookupID = entry.id
+    else
+        lookupID = (GetInventoryItemLink and GetInventoryItemLink("player", entry.id))
+            or (GetInventoryItemID and GetInventoryItemID("player", entry.id))
+    end
+
+    local qualityInfo = lookupID and GetProfessionQualityInfoForItem(lookupID)
+    local atlas = qualityInfo and qualityInfo.iconInventory
+    if not atlas then
+        ClearIconProfessionQuality(icon)
+        return
+    end
+
+    local overlay = icon._professionQualityOverlay
+    if not overlay then
+        overlay = icon:CreateTexture(nil, "ARTWORK", nil, 7)
+        overlay:SetPoint("TOPLEFT", icon, "TOPLEFT", -3, 2)
+        icon._professionQualityOverlay = overlay
+    end
+    overlay:SetAtlas(atlas, (TextureKitConstants and TextureKitConstants.UseAtlasSize) or true)
+    overlay:Show()
+end
+
+---------------------------------------------------------------------------
 -- COOLDOWN RESOLUTION
 -- Ported from cdm_custom.lua:116-181 (GetBestSpellCooldown)
 ---------------------------------------------------------------------------
@@ -1575,6 +1643,7 @@ local function CreateIcon(parent, spellEntry)
                 icon._desiredTexture = texID
             end
         end
+        UpdateIconProfessionQuality(icon)
     end
 
     -- Tooltip support
@@ -2180,7 +2249,12 @@ end
 local function GetTrackerSettings(viewerType)
     local db = GetDB()
     if not db or not viewerType then return nil end
-    return db[viewerType]
+    -- Built-in containers (essential, utility, buff, trackedBar) live at the
+    -- top level; custom containers (user-created, legacy-migrated customBar)
+    -- live under db.containers. Check both so range/usability tints apply
+    -- uniformly across all container types.
+    if db[viewerType] then return db[viewerType] end
+    return db.containers and db.containers[viewerType] or nil
 end
 
 -- _hoistedNcdm is set once per UpdateAllCooldowns batch (avoids 4 table
@@ -2398,6 +2472,7 @@ local function UpdateIconCooldown(icon)
             if newTex and icon.Icon and newTex ~= icon._lastTexture then
                 icon.Icon:SetTexture(newTex)
                 icon._lastTexture = newTex
+                UpdateIconProfessionQuality(icon)
             end
         elseif entry.type == "trinket" or entry.type == "slot" then
             -- Trinket/slot entries store equipment slot (13/14), resolve to item ID
@@ -2411,6 +2486,7 @@ local function UpdateIconCooldown(icon)
                     if ok and tex and tex ~= icon._lastTexture then
                         icon.Icon:SetTexture(tex)
                         icon._lastTexture = tex
+                        UpdateIconProfessionQuality(icon)
                     end
                 end
             end
@@ -3241,6 +3317,7 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
             end
             icon.Icon:SetDesaturated(false)
         end
+        UpdateIconProfessionQuality(icon)
 
         if icon.Cooldown then
             icon.Cooldown:Clear()
@@ -3314,6 +3391,7 @@ function CDMIcons:ReleaseIcon(icon)
     end
     icon.StackText:SetText("")
     icon.Border:Hide()
+    ClearIconProfessionQuality(icon)
 
     -- Clear click-to-cast secure button
     if icon.clickButton then
@@ -3353,6 +3431,50 @@ end
 
 
 ---------------------------------------------------------------------------
+-- Build a spellEntry record from a user-curated custom entry.
+-- Used by both legacy essential/utility custom merges (Phase G) and
+-- Phase B.3 custom-container rendering (customBar / user-created cooldown).
+-- Returns a fully-populated spellEntry or nil if the entry is unusable.
+---------------------------------------------------------------------------
+local function BuildSpellEntryFromCustom(entry, idx, viewerType)
+    if type(entry) ~= "table" or entry.id == nil then return nil end
+    local isSpellType = (entry.type ~= "item" and entry.type ~= "trinket" and entry.type ~= "slot")
+    local spellEntry = {
+        spellID = isSpellType and entry.id or nil,
+        overrideSpellID = isSpellType and entry.id or nil,
+        name = "",
+        isAura = false,
+        layoutIndex = 99000 + (idx or 0),
+        viewerType = viewerType,
+        type = entry.type,
+        id = entry.id,
+        _isCustomEntry = true,
+    }
+    if entry.type == "macro" then
+        spellEntry.macroName = entry.macroName
+        spellEntry.name = entry.macroName or ""
+        local resolvedID = ResolveMacro(spellEntry)
+        if resolvedID then
+            spellEntry.spellID = resolvedID
+            spellEntry.overrideSpellID = resolvedID
+        end
+    elseif entry.type == "trinket" or entry.type == "slot" then
+        local itemID = GetInventoryItemID("player", entry.id)
+        if itemID then
+            local itemName = C_Item.GetItemNameByID(itemID)
+            spellEntry.name = itemName or ""
+        end
+    elseif entry.type == "item" then
+        local itemName = C_Item.GetItemNameByID(entry.id)
+        spellEntry.name = itemName or ""
+    else
+        local spellInfo = C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(entry.id)
+        spellEntry.name = spellInfo and spellInfo.name or ""
+    end
+    return spellEntry
+end
+
+---------------------------------------------------------------------------
 -- BUILD ICONS: Create icons from harvested spell data + custom entries
 ---------------------------------------------------------------------------
 function CDMIcons:BuildIcons(viewerType, container)
@@ -3370,6 +3492,36 @@ function CDMIcons:BuildIcons(viewerType, container)
         pool[#pool + 1] = icon
     end
 
+    -- Phase B.3: Custom containers (non-built-in) render their own entries.
+    -- Covers customBar containers (migrated from legacy trackers) and any
+    -- user-created cooldown / aura container from the Composer.  Entries
+    -- live on the container itself under `entries`, or under a per-spec
+    -- table in db.global.ncdm.specTrackerSpells when specSpecific is set.
+    do
+        local ncdm = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
+        local cDB = ncdm and ncdm.containers and ncdm.containers[viewerType]
+        if cDB and cDB.builtIn == false then
+            local entryList
+            if cDB.specSpecific and ns.CDMSpellData and ns.CDMSpellData.GetSpecEntries then
+                entryList = ns.CDMSpellData:GetSpecEntries(viewerType)
+            end
+            if type(entryList) ~= "table" then
+                entryList = cDB.entries
+            end
+            if type(entryList) == "table" then
+                for idx, entry in ipairs(entryList) do
+                    if entry and entry.enabled ~= false then
+                        local spellEntry = BuildSpellEntryFromCustom(entry, idx, viewerType)
+                        if spellEntry then
+                            local icon = self:AcquireIcon(container, spellEntry)
+                            pool[#pool + 1] = icon
+                        end
+                    end
+                end
+            end
+        end
+    end
+
     -- Merge custom entries (essential and utility only)
     if viewerType == "essential" or viewerType == "utility" then
         local customData = GetCustomData(viewerType)
@@ -3381,47 +3533,13 @@ function CDMIcons:BuildIcons(viewerType, container)
             local unpositioned = {}
             for idx, entry in ipairs(customData.entries) do
                 if entry.enabled ~= false then
-                    local isSpellType = (entry.type ~= "item" and entry.type ~= "trinket")
-                    local spellEntry = {
-                        spellID = isSpellType and entry.id or nil,
-                        overrideSpellID = isSpellType and entry.id or nil,
-                        name = "",
-                        isAura = false,
-                        layoutIndex = 99000 + idx,
-                        viewerType = viewerType,
-                        type = entry.type,
-                        id = entry.id,
-                        _isCustomEntry = true,
-                    }
-                    -- Get name and resolve IDs per entry type
-                    if entry.type == "macro" then
-                        spellEntry.macroName = entry.macroName
-                        spellEntry.name = entry.macroName or ""
-                        -- Resolve current spell for initial texture (updates dynamically)
-                        local resolvedID, resolvedType = ResolveMacro(spellEntry)
-                        if resolvedID then
-                            spellEntry.spellID = resolvedID
-                            spellEntry.overrideSpellID = resolvedID
+                    local spellEntry = BuildSpellEntryFromCustom(entry, idx, viewerType)
+                    if spellEntry then
+                        if entry.position and entry.position > 0 then
+                            positioned[#positioned + 1] = { entry = spellEntry, position = entry.position, origIndex = idx }
+                        else
+                            unpositioned[#unpositioned + 1] = spellEntry
                         end
-                    elseif entry.type == "trinket" then
-                        -- Trinket entries store equipment slot (13/14), resolve to item ID
-                        local itemID = GetInventoryItemID("player", entry.id)
-                        if itemID then
-                            local itemName = C_Item.GetItemNameByID(itemID)
-                            spellEntry.name = itemName or ""
-                        end
-                    elseif entry.type == "item" then
-                        local itemName = C_Item.GetItemNameByID(entry.id)
-                        spellEntry.name = itemName or ""
-                    else
-                        local spellInfo = C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(entry.id)
-                        spellEntry.name = spellInfo and spellInfo.name or ""
-                    end
-
-                    if entry.position and entry.position > 0 then
-                        positioned[#positioned + 1] = { entry = spellEntry, position = entry.position, origIndex = idx }
-                    else
-                        unpositioned[#unpositioned + 1] = spellEntry
                     end
                 end
             end
@@ -3893,35 +4011,30 @@ function CDMIcons:UpdateAllCooldowns(keepTickCaches)
                         effectiveMode = inCombat and "always" or "active"
                     end
 
+                    -- Compute desired visibility from display mode
+                    local shouldShow
                     if effectiveMode == "always" then
-                        if not icon:IsShown() then icon:Show() end
+                        shouldShow = true
                     elseif effectiveMode == "active" then
                         if isOnCD then
-                            if not icon:IsShown() then icon:Show() end
+                            shouldShow = true
                         else
-                            -- Keep proc-ready icons visible in active mode, not just
-                            -- procOnUsable overrides. Blizzard CDM can raise overlay
-                            -- glows for off-cooldown spells that should still appear.
                             local keepForGlow = false
                             if ns._OwnedGlows and ns._OwnedGlows.ShouldIconGlow then
                                 keepForGlow = ns._OwnedGlows.ShouldIconGlow(icon)
                             end
-                            if keepForGlow then
-                                local wasHidden = not icon:IsShown()
-                                if wasHidden then
-                                    icon:Show()
-                                end
-                                if ns._OwnedGlows and ns._OwnedGlows.SyncGlowForIcon then
-                                    ns._OwnedGlows.SyncGlowForIcon(icon)
-                                end
-                            elseif icon:IsShown() then
-                                if ns._OwnedGlows and ns._OwnedGlows.StopGlow then
-                                    ns._OwnedGlows.StopGlow(icon)
-                                end
-                                icon:Hide()
-                            end
+                            shouldShow = keepForGlow
                         end
+                    else
+                        shouldShow = false
                     end
+
+                    -- Phase B.3: overlay container-level visibility filters
+                    if shouldShow and ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD) then
+                        shouldShow = false
+                    end
+
+                    ApplyIconVisibility(icon, shouldShow, containerDB and containerDB.dynamicLayout)
 
                     -- Grey out when linked debuff/buff not active
                     -- greyOutInactive = my debuffs on target, greyOutInactiveBuffs = buffs on player
@@ -4393,7 +4506,8 @@ local function UpdateIconVisualState(icon, cachedDB)
     local viewerType = entry.viewerType
     if not viewerType then return end
 
-    local settings = cachedDB and cachedDB[viewerType] or GetTrackerSettings(viewerType)
+    local settings = (cachedDB and (cachedDB[viewerType] or (cachedDB.containers and cachedDB.containers[viewerType])))
+        or GetTrackerSettings(viewerType)
     if not settings then
         if icon._rangeTinted or icon._usabilityTinted then
             icon._lastVisualState = nil

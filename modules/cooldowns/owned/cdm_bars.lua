@@ -1251,6 +1251,12 @@ function CDMBars:UpdateOwnedBarAura(bar)
     local entry = bar._spellEntry
     if not ns.CDMSpellData then return end
 
+    -- Phase B.3: item / trinket-slot entries take the item cooldown path
+    if entry and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot") then
+        UpdateItemBarCooldown(bar, entry)
+        return
+    end
+
     local Helpers = ns.Helpers
 
     local p = bar._auraParams or {}

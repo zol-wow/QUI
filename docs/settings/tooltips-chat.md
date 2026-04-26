@@ -7,7 +7,7 @@ nav_order: 13
 
 # Tooltips & Chat
 
-Tooltip and Chat settings are accessible from the **General & QoL** tab in-game but are documented separately here for convenience. This page also covers Skyriding, XP Tracker, Combat Text, BRez Counter, Combat Timer, M+ Timer, Raid Buffs, and Buff/Debuff Borders settings.
+Tooltip and Chat settings are accessible from the **Chat & Tooltips** tile in-game and are documented separately here for convenience. This page also covers several related presentation settings that may appear in nearby tiles such as Gameplay, Appearance, and Quality of Life.
 
 ---
 

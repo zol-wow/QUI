@@ -1,34 +1,44 @@
 --[[
     QUI CDM Provider
-    Provider that wires the owned CDM engine once its modules are loaded.
 
-    Load order: cdm_provider.lua → hud_visibility.lua → engine files
-    Engine files call RegisterEngine() at load time.
-    Provider calls Initialize() on the owned engine at ADDON_LOADED.
+    Thin bootstrap around the single CDM engine ("owned"). Phase B.3
+    removed the engine-selection abstraction since there has only ever
+    been one implementation — the owned engine. This file remains the
+    place that:
+
+      1. Wires _G.QUI_* globals from the engine so consumer modules can
+         call them without reaching into the engine table directly.
+      2. Publishes a frame resolver that works before the engine has
+         finished initializing (Blizzard global fallback).
+      3. Kicks off engine initialization on ADDON_LOADED, inside the
+         safe window where combat /reload hasn't yet locked protected
+         frames.
+
+    Load order: cdm_provider.lua → hud_visibility.lua → owned engine
+    files. The owned engine calls SetEngine() at load time to hand its
+    table over; the provider initializes it on ADDON_LOADED.
 ]]
 
 local ADDON_NAME, ns = ...
-local Helpers = ns.Helpers
 
 ---------------------------------------------------------------------------
 -- PROVIDER STATE
 ---------------------------------------------------------------------------
 local CDMProvider = {
-    engines = {},           -- name → engine table
-    activeEngine = nil,     -- the initialized engine table
-    activeEngineName = nil, -- "owned" after initialization
+    engine = nil,         -- the single engine table
     initialized = false,
 }
 
 ---------------------------------------------------------------------------
--- ENGINE REGISTRATION
+-- ENGINE REGISTRATION (single-engine; owned is the only implementation)
 ---------------------------------------------------------------------------
 
---- Register a CDM engine implementation.
---- @param name string  Engine identifier
---- @param engine table  Table with contract methods (Initialize, Refresh, etc.)
-function CDMProvider:RegisterEngine(name, engine)
-    self.engines[name] = engine
+--- Hand the owned engine table to the provider. Called at file-load
+--- time by cdm_containers.lua; initialization is deferred to
+--- InitializeEngine() on ADDON_LOADED.
+--- @param engine table  Engine table with contract methods (Initialize, Refresh, etc.)
+function CDMProvider:SetEngine(engine)
+    self.engine = engine
 end
 
 ---------------------------------------------------------------------------
@@ -43,27 +53,23 @@ local BLIZZARD_FRAME_KEYS = {
     buffBar   = "BuffBarCooldownViewer",
 }
 
---- Resolve a viewer key to a frame.
---- Works before engine init via Blizzard global fallback.
---- @param key string  One of "essential", "utility", "buffIcon", "buffBar"
---- @return Frame|nil
+--- Resolve a viewer key to a frame. Works before engine init via the
+--- Blizzard global fallback.
 function CDMProvider:GetViewerFrame(key)
-    -- Active engine gets priority
-    if self.activeEngine and self.activeEngine.GetViewerFrame then
-        return self.activeEngine:GetViewerFrame(key)
+    local engine = self.engine
+    if self.initialized and engine and engine.GetViewerFrame then
+        return engine:GetViewerFrame(key)
     end
-    -- Fallback to well-known Blizzard globals
     local blizzName = BLIZZARD_FRAME_KEYS[key]
     return blizzName and _G[blizzName] or nil
 end
 
 --- Get all viewer frames for visibility control.
---- @return table  Array of frame references
 function CDMProvider:GetViewerFrames()
-    if self.activeEngine and self.activeEngine.GetViewerFrames then
-        return self.activeEngine:GetViewerFrames()
+    local engine = self.engine
+    if self.initialized and engine and engine.GetViewerFrames then
+        return engine:GetViewerFrames()
     end
-    -- Fallback: collect from Blizzard globals
     local frames = {}
     for _, blizzName in pairs(BLIZZARD_FRAME_KEYS) do
         if _G[blizzName] then
@@ -73,20 +79,13 @@ function CDMProvider:GetViewerFrames()
     return frames
 end
 
---- Get the name of the active engine (or nil if not yet initialized).
---- @return string|nil
-function CDMProvider:GetActiveEngineName()
-    return self.activeEngineName
-end
-
 ---------------------------------------------------------------------------
 -- GLOBAL WIRING
 ---------------------------------------------------------------------------
 
--- Wire _G.QUI_* globals from the active engine.
--- These are the integration points that consumer modules call.
+-- Wire _G.QUI_* globals from the engine so consumer modules don't need
+-- to reach into the engine table directly.
 local GLOBAL_WIRE_MAP = {
-    -- method name → global name
     { method = "Refresh",                global = "QUI_RefreshNCDM" },
     { method = "ApplyUtilityAnchor",     global = "QUI_ApplyUtilityAnchor" },
     { method = "IsSelectionKeepVisible", global = "QUI_IsSelectionKeepVisible" },
@@ -115,25 +114,17 @@ end
 
 function CDMProvider:InitializeEngine()
     if self.initialized then return end
-
-    -- Only "owned" engine exists
-    local engineName = "owned"
-    local engine = self.engines[engineName]
-
+    local engine = self.engine
     if not engine then
         return  -- Engine not registered yet
     end
 
-    self.activeEngine = engine
-    self.activeEngineName = engineName
     self.initialized = true
 
-    -- Initialize the engine
     if engine.Initialize then
         engine:Initialize()
     end
 
-    -- Wire globals from the active engine (only for globals the engine provides)
     WireGlobals(engine)
 
     if ns.Registry then
@@ -145,17 +136,14 @@ function CDMProvider:InitializeEngine()
         })
     end
 
-    -- Wire ns.NCDM for backward compat
+    -- Backward compat namespace exports
     if engine.GetNCDM then
         ns.NCDM = engine:GetNCDM()
     end
-
-    -- Wire ns.CustomCDM for backward compat
     if engine.GetCustomCDM then
         ns.CustomCDM = engine:GetCustomCDM()
     end
 
-    -- Invalidate visibility frame cache now that engine is ready
     if ns.InvalidateCDMFrameCache then
         ns.InvalidateCDMFrameCache()
     end
@@ -172,10 +160,10 @@ end
 ---------------------------------------------------------------------------
 -- ADDON_LOADED TRIGGER
 ---------------------------------------------------------------------------
--- Initialize during ADDON_LOADED for our own addon.  This leverages the
+-- Initialize during ADDON_LOADED for our own addon. This leverages the
 -- safe window where InCombatLockdown() returns false even during a combat
--- /reload, allowing container creation and layout to complete before combat
--- lockdown kicks in.
+-- /reload, allowing container creation and layout to complete before
+-- combat lockdown kicks in.
 local providerEventFrame = CreateFrame("Frame")
 providerEventFrame:RegisterEvent("ADDON_LOADED")
 providerEventFrame:SetScript("OnEvent", function(self, event, addonName)

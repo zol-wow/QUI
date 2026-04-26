@@ -1125,32 +1125,6 @@ CreateToolbar = function(ui)
         end
     end, 0.15, 0.25, 0.4)
 
-    -- CDM Spell Manager button
-    AddButton("CDM Spells", function()
-        if _G.QUI_OpenCDMComposer then
-            _G.QUI_OpenCDMComposer()
-            if ui._collapseToolbar then ui._collapseToolbar() end
-        end
-    end, 0.15, 0.25, 0.4)
-
-    -- Party Composer button
-    AddButton("Party Composer", function()
-        local composer = ns.QUI_LayoutMode_Composer
-        if composer and composer.Open then
-            composer:Open("party")
-            if ui._collapseToolbar then ui._collapseToolbar() end
-        end
-    end, 0.15, 0.25, 0.4)
-
-    -- Raid Composer button
-    AddButton("Raid Composer", function()
-        local composer = ns.QUI_LayoutMode_Composer
-        if composer and composer.Open then
-            composer:Open("raid")
-            if ui._collapseToolbar then ui._collapseToolbar() end
-        end
-    end, 0.15, 0.25, 0.4)
-
     -- Save button (green)
     ui._saveBtn = AddButton("Save & Close", function()
         local um = ns.QUI_LayoutMode
@@ -2249,9 +2223,9 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                         end
                     end
 
-                    -- Register settings provider for the new panel
-                    if Datapanels.RegisterProvider then
-                        Datapanels.RegisterProvider(newID, elementKey)
+                    -- Register shared settings lookup for the new panel
+                    if Datapanels.RegisterSettingsLookup then
+                        Datapanels.RegisterSettingsLookup(newID, elementKey)
                     end
 
                     -- Ensure the frame is shown for layout mode even without datatexts

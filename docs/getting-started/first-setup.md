@@ -7,32 +7,39 @@ nav_order: 2
 
 # First Setup
 
-After installing QUI, follow these steps to get the full experience up and running.
+If you want QUI to feel right quickly, follow these steps in order. This is the setup path most players should use on their first login.
 
-## Step 1: Import the Edit Mode Layout
+![Actual QUI sidebar navigation]({{ '/assets/images/qui-sidebar-navigation.png' | relative_url }})
+_Actual QUI navigation panel, which is the quickest way to move between setup areas while you are getting started._
 
-QUI is designed around a specific Blizzard Edit Mode layout. Importing it ensures that default Blizzard frames are positioned correctly for QUI's design.
+## Step 1: Open QUI
+
+Type `/qui` in chat to open the main settings window.
+
+This is the control center for feature tiles like Action Bars, Unit Frames, Group Frames, Appearance, and Quality of Life, plus the **General** tile for profiles and import/export tools.
+
+## Step 2: Import the Base Layout
+
+QUI is designed around a specific base layout. Importing that layout first gives the rest of the addon a clean starting point.
 
 1. Open QUI settings with `/qui`.
-2. Go to the **Import & Export Strings** tab.
+2. Open **General > Import / Export**.
 3. Select the **QUI Edit Mode Base** preset and copy the Edit Mode layout string.
 4. Open Blizzard's **Edit Mode** (press `Escape` > `Edit Mode`, or use the keybind).
 5. Click **Import** in Edit Mode and paste the string.
 6. Apply the imported layout.
 
-## Step 2: Browse the Settings
-
-Open `/qui` and take a moment to explore the available tabs. Each tab controls a different area of the UI. You do not need to change anything right away -- the defaults are a solid starting point.
-
 ## Step 3: Import a QUI Profile
 
-QUI comes with bundled profile presets that configure all QUI-specific settings (fonts, textures, frame visibility, cooldown tracking, and more).
+The layout handles placement. The profile handles how QUI itself behaves.
 
-1. In `/qui`, navigate to the **Import & Export Strings** tab.
+1. In `/qui`, navigate to **General > Import / Export**.
 2. Select one of the bundled presets (e.g., the **Quazii** profile or the **Dark Mode** variant).
 3. Click **Import** to apply the profile.
 
-## Step 4: Reload
+If you prefer to build your own look later, you can still start from a bundled profile and gradually change it.
+
+## Step 4: Reload Once
 
 Type `/rl` to reload the UI. This ensures all settings are fully applied.
 
@@ -40,18 +47,27 @@ Type `/rl` to reload the UI. This ensures all settings are fully applied.
 
 Type `/qui layout` to enter Layout Mode. This is where you can:
 
-- Reposition CDM bars, unit frames, group frames, and other QUI elements by dragging their handles.
-- Access CDM, Group Frames, and Minimap settings through the Layout Mode toolbar and drawer.
-- Fine-tune frame spacing, anchoring, and layout direction.
-- Click **Save** when you are happy with the layout.
+- Reposition CDM bars, unit frames, group frames, minimap-related panels, and other QUI elements.
+- Use the mover-side controls for quick placement adjustments while you arrange the HUD.
+- Fine-tune spacing, anchoring, and visual grouping until the HUD feels natural on your screen.
+- Click **Save** when you are done.
+
+## Step 6: Do a Quick Comfort Pass
+
+Before you head into real content, spend two minutes checking:
+
+- Are your action bars visible the way you expect?
+- Is the Cooldown Manager close enough to your character to read comfortably?
+- Do your player and target frames sit where your eyes naturally go?
+- If you heal or support, do you want to enable Group Frames now or later?
 
 ## Important Notes
 
-- **Action bars are hidden on mouseover by default.** If your action bars seem to have disappeared, move your mouse to where they should be. You can disable this behavior in the **Action Bars** tab within `/qui`.
+- **Action bars may fade on mouseover.** If they seem to be missing, move your mouse over the bottom-center area first.
 
-- **CDM (Cooldown Manager) is enabled by default.** The Essential bar is on by default. If you do not see cooldown icons, enter Layout Mode (`/qui layout`) to position them, or check that your spec's spells are populated in the CDM settings. The intro message on first login will remind you to configure CDM.
+- **CDM is one of the main reasons people use QUI.** If you do not immediately love where it is sitting, move it before judging the addon.
 
-- **CDM, Group Frames, and Minimap settings are in Layout Mode.** These settings have been moved out of the main `/qui` options panel and into Layout Mode's side panels and toolbar. Use `/qui layout` to access them.
+- **Some important settings live in Layout Mode.** CDM, Group Frames, and Minimap-related tuning are not only in the main `/qui` window.
 
 ## Tip: CDM Icon Size in Edit Mode
 

@@ -4,6 +4,9 @@
     <Script file="cdm_icons.lua"/>
     <Script file="cdm_bars.lua"/>
     <Script file="cdm_containers.lua"/>
+    <Script file="settings\containers_page_schema.lua"/>
+    <Script file="settings\containers_page_model.lua"/>
+    <Script file="settings\containers_page.lua"/>
     <Script file="cdm_composer.lua"/>
     <Script file="glows.lua"/>
     <Script file="swipe.lua"/>

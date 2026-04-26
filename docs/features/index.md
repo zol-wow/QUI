@@ -7,99 +7,63 @@ has_children: true
 
 # Features
 
-QUI provides a comprehensive set of UI modules that can be individually enabled or disabled to suit your playstyle. Whether you want a complete UI overhaul or just a few targeted improvements, you can pick and choose exactly what QUI manages.
+QUI can handle as much or as little of your UI as you want. Some players come for the Cooldown Manager alone. Others use QUI as their full-screen layout, utility, and polish addon.
 
-## Feature Map
+## Where Most Players Start
 
-```mermaid
-graph LR
-    subgraph Combat["Combat HUD"]
-        CDM["Cooldown Manager"]
-        UF["Unit Frames"]
-        GF["Group Frames"]
-        CT["Custom Trackers"]
-        HV["HUD Visibility"]
-    end
-
-    subgraph Interface["Action Bars & Interface"]
-        AB["Action Bars"]
-        MM["Minimap"]
-        DP["Data Panels"]
-        CHAT["Chat"]
-        TT["Tooltips"]
-        SKIN["Skinning"]
-    end
-
-    subgraph Dungeon["Dungeon & Group"]
-        MPT["M+ Timer"]
-        PK["Party Keystones"]
-        BREZ["Battle Res"]
-        TELE["Dungeon Teleport"]
-    end
-
-    subgraph QoL["Quality of Life"]
-        CP["Character Pane"]
-        BFM["Blizzard Frame Mover"]
-        AUTO["Automation"]
-        SKY["Skyriding"]
-        XP["XP Tracker"]
-    end
-
-    subgraph Layout["Layout & Config"]
-        LM["Layout Mode"]
-        ANCHOR["Frame Anchoring"]
-        KB["Keybinds"]
-        PROF["Profiles"]
-        PERF["Performance Monitor"]
-    end
-
-    style Combat fill:#1a1a2e,stroke:#34D399,color:#fff
-    style Interface fill:#1a1a2e,stroke:#34D399,color:#fff
-    style Dungeon fill:#1a1a2e,stroke:#34D399,color:#fff
-    style QoL fill:#1a1a2e,stroke:#34D399,color:#fff
-    style Layout fill:#1a1a2e,stroke:#34D399,color:#fff
-```
+- [**Cooldown Manager**](cooldown-manager) if you want QUI's signature combat HUD.
+- [**Frame Layout**](frame-layout) if you want to place and anchor everything quickly.
+- [**Action Bars**](action-bars) if you want a cleaner bottom HUD.
+- [**Unit Frames**](unit-frames) if you want player and target information to be easier to read.
+- [**Quality of Life**](quality-of-life) if you want the convenience layer that saves clicks every session.
 
 ## Feature Areas
 
-- [Cooldown Manager]({% link features/cooldown-manager.md %}) -- QUI's flagship feature. Displays ability cooldowns as configurable icon containers near your character with glow effects, swipe overlays, range indicators, Composer for per-spell customization, and flexible container types (cooldown, aura, aura bar).
+### Combat Core
 
-- [Unit Frames]({% link features/unit-frames.md %}) -- Replaces Blizzard's unit frames for Player, Target, Focus, Pet, Boss, and more. Includes castbars, auras, absorb shields, heal prediction, portraits, and extensive color and layout options.
+| Feature | Best for |
+|---------|----------|
+| [Cooldown Manager](cooldown-manager) | Players who want their important cooldowns and procs near the center of the screen |
+| [Unit Frames](unit-frames) | Cleaner player, target, focus, pet, and boss information |
+| [Group Frames](group-frames) | Healers, supports, and anyone who wants stronger party or raid visibility |
+| [Custom Trackers](custom-trackers) | Extra utility bars for niche spells, items, or encounter tools |
+| [HUD Visibility](hud-visibility) | Keeping the HUD clean outside combat without losing information when it matters |
 
-- [Group Frames]({% link features/group-frames.md %}) -- Opt-in replacement for Blizzard party and raid frames. Separate party/raid profiles, auto-scaling layouts, click-casting with scroll wheel and ping support, Composer, dispel overlays, custom aura indicators, spotlight pinning, and healer-focused features.
+### Interface Polish
 
-- [Action Bars]({% link features/action-bars.md %}) -- Native action bar engine enhancing all 8 standard action bars plus pet, stance, and special bars. Mouseover fade, per-bar style overrides, range and usability indicators, and button spacing controls.
+| Feature | Best for |
+|---------|----------|
+| [Action Bars](action-bars) | A cleaner bar presentation with better readability and fade options |
+| [Minimap & Data Panels](minimap-datatext) | Condensing utility info without cluttering the middle of the screen |
+| [Chat](chat) | A darker, cleaner chat presentation |
+| [Tooltips](tooltips) | Richer hover information and smarter tooltip behavior |
+| [Skinning](skinning) | Making the rest of the default UI match QUI's style |
 
-- [Chat]({% link features/chat.md %}) -- Enhances the default chat window with a glass effect, clickable URLs, message fade, timestamps, copy button, and edit box styling.
+### Group, Dungeon, and Progress Tools
 
-- [Tooltips]({% link features/tooltips.md %}) -- Reskins tooltips with QUI's dark theme, adds cursor anchoring, combat hiding, class-colored names, spell/item IDs, guild rank, M+ rating, and per-context visibility with modifier key controls.
+| Feature | Best for |
+|---------|----------|
+| [Dungeon Features](dungeon-features) | Mythic Plus and raid utility |
+| [Character Pane](character-pane) | Better gear and stat visibility |
+| [Skyriding](skyriding) | Cleaner Skyriding feedback |
+| [XP Tracker](xp-tracker) | Leveling or casual progression visibility |
 
-- [Character Pane]({% link features/character-pane.md %}) -- Enhances the character and inspect frames with item level overlays, enchant status, gem indicators, durability bars, avoidance/stagger stats, PvP iLvl, and customizable stats formatting.
+### Layout and Convenience
 
-- [Skinning]({% link features/skinning.md %}) -- Applies QUI's visual theme to Blizzard frames including the game menu, loot window, objective tracker, keystone frame, ready check, status bars, and more.
+| Feature | Best for |
+|---------|----------|
+| [Frame Layout](frame-layout) | Moving, anchoring, and grouping your HUD quickly |
+| [Keybinds & Integrations](keybinds-integrations) | Fast keybinding and compatible workflows |
+| [Blizzard Frame Mover](blizzard-frame-mover) | Repositioning supported default frames more freely |
+| [Performance Monitor](performance-monitor) | Diagnosing addon load or event noise |
+| [Quality of Life](quality-of-life) | Everyday convenience toggles, reminders, and automation |
 
-- [Minimap & Data Panels]({% link features/minimap-datatext.md %}) -- Full minimap customization with shape, border, button drawer, clock, coordinates, zone text, and element visibility controls. See also [Data Panels]({% link features/data-panels.md %}).
+## Recommended Upgrade Path
 
-- [Dungeon Features]({% link features/dungeon-features.md %}) -- M+ timer, party keystones, dungeon teleport, battle res counter, combat timer, and automatic combat logging for dungeons and raids.
+1. Set up [Cooldown Manager](cooldown-manager).
+2. Place your HUD with [Frame Layout](frame-layout).
+3. Clean up the bottom of the screen with [Action Bars](action-bars).
+4. Decide whether you want [Unit Frames](unit-frames) only or [Group Frames](group-frames) too.
+5. Finish with [Minimap & Data Panels](minimap-datatext), [Tooltips](tooltips), and [Quality of Life](quality-of-life).
 
-- [Quality of Life]({% link features/quality-of-life.md %}) -- Automation features including junk selling, auto repair, consumable checks, popup blocking, pet warnings, focus cast alerts, Blizzard Frame Mover, and missing raid buff display.
-
-- [Custom Trackers]({% link features/custom-trackers.md %}) -- User-defined spell and item tracking bars with dynamic layouts, clickable icons, and independent visibility rules.
-
-- [Skyriding]({% link features/skyriding.md %}) -- Custom vigor bar for Skyriding with segmented display, Second Wind progress, speed readout, and Thrill of the Skies color change.
-
-- [XP Tracker]({% link features/xp-tracker.md %}) -- XP progress bar with rested XP overlay, details panel, and hover-to-show option.
-
-- [HUD Visibility]({% link features/hud-visibility.md %}) -- Visibility rule system for CDM, Unit Frames, and Custom Trackers. Show/hide based on combat, target, group, mounting, flying, and more.
-
-- [Frame Layout]({% link features/frame-layout.md %}) -- Layout Mode with edge-docked toolbar for positioning frames, anchoring system for relative positioning, HUD layering priorities, and DandersFrames/BigWigs/AbilityTimeline integration.
-
-- [Keybinds & Integrations]({% link features/keybinds-integrations.md %}) -- LibKeyBound keybind mode, keybind display on CDM and action bars, and third-party addon integrations (DandersFrames, BigWigs, Plater, LibDualSpec).
-
-- [Blizzard Frame Mover]({% link features/blizzard-frame-mover.md %}) -- Drag-and-drop repositioning for default Blizzard UI frames without entering Edit Mode. Positions persist across sessions.
-
-- [Performance Monitor]({% link features/performance-monitor.md %}) -- Real-time diagnostics showing per-addon memory usage, event frequency, and CPU monitoring. Access with `/qui perf`.
-
-- [Data Panels]({% link features/data-panels.md %}) -- Configurable information displays for gold, FPS, latency, durability, guild info, and more. Assignable to minimap slots or standalone panels.
-
-Every module reads its settings from the QUI profile database, so your configuration travels with your profile. Open the options panel with `/qui` to explore what each module offers.
+Every feature here can be tuned further in the [Settings Reference](../settings/) section once you know which parts of QUI you actually want to keep.

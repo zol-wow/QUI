@@ -10,3 +10,5 @@ package.json
 /.planning
 /docs/superpowers
 AGENTS.md
+docs/settings/settings-architecture-migration-test-plan.md
+docs/settings/settings-architecture-migration-plan.md
