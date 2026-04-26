@@ -93,6 +93,14 @@ end
 local EMPTY_TABLE = {}
 local DEFAULT_HEALTH_COLOR = { 0.2, 0.8, 0.2, 1 }
 local AURA_FILTERS = { "HELPFUL", "HARMFUL" }
+local HEALTH_TINT_ANIMATION_DEFAULT = "fill"
+local HEALTH_TINT_ANIMATION_DURATIONS = {
+    instant = 0,
+    fill = 0.35,
+    fade = 0.25,
+    fillFade = 0.35,
+    pulse = 0.28,
+}
 
 local FILTER_RAID = "PLAYER|HELPFUL|RAID"
 local FILTER_RIC = "PLAYER|HELPFUL|RAID_IN_COMBAT"
@@ -147,6 +155,186 @@ local function GetStatusBarTexturePath(isRaid)
     local general = vdb and vdb.general
     local textureName = general and general.texture or "Quazii v5"
     return LSM and LSM:Fetch("statusbar", textureName, true) or "Interface\\TargetingFrame\\UI-StatusBar"
+end
+
+local function NormalizeHealthTintAnimation(value)
+    if value == "instant"
+        or value == "fill"
+        or value == "fade"
+        or value == "fillFade"
+        or value == "pulse" then
+        return value
+    end
+    return HEALTH_TINT_ANIMATION_DEFAULT
+end
+
+local activeHealthTintAnimations = {}
+local activeHealthTintAnimationCount = 0
+local healthTintAnimationFrame = CreateFrame("Frame")
+healthTintAnimationFrame:Hide()
+
+local function EaseOutCubic(t)
+    local inv = 1 - t
+    return 1 - (inv * inv * inv)
+end
+
+local function UnregisterHealthTintAnimation(overlay)
+    if activeHealthTintAnimations[overlay] then
+        activeHealthTintAnimations[overlay] = nil
+        activeHealthTintAnimationCount = math_max(activeHealthTintAnimationCount - 1, 0)
+        if activeHealthTintAnimationCount == 0 then
+            healthTintAnimationFrame:Hide()
+        end
+    end
+    if overlay then
+        overlay._quiTintAnimating = nil
+    end
+end
+
+local function RegisterHealthTintAnimation(overlay)
+    if not activeHealthTintAnimations[overlay] then
+        activeHealthTintAnimations[overlay] = true
+        activeHealthTintAnimationCount = activeHealthTintAnimationCount + 1
+    end
+    overlay._quiTintAnimating = true
+    healthTintAnimationFrame:Show()
+end
+
+healthTintAnimationFrame:SetScript("OnUpdate", function(_, elapsed)
+    for overlay in pairs(activeHealthTintAnimations) do
+        if not overlay:IsShown() then
+            UnregisterHealthTintAnimation(overlay)
+        else
+            overlay._quiTintElapsed = (overlay._quiTintElapsed or 0) + elapsed
+            local duration = overlay._quiTintDuration or 0
+            local progress = duration > 0 and math_min(overlay._quiTintElapsed / duration, 1) or 1
+            local eased = EaseOutCubic(progress)
+            local value
+            local alpha = (overlay._quiTintStartAlpha or 1)
+                + ((overlay._quiTintTargetAlpha or 1) - (overlay._quiTintStartAlpha or 1)) * eased
+
+            if overlay._quiTintTweenValue then
+                value = (overlay._quiTintStartValue or 0)
+                    + ((overlay._quiTintTargetValue or 0) - (overlay._quiTintStartValue or 0)) * eased
+                overlay:SetValue(value)
+            end
+
+            overlay:SetAlpha(alpha)
+
+            if progress >= 1 then
+                if overlay._quiTintTweenValue then
+                    overlay:SetValue(overlay._quiTintTargetValue or value)
+                end
+                overlay:SetAlpha(overlay._quiTintTargetAlpha or alpha)
+                UnregisterHealthTintAnimation(overlay)
+            end
+        end
+    end
+end)
+
+local function GetOrCreateHealthTintOverlay(frame)
+    if not frame or not frame.healthBar then
+        return nil
+    end
+
+    local overlay = frame._auraIndicatorHealthTintOverlay
+    if not overlay then
+        overlay = CreateFrame("StatusBar", nil, frame.healthBar)
+        overlay:SetAllPoints(frame.healthBar)
+        overlay:SetFrameLevel(frame.healthBar:GetFrameLevel() + 1)
+        overlay:SetMinMaxValues(0, 100)
+        overlay:SetValue(0)
+        overlay:SetAlpha(1)
+        overlay:EnableMouse(false)
+        overlay:Hide()
+        frame._auraIndicatorHealthTintOverlay = overlay
+    end
+
+    local texture = frame.healthBar:GetStatusBarTexture()
+    overlay:SetStatusBarTexture(texture and texture:GetTexture() or GetStatusBarTexturePath(frame._isRaid))
+    overlay:SetOrientation(frame._isVerticalFill and "VERTICAL" or "HORIZONTAL")
+    if overlay.SetReverseFill then
+        overlay:SetReverseFill(false)
+    end
+    overlay:SetAllPoints(frame.healthBar)
+    overlay:SetFrameLevel(frame.healthBar:GetFrameLevel() + 1)
+    return overlay
+end
+
+local function HideHealthTintOverlay(frame)
+    local overlay = frame and frame._auraIndicatorHealthTintOverlay
+    if not overlay then
+        return
+    end
+    UnregisterHealthTintAnimation(overlay)
+    overlay:SetAlpha(1)
+    overlay:SetValue(0)
+    overlay._quiTintWasShown = nil
+    overlay:Hide()
+end
+
+local function StartHealthTintAnimation(overlay, mode, targetValue, targetAlpha)
+    mode = NormalizeHealthTintAnimation(mode)
+    local duration = HEALTH_TINT_ANIMATION_DURATIONS[mode] or HEALTH_TINT_ANIMATION_DURATIONS[HEALTH_TINT_ANIMATION_DEFAULT]
+    local nativeInterpolation = Enum and Enum.StatusBarInterpolation and Enum.StatusBarInterpolation.ExponentialEaseOut
+    local canTweenValue = not IsSecretValue(targetValue) and type(targetValue) == "number"
+
+    overlay._quiTintMode = mode
+    overlay._quiTintElapsed = 0
+    overlay._quiTintDuration = duration
+    overlay._quiTintTargetValue = targetValue
+    overlay._quiTintTargetAlpha = targetAlpha
+    overlay._quiTintTweenValue = nil
+
+    if mode == "instant" or duration <= 0 then
+        overlay:SetValue(targetValue)
+        overlay:SetAlpha(targetAlpha)
+        UnregisterHealthTintAnimation(overlay)
+        return
+    elseif mode == "fade" then
+        overlay:SetValue(targetValue)
+        overlay._quiTintStartValue = targetValue
+        overlay._quiTintStartAlpha = 0
+    elseif mode == "fillFade" then
+        overlay:SetValue(0)
+        if nativeInterpolation then
+            overlay:SetValue(targetValue, nativeInterpolation)
+            overlay._quiTintStartValue = targetValue
+        elseif canTweenValue then
+            overlay._quiTintTweenValue = true
+            overlay._quiTintStartValue = 0
+        else
+            overlay:SetValue(targetValue)
+            overlay._quiTintStartValue = targetValue
+        end
+        overlay._quiTintStartAlpha = 0
+    elseif mode == "pulse" then
+        overlay:SetValue(targetValue)
+        overlay._quiTintStartValue = targetValue
+        overlay._quiTintStartAlpha = targetAlpha * 0.35
+    else
+        overlay:SetAlpha(targetAlpha)
+        overlay:SetValue(0)
+        if nativeInterpolation then
+            overlay:SetValue(targetValue, nativeInterpolation)
+            UnregisterHealthTintAnimation(overlay)
+            return
+        elseif canTweenValue then
+            overlay._quiTintTweenValue = true
+            overlay._quiTintStartValue = 0
+        else
+            overlay:SetValue(targetValue)
+            UnregisterHealthTintAnimation(overlay)
+            return
+        end
+        overlay._quiTintStartAlpha = targetAlpha
+    end
+
+    if overlay._quiTintTweenValue then
+        overlay:SetValue(overlay._quiTintStartValue or 0)
+    end
+    overlay:SetAlpha(overlay._quiTintStartAlpha or targetAlpha)
+    RegisterHealthTintAnimation(overlay)
 end
 
 local function GetAuraIndicatorSettings(isRaid)
@@ -794,16 +982,72 @@ local function PositionIconContainer(frame, ai)
     container:SetPoint(anchor, frame, anchor, offX, offY)
 end
 
-local function SetHealthBarOverride(frame, color)
-    local changed = not ColorsEqual(frame._auraIndicatorHealthColor, color)
+local function SetHealthBarOverride(frame, indicator, auraData)
+    local color = indicator and indicator.color
+    local animation = indicator and NormalizeHealthTintAnimation(indicator.animation)
+    local auraKey = auraData and (SafeValue(auraData.auraInstanceID, nil) or SafeValue(auraData.spellId, nil))
+    local changed = not ColorsEqual(frame._auraIndicatorHealthTintColor, color)
+        or frame._auraIndicatorHealthTintAnimation ~= animation
+        or frame._auraIndicatorHealthTintAuraKey ~= auraKey
     if not changed then
         return
     end
 
-    frame._auraIndicatorHealthColor = color
+    frame._auraIndicatorHealthTintColor = color
+    frame._auraIndicatorHealthTintAnimation = animation
+    frame._auraIndicatorHealthTintAuraKey = auraKey
+    frame._auraIndicatorHealthTintPendingStart = color ~= nil
+    if not color then
+        HideHealthTintOverlay(frame)
+    end
+
     local GF = ns.QUI_GroupFrames
     if GF and GF.RefreshHealth then
         GF:RefreshHealth(frame)
+    end
+end
+
+function QUI_GFI:SyncHealthBarTint(frame, healthPct, canShow)
+    if not frame then
+        return
+    end
+
+    local color = frame._auraIndicatorHealthTintColor
+    if not color or canShow == false then
+        HideHealthTintOverlay(frame)
+        return
+    end
+
+    local overlay = GetOrCreateHealthTintOverlay(frame)
+    if not overlay then
+        return
+    end
+
+    local r = color[1] or 0.2
+    local g = color[2] or 0.8
+    local b = color[3] or 0.2
+    local a = color[4] or 1
+    local targetValue = healthPct or 0
+
+    overlay:SetStatusBarColor(r, g, b, a)
+    overlay:Show()
+
+    if frame._auraIndicatorHealthTintPendingStart or not overlay._quiTintWasShown then
+        frame._auraIndicatorHealthTintPendingStart = nil
+        overlay._quiTintWasShown = true
+        StartHealthTintAnimation(overlay, frame._auraIndicatorHealthTintAnimation, targetValue, 1)
+    elseif overlay._quiTintAnimating then
+        if overlay._quiTintTweenValue and not IsSecretValue(targetValue) and type(targetValue) == "number" then
+            overlay._quiTintTargetValue = targetValue
+        else
+            overlay._quiTintTweenValue = nil
+            overlay._quiTintTargetValue = targetValue
+            overlay:SetValue(targetValue)
+        end
+        overlay._quiTintTargetAlpha = 1
+    else
+        overlay:SetValue(targetValue)
+        overlay:SetAlpha(1)
     end
 end
 
@@ -812,8 +1056,8 @@ local function ClearIndicators(frame)
     if frame and frame._indicatorAuraIDs then
         wipe(frame._indicatorAuraIDs)
     end
-    if frame and frame._auraIndicatorHealthColor then
-        SetHealthBarOverride(frame, nil)
+    if frame and frame._auraIndicatorHealthTintColor then
+        SetHealthBarOverride(frame, nil, nil)
     end
     if not state then
         return
@@ -1051,7 +1295,8 @@ local function UpdateFrameIndicators(frame)
     wipe(frame._indicatorAuraIDs)
 
     local defIDs = frame._defensiveAuraIDs
-    local healthColor = nil
+    local healthIndicator = nil
+    local healthAuraData = nil
 
     for _, entry in ipairs(entries) do
         if entry.enabled ~= false and entry.spellID then
@@ -1086,8 +1331,9 @@ local function UpdateFrameIndicators(frame)
                             p.indicator = indicator
                             p.auraData = auraData
                             barPayloads[#barPayloads + 1] = p
-                        elseif indicator.type == "healthBarColor" and not healthColor then
-                            healthColor = indicator.color or DEFAULT_HEALTH_COLOR
+                        elseif indicator.type == "healthBarColor" and not healthIndicator then
+                            healthIndicator = indicator
+                            healthAuraData = auraData
                         end
                     end
                 end
@@ -1097,7 +1343,7 @@ local function UpdateFrameIndicators(frame)
 
     RenderIconIndicators(frame, ai, iconPayloads)
     RenderBarIndicators(frame, barPayloads)
-    SetHealthBarOverride(frame, healthColor)
+    SetHealthBarOverride(frame, healthIndicator, healthAuraData)
 end
 
 local eventFrame = CreateFrame("Frame")
@@ -1136,3 +1382,4 @@ end
 ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
 ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_Indicators", frame = eventFrame }
 ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_IndicatorBars", frame = barTimerFrame, scriptType = "OnUpdate" }
+ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_HealthTintAnims", frame = healthTintAnimationFrame, scriptType = "OnUpdate" }

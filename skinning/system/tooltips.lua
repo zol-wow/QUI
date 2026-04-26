@@ -463,6 +463,18 @@ local function ApplyTooltipChrome(tooltip)
         if h.SetBackdrop then pcall(h.SetBackdrop, h, nil) end
         if h.NineSlice then pcall(h.NineSlice.Hide, h.NineSlice) end
     end
+
+    -- Re-fit chrome to actual content extents on every show. GameTooltip is
+    -- a single Lua object reused across player/NPC/object hovers, so any
+    -- extend offsets cached from a prior show (e.g. player Target/M+ Rating
+    -- pushing the chrome 61px down) must be re-evaluated for the new content,
+    -- otherwise NPC/object tooltips display chrome much larger than needed.
+    -- For tooltips that fit inside their reported rect, this resolves to
+    -- extend = 0 and re-anchors the chrome flush with the tooltip.
+    local refit = ns.QUI_RefitTooltipChromeToContent
+    if refit then
+        pcall(refit, tooltip)
+    end
 end
 
 local function StyleTooltip(tooltip)
@@ -772,9 +784,15 @@ HookTooltipOnShow = function(tooltip)
                 FallbackToNineSlice(self)
                 return
             end
-            if ShowExistingChrome(self) then
-                QueueGameTooltipRestyle()
-            end
+            ShowExistingChrome(self)
+            -- Always queue a restyle, even when ShowExistingChrome found the
+            -- chrome already stable. The restyle OnUpdate is the path that
+            -- runs RefitChromeToContent once per show cycle, and without it
+            -- chrome offsets (extendY/X) cached from the prior tooltip stay
+            -- on the new tooltip — making NPC/object tooltips render with
+            -- chrome much larger than needed after a player tooltip extended
+            -- it for Target/M+ Rating.
+            QueueGameTooltipRestyle()
         end)
 
         return
@@ -1187,6 +1205,18 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 QueueFontUpdate(GameTooltip)
                 QueueShoppingTooltipSync()
             end
+
+            -- Re-fit chrome to the actual rendered FontString extents on every
+            -- show cycle. ApplyTooltipChrome only runs when chrome is hidden
+            -- (avoiding flicker), so the chrome's extendY/X anchors carried
+            -- over from the prior tooltip stay until something explicitly
+            -- recomputes them. Running the refit here covers every show,
+            -- including the player → NPC transition where chrome was previously
+            -- extended for Target/M+ Rating overflow.
+            local refit = ns.QUI_RefitTooltipChromeToContent
+            if refit then
+                pcall(refit, GameTooltip)
+            end
             TooltipDebugEnd(dbg, "skin.restyleTick", dbgStart, "run", dbgHeap)
         end
         gameTooltipRestyleFrame:SetScript("OnUpdate", nil)
@@ -1218,9 +1248,289 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
 end)
 
 ---------------------------------------------------------------------------
+-- Chrome Refit (post-AddLine extent recovery)
+---------------------------------------------------------------------------
+-- Midnight's GameTooltip stopped exposing Lua-callable Layout/MarkDirty/
+-- UpdateTooltipSize. After AddLine/AddDoubleLine on a shown tooltip, the
+-- C-side renders the new FontStrings but the Lua-facing :GetHeight() does
+-- not grow. Our chrome (anchored via SetAllPoints) tracks :GetHeight(), so
+-- it ends up shorter than the actual rendered extent — exposing Blizzard's
+-- backdrop on the appended lines (Target / M+ Rating).
+--
+-- RefitChromeToContent measures the lowest visible FontString and extends
+-- the chrome's bottom anchor below the tooltip's reported bottom by the
+-- overflow delta. Called by qol/tooltip after deferred line additions.
+
+-- Walks the tooltip's active line FontStrings and returns:
+--   lowestBottom    — lowest visible FontString bottom edge (smallest screen Y)
+--   rightmostRight  — rightmost edge of any visible RIGHT-side double-line FontString
+--   ttBottom, ttRight
+--
+-- DIRECTIONAL MEASUREMENT (the result of two false starts):
+--
+--   Vertical: any visible FontString counts. AddLine on a shown Midnight
+--   tooltip doesn't grow GetHeight, so chrome must extend past stale
+--   ttBottom to cover appended FontStrings.
+--
+--   Horizontal: only RIGHT-side FontStrings of double-lines (those with
+--   non-empty text) count. LEFT-side FontStrings of wrapping description
+--   text return their *natural unwrapped* width (a trinket "Use:" line
+--   reports GetRight=2344 while tooltip is rendered at 1317), which once
+--   inflated chrome by 1000+px to the right. Right-side FontStrings of
+--   double-lines are short non-wrapping text anchored TOPRIGHT to the
+--   tooltip — their GetRight is reliable. Empty/hidden right FontStrings
+--   on description lines naturally filter out via the IsShown+text check.
+--   This catches the QoL case: AddDoubleLine("Mount:", longMountName)
+--   appended after Show, where tooltip:GetWidth() doesn't grow on
+--   Midnight and the right text spills past the tooltip's reported
+--   right edge.
+--
+-- STALE-STATE SAFETY: Iterate via NumLines+GetLeftLine/GetRightLine
+-- (or the named global FontString fallback) instead of GetRegions().
+-- GameTooltip pre-allocates FontStrings and reuses them across hovers;
+-- a raw GetRegions walk picks up stale FontStrings from previous
+-- (taller / wider) tooltips that Blizzard cleared but left IsShown=true.
+
+-- Per-call diagnostics: which line contributed the lowest / rightmost edge.
+local _diagWorstBottom, _diagWorstBottomLine, _diagWorstBottomSide, _diagWorstBottomText
+local _diagWorstRight, _diagWorstRightLine, _diagWorstRightText
+
+local function MeasureBottom(fs, lowest, lineIndex, side)
+    if not fs then return lowest end
+    local okShown, shown = pcall(fs.IsShown, fs)
+    if not okShown or not shown then return lowest end
+    local okB, b = pcall(fs.GetBottom, fs)
+    if okB and b and b < lowest then
+        lowest = b
+        if lineIndex then
+            _diagWorstBottom = b
+            _diagWorstBottomLine = lineIndex
+            _diagWorstBottomSide = side
+            local okT, t = pcall(fs.GetText, fs)
+            _diagWorstBottomText = (okT and t) or nil
+        end
+    end
+    return lowest
+end
+
+-- Right-side measurement: only counts FontStrings with non-empty visible text.
+-- This filters out the stale/empty right FontStrings on description-only
+-- lines, where Blizzard's NumLines includes the line but the right slot is
+-- unused. Their phantom widths would otherwise inflate the chrome.
+local function MeasureRightOfDoubleLine(rightFS, rightmost, lineIndex)
+    if not rightFS then return rightmost end
+    local okShown, shown = pcall(rightFS.IsShown, rightFS)
+    if not okShown or not shown then return rightmost end
+    local okT, text = pcall(rightFS.GetText, rightFS)
+    if not okT or not text or text == "" then return rightmost end
+    local okR, rx = pcall(rightFS.GetRight, rightFS)
+    if okR and rx and rx > rightmost then
+        rightmost = rx
+        if lineIndex then
+            _diagWorstRight = rx
+            _diagWorstRightLine = lineIndex
+            _diagWorstRightText = text
+        end
+    end
+    return rightmost
+end
+
+local function FindContentExtents(tooltip)
+    if not tooltip then return nil end
+    local okBottom, ttBottom = pcall(tooltip.GetBottom, tooltip)
+    if not okBottom or not ttBottom then return nil end
+    local okRight, ttRight = pcall(tooltip.GetRight, tooltip)
+    if not okRight or not ttRight then return nil end
+    local lowestBottom = ttBottom
+    local rightmostRight = ttRight
+
+    _diagWorstBottom, _diagWorstBottomLine, _diagWorstBottomSide, _diagWorstBottomText = nil, nil, nil, nil
+    _diagWorstRight, _diagWorstRightLine, _diagWorstRightText = nil, nil, nil
+
+    if tooltip.NumLines then
+        local okCount, count = pcall(tooltip.NumLines, tooltip)
+        if okCount and count and count > 0 then
+            local hasGetters = tooltip.GetLeftLine and tooltip.GetRightLine
+            local name
+            if not hasGetters and tooltip.GetName then
+                local okName, n = pcall(tooltip.GetName, tooltip)
+                if okName then name = n end
+            end
+            for i = 1, count do
+                local left, right
+                if hasGetters then
+                    left = tooltip:GetLeftLine(i)
+                    right = tooltip:GetRightLine(i)
+                elseif name then
+                    left = _G[name .. "TextLeft" .. i]
+                    right = _G[name .. "TextRight" .. i]
+                end
+                lowestBottom = MeasureBottom(left, lowestBottom, i, "L")
+                lowestBottom = MeasureBottom(right, lowestBottom, i, "R")
+                rightmostRight = MeasureRightOfDoubleLine(right, rightmostRight, i)
+            end
+            return lowestBottom, rightmostRight, ttBottom, ttRight
+        end
+    end
+
+    -- Fallback for specialized tooltips without a NumLines API.  These are
+    -- not GameTooltip-style reused frames, so stale FontString carryover is
+    -- not a concern. Bottom only — without NumLines we can't reliably
+    -- distinguish left from right FontStrings.
+    if not tooltip.GetNumRegions then return nil end
+    local okCount2, count2 = pcall(tooltip.GetNumRegions, tooltip)
+    if not okCount2 or not count2 then return nil end
+    for i = 1, count2 do
+        local r = select(i, tooltip:GetRegions())
+        if r and r.IsObjectType and r:IsObjectType("FontString") then
+            lowestBottom = MeasureBottom(r, lowestBottom, i, "?")
+        end
+    end
+    return lowestBottom, rightmostRight, ttBottom, ttRight
+end
+
+local function RefitChromeToContent(tooltip)
+    if not tooltip or not IsEnabled() then return end
+    if tooltip.IsForbidden and tooltip:IsForbidden() then return end
+
+    local frame = styleFrames[tooltip]
+    if not frame then return end
+    if not (frame.IsShown and frame:IsShown()) then return end
+
+    TooltipDebugCount("skin.refit")
+
+    local lowest, rightmost, ttBottom, ttRight = FindContentExtents(tooltip)
+    if not lowest or not ttBottom then
+        TooltipDebugCount("skin.refitNoExtents")
+        return
+    end
+
+    local yOverflow = ttBottom - lowest
+    if yOverflow < 0 then yOverflow = 0 end
+    local xOverflow = (rightmost or ttRight) - ttRight
+    if xOverflow < 0 then xOverflow = 0 end
+
+    -- Add a small inset so the chrome's borders match Blizzard's visual
+    -- padding around the last line / right column.
+    local extendY = yOverflow > 0 and (yOverflow + 4) or 0
+    local extendX = xOverflow > 0 and (xOverflow + 4) or 0
+
+    local dbg = ns.QUI_TooltipDebug
+    if dbg and dbg.enabled and (extendY > 6 or extendX > 6) then
+        local ttName = "?"
+        if tooltip.GetName then
+            local okName, n = pcall(tooltip.GetName, tooltip)
+            if okName and n then ttName = n end
+        end
+        local nLines
+        if tooltip.NumLines then
+            local okN, n = pcall(tooltip.NumLines, tooltip)
+            if okN then nLines = n end
+        end
+        print(string.format(
+            "|cff60A5FA[refit]|r %s lines=%s extendY=%.0f extendX=%.0f (ttBottom=%.1f lowest=%.1f ttRight=%.1f rightmost=%.1f)",
+            ttName, tostring(nLines), extendY, extendX, ttBottom, lowest, ttRight, rightmost or ttRight))
+        if extendY > 6 and _diagWorstBottomLine then
+            local txt = _diagWorstBottomText
+            if txt and #txt > 40 then txt = txt:sub(1, 40) .. "..." end
+            print(string.format(
+                "  |cffFF8844worstBottom:|r line %d %s bottom=%.1f text=%q",
+                _diagWorstBottomLine,
+                tostring(_diagWorstBottomSide or "?"),
+                _diagWorstBottom or -1,
+                tostring(txt or "")))
+        end
+        if extendX > 6 and _diagWorstRightLine then
+            local txt = _diagWorstRightText
+            if txt and #txt > 40 then txt = txt:sub(1, 40) .. "..." end
+            print(string.format(
+                "  |cffFF8844worstRight:|r line %d R right=%.1f text=%q",
+                _diagWorstRightLine,
+                _diagWorstRight or -1,
+                tostring(txt or "")))
+        end
+        TooltipDebugCount("skin.refitVisibleExtend")
+    elseif extendY == 0 and extendX == 0 then
+        TooltipDebugCount("skin.refitNoOverflow")
+    else
+        TooltipDebugCount("skin.refitTinyOverflow")
+    end
+
+    -- Monotonic grow within a single content cycle. Same physical tooltip
+    -- (GameTooltip) is reused across hovers; deferred-add FontStrings
+    -- (Item ID / Spell ID / etc.) briefly skip our IsShown/GetText filters
+    -- mid-render, so consecutive refits flip between the real overflow
+    -- (e.g. extendY=22, extendX=28) and (0, 0). Each flip re-anchors the
+    -- chrome → visible Y-axis flash.
+    --
+    -- Reset key: (GetOwner, GetUnit, line1Text). Owner+Unit alone are not
+    -- enough — GetUnit returns the literal string "mouseover", "nameplate1",
+    -- "target", etc. so sweeping the cursor across different actual units
+    -- under the same anchor leaves the cache sticky and the chrome too tall
+    -- for the new (smaller) tooltip. Line 1 is the tooltip header (unit or
+    -- item name); it changes when actual content changes but stays stable
+    -- across the IsShown-flicker that monotonic-grow needs to absorb.
+    -- gameTooltipShowToken was tried first but Blizzard internally re-calls
+    -- Show on data refresh, churning the token mid-hover and defeating
+    -- monotonic entirely.
+    local okOwner, owner = pcall(tooltip.GetOwner, tooltip)
+    if not okOwner then owner = nil end
+    local okUnit, _, unit = pcall(tooltip.GetUnit, tooltip)
+    if not okUnit then unit = nil end
+    -- Secret-value guards so the equality check itself doesn't taint via
+    -- secret string comparison.
+    if unit and Helpers.IsSecretValue and Helpers.IsSecretValue(unit) then
+        unit = "<secret>"
+    end
+    local line1Text
+    if tooltip.GetLeftLine then
+        local okFS, fs = pcall(tooltip.GetLeftLine, tooltip, 1)
+        if okFS and fs then
+            local okT, t = pcall(fs.GetText, fs)
+            if okT and t and not (Helpers.IsSecretValue and Helpers.IsSecretValue(t)) then
+                line1Text = t
+            end
+        end
+    end
+    if owner ~= frame.qOwner or unit ~= frame.qUnit or line1Text ~= frame.qLine1 then
+        frame.qOwner = owner
+        frame.qUnit = unit
+        frame.qLine1 = line1Text
+        frame.qExtendY = nil
+        frame.qExtendX = nil
+        TooltipDebugCount("skin.refitOwnerReset")
+    else
+        if frame.qExtendY and extendY < frame.qExtendY then
+            extendY = frame.qExtendY
+            TooltipDebugCount("skin.refitMonotonicY")
+        end
+        if frame.qExtendX and extendX < frame.qExtendX then
+            extendX = frame.qExtendX
+            TooltipDebugCount("skin.refitMonotonicX")
+        end
+    end
+
+    -- Cache so repeat refits with the same extents no-op.
+    if frame.qExtendY == extendY and frame.qExtendX == extendX then
+        TooltipDebugCount("skin.refitCacheSkip")
+        return
+    end
+    frame.qExtendY = extendY
+    frame.qExtendX = extendX
+    TooltipDebugCount("skin.refitApplied")
+
+    pcall(frame.ClearAllPoints, frame)
+    pcall(frame.SetPoint, frame, "TOPLEFT", tooltip, "TOPLEFT", 0, 0)
+    pcall(frame.SetPoint, frame, "TOPRIGHT", tooltip, "TOPRIGHT", extendX, 0)
+    pcall(frame.SetPoint, frame, "BOTTOMLEFT", tooltip, "BOTTOMLEFT", 0, -extendY)
+    pcall(frame.SetPoint, frame, "BOTTOMRIGHT", tooltip, "BOTTOMRIGHT", extendX, -extendY)
+end
+
+---------------------------------------------------------------------------
 -- Public API
 ---------------------------------------------------------------------------
 
 ns.QUI_RefreshTooltipSkinColors = RefreshAllColors
 ns.QUI_RefreshTooltipFontSize = RefreshAllFonts
+ns.QUI_RefitTooltipChromeToContent = RefitChromeToContent
 

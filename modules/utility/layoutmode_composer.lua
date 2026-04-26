@@ -363,6 +363,20 @@ local BAR_ORIENTATION_OPTIONS = {
     { value = "HORIZONTAL", text = "Horizontal" },
     { value = "VERTICAL", text = "Vertical" },
 }
+local HEALTH_TINT_ANIMATION_OPTIONS = {
+    { value = "fill", text = "Soft Fill" },
+    { value = "fade", text = "Soft Fade" },
+    { value = "fillFade", text = "Fill + Fade" },
+    { value = "pulse", text = "Subtle Pulse" },
+    { value = "instant", text = "Instant" },
+}
+local HEALTH_TINT_ANIMATION_DURATIONS = {
+    instant = 0,
+    fill = 0.35,
+    fade = 0.25,
+    fillFade = 0.35,
+    pulse = 0.28,
+}
 
 ---------------------------------------------------------------------------
 -- SPELL PRESETS
@@ -1439,6 +1453,112 @@ local function BuildPrivateAurasSettings(content, gfdb, onChange)
     relayout()
 end
 
+local function NormalizeHealthTintAnimation(value)
+    if value == "instant"
+        or value == "fill"
+        or value == "fade"
+        or value == "fillFade"
+        or value == "pulse" then
+        return value
+    end
+    return "fill"
+end
+
+local function EaseOutCubic(t)
+    local inv = 1 - t
+    return 1 - (inv * inv * inv)
+end
+
+local function CreateHealthTintAnimationPreview(parent, indicator)
+    local preview = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    preview:SetHeight(72)
+    ApplyPixelBackdrop(preview, 1, true)
+    preview:SetBackdropColor(0.06, 0.06, 0.07, 0.92)
+    preview:SetBackdropBorderColor(0.22, 0.24, 0.28, 1)
+
+    local label = GUI:CreateLabel(preview, "Animation Preview", 11, C and C.textMuted)
+    label:SetPoint("TOPLEFT", PAD, -8)
+    label:SetJustifyH("LEFT")
+
+    local replay = GUI:CreateButton(preview, "Replay", 72, 22, function()
+        preview._elapsed = 0
+    end)
+    replay:SetPoint("TOPRIGHT", -PAD, -6)
+
+    local bar = CreateFrame("StatusBar", nil, preview)
+    bar:SetPoint("LEFT", PAD, 0)
+    bar:SetPoint("RIGHT", replay, "LEFT", -10, 0)
+    bar:SetPoint("BOTTOM", 0, 12)
+    bar:SetHeight(18)
+    bar:SetMinMaxValues(0, 100)
+    bar:SetValue(72)
+    local texturePath = ns.LSM and ns.LSM:Fetch("statusbar", "Quazii v5", true) or "Interface\\TargetingFrame\\UI-StatusBar"
+    bar:SetStatusBarTexture(texturePath)
+    bar:SetStatusBarColor(0.18, 0.18, 0.2, 1)
+
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0, 0, 0, 0.35)
+
+    local tint = CreateFrame("StatusBar", nil, bar)
+    tint:SetAllPoints(bar)
+    tint:SetFrameLevel(bar:GetFrameLevel() + 1)
+    tint:SetStatusBarTexture(texturePath)
+    tint:SetMinMaxValues(0, 100)
+    tint:SetValue(0)
+    preview.tint = tint
+
+    local function UpdatePreview()
+        local color = indicator and indicator.color or { 0.2, 0.8, 0.2, 1 }
+        local r = color[1] or 0.2
+        local g = color[2] or 0.8
+        local b = color[3] or 0.2
+        local a = color[4] or 1
+        local mode = NormalizeHealthTintAnimation(indicator and indicator.animation)
+        local duration = HEALTH_TINT_ANIMATION_DURATIONS[mode] or HEALTH_TINT_ANIMATION_DURATIONS.fill
+        local target = 72
+        local elapsed = preview._elapsed or 0
+        local pct = duration > 0 and math.min(elapsed / duration, 1) or 1
+        local eased = EaseOutCubic(pct)
+        local value, alpha
+
+        if mode == "instant" then
+            value, alpha = target, 1
+        elseif mode == "fade" then
+            value, alpha = target, eased
+        elseif mode == "fillFade" then
+            value, alpha = target * eased, eased
+        elseif mode == "pulse" then
+            value, alpha = target, 0.35 + (0.65 * eased)
+        else
+            value, alpha = target * eased, 1
+        end
+
+        tint:SetStatusBarColor(r, g, b, a)
+        tint:SetValue(value)
+        tint:SetAlpha(alpha)
+    end
+
+    preview._elapsed = 0
+    preview:SetScript("OnShow", function(self)
+        self._elapsed = 0
+        UpdatePreview()
+    end)
+    preview:SetScript("OnUpdate", function(self, elapsed)
+        self._elapsed = (self._elapsed or 0) + elapsed
+        if self._elapsed > 1.4 then
+            self._elapsed = 0
+        end
+        UpdatePreview()
+    end)
+    preview:SetScript("OnHide", function(self)
+        self._elapsed = 0
+    end)
+    UpdatePreview()
+
+    return preview
+end
+
 local function BuildAuraIndicatorsSettings(content, gfdb, onChange)
     local ai = gfdb.auraIndicators; if not ai then gfdb.auraIndicators = {} ai = gfdb.auraIndicators end
     local normalizeAuraIndicators = ns.Helpers and ns.Helpers.NormalizeAuraIndicatorConfig
@@ -2287,6 +2407,8 @@ local function BuildAuraIndicatorsSettings(content, gfdb, onChange)
                         AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Low-Time Color", "lowTimeColor", selectedIndicator, onChange), FORM_ROW)
                     elseif selectedIndicator.type == "healthBarColor" then
                         AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Tint Color", "color", selectedIndicator, onChange), FORM_ROW)
+                        AddDetailWidget(GUI:CreateFormDropdown(detailArea, "Tint Animation", HEALTH_TINT_ANIMATION_OPTIONS, "animation", selectedIndicator, onChange), DROP_ROW)
+                        AddDetailWidget(CreateHealthTintAnimationPreview(detailArea, selectedIndicator), 78)
                     else
                         local note = GUI:CreateLabel(detailArea, "Icon indicators use the shared icon-strip settings in the section above.", 11, C and C.textMuted)
                         note:SetJustifyH("LEFT")
@@ -2483,7 +2605,11 @@ local function ShowPinnedSlotMenu(anchorFrame, slot, onChanged)
                     SetColor(prev[1], prev[2], prev[3], prev[4])
                 end
                 info.opacityFunc = info.swatchFunc
-                ColorPickerFrame:SetupColorPickerAndShow(info)
+                if GUI.ShowColorPicker then
+                    GUI:ShowColorPicker(info)
+                else
+                    ColorPickerFrame:SetupColorPickerAndShow(info)
+                end
             end)
             colorRow:SetScript("OnEnter", function() colorLabel:SetTextColor(1, 1, 1, 1) end)
             colorRow:SetScript("OnLeave", function() colorLabel:SetTextColor(0.8, 0.8, 0.8, 1) end)
@@ -3599,7 +3725,14 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         end
 
         if firstTint then
-            healthBar:SetStatusBarColor(firstTint[1] or 0.2, firstTint[2] or 0.8, firstTint[3] or 0.2, firstTint[4] or 1)
+            local tintOverlay = CreateFrame("StatusBar", nil, healthBar)
+            tintOverlay:SetAllPoints(healthBar)
+            tintOverlay:SetFrameLevel(healthBar:GetFrameLevel() + 1)
+            tintOverlay:SetStatusBarTexture(texturePath)
+            tintOverlay:SetOrientation(healthBar.GetOrientation and healthBar:GetOrientation() or "HORIZONTAL")
+            tintOverlay:SetMinMaxValues(0, 1)
+            tintOverlay:SetValue(0.72)
+            tintOverlay:SetStatusBarColor(firstTint[1] or 0.2, firstTint[2] or 0.8, firstTint[3] or 0.2, firstTint[4] or 1)
         end
     end
 

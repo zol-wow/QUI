@@ -833,14 +833,16 @@ local PROFILE_IMPORT_CATEGORIES = {
             {
                 id = "groupFramesGeneral",
                 label = "General",
-                description = "Shared group frame options, click-cast, and global toggles.",
+                description = "Shared group frame options and global toggles.",
                 topLevelKeys = { "raidBuffs" },
                 paths = {
                     "quiGroupFrames.enabled",
                     "quiGroupFrames.unifiedPosition",
                     "quiGroupFrames.partySelfFirst",
                     "quiGroupFrames.raidSelfFirst",
-                    "quiGroupFrames.clickCast",
+                    -- quiGroupFrames.clickCast intentionally omitted: click-cast
+                    -- bindings live on db.char (per-character) so they cannot
+                    -- meaningfully travel through profile import/export.
                 },
             },
             { id = "groupFramesParty", label = "Party", description = "Party frame designer settings.", paths = { "quiGroupFrames.party" } },

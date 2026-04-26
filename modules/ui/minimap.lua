@@ -53,7 +53,6 @@ local pendingMinimapRefresh = false
 local pendingDrawerSetup = false
 local middleClickMenuHooked = false
 -- (micro/bag visibility now managed by action bars module)
-local minimapOriginalOnMouseUp = nil
 
 -- External HUD overlay detection
 local externalHudActive = false
@@ -1463,6 +1462,38 @@ local function RestoreBlizzardMailIndicator()
     mailFrame:EnableMouse(true)
 end
 
+local function ShowCustomMailTooltip(owner)
+    GameTooltip:SetOwner(owner, "ANCHOR_LEFT")
+
+    if type(MinimapMailFrameUpdate) == "function" then
+        local ok = pcall(MinimapMailFrameUpdate)
+        if ok then
+            return
+        end
+    end
+
+    local senders = {}
+    if type(GetLatestThreeSenders) == "function" then
+        local ok, sender1, sender2, sender3 = pcall(GetLatestThreeSenders)
+        if ok then
+            if sender1 then senders[#senders + 1] = sender1 end
+            if sender2 then senders[#senders + 1] = sender2 end
+            if sender3 then senders[#senders + 1] = sender3 end
+        end
+    end
+
+    local headerText = #senders >= 1 and (HAVE_MAIL_FROM or "Unread mail from:") or (HAVE_MAIL or "You have unread mail")
+    if type(FormatUnreadMailTooltip) == "function" then
+        FormatUnreadMailTooltip(GameTooltip, headerText, senders)
+    else
+        GameTooltip:SetText(headerText)
+        for _, sender in ipairs(senders) do
+            GameTooltip:AddLine(sender)
+        end
+    end
+    GameTooltip:Show()
+end
+
 local function CreateCustomMailButton()
     if customMailButton then return end
 
@@ -1482,9 +1513,7 @@ local function CreateCustomMailButton()
 
     customMailButton:SetScript("OnEnter", function(self)
         self.icon:SetAtlas(MAIL_ICON_OVER_ATLAS)
-        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine(HAVE_MAIL or "Unread Mail", 1, 1, 1)
-        GameTooltip:Show()
+        ShowCustomMailTooltip(self)
     end)
     customMailButton:SetScript("OnLeave", function(self)
         self.icon:SetAtlas(MAIL_ICON_UP_ATLAS)
@@ -2064,29 +2093,14 @@ local function SetupMiddleClickMenu()
     if middleClickMenuHooked then return end
     middleClickMenuHooked = true
 
-    -- TAINT SAFETY: Avoid SetPassThroughButtons/SetPropagateMouseClicks here.
-    -- Those protected mouse-pass-through APIs can taint Blizzard map pin code
-    -- later in the session, producing ADDON_ACTION_BLOCKED on WorldMap pins.
-    -- Wrapping Minimap's existing OnMouseUp keeps the middle-click feature local
-    -- to the minimap without touching protected pass-through state.
-    local currentOnMouseUp = Minimap:GetScript("OnMouseUp")
-    if currentOnMouseUp and currentOnMouseUp ~= minimapOriginalOnMouseUp then
-        minimapOriginalOnMouseUp = currentOnMouseUp
-    end
-
-    Minimap:SetScript("OnMouseUp", function(self, button, ...)
+    -- TAINT SAFETY: HookScript only. SetScript-then-recall taints Blizzard's
+    -- OnMouseUp, which is XML-bound to MinimapMixin:OnClick → PingLocation
+    -- (protected). HookScript lets the original run untainted, so middle-click
+    -- ping continues to work; our menu opens additively on top.
+    Minimap:HookScript("OnMouseUp", function(_, button)
         local settings = GetSettings()
         if settings and settings.enabled and settings.middleClickMenuEnabled and button == "MiddleButton" then
             ShowMiddleClickMenu()
-            return
-        end
-
-        if minimapOriginalOnMouseUp then
-            return minimapOriginalOnMouseUp(self, button, ...)
-        end
-
-        if Minimap_OnClick then
-            return Minimap_OnClick(self)
         end
     end)
 

@@ -14,7 +14,6 @@ local QUICore = ns.Addon
 -- Local references
 local PADDING = Shared.PADDING
 local CreateScrollableContent = Shared.CreateScrollableContent
-local GetDB = Shared.GetDB
 local GetTextureList = Shared.GetTextureList
 local GetFontList = Shared.GetFontList
 
@@ -228,11 +227,6 @@ end
 
 ---------------------------------------------------------------------------
 -- HELPERS
-
-local function GetGFDB()
-    local db = GetDB()
-    return db and db.quiGroupFrames
-end
 
 local function RefreshGF()
     if _G.QUI_RefreshGroupFrames then
@@ -1646,16 +1640,19 @@ local function CreateClickCastPage(parent)
 
     GUI:SetSearchContext({tabIndex = 7, tabName = "Click-Cast", subTabIndex = 1, subTabName = "Click-Cast"})
 
-    local gfdb = GetGFDB()
-    if not gfdb then
-        local info = GUI:CreateLabel(content, "Group frame settings not available.", 12, C.textMuted)
+    -- Click-cast settings are character-scoped (see groupframes_clickcast.lua
+    -- for the rationale). Read directly from db.char rather than gfdb so the
+    -- settings UI writes to the same location the runtime reads from.
+    local charDB = QUI and QUI.db and QUI.db.char
+    if not charDB then
+        local info = GUI:CreateLabel(content, "Click-cast settings not available.", 12, C.textMuted)
         info:SetPoint("TOPLEFT", PAD, -10)
         content:SetHeight(100)
         return
     end
 
-    local cc = gfdb.clickCast
-    if not cc then gfdb.clickCast = {} cc = gfdb.clickCast end
+    local cc = charDB.clickCast
+    if not cc then charDB.clickCast = {} cc = charDB.clickCast end
 
     local refreshClickCast = function()
         local GFCC_ref = ns.QUI_GroupFrameClickCast

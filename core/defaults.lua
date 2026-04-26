@@ -1061,6 +1061,7 @@ local defaults = {
             soulFragments = { 0.64, 0.19, 0.79, 1 },
             whirlwind = { 0.90, 0.20, 0.20, 1 },           -- Red (Warrior theme)
             tipOfTheSpear = { 0.00, 0.80, 0.30, 1 },       -- Green (Hunter/Survival theme)
+            renewingMistCharges = { 0.30, 1.00, 0.72, 1 }, -- Mistweaver Renewing Mist charges
             runes = { 0.77, 0.12, 0.23, 1 },
             bloodRunes = { 0.77, 0.12, 0.23, 1 },
             frostRunes = { 0.00, 0.82, 1.00, 1 },
@@ -2740,6 +2741,7 @@ local defaults = {
                     sortMethod = "INDEX",
                     sortByRole = true,
                     groupBy = "GROUP",
+                    limitGroupsByRaidSize = false,
                     unitsPerFlat = 5,
                 },
                 health = {
@@ -2908,24 +2910,10 @@ local defaults = {
                 },
             },
 
-            -- Click-casting (shared)
-            clickCast = {
-                enabled = true,
-                bindings = {},
-                perSpec = true,
-                perLoadout = false,
-                loadoutBindings = {},
-                smartRes = true,
-                showTooltip = true,
-                unitFrames = {
-                    player = false,
-                    target = false,
-                    targettarget = false,
-                    focus = false,
-                    pet = false,
-                    boss = false,
-                },
-            },
+            -- Click-casting moved to db.char (per-character) in v3.5.3.
+            -- See ns.defaults.char.clickCast at the bottom of this file and
+            -- the migration in modules/frames/groupframes_clickcast.lua.
+            -- Stale profile data intentionally left alone for downgrade safety.
 
             -- Test/preview mode (shared)
             testMode = {
@@ -4175,6 +4163,28 @@ local defaults = {
     },
     char = {
         keybindOverrides = {},  -- [specID] = { [spellID] = keybindText, [-itemID] = keybindText }
+        -- Click-casting is per-character: bindings reference class-specific
+        -- spells, so a single AceDB profile shared across an account would
+        -- leak one class's bindings onto every alt. Legacy profile data at
+        -- profile.quiGroupFrames.clickCast is one-time copied here by the
+        -- migration in modules/frames/groupframes_clickcast.lua.
+        clickCast = {
+            enabled = true,
+            bindings = {},
+            perSpec = true,
+            perLoadout = false,
+            loadoutBindings = {},
+            smartRes = true,
+            showTooltip = true,
+            unitFrames = {
+                player = false,
+                target = false,
+                targettarget = false,
+                focus = false,
+                pet = false,
+                boss = false,
+            },
+        },
     },
 }
 

@@ -132,7 +132,12 @@ end)
 ---------------------------------------------------------------------------
 local cachedMouseFrame = nil
 local cachedMouseFrameTime = 0
-local MOUSE_FRAME_CACHE_TTL = 0.2  -- 200ms cache
+-- Cache TTL must be short: long staleness causes IsTooltipOwnerHovered to keep
+-- returning true after the cursor leaves the owner, which masks hideDelay=0
+-- and makes "instant hide" look laggy. 50ms still coalesces the multiple
+-- GetMouseFoci calls within a single visibility-check tick (those happen
+-- microseconds apart) without carrying focus across ticks.
+local MOUSE_FRAME_CACHE_TTL = 0.05
 local contextCache = Helpers.CreateStateTable()
 local CONTEXT_CACHE_TTL = 0.12
 local NIL_CONTEXT = {}

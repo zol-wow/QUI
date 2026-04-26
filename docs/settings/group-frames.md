@@ -216,13 +216,19 @@ Per-spec custom aura indicators (colored squares, bars, icons on specific frame 
 
 Click-casting allows binding spells to mouse clicks on group frames.
 
+**DB path:** `db.char.clickCast` — character-scoped, not profile-scoped. Bindings reference class-specific spells, so each character keeps its own list and they do not travel through profile import/export. (Versions before v3.5.3 stored these on the shared profile, which leaked one class's bindings onto every alt; existing data is migrated to the per-character scope on first login after upgrade.)
+
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `clickCast.enabled` | boolean | `false` | Enable click-casting on group frames |
+| `clickCast.enabled` | boolean | `true` | Enable click-casting on group frames |
 | `clickCast.perSpec` | boolean | `true` | Use separate click-cast bindings per specialization |
-| `clickCast.smartRes` | boolean | `true` | Smart resurrection (auto-detect correct resurrection spell) |
-| `clickCast.showTooltip` | boolean | `true` | Show click-cast binding tooltips |
-| `clickCast.bindings` | table | `{}` | Click-cast binding configuration |
+| `clickCast.perLoadout` | boolean | `false` | Also split bindings per talent loadout within each spec (requires `perSpec`) |
+| `clickCast.smartRes` | boolean | `true` | Smart resurrection (auto-swap to res spell when hovering a dead unit) |
+| `clickCast.showTooltip` | boolean | `true` | Append binding summary to unit tooltips on hover |
+| `clickCast.bindings` | table | `{}` | Shared bindings list (used when `perSpec` is off) |
+| `clickCast.specBindings` | table | `{}` | Per-spec bindings keyed by `specID` |
+| `clickCast.loadoutBindings` | table | `{}` | Per-loadout bindings keyed by `specID` then config ID |
+| `clickCast.unitFrames` | table | `{...}` | Per-unit-frame opt-ins (`player`, `target`, `targettarget`, `focus`, `pet`, `boss`) |
 
 ---
 

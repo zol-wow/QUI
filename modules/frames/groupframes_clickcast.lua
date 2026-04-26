@@ -10,7 +10,21 @@
 
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
-local GetDB = Helpers.CreateDBGetter("quiGroupFrames")
+
+-- Click-cast settings live on db.char (per-character), not on the shared
+-- profile. Bindings reference class-specific spells, and a single AceDB
+-- profile is shared across every character on the account by default —
+-- storing them on the profile leaked one class's bindings onto another
+-- (e.g. Druid bindings appearing on a Paladin alt). GetDB returns the
+-- character-scoped wrapper so existing `db.clickCast` access shape is
+-- preserved.
+local function GetDB()
+    return _G.QUI and _G.QUI.db and _G.QUI.db.char or nil
+end
+
+-- Forward-declared so Initialize (defined before the migration block)
+-- can call it. Body is assigned later in the file.
+local MigrateProfileClickCastToChar
 
 -- Upvalue hot-path globals
 local pairs = pairs
@@ -588,6 +602,13 @@ end
 -- PUBLIC API
 ---------------------------------------------------------------------------
 function QUI_GFCC:Initialize()
+    -- One-time per-character: copy legacy profile.quiGroupFrames.clickCast
+    -- onto db.char.clickCast. Initialize can run before PLAYER_ENTERING_WORLD
+    -- (groupframes/unitframes call it during their own init), so the
+    -- migration must run here too — otherwise the first session after
+    -- upgrade reads empty char defaults until PLAYER_ENTERING_WORLD fires.
+    MigrateProfileClickCastToChar()
+
     local db = GetDB()
     if not db or not db.clickCast or not db.clickCast.enabled then return end
 
@@ -839,6 +860,44 @@ local function RunRootSpellMigration()
 end
 
 ---------------------------------------------------------------------------
+-- PROFILE → CHAR MIGRATION
+-- v3.5.3 moved click-cast settings from db.profile.quiGroupFrames.clickCast
+-- to db.char.clickCast so bindings stop leaking across characters that
+-- share an AceDB profile. On the first login per character after the
+-- upgrade, we deep-copy the legacy profile data over the freshly-seeded
+-- char defaults. Stale profile data is left in place so a downgrade can
+-- recover it.
+---------------------------------------------------------------------------
+local function DeepCopy(value)
+    if type(value) ~= "table" then return value end
+    local copy = {}
+    for k, v in pairs(value) do
+        copy[k] = DeepCopy(v)
+    end
+    return copy
+end
+
+function MigrateProfileClickCastToChar()
+    local QUI = _G.QUI
+    if not QUI or not QUI.db then return end
+    local charDB = QUI.db.char
+    local profile = QUI.db.profile
+    if not charDB or not profile then return end
+
+    if not charDB.clickCast then charDB.clickCast = {} end
+    if charDB.clickCast._migratedFromProfile then return end
+
+    local source = profile.quiGroupFrames and profile.quiGroupFrames.clickCast
+    if type(source) == "table" then
+        for k, v in pairs(source) do
+            charDB.clickCast[k] = DeepCopy(v)
+        end
+    end
+
+    charDB.clickCast._migratedFromProfile = true
+end
+
+---------------------------------------------------------------------------
 -- EVENTS: Spec/loadout change and combat end
 ---------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
@@ -873,6 +932,11 @@ eventFrame:SetScript("OnEvent", function(self, event)
             if key2 then SetBinding(key2, nativeAction); didMigrate = true end
         end
         if didMigrate then SaveBindings(GetCurrentBindingSet()) end
+
+        -- One-time per-character: copy legacy profile.quiGroupFrames.clickCast
+        -- onto db.char.clickCast. Must run before RunRootSpellMigration so
+        -- the root-spell pass operates on the migrated char-level data.
+        MigrateProfileClickCastToChar()
 
         -- Migrate existing bindings to store root spellIDs
         RunRootSpellMigration()

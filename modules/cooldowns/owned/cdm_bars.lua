@@ -149,7 +149,6 @@ local function CreateBar(parent)
     durationText:SetShadowOffset(1, -1)
     bar.DurationText = durationText
 
-
     -- State tracking
     bar._spellEntry = nil
     bar._blizzBar = nil
@@ -219,6 +218,40 @@ local function GetBlizzTrackedBarSpellData(blizzBarChild)
         name = name,
         cooldownID = cdID,
     }
+end
+
+local function ShouldDebugBarEntry(entry, spellID)
+    local dbg = _G.QUI_CDM_BAR_DEBUG
+    if not dbg then return false end
+    if dbg == true then return true end
+    if type(dbg) ~= "string" then return false end
+    local entryName = entry and entry.name
+    if type(entryName) == "string" and entryName:lower():find(dbg, 1, true) then
+        return true
+    end
+    return tostring(spellID) == dbg
+end
+
+local function DebugBarLabel(entry, spellID, ...)
+    if not ShouldDebugBarEntry(entry, spellID) then return end
+    print("|cff34D399[CDM-BarDbg]|r", ...)
+end
+
+local function ShouldHideAuraDurationText(r)
+    if not r or not r.isActive then return false end
+    if r.isTotemInstance then return false end
+    if r.hideDurationText or r.hasExpirationTime == false then return true end
+    if not r.auraData then return false end
+
+    local duration = r.auraData.duration
+    if duration == nil then
+        return true
+    end
+    if Helpers.IsSecretValue(duration) then
+        return false
+    end
+    local readableDuration = SafeToNumber(duration, nil)
+    return not readableDuration or readableDuration <= 0
 end
 
 local function GetTrackedBarOverrideColor(settings, spellData)
@@ -651,6 +684,38 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
     -- Edit Mode frame iteration. Totem-instance bars bypass this entirely
     -- and drive from the shared virtual-aura resolver in CDMSpellData.
 
+    -- ChildStillBoundTo: true when blizzBarChild's current cooldownInfo still
+    -- references the bar's bound spell. Blizzard's BuffBarCooldownViewer
+    -- recycles bar children across sibling auras (e.g. the same child is
+    -- repurposed from Dark Transformation to Summon Gargoyle when both are
+    -- active), so a stale binding can leak the wrong aura's progress / text
+    -- through the mirror. Permissive when cinfo is missing or both spell IDs
+    -- are secret — we'd rather forward stale data than block legitimate
+    -- combat-time writes when we can't verify.
+    local function ChildStillBoundTo(target)
+        if not target then return false end
+        local cinfo = blizzBarChild.cooldownInfo
+        if not cinfo then return true end
+        local sid = Helpers.SafeValue(cinfo.spellID, nil)
+        local ovsid = Helpers.SafeValue(cinfo.overrideSpellID, nil)
+        if sid == nil and ovsid == nil then return true end
+        local boundSid = target._spellID
+        local entry = target._spellEntry
+        local entrySpellID = entry and entry.spellID
+        local entryID = entry and entry.id
+        if sid then
+            if sid == boundSid or sid == entrySpellID or sid == entryID then
+                return true
+            end
+        end
+        if ovsid then
+            if ovsid == boundSid or ovsid == entrySpellID or ovsid == entryID then
+                return true
+            end
+        end
+        return false
+    end
+
     -- Hook StatusBar value/range forwarding
     local blizzStatusBar = blizzBarChild.Bar
     if blizzStatusBar then
@@ -670,6 +735,7 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
             if target._active == false then
                 return
             end
+            if not ChildStillBoundTo(target) then return end
             pcall(target.StatusBar.SetValue, target.StatusBar, value)
             target._lastMirrorFill = GetTime()
         end)
@@ -681,6 +747,7 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
             if target._isTotemInstance and not target._allowTotemMirrorFill then
                 return
             end
+            if not ChildStillBoundTo(target) then return end
             pcall(target.StatusBar.SetMinMaxValues, target.StatusBar, minVal, maxVal)
         end)
     end
@@ -745,13 +812,22 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
         ForEachChildFrame(blizzBarChild, DiscoverNamedFontStrings)
     end
 
-        local function ForwardText(fs, text)
-            local target = mirrorMap[blizzBarChild]
-            if not target then return end
-            if target._isTotemInstance and target._preferTotemDisplay then return end
-            if knownDurationFS[fs] then
-                pcall(target.DurationText.SetText, target.DurationText, text or "")
-            elseif knownNameFS[fs] then
+    local function ForwardText(fs, text)
+        local target = mirrorMap[blizzBarChild]
+        if not target then return end
+        if target._isTotemInstance and target._preferTotemDisplay then return end
+        -- Same recycled-child concern as the SetValue/SetMinMaxValues hooks:
+        -- skip when the Blizzard child no longer references our spell, or
+        -- the duration text would also flicker between sibling auras.
+        if not ChildStillBoundTo(target) then return end
+        -- Aura entries additionally own NameText via UpdateOwnedBarAura
+        -- (entry.name). Mirror only for non-aura entries, where Blizzard
+        -- still owns the canonical label (talent renames, etc.).
+        local lockedName = target._spellEntry and target._spellEntry.isAura
+        if knownDurationFS[fs] then
+            pcall(target.DurationText.SetText, target.DurationText, text or "")
+        elseif knownNameFS[fs] then
+            if lockedName then return end
             pcall(target.NameText.SetText, target.NameText, text or "")
         else
             -- Fallback: use justify for unknown FontStrings
@@ -759,6 +835,7 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
             if justify == "RIGHT" then
                 pcall(target.DurationText.SetText, target.DurationText, text or "")
             else
+                if lockedName then return end
                 pcall(target.NameText.SetText, target.NameText, text or "")
             end
         end
@@ -844,6 +921,7 @@ local function ReleaseBar(bar)
     bar._instanceKey = nil
     bar._active = false
     bar._cSideFill = nil
+    bar._lastMirrorFill = nil
     bar._lastPosKey = nil
     bar._lastAnchor = nil
     bar._desiredTexture = nil
@@ -853,6 +931,8 @@ local function ReleaseBar(bar)
     bar._preferTotemDisplay = nil
     bar._totemIconCache = nil
     bar._totemNameCache = nil
+    bar._hideDurationText = nil
+    bar._hasAuraExpirationTime = nil
     bar.NameText:SetText("")
     bar.DurationText:SetText("")
     bar.IconTexture:SetTexture(nil)
@@ -1094,29 +1174,13 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
                     texID = icon
                 end
             elseif entry.type == "spell" then
-                -- Cooldown bars: use overrideSpellID for talent replacements.
-                -- Aura bars: resolve icon from the entry's own Blizzard
-                -- child linkedSpellIDs. When multiple CDM entries share the
-                -- same base spellID (e.g. Inertia has two entries with
-                -- different linked auras), each entry's child has a unique
-                -- linked aura with its own icon.
+                -- Cooldown bars use overrideSpellID for talent replacements.
+                -- Aura bars must keep their configured entry identity; live
+                -- viewer children are only state sources and can point at
+                -- sibling summons/buffs during combat.
                 local iconSid
                 if entry.isAura then
-                    local baseId = entry.id or spellID
-                    -- Try this entry's Blizzard child's linked aura first
-                    local blzChild = entry._blizzChild or bar._blizzIconChild
-                    if blzChild and blzChild.cooldownInfo and blzChild.cooldownInfo.linkedSpellIDs then
-                        local linked = blzChild.cooldownInfo.linkedSpellIDs
-                        if linked[1] then
-                            local lsid = Helpers.SafeValue(linked[1], nil)
-                            if lsid and lsid > 0 then iconSid = lsid end
-                        end
-                    end
-                    -- Fallback to ability→aura map, then base ID
-                    if not iconSid then
-                        local auraMap = ns.CDMSpellData and ns.CDMSpellData._abilityToAuraSpellID
-                        iconSid = (auraMap and auraMap[baseId]) or baseId
-                    end
+                    iconSid = entry.overrideSpellID or entry.spellID or entry.id or spellID
                 else
                     iconSid = entry.overrideSpellID or entry.id or spellID
                 end
@@ -1137,7 +1201,8 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
         -- replacements). Skip for totem instances — MirrorBlizzBar's SetText
         -- hook already forwarded the per-slot name from Blizzard's FontString.
         if bar.NameText and not bar._isTotemInstance then
-            local displayName = ns.CDMSpellData:ResolveDisplayName(entry, bar._blizzIconChild)
+            local displayName = entry and entry.isAura and entry.name
+                or ns.CDMSpellData:ResolveDisplayName(entry, bar._blizzIconChild)
             if displayName then
                 bar.NameText:SetText(displayName)
             end
@@ -1198,6 +1263,8 @@ local function UpdateItemBarCooldown(bar, entry)
 
     if isActive and auraRemaining and auraRemaining > 0 then
         bar._active = true
+        bar._hideDurationText = nil
+        bar._hasAuraExpirationTime = nil
         bar._totalDuration = auraDur
         bar._expirationTime = GetTime() + auraRemaining
         if bar.StatusBar then
@@ -1223,6 +1290,8 @@ local function UpdateItemBarCooldown(bar, entry)
         local remaining = (startTime + duration) - GetTime()
         if remaining > 0 then
             bar._active = true
+            bar._hideDurationText = nil
+            bar._hasAuraExpirationTime = nil
             bar._totalDuration = duration
             bar._expirationTime = startTime + duration
             if bar.StatusBar then
@@ -1235,6 +1304,8 @@ local function UpdateItemBarCooldown(bar, entry)
 
     -- Not active, not on cooldown
     bar._active = false
+    bar._hideDurationText = nil
+    bar._hasAuraExpirationTime = nil
     bar._totalDuration = nil
     bar._expirationTime = nil
     if bar.StatusBar then
@@ -1292,9 +1363,26 @@ function CDMBars:UpdateOwnedBarAura(bar)
     if r.isActive then
         bar._active = true
         bar._auraDataUnit = r.auraUnit
+        bar._hasAuraExpirationTime = r.hasExpirationTime
+        bar._hideDurationText = ShouldHideAuraDurationText(r)
+        if bar._hideDurationText then
+            bar._durObj = nil
+            bar._cSideFill = nil
+            bar._lastDurationText = nil
+            bar._lastDurationBucket = nil
+            bar._totalDuration = nil
+            bar._expirationTime = nil
+            if bar.StatusBar then
+                pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
+                pcall(bar.StatusBar.SetValue, bar.StatusBar, 1)
+            end
+            if bar.DurationText then
+                pcall(bar.DurationText.SetText, bar.DurationText, "")
+            end
+        end
 
         -- Cache readable duration/expiration from OOC auraData (for OnUpdate timer text)
-        if r.auraData then
+        if r.auraData and not bar._hideDurationText then
             local rawDur = r.auraData.duration
             if rawDur and not Helpers.IsSecretValue(rawDur) and rawDur > 0 then
                 bar._totalDuration = rawDur
@@ -1311,7 +1399,7 @@ function CDMBars:UpdateOwnedBarAura(bar)
             bar._allowTotemMirrorFill = nil
             bar._preferTotemDisplay = nil
         end
-        if durObj then
+        if durObj and not bar._hideDurationText then
             local prevDurObj = bar._durObj
             bar._durObj = durObj
             local mirrorFillActive = bar._lastMirrorFill
@@ -1355,22 +1443,28 @@ function CDMBars:UpdateOwnedBarAura(bar)
                     pcall(bar.IconTexture.SetTexture, bar.IconTexture, bar._totemIconCache)
                 end
             else
-                local blzIcon = bar._blizzIconChild
-                if blzIcon then
-                    local iconRegion = blzIcon.Icon or blzIcon.icon
-                    local texRegion = iconRegion and (iconRegion.Icon or iconRegion.icon or iconRegion)
-                    if texRegion and texRegion.GetTexture then
-                        local tok, tex = pcall(texRegion.GetTexture, texRegion)
-                        if tok and tex then
-                            pcall(bar.IconTexture.SetTexture, bar.IconTexture, tex)
+                if bar._desiredTexture ~= nil then
+                    pcall(bar.IconTexture.SetTexture, bar.IconTexture, bar._desiredTexture)
+                else
+                    local blzIcon = bar._blizzIconChild
+                    if blzIcon then
+                        local iconRegion = blzIcon.Icon or blzIcon.icon
+                        local texRegion = iconRegion and (iconRegion.Icon or iconRegion.icon or iconRegion)
+                        if texRegion and texRegion.GetTexture then
+                            local tok, tex = pcall(texRegion.GetTexture, texRegion)
+                            if tok and tex then
+                                pcall(bar.IconTexture.SetTexture, bar.IconTexture, tex)
+                            end
                         end
                     end
                 end
             end
         end
 
-        -- Name + stacks text. SetText is C-side, so we can forward the
-        -- resolved string every tick without Lua-side text comparisons.
+        -- Name + stacks text.  Display-count payloads are already formatted
+        -- by C_UnitAuras, while auraData applications are numeric counts.
+        -- Keep both paths in C-side helpers so secret values are forwarded
+        -- without Lua concatenation.
         if bar.NameText then
             local name
             if bar._isTotemInstance then
@@ -1378,25 +1472,53 @@ function CDMBars:UpdateOwnedBarAura(bar)
                     bar._totemNameCache = r.totemName
                 end
                 name = bar._totemNameCache
+            elseif entry and entry.isAura then
+                name = entry.name or ns.CDMSpellData:ResolveDisplayName(entry)
             else
                 name = ns.CDMSpellData:ResolveDisplayName(entry, bar._blizzIconChild)
             end
             if name ~= nil then
-                -- r.stacks comes from C_UnitAuras aura data and is secret in
-                -- combat. C_StringUtil.WrapString/TruncateWhenZero are C-side
-                -- but carry the secrecy through to the returned string, so
-                -- the wrapped result cannot be compared in Lua (== / ~= taint).
-                -- Always forward to C-side SetFormattedText when formatting
-                -- succeeds; invalid combat stack counts collapse to empty.
                 local stacks = ""
-                if r.stacks ~= nil then
-                    local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, r.stacks)
-                    if truncOk then
-                        local wrapOk, wrapped = pcall(C_StringUtil.WrapString, truncText, " (", ")")
-                        stacks = wrapOk and wrapped or ""
+                local stackMethod = "none"
+                local stackOk, stackText
+                if r.stacks then
+                    if r.stackSource == "display-count" then
+                        stackMethod = "wrap-display-count"
+                        stackOk, stackText = pcall(C_StringUtil.WrapString, r.stacks, " (", ")")
+                    elseif type(r.stacks) == "number" then
+                        stackMethod = "truncate-wrap-number"
+                        stackOk, stackText = pcall(function()
+                            return C_StringUtil.WrapString(
+                                C_StringUtil.TruncateWhenZero(r.stacks), " (", ")")
+                        end)
+                    elseif Helpers.IsSecretValue(r.stacks) then
+                        stackMethod = "truncate-wrap-secret-number"
+                        stackOk, stackText = pcall(function()
+                            return C_StringUtil.WrapString(
+                                C_StringUtil.TruncateWhenZero(r.stacks), " (", ")")
+                        end)
+                        if not stackOk then
+                            stackMethod = "wrap-secret-fallback"
+                            stackOk, stackText = pcall(C_StringUtil.WrapString, r.stacks, " (", ")")
+                        end
+                    else
+                        stackMethod = "wrap-text"
+                        stackOk, stackText = pcall(C_StringUtil.WrapString, r.stacks, " (", ")")
                     end
+                    stacks = stackOk and stackText or ""
                 end
-                pcall(bar.NameText.SetFormattedText, bar.NameText, "%s%s", name, stacks)
+                local setOk, setErr = pcall(bar.NameText.SetFormattedText, bar.NameText, "%s%s", name, stacks)
+                DebugBarLabel(entry, spellID,
+                    "label",
+                    "name=", Helpers.SafeValue(name, "secret"),
+                    "stackNil=", tostring(r.stacks == nil),
+                    "stackSecret=", tostring(Helpers.IsSecretValue(r.stacks)),
+                    "stackSource=", tostring(r.stackSource),
+                    "stackMethod=", stackMethod,
+                    "stackOk=", tostring(stackOk),
+                    "stackText=", Helpers.SafeValue(stackText, "secret"),
+                    "setOk=", tostring(setOk),
+                    "setErr=", setOk and "nil" or tostring(setErr))
             end
         end
     else
@@ -1407,6 +1529,8 @@ function CDMBars:UpdateOwnedBarAura(bar)
         bar._preferTotemDisplay = nil
         bar._totalDuration = nil
         bar._expirationTime = nil
+        bar._hideDurationText = nil
+        bar._hasAuraExpirationTime = nil
         if not InCombatLockdown() then
             bar._resolvedAuraID = nil
         end
@@ -1744,91 +1868,97 @@ barTimerGroup:SetScript("OnLoop", function()
     local anyActive = false
     for _, bar in ipairs(barPool) do
         if bar._isOwnedBar and bar._active and bar:IsShown() then
-            -- When MirrorBlizzBar hooks are actively driving fill,
-            -- skip OnLoop processing to avoid competing writes.
-            local mirrorFillActive = bar._lastMirrorFill
-                and (GetTime() - bar._lastMirrorFill) < 5
-            if mirrorFillActive then
+            if bar._hideDurationText then
                 anyActive = true
+                bar._lastDurationText = nil
+                bar._lastDurationBucket = nil
+                if bar.DurationText then
+                    pcall(bar.DurationText.SetText, bar.DurationText, "")
+                end
+                if bar.StatusBar then
+                    pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
+                    pcall(bar.StatusBar.SetValue, bar.StatusBar, 1)
+                end
             else
-                local durObj = bar._durObj
-                -- Guard: GetCooldownDuration can return 0 (a number) when inactive.
-                -- Numbers must never be indexed, so only treat userdata/tables as DurationObjects.
-                if durObj and type(durObj) == "number" then
-                    bar._durObj = nil
-                    durObj = nil
-                end
-                local remaining = nil
-                if durObj and durObj.GetRemainingDuration then
-                    local rok, r = pcall(durObj.GetRemainingDuration, durObj)
-                    if rok then remaining = r end
-                end
-                if remaining ~= nil then
-                    local isSecret = Helpers.IsSecretValue(remaining)
-                    if isSecret then
-                        anyActive = true
-                        if bar.DurationText then
-                            pcall(bar.DurationText.SetFormattedText, bar.DurationText, "%.1f", remaining)
-                        end
-                    elseif remaining > 0 then
-                        anyActive = true
-                        -- OOC: readable remaining — update text in Lua
-                        if bar.DurationText then
-                            if remaining >= 60 then
-                                local bucket = math_floor(remaining / 60)
-                                if bucket ~= bar._lastDurationBucket then
-                                    bar._lastDurationBucket = bucket
-                                    local text = string_format("%.0fm", remaining / 60)
-                                    bar._lastDurationText = text
-                                    bar.DurationText:SetText(text)
-                                end
-                            else
-                                local bucket = math_floor(remaining * 10)
-                                if bucket ~= bar._lastDurationBucket then
-                                    bar._lastDurationBucket = bucket
-                                    local text = string_format("%.1f", remaining)
-                                    bar._lastDurationText = text
-                                    bar.DurationText:SetText(text)
-                                end
-                            end
-                        end
-                        -- Update bar fill ONLY if C-side SetTimerDuration isn't driving it.
-                        if not bar._cSideFill then
-                            local total = bar._totalDuration
-                            if total and total > 0 and bar.StatusBar then
-                                local fill = remaining / total
-                                if fill > 1 then fill = 1 end
-                                pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
-                                pcall(bar.StatusBar.SetValue, bar.StatusBar, fill)
-                            elseif bar.StatusBar then
-                                -- Remaining-only fallback: keep the bar visibly active
-                                -- without inventing a fake total duration in Lua.
-                                pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
-                                pcall(bar.StatusBar.SetValue, bar.StatusBar, 1)
-                            end
-                        end
-                    elseif isSecret then
-                        -- Combat: C-side SetTimerDuration drives bar fill.
-                        -- Pass secret remaining to C-side SetFormattedText for text.
-                        anyActive = true
-                        if bar.DurationText then
-                            pcall(bar.DurationText.SetFormattedText, bar.DurationText, "%.1f", remaining)
-                        end
-                    else
-                        -- Expired (remaining nil or 0): clear visuals immediately
-                        -- so the bar doesn't show stale text, but do NOT set
-                        -- _active = false or call LayoutBars — UpdateOwnedBars
-                        -- owns state transitions and layout.
-                        anyActive = true  -- keep ticking until UpdateOwnedBars confirms
+                -- When MirrorBlizzBar hooks are actively driving fill,
+                -- skip OnLoop processing to avoid competing writes.
+                local mirrorFillActive = bar._lastMirrorFill
+                    and (GetTime() - bar._lastMirrorFill) < 5
+                if mirrorFillActive then
+                    anyActive = true
+                else
+                    local durObj = bar._durObj
+                    -- Guard: GetCooldownDuration can return 0 (a number) when inactive.
+                    -- Numbers must never be indexed, so only treat userdata/tables as DurationObjects.
+                    if durObj and type(durObj) == "number" then
                         bar._durObj = nil
-                        bar._cSideFill = nil
-                        bar._lastDurationText = nil
-                        bar._lastDurationBucket = nil
-                        if bar.DurationText then
-                            bar.DurationText:SetText("")
-                        end
-                        if bar.StatusBar then
-                            pcall(bar.StatusBar.SetValue, bar.StatusBar, 0)
+                        durObj = nil
+                    end
+                    local remaining = nil
+                    if durObj and durObj.GetRemainingDuration then
+                        local rok, r = pcall(durObj.GetRemainingDuration, durObj)
+                        if rok then remaining = r end
+                    end
+                    if remaining ~= nil then
+                        local isSecret = Helpers.IsSecretValue(remaining)
+                        if isSecret then
+                            anyActive = true
+                            if bar.DurationText then
+                                pcall(bar.DurationText.SetFormattedText, bar.DurationText, "%.1f", remaining)
+                            end
+                        elseif remaining > 0 then
+                            anyActive = true
+                            -- OOC: readable remaining — update text in Lua
+                            if bar.DurationText then
+                                if remaining >= 60 then
+                                    local bucket = math_floor(remaining / 60)
+                                    if bucket ~= bar._lastDurationBucket then
+                                        bar._lastDurationBucket = bucket
+                                        local text = string_format("%.0fm", remaining / 60)
+                                        bar._lastDurationText = text
+                                        bar.DurationText:SetText(text)
+                                    end
+                                else
+                                    local bucket = math_floor(remaining * 10)
+                                    if bucket ~= bar._lastDurationBucket then
+                                        bar._lastDurationBucket = bucket
+                                        local text = string_format("%.1f", remaining)
+                                        bar._lastDurationText = text
+                                        bar.DurationText:SetText(text)
+                                    end
+                                end
+                            end
+                            -- Update bar fill ONLY if C-side SetTimerDuration isn't driving it.
+                            if not bar._cSideFill then
+                                local total = bar._totalDuration
+                                if total and total > 0 and bar.StatusBar then
+                                    local fill = remaining / total
+                                    if fill > 1 then fill = 1 end
+                                    pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
+                                    pcall(bar.StatusBar.SetValue, bar.StatusBar, fill)
+                                elseif bar.StatusBar then
+                                    -- Remaining-only fallback: keep the bar visibly active
+                                    -- without inventing a fake total duration in Lua.
+                                    pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
+                                    pcall(bar.StatusBar.SetValue, bar.StatusBar, 1)
+                                end
+                            end
+                        else
+                            -- Expired (remaining nil or 0): clear visuals immediately
+                            -- so the bar doesn't show stale text, but do NOT set
+                            -- _active = false or call LayoutBars — UpdateOwnedBars
+                            -- owns state transitions and layout.
+                            anyActive = true  -- keep ticking until UpdateOwnedBars confirms
+                            bar._durObj = nil
+                            bar._cSideFill = nil
+                            bar._lastDurationText = nil
+                            bar._lastDurationBucket = nil
+                            if bar.DurationText then
+                                bar.DurationText:SetText("")
+                            end
+                            if bar.StatusBar then
+                                pcall(bar.StatusBar.SetValue, bar.StatusBar, 0)
+                            end
                         end
                     end
                 end
@@ -1882,7 +2012,9 @@ function CDMBars:UpdateOwnedBarAura(bar)
     print(P, entryName, "spellID=", bar._spellID, "entry.id=", entry.id,
           "entry.spellID=", entry.spellID, "entry.overrideSpellID=", entry.overrideSpellID)
     print(P, "  active=", bar._active, "cSideFill=", bar._cSideFill,
-          "durObj=", bar._durObj and "yes" or "nil")
+          "durObj=", bar._durObj and "yes" or "nil",
+          "hideDuration=", tostring(bar._hideDurationText),
+          "hasExpiration=", tostring(bar._hasAuraExpirationTime))
     print(P, "  isTotemInstance=", tostring(bar._isTotemInstance),
           "totemSlot=", tostring(bar._totemSlot),
           "instanceKey=", tostring(bar._instanceKey))
@@ -1994,4 +2126,3 @@ function CDMBars:UpdateOwnedBarAura(bar)
         print(P, "  blizzIcon: nil")
     end
 end
-

@@ -436,7 +436,25 @@ end
 local function UseRaidSectionHeaders(db)
     db = db or GetSettings()
     if not db then return false end
-    return IsMultiHeaderMode() or GetRaidSelfFirst(db)
+    local raidVdb = db.raid or db
+    local layout = raidVdb and raidVdb.layout
+    return IsMultiHeaderMode()
+        or GetRaidSelfFirst(db)
+        or (layout and layout.limitGroupsByRaidSize == true)
+end
+
+_state.UseRaidNameListSections = function(db, layout)
+    db = db or GetSettings()
+    if not layout and db then
+        local raidVdb = db.raid or db
+        layout = raidVdb and raidVdb.layout
+    end
+    if GetRaidSelfFirst(db) then
+        return true
+    end
+    return layout
+        and layout.limitGroupsByRaidSize == true
+        and (layout.groupBy or "GROUP") ~= "GROUP"
 end
 
 local function GetLayoutGrowDirection(layout, fallback)
@@ -453,6 +471,34 @@ local function GetLayoutGrowDirection(layout, fallback)
     end
 
     return fallback or "DOWN"
+end
+
+_state.GetRaidGroupLimit = function(layout)
+    if not layout or layout.limitGroupsByRaidSize ~= true then
+        return 8
+    end
+
+    local difficultyID = _G.GetInstanceInfo and select(3, _G.GetInstanceInfo())
+    return difficultyID == 16 and 4 or 6
+end
+
+_state.GetRaidGroupFilterString = function(layout)
+    local limit = _state.GetRaidGroupLimit(layout)
+    if limit == 4 then
+        return "1,2,3,4"
+    elseif limit == 6 then
+        return "1,2,3,4,5,6"
+    end
+    return "1,2,3,4,5,6,7,8"
+end
+
+_state.IsRaidSubgroupAllowed = function(subgroup, layout)
+    local limit = _state.GetRaidGroupLimit(layout)
+    if limit >= 8 then
+        return true
+    end
+    subgroup = tonumber(subgroup)
+    return subgroup ~= nil and subgroup >= 1 and subgroup <= limit
 end
 
 local function GetRaidColumnAnchorPoint(layout, grow)
@@ -827,6 +873,10 @@ local function UpdateHealth(frame)
 
     if not UnitExists(unit) then
         if frame.healthBar then frame.healthBar:SetValue(0) end
+        local GFI = ns.QUI_GroupFrameIndicators
+        if GFI and GFI.SyncHealthBarTint then
+            GFI:SyncHealthBarTint(frame, 0, false)
+        end
         if frame.healthText then frame.healthText:SetText("") end
         return
     end
@@ -843,11 +893,12 @@ local function UpdateHealth(frame)
     -- UnitHealthPercent returns 0-100 via CurveConstants.ScaleTo100, C-side handles secrets
     -- SetMinMaxValues(0, 100) is set once at frame creation (DecorateGroupFrame) — never changes.
     if frame.healthBar then
+        local healthPct = 0
         if isDeadOrGhost then
             frame.healthBar:SetValue(0)
         else
-            local pct = GetHealthPct(unit)
-            frame.healthBar:SetValue(pct)
+            healthPct = GetHealthPct(unit)
+            frame.healthBar:SetValue(healthPct)
         end
 
         -- Color (dirty-checked: skip SetStatusBarColor when unchanged)
@@ -856,9 +907,6 @@ local function UpdateHealth(frame)
             r, g, b, a = COLORS.OFFLINE[1], COLORS.OFFLINE[2], COLORS.OFFLINE[3], COLORS.OFFLINE[4]
         elseif isDeadOrGhost then
             r, g, b, a = COLORS.DEAD[1], COLORS.DEAD[2], COLORS.DEAD[3], COLORS.DEAD[4]
-        elseif frame._auraIndicatorHealthColor then
-            local c = frame._auraIndicatorHealthColor
-            r, g, b, a = c[1] or 0.2, c[2] or 0.8, c[3] or 0.2, c[4] or 1
         else
             r, g, b, a = GetHealthBarColor(unit, frame._isRaid)
         end
@@ -872,6 +920,11 @@ local function UpdateHealth(frame)
             frame._lastHealthColorB = b
             frame._lastHealthColorA = a
             frame.healthBar:SetStatusBarColor(r, g, b, a)
+        end
+
+        local GFI = ns.QUI_GroupFrameIndicators
+        if GFI and GFI.SyncHealthBarTint then
+            GFI:SyncHealthBarTint(frame, healthPct, isConnected and not isDeadOrGhost)
         end
     end
 
@@ -1105,10 +1158,15 @@ local function UpdateAbsorbs(frame, _unit, _maxHP)
     local maxHP = _maxHP or UnitHealthMax(unit)
     local absorbAmount = UnitGetTotalAbsorbs(unit)
 
-    -- Only hide on nil (API unavailable). Do NOT check for zero — StatusBar
-    -- naturally shows 0-width when value is 0 (matches QUI pattern).
-    -- absorbAmount may be a secret value; pass directly to C-side.
+    -- Hide explicit zero absorbs. Some clients/textures can keep drawing a
+    -- visible reverse-filled StatusBar at value 0; secret values still pass
+    -- directly to C-side APIs below.
     if not absorbAmount then
+        frame.absorbBar:Hide()
+        return
+    end
+    if not IsSecretValue(absorbAmount) and SafeToNumber(absorbAmount, 0) <= 0 then
+        frame.absorbBar:SetValue(0)
         frame.absorbBar:Hide()
         return
     end
@@ -1179,6 +1237,11 @@ local function UpdateHealAbsorb(frame, _unit, _maxHP)
     local healAbsorbAmount = UnitGetTotalHealAbsorbs(unit)
 
     if not healAbsorbAmount then
+        frame.healAbsorbBar:Hide()
+        return
+    end
+    if not IsSecretValue(healAbsorbAmount) and SafeToNumber(healAbsorbAmount, 0) <= 0 then
+        frame.healAbsorbBar:SetValue(0)
         frame.healAbsorbBar:Hide()
         return
     end
@@ -1734,7 +1797,7 @@ local function UpdateDispelOverlay(frame)
         local GFPA = ns.QUI_GroupFramePrivateAuras
         if GFPA and GFPA.RefreshPrivateDispelState then
             local privateState = GFPA:RefreshPrivateDispelState(unit)
-            if privateState and privateState.auraInstanceID then
+            if privateState and (privateState.auraInstanceID or privateState.slot) then
                 hasDispellable = true
                 fromPrivateSlots = true
                 firstDispellableInstID = privateState.auraInstanceID
@@ -3200,14 +3263,16 @@ local function ConfigureRaidHeader(header)
     local horizontal = (grow == "LEFT" or grow == "RIGHT")
     local groupBy = layout.groupBy or "GROUP"
     local isFlat = (groupBy == "NONE")
+    local groupLimit = _state.GetRaidGroupLimit(layout)
+    local groupFilter = _state.GetRaidGroupFilterString(layout)
 
     if isFlat then
         local upc = layout.unitsPerFlat or 5
         header:SetAttribute("unitsPerColumn", upc)
-        header:SetAttribute("maxColumns", math.ceil(40 / upc))
+        header:SetAttribute("maxColumns", math.ceil((groupLimit * 5) / upc))
         header:SetAttribute("columnSpacing", spacing)
     else
-        header:SetAttribute("maxColumns", 8)
+        header:SetAttribute("maxColumns", groupLimit)
         header:SetAttribute("unitsPerColumn", 5)
         header:SetAttribute("columnSpacing", groupSpacing)
     end
@@ -3227,12 +3292,12 @@ local function ConfigureRaidHeader(header)
     -- Group filtering
     if groupBy == "NONE" then
         header:SetAttribute("groupBy", nil)
-        header:SetAttribute("groupFilter", nil)
+        header:SetAttribute("groupFilter", groupLimit < 8 and groupFilter or nil)
         header:SetAttribute("groupingOrder", nil)
     elseif groupBy == "GROUP" then
         header:SetAttribute("groupBy", "GROUP")
-        header:SetAttribute("groupFilter", "1,2,3,4,5,6,7,8")
-        header:SetAttribute("groupingOrder", "1,2,3,4,5,6,7,8")
+        header:SetAttribute("groupFilter", groupFilter)
+        header:SetAttribute("groupingOrder", groupFilter)
     elseif groupBy == "ROLE" then
         header:SetAttribute("groupBy", "ASSIGNEDROLE")
         header:SetAttribute("groupingOrder", "TANK,HEALER,DAMAGER,NONE")
@@ -3282,8 +3347,9 @@ local function ConfigureRaidGroupHeaders()
     local sortMethod = layout.sortMethod or "INDEX"
     local sortByRole = layout.sortByRole
     local db = GetSettings()
-    local raidSelfFirst = GetRaidSelfFirst(db)
-    local sections = raidSelfFirst and GetRaidDisplaySections() or nil
+    local useNameListSections = _state.UseRaidNameListSections(db, layout)
+    local sections = useNameListSections and GetRaidDisplaySections() or nil
+    local groupLimit = _state.GetRaidGroupLimit(layout)
 
     for g, header in ipairs(QUI_GF.raidGroupHeaders) do
         local section = sections and sections[g] or nil
@@ -3314,7 +3380,7 @@ local function ConfigureRaidGroupHeaders()
                 header:SetAttribute("groupBy", nil)
                 header:SetAttribute("groupFilter", nil)
                 header:SetAttribute("groupingOrder", nil)
-            elseif raidSelfFirst then
+            elseif useNameListSections then
                 header:SetAttribute("maxColumns", 1)
                 header:SetAttribute("unitsPerColumn", 1)
                 header:SetAttribute("groupBy", nil)
@@ -3325,7 +3391,7 @@ local function ConfigureRaidGroupHeaders()
             else
                 header:SetAttribute("maxColumns", 1)
                 header:SetAttribute("unitsPerColumn", 5)
-                if g <= 8 then
+                if g <= groupLimit then
                     header:SetAttribute("groupBy", "GROUP")
                     header:SetAttribute("groupFilter", tostring(g))
                     header:SetAttribute("groupingOrder", tostring(g))
@@ -3816,10 +3882,11 @@ end
 -- HEADER: Helper to determine which raid groups (1-8) have at least one member
 ---------------------------------------------------------------------------
 local function GetPopulatedRaidGroups()
+    local layout = GetLayoutSettings(true)
     local populated = {}
     for i = 1, GetNumGroupMembers() do
         local _, _, subgroup = GetRaidRosterInfo(i)
-        if subgroup then
+        if subgroup and _state.IsRaidSubgroupAllowed(subgroup, layout) then
             populated[subgroup] = true
         end
     end
@@ -3877,7 +3944,7 @@ GetRaidDisplaySections = function()
     for i = 1, GetNumGroupMembers() do
         local unit = "raid" .. i
         local name, _, subgroup = GetRaidRosterInfo(i)
-        if name then
+        if name and _state.IsRaidSubgroupAllowed(subgroup, layout) then
             local _, classFile = UnitClass(unit)
             local role = NormalizeRaidRole(UnitGroupRolesAssigned(unit))
             local sectionKey, sectionOrder
@@ -4009,7 +4076,7 @@ local function UpdateHeaderSizes()
         local mode = GetGroupMode()
         local raidVdb = db.raid or db
         local layout = raidVdb and raidVdb.layout
-        local sections = GetRaidSelfFirst(db) and GetRaidDisplaySections() or nil
+        local sections = _state.UseRaidNameListSections(db, layout) and GetRaidDisplaySections() or nil
         local populated = sections and nil or GetPopulatedRaidGroups()
 
         for g, header in ipairs(QUI_GF.raidGroupHeaders) do
@@ -4080,12 +4147,13 @@ local function ShowRaidGroupHeaders()
     if QUI_GF.headers.raid then QUI_GF.headers.raid:Hide() end
 
     local db = GetSettings()
-    local raidSelfFirst = GetRaidSelfFirst(db)
+    local layout = GetLayoutSettings(true)
+    local useNameListSections = _state.UseRaidNameListSections(db, layout)
     local sections = ConfigureRaidGroupHeaders()
-    local populated = raidSelfFirst and nil or GetPopulatedRaidGroups()
+    local populated = useNameListSections and nil or GetPopulatedRaidGroups()
 
     for g, header in ipairs(QUI_GF.raidGroupHeaders) do
-        if raidSelfFirst then
+        if useNameListSections then
             if sections and sections[g] then
                 header:Show()
             else
@@ -4108,8 +4176,27 @@ local function HideRaidGroupHeaders()
     end
 end
 
+_state.EnsureCombatVisibleRoots = function()
+    local layoutMode = ns.QUI_LayoutMode
+    local hidden = layoutMode and layoutMode._gameplayHidden
+    local partyRoot = QUI_GF.anchorFrames and QUI_GF.anchorFrames.party
+    if partyRoot and not (hidden and hidden.partyFrames) then
+        partyRoot:SetAlpha(1)
+    end
+
+    local raidRoot = QUI_GF.anchorFrames and QUI_GF.anchorFrames.raid
+    if raidRoot and not (hidden and hidden.raidFrames) then
+        raidRoot:SetAlpha(1)
+    end
+
+    if QUI_GF.spotlightContainer and not (hidden and hidden.spotlightFrames) then
+        QUI_GF.spotlightContainer:SetAlpha(1)
+    end
+end
+
 local function UpdateHeaderVisibility()
     if InCombatLockdown() and not _state.inInitSafeWindow then
+        _state.EnsureCombatVisibleRoots()
         _pending.visibilityUpdate = true
         return
     end
@@ -4963,6 +5050,7 @@ local function OnEvent(self, event, arg1, ...)
         -- Combat started: clear range cache so stale OOC values
         -- (CheckInteractDistance) don't persist into combat where
         -- that API is unavailable.
+        _state.EnsureCombatVisibleRoots()
         wipe(_range.cache)
         wipe(_range.cacheTime)
 

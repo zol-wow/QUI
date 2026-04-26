@@ -4438,6 +4438,7 @@ local function CreateCDMSetupPage(parent)
             bloodRunes = { 0.77, 0.12, 0.23, 1 },
             frostRunes = { 0.00, 0.82, 1.00, 1 },
             unholyRunes = { 0.00, 0.80, 0.00, 1 },
+            renewingMistCharges = { 0.30, 1.00, 0.72, 1 },
         }
 
         -- Initialize defaults if missing
@@ -4693,6 +4694,13 @@ local function CreateCDMSetupPage(parent)
         tipOfTheSpearColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
         tipOfTheSpearColor.dbKey = "tipOfTheSpear"
         table.insert(powerColorWidgets, tipOfTheSpearColor)
+        y = y - FORM_ROW
+
+        local renewingMistColor = GUI:CreateFormColorPicker(tabContent, "Renewing Mist (Mistweaver Monk)", "renewingMistCharges", pc, RefreshPowerBars)
+        renewingMistColor:SetPoint("TOPLEFT", PAD, y)
+        renewingMistColor:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        renewingMistColor.dbKey = "renewingMistCharges"
+        table.insert(powerColorWidgets, renewingMistColor)
         y = y - FORM_ROW
 
         local runesColor = GUI:CreateFormColorPicker(tabContent, "Runes (Generic)", "runes", pc, RefreshPowerBars)

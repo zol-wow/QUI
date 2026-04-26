@@ -230,6 +230,19 @@ local function GetEntryName(entry)
     return "Unknown"
 end
 
+-- True if the entry is castable / usable by the player currently logged in.
+-- Items, slots, macros are always considered "usable" here — the cross-class
+-- mismatch concept only applies to spells. Non-spell types fall back to the
+-- runtime hideNonUsable filter for their own usability rules.
+local function IsEntryUsableOnCurrentPlayer(entry)
+    if type(entry) ~= "table" then return true end
+    if entry.type ~= "spell" then return true end
+    if type(entry.id) ~= "number" then return true end
+    if IsPlayerSpell and IsPlayerSpell(entry.id) then return true end
+    if IsSpellKnownOrOverridesKnown and IsSpellKnownOrOverridesKnown(entry.id) then return true end
+    return false
+end
+
 ---------------------------------------------------------------------------
 -- FRAME FACTORY HELPERS
 ---------------------------------------------------------------------------
@@ -1236,6 +1249,9 @@ local function GetOrCreateEntryCell(index)
             GameTooltip:AddLine("Not Learned (Dormant)", 0.9, 0.6, 0.2)
             GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
         else
+            if self._isUnknownToPlayer then
+                GameTooltip:AddLine("Not usable on your current class", 0.95, 0.5, 0.5)
+            end
             GameTooltip:AddLine("Drag to reorder or move between rows", 0.5, 0.5, 0.5)
             GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
         end
@@ -1848,11 +1864,12 @@ RefreshEntryList = function()
         cell._entryIndex = idx
         cell._rowNum = rowNum or nil
         cell._isDormant = false
+        cell._isUnknownToPlayer = not IsEntryUsableOnCurrentPlayer(entry)
 
         cell._icon:SetTexture(GetEntryIcon(entry))
-        cell._icon:SetDesaturated(false)
+        cell._icon:SetDesaturated(cell._isUnknownToPlayer)
         cell._icon:Show()
-        cell:SetAlpha(1)
+        cell:SetAlpha(cell._isUnknownToPlayer and 0.6 or 1)
 
         -- Wire drag
         cell:SetScript("OnDragStart", function()

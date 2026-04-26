@@ -87,6 +87,26 @@ local function RefreshCachedColors()
 end
 GUI.RefreshCachedColors = RefreshCachedColors
 
+local function RaiseColorPickerFrame()
+    if not ColorPickerFrame then return end
+    ColorPickerFrame:SetParent(UIParent)
+    ColorPickerFrame:SetFrameStrata("TOOLTIP")
+    ColorPickerFrame:SetFrameLevel(900)
+    ColorPickerFrame:SetToplevel(true)
+    ColorPickerFrame:Raise()
+end
+
+function GUI:ShowColorPicker(info)
+    if not ColorPickerFrame or not ColorPickerFrame.SetupColorPickerAndShow then return end
+    ColorPickerFrame:SetupColorPickerAndShow(info)
+    RaiseColorPickerFrame()
+
+    -- Some client builds adjust picker strata during Show; re-raise after that.
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, RaiseColorPickerFrame)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- ACCENT COLOR - Derive theme colors from a base accent color
 ---------------------------------------------------------------------------
@@ -1719,7 +1739,7 @@ function GUI:CreateColorPicker(parent, label, dbKey, dbTable, onChange)
             end,
         }
         
-        ColorPickerFrame:SetupColorPickerAndShow(info)
+        GUI:ShowColorPicker(info)
     end)
     
     -- Hover effect
@@ -2255,7 +2275,7 @@ function GUI:CreateColorPickerCentered(parent, label, dbKey, dbTable, onChange)
                 SetColor(prev.r, prev.g, prev.b, originalA)
             end,
         }
-        ColorPickerFrame:SetupColorPickerAndShow(info)
+        GUI:ShowColorPicker(info)
     end)
     
     swatch:SetScript("OnEnter", function(self)
@@ -5028,7 +5048,7 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
     swatch:SetScript("OnClick", function()
         local currentR, currentG, currentB, currentA = GetColor()
         local originalA = currentA
-        ColorPickerFrame:SetupColorPickerAndShow({
+        GUI:ShowColorPicker({
             r = currentR, g = currentG, b = currentB, opacity = currentA,
             hasOpacity = not noAlpha,
             swatchFunc = function()
@@ -6619,7 +6639,7 @@ function GUI:CreateMainFrame()
                         end
                     end)
                     pickerWatcher:Show()
-                    ColorPickerFrame:SetupColorPickerAndShow({
+                    GUI:ShowColorPicker({
                         r = cur[1], g = cur[2], b = cur[3], opacity = 1,
                         hasOpacity = false,
                         swatchFunc = function()
@@ -6688,7 +6708,7 @@ function GUI:CreateMainFrame()
             end
         end)
         pickerWatcher:Show()
-        ColorPickerFrame:SetupColorPickerAndShow({
+        GUI:ShowColorPicker({
             r = cur[1], g = cur[2], b = cur[3], opacity = 1,
             hasOpacity = false,
             swatchFunc = function()
