@@ -1591,11 +1591,9 @@ function CDMBars:LayoutBars(container, settings)
         else
             w, h = barWidth, barHeight
         end
-        if not InCombatLockdown() then
-            container:SetSize(w, h)
-            if _G.QUI_SetCDMViewerBounds then
-                _G.QUI_SetCDMViewerBounds(container, w, h)
-            end
+        pcall(container.SetSize, container, w, h)
+        if _G.QUI_SetCDMViewerBounds then
+            _G.QUI_SetCDMViewerBounds(container, w, h)
         end
         return
     end
@@ -1789,14 +1787,14 @@ function CDMBars:LayoutBars(container, settings)
     local lastW = container._lastBarLayoutW
     local lastH = container._lastBarLayoutH
     if lastW ~= totalW or lastH ~= totalH then
-        if not InCombatLockdown() then
-            container._lastBarLayoutW = totalW
-            container._lastBarLayoutH = totalH
-            container:SetSize(totalW, totalH)
-            -- Write calculated dimensions to viewer state for proxy sizing
-            if _G.QUI_SetCDMViewerBounds then
-                _G.QUI_SetCDMViewerBounds(container, totalW, totalH)
-            end
+        -- Must run in combat too: a bar going active mid-combat would
+        -- otherwise leave the container frozen at the previous height,
+        -- so frames anchored to its growth edge stop tracking.
+        container._lastBarLayoutW = totalW
+        container._lastBarLayoutH = totalH
+        pcall(container.SetSize, container, totalW, totalH)
+        if _G.QUI_SetCDMViewerBounds then
+            _G.QUI_SetCDMViewerBounds(container, totalW, totalH)
         end
     end
 end
