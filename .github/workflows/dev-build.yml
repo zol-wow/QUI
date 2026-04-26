@@ -1,0 +1,72 @@
+name: Dev Build
+
+on:
+  push:
+    branches:
+      - 'main'
+      - 'feature/*'
+      - 'bugfix/*'
+
+jobs:
+  dev-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get branch info
+        id: info
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          SAFE_BRANCH=$(echo "$BRANCH" | sed 's/[^a-zA-Z0-9._-]/-/g')
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "filename=QUI-${SAFE_BRANCH}-${SHORT_SHA}.zip" >> $GITHUB_OUTPUT
+
+      - name: Create addon zip
+        run: |
+          mkdir -p build/QUI
+
+          rsync -av --progress . build/QUI/ \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.gitignore' \
+            --exclude='.claude' \
+            --exclude='build'
+
+          cp README.md build/QUI/ 2>/dev/null || true
+          cp CHANGELOG.md build/QUI/ 2>/dev/null || true
+          cp LICENSE build/QUI/ 2>/dev/null || true
+
+          cd build
+          zip -r ../${{ steps.info.outputs.filename }} QUI
+
+      - name: Post to Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_DEV_WEBHOOK_URL }}
+          BRANCH: ${{ steps.info.outputs.branch }}
+          SHORT_SHA: ${{ steps.info.outputs.short_sha }}
+          FILENAME: ${{ steps.info.outputs.filename }}
+          REPO: ${{ github.repository }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          COMMIT_URL="https://github.com/$REPO/commit/$GITHUB_SHA"
+
+          # Truncate commit message to first line
+          FIRST_LINE=$(echo "$COMMIT_MSG" | head -n1)
+
+          PAYLOAD=$(jq -n \
+            --arg branch "$BRANCH" \
+            --arg sha "$SHORT_SHA" \
+            --arg url "$COMMIT_URL" \
+            --arg msg "$FIRST_LINE" \
+            '{
+              content: "🔧 **Dev Build** — `\($branch)` @ [`\($sha)`](\($url))\n> \($msg)"
+            }')
+
+          echo "$PAYLOAD" > payload.json
+          curl --fail-with-body \
+            -F "payload_json=<payload.json" \
+            -F "file1=@$FILENAME" \
+            "$DISCORD_WEBHOOK"
