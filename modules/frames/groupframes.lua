@@ -1741,7 +1741,7 @@ local function UpdateDispelOverlay(frame)
         local GFPA = ns.QUI_GroupFramePrivateAuras
         if GFPA and GFPA.RefreshPrivateDispelState then
             local privateState = GFPA:RefreshPrivateDispelState(unit)
-            if privateState and privateState.auraInstanceID then
+            if privateState and (privateState.auraInstanceID or privateState.slot) then
                 hasDispellable = true
                 fromPrivateSlots = true
                 firstDispellableInstID = privateState.auraInstanceID

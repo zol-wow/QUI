@@ -99,10 +99,27 @@ local function ExtractFirstAuraSlot(...)
     return nil
 end
 
+local function SetPrivateDispelState(unit, auraInstanceID, slot, slotOnly)
+    local state = unitPrivateDispelState[unit]
+    if state then
+        state.auraInstanceID = auraInstanceID
+        state.slot = slot
+        state.slotOnly = slotOnly == true
+    else
+        state = {
+            auraInstanceID = auraInstanceID,
+            slot = slot,
+            slotOnly = slotOnly == true,
+        }
+        unitPrivateDispelState[unit] = state
+    end
+    return state
+end
+
 local function RefreshPrivateDispelState(unit)
     if not unit then return nil end
 
-    if not GetAuraSlots or not GetAuraDataBySlot or not UnitExists(unit) then
+    if not GetAuraSlots or not UnitExists(unit) then
         unitPrivateDispelState[unit] = nil
         return nil
     end
@@ -119,26 +136,20 @@ local function RefreshPrivateDispelState(unit)
         return nil
     end
 
-    local auraOk, auraData = pcall(GetAuraDataBySlot, unit, firstSlot)
-    if not auraOk or not auraData then
-        unitPrivateDispelState[unit] = nil
-        return nil
+    if not GetAuraDataBySlot then
+        return SetPrivateDispelState(unit, nil, firstSlot, true)
     end
 
-    -- Reuse existing state table when present; UNIT_AURA fires per unit up
-    -- to 40 times in a raid (~40-80 allocations/sec otherwise).
-    local state = unitPrivateDispelState[unit]
-    if state then
-        state.auraInstanceID = auraData.auraInstanceID
-        state.slot = firstSlot
-    else
-        state = {
-            auraInstanceID = auraData.auraInstanceID,
-            slot = firstSlot,
-        }
-        unitPrivateDispelState[unit] = state
+    local auraOk, auraData = pcall(GetAuraDataBySlot, unit, firstSlot)
+    if not auraOk or not auraData then
+        -- DandersFrames' latest private-dispel path relies on GetAuraSlots
+        -- alone: private auras can be player-dispellable but still hide their
+        -- normal auraData.  Keep a slot-only hit so the group-frame dispel
+        -- overlay can fall back to Magic coloring instead of dropping it.
+        return SetPrivateDispelState(unit, nil, firstSlot, true)
     end
-    return state
+
+    return SetPrivateDispelState(unit, auraData.auraInstanceID, firstSlot, false)
 end
 
 local function RefreshAllPrivateDispelState()
