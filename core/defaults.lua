@@ -2740,6 +2740,7 @@ local defaults = {
                     sortMethod = "INDEX",
                     sortByRole = true,
                     groupBy = "GROUP",
+                    limitGroupsByRaidSize = false,
                     unitsPerFlat = 5,
                 },
                 health = {

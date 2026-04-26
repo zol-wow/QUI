@@ -235,6 +235,11 @@ local function BuildFrameSettings(content, contextMode, sections, relayout)
             sy = P(GUI:CreateFormDropdown(body, "Sort Method", SORT_OPTIONS, "sortMethod", layout, onChange), body, sy)
             sy = P(GUI:CreateFormCheckbox(body, "Always Show Self First", "raidSelfFirst", gfdb, onChange), body, sy)
             sy = P(GUI:CreateFormCheckbox(body, "Sort by Role (Tank > Healer > DPS)", "sortByRole", layout, onChange), body, sy)
+            local limitGroupsCheck = GUI:CreateFormCheckbox(body, "Limit Mythic/Flex Raid Groups (1-4 / 1-6)", "limitGroupsByRaidSize", layout, onChange)
+            if GUI.SetWidgetProviderSyncOptions then
+                GUI:SetWidgetProviderSyncOptions(limitGroupsCheck, { auto = true, structural = true })
+            end
+            sy = P(limitGroupsCheck, body, sy)
         end
 
         local totalHeight = math.abs(sy) + 4
