@@ -703,6 +703,137 @@ local function ResolveEffectsContext(containerKey)
     }
 end
 
+----------------------------------------------------------------------------
+-- Legacy tracker recovery banner — shown above the Entries composer when
+-- LegacyResolver flags this container with unresolved proposals or a spec
+-- mismatch. Self-contained: pulls state from ns.LegacyResolver, calls back
+-- into resolver actions on button click. After an action it hides itself
+-- and refreshes the live container; the panel re-renders state on next
+-- visit. Returns (frame, height) — height is 0 when no banner needed.
+----------------------------------------------------------------------------
+local function BuildLegacyRecoveryBanner(parent, containerKey)
+    local resolver = ns.LegacyResolver
+    if not resolver or type(resolver.GetRecoveryStateForContainer) ~= "function" then
+        return nil, 0
+    end
+    local state = resolver:GetRecoveryStateForContainer(containerKey)
+    if not state then return nil, 0 end
+
+    local gui = GetGUI()
+    if not gui then return nil, 0 end
+
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+    frame:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, 0)
+
+    local bg = frame:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(frame)
+    if state.kind == "needs-review" then
+        bg:SetColorTexture(0.20, 0.13, 0.04, 0.85)
+    else
+        bg:SetColorTexture(0.06, 0.10, 0.16, 0.85)
+    end
+
+    local UIKit = ns.UIKit
+    if UIKit and UIKit.CreateBorderLines then
+        UIKit.CreateBorderLines(frame)
+        if UIKit.UpdateBorderLines then
+            if state.kind == "needs-review" then
+                UIKit.UpdateBorderLines(frame, 1, 0.95, 0.65, 0.20, 0.6)
+            else
+                UIKit.UpdateBorderLines(frame, 1, 0.40, 0.65, 0.95, 0.4)
+            end
+        end
+    end
+
+    local sourceLabel = resolver:GetSpecLabel(state.sourceSpecID)
+    local titleText, bodyText
+    if state.kind == "needs-review" then
+        local s = state.stats or {}
+        local needs = (s.ambiguous or 0) + (s.noMatch or 0)
+        titleText = ("%d entry(ies) need attention"):format(needs)
+        bodyText = ("Imported from %s. Some entries couldn't be matched automatically."):format(sourceLabel)
+    else
+        titleText = ("Imported from %s"):format(sourceLabel)
+        bodyText = "Switch to that spec to recover entries automatically, or remove this bar if you no longer need it."
+    end
+
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOPLEFT", 12, -10)
+    title:SetText(titleText)
+    title:SetTextColor(1, 0.85, 0.55, 1)
+
+    local body = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    body:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
+    body:SetPoint("RIGHT", frame, "RIGHT", -12, 0)
+    body:SetJustifyH("LEFT")
+    body:SetText(bodyText)
+
+    local function HideAndRefresh()
+        frame:Hide()
+        frame:ClearAllPoints()
+        RefreshContainer(containerKey)
+    end
+
+    local buttons = {}
+    local function AddButton(text, variant, onClick)
+        local btn = gui:CreateButton(frame, text, 0, 22, onClick, variant or "ghost")
+        buttons[#buttons + 1] = btn
+        return btn
+    end
+
+    AddButton("Delete bar", "ghost", function()
+        if resolver.DeleteContainerAndLegacy then
+            resolver:DeleteContainerAndLegacy(containerKey)
+        end
+        HideAndRefresh()
+    end)
+
+    AddButton("Remove broken entries", "ghost", function()
+        if resolver.RemoveInvalidSpellEntriesForContainer then
+            resolver:RemoveInvalidSpellEntriesForContainer(containerKey)
+        elseif resolver.RemoveBrokenEntriesForContainer then
+            resolver:RemoveBrokenEntriesForContainer(containerKey)
+        end
+        HideAndRefresh()
+    end)
+
+    if state.kind == "needs-review" then
+        local stats = state.stats or {}
+        if (stats.ambiguous or 0) > 0 and resolver.AcceptProposalsForContainer then
+            AddButton("Apply best guess", "primary", function()
+                resolver:AcceptProposalsForContainer(containerKey, { includeAmbiguous = true })
+                HideAndRefresh()
+            end)
+        end
+    else
+        AddButton("Dismiss", "ghost", function()
+            if resolver.DismissContainer then resolver:DismissContainer(containerKey) end
+            HideAndRefresh()
+        end)
+    end
+
+    -- Right-align buttons in a row below the body text.
+    local btnRowTop = body
+    if #buttons > 0 then
+        local x = -12
+        for i = #buttons, 1, -1 do
+            local b = buttons[i]
+            local w = (b.text and b.text.GetStringWidth and b.text:GetStringWidth() or 60) + 24
+            b:SetWidth(math.max(w, 80))
+            b:ClearAllPoints()
+            b:SetPoint("TOPRIGHT", btnRowTop, "BOTTOMRIGHT", x, -8)
+            x = x - (b:GetWidth() + 6)
+        end
+    end
+
+    local bodyHeight = body:GetStringHeight() or 14
+    local btnHeight = (#buttons > 0) and 30 or 0
+    local total = 12 + (title:GetStringHeight() or 12) + 4 + bodyHeight + btnHeight + 10
+    frame:SetHeight(total)
+    return frame, total
+end
+
 local function RenderEntriesSection(sectionHost, ctx)
     local containerKey = ResolveContainerKey(ctx)
     SetSearchContext("entries")
@@ -714,19 +845,30 @@ local function RenderEntriesSection(sectionHost, ctx)
         return RenderUnavailableLabel(sectionHost, "CDM Composer unavailable (module not loaded).")
     end
 
+    local _, bannerHeight = BuildLegacyRecoveryBanner(sectionHost, containerKey)
+    bannerHeight = bannerHeight or 0
+    local composerTopOffset = (bannerHeight > 0) and -(bannerHeight + 8) or 0
+
     if FullSurface and type(FullSurface.RenderEmbeddedEditor) == "function" then
-        local height = FullSurface.RenderEmbeddedEditor(sectionHost, {
-            host = sectionHost,
+        local opts = {
             minHeight = 160,
+            topOffset = composerTopOffset,
             beforeRender = function(host)
                 host._hideComposerNav = true
             end,
             render = function(host)
                 _G.QUI_EmbedCDMComposer(host, containerKey)
             end,
-        })
+        }
+        -- When no banner, keep the legacy behaviour of rendering directly
+        -- into sectionHost (avoids creating an unnecessary wrapper frame).
+        if bannerHeight <= 0 then
+            opts.host = sectionHost
+        end
+        local height = FullSurface.RenderEmbeddedEditor(sectionHost, opts)
         if type(height) == "number" and height > 0 then
-            return math.max(height, 160)
+            local total = height + (bannerHeight > 0 and (bannerHeight + 8) or 0)
+            return math.max(total, 160)
         end
     end
 

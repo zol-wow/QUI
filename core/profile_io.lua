@@ -1542,11 +1542,51 @@ local function ExportSelectedCustomTrackerBars(targetProfile, sourceProfile, bar
     return exportedAny
 end
 
+-- Tracker bar entries with specSpecificSpells live in db.global, not
+-- db.profile, so a profile-scoped export drops them. We bundle the
+-- relevant subtrees under a top-level key on the payload, then unpack
+-- them into db.global on import. Self-contained — no schema knowledge
+-- needed beyond "these specific tables hold tracker spell entries".
+local PROFILE_EXPORT_GLOBALS_KEY = "_quiBundledGlobals"
+
+local function CollectExportGlobals(globals)
+    if type(globals) ~= "table" then return nil end
+    local bundle = nil
+    if type(globals.specTrackerSpells) == "table" and next(globals.specTrackerSpells) then
+        bundle = bundle or {}
+        bundle.specTrackerSpells = globals.specTrackerSpells
+    end
+    if type(globals.ncdm) == "table"
+       and type(globals.ncdm.specTrackerSpells) == "table"
+       and next(globals.ncdm.specTrackerSpells)
+    then
+        bundle = bundle or {}
+        bundle.ncdm_specTrackerSpells = globals.ncdm.specTrackerSpells
+    end
+    return bundle
+end
+
+local function ApplyImportedGlobals(core, bundle)
+    if type(bundle) ~= "table" then return end
+    local globals = core and core.db and core.db.global
+    if type(globals) ~= "table" then return end
+
+    if type(bundle.specTrackerSpells) == "table" then
+        globals.specTrackerSpells = CloneValue(bundle.specTrackerSpells)
+    end
+    if type(bundle.ncdm_specTrackerSpells) == "table" then
+        if type(globals.ncdm) ~= "table" then globals.ncdm = {} end
+        globals.ncdm.specTrackerSpells = CloneValue(bundle.ncdm_specTrackerSpells)
+    end
+end
+
 local function ApplyFullProfilePayload(core, importedProfile)
     local profile = core and core.db and core.db.profile
     if type(profile) ~= "table" or type(importedProfile) ~= "table" then
         return false, "No profile loaded."
     end
+
+    local bundledGlobals = importedProfile[PROFILE_EXPORT_GLOBALS_KEY]
 
     for key in pairs(profile) do
         profile[key] = nil
@@ -1556,10 +1596,12 @@ local function ApplyFullProfilePayload(core, importedProfile)
         -- It refers to the source user's profile state and is meaningless
         -- here. A fresh backup will be created by the migration pipeline
         -- below if the imported data actually needs migrating.
-        if key ~= "_migrationBackup" then
+        if key ~= "_migrationBackup" and key ~= PROFILE_EXPORT_GLOBALS_KEY then
             profile[key] = CloneValue(value)
         end
     end
+
+    ApplyImportedGlobals(core, bundledGlobals)
 
     local pins = ns.Settings and ns.Settings.Pins
     if pins and type(pins.HandleFullImportSnapshot) == "function" then
@@ -1818,6 +1860,11 @@ function QUICore:ExportProfileToString()
         if k ~= "_migrationBackup" then
             payload[k] = v
         end
+    end
+
+    local bundle = CollectExportGlobals(self.db.global)
+    if bundle then
+        payload[PROFILE_EXPORT_GLOBALS_KEY] = bundle
     end
 
     local exportString, exportErr = SerializeProfileExportPayload(payload)

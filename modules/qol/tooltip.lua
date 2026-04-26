@@ -257,6 +257,9 @@ if not TooltipDebug then
         AppendCounter(parts, "skin.refitTinyOverflow", "refitTiny")
         AppendCounter(parts, "skin.refitVisibleExtend", "refitBIG")
         AppendCounter(parts, "skin.refitNoExtents", "refitNoExt")
+        AppendCounter(parts, "skin.refitOwnerReset", "refitReset")
+        AppendCounter(parts, "skin.refitMonotonicY", "monoY")
+        AppendCounter(parts, "skin.refitMonotonicX", "monoX")
 
         print(string.format(
             "|cff60A5FA[tooltipdebug]|r %.1fs heap %s (delta %s, %.1f KB/s) QUI %s%s | %s%s",
@@ -1067,7 +1070,7 @@ local function EnsureTooltipUnitInfoState(tooltip, guid)
     if not state or state.guid ~= guid then
         state = {
             guid = guid,
-            lastTargetName = nil,
+            targetAdded = false,
             mountResolved = false,
             mountName = nil,
             mountNextAuraIndex = 1,
@@ -1094,7 +1097,7 @@ local function ResolveTooltipTargetInfo(unit)
     end
     local targetUnit = unit .. "target"
     local ok, exists = pcall(UnitExists, targetUnit)
-    if not ok or not exists then
+    if not ok or not exists or Helpers.IsSecretValue(exists) then
         return {
             name = "Unknown",
             valueR = 1,
@@ -1104,14 +1107,13 @@ local function ResolveTooltipTargetInfo(unit)
     end
 
     local okName, targetName = pcall(UnitName, targetUnit)
-    if not okName or not targetName then
+    if not okName or not targetName or Helpers.IsSecretValue(targetName) then
         targetName = "Unknown"
     end
 
-    -- Get target's class for color
     local okClass, _, classToken = pcall(UnitClass, targetUnit)
     local valueR, valueG, valueB = 1, 1, 1
-    if okClass and classToken then
+    if okClass and classToken and not Helpers.IsSecretValue(classToken) then
         valueR, valueG, valueB = GetPlayerClassColor(classToken)
     end
 
@@ -1126,19 +1128,19 @@ end
 local function AddTooltipTargetInfo(tooltip, unit, state)
     if not tooltip or not unit or not state then return false end
 
+    -- Add the Target line once per tooltip state cycle. State resets when the
+    -- mouseover GUID changes (via EnsureTooltipUnitInfoState), so a fresh hover
+    -- always re-adds. Comparing names is unsafe because UnitName on a tainted
+    -- target unit can return a secret string that taints == comparison even
+    -- when forwarded through C-side AddDoubleLine cleanly.
+    if state.targetAdded then return false end
+
     local targetInfo = ResolveTooltipTargetInfo(unit)
     if not targetInfo then return false end
 
-    -- Dedupe by name: skip if the same target name was already appended
-    -- to this tooltip's state. Blizzard's tooltip API has no way to remove
-    -- or edit lines, so re-adding on every aura/target tick stacks visibly.
-    -- Re-adding only on actual change limits worst case to one duplicate
-    -- per real target swap (acceptable; better than the indefinite stack).
-    if state.lastTargetName == targetInfo.name then return false end
-
     EnsureTooltipInfoSpacer(tooltip, state)
     tooltip:AddDoubleLine("Target:", targetInfo.name, 0.7, 0.82, 1, targetInfo.valueR, targetInfo.valueG, targetInfo.valueB)
-    state.lastTargetName = targetInfo.name
+    state.targetAdded = true
     TooltipDebugCount("qol.targetAdded")
     return true
 end

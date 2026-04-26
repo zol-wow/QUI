@@ -127,6 +127,13 @@ function QUI:SlashCommandOpen(input)
             print("|cff60A5FAQUI:|r CDM Spell Composer not available. Enable CDM first.")
         end
         return
+    elseif input and input:match("^legacyrecover") then
+        if not _G.QUI_LegacyRecoverHandle then
+            print("|cff60A5FAQUI:|r Legacy tracker resolver not loaded.")
+            return
+        end
+        _G.QUI_LegacyRecoverHandle(input:match("^legacyrecover%s*(.*)$") or "")
+        return
     elseif input and input:match("^gse") then
         -- /qui gse          → dump current override state
         -- /qui gse debug    → toggle click-event logging

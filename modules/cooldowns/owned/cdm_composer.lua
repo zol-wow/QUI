@@ -257,6 +257,19 @@ local function GetEntryName(entry)
     return "Unknown"
 end
 
+-- True if the entry is castable / usable by the player currently logged in.
+-- Items, slots, macros are always considered "usable" here — the cross-class
+-- mismatch concept only applies to spells. Non-spell types fall back to the
+-- runtime hideNonUsable filter for their own usability rules.
+local function IsEntryUsableOnCurrentPlayer(entry)
+    if type(entry) ~= "table" then return true end
+    if entry.type ~= "spell" then return true end
+    if type(entry.id) ~= "number" then return true end
+    if IsPlayerSpell and IsPlayerSpell(entry.id) then return true end
+    if IsSpellKnownOrOverridesKnown and IsSpellKnownOrOverridesKnown(entry.id) then return true end
+    return false
+end
+
 ---------------------------------------------------------------------------
 -- FRAME FACTORY HELPERS
 ---------------------------------------------------------------------------
@@ -1343,6 +1356,24 @@ local function GetOrCreateEntryCell(index)
             GameTooltip:AddLine("Not Learned (Dormant)", 0.9, 0.6, 0.2)
             GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
         else
+            if self._isUnknownToPlayer then
+                GameTooltip:AddLine("Not usable on your current class", 0.95, 0.5, 0.5)
+            end
+            -- Source-spec attribution: read from explicit _sourceSpecID
+            -- (set by the v32 migration on each migrated entry) or fall
+            -- back to the per-spec storage key the aggregated reader
+            -- attached at render time.
+            local entry = self._entry
+            local srcSpec = type(entry) == "table"
+                and (entry._sourceSpecID or tonumber(entry._renderSpecKey))
+                or nil
+            if type(srcSpec) == "number" and GetSpecializationInfoByID then
+                local _, specName, _, _, _, classToken = GetSpecializationInfoByID(srcSpec)
+                if specName then
+                    local label = classToken and ("%s %s"):format(specName, classToken) or specName
+                    GameTooltip:AddLine(("Source: %s"):format(label), 0.6, 0.85, 1)
+                end
+            end
             GameTooltip:AddLine("Drag to reorder or move between rows", 0.5, 0.5, 0.5)
             GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
         end
@@ -1878,7 +1909,45 @@ RefreshEntryList = function()
     local isCustomBar = (db.containerType == "customBar")
 
     local entries
-    if isCustomBar then
+    -- Aggregated view for spec-specific customBar containers: pull entries
+    -- from every spec's list in db.global.ncdm.specTrackerSpells[key] so
+    -- the user can see (and right-click → Remove) entries from any spec
+    -- regardless of which spec they're currently on. Each entry carries
+    -- a render-time _renderSpecKey that the right-click menu and tooltip
+    -- read; the entry itself stays in its per-spec list (so removes hit
+    -- the correct list).
+    if isCustomBar and db.specSpecific then
+        entries = {}
+        local globalDB = ns.Addon and ns.Addon.db and ns.Addon.db.global
+        local byContainer = globalDB and globalDB.ncdm
+            and globalDB.ncdm.specTrackerSpells
+            and globalDB.ncdm.specTrackerSpells[activeContainer]
+        if type(byContainer) == "table" then
+            local specKeys = {}
+            for k in pairs(byContainer) do specKeys[#specKeys + 1] = k end
+            table.sort(specKeys)
+            for _, specKey in ipairs(specKeys) do
+                local list = byContainer[specKey]
+                if type(list) == "table" then
+                    for _, entry in ipairs(list) do
+                        if type(entry) == "table" then
+                            entry._renderSpecKey = specKey
+                            entries[#entries + 1] = entry
+                        end
+                    end
+                end
+            end
+        end
+        -- Also surface any unmigrated entries still sitting in db.entries
+        -- (defensive — should be empty after v32 migration).
+        if type(db.entries) == "table" then
+            for _, entry in ipairs(db.entries) do
+                if type(entry) == "table" then
+                    entries[#entries + 1] = entry
+                end
+            end
+        end
+    elseif isCustomBar then
         entries = db.entries
     else
         entries = db.ownedSpells
@@ -1975,11 +2044,12 @@ RefreshEntryList = function()
         cell._entryIndex = idx
         cell._rowNum = rowNum or nil
         cell._isDormant = false
+        cell._isUnknownToPlayer = not IsEntryUsableOnCurrentPlayer(entry)
 
         cell._icon:SetTexture(GetEntryIcon(entry))
-        cell._icon:SetDesaturated(false)
+        cell._icon:SetDesaturated(cell._isUnknownToPlayer)
         cell._icon:Show()
-        cell:SetAlpha(1)
+        cell:SetAlpha(cell._isUnknownToPlayer and 0.6 or 1)
 
         -- Wire drag
         cell:SetScript("OnDragStart", function()

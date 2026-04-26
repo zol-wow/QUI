@@ -161,7 +161,7 @@ local function AcquireNameplateFrame()
     text:SetJustifyH("LEFT")
     text:SetJustifyV("MIDDLE")
     text:SetWordWrap(false)
-    text:SetText("")
+    text:SetFont(Helpers.GetGeneralFont(), 12, Helpers.GetGeneralFontOutline())
     frame.text = text
 
     return frame

@@ -11,4 +11,5 @@
     <Script file="glows.lua"/>
     <Script file="swipe.lua"/>
     <Script file="highlighter.lua"/>
+    <Script file="legacy_resolver.lua"/>
 </Ui>

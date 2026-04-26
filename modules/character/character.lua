@@ -260,7 +260,6 @@ end
 ---------------------------------------------------------------------------
 -- Shared styling helpers (character panel widgets)
 ---------------------------------------------------------------------------
-local styledScrollBars = Helpers.CreateStateTable()
 local styledCloseButtons = Helpers.CreateStateTable()
 local closeButtonBorders = Helpers.CreateStateTable()
 local closeButtonLabels = Helpers.CreateStateTable()
@@ -305,40 +304,6 @@ local function GetCharacterAccentColor()
         end
     end
     return C.accent[1], C.accent[2], C.accent[3], 1
-end
-
-local function ApplyScrollBarSkin(scrollBar)
-    if not scrollBar then return end
-    local ar, ag, ab = GetCharacterAccentColor()
-
-    if scrollBar.Track then scrollBar.Track:SetAlpha(0) end
-    if scrollBar.Background then scrollBar.Background:SetAlpha(0) end
-
-    local thumb = scrollBar.ThumbTexture or (scrollBar.GetThumbTexture and scrollBar:GetThumbTexture()) or scrollBar.Thumb
-    if thumb then
-        thumb:SetColorTexture(ar, ag, ab, 0.78)
-        thumb:SetWidth(QUICore:Pixels(8, scrollBar))
-        QUICore:ApplyPixelSnapping(thumb)
-    end
-
-    local scrollUp = scrollBar.ScrollUpButton or scrollBar.Back
-    local scrollDown = scrollBar.ScrollDownButton or scrollBar.Forward
-    if scrollUp then scrollUp:SetAlpha(0) scrollUp:SetSize(1, 1) end
-    if scrollDown then scrollDown:SetAlpha(0) scrollDown:SetSize(1, 1) end
-end
-
-local function StyleCharacterScrollBar(scrollFrame)
-    if not scrollFrame then return end
-    local scrollBar = scrollFrame.ScrollBar or (scrollFrame.GetName and _G[scrollFrame:GetName() .. "ScrollBar"])
-    if not scrollBar then return end
-
-    ApplyScrollBarSkin(scrollBar)
-    if styledScrollBars[scrollBar] then return end
-
-    scrollBar:HookScript("OnShow", function(self)
-        ApplyScrollBarSkin(self)
-    end)
-    styledScrollBars[scrollBar] = true
 end
 
 local function StyleCloseButton(button)
@@ -1884,11 +1849,21 @@ CreateStatsPanel = function(parent, unit)
     -- No backdrop - let customBg show through (avoids double-layered background)
     panel:SetBackdrop(nil)
 
-    -- Create scroll frame for stats
-    local scrollFrame = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    -- Plain ScrollFrame (no template). UIPanelScrollFrameTemplate inherits from
+    -- SecureScrollFrameTemplate; addon-side geometry mods (SetSize on the child,
+    -- SetWidth on the thumb, etc.) taint the secure template's xrange/yrange
+    -- reads in 12.0+, producing "secret number value" errors. Plain ScrollFrames
+    -- have no secure inheritance, so they're safe to size from addon code.
+    local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
     scrollFrame:SetPoint("TOPLEFT", 5, -5)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -25, 5)
-    StyleCharacterScrollBar(scrollFrame)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -5, 5)
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+        local current = self:GetVerticalScroll() or 0
+        local maxScroll = self:GetVerticalScrollRange() or 0
+        local new = math.max(0, math.min(maxScroll, current - delta * 20))
+        self:SetVerticalScroll(new)
+    end)
 
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
     scrollChild:SetSize(130, 1)  -- Width matches scroll area (160 - 30 padding), height set dynamically
@@ -2232,31 +2207,18 @@ local function FinalizeStatsPanelLayout(panel, scrollChild, yOffset)
     -- Scale the stats panel to fit without scrollbar
     panel:SetScale(0.92)
 
-    -- Check if scrollbar is needed and hide/show it accordingly
+    -- Reset scroll position when content fits in viewport. No scrollbar to
+    -- show/hide (the plain ScrollFrame has none — wheel-only scrolling).
     local scrollFrame = panel.scrollFrame
     if scrollFrame then
-        local scrollBar = scrollFrame.ScrollBar
-        if scrollBar then
-            C_Timer.After(0.01, function()
-                local okScroll, maxScroll = pcall(scrollFrame.GetVerticalScrollRange, scrollFrame)
-                if not okScroll or Helpers.IsSecretValue(maxScroll) then
-                    scrollBar:Show()
-                    scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -25, 5)
-                    return
-                end
-
-                maxScroll = Helpers.SafeToNumber(maxScroll, 0)
-
-                if maxScroll <= 1 then
-                    scrollBar:Hide()
+        C_Timer.After(0.01, function()
+            local okScroll, maxScroll = pcall(scrollFrame.GetVerticalScrollRange, scrollFrame)
+            if okScroll and not Helpers.IsSecretValue(maxScroll) then
+                if Helpers.SafeToNumber(maxScroll, 0) <= 1 then
                     scrollFrame:SetVerticalScroll(0)
-                    scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -5, 5)
-                else
-                    scrollBar:Show()
-                    scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -25, 5)
                 end
-            end)
-        end
+            end
+        end)
     end
 end
 
@@ -3642,23 +3604,24 @@ local function HookCharacterFrame()
         closeBtn:SetScript("OnClick", function() settingsPanel:Hide() end)
         StyleCloseButton(closeBtn)
 
-        -- Scroll frame for settings
-        local scrollFrame = CreateFrame("ScrollFrame", nil, settingsPanel, "UIPanelScrollFrameTemplate")
+        -- Plain ScrollFrame (no template). See comment on the stats-panel scroll
+        -- frame: UIPanelScrollFrameTemplate inherits from SecureScrollFrameTemplate,
+        -- and addon-side geometry mods taint its xrange/yrange reads in 12.0+.
+        local scrollFrame = CreateFrame("ScrollFrame", nil, settingsPanel)
         scrollFrame:SetPoint("TOPLEFT", settingsPanel, "TOPLEFT", 5, -28)
-        scrollFrame:SetPoint("BOTTOMRIGHT", settingsPanel, "BOTTOMRIGHT", -26, 40)
+        scrollFrame:SetPoint("BOTTOMRIGHT", settingsPanel, "BOTTOMRIGHT", -5, 40)
+        scrollFrame:EnableMouseWheel(true)
+        scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+            local current = self:GetVerticalScroll() or 0
+            local maxScroll = self:GetVerticalScrollRange() or 0
+            local new = math.max(0, math.min(maxScroll, current - delta * 30))
+            self:SetVerticalScroll(new)
+        end)
 
         local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-        scrollChild:SetWidth(419)  -- settingsPanel(450) - left(5) - right(26)
+        scrollChild:SetWidth(440)  -- settingsPanel(450) - left(5) - right(5)
         scrollChild:SetHeight(1)  -- Will be updated after adding widgets
         scrollFrame:SetScrollChild(scrollChild)
-
-        -- Style the scroll bar
-        local scrollBar = scrollFrame.ScrollBar
-        if scrollBar then
-            scrollBar:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT", 2, -16)
-            scrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", 2, 16)
-        end
-        StyleCharacterScrollBar(scrollFrame)
 
         -- Get GUI reference and settings
         local GUI = _G.QUI and _G.QUI.GUI

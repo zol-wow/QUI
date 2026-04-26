@@ -1456,6 +1456,60 @@ local function RefitChromeToContent(tooltip)
         TooltipDebugCount("skin.refitTinyOverflow")
     end
 
+    -- Monotonic grow within a single content cycle. Same physical tooltip
+    -- (GameTooltip) is reused across hovers; deferred-add FontStrings
+    -- (Item ID / Spell ID / etc.) briefly skip our IsShown/GetText filters
+    -- mid-render, so consecutive refits flip between the real overflow
+    -- (e.g. extendY=22, extendX=28) and (0, 0). Each flip re-anchors the
+    -- chrome → visible Y-axis flash.
+    --
+    -- Reset key: (GetOwner, GetUnit, line1Text). Owner+Unit alone are not
+    -- enough — GetUnit returns the literal string "mouseover", "nameplate1",
+    -- "target", etc. so sweeping the cursor across different actual units
+    -- under the same anchor leaves the cache sticky and the chrome too tall
+    -- for the new (smaller) tooltip. Line 1 is the tooltip header (unit or
+    -- item name); it changes when actual content changes but stays stable
+    -- across the IsShown-flicker that monotonic-grow needs to absorb.
+    -- gameTooltipShowToken was tried first but Blizzard internally re-calls
+    -- Show on data refresh, churning the token mid-hover and defeating
+    -- monotonic entirely.
+    local okOwner, owner = pcall(tooltip.GetOwner, tooltip)
+    if not okOwner then owner = nil end
+    local okUnit, _, unit = pcall(tooltip.GetUnit, tooltip)
+    if not okUnit then unit = nil end
+    -- Secret-value guards so the equality check itself doesn't taint via
+    -- secret string comparison.
+    if unit and Helpers.IsSecretValue and Helpers.IsSecretValue(unit) then
+        unit = "<secret>"
+    end
+    local line1Text
+    if tooltip.GetLeftLine then
+        local okFS, fs = pcall(tooltip.GetLeftLine, tooltip, 1)
+        if okFS and fs then
+            local okT, t = pcall(fs.GetText, fs)
+            if okT and t and not (Helpers.IsSecretValue and Helpers.IsSecretValue(t)) then
+                line1Text = t
+            end
+        end
+    end
+    if owner ~= frame.qOwner or unit ~= frame.qUnit or line1Text ~= frame.qLine1 then
+        frame.qOwner = owner
+        frame.qUnit = unit
+        frame.qLine1 = line1Text
+        frame.qExtendY = nil
+        frame.qExtendX = nil
+        TooltipDebugCount("skin.refitOwnerReset")
+    else
+        if frame.qExtendY and extendY < frame.qExtendY then
+            extendY = frame.qExtendY
+            TooltipDebugCount("skin.refitMonotonicY")
+        end
+        if frame.qExtendX and extendX < frame.qExtendX then
+            extendX = frame.qExtendX
+            TooltipDebugCount("skin.refitMonotonicX")
+        end
+    end
+
     -- Cache so repeat refits with the same extents no-op.
     if frame.qExtendY == extendY and frame.qExtendX == extendX then
         TooltipDebugCount("skin.refitCacheSkip")

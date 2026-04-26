@@ -105,35 +105,35 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --       (3.1.6: add per-kind group-frame aura duration text font, color,
 --        anchor, and offset settings. Existing profiles inherit the old shared
 --        duration font size and time-based color toggle.)
--- v32 = MigrateCustomTrackersToContainers
---       (Phase B: converge legacy custom-tracker bars (db.customTrackers.bars)
---        into the unified CDM containers table (db.ncdm.containers) as a new
---        "customBar" container type. Idempotent and non-destructive: legacy
---        db.customTrackers stays in place so the existing renderer keeps
---        working until Phase B.3 ships the unified renderer. Migration only
---        creates new container entries; does not modify or delete anything
---        in the source data. Each customTrackers.bars[i] becomes
---        db.ncdm.containers["customBar_<id>"] with identical settings,
---        marked _migratedFromCustomTrackers = true for trace-back.)
--- v33 = RemovePartyTrackerData
---       (Party tracker feature removed before the 12.0.5 release. Nil the
---        orphaned subtree at quiGroupFrames.party.partyTracker and
---        quiGroupFrames.raid.partyTracker on existing profiles so the dead
---        keys don't linger forever. Idempotent: nil-ing a missing key is a
---        no-op.)
--- v34 = FinalizeCustomBarContainers
---       (Phase B.3: complete the customBar migration now that the unified
---        renderer owns them. Synthesizes a row1 config from the flat
---        iconSize/spacing/borderSize/aspectRatioCrop fields so the shared
---        CDM layout pipeline can render. Also ports per-bar spec-specific
---        entries from db.global.specTrackerSpells[legacyID] to
---        db.global.ncdm.specTrackerSpells[containerKey] and flags
---        container.specSpecific=true when the source bar had it.)
+-- v32 = OptionsV2BranchConsolidated (the V2 settings branch's data work)
+--       Four discrete transforms collapsed into one schema bump because the
+--       V2 branch never shipped past v31 — there's no point preserving the
+--       intermediate v32..v35 step granularity. Helper functions stay
+--       separate for readability; they're called sequentially behind a
+--       single `if stored < 32` gate.
+--         (a) MigrateCustomTrackersToContainers — mirror legacy
+--             db.customTrackers.bars[] into db.ncdm.containers[customBar_*]
+--             so the unified V2 renderer can serve them. Non-destructive.
+--         (b) RemovePartyTrackerData — strip orphan partyTracker subtree
+--             (feature removed before 12.0.5).
+--         (c) FinalizeCustomBarContainers — synthesize row1 config from
+--             flat iconSize/spacing/etc., port per-spec entries from the
+--             legacy db.global.specTrackerSpells[legacyID] location into
+--             db.global.ncdm.specTrackerSpells[containerKey] when present.
+--         (d) FinalizeLegacyTrackerSpecState — promote legacy
+--             specSpecificSpells -> V2 specSpecific, stamp
+--             container._sourceSpecID from ncdm._lastSpecID, move
+--             container.entries into per-spec storage so the unified
+--             renderer's natural per-spec gating takes over (this also
+--             tags each entry with _sourceSpecID for tooltip rendering).
+--             Repairs the gap (c) leaves when the pre-V2 drag-drop bug
+--             stored entries in bar.entries instead of the global
+--             per-spec location, so (c) had nothing to port.
 --
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 34
+local CURRENT_SCHEMA_VERSION = 32
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -2257,6 +2257,109 @@ local function FinalizeCustomBarContainers(profile)
     end
 end
 
+----------------------------------------------------------------------------
+-- v36: FinalizeLegacyTrackerSpecState
+--
+-- Two repairs in one pass for customBar containers migrated from the legacy
+-- customTrackers system:
+--
+--   1. Field rename promotion: legacy bars stored the toggle as
+--      specSpecificSpells; V2 reads specSpecific. v34 only set specSpecific
+--      after porting entries from db.global.specTrackerSpells — but the
+--      pre-V2 drag-drop handler bypassed that storage, so for the very
+--      profiles we need to repair, no entries existed there to port and
+--      v34 silently skipped the rename. v35 unconditionally promotes when
+--      the legacy field is true.
+--
+--   2. Spec stamp: tag the container with ncdm._lastSpecID as
+--      _sourceSpecID for traceability and as a hint to the runtime
+--      LegacyResolver about which spec to attempt entry recovery on.
+--
+--   3. Move entries into per-spec storage: v34's intended end state.
+--      For each spec-specific container with _sourceSpecID set, copy
+--      container.entries into db.global.ncdm.specTrackerSpells[key][specKey]
+--      and clear container.entries. This is what makes the V2 unified
+--      renderer behave like every other CDM container — entries live in
+--      per-spec storage, the renderer reads the current spec's list, and
+--      bars naturally render empty on non-matching specs without any
+--      dedicated visibility gate.
+--
+--      Each migrated entry also gets entry._sourceSpecID stamped on it so
+--      tooltip rendering can surface the source spec to the user.
+--
+-- Source spec hint is a single value (ncdm._lastSpecID), so all
+-- spec-specific containers in the profile receive the same stamp. Profiles
+-- where bars were configured under different specs will mis-stamp some
+-- bars; the user can dismiss / delete those via the Custom CDM Bars UI.
+--
+-- Idempotent: only writes fields that are absent and only moves entries
+-- when per-spec destination is empty. Re-runnable.
+----------------------------------------------------------------------------
+local function FinalizeLegacyTrackerSpecState(profile)
+    if not profile then return end
+    local ncdm = profile.ncdm
+    if type(ncdm) ~= "table" then return end
+    if type(ncdm.containers) ~= "table" then return end
+
+    local sourceSpecID = ncdm._lastSpecID
+
+    for key, container in pairs(ncdm.containers) do
+        if type(key) == "string" and key:find("^customBar_")
+           and type(container) == "table"
+        then
+            -- (1) Promote legacy specSpecificSpells -> V2 specSpecific.
+            if container.specSpecificSpells == true and container.specSpecific == nil then
+                container.specSpecific = true
+            end
+
+            -- (2) Stamp the source spec hint when this is a spec-specific bar
+            -- and we have a usable hint to apply.
+            if container.specSpecific == true
+               and container._sourceSpecID == nil
+               and type(sourceSpecID) == "number" and sourceSpecID > 0
+            then
+                container._sourceSpecID = sourceSpecID
+            end
+
+            -- (3) Move container.entries into per-spec storage at the source
+            -- spec. Requires db.global access via _currentGlobalDB (set by
+            -- Migrations.Run at the top-level entry point). Skip silently
+            -- if globals aren't available — the migration is idempotent and
+            -- will retry on the next addon-init pass.
+            local globalDB = _currentGlobalDB
+            local stampedSpec = container._sourceSpecID
+            if container.specSpecific == true
+               and type(stampedSpec) == "number" and stampedSpec > 0
+               and type(container.entries) == "table" and #container.entries > 0
+               and type(globalDB) == "table"
+            then
+                if type(globalDB.ncdm) ~= "table" then globalDB.ncdm = {} end
+                if type(globalDB.ncdm.specTrackerSpells) ~= "table" then
+                    globalDB.ncdm.specTrackerSpells = {}
+                end
+                local byContainer = globalDB.ncdm.specTrackerSpells[key]
+                if type(byContainer) ~= "table" then
+                    byContainer = {}
+                    globalDB.ncdm.specTrackerSpells[key] = byContainer
+                end
+                local specKey = tostring(stampedSpec)
+                if type(byContainer[specKey]) ~= "table" or #byContainer[specKey] == 0 then
+                    local moved = {}
+                    for _, entry in ipairs(container.entries) do
+                        if type(entry) == "table" then
+                            local copy = CloneValue(entry)
+                            copy._sourceSpecID = stampedSpec
+                            moved[#moved + 1] = copy
+                        end
+                    end
+                    byContainer[specKey] = moved
+                    container.entries = {}
+                end
+            end
+        end
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Late migration: import action bar / micro menu / bag bar positions from
 -- Blizzard Edit Mode for users whose QUI profile predates frame anchoring
@@ -2742,17 +2845,16 @@ function Migrations.RunOnProfile(profile)
     -- v31: add font, color, anchor, and offset controls for duration text.
     if stored < 31 then EnsureGroupAuraDurationTextStyle(profile) end
 
-    -- v32: mirror legacy customTrackers.bars[] into ncdm.containers as
-    -- "customBar" containers so the unified renderer can take over once
-    -- shipped. Idempotent and non-destructive — see function docstring.
-    if stored < 32 then MigrateCustomTrackersToContainers(profile) end
-
-    -- v33: strip orphan partyTracker subtree (feature removed before 12.0.5).
-    if stored < 33 then RemovePartyTrackerData(profile) end
-
-    -- v34: finalize customBar containers for the unified renderer — row1
-    -- synthesis + per-spec entry port. See function docstring for details.
-    if stored < 34 then FinalizeCustomBarContainers(profile) end
+    -- v32: V2 settings branch consolidated migration. Four discrete
+    -- transforms run sequentially behind one gate (V2 branch never
+    -- shipped past v31, so intermediate version steps were collapsed).
+    -- Order matters — see version log for what each function does.
+    if stored < 32 then
+        MigrateCustomTrackersToContainers(profile)
+        RemovePartyTrackerData(profile)
+        FinalizeCustomBarContainers(profile)
+        FinalizeLegacyTrackerSpecState(profile)
+    end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame

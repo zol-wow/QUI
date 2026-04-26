@@ -1848,6 +1848,18 @@ local function CreateIcon(parent, spellEntry)
                 pcall(GameTooltip.SetSpellByID, GameTooltip, sid)
             end
         end
+        -- Append a source-spec line for entries migrated from a legacy
+        -- spec-specific bar so the user can see at a glance where the
+        -- entry came from (e.g. "Source: Discipline Priest"). Resolver
+        -- writes _sourceSpecID at migration time.
+        local srcSpecID = entry._sourceSpecID
+        if type(srcSpecID) == "number" and GetSpecializationInfoByID then
+            local _, specName, _, _, _, classToken = GetSpecializationInfoByID(srcSpecID)
+            if specName then
+                local label = classToken and ("%s %s"):format(specName, classToken) or specName
+                pcall(GameTooltip.AddLine, GameTooltip, ("Source: %s"):format(label), 0.75, 0.85, 1, true)
+            end
+        end
         pcall(GameTooltip.Show, GameTooltip)
     end)
     icon:SetScript("OnLeave", function()
@@ -3582,6 +3594,7 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
         type = entry.type,
         id = entry.id,
         _isCustomEntry = true,
+        _sourceSpecID = entry._sourceSpecID,
     }
     if entry.type == "macro" then
         spellEntry.macroName = entry.macroName
@@ -3868,9 +3881,20 @@ local function ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
             if not GetInventoryItemID("player", entry.id) then return true end
         else
             local sid = icon._runtimeSpellID or entry.spellID or entry.id
-            if sid and C_Spell and C_Spell.IsSpellUsable then
-                local ok, usable = pcall(C_Spell.IsSpellUsable, sid)
-                if ok and usable == false then return true end
+            if sid then
+                -- "Non-usable" includes "player doesn't know this spell at
+                -- all" (cross-class entries on a Warrior viewing a Priest
+                -- profile's Dispell CDs bar). C_Spell.IsSpellUsable alone
+                -- isn't enough — for unknown spells it returns nil, not
+                -- false, so a strict `usable == false` check lets cross-
+                -- class entries through.
+                local known = (IsPlayerSpell and IsPlayerSpell(sid))
+                    or (IsSpellKnownOrOverridesKnown and IsSpellKnownOrOverridesKnown(sid))
+                if not known then return true end
+                if C_Spell and C_Spell.IsSpellUsable then
+                    local ok, usable = pcall(C_Spell.IsSpellUsable, sid)
+                    if ok and usable == false then return true end
+                end
             end
         end
     end
