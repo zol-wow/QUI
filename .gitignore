@@ -2,3 +2,12 @@
 CLAUDE.md
 GSE_UnholyDK.lua
 encode_gse.py
+/.windsurf
+/node_modules
+package-lock.json
+package.json
+/.superpowers
+/.planning
+/docs/superpowers
+AGENTS.md
+/.tmp_debug
