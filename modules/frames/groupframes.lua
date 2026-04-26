@@ -1159,10 +1159,15 @@ local function UpdateAbsorbs(frame, _unit, _maxHP)
     local maxHP = _maxHP or UnitHealthMax(unit)
     local absorbAmount = UnitGetTotalAbsorbs(unit)
 
-    -- Only hide on nil (API unavailable). Do NOT check for zero — StatusBar
-    -- naturally shows 0-width when value is 0 (matches QUI pattern).
-    -- absorbAmount may be a secret value; pass directly to C-side.
+    -- Hide explicit zero absorbs. Some clients/textures can keep drawing a
+    -- visible reverse-filled StatusBar at value 0; secret values still pass
+    -- directly to C-side APIs below.
     if not absorbAmount then
+        frame.absorbBar:Hide()
+        return
+    end
+    if not IsSecretValue(absorbAmount) and SafeToNumber(absorbAmount, 0) <= 0 then
+        frame.absorbBar:SetValue(0)
         frame.absorbBar:Hide()
         return
     end
@@ -1233,6 +1238,11 @@ local function UpdateHealAbsorb(frame, _unit, _maxHP)
     local healAbsorbAmount = UnitGetTotalHealAbsorbs(unit)
 
     if not healAbsorbAmount then
+        frame.healAbsorbBar:Hide()
+        return
+    end
+    if not IsSecretValue(healAbsorbAmount) and SafeToNumber(healAbsorbAmount, 0) <= 0 then
+        frame.healAbsorbBar:SetValue(0)
         frame.healAbsorbBar:Hide()
         return
     end
