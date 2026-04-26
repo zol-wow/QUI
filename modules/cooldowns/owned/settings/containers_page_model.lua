@@ -1,9 +1,12 @@
 local ADDON_NAME, ns = ...
 
-local QUI = QUI
+local function GetCore()
+    return (ns.Helpers and ns.Helpers.GetCore and ns.Helpers.GetCore()) or ns.Addon or QUI
+end
 
 local Model = ns.QUI_CooldownManagerSettingsModel or {}
 ns.QUI_CooldownManagerSettingsModel = Model
+local ModelKit = ns.Settings and ns.Settings.ModelKit
 
 local BUILTIN_ORDER = { "essential", "utility", "buff", "trackedBar" }
 local BUILTIN_LABELS = {
@@ -26,7 +29,8 @@ function Model.GetContainerOptions()
         end
     end
 
-    local ncdm = QUI and QUI.db and QUI.db.profile and QUI.db.profile.ncdm
+    local core = GetCore()
+    local ncdm = core and core.db and core.db.profile and core.db.profile.ncdm
     if ncdm and ncdm.containers then
         local customKeys = {}
         for key in pairs(ncdm.containers) do
@@ -73,14 +77,9 @@ function Model.NormalizeContainerKey(containerKey)
     return BUILTIN_ORDER[1]
 end
 
-local function RenderUnavailable(host, label)
-    local message = host:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    message:SetPoint("TOPLEFT", 20, -20)
-    message:SetText((label or "Settings") .. " settings unavailable (module not loaded).")
-end
-
 local function SetSearchContext(label)
-    local gui = QUI and QUI.GUI
+    local core = GetCore()
+    local gui = core and core.GUI
     if gui and type(gui.SetSearchContext) == "function" then
         gui:SetSearchContext({
             tabIndex = 4,
@@ -92,14 +91,7 @@ local function SetSearchContext(label)
 end
 
 local function RenderSchema(methodName, host, containerKey, label)
-    local schema = ns.QUI_CooldownManagerSettingsSchema
-    local render = schema and schema[methodName]
-    if type(render) == "function" and render(host, containerKey) then
-        return true
-    end
-
-    RenderUnavailable(host, label)
-    return false
+    return ModelKit.RenderSchema(ns.QUI_CooldownManagerSettingsSchema, methodName, host, containerKey, label, " settings unavailable (module not loaded).")
 end
 
 local function BuildSchemaRender(methodName, label)
@@ -114,7 +106,7 @@ local function RenderEntriesTab(host, state)
 
     local containerKey = state and state.activeContainer or nil
     if type(containerKey) ~= "string" or containerKey == "" or not _G.QUI_EmbedCDMComposer then
-        RenderUnavailable(host, "Entries")
+        ModelKit.RenderUnavailable(host, "Entries", " settings unavailable (module not loaded).")
         return false
     end
 
@@ -133,5 +125,5 @@ local TAB_DEFINITIONS = {
 }
 
 function Model.GetTabDefinitions()
-    return TAB_DEFINITIONS
+    return ModelKit.NormalizeTabDefinitions(TAB_DEFINITIONS)
 end

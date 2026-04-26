@@ -1506,7 +1506,10 @@ local function ClearDynamicContent(frame)
     end
 
     local gui = QUI and QUI.GUI
-    if gui and type(gui.CleanupWidgetTree) == "function" then
+    if gui and type(gui.TeardownFrameTree) == "function" then
+        gui:TeardownFrameTree(frame)
+        return
+    elseif gui and type(gui.CleanupWidgetTree) == "function" then
         gui:CleanupWidgetTree(frame)
     end
 

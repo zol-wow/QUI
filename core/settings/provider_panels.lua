@@ -39,6 +39,10 @@ function ProviderPanels:GetContext()
 
     function ctx.RegisterShared(key, provider)
         settingsPanel:RegisterSharedProvider(key, provider)
+        local adapters = Settings.RenderAdapters
+        if adapters and type(adapters.NotifyProviderChanged) == "function" then
+            adapters.NotifyProviderChanged(key, { structural = true })
+        end
     end
 
     function ctx.NotifyProviderFor(widget, opts)
@@ -69,15 +73,82 @@ function ProviderPanels:GetContext()
     return ctx
 end
 
+ProviderPanels._pendingRegistrations = ProviderPanels._pendingRegistrations or {}
+ProviderPanels._registeredCallbacks = ProviderPanels._registeredCallbacks or {}
+
+function ProviderPanels:FlushPending()
+    local pending = self._pendingRegistrations
+    if type(pending) ~= "table" or #pending == 0 then
+        return true
+    end
+
+    local ctx = self:GetContext()
+    if not ctx then
+        return false
+    end
+
+    self._pendingRegistrations = {}
+    for _, registerFunc in ipairs(pending) do
+        if self._registeredCallbacks[registerFunc] ~= true then
+            self._registeredCallbacks[registerFunc] = true
+            local ok, err = xpcall(function()
+                registerFunc(ctx)
+            end, geterrorhandler and geterrorhandler() or debug.traceback)
+            if not ok then
+                self._registeredCallbacks[registerFunc] = nil
+            end
+        end
+    end
+
+    return true
+end
+
+function ProviderPanels:ScheduleFlush()
+    if self._flushFrame then
+        return
+    end
+
+    local core = ns.Addon
+    if core and type(core.RegisterPostInitialize) == "function" then
+        core:RegisterPostInitialize(function()
+            self:FlushPending()
+        end)
+    end
+
+    local frame = CreateFrame("Frame")
+    local elapsedSinceCheck = 0
+    frame:SetScript("OnUpdate", function(_, elapsed)
+        elapsedSinceCheck = elapsedSinceCheck + (elapsed or 0)
+        if elapsedSinceCheck < 0.05 then
+            return
+        end
+        elapsedSinceCheck = 0
+        if self:FlushPending() then
+            frame:SetScript("OnUpdate", nil)
+            frame:Hide()
+            self._flushFrame = nil
+        end
+    end)
+    frame:Show()
+    self._flushFrame = frame
+end
+
 function ProviderPanels:RegisterAfterLoad(registerFunc)
     if type(registerFunc) ~= "function" then
         return
     end
 
-    C_Timer.After(3, function()
-        local ctx = self:GetContext()
-        if ctx then
-            registerFunc(ctx)
-        end
-    end)
+    if self._registeredCallbacks[registerFunc] == true then
+        return
+    end
+
+    local ctx = self:GetContext()
+    if ctx then
+        self._registeredCallbacks[registerFunc] = true
+        registerFunc(ctx)
+        return
+    end
+
+    self._pendingRegistrations[#self._pendingRegistrations + 1] = registerFunc
+    self:ScheduleFlush()
 end

@@ -246,6 +246,9 @@ end
 
 function UIKit.RegisterScaleRefresh(owner, key, refreshFn)
     if not owner then return end
+    -- Prefer the three-argument form with a stable string key. The
+    -- two-argument compatibility form treats the callback itself as the key,
+    -- so anonymous functions register as distinct callbacks.
     if type(key) == "function" and refreshFn == nil then
         refreshFn = key
         key = refreshFn

@@ -52,6 +52,11 @@ local BLIZZARD_FRAME_KEYS = {
     buffIcon  = "BuffIconCooldownViewer",
     buffBar   = "BuffBarCooldownViewer",
 }
+CDMProvider.BLIZZARD_FRAME_KEYS = BLIZZARD_FRAME_KEYS
+
+function CDMProvider:GetViewerFrameNames()
+    return BLIZZARD_FRAME_KEYS
+end
 
 --- Resolve a viewer key to a frame. Works before engine init via the
 --- Blizzard global fallback.

@@ -368,8 +368,12 @@ function QUICore:OnProfileChanged(event, db, profileKey)
 
     -- Invalidate options panel — cached widgets hold stale profile table references
     if QUI.GUI and QUI.GUI.MainFrame then
-        pcall(QUI.GUI.MainFrame.Hide, QUI.GUI.MainFrame)
-        pcall(QUI.GUI.MainFrame.SetParent, QUI.GUI.MainFrame, nil)
+        if type(QUI.GUI.TeardownFrameTree) == "function" then
+            pcall(QUI.GUI.TeardownFrameTree, QUI.GUI, QUI.GUI.MainFrame, { includeRoot = true })
+        else
+            pcall(QUI.GUI.MainFrame.Hide, QUI.GUI.MainFrame)
+            pcall(QUI.GUI.MainFrame.SetParent, QUI.GUI.MainFrame, nil)
+        end
         QUI.GUI.MainFrame = nil
         QUI.GUI.SettingsRegistry = {}
         QUI.GUI.SettingsRegistryKeys = {}

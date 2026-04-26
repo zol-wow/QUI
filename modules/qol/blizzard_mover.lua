@@ -364,16 +364,19 @@ local function leafHas(target, key)
 end
 
 ---------------------------------------------------------------------------
--- Per-root-frame context (single named slot on Blizzard root widgets)
+-- Per-root-frame context stored outside Blizzard widgets to avoid custom
+-- fields on protected frames.
 ---------------------------------------------------------------------------
 
-local CTX_KEY = "_QUI_BlizzardPanelMover"
+local rootContext = setmetatable({}, { __mode = "k" })
+local playerChoiceGuarded = setmetatable({}, { __mode = "k" })
+local playerChoiceReapply = setmetatable({}, { __mode = "k" })
 
 local function ctx(root)
-	local t = root[CTX_KEY]
+	local t = rootContext[root]
 	if not t then
 		t = {}
-		root[CTX_KEY] = t
+		rootContext[root] = t
 	end
 	return t
 end
@@ -664,9 +667,9 @@ local function playerChoiceMoverOn()
 end
 
 local function installPlayerChoiceLayoutGuard(f)
-	if not f or f._QUI_BM_playerChoiceGuard then return true end
+	if not f or playerChoiceGuarded[f] then return true end
 	if not playerChoiceMoverOn() then return false end
-	f._QUI_BM_playerChoiceGuard = true
+	playerChoiceGuarded[f] = true
 
 	f:HookScript("OnHide", function(self)
 		if not playerChoiceMoverOn() then return end
@@ -676,13 +679,13 @@ local function installPlayerChoiceLayoutGuard(f)
 		self:ClearAllPoints()
 		self:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 		cx.applyingLayout = nil
-		self._QUI_BM_reapplyWhenShown = true
+		playerChoiceReapply[self] = true
 	end)
 
 	f:HookScript("OnShow", function(self)
 		if not playerChoiceMoverOn() then return end
-		if not self._QUI_BM_reapplyWhenShown then return end
-		self._QUI_BM_reapplyWhenShown = nil
+		if not playerChoiceReapply[self] then return end
+		playerChoiceReapply[self] = nil
 		C_Timer.After(0, function()
 			if self:IsShown() then
 				local p = R.panels.PlayerChoiceFrame
@@ -707,33 +710,31 @@ local function installHeroTalentAnchorWorkaround()
 
 	M.variables.heroTalentWorkaround = true
 	local reenter = false
+	local queued = false
 
 	hooksecurefunc(TalentFrameUtil, "GetNormalizedSubTreeNodePosition", function(talentFrame)
 		if reenter then return end
 		if not heroDialogMoverOn() then return end
-		local trace = debugstack(3)
-		if not trace then return end
-		local conflict = (trace:find("UpdateContainerVisibility", 1, true)
-			or trace:find("UpdateHeroTalentButtonPosition", 1, true)
-			or trace:find("PlaceHeroTalentButton", 1, true))
-			and not trace:find("InstantiateTalentButton", 1, true)
-		if not conflict then return end
-		reenter = true
-		if talentFrame and talentFrame.EnumerateAllTalentButtons then
-			for btn in talentFrame:EnumerateAllTalentButtons() do
-				local info = btn and btn.GetNodeInfo and btn:GetNodeInfo()
-				if info and info.subTreeID and btn.ClearAllPoints then btn:ClearAllPoints() end
+		if HeroTalentsSelectionDialog and HeroTalentsSelectionDialog.IsShown and not HeroTalentsSelectionDialog:IsShown() then return end
+		if queued then return end
+		queued = true
+		local function clearSubTreeAnchors()
+			queued = false
+			reenter = true
+			if talentFrame and talentFrame.EnumerateAllTalentButtons then
+				for btn in talentFrame:EnumerateAllTalentButtons() do
+					local info = btn and btn.GetNodeInfo and btn:GetNodeInfo()
+					if info and info.subTreeID and btn.ClearAllPoints then btn:ClearAllPoints() end
+				end
 			end
-		end
-		local function clearGuard()
 			reenter = false
 		end
 		if RunNextFrame then
-			RunNextFrame(clearGuard)
+			RunNextFrame(clearSubTreeAnchors)
 		elseif C_Timer and C_Timer.After then
-			C_Timer.After(0, clearGuard)
+			C_Timer.After(0, clearSubTreeAnchors)
 		else
-			reenter = false
+			clearSubTreeAnchors()
 		end
 	end)
 	return true

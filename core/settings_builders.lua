@@ -75,7 +75,13 @@ local function ClearHost(parent)
     if not parent then return end
 
     local GUI = GetGUI()
-    if GUI and GUI.CleanupWidgetTree then
+    if GUI and type(GUI.TeardownFrameTree) == "function" then
+        GUI:TeardownFrameTree(parent)
+        if parent.SetHeight then
+            parent:SetHeight(1)
+        end
+        return
+    elseif GUI and GUI.CleanupWidgetTree then
         GUI:CleanupWidgetTree(parent)
     end
 
@@ -194,7 +200,12 @@ end
 local function WithOnlyPosition(fn)
     local U = ns.QUI_LayoutMode_Utils
     if not U or not U.CreateCollapsible or not U.BuildPositionCollapsible then
-        return xpcall(fn, ErrorHandler)
+        local ok, result = xpcall(fn, ErrorHandler)
+        if not ok then
+            geterrorhandler()(result)
+            return nil
+        end
+        return result
     end
 
     local originalCreate = U.CreateCollapsible
@@ -240,6 +251,7 @@ end
 -- layoutmode_composer.lua so every tile tab looks the same.
 ---------------------------------------------------------------------------
 local CARD_ROW_HEIGHT = 32
+local dualColumnSequence = 0
 
 local function GetDualColumnRowHeight(widget)
     if not widget then return CARD_ROW_HEIGHT end
@@ -275,6 +287,10 @@ local function ApplyDualColumnLayout(section)
 
         table.insert(layoutItems, item)
         itemOrder[item] = #layoutItems
+        if not item._quiDualColumnSequence then
+            dualColumnSequence = dualColumnSequence + 1
+            item._quiDualColumnSequence = dualColumnSequence
+        end
 
         if isTextRegion then
             item._quiDualColumnFullWidth = true
@@ -315,15 +331,16 @@ local function ApplyDualColumnLayout(section)
         if item._quiCardGroup then return end
     end
 
-    -- Stable sort by descending top edge so order matches PlaceRow's
-    -- vertical layout (top-most widgets first).
+    -- Stable sort by creation sequence. The next-frame relayout below still
+    -- corrects geometry, but ordering no longer depends primarily on GetTop()
+    -- before hidden tile pages have settled.
     table.sort(layoutItems, function(a, b)
-        local at = a.GetTop and a:GetTop() or 0
-        local bt = b.GetTop and b:GetTop() or 0
-        if math.abs(at - bt) <= 1 then
+        local as = a._quiDualColumnSequence or 0
+        local bs = b._quiDualColumnSequence or 0
+        if as == bs then
             return (itemOrder[a] or 0) < (itemOrder[b] or 0)
         end
-        return at > bt
+        return as < bs
     end)
 
     -- Reset row-chrome pool attached to the body so repeated renders don't
@@ -382,10 +399,11 @@ local function ApplyDualColumnLayout(section)
 
             rowIdx = rowIdx + 1
             local rf = AcquireRowFrame(rowIdx)
+            local rowHeight = math.max(GetDualColumnRowHeight(left), right and GetDualColumnRowHeight(right) or CARD_ROW_HEIGHT)
             rf:ClearAllPoints()
             rf:SetPoint("TOPLEFT", body, "TOPLEFT", -2, ly)
             rf:SetPoint("TOPRIGHT", body, "TOPRIGHT", 2, ly)
-            rf:SetHeight(CARD_ROW_HEIGHT)
+            rf:SetHeight(rowHeight)
             rf:Show()
 
             if (rowIdx % 2) == 0 then
@@ -410,7 +428,7 @@ local function ApplyDualColumnLayout(section)
                 i = i + 1
             end
 
-            ly = ly - CARD_ROW_HEIGHT
+            ly = ly - rowHeight
         end
     end
 
@@ -459,7 +477,12 @@ end
 local function RenderWithTileChrome(fn)
     local U = ns.QUI_LayoutMode_Utils
     if not U or not U.CreateCollapsible then
-        return xpcall(fn, ErrorHandler)
+        local ok, result = xpcall(fn, ErrorHandler)
+        if not ok then
+            geterrorhandler()(result)
+            return nil
+        end
+        return result
     end
 
     local originalCreate = U.CreateCollapsible
@@ -573,6 +596,9 @@ local function BuildViaProvider(providerKey, parent, width, options)
 
     if not height and parent and parent.GetHeight then
         height = parent:GetHeight()
+    end
+    if type(height) ~= "number" then
+        height = parent and parent.GetHeight and parent:GetHeight() or 80
     end
     if parent and parent.SetHeight and height then
         parent:SetHeight(math.max(height, 80))

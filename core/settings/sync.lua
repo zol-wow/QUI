@@ -32,6 +32,9 @@ function Sync:NotifyChanged(featureId, opts)
         return
     end
 
+    -- The listener set is intentionally small today, so a linear pass keeps
+    -- registration simple. Bucket by featureId if profiling ever shows this
+    -- notification path growing large enough to matter.
     for _, listener in pairs(self._listeners) do
         if listener.featureId == featureId then
             local ok, err = pcall(listener.callback, featureId, opts or {})

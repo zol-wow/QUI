@@ -2,6 +2,7 @@ local ADDON_NAME, ns = ...
 
 local Model = ns.QUI_GroupFramesSettingsModel or {}
 ns.QUI_GroupFramesSettingsModel = Model
+local ModelKit = ns.Settings and ns.Settings.ModelKit
 
 local CONTEXT_ORDER = { "party", "raid" }
 local CONTEXT_LABELS = {
@@ -27,21 +28,8 @@ function Model.NormalizeContextMode(contextMode)
     return contextMode
 end
 
-local function RenderUnavailable(host, label)
-    local message = host:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    message:SetPoint("TOPLEFT", 20, -20)
-    message:SetText((label or "Settings") .. " settings unavailable (module not loaded).")
-end
-
 local function RenderSchema(methodName, host, contextMode, label)
-    local schema = ns.QUI_GroupFramesSettingsSchema
-    local render = schema and schema[methodName]
-    if type(render) == "function" and render(host, contextMode) then
-        return true
-    end
-
-    RenderUnavailable(host, label)
-    return false
+    return ModelKit.RenderSchema(ns.QUI_GroupFramesSettingsSchema, methodName, host, contextMode, label, " settings unavailable (module not loaded).")
 end
 
 local function RenderGeneral(host, state)
@@ -94,5 +82,5 @@ local TAB_DEFINITIONS = {
 }
 
 function Model.GetTabDefinitions()
-    return TAB_DEFINITIONS
+    return ModelKit.NormalizeTabDefinitions(TAB_DEFINITIONS)
 end

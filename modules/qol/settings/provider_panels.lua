@@ -22,6 +22,19 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
     local function RegisterSharedOnly(key, provider)
         ctx.RegisterShared(key, provider)
     end
+    local function CreateProviderSections(content)
+        local sections = {}
+        local function relayout()
+            U.StandardRelayout(content, sections)
+        end
+        return sections, relayout
+    end
+    local function FinishProviderPage(content, key, positionKey, sections, relayout)
+        U.BuildPositionCollapsible(content, positionKey, nil, sections, relayout)
+        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
+        relayout()
+        return content:GetHeight()
+    end
 
     ---------------------------------------------------------------------------
     -- XP TRACKER
@@ -30,8 +43,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local db = U.GetProfileDB()
         if not db or not db.xpTracker then return 80 end
         local xp = db.xpTracker
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
+        local sections, relayout = CreateProviderSections(content)
         local function Refresh() if _G.QUI_RefreshXPTracker then _G.QUI_RefreshXPTracker() end end
 
         U.CreateCollapsible(content, "Size & Text", 9 * FORM_ROW + 8, function(body)
@@ -62,9 +74,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             P(GUI:CreateFormCheckbox(body, "Hide Text Until Hover", "hideTextUntilHover", xp, Refresh, { description = "Hide the bar text until you mouse over the frame. Keeps the tracker visually clean between pulls." }), body, sy)
         end, sections, relayout)
 
-        U.BuildPositionCollapsible(content, "xpTracker", nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout() return content:GetHeight()
+        return FinishProviderPage(content, key, "xpTracker", sections, relayout)
     end })
 
     ---------------------------------------------------------------------------
@@ -74,8 +84,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local db = U.GetProfileDB()
         if not db or not db.combatTimer then return 80 end
         local ct = db.combatTimer
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
+        local sections, relayout = CreateProviderSections(content)
         local function Refresh() if _G.QUI_RefreshCombatTimer then _G.QUI_RefreshCombatTimer() end end
 
         U.CreateCollapsible(content, "General", 4 * FORM_ROW + 8, function(body)
@@ -96,9 +105,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         U.BuildBackdropBorderSection(content, ct, sections, relayout, Refresh)
 
-        U.BuildPositionCollapsible(content, "combatTimer", nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout() return content:GetHeight()
+        return FinishProviderPage(content, key, "combatTimer", sections, relayout)
     end })
 
     ---------------------------------------------------------------------------
@@ -108,8 +115,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local db = U.GetProfileDB()
         if not db or not db.brzCounter then return 80 end
         local bz = db.brzCounter
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
+        local sections, relayout = CreateProviderSections(content)
         local function Refresh() if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end end
 
         U.CreateCollapsible(content, "General", 5 * FORM_ROW + 8, function(body)
@@ -133,9 +139,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         U.BuildBackdropBorderSection(content, bz, sections, relayout, Refresh)
 
-        U.BuildPositionCollapsible(content, "brezCounter", nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout() return content:GetHeight()
+        return FinishProviderPage(content, key, "brezCounter", sections, relayout)
     end })
 
     ---------------------------------------------------------------------------

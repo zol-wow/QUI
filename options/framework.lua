@@ -852,6 +852,34 @@ function GUI:CleanupWidgetTree(root)
     UnregisterWidgetInstance(root)
 end
 
+function GUI:TeardownFrameTree(root, options)
+    if not root then return end
+    options = options or {}
+
+    self:CleanupWidgetTree(root)
+
+    if root.GetChildren then
+        for _, child in ipairs({root:GetChildren()}) do
+            if child.Hide then child:Hide() end
+            if child.ClearAllPoints then child:ClearAllPoints() end
+            if child.SetParent then child:SetParent(nil) end
+        end
+    end
+
+    if root.GetRegions then
+        for _, region in ipairs({root:GetRegions()}) do
+            if region.Hide then region:Hide() end
+            if region.SetParent then region:SetParent(nil) end
+        end
+    end
+
+    if options.includeRoot then
+        if root.Hide then root:Hide() end
+        if root.ClearAllPoints then root:ClearAllPoints() end
+        if root.SetParent then root:SetParent(nil) end
+    end
+end
+
 -- Set search context for auto-registration (call at start of page builder)
 function GUI:SetSearchContext(info)
     self._searchContext.tabIndex = info.tabIndex
@@ -5071,6 +5099,7 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
 end
 
 local CreateFormEditBoxModern = GUI.CreateFormEditBox
+local CreateInlineEditBoxModern = GUI.CreateInlineEditBox
 
 ---------------------------------------------------------------------------
 -- FORM EDIT BOX (single-line text input with label and DB binding)
@@ -5086,78 +5115,10 @@ end
 -- Inline edit box (lightweight, no label, used inside custom list entries)
 ---------------------------------------------------------------------------
 function GUI:CreateInlineEditBox(parent, options)
-    options = options or {}
-    local w = options.width or 120
-    local h = options.height or 22
-    local editH = options.editHeight or (h - 2)
-    local inset = options.textInset or 6
-    local bg = options.bgColor or {0.08, 0.08, 0.08, 1}
-    local border = options.borderColor or {0.25, 0.25, 0.25, 1}
-    local activeBorder = options.activeBorderColor or C.accent
-
-    -- Background frame with backdrop
-    local bgFrame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    bgFrame:SetSize(w, h)
-    local px = QUICore:GetPixelSize(bgFrame)
-    bgFrame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    })
-    bgFrame:SetBackdropColor(bg[1], bg[2], bg[3], bg[4] or 1)
-    bgFrame:SetBackdropBorderColor(border[1], border[2], border[3], border[4] or 1)
-
-    -- Helper for callers to update border color (used by CDM position fields)
-    bgFrame.SetFieldBorderColor = function(self, r, g, b, a)
-        pcall(self.SetBackdropBorderColor, self, r, g, b, a or 1)
+    if CreateInlineEditBoxModern then
+        return CreateInlineEditBoxModern(self, parent, options)
     end
-
-    -- Edit box inside
-    local editBox = CreateFrame("EditBox", nil, bgFrame)
-    editBox:SetHeight(editH)
-    editBox:SetPoint("LEFT", inset, 0)
-    editBox:SetPoint("RIGHT", -inset, 0)
-    editBox:SetFont(GetFontPath(), options.fontSize or 11, "")
-    editBox:SetTextColor(C_text_r, C_text_g, C_text_b, C_text_a)
-    editBox:SetJustifyH(options.justifyH or "LEFT")
-    editBox:SetAutoFocus(false)
-
-    if options.maxLetters then
-        editBox:SetMaxLetters(options.maxLetters)
-    end
-
-    if options.text then
-        editBox:SetText(options.text)
-    end
-
-    -- Border hover/focus effects
-    editBox:SetScript("OnEnter", function(self)
-        pcall(bgFrame.SetBackdropBorderColor, bgFrame, activeBorder[1], activeBorder[2], activeBorder[3], activeBorder[4] or 1)
-    end)
-    editBox:SetScript("OnLeave", function(self)
-        if not self:HasFocus() then
-            pcall(bgFrame.SetBackdropBorderColor, bgFrame, border[1], border[2], border[3], border[4] or 1)
-        end
-    end)
-
-    editBox:HookScript("OnEditFocusGained", function(self)
-        pcall(bgFrame.SetBackdropBorderColor, bgFrame, activeBorder[1], activeBorder[2], activeBorder[3], activeBorder[4] or 1)
-        if options.onEditFocusGained then options.onEditFocusGained(self) end
-    end)
-    editBox:HookScript("OnEditFocusLost", function(self)
-        pcall(bgFrame.SetBackdropBorderColor, bgFrame, border[1], border[2], border[3], border[4] or 1)
-    end)
-
-    editBox:SetScript("OnEnterPressed", function(self)
-        if options.onEnterPressed then options.onEnterPressed(self) end
-        self:ClearFocus()
-    end)
-    editBox:SetScript("OnEscapePressed", function(self)
-        if options.onEscapePressed then options.onEscapePressed(self) end
-        self:ClearFocus()
-    end)
-
-    return bgFrame, editBox
+    return nil
 end
 
 ---------------------------------------------------------------------------
@@ -5839,14 +5800,17 @@ end
 function GUI:RenderSearchResults(content, results, searchTerm, navResults)
     if not content then return end
 
-    -- Clear previous child frames (unregister from widget sync first)
-    -- Snapshot children before mutating: SetParent(nil) removes children
-    -- from the list mid-iteration, causing select() to return nil.
-    local kids = { content:GetChildren() }
-    for _, child in ipairs(kids) do
-        UnregisterWidgetInstance(child)
-        child:Hide()
-        child:SetParent(nil)
+    if GUI.TeardownFrameTree then
+        GUI:TeardownFrameTree(content)
+    else
+        -- Snapshot children before mutating: SetParent(nil) removes children
+        -- from the list mid-iteration, causing select() to return nil.
+        local kids = { content:GetChildren() }
+        for _, child in ipairs(kids) do
+            UnregisterWidgetInstance(child)
+            child:Hide()
+            child:SetParent(nil)
+        end
     end
 
     -- Clear previous font strings
@@ -6045,8 +6009,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
     -- Suppress auto-registration while creating search result widgets
     GUI._suppressSearchRegistration = true
 
-    -- Render grouped results with actual widgets (pcall ensures flag always resets on error)
-    pcall(function()
+    local function RenderGroupedResults()
     for _, groupKey in ipairs(tabOrder) do
         local group = groupedResults[groupKey]
         local groupData = group.data
@@ -6237,10 +6200,35 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
 
         y = y - 10  -- Gap between groups
     end
-    end)  -- end pcall
+    end
+
+    local ok, err = xpcall(RenderGroupedResults, geterrorhandler and geterrorhandler() or debug.traceback)
 
     -- Re-enable auto-registration (guaranteed even if widget builder errored)
     GUI._suppressSearchRegistration = false
+
+    if not ok then
+        local errorRow = CreateFrame("Frame", nil, content, "BackdropTemplate")
+        errorRow:SetSize(content:GetWidth() - (PADDING * 2), 28)
+        errorRow:SetPoint("TOPLEFT", PADDING, y)
+        local rowPx = QUICore:GetPixelSize(errorRow)
+        errorRow:SetBackdrop({
+            bgFile = "Interface\\BUTTONS\\WHITE8X8",
+            edgeFile = "Interface\\BUTTONS\\WHITE8X8",
+            edgeSize = rowPx,
+        })
+        errorRow:SetBackdropColor(0.25, 0.05, 0.05, 0.75)
+        errorRow:SetBackdropBorderColor(1, 0.25, 0.25, 0.65)
+
+        local label = errorRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        SetFont(label, 11, "", {1, 0.45, 0.45, 1})
+        label:SetPoint("LEFT", errorRow, "LEFT", 8, 0)
+        label:SetPoint("RIGHT", errorRow, "RIGHT", -8, 0)
+        label:SetJustifyH("LEFT")
+        label:SetText("Some search results failed to render. Check the Lua error log.")
+        table.insert(content._fontStrings, label)
+        y = y - 32
+    end
 
     content:SetHeight(math.abs(y) + 20)
 end
@@ -7043,8 +7031,12 @@ function GUI:RefreshAccentColor()
 
     local point, _, relPoint, xOfs, yOfs = self.MainFrame:GetPoint()
 
-    self.MainFrame:Hide()
-    self.MainFrame:SetParent(nil)
+    if self.TeardownFrameTree then
+        self:TeardownFrameTree(self.MainFrame, { includeRoot = true })
+    else
+        self.MainFrame:Hide()
+        self.MainFrame:SetParent(nil)
+    end
     self.MainFrame = nil
 
     -- Registry re-seeds from the tile builders on re-init.

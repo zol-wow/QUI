@@ -1754,6 +1754,9 @@ local function CreateIcon(parent, spellEntry)
     -- Metadata
     icon._spellEntry = spellEntry
     icon._isQUICDMIcon = true
+    if ns.HookFrameForMouseover then
+        ns.HookFrameForMouseover(icon)
+    end
 
     -- Set texture
     if spellEntry then
