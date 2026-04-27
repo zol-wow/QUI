@@ -31,13 +31,6 @@ local function BuildBlizzardMoverTab(tabContent)
     local BM = ns.QUI_BlizzardMover
     local db = Shared.GetDB()
 
-    GUI:SetSearchContext({
-        tabIndex = 2,
-        tabName = "General & QoL",
-        subTabIndex = 12,
-        subTabName = "Blizzard Mover",
-    })
-
     local bm = db and db.blizzardMover
     if not bm then
         local err = GUI:CreateLabel(tabContent, "Blizzard Mover settings are unavailable (database not ready).", 12, C.textMuted)

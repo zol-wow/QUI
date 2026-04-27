@@ -5329,7 +5329,12 @@ local function ScoreSearchText(text, term)
         end
         if allTokens and #term.tokens > 0 then
             score = math.max(score, 210 + math.min(#term.tokens, 4) * 6)
-        elseif tokenHits > 0 then
+        elseif tokenHits > 0 and #term.tokens == 1 then
+            -- Multi-token queries require all tokens — otherwise
+            -- "action tracker" matches every entry containing just
+            -- "action" or just "tracker". This branch only ever fires
+            -- for single-token queries because allTokens is true when
+            -- the only token matches. Kept for symmetry / future use.
             score = math.max(score, 110 + tokenHits * 8)
         end
 
@@ -5513,13 +5518,15 @@ function GUI:CreateSearchBox(parent)
 
     -- Text changed handler with debounce
     editBox:SetScript("OnTextChanged", function(self, userInput)
-        if not userInput then return end
-
         local text = self:GetText()
 
-        -- Show/hide placeholder and clear button
+        -- Show/hide placeholder and clear button. Done unconditionally so
+        -- programmatic SetText("") (e.g. sidebar nav clearing the search)
+        -- restores the placeholder, not just user typing.
         placeholder:SetShown(text == "")
         clearBtn:SetShown(text ~= "")
+
+        if not userInput then return end
 
         -- Cancel pending search timer
         if GUI._searchTimer then
@@ -5542,8 +5549,15 @@ function GUI:CreateSearchBox(parent)
     end)
 
     -- Focus effects
-    editBox:SetScript("OnEditFocusGained", function()
+    editBox:SetScript("OnEditFocusGained", function(self)
         container:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+        -- "Back to results": if the search box still has a term (e.g. user
+        -- clicked a result and is now on the navigated tile), focusing the
+        -- search bar re-opens the results overlay.
+        local text = self:GetText()
+        if text and text:len() >= SEARCH_MIN_CHARS and container.onSearch then
+            container.onSearch(text)
+        end
     end)
     editBox:SetScript("OnEditFocusLost", function()
         container:SetBackdropBorderColor(0.25, 0.28, 0.32, 1)
@@ -5939,18 +5953,11 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                 self:SetBackdropBorderColor(0.2, 0.22, 0.25, 0.6)
             end)
 
-            -- Click to navigate
-            local targetTabIndex = entry.tabIndex
-            local targetSubTabIndex = entry.subTabIndex
-            local targetSectionName = entry.sectionName
+            -- Click to navigate. Pass the entry through verbatim — losing
+            -- tileId / subPageIndex / featureId / navType here breaks v2
+            -- routing and the section-anchor scroll-to-feature path.
             navRow:SetScript("OnClick", function()
-                GUI:NavigateSearchResult({
-                    tabIndex = targetTabIndex,
-                    subTabIndex = targetSubTabIndex,
-                    sectionName = targetSectionName,
-                    tabName = entry.tabName,
-                    subTabName = entry.subTabName,
-                })
+                GUI:NavigateSearchResult(entry)
             end)
 
             y = y - 30
@@ -7434,11 +7441,11 @@ function GUI:AddFeatureTile(frame, config)
     -- Vertical layout within bucket. Top bucket stacks down from below the
     -- sidebar search bar (search bar eats ~44px at the top: -10 offset + 28
     -- height + 6 gap). Bottom bucket stacks up from above the Tools strip
-    -- (~146px reserved: 24 bottom offset + 116 strip height + 6 gap).
+    -- (~102px reserved: 24 bottom offset + 72 strip height + 6 gap).
     if config.isBottomItem then
         if bucketIndex == 1 then
-            tile:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 6, 146)
-            tile:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -6, 146)
+            tile:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 6, 102)
+            tile:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -6, 102)
         else
             local prev = bucket[bucketIndex - 1]
             tile:SetPoint("BOTTOMLEFT", prev, "TOPLEFT", 0, 2)
@@ -7697,6 +7704,16 @@ function GUI:SeedStaticSearchRoutesFromTiles(frame)
             return
         end
 
+        if not entry.tileId then
+            local resolved = GUI:ResolveV2Navigation(entry.tabIndex, entry.subTabIndex)
+            if resolved then
+                entry.tileId = resolved.tileId or entry.tileId
+                if entry.subPageIndex == nil then
+                    entry.subPageIndex = resolved.subPageIndex
+                end
+            end
+        end
+
         local tile = entry.tileId and tilesById[entry.tileId] or nil
         if not tile then
             return
@@ -7704,9 +7721,7 @@ function GUI:SeedStaticSearchRoutesFromTiles(frame)
 
         local tileName = tile.config and tile.config.name or nil
         if type(tileName) == "string" and tileName ~= "" then
-            if type(entry.tabName) ~= "string" or entry.tabName == "" or entry.tabName == entry.tileId then
-                entry.tabName = tileName
-            end
+            entry.tabName = tileName
         end
 
         local subPage = entry.subPageIndex
@@ -7716,10 +7731,7 @@ function GUI:SeedStaticSearchRoutesFromTiles(frame)
             or nil
         local subPageName = subPage and subPage.name or nil
         if type(subPageName) == "string" and subPageName ~= "" then
-            local defaultSubPageLabel = "Page " .. tostring(entry.subPageIndex)
-            if type(entry.subTabName) ~= "string" or entry.subTabName == "" or entry.subTabName == defaultSubPageLabel then
-                entry.subTabName = subPageName
-            end
+            entry.subTabName = subPageName
         end
 
         if entry.navType then
@@ -7781,6 +7793,62 @@ function GUI:SeedStaticSearchRoutesFromTiles(frame)
                         }),
                     })
                 end
+
+                -- Stack sub-pages render one heading per featureId at runtime
+                -- (see BuildFeatureStackPage). Mirror those headings as section
+                -- nav entries so search ranks the heading label (e.g. "Action
+                -- Tracker") instead of just the inner widget labels.
+                if type(subPage) == "table" and type(subPage.featureIds) == "table" then
+                    local registry = ns.Settings and ns.Settings.Registry
+                    local renderAdapters = ns.Settings and ns.Settings.RenderAdapters
+                    for _, item in ipairs(subPage.featureIds) do
+                        local featureId, explicitLabel
+                        if type(item) == "string" then
+                            featureId = item
+                        elseif type(item) == "table" and type(item.key) == "string" then
+                            featureId = item.key
+                            explicitLabel = item.label
+                        end
+
+                        local sectionLabel = explicitLabel
+                        if featureId and (type(sectionLabel) ~= "string" or sectionLabel == "") then
+                            local feature = registry and type(registry.GetFeature) == "function"
+                                and registry:GetFeature(featureId) or nil
+                            local providerKey = (feature and feature.providerKey) or featureId
+                            if renderAdapters and type(renderAdapters.GetProviderLabel) == "function" then
+                                sectionLabel = renderAdapters.GetProviderLabel(providerKey)
+                            else
+                                sectionLabel = providerKey
+                            end
+                        end
+
+                        if type(sectionLabel) == "string" and sectionLabel ~= "" then
+                            self:RegisterStaticNavigationEntry({
+                                navType = "section",
+                                label = BuildSearchNavigationLabel("section", {
+                                    tabName = tile.config.name,
+                                    subTabName = subPage.name,
+                                    sectionName = sectionLabel,
+                                    tileId = tile.id,
+                                    subPageIndex = subPageIndex,
+                                }),
+                                tabName = tile.config.name,
+                                subTabName = subPage.name,
+                                sectionName = sectionLabel,
+                                tileId = tile.id,
+                                subPageIndex = subPageIndex,
+                                featureId = featureId,
+                                keywords = BuildSearchNavigationKeywords({
+                                    tabName = tile.config.name,
+                                    subTabName = subPage.name,
+                                    sectionName = sectionLabel,
+                                    tileId = tile.id,
+                                    subPageIndex = subPageIndex,
+                                }),
+                            })
+                        end
+                    end
+                end
             end
         end
     end
@@ -7790,6 +7858,19 @@ function GUI:SelectFeatureTile(frame, index, opts)
     frame._tiles = frame._tiles or {}
     local tile = frame._tiles[index]
     if not tile then return end
+
+    -- Sidebar selection is "navigate elsewhere" — clear any stale search
+    -- term so the user lands on the tile with a fresh search box (placeholder
+    -- restored by CreateSearchBox's OnTextChanged). Search-driven navigation
+    -- (NavigateSearchResult) sets opts.searchEntry and skips this so the term
+    -- persists for "back to results".
+    if not (opts and opts.searchEntry) and frame._searchBox and frame._searchBox.editBox then
+        local box = frame._searchBox.editBox
+        if box:GetText() ~= "" then
+            box:SetText("")
+            box:ClearFocus()
+        end
+    end
 
     -- Update sidebar active state
     for i, t in ipairs(frame._tiles) do
@@ -7845,9 +7926,35 @@ function GUI:SelectFeatureTile(frame, index, opts)
     end
 
     -- Scroll to and pulse a specific widget (search jump-to-setting).
-    if opts and (opts.scrollToPath or opts.scrollToLabel) then
+    if opts and (opts.scrollToPath or opts.scrollToLabel or opts.scrollToFeatureId) then
         C_Timer.After(0, function()
             local root = opts.searchRoot or tile._pageFrame
+            local scrolledToSection = false
+
+            -- Stack-page section results: BuildFeatureStackPage tags each
+            -- feature title row with _quiSearchSectionFeatureId. Walk the
+            -- frame tree (same approach as pinned-widget navigation) to
+            -- find the tagged row and scroll its ancestor ScrollFrame to
+            -- bring it into view. More robust than relying on stored
+            -- _subPageBodies references because layout timing doesn't
+            -- matter — we re-query the live frame tree at click time.
+            if opts.scrollToFeatureId then
+                local target = GUI:_findSectionByFeatureId(root, opts.scrollToFeatureId)
+                if target then
+                    local scroll = GUI:_findAncestorScroll(target)
+                    if scroll then
+                        local scrollChild = scroll.GetScrollChild and scroll:GetScrollChild() or nil
+                        local bodyTop = scrollChild and scrollChild.GetTop and scrollChild:GetTop() or nil
+                        local sectionTop = target.GetTop and target:GetTop() or nil
+                        if bodyTop and sectionTop and scroll.SetVerticalScroll then
+                            local offset = math.max(0, bodyTop - sectionTop)
+                            pcall(scroll.SetVerticalScroll, scroll, offset)
+                            scrolledToSection = true
+                        end
+                    end
+                end
+            end
+
             local target = nil
             if opts.scrollToPath then
                 target = GUI:_findWidgetByPinnedPath(root, opts.scrollToPath)
@@ -7856,14 +7963,25 @@ function GUI:SelectFeatureTile(frame, index, opts)
                 target = GUI:_findWidgetByLabel(root, opts.scrollToLabel)
             end
             if target then
-                local scroll = GUI:_findAncestorScroll(target)
-                if scroll then
-                    local _, y = target:GetCenter()
-                    local _, sTop = scroll:GetCenter()
-                    if y and sTop then
-                        local offset = (sTop - y) - 50
-                        if scroll.SetVerticalScroll then
-                            pcall(scroll.SetVerticalScroll, scroll, math.max(0, offset))
+                -- Only re-scroll when the section-anchor pass didn't already
+                -- land us on the right card. The legacy widget-scroll math
+                -- below uses screen-center coords which give wrong (often
+                -- zero) absolute scroll values once any prior scroll has
+                -- moved the widget near the viewport top — running it after
+                -- the section anchor would yank scroll back to 0.
+                if not scrolledToSection then
+                    local scroll = GUI:_findAncestorScroll(target)
+                    if scroll then
+                        local scrollChild = scroll.GetScrollChild and scroll:GetScrollChild() or nil
+                        local bodyTop = scrollChild and scrollChild.GetTop and scrollChild:GetTop() or nil
+                        local widgetTop = target.GetTop and target:GetTop() or nil
+                        if bodyTop and widgetTop and scroll.SetVerticalScroll then
+                            -- Offset from scroll-child top to widget top is
+                            -- invariant under scroll, so this gives the
+                            -- correct absolute scroll value to bring the
+                            -- widget into view (with ~50px breathing room).
+                            local offset = math.max(0, bodyTop - widgetTop - 50)
+                            pcall(scroll.SetVerticalScroll, scroll, offset)
                         end
                     end
                 end
@@ -8040,9 +8158,21 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
                 targetBody._sections = {}
                 function targetBody:RegisterSection(id, label, frame)
                     if type(id) ~= "string" or id == "" or not frame then return end
+                    local resolvedLabel = (type(label) == "string" and label ~= "") and label or id
+                    -- Dedupe by id so partial re-renders that don't go through
+                    -- ClearDynamicContent (e.g. provider notifications that
+                    -- re-invoke the renderer in place) replace the stale frame
+                    -- reference instead of growing the list. Without this the
+                    -- chip strip's idx-based clicks land on hidden ghosts.
+                    for i, existing in ipairs(self._sections) do
+                        if existing.id == id then
+                            self._sections[i] = { id = id, label = resolvedLabel, frame = frame }
+                            return
+                        end
+                    end
                     self._sections[#self._sections + 1] = {
                         id = id,
-                        label = (type(label) == "string" and label ~= "") and label or id,
+                        label = resolvedLabel,
                         frame = frame,
                     }
                 end
@@ -8425,10 +8555,10 @@ function GUI:AddToolsStripButton(frame, config)
     if not frame._toolsStrip then
         local strip = CreateFrame("Frame", nil, frame.sidebar)
         -- Single-column layout: strip holds the TOOLS heading plus a stack
-        -- of full-width buttons. Height is tall enough for up to ~4 rows.
+        -- of full-width buttons. Height fits 2 rows (heading + 2 buttons).
         strip:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 6, 24)
         strip:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -6, 24)
-        strip:SetHeight(116)
+        strip:SetHeight(72)
 
         local sep = strip:CreateTexture(nil, "OVERLAY")
         sep:SetPoint("TOPLEFT", 2, 0)
@@ -8746,9 +8876,10 @@ function GUI:NavigateSearchResult(entry, opts)
     local _, idx = self:FindV2TileByID(frame, route.tileId)
     if not idx then return end
 
-    if frame._searchBox and frame._searchBox.editBox then
-        frame._searchBox.editBox:SetText("")
-    end
+    -- Hide the results overlay and reveal the tile content, but keep the
+    -- search term in the box: focusing it again re-opens the results overlay
+    -- (see CreateSearchBox OnEditFocusGained — "back to results"). The X
+    -- button or a sidebar tile click is the explicit way to reset the search.
     if frame._searchResultsArea then
         frame._searchResultsArea:Hide()
     end
@@ -8762,6 +8893,11 @@ function GUI:NavigateSearchResult(entry, opts)
         searchTabIndex = entry.tabIndex,
         searchSubTabIndex = entry.subTabIndex,
         searchEntry = entry,
+        -- Stack-page section results carry the featureId of the title row
+        -- registered by BuildFeatureStackPage. Forwarding it triggers the
+        -- scroll-to-section path in SelectFeatureTile so the user lands at
+        -- the matching feature card instead of the top of the sub-page.
+        scrollToFeatureId = (entry.navType == "section" and entry.featureId) or nil,
     }
     if opts then
         for key, value in pairs(opts) do
@@ -8941,6 +9077,28 @@ function GUI:_findAncestorScroll(frame)
         if p.GetObjectType and p:GetObjectType() == "ScrollFrame" then return p end
         p = p.GetParent and p:GetParent() or nil
     end
+end
+
+-- Walks the frame tree under root looking for a section title row tagged
+-- with _quiSearchSectionFeatureId == featureId (set by BuildFeatureStackPage).
+-- Same approach as _findWidgetByPinnedPath — re-queries the live tree at
+-- click time, so layout/build timing doesn't matter.
+function GUI:_findSectionByFeatureId(root, featureId)
+    if not root or type(featureId) ~= "string" or featureId == "" then
+        return nil
+    end
+    if root._quiSearchSectionFeatureId == featureId then
+        return root
+    end
+    local n = root.GetNumChildren and root:GetNumChildren() or 0
+    for i = 1, n do
+        local child = select(i, root:GetChildren())
+        if child then
+            local match = GUI:_findSectionByFeatureId(child, featureId)
+            if match then return match end
+        end
+    end
+    return nil
 end
 
 --[[

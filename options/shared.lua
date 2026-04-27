@@ -1057,6 +1057,27 @@ local function CreateAccentDotLabel(parent, text, yOffset)
     container._dot = dot
     container._label = label
     container._separator = sep
+
+    -- Auto-register this label as a section on any V2 settings sub-page
+    -- body that opted in via sectionNav. Walks up the parent chain because
+    -- BuildFeatureTabPage wraps the renderer in an intermediate host frame.
+    -- _sectionsAuthoritative tells us BuildFeatureStackPage is in charge of
+    -- registration (one chip per featureId titleRow); skip nested registers
+    -- so feature-card schemas using this helper don't bubble up as chips.
+    if type(text) == "string" and text ~= "" then
+        local target = parent
+        while target do
+            if type(target.RegisterSection) == "function" then
+                if not target._sectionsAuthoritative then
+                    target:RegisterSection(text, text, container)
+                end
+                break
+            end
+            if not target.GetParent then break end
+            target = target:GetParent()
+        end
+    end
+
     return container
 end
 
@@ -1283,6 +1304,14 @@ local function ClearDynamicContent(frame)
         return
     end
 
+    -- Section nav: each (re)render produces fresh section frames; the old
+    -- ones get reparented out of `frame` below. Without wiping _sections,
+    -- the body keeps stale references and the chip strip's anchors miss
+    -- (clicks find no visible idx and silently no-op).
+    if frame._sections then
+        wipe(frame._sections)
+    end
+
     local gui = QUI and QUI.GUI
     if gui and type(gui.TeardownFrameTree) == "function" then
         gui:TeardownFrameTree(frame)
@@ -1319,6 +1348,25 @@ local function ResolveFeatureSearchContext(featureId, searchContext)
         end
         if route.subPageIndex ~= nil then
             merged.subPageIndex = route.subPageIndex
+        end
+    end
+
+    -- Stamp the feature identity onto the search context so widget bindings
+    -- created during the feature's render carry the right featureId/providerKey/category.
+    -- Without this the context leaks from whatever feature was rendered last,
+    -- and pinned entries get the wrong featureId — misrouting Jump-to-setting.
+    if type(featureId) == "string" and featureId ~= "" then
+        merged.featureId = featureId
+        local registry = Settings and Settings.Registry
+        local feature = registry and type(registry.GetFeature) == "function"
+            and registry:GetFeature(featureId) or nil
+        if type(feature) == "table" then
+            if type(feature.providerKey) == "string" and feature.providerKey ~= "" then
+                merged.providerKey = feature.providerKey
+            end
+            if type(feature.category) == "string" and feature.category ~= "" then
+                merged.category = feature.category
+            end
         end
     end
 
@@ -1623,6 +1671,7 @@ local function RegisterFeatureTile(frame, spec)
                     featureId = page.featureId,
                     featureIds = page.featureIds,
                     noScroll = subPage.noScroll,
+                    sectionNav = subPage.sectionNav,
                     buildFunc = function(body)
                         BuildFeaturePageBody(body, pageConfig, BuildFeatureTabPage)
                     end,
@@ -1689,6 +1738,12 @@ BuildFeatureStackPage = function(tabContent, featureIds, searchContext, options)
         return
     end
 
+    -- This page registers one chip per featureId titleRow. Suppress the
+    -- auto-registration that Utils.CreateCollapsible does for nested
+    -- collapsibles inside each feature card's renderer — otherwise those
+    -- show up as top-level chips alongside the feature names.
+    tabContent._sectionsAuthoritative = true
+
     for _, item in ipairs(featureIds) do
         local featureId, explicitLabel
         if type(item) == "string" then
@@ -1709,6 +1764,12 @@ BuildFeatureStackPage = function(tabContent, featureIds, searchContext, options)
             titleRow:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, yOffset)
             titleRow:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
             titleRow:SetHeight(HEADER_HEIGHT)
+            -- Tag for search/jump-to navigation. GUI:_findSectionByFeatureId
+            -- walks the live frame tree at click time looking for this tag,
+            -- so search results pointing to a stack-page section can land
+            -- the user on the right card without depending on cached
+            -- subPageBody references.
+            titleRow._quiSearchSectionFeatureId = featureId
 
             local dot = titleRow:CreateTexture(nil, "OVERLAY")
             dot:SetSize(6, 6)

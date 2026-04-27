@@ -764,13 +764,59 @@ function Pins:AttachSettingRow(cell, widget, labelText)
 end
 
 local function BuildBreadcrumb(item)
+    -- Prefer stored tabName/subTabName, but fall back to deriving them from
+    -- tileId/subPageIndex via the tile registry. Pins captured inside a
+    -- BuildFeatureStackPage iteration sometimes have no tabName/subTabName
+    -- stored (only tileId/subPageIndex), which would otherwise collapse the
+    -- breadcrumb to just the sectionName ("Behavior") with no useful context.
+    local tabName, subTabName = item.tabName, item.subTabName
+    local needLookup = (type(tabName) ~= "string" or tabName == "")
+        or (type(subTabName) ~= "string" or subTabName == "")
+    if needLookup and type(item.tileId) == "string" and item.tileId ~= "" then
+        local gui = _G.QUI and _G.QUI.GUI or nil
+        local frame = gui and gui.MainFrame or nil
+        if frame and type(gui.FindV2TileByID) == "function" then
+            local tile = gui:FindV2TileByID(frame, item.tileId)
+            if tile and tile.config then
+                if (type(tabName) ~= "string" or tabName == "")
+                    and type(tile.config.name) == "string" and tile.config.name ~= "" then
+                    tabName = tile.config.name
+                end
+                if (type(subTabName) ~= "string" or subTabName == "")
+                    and type(item.subPageIndex) == "number" and tile.config.subPages then
+                    local sp = tile.config.subPages[item.subPageIndex]
+                    if sp and type(sp.name) == "string" and sp.name ~= "" then
+                        subTabName = sp.name
+                    end
+                end
+            end
+        end
+    end
+
     local parts = {}
-    if type(item.tabName) == "string" and item.tabName ~= "" then
-        parts[#parts + 1] = item.tabName
+    if type(tabName) == "string" and tabName ~= "" then
+        parts[#parts + 1] = tabName
     end
-    if type(item.subTabName) == "string" and item.subTabName ~= "" and item.subTabName ~= item.tabName then
-        parts[#parts + 1] = item.subTabName
+    if type(subTabName) == "string" and subTabName ~= "" and subTabName ~= tabName then
+        parts[#parts + 1] = subTabName
     end
+
+    -- Stacked feature pages (e.g. Gameplay > Combat) host many features under
+    -- one sub-tab. Surface the feature's display label between the sub-tab
+    -- and the sectionName so the crumb tells the user which feature card
+    -- the pin lives under.
+    if type(item.featureId) == "string" and item.featureId ~= "" then
+        local RenderAdapters = Settings and Settings.RenderAdapters
+        local featureLabel
+        if RenderAdapters and type(RenderAdapters.GetProviderLabel) == "function" then
+            featureLabel = RenderAdapters.GetProviderLabel(item.featureId, nil)
+        end
+        if type(featureLabel) == "string" and featureLabel ~= ""
+            and featureLabel ~= subTabName and featureLabel ~= tabName then
+            parts[#parts + 1] = featureLabel
+        end
+    end
+
     if type(item.sectionName) == "string" and item.sectionName ~= "" then
         parts[#parts + 1] = item.sectionName
     end

@@ -625,6 +625,11 @@ function Pins:List(db)
             sectionName = entry.sectionName,
             tileId = entry.tileId,
             subPageIndex = entry.subPageIndex,
+            featureId = entry.featureId,
+            providerKey = entry.providerKey,
+            category = entry.category,
+            surfaceTabKey = entry.surfaceTabKey,
+            surfaceUnitKey = entry.surfaceUnitKey,
         }
     end
 
@@ -762,9 +767,12 @@ function Pins:UpdateEntryMetadata(entry, descriptor)
     if type(descriptor.pinLabel) == "string" and descriptor.pinLabel ~= "" then
         entry.label = descriptor.pinLabel
     end
-    if type(descriptor.tabName) == "string" then entry.tabName = descriptor.tabName end
-    if type(descriptor.subTabName) == "string" then entry.subTabName = descriptor.subTabName end
-    if type(descriptor.sectionName) == "string" then entry.sectionName = descriptor.sectionName end
+    -- Only overwrite when the descriptor carries a non-empty string. An empty
+    -- string from a stale-context rebind would otherwise clobber good metadata
+    -- captured at pin time and break Jump-to-setting navigation.
+    if type(descriptor.tabName) == "string" and descriptor.tabName ~= "" then entry.tabName = descriptor.tabName end
+    if type(descriptor.subTabName) == "string" and descriptor.subTabName ~= "" then entry.subTabName = descriptor.subTabName end
+    if type(descriptor.sectionName) == "string" and descriptor.sectionName ~= "" then entry.sectionName = descriptor.sectionName end
     if type(descriptor.featureId) == "string" and descriptor.featureId ~= "" then entry.featureId = descriptor.featureId end
     if type(descriptor.surfaceTabKey) == "string" and descriptor.surfaceTabKey ~= "" then entry.surfaceTabKey = descriptor.surfaceTabKey end
     if type(descriptor.surfaceUnitKey) == "string" and descriptor.surfaceUnitKey ~= "" then entry.surfaceUnitKey = descriptor.surfaceUnitKey end
@@ -1210,6 +1218,7 @@ function Pins:NavigateToPinned(path)
     gui:NavigateSearchResult(entry, {
         scrollToLabel = entry.label,
         scrollToPath = entry.path,
+        scrollToFeatureId = entry.featureId,
         pulse = true,
     })
     return true

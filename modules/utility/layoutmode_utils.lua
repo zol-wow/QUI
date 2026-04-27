@@ -124,6 +124,36 @@ function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sectio
 
     local section = CreateFrame("Frame", nil, parent)
 
+    -- Auto-register this collapsible as a section on any V2 settings sub-page
+    -- body that opted in via sectionNav. Walks up the parent chain because
+    -- BuildFeatureTabPage wraps the renderer in an intermediate host frame.
+    -- Headerless sections have no visible title to chip; skip them.
+    -- _sectionsAuthoritative tells us BuildFeatureStackPage is in charge of
+    -- registration (one chip per featureId titleRow); skip nested registers.
+    --
+    -- Also stamp the section title onto the GUI search context so that any
+    -- pinnable widget bound inside buildFunc carries the right sectionName.
+    -- Without this, bindings inherit a stale sectionName from whatever was
+    -- last set, which surfaces as misrouted Jump-to-setting clicks on pins.
+    if not headerless and type(title) == "string" and title ~= "" then
+        local GUI = QUI and QUI.GUI
+        if GUI and type(GUI.SetSearchSection) == "function" then
+            GUI:SetSearchSection(title)
+        end
+
+        local target = parent
+        while target do
+            if type(target.RegisterSection) == "function" then
+                if not target._sectionsAuthoritative then
+                    target:RegisterSection(title, title, section)
+                end
+                break
+            end
+            if not target.GetParent then break end
+            target = target:GetParent()
+        end
+    end
+
     if not headerless then
         -- Header: accent dot + title + 1px accent underline
         local dot = section:CreateTexture(nil, "OVERLAY")

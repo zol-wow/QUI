@@ -22,6 +22,7 @@ function V2Minimap.Register(frame)
             {
                 id = "minimap",
                 name = "Minimap",
+                sectionNav = true,
                 featureId = "minimap",
                 navRoutes = {
                     { tabIndex = 9, subTabIndex = 0 },

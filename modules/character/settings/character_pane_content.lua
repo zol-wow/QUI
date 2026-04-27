@@ -1,6 +1,5 @@
 --[[
-    QUI Options - Character Pane Tab
-    BuildCharacterPaneTab for General & QoL page
+    QUI Options - Character Pane Tab (Gameplay tile sub-page)
 ]]
 
 local ADDON_NAME, ns = ...
@@ -18,8 +17,6 @@ local function BuildCharacterPaneTab(tabContent)
     local FORM_ROW = 32
     local PAD = Shared.PADDING
     local db = Shared.GetDB()
-
-    GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 7, subTabName = "Character Pane"})
 
     local char = db and db.character
     if not char then return end

@@ -42,6 +42,7 @@ function V2.Register(frame)
             {
                 id = "importExport",
                 name = "Import / Export",
+                sectionNav = true,
                 featureId = "importExportPage",
                 navRoutes = { { tabIndex = 14, subTabIndex = 0 } },
                 searchContext = {
@@ -59,6 +60,7 @@ function V2.Register(frame)
             {
                 id = "clickCast",
                 name = "Click-Cast",
+                sectionNav = true,
                 featureId = "clickCastPage",
                 navRoutes = {
                     { tabIndex = 7, subTabIndex = 0 },

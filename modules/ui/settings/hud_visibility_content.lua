@@ -1,6 +1,5 @@
 --[[
-    QUI Options - HUD Visibility Tab
-    BuildHUDVisibilityTab for General & QoL page
+    QUI Options - HUD Visibility Tab (Appearance tile sub-page)
 ]]
 
 local ADDON_NAME, ns = ...
@@ -18,8 +17,6 @@ local function BuildHUDVisibilityTab(tabContent)
     local FORM_ROW = 32
     local PAD = Shared.PADDING
     local db = Shared.GetDB()
-
-    GUI:SetSearchContext({tabIndex = 2, tabName = "General & QoL", subTabIndex = 2, subTabName = "HUD Visibility"})
 
     if not db then return end
 

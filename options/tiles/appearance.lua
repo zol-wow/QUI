@@ -51,6 +51,7 @@ function V2.Register(frame)
             {
                 id = "skinning",
                 name = "Skinning",
+                sectionNav = true,
                 featureId = "skinningPage",
                 navRoutes = { { tabIndex = SEARCH_TAB_INDEX, subTabIndex = 2 } },
                 searchContext = {
@@ -63,6 +64,7 @@ function V2.Register(frame)
             {
                 id = "autohide",
                 name = "Autohide",
+                sectionNav = true,
                 featureId = "autohidePage",
                 navRoutes = { { tabIndex = SEARCH_TAB_INDEX, subTabIndex = 1 } },
                 searchContext = {
@@ -87,14 +89,9 @@ function V2.Register(frame)
             {
                 id = "hudVisibility",
                 name = "HUD Visibility",
+                sectionNav = true,
                 featureId = "hudVisibilityPage",
                 navRoutes = { { tabIndex = 2, subTabIndex = 2 } },
-                searchContext = {
-                    tabIndex = 2,
-                    tabName = "General & QoL",
-                    subTabIndex = 2,
-                    subTabName = "HUD Visibility",
-                },
             },
             {
                 id = "frameLevels",
@@ -111,14 +108,9 @@ function V2.Register(frame)
             {
                 id = "blizzardMover",
                 name = "Blizzard Mover",
+                sectionNav = true,
                 featureId = "blizzardMoverPage",
                 navRoutes = { { tabIndex = 2, subTabIndex = 12 } },
-                searchContext = {
-                    tabIndex = 2,
-                    tabName = "General & QoL",
-                    subTabIndex = 12,
-                    subTabName = "Blizzard Mover",
-                },
             },
         },
         relatedSettings = {

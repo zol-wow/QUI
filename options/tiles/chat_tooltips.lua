@@ -21,26 +21,16 @@ function V2.Register(frame)
             {
                 id = "chat",
                 name = "Chat",
+                sectionNav = true,
                 featureId = "chatFrame1",
                 navRoutes = { { tabIndex = 2, subTabIndex = 5 } },
-                searchContext = {
-                    tabIndex = 2,
-                    tabName = "General & QoL",
-                    subTabIndex = 5,
-                    subTabName = "Chat",
-                },
             },
             {
                 id = "tooltips",
                 name = "Tooltips",
+                sectionNav = true,
                 featureId = "tooltipAnchor",
                 navRoutes = { { tabIndex = 2, subTabIndex = 6 } },
-                searchContext = {
-                    tabIndex = 2,
-                    tabName = "General & QoL",
-                    subTabIndex = 6,
-                    subTabName = "Tooltip",
-                },
             },
         },
     })

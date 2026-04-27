@@ -1,6 +1,5 @@
 --[[
-    QUI QoL Options - General Tab
-    BuildGeneralTab for General & QoL page
+    QUI QoL Options - General Tab (Quality of Life tile sub-page)
 ]]
 
 local ADDON_NAME, ns = ...
@@ -61,12 +60,9 @@ local function BuildGeneralTab(tabContent, searchContext, selectedSectionKey)
         RefreshDefaultTextures()
     end
 
-    GUI:SetSearchContext(searchContext or {
-        tabIndex = 2,
-        tabName = "General & QoL",
-        subTabIndex = 1,
-        subTabName = "General",
-    })
+    if searchContext then
+        GUI:SetSearchContext(searchContext)
+    end
 
     if not db then return end
 
