@@ -51,37 +51,77 @@ local function KillBlizzardFrame(frame, allowInEditMode)
     -- secure position managers (for example PetFrame:ClearAllPointsBase()).
 end
 
+-- Hidden parent for evicted protected frames. Sized to UIParent so children's
+-- GetRect() returns valid geometry (matters for EditMode magnetic-snap loop's
+-- GetScaledSelectionSides() which crashes on nil-rect frames). Mirrors the
+-- ElvUI/oUF hiddenParent pattern.
+local _hiddenPetParent
+local _petReevictPending = false
+
+local function GetHiddenPetParent()
+    if not _hiddenPetParent then
+        _hiddenPetParent = CreateFrame("Frame", nil, UIParent)
+        _hiddenPetParent:SetAllPoints()
+        _hiddenPetParent:Hide()
+    end
+    return _hiddenPetParent
+end
+
+local function EvictPetFrameToHiddenParent()
+    if not PetFrame then return end
+    local hidden = GetHiddenPetParent()
+    if PetFrame:GetParent() == hidden then return end
+    if InCombatLockdown() then
+        _petReevictPending = true
+        return
+    end
+    PetFrame:SetParent(hidden)
+end
+
 local function SuppressBlizzardPetFrame()
     if not PetFrame then return end
 
-    -- Mark PetFrame as skip-in-layout so PlayerFrameBottomManagedFramesContainer's
-    -- LayoutChildren pass — fired in combat whenever a sibling (TotemFrame, the
-    -- vehicle leave button, etc.) hides via SetShown and triggers
-    -- UIParentManagedFrameMixin:OnHide -> layoutParent:RemoveManagedFrame ->
-    -- self:Layout() -> LayoutChildren — bypasses PetFrame entirely.
+    -- Reparent PetFrame off PlayerFrameBottomManagedFramesContainer so the
+    -- container's combat-triggered Layout pass (fired by TotemFrame/pet/vehicle
+    -- SetShown events) no longer iterates PetFrame via :GetChildren() and
+    -- never reads any field from it. Mirrors ElvUI/oUF's approach.
     --
-    -- LayoutChildren gathers regions from self:GetChildren()/:GetRegions(),
-    -- then filters via BaseLayoutMixin:AddLayoutChildren which checks:
-    --     local canInclude = (not region.ignoreInLayout) and ...
-    -- Verified against Blizzard_SharedXML/LayoutFrame.lua lines 28-37 of
-    -- the live wow-ui-source mirror. Setting ignoreInLayout = true makes the
-    -- iteration skip PetFrame, so child:ClearAllPoints() is never called on
-    -- it during the Layout pass — eliminating the protected ClearAllPointsBase
-    -- block in combat regardless of any pre-existing taint on the frame.
+    -- Why reparent instead of ignoreInLayout: setting PetFrame.ignoreInLayout
+    -- works to skip PetFrame in iteration, but the addon-write taints the
+    -- field. LayoutMixin reads region.ignoreInLayout for every region in every
+    -- Layout pass; that read propagates the addon taint into Layout's secure
+    -- execution context, which then surfaces at the parent's self:SetSize()
+    -- call (verified empirically: ignoreInLayout fix moved the block from
+    -- PetFrame:ClearAllPointsBase to PlayerFrameBottomManagedFramesContainer
+    -- :SetSize). Reparenting removes PetFrame from :GetChildren() entirely,
+    -- so no field on PetFrame is read by any Layout pass — no taint surface.
     --
-    -- ignoreFramePositionManager is paired so AddManagedFrame's early-return
-    -- prevents UpdateFrame's own frame:ClearAllPoints() call when Blizzard
-    -- re-enrolls PetFrame on pet summon / vehicle exit (verified against
-    -- Blizzard_UIParent/Shared/UIParent.lua AddManagedFrame).
+    -- The SetParent call from insecure code does taint PetFrame, but with
+    -- PetFrame outside the Layout iteration, that taint has no surface.
     --
-    -- Two boolean writes to PetFrame's frame table — same taint profile as the
-    -- BossTargetFrameContainer fix at line ~282 of this file. Both flags are
-    -- read only by Blizzard's iteration and early-return code paths; no
-    -- protected operation surfaces them.
-    if not _blizzFrameGuards.petFrameLayoutSkip then
-        _blizzFrameGuards.petFrameLayoutSkip = true
-        PetFrame.ignoreInLayout = true
-        PetFrame.ignoreFramePositionManager = true
+    -- Hook on PetFrame:SetParent re-evicts whenever Blizzard re-parents back
+    -- (pet summon, vehicle exit, login). Combat-deferred via _petReevictPending
+    -- + PLAYER_REGEN_ENABLED watcher because SetParent on a protected frame
+    -- is itself protected during combat.
+    if not _blizzFrameGuards.petFrameReparented then
+        _blizzFrameGuards.petFrameReparented = true
+
+        hooksecurefunc(PetFrame, "SetParent", function(self, parent)
+            if parent ~= GetHiddenPetParent() then
+                EvictPetFrameToHiddenParent()
+            end
+        end)
+
+        local watcher = CreateFrame("Frame")
+        watcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+        watcher:SetScript("OnEvent", function()
+            if _petReevictPending then
+                _petReevictPending = false
+                EvictPetFrameToHiddenParent()
+            end
+        end)
+
+        EvictPetFrameToHiddenParent()
     end
 
     -- Visual suppression. Method calls only — no frame-table writes.
