@@ -1927,12 +1927,23 @@ function ActionBarsOwned:OnBarMouseLeave(barKey)
                     end
                     local delay = fadeSettings and fadeSettings.fadeOutDelay or 0.5
                     CancelOwnedBarFadeTimers(linkedState)
-                    linkedState.delayTimer = C_Timer.NewTimer(delay, function()
+                    local function TryLinkedOwnedFade()
+                        if ShouldForceShowForSpellBook() then
+                            SetOwnedBarAlpha(linkedKey, 1)
+                            linkedState.delayTimer = nil
+                            return
+                        end
+                        if IsSpellFlyoutActiveForBar(linkedKey) then
+                            SetOwnedBarAlpha(linkedKey, 1)
+                            linkedState.delayTimer = C_Timer.NewTimer(SPELL_UI_FADE_RECHECK_DELAY, TryLinkedOwnedFade)
+                            return
+                        end
                         linkedState.delayTimer = nil
                         if not IsMouseOverAnyLinkedOwnedBar() then
                             StartOwnedBarFade(linkedKey, linkedFadeOutAlpha)
                         end
-                    end)
+                    end
+                    linkedState.delayTimer = C_Timer.NewTimer(delay, TryLinkedOwnedFade)
                 end
             end
             return
@@ -1949,7 +1960,7 @@ function ActionBarsOwned:OnBarMouseLeave(barKey)
         if state.delayTimer then
             state.delayTimer:Cancel()
         end
-        state.delayTimer = C_Timer.NewTimer(delay, function()
+        local function TryOwnedFadeOut()
             if state.isMouseOver then
                 state.delayTimer = nil
                 return
@@ -1957,6 +1968,11 @@ function ActionBarsOwned:OnBarMouseLeave(barKey)
             if ShouldForceShowForSpellBook() then
                 SetOwnedBarAlpha(barKey, 1)
                 state.delayTimer = nil
+                return
+            end
+            if IsSpellFlyoutActiveForBar(barKey) then
+                SetOwnedBarAlpha(barKey, 1)
+                state.delayTimer = C_Timer.NewTimer(SPELL_UI_FADE_RECHECK_DELAY, TryOwnedFadeOut)
                 return
             end
             local freshBarSettings = GetBarSettings(barKey)
@@ -1967,7 +1983,8 @@ function ActionBarsOwned:OnBarMouseLeave(barKey)
             end
             StartOwnedBarFade(barKey, freshFadeOutAlpha)
             state.delayTimer = nil
-        end)
+        end
+        state.delayTimer = C_Timer.NewTimer(delay, TryOwnedFadeOut)
     end)
 end
 
