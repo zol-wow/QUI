@@ -200,9 +200,11 @@ local FADED_ALPHA_THRESHOLD = 0.5
 
 function TooltipProvider:IsOwnerFadedOut(owner)
     if not owner or not owner.GetEffectiveAlpha then return false end
+    if owner.IsForbidden and owner:IsForbidden() then return false end
     if IsOPieFrame(owner) then return false end
-    local alpha = Helpers.SafeToNumber(owner:GetEffectiveAlpha(), 1)
-    return alpha < FADED_ALPHA_THRESHOLD
+    local ok, alpha = pcall(owner.GetEffectiveAlpha, owner)
+    if not ok then return false end
+    return Helpers.SafeToNumber(alpha, 1) < FADED_ALPHA_THRESHOLD
 end
 
 function TooltipProvider:IsTransientTooltipOwner(owner)
