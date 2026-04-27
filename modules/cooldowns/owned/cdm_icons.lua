@@ -83,6 +83,27 @@ local function UsesAPIAuraStackText(entry)
     return IsAuraContainerViewer(entry.viewerType)
 end
 
+-- True when the actual Blizzard child lives in a buff viewer.  Used to
+-- route stack-text handling through the API hook path even when the QUI
+-- container is cooldown-typed: Blizzard's buff viewer doesn't drive
+-- ChargeCount/Applications reliably after a reparent, so stacks for spells
+-- like Mana Tea blank out on custom cooldown containers if we don't
+-- detect this case independently of container type.
+local function IsBuffViewerChild(blizzChild)
+    if not blizzChild or not blizzChild.viewerFrame then return false end
+    local buffViewer = _G["BuffIconCooldownViewer"]
+    local buffBarViewer = _G["BuffBarCooldownViewer"]
+    return blizzChild.viewerFrame == buffViewer or blizzChild.viewerFrame == buffBarViewer
+end
+
+-- True when the entry's stack text should come from the buff-viewer hook
+-- path rather than the reparent path.  Either an aura/auraBar container
+-- or a cooldown container backed by a buff-viewer child qualifies.
+local function UsesHookStackText(entry, blizzChild)
+    if UsesAPIAuraStackText(entry) then return true end
+    return IsBuffViewerChild(blizzChild or (entry and entry._blizzChild))
+end
+
 
 -- Per-spell override lookup helper.  Returns the cached override table
 -- for the icon's spell/container, or nil.  Cheap (two table lookups).
@@ -1434,16 +1455,28 @@ end
 local function ForwardAuraHookStackText(blizzChild, text, source)
     local state = blizzStackState[blizzChild]
     if not state or not state.icon then return end
+    local icon = state.icon
+    local entry = icon and icon._spellEntry
+    -- Allow forwarding when the entry is in an aura container OR when the
+    -- QUI container is cooldown-typed but the actual blizzChild lives in
+    -- a buff viewer (e.g. Mana Tea on a custom cooldown container).
+    local cooldownWithBuffChild = entry and not UsesAPIAuraStackText(entry)
+        and IsBuffViewerChild(blizzChild)
     if not HookTextHasDisplay(text) then
         if not InCombatLockdown() then
             state.auraText = nil
         end
+        -- Cooldown-container icons stay visible after the aura drops, so
+        -- we must actively clear the addon StackText — the icon won't be
+        -- hidden by aura-state changes the way aura-container icons are.
+        if cooldownWithBuffChild and icon and icon.StackText and not InCombatLockdown() then
+            pcall(icon.StackText.SetText, icon.StackText, "")
+            pcall(icon.StackText.Hide, icon.StackText)
+        end
         return
     end
-    local icon = state.icon
-    local entry = icon._spellEntry
     if not entry or entry._blizzChild ~= blizzChild then return end
-    if not UsesAPIAuraStackText(entry) then return end
+    if not UsesAPIAuraStackText(entry) and not cooldownWithBuffChild then return end
     if not icon.StackText then return end
 
     if pcall(icon.StackText.SetText, icon.StackText, text) then
@@ -1459,11 +1492,19 @@ end
 --- yield so they do not overwrite clean hook arguments in the same frame.
 local function IsHookStackActive(entry, icon)
     if not entry or not entry._blizzChild then return false end
+    local child = entry._blizzChild
     if UsesAPIAuraStackText(entry) then
-        local state = blizzStackState[entry._blizzChild]
+        local state = blizzStackState[child]
         return icon and icon._auraActive and state and state.icon == icon and state.auraText ~= nil
     end
-    local child = entry._blizzChild
+    -- Cooldown container backed by a buff-viewer child: stacks come from
+    -- the API hook path (ForwardAuraHookStackText), not from reparented
+    -- native frames.  Hook is "active" whenever it has driven a non-empty
+    -- text into our StackText for this icon.
+    if IsBuffViewerChild(child) then
+        local state = blizzStackState[child]
+        return state and state.icon == icon and state.auraText ~= nil
+    end
     local textOverlay = icon.TextOverlay
     if not textOverlay then return false end
     -- If we reparented ChargeCount or Applications onto our TextOverlay,
@@ -1480,13 +1521,16 @@ local function HookBlizzStackText(icon, blizzChild)
     local chargeFrame = blizzChild.ChargeCount
     local appFrame = blizzChild.Applications
 
-    -- Aura containers: do NOT reparent Applications/ChargeCount. Blizzard's
-    -- buff-viewer display layer doesn't reliably drive these frames the way
-    -- cooldown viewer templates do, so reparenting can leave counts blank.
+    -- Aura containers OR cooldown containers backed by a buff-viewer child:
+    -- do NOT reparent Applications/ChargeCount. Blizzard's buff-viewer display
+    -- layer doesn't reliably drive these frames the way cooldown viewer
+    -- templates do, so reparenting can leave counts blank.  This is decided
+    -- by the actual child's viewer, not the QUI container type — Mana Tea on
+    -- a custom cooldown container still resolves to a buff viewer child via
+    -- ResolveOwnedEntry's score and would lose its stacks under reparenting.
     -- Leave the native frames on their original parent, but hook their SetText
-    -- calls so clean Blizzard arguments can override secret API values when
-    -- the viewer does emit stack text.
-    if UsesAPIAuraStackText(entry) then
+    -- calls so clean Blizzard arguments can drive icon.StackText directly.
+    if UsesHookStackText(entry, blizzChild) then
         local state = blizzStackState[blizzChild]
         if not state then
             state = {}
@@ -1500,7 +1544,13 @@ local function HookBlizzStackText(icon, blizzChild)
 
         if not state.auraHooked then
             state.auraHooked = true
-            if entry and entry.hasCharges and chargeFrame and chargeFrame.Current then
+            -- Hook ChargeCount.Current for charge-style stacks (multi-charge
+            -- spells whose Blizzard child still tracks chargeCount).  For
+            -- buff-viewer-backed cooldown containers we don't gate on
+            -- entry.hasCharges since the buff viewer may write to either
+            -- ChargeCount or Applications depending on the spell.
+            local hookCharge = (entry and entry.hasCharges) or IsBuffViewerChild(blizzChild)
+            if hookCharge and chargeFrame and chargeFrame.Current then
                 hooksecurefunc(chargeFrame.Current, "SetText", function(_, text)
                     ForwardAuraHookStackText(blizzChild, text, "ChargeCount")
                 end)
@@ -1515,6 +1565,7 @@ local function HookBlizzStackText(icon, blizzChild)
         ChargeDebug(entry and entry.name, "HookBlizzStackText AURA ASSIGN",
             "spellID=", entry and entry.spellID, "overrideSpellID=", entry and entry.overrideSpellID,
             "hasCharges=", entry and entry.hasCharges,
+            "buffViewerChild=", IsBuffViewerChild(blizzChild),
             "child.cooldownChargesCount=", blizzChild.cooldownChargesCount,
             "ChargeCount=", chargeFrame and "exists" or "nil",
             "Applications=", appFrame and "exists" or "nil")
