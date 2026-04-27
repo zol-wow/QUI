@@ -54,10 +54,33 @@ end
 local function SuppressBlizzardPetFrame()
     if not PetFrame then return end
 
-    -- PetFrame is both protected and Edit Mode managed. On corrupted Blizzard
-    -- Edit Mode layouts, mutating its frame table, scripts, events, or anchors
-    -- can make the next Blizzard layout pass blame QUI for
-    -- PetFrame:ClearAllPointsBase(). Keep this to visual suppression only.
+    -- Evict PetFrame from PlayerFrameBottomManagedFramesContainer's managed
+    -- list so its combat-triggered LayoutChildren pass (fired by TotemFrame /
+    -- pet summon / vehicle / mount events) no longer iterates PetFrame and
+    -- calls ClearAllPoints/SetPoint on it. Mirrors the BossTargetFrameContainer
+    -- fix below; verified against Blizzard source:
+    --   * Blizzard_UIParent/Shared/UIParent.lua RemoveManagedFrame skips its
+    --     own frame:ClearAllPoints() when the frame has IsInDefaultPosition.
+    --     PetFrame inherits EditModeSystemMixin which provides that method,
+    --     so eviction does not itself produce the protected anchor write.
+    --   * AddManagedFrame returns early when frame.ignoreFramePositionManager
+    --     is truthy, preventing re-enrollment on pet summon / vehicle exit.
+    -- The single boolean write to PetFrame.ignoreFramePositionManager is the
+    -- one taint vector accepted here (read only by AddManagedFrame's early
+    -- return — no protected operation surfaces it). Same trade-off as the
+    -- BossTargetFrameContainer fix at line ~282 of this file. Out of combat
+    -- only: RemoveManagedFrame triggers self:Layout() on remaining children.
+    if not InCombatLockdown()
+        and not _blizzFrameGuards.petFrameRemovedFromManaged then
+        _blizzFrameGuards.petFrameRemovedFromManaged = true
+        local parent = PetFrame:GetParent()
+        if parent and parent.RemoveManagedFrame then
+            pcall(parent.RemoveManagedFrame, parent, PetFrame)
+        end
+        PetFrame.ignoreFramePositionManager = true
+    end
+
+    -- Visual suppression. Method calls only — no frame-table writes.
     pcall(PetFrame.SetAlpha, PetFrame, 0)
     pcall(PetFrame.EnableMouse, PetFrame, false)
 end
