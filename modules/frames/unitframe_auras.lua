@@ -458,7 +458,12 @@ local function UpdateAuras(frame)
         end
     end
 
-    -- Populate buffs (skip if preview is active)
+    -- Populate buffs (skip if preview is active).
+    -- Boss frames show all buffs so encounter-critical self-buffs (e.g.
+    -- drake stacks in Voidspire) remain visible; other frames filter to
+    -- player/pet/vehicle-cast buffs to keep class-mate buffs out of the
+    -- player/target/focus/targettarget rows.
+    local filterBuffsByMine = not unit:match("^boss%d+$")
     local buffCount = 0
     local buffIndex = 1
     if showBuffs and not buffPreviewActive then
@@ -466,8 +471,8 @@ local function UpdateAuras(frame)
             local auraData = C_UnitAuras.GetAuraDataByIndex(unit, buffIndex, "HELPFUL")
             if not auraData then break end
             buffIndex = buffIndex + 1
-            if not Helpers.IsAuraOwnedByPlayerOrPet(auraData, true) then
-                -- skip: buff not cast by player/pet/vehicle
+            if filterBuffsByMine and not Helpers.IsAuraOwnedByPlayerOrPet(auraData, true) then
+                -- skip: foreign-source buff while ownership filter is on
             else
 
             buffCount = buffCount + 1
