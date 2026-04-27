@@ -517,6 +517,15 @@ local BUILTIN_CONTAINER_TYPES = {
     trackedBar = "auraBar",
 }
 
+local function ShouldDeferContainerLayoutInCombat(trackerKey, settings)
+    if not InCombatLockdown() or inInitSafeWindow then
+        return false
+    end
+
+    local containerType = settings and settings.containerType or BUILTIN_CONTAINER_TYPES[trackerKey]
+    return containerType == "cooldown" or trackerKey == "essential" or trackerKey == "utility"
+end
+
 ---------------------------------------------------------------------------
 -- CONTAINER DEFAULTS BY TYPE (used when creating new custom containers)
 ---------------------------------------------------------------------------
@@ -1495,15 +1504,15 @@ end
 
 ---------------------------------------------------------------------------
 -- CORE: Layout icons in a container
--- Ported from cdm_viewer.lua:1069-1554 with taint safety removed.
+-- Ported from cdm_viewer.lua:1069-1554 for addon-owned containers.
 ---------------------------------------------------------------------------
 local function LayoutContainer(trackerKey)
     local container = containers[trackerKey]
     if not container then return end
 
-    -- Owned containers are allowed to rebuild during combat. The frames we
-    -- create here are addon-owned, and Blizzard CooldownFrames/DurationObjects
-    -- are still mirrored through the existing taint-safe paths.
+    -- Aura containers may rebuild during combat. Cooldown containers can have
+    -- SecureActionButton children for click-to-cast, so their visibility/layout
+    -- work is deferred until combat ends.
 
     -- Edit Mode: containers are visible with overlays but skip layout
     -- to avoid flicker while the user is looking at overlays.  Icons are
@@ -1513,6 +1522,11 @@ local function LayoutContainer(trackerKey)
     if _editModeActive and trackerKey ~= _forceLayoutKey then return end
 
     local settings = GetTrackerSettings(trackerKey)
+    if ShouldDeferContainerLayoutInCombat(trackerKey, settings) then
+        specTrackingPendingRefresh = true
+        return
+    end
+
     -- Built-in containers default to enabled when no settings exist
     -- or when enabled is nil (never explicitly disabled by user).
     if not settings then
@@ -2253,6 +2267,10 @@ RefreshAll = function(forceSync)
         local finalTimerDelay = 0.10 + #customKeys * 0.01
         refreshTimers[100] = C_Timer.NewTimer(finalTimerDelay, function()
             refreshTimers[100] = nil
+            if InCombatLockdown() and not inInitSafeWindow then
+                specTrackingPendingRefresh = true
+                return
+            end
             UpdateAllLockedBars()
             if _G.QUI_UpdateCDMAnchoredUnitFrames then
                 _G.QUI_UpdateCDMAnchoredUnitFrames()
@@ -2293,6 +2311,11 @@ ApplyUtilityAnchor = function()
     local utilSettings = db.utility
     local utilContainer = containers.utility
     if not utilContainer then
+        return
+    end
+
+    if InCombatLockdown() and not inInitSafeWindow then
+        specTrackingPendingRefresh = true
         return
     end
 

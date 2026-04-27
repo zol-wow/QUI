@@ -1477,6 +1477,38 @@ local function RestoreBlizzardMailIndicator()
     mailFrame:EnableMouse(true)
 end
 
+local function ShowCustomMailTooltip(owner)
+    GameTooltip:SetOwner(owner, "ANCHOR_LEFT")
+
+    if type(MinimapMailFrameUpdate) == "function" then
+        local ok = pcall(MinimapMailFrameUpdate)
+        if ok then
+            return
+        end
+    end
+
+    local senders = {}
+    if type(GetLatestThreeSenders) == "function" then
+        local ok, sender1, sender2, sender3 = pcall(GetLatestThreeSenders)
+        if ok then
+            if sender1 then senders[#senders + 1] = sender1 end
+            if sender2 then senders[#senders + 1] = sender2 end
+            if sender3 then senders[#senders + 1] = sender3 end
+        end
+    end
+
+    local headerText = #senders >= 1 and (HAVE_MAIL_FROM or "Unread mail from:") or (HAVE_MAIL or "You have unread mail")
+    if type(FormatUnreadMailTooltip) == "function" then
+        FormatUnreadMailTooltip(GameTooltip, headerText, senders)
+    else
+        GameTooltip:SetText(headerText)
+        for _, sender in ipairs(senders) do
+            GameTooltip:AddLine(sender)
+        end
+    end
+    GameTooltip:Show()
+end
+
 local function CreateCustomMailButton()
     if customMailButton then return end
 
@@ -1496,9 +1528,7 @@ local function CreateCustomMailButton()
 
     customMailButton:SetScript("OnEnter", function(self)
         self.icon:SetAtlas(MAIL_ICON_OVER_ATLAS)
-        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine(HAVE_MAIL or "Unread Mail", 1, 1, 1)
-        GameTooltip:Show()
+        ShowCustomMailTooltip(self)
     end)
     customMailButton:SetScript("OnLeave", function(self)
         self.icon:SetAtlas(MAIL_ICON_UP_ATLAS)

@@ -2858,7 +2858,11 @@ local function ShowPinnedSlotMenu(anchorFrame, slot, onChanged)
                     SetColor(prev[1], prev[2], prev[3], prev[4])
                 end
                 info.opacityFunc = info.swatchFunc
-                ColorPickerFrame:SetupColorPickerAndShow(info)
+                if GUI.ShowColorPicker then
+                    GUI:ShowColorPicker(info)
+                else
+                    ColorPickerFrame:SetupColorPickerAndShow(info)
+                end
             end)
             colorRow:SetScript("OnEnter", function() colorLabel:SetTextColor(1, 1, 1, 1) end)
             colorRow:SetScript("OnLeave", function() colorLabel:SetTextColor(0.8, 0.8, 0.8, 1) end)

@@ -17,6 +17,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v3.5.3 - 2026-04-27
+
+### Added
+- added animations to aura indicator health bar tints on group frames
+- now showing dispellable private auras with dispel overlays on group frames
+- added option to limit group visibility in raids (1-4 in myth, 1-6 in flex raids)
+
+### Fixed
+- fixed region-owned tooltips
+- fixed CDM row opacity not being honored on update
+- restored CDM buff stack updates
+- raised color picker frame strata above options panel
+- show actual mail tooltip information instead of a placeholder line
+- fixed m+ character sheet taints, keeping (some) stats visible in protected instances
+- fix(groupframes): clear zero absorb overlays
+- fix(frames): avoid PetFrame edit mode taint
+- fix(cooldowns): defer CDM layout in combat
+- fix(cdm, tooltip): cross-class entry detection + tooltip chrome refit
+- fix(tooltip, skin): dedupe stacked lines and harden refit measurement
+- fix(taint, mirror, tooltip): combat-edge hardening and chrome refit
+- fix(clickcast): scope per character via db.char
 ## v3.5.2 - 2026-04-26
 
 ### Added

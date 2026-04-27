@@ -852,6 +852,28 @@ local function IsChildOfFrame(frame, ancestor)
     return false
 end
 
+local function IsFrameObject(object)
+    if not object or not object.IsObjectType then
+        return false
+    end
+
+    local ok, isFrame = pcall(object.IsObjectType, object, "Frame")
+    return ok and isFrame
+end
+
+local function GetRegionOwnerParent(owner)
+    if not owner or IsFrameObject(owner) or not owner.GetParent then
+        return nil
+    end
+
+    local ok, parent = pcall(owner.GetParent, owner)
+    if ok and parent and parent ~= owner then
+        return parent
+    end
+
+    return nil
+end
+
 local function IsTooltipOwnerHovered(owner)
     if not owner or not Provider then
         return false
@@ -862,8 +884,23 @@ local function IsTooltipOwnerHovered(owner)
         return true
     end
 
+    -- Some Blizzard tooltips are owned by a FontString/Texture child rather
+    -- than the button frame itself, e.g. Professions RecipeSourceButton.Text.
+    -- In that case the mouse focus is the parent frame, not the region owner.
+    local regionOwnerParent = GetRegionOwnerParent(owner)
+    if regionOwnerParent and focus and IsChildOfFrame(focus, regionOwnerParent) then
+        return true
+    end
+
     if owner.IsMouseOver then
         local ok, isOver = pcall(owner.IsMouseOver, owner)
+        if ok and isOver then
+            return true
+        end
+    end
+
+    if regionOwnerParent and regionOwnerParent.IsMouseOver then
+        local ok, isOver = pcall(regionOwnerParent.IsMouseOver, regionOwnerParent)
         if ok and isOver then
             return true
         end

@@ -233,6 +233,7 @@ Enum.PowerType.MaelstromWeapon = 100
 Enum.PowerType.VengSoulFragments = 101
 Enum.PowerType.Whirlwind = 102       -- Fury Warrior Improved Whirlwind stacks
 Enum.PowerType.TipOfTheSpear = 103   -- Survival Hunter Tip of the Spear stacks
+Enum.PowerType.RenewingMistCharges = 104 -- Mistweaver Monk Renewing Mist charges
 
 ---------------------------------------------------------------------------
 -- WHIRLWIND STACK TRACKER (event-driven)
@@ -511,6 +512,167 @@ end
 
 local VDH_SOUL_FRAGMENTS_POWER = (Enum.PowerType and type(Enum.PowerType.SoulFragments) == "number") and Enum.PowerType.SoulFragments or nil
 
+-- Renewing Mist charge spell IDs.  115151 is the player-facing Mistweaver
+-- spell on most builds; 448430 is included as a build/PTR fallback because
+-- Blizzard spell records can shift between releases.
+local RENEWING_MIST_SPELL_IDS = { 115151, 448430 }
+local RENEWING_MIST_FALLBACK_RECHARGE = 9
+local RUSHING_WIND_KICK_SPELL_IDS = {
+    [107428] = true, -- Rising Sun Kick can be reported while Rushing Wind Kick overrides it.
+    [467307] = true,
+    [1250554] = true,
+    [1269159] = true,
+}
+local RUSHING_WIND_KICK_RENEWING_MIST_REDUCTION = 1
+
+local RenewingMistChargeState = {
+    max = nil,
+    current = nil,
+    startTime = 0,
+    duration = RENEWING_MIST_FALLBACK_RECHARGE,
+    chargeModRate = 1,
+}
+
+local function SafeNumberOrNil(value)
+    if value == nil or Helpers.IsSecretValue(value) then
+        return nil
+    end
+    local number = tonumber(value)
+    return number
+end
+
+local function GetSpellChargesCompat(spellID)
+    -- Dragonflight+/modern API: returns a table.  Some older clients/wrappers
+    -- still return multiple values, so support both forms.
+    if C_Spell and C_Spell.GetSpellCharges then
+        local ok, a, b, c, d, e = pcall(C_Spell.GetSpellCharges, spellID)
+        if not ok then
+            return nil, nil, nil, nil, nil
+        end
+        if type(a) == "table" then
+            return a.currentCharges,
+                   a.maxCharges,
+                   a.cooldownStartTime or a.cooldownStart or a.startTime,
+                   a.cooldownDuration or a.duration,
+                   a.chargeModRate
+        end
+        return a, b, c, d, e
+    end
+
+    -- Legacy global fallback.
+    if type(GetSpellCharges) == "function" then
+        local ok, a, b, c, d, e = pcall(GetSpellCharges, spellID)
+        if ok then
+            return a, b, c, d, e
+        end
+    end
+
+    return nil, nil, nil, nil, nil
+end
+
+local function GetRenewingMistCharges()
+    for _, spellID in ipairs(RENEWING_MIST_SPELL_IDS) do
+        local current, max, startTime, duration, chargeModRate = GetSpellChargesCompat(spellID)
+
+        local safeMax = SafeNumberOrNil(max)
+        local safeCurrent = SafeNumberOrNil(current)
+        local safeStartTime = SafeNumberOrNil(startTime)
+        local safeDuration = SafeNumberOrNil(duration)
+        local safeChargeModRate = SafeNumberOrNil(chargeModRate)
+
+        if safeMax and safeMax > 0 then
+            RenewingMistChargeState.max = safeMax
+        end
+        if safeCurrent then
+            RenewingMistChargeState.current = safeCurrent
+        end
+        if safeStartTime then
+            RenewingMistChargeState.startTime = safeStartTime
+        end
+        if safeDuration and safeDuration > 0 then
+            RenewingMistChargeState.duration = safeDuration
+        end
+        if safeChargeModRate and safeChargeModRate > 0 then
+            RenewingMistChargeState.chargeModRate = safeChargeModRate
+        end
+
+        local cachedMax = RenewingMistChargeState.max
+        if cachedMax and cachedMax > 0 then
+            local cachedCurrent = RenewingMistChargeState.current
+            if cachedCurrent == nil then
+                cachedCurrent = cachedMax
+                RenewingMistChargeState.current = cachedCurrent
+            end
+            return cachedMax,
+                   math_min(cachedMax, math_max(0, cachedCurrent)),
+                   RenewingMistChargeState.startTime or 0,
+                   RenewingMistChargeState.duration or RENEWING_MIST_FALLBACK_RECHARGE,
+                   RenewingMistChargeState.chargeModRate or 1
+        end
+    end
+    return nil, 0, 0, 0, 1
+end
+
+local function NoteRenewingMistCast()
+    local max, current, startTime, duration = GetRenewingMistCharges()
+    if not max then
+        max = RenewingMistChargeState.max or 2
+        RenewingMistChargeState.max = max
+    end
+
+    current = current or RenewingMistChargeState.current or max
+    local wasFull = current >= max
+    local hadActiveRecharge = startTime and startTime > 0 and duration and duration > 0 and current < max
+
+    RenewingMistChargeState.current = math_max(0, math_min(max, current - 1))
+
+    if duration and duration > 0 then
+        RenewingMistChargeState.duration = duration
+    elseif not RenewingMistChargeState.duration or RenewingMistChargeState.duration <= 0 then
+        RenewingMistChargeState.duration = RENEWING_MIST_FALLBACK_RECHARGE
+    end
+
+    -- Charge spells only start a new recharge timer when spending from full.
+    -- If a recharge is already in progress, spending another charge preserves
+    -- that partial progress instead of restarting at zero.
+    if wasFull or not hadActiveRecharge then
+        RenewingMistChargeState.startTime = GetTime()
+    else
+        RenewingMistChargeState.startTime = startTime
+    end
+end
+
+local function AdvanceRenewingMistRecharge(seconds)
+    seconds = tonumber(seconds) or 0
+    if seconds <= 0 then return end
+
+    local max, current, startTime, duration, chargeModRate = GetRenewingMistCharges()
+    max = max or RenewingMistChargeState.max
+    current = current or RenewingMistChargeState.current
+    duration = duration and duration > 0 and duration or RenewingMistChargeState.duration or RENEWING_MIST_FALLBACK_RECHARGE
+    chargeModRate = chargeModRate and chargeModRate > 0 and chargeModRate or RenewingMistChargeState.chargeModRate or 1
+    if not max or not current or current >= max then return end
+
+    local now = GetTime()
+    local elapsed = 0
+    if startTime and startTime > 0 then
+        elapsed = math_max(0, (now - startTime) * chargeModRate)
+    end
+    elapsed = elapsed + seconds
+
+    while current < max and elapsed >= duration do
+        current = current + 1
+        elapsed = elapsed - duration
+    end
+
+    RenewingMistChargeState.current = math_min(max, current)
+    if RenewingMistChargeState.current >= max then
+        RenewingMistChargeState.startTime = 0
+    else
+        RenewingMistChargeState.startTime = now - (elapsed / chargeModRate)
+    end
+end
+
 local tocVersion = select(4, GetBuildInfo())
 local HAS_UNIT_POWER_PERCENT = type(UnitPowerPercent) == "function"
 
@@ -552,6 +714,7 @@ local tickedPowerTypes = {
     [Enum.PowerType.VengSoulFragments] = true,
     [Enum.PowerType.Whirlwind] = true,
     [Enum.PowerType.TipOfTheSpear] = true,
+    [Enum.PowerType.RenewingMistCharges] = true,
 }
 if VDH_SOUL_FRAGMENTS_POWER then
     tickedPowerTypes[VDH_SOUL_FRAGMENTS_POWER] = true
@@ -572,6 +735,10 @@ local essenceUpdateRunning = false
 local essenceNextTick = nil      -- GetTime() when next essence will be ready
 local essenceLastCount = nil     -- last integer essence count (detect gains)
 local essenceTickDuration = nil  -- seconds per essence regen tick
+
+-- Renewing Mist spell charge animation state
+local renewingMistUpdateElapsed = 0
+local renewingMistUpdateRunning = false
 
 -- Rune text format cache: only call string.format when the truncated value changes
 local _lastRuneRounded = {}    -- [runeIndex] = last math_floor(remaining * 10) value
@@ -596,6 +763,7 @@ local instantFeedbackTypes = {
     [Enum.PowerType.VengSoulFragments] = true,
     [Enum.PowerType.Whirlwind] = true,
     [Enum.PowerType.TipOfTheSpear] = true,
+    [Enum.PowerType.RenewingMistCharges] = true,
 }
 if VDH_SOUL_FRAGMENTS_POWER then
     instantFeedbackTypes[VDH_SOUL_FRAGMENTS_POWER] = true
@@ -1413,6 +1581,7 @@ local function GetSecondaryResource()
         ["MONK"]        = {
             [268]  = "STAGGER", -- Brewmaster
             [269]  = Enum.PowerType.Chi, -- Windwalker
+            [270]  = Enum.PowerType.RenewingMistCharges, -- Mistweaver Renewing Mist charges
         },
         ["PALADIN"]     = Enum.PowerType.HolyPower,
         ["PRIEST"]      = {
@@ -1525,6 +1694,8 @@ local function GetResourceColor(resource)
             customColor = pc.whirlwind
         elseif resource == Enum.PowerType.TipOfTheSpear then
             customColor = pc.tipOfTheSpear
+        elseif resource == Enum.PowerType.RenewingMistCharges then
+            customColor = pc.renewingMistCharges or pc.renewingMist or pc.chi or pc.mana
         elseif resource == Enum.PowerType.LunarPower then
             customColor = pc.lunarPower
         elseif resource == Enum.PowerType.HolyPower then
@@ -1678,6 +1849,22 @@ local function GetSecondaryResourceValue(resource)
         local max, current = TipOfTheSpearTracker:GetStacks()
         if not max then return nil, nil, nil, nil end
         return max, current, current, "number"
+    end
+
+    if resource == Enum.PowerType.RenewingMistCharges then
+        -- Mistweaver Monk Renewing Mist spell charges. This tracks available
+        -- charges on the button, not active HoT applications.
+        local max, current, startTime, duration, chargeModRate = GetRenewingMistCharges()
+        if not max then return nil, nil, nil, nil end
+
+        local fillValue = current
+        if current < max and startTime and startTime > 0 and duration and duration > 0 then
+            local elapsed = (GetTime() - startTime) * (chargeModRate or 1)
+            local partial = math_max(0, math_min(1, elapsed / duration))
+            fillValue = math_min(max, current + partial)
+        end
+
+        return max, fillValue, current, "number"
     end
 
     if resource == Enum.PowerType.Runes then
@@ -3299,6 +3486,63 @@ local function EssenceTimerOnUpdate(bar, delta)
     end
 end
 
+local function RenewingMistChargeOnUpdate(bar, delta)
+    renewingMistUpdateElapsed = renewingMistUpdateElapsed + (delta or 0)
+    if renewingMistUpdateElapsed < 0.05 then return end -- 20 FPS throttle
+    renewingMistUpdateElapsed = 0
+
+    if GetSecondaryResource() ~= Enum.PowerType.RenewingMistCharges then
+        bar:SetScript("OnUpdate", nil)
+        renewingMistUpdateRunning = false
+        return
+    end
+
+    local max, current, startTime, duration, chargeModRate = GetRenewingMistCharges()
+    if not max or not current or not startTime or startTime <= 0 or not duration or duration <= 0 then
+        bar:SetScript("OnUpdate", nil)
+        renewingMistUpdateRunning = false
+        return
+    end
+
+    if current >= max then
+        bar:SetScript("OnUpdate", nil)
+        renewingMistUpdateRunning = false
+        if bar.StatusBar then
+            bar.StatusBar:SetValue(current)
+        end
+        return
+    end
+
+    local elapsed = (GetTime() - startTime) * (chargeModRate or 1)
+    if elapsed >= duration then
+        RenewingMistChargeState.current = math_min(max, current + 1)
+        if RenewingMistChargeState.current < max then
+            RenewingMistChargeState.startTime = GetTime()
+            current = RenewingMistChargeState.current
+            startTime = RenewingMistChargeState.startTime
+            elapsed = 0
+        else
+            bar:SetScript("OnUpdate", nil)
+            renewingMistUpdateRunning = false
+            if bar.StatusBar then
+                bar.StatusBar:SetValue(RenewingMistChargeState.current)
+            end
+            if bar.TextValue then
+                bar.TextValue:SetText(tostring(RenewingMistChargeState.current))
+            end
+            return
+        end
+    end
+
+    if bar.StatusBar then
+        local partial = math_max(0, math_min(1, elapsed / duration))
+        bar.StatusBar:SetValue(math_min(max, current + partial))
+    end
+    if bar.TextValue then
+        bar.TextValue:SetText(tostring(current or 0))
+    end
+end
+
 function QUICore:UpdateSecondaryPowerBarTicks(bar, resource, max)
     local cfg = self.db.profile.secondaryPowerBar
 
@@ -3511,6 +3755,10 @@ function QUICore:UpdateSecondaryPowerBar()
 
     if not resource then
         local wasShown = bar:IsShown()
+        if renewingMistUpdateRunning then
+            bar:SetScript("OnUpdate", nil)
+            renewingMistUpdateRunning = false
+        end
         SafeHide(bar)
         -- Visibility changed — reapply frame anchoring so fallback targets update
         if wasShown and not bar:IsShown() and _G.QUI_UpdateAnchoredFrames then
@@ -3518,6 +3766,11 @@ function QUICore:UpdateSecondaryPowerBar()
         end
         if self.UpdateResourceBarsProxy then self:UpdateResourceBarsProxy() end
         return
+    end
+
+    if resource ~= Enum.PowerType.RenewingMistCharges and renewingMistUpdateRunning then
+        bar:SetScript("OnUpdate", nil)
+        renewingMistUpdateRunning = false
     end
 
     -- CDM visibility can hide bars independently of bar visibility mode.
@@ -3966,8 +4219,25 @@ function QUICore:UpdateSecondaryPowerBar()
     -- Get resource values
     local max, current, displayValue, valueType = GetSecondaryResourceValue(resource)
     if not max then
+        if renewingMistUpdateRunning then
+            bar:SetScript("OnUpdate", nil)
+            renewingMistUpdateRunning = false
+        end
         SafeHide(bar)
         return
+    end
+
+    if resource == Enum.PowerType.RenewingMistCharges then
+        local _, rawCurrent, startTime, duration = GetRenewingMistCharges()
+        local shouldAnimate = rawCurrent and rawCurrent < max and startTime and startTime > 0 and duration and duration > 0
+        if shouldAnimate and not renewingMistUpdateRunning then
+            renewingMistUpdateRunning = true
+            renewingMistUpdateElapsed = 0
+            bar:SetScript("OnUpdate", RenewingMistChargeOnUpdate)
+        elseif not shouldAnimate and renewingMistUpdateRunning then
+            bar:SetScript("OnUpdate", nil)
+            renewingMistUpdateRunning = false
+        end
     end
 
     -- Handle fragmented power types (Runes, Essence)
@@ -4175,6 +4445,23 @@ function QUICore:OnUnitAura(_, unit)
     end
 end
 
+function QUICore:OnSpellChargeUpdate(event, spellID)
+    if GetSecondaryResource() == Enum.PowerType.RenewingMistCharges then
+        if event == "UNIT_SPELLCAST_SUCCEEDED" then
+            for _, renewingMistSpellID in ipairs(RENEWING_MIST_SPELL_IDS) do
+                if spellID == renewingMistSpellID then
+                    NoteRenewingMistCast()
+                    break
+                end
+            end
+            if RUSHING_WIND_KICK_SPELL_IDS[spellID] then
+                AdvanceRenewingMistRecharge(RUSHING_WIND_KICK_RENEWING_MIST_REDUCTION)
+            end
+        end
+        self:UpdateSecondaryPowerBar()
+    end
+end
+
 function QUICore:OnUnitPowerPointCharge(_, unit)
     if unit and unit ~= "player" then return end
     if GetSecondaryResource() == Enum.PowerType.ComboPoints then
@@ -4268,6 +4555,9 @@ local function InitializeResourceBars(self)
     powerEventFrame:RegisterUnitEvent("UNIT_MAXPOWER", "player")
     powerEventFrame:RegisterUnitEvent("UNIT_AURA", "player")  -- Aura-based resources (Maelstrom Weapon stacks)
     powerEventFrame:RegisterEvent("UNIT_POWER_POINT_CHARGE")  -- Charged combo points
+    powerEventFrame:RegisterEvent("SPELL_UPDATE_CHARGES")  -- Spell-charge resources (Renewing Mist)
+    powerEventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN") -- Recharge timer completion fallback
+    powerEventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player") -- Immediate charge updates on cast
     powerEventFrame:RegisterEvent("RUNE_POWER_UPDATE")  -- DK rune updates (no unit filter available)
     powerEventFrame:SetScript("OnEvent", function(_, event, unit, ...)
         if event == "RUNE_POWER_UPDATE" then
@@ -4276,6 +4566,24 @@ local function InitializeResourceBars(self)
             self:OnUnitAura(event, unit, ...)
         elseif event == "UNIT_POWER_POINT_CHARGE" then
             self:OnUnitPowerPointCharge(event, unit, ...)
+        elseif event == "SPELL_UPDATE_CHARGES" or event == "SPELL_UPDATE_COOLDOWN" then
+            self:OnSpellChargeUpdate(event)
+        elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+            local _, spellID = ...
+            if unit == "player" then
+                local shouldUpdate = RUSHING_WIND_KICK_SPELL_IDS[spellID]
+                if not shouldUpdate then
+                    for _, renewingMistSpellID in ipairs(RENEWING_MIST_SPELL_IDS) do
+                        if spellID == renewingMistSpellID then
+                            shouldUpdate = true
+                            break
+                        end
+                    end
+                end
+                if shouldUpdate then
+                    self:OnSpellChargeUpdate(event, spellID)
+                end
+            end
         else
             self:OnUnitPower(event, unit, ...)
         end

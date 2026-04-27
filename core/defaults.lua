@@ -1075,6 +1075,7 @@ local defaults = {
             soulFragments = { 0.64, 0.19, 0.79, 1 },
             whirlwind = { 0.90, 0.20, 0.20, 1 },           -- Red (Warrior theme)
             tipOfTheSpear = { 0.00, 0.80, 0.30, 1 },       -- Green (Hunter/Survival theme)
+            renewingMistCharges = { 0.30, 1.00, 0.72, 1 }, -- Mistweaver Renewing Mist charges
             runes = { 0.77, 0.12, 0.23, 1 },
             bloodRunes = { 0.77, 0.12, 0.23, 1 },
             frostRunes = { 0.00, 0.82, 1.00, 1 },

@@ -26,6 +26,8 @@ local MANAGED_TOKENS = {
     "UIParentBottom",
     "ObjectiveTrackerFrame",
     "BossTargetFrameContainer",
+    "PetFrame",
+    "ClearAllPointsBase",
     "UIWidgetTopCenterContainerFrame",
     "UIWidgetBelowMinimapContainerFrame",
     "ExtraAbilityContainer",
@@ -87,6 +89,13 @@ end
 
 local function IsEditModeBlock(entry)
     return containsAny(entry.func, EDITMODE_TOKENS)
+end
+
+local function IsPetFrameLayoutBlock(entry)
+    local func = entry and entry.func
+    return type(func) == "string"
+        and func:find("PetFrame", 1, true)
+        and func:find("ClearAllPointsBase", 1, true)
 end
 
 ----------------------------------------------------------------------------
@@ -183,10 +192,11 @@ local function line(s) print(s or "") end
 local function fmt(color, s) return color .. s .. RESET end
 
 local function SummarizeEvents()
-    local managed, editmode, other, combat = 0, 0, 0, 0
+    local managed, editmode, other, combat, petLayout = 0, 0, 0, 0, 0
     for i = 1, #buffer do
         local e = buffer[i]
         if e.combat then combat = combat + 1 end
+        if IsPetFrameLayoutBlock(e) then petLayout = petLayout + 1 end
         if IsManagedContainerBlock(e) then
             managed = managed + 1
         elseif IsEditModeBlock(e) then
@@ -195,7 +205,7 @@ local function SummarizeEvents()
             other = other + 1
         end
     end
-    return managed, editmode, other, combat
+    return managed, editmode, other, combat, petLayout
 end
 
 local function PrintReport()
@@ -257,8 +267,9 @@ local function PrintReport()
     line("")
     line(fmt(COLOR_HEAD, "Verdict:"))
 
-    local managed, editmode, other, _ = SummarizeEvents()
+    local managed, editmode, other, _, petLayout = SummarizeEvents()
     local haveManaged = managed > 0
+    local havePetFrameLayoutBlock = petLayout > 0
     local haveCorruptSigns = (not state.managerPresent and state.addonLoaded)
         or (#state.suspiciousLayouts > 0)
 
@@ -270,28 +281,28 @@ local function PrintReport()
         return
     end
 
-    if haveManaged and haveCorruptSigns then
+    if haveManaged and (haveCorruptSigns or havePetFrameLayoutBlock) then
         line("  " .. fmt(COLOR_BAD,
-            "Corrupt Blizzard Edit Mode profile strongly suspected."))
+            "Bad Blizzard Edit Mode layout strongly suspected."))
         line("")
         line("  What this means:")
         line("    " .. fmt(COLOR_DIM, "•") ..
             " Edit Mode layouts are stored SERVER-SIDE by Blizzard as account-wide")
         line("      data, not in your WTF folder.")
         line("    " .. fmt(COLOR_DIM, "•") ..
-            " Deleting WTF, reinstalling addons, and resetting CVars will NOT")
-        line("      fix this. The corruption lives on Blizzard's servers.")
+            " Deleting WTF, reinstalling addons, and resetting CVars usually will NOT")
+        line("      fix this because the layout is replayed from Blizzard's servers.")
         line("    " .. fmt(COLOR_DIM, "•") ..
-            " QUI's reparent protections are active but cannot prevent Blizzard")
-        line("      from replaying a malformed layout on loading screens.")
+            " PetFrame:ClearAllPointsBase() blocks during TotemFrame updates match")
+        line("      the known bad-layout symptom on pet classes.")
         line("")
         line("  " .. fmt(COLOR_HEAD, "How to fix:"))
         line("    " .. fmt(COLOR_WARN, "1.") ..
-            " Open a Blizzard support ticket (Game Menu > Support > Open Ticket).")
+            " Open Blizzard Edit Mode and create a new layout from scratch.")
         line("    " .. fmt(COLOR_WARN, "2.") ..
-            ' Request: "Please reset my account-wide Edit Mode layout data."')
+            " Switch to the new layout, reload, and delete the old layout if errors stop.")
         line("    " .. fmt(COLOR_WARN, "3.") ..
-            " Mention: suspicious layout name in saved data / malformed JSON.")
+            ' If it persists, open a support ticket requesting: "Please reset my account-wide Edit Mode layout data."')
         return
     end
 

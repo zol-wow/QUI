@@ -757,7 +757,11 @@ function QUICore:HookEditMode()
         local _editModeSuppressedFrames = {}
         local _editModeSuppressedFrameNames = {
             -- Unit frames
-            "PlayerFrame", "PetFrame", "PartyFrame",
+            -- PetFrame intentionally stays out of this list: bad server-side
+            -- Edit Mode layouts can replay protected PetFrame layout during
+            -- TotemFrame updates, and touching its Edit Mode selection state
+            -- makes Blizzard blame QUI for PetFrame:ClearAllPointsBase().
+            "PlayerFrame", "PartyFrame",
             "BossTargetFrameContainer",
             -- Aura frames
             "BuffFrame", "DebuffFrame",
