@@ -128,26 +128,37 @@ local CLASS_ENHANCEMENT_CONFIG = {
         },
     },
     SHAMAN = {
+        -- Enhancement: Windfury → MH. Resto: Earthliving → MH.
+        -- Flametongue is OH-only for Enhancement and lives in OHWeapon below.
         MH = {
             source = "spell",
             label = "Weapon Imbue",
             checkType = "weaponEnchant",
             anyEnchantIDs = { [5400] = true, [5401] = true, [6498] = true },
             spells = {
-                { spellID = 318038, name = "Flametongue Weapon" },
                 { spellID = 33757,  name = "Windfury Weapon" },
                 { spellID = 382021, name = "Earthliving Weapon" },
             },
         },
-        OH = {
+        -- Resto/Ele with shield equipped
+        OHShield = {
             source = "spell",
             label = "Shield Enchant",
             checkType = "weaponEnchant",
-            requiresShield = true,
             anyEnchantIDs = { [7587] = true, [7528] = true },
             spells = {
                 { spellID = 462757, name = "Thunderstrike Ward" },
                 { spellID = 457481, name = "Tidecaller's Guard" },
+            },
+        },
+        -- Enhancement dual-wielding: Flametongue → OH
+        OHWeapon = {
+            source = "spell",
+            label = "Offhand Imbue",
+            checkType = "weaponEnchant",
+            anyEnchantIDs = { [5400] = true, [5401] = true, [6498] = true },
+            spells = {
+                { spellID = 318038, name = "Flametongue Weapon" },
             },
         },
     },
@@ -173,10 +184,22 @@ local CLASS_ENHANCEMENT_CONFIG = {
     },
 }
 
+-- Forward declarations: SHAMAN OH dispatch (below) needs these before they are defined.
+local HasShieldEquipped, IsDualWielding
+
 local function GetEnhancementConfig(slot)
     local classConfig = CLASS_ENHANCEMENT_CONFIG[playerClass]
     if not classConfig then return nil end
-    local slotConfig = classConfig[slot]
+    local slotConfig
+    if playerClass == "SHAMAN" and slot == "OH" then
+        if HasShieldEquipped() then
+            slotConfig = classConfig.OHShield
+        elseif IsDualWielding() then
+            slotConfig = classConfig.OHWeapon
+        end
+    else
+        slotConfig = classConfig[slot]
+    end
     if not slotConfig then return nil end
     if slotConfig.spells then
         for _, spell in ipairs(slotConfig.spells) do
@@ -189,7 +212,7 @@ local function GetEnhancementConfig(slot)
     return slotConfig
 end
 
-local function HasShieldEquipped()
+function HasShieldEquipped()
     local ohItemID = GetInventoryItemID("player", INVSLOT_OFFHAND)
     if not ohItemID then return false end
     local _, _, _, _, _, classID, subClassID = C_Item.GetItemInfoInstant(ohItemID)
@@ -323,7 +346,7 @@ local function HasWarlockInGroup()
     return false
 end
 
-local function IsDualWielding()
+function IsDualWielding()
     local offhand = GetInventoryItemID("player", INVSLOT_OFFHAND)
     if not offhand then return false end
     local _, _, _, _, _, itemClassID = C_Item.GetItemInfoInstant(offhand)

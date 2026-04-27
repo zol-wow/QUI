@@ -3758,10 +3758,16 @@ local function ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
                 -- profile's Dispell CDs bar). C_Spell.IsSpellUsable alone
                 -- isn't enough — for unknown spells it returns nil, not
                 -- false, so a strict `usable == false` check lets cross-
-                -- class entries through.
-                local known = (IsPlayerSpell and IsPlayerSpell(sid))
-                    or (IsSpellKnownOrOverridesKnown and IsSpellKnownOrOverridesKnown(sid))
-                if not known then return true end
+                -- class entries through. Delegate to CDMSpellData:IsSpellKnown
+                -- so override-chain and CDM-viewer fallbacks recognize
+                -- talent / hero-talent / alternate-ID variants that the
+                -- base IsPlayerSpell / IsSpellKnownOrOverridesKnown checks
+                -- miss when an entry was added under a different spec.
+                local spellData = ns.CDMSpellData
+                if spellData and type(spellData.IsSpellKnown) == "function"
+                   and not spellData:IsSpellKnown(sid) then
+                    return true
+                end
                 if C_Spell and C_Spell.IsSpellUsable then
                     local ok, usable = pcall(C_Spell.IsSpellUsable, sid)
                     if ok and usable == false then return true end
@@ -4722,6 +4728,10 @@ cdEventFrame:RegisterEvent("SPELLS_CHANGED")
 cdEventFrame:RegisterEvent("SPELL_UPDATE_USABLE")
 cdEventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
 cdEventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
+-- Server-side cooldown table hotfix. User /cdm edits route through
+-- EventRegistry's "CooldownViewerSettings.OnDataChanged" callback (see
+-- registration below) — they are NOT the same event.
+cdEventFrame:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED")
 -- UNIT_AURA handled by centralized dispatcher subscription (below)
 
 -- Frame-based coalescing for cooldown/aura events. Pure cooldown events use a
@@ -4895,9 +4905,32 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
         ScheduleCDMUpdate(true, CDM_UPDATE_FULL)
         return
     end
+    if event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" then
+        -- Server-side cooldown table changed. Drop the cached child map so
+        -- the next lookup walks fresh viewer children.
+        ns.CDMSpellData:InvalidateChildMap()
+        ScheduleCDMUpdate(true, CDM_UPDATE_FULL)
+        return
+    end
     -- Coalesce cooldown events via the reusable update frame.
     ScheduleCDMUpdate(nil, CDM_UPDATE_COOLDOWN)
 end)
+
+-- User /cdm spell add/remove. Blizzard's standalone CooldownManager UI
+-- routes mutations through CooldownViewerSettingsDataProvider, which fires
+-- EventRegistry's "CooldownViewerSettings.OnDataChanged" callback (NOT a
+-- Frame event). Drop the child map and refresh so downstream code picks
+-- up the new viewer composition without waiting for an unrelated event
+-- to dirty the cache.
+if EventRegistry and EventRegistry.RegisterCallback then
+    EventRegistry:RegisterCallback(
+        "CooldownViewerSettings.OnDataChanged",
+        function()
+            ns.CDMSpellData:InvalidateChildMap()
+            ScheduleCDMUpdate(true, CDM_UPDATE_FULL)
+        end,
+        "QUI_CDMIcons")
+end
 
 ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
 ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_Icons", frame = cdEventFrame }

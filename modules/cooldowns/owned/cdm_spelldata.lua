@@ -901,6 +901,60 @@ local function FindBuffChildForSpell(viewerType, id1, id2, id3)
     return _scanViewerForIDs(fallbackViewer, buffContainer, id1, id2, id3)
 end
 
+--- Authoritative "is this spell currently in the user's /cdm?" check.
+--- Walks live viewer children and filters by ch.cooldownID ~= nil — Blizzard
+--- only assigns a cooldownID to a child while it represents an added spell,
+--- and clears it on removal (mirrors the canonical filter used by the
+--- /cdm-import path, which treats viewer children as the truth source).
+--- Bypasses the cached _childBySpellID map, since /cdm edits don't fire any
+--- event QUI subscribes to and the cache can be stale indefinitely.
+local function _matchesAnyID(info, id1, id2, id3)
+    local sid = SafeValue(info.spellID, nil)
+    local ov  = SafeValue(info.overrideSpellID, nil)
+    local tip = SafeValue(info.overrideTooltipSpellID, nil)
+    if sid and (sid == id1 or sid == id2 or sid == id3) then return true end
+    if ov  and (ov  == id1 or ov  == id2 or ov  == id3) then return true end
+    if tip and (tip == id1 or tip == id2 or tip == id3) then return true end
+    if info.linkedSpellIDs then
+        for _, lsid in ipairs(info.linkedSpellIDs) do
+            local v = SafeValue(lsid, nil)
+            if v and (v == id1 or v == id2 or v == id3) then return true end
+        end
+    end
+    return false
+end
+
+local function _scanCDMViewerLive(viewer, id1, id2, id3)
+    if not viewer or not C_CooldownViewer
+       or not C_CooldownViewer.GetCooldownViewerCooldownInfo then
+        return nil
+    end
+    local ok, kids = pcall(function() return { viewer:GetChildren() } end)
+    if not ok or not kids then return nil end
+    for _, ch in ipairs(kids) do
+        local cdID = ch.cooldownID or (ch.cooldownInfo and ch.cooldownInfo.cooldownID)
+        if cdID then
+            local okI, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+            if okI and info and _matchesAnyID(info, id1, id2, id3) then
+                return ch
+            end
+        end
+    end
+    return nil
+end
+
+local function FindCooldownChildForSpell(id1, id2, id3)
+    return _scanCDMViewerLive(_G["EssentialCooldownViewer"], id1, id2, id3)
+        or _scanCDMViewerLive(_G["UtilityCooldownViewer"], id1, id2, id3)
+end
+
+local function FindAuraChildForSpell(id1, id2, id3)
+    return _scanCDMViewerLive(_G["BuffIconCooldownViewer"], id1, id2, id3)
+        or _scanCDMViewerLive(_G["BuffBarCooldownViewer"], id1, id2, id3)
+        or _scanCDMViewerLive(_G["QUI_BuffIconContainer"], id1, id2, id3)
+        or _scanCDMViewerLive(_G["QUI_BuffContainer"], id1, id2, id3)
+end
+
 local childTracksSpell
 
 local function SafeMaybeNumber(value)
@@ -1167,6 +1221,8 @@ end
 
 CDMSpellData.FindChildForSpell = FindChildForSpell
 CDMSpellData.FindBuffChildForSpell = FindBuffChildForSpell
+CDMSpellData.FindCooldownChildForSpell = FindCooldownChildForSpell
+CDMSpellData.FindAuraChildForSpell = FindAuraChildForSpell
 CDMSpellData.GetBuffChildrenForSpell = GetBuffChildrenForSpell
 CDMSpellData._childBySpellID = _childBySpellID
 
@@ -2678,7 +2734,14 @@ local function IsSpellKnownByPlayer(spellID)
                                 if okI and cdInfo then
                                     local sid = Helpers.SafeValue(cdInfo.spellID, nil)
                                     local ov = Helpers.SafeValue(cdInfo.overrideSpellID, nil)
-                                    if sid == spellID or ov == spellID then
+                                    -- Aura containers (TrackedBuff / TrackedBar)
+                                    -- snapshot using overrideTooltipSpellID — the
+                                    -- ID of the actual tracked aura, distinct from
+                                    -- the casting spell's spellID. Match against
+                                    -- it too so aura-only entries don't get falsely
+                                    -- flagged as unknown.
+                                    local tip = Helpers.SafeValue(cdInfo.overrideTooltipSpellID, nil)
+                                    if sid == spellID or ov == spellID or tip == spellID then
                                         return true
                                     end
                                 end

@@ -234,13 +234,19 @@ end
 -- Items, slots, macros are always considered "usable" here — the cross-class
 -- mismatch concept only applies to spells. Non-spell types fall back to the
 -- runtime hideNonUsable filter for their own usability rules.
+--
+-- Spell knownness is delegated to CDMSpellData:IsSpellKnown so this check
+-- inherits the override-chain and CDM-viewer fallbacks needed to recognize
+-- talent / hero-talent / alternate-ID variants that IsPlayerSpell and
+-- IsSpellKnownOrOverridesKnown alone miss (e.g., a spell added on one spec
+-- whose stored ID isn't the active spec's variant).
 local function IsEntryUsableOnCurrentPlayer(entry)
     if type(entry) ~= "table" then return true end
     if entry.type ~= "spell" then return true end
     if type(entry.id) ~= "number" then return true end
-    if IsPlayerSpell and IsPlayerSpell(entry.id) then return true end
-    if IsSpellKnownOrOverridesKnown and IsSpellKnownOrOverridesKnown(entry.id) then return true end
-    return false
+    local spellData = ns.CDMSpellData
+    if not spellData or type(spellData.IsSpellKnown) ~= "function" then return true end
+    return spellData:IsSpellKnown(entry.id) == true
 end
 
 ---------------------------------------------------------------------------
@@ -515,6 +521,9 @@ end
 local RefreshPreview
 local RefreshEntryList
 local RefreshAddList
+-- Forward-declared so RefreshPreview (defined below) can capture it as an
+-- upvalue; the assignment lives further down with GetOrCreateEntryCell.
+local IsEntryRegisteredInBlizzCDM
 
 RefreshPreview = function()
     if not previewFrame or not activeContainer then return end
@@ -663,6 +672,11 @@ RefreshPreview = function()
                 bar._icon:SetPoint("TOPLEFT", bar, "TOPLEFT", -iconSize, 0)
                 bar._icon:SetSize(iconSize, iconSize)
                 bar._icon:SetTexture(GetEntryIcon(entry))
+                if IsEntryRegisteredInBlizzCDM(entry) then
+                    bar._icon:SetVertexColor(1, 1, 1)
+                else
+                    bar._icon:SetVertexColor(1, 0.4, 0.4)
+                end
                 bar._icon:Show()
             end
 
@@ -852,6 +866,11 @@ RefreshPreview = function()
             obj.tex:SetPoint("CENTER", gridArea, "TOPLEFT", x, rowCenterY)
             obj.tex:SetTexture(GetEntryIcon(entry))
             obj.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            if IsEntryRegisteredInBlizzCDM(entry) then
+                obj.tex:SetVertexColor(1, 1, 1)
+            else
+                obj.tex:SetVertexColor(1, 0.4, 0.4)
+            end
             obj.tex:Show()
         end
 
@@ -1213,6 +1232,32 @@ local function BuildEntryListSection(parent)
     return container
 end
 
+-- True if the entry is currently in the user's Blizzard /cdm for the
+-- container family the composer is editing. Family-grouped: cooldown
+-- family covers essential+utility, aura family covers buff-icon+buff-bar.
+-- Non-spell entries (items/macros/slots) and unknown families return true
+-- so they aren't flagged.
+IsEntryRegisteredInBlizzCDM = function(entry)
+    if not entry then return true end
+    local etype = entry.type or ResolveEntryType(entry)
+    if etype ~= "spell" then return true end
+    local id = tonumber(entry.id) or tonumber(entry.spellID)
+    if not id then return true end
+    local spellData = GetCDMSpellData()
+    if not spellData then return true end
+    local family = activeContainer and ResolveContainerType(activeContainer) or nil
+    if family == "cooldown" then
+        local fn = spellData.FindCooldownChildForSpell
+        if not fn then return true end
+        return fn(id) ~= nil
+    elseif family == "aura" or family == "auraBar" then
+        local fn = spellData.FindAuraChildForSpell
+        if not fn then return true end
+        return fn(id) ~= nil
+    end
+    return true
+end
+
 local function GetOrCreateEntryCell(index)
     if entryCells[index] then return entryCells[index] end
 
@@ -1251,6 +1296,8 @@ local function GetOrCreateEntryCell(index)
         else
             if self._isUnknownToPlayer then
                 GameTooltip:AddLine("Not usable on your current class", 0.95, 0.5, 0.5)
+            elseif not IsEntryRegisteredInBlizzCDM(self._entry) then
+                GameTooltip:AddLine("Not added to /cdm", 0.95, 0.6, 0.2)
             end
             GameTooltip:AddLine("Drag to reorder or move between rows", 0.5, 0.5, 0.5)
             GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
@@ -1865,9 +1912,19 @@ RefreshEntryList = function()
         cell._rowNum = rowNum or nil
         cell._isDormant = false
         cell._isUnknownToPlayer = not IsEntryUsableOnCurrentPlayer(entry)
+        -- Mirrors the tooltip warning: red-tint icons that are usable on
+        -- this class but currently absent from Blizzard's CDM viewer.
+        -- Skip when unknown-to-player (already desaturated for that state).
+        cell._isMissingFromCDM = (not cell._isUnknownToPlayer)
+            and not IsEntryRegisteredInBlizzCDM(entry)
 
         cell._icon:SetTexture(GetEntryIcon(entry))
         cell._icon:SetDesaturated(cell._isUnknownToPlayer)
+        if cell._isMissingFromCDM then
+            cell._icon:SetVertexColor(1, 0.4, 0.4)
+        else
+            cell._icon:SetVertexColor(1, 1, 1)
+        end
         cell._icon:Show()
         cell:SetAlpha(cell._isUnknownToPlayer and 0.6 or 1)
 
@@ -1920,8 +1977,10 @@ RefreshEntryList = function()
         end
         cell._icon:SetTexture(icon)
         cell._icon:SetDesaturated(true)
+        cell._icon:SetVertexColor(1, 1, 1)
         cell._icon:Show()
         cell:SetAlpha(0.6)
+        cell._isMissingFromCDM = false
 
         -- No drag for dormant
         cell:SetScript("OnDragStart", nil)
@@ -2021,6 +2080,39 @@ RefreshEntryList = function()
         entryListContent._updateScroll()
     end
 end
+
+-- Refresh the entry grid and preview when /cdm composition changes.
+-- Blizzard's standalone /cdm UI does NOT fire EDIT_MODE_LAYOUTS_UPDATED
+-- (that's only for the broader edit-mode editor); it routes user toggles
+-- through CooldownViewerSettingsDataProvider, which fires the
+-- "CooldownViewerSettings.OnDataChanged" EventRegistry callback. The
+-- Blizzard CooldownViewer itself listens to this same callback for its
+-- own relayout, so by the time our callback runs the viewer's children
+-- are already current. Pending flag coalesces bursts of events.
+local composerCDMRefreshPending = false
+local function ScheduleComposerCDMRefresh()
+    if composerCDMRefreshPending then return end
+    composerCDMRefreshPending = true
+    C_Timer.After(0, function()
+        composerCDMRefreshPending = false
+        if composerFrame and composerFrame:IsShown() then
+            RefreshEntryList()
+            if RefreshPreview then RefreshPreview() end
+        end
+    end)
+end
+
+if EventRegistry and EventRegistry.RegisterCallback then
+    EventRegistry:RegisterCallback(
+        "CooldownViewerSettings.OnDataChanged",
+        ScheduleComposerCDMRefresh,
+        "QUI_Composer")
+end
+
+-- Server-side cooldown table hotfixes still come through a real event.
+local composerCDMEventFrame = CreateFrame("Frame")
+composerCDMEventFrame:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED")
+composerCDMEventFrame:SetScript("OnEvent", ScheduleComposerCDMRefresh)
 
 ---------------------------------------------------------------------------
 -- ADD SECTION (Below Entry List)
