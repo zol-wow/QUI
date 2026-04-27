@@ -5159,6 +5159,73 @@ function CDMSpellData:InvalidateLearnedCache()
     InvalidateLearnedCooldownsCache()
 end
 
+-- Wipe per-batch resolve memos. Normally cleared once per batch in
+-- BuildSpellListFromOwned; exposed for the /qui cdm_cache reset path.
+function CDMSpellData:ClearResolveMemos()
+    wipe(_resolveIconMemo)
+    wipe(_resolveAuraActiveMemo)
+end
+
+-- Aggressive reset: nuke per-child caches stamped on Blizzard viewer
+-- children (cooldown info + resolved IDs). They self-refresh on next
+-- read, so the only effect is a one-shot rebuild cost.
+function CDMSpellData:ClearChildCaches()
+    local viewerNames = {
+        "EssentialCooldownViewer",
+        "UtilityCooldownViewer",
+        "BuffIconCooldownViewer",
+        "BuffBarCooldownViewer",
+    }
+    for _, vname in ipairs(viewerNames) do
+        local viewer = _G[vname]
+        if viewer and viewer.GetChildren then
+            local ok, kids = pcall(function() return { viewer:GetChildren() } end)
+            if ok and kids then
+                for i = 1, #kids do
+                    local ch = kids[i]
+                    if ch then
+                        ch._cachedCdInfo = nil
+                        ch._cachedCdInfoID = nil
+                        ch._resolvedIDs = nil
+                        ch._resolvedKey = nil
+                    end
+                end
+            end
+        end
+    end
+    -- Per-child totem slot resolution map keyed by Blizzard child frame.
+    if _blizzChildToTotemSlot then
+        wipe(_blizzChildToTotemSlot)
+    end
+end
+
+-- Aggregate cache stats for /qui cdm_cache status.
+function CDMSpellData:GetCacheStats()
+    local function size(t)
+        if type(t) ~= "table" then return 0 end
+        local n = 0
+        for _ in pairs(t) do n = n + 1 end
+        return n
+    end
+    local learnedSize = 0
+    if type(learnedCooldownsCache) == "table" then
+        learnedSize = #learnedCooldownsCache
+    end
+    return {
+        childMapDirty       = _childMapDirty and true or false,
+        childMapSize        = size(_childBySpellID),
+        learnedDirty        = learnedCooldownsCacheDirty and true or false,
+        learnedSize         = learnedSize,
+        tickAuraData        = size(_tickAuraDataCache),
+        tickAuraDuration    = size(_tickAuraDurationCache),
+        tickAuraExpiration  = size(_tickAuraExpirationCache),
+        tickAuraApplication = size(_tickAuraApplicationCache),
+        resolveIconMemo     = size(_resolveIconMemo),
+        resolveAuraMemo     = size(_resolveAuraActiveMemo),
+        totemSlotMap        = size(_blizzChildToTotemSlot),
+    }
+end
+
 
 ---------------------------------------------------------------------------
 -- EDIT MODE INTEGRATION

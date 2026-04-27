@@ -954,6 +954,24 @@ function CDMBars:GetActiveBars()
     return barPool
 end
 
+-- Aggressive reset: clear per-bar caches stamped during totem/aura
+-- mirroring. Repopulated on the next bar update tick.
+function CDMBars:ClearPerBarCaches()
+    for i = 1, #barPool do
+        local bar = barPool[i]
+        if bar then
+            bar._totemIconCache = nil
+            bar._totemNameCache = nil
+        end
+    end
+end
+
+function CDMBars:GetCacheStats()
+    return {
+        activeBars = #barPool,
+    }
+end
+
 ---------------------------------------------------------------------------
 -- BUILD BARS: Scan Blizzard BuffBarCooldownViewer children, create owned
 -- bars for each, and set up hooks for data mirroring.

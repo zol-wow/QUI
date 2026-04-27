@@ -5066,6 +5066,30 @@ end
 ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
 ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_Icons", frame = cdEventFrame }
 
+-- Exporters for /qui cdm_cache reset / status.
+function CDMIcons:ClearTextureCycleCache()
+    wipe(_textureCycleCache)
+end
+
+function CDMIcons:ClearTickCaches()
+    ClearUpdateTickCaches()
+end
+
+function CDMIcons:RequestFullUpdate()
+    _barsDirty = true
+    ScheduleCDMUpdate(true, CDM_UPDATE_FULL)
+end
+
+function CDMIcons:GetCacheStats()
+    local n = 0
+    for _ in pairs(_textureCycleCache) do n = n + 1 end
+    return {
+        textureCycleCache = n,
+        barsDirty         = _barsDirty and true or false,
+        updatePending     = _cdmUpdatePending and true or false,
+    }
+end
+
 -- Subscribe to centralized aura dispatcher for prompt icon updates.
 -- Player auras via "player" filter (avoids callback for all 20+ raid units).
 -- Target debuffs via "all" filter (no "target" filter in the dispatcher).

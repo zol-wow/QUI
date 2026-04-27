@@ -1391,6 +1391,12 @@ end
 ns.HookFrameForMouseover = HookFrameForMouseover
 -- Expose cache invalidation so engines can mark frames dirty after init
 ns.InvalidateCDMFrameCache = InvalidateCDMFrameCache
+ns.GetCDMFrameCacheStats = function()
+    return {
+        dirty = _cdmFramesDirty and true or false,
+        size  = #_cdmFramesCache,
+    }
+end
 
 ---------------------------------------------------------------------------
 -- LAYOUT MODE: force all frames visible on enter, restore on exit
