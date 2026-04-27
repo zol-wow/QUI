@@ -1264,7 +1264,6 @@ end
 
 local function RenderFiltersSection(sectionHost, ctx)
     local containerKey = ResolveContainerKey(ctx)
-    local containerType = ResolveContainerType(containerKey)
     local gui = GetGUI()
     local optionsAPI = GetOptionsAPI()
     local tracker = ResolveTrackerDB(containerKey)
@@ -1276,21 +1275,18 @@ local function RenderFiltersSection(sectionHost, ctx)
         return RenderUnavailableLabel(sectionHost, "Filters unavailable.")
     end
 
-    if containerType == "aura" then
+    -- Bar-shape containers expose visibility through the Layout tab's
+    -- inactive-mode controls (hide / dim / always show). Icon-shape
+    -- containers — including former customBar containers, which are
+    -- icon-shape with single-row layout — get the full filter set.
+    local shape = (ns.CDMContainers and ns.CDMContainers.GetContainerShape
+        and ns.CDMContainers.GetContainerShape(containerKey)) or "icon"
+    if shape == "bar" then
         return RenderInfoMessage(
             sectionHost,
             ctx,
             "filters",
-            "Buff icon containers currently use their Layout and Effects settings instead of separate Filters controls."
-        )
-    end
-
-    if containerType == "auraBar" then
-        return RenderInfoMessage(
-            sectionHost,
-            ctx,
-            "filters",
-            "Buff bar containers currently use their Layout display and inactive-behavior settings instead of separate Filters controls."
+            "Bar containers expose visibility through their Layout display and inactive-behavior settings instead of a separate Filters tab."
         )
     end
 

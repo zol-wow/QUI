@@ -62,25 +62,24 @@ local function IsSafeNumeric(val)
     return type(val) == "number"
 end
 
-local function GetContainerTypeForViewer(viewerType)
-    if not viewerType then return nil end
-    local ncdm = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm
-    local containerDB = ncdm and (ncdm[viewerType] or (ncdm.containers and ncdm.containers[viewerType]))
-    local cType = containerDB and containerDB.containerType
-    if not cType then
-        cType = (viewerType == "buff" or viewerType == "trackedBar") and "aura" or "cooldown"
+-- Per-entry classifier — delegates to CDMSpellData.ResolveEntryKind
+-- which consults entry.kind first, then runtime fallbacks. Used by every
+-- aura-gated branch in this file (visibility, stack text, ID correction).
+local function IsAuraEntry(entry)
+    if not entry then return false end
+    local CDMSpellData = ns.CDMSpellData
+    if CDMSpellData and CDMSpellData.IsAuraEntry then
+        return CDMSpellData.IsAuraEntry(entry, entry.viewerType)
     end
-    return cType
-end
-
-local function IsAuraContainerViewer(viewerType)
-    local cType = GetContainerTypeForViewer(viewerType)
-    return cType == "aura" or cType == "auraBar"
+    -- Bootstrap fallback (CDMSpellData not yet loaded)
+    if entry.kind == "aura" then return true end
+    if entry.kind == "cooldown" then return false end
+    local vt = entry.viewerType
+    return vt == "buff" or vt == "trackedBar"
 end
 
 local function UsesAPIAuraStackText(entry)
-    if not entry then return false end
-    return IsAuraContainerViewer(entry.viewerType)
+    return IsAuraEntry(entry)
 end
 
 -- True when the actual Blizzard child lives in a buff viewer.  Used to
@@ -1641,6 +1640,28 @@ local function ClearIconStackText(icon)
     pcall(icon.StackText.Hide, icon.StackText)
 end
 
+-- Per-icon aura-applications fallback for cooldown-container icons.
+-- HookBlizzStackText reparents Blizzard's ChargeCount FontString onto only
+-- ONE icon (a FontString has one parent), so when the same single-charge
+-- stacking-aura spell (e.g., Mana Tea) shows in multiple QUI containers,
+-- all but one icon would render no stacks. This API read is per-icon and
+-- works regardless of which icon won the reparent. Returns the raw
+-- applications value (may be secret in combat) for C-side forwarding,
+-- or nil when no eligible aura is present.
+local function GetAuraApplicationsForSpell(spellID)
+    if not spellID or not C_UnitAuras or not C_UnitAuras.GetPlayerAuraBySpellID then
+        return nil
+    end
+    local auraID = spellID
+    if ns.CDMSpellData and ns.CDMSpellData._abilityToAuraSpellID then
+        local mapped = ns.CDMSpellData._abilityToAuraSpellID[auraID]
+        if mapped then auraID = mapped end
+    end
+    local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, auraID)
+    if not ok or not ad then return nil end
+    return ad.applications
+end
+
 local function ApplyAuraStackText(icon, stackValue, showZero, preserveWhenMissing)
     if not icon or not icon.StackText then return end
 
@@ -2518,8 +2539,7 @@ local function UpdateIconCooldown(icon)
         -- Aura-driven update: delegates to shared CDMSpellData:ResolveAuraState().
         -- Icons apply result to swipe/stacks display on CooldownFrame.
         do
-            local cType = GetContainerTypeForViewer(entry.viewerType)
-            if cType == "aura" or cType == "auraBar" then
+            if IsAuraEntry(entry) then
                 local auraSpellID = _runtimeSid
                 if auraSpellID and ns.CDMSpellData then
                     local p = icon._auraParams or {}
@@ -3313,6 +3333,12 @@ local function UpdateIconCooldown(icon)
                     "maxCharges=", _cachedChargeInfo.maxCharges,
                     "currentCharges=", _cachedChargeInfo.currentCharges,
                     "displayCount=", stackVal, "isMultiCharge=", isMultiCharge)
+            else
+                -- Single-charge spells with stacking auras (e.g., Mana Tea):
+                -- the hook path can only render on the one icon that owns the
+                -- reparented Blizzard FontString, so each non-owning icon
+                -- reads its own count via API and writes its own StackText.
+                stackVal = GetAuraApplicationsForSpell(spellID)
             end
 
 
@@ -3346,11 +3372,28 @@ local function UpdateIconCooldown(icon)
                 icon.StackText:Hide()
             end
         else
-            -- Harvested entries and other types: hooks drive stack text.
-            -- OOC only: clear stacks (hooks are authoritative but may not
-            -- have fired yet for this tick).
-            if not InCombatLockdown() then
-
+            -- Harvested entries and other types: hooks drive stack text on
+            -- the one icon that owns the reparented Blizzard FontString.
+            -- For other icons sharing the same _blizzChild (same spell in
+            -- multiple containers), API-read aura applications per-icon so
+            -- they render their own StackText independently of the hook.
+            local stackVal = GetAuraApplicationsForSpell(_runtimeSid)
+            if stackVal then
+                local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, stackVal)
+                local displayText = truncOk and truncText or stackVal
+                local hasText = displayText ~= nil
+                if hasText then
+                    local etOk, etEq = pcall(function() return displayText == "" end)
+                    if etOk and etEq then hasText = false end
+                end
+                if hasText then
+                    pcall(icon.StackText.SetText, icon.StackText, displayText)
+                    icon.StackText:Show()
+                else
+                    icon.StackText:SetText("")
+                    icon.StackText:Hide()
+                end
+            elseif not InCombatLockdown() then
                 icon.StackText:SetText("")
                 icon.StackText:Hide()
             end
@@ -3640,12 +3683,29 @@ end
 local function BuildSpellEntryFromCustom(entry, idx, viewerType)
     if type(entry) ~= "table" or entry.id == nil then return nil end
     local isSpellType = (entry.type ~= "item" and entry.type ~= "trinket" and entry.type ~= "slot")
-    local isAuraContainer = isSpellType and IsAuraContainerViewer(viewerType)
+    -- Forward the entry's stamped kind onto the synthesized spellEntry so
+    -- downstream IsAuraEntry / visibility / ID-correction code branches per
+    -- entry instead of per container. Falls through to viewerType-based
+    -- classification when the legacy entry lacks an explicit kind.
+    local kind = entry.kind
+    if not (kind == "aura" or kind == "cooldown") then
+        if not isSpellType then
+            kind = "cooldown"
+        elseif viewerType == "buff" or viewerType == "trackedBar" then
+            kind = "aura"
+        else
+            local CDMSpellData = ns.CDMSpellData
+            kind = (CDMSpellData and CDMSpellData.ResolveEntryKind
+                and CDMSpellData.ResolveEntryKind(entry, viewerType)) or "cooldown"
+        end
+    end
+    local isAuraEntry = (kind == "aura")
     local spellEntry = {
         spellID = isSpellType and entry.id or nil,
         overrideSpellID = isSpellType and entry.id or nil,
         name = "",
-        isAura = isAuraContainer or false,
+        isAura = isAuraEntry or false,
+        kind = kind,
         layoutIndex = 99000 + (idx or 0),
         viewerType = viewerType,
         type = entry.type,
@@ -3792,12 +3852,11 @@ function CDMIcons:BuildIcons(viewerType, container)
                 addonCD:SetSwipeColor(0, 0, 0, 0.8)
                 addonCD:Show()
             end
-            -- Mark aura containers so visibility handling works correctly
-            local cType = GetContainerTypeForViewer(entry.viewerType)
-            if cType == "aura" or cType == "auraBar" then
+            -- Mark aura entries so visibility handling works correctly
+            if IsAuraEntry(entry) then
                 icon._auraActive = false  -- will be set true by UpdateIconCooldown when aura present
                 icon._auraUnit = nil
-                        end
+            end
         end
     end
 
@@ -4156,16 +4215,13 @@ function CDMIcons:UpdateAllCooldowns(keepTickCaches)
             local isHiddenOverride = spellOvr and spellOvr.hidden
 
             if entry then
-                -- Visibility based on container type + display mode
+                -- Visibility branches per entry kind (aura vs cooldown). Container
+                -- shape (icon vs bar) is decoupled — a cooldown entry on a bar-
+                -- shaped container takes the cooldown branch, aura entries on an
+                -- icon-shaped container take the aura branch.
                 local containerDB = _ncdm and (_ncdm[entry.viewerType] or (_ncdmContainers and _ncdmContainers[entry.viewerType]))
-                local cType = containerDB and containerDB.containerType
-                if not cType then
-                    -- Built-in buff and trackedBar are aura containers even without
-                    -- an explicit containerType (they predate the Composer).
-                    local vt = entry.viewerType
-                    cType = (vt == "buff" or vt == "trackedBar") and "aura" or "cooldown"
-                end
                 local displayMode = containerDB and containerDB.iconDisplayMode or "always"
+                local entryIsAura = IsAuraEntry(entry)
 
                 if isHiddenOverride then
                     -- Per-spell hidden override: always hide owned entries
@@ -4173,7 +4229,7 @@ function CDMIcons:UpdateAllCooldowns(keepTickCaches)
                 elseif editMode then
                     icon:SetAlpha(1)
                     icon:Show()
-                elseif cType == "aura" or cType == "auraBar" then
+                elseif entryIsAura then
                     -- Aura containers: visibility depends on display mode + aura state
                     local isActive = icon._auraActive
                     local effectiveMode = displayMode

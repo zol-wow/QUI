@@ -130,10 +130,20 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --             stored entries in bar.entries instead of the global
 --             per-spec location, so (c) had nothing to port.
 --
+-- v33 = MigrateContainerShapeAndEntryKind
+--       (3.5.x options-v2 follow-up: collapses the 4-value containerType
+--        taxonomy {aura, auraBar, cooldown, customBar} into two orthogonal
+--        axes — container.shape ∈ {icon, bar} for layout/render, and
+--        entry.kind ∈ {aura, cooldown} for behavior. trackedBar/auraBar →
+--        shape=bar; everything else → shape=icon. Spell entries on
+--        previously-aura containers get kind=aura stamped; non-spell
+--        entries (item/trinket/slot/macro) get kind=cooldown stamped;
+--        ambiguous spell entries are left for the runtime classifier.)
+--
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 32
+local CURRENT_SCHEMA_VERSION = 33
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -2361,6 +2371,113 @@ local function FinalizeLegacyTrackerSpecState(profile)
 end
 
 ---------------------------------------------------------------------------
+-- v33: MigrateContainerShapeAndEntryKind
+--
+-- Collapses the legacy 4-value containerType taxonomy
+-- {aura, auraBar, cooldown, customBar} into two orthogonal axes:
+--   * container.shape ∈ {icon, bar} — layout/render concern.
+--   * entry.kind ∈ {aura, cooldown} — drives aura tracking, ID correction,
+--     "show only when active", grey-out, etc.
+--
+-- Mapping for shape:
+--   auraBar  → bar   (the only true StatusBar container)
+--   aura     → icon
+--   cooldown → icon
+--   customBar → icon (already renders via the icon factory; row1 was
+--                     synthesized by v32's FinalizeCustomBarContainers)
+--
+-- Mapping for entry.kind on custom containers (built-ins inject kind at
+-- scan time, so they aren't walked here):
+--   * Non-spell entries (type=item/trinket/slot/macro): kind=cooldown.
+--   * Spell entries on a previously-aura container (containerType in
+--     {aura, auraBar}): kind=aura.
+--   * Spell entries on cooldown/customBar containers: kind left nil
+--     (runtime classifier resolves via _abilityToAuraSpellID + viewer).
+--
+-- The legacy containerType field is retained as redundant data — readers
+-- migrate site-by-site to consult shape/kind. A future cleanup pass can
+-- delete it once all consumers are switched.
+--
+-- Idempotent: writes shape only when nil; writes entry.kind only when nil.
+---------------------------------------------------------------------------
+local function MigrateContainerShapeAndEntryKind(profile)
+    if not profile then return end
+    local ncdm = profile.ncdm
+    if type(ncdm) ~= "table" or type(ncdm.containers) ~= "table" then return end
+
+    for _, container in pairs(ncdm.containers) do
+        if type(container) == "table" then
+            -- Stamp shape from legacy containerType.
+            if container.shape == nil then
+                local ct = container.containerType
+                if ct == "auraBar" then
+                    container.shape = "bar"
+                else
+                    -- aura, cooldown, customBar, or unknown → icon
+                    container.shape = "icon"
+                end
+            end
+
+            -- Stamp entry.kind on user-curated entries. Built-in containers
+            -- (essential/utility/buff/trackedBar) have entries injected at
+            -- scan time with kind already set; custom containers are the
+            -- ones we walk here.
+            local wasAuraContainer = (container.containerType == "aura"
+                                       or container.containerType == "auraBar")
+
+            local function StampList(list)
+                if type(list) ~= "table" then return end
+                for _, entry in ipairs(list) do
+                    if type(entry) == "table" and entry.kind == nil then
+                        if entry.type and entry.type ~= "spell" then
+                            entry.kind = "cooldown"
+                        elseif wasAuraContainer then
+                            entry.kind = "aura"
+                        end
+                        -- Spell entries on cd/customBar containers fall
+                        -- through to runtime classification — leave nil.
+                    end
+                end
+            end
+
+            StampList(container.ownedSpells)
+            StampList(container.entries)
+        end
+    end
+
+    -- Per-spec entry storage lives outside ncdm.containers. Walk it too so
+    -- spec-specific custom containers (specSpecific=true) get their entries
+    -- stamped consistently with their non-spec siblings.
+    local globalDB = _currentGlobalDB
+    if type(globalDB) == "table"
+       and type(globalDB.ncdm) == "table"
+       and type(globalDB.ncdm.specTrackerSpells) == "table"
+    then
+        for containerKey, byContainer in pairs(globalDB.ncdm.specTrackerSpells) do
+            local sourceContainer = ncdm.containers[containerKey]
+            local wasAuraContainer = sourceContainer
+                and (sourceContainer.containerType == "aura"
+                     or sourceContainer.containerType == "auraBar")
+            if type(byContainer) == "table" then
+                for _, specList in pairs(byContainer) do
+                    if type(specList) == "table" then
+                        for _, entry in ipairs(specList) do
+                            if type(entry) == "table" and entry.kind == nil then
+                                if entry.type and entry.type ~= "spell" then
+                                    entry.kind = "cooldown"
+                                elseif wasAuraContainer then
+                                    entry.kind = "aura"
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+---------------------------------------------------------------------------
 -- Late migration: import action bar / micro menu / bag bar positions from
 -- Blizzard Edit Mode for users whose QUI profile predates frame anchoring
 -- for these bars. Runs at PLAYER_LOGIN (not at addon-init time) because it
@@ -2854,6 +2971,15 @@ function Migrations.RunOnProfile(profile)
         RemovePartyTrackerData(profile)
         FinalizeCustomBarContainers(profile)
         FinalizeLegacyTrackerSpecState(profile)
+    end
+
+    -- v33: split legacy containerType into container.shape +
+    -- entry.kind so aura tracking gates on per-entry classification
+    -- instead of per-container. Must run after v32 so the
+    -- customBar-style containers and per-spec entry storage already
+    -- exist in their final shape before we walk and stamp them.
+    if stored < 33 then
+        MigrateContainerShapeAndEntryKind(profile)
     end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then

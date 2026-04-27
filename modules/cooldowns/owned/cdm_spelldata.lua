@@ -2385,6 +2385,7 @@ local function ScanCooldownViewer(viewerType)
                             overrideSpellID = overrideSpellID or spellID,
                             name = name or "",
                             isAura = isAura or false,
+                            kind = (viewerType == "buff" or viewerType == "trackedBar") and "aura" or "cooldown",
                             hasCharges = hasCharges,
                             layoutIndex = layoutIndex,
                             viewerType = viewerType,
@@ -2787,6 +2788,48 @@ local _spellToCooldownID = {}
 -- on each ID variant to find the one that returns aura data.
 local _abilityToAuraSpellID = {}
 
+---------------------------------------------------------------------------
+-- ENTRY KIND CLASSIFIER
+--
+-- Each entry is either "aura" (player buff/debuff to track) or "cooldown"
+-- (ability/item with a recharge timer). This is an entry-level property,
+-- independent of container shape (icon vs bar). Resolution order:
+--   1. entry.kind if explicitly stamped (Composer add-time, migration)
+--   2. Non-spell types (item/trinket/slot/macro) → cooldown
+--   3. Built-in aura viewers (buff/trackedBar) → aura
+--   4. Runtime classifier: ability→aura map presence indicates a buff
+--   5. Default cooldown
+--
+-- Hot path: called from UpdateAllCooldowns per icon per tick. Two table
+-- lookups in the worst case.
+---------------------------------------------------------------------------
+local function ResolveEntryKind(entry, viewerType)
+    if not entry then return "cooldown" end
+
+    if entry.kind == "aura" or entry.kind == "cooldown" then
+        return entry.kind
+    end
+
+    if entry.type and entry.type ~= "spell" then
+        return "cooldown"
+    end
+
+    if viewerType == "buff" or viewerType == "trackedBar" then
+        return "aura"
+    end
+
+    local sid = entry.id or entry.spellID
+    if sid and _abilityToAuraSpellID[sid] then
+        return "aura"
+    end
+
+    return "cooldown"
+end
+
+local function IsAuraEntry(entry, viewerType)
+    return ResolveEntryKind(entry, viewerType) == "aura"
+end
+
 -- Forward declarations for functions defined in reconciliation section
 local RebuildCdIDToCorrectSID
 local RebuildSpellToCooldownID
@@ -2848,19 +2891,15 @@ local function ResolveOwnedEntry(entry, containerKey, index)
     if entry.type == "spell" then
         resolved.spellID = entry.id
 
-        -- For aura containers, apply the correction map to get the actual aura
-        -- spellID. The CDM info struct often returns the ability ID (e.g. Death Strike)
-        -- instead of the tracked aura ID (e.g. Coagulating Blood).
-        local db = GetContainerDB(containerKey)
-        local isAuraContainer = db and (db.containerType == "aura" or db.containerType == "auraBar")
-        -- Built-in buff and trackedBar are aura containers even without
-        -- an explicit containerType (they predate the Composer).
-        if not isAuraContainer and (containerKey == "buff" or containerKey == "trackedBar") then
-            isAuraContainer = true
-        end
+        -- Apply the aura ID correction map for any entry classified as an
+        -- aura — the CDM info struct often returns the ability ID
+        -- (e.g. Death Strike) instead of the tracked aura ID (e.g.
+        -- Coagulating Blood). Classification is per-entry now: an aura
+        -- entry on a cooldown-shaped container still gets aura ID resolution.
+        local isAuraEntry = ResolveEntryKind(entry, containerKey) == "aura"
         local displayID = entry.id
 
-        if isAuraContainer then
+        if isAuraEntry then
             -- Try correction: entry.id → cooldownID → corrected aura spellID.
             -- Only apply if entry.id is the base/override ability ID of the CDM
             -- entry — not if it's already a linked buff ID.  Multiple independent
@@ -2892,15 +2931,18 @@ local function ResolveOwnedEntry(entry, containerKey, index)
                 resolved.spellID = displayID
             end
             resolved.isAura = true
+            resolved.kind = "aura"
+        else
+            resolved.kind = "cooldown"
         end
 
         -- Check for override spell (e.g., talent replacements).
-        -- Skip for aura containers: displayID is already the resolved buff
+        -- Skip for aura entries: displayID is already the resolved buff
         -- spell ID (via _cdIDToCorrectSID / _abilityToAuraSpellID).
         -- GetOverrideSpell is for ability overrides, not buffs — calling it
         -- on an aura spell ID returns unrelated spells (e.g. Beacon of Light
         -- resolving to Blessing of Freedom).
-        if not isAuraContainer and C_Spell and C_Spell.GetOverrideSpell then
+        if not isAuraEntry and C_Spell and C_Spell.GetOverrideSpell then
             local ok, overrideID = pcall(C_Spell.GetOverrideSpell, displayID)
             if ok and overrideID and overrideID ~= displayID then
                 resolved.overrideSpellID = overrideID
@@ -3557,7 +3599,12 @@ function CDMSpellData:SnapshotBlizzardCDM(containerKey)
                             end
                             if sid and not seenIDs[sid] then
                                 seenIDs[sid] = true
-                                owned[#owned + 1] = { type = "spell", id = sid, _layoutIndex = viewerCDIDs[cdID] or 9999 }
+                                owned[#owned + 1] = {
+                                    type = "spell",
+                                    id = sid,
+                                    kind = isAuraContainer and "aura" or "cooldown",
+                                    _layoutIndex = viewerCDIDs[cdID] or 9999,
+                                }
                                 -- Also mark the override spellID so the fallback
                                 -- merge doesn't re-add it as a duplicate.
                                 local baseSid = Helpers.SafeValue(cdInfo.spellID, nil)
@@ -3592,7 +3639,11 @@ function CDMSpellData:SnapshotBlizzardCDM(containerKey)
             end
             if sid and not seenIDs[sid] then
                 seenIDs[sid] = true
-                owned[#owned + 1] = { type = "spell", id = sid }
+                owned[#owned + 1] = {
+                    type = "spell",
+                    id = sid,
+                    kind = isAuraContainer and "aura" or "cooldown",
+                }
             end
         end
     end
@@ -3865,7 +3916,9 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
     for _, info in ipairs(returning) do
         db.dormantSpells[info.id] = nil  -- remove from dormant
         local insertAt = math.min(info.slot, #db.ownedSpells + 1)
-        table.insert(db.ownedSpells, insertAt, { type = "spell", id = info.id, row = info.row })
+        local restored = { type = "spell", id = info.id, row = info.row }
+        restored.kind = ResolveEntryKind(restored, containerKey)
+        table.insert(db.ownedSpells, insertAt, restored)
     end
 
     -- Phase 3: Clean obsolete dormant spells no longer in the CDM system.
@@ -4190,11 +4243,6 @@ function CDMSpellData:ReconcileOwnedSpells(containerKey, globalTracked)
     -- Only reconcile containers that have been snapshotted
     if db.ownedSpells == nil then return false end
 
-    local isCooldown = true
-    if db.containerType == "aura" or db.containerType == "auraBar" then
-        isCooldown = false
-    end
-
     -- Build set of existing tracked entries in THIS container (for within-container dedup)
     local keptSet = {}
     for _, entry in ipairs(db.ownedSpells) do
@@ -4447,6 +4495,13 @@ function CDMSpellData:AddEntry(containerKey, entry)
     local list = GetMutableEntryList(db, containerKey, true)
     if not list then return false end
 
+    -- Stamp entry.kind on insert. Caller can pre-set entry.kind to
+    -- override (e.g., Composer's Passives/Buffs tabs forcing aura).
+    -- Falls through to the runtime classifier when nil.
+    if entry.kind == nil then
+        entry.kind = ResolveEntryKind(entry, containerKey)
+    end
+
     -- Within-container dedup — prevent adding duplicates. customBar
     -- entries are already typed as {type,id}; ownedSpells may have the
     -- older {id=N} shape which NormalizeOwnedEntry handles.
@@ -4541,11 +4596,15 @@ function CDMSpellData:RestoreRemovedEntry(containerKey, spellID)
         db.removedSpells[spellID] = nil
     end
 
-    -- Add back to ownedSpells
+    -- Add back to ownedSpells. Reclassify kind via the runtime
+    -- classifier — removedSpells only stored the spellID, so the
+    -- original kind hint is gone.
     if db.ownedSpells == nil then
         db.ownedSpells = {}
     end
-    db.ownedSpells[#db.ownedSpells + 1] = { type = "spell", id = spellID }
+    local restored = { type = "spell", id = spellID }
+    restored.kind = ResolveEntryKind(restored, containerKey)
+    db.ownedSpells[#db.ownedSpells + 1] = restored
 
     FireChangeCallback()
     return true
@@ -4569,7 +4628,9 @@ function CDMSpellData:RestoreDormantEntry(containerKey, spellID)
         savedSlot = savedData or 9999
     end
     local insertAt = math.min(savedSlot, #db.ownedSpells + 1)
-    table.insert(db.ownedSpells, insertAt, { type = "spell", id = spellID, row = savedRow })
+    local restored = { type = "spell", id = spellID, row = savedRow }
+    restored.kind = ResolveEntryKind(restored, containerKey)
+    table.insert(db.ownedSpells, insertAt, restored)
     FireChangeCallback()
     return true
 end
@@ -4606,17 +4667,19 @@ function CDMSpellData:ResnapshotFromBlizzard(containerKey)
     return true
 end
 
--- Convenience wrappers
-function CDMSpellData:AddSpell(containerKey, spellID)
-    return self:AddEntry(containerKey, { type = "spell", id = spellID })
+-- Convenience wrappers. Optional `kind` arg overrides the runtime
+-- classifier — pass it from the Composer when the picker tab dictates
+-- (Passives/Buffs → aura; all_cooldowns/items → cooldown).
+function CDMSpellData:AddSpell(containerKey, spellID, kind)
+    return self:AddEntry(containerKey, { type = "spell", id = spellID, kind = kind })
 end
 
 function CDMSpellData:AddItem(containerKey, itemID)
-    return self:AddEntry(containerKey, { type = "item", id = itemID })
+    return self:AddEntry(containerKey, { type = "item", id = itemID, kind = "cooldown" })
 end
 
 function CDMSpellData:AddTrinketSlot(containerKey, slotID)
-    return self:AddEntry(containerKey, { type = "slot", id = slotID })
+    return self:AddEntry(containerKey, { type = "slot", id = slotID, kind = "cooldown" })
 end
 
 
@@ -5704,6 +5767,8 @@ end
 ---------------------------------------------------------------------------
 CDMSpellData._spellIDToChild = _spellIDToChild
 CDMSpellData._abilityToAuraSpellID = _abilityToAuraSpellID
+CDMSpellData.ResolveEntryKind = ResolveEntryKind
+CDMSpellData.IsAuraEntry = IsAuraEntry
 
 --- Resolve the live spell ID from a Blizzard viewer child, falling back to
 --- entry IDs.  Used by both icons (tooltips) and bars (name text) so that

@@ -510,6 +510,10 @@ local BUILTIN_NAMES = {
     trackedBar = "Buff Bars",
 }
 
+-- Legacy 4-value taxonomy. Kept for backward-compat reads on profiles where
+-- the v33 schema bump has not yet stamped db.shape. New code should use
+-- BUILTIN_SHAPES + GetContainerShape (shape-only) and CDMSpellData.ResolveEntryKind
+-- (entry-only) instead.
 local BUILTIN_CONTAINER_TYPES = {
     essential  = "cooldown",
     utility    = "cooldown",
@@ -517,13 +521,64 @@ local BUILTIN_CONTAINER_TYPES = {
     trackedBar = "auraBar",
 }
 
+-- Shape is a layout/render concern — does the container draw icons or
+-- StatusBars. Independent of whether entries are auras or cooldowns.
+-- Only trackedBar is a true StatusBar today (real bar mirror); essential,
+-- utility, buff, and migrated customBar containers all render as icons.
+local BUILTIN_SHAPES = {
+    essential  = "icon",
+    utility    = "icon",
+    buff       = "icon",
+    trackedBar = "bar",
+}
+
+---------------------------------------------------------------------------
+-- Resolve container shape ("icon" or "bar") for a given container key.
+-- Reads db.shape if present, else falls back to BUILTIN_SHAPES, else
+-- infers from legacy containerType (auraBar → bar; everything else → icon).
+---------------------------------------------------------------------------
+local function GetContainerShape(viewerType)
+    if not viewerType then return "icon" end
+
+    local db = ns.Addon and ns.Addon.db and ns.Addon.db.profile
+    local cDB
+    if db then
+        cDB = db[viewerType]
+        if not cDB and db.ncdm and db.ncdm.containers then
+            cDB = db.ncdm.containers[viewerType]
+        end
+    end
+
+    if cDB then
+        local s = cDB.shape
+        if s == "icon" or s == "bar" then return s end
+    end
+
+    if BUILTIN_SHAPES[viewerType] then
+        return BUILTIN_SHAPES[viewerType]
+    end
+
+    if cDB and cDB.containerType == "auraBar" then
+        return "bar"
+    end
+
+    return "icon"
+end
+
+local function IsBarShape(viewerType)
+    return GetContainerShape(viewerType) == "bar"
+end
+
 local function ShouldDeferContainerLayoutInCombat(trackerKey, settings)
     if not InCombatLockdown() or inInitSafeWindow then
         return false
     end
 
-    local containerType = settings and settings.containerType or BUILTIN_CONTAINER_TYPES[trackerKey]
-    return containerType == "cooldown" or trackerKey == "essential" or trackerKey == "utility"
+    -- Only essential/utility wire click-to-cast SecureActionButton children
+    -- on their icons (see cdm_icons.lua UpdateIconSecureAttributes).  Other
+    -- containers (buff/trackedBar/customBar/user-created) have no secure
+    -- attributes that would taint during combat layout.
+    return trackerKey == "essential" or trackerKey == "utility"
 end
 
 ---------------------------------------------------------------------------
@@ -729,6 +784,7 @@ function CDMContainers_API:CreateContainer(name, containerType)
     settings.builtIn = false
     settings.name = name
     settings.containerType = containerType
+    settings.shape = (containerType == "auraBar") and "bar" or "icon"
     settings.ownedSpells = {}  -- custom containers start empty
 
     db.containers[key] = settings
@@ -1480,9 +1536,7 @@ SyncContainerMouseState = function(container, alphaOverride, force)
     container._quiAlphaHidden = hidden
     container._quiHoverOnly = hoverOnly
 
-    local settings = GetTrackerSettings(containerKey)
-    local containerType = settings and settings.containerType or BUILTIN_CONTAINER_TYPES[containerKey]
-    if containerType == "auraBar" then
+    if GetContainerShape(containerKey) == "bar" then
         SyncContainerBarsForVisibility(container)
     else
         SyncContainerIconsForVisibility(containerKey, hidden, hoverOnly)
@@ -3181,6 +3235,9 @@ ns.CDMContainers = {
     LayoutContainer = LayoutContainer,
     RefreshAll = RefreshAll,
     GetTrackedBarContainer = function() return containers.trackedBar end,
+    GetContainerShape = GetContainerShape,
+    IsBarShape = IsBarShape,
+    BUILTIN_SHAPES = BUILTIN_SHAPES,
     ResolveLayoutElementKey = function(containerKey)
         if containerKey == "essential" then return "cdmEssential" end
         if containerKey == "utility"   then return "cdmUtility"   end

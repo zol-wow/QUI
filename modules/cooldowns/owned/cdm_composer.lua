@@ -2664,6 +2664,17 @@ RefreshAddList = function()
                             containerDB.removedSpells[addID] = nil
                         end
 
+                        -- Tab-of-origin is authoritative for entry.kind: spells added
+                        -- from Passives/Buffs are auras; from CDM/Cooldowns/Items they
+                        -- are cooldowns. by_spell_id and the mixed CDM tab on built-in
+                        -- containers fall through to the runtime classifier.
+                        local kindFromTab = nil
+                        if activeAddTab == "other_auras" or activeAddTab == "active_buffs" then
+                            kindFromTab = "aura"
+                        elseif activeAddTab == "all_cooldowns" or activeAddTab == "items" then
+                            kindFromTab = "cooldown"
+                        end
+
                         local addResult
                         if addType == "slot" and entryRef._slotID then
                             if containerDB.removedSpells then
@@ -2673,7 +2684,7 @@ RefreshAddList = function()
                         elseif addType == "item" then
                             addResult = spellData:AddItem(activeContainer, addID)
                         else
-                            addResult = spellData:AddSpell(activeContainer, addID)
+                            addResult = spellData:AddSpell(activeContainer, addID, kindFromTab)
                         end
 
                         -- Assign the new entry to the target row (first with capacity)

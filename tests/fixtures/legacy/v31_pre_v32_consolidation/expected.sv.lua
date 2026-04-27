@@ -48,7 +48,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 32,
+        _schemaVersion = 33,
         _shippedDefaults = {
           abilityTimeline = {
             bigIcon = {
@@ -6190,6 +6190,7 @@ return {
               row3 = {
                 iconCount = 0
               },
+              shape = "icon",
               spacing = 4
             },
             customBar_test_bar_spec = {
@@ -6274,6 +6275,7 @@ return {
               row3 = {
                 iconCount = 0
               },
+              shape = "icon",
               spacing = 2,
               specSpecific = true,
               specSpecificSpells = true

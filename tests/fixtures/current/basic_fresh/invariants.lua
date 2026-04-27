@@ -7,7 +7,7 @@ return {
         name = "_schemaVersion is at current value",
         assert = function(sv, ctx)
             local p = sv.QUI_DB.profiles.Default
-            return p._schemaVersion == 32  -- bump when CURRENT_SCHEMA_VERSION changes
+            return p._schemaVersion == 33  -- bump when CURRENT_SCHEMA_VERSION changes
         end,
     },
     {

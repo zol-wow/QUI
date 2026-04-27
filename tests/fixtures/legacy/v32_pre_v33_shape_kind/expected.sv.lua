@@ -11,6 +11,25 @@ return {
       imports = {},
       isDone = false,
       lastVersion = 0,
+      ncdm = {
+        specTrackerSpells = {
+          customBar_specced = {
+            ["250"] = {
+              [1] = {
+                _sourceSpecID = 250,
+                id = 88888,
+                type = "spell"
+              },
+              [2] = {
+                _sourceSpecID = 250,
+                id = 14,
+                kind = "cooldown",
+                type = "trinket"
+              }
+            }
+          }
+        }
+      },
       specTrackerSpells = {}
     },
     profileKeys = {
@@ -6021,16 +6040,142 @@ return {
         },
         ncdm = {
           containers = {
-            buff = {
+            customBar_legacy_one = {
+              _legacyId = "legacy_one",
+              _migratedFromCustomTrackers = true,
+              anchorTo = "disabled",
+              borderColor = {
+                [1] = 0,
+                [2] = 0,
+                [3] = 0,
+                [4] = 1
+              },
+              borderSize = 1,
+              builtIn = false,
+              containerType = "customBar",
+              enabled = true,
+              entries = {
+                [1] = {
+                  id = 77777,
+                  type = "spell"
+                },
+                [2] = {
+                  id = 444,
+                  kind = "cooldown",
+                  type = "item"
+                }
+              },
+              iconSize = 32,
+              layoutDirection = "HORIZONTAL",
+              name = "Legacy Bar One",
+              pos = {
+                ox = 100,
+                oy = -100
+              },
+              row1 = {
+                iconCount = 6,
+                iconSize = 32
+              },
+              row2 = {
+                iconCount = 0
+              },
+              row3 = {
+                iconCount = 0
+              },
+              shape = "icon",
+              spacing = 4
+            },
+            customBar_specced = {
+              _legacyId = "specced",
+              _migratedFromCustomTrackers = true,
+              _sourceSpecID = 250,
+              _specEntriesPortedB3 = true,
+              anchorTo = "disabled",
+              builtIn = false,
+              containerType = "customBar",
+              enabled = true,
+              entries = {},
+              iconSize = 36,
+              layoutDirection = "VERTICAL",
+              name = "Spec Bar",
+              pos = {
+                ox = -200,
+                oy = 50
+              },
+              row1 = {
+                iconCount = 8,
+                iconSize = 36
+              },
+              row2 = {
+                iconCount = 0
+              },
+              row3 = {
+                iconCount = 0
+              },
+              shape = "icon",
+              spacing = 2,
+              specSpecific = true
+            },
+            custom_aura = {
+              builtIn = false,
+              containerType = "aura",
+              enabled = true,
+              name = "Custom Auras",
+              ownedSpells = {
+                [1] = {
+                  id = 33333,
+                  kind = "aura",
+                  type = "spell"
+                },
+                [2] = {
+                  id = 44444,
+                  kind = "aura",
+                  type = "spell"
+                },
+                [3] = {
+                  id = 1,
+                  kind = "cooldown",
+                  macroName = "Defensives",
+                  type = "macro"
+                }
+              },
               shape = "icon"
             },
-            essential = {
-              shape = "icon"
-            },
-            trackedBar = {
+            custom_bar = {
+              builtIn = false,
+              containerType = "auraBar",
+              enabled = true,
+              name = "Custom Aura Bars",
+              ownedSpells = {
+                [1] = {
+                  id = 55555,
+                  kind = "aura",
+                  type = "spell"
+                }
+              },
               shape = "bar"
             },
-            utility = {
+            custom_cd = {
+              builtIn = false,
+              containerType = "cooldown",
+              enabled = true,
+              name = "Custom Cooldowns",
+              ownedSpells = {
+                [1] = {
+                  id = 11111,
+                  type = "spell"
+                },
+                [2] = {
+                  id = 222,
+                  kind = "cooldown",
+                  type = "item"
+                },
+                [3] = {
+                  id = 13,
+                  kind = "cooldown",
+                  type = "trinket"
+                }
+              },
               shape = "icon"
             }
           }
