@@ -3616,6 +3616,7 @@ function CDMIcons:ReleaseIcon(icon)
     icon._totemSlot = nil
     icon._totemIconCache = nil
     icon._pendingTotemSlotRefresh = nil
+    icon._lastLayoutFilterHidden = nil
     -- Reset grey-out child alpha (set by greyOutInactive/greyOutInactiveBuffs)
     icon._greyType = nil
     if icon._greyedOut then
@@ -4029,6 +4030,42 @@ end
 -- collapse around missing items instead of leaving a gap.
 CDMIcons.ComputeFilterHides = ComputeFilterHides
 
+-- Per-container dirty set. When the runtime visibility update detects that an
+-- icon's filter verdict has flipped versus the last layout pass (e.g. mana-tea
+-- becoming usable mid-combat with hideNonUsable enabled), it marks the
+-- container here. After the per-icon loop in UpdateAllCooldowns /
+-- UpdateCooldownOnly we drain the set and call LayoutContainer for each entry
+-- so the bar collapses or expands around the slot. With clickableIcons = false,
+-- ShouldDeferContainerLayoutInCombat now permits the relayout to run in
+-- combat instead of waiting for PLAYER_REGEN_ENABLED.
+local _layoutNeedsRefresh = {}
+
+local function MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
+    if not (entry and entry.viewerType) then return end
+    if not containerDB or containerDB.dynamicLayout == false then return end
+    local previously = icon._lastLayoutFilterHidden
+    -- Only react to flips on icons LayoutContainer actually filter-checked.
+    -- Hidden-override drops, missing-entry skips, and static-layout icons
+    -- leave _lastLayoutFilterHidden as nil and don't participate.
+    if previously == nil then return end
+    if filterHidesNow ~= previously then
+        _layoutNeedsRefresh[entry.viewerType] = true
+    end
+end
+
+local function DrainLayoutDirty()
+    if next(_layoutNeedsRefresh) == nil then return end
+    local force = _G.QUI_ForceLayoutContainer
+    if not force then
+        wipe(_layoutNeedsRefresh)
+        return
+    end
+    for trackerKey in pairs(_layoutNeedsRefresh) do
+        force(trackerKey)
+    end
+    wipe(_layoutNeedsRefresh)
+end
+
 local function GetIconRowOpacity(icon)
     local opacity = icon and icon._rowOpacity
     if opacity == nil then
@@ -4157,9 +4194,12 @@ local function UpdateCooldownContainerVisibility(icon, entry, containerDB, editM
         shouldShow = false
     end
 
-    if shouldShow and ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD) then
-        shouldShow = false
-    end
+    -- Compute filter unconditionally (not gated on shouldShow) so the
+    -- mismatch detector sees the latest verdict even when display mode has
+    -- already hidden the icon.
+    local filterHidesNow = ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
+    if filterHidesNow then shouldShow = false end
+    MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
 
     ApplyIconVisibility(icon, shouldShow, containerDB and containerDB.dynamicLayout)
     SyncCooldownBling(icon)
@@ -4316,10 +4356,12 @@ function CDMIcons:UpdateAllCooldowns(keepTickCaches)
                         shouldShow = false
                     end
 
-                    -- Phase B.3: overlay container-level visibility filters
-                    if shouldShow and ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD) then
-                        shouldShow = false
-                    end
+                    -- Phase B.3: overlay container-level visibility filters.
+                    -- Filter computed unconditionally so the dirty-tracker sees
+                    -- the verdict even when display mode already hides the icon.
+                    local filterHidesNow = ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
+                    if filterHidesNow then shouldShow = false end
+                    MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
 
                     ApplyIconVisibility(icon, shouldShow, containerDB and containerDB.dynamicLayout)
 
@@ -4423,6 +4465,10 @@ function CDMIcons:UpdateAllCooldowns(keepTickCaches)
         end
     end
 
+    -- After the per-icon visibility loop, relayout any container whose
+    -- filter verdict flipped since the last layout pass.
+    DrainLayoutDirty()
+
     if not keepTickCaches then
         WipeUpdateTickCaches()
     end
@@ -4452,6 +4498,10 @@ function CDMIcons:UpdateCooldownOnly(keepTickCaches)
             end
         end
     end
+
+    -- After the per-icon visibility loop, relayout any container whose
+    -- filter verdict flipped since the last layout pass.
+    DrainLayoutDirty()
 
     if not keepTickCaches then
         WipeUpdateTickCaches()

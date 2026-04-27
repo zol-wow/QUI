@@ -1759,13 +1759,20 @@ local function LayoutContainer(trackerKey)
 
         -- Drop filtered icons (e.g. Hide Non-Usable items with 0 count,
         -- Show Only On Cooldown when off-cd) so the layout collapses.
-        -- InCombatLockdown is always false here (early-returned above).
+        -- inCombat reflects whether layout is running mid-fight; for non-
+        -- clickable custom cooldown bars ShouldDeferContainerLayoutInCombat
+        -- now allows that path so filter flips during combat (mana-tea
+        -- becoming usable, etc.) trigger a re-anchor instead of waiting
+        -- for PLAYER_REGEN_ENABLED.
         if not skipIcon and not editModeActive
            and dynamicLayoutEnabled and ComputeFilterHides then
             local entry = icon._spellEntry
             if entry then
                 local isOnCD = icon._hasCooldownActive or false
-                if ComputeFilterHides(icon, entry, settings, false, isOnCD) then
+                local inCombatNow = InCombatLockdown() or false
+                local filterHides = ComputeFilterHides(icon, entry, settings, inCombatNow, isOnCD)
+                icon._lastLayoutFilterHidden = filterHides and true or false
+                if filterHides then
                     icon:Hide()
                     icon:ClearAllPoints()
                     skipIcon = true
