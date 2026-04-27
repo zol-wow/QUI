@@ -11,6 +11,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v3.5.4 - 2026-04-28
+
+### Fixed
+- fix(frames): use ignoreInLayout for PetFrame skip in LayoutChildren
+- fix(frames): evict PetFrame from managed list to stop combat taint blocks
+- fix(cdm): show stacks for buff-viewer spells on custom cooldown containers
+- fix(tooltip): guard IsOwnerFadedOut against forbidden frames
+- fix(actionbars): keep autohide bars visible while spell flyout is open
+- fix(frames): restore boss frame buffs
+- CDM tooltip/tint, Shaman OH imbue, aura-snapshot fix
+- fix(cdm, anchoring): track parent growth for frames anchored to dynamic-size containers
+- fix(cdm): decouple charge stack lookup from Blizzard CDM category
 ## v3.5.3 - 2026-04-27
 
 ### Added
