@@ -753,10 +753,18 @@ function Pins:WithAutoApplySuppressed(callback)
     return resultA, resultB, resultC
 end
 
-function Pins:UpdateEntryMetadata(entry, descriptor)
+function Pins:UpdateEntryMetadata(entry, descriptor, options)
     if type(entry) ~= "table" or type(descriptor) ~= "table" then
         return
     end
+
+    -- Navigation fields define where the user pinned from. They are write-once
+    -- by default: a widget rebound under a different sub-page (e.g. the bulk
+    -- editor, or a shared page that hosts a bound copy of the same path) must
+    -- not clobber the original capture context. Only Pins:Pin opts in to
+    -- overwrite, since re-pinning is the only operation that legitimately
+    -- re-establishes nav.
+    local allowNavOverwrite = options and options.allowNavOverwrite == true
 
     if type(descriptor.kind) == "string" and descriptor.kind ~= "" then
         entry.kind = descriptor.kind
@@ -767,19 +775,33 @@ function Pins:UpdateEntryMetadata(entry, descriptor)
     if type(descriptor.pinLabel) == "string" and descriptor.pinLabel ~= "" then
         entry.label = descriptor.pinLabel
     end
-    -- Only overwrite when the descriptor carries a non-empty string. An empty
-    -- string from a stale-context rebind would otherwise clobber good metadata
-    -- captured at pin time and break Jump-to-setting navigation.
-    if type(descriptor.tabName) == "string" and descriptor.tabName ~= "" then entry.tabName = descriptor.tabName end
-    if type(descriptor.subTabName) == "string" and descriptor.subTabName ~= "" then entry.subTabName = descriptor.subTabName end
-    if type(descriptor.sectionName) == "string" and descriptor.sectionName ~= "" then entry.sectionName = descriptor.sectionName end
-    if type(descriptor.featureId) == "string" and descriptor.featureId ~= "" then entry.featureId = descriptor.featureId end
-    if type(descriptor.surfaceTabKey) == "string" and descriptor.surfaceTabKey ~= "" then entry.surfaceTabKey = descriptor.surfaceTabKey end
-    if type(descriptor.surfaceUnitKey) == "string" and descriptor.surfaceUnitKey ~= "" then entry.surfaceUnitKey = descriptor.surfaceUnitKey end
-    if descriptor.tabIndex ~= nil then entry.tabIndex = descriptor.tabIndex end
-    if descriptor.subTabIndex ~= nil then entry.subTabIndex = descriptor.subTabIndex end
-    if type(descriptor.tileId) == "string" and descriptor.tileId ~= "" then entry.tileId = descriptor.tileId end
-    if descriptor.subPageIndex ~= nil then entry.subPageIndex = descriptor.subPageIndex end
+
+    local function setNavString(key, value)
+        if type(value) ~= "string" or value == "" then return end
+        if allowNavOverwrite or type(entry[key]) ~= "string" or entry[key] == "" then
+            entry[key] = value
+        end
+    end
+
+    local function setNavValue(key, value)
+        if value == nil then return end
+        if allowNavOverwrite or entry[key] == nil then
+            entry[key] = value
+        end
+    end
+
+    setNavString("tabName", descriptor.tabName)
+    setNavString("subTabName", descriptor.subTabName)
+    setNavString("sectionName", descriptor.sectionName)
+    setNavString("featureId", descriptor.featureId)
+    setNavString("providerKey", descriptor.providerKey)
+    setNavString("category", descriptor.category)
+    setNavString("surfaceTabKey", descriptor.surfaceTabKey)
+    setNavString("surfaceUnitKey", descriptor.surfaceUnitKey)
+    setNavString("tileId", descriptor.tileId)
+    setNavValue("tabIndex", descriptor.tabIndex)
+    setNavValue("subTabIndex", descriptor.subTabIndex)
+    setNavValue("subPageIndex", descriptor.subPageIndex)
 end
 
 function Pins:ClearProfileShadow(profileName, path, db)
@@ -985,7 +1007,7 @@ function Pins:Pin(path, descriptor, db)
     entry.disabled = false
     entry.missCount = 0
 
-    self:UpdateEntryMetadata(entry, descriptor)
+    self:UpdateEntryMetadata(entry, descriptor, { allowNavOverwrite = true })
     TouchStore(store)
     self:Broadcast(path)
     return true

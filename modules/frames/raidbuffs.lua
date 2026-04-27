@@ -127,7 +127,8 @@ local RAID_BUFFS = {
 -- castPriority: ordered list of spell IDs to try casting (first known wins)
 -- requiresShield: only check if shield equipped in OH slot
 local SELF_BUFFS = {
-    -- Shaman: Main hand weapon enchant
+    -- Shaman: Main hand weapon enchant (Enhancement: Windfury → MH. Resto: Earthliving → MH.)
+    -- Flametongue is OH-only for Enhancement and lives in the Offhand entry below.
     {
         name = "Weapon Enchant",
         stat = "Main Hand",
@@ -135,7 +136,18 @@ local SELF_BUFFS = {
         selfBuff = true,
         checkType = "weaponEnchant",
         anyEnchantIDs = { [5400] = true, [5401] = true, [6498] = true },
-        castPriority = { 318038, 33757, 382021 },  -- Flametongue, Windfury, Earthliving
+        castPriority = { 33757, 382021 },  -- Windfury, Earthliving
+    },
+    -- Shaman: Off-hand weapon enchant (Enhancement dual-wielding: Flametongue → OH)
+    {
+        name = "Offhand Enchant",
+        stat = "Off Hand",
+        providerClass = "SHAMAN",
+        selfBuff = true,
+        checkType = "weaponEnchant",
+        requiresDualWield = true,
+        anyEnchantIDs = { [5400] = true, [5401] = true, [6498] = true },
+        castPriority = { 318038 },  -- Flametongue
     },
     -- Shaman: Shield enchant (requires shield equipped)
     {
@@ -556,6 +568,13 @@ local function PlayerHasSelfBuff(entry)
             if not ohItemID then return true end  -- No OH item = skip this check
             local _, _, _, _, _, _, itemSubClass = C_Item.GetItemInfoInstant(ohItemID)
             if itemSubClass ~= 6 then return true end  -- Not a shield = skip
+            return hasOH and entry.anyEnchantIDs[ohID] or false
+        end
+        if entry.requiresDualWield then
+            local ohItemID = GetInventoryItemID("player", 17)
+            if not ohItemID then return true end  -- No OH item = skip this check
+            local _, _, _, _, _, itemClass = C_Item.GetItemInfoInstant(ohItemID)
+            if itemClass ~= 2 then return true end  -- OH is not a weapon = skip
             return hasOH and entry.anyEnchantIDs[ohID] or false
         end
         return hasMH and entry.anyEnchantIDs[mhID] or false
@@ -1274,8 +1293,9 @@ end
 
 local eventFrame = CreateFrame("Frame")
 
--- Forward declaration for range check functions (defined after event handling)
+-- Forward declaration for range check / enchant polling functions (defined after event handling)
 local StartRangeCheck, StopRangeCheck
+local StartWeaponEnchantPolling
 
 local function OnEvent(self, event, ...)
     local settings = GetSettings()
@@ -1300,6 +1320,7 @@ local function OnEvent(self, event, ...)
     if event == "ADDON_LOADED" then
         CreateMainFrame()
         ApplySkin()
+        StartWeaponEnchantPolling()
         C_Timer.After(2, UpdateDisplay)
     elseif event == "GROUP_ROSTER_UPDATE" then
         ThrottledUpdate()
@@ -1368,6 +1389,45 @@ StartRangeCheck = function()
             return
         end
         UpdateDisplay()
+    end)
+end
+
+-- Weapon enchant polling: WoW does not fire an event when a weapon imbue is
+-- applied or removed, so the icon would otherwise stay marked "missing" until
+-- the next aura/group/combat event. Poll GetWeaponEnchantInfo() and refresh
+-- when the MH or OH enchant ID changes. Skipped for classes that don't have
+-- a weaponEnchant self-buff in SELF_BUFFS.
+local lastMHEnchantID, lastOHEnchantID
+local weaponEnchantTicker
+
+local function PlayerNeedsWeaponEnchantPolling()
+    local playerClass = GetPlayerClass()
+    if not playerClass then return false end
+    for _, entry in ipairs(SELF_BUFFS) do
+        if entry.providerClass == playerClass and entry.checkType == "weaponEnchant" then
+            return true
+        end
+    end
+    return false
+end
+
+StartWeaponEnchantPolling = function()
+    if weaponEnchantTicker then return end
+    if not PlayerNeedsWeaponEnchantPolling() then return end
+    local hasMH, _, _, mhID, hasOH, _, _, ohID = GetWeaponEnchantInfo()
+    lastMHEnchantID = hasMH and mhID or nil
+    lastOHEnchantID = hasOH and ohID or nil
+    weaponEnchantTicker = C_Timer.NewTicker(0.5, function()
+        local settings = GetSettings()
+        if not settings or not settings.enabled then return end
+        local hMH, _, _, mID, hOH, _, _, oID = GetWeaponEnchantInfo()
+        local curMH = hMH and mID or nil
+        local curOH = hOH and oID or nil
+        if curMH ~= lastMHEnchantID or curOH ~= lastOHEnchantID then
+            lastMHEnchantID = curMH
+            lastOHEnchantID = curOH
+            ThrottledUpdate()
+        end
     end)
 end
 
