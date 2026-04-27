@@ -30,34 +30,13 @@ local function ScriptDir()
     return dir
 end
 
-local libsRoot = ScriptDir() .. "../libs"
-
--- Stub the WoW global aliases the bundled libs reach for.
-strmatch = string.match
-strfind  = string.find
-strsub   = string.sub
-strlower = string.lower
-strupper = string.upper
-strrep   = string.rep
-strtrim  = function(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
-strjoin  = function(sep, ...)
-    local n = select("#", ...)
-    local out = {}
-    for i = 1, n do out[i] = tostring(select(i, ...)) end
-    return table.concat(out, sep)
-end
-tinsert  = table.insert
-tremove  = table.remove
-tconcat  = table.concat
-wipe     = function(t) for k in pairs(t) do t[k] = nil end return t end
-geterrorhandler = function() return print end
-
-dofile(libsRoot .. "/LibStub/LibStub.lua")
-dofile(libsRoot .. "/LibDeflate/LibDeflate.lua")
-dofile(libsRoot .. "/AceSerializer-3.0.lua")
+-- Load the shared headless harness env (WoW stubs + libs).
+local env = dofile(ScriptDir() .. "_addon_env.lua")
+env.LoadLibs()
 
 local LibDeflate    = LibStub("LibDeflate")
 local AceSerializer = LibStub("AceSerializer-3.0")
+local PrettyPrint   = dofile(ScriptDir() .. "../tests/helpers/pretty_print.lua")
 
 ----------------------------------------------------------------------------
 -- I/O
@@ -312,13 +291,18 @@ end
 
 local function Main(args)
     local inputArg, fullDump = nil, false
-    for _, a in ipairs(args) do
+    local toSeedSv = nil
+    local i = 1
+    while i <= #args do
+        local a = args[i]
         if a == "--full" then fullDump = true
+        elseif a == "--to-seed-sv" then i = i + 1; toSeedSv = args[i]
         elseif not inputArg then inputArg = a end
+        i = i + 1
     end
 
     if not inputArg then
-        print("usage: lua tools/decode_profile.lua <file|-> [--full]")
+        print("usage: lua tools/decode_profile.lua <file|-> [--full] [--to-seed-sv <path>]")
         os.exit(1)
     end
 
@@ -347,6 +331,27 @@ local function Main(args)
         local outPath = inputArg .. ".dump.txt"
         WriteFile(outPath, table.concat(out, "\n"))
         print(("\nFull depth-8 dump written to: %s"):format(outPath))
+    end
+
+    if toSeedSv then
+        if decoded.prefix ~= "QUI1:" then
+            print("--to-seed-sv requires a QUI1: profile string (got " .. decoded.prefix .. ")")
+            os.exit(2)
+        end
+        local quiDb = {
+            profileKeys = { ["TestChar - TestRealm"] = "Default" },
+            profiles = { Default = decoded.payload },
+        }
+        local body = PrettyPrint.Format(quiDb)
+        -- pretty_print outputs `return {...}\n`; we want `QUI_DB = {...}\n`.
+        body = body:gsub("^return ", "QUI_DB = ")
+        body = body .. "QUIDB = {}\n"
+
+        local f, err = io.open(toSeedSv, "w")
+        if not f then error("Cannot write " .. toSeedSv .. ": " .. tostring(err)) end
+        f:write(body)
+        f:close()
+        print(("\nSeed file written to: %s"):format(toSeedSv))
     end
 end
 

@@ -55,3 +55,56 @@ table that came along.
 `--full` additionally writes a `<input>.dump.txt` with a depth-8
 pretty-print of the entire deserialized payload — handy for grepping when
 a setting is suspected of being mis-stored.
+
+## test_profiles.lua
+
+Headless QUI profile regression test runner. Walks `tests/fixtures/`, runs
+the round-trip pipeline against each, snapshot-diffs results.
+
+```sh
+# Run all fixtures
+lua tools/test_profiles.lua
+
+# Run only fixtures matching a pattern
+lua tools/test_profiles.lua --only edge/
+
+# List discovered fixtures
+lua tools/test_profiles.lua --list
+
+# Regenerate snapshots after intentional changes
+lua tools/test_profiles.lua --update --only legacy/v22_pre_ncdm_containers
+```
+
+See `tests/README.md` for the full fixture authoring guide. Exit codes:
+`0` all passed, `1` test failure, `2` harness error.
+
+## _addon_env.lua
+
+Internal: shared WoW-stub + module loader used by `decode_profile.lua` and
+`test_profiles.lua`. Not meant to be invoked directly. Exposes:
+
+- `env.LoadLibs()` — loads bundled libraries (LibStub, AceDB, etc.)
+- `env.LoadCore()` — loads the QUI core slice (utils, defaults, migrations,
+  compat, profile_io)
+- `env.LoadHarness(seed)` — combines the above with a seeded `_G.QUI_DB`,
+  returns a table with `db`, `QUI`, `QUICore`, `ns`
+
+When WoW adds a new global the libs reach for, add the stub to `_addon_env.lua`
+and both tools pick it up automatically.
+
+## decode_profile.lua — `--to-seed-sv` flag
+
+Convert any `QUI1:` import string into a fixture-shaped `seed.sv.lua`:
+
+```sh
+lua tools/decode_profile.lua user-bug-report.txt \
+    --to-seed-sv tests/fixtures/edge/issue-123/seed.sv.lua
+```
+
+Then run with `--update`:
+
+```sh
+lua tools/test_profiles.lua --update --only edge/issue-123
+```
+
+The user's reported bug shape is now a permanent regression test.

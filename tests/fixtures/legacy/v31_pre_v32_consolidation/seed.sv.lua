@@ -1,0 +1,125 @@
+-- Profile at _schemaVersion = 31, before the v32 OptionsV2BranchConsolidated
+-- migration ran. Exercises all four sub-transforms:
+--
+--   (a) MigrateCustomTrackersToContainers:
+--       customTrackers.bars[] -> ncdm.containers["customBar_<id>"]
+--       Two bars: one plain (no spec), one spec-specific with entries.
+--
+--   (b) RemovePartyTrackerData:
+--       quiGroupFrames.party.partyTracker and .raid.partyTracker stripped.
+--
+--   (c) FinalizeCustomBarContainers:
+--       row1 synthesised from flat iconSize/spacing/etc.;
+--       QUIDB.specTrackerSpells["test_bar_spec"]["250"] ported to
+--       QUIDB.ncdm.specTrackerSpells["customBar_test_bar_spec"]["250"].
+--
+--   (d) FinalizeLegacyTrackerSpecState:
+--       specSpecificSpells=true promoted to specSpecific=true;
+--       _sourceSpecID stamped from ncdm._lastSpecID = 250;
+--       container.entries moved into QUIDB.ncdm.specTrackerSpells per-spec.
+QUI_DB = {
+    profileKeys = { ["TestChar - TestRealm"] = "Default" },
+    profiles = {
+        Default = {
+            _schemaVersion = 31,
+
+            -- ----------------------------------------------------------------
+            -- Input for transform (a): legacy custom tracker bars
+            -- ----------------------------------------------------------------
+            customTrackers = {
+                bars = {
+                    -- Bar 1: plain bar, no spec specificity, has offsetX/offsetY
+                    {
+                        id            = "test_bar_1",
+                        name          = "Test Bar One",
+                        enabled       = true,
+                        iconSize      = 32,
+                        spacing       = 4,
+                        growDirection = "RIGHT",
+                        maxIcons      = 6,
+                        borderSize    = 1,
+                        borderColor   = { 0, 0, 0, 1 },
+                        offsetX       = 120,
+                        offsetY       = -80,
+                        entries = {
+                            { type = "spell", id = 12345 },
+                            { type = "spell", id = 67890 },
+                        },
+                    },
+                    -- Bar 2: spec-specific bar; entries here exercise transform (d)
+                    -- (the drag-drop-bug path where entries were stored in bar.entries
+                    -- rather than in global specTrackerSpells).
+                    {
+                        id                 = "test_bar_spec",
+                        name               = "Spec Bar",
+                        enabled            = true,
+                        iconSize           = 36,
+                        spacing            = 2,
+                        growDirection      = "DOWN",
+                        maxIcons           = 8,
+                        borderSize         = 2,
+                        borderColor        = { 0.2, 0.2, 0.2, 1 },
+                        offsetX            = -200,
+                        offsetY            = 50,
+                        specSpecificSpells = true,
+                        entries = {
+                            { type = "spell", id = 11111 },
+                            { type = "spell", id = 22222 },
+                        },
+                    },
+                },
+            },
+
+            -- ----------------------------------------------------------------
+            -- ncdm block: _lastSpecID used by transforms (c) and (d)
+            -- ----------------------------------------------------------------
+            ncdm = {
+                enabled    = true,
+                _lastSpecID = 250,
+            },
+
+            -- ----------------------------------------------------------------
+            -- Input for transform (b): orphan partyTracker under group frames
+            -- ----------------------------------------------------------------
+            quiGroupFrames = {
+                party = {
+                    enabled = true,
+                    partyTracker = {
+                        enabled          = true,
+                        someStaleField   = "should be gone after migration",
+                        kickTimerEnabled = true,
+                    },
+                },
+                raid = {
+                    enabled = true,
+                    partyTracker = {
+                        enabled        = true,
+                        anotherOrphan  = "also gone after migration",
+                    },
+                },
+            },
+        },
+    },
+}
+
+-- QUIDB is the SavedVariable name used by QUICore:OnInitialize in WoW, but
+-- the headless harness creates its AceDB via QUI_DB (not QUIDB).  The global
+-- DB table (db.global, i.e. QUI_DB.global) is where _currentGlobalDB points.
+-- Put specTrackerSpells there so transform (c)'s per-spec entry port fires.
+QUIDB = {}
+
+-- Extend QUI_DB with a global section carrying the legacy spec-tracker data.
+-- AceDB reads QUI_DB.global for db.global.
+QUI_DB.global = {
+    specTrackerSpells = {
+        -- transform (c): FinalizeCustomBarContainers copies
+        -- global.specTrackerSpells["test_bar_spec"]["250"]
+        -- -> global.ncdm.specTrackerSpells["customBar_test_bar_spec"]["250"]
+        test_bar_spec = {
+            ["250"] = {
+                { type = "spell", id = 33333 },
+                { type = "spell", id = 44444 },
+            },
+        },
+    },
+}
