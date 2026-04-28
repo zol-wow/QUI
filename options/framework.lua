@@ -4893,7 +4893,10 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
 
     container.GetValue = GetValue
     container.SetValue = BindWidgetMethod(container, SetValue)
-    container.SetOptions = SetOptions
+    -- BindWidgetMethod so `dd:SetOptions(opts)` and `dd.SetOptions(opts)`
+    -- both work; without it, a colon-call passes the container itself as
+    -- `newOptions` and silently empties the menu.
+    container.SetOptions = BindWidgetMethod(container, SetOptions)
     container.UpdateVisual = UpdateVisual
 
     -- Register for cross-widget sync
