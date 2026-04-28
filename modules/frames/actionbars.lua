@@ -5658,6 +5658,16 @@ local function SuppressProcVisualFrame(frame)
         if frame.StopAnimating then
             frame:StopAnimating()
         end
+        -- ActionButtonSpellAlertMixin keeps the proc loop alive via two
+        -- AnimationGroups (ProcStartAnim → ProcLoop) defined on the alert
+        -- frame itself. StopAnimating() doesn't traverse them, so the swirl
+        -- keeps playing under SetAlpha(0) and pops back on the next Show.
+        if frame.ProcStartAnim and frame.ProcStartAnim.Stop then
+            frame.ProcStartAnim:Stop()
+        end
+        if frame.ProcLoop and frame.ProcLoop.Stop then
+            frame.ProcLoop:Stop()
+        end
     end)
 
     if frame.Show then
@@ -8836,6 +8846,24 @@ function ActionBarsOwned:Refresh()
             end
         end)
 
+        -- Modern retail (post-rename): proc swirl is created lazily by
+        -- ActionButtonSpellAlertManager:ShowAlert. Hook the manager so we
+        -- catch the alert frame the moment it exists, both for the default
+        -- alert and the AssistedCombatRotationFrame's separate alert.
+        if ActionButtonSpellAlertManager and ActionButtonSpellAlertManager.ShowAlert then
+            hooksecurefunc(ActionButtonSpellAlertManager, "ShowAlert", function(_, actionButton)
+                if not actionButton then return end
+                if not ActionBarsOwned.skinnedButtons[actionButton] then return end
+                ActionBarsOwned.SuppressButtonProcVisuals(actionButton)
+                local acrf = actionButton.AssistedCombatRotationFrame
+                if acrf and acrf.SpellActivationAlert then
+                    SuppressProcVisualFrame(acrf.SpellActivationAlert)
+                end
+            end)
+        end
+        -- Legacy global path — kept as a fallback for clients that still
+        -- expose ActionButton_ShowOverlayGlow before the SpellAlertManager
+        -- refactor.
         if type(ActionButton_ShowOverlayGlow) == "function" then
             hooksecurefunc("ActionButton_ShowOverlayGlow", function(button)
                 if ActionBarsOwned.skinnedButtons[button] then
