@@ -28,6 +28,22 @@ local _proposalsByContainer = {}
 local _resolverFrame
 local _pendingPostCombat = false
 
+local SPEC_ID_CLASS_TOKEN = {
+    [62] = "MAGE", [63] = "MAGE", [64] = "MAGE",
+    [65] = "PALADIN", [66] = "PALADIN", [70] = "PALADIN",
+    [71] = "WARRIOR", [72] = "WARRIOR", [73] = "WARRIOR",
+    [102] = "DRUID", [103] = "DRUID", [104] = "DRUID", [105] = "DRUID",
+    [250] = "DEATHKNIGHT", [251] = "DEATHKNIGHT", [252] = "DEATHKNIGHT",
+    [253] = "HUNTER", [254] = "HUNTER", [255] = "HUNTER",
+    [256] = "PRIEST", [257] = "PRIEST", [258] = "PRIEST",
+    [259] = "ROGUE", [260] = "ROGUE", [261] = "ROGUE",
+    [262] = "SHAMAN", [263] = "SHAMAN", [264] = "SHAMAN",
+    [265] = "WARLOCK", [266] = "WARLOCK", [267] = "WARLOCK",
+    [268] = "MONK", [269] = "MONK", [270] = "MONK",
+    [577] = "DEMONHUNTER", [581] = "DEMONHUNTER",
+    [1467] = "EVOKER", [1468] = "EVOKER", [1473] = "EVOKER",
+}
+
 local function GetCurrentSpecID()
     if not GetSpecialization or not GetSpecializationInfo then return nil end
     local idx = GetSpecialization()
@@ -37,9 +53,32 @@ local function GetCurrentSpecID()
 end
 
 local function GetSpecClassToken(specID)
-    if not specID or not GetSpecializationInfoByID then return nil end
-    local _, _, _, _, _, classToken = GetSpecializationInfoByID(specID)
-    return classToken
+    if not specID then return nil end
+    if GetSpecializationInfoByID then
+        local ok, id, name, description, icon, role, classToken = pcall(GetSpecializationInfoByID, specID)
+        if ok and classToken then return classToken end
+    end
+    return SPEC_ID_CLASS_TOKEN[specID]
+end
+
+local function GetSpecKeyCandidates(specID, preferredKey)
+    local keys, seen = {}, {}
+    local function push(key)
+        if key == nil then return end
+        key = tostring(key)
+        if key ~= "" and not seen[key] then
+            seen[key] = true
+            keys[#keys + 1] = key
+        end
+    end
+
+    push(preferredKey)
+    local classToken = GetSpecClassToken(specID) or SPEC_ID_CLASS_TOKEN[specID]
+    if classToken and specID then
+        push(classToken .. "-" .. tostring(specID))
+    end
+    push(specID)
+    return keys
 end
 
 local function IsCastableForPlayer(spellID)
@@ -112,8 +151,8 @@ end
 
 -- Resolve the per-spec list path: db.global.ncdm.specTrackerSpells[containerKey][specKey].
 -- After migration v35, this is the canonical storage for spec-specific bar entries.
--- Returns the list (may be nil) and a setter that creates the path on demand.
-local function GetPerSpecList(containerKey, specID, createIfMissing)
+-- Returns the list (may be nil) and the key that was used.
+local function GetPerSpecList(containerKey, specID, createIfMissing, preferredKey)
     local db = QUICore and QUICore.db
     if not db or type(db.global) ~= "table" then return nil end
     local global = db.global
@@ -131,14 +170,35 @@ local function GetPerSpecList(containerKey, specID, createIfMissing)
         byContainer = {}
         global.ncdm.specTrackerSpells[containerKey] = byContainer
     end
-    local specKey = tostring(specID)
-    local list = byContainer[specKey]
-    if type(list) ~= "table" then
-        if not createIfMissing then return nil end
-        list = {}
-        byContainer[specKey] = list
+
+    local keys = GetSpecKeyCandidates(specID, preferredKey)
+    for _, specKey in ipairs(keys) do
+        local list = byContainer[specKey]
+        if type(list) == "table" then
+            return list, specKey
+        end
     end
-    return list
+
+    local specKey = keys[1] or tostring(specID)
+    if type(byContainer[specKey]) ~= "table" then
+        if not createIfMissing then return nil end
+        byContainer[specKey] = {}
+    end
+    return byContainer[specKey], specKey
+end
+
+local function GetEntryListForContainer(containerKey, container, createIfMissing, preferredKey)
+    if type(container) ~= "table" then return nil end
+    if type(container._sourceSpecID) == "number" then
+        local list, specKey = GetPerSpecList(containerKey, container._sourceSpecID, createIfMissing, preferredKey)
+        if type(list) == "table" then
+            return list, "spec", specKey
+        end
+    end
+    if type(container.entries) == "table" then
+        return container.entries, "container", nil
+    end
+    return nil
 end
 
 local function ContainerIsCandidate(container)
@@ -180,8 +240,7 @@ function LegacyResolver:WalkAll(opts)
             -- Post-v35: entries live in per-spec storage at _sourceSpecID.
             -- Pre-v35 (or stale state where v35 couldn't access globals):
             -- fall back to container.entries.
-            local entryList = GetPerSpecList(key, container._sourceSpecID, false)
-                              or container.entries
+            local entryList, entryListSource, entryListKey = GetEntryListForContainer(key, container, false)
             if type(entryList) ~= "table" then entryList = {} end
 
             for ei, entry in ipairs(entryList) do
@@ -209,6 +268,8 @@ function LegacyResolver:WalkAll(opts)
                 _proposalsByContainer[key] = {
                     proposals = proposalsForContainer,
                     stats     = stats,
+                    listSource = entryListSource,
+                    listKey    = entryListKey,
                     walkedAt  = (time and time()) or 0,
                 }
                 proposalCount = proposalCount + (stats.proposed + stats.ambiguous + stats.noMatch)
@@ -261,9 +322,12 @@ function LegacyResolver:RemoveBrokenEntriesForContainer(containerKey)
         return removed
     end
 
-    local removed = CompactEntries(container.entries)
-    local legacyBar = FindLegacyBar(db.profile, container._legacyId)
-    if legacyBar then CompactEntries(legacyBar.entries) end
+    local entryList = GetEntryListForContainer(containerKey, container, false, proposalSet.listKey)
+    local removed = CompactEntries(entryList)
+    if proposalSet.listSource == "container" then
+        local legacyBar = FindLegacyBar(db.profile, container._legacyId)
+        if legacyBar then CompactEntries(legacyBar.entries) end
+    end
 
     _proposalsByContainer[containerKey] = nil
     NotifyRefresh()
@@ -306,11 +370,17 @@ local function ApplyResolutionToEntry(entry, res, includeAmbiguous)
     if type(entry) ~= "table" then return false end
     if res.state == "proposed" and res.target and res.target.spellID then
         entry._sourceID = res.originalID
+        if res.target.source == "slot" and entry._legacySpellbookSlot == nil then
+            entry._legacySpellbookSlot = res.originalID
+        end
         entry.id = res.target.spellID
         return true
     elseif res.state == "ambiguous" and includeAmbiguous and res.candidates and res.candidates[1] then
         entry._sourceID = res.originalID
         entry._ambiguousResolved = true
+        if res.candidates[1].source == "slot" and entry._legacySpellbookSlot == nil then
+            entry._legacySpellbookSlot = res.originalID
+        end
         entry.id = res.candidates[1].spellID
         return true
     end
@@ -343,12 +413,7 @@ function LegacyResolver:AcceptProposalsForContainer(containerKey, opts)
     -- Resolve which list the WalkAll iteration sourced from. After v35
     -- migration that's per-spec storage; on profiles where v35 hasn't
     -- moved entries yet it falls through to container.entries.
-    local entryList = (type(container._sourceSpecID) == "number")
-        and GetPerSpecList(containerKey, container._sourceSpecID, false)
-        or nil
-    if type(entryList) ~= "table" then
-        entryList = container.entries
-    end
+    local entryList = GetEntryListForContainer(containerKey, container, false, proposalSet.listKey)
     if type(entryList) ~= "table" then entryList = {} end
 
     local remaining, remainStats = {}, { proposed = 0, ambiguous = 0, noMatch = 0, total = 0 }

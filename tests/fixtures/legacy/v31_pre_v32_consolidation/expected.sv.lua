@@ -14,13 +14,31 @@ return {
       ncdm = {
         specTrackerSpells = {
           customBar_test_bar_spec = {
-            ["250"] = {
+            ["DEATHKNIGHT-250"] = {
               [1] = {
+                _legacySourceSpecKey = "250",
+                _sourceSpecID = 250,
                 id = 33333,
                 type = "spell"
               },
               [2] = {
+                _legacySourceSpecKey = "250",
+                _sourceSpecID = 250,
                 id = 44444,
+                type = "spell"
+              },
+              [3] = {
+                _legacySourceSpecKey = "250",
+                _legacySpellbookSlot = 11111,
+                _sourceSpecID = 250,
+                id = 11111,
+                type = "spell"
+              },
+              [4] = {
+                _legacySourceSpecKey = "250",
+                _legacySpellbookSlot = 22222,
+                _sourceSpecID = 250,
+                id = 22222,
                 type = "spell"
               }
             }
@@ -48,7 +66,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 33,
+        _schemaVersion = 34,
         _shippedDefaults = {
           abilityTimeline = {
             bigIcon = {
@@ -6300,6 +6318,9 @@ return {
             },
             customBar_test_bar_spec = {
               _legacyId = "test_bar_spec",
+              _legacySpecKeyAliases = {
+                ["250"] = "DEATHKNIGHT-250"
+              },
               _migratedFromCustomTrackers = true,
               _sourceSpecID = 250,
               _specEntriesPortedB3 = true,
@@ -6314,16 +6335,7 @@ return {
               builtIn = false,
               containerType = "customBar",
               enabled = true,
-              entries = {
-                [1] = {
-                  id = 11111,
-                  type = "spell"
-                },
-                [2] = {
-                  id = 22222,
-                  type = "spell"
-                }
-              },
+              entries = {},
               growDirection = "DOWN",
               iconSize = 36,
               id = "test_bar_spec",

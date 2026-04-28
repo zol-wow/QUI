@@ -4674,6 +4674,11 @@ local function GetCurrentSpecKey()
     return class .. "-" .. tostring(specID)
 end
 
+local function GetNumericSpecKey(specKey)
+    if type(specKey) ~= "string" then return nil end
+    return specKey:match("%-(%d+)$") or specKey:match("^(%d+)$")
+end
+
 local function GetSpecTrackerRoot(createIfMissing)
     local core = ns.Addon
     local globalDB = core and core.db and core.db.global
@@ -4700,6 +4705,12 @@ local function GetSpecEntryList(containerKey, specKey, createIfMissing)
     end
     specKey = specKey or GetCurrentSpecKey()
     local list = byContainer[specKey]
+    if type(list) ~= "table" then
+        local numericKey = GetNumericSpecKey(specKey)
+        if numericKey and numericKey ~= specKey then
+            list = byContainer[numericKey]
+        end
+    end
     if not list and createIfMissing then
         list = {}
         byContainer[specKey] = list

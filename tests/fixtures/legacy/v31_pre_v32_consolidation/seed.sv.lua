@@ -11,7 +11,7 @@
 --   (c) FinalizeCustomBarContainers:
 --       row1 synthesised from flat iconSize/spacing/etc.;
 --       QUIDB.specTrackerSpells["test_bar_spec"]["250"] ported to
---       QUIDB.ncdm.specTrackerSpells["customBar_test_bar_spec"]["250"].
+--       QUIDB.ncdm.specTrackerSpells["customBar_test_bar_spec"]["DEATHKNIGHT-250"].
 --
 --   (d) FinalizeLegacyTrackerSpecState:
 --       specSpecificSpells=true promoted to specSpecific=true;
@@ -232,7 +232,7 @@ QUI_DB.global = {
     specTrackerSpells = {
         -- transform (c): FinalizeCustomBarContainers copies
         -- global.specTrackerSpells["test_bar_spec"]["250"]
-        -- -> global.ncdm.specTrackerSpells["customBar_test_bar_spec"]["250"]
+        -- -> global.ncdm.specTrackerSpells["customBar_test_bar_spec"]["DEATHKNIGHT-250"]
         test_bar_spec = {
             ["250"] = {
                 { type = "spell", id = 33333 },
