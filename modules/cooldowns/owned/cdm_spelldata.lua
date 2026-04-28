@@ -270,6 +270,162 @@ local function BeginTickAuraCache()
     end
 end
 
+---------------------------------------------------------------------------
+-- EVENT-PAYLOAD AURA CAPTURE
+-- WoW 12.0.5+ redacts auraInstanceID to nil on AuraData returned by
+-- restricted-scope query functions (GetAuraDataBySpellName,
+-- GetPlayerAuraBySpellID, GetCooldownAuraBySpellID) during combat. The
+-- IDs delivered through UNIT_AURA's addedAuras payload are clean — we
+-- capture them at apply time and use them as the source of truth for
+-- duration resolution while restricted-scope is active.
+--
+-- Caches are wiped on encounter/M+/PvP start (auraInstanceID values
+-- re-randomize on those transitions).
+---------------------------------------------------------------------------
+local _capturedAuraBySpellID = {}    -- [spellID]      -> {auraInstanceID, unit, spellID, name}
+local _capturedAuraByName    = {}    -- [name:lower()] -> same entry
+local _capturedAuraIDToSpellID = {}  -- [auraInstanceID] -> spellID (for removal lookups)
+local _capturedAuraIDToName    = {}  -- [auraInstanceID] -> name:lower() (for removal lookups)
+
+local function ClearCapturedAuras()
+    wipe(_capturedAuraBySpellID)
+    wipe(_capturedAuraByName)
+    wipe(_capturedAuraIDToSpellID)
+    wipe(_capturedAuraIDToName)
+end
+
+local function CaptureAuraFromPayload(unit, ad)
+    if not ad then return end
+    local instID = ad.auraInstanceID
+    -- instID itself must be a clean number for use as a table key. If it's
+    -- secret (rare — usually it's the only clean field on AuraData), skip.
+    if not instID or Helpers.IsSecretValue(instID) then return end
+
+    -- spellId and name come back as secret values when the addedAuras
+    -- payload fires under restricted-scope (mid-combat re-application of
+    -- a stacking aura, for example). Filter both so we never use them as
+    -- table keys — Lua/WoW raises "indexed assignment on a table that
+    -- cannot be indexed with secret keys" if we try.
+    local sidRaw = ad.spellId or ad.spellID
+    local sid = (sidRaw and not Helpers.IsSecretValue(sidRaw)) and sidRaw or nil
+    local nameRaw = ad.name
+    local name = (type(nameRaw) == "string"
+                  and not Helpers.IsSecretValue(nameRaw)
+                  and nameRaw ~= "")
+                 and nameRaw or nil
+
+    if not sid and not name then return end
+
+    local entry = {
+        auraInstanceID = instID,
+        unit = unit,
+        spellID = sid,
+        name = name,
+    }
+    if sid then
+        _capturedAuraBySpellID[sid] = entry
+        _capturedAuraIDToSpellID[instID] = sid
+    end
+    if name then
+        local key = name:lower()
+        _capturedAuraByName[key] = entry
+        _capturedAuraIDToName[instID] = key
+    end
+end
+
+local function ReleaseCapturedAuraByInstanceID(instID)
+    if not instID then return end
+    local sid = _capturedAuraIDToSpellID[instID]
+    if sid then
+        _capturedAuraBySpellID[sid] = nil
+        _capturedAuraIDToSpellID[instID] = nil
+    end
+    local nameKey = _capturedAuraIDToName[instID]
+    if nameKey then
+        _capturedAuraByName[nameKey] = nil
+        _capturedAuraIDToName[instID] = nil
+    end
+end
+
+local function ReleaseCapturedAurasForUnit(unit)
+    for instID, sid in pairs(_capturedAuraIDToSpellID) do
+        local entry = _capturedAuraBySpellID[sid]
+        if entry and entry.unit == unit then
+            ReleaseCapturedAuraByInstanceID(instID)
+        end
+    end
+    for instID, nameKey in pairs(_capturedAuraIDToName) do
+        local entry = _capturedAuraByName[nameKey]
+        if entry and entry.unit == unit then
+            ReleaseCapturedAuraByInstanceID(instID)
+        end
+    end
+end
+
+-- Full rescan via AuraUtil.ForEachAura. Used on isFullUpdate (which carries
+-- no addedAuras list — it's a "rescan everything" signal) and on initial
+-- bootstrap so auras already on the player at /reload time are captured
+-- without waiting for them to re-apply.
+local function RescanCapturedAurasForUnit(unit)
+    if not (AuraUtil and AuraUtil.ForEachAura) then return end
+    ReleaseCapturedAurasForUnit(unit)
+    AuraUtil.ForEachAura(unit, "HELPFUL", nil, function(ad)
+        CaptureAuraFromPayload(unit, ad)
+        return false
+    end)
+    AuraUtil.ForEachAura(unit, "HARMFUL", nil, function(ad)
+        CaptureAuraFromPayload(unit, ad)
+        return false
+    end)
+end
+
+local auraCaptureFrame = CreateFrame("Frame")
+auraCaptureFrame:RegisterUnitEvent("UNIT_AURA", "player", "pet")
+auraCaptureFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+auraCaptureFrame:SetScript("OnEvent", function(self, event, unit, updateInfo)
+    if event == "PLAYER_ENTERING_WORLD" then
+        RescanCapturedAurasForUnit("player")
+        RescanCapturedAurasForUnit("pet")
+        return
+    end
+    if event ~= "UNIT_AURA" then return end
+    if not updateInfo or updateInfo.isFullUpdate then
+        RescanCapturedAurasForUnit(unit)
+        return
+    end
+    if updateInfo.addedAuras then
+        for _, ad in ipairs(updateInfo.addedAuras) do
+            CaptureAuraFromPayload(unit, ad)
+        end
+    end
+    if updateInfo.removedAuraInstanceIDs then
+        for _, rid in ipairs(updateInfo.removedAuraInstanceIDs) do
+            ReleaseCapturedAuraByInstanceID(rid)
+        end
+    end
+end)
+
+local function GetCapturedAuraForLookup(spellIDs, entryName)
+    if spellIDs then
+        for i = 1, #spellIDs do
+            local sid = spellIDs[i]
+            if sid then
+                local entry = _capturedAuraBySpellID[sid]
+                if entry and entry.auraInstanceID then
+                    return entry
+                end
+            end
+        end
+    end
+    if type(entryName) == "string" and entryName ~= "" then
+        local entry = _capturedAuraByName[entryName:lower()]
+        if entry and entry.auraInstanceID then
+            return entry
+        end
+    end
+    return nil
+end
+
 local function TickCacheGetAuraData(unit, instanceID)
     if not instanceID then return nil end
     local now = GetTickAuraCacheNow()
@@ -1585,7 +1741,15 @@ function CDMSpellData:ResolveAuraState(params)
             if not blzBarChild and vf == buffBarViewer then
                 blzBarChild = blzChild
             end
-            blzChild = nil
+            -- Keep non-buff-viewer children that carry an auraInstanceID
+            -- (Blizzard sets these on cooldown-viewer children that track
+            -- stacking auras like Mana Tea on utility). Phase 3 needs this
+            -- ID to feed GetAuraDuration — and in combat it's the only
+            -- source we have, since GetAuraDataBySpellName returns
+            -- SecretWhenUnitAuraRestricted data and Phase 4 fallbacks fail.
+            if not blzChild.auraInstanceID then
+                blzChild = nil
+            end
         end
     end
     -- Primary (viewer-matching) lookup
@@ -1768,6 +1932,68 @@ function CDMSpellData:ResolveAuraState(params)
     end
 
     -----------------------------------------------------------------------
+    -- Phase 3.4: Event-payload captured auraInstanceID
+    -- WoW 12.0.5+ redacts auraInstanceID to nil on AuraData returned by
+    -- restricted-scope query functions during combat
+    -- (GetAuraDataBySpellName, GetPlayerAuraBySpellID,
+    -- GetCooldownAuraBySpellID). The IDs delivered through UNIT_AURA's
+    -- addedAuras event payload are clean — capture them at apply time
+    -- (see auraCaptureFrame) and use them as the source of truth here.
+    -- Without this, stacking auras whose CDM viewer child reports
+    -- auraInstanceID = nil (e.g. Mana Tea) have no resolvable duration
+    -- once UNIT_AURA scope becomes restricted.
+    -----------------------------------------------------------------------
+    if not isActive then
+        local _lookupIDs = { auraSpellID, entrySpellID, entryID }
+        local captured = GetCapturedAuraForLookup(_lookupIDs, entryName)
+        if captured and captured.auraInstanceID then
+            local vdata = TickCacheGetAuraData(captured.unit or "player",
+                captured.auraInstanceID)
+            if vdata then
+                AuraStateDebug(debugAura, "phase3.4-event-captured",
+                    "spellID=", captured.spellID,
+                    "inst=", captured.auraInstanceID,
+                    "unit=", captured.unit)
+                isActive = true
+                childAuraInstID = captured.auraInstanceID
+                auraUnit = captured.unit or "player"
+                r.auraData = vdata
+            else
+                ReleaseCapturedAuraByInstanceID(captured.auraInstanceID)
+            end
+        end
+    end
+
+    -----------------------------------------------------------------------
+    -- Phase 3.5: Cooldown viewer aura by spellID
+    -- C_UnitAuras.GetCooldownAuraBySpellID is the privileged spellID→aura
+    -- lookup used by Blizzard's CooldownViewer pipeline. Unlike
+    -- GetPlayerAuraBySpellID (broad player-aura scan) it targets the aura
+    -- that the cooldown viewer itself tracks for a given cooldown spell —
+    -- so for stacking auras like Mana Tea where the viewer child reports
+    -- auraInstanceID = nil, this API can still surface the right
+    -- auraInstanceID so post-detection duration resolution can run.
+    -----------------------------------------------------------------------
+    if not isActive and C_UnitAuras and C_UnitAuras.GetCooldownAuraBySpellID then
+        for tryIdx = 1, 3 do
+            if isActive then break end
+            local tryID = tryIdx == 1 and auraSpellID
+                or tryIdx == 2 and entrySpellID or entryID
+            if tryID then
+                local ok, ad = pcall(C_UnitAuras.GetCooldownAuraBySpellID, tryID)
+                if ok and ad and ad.auraInstanceID then
+                    AuraStateDebug(debugAura, "phase3.5-cooldown-aura",
+                        "tryID=", tryID, "inst=", ad.auraInstanceID)
+                    isActive = true
+                    childAuraInstID = ad.auraInstanceID
+                    auraUnit = ad.auraDataUnit or "player"
+                    r.auraData = ad
+                end
+            end
+        end
+    end
+
+    -----------------------------------------------------------------------
     -- Phase 4: API fallbacks (unified OOC/combat)
     -- GetPlayerAuraBySpellID and GetAuraDataBySpellName work in both
     -- states. In combat, isHelpful may be secret — allow when not false.
@@ -1775,8 +2001,12 @@ function CDMSpellData:ResolveAuraState(params)
     -----------------------------------------------------------------------
     -- 1. Player aura by spell ID (helpful only)
     -- GetPlayerAuraBySpellID returns ANY aura on the player with that spellID
-    -- regardless of caster, so a class-mate's buff on us would otherwise
-    -- mark our tracker active. Reject unless the source is the player/pet.
+    -- regardless of caster. Drop the strict ownership check for player-unit
+    -- queries: the aura is by definition on the player. In combat, ad fields
+    -- like sourceUnit / isFromPlayerOrPlayerPet come back as secret values
+    -- (SafeValue → nil), so IsAuraOwnedByPlayerOrPet returns false and
+    -- Phase 4 silently fails — exactly when stacking-aura entries (Mana Tea)
+    -- need the auraInstanceID for GetAuraDuration.
     if not isActive and C_UnitAuras.GetPlayerAuraBySpellID then
         for tryIdx = 1, 3 do
             if isActive then break end
@@ -1786,7 +2016,7 @@ function CDMSpellData:ResolveAuraState(params)
                 local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, tryID)
                 if ok and ad and ad.auraInstanceID then
                     local helpful = Helpers.SafeValue(ad.isHelpful, nil)
-                    if helpful ~= false and IsAuraOwnedByPlayerOrPet(ad, true) then
+                    if helpful ~= false then
                         AuraStateDebug(debugAura, "phase4-player-id", "tryID=", tryID, "inst=", ad.auraInstanceID)
                         isActive = true
                         childAuraInstID = ad.auraInstanceID
@@ -1797,10 +2027,12 @@ function CDMSpellData:ResolveAuraState(params)
             end
         end
     end
-    -- 2. Player buff by name
+    -- 2. Player buff by name. Same reasoning as 4.1: trust the player-unit
+    -- query, drop the strict ownership check whose secret-field gates fail
+    -- in combat.
     if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
         local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", entryName, "HELPFUL")
-        if ok and ad and ad.auraInstanceID and IsAuraOwnedByPlayerOrPet(ad, true) then
+        if ok and ad and ad.auraInstanceID then
             AuraStateDebug(debugAura, "phase4-player-name", "inst=", ad.auraInstanceID)
             isActive = true
             childAuraInstID = ad.auraInstanceID
@@ -5196,10 +5428,22 @@ function CDMSpellData:Initialize()
             -- negative entries (`false`) don't mask newly-applied auras that
             -- happen to land on a previously-seen ID.
             ClearTickAuraCache()
+            -- Rescan captured auras with the new (post-randomization) IDs.
+            -- Without this, auras already applied at encounter start (e.g.
+            -- pre-pull buffs) keep their stale IDs in the cache or stay
+            -- absent entirely.
+            RescanCapturedAurasForUnit("player")
+            RescanCapturedAurasForUnit("pet")
         elseif event == "PLAYER_REGEN_ENABLED" then
             ClearTickAuraCache()
+            -- OOC rescan: ForEachAura returns clean auraInstanceIDs with no
+            -- restricted-scope redaction, so this is the most reliable
+            -- moment to refresh the capture cache.
+            RescanCapturedAurasForUnit("player")
+            RescanCapturedAurasForUnit("pet")
         elseif event == "PLAYER_ENTERING_WORLD" then
             ClearTickAuraCache()
+            ClearCapturedAuras()
             -- Suppress SPELLS_CHANGED dormant checks during zone transitions.
             -- APIs are stale for ~1-2s after entering a new zone/instance.
             _inZoneTransition = true

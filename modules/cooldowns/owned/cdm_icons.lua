@@ -3179,6 +3179,26 @@ local function UpdateIconCooldown(icon)
                 "overrideSpellID=", entry.overrideSpellID)
             icon.StackText:SetText("")
             _chargeCountForwarded = true
+        else
+            -- Spell has no charge mechanic (ci nil) but the Blizzard child
+            -- may still track a stack count via cooldownChargesCount — this
+            -- is how the cooldown viewer represents stacking auras like
+            -- Mana Tea. Reparenting the native ChargeCount FontString only
+            -- works for one icon at a time; this per-icon forward lets every
+            -- icon sharing the same _blizzChild render the stack count.
+            -- TruncateWhenZero is C-side and handles secret values: returns
+            -- "" for zero (non-stacking spells like Touch of Death stay
+            -- blank) and the stack count otherwise.
+            local ccc = entry._blizzChild.cooldownChargesCount
+            if ccc ~= nil then
+                local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, ccc)
+                local displayText = truncOk and truncText or ccc
+                pcall(icon.StackText.SetText, icon.StackText, displayText)
+                icon.StackText:Show()
+                _chargeCountForwarded = true
+                ChargeDebug(entry.name, "FWD path STACKING-AURA: baseSid=", baseSid,
+                    "ccc=", ccc, "displayText=", displayText)
+            end
         end
     end
 
