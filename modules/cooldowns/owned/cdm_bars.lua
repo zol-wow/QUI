@@ -82,6 +82,65 @@ local _lastContainer = nil
 local _lastSettings = nil
 
 ---------------------------------------------------------------------------
+-- DEFERRED RESIZE
+-- The buff-bar container must keep adjusting its size during combat so
+-- frames anchored to its growth edge track when bars activate/deactivate
+-- mid-combat (and so the container itself follows an autoWidth parent that
+-- resizes). LayoutBars is reached via AuraEvents/UNIT_AURA dispatch, which
+-- enters with taint inherited from the secure event chain; calling
+-- container:SetSize directly fires ADDON_ACTION_BLOCKED 'UNKNOWN()' on the
+-- protection check (pcall catches the Lua error but not the event itself).
+-- C_Timer.After(0) defers the SetSize one tick into clean main-loop context,
+-- breaking the taint chain so the call passes the protection check on a
+-- non-protected QUI Frame. Multiple in-flight requests coalesce: each
+-- container only resizes once per flush, with the latest target dimensions.
+---------------------------------------------------------------------------
+local _pendingResize = nil
+
+local function _flushPendingResizes()
+    local q = _pendingResize
+    _pendingResize = nil
+    if not q then return end
+    for container, dims in pairs(q) do
+        if container.SetSize then
+            container:SetSize(dims.w, dims.h)
+        end
+        if _G.QUI_SetCDMViewerBounds then
+            _G.QUI_SetCDMViewerBounds(container, dims.w, dims.h)
+        end
+    end
+end
+
+local function ResizeContainer(container, w, h)
+    if not container then return end
+    if container._lastBarLayoutW == w and container._lastBarLayoutH == h then
+        return
+    end
+    container._lastBarLayoutW = w
+    container._lastBarLayoutH = h
+
+    if (not InCombatLockdown()) or ns._inInitSafeWindow then
+        container:SetSize(w, h)
+        if _G.QUI_SetCDMViewerBounds then
+            _G.QUI_SetCDMViewerBounds(container, w, h)
+        end
+        return
+    end
+
+    if not _pendingResize then
+        _pendingResize = {}
+        C_Timer.After(0, _flushPendingResizes)
+    end
+    local entry = _pendingResize[container]
+    if entry then
+        entry.w = w
+        entry.h = h
+    else
+        _pendingResize[container] = { w = w, h = h }
+    end
+end
+
+---------------------------------------------------------------------------
 -- BAR FRAME FACTORY
 ---------------------------------------------------------------------------
 local function CreateBar(parent)
@@ -1615,10 +1674,7 @@ function CDMBars:LayoutBars(container, settings)
         else
             w, h = barWidth, barHeight
         end
-        pcall(container.SetSize, container, w, h)
-        if _G.QUI_SetCDMViewerBounds then
-            _G.QUI_SetCDMViewerBounds(container, w, h)
-        end
+        ResizeContainer(container, w, h)
         return
     end
 
@@ -1807,20 +1863,12 @@ function CDMBars:LayoutBars(container, settings)
     totalW = QUICore:PixelRound(totalW)
     totalH = QUICore:PixelRound(totalH)
 
-    -- Skip SetSize when dimensions haven't changed to avoid layout invalidation.
-    local lastW = container._lastBarLayoutW
-    local lastH = container._lastBarLayoutH
-    if lastW ~= totalW or lastH ~= totalH then
-        -- Must run in combat too: a bar going active mid-combat would
-        -- otherwise leave the container frozen at the previous height,
-        -- so frames anchored to its growth edge stop tracking.
-        container._lastBarLayoutW = totalW
-        container._lastBarLayoutH = totalH
-        pcall(container.SetSize, container, totalW, totalH)
-        if _G.QUI_SetCDMViewerBounds then
-            _G.QUI_SetCDMViewerBounds(container, totalW, totalH)
-        end
-    end
+    -- Must run in combat too: a bar going active mid-combat would
+    -- otherwise leave the container frozen at the previous height,
+    -- so frames anchored to its growth edge stop tracking. The combat
+    -- branch defers SetSize one tick to escape inherited taint — see
+    -- the DEFERRED RESIZE block at the top of the file.
+    ResizeContainer(container, totalW, totalH)
 end
 
 ---------------------------------------------------------------------------
