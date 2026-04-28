@@ -675,9 +675,17 @@ local function EnsureSlotBorders(slot)
 end
 
 local function SlotHasVisibleAura(slot)
-    for i = 1, slot:GetNumChildren() do
-        local child = select(i, slot:GetChildren())
-        if child and child:IsShown() then return true end
+    if not slot or not slot.GetNumChildren then return false end
+    local numOk, numChildren = pcall(slot.GetNumChildren, slot)
+    if not numOk or not numChildren or numChildren == 0 then return false end
+    local childrenOk, children = pcall(function() return { slot:GetChildren() } end)
+    if not childrenOk or not children then return false end
+    for i = 1, numChildren do
+        local child = children[i]
+        if child and not (child.IsForbidden and child:IsForbidden()) and child.IsShown then
+            local ok, shown = pcall(child.IsShown, child)
+            if ok and shown then return true end
+        end
     end
     return false
 end
