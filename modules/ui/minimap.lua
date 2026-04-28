@@ -2128,29 +2128,58 @@ end
 
 local dungeonEyeOriginalParent = nil
 local dungeonEyeOriginalPoint = nil
-local dungeonEyeOriginalUpdatePosition = nil
+local dungeonEyeHooksInstalled = false
+-- Recursion guard: true while we mutate the button ourselves so our own
+-- hooks don't reschedule a reapply against our own writes.
+local dungeonEyeApplyingOurState = false
+-- Coalesce multiple Blizzard mutations in the same frame into one reapply.
+local dungeonEyeReapplyPending = false
+
+local UpdateDungeonEyePosition  -- forward declared; assigned below
+
+local function ScheduleDungeonEyeReapply()
+    if dungeonEyeApplyingOurState then return end
+    if dungeonEyeReapplyPending then return end
+    dungeonEyeReapplyPending = true
+    C_Timer.After(0, function()
+        dungeonEyeReapplyPending = false
+        UpdateDungeonEyePosition()
+    end)
+end
+
+-- Hook every Blizzard side-channel that can move/resize/reparent the eye.
+-- UpdatePosition isn't enough on its own: EditMode, queue-state churn, and
+-- some Blizzard refresh paths call SetParent/SetScale/SetPoint directly.
+local function InstallDungeonEyeHooks(btn)
+    if dungeonEyeHooksInstalled then return end
+    if not btn then return end
+    dungeonEyeHooksInstalled = true
+
+    hooksecurefunc(btn, "SetParent",      ScheduleDungeonEyeReapply)
+    hooksecurefunc(btn, "SetScale",       ScheduleDungeonEyeReapply)
+    hooksecurefunc(btn, "SetPoint",       ScheduleDungeonEyeReapply)
+    hooksecurefunc(btn, "ClearAllPoints", ScheduleDungeonEyeReapply)
+    hooksecurefunc(btn, "SetSize",        ScheduleDungeonEyeReapply)
+    hooksecurefunc(btn, "SetWidth",       ScheduleDungeonEyeReapply)
+    hooksecurefunc(btn, "SetHeight",      ScheduleDungeonEyeReapply)
+    if btn.UpdatePosition then
+        hooksecurefunc(btn, "UpdatePosition", ScheduleDungeonEyeReapply)
+    end
+end
 
 local function RestoreDungeonEye()
     local btn = QueueStatusButton
     if not btn then return end
 
-    -- Restore original UpdatePosition so Blizzard can manage the button again
-    local hadOverride = dungeonEyeOriginalUpdatePosition ~= nil
-    if dungeonEyeOriginalUpdatePosition then
-        btn.UpdatePosition = dungeonEyeOriginalUpdatePosition
-        dungeonEyeOriginalUpdatePosition = nil
-    end
+    dungeonEyeApplyingOurState = true
 
-    -- Restore original parent if we saved it
     if dungeonEyeOriginalParent then
         btn:SetParent(dungeonEyeOriginalParent)
     end
 
-    -- Let Blizzard re-anchor via its own method now that it's restored
-    -- Only call UpdatePosition if we previously suppressed it; calling it
-    -- during initial load (before Blizzard fully initialises the button)
-    -- causes SetPoint errors.
-    if hadOverride and btn.UpdatePosition then
+    -- Let Blizzard re-anchor via its own method when available; UpdatePosition
+    -- is the original (we hook it instead of replacing it now).
+    if btn.UpdatePosition then
         btn:UpdatePosition()
     elseif dungeonEyeOriginalPoint then
         btn:ClearAllPoints()
@@ -2160,12 +2189,13 @@ local function RestoreDungeonEye()
         end
     end
 
-    -- Reset scale and strata
     btn:SetScale(1.0)
     btn:SetFrameStrata("MEDIUM")
+
+    dungeonEyeApplyingOurState = false
 end
 
-local function UpdateDungeonEyePosition()
+UpdateDungeonEyePosition = function()
     if InCombatLockdown() then
         -- Blizzard can relayout the queue eye during combat; retry on the next
         -- deferred minimap refresh once combat ends.
@@ -2191,12 +2221,9 @@ local function UpdateDungeonEyePosition()
     end
 
     if eyeSettings.enabled then
-        -- Suppress Blizzard's UpdatePosition so it can't tear off our anchor.
-        -- QueueStatusButton is not a protected frame so this is taint-safe.
-        if not dungeonEyeOriginalUpdatePosition and btn.UpdatePosition then
-            dungeonEyeOriginalUpdatePosition = btn.UpdatePosition
-            btn.UpdatePosition = function() end
-        end
+        InstallDungeonEyeHooks(btn)
+
+        dungeonEyeApplyingOurState = true
 
         -- Reparent to Minimap - Blizzard controls visibility based on queue status
         btn:SetParent(Minimap)
@@ -2223,8 +2250,9 @@ local function UpdateDungeonEyePosition()
         btn:SetScale(scale)
         btn:SetFrameStrata("MEDIUM")
         -- Do NOT call btn:Show() - let Blizzard control visibility based on queue status
+
+        dungeonEyeApplyingOurState = false
     else
-        -- Restore original position
         RestoreDungeonEye()
     end
 end
@@ -3980,6 +4008,7 @@ local function RefreshMinimapButtonsAfterTransition()
         local s = GetSettings()
         if s and s.enabled and not InCombatLockdown() then
             UpdateButtonVisibility()
+            UpdateDungeonEyePosition()
         end
     end)
 
@@ -3987,6 +4016,7 @@ local function RefreshMinimapButtonsAfterTransition()
         local s = GetSettings()
         if s and s.enabled and not InCombatLockdown() then
             UpdateButtonVisibility()
+            UpdateDungeonEyePosition()
         end
     end)
 end
@@ -4007,6 +4037,12 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then
             Minimap_Module:Initialize()
+        elseif arg1 == "Blizzard_QueueStatusFrame" then
+            -- LoD: install hooks once the queue button actually exists.
+            local settings = GetSettings()
+            if settings and settings.enabled then
+                UpdateDungeonEyePosition()
+            end
         elseif arg1 == "Blizzard_HybridMinimap" then
             -- Handle HybridMinimap loading (Delves/scenarios)
             local settings = GetSettings()
