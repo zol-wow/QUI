@@ -1317,10 +1317,11 @@ local function MirrorBlizzCooldown(icon, blizzChild)
             end
         end)
 
-        -- Hook the rest of the cooldown setters too, so any path Blizzard
-        -- uses to drive the source CD frame — including stacking-aura
-        -- updates that don't go through SetCooldownFromDurationObject —
-        -- propagates to every subscriber. Same pcall/relevance pattern.
+        -- Hook the rest of the cooldown-timing setters too, so any path
+        -- Blizzard uses to drive the source CD frame — including
+        -- stacking-aura updates that don't go through
+        -- SetCooldownFromDurationObject — propagates to every subscriber.
+        -- Same pcall/relevance pattern.
         --
         -- CRITICAL: skip subscribers whose icon is currently aura-active.
         -- Aura-active icons are showing the aura's DurationObject (from
@@ -1328,6 +1329,21 @@ local function MirrorBlizzCooldown(icon, blizzChild)
         -- the source frame would constantly overwrite the aura swipe and
         -- cause the duration text to flicker. Mirror only when the icon
         -- is in cooldown-display mode.
+        --
+        -- Styling setters (SetDrawSwipe / SetDrawBling / SetDrawEdge /
+        -- SetUseCircularEdge / SetSwipeColor / SetSwipeTexture /
+        -- SetEdgeTexture / SetHideCountdownNumbers) are intentionally
+        -- NOT mirrored: ApplySwipeToIcon (swipe.lua) and the addon-owned
+        -- bling/countdown-number paths own those properties on the
+        -- subscriber CD. Forwarding Blizzard's source-frame styling
+        -- writes — which the CooldownViewer pulses during combat as it
+        -- animates — would race with ApplySwipeToIcon and produce the
+        -- combat swipe flicker observed across all CDM containers.
+        --
+        -- SetReverse is also not mirrored: the aura/cooldown branches in
+        -- UpdateIconCooldown set it explicitly per state, and Blizzard's
+        -- source-frame reverse state can flip out of sync with the
+        -- subscriber's display state.
         local function ForwardToSubscribers(self, methodName, ...)
             local s = blizzCDState[self]
             if not s or s.bypass then return end
@@ -1352,15 +1368,6 @@ local function MirrorBlizzCooldown(icon, blizzChild)
             "SetCooldownDuration",
             "SetCooldownUNIX",
             "Clear",
-            "SetReverse",
-            "SetDrawSwipe",
-            "SetDrawBling",
-            "SetDrawEdge",
-            "SetUseCircularEdge",
-            "SetSwipeColor",
-            "SetSwipeTexture",
-            "SetEdgeTexture",
-            "SetHideCountdownNumbers",
         }
         for _, m in ipairs(mirroredMethods) do
             if blizzCD[m] then

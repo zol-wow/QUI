@@ -373,17 +373,24 @@ end
 -- auraInstanceIDs OOC; if called in combat the ad table fields may be
 -- secret, but auraInstanceID itself comes through clean from this path
 -- (the same path Blizzard's BuffFrame walks).
+--
+-- usePackedAura=true (5th arg) is required: without it, Blizzard's helper
+-- calls AuraUtil.UnpackAuraData on each aura, whose final expression is
+-- unpack(auraData.points or {}). When points is a secret value (which the
+-- `or {}` doesn't catch — only nil), unpack(secret) errors. Receiving the
+-- packed table directly skips that, and CaptureAuraFromPayload is already
+-- secret-safe on every field it reads.
 local function RescanCapturedAurasForUnit(unit)
     if not (AuraUtil and AuraUtil.ForEachAura) then return end
     ReleaseCapturedAurasForUnit(unit)
     AuraUtil.ForEachAura(unit, "HELPFUL", nil, function(ad)
         CaptureAuraFromPayload(unit, ad)
         return false  -- continue iterating
-    end)
+    end, true)
     AuraUtil.ForEachAura(unit, "HARMFUL", nil, function(ad)
         CaptureAuraFromPayload(unit, ad)
         return false
-    end)
+    end, true)
 end
 
 local auraCaptureFrame = CreateFrame("Frame")
