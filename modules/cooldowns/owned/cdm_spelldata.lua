@@ -366,17 +366,24 @@ end
 -- no addedAuras list — it's a "rescan everything" signal) and on initial
 -- bootstrap so auras already on the player at /reload time are captured
 -- without waiting for them to re-apply.
+--
+-- usePackedAura=true (5th arg) is required: without it, Blizzard's helper
+-- calls AuraUtil.UnpackAuraData on each aura, whose final expression is
+-- unpack(auraData.points or {}). When points is a secret value (which the
+-- `or {}` doesn't catch — only nil), unpack(secret) errors. Receiving the
+-- packed table directly skips that, and CaptureAuraFromPayload is already
+-- secret-safe on every field it reads.
 local function RescanCapturedAurasForUnit(unit)
     if not (AuraUtil and AuraUtil.ForEachAura) then return end
     ReleaseCapturedAurasForUnit(unit)
     AuraUtil.ForEachAura(unit, "HELPFUL", nil, function(ad)
         CaptureAuraFromPayload(unit, ad)
-        return false
-    end)
+        return false  -- continue iterating
+    end, true)
     AuraUtil.ForEachAura(unit, "HARMFUL", nil, function(ad)
         CaptureAuraFromPayload(unit, ad)
         return false
-    end)
+    end, true)
 end
 
 local auraCaptureFrame = CreateFrame("Frame")
