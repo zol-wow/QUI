@@ -1056,15 +1056,20 @@ end
 ---------------------------------------------------------------------------
 -- Maps DB toggle keys to Blizzard classification filter strings
 local BUFF_CLASSIFICATION_MAP = {
-    raid             = "HELPFUL|RAID",
-    cancelable       = "HELPFUL|CANCELABLE",
-    important        = "HELPFUL|IMPORTANT",
+    raid              = "HELPFUL|RAID",
+    raidInCombat      = "HELPFUL|RAID_IN_COMBAT",
+    cancelable        = "HELPFUL|CANCELABLE",
+    notCancelable     = "HELPFUL|NOT_CANCELABLE",
+    important         = "HELPFUL|IMPORTANT",
+    bigDefensive      = "HELPFUL|BIG_DEFENSIVE",
+    externalDefensive = "HELPFUL|EXTERNAL_DEFENSIVE",
 }
 
 local DEBUFF_CLASSIFICATION_MAP = {
-    raid        = "HARMFUL|RAID",
+    raid         = "HARMFUL|RAID",
+    raidInCombat = "HARMFUL|RAID_IN_COMBAT",
     crowdControl = "HARMFUL|CROWD_CONTROL",
-    important   = "HARMFUL|IMPORTANT",
+    important    = "HARMFUL|IMPORTANT",
 }
 
 -- Per-context (party/raid) cached filter data

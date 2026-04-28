@@ -1205,12 +1205,16 @@ local function BuildBuffsSettings(content, gfdb, onChange)
         L:Row(GUI:CreateFormCheckbox(body, "Only My Buffs", "buffFilterOnlyMine", auras, syncedOnChange), FORM_ROW, cond)
         L:Row(GUI:CreateFormCheckbox(body, "Hide Permanent Buffs", "buffHidePermanent", auras, syncedOnChange), FORM_ROW, cond)
         L:Row(GUI:CreateFormCheckbox(body, "Deduplicate Defensives/Indicators", "buffDeduplicateDefensives", auras, syncedOnChange), FORM_ROW, cond)
-        L:Row(classificationContainer, FORM_ROW * 3, classCond)
+        L:Row(classificationContainer, FORM_ROW * 7, classCond)
         local classY = 0
         local buffClass = auras.buffClassifications; if not buffClass then auras.buffClassifications = {} buffClass = auras.buffClassifications end
         local c1 = GUI:CreateFormCheckbox(classificationContainer, "Raid", "raid", buffClass, syncedOnChange); c1:SetPoint("TOPLEFT", 0, classY); c1:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
-        local c2 = GUI:CreateFormCheckbox(classificationContainer, "Cancelable", "cancelable", buffClass, syncedOnChange); c2:SetPoint("TOPLEFT", 0, classY); c2:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
+        local c2 = GUI:CreateFormCheckbox(classificationContainer, "Raid (In Combat)", "raidInCombat", buffClass, syncedOnChange); c2:SetPoint("TOPLEFT", 0, classY); c2:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
+        local c3 = GUI:CreateFormCheckbox(classificationContainer, "Cancelable", "cancelable", buffClass, syncedOnChange); c3:SetPoint("TOPLEFT", 0, classY); c3:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
+        local c4 = GUI:CreateFormCheckbox(classificationContainer, "Not Cancelable", "notCancelable", buffClass, syncedOnChange); c4:SetPoint("TOPLEFT", 0, classY); c4:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
         local c5 = GUI:CreateFormCheckbox(classificationContainer, "Important", "important", buffClass, syncedOnChange); c5:SetPoint("TOPLEFT", 0, classY); c5:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
+        local c6 = GUI:CreateFormCheckbox(classificationContainer, "Big Defensive", "bigDefensive", buffClass, syncedOnChange); c6:SetPoint("TOPLEFT", 0, classY); c6:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
+        local c7 = GUI:CreateFormCheckbox(classificationContainer, "External Defensive", "externalDefensive", buffClass, syncedOnChange); c7:SetPoint("TOPLEFT", 0, classY); c7:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
         classificationContainer:SetHeight(math.abs(classY))
         sectionRelayouts[#sectionRelayouts + 1] = L:Finish()
     end, sections, relayout)
@@ -1275,12 +1279,13 @@ local function BuildDebuffsSettings(content, gfdb, onChange)
         classificationContainer:SetPoint("RIGHT", body, "RIGHT", -PAD, 0)
         local L = CreateDynamicLayout(body, updateH)
         L:Row(GUI:CreateFormDropdown(body, "Filter Mode", FILTER_MODE_OPTIONS, "filterMode", auras, syncedOnChange), DROP_ROW, cond)
-        L:Row(classificationContainer, FORM_ROW * 3, classCond)
+        L:Row(classificationContainer, FORM_ROW * 4, classCond)
         local classY = 0
         local debuffClass = auras.debuffClassifications; if not debuffClass then auras.debuffClassifications = {} debuffClass = auras.debuffClassifications end
         local d1 = GUI:CreateFormCheckbox(classificationContainer, "Raid", "raid", debuffClass, syncedOnChange); d1:SetPoint("TOPLEFT", 0, classY); d1:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
-        local d2 = GUI:CreateFormCheckbox(classificationContainer, "Crowd Control", "crowdControl", debuffClass, syncedOnChange); d2:SetPoint("TOPLEFT", 0, classY); d2:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
-        local d3 = GUI:CreateFormCheckbox(classificationContainer, "Important", "important", debuffClass, syncedOnChange); d3:SetPoint("TOPLEFT", 0, classY); d3:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
+        local d2 = GUI:CreateFormCheckbox(classificationContainer, "Raid (In Combat)", "raidInCombat", debuffClass, syncedOnChange); d2:SetPoint("TOPLEFT", 0, classY); d2:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
+        local d3 = GUI:CreateFormCheckbox(classificationContainer, "Crowd Control", "crowdControl", debuffClass, syncedOnChange); d3:SetPoint("TOPLEFT", 0, classY); d3:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
+        local d4 = GUI:CreateFormCheckbox(classificationContainer, "Important", "important", debuffClass, syncedOnChange); d4:SetPoint("TOPLEFT", 0, classY); d4:SetPoint("RIGHT", classificationContainer, "RIGHT", 0, 0); classY = classY - FORM_ROW
         classificationContainer:SetHeight(math.abs(classY))
         sectionRelayouts[#sectionRelayouts + 1] = L:Finish()
     end, sections, relayout)
