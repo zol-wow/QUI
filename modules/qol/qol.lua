@@ -221,11 +221,19 @@ local function HideTalentMicroButtonAlert(button)
         alert:Hide()
     end
 
+    -- Blizzard's MicroButtonPulse flashes BOTH FlashBorder and FlashContent
+    -- (MainMenuBarMicroButtons.lua). Hiding only FlashBorder leaves the
+    -- inner pulse rendering — that's the gap that lets the "big glow"
+    -- bleed through when the microbar is visible.
     if button.FlashBorder then
         -- Alpha 0 persists across re-shows; Blizzard pulse animations can
         -- re-show the texture, but with alpha 0 it renders invisibly.
         button.FlashBorder:SetAlpha(0)
         button.FlashBorder:Hide()
+    end
+    if button.FlashContent then
+        button.FlashContent:SetAlpha(0)
+        button.FlashContent:Hide()
     end
     if button.NewFeatureTexture then
         button.NewFeatureTexture:Hide()
@@ -455,10 +463,30 @@ local function HookTalentReminderAlerts()
                         button.FlashBorder:SetAlpha(0)
                         button.FlashBorder:Hide()
                     end
+                    if button.FlashContent then
+                        button.FlashContent:SetAlpha(0)
+                        button.FlashContent:Hide()
+                    end
                 end)
             end)
         end
         microButtonPulseHooked = true
+    end
+
+    -- EJMicroButtonMixin:UpdateNewAdventureNotice() shows FlashBorder
+    -- directly, bypassing MicroButtonPulse — so the pulse hook above never
+    -- catches it. Hook it on the instance so the same gating still applies.
+    if EJMicroButton and EJMicroButton.UpdateNewAdventureNotice
+        and not _quiPopupBlockerHooked[EJMicroButton] then
+        hooksecurefunc(EJMicroButton, "UpdateNewAdventureNotice", function(self)
+            C_Timer.After(0, function()
+                if not self then return end
+                if IsMicrobarEffectivelyHidden() or IsPopupBlockEnabled("blockMicroButtonGlows") then
+                    HideTalentMicroButtonAlert(self)
+                end
+            end)
+        end)
+        _quiPopupBlockerHooked[EJMicroButton] = true
     end
 end
 
