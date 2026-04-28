@@ -103,6 +103,27 @@ local function UsesHookStackText(entry, blizzChild)
     return IsBuffViewerChild(blizzChild or (entry and entry._blizzChild))
 end
 
+-- True when the actual Blizzard child lives in a buff viewer.  Used to
+-- route stack-text handling through the API hook path even when the QUI
+-- container is cooldown-typed: Blizzard's buff viewer doesn't drive
+-- ChargeCount/Applications reliably after a reparent, so stacks for spells
+-- like Mana Tea blank out on custom cooldown containers if we don't
+-- detect this case independently of container type.
+local function IsBuffViewerChild(blizzChild)
+    if not blizzChild or not blizzChild.viewerFrame then return false end
+    local buffViewer = _G["BuffIconCooldownViewer"]
+    local buffBarViewer = _G["BuffBarCooldownViewer"]
+    return blizzChild.viewerFrame == buffViewer or blizzChild.viewerFrame == buffBarViewer
+end
+
+-- True when the entry's stack text should come from the buff-viewer hook
+-- path rather than the reparent path.  Either an aura/auraBar container
+-- or a cooldown container backed by a buff-viewer child qualifies.
+local function UsesHookStackText(entry, blizzChild)
+    if UsesAPIAuraStackText(entry) then return true end
+    return IsBuffViewerChild(blizzChild or (entry and entry._blizzChild))
+end
+
 
 -- Per-spell override lookup helper.  Returns the cached override table
 -- for the icon's spell/container, or nil.  Cheap (two table lookups).

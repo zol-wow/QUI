@@ -1,5 +1,5 @@
 -- Profile at _schemaVersion = 31, before the v32 OptionsV2BranchConsolidated
--- migration ran. Exercises all four sub-transforms:
+-- migration ran. Exercises all five sub-transforms:
 --
 --   (a) MigrateCustomTrackersToContainers:
 --       customTrackers.bars[] -> ncdm.containers["customBar_<id>"]
@@ -17,6 +17,20 @@
 --       specSpecificSpells=true promoted to specSpecific=true;
 --       _sourceSpecID stamped from ncdm._lastSpecID = 250;
 --       container.entries moved into QUIDB.ncdm.specTrackerSpells per-spec.
+--
+--   (e) MigrateContainerShapeAndEntryKind:
+--       Stamps container.shape from legacy containerType (aura → icon,
+--       auraBar → bar, cooldown → icon, customBar → icon). Stamps
+--       entry.kind on entries: spell entries on previously-aura
+--       containers (aura/auraBar) get kind="aura"; non-spell entries
+--       (item/trinket/macro) get kind="cooldown" everywhere; spell
+--       entries on cooldown/customBar containers are left for the
+--       runtime classifier. Walks both per-container entries and the
+--       global per-spec entry storage. Three standalone containers
+--       (custom_cd / custom_aura / custom_bar) seeded directly under
+--       ncdm.containers exercise the cooldown/aura/auraBar branches;
+--       the customBar branch is exercised via the customBar_*
+--       containers that transforms (a)/(c)/(d) synthesise above.
 QUI_DB = {
     profileKeys = { ["TestChar - TestRealm"] = "Default" },
     profiles = {
@@ -71,11 +85,55 @@ QUI_DB = {
             },
 
             -- ----------------------------------------------------------------
-            -- ncdm block: _lastSpecID used by transforms (c) and (d)
+            -- ncdm block: _lastSpecID used by transforms (c) and (d).
+            -- Standalone containers below are pre-existing user containers
+            -- that v32(e) walks for shape/kind stamping.
             -- ----------------------------------------------------------------
             ncdm = {
                 enabled    = true,
                 _lastSpecID = 250,
+                containers = {
+                    -- containerType=cooldown → shape="icon"; spell entries
+                    -- left without kind (runtime classifier handles them);
+                    -- non-spell entries get kind="cooldown".
+                    custom_cd = {
+                        builtIn = false,
+                        containerType = "cooldown",
+                        name = "Custom Cooldowns",
+                        enabled = true,
+                        ownedSpells = {
+                            { type = "spell", id = 11111 },
+                            { type = "item",  id = 222 },
+                            { type = "trinket", id = 13 },
+                        },
+                    },
+
+                    -- containerType=aura → shape="icon"; spell entries get
+                    -- kind="aura"; non-spell entries get kind="cooldown".
+                    custom_aura = {
+                        builtIn = false,
+                        containerType = "aura",
+                        name = "Custom Auras",
+                        enabled = true,
+                        ownedSpells = {
+                            { type = "spell", id = 33333 },
+                            { type = "spell", id = 44444 },
+                            { type = "macro", id = 1, macroName = "Defensives" },
+                        },
+                    },
+
+                    -- containerType=auraBar → shape="bar"; spell entries
+                    -- get kind="aura".
+                    custom_bar = {
+                        builtIn = false,
+                        containerType = "auraBar",
+                        name = "Custom Aura Bars",
+                        enabled = true,
+                        ownedSpells = {
+                            { type = "spell", id = 55555 },
+                        },
+                    },
+                },
             },
 
             -- ----------------------------------------------------------------

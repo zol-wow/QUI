@@ -48,7 +48,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 33,
+        _schemaVersion = 32,
         _shippedDefaults = {
           abilityTimeline = {
             bigIcon = {
@@ -6279,6 +6279,68 @@ return {
               spacing = 2,
               specSpecific = true,
               specSpecificSpells = true
+            },
+            custom_aura = {
+              builtIn = false,
+              containerType = "aura",
+              enabled = true,
+              name = "Custom Auras",
+              ownedSpells = {
+                [1] = {
+                  id = 33333,
+                  kind = "aura",
+                  type = "spell"
+                },
+                [2] = {
+                  id = 44444,
+                  kind = "aura",
+                  type = "spell"
+                },
+                [3] = {
+                  id = 1,
+                  kind = "cooldown",
+                  macroName = "Defensives",
+                  type = "macro"
+                }
+              },
+              shape = "icon"
+            },
+            custom_bar = {
+              builtIn = false,
+              containerType = "auraBar",
+              enabled = true,
+              name = "Custom Aura Bars",
+              ownedSpells = {
+                [1] = {
+                  id = 55555,
+                  kind = "aura",
+                  type = "spell"
+                }
+              },
+              shape = "bar"
+            },
+            custom_cd = {
+              builtIn = false,
+              containerType = "cooldown",
+              enabled = true,
+              name = "Custom Cooldowns",
+              ownedSpells = {
+                [1] = {
+                  id = 11111,
+                  type = "spell"
+                },
+                [2] = {
+                  id = 222,
+                  kind = "cooldown",
+                  type = "item"
+                },
+                [3] = {
+                  id = 13,
+                  kind = "cooldown",
+                  type = "trinket"
+                }
+              },
+              shape = "icon"
             }
           }
         },

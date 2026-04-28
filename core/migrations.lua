@@ -106,11 +106,12 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --        anchor, and offset settings. Existing profiles inherit the old shared
 --        duration font size and time-based color toggle.)
 -- v32 = OptionsV2BranchConsolidated (the V2 settings branch's data work)
---       Four discrete transforms collapsed into one schema bump because the
+--       Five discrete transforms collapsed into one schema bump because the
 --       V2 branch never shipped past v31 — there's no point preserving the
---       intermediate v32..v35 step granularity. Helper functions stay
---       separate for readability; they're called sequentially behind a
---       single `if stored < 32` gate.
+--       intermediate step granularity. Helper functions stay separate for
+--       readability; they're called sequentially behind a single
+--       `if stored < 32` gate. Order matters: (e) walks the containers
+--       (a)/(c)/(d) finalize, so it must run last.
 --         (a) MigrateCustomTrackersToContainers — mirror legacy
 --             db.customTrackers.bars[] into db.ncdm.containers[customBar_*]
 --             so the unified V2 renderer can serve them. Non-destructive.
@@ -129,21 +130,22 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --             Repairs the gap (c) leaves when the pre-V2 drag-drop bug
 --             stored entries in bar.entries instead of the global
 --             per-spec location, so (c) had nothing to port.
---
--- v33 = MigrateContainerShapeAndEntryKind
---       (3.5.x options-v2 follow-up: collapses the 4-value containerType
---        taxonomy {aura, auraBar, cooldown, customBar} into two orthogonal
---        axes — container.shape ∈ {icon, bar} for layout/render, and
---        entry.kind ∈ {aura, cooldown} for behavior. trackedBar/auraBar →
---        shape=bar; everything else → shape=icon. Spell entries on
---        previously-aura containers get kind=aura stamped; non-spell
---        entries (item/trinket/slot/macro) get kind=cooldown stamped;
---        ambiguous spell entries are left for the runtime classifier.)
+--         (e) MigrateContainerShapeAndEntryKind — collapses the 4-value
+--             containerType taxonomy {aura, auraBar, cooldown, customBar}
+--             into two orthogonal axes: container.shape ∈ {icon, bar} for
+--             layout/render, and entry.kind ∈ {aura, cooldown} for
+--             behavior. trackedBar/auraBar → shape=bar; everything else →
+--             shape=icon. Spell entries on previously-aura containers get
+--             kind=aura stamped; non-spell entries (item/trinket/slot/
+--             macro) get kind=cooldown stamped; ambiguous spell entries
+--             are left for the runtime classifier. Must run after
+--             (a)/(c)/(d) so the customBar-style containers and per-spec
+--             entry storage already exist in their final shape.
 --
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 33
+local CURRENT_SCHEMA_VERSION = 32
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -2962,23 +2964,17 @@ function Migrations.RunOnProfile(profile)
     -- v31: add font, color, anchor, and offset controls for duration text.
     if stored < 31 then EnsureGroupAuraDurationTextStyle(profile) end
 
-    -- v32: V2 settings branch consolidated migration. Four discrete
+    -- v32: V2 settings branch consolidated migration. Five discrete
     -- transforms run sequentially behind one gate (V2 branch never
     -- shipped past v31, so intermediate version steps were collapsed).
     -- Order matters — see version log for what each function does.
+    -- MigrateContainerShapeAndEntryKind must run last because it walks
+    -- the containers the prior helpers finalize.
     if stored < 32 then
         MigrateCustomTrackersToContainers(profile)
         RemovePartyTrackerData(profile)
         FinalizeCustomBarContainers(profile)
         FinalizeLegacyTrackerSpecState(profile)
-    end
-
-    -- v33: split legacy containerType into container.shape +
-    -- entry.kind so aura tracking gates on per-entry classification
-    -- instead of per-container. Must run after v32 so the
-    -- customBar-style containers and per-spec entry storage already
-    -- exist in their final shape before we walk and stamp them.
-    if stored < 33 then
         MigrateContainerShapeAndEntryKind(profile)
     end
 
