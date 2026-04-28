@@ -19,7 +19,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 32,
+        _schemaVersion = 33,
         _shippedDefaults = {
           abilityTimeline = {
             bigIcon = {
@@ -3482,9 +3482,13 @@ return {
                 buffAnchor = "TOPLEFT",
                 buffBlacklist = {},
                 buffClassifications = {
+                  bigDefensive = false,
                   cancelable = false,
+                  externalDefensive = false,
                   important = false,
-                  raid = false
+                  notCancelable = false,
+                  raid = false,
+                  raidInCombat = false
                 },
                 buffDeduplicateDefensives = true,
                 buffDurationAnchor = "BOTTOM",
@@ -3514,7 +3518,8 @@ return {
                 debuffClassifications = {
                   crowdControl = true,
                   important = true,
-                  raid = true
+                  raid = true,
+                  raidInCombat = false
                 },
                 debuffDurationAnchor = "BOTTOM",
                 debuffDurationColor = {
@@ -3849,9 +3854,13 @@ return {
                 buffAnchor = "TOPLEFT",
                 buffBlacklist = {},
                 buffClassifications = {
+                  bigDefensive = false,
                   cancelable = false,
+                  externalDefensive = false,
                   important = false,
-                  raid = false
+                  notCancelable = false,
+                  raid = false,
+                  raidInCombat = false
                 },
                 buffDeduplicateDefensives = true,
                 buffDurationAnchor = "BOTTOM",
@@ -3881,7 +3890,8 @@ return {
                 debuffClassifications = {
                   crowdControl = true,
                   important = true,
-                  raid = true
+                  raid = true,
+                  raidInCombat = false
                 },
                 debuffDurationAnchor = "BOTTOM",
                 debuffDurationColor = {

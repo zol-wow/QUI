@@ -7,12 +7,15 @@
 
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
+local QUICore = ns.Addon
 
 ---------------------------------------------------------------------------
 -- FORWARD DECLARATIONS
 ---------------------------------------------------------------------------
 local UpdateCDMVisibility
+local UpdateCustomTrackersVisibility
 local UpdateUnitframesVisibility
+local HookCustomTrackerFrameForMouseover
 
 ---------------------------------------------------------------------------
 -- HEALTH STATE TRACKER
@@ -90,6 +93,22 @@ local function InvalidateCDMFrameCache()
 end
 
 -- Get CDM frames (viewers + power bars) — cached to avoid per-frame allocations
+local function IsCustomCDMBarFrame(frame)
+    if not frame then return false end
+    local key = frame._quiCdmKey
+    if not key and frame._spellEntry then
+        key = frame._spellEntry.viewerType
+    end
+    if type(key) ~= "string" then return false end
+
+    local profile = QUICore and QUICore.db and QUICore.db.profile
+    local container = profile
+        and profile.ncdm
+        and profile.ncdm.containers
+        and profile.ncdm.containers[key]
+    return type(container) == "table" and container.containerType == "customBar"
+end
+
 local function GetCDMFrames()
     if not _cdmFramesDirty then
         return _cdmFramesCache
@@ -102,7 +121,9 @@ local function GetCDMFrames()
         local frames = ns.CDMProvider:GetViewerFrames()
         if frames then
             for i = 1, #frames do
-                _cdmFramesCache[#_cdmFramesCache + 1] = frames[i]
+                if not IsCustomCDMBarFrame(frames[i]) then
+                    _cdmFramesCache[#_cdmFramesCache + 1] = frames[i]
+                end
             end
         end
     else
@@ -124,11 +145,25 @@ local function GetCDMFrames()
     return _cdmFramesCache
 end
 
+local function GetCustomTrackerFrames()
+    local frames = {}
+    if ns.CDMProvider and ns.CDMProvider.GetViewerFrames then
+        local allFrames = ns.CDMProvider:GetViewerFrames()
+        if allFrames then
+            for i = 1, #allFrames do
+                local frame = allFrames[i]
+                if IsCustomCDMBarFrame(frame) then
+                    frames[#frames + 1] = frame
+                end
+            end
+        end
+    end
+    return frames
+end
+
 ---------------------------------------------------------------------------
 -- CDM VISIBILITY SETTINGS CACHE
 ---------------------------------------------------------------------------
-local QUICore = ns.Addon
-
 local function GetCDMVisibilitySettings()
     if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.cdmVisibility then
         return QUICore.db.profile.cdmVisibility
@@ -311,6 +346,12 @@ end
 -- Exported on ns so CDM engines can call it when skinning new icons
 local function HookFrameForMouseover(frame)
     if not IsAddonOwnedCDMMouseoverFrame(frame) or _mouseoverHooked[frame] then return end
+    if IsCustomCDMBarFrame(frame) then
+        if HookCustomTrackerFrameForMouseover then
+            HookCustomTrackerFrameForMouseover(frame)
+        end
+        return
+    end
 
     _mouseoverHooked[frame] = true
 
@@ -419,6 +460,238 @@ local function SetupCDMMouseoverDetector()
     local detector = CreateFrame("Frame", nil, UIParent)
     detector:EnableMouse(false)
     CDMVisibility.mouseoverDetector = detector
+end
+
+---------------------------------------------------------------------------
+-- CUSTOM TRACKER / CUSTOM CDM BAR VISIBILITY CONTROLLER
+---------------------------------------------------------------------------
+local CustomTrackersVisibility = {
+    currentlyHidden = false,
+    isFading = false,
+    fadeStart = 0,
+    fadeStartAlpha = 1,
+    fadeTargetAlpha = 1,
+    fadeTargets = nil,
+    fadeFrame = nil,
+    mouseOver = false,
+    mouseoverDetector = nil,
+    hoverCount = 0,
+    leaveTimer = nil,
+}
+
+local function GetCustomTrackersVisibilitySettings()
+    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.customTrackersVisibility then
+        return QUICore.db.profile.customTrackersVisibility
+    end
+    return nil
+end
+
+local function ShouldCustomTrackersBeVisible()
+    local vis = GetCustomTrackersVisibilitySettings()
+    if not vis then return true end
+
+    if vis.showAlways then
+        local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
+        if not ignoreHideRules then
+            if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
+            if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
+            if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
+            if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
+        end
+        return true
+    end
+
+    if vis.showWhenTargetExists and UnitExists("target") then return true end
+    if vis.showInCombat and UnitAffectingCombat("player") then return true end
+    if vis.showInGroup and IsPlayerInGroup() then return true end
+    if vis.showInInstance and IsPlayerInInstance() then return true end
+    if vis.showOnMouseover and CustomTrackersVisibility.mouseOver then return true end
+    if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
+
+    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
+    if not ignoreHideRules then
+        if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
+        if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
+        if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
+        if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
+    end
+
+    return false
+end
+
+local function OnCustomTrackersFadeUpdate(self, elapsed)
+    local targetAlpha = Helpers.SafeToNumber(CustomTrackersVisibility.fadeTargetAlpha, 1)
+    local vis = GetCustomTrackersVisibilitySettings()
+    local duration = (vis and vis.fadeDuration) or 0.2
+    if duration <= 0 then duration = 0.01 end
+
+    local now = GetTime()
+    local elapsedTime = now - CustomTrackersVisibility.fadeStart
+    local progress = math.min(elapsedTime / duration, 1)
+    local startAlpha = Helpers.SafeToNumber(CustomTrackersVisibility.fadeStartAlpha, targetAlpha)
+    local alpha = startAlpha + (targetAlpha - startAlpha) * progress
+
+    local frames = CustomTrackersVisibility.fadeTargets or GetCustomTrackerFrames()
+    for i = #frames, 1, -1 do
+        local frame = frames[i]
+        local ok = false
+        if frame and frame.SetAlpha and (not frame.IsForbidden or not frame:IsForbidden()) then
+            ok = pcall(frame.SetAlpha, frame, alpha)
+        end
+        if not ok then
+            table.remove(frames, i)
+        end
+    end
+
+    if progress >= 1 then
+        CustomTrackersVisibility.isFading = false
+        CustomTrackersVisibility.currentlyHidden = (targetAlpha < 1)
+        CustomTrackersVisibility.fadeTargets = nil
+        self:SetScript("OnUpdate", nil)
+    end
+end
+
+local function StartCustomTrackersFade(targetAlpha)
+    local frames = GetCustomTrackerFrames()
+    if #frames == 0 then return end
+
+    local rawAlpha = frames[1]:GetAlpha()
+    if Helpers.IsSecretValue(rawAlpha) then
+        for _, frame in ipairs(frames) do
+            if frame and frame.SetAlpha and (not frame.IsForbidden or not frame:IsForbidden()) then
+                pcall(frame.SetAlpha, frame, targetAlpha)
+            end
+        end
+        if CustomTrackersVisibility.fadeFrame then
+            CustomTrackersVisibility.fadeFrame:SetScript("OnUpdate", nil)
+        end
+        CustomTrackersVisibility.isFading = false
+        CustomTrackersVisibility.currentlyHidden = (targetAlpha < 1)
+        CustomTrackersVisibility.fadeStartAlpha = targetAlpha
+        CustomTrackersVisibility.fadeTargetAlpha = targetAlpha
+        CustomTrackersVisibility.fadeTargets = nil
+        return
+    end
+
+    local currentAlpha = Helpers.SafeToNumber(rawAlpha, targetAlpha)
+    if math.abs(currentAlpha - targetAlpha) < 0.01 then
+        CustomTrackersVisibility.currentlyHidden = (targetAlpha < 1)
+        CustomTrackersVisibility.fadeStartAlpha = targetAlpha
+        CustomTrackersVisibility.fadeTargetAlpha = targetAlpha
+        return
+    end
+
+    CustomTrackersVisibility.isFading = true
+    CustomTrackersVisibility.fadeStart = GetTime()
+    CustomTrackersVisibility.fadeStartAlpha = currentAlpha
+    CustomTrackersVisibility.fadeTargetAlpha = targetAlpha
+    CustomTrackersVisibility.fadeTargets = {}
+    for i = 1, #frames do
+        CustomTrackersVisibility.fadeTargets[i] = frames[i]
+    end
+
+    if not CustomTrackersVisibility.fadeFrame then
+        CustomTrackersVisibility.fadeFrame = CreateFrame("Frame")
+    end
+    CustomTrackersVisibility.fadeFrame:SetScript("OnUpdate", OnCustomTrackersFadeUpdate)
+end
+
+UpdateCustomTrackersVisibility = function()
+    if Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
+        StartCustomTrackersFade(1)
+        return
+    end
+
+    local shouldShow = ShouldCustomTrackersBeVisible()
+    local vis = GetCustomTrackersVisibilitySettings()
+    if shouldShow then
+        StartCustomTrackersFade(1)
+    else
+        StartCustomTrackersFade(vis and vis.fadeOutAlpha or 0)
+    end
+end
+
+HookCustomTrackerFrameForMouseover = function(frame)
+    if not IsAddonOwnedCDMMouseoverFrame(frame) or _mouseoverHooked[frame] then return end
+    if not IsCustomCDMBarFrame(frame) then return end
+
+    _mouseoverHooked[frame] = true
+
+    frame:HookScript("OnEnter", function()
+        local vis = GetCustomTrackersVisibilitySettings()
+        if not vis or vis.showAlways or not vis.showOnMouseover then return end
+
+        if CustomTrackersVisibility.leaveTimer then
+            CustomTrackersVisibility.leaveTimer:Cancel()
+            CustomTrackersVisibility.leaveTimer = nil
+        end
+
+        CustomTrackersVisibility.hoverCount = CustomTrackersVisibility.hoverCount + 1
+        if CustomTrackersVisibility.hoverCount == 1 then
+            CustomTrackersVisibility.mouseOver = true
+            UpdateCustomTrackersVisibility()
+        end
+    end)
+
+    frame:HookScript("OnLeave", function()
+        local vis = GetCustomTrackersVisibilitySettings()
+        if not vis or vis.showAlways or not vis.showOnMouseover then return end
+
+        CustomTrackersVisibility.hoverCount = math.max(0, CustomTrackersVisibility.hoverCount - 1)
+        if CustomTrackersVisibility.hoverCount == 0 then
+            if CustomTrackersVisibility.leaveTimer then
+                CustomTrackersVisibility.leaveTimer:Cancel()
+            end
+
+            CustomTrackersVisibility.leaveTimer = C_Timer.NewTimer(0.5, function()
+                CustomTrackersVisibility.leaveTimer = nil
+                if CustomTrackersVisibility.hoverCount == 0 then
+                    CustomTrackersVisibility.mouseOver = false
+                    UpdateCustomTrackersVisibility()
+                end
+            end)
+        end
+    end)
+end
+
+local function SetupCustomTrackersMouseoverDetector()
+    local vis = GetCustomTrackersVisibilitySettings()
+
+    if CustomTrackersVisibility.mouseoverDetector then
+        CustomTrackersVisibility.mouseoverDetector:SetScript("OnUpdate", nil)
+        CustomTrackersVisibility.mouseoverDetector:Hide()
+        CustomTrackersVisibility.mouseoverDetector = nil
+    end
+
+    if CustomTrackersVisibility.leaveTimer then
+        CustomTrackersVisibility.leaveTimer:Cancel()
+        CustomTrackersVisibility.leaveTimer = nil
+    end
+
+    CustomTrackersVisibility.mouseOver = false
+    CustomTrackersVisibility.hoverCount = 0
+
+    if not vis or vis.showAlways or not vis.showOnMouseover then
+        return
+    end
+
+    local frames = GetCustomTrackerFrames()
+    for _, frame in ipairs(frames) do
+        HookCustomTrackerFrameForMouseover(frame)
+        if frame and frame.GetNumChildren then
+            local numChildren = frame:GetNumChildren()
+            for i = 1, numChildren do
+                local child = select(i, frame:GetChildren())
+                if child and IsAddonOwnedCDMMouseoverFrame(child) then
+                    HookCustomTrackerFrameForMouseover(child)
+                end
+            end
+        end
+    end
+
+    local detector = CreateFrame("Frame", nil, UIParent)
+    detector:EnableMouse(false)
+    CustomTrackersVisibility.mouseoverDetector = detector
 end
 
 ---------------------------------------------------------------------------
@@ -1284,6 +1557,7 @@ visCoalesceFrame:Hide()
 visCoalesceFrame:SetScript("OnUpdate", function(self)
     self:Hide()
     UpdateCDMVisibility()
+    UpdateCustomTrackersVisibility()
     UpdateUnitframesVisibility()
     UpdateActionBarsVisibility()
     UpdateChatVisibility()
@@ -1323,10 +1597,11 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
         _pendingSetupTimer = C_Timer.NewTimer(2.0, function()
             _pendingSetupTimer = nil
             SetupCDMMouseoverDetector()
+                SetupCustomTrackersMouseoverDetector()
             SetupUnitframesMouseoverDetector()
             SetupActionBarsMouseoverDetector()
             SetupChatMouseoverDetector()
-            -- Only CDM runs here — UF/AB/Chat visibility is driven by
+            -- CDM and custom bars run here — UF/AB/Chat visibility is driven by
             -- events (dismount, combat, target, etc.).  Running a full
             -- re-eval here flashes frames because IsMounted() and
             -- IsPlayerInDungeonOrRaid() can still return stale values
@@ -1335,6 +1610,7 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
             -- UpdateUnitframesVisibility internally.  UNIT_HEALTH events
             -- keep the health state current independently.
             UpdateCDMVisibility()
+            UpdateCustomTrackersVisibility()
         end)
     end
 
@@ -1346,6 +1622,7 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
     -- All other events (dismount, combat, target change) trigger normally.
     if (event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA")
         and (UnitframesVisibility.currentlyHidden
+            or CustomTrackersVisibility.currentlyHidden
             or ActionBarsVisibility.currentlyHidden
             or ChatVisibility.currentlyHidden) then
         -- Run CDM only — it doesn't have mount-based hide rules
@@ -1365,10 +1642,13 @@ _G.QUI_RefreshCDMVisibility = function()
     _cdmFramesDirty = true
     UpdateCDMVisibility()
 end
+_G.QUI_RefreshCustomTrackersVisibility = UpdateCustomTrackersVisibility
 _G.QUI_RefreshUnitframesVisibility = UpdateUnitframesVisibility
 _G.QUI_RefreshCDMMouseover = SetupCDMMouseoverDetector
+_G.QUI_RefreshCustomTrackersMouseover = SetupCustomTrackersMouseoverDetector
 _G.QUI_RefreshUnitframesMouseover = SetupUnitframesMouseoverDetector
 _G.QUI_ShouldCDMBeVisible = ShouldCDMBeVisible
+_G.QUI_ShouldCustomTrackersBeVisible = ShouldCustomTrackersBeVisible
 _G.QUI_ShouldUnitframesBeVisible = ShouldUnitframesBeVisible
 _G.QUI_RefreshActionBarsVisibility = UpdateActionBarsVisibility
 _G.QUI_RefreshActionBarsMouseover = SetupActionBarsMouseoverDetector
@@ -1382,13 +1662,24 @@ if ns.Registry then
         group = "cooldowns",
         importCategories = { "cdm" },
     })
+    ns.Registry:Register("customTrackersVisibility", {
+        refresh = _G.QUI_RefreshCustomTrackersVisibility,
+        priority = 10,
+        group = "cooldowns",
+        importCategories = { "customTrackers" },
+    })
 end
 
 ---------------------------------------------------------------------------
 -- NAMESPACE EXPORTS
 ---------------------------------------------------------------------------
 -- Expose HookFrameForMouseover so CDM engines can hook new icons during skinning
-ns.HookFrameForMouseover = HookFrameForMouseover
+ns.HookFrameForMouseover = function(frame)
+    HookFrameForMouseover(frame)
+    if HookCustomTrackerFrameForMouseover then
+        HookCustomTrackerFrameForMouseover(frame)
+    end
+end
 -- Expose cache invalidation so engines can mark frames dirty after init
 ns.InvalidateCDMFrameCache = InvalidateCDMFrameCache
 ns.GetCDMFrameCacheStats = function()
@@ -1403,6 +1694,7 @@ end
 ---------------------------------------------------------------------------
 local function RefreshAllVisibility()
     UpdateCDMVisibility()
+    UpdateCustomTrackersVisibility()
     UpdateUnitframesVisibility()
     UpdateActionBarsVisibility()
     UpdateChatVisibility()

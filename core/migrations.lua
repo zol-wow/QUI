@@ -142,10 +142,18 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --             (a)/(c)/(d) so the customBar-style containers and per-spec
 --             entry storage already exist in their final shape.
 --
+-- v33 = RepairCustomTrackerCDMBarFidelity
+--       (Options V2: custom tracker bars were consolidated into Custom CDM
+--        Bars, but the first v32 mapping missed several legacy row/text
+--        fields and did not copy frameAnchoring customTracker:<id> entries
+--        to the new cdmCustom_customBar_<id> resolver keys. Re-sync the
+--        migrated containers from their legacy source bars so old profiles
+--        keep size, spacing, text placement, visibility, and anchoring.)
+--
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 32
+local CURRENT_SCHEMA_VERSION = 33
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -2073,9 +2081,8 @@ end
 -- will wire the new renderer that consumes the migrated containers.
 --
 -- Safety properties:
---   * Idempotent: only creates a destination entry when one is absent for
---     the same legacy id. Re-running over a partially-migrated profile
---     does not clobber user edits to the migrated container.
+--   * Idempotent: re-running refreshes only the legacy-derived customBar
+--     mirror for the same legacy id instead of creating duplicates.
 --   * Non-destructive: source `customTrackers.bars` is never read for
 --     deletion, only for cloning.
 --   * Trace-back: each migrated entry is stamped with
@@ -2088,54 +2095,243 @@ end
 --   `anchorTo = "disabled"`. The migration translates by copying the
 --   offsets verbatim and forcing anchorTo="disabled".
 ---------------------------------------------------------------------------
+local _currentGlobalDB = nil  -- set by Migrations.Run for cross-profile access
+local CUSTOM_TRACKER_ANCHOR_PREFIX = "customTracker:"
+local CDM_CUSTOM_ANCHOR_PREFIX = "cdmCustom_"
+
+local function GetCustomBarContainerKey(legacyId)
+    return "customBar_" .. tostring(legacyId)
+end
+
+local function GetCustomBarAnchorKey(containerKey)
+    return CDM_CUSTOM_ANCHOR_PREFIX .. tostring(containerKey)
+end
+
+local function FindCustomBarContainerByLegacyId(containers, legacyId)
+    if type(containers) ~= "table" then return nil, nil end
+    local destKey = GetCustomBarContainerKey(legacyId)
+    if type(containers[destKey]) == "table" then
+        return destKey, containers[destKey]
+    end
+    for key, container in pairs(containers) do
+        if type(container) == "table" and container._legacyId == legacyId then
+            return key, container
+        end
+    end
+    return nil, nil
+end
+
+local function BuildCustomBarRowFromLegacy(bar)
+    return {
+        iconCount        = bar.maxIcons or 8,
+        iconSize         = bar.iconSize or 28,
+        borderSize       = bar.borderSize or 2,
+        borderColorTable = CloneValue(bar.borderColor or bar.borderColorTable or {0, 0, 0, 1}),
+        aspectRatioCrop  = bar.aspectRatioCrop or 1.0,
+        zoom             = bar.zoom or 0,
+        padding          = bar.spacing or 4,
+        xOffset          = 0,
+        yOffset          = 0,
+        hideDurationText = bar.hideDurationText == true,
+        durationSize     = bar.durationSize or bar.durationTextSize or 13,
+        durationOffsetX  = bar.durationOffsetX or 0,
+        durationOffsetY  = bar.durationOffsetY or 0,
+        durationTextColor = CloneValue(bar.durationColor or bar.durationTextColor or {1, 1, 1, 1}),
+        durationAnchor   = bar.durationAnchor or "CENTER",
+        stackSize        = bar.stackSize or bar.stackTextSize or 9,
+        stackOffsetX     = bar.stackOffsetX or 3,
+        stackOffsetY     = bar.stackOffsetY or -1,
+        stackTextColor   = CloneValue(bar.stackColor or bar.stackTextColor or {1, 1, 1, 1}),
+        stackAnchor      = bar.stackAnchor or "BOTTOMRIGHT",
+        hideStackText    = bar.hideStackText == true,
+        opacity          = 1.0,
+    }
+end
+
+local function CopyLegacyCustomTrackerAnchor(profile, legacyId, containerKey)
+    local fa = profile and profile.frameAnchoring
+    if type(fa) ~= "table" then return end
+
+    local oldKey = CUSTOM_TRACKER_ANCHOR_PREFIX .. tostring(legacyId)
+    local newKey = GetCustomBarAnchorKey(containerKey)
+
+    if type(fa[oldKey]) == "table" and type(fa[newKey]) ~= "table" then
+        fa[newKey] = CloneValue(fa[oldKey])
+    end
+
+    -- Anything anchored to the old dynamic target should now point at the
+    -- unified CDM container resolver.
+    for _, entry in pairs(fa) do
+        if type(entry) == "table" and entry.parent == oldKey then
+            entry.parent = newKey
+        end
+    end
+end
+
+local function PortLegacySpecTrackerEntries(globalDB, legacyId, containerKey, container)
+    if type(globalDB) ~= "table" then return end
+    if type(globalDB.specTrackerSpells) ~= "table" then return end
+    local src = globalDB.specTrackerSpells[legacyId]
+    if type(src) ~= "table" then return end
+
+    if type(globalDB.ncdm) ~= "table" then globalDB.ncdm = {} end
+    if type(globalDB.ncdm.specTrackerSpells) ~= "table" then
+        globalDB.ncdm.specTrackerSpells = {}
+    end
+
+    local dstRoot = globalDB.ncdm.specTrackerSpells
+    if type(dstRoot[containerKey]) ~= "table" then
+        dstRoot[containerKey] = {}
+    end
+
+    local dst = dstRoot[containerKey]
+    local anyPorted = false
+    for specKey, specList in pairs(src) do
+        if type(specList) == "table" and type(dst[specKey]) ~= "table" then
+            local copy = {}
+            for i, entry in ipairs(specList) do
+                copy[i] = CloneValue(entry)
+            end
+            dst[specKey] = copy
+            anyPorted = true
+        end
+    end
+
+    if anyPorted and type(container) == "table" then
+        container.specSpecific = true
+    end
+end
+
+local IsUncustomizedDefaultTrackerBar
+
+function Migrations.EnsureCustomTrackerBarContainer(profile, bar, globalDB)
+    if type(profile) ~= "table" or type(bar) ~= "table" then return nil end
+    if type(profile.ncdm) ~= "table" then profile.ncdm = {} end
+    if type(profile.ncdm.containers) ~= "table" then profile.ncdm.containers = {} end
+
+    local legacyId = bar.id
+    if legacyId == nil or legacyId == "" then return nil end
+
+    local containers = profile.ncdm.containers
+    local containerKey, container = FindCustomBarContainerByLegacyId(containers, legacyId)
+    if not containerKey then
+        containerKey = GetCustomBarContainerKey(legacyId)
+    end
+
+    if type(container) ~= "table" then
+        container = CloneValue(bar)
+        containers[containerKey] = container
+    end
+
+    container.builtIn = false
+    container.containerType = "customBar"
+    container.shape = "icon"
+    container.name = bar.name or container.name or "Custom Bar"
+    container.id = bar.id
+    container._migratedFromCustomTrackers = true
+    container._legacyId = legacyId
+
+    container.pos = {
+        ox = bar.offsetX or 0,
+        oy = bar.offsetY or 0,
+    }
+    container.anchorTo = "disabled"
+
+    container.row1 = BuildCustomBarRowFromLegacy(bar)
+    container.row2 = { iconCount = 0 }
+    container.row3 = { iconCount = 0 }
+
+    local gd = bar.growDirection or container.growDirection
+    container.growDirection = gd or "RIGHT"
+    container.layoutDirection = (gd == "UP" or gd == "DOWN") and "VERTICAL" or "HORIZONTAL"
+
+    if type(container.entries) ~= "table" and type(bar.entries) == "table" then
+        container.entries = CloneValue(bar.entries)
+    end
+    if bar.specSpecificSpells == true then
+        container.specSpecific = true
+    end
+
+    CopyLegacyCustomTrackerAnchor(profile, legacyId, containerKey)
+    PortLegacySpecTrackerEntries(globalDB or _currentGlobalDB, legacyId, containerKey, container)
+
+    return containerKey, container
+end
+
+function Migrations.SyncCustomTrackerBarsToCDM(profile, globalDB)
+    local bars = profile and profile.customTrackers and profile.customTrackers.bars
+    if type(bars) ~= "table" then return false end
+
+    local any = false
+    for _, bar in ipairs(bars) do
+        if type(bar) == "table" and not IsUncustomizedDefaultTrackerBar(bar) then
+            local key = Migrations.EnsureCustomTrackerBarContainer(profile, bar, globalDB)
+            if key then any = true end
+        end
+    end
+    return any
+end
+
+function Migrations.RemoveLegacyCustomBarContainers(profile, globalDB)
+    local containers = profile and profile.ncdm and profile.ncdm.containers
+    if type(containers) ~= "table" then return end
+
+    for key, container in pairs(containers) do
+        if type(key) == "string" and type(container) == "table"
+           and container.containerType == "customBar"
+           and container._migratedFromCustomTrackers
+        then
+            containers[key] = nil
+            if type(globalDB) == "table"
+               and type(globalDB.ncdm) == "table"
+               and type(globalDB.ncdm.specTrackerSpells) == "table"
+            then
+                globalDB.ncdm.specTrackerSpells[key] = nil
+            end
+            local fa = profile.frameAnchoring
+            if type(fa) == "table" then
+                fa[GetCustomBarAnchorKey(key)] = nil
+            end
+        end
+    end
+end
+
+function IsUncustomizedDefaultTrackerBar(bar)
+    if type(bar) ~= "table" then return false end
+    if bar.id ~= "default_tracker_1" then return false end
+    if bar.enabled ~= nil and bar.enabled ~= false then return false end
+    if bar.name ~= nil and bar.name ~= "Trinket & Pot" then return false end
+    if bar.offsetX ~= nil and bar.offsetX ~= -406 then return false end
+    if bar.offsetY ~= nil and bar.offsetY ~= -152 then return false end
+    if bar.iconSize ~= nil and bar.iconSize ~= 28 then return false end
+    if bar.spacing ~= nil and bar.spacing ~= 4 then return false end
+
+    local entries = bar.entries
+    if type(entries) == "table" then
+        if #entries ~= 1 then return false end
+        local entry = entries[1]
+        if type(entry) ~= "table" or entry.type ~= "item" or entry.id ~= 224022 then
+            return false
+        end
+    end
+
+    return true
+end
+
 local function MigrateCustomTrackersToContainers(profile)
     if not profile then return end
     if not profile.customTrackers or type(profile.customTrackers.bars) ~= "table" then
         return
     end
-    if not profile.ncdm then profile.ncdm = {} end
-    if not profile.ncdm.containers then profile.ncdm.containers = {} end
-
-    local containers = profile.ncdm.containers
-
-    -- Build a fast lookup for already-migrated legacy IDs so we don't add
-    -- duplicates if someone hand-edited a key prefix.
-    local seenLegacyIds = {}
-    for k, c in pairs(containers) do
-        if type(c) == "table" and c._legacyId then
-            seenLegacyIds[c._legacyId] = k
-        end
-    end
 
     for i, bar in ipairs(profile.customTrackers.bars) do
         if type(bar) == "table" then
-            local legacyId = bar.id or ("anon_" .. tostring(i))
-            local destKey = "customBar_" .. tostring(legacyId)
-
-            -- Skip if a destination already exists (either by exact key
-            -- or by trace-back stamp).
-            if containers[destKey] == nil and seenLegacyIds[legacyId] == nil then
-                local migrated = CloneValue(bar)
-                migrated.builtIn = false
-                migrated.containerType = "customBar"
-                migrated.name = bar.name or ("Custom Bar " .. tostring(i))
-
-                -- Translate position from screen-center offsets to ncdm
-                -- pos table; force free-position anchor.
-                migrated.pos = {
-                    ox = bar.offsetX or 0,
-                    oy = bar.offsetY or 0,
-                }
-                migrated.anchorTo = "disabled"
-
-                migrated._migratedFromCustomTrackers = true
-                migrated._legacyId = legacyId
-
-                containers[destKey] = migrated
-                seenLegacyIds[legacyId] = destKey
+            if bar.id == nil or bar.id == "" then
+                bar.id = "anon_" .. tostring(i)
             end
         end
     end
+    Migrations.SyncCustomTrackerBarsToCDM(profile, _currentGlobalDB)
 end
 
 ---------------------------------------------------------------------------
@@ -2177,8 +2373,6 @@ end
 -- not modified (legacy db.customTrackers / db.global.specTrackerSpells
 -- stays intact for B.4 cleanup).
 ---------------------------------------------------------------------------
-local _currentGlobalDB = nil  -- set by Migrations.Run for cross-profile access
-
 local function FinalizeCustomBarContainers(profile)
     if not profile then return end
     local ncdm = profile.ncdm
@@ -2188,31 +2382,7 @@ local function FinalizeCustomBarContainers(profile)
         if type(container) == "table" and container.containerType == "customBar" then
             -- 1. Row1 synthesis
             if type(container.row1) ~= "table" then
-                container.row1 = {
-                    iconCount      = container.maxIcons or 8,
-                    iconSize       = container.iconSize or 36,
-                    borderSize     = container.borderSize or 1,
-                    borderColorTable = container.borderColor
-                        or container.borderColorTable
-                        or {0, 0, 0, 1},
-                    aspectRatioCrop = container.aspectRatioCrop or 1.0,
-                    zoom           = 0,
-                    padding        = container.spacing or 2,
-                    xOffset        = 0,
-                    yOffset        = 0,
-                    hideDurationText = container.hideDurationText or false,
-                    durationSize   = container.durationTextSize or 14,
-                    durationOffsetX = 0,
-                    durationOffsetY = 0,
-                    durationTextColor = container.durationTextColor or {1, 1, 1, 1},
-                    durationAnchor = "CENTER",
-                    stackSize      = container.stackTextSize or 12,
-                    stackOffsetX   = 0,
-                    stackOffsetY   = 2,
-                    stackTextColor = container.stackColor or {1, 1, 1, 1},
-                    stackAnchor    = "BOTTOMRIGHT",
-                    opacity        = 1.0,
-                }
+                container.row1 = BuildCustomBarRowFromLegacy(container)
                 -- Zero-count rows so the 1..3 row loop sees a single row.
                 container.row2 = container.row2 or { iconCount = 0 }
                 container.row3 = container.row3 or { iconCount = 0 }
@@ -2266,6 +2436,27 @@ local function FinalizeCustomBarContainers(profile)
                 container._specEntriesPortedB3 = true
             end
         end
+    end
+end
+
+local function RepairCustomTrackerCDMBarFidelity(profile)
+    local containers = profile and profile.ncdm and profile.ncdm.containers
+    if type(containers) ~= "table" then return end
+
+    local hasMigratedCustomBar = false
+    for key, container in pairs(containers) do
+        if type(key) == "string"
+           and type(container) == "table"
+           and container.containerType == "customBar"
+           and container._legacyId
+        then
+            hasMigratedCustomBar = true
+            break
+        end
+    end
+
+    if hasMigratedCustomBar then
+        Migrations.SyncCustomTrackerBarsToCDM(profile, _currentGlobalDB)
     end
 end
 
@@ -2977,6 +3168,10 @@ function Migrations.RunOnProfile(profile)
         FinalizeLegacyTrackerSpecState(profile)
         MigrateContainerShapeAndEntryKind(profile)
     end
+
+    -- v33: repair the legacy custom-tracker-to-CDM-bar mapping so every
+    -- migrated Custom CDM Bar mirrors the source tracker layout exactly.
+    if stored < 33 then RepairCustomTrackerCDMBarFidelity(profile) end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame

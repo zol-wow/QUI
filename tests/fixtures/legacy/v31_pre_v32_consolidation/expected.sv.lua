@@ -48,7 +48,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 32,
+        _schemaVersion = 33,
         _shippedDefaults = {
           abilityTimeline = {
             bigIcon = {
@@ -3511,9 +3511,13 @@ return {
                 buffAnchor = "TOPLEFT",
                 buffBlacklist = {},
                 buffClassifications = {
+                  bigDefensive = false,
                   cancelable = false,
+                  externalDefensive = false,
                   important = false,
-                  raid = false
+                  notCancelable = false,
+                  raid = false,
+                  raidInCombat = false
                 },
                 buffDeduplicateDefensives = true,
                 buffDurationAnchor = "BOTTOM",
@@ -3543,7 +3547,8 @@ return {
                 debuffClassifications = {
                   crowdControl = true,
                   important = true,
-                  raid = true
+                  raid = true,
+                  raidInCombat = false
                 },
                 debuffDurationAnchor = "BOTTOM",
                 debuffDurationColor = {
@@ -3878,9 +3883,13 @@ return {
                 buffAnchor = "TOPLEFT",
                 buffBlacklist = {},
                 buffClassifications = {
+                  bigDefensive = false,
                   cancelable = false,
+                  externalDefensive = false,
                   important = false,
-                  raid = false
+                  notCancelable = false,
+                  raid = false,
+                  raidInCombat = false
                 },
                 buffDeduplicateDefensives = true,
                 buffDurationAnchor = "BOTTOM",
@@ -3910,7 +3919,8 @@ return {
                 debuffClassifications = {
                   crowdControl = true,
                   important = true,
-                  raid = true
+                  raid = true,
+                  raidInCombat = false
                 },
                 debuffDurationAnchor = "BOTTOM",
                 debuffDurationColor = {
@@ -6051,6 +6061,7 @@ return {
         customTrackers = {
           bars = {
             [1] = {
+              aspectRatioCrop = 1.25,
               borderColor = {
                 [1] = 0,
                 [2] = 0,
@@ -6058,6 +6069,15 @@ return {
                 [4] = 1
               },
               borderSize = 1,
+              durationAnchor = "TOP",
+              durationColor = {
+                [1] = 0.80000000000000004,
+                [2] = 0.90000000000000002,
+                [4] = 0.94999999999999996
+              },
+              durationOffsetX = 2,
+              durationOffsetY = -3,
+              durationSize = 17,
               enabled = true,
               entries = {
                 [1] = {
@@ -6069,12 +6089,23 @@ return {
                   type = "spell"
                 }
               },
+              hideDurationText = true,
+              hideStackText = true,
               iconSize = 32,
               id = "test_bar_1",
               maxIcons = 6,
               name = "Test Bar One",
               offsetX = 120,
-              offsetY = -80
+              offsetY = -80,
+              stackAnchor = "BOTTOMLEFT",
+              stackColor = {
+                [2] = 0.69999999999999996,
+                [3] = 0.20000000000000001
+              },
+              stackOffsetX = -2,
+              stackOffsetY = 4,
+              stackSize = 11,
+              zoom = 0.080000000000000002
             },
             [2] = {
               borderColor = {
@@ -6107,6 +6138,55 @@ return {
             }
           }
         },
+        customTrackersVisibility = {
+          fadeDuration = 0.34999999999999998,
+          fadeOutAlpha = 0.25,
+          hideWhenMounted = false,
+          hideWhenSkyriding = false,
+          showAlways = false,
+          showInCombat = true,
+          showInInstance = true,
+          showOnMouseover = true,
+          showWhenTargetExists = true
+        },
+        frameAnchoring = {
+          cdmCustom_customBar_test_bar_1 = {
+            autoHeight = false,
+            autoWidth = false,
+            heightAdjust = -1,
+            hideWithParent = true,
+            keepInPlace = true,
+            offsetX = 5,
+            offsetY = 7,
+            parent = "playerFrame",
+            point = "BOTTOMRIGHT",
+            relative = "TOPRIGHT",
+            sizeStable = true,
+            widthAdjust = 3
+          },
+          combatTimer = {
+            keepInPlace = true,
+            offsetX = 1,
+            offsetY = -2,
+            parent = "cdmCustom_customBar_test_bar_1",
+            point = "TOP",
+            relative = "BOTTOM"
+          },
+          ["customTracker:test_bar_1"] = {
+            autoHeight = false,
+            autoWidth = false,
+            heightAdjust = -1,
+            hideWithParent = true,
+            keepInPlace = true,
+            offsetX = 5,
+            offsetY = 7,
+            parent = "playerFrame",
+            point = "BOTTOMRIGHT",
+            relative = "TOPRIGHT",
+            sizeStable = true,
+            widthAdjust = 3
+          }
+        },
         ncdm = {
           _lastSpecID = 250,
           containers = {
@@ -6114,6 +6194,7 @@ return {
               _legacyId = "test_bar_1",
               _migratedFromCustomTrackers = true,
               anchorTo = "disabled",
+              aspectRatioCrop = 1.25,
               borderColor = {
                 [1] = 0,
                 [2] = 0,
@@ -6123,6 +6204,16 @@ return {
               borderSize = 1,
               builtIn = false,
               containerType = "customBar",
+              durationAnchor = "TOP",
+              durationColor = {
+                [1] = 0.80000000000000004,
+                [2] = 0.90000000000000002,
+                [3] = 1,
+                [4] = 0.94999999999999996
+              },
+              durationOffsetX = 2,
+              durationOffsetY = -3,
+              durationSize = 17,
               enabled = true,
               entries = {
                 [1] = {
@@ -6135,6 +6226,8 @@ return {
                 }
               },
               growDirection = "RIGHT",
+              hideDurationText = true,
+              hideStackText = true,
               iconSize = 32,
               id = "test_bar_1",
               layoutDirection = "HORIZONTAL",
@@ -6147,7 +6240,7 @@ return {
                 oy = -80
               },
               row1 = {
-                aspectRatioCrop = 1,
+                aspectRatioCrop = 1.25,
                 borderColorTable = {
                   [1] = 0,
                   [2] = 0,
@@ -6155,34 +6248,35 @@ return {
                   [4] = 1
                 },
                 borderSize = 1,
-                durationAnchor = "CENTER",
-                durationOffsetX = 0,
-                durationOffsetY = 0,
-                durationSize = 14,
+                durationAnchor = "TOP",
+                durationOffsetX = 2,
+                durationOffsetY = -3,
+                durationSize = 17,
                 durationTextColor = {
-                  [1] = 1,
-                  [2] = 1,
+                  [1] = 0.80000000000000004,
+                  [2] = 0.90000000000000002,
                   [3] = 1,
-                  [4] = 1
+                  [4] = 0.94999999999999996
                 },
-                hideDurationText = false,
+                hideDurationText = true,
+                hideStackText = true,
                 iconCount = 6,
                 iconSize = 32,
                 opacity = 1,
                 padding = 4,
-                stackAnchor = "BOTTOMRIGHT",
-                stackOffsetX = 0,
-                stackOffsetY = 2,
-                stackSize = 12,
+                stackAnchor = "BOTTOMLEFT",
+                stackOffsetX = -2,
+                stackOffsetY = 4,
+                stackSize = 11,
                 stackTextColor = {
                   [1] = 1,
-                  [2] = 1,
-                  [3] = 1,
+                  [2] = 0.69999999999999996,
+                  [3] = 0.20000000000000001,
                   [4] = 1
                 },
                 xOffset = 0,
                 yOffset = 0,
-                zoom = 0
+                zoom = 0.080000000000000002
               },
               row2 = {
                 iconCount = 0
@@ -6191,7 +6285,18 @@ return {
                 iconCount = 0
               },
               shape = "icon",
-              spacing = 4
+              spacing = 4,
+              stackAnchor = "BOTTOMLEFT",
+              stackColor = {
+                [1] = 1,
+                [2] = 0.69999999999999996,
+                [3] = 0.20000000000000001,
+                [4] = 1
+              },
+              stackOffsetX = -2,
+              stackOffsetY = 4,
+              stackSize = 11,
+              zoom = 0.080000000000000002
             },
             customBar_test_bar_spec = {
               _legacyId = "test_bar_spec",
@@ -6243,7 +6348,7 @@ return {
                 durationAnchor = "CENTER",
                 durationOffsetX = 0,
                 durationOffsetY = 0,
-                durationSize = 14,
+                durationSize = 13,
                 durationTextColor = {
                   [1] = 1,
                   [2] = 1,
@@ -6251,14 +6356,15 @@ return {
                   [4] = 1
                 },
                 hideDurationText = false,
+                hideStackText = false,
                 iconCount = 8,
                 iconSize = 36,
                 opacity = 1,
                 padding = 2,
                 stackAnchor = "BOTTOMRIGHT",
-                stackOffsetX = 0,
-                stackOffsetY = 2,
-                stackSize = 12,
+                stackOffsetX = 3,
+                stackOffsetY = -1,
+                stackSize = 9,
                 stackTextColor = {
                   [1] = 1,
                   [2] = 1,

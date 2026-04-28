@@ -1158,7 +1158,7 @@ local function SaveContainerPosition(trackerKey)
         -- Keep frameAnchoring in sync so ApplyAllFrameAnchors uses the
         -- updated position instead of overwriting with a stale offset.
         -- Only sync when parent is screen (offsets are UIParent-center based).
-        local anchorKey = ANCHOR_KEY_MAP[trackerKey]
+        local anchorKey = ANCHOR_KEY_MAP[trackerKey] or ("cdmCustom_" .. trackerKey)
         if anchorKey then
             local profile = QUICore and QUICore.db and QUICore.db.profile
             local anchoringDB = profile and profile.frameAnchoring
@@ -1203,7 +1203,7 @@ local function RestoreContainerPosition(container, trackerKey)
 
     -- During layout mode, handles own frame positions — skip restoring
     -- from DB so we don't yank the container away from its mover.
-    local anchorKey = ANCHOR_KEY_MAP[trackerKey]
+    local anchorKey = ANCHOR_KEY_MAP[trackerKey] or ("cdmCustom_" .. trackerKey)
     if anchorKey and _G.QUI_IsLayoutModeManaged and _G.QUI_IsLayoutModeManaged(anchorKey) then
         return true
     end
@@ -1212,7 +1212,6 @@ local function RestoreContainerPosition(container, trackerKey)
     -- this CDM key with a screen parent, use its CENTER offsets directly.
     -- When anchored to another frame (e.g. "playerFrame"), the offsets are
     -- relative to that parent — let the anchoring system handle it later.
-    local anchorKey = ANCHOR_KEY_MAP[trackerKey]
     if anchorKey then
         local profile = QUICore and QUICore.db and QUICore.db.profile
         local anchoringDB = profile and profile.frameAnchoring

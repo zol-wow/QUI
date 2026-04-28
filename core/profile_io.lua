@@ -661,6 +661,22 @@ end
 local CUSTOM_TRACKER_BAR_ID_PREFIX = "customTrackerBar:"
 local GenerateUniqueTrackerID
 
+local function SyncCustomTrackerBarsToCDM(core, profile)
+    local migrations = ns.Migrations
+    if not migrations or type(migrations.SyncCustomTrackerBarsToCDM) ~= "function" then
+        return false
+    end
+    local globalDB = core and core.db and core.db.global
+    return migrations.SyncCustomTrackerBarsToCDM(profile, globalDB)
+end
+
+local function RemoveImportedCustomBarContainers(core, profile)
+    local migrations = ns.Migrations
+    if migrations and type(migrations.RemoveLegacyCustomBarContainers) == "function" then
+        migrations.RemoveLegacyCustomBarContainers(profile, core and core.db and core.db.global)
+    end
+end
+
 local function GetTrackerEntryResolvedName(entry)
     if type(entry) ~= "table" then
         return nil
@@ -1242,7 +1258,7 @@ local function RestoreDatatextPanelLayout(targetProfile, previousProfile)
     end
 end
 
-local function ImportSelectedCustomTrackerBars(targetProfile, importedProfile, barIndexes)
+local function ImportSelectedCustomTrackerBars(core, targetProfile, importedProfile, barIndexes)
     if type(targetProfile) ~= "table" or type(importedProfile) ~= "table" or type(barIndexes) ~= "table" then
         return false
     end
@@ -1264,9 +1280,7 @@ local function ImportSelectedCustomTrackerBars(targetProfile, importedProfile, b
         local sourceBar = importedBars[barIndex]
         if type(sourceBar) == "table" then
             local clonedBar = CloneValue(sourceBar)
-            if clonedBar.id then
-                clonedBar.id = GenerateUniqueTrackerID()
-            end
+            clonedBar.id = GenerateUniqueTrackerID()
             table.insert(targetProfile.customTrackers.bars, clonedBar)
             importedAny = true
         end
@@ -1620,6 +1634,10 @@ local function ApplyFullProfilePayload(core, importedProfile)
         addon:BackwardsCompat()
     end
 
+    -- If the import payload already carries the current schema but only has
+    -- legacy tracker bars, the schema gate will no-op. Normalize explicitly.
+    SyncCustomTrackerBarsToCDM(core, profile)
+
     -- Refresh all modules via the Registry (includes frame anchoring).
     -- Falls back to core:RefreshAll() if the Registry is not available.
     if ns.Registry then
@@ -1712,7 +1730,11 @@ local function RunImportProfileSelection(core, payloadOrErr, selectedCategoryIDs
     end
 
     if not selectedLookup.customTrackers and #selectedCustomTrackerBarIndexes > 0 then
-        ImportSelectedCustomTrackerBars(profile, payloadOrErr, selectedCustomTrackerBarIndexes)
+        ImportSelectedCustomTrackerBars(core, profile, payloadOrErr, selectedCustomTrackerBarIndexes)
+    end
+
+    if selectedLookup.customTrackers or #selectedCustomTrackerBarIndexes > 0 then
+        SyncCustomTrackerBarsToCDM(core, profile)
     end
 
     local function CategoryCanImportThemePath(category, path)
@@ -2018,6 +2040,16 @@ function QUICore:GenerateUniqueTrackerID()
             used[id] = true
         end
     end
+    local containers = db and db.profile and db.profile.ncdm and db.profile.ncdm.containers
+    if type(containers) == "table" then
+        for key, container in pairs(containers) do
+            if type(container) == "table" then
+                if container._legacyId then used[container._legacyId] = true end
+                local suffix = type(key) == "string" and key:match("^customBar_(.+)$")
+                if suffix then used[suffix] = true end
+            end
+        end
+    end
     local id
     repeat
         id = "tracker" .. time() .. math.random(1000, 9999)
@@ -2161,10 +2193,11 @@ function QUICore:ImportSingleTrackerBar(str)
     -- Generate collision-safe unique ID for the imported bar
     local oldID = data.bar.id
     local newID = GenerateUniqueTrackerID()
-    data.bar.id = newID
+    local importedBar = CloneValue(data.bar)
+    importedBar.id = newID
 
     -- Append bar to existing bars
-    table.insert(self.db.profile.customTrackers.bars, data.bar)
+    table.insert(self.db.profile.customTrackers.bars, importedBar)
 
     -- Copy spec-specific entries if present (with new ID)
     if data.specEntries then
@@ -2172,6 +2205,8 @@ function QUICore:ImportSingleTrackerBar(str)
         if not self.db.global.specTrackerSpells then self.db.global.specTrackerSpells = {} end
         self.db.global.specTrackerSpells[newID] = data.specEntries
     end
+
+    SyncCustomTrackerBarsToCDM(self, self.db.profile)
 
     return true, "Bar imported successfully."
 end
@@ -2222,12 +2257,14 @@ function QUICore:ImportAllTrackerBars(str, replaceExisting)
     end
 
     if replaceExisting then
+        RemoveImportedCustomBarContainers(self, self.db.profile)
+
         -- Replace all bars
-        self.db.profile.customTrackers.bars = data.bars
+        self.db.profile.customTrackers.bars = CloneValue(data.bars)
 
         -- Replace spec entries (or clear if none provided)
         if not self.db.global then self.db.global = {} end
-        self.db.global.specTrackerSpells = data.specEntries or {}
+        self.db.global.specTrackerSpells = CloneValue(data.specEntries or {})
     else
         -- Merge: append bars with new IDs
         if not self.db.profile.customTrackers.bars then
@@ -2239,9 +2276,12 @@ function QUICore:ImportAllTrackerBars(str, replaceExisting)
         for _, bar in ipairs(data.bars) do
             local oldID = bar.id
             local newID = GenerateUniqueTrackerID()
-            bar.id = newID
-            idMapping[oldID] = newID
-            table.insert(self.db.profile.customTrackers.bars, bar)
+            local clonedBar = CloneValue(bar)
+            clonedBar.id = newID
+            if oldID ~= nil then
+                idMapping[oldID] = newID
+            end
+            table.insert(self.db.profile.customTrackers.bars, clonedBar)
         end
 
         -- Copy spec entries with new IDs
@@ -2257,6 +2297,8 @@ function QUICore:ImportAllTrackerBars(str, replaceExisting)
             end
         end
     end
+
+    SyncCustomTrackerBarsToCDM(self, self.db.profile)
 
     return true, "CDM bars imported successfully."
 end

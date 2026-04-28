@@ -2576,7 +2576,8 @@ local function ConfigureIcon(icon, rowConfig)
 
     -- Stack text styling
     local stackSize = rowConfig.stackSize or 14
-    if stackSize > 0 then
+    local hideStackText = rowConfig.hideStackText
+    if stackSize > 0 and not hideStackText then
         local stc = rowConfig.stackTextColor or {1, 1, 1, 1}
         local sAnchor = rowConfig.stackAnchor or "BOTTOMRIGHT"
         local sox = rowConfig.stackOffsetX or 0
@@ -2598,6 +2599,8 @@ local function ConfigureIcon(icon, rowConfig)
                 stc[1], stc[2], stc[3], stc[4] or 1,
                 sAnchor, sox, soy)
         end
+    elseif hideStackText then
+        icon.StackText:Hide()
     end
 
     -- Apply row opacity
