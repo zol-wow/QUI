@@ -1,10 +1,9 @@
 --[[
     QUI Help Tab — Page Builder
-    Migrated to V3 section pattern (Opts.CreateAccentDotLabel). Help
-    content is narrative (wrapped labels + expandable guides + link
-    items), not interactive settings — so there are no widget rows to
-    pair into cards; the section headers just get the accent-dot style
-    for visual consistency with other V3 tabs.
+    Narrative content rendered flat: accent-dot section headers + plain
+    wrapped labels + link items. No card chrome on guides — the tile
+    opts into chip-strip section nav at the top via sectionNav=true,
+    which auto-collects the accent-dot labels as scroll anchors.
 ]]
 
 local ADDON_NAME, ns = ...
@@ -64,160 +63,86 @@ local function BuildHelpContent(content)
     y = y - 12
 
     -- =====================================================
-    -- FEATURE GUIDES (collapsible sections)
+    -- FEATURE GUIDES (flat — no card chrome)
     -- =====================================================
     Shared.CreateAccentDotLabel(content, "Feature Guides", y); y = y - SECTION_LABEL_GAP
 
-    local guideDesc = CreateWrappedLabel(content,
-        "Click a section below to expand detailed guidance for each feature.",
-        11, C.textMuted, contentWidth - PADDING * 2)
-    guideDesc:SetPoint("TOPLEFT", PADDING, y)
-    y = y - (guideDesc:GetStringHeight() or 14) - 10
-
-    -- Build all guide sections with relative anchoring
-    local guideSections = {}
-    local prevAnchor = nil  -- frame to anchor next section to
-    local prevAnchorY = y   -- y offset for first section
-
     if HelpContent.FeatureGuides then
-        for i, guide in ipairs(HelpContent.FeatureGuides) do
-            -- V3 inline card (always visible). CreateInlineCollapsible returns
-            -- (section, body); body is where child widgets get parented.
-            local section, sectionContent = Shared.CreateInlineCollapsible(
-                content, guide.title, 100)
-            section:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+        for _, guide in ipairs(HelpContent.FeatureGuides) do
+            local titleLabel = CreateWrappedLabel(content, guide.title, 13, C.accent, contentWidth - PADDING * 2)
+            titleLabel:SetPoint("TOPLEFT", PADDING, y)
+            y = y - (titleLabel:GetStringHeight() or 14) - 4
 
-            if prevAnchor then
-                section:SetPoint("TOPLEFT", prevAnchor, "BOTTOMLEFT", 0, -6)
-            else
-                section:SetPoint("TOPLEFT", PADDING, prevAnchorY)
-            end
+            local desc = CreateWrappedLabel(content, guide.description,
+                11, C.textMuted, contentWidth - PADDING * 2 - 10)
+            desc:SetPoint("TOPLEFT", PADDING + 10, y)
+            y = y - (desc:GetStringHeight() or 14) - 8
 
-            local sy = -6
-
-            -- Description
-            local desc = CreateWrappedLabel(sectionContent, guide.description,
-                11, C.textMuted, contentWidth - PADDING * 2 - 20)
-            desc:SetPoint("TOPLEFT", 10, sy)
-            sy = sy - (desc:GetStringHeight() or 14) - 10
-
-            -- Tips
             if guide.tips then
-                local tipsLabel = CreateWrappedLabel(sectionContent, "Tips:", 11, C.accent, contentWidth - PADDING * 2 - 20)
-                tipsLabel:SetPoint("TOPLEFT", 10, sy)
-                sy = sy - (tipsLabel:GetStringHeight() or 14) - 4
-
                 for _, tip in ipairs(guide.tips) do
-                    local tipLabel = CreateWrappedLabel(sectionContent,
+                    local tipLabel = CreateWrappedLabel(content,
                         "|cff60A5FA\226\128\162|r  " .. tip,
-                        11, C.text, contentWidth - PADDING * 2 - 40)
-                    tipLabel:SetPoint("TOPLEFT", 20, sy)
-                    sy = sy - (tipLabel:GetStringHeight() or 14) - 4
+                        11, C.text, contentWidth - PADDING * 2 - 30)
+                    tipLabel:SetPoint("TOPLEFT", PADDING + 20, y)
+                    y = y - (tipLabel:GetStringHeight() or 14) - 4
                 end
             end
-            sy = sy - 4
-
-            sectionContent:SetHeight(math.abs(sy))
-            if section.RefreshContentHeight then section:RefreshContentHeight() end
-
-            prevAnchor = section
-            table.insert(guideSections, section)
+            y = y - 14
         end
     end
-
-    -- =====================================================
-    -- CONTAINER for everything after guides
-    -- Uses relative anchoring to the last guide section
-    -- so expand/collapse automatically reflows
-    -- =====================================================
-    local afterGuidesContainer = CreateFrame("Frame", nil, content)
-    afterGuidesContainer:SetPoint("RIGHT", content, "RIGHT", 0, 0)
-    if prevAnchor then
-        afterGuidesContainer:SetPoint("TOPLEFT", prevAnchor, "BOTTOMLEFT", -PADDING, -12)
-    else
-        afterGuidesContainer:SetPoint("TOPLEFT", PADDING, prevAnchorY - 12)
-    end
-
-    local ay = 0
 
     -- =====================================================
     -- SLASH COMMANDS
     -- =====================================================
-    Shared.CreateAccentDotLabel(afterGuidesContainer, "Slash Commands", ay); ay = ay - SECTION_LABEL_GAP
+    Shared.CreateAccentDotLabel(content, "Slash Commands", y); y = y - SECTION_LABEL_GAP
 
     if HelpContent.SlashCommands then
         for _, cmd in ipairs(HelpContent.SlashCommands) do
-            local cmdLabel = CreateWrappedLabel(afterGuidesContainer,
+            local cmdLabel = CreateWrappedLabel(content,
                 "|cff60A5FA" .. cmd.command .. "|r  \226\128\148  " .. cmd.description,
                 12, C.text, contentWidth - PADDING * 2)
-            cmdLabel:SetPoint("TOPLEFT", PADDING + 10, ay)
-            ay = ay - (cmdLabel:GetStringHeight() or 14) - 6
+            cmdLabel:SetPoint("TOPLEFT", PADDING + 10, y)
+            y = y - (cmdLabel:GetStringHeight() or 14) - 6
         end
     end
-    ay = ay - 12
+    y = y - 12
 
     -- =====================================================
     -- TROUBLESHOOTING
     -- =====================================================
-    Shared.CreateAccentDotLabel(afterGuidesContainer, "Troubleshooting", ay); ay = ay - SECTION_LABEL_GAP
+    Shared.CreateAccentDotLabel(content, "Troubleshooting", y); y = y - SECTION_LABEL_GAP
 
     if HelpContent.Troubleshooting then
         for _, qa in ipairs(HelpContent.Troubleshooting) do
-            local qLabel = CreateWrappedLabel(afterGuidesContainer, qa.question, 12, C.text, contentWidth - PADDING * 2)
-            qLabel:SetPoint("TOPLEFT", PADDING, ay)
-            ay = ay - (qLabel:GetStringHeight() or 14) - 4
+            local qLabel = CreateWrappedLabel(content, qa.question, 12, C.text, contentWidth - PADDING * 2)
+            qLabel:SetPoint("TOPLEFT", PADDING, y)
+            y = y - (qLabel:GetStringHeight() or 14) - 4
 
-            local aLabel = CreateWrappedLabel(afterGuidesContainer, qa.answer, 11, C.textMuted, contentWidth - PADDING * 2 - 10)
-            aLabel:SetPoint("TOPLEFT", PADDING + 10, ay)
-            ay = ay - (aLabel:GetStringHeight() or 14) - 12
+            local aLabel = CreateWrappedLabel(content, qa.answer, 11, C.textMuted, contentWidth - PADDING * 2 - 10)
+            aLabel:SetPoint("TOPLEFT", PADDING + 10, y)
+            y = y - (aLabel:GetStringHeight() or 14) - 12
         end
     end
-    ay = ay - 10
+    y = y - 10
 
     -- =====================================================
     -- LINKS & RESOURCES
     -- =====================================================
-    Shared.CreateAccentDotLabel(afterGuidesContainer, "Links & Resources", ay); ay = ay - SECTION_LABEL_GAP
+    Shared.CreateAccentDotLabel(content, "Links & Resources", y); y = y - SECTION_LABEL_GAP
 
     if HelpContent.Links then
         for _, link in ipairs(HelpContent.Links) do
-            local linkItem = CreateLinkItem(afterGuidesContainer,
+            local linkItem = CreateLinkItem(content,
                 link.label, link.url,
                 link.iconR, link.iconG, link.iconB,
                 link.iconTexture, link.popupTitle)
-            linkItem:SetPoint("TOPLEFT", PADDING, ay)
+            linkItem:SetPoint("TOPLEFT", PADDING, y)
             linkItem:SetSize(contentWidth - PADDING * 2, 22)
-            ay = ay - 28
+            y = y - 28
         end
     end
 
-    local afterGuidesHeight = math.abs(ay) + 10
-    afterGuidesContainer:SetHeight(afterGuidesHeight)
-
-    -- =====================================================
-    -- CONTENT HEIGHT MANAGEMENT
-    -- =====================================================
-    local function RecalcContentHeight()
-        C_Timer.After(0.01, function()
-            if not content:GetParent() then return end
-            local containerTop = afterGuidesContainer:GetTop()
-            local contentTop = content:GetTop()
-            if containerTop and contentTop then
-                local offset = contentTop - containerTop
-                content:SetHeight(offset + afterGuidesHeight + 20)
-            else
-                content:SetHeight(1200)
-            end
-        end)
-    end
-
-    for _, section in ipairs(guideSections) do
-        section.OnExpandChanged = function()
-            RecalcContentHeight()
-        end
-    end
-
-    RecalcContentHeight()
+    content:SetHeight(math.abs(y) + 10)
 end
 
 --------------------------------------------------------------------------------

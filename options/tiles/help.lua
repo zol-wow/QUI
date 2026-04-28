@@ -18,11 +18,24 @@ function V2.Register(frame)
         icon = "?",
         name = "Help",
         isBottomItem = true,
-        featureId = "helpPage",
-        noScroll = false,
-        searchContext = {
-            tabIndex = 13,
-            tabName = "Help",
+        subPages = {
+            {
+                id = "help",
+                name = "Help",
+                featureId = "helpPage",
+                sectionNav = true,
+                searchContext = { tabIndex = 13, tabName = "Help" },
+            },
+            {
+                id = "troubleshooting",
+                name = "Tools",
+                featureId = "troubleshootingPage",
+                searchContext = {
+                    tabIndex   = 13,
+                    tabName    = "Help",
+                    subTabName = "Tools",
+                },
+            },
         },
     })
 end

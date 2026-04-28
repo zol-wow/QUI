@@ -7623,13 +7623,54 @@ function GUI:BuildTilePage(frame, tile)
         container:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", -18, -10)
         container:SetPoint("TOPRIGHT", anchorFrame, "BOTTOMRIGHT", 18, -10)
         container:SetPoint("BOTTOMRIGHT", tile._pageFrame, "BOTTOMRIGHT", 0, footerReserve)
+
+        local scrollFrame, body
         if tile.config.noScroll then
-            tile.config.buildFunc(container)
+            body = container
         elseif ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
-            local _, body = ns.QUI_Options.CreateScrollableContent(container)
-            tile.config.buildFunc(body)
+            scrollFrame, body = ns.QUI_Options.CreateScrollableContent(container)
         else
-            tile.config.buildFunc(container)
+            body = container
+        end
+
+        -- Mirror the RegisterSection install used by the sub-page render path
+        -- so CreateAccentDotLabel can auto-register sections on direct
+        -- (no-subPages) tiles that opt in via tile.config.sectionNav.
+        body._sections = {}
+        function body:RegisterSection(id, label, frame)
+            if type(id) ~= "string" or id == "" or not frame then return end
+            local resolvedLabel = (type(label) == "string" and label ~= "") and label or id
+            for j, existing in ipairs(self._sections) do
+                if existing.id == id then
+                    self._sections[j] = { id = id, label = resolvedLabel, frame = frame }
+                    return
+                end
+            end
+            self._sections[#self._sections + 1] = {
+                id = id,
+                label = resolvedLabel,
+                frame = frame,
+            }
+        end
+
+        tile.config.buildFunc(body)
+
+        if tile.config.sectionNav and scrollFrame and #body._sections >= 2 then
+            local function tryBuildSectionNav()
+                if container._sectionNav then return end
+                local bodyH = body:GetHeight() or 0
+                local viewH = scrollFrame:GetHeight() or 0
+                if bodyH > viewH and viewH > 0 then
+                    container._sectionNav = GUI:RenderSectionNav(scrollFrame, body, body._sections)
+                end
+            end
+            tryBuildSectionNav()
+            C_Timer.After(0, tryBuildSectionNav)
+            body:HookScript("OnSizeChanged", function()
+                if not container._sectionNav then
+                    C_Timer.After(0, tryBuildSectionNav)
+                end
+            end)
         end
     end
 
@@ -8081,7 +8122,11 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
     if not subPages or #subPages == 0 then return end
 
     -- Tab bar — anchor to header bottom when provided so a taller header
-    -- (with subtitle) shifts the tabs down instead of overlapping.
+    -- (with subtitle) shifts the tabs down instead of overlapping. Bar is
+    -- header-aligned (matches gameplay/cooldown_manager etc.) so chips
+    -- visually line up under the header text. Body underneath extends past
+    -- the bar to full contentArea width so page content and the optional
+    -- section-nav chip strip span properly — see body anchors below.
     local bar = CreateFrame("Frame", nil, contentArea)
     if headerFrame then
         bar:SetPoint("TOPLEFT", headerFrame, "BOTTOMLEFT", 0, -8)
@@ -8101,9 +8146,14 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
 
     -- Tab body below. Reserve 32px at the bottom when the tile has a
     -- related-settings footer so sub-page content doesn't sit under it.
+    -- Body extends 18px past the bar's left so it's full-width relative to
+    -- contentArea (matches the direct render path's container, which uses
+    -- the same -18/+18 trick to extend past the header). Without this the
+    -- section-nav chip strip — which anchors to scrollFrame:GetParent() —
+    -- ends up 18px short on the left versus the direct path.
     local body = CreateFrame("Frame", nil, contentArea)
     local footerReserve = tile and tile.config and tile.config.relatedSettings and 32 or 0
-    body:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -8)
+    body:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", -18, -8)
     body:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", 0, footerReserve)
 
     local tabs = {}

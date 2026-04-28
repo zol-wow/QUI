@@ -19,6 +19,7 @@
     <Script file="..\core\settings\content\welcome_page.lua"/>
     <Script file="tiles\help_content.lua"/>
     <Script file="..\core\settings\content\help_page.lua"/>
+    <Script file="..\core\settings\content\troubleshooting_page.lua"/>
     <Script file="..\core\settings\content\profiles_content.lua"/>
     <Script file="..\core\settings\content\import_export_content.lua"/>
     <Script file="..\modules\utility\settings\keybinds_content.lua"/>

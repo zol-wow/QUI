@@ -76,6 +76,7 @@ local function should_load_script(path)
         or path == "core/scaling.lua"
         or path == "core/uikit.lua"
         or path == "core/settings_builders.lua"
+        or path == "core/diagnostics_console.lua"
         or path:match("^core/settings/") then
         return true
     end

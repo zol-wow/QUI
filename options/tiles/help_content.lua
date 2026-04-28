@@ -156,6 +156,112 @@ QUI_HelpContent.Troubleshooting = {
 }
 
 ---------------------------------------------------------------------------
+-- DIAGNOSTICS (Troubleshooting sub-tab buttons)
+---------------------------------------------------------------------------
+-- Each entry:
+--   label    = button text
+--   command  = slash form shown in tooltip + capture header
+--   tooltip  = body text shown on hover
+--   run      = closure invoked under DiagnosticsConsole.Run
+--   danger   = optional; true => red border + confirmation modal
+QUI_HelpContent.Diagnostics = {
+    -- General
+    { label = "Reload UI",            command = "/rl",
+      tooltip = "Reload the UI safely. If you're in combat, the reload defers until combat ends.",
+      run = function() QUI:SafeReload() end },
+    { label = "Toggle Debug",         command = "/qui debug",
+      tooltip = "Toggle QUI debug mode for one session. Persists across one /reload, then resets to off.",
+      run = function() QUI:SlashCommandOpen("debug") end },
+    { label = "Layout Mode",          command = "/qui layout",
+      tooltip = "Toggle QUI's Layout Mode for repositioning every QUI frame. Click again to exit.",
+      run = function() QUI:SlashCommandOpen("layout") end },
+    { label = "Performance Monitor",  command = "/qui perf",
+      tooltip = "Toggle the QUI performance monitor overlay. Useful when investigating frame-rate hitches.",
+      run = function() QUI:SlashCommandOpen("perf") end },
+    { label = "Open Keybind Mode",    command = "/kb",
+      tooltip = "Open the keybind overlay. Hover an action button and press a key to bind it.",
+      run = function() if SlashCmdList and SlashCmdList["QUIKB"] then SlashCmdList["QUIKB"]() end end },
+    -- CDM
+    { label = "Open CDM Settings",    command = "/cdm",
+      tooltip = "Toggle Blizzard's CooldownViewer Settings panel.",
+      run = function() if SlashCmdList and SlashCmdList["QUI_CDM"] then SlashCmdList["QUI_CDM"]() end end },
+    { label = "Open CDM Composer",    command = "/qui cdm",
+      tooltip = "Open the QUI CDM Spell Composer for editing custom CDM tracking entries.",
+      run = function() QUI:SlashCommandOpen("cdm") end },
+    { label = "CDM Cache Status",     command = "/qui cdm_cache status",
+      tooltip = "Print sizes and dirty flags for every CDM internal cache. Use first when CDM seems stuck.",
+      run = function() QUI:SlashCommandOpen("cdm_cache status") end },
+    { label = "CDM Cache Reset",      command = "/qui cdm_cache reset",
+      tooltip = "Wipe and rebuild every CDM cache. Out-of-combat only. Run when /qui cdm_cache status reports stale state.",
+      danger = true,
+      run = function() QUI:SlashCommandOpen("cdm_cache reset") end },
+    -- Migrations & profiles
+    { label = "Migration Status",     command = "/qui migration status",
+      tooltip = "Print the active profile's schema version and any available rollback slots.",
+      run = function() QUI:SlashCommandOpen("migration status") end },
+    { label = "Migration Restore Newest", command = "/qui migration restore 1",
+      tooltip = "Roll the active profile back to the most recent migration backup. Reloads the UI on success.",
+      danger = true,
+      run = function() QUI:SlashCommandOpen("migration restore 1") end },
+    { label = "Migration Log",        command = "/qui miglog",
+      tooltip = "Dump the buffered migration debug log. Enable buffering with /run QUI_MIGRATION_DEBUG = true then /reload before the run you want to capture.",
+      run = function() QUI:SlashCommandOpen("miglog") end },
+    { label = "Migration Log Clear",  command = "/qui miglog clear",
+      tooltip = "Empty the migration debug log buffer.",
+      danger = true,
+      run = function() QUI:SlashCommandOpen("miglog clear") end },
+    { label = "Anchor Dump",          command = "/qui anchordump",
+      tooltip = "Print frame-anchoring state (saved data + live frame positions) for the active profile.",
+      run = function() QUI:SlashCommandOpen("anchordump") end },
+    -- Tooltip debugging
+    { label = "Tooltip Debug On",     command = "/qui tooltipdebug on",
+      tooltip = "Begin sampling tooltip processing churn every 1 second. Use Tooltip Debug Report to read samples. To log slow callers, type /qui tooltipdebug slow N in chat (N = millisecond threshold).",
+      run = function() QUI:SlashCommandOpen("tooltipdebug on") end },
+    { label = "Tooltip Debug Report", command = "/qui tooltipdebug report",
+      tooltip = "Print the most recent tooltip-debug sample without resetting it.",
+      run = function() QUI:SlashCommandOpen("tooltipdebug report") end },
+    { label = "Tooltip Bypass: QoL",  command = "/qui tooltipdebug bypass qol",
+      tooltip = "Isolate tooltip processors: bypass QoL hooks only. Use when diagnosing which addon owns a tooltip stall.",
+      run = function() QUI:SlashCommandOpen("tooltipdebug bypass qol") end },
+    { label = "Tooltip Bypass: Skin", command = "/qui tooltipdebug bypass skin",
+      tooltip = "Isolate tooltip processors: bypass Skin hooks only.",
+      run = function() QUI:SlashCommandOpen("tooltipdebug bypass skin") end },
+    { label = "Tooltip Bypass: All",  command = "/qui tooltipdebug bypass all",
+      tooltip = "Isolate tooltip processors: bypass both QoL and Skin hooks (vanilla tooltip path).",
+      run = function() QUI:SlashCommandOpen("tooltipdebug bypass all") end },
+    { label = "Tooltip Bypass: Off",  command = "/qui tooltipdebug bypass off",
+      tooltip = "Restore default tooltip processing (clear any active bypass).",
+      run = function() QUI:SlashCommandOpen("tooltipdebug bypass off") end },
+    { label = "White-Backdrop Scan",  command = "/qui tooltipdbg",
+      tooltip = "Scan every visible frame and report any with explicit white backdrops or visible NineSlices. Useful when a stray white panel appears mid-screen.",
+      run = function() QUI:SlashCommandOpen("tooltipdbg") end },
+    -- Edit Mode diagnostic
+    { label = "Diagnose Edit Mode",   command = "/qui diagnose",
+      tooltip = "Report Edit Mode state and the most recent ADDON_ACTION_BLOCKED events. Run after a frame-positioning action that didn't take effect.",
+      run = function() QUI:SlashCommandOpen("diagnose") end },
+    { label = "Diagnose Clear",       command = "/qui diagnose clear",
+      tooltip = "Empty the Edit Mode diagnostic ring buffer.",
+      run = function() QUI:SlashCommandOpen("diagnose clear") end },
+    -- Memory & GSE
+    { label = "Memory Audit Help",    command = "/qui memaudit",
+      tooltip = "Print memory audit usage. Power forms (alloc N, dump foo bar) stay in chat — type them directly.",
+      run = function() QUI:SlashCommandOpen("memaudit") end },
+    { label = "GSE Dump",             command = "/qui gse",
+      tooltip = "Dump current GSE compatibility-shim override state.",
+      run = function() QUI:SlashCommandOpen("gse") end },
+    { label = "GSE Toggle Debug",     command = "/qui gse debug",
+      tooltip = "Toggle GSE click-event logging on or off.",
+      run = function() QUI:SlashCommandOpen("gse debug") end },
+    { label = "GSE Tail (last 20)",   command = "/qui gse tail 20",
+      tooltip = "Print the last 20 entries from the GSE log.",
+      run = function() QUI:SlashCommandOpen("gse tail 20") end },
+    -- Recovery
+    { label = "Legacy Tracker Recovery", command = "/qui legacyrecover",
+      tooltip = "Show usage for the legacy tracker resolver. To recover a specific tracker, type /qui legacyrecover <handle> in chat.",
+      run = function() QUI:SlashCommandOpen("legacyrecover") end },
+}
+
+---------------------------------------------------------------------------
 -- LINKS
 ---------------------------------------------------------------------------
 QUI_HelpContent.Links = {

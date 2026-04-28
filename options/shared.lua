@@ -1681,6 +1681,7 @@ local function RegisterFeatureTile(frame, spec)
     else
         tileConfig.featureId = spec.featureId
         tileConfig.noScroll = spec.noScroll ~= false
+        tileConfig.sectionNav = spec.sectionNav
         tileConfig.buildFunc = function(body)
             BuildFeaturePageBody(body, spec, BuildFeatureDirectPage)
         end

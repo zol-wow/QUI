@@ -14,7 +14,7 @@ function GUI:InitializeOptions()
     -- Sidebar search bar (top)
     self:AddSidebarSearchBar(frame)
 
-    -- Keyboard shortcut: / or Ctrl+F focuses the search box while the panel is open.
+    -- Keyboard shortcut: Ctrl+F focuses the search box while the panel is open.
     frame:EnableKeyboard(true)
     frame:SetPropagateKeyboardInput(true)
     frame:SetScript("OnKeyDown", function(self, key)
@@ -30,16 +30,8 @@ function GUI:InitializeOptions()
             return
         end
         local ctrl = IsControlKeyDown and IsControlKeyDown()
-        -- WoW's OnKeyDown reports slash as "/" (not "SLASH"); accept both for safety.
-        if key == "/" or key == "SLASH" or (ctrl and key == "F") then
-            -- Block propagation of this key *first* so it doesn't leak into
-            -- any other frame.
+        if ctrl and key == "F" then
             self:SetPropagateKeyboardInput(false)
-            -- Defer focus to next frame. If we SetFocus synchronously, the
-            -- editbox becomes the keyboard-focus frame for this same event
-            -- and WoW routes the '/' character into it — the user sees a
-            -- stray slash. Next-tick focus lets this keystroke finish with
-            -- no focused editbox, then the user can type freely.
             C_Timer.After(0, function()
                 GUI:FocusSearchBox()
             end)
