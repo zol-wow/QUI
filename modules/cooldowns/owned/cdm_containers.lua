@@ -44,6 +44,10 @@ local ROW_GAP = 0
 local SETTINGS_FEATURE_ID = "cooldownManagerContainersPage"
 local registeredSettingsLookupKeys = {}
 local ANCHOR_KEY_MAP
+-- Forward decl: defined later in the file but called from CreateContainer/
+-- DeleteContainer above its definition. Without this, those callers would
+-- bind the name as a global (nil) at parse time and crash on invocation.
+local SyncSettingsFeatureLookups
 
 -- Aspect ratio migration
 local function MigrateRowAspect(rowData)
@@ -1091,7 +1095,7 @@ local function ResolveSettingsLookupKey(containerKey)
     return ANCHOR_KEY_MAP[containerKey] or ("cdmCustom_" .. containerKey)
 end
 
-local function SyncSettingsFeatureLookups(featureId)
+function SyncSettingsFeatureLookups(featureId)
     local Settings = ns.Settings
     local Registry = Settings and Settings.Registry
     if not Registry

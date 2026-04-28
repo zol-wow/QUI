@@ -188,9 +188,14 @@ local blizzCDState = setmetatable({}, { __mode = "k" })
 local blizzTexState = setmetatable({}, { __mode = "k" })
 
 -- Minimal state for reparented Blizzard stack/charge frames.
--- Maps _blizzChild → { icon, blizzChild }.  The native ChargeCount and
--- Applications frames are reparented onto our CDM icons and Blizzard
--- manages SetText/Show/Hide natively — no hook forwarding needed.
+-- Maps _blizzChild → state table with these fields:
+--   icon          (single-subscriber, for buff-viewer API hook path)
+--   blizzChild    (back-reference)
+--   auraText      (last hook-driven text, for IsHookStackActive)
+--   auraHooked    (buff-viewer SetText hook installed)
+--   subscribers   (weak set of icons sharing this child — multi-subscriber
+--                  fan-out for cooldown-viewer ChargeCount/Applications)
+--   subsHooked    (cooldown-viewer SetText hook installed)
 local blizzStackState = setmetatable({}, { __mode = "k" })
 
 ---------------------------------------------------------------------------
@@ -1226,6 +1231,13 @@ local function MirrorBlizzCooldown(icon, blizzChild)
         blizzCDState[blizzCD] = state
     end
     state.icon = icon
+    -- Multi-subscriber set so several QUI icons sharing the same Blizzard
+    -- Cooldown frame all get the mirrored DurationObject (Mana Tea on
+    -- Essential + Utility + custom container).
+    if not state.subscribers then
+        state.subscribers = setmetatable({}, { __mode = "k" })
+    end
+    state.subscribers[icon] = true
 
     -- The addon-created CooldownFrame stays as icon.Cooldown (the display).
     -- Style it to match QUI defaults.
@@ -1249,68 +1261,114 @@ local function MirrorBlizzCooldown(icon, blizzChild)
             hooksecurefunc(blizzCD, "SetCooldownFromDurationObject", function(self, durationObj)
                 local s = blizzCDState[self]
                 if not s or s.bypass then return end
-                local targetIcon = s.icon
-                if not targetIcon then return end
-                -- Stale mapping guard: if the icon's entry now references a
-                -- different Blizzard child, this hook is orphaned.
-                local tEntry = targetIcon._spellEntry
-                if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown ~= self then
+                local subs = s.subscribers
+                if not subs then return end
+                -- Fan out to every subscribed icon so multiple QUI icons
+                -- sharing this Blizzard child all receive the mirrored
+                -- DurationObject (Mana Tea on Essential + Utility + custom).
+                -- Each subscriber's relevance is checked against its current
+                -- _spellEntry to skip recycled icons that have moved on.
+                for targetIcon in pairs(subs) do
+                    local tEntry = targetIcon._spellEntry
+                    if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown == self then
+                        local cd = targetIcon.Cooldown
+                        local tSkipCharge = tEntry and tEntry.hasCharges
+                        local tSkipAura = targetIcon._auraActive
+                        RefreshIconGCDState(targetIcon)
 
-                    return
+                        if not tSkipCharge and not tSkipAura and cd and cd.SetCooldownFromDurationObject then
+                            pcall(cd.SetCooldownFromDurationObject, cd, durationObj)
+                            targetIcon._durObjHookSync = GetTime()
+                            targetIcon._showingGCDSwipe = nil
+                            targetIcon._showingRealCooldownSwipe = true
+                        end
+                        ChargeDebug(tEntry and tEntry.name, "MIRROR hook: tSkipCharge=", tSkipCharge,
+                            "tSkipAura=", tSkipAura,
+                            "_hasCooldownActive=", targetIcon._hasCooldownActive)
+
+                        if not tSkipCharge and not tSkipAura then
+                            SyncMirroredCooldownState(targetIcon, self, true)
+                        end
+
+                        ReapplySwipeStyle(cd, targetIcon)
+                    end
                 end
-
-                -- Mirror to addon-owned CD.
-                -- Skip forwarding for charged entries — Blizzard's viewer
-                -- sends zero-span DurationObjects when the spell is usable
-                -- (isActive=false), which clears the addon CooldownFrame
-                -- and overwrites the API's charge recharge swipe.  The API
-                -- path (GetBestSpellCooldown + isActive) handles charged
-                -- cooldowns correctly without mirror interference.
-                -- Also skip when the icon is in aura-active mode — the tick
-                -- function drives the aura swipe via ResolveAuraState and
-                -- forwarding the cooldown DurationObject would overwrite it.
-                local cd = targetIcon.Cooldown
-                local tSkipCharge = tEntry and tEntry.hasCharges
-                local tSkipAura = targetIcon._auraActive
-                RefreshIconGCDState(targetIcon)
-
-                if not tSkipCharge and not tSkipAura and cd and cd.SetCooldownFromDurationObject then
-                    pcall(cd.SetCooldownFromDurationObject, cd, durationObj)
-                    -- Track that this hook successfully forwarded a DurationObject
-                    -- so the API path can skip competing CooldownFrame writes.
-                    targetIcon._durObjHookSync = GetTime()
-                    targetIcon._showingGCDSwipe = nil
-                    targetIcon._showingRealCooldownSwipe = true
-                end
-                ChargeDebug(tEntry and tEntry.name, "MIRROR hook: tSkipCharge=", tSkipCharge,
-                    "tSkipAura=", tSkipAura,
-                    "_hasCooldownActive=", targetIcon._hasCooldownActive)
-
-                if not tSkipCharge and not tSkipAura then
-                    SyncMirroredCooldownState(targetIcon, self, true)
-                end
-
-                ReapplySwipeStyle(cd, targetIcon)
             end)
         end
 
         hooksecurefunc(blizzCD, "SetCooldown", function(self, start, duration)
             local s = blizzCDState[self]
             if not s or s.bypass then return end
-            local targetIcon = s.icon
-            if not targetIcon then return end
-            -- Stale mapping guard
-            local tEntry = targetIcon._spellEntry
-            if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown ~= self then
-
-                return
+            local subs = s.subscribers
+            if not subs then return end
+            for targetIcon in pairs(subs) do
+                local tEntry = targetIcon._spellEntry
+                if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown == self then
+                    RefreshIconGCDState(targetIcon)
+                    local cd = targetIcon.Cooldown
+                    if cd and cd.SetCooldown and not (tEntry and tEntry.hasCharges) and not targetIcon._auraActive then
+                        -- Forward to subscriber's Cooldown. Pcall handles the
+                        -- secret-value rejection (12.0.5+ tainted SetCooldown
+                        -- bans secret args); when it fails the subscriber
+                        -- just stays at its previous state.
+                        pcall(cd.SetCooldown, cd, start, duration)
+                    end
+                end
             end
-
-            -- Swipe is driven by UpdateIconCooldown via the override chain
-            -- (GetOverrideSpell → GetSpellCooldown/Duration).  The hook
-            -- only needs to refresh GCD state — no CooldownFrame writes.
-            RefreshIconGCDState(targetIcon)
         end)
+
+        -- Hook the rest of the cooldown setters too, so any path Blizzard
+        -- uses to drive the source CD frame — including stacking-aura
+        -- updates that don't go through SetCooldownFromDurationObject —
+        -- propagates to every subscriber. Same pcall/relevance pattern.
+        --
+        -- CRITICAL: skip subscribers whose icon is currently aura-active.
+        -- Aura-active icons are showing the aura's DurationObject (from
+        -- ResolveAuraState's r.durObj); forwarding Clear/SetCooldown* from
+        -- the source frame would constantly overwrite the aura swipe and
+        -- cause the duration text to flicker. Mirror only when the icon
+        -- is in cooldown-display mode.
+        local function ForwardToSubscribers(self, methodName, ...)
+            local s = blizzCDState[self]
+            if not s or s.bypass then return end
+            local subs = s.subscribers
+            if not subs then return end
+            local args = { ... }
+            local nargs = select("#", ...)
+            for targetIcon in pairs(subs) do
+                local tEntry = targetIcon._spellEntry
+                if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown == self
+                   and not targetIcon._auraActive
+                   and not (tEntry and tEntry.hasCharges) then
+                    local cd = targetIcon.Cooldown
+                    if cd and cd[methodName] then
+                        pcall(cd[methodName], cd, unpack(args, 1, nargs))
+                    end
+                end
+            end
+        end
+        local mirroredMethods = {
+            "SetCooldownFromExpirationTime",
+            "SetCooldownDuration",
+            "SetCooldownUNIX",
+            "Clear",
+            "SetReverse",
+            "SetDrawSwipe",
+            "SetDrawBling",
+            "SetDrawEdge",
+            "SetUseCircularEdge",
+            "SetSwipeColor",
+            "SetSwipeTexture",
+            "SetEdgeTexture",
+            "SetHideCountdownNumbers",
+        }
+        for _, m in ipairs(mirroredMethods) do
+            if blizzCD[m] then
+                hooksecurefunc(blizzCD, m, function(self, ...)
+                    ForwardToSubscribers(self, m, ...)
+                end)
+            end
+        end
 
         -- No SetAllPoints/SetPoint/SetParent hooks: the Blizzard
         -- CooldownFrame stays on its original parent frame.  Nothing
@@ -1647,6 +1705,46 @@ local function HookBlizzStackText(icon, blizzChild)
     state.icon = icon
     state.blizzChild = blizzChild
 
+    -- Multi-subscriber registration. The reparent above visually places
+    -- the source ChargeCount FontString on ONE icon's TextOverlay (last
+    -- caller wins), so other icons sharing this blizzChild rendered no
+    -- stacks. Hooksecurefunc on the source SetText fans the value out to
+    -- every subscriber's icon.StackText — each icon gets its own copy.
+    -- The relevance check inside the fan-out (`ent._blizzChild == blizzChild`)
+    -- handles icon recycle: a recycled icon no longer associated with this
+    -- blizzChild is silently skipped instead of getting a stale write.
+    -- Subscriber state lives on `state` (blizzStackState entry) instead of
+    -- a separate module-level table to stay under Lua 5.1's 200-locals
+    -- limit on the file's main chunk.
+    if not state.subscribers then
+        state.subscribers = setmetatable({}, { __mode = "k" })
+    end
+    state.subscribers[icon] = true
+
+    if not state.subsHooked then
+        state.subsHooked = true
+        local sharedState = state  -- capture for upvalue
+        local function fanOut(text)
+            for ic in pairs(sharedState.subscribers) do
+                local ent = ic and ic._spellEntry
+                if ic.StackText and ent and ent._blizzChild == blizzChild then
+                    pcall(ic.StackText.SetText, ic.StackText, text)
+                    pcall(ic.StackText.Show, ic.StackText)
+                end
+            end
+        end
+        if chargeFrame and chargeFrame.Current then
+            hooksecurefunc(chargeFrame.Current, "SetText", function(_, text)
+                fanOut(text)
+            end)
+        end
+        if appFrame and appFrame.Applications then
+            hooksecurefunc(appFrame.Applications, "SetText", function(_, text)
+                fanOut(text)
+            end)
+        end
+    end
+
     ChargeDebug(entry and entry.name, "HookBlizzStackText ASSIGN",
         "spellID=", entry and entry.spellID, "overrideSpellID=", entry and entry.overrideSpellID,
         "hasCharges=", entry and entry.hasCharges,
@@ -1669,7 +1767,57 @@ end
 -- works regardless of which icon won the reparent. Returns the raw
 -- applications value (may be secret in combat) for C-side forwarding,
 -- or nil when no eligible aura is present.
-local function GetAuraApplicationsForSpell(spellID)
+--
+-- Resolution order:
+--  1. Direct lookup with the supplied spellID.
+--  2. _abilityToAuraSpellID mapping (buff-category base → linked aura).
+--  3. Spell-name fallback via C_UnitAuras.GetAuraDataBySpellName. Required
+--     for entries added via the cooldown-category CDM picker (e.g. Mana
+--     Tea added on Utility) — those carry the cast/cooldown spellID,
+--     which doesn't match the actual buff aura ID, and the ability→aura
+--     map is built only from buff-category cdInfo so the cooldown cast ID
+--     isn't a key. Spell names are stable across ID variants.
+--
+-- spellName is the entry's pre-resolved name (set OOC at icon build
+-- time). Passing it in avoids a per-tick C_Spell.GetSpellInfo call,
+-- which can return secret-value name fields in combat — that breaks
+-- the GetAuraDataBySpellName fallback exactly when stacks are most
+-- likely to flip (mid-fight). Falls back to GetSpellInfo OOC only.
+
+-- Persistent spell-name cache. C_Spell.GetSpellInfo can return a secret
+-- value in info.name during combat, and a secret name silently breaks
+-- GetAuraDataBySpellName downstream. Resolve OOC and cache per-spell so
+-- subsequent in-combat rebuilds (BuildSpellEntryFromCustom fired by the
+-- filter-flip relayout when hideNonUsable's verdict crosses 0/1 stacks)
+-- read a clean string instead of a fresh, possibly-secret one. Cache
+-- entries are stable across the session — spell names don't mutate.
+local _spellNameCache = {}
+
+-- Returns ONLY clean (non-secret) names so the cache value is safe to
+-- compare against "" downstream (cdm_bars.lua, swipe.lua, profile_io.lua
+-- all do `entry.name ~= ""`). Skips GetSpellInfo entirely in combat —
+-- info.name there could be secret, and we don't want a secret leaking
+-- onto entry.name and tainting unrelated comparison sites.
+local function GetCachedSpellName(spellID)
+    if not spellID then return nil end
+    local cached = _spellNameCache[spellID]
+    if cached then return cached end
+    if InCombatLockdown() then return nil end
+    if not (C_Spell and C_Spell.GetSpellInfo) then return nil end
+    local ok, info = pcall(C_Spell.GetSpellInfo, spellID)
+    if not ok or not info then return nil end
+    local name = info.name
+    if name == nil or IsSecretValue(name) then return nil end
+    _spellNameCache[spellID] = name
+    return name
+end
+
+-- Shared with cdm_spelldata.lua's ResolveOwnedEntry so harvested spell
+-- entries (essential/utility/buff ownedSpells) and Composer-built custom
+-- entries draw from the same cache.
+ns._GetCachedSpellName = GetCachedSpellName
+
+local function GetAuraApplicationsForSpell(spellID, spellName)
     if not spellID or not C_UnitAuras or not C_UnitAuras.GetPlayerAuraBySpellID then
         return nil
     end
@@ -1679,8 +1827,31 @@ local function GetAuraApplicationsForSpell(spellID)
         if mapped then auraID = mapped end
     end
     local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, auraID)
-    if not ok or not ad then return nil end
-    return ad.applications
+    if ok and ad then return ad.applications end
+
+    if not C_UnitAuras.GetAuraDataBySpellName then return nil end
+
+    -- Resolve a name and forward it transiently. Caller-supplied spellName
+    -- and GetCachedSpellName are both clean strings (or nil), so the `==""`
+    -- comparison below is safe. Only the final fresh-from-GetSpellInfo
+    -- branch can produce a secret value, and that secret is passed straight
+    -- through to GetAuraDataBySpellName via pcall — never compared, never
+    -- stored. C-side handles secrets natively.
+    local nameToUse = spellName
+    if nameToUse == nil or nameToUse == "" then
+        nameToUse = GetCachedSpellName(spellID)
+    end
+    if (nameToUse == nil or nameToUse == "") and C_Spell and C_Spell.GetSpellInfo then
+        local infoOk, info = pcall(C_Spell.GetSpellInfo, spellID)
+        if infoOk and info then
+            nameToUse = info.name  -- may be secret in combat — forwarded only
+        end
+    end
+    if nameToUse then
+        local nOk, nad = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", nameToUse, "HELPFUL")
+        if nOk and nad then return nad.applications end
+    end
+    return nil
 end
 
 local function ApplyAuraStackText(icon, stackValue, showZero, preserveWhenMissing)
@@ -2907,16 +3078,23 @@ local function UpdateIconCooldown(icon)
                     end
                 end
             else
-                -- Charged entries may have an aura phase (e.g., utility
-                -- abilities that grant a timed buff before the recharge
-                -- timer begins). Detect active aura via ResolveAuraState
-                -- and show it; when the aura fades, fall through to the
-                -- normal charge-recharge display via GetBestSpellCooldown.
-                -- When buff/debuff swipe is disabled, skip aura detection
-                -- so the icon shows the recharge/cooldown timer instead.
+                -- Aura-phase detection. Originally for charged entries with
+                -- a buff phase before the recharge timer (e.g. utility CDs
+                -- granting a timed buff). Also runs when the entry has no
+                -- Blizzard child at all — that's the cooldown-typed aura
+                -- entry case (Mana Tea added via the cooldown CDM picker
+                -- on Utility / a custom container has no essential/utility
+                -- viewer child, so the line-2746 _blizzChild path doesn't
+                -- run, leaving the swipe / duration text blank). When the
+                -- aura fades, falls through to GetBestSpellCooldown so the
+                -- recharge swipe still renders for charged entries (no-op
+                -- for non-charged entries, which have no recharge).
+                -- When buff/debuff swipe is disabled, skip detection so
+                -- the icon shows the recharge/cooldown timer instead.
                 local _chargedAuraActive = false
                 local _chargedTotemTexture = nil
-                if entry.hasCharges and ns.CDMSpellData and _showBuffSwipe then
+                if (entry.hasCharges or not entry._blizzChild)
+                    and ns.CDMSpellData and _showBuffSwipe then
                     local _cBaseID = _runtimeSid
 
                     local p = icon._auraParams or {}
@@ -2959,6 +3137,22 @@ local function UpdateIconCooldown(icon)
                             pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, r.durObj, true)
                             pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
                             ReapplySwipeStyle(icon.Cooldown, icon)
+                        end
+                        -- Non-charged, no-blizzChild aura entries (e.g. Mana
+                        -- Tea added via the cooldown CDM picker on Utility /
+                        -- a custom container) write stacks here from r.stacks.
+                        -- ApplyAuraStackText has explicit IsSecretValue handling
+                        -- and routes through the same C-side pcall pattern as
+                        -- the kind="aura" branch — much more robust mid-combat
+                        -- than the API path's GetAuraDataBySpellName fallback,
+                        -- which can return nil when fed a secret name. Charged
+                        -- entries skip this so the cooldownChargesCount path
+                        -- (which forwards from the Blizzard child) can drive
+                        -- the StackText for them.
+                        if not entry.hasCharges
+                            and not entry._blizzChild
+                            and not IsTotemSlotEntry(entry) then
+                            ApplyAuraStackText(icon, r.stacks, false, InCombatLockdown())
                         end
                     else
                         icon._isTotemInstance = nil
@@ -3311,6 +3505,28 @@ local function UpdateIconCooldown(icon)
                 "overrideSpellID=", entry.overrideSpellID)
             icon.StackText:SetText("")
             _chargeCountForwarded = true
+        else
+            -- Spell has no charge mechanic (ci nil) but the Blizzard child
+            -- may still track a stack count via cooldownChargesCount — this
+            -- is how the cooldown viewer represents stacking auras like
+            -- Mana Tea. Reparenting the native ChargeCount FontString only
+            -- works for one icon at a time; this per-icon forward lets every
+            -- icon sharing the same _blizzChild render the stack count.
+            -- TruncateWhenZero is C-side and handles secret values: returns
+            -- "" for zero (non-stacking spells like Touch of Death stay
+            -- blank) and the stack count otherwise. Both arms forward via
+            -- pcall + SetText, so the value flows through C-side regardless
+            -- of secret state.
+            local ccc = entry._blizzChild.cooldownChargesCount
+            if ccc ~= nil then
+                local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, ccc)
+                local displayText = truncOk and truncText or ccc
+                pcall(icon.StackText.SetText, icon.StackText, displayText)
+                icon.StackText:Show()
+                _chargeCountForwarded = true
+                ChargeDebug(entry.name, "FWD path STACKING-AURA: baseSid=", baseSid,
+                    "ccc=", ccc, "displayText=", displayText)
+            end
         end
     end
 
@@ -3359,7 +3575,7 @@ local function UpdateIconCooldown(icon)
                 -- the hook path can only render on the one icon that owns the
                 -- reparented Blizzard FontString, so each non-owning icon
                 -- reads its own count via API and writes its own StackText.
-                stackVal = GetAuraApplicationsForSpell(spellID)
+                stackVal = GetAuraApplicationsForSpell(spellID, entry and entry.name)
             end
 
 
@@ -3398,7 +3614,7 @@ local function UpdateIconCooldown(icon)
             -- For other icons sharing the same _blizzChild (same spell in
             -- multiple containers), API-read aura applications per-icon so
             -- they render their own StackText independently of the hook.
-            local stackVal = GetAuraApplicationsForSpell(_runtimeSid)
+            local stackVal = GetAuraApplicationsForSpell(_runtimeSid, entry and entry.name)
             if stackVal then
                 local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, stackVal)
                 local displayText = truncOk and truncText or stackVal
@@ -3753,8 +3969,7 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
         local itemName = C_Item.GetItemNameByID(entry.id)
         spellEntry.name = itemName or ""
     else
-        local spellInfo = C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(entry.id)
-        spellEntry.name = spellInfo and spellInfo.name or ""
+        spellEntry.name = GetCachedSpellName(entry.id) or ""
     end
     return spellEntry
 end
@@ -3889,7 +4104,13 @@ function CDMIcons:BuildIcons(viewerType, container)
     -- (essential vs utility) is independent of where Blizzard places the
     -- spell — accept a child from either cooldown viewer so cross-category
     -- placement still mirrors cooldown data.
-    if (viewerType == "essential" or viewerType == "utility") and ns.CDMSpellData then
+    -- Resolve _blizzChild from any cooldown viewer (essential or utility)
+    -- for ALL container types — including custom containers. Previously
+    -- gated to viewerType == essential/utility, which left custom-container
+    -- entries with _blizzChild = nil and excluded them from the
+    -- HookBlizzStackText subscriber path + the line-2746 aura-detection
+    -- block, so the custom bar's icons rendered no stacks and no swipe.
+    if ns.CDMSpellData then
         local spellMap = ns.CDMSpellData._spellIDToChild
         local essentialViewer = _G["EssentialCooldownViewer"]
         local utilityViewer = _G["UtilityCooldownViewer"]

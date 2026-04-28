@@ -1343,7 +1343,10 @@ end
 -- container family the composer is editing. Family-grouped: cooldown
 -- family covers essential+utility, aura family covers buff-icon+buff-bar.
 -- Non-spell entries (items/macros/slots) and unknown families return true
--- so they aren't flagged.
+-- so they aren't flagged. Spells that aren't in any Blizzard /cdm category
+-- at all (i.e. added via QUI's All Cooldowns / Other Auras / Active Buffs /
+-- Spell ID / Items tabs) also return true — Blizzard's /cdm has no slot
+-- for them, so "missing from /cdm" is meaningless for those entries.
 IsEntryRegisteredInBlizzCDM = function(entry)
     if not entry then return true end
     local etype = entry.type or ResolveEntryType(entry)
@@ -1353,6 +1356,10 @@ IsEntryRegisteredInBlizzCDM = function(entry)
     local spellData = GetCDMSpellData()
     if not spellData then return true end
     local family = activeContainer and ResolveContainerType(activeContainer) or nil
+    if type(spellData.IsSpellInCDMCategory) == "function"
+       and not spellData:IsSpellInCDMCategory(id, family) then
+        return true
+    end
     if family == "cooldown" then
         local fn = spellData.FindCooldownChildForSpell
         if not fn then return true end
@@ -1948,6 +1955,23 @@ RefreshEntryList = function()
 
     local db = GetContainerDB(activeContainer)
     if not db then return end
+
+    -- Self-heal dormancy before reading entries. The data layer's
+    -- SPELLS_CHANGED debounce (0.3s) can lag behind a hero-talent or
+    -- spec swap that happened just before the user opened the composer,
+    -- leaving unlearned spells (e.g. Reaper's Mark after swapping
+    -- Deathbringer → Sanlay'n) sitting in ownedSpells and rendering
+    -- as "Not usable on your current class" instead of moving to the
+    -- Dormant section. CheckDormantSpells is idempotent and bails on
+    -- containers without an ownedSpells list (customBar), so calling
+    -- it per-render is safe and free for unaffected containers.
+    do
+        local sd = ns.CDMSpellData
+        if sd and type(sd.CheckDormantSpells) == "function"
+           and not InCombatLockdown() then
+            sd:CheckDormantSpells(activeContainer)
+        end
+    end
 
     -- customBar containers (migrated from customTrackers) store their
     -- entry list under `entries` (mixed spell/item/slot/macro types),
