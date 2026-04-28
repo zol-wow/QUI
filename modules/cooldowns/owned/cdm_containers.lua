@@ -519,8 +519,23 @@ local function ShouldDeferContainerLayoutInCombat(trackerKey, settings)
         return false
     end
 
-    local containerType = settings and settings.containerType or BUILTIN_CONTAINER_TYPES[trackerKey]
-    return containerType == "cooldown" or trackerKey == "essential" or trackerKey == "utility"
+    -- Built-in essential/utility wrap Blizzard CDM viewer children whose
+    -- start/dur become "secret" in combat — laying out then would taint.
+    if trackerKey == "essential" or trackerKey == "utility" then
+        return true
+    end
+
+    -- Clickable custom bars wire SecureActionButton children on each icon
+    -- (see UpdateIconSecureAttributes); reflowing in combat would taint.
+    -- Non-clickable custom cooldown bars are addon-owned with no secure
+    -- attributes, so they may relayout in combat — required for filter
+    -- flips (Mana Tea becoming usable, etc.) to collapse the bar without
+    -- waiting for PLAYER_REGEN_ENABLED.
+    if settings and settings.clickableIcons then
+        return true
+    end
+
+    return false
 end
 
 ---------------------------------------------------------------------------
@@ -1625,6 +1640,11 @@ local function LayoutContainer(trackerKey)
     -- Select icons to layout (up to capacity)
     local editModeActive = Helpers.IsEditModeActive()
         or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
+    -- When dynamicLayout is on (default), visibility filters must drop
+    -- icons at layout time so row width / centering math collapse around
+    -- the missing slot. Otherwise the runtime hide leaves an anchor gap.
+    local dynamicLayoutEnabled = (settings.dynamicLayout ~= false)
+    local ComputeFilterHides = ns.CDMIcons and ns.CDMIcons.ComputeFilterHides
     local iconsToLayout = {}
     for i = 1, math.min(#allIcons, totalCapacity) do
         local icon = allIcons[i]
@@ -1643,6 +1663,28 @@ local function LayoutContainer(trackerKey)
                         icon:ClearAllPoints()
                         skipIcon = true
                     end
+                end
+            end
+        end
+
+        -- Drop filtered icons (Hide Non-Usable with 0 count, Show Only On
+        -- Cooldown when off-cd, etc.) so the layout collapses around them.
+        -- inCombatNow lets ComputeFilterHides see the current combat state;
+        -- ShouldDeferContainerLayoutInCombat now allows non-clickable
+        -- cooldown bars to layout in combat so mid-fight filter flips
+        -- trigger a re-anchor instead of waiting for PLAYER_REGEN_ENABLED.
+        if not skipIcon and not editModeActive
+           and dynamicLayoutEnabled and ComputeFilterHides then
+            local entry = icon._spellEntry
+            if entry then
+                local isOnCD = icon._hasCooldownActive or false
+                local inCombatNow = InCombatLockdown() or false
+                local filterHides = ComputeFilterHides(icon, entry, settings, inCombatNow, isOnCD)
+                icon._lastLayoutFilterHidden = filterHides and true or false
+                if filterHides then
+                    icon:Hide()
+                    icon:ClearAllPoints()
+                    skipIcon = true
                 end
             end
         end
