@@ -879,6 +879,9 @@ local PROFILE_IMPORT_CATEGORIES = {
             "rangeCheck",
             "skyriding",
             "hudLayering",
+            "powerBar",
+            "secondaryPowerBar",
+            "powerColors",
         },
     },
     {
@@ -897,6 +900,9 @@ local PROFILE_IMPORT_CATEGORIES = {
             "customGlow",
             "buffBorders",
             "keybindOverridesEnabledCDM",
+            "powerBar",
+            "secondaryPowerBar",
+            "powerColors",
         },
         children = {
             { id = "cdmEssential", label = "Essential", description = "Essential cooldown rows and essential viewer settings.", paths = { "ncdm.essential" } },
@@ -1276,17 +1282,24 @@ local function ImportSelectedCustomTrackerBars(core, targetProfile, importedProf
     end
 
     local importedAny = false
+    local mappings = {}
     for _, barIndex in ipairs(barIndexes) do
         local sourceBar = importedBars[barIndex]
         if type(sourceBar) == "table" then
             local clonedBar = CloneValue(sourceBar)
+            local sourceID = clonedBar.id
             clonedBar.id = GenerateUniqueTrackerID()
+            clonedBar._importedLegacyId = sourceID
             table.insert(targetProfile.customTrackers.bars, clonedBar)
+            mappings[#mappings + 1] = {
+                sourceID = sourceID,
+                targetID = clonedBar.id,
+            }
             importedAny = true
         end
     end
 
-    return importedAny
+    return importedAny, mappings
 end
 
 local function DetectProfileImportPrefix(str)
@@ -1594,6 +1607,61 @@ local function ApplyImportedGlobals(core, bundle)
     end
 end
 
+local function EnsureGlobalSpecTrackerRoots(core)
+    local globals = core and core.db and core.db.global
+    if type(globals) ~= "table" then return nil end
+    if type(globals.specTrackerSpells) ~= "table" then
+        globals.specTrackerSpells = {}
+    end
+    if type(globals.ncdm) ~= "table" then
+        globals.ncdm = {}
+    end
+    if type(globals.ncdm.specTrackerSpells) ~= "table" then
+        globals.ncdm.specTrackerSpells = {}
+    end
+    return globals
+end
+
+local function MergeImportedCustomTrackerGlobals(core, bundle, mappings)
+    if type(bundle) ~= "table" then return end
+    local globals = EnsureGlobalSpecTrackerRoots(core)
+    if not globals then return end
+
+    if type(mappings) == "table" and #mappings > 0 then
+        for _, mapping in ipairs(mappings) do
+            local sourceID = mapping.sourceID
+            local targetID = mapping.targetID
+            if sourceID ~= nil then
+                local sourceLegacy = type(bundle.specTrackerSpells) == "table"
+                    and bundle.specTrackerSpells[sourceID]
+                if type(sourceLegacy) == "table" then
+                    globals.specTrackerSpells[sourceID] = CloneValue(sourceLegacy)
+                end
+
+                local sourceContainerKey = "customBar_" .. tostring(sourceID)
+                local targetContainerKey = "customBar_" .. tostring(targetID)
+                local sourceNCDM = type(bundle.ncdm_specTrackerSpells) == "table"
+                    and bundle.ncdm_specTrackerSpells[sourceContainerKey]
+                if type(sourceNCDM) == "table" then
+                    globals.ncdm.specTrackerSpells[targetContainerKey] = CloneValue(sourceNCDM)
+                end
+            end
+        end
+        return
+    end
+
+    if type(bundle.specTrackerSpells) == "table" then
+        for key, value in pairs(bundle.specTrackerSpells) do
+            globals.specTrackerSpells[key] = CloneValue(value)
+        end
+    end
+    if type(bundle.ncdm_specTrackerSpells) == "table" then
+        for key, value in pairs(bundle.ncdm_specTrackerSpells) do
+            globals.ncdm.specTrackerSpells[key] = CloneValue(value)
+        end
+    end
+end
+
 local function ApplyFullProfilePayload(core, importedProfile)
     local profile = core and core.db and core.db.profile
     if type(profile) ~= "table" or type(importedProfile) ~= "table" then
@@ -1729,12 +1797,29 @@ local function RunImportProfileSelection(core, payloadOrErr, selectedCategoryIDs
         ApplyProfileImportCategory(profile, payloadOrErr, category)
     end
 
+    local importedCustomTrackerMappings
     if not selectedLookup.customTrackers and #selectedCustomTrackerBarIndexes > 0 then
-        ImportSelectedCustomTrackerBars(core, profile, payloadOrErr, selectedCustomTrackerBarIndexes)
+        local importedBars
+        importedBars, importedCustomTrackerMappings = ImportSelectedCustomTrackerBars(core, profile, payloadOrErr, selectedCustomTrackerBarIndexes)
+        if not importedBars then
+            importedCustomTrackerMappings = nil
+        end
     end
 
     if selectedLookup.customTrackers or #selectedCustomTrackerBarIndexes > 0 then
+        MergeImportedCustomTrackerGlobals(
+            core,
+            payloadOrErr[PROFILE_EXPORT_GLOBALS_KEY],
+            selectedLookup.customTrackers and nil or importedCustomTrackerMappings
+        )
         SyncCustomTrackerBarsToCDM(core, profile)
+        if type(profile.customTrackers) == "table" and type(profile.customTrackers.bars) == "table" then
+            for _, bar in ipairs(profile.customTrackers.bars) do
+                if type(bar) == "table" then
+                    bar._importedLegacyId = nil
+                end
+            end
+        end
     end
 
     local function CategoryCanImportThemePath(category, path)
@@ -1861,6 +1946,13 @@ local function RunExportProfileSelection(core, selectedCategoryIDs)
 
     if not selectionData.lookup.customTrackers and #selectionData.customTrackerBarIndexes > 0 then
         ExportSelectedCustomTrackerBars(exportPayload, profile, selectionData.customTrackerBarIndexes)
+    end
+
+    if selectionData.lookup.customTrackers or #selectionData.customTrackerBarIndexes > 0 then
+        local bundle = CollectExportGlobals(core and core.db and core.db.global)
+        if bundle then
+            exportPayload[PROFILE_EXPORT_GLOBALS_KEY] = bundle
+        end
     end
 
     return SerializeProfileExportPayload(exportPayload)

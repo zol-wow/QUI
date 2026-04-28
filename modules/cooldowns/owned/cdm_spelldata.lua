@@ -4665,13 +4665,32 @@ end
 -- re-reads via GetSpecEntries on PLAYER_SPECIALIZATION_CHANGED.
 ---------------------------------------------------------------------------
 
-local function GetCurrentSpecKey()
-    local _, class = UnitClass("player")
+local function GetCurrentSpecID()
     local specIdx = GetSpecialization and GetSpecialization() or nil
-    if not specIdx then return class or "UNKNOWN" end
+    if not specIdx then return nil end
     local specID = GetSpecializationInfo and GetSpecializationInfo(specIdx) or nil
+    return type(specID) == "number" and specID or nil
+end
+
+local function GetSpecKeyForSpecID(specID)
+    local class
+    if UnitClass then
+        local _
+        _, class = UnitClass("player")
+    end
     if not class or not specID then return class or "UNKNOWN" end
     return class .. "-" .. tostring(specID)
+end
+
+local function GetCurrentSpecKey()
+    local class
+    if UnitClass then
+        local _
+        _, class = UnitClass("player")
+    end
+    local specID = GetCurrentSpecID()
+    if not specID then return class or "UNKNOWN" end
+    return GetSpecKeyForSpecID(specID)
 end
 
 local function GetNumericSpecKey(specKey)
@@ -4725,6 +4744,69 @@ local function CloneEntry(entry)
     return out
 end
 
+local function EntriesEquivalent(a, b)
+    if type(a) ~= "table" or type(b) ~= "table" then return false end
+    return a.type == b.type
+        and a.id == b.id
+        and a.macroName == b.macroName
+        and a.customName == b.customName
+end
+
+local function MergeEntryLists(dst, src)
+    if type(dst) ~= "table" or type(src) ~= "table" then return false end
+    local changed = false
+    for _, entry in ipairs(src) do
+        if type(entry) == "table" then
+            local exists = false
+            for _, existing in ipairs(dst) do
+                if EntriesEquivalent(existing, entry) then
+                    exists = true
+                    break
+                end
+            end
+            if not exists then
+                dst[#dst + 1] = CloneEntry(entry)
+                changed = true
+            end
+        end
+    end
+    return changed
+end
+
+local function ResolveContainerSourceSpecID(db)
+    local sourceSpecID = db and db._sourceSpecID
+    if type(sourceSpecID) == "number" and sourceSpecID > 0 then
+        return sourceSpecID
+    end
+    local profile = ns.Addon and ns.Addon.db and ns.Addon.db.profile
+    local lastSpecID = profile and profile.ncdm and profile.ncdm._lastSpecID
+    if type(lastSpecID) == "number" and lastSpecID > 0 then
+        return lastSpecID
+    end
+    return GetCurrentSpecID()
+end
+
+local function MoveLegacySpecEntriesToPerSpecStorage(containerKey, db)
+    if type(db) ~= "table" or not db.specSpecific then return nil end
+    if type(db.entries) ~= "table" or #db.entries == 0 then return nil end
+
+    local sourceSpecID = ResolveContainerSourceSpecID(db)
+    if type(sourceSpecID) ~= "number" or sourceSpecID <= 0 then return nil end
+
+    local specKey = GetSpecKeyForSpecID(sourceSpecID)
+    local list = GetSpecEntryList(containerKey, specKey, true)
+    if type(list) ~= "table" then return nil end
+
+    MergeEntryLists(list, db.entries)
+    db._sourceSpecID = sourceSpecID
+    db.entries = {}
+
+    if sourceSpecID == GetCurrentSpecID() then
+        return list
+    end
+    return nil
+end
+
 -- Resolve the mutable entry list for a container. Honors specSpecific —
 -- specSpecific containers mutate the current spec's private list instead
 -- of the container's shared field.
@@ -4742,6 +4824,14 @@ end
 -- Used by cdm_icons BuildIcons to render specSpecific containers.
 function CDMSpellData:GetSpecEntries(containerKey, specKey)
     local list = GetSpecEntryList(containerKey, specKey, false)
+    if type(list) == "table" then
+        return list
+    end
+
+    local db = GetContainerDB(containerKey)
+    if type(db) == "table" and db.specSpecific then
+        return MoveLegacySpecEntriesToPerSpecStorage(containerKey, db)
+    end
     return list
 end
 

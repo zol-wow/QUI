@@ -41,6 +41,20 @@ return {
                 id = 22222,
                 type = "spell"
               }
+            },
+            ["DEATHKNIGHT-251"] = {
+              [1] = {
+                _legacySourceSpecKey = "251",
+                _sourceSpecID = 251,
+                id = 55555,
+                type = "spell"
+              },
+              [2] = {
+                _legacySourceSpecKey = "251",
+                _sourceSpecID = 251,
+                id = 66666,
+                type = "spell"
+              }
             }
           }
         }
@@ -53,7 +67,21 @@ return {
               type = "spell"
             },
             [2] = {
+              id = 33333,
+              type = "spell"
+            },
+            [3] = {
               id = 44444,
+              type = "spell"
+            }
+          },
+          ["251"] = {
+            [1] = {
+              id = 55555,
+              type = "spell"
+            },
+            [2] = {
+              id = 66666,
               type = "spell"
             }
           }
@@ -66,7 +94,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 34,
+        _schemaVersion = 35,
         _shippedDefaults = {
           abilityTimeline = {
             bigIcon = {
@@ -6140,6 +6168,10 @@ return {
                   type = "spell"
                 },
                 [2] = {
+                  id = 11111,
+                  type = "spell"
+                },
+                [3] = {
                   id = 22222,
                   type = "spell"
                 }
@@ -6319,7 +6351,8 @@ return {
             customBar_test_bar_spec = {
               _legacyId = "test_bar_spec",
               _legacySpecKeyAliases = {
-                ["250"] = "DEATHKNIGHT-250"
+                ["250"] = "DEATHKNIGHT-250",
+                ["251"] = "DEATHKNIGHT-251"
               },
               _migratedFromCustomTrackers = true,
               _sourceSpecID = 250,
@@ -6460,7 +6493,68 @@ return {
               },
               shape = "icon"
             }
+          },
+          powerBar = {
+            bgColor = {
+              [1] = 0.050000000000000003,
+              [2] = 0.059999999999999998,
+              [3] = 0.070000000000000007,
+              [4] = 0.80000000000000004
+            },
+            borderSize = 1,
+            colorMode = "custom",
+            customColor = {
+              [1] = 0.90000000000000002,
+              [2] = 0.10000000000000001,
+              [3] = 0.25,
+              [4] = 1
+            },
+            height = 18,
+            lockedToEssential = false,
+            textSize = 15,
+            textX = 1,
+            textY = 3,
+            tickThickness = 2,
+            width = 321
+          },
+          secondaryPowerBar = {
+            colorMode = "custom",
+            customColor = {
+              [1] = 0.20000000000000001,
+              [2] = 0.80000000000000004,
+              [3] = 0.40000000000000002,
+              [4] = 1
+            },
+            height = 13,
+            lockedToEssential = false,
+            lockedToPrimary = true,
+            showText = true,
+            textSize = 14,
+            tickThickness = 2,
+            width = 326
           }
+        },
+        powerBar = {
+          bgColor = {
+            [1] = 0.050000000000000003,
+            [2] = 0.059999999999999998,
+            [3] = 0.070000000000000007,
+            [4] = 0.80000000000000004
+          },
+          borderSize = 1,
+          colorMode = "custom",
+          customColor = {
+            [1] = 0.90000000000000002,
+            [2] = 0.10000000000000001,
+            [3] = 0.25
+          },
+          height = 18,
+          lockedToEssential = false,
+          textSize = 15,
+          textX = 1,
+          textY = 3,
+          tickThickness = 2,
+          width = 321
         },
         quiGroupFrames = {
           party = {
@@ -6496,6 +6590,20 @@ return {
               previewMode = false
             }
           }
+        },
+        secondaryPowerBar = {
+          colorMode = "custom",
+          customColor = {
+            [1] = 0.20000000000000001,
+            [3] = 0.40000000000000002
+          },
+          height = 13,
+          lockedToEssential = false,
+          lockedToPrimary = true,
+          showText = true,
+          textSize = 14,
+          tickThickness = 2,
+          width = 326
         }
       }
     }

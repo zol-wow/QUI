@@ -92,6 +92,7 @@ QUI_DB = {
                         specSpecificSpells = true,
                         entries = {
                             { type = "spell", id = 11111 },
+                            { type = "spell", id = 11111 },
                             { type = "spell", id = 22222 },
                         },
                     },
@@ -121,6 +122,23 @@ QUI_DB = {
             ncdm = {
                 enabled    = true,
                 _lastSpecID = 250,
+                -- Legacy resource bar settings that can ride under ncdm in
+                -- old profile/import payloads. Current runtime reads the
+                -- top-level powerBar / secondaryPowerBar tables.
+                powerBar = {
+                    height = 18,
+                    width = 321,
+                    colorMode = "custom",
+                    customColor = { 0.9, 0.1, 0.25, 1 },
+                    bgColor = { 0.05, 0.06, 0.07, 0.8 },
+                    textSize = 15,
+                },
+                secondaryPowerBar = {
+                    height = 13,
+                    colorMode = "custom",
+                    customColor = { 0.2, 0.8, 0.4, 1 },
+                    showText = true,
+                },
                 containers = {
                     -- containerType=cooldown → shape="icon"; spell entries
                     -- left without kind (runtime classifier handles them);
@@ -236,7 +254,12 @@ QUI_DB.global = {
         test_bar_spec = {
             ["250"] = {
                 { type = "spell", id = 33333 },
+                { type = "spell", id = 33333 },
                 { type = "spell", id = 44444 },
+            },
+            ["251"] = {
+                { type = "spell", id = 55555 },
+                { type = "spell", id = 66666 },
             },
         },
     },

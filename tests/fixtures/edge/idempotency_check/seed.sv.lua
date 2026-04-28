@@ -3,7 +3,7 @@ QUI_DB = {
     profileKeys = { ["TestChar - TestRealm"] = "Default" },
     profiles = {
         Default = {
-            _schemaVersion = 34,
+            _schemaVersion = 35,
             cdm = { engine = "owned" },
         },
     },

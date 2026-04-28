@@ -4,6 +4,8 @@ A profile at _schemaVersion = 31 with:
 - legacy customTrackers.bars[] (migrated to ncdm.containers[customBar_*] by v32a)
 - orphan partyTracker subtree inside quiGroupFrames.party and .raid (cleaned by v32b)
 - ncdm._lastSpecID (used by v32c/v32d for spec stamping)
+- legacy ncdm.powerBar / ncdm.secondaryPowerBar settings (copied to the
+  runtime top-level tables by v35)
 - three standalone ncdm.containers entries with the legacy 4-value containerType
   (cooldown / aura / auraBar) — exercises v32e shape/kind stamping across all
   three branches. The customBar branch of v32e is exercised on the
@@ -37,7 +39,8 @@ Expected post-migration state:
 - spell entries on aura/auraBar containers gain `kind = "aura"` (v32e)
 - non-spell entries gain `kind = "cooldown"` (v32e)
 - spell entries on cooldown / customBar containers retain no kind (runtime classifies)
-- _schemaVersion = 34
+- powerBar and secondaryPowerBar preserve legacy height/color values from ncdm (v35)
+- _schemaVersion = 35
 
 Reference: core/migrations.lua lines 108-148 (v32 documentation), plus
 the v32 migration code below it.

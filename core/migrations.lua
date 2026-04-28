@@ -157,10 +157,16 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --        migrated customBar spec buckets, preserve source-key metadata, and
 --        stamp bug-path entries that may still contain spellbook slot IDs.)
 --
+-- v35 = RepairResourceBarSettings
+--       (Options V2: resource bar settings moved in the options UI, and some
+--        old profiles can carry primary/secondary bar values under ncdm while
+--        the runtime reads top-level powerBar/secondaryPowerBar. Copy legacy
+--        values into the active tables when those fields are still defaults.)
+--
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 34
+local CURRENT_SCHEMA_VERSION = 35
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -176,6 +182,18 @@ local function CloneValue(value)
         copy[key] = CloneValue(nestedValue)
     end
     return copy
+end
+
+local function ValuesEqual(a, b)
+    if a == b then return true end
+    if type(a) ~= "table" or type(b) ~= "table" then return false end
+    for k, v in pairs(a) do
+        if not ValuesEqual(v, b[k]) then return false end
+    end
+    for k in pairs(b) do
+        if a[k] == nil then return false end
+    end
+    return true
 end
 
 local SPEC_ID_CLASS_TOKEN = {
@@ -237,6 +255,22 @@ local function GetCanonicalSpecKey(value)
     return tostring(specID), specID
 end
 
+local function GetLiveSpecID()
+    if not GetSpecialization or not GetSpecializationInfo then return nil end
+    local specIndex = GetSpecialization()
+    if not specIndex then return nil end
+    local specID = GetSpecializationInfo(specIndex)
+    return type(specID) == "number" and specID or nil
+end
+
+local function GetProfileSourceSpecID(profile)
+    local fromProfile = profile and profile.ncdm and profile.ncdm._lastSpecID
+    if type(fromProfile) == "number" and fromProfile > 0 then
+        return fromProfile
+    end
+    return GetLiveSpecID()
+end
+
 local function RecordSpecKeyAlias(container, fromKey, toKey)
     if type(container) ~= "table" or fromKey == nil or toKey == nil or fromKey == toKey then return end
     if type(container._legacySpecKeyAliases) ~= "table" then
@@ -271,6 +305,35 @@ local function EntriesEquivalent(a, b)
        and a.customName == b.customName
 end
 
+local function DeduplicateEntryList(entries)
+    if type(entries) ~= "table" then return false end
+    local seen = {}
+    local kept = {}
+    local changed = false
+    for _, entry in ipairs(entries) do
+        if type(entry) == "table" then
+            local key = tostring(entry.type or "") .. "\031"
+                .. tostring(entry.id or "") .. "\031"
+                .. tostring(entry.macroName or "") .. "\031"
+                .. tostring(entry.customName or "")
+            if not seen[key] then
+                seen[key] = true
+                kept[#kept + 1] = entry
+            else
+                changed = true
+            end
+        else
+            kept[#kept + 1] = entry
+        end
+    end
+    if changed then
+        for i = 1, math.max(#entries, #kept) do
+            entries[i] = kept[i]
+        end
+    end
+    return changed
+end
+
 local function MergeSpecEntryLists(dst, src)
     if type(dst) ~= "table" or type(src) ~= "table" then return false end
     local changed = false
@@ -286,6 +349,9 @@ local function MergeSpecEntryLists(dst, src)
             dst[#dst + 1] = entry
             changed = true
         end
+    end
+    if DeduplicateEntryList(dst) then
+        changed = true
     end
     return changed
 end
@@ -2339,6 +2405,7 @@ function Migrations.EnsureCustomTrackerBarContainer(profile, bar, globalDB)
 
     local legacyId = bar.id
     if legacyId == nil or legacyId == "" then return nil end
+    local sourceLegacyId = bar._importedLegacyId or legacyId
 
     local containers = profile.ncdm.containers
     local containerKey, container = FindCustomBarContainerByLegacyId(containers, legacyId)
@@ -2358,6 +2425,7 @@ function Migrations.EnsureCustomTrackerBarContainer(profile, bar, globalDB)
     container.id = bar.id
     container._migratedFromCustomTrackers = true
     container._legacyId = legacyId
+    container._importedLegacyId = nil
 
     container.pos = {
         ox = bar.offsetX or 0,
@@ -2381,7 +2449,7 @@ function Migrations.EnsureCustomTrackerBarContainer(profile, bar, globalDB)
     end
 
     CopyLegacyCustomTrackerAnchor(profile, legacyId, containerKey)
-    PortLegacySpecTrackerEntries(globalDB or _currentGlobalDB, legacyId, containerKey, container)
+    PortLegacySpecTrackerEntries(globalDB or _currentGlobalDB, sourceLegacyId, containerKey, container)
 
     return containerKey, container
 end
@@ -2615,6 +2683,9 @@ function Migrations.RepairCustomTrackerSpecStorage(profile, globalDB)
                         for _, entry in ipairs(list) do
                             StampLegacySpecEntry(entry, specID, specKey)
                         end
+                        if DeduplicateEntryList(list) then
+                            changed = true
+                        end
 
                         if canonicalKey ~= specKey then
                             if type(byContainer[canonicalKey]) == "table" then
@@ -2634,19 +2705,26 @@ function Migrations.RepairCustomTrackerSpecStorage(profile, globalDB)
             end
 
             if container.specSpecific == true
-               and type(container._sourceSpecID) == "number"
                and type(container.entries) == "table"
                and #container.entries > 0
             then
-                local canonicalKey = GetCanonicalSpecKey(container._sourceSpecID)
+                local sourceSpecID = type(container._sourceSpecID) == "number"
+                    and container._sourceSpecID
+                    or GetProfileSourceSpecID(profile)
+                if type(sourceSpecID) == "number" and sourceSpecID > 0 then
+                    container._sourceSpecID = sourceSpecID
+                end
+                local canonicalKey = sourceSpecID and GetCanonicalSpecKey(sourceSpecID) or nil
                 local moved = {}
-                for _, entry in ipairs(container.entries) do
-                    if type(entry) == "table" then
-                        local copy = CloneValue(entry)
-                        StampLegacySpecEntry(copy, container._sourceSpecID, tostring(container._sourceSpecID), {
-                            legacySpellbookSlot = true,
-                        })
-                        moved[#moved + 1] = copy
+                if canonicalKey then
+                    for _, entry in ipairs(container.entries) do
+                        if type(entry) == "table" then
+                            local copy = CloneValue(entry)
+                            StampLegacySpecEntry(copy, sourceSpecID, tostring(sourceSpecID), {
+                                legacySpellbookSlot = true,
+                            })
+                            moved[#moved + 1] = copy
+                        end
                     end
                 end
                 if #moved > 0 then
@@ -2658,7 +2736,7 @@ function Migrations.RepairCustomTrackerSpecStorage(profile, globalDB)
                     else
                         root[containerKey][canonicalKey] = moved
                     end
-                    RecordSpecKeyAlias(container, tostring(container._sourceSpecID), canonicalKey)
+                    RecordSpecKeyAlias(container, tostring(sourceSpecID), canonicalKey)
                     container.entries = {}
                     changed = true
                 end
@@ -2666,6 +2744,41 @@ function Migrations.RepairCustomTrackerSpecStorage(profile, globalDB)
         end
     end
 
+    return changed
+end
+
+local function CopyLegacyResourceBarSettings(profile, legacyKey, targetKey)
+    if type(profile) ~= "table" or type(profile.ncdm) ~= "table" then return false end
+    local legacy = profile.ncdm[legacyKey]
+    if type(legacy) ~= "table" then return false end
+
+    local target = profile[targetKey]
+    if type(target) ~= "table" then
+        target = {}
+        profile[targetKey] = target
+    end
+
+    local defaults = ns.defaults and ns.defaults.profile and ns.defaults.profile[targetKey]
+    local changed = false
+    for key, legacyValue in pairs(legacy) do
+        local currentValue = target[key]
+        local defaultValue = type(defaults) == "table" and defaults[key] or nil
+        if currentValue == nil or (defaultValue ~= nil and ValuesEqual(currentValue, defaultValue)) then
+            target[key] = CloneValue(legacyValue)
+            changed = true
+        end
+    end
+    return changed
+end
+
+local function RepairResourceBarSettings(profile)
+    local changed = false
+    if CopyLegacyResourceBarSettings(profile, "powerBar", "powerBar") then
+        changed = true
+    end
+    if CopyLegacyResourceBarSettings(profile, "secondaryPowerBar", "secondaryPowerBar") then
+        changed = true
+    end
     return changed
 end
 
@@ -3392,6 +3505,10 @@ function Migrations.RunOnProfile(profile)
     -- v34: normalize spec-specific custom tracker buckets from legacy
     -- numeric spec IDs to the CLASS-specID keys read by the CDM runtime.
     if stored < 34 then Migrations.RepairCustomTrackerSpecStorage(profile, _currentGlobalDB) end
+
+    -- v35: preserve resource bar settings that old profiles/imports can
+    -- carry under ncdm even though runtime now reads top-level tables.
+    if stored < 35 then RepairResourceBarSettings(profile) end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame

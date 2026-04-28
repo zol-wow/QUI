@@ -27,6 +27,8 @@ ns.LegacyResolver = LegacyResolver
 local _proposalsByContainer = {}
 local _resolverFrame
 local _pendingPostCombat = false
+local FindLegacyBar
+local NotifyRefresh
 
 local SPEC_ID_CLASS_TOKEN = {
     [62] = "MAGE", [63] = "MAGE", [64] = "MAGE",
@@ -187,10 +189,11 @@ local function GetPerSpecList(containerKey, specID, createIfMissing, preferredKe
     return byContainer[specKey], specKey
 end
 
-local function GetEntryListForContainer(containerKey, container, createIfMissing, preferredKey)
+local function GetEntryListForContainer(containerKey, container, createIfMissing, preferredKey, specID)
     if type(container) ~= "table" then return nil end
-    if type(container._sourceSpecID) == "number" then
-        local list, specKey = GetPerSpecList(containerKey, container._sourceSpecID, createIfMissing, preferredKey)
+    local requestedSpecID = type(specID) == "number" and specID or container._sourceSpecID
+    if container.specSpecific == true or container.specSpecificSpells == true then
+        local list, specKey = GetPerSpecList(containerKey, requestedSpecID, createIfMissing, preferredKey)
         if type(list) == "table" then
             return list, "spec", specKey
         end
@@ -199,6 +202,113 @@ local function GetEntryListForContainer(containerKey, container, createIfMissing
         return container.entries, "container", nil
     end
     return nil
+end
+
+local function DeduplicateEntryList(entries)
+    if type(entries) ~= "table" then return false, 0 end
+    local seen = {}
+    local kept = {}
+    local removed = 0
+    for _, entry in ipairs(entries) do
+        if type(entry) == "table" then
+            local key = tostring(entry.type or "") .. "\031"
+                .. tostring(entry.id or "") .. "\031"
+                .. tostring(entry.macroName or "") .. "\031"
+                .. tostring(entry.customName or "")
+            if not seen[key] then
+                seen[key] = true
+                kept[#kept + 1] = entry
+            else
+                removed = removed + 1
+            end
+        else
+            kept[#kept + 1] = entry
+        end
+    end
+    if removed > 0 then
+        for i = 1, math.max(#entries, #kept) do
+            entries[i] = kept[i]
+        end
+        return true, removed
+    end
+    return false, 0
+end
+
+local function MergeEntryLists(dst, src)
+    if type(dst) ~= "table" or type(src) ~= "table" then return false end
+    local changed = false
+    for _, entry in ipairs(src) do
+        if type(entry) == "table" then
+            local exists = false
+            for _, existing in ipairs(dst) do
+                if type(existing) == "table"
+                   and existing.type == entry.type
+                   and existing.id == entry.id
+                   and existing.macroName == entry.macroName
+                   and existing.customName == entry.customName
+                then
+                    exists = true
+                    break
+                end
+            end
+            if not exists then
+                dst[#dst + 1] = entry
+                changed = true
+            end
+        end
+    end
+    if DeduplicateEntryList(dst) then
+        changed = true
+    end
+    return changed
+end
+
+local function NormalizePerSpecStorage(containerKey, container, specID)
+    local db = QUICore and QUICore.db
+    local root = db and db.global and db.global.ncdm and db.global.ncdm.specTrackerSpells
+    local byContainer = root and root[containerKey]
+    if type(byContainer) ~= "table" then return false end
+
+    local keys = GetSpecKeyCandidates(specID)
+    local canonicalKey = keys[1]
+    if type(canonicalKey) ~= "string" then return false end
+
+    local canonicalList = byContainer[canonicalKey]
+    local changed = false
+    if type(canonicalList) ~= "table" then
+        for i = 2, #keys do
+            local aliasKey = keys[i]
+            if type(byContainer[aliasKey]) == "table" then
+                canonicalList = byContainer[aliasKey]
+                byContainer[canonicalKey] = canonicalList
+                changed = true
+                break
+            end
+        end
+    end
+    if type(canonicalList) ~= "table" then return changed end
+
+    for i = 2, #keys do
+        local aliasKey = keys[i]
+        local aliasList = byContainer[aliasKey]
+        if type(aliasList) == "table" then
+            if aliasList ~= canonicalList and MergeEntryLists(canonicalList, aliasList) then
+                changed = true
+            end
+            byContainer[aliasKey] = nil
+            if type(container) == "table" then
+                if type(container._legacySpecKeyAliases) ~= "table" then
+                    container._legacySpecKeyAliases = {}
+                end
+                container._legacySpecKeyAliases[aliasKey] = canonicalKey
+            end
+            changed = true
+        end
+    end
+    if DeduplicateEntryList(canonicalList) then
+        changed = true
+    end
+    return changed
 end
 
 local function ContainerIsCandidate(container)
@@ -230,17 +340,19 @@ function LegacyResolver:WalkAll(opts)
 
     for key, container in pairs(containers) do
         if type(key) == "string" and ContainerIsCandidate(container)
-           and container._sourceSpecID == currentSpec
            and not container._legacyResolutionDismissed
         then
             matchedAny = true
             local proposalsForContainer = {}
             local stats = { proposed = 0, ambiguous = 0, noMatch = 0, asIs = 0, total = 0 }
 
-            -- Post-v35: entries live in per-spec storage at _sourceSpecID.
-            -- Pre-v35 (or stale state where v35 couldn't access globals):
-            -- fall back to container.entries.
-            local entryList, entryListSource, entryListKey = GetEntryListForContainer(key, container, false)
+            -- Entries live in the current spec's private bucket. Older
+            -- imported profiles may still have alias buckets; normalize the
+            -- active spec before probing slot IDs.
+            if NormalizePerSpecStorage(key, container, currentSpec) then
+                autoAppliedTotal = autoAppliedTotal + 1
+            end
+            local entryList, entryListSource, entryListKey = GetEntryListForContainer(key, container, false, nil, currentSpec)
             if type(entryList) ~= "table" then entryList = {} end
 
             for ei, entry in ipairs(entryList) do
@@ -270,6 +382,7 @@ function LegacyResolver:WalkAll(opts)
                     stats     = stats,
                     listSource = entryListSource,
                     listKey    = entryListKey,
+                    specID     = currentSpec,
                     walkedAt  = (time and time()) or 0,
                 }
                 proposalCount = proposalCount + (stats.proposed + stats.ambiguous + stats.noMatch)
@@ -282,6 +395,9 @@ function LegacyResolver:WalkAll(opts)
                     end
                 end
             else
+                if DeduplicateEntryList(entryList) then
+                    autoAppliedTotal = autoAppliedTotal + 1
+                end
                 _proposalsByContainer[key] = nil
             end
         end
@@ -322,7 +438,7 @@ function LegacyResolver:RemoveBrokenEntriesForContainer(containerKey)
         return removed
     end
 
-    local entryList = GetEntryListForContainer(containerKey, container, false, proposalSet.listKey)
+    local entryList = GetEntryListForContainer(containerKey, container, false, proposalSet.listKey, proposalSet.specID)
     local removed = CompactEntries(entryList)
     if proposalSet.listSource == "container" then
         local legacyBar = FindLegacyBar(db.profile, container._legacyId)
@@ -354,7 +470,7 @@ function LegacyResolver:GetAllProposals()
     return _proposalsByContainer
 end
 
-local function FindLegacyBar(profile, legacyId)
+FindLegacyBar = function(profile, legacyId)
     if not legacyId then return nil end
     local ct = profile.customTrackers
     if type(ct) ~= "table" or type(ct.bars) ~= "table" then return nil end
@@ -387,7 +503,7 @@ local function ApplyResolutionToEntry(entry, res, includeAmbiguous)
     return false
 end
 
-local function NotifyRefresh()
+NotifyRefresh = function()
     if ns.Registry and ns.Registry.RefreshAll then
         pcall(ns.Registry.RefreshAll, ns.Registry)
     elseif QUICore and QUICore.RefreshAll then
@@ -410,10 +526,8 @@ function LegacyResolver:AcceptProposalsForContainer(containerKey, opts)
     local quiet = opts and opts.quiet
     local applied, skipped = 0, 0
 
-    -- Resolve which list the WalkAll iteration sourced from. After v35
-    -- migration that's per-spec storage; on profiles where v35 hasn't
-    -- moved entries yet it falls through to container.entries.
-    local entryList = GetEntryListForContainer(containerKey, container, false, proposalSet.listKey)
+    -- Resolve the same current-spec list that WalkAll sourced.
+    local entryList = GetEntryListForContainer(containerKey, container, false, proposalSet.listKey, proposalSet.specID)
     if type(entryList) ~= "table" then entryList = {} end
 
     local remaining, remainStats = {}, { proposed = 0, ambiguous = 0, noMatch = 0, total = 0 }
@@ -437,9 +551,14 @@ function LegacyResolver:AcceptProposalsForContainer(containerKey, opts)
         end
     end
 
+    local listMutated = false
+    if applied > 0 then
+        listMutated = DeduplicateEntryList(entryList)
+    end
+
     container._legacyResolutionAcceptedAt = (time and time()) or 0
 
-    if next(remaining) then
+    if next(remaining) and not listMutated then
         proposalSet.proposals = remaining
         proposalSet.stats = remainStats
     else
