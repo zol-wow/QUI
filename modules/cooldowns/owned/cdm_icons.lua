@@ -4250,8 +4250,7 @@ local function ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
                 end
             end
             if not hasRealCooldown then
-                local dur = icon._lastDuration or 0
-                if dur <= 1.5 then effectiveOnCD = false end
+                effectiveOnCD = false
             end
         end
         if not effectiveOnCD then return true end
