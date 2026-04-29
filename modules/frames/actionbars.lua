@@ -9263,6 +9263,15 @@ do
             {value = "RIGHT", text = "Right"},
         }
 
+        local totemBarGrowOptions = {
+            {value = "RIGHT", text = "Right"},
+            {value = "LEFT",  text = "Left"},
+            {value = "UP",    text = "Up"},
+            {value = "DOWN",  text = "Down"},
+        }
+
+        local GetTotemBarDB = Helpers.CreateDBGetter("totemBar")
+
         local SETTINGS_DB_KEY_MAP = {
             petBar = "pet", stanceBar = "stance",
             microMenu = "microbar", bagBar = "bags",
@@ -9294,7 +9303,37 @@ do
             return U.CreateCollapsible(parent, title, contentHeight, buildFunc, sections, relayout)
         end
 
+        local function BuildTotemBarSettings(content)
+            local totemDB = GetTotemBarDB()
+            if not totemDB then return 80 end
+
+            local sections = {}
+            local function relayout() U.StandardRelayout(content, sections) end
+
+            local function RefreshTotemBar()
+                if type(_G.QUI_RefreshTotemBar) == "function" then
+                    _G.QUI_RefreshTotemBar()
+                end
+            end
+
+            CreateCollapsible(content, "Layout", FORM_ROW + 8, function(body)
+                local sy = -4
+                P(GUI:CreateFormDropdown(body, "Grow Direction",
+                    totemBarGrowOptions, "growDirection", totemDB, RefreshTotemBar,
+                    { description = "Direction the totem bar grows as additional totems are summoned." }), body, sy)
+            end, sections, relayout)
+
+            U.BuildPositionCollapsible(content, "totemBar", nil, sections, relayout)
+
+            relayout()
+            return content:GetHeight()
+        end
+
         local function BuildBarSettings(content, barKey, width)
+            if barKey == "totemBar" then
+                return BuildTotemBarSettings(content)
+            end
+
             local db = GetDB()
             if not db or not db.bars then return 80 end
 
