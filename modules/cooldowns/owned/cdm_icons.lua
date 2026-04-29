@@ -3629,7 +3629,17 @@ local function UpdateIconCooldown(icon)
                         icon.StackText:Hide()
                     end
                 end
-            elseif not InCombatLockdown() then
+            elseif not InCombatLockdown() and not (entry and entry.hasCharges) then
+                -- Don't hide charged-ability stack text on a transient API
+                -- nil. UNIT_AURA on the target (from other players' buffs/
+                -- debuffs) and PLAYER_SOFT_ENEMY_CHANGED both schedule full
+                -- CDM updates; during those Blizzard's charge data and
+                -- TickCacheGetDisplayCount can momentarily return nil even
+                -- when the spell still has charges. Hiding here and
+                -- re-showing on the next tick produced the visible "stacks
+                -- flicker show/hide" symptom on every target aura change.
+                -- The FWD path or the next tick's API read will restore the
+                -- correct value; preserve the previous text in the gap.
                 icon.StackText:SetText("")
                 icon.StackText:Hide()
             end
