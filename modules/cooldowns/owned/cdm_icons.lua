@@ -4225,11 +4225,34 @@ local function ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
 
     if containerDB.showOnlyOnCooldown then
         local effectiveOnCD = isOnCD
-        -- hideGCD: treat pure-GCD as not-on-cooldown for visibility purposes
+        -- hideGCD: treat pure-GCD as not-on-cooldown for visibility purposes.
+        -- The previous heuristic relied on icon._lastDuration <= 1.5 to detect
+        -- a "GCD-only" cooldown, but during a player-wide GCD Blizzard
+        -- temporarily writes the 1.5s GCD start/duration onto the source CD
+        -- frame; SyncMirroredCooldownState mirrors that into _lastDuration,
+        -- which then flips to 1.5 even on spells with a real cooldown
+        -- running. For ~1.5s every GCD the filter misclassified real
+        -- cooldowns as GCD-only and hid the icon, producing the visible
+        -- "cooldown disappears then comes back" flicker on every cast.
+        --
+        -- C_Spell.GetSpellBaseCooldown returns the spell's *defined* cooldown,
+        -- which is unaffected by GCD overlay state and is the reliable
+        -- "is this a GCD-only spell vs a real-cooldown spell" signal.
         if effectiveOnCD and containerDB.hideGCD and icon._isOnGCD
            and not icon._auraActive then
-            local dur = icon._lastDuration or 0
-            if dur <= 1.5 then effectiveOnCD = false end
+            local hasRealCooldown = false
+            local sid = icon._runtimeSpellID
+                or (entry and (entry.overrideSpellID or entry.spellID or entry.id))
+            if sid and C_Spell and C_Spell.GetSpellBaseCooldown then
+                local ok, baseDurMs = pcall(C_Spell.GetSpellBaseCooldown, sid)
+                if ok and type(baseDurMs) == "number" and baseDurMs > 1500 then
+                    hasRealCooldown = true
+                end
+            end
+            if not hasRealCooldown then
+                local dur = icon._lastDuration or 0
+                if dur <= 1.5 then effectiveOnCD = false end
+            end
         end
         if not effectiveOnCD then return true end
     end
