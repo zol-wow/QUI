@@ -1133,12 +1133,6 @@ local function MirrorCurrentBlizzCooldown(icon, blizzCD)
         icon._durObjHookSync = GetTime()
         icon._showingGCDSwipe = nil
         icon._showingRealCooldownSwipe = true
-        -- One-shot mirror binding: the C-side now polls the bound DurationObject
-        -- for remaining time, so the per-tick UpdateIconCooldown re-bind is gated
-        -- on this flag to prevent restarting the swipe animation every batch.
-        if not (icon._spellEntry and icon._spellEntry.hasCharges) then
-            icon._mirrorDriven = true
-        end
         SyncMirroredCooldownState(icon, blizzCD, true)
         RefreshIconGCDState(icon)
         return true
@@ -1287,12 +1281,6 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                             targetIcon._durObjHookSync = GetTime()
                             targetIcon._showingGCDSwipe = nil
                             targetIcon._showingRealCooldownSwipe = true
-                            -- One-shot binding: subsequent per-tick re-binds are
-                            -- skipped while this is set so the C-side animation
-                            -- isn't restarted every batch. Cleared on aura-end /
-                            -- icon recycle / release so the next cooldown cycle
-                            -- can re-bind through this hook or the per-tick path.
-                            targetIcon._mirrorDriven = true
                         end
                         ChargeDebug(tEntry and tEntry.name, "MIRROR hook: tSkipCharge=", tSkipCharge,
                             "tSkipAura=", tSkipAura,
@@ -2996,11 +2984,6 @@ local function UpdateIconCooldown(icon)
                             if icon.Cooldown then
                                 pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
                                 pcall(icon.Cooldown.Clear, icon.Cooldown)
-                                -- Clear() unbound the aura's DurationObject from the
-                                -- C-side; release _mirrorDriven so the next tick
-                                -- re-binds the spell's cooldown durObj for the
-                                -- post-aura cooldown phase.
-                                icon._mirrorDriven = nil
                                 ReapplySwipeStyle(icon.Cooldown, icon)
                             end
                         end
@@ -3012,7 +2995,6 @@ local function UpdateIconCooldown(icon)
                     if icon.Cooldown then
                         pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
                         pcall(icon.Cooldown.Clear, icon.Cooldown)
-                        icon._mirrorDriven = nil
                         ReapplySwipeStyle(icon.Cooldown, icon)
                     end
                 end
@@ -3037,22 +3019,16 @@ local function UpdateIconCooldown(icon)
                     if childCi and not IsSecretValue(childCi.isOnGCD) then
                         icon._isOnGCD = childCi.isOnGCD or false
                     end
-                    -- One-shot DurationObject binding for non-charged
-                    -- Blizzard-backed entries. Re-binding a fresh DurationObject
-                    -- on every UpdateAllCooldowns batch was restarting the
-                    -- C-side swipe animation each tick (visible flicker during
-                    -- long cooldowns). Once bound, the C-side polls the
-                    -- DurationObject for remaining time on its own, and the
-                    -- mirror hook on blizzCD.SetCooldownFromDurationObject
-                    -- forwards genuine state changes from Blizzard.
-                    --
-                    -- The fallback at line 3315 still re-fetches a durObj for
-                    -- the post-aura case (Divine Protection, Divine Shield,
-                    -- etc.) where Blizzard's hook may not re-fire — that path
-                    -- triggers when _mirrorDriven gets cleared by the aura-end
-                    -- transitions and runs through ApplyResolvedCooldown.
-                    if entry._blizzChild and icon.Cooldown and icon.Cooldown.SetCooldownFromDurationObject
-                        and not icon._auraActive and not icon._mirrorDriven then
+                    -- Forward the spell's DurationObject from
+                    -- C_Spell.GetSpellCooldownDuration via SetCooldownFromDurationObject
+                    -- (the one secret-safe setter). This reflects resource waits for
+                    -- resource-gated spells (rune spenders, etc.) — the spell's own
+                    -- Cooldown frame GetCooldownDuration returns a plain number per
+                    -- FrameAPICooldownDocumentation, not a DurationObject, so the
+                    -- spell-level API is required. _mirrorDriven lets the C-side own
+                    -- draw/no-draw decisions (SetCooldownFromDurationObject clears at
+                    -- zero) and skips the numeric tick-apply/clear fallback below.
+                    if entry._blizzChild and icon.Cooldown and icon.Cooldown.SetCooldownFromDurationObject and not icon._auraActive then
                         local spellDurObj = TickCacheGetDuration(cdSid)
                         if spellDurObj then
                             pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, spellDurObj)
@@ -3062,14 +3038,12 @@ local function UpdateIconCooldown(icon)
                             icon._mirrorDriven = true
                             blizzRealCooldownActive = true
                             ReapplySwipeStyle(icon.Cooldown, icon)
+                        else
+                            icon._mirrorDriven = false
                         end
                         if entry._blizzChild.Cooldown then
                             SyncMirroredCooldownState(icon, entry._blizzChild.Cooldown, apiIsActive)
                         end
-                    elseif entry._blizzChild and entry._blizzChild.Cooldown and not icon._auraActive then
-                        -- Already mirror-bound: keep _hasCooldownActive /
-                        -- _lastStart in sync each tick without re-binding.
-                        SyncMirroredCooldownState(icon, entry._blizzChild.Cooldown, apiIsActive)
                     end
                     startTime, duration, durObj = nil, nil, nil
                 else
