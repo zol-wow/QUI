@@ -4254,7 +4254,13 @@ local function ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
         -- which is unaffected by GCD overlay state and is the reliable
         -- "is this a GCD-only spell vs a real-cooldown spell" signal.
         if effectiveOnCD and containerDB.hideGCD and icon._isOnGCD
-           and not icon._auraActive then
+           and not icon._auraActive
+           -- Charged abilities are never GCD-only: their cooldown is the
+           -- per-charge recharge timer, which GetSpellBaseCooldown reports
+           -- as 0 (charge spells have no duration-based cooldown). Without
+           -- this exclusion every player GCD would hide every charged
+           -- icon for 1.5s — including its stack text.
+           and not (entry and entry.hasCharges) then
             local hasRealCooldown = false
             local sid = icon._runtimeSpellID
                 or (entry and (entry.overrideSpellID or entry.spellID or entry.id))
