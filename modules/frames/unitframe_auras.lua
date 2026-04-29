@@ -367,15 +367,16 @@ local function UpdateAuras(frame)
     local debuffCount = 0
     local debuffIndex = 1
     -- Player frame shows all debuffs; non-player frames respect the
-    -- user-facing onlyMyDebuffs toggle. "Mine" means player/pet/vehicle
-    -- (post-filtered via IsAuraOwnedByPlayerOrPet so pet-cast auras count).
+    -- user-facing onlyMyDebuffs toggle. "Mine" means player or vehicle —
+    -- delegated to Blizzard's |PLAYER filter via IsAuraFilteredOutByInstanceID
+    -- so secret source fields don't have to be inspected from tainted code.
     local filterDebuffsByMine = (unit ~= "player") and onlyMyDebuffs
     if showDebuffs and not debuffPreviewActive then
         while debuffCount < debuffMaxIcons do
             local auraData = C_UnitAuras.GetAuraDataByIndex(unit, debuffIndex, "HARMFUL")
             if not auraData then break end
             debuffIndex = debuffIndex + 1
-            if filterDebuffsByMine and not Helpers.IsAuraOwnedByPlayerOrPet(auraData, true) then
+            if filterDebuffsByMine and C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, auraData.auraInstanceID, "HARMFUL|PLAYER") then
                 -- skip: foreign-source debuff while onlyMyDebuffs is on
             else
 
@@ -461,8 +462,10 @@ local function UpdateAuras(frame)
     -- Populate buffs (skip if preview is active).
     -- Boss frames show all buffs so encounter-critical self-buffs (e.g.
     -- drake stacks in Voidspire) remain visible; other frames filter to
-    -- player/pet/vehicle-cast buffs to keep class-mate buffs out of the
-    -- player/target/focus/targettarget rows.
+    -- player/vehicle-cast buffs to keep class-mate buffs out of the
+    -- player/target/focus/targettarget rows. Filter is delegated to
+    -- Blizzard's |PLAYER filter via IsAuraFilteredOutByInstanceID for
+    -- taint-safe ownership detection on secret source fields.
     local filterBuffsByMine = not unit:match("^boss%d+$")
     local buffCount = 0
     local buffIndex = 1
@@ -471,7 +474,7 @@ local function UpdateAuras(frame)
             local auraData = C_UnitAuras.GetAuraDataByIndex(unit, buffIndex, "HELPFUL")
             if not auraData then break end
             buffIndex = buffIndex + 1
-            if filterBuffsByMine and not Helpers.IsAuraOwnedByPlayerOrPet(auraData, true) then
+            if filterBuffsByMine and C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, auraData.auraInstanceID, "HELPFUL|PLAYER") then
                 -- skip: foreign-source buff while ownership filter is on
             else
 
