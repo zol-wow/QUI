@@ -354,13 +354,19 @@ function IsDualWielding()
 end
 
 local function FormatTimeRemaining(seconds)
-    if seconds >= 3600 then
-        return string.format("%dh", math.floor(seconds / 3600))
-    elseif seconds >= 60 then
-        return string.format("%dm", math.floor(seconds / 60))
-    else
-        return string.format("%ds", math.floor(seconds))
+    if seconds < 60 then
+        return string.format("%ds", math.ceil(seconds))
     end
+    local mins = math.ceil(seconds / 60)
+    if mins < 60 then
+        return string.format("%dm", mins)
+    end
+    local hours = math.floor(mins / 60)
+    local rem = mins % 60
+    if rem > 0 then
+        return string.format("%dh %dm", hours, rem)
+    end
+    return string.format("%dh", hours)
 end
 
 local function GetPreferenceKey(buttonType)
