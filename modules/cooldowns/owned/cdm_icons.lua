@@ -4301,7 +4301,18 @@ local function ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
             local ok, count = pcall(C_Item.GetItemCount, entry.id, false, false)
             if ok and (not count or count <= 0) then return true end
         elseif entry.type == "trinket" or entry.type == "slot" then
-            if not GetInventoryItemID("player", entry.id) then return true end
+            local equippedItemID = GetInventoryItemID("player", entry.id)
+            if not equippedItemID then return true end
+            -- Trinket slots (13/14): also hide passive trinkets — those without
+            -- an on-use spell — under hideNonUsable. The slot is tracked rather
+            -- than a specific item, so a stat-stick equipped in slot 13 would
+            -- otherwise sit visible forever with nothing to display.
+            if entry.id == 13 or entry.id == 14 then
+                if C_Item and C_Item.GetItemSpell then
+                    local okS, spellName = pcall(C_Item.GetItemSpell, equippedItemID)
+                    if okS and not spellName then return true end
+                end
+            end
         else
             local sid = icon._runtimeSpellID or entry.spellID or entry.id
             if sid then
