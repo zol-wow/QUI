@@ -1355,7 +1355,22 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                 local tEntry = targetIcon._spellEntry
                 if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown == self
                    and not targetIcon._auraActive
-                   and not (tEntry and tEntry.hasCharges) then
+                   and not (tEntry and tEntry.hasCharges)
+                   -- Skip subscribers whose own cooldown is currently active
+                   -- (.isactive on cdInfo, mirrored to icon._hasCooldownActive
+                   -- by the per-tick UpdateIconCooldown). Blizzard's
+                   -- CooldownViewer pulses Clear / SetCooldownDuration /
+                   -- SetCooldownFromExpirationTime on the source CD frame
+                   -- during GCD overlays and animation transitions even when
+                   -- a real cooldown is mid-progress; forwarding those to a
+                   -- subscriber that's already animating its real cooldown
+                   -- blanks the swipe (Clear) or overlays the GCD on top
+                   -- (SetCooldownDuration) — the visible "draw → clear →
+                   -- continue drawing" combat flicker. Genuine cooldown-end
+                   -- transitions are still handled by the per-tick block:
+                   -- the bound DurationObject reports zero remaining and the
+                   -- C-side stops drawing on its own.
+                   and not targetIcon._hasCooldownActive then
                     local cd = targetIcon.Cooldown
                     if cd and cd[methodName] then
                         pcall(cd[methodName], cd, unpack(args, 1, nargs))
@@ -4250,7 +4265,8 @@ local function ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
                 end
             end
             if not hasRealCooldown then
-                effectiveOnCD = false
+                local dur = icon._lastDuration or 0
+                if dur <= 1.5 then effectiveOnCD = false end
             end
         end
         if not effectiveOnCD then return true end
