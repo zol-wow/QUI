@@ -5892,6 +5892,9 @@ function CDMSpellData:Initialize()
             end)
         end
     end)
+
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_SpellData", frame = eventFrame }
 end
 
 --- Find a viewer child for a spell ID via the OOC-built _spellIDToChild map.
