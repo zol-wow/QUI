@@ -19,6 +19,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v3.5.5 - 2026-04-29
+
+### Fixed
+- fix(buffborders): guard SlotHasVisibleAura against forbidden children
+- fix(minimap): hook QueueStatusButton mutators to stop dungeon eye drift
+- fix(actionbars, cdm): port flyout taint + restricted-aura unpack from d7d5a36
+- fix(cdm): defer buff-bar SetSize in combat to break inherited taint
+- fix(frames, qol): restore proc-swirl + micromenu pulse suppression
+- fix(cdm): port taint-resilient aura resolution from 16bcfcc
+- feat(groupframes): expand classification filters with RaidInCombat, NotCancelable, BigDefensive, ExternalDefensive
+- fix(cdm): collapse custom cooldown bars around filtered icons + mid-combat flips
+- fix(frames): reparent PetFrame off managed container instead of flagging
 ## v3.5.4 - 2026-04-28
 
 ### Fixed

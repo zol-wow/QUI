@@ -578,11 +578,23 @@ local function ShouldDeferContainerLayoutInCombat(trackerKey, settings)
         return false
     end
 
-    -- Only essential/utility wire click-to-cast SecureActionButton children
-    -- on their icons (see cdm_icons.lua UpdateIconSecureAttributes).  Other
-    -- containers (buff/trackedBar/customBar/user-created) have no secure
-    -- attributes that would taint during combat layout.
-    return trackerKey == "essential" or trackerKey == "utility"
+    -- Built-in essential/utility wrap Blizzard CDM viewer children whose
+    -- start/dur become "secret" in combat — laying out then would taint.
+    if trackerKey == "essential" or trackerKey == "utility" then
+        return true
+    end
+
+    -- Clickable custom bars wire SecureActionButton children on each icon
+    -- (see UpdateIconSecureAttributes); reflowing in combat would taint.
+    -- Non-clickable custom cooldown bars are addon-owned with no secure
+    -- attributes, so they may relayout in combat — required for filter
+    -- flips (Mana Tea becoming usable, etc.) to collapse the bar without
+    -- waiting for PLAYER_REGEN_ENABLED.
+    if settings and settings.clickableIcons then
+        return true
+    end
+
+    return false
 end
 
 ---------------------------------------------------------------------------

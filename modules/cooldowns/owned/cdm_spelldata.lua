@@ -2038,8 +2038,12 @@ function CDMSpellData:ResolveAuraState(params)
     -----------------------------------------------------------------------
     -- 1. Player aura by spell ID (helpful only)
     -- GetPlayerAuraBySpellID returns ANY aura on the player with that spellID
-    -- regardless of caster, so a class-mate's buff on us would otherwise
-    -- mark our tracker active. Reject unless the source is the player/pet.
+    -- regardless of caster. Drop the strict ownership check for player-unit
+    -- queries: the aura is by definition on the player. In combat, ad fields
+    -- like sourceUnit / isFromPlayerOrPlayerPet come back as secret values
+    -- (SafeValue → nil), so IsAuraOwnedByPlayerOrPet returns false and
+    -- Phase 4 silently fails — exactly when stacking-aura entries (Mana Tea)
+    -- need the auraInstanceID for GetAuraDuration.
     if not isActive and C_UnitAuras.GetPlayerAuraBySpellID then
         for tryIdx = 1, 3 do
             if isActive then break end
@@ -2067,7 +2071,9 @@ function CDMSpellData:ResolveAuraState(params)
             end
         end
     end
-    -- 2. Player buff by name
+    -- 2. Player buff by name. Same reasoning as 4.1: trust the player-unit
+    -- query, drop the strict ownership check whose secret-field gates fail
+    -- in combat.
     if not isActive and entryName and entryName ~= "" and C_UnitAuras.GetAuraDataBySpellName then
         local ok, ad = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", entryName, "HELPFUL")
         -- Same reasoning as Phase 4.1: trust the player-unit query, drop
