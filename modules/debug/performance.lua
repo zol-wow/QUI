@@ -151,8 +151,10 @@ local function DrainPerfRegistry()
             end
         end
     end
-    -- Clear the registry so re-drain (after reload) is idempotent.
-    wipe(reg)
+    -- Note: do NOT wipe(reg). The combat-end profiler reads ns.QUI_PerfRegistry
+    -- at /qui combatprof on time, after PLAYER_LOGIN drain. The dupe guard above
+    -- (`not profileRegistry[name]`) keeps re-drain idempotent without wiping.
+    -- The registry is naturally re-initialized on /reload via ns being fresh.
 end
 
 -- Public API: called by debug.xml's init or modules directly if they load after

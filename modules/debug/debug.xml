@@ -3,4 +3,5 @@
     <Script file="performance.lua"/>
     <Script file="memaudit.lua"/>
     <Script file="editmode_diagnose.lua"/>
+    <Script file="combat_end_profiler.lua"/>
 </Ui>

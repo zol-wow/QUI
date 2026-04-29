@@ -455,6 +455,18 @@ function QUI:SlashCommandOpen(input)
             print("|cff60A5FAQUI:|r Performance Monitor not loaded yet.")
         end
         return
+    elseif input and input:match("^combatprof") then
+        -- /qui combatprof [on|off|report|reset]
+        --   Diagnoses combat-end stutter: wraps named CDM functions, watches
+        --   C_Timer.After scheduling, and detects >50ms frame spikes within
+        --   2s of PLAYER_REGEN_ENABLED. Auto-prints a report after each combat.
+        if _G.QUI_CombatProf then
+            local sub = input:match("^combatprof%s+(%S+)")
+            _G.QUI_CombatProf(sub)
+        else
+            print("|cff60A5FAQUI:|r combat profiler not loaded yet.")
+        end
+        return
     end
 
     -- Default: Open custom GUI

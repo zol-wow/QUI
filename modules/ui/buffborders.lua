@@ -1464,6 +1464,9 @@ paRegenFrame:SetScript("OnEvent", function()
     TryDeferredFullRefresh()
 end)
 
+ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "BuffBorders_CombatEnd", frame = paRegenFrame }
+
 -- Primary initialization is called from core/main.lua during the ADDON_LOADED
 -- safe window. Keep this retry for unusual load orders and for combat-end
 -- recovery if the safe-window call was missed.

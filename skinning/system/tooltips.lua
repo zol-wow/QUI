@@ -1113,6 +1113,8 @@ end
 
 local eventFrame = CreateFrame("Frame")
 local initialized = false
+ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "Tooltips_Skin", frame = eventFrame }
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     -- After initialization, discover addon tooltips on each ADDON_LOADED

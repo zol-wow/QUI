@@ -1092,6 +1092,9 @@ combatDeferFrame:SetScript("OnEvent", function(self, event)
     end
 end)
 
+ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "Loot_CombatDefer", frame = combatDeferFrame }
+
 DisableBlizzardLoot = function()
     -- TAINT SAFETY: Defer to after combat if in combat lockdown
     if InCombatLockdown() then

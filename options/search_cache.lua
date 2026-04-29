@@ -14839,6 +14839,54 @@ ns.QUI_SearchCache = {
             ["widgetType"] = "button",
         },
         {
+            ["description"] = "Stop the combat-end profiler and unwrap functions.",
+            ["keywords"] = {
+                "/qui combatprof off",
+            },
+            ["label"] = "Combat Profiler Off",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "Tools",
+            ["tabName"] = "Help",
+            ["tileId"] = "help",
+            ["widgetType"] = "button",
+        },
+        {
+            ["description"] = "Start profiling the PLAYER_REGEN_ENABLED handler chain. Wraps named CDM functions plus every frame in QUI_PerfRegistry (CDM, group frames, action bars, raid buffs, aura dispatch, plus skinning combat-defer frames) and prints a summary 2.5s after each combat ends. Use to diagnose combat-end stutter.",
+            ["keywords"] = {
+                "/qui combatprof on",
+            },
+            ["label"] = "Combat Profiler On",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "Tools",
+            ["tabName"] = "Help",
+            ["tileId"] = "help",
+            ["widgetType"] = "button",
+        },
+        {
+            ["description"] = "Reprint the most recent combat-end report.",
+            ["keywords"] = {
+                "/qui combatprof report",
+            },
+            ["label"] = "Combat Profiler Report",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "Tools",
+            ["tabName"] = "Help",
+            ["tileId"] = "help",
+            ["widgetType"] = "button",
+        },
+        {
+            ["description"] = "Clear the combat-end profiler's accumulated stats.",
+            ["keywords"] = {
+                "/qui combatprof reset",
+            },
+            ["label"] = "Combat Profiler Reset",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "Tools",
+            ["tabName"] = "Help",
+            ["tileId"] = "help",
+            ["widgetType"] = "button",
+        },
+        {
             ["description"] = "Empty the Edit Mode diagnostic ring buffer.",
             ["keywords"] = {
                 "/qui diagnose clear",

@@ -513,6 +513,9 @@ protectedLayoutEventFrame:SetScript("OnEvent", function()
     ScheduleBackdropUpdate()
 end)
 
+ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "ObjTracker_ProtectedLayout", frame = protectedLayoutEventFrame }
+
 local function ApplyLayoutSettingsSafely(settings)
     if type(InCombatLockdown) == "function" and InCombatLockdown() then
         pendingProtectedLayoutUpdate = true
