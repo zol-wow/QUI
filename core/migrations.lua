@@ -163,10 +163,17 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --        the runtime reads top-level powerBar/secondaryPowerBar. Copy legacy
 --        values into the active tables when those fields are still defaults.)
 --
+-- v36 = NormalizeCustomCDMBarCompatibility
+--       (Options V2: custom tracker bars now render as custom CDM bars. Stamp
+--        the legacy tooltip/keybind contexts, restore old custom tracker
+--        default behavior for dynamic layout, normalize mutually-exclusive
+--        visibility flags, and backfill active-glow/text fields that the
+--        initial customBar mirror left implicit.)
+--
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 35
+local CURRENT_SCHEMA_VERSION = 36
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -2318,11 +2325,13 @@ local function BuildCustomBarRowFromLegacy(bar)
         xOffset          = 0,
         yOffset          = 0,
         hideDurationText = bar.hideDurationText == true,
+        durationFont     = bar.durationFont,
         durationSize     = bar.durationSize or bar.durationTextSize or 13,
         durationOffsetX  = bar.durationOffsetX or 0,
         durationOffsetY  = bar.durationOffsetY or 0,
         durationTextColor = CloneValue(bar.durationColor or bar.durationTextColor or {1, 1, 1, 1}),
         durationAnchor   = bar.durationAnchor or "CENTER",
+        stackFont        = bar.stackFont,
         stackSize        = bar.stackSize or bar.stackTextSize or 9,
         stackOffsetX     = bar.stackOffsetX or 3,
         stackOffsetY     = bar.stackOffsetY or -1,
@@ -2331,6 +2340,91 @@ local function BuildCustomBarRowFromLegacy(bar)
         hideStackText    = bar.hideStackText == true,
         opacity          = 1.0,
     }
+end
+
+local LEGACY_CUSTOM_TRACKER_COMPAT_FIELDS = {
+    "enabled",
+    "locked",
+    "hideGCD",
+    "hideNonUsable",
+    "showOnlyOnCooldown",
+    "showOnlyWhenActive",
+    "showOnlyWhenOffCooldown",
+    "showOnlyInCombat",
+    "dynamicLayout",
+    "clickableIcons",
+    "showItemCharges",
+    "showRechargeSwipe",
+    "noDesaturateWithCharges",
+    "showProfessionQuality",
+    "showActiveState",
+    "activeGlowEnabled",
+    "activeGlowType",
+    "activeGlowColor",
+    "activeGlowLines",
+    "activeGlowFrequency",
+    "activeGlowThickness",
+    "activeGlowScale",
+}
+
+local function NormalizeCustomBarVisibilityFlags(container)
+    if type(container) ~= "table" then return end
+
+    local mode = "always"
+    if container.showOnlyOnCooldown then
+        mode = "onCooldown"
+        container.showOnlyWhenActive = false
+        container.showOnlyWhenOffCooldown = false
+    elseif container.showOnlyWhenActive then
+        mode = "active"
+        container.showOnlyWhenOffCooldown = false
+    elseif container.showOnlyWhenOffCooldown then
+        mode = "offCooldown"
+    end
+
+    container.visibilityMode = mode
+
+    if mode ~= "onCooldown" then
+        container.noDesaturateWithCharges = false
+    end
+end
+
+local function StampCustomBarCompatibilityDefaults(container)
+    if type(container) ~= "table" then return end
+
+    container.tooltipContext = container.tooltipContext or "customTrackers"
+    container.keybindContext = container.keybindContext or "customTrackers"
+
+    if container.hideGCD == nil then container.hideGCD = true end
+    if container.showItemCharges == nil then container.showItemCharges = true end
+    if container.showProfessionQuality == nil then container.showProfessionQuality = true end
+    if container.showActiveState == nil then container.showActiveState = true end
+    if container.activeGlowEnabled == nil then container.activeGlowEnabled = true end
+    if container.activeGlowType == nil then container.activeGlowType = "Pixel Glow" end
+    if container.activeGlowColor == nil then container.activeGlowColor = {1, 0.85, 0.3, 1} end
+    if container.activeGlowLines == nil then container.activeGlowLines = 8 end
+    if container.activeGlowFrequency == nil then container.activeGlowFrequency = 0.25 end
+    if container.activeGlowThickness == nil then container.activeGlowThickness = 2 end
+    if container.activeGlowScale == nil then container.activeGlowScale = 1.0 end
+
+    -- Legacy custom trackers defaulted to fixed slots. A nil value in old
+    -- profiles means "static", while generic CDM containers treat nil as
+    -- "dynamic"; stamp the legacy default explicitly for migrated bars.
+    if container.dynamicLayout == nil then
+        container.dynamicLayout = false
+    end
+    if container.dynamicLayout and container.clickableIcons then
+        container.clickableIcons = false
+    end
+
+    if type(container.row1) == "table" then
+        local row = container.row1
+        if row.hideStackText == nil then row.hideStackText = container.hideStackText == true end
+        if row.durationFont == nil then row.durationFont = container.durationFont end
+        if row.stackFont == nil then row.stackFont = container.stackFont end
+    end
+
+    NormalizeCustomBarVisibilityFlags(container)
 end
 
 local function CopyLegacyCustomTrackerAnchor(profile, legacyId, containerKey)
@@ -2427,6 +2521,12 @@ function Migrations.EnsureCustomTrackerBarContainer(profile, bar, globalDB)
     container._legacyId = legacyId
     container._importedLegacyId = nil
 
+    for _, field in ipairs(LEGACY_CUSTOM_TRACKER_COMPAT_FIELDS) do
+        if bar[field] ~= nil then
+            container[field] = CloneValue(bar[field])
+        end
+    end
+
     container.pos = {
         ox = bar.offsetX or 0,
         oy = bar.offsetY or 0,
@@ -2450,6 +2550,7 @@ function Migrations.EnsureCustomTrackerBarContainer(profile, bar, globalDB)
 
     CopyLegacyCustomTrackerAnchor(profile, legacyId, containerKey)
     PortLegacySpecTrackerEntries(globalDB or _currentGlobalDB, sourceLegacyId, containerKey, container)
+    StampCustomBarCompatibilityDefaults(container)
 
     return containerKey, container
 end
@@ -2782,8 +2883,44 @@ local function RepairResourceBarSettings(profile)
     return changed
 end
 
+local function NormalizeCustomCDMBarCompatibility(profile)
+    local containers = profile and profile.ncdm and profile.ncdm.containers
+    if type(containers) ~= "table" then return end
+
+    local legacyBarsByID = nil
+    local legacyBars = profile.customTrackers and profile.customTrackers.bars
+    if type(legacyBars) == "table" then
+        legacyBarsByID = {}
+        for _, bar in ipairs(legacyBars) do
+            if type(bar) == "table" and bar.id ~= nil then
+                legacyBarsByID[tostring(bar.id)] = bar
+            end
+        end
+    end
+
+    for key, container in pairs(containers) do
+        if type(container) == "table" and container.containerType == "customBar" then
+            if legacyBarsByID then
+                local legacyId = container._legacyId or container.id
+                if legacyId == nil and type(key) == "string" then
+                    legacyId = key:match("^customBar_(.+)$")
+                end
+                local bar = legacyId ~= nil and legacyBarsByID[tostring(legacyId)] or nil
+                if type(bar) == "table" then
+                    for _, field in ipairs(LEGACY_CUSTOM_TRACKER_COMPAT_FIELDS) do
+                        if container[field] == nil and bar[field] ~= nil then
+                            container[field] = CloneValue(bar[field])
+                        end
+                    end
+                end
+            end
+            StampCustomBarCompatibilityDefaults(container)
+        end
+    end
+end
+
 ----------------------------------------------------------------------------
--- v36: FinalizeLegacyTrackerSpecState
+-- LegacyTrackerSpecState repair (folded into the v32 consolidation gate)
 --
 -- Two repairs in one pass for customBar containers migrated from the legacy
 -- customTrackers system:
@@ -3509,6 +3646,9 @@ function Migrations.RunOnProfile(profile)
     -- v35: preserve resource bar settings that old profiles/imports can
     -- carry under ncdm even though runtime now reads top-level tables.
     if stored < 35 then RepairResourceBarSettings(profile) end
+
+    -- v36: finish custom tracker compatibility on migrated custom CDM bars.
+    if stored < 36 then NormalizeCustomCDMBarCompatibility(profile) end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame

@@ -1748,7 +1748,12 @@ local function LayoutContainer(trackerKey)
     -- icons at layout time so row width / centering collapse around the
     -- missing slot. Otherwise filters hide the icon after layout and
     -- leave a gap in the bar.
-    local dynamicLayoutEnabled = (settings.dynamicLayout ~= false)
+    local dynamicLayoutEnabled
+    if settings.containerType == "customBar" then
+        dynamicLayoutEnabled = settings.dynamicLayout == true
+    else
+        dynamicLayoutEnabled = settings.dynamicLayout ~= false
+    end
     local ComputeFilterHides = ns.CDMIcons and ns.CDMIcons.ComputeFilterHides
     local iconsToLayout = {}
     for i = 1, math.min(#allIcons, totalCapacity) do
@@ -1784,7 +1789,7 @@ local function LayoutContainer(trackerKey)
             local entry = icon._spellEntry
             if entry then
                 local isOnCD = icon._hasCooldownActive or false
-                local inCombatNow = InCombatLockdown() or false
+                local inCombatNow = UnitAffectingCombat and UnitAffectingCombat("player") or false
                 local filterHides = ComputeFilterHides(icon, entry, settings, inCombatNow, isOnCD)
                 icon._lastLayoutFilterHidden = filterHides and true or false
                 if filterHides then

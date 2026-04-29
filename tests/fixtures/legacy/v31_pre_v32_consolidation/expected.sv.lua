@@ -94,7 +94,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 35,
+        _schemaVersion = 36,
         _shippedDefaults = {
           abilityTimeline = {
             bigIcon = {
@@ -6107,6 +6107,10 @@ return {
         customTrackers = {
           bars = {
             [1] = {
+              activeGlowFrequency = 0.25,
+              activeGlowLines = 8,
+              activeGlowScale = 1,
+              activeGlowThickness = 2,
               aspectRatioCrop = 1.25,
               borderColor = {
                 [1] = 0,
@@ -6124,6 +6128,7 @@ return {
               durationOffsetX = 2,
               durationOffsetY = -3,
               durationSize = 17,
+              dynamicLayout = false,
               enabled = true,
               entries = {
                 [1] = {
@@ -6141,8 +6146,11 @@ return {
               id = "test_bar_1",
               maxIcons = 6,
               name = "Test Bar One",
+              noDesaturateWithCharges = false,
               offsetX = 120,
               offsetY = -80,
+              showRechargeSwipe = false,
+              specSpecificSpells = false,
               stackAnchor = "BOTTOMLEFT",
               stackColor = {
                 [2] = 0.69999999999999996,
@@ -6154,6 +6162,26 @@ return {
               zoom = 0.080000000000000002
             },
             [2] = {
+              activeGlowColor = {
+                [1] = 1,
+                [2] = 0.84999999999999998,
+                [3] = 0.29999999999999999,
+                [4] = 1
+              },
+              activeGlowEnabled = true,
+              activeGlowFrequency = 0.25,
+              activeGlowLines = 8,
+              activeGlowScale = 1,
+              activeGlowThickness = 2,
+              activeGlowType = "Pixel Glow",
+              aspectRatioCrop = 1,
+              bgColor = {
+                [1] = 0,
+                [2] = 0,
+                [3] = 0,
+                [4] = 1
+              },
+              bgOpacity = 0,
               borderColor = {
                 [1] = 0.20000000000000001,
                 [2] = 0.20000000000000001,
@@ -6161,30 +6189,54 @@ return {
                 [4] = 1
               },
               borderSize = 2,
-              enabled = true,
-              entries = {
-                [1] = {
-                  id = 11111,
-                  type = "spell"
-                },
-                [2] = {
-                  id = 11111,
-                  type = "spell"
-                },
-                [3] = {
-                  id = 22222,
-                  type = "spell"
-                }
+              clickableIcons = false,
+              durationAnchor = "CENTER",
+              durationColor = {
+                [1] = 1,
+                [2] = 1,
+                [3] = 1,
+                [4] = 1
               },
+              durationOffsetX = 0,
+              durationOffsetY = 0,
+              durationSize = 13,
+              dynamicLayout = false,
+              enabled = true,
+              entries = {},
               growDirection = "DOWN",
+              hideDurationText = false,
+              hideGCD = true,
+              hideNonUsable = false,
+              hideStackText = false,
               iconSize = 36,
               id = "test_bar_spec",
+              locked = false,
               maxIcons = 8,
               name = "Spec Bar",
+              noDesaturateWithCharges = false,
               offsetX = -200,
               offsetY = 50,
+              showActiveState = true,
+              showItemCharges = true,
+              showOnlyInCombat = false,
+              showOnlyOnCooldown = false,
+              showOnlyWhenActive = false,
+              showOnlyWhenOffCooldown = false,
+              showProfessionQuality = true,
+              showRechargeSwipe = false,
               spacing = 2,
-              specSpecificSpells = true
+              specSpecificSpells = true,
+              stackAnchor = "BOTTOMRIGHT",
+              stackColor = {
+                [1] = 1,
+                [2] = 1,
+                [3] = 1,
+                [4] = 1
+              },
+              stackOffsetX = 3,
+              stackOffsetY = -1,
+              stackSize = 9,
+              zoom = 0
             }
           }
         },
@@ -6243,6 +6295,18 @@ return {
             customBar_test_bar_1 = {
               _legacyId = "test_bar_1",
               _migratedFromCustomTrackers = true,
+              activeGlowColor = {
+                [1] = 1,
+                [2] = 0.84999999999999998,
+                [3] = 0.29999999999999999,
+                [4] = 1
+              },
+              activeGlowEnabled = true,
+              activeGlowFrequency = 0.25,
+              activeGlowLines = 8,
+              activeGlowScale = 1,
+              activeGlowThickness = 2,
+              activeGlowType = "Pixel Glow",
               anchorTo = "disabled",
               aspectRatioCrop = 1.25,
               borderColor = {
@@ -6253,6 +6317,7 @@ return {
               },
               borderSize = 1,
               builtIn = false,
+              clickableIcons = false,
               containerType = "customBar",
               durationAnchor = "TOP",
               durationColor = {
@@ -6264,6 +6329,7 @@ return {
               durationOffsetX = 2,
               durationOffsetY = -3,
               durationSize = 17,
+              dynamicLayout = false,
               enabled = true,
               entries = {
                 [1] = {
@@ -6277,12 +6343,17 @@ return {
               },
               growDirection = "RIGHT",
               hideDurationText = true,
+              hideGCD = true,
+              hideNonUsable = false,
               hideStackText = true,
               iconSize = 32,
               id = "test_bar_1",
+              keybindContext = "customTrackers",
               layoutDirection = "HORIZONTAL",
+              locked = false,
               maxIcons = 6,
               name = "Test Bar One",
+              noDesaturateWithCharges = false,
               offsetX = 120,
               offsetY = -80,
               pos = {
@@ -6335,6 +6406,14 @@ return {
                 iconCount = 0
               },
               shape = "icon",
+              showActiveState = true,
+              showItemCharges = true,
+              showOnlyInCombat = false,
+              showOnlyOnCooldown = false,
+              showOnlyWhenActive = false,
+              showOnlyWhenOffCooldown = false,
+              showProfessionQuality = true,
+              showRechargeSwipe = false,
               spacing = 4,
               stackAnchor = "BOTTOMLEFT",
               stackColor = {
@@ -6346,6 +6425,8 @@ return {
               stackOffsetX = -2,
               stackOffsetY = 4,
               stackSize = 11,
+              tooltipContext = "customTrackers",
+              visibilityMode = "always",
               zoom = 0.080000000000000002
             },
             customBar_test_bar_spec = {
@@ -6357,6 +6438,18 @@ return {
               _migratedFromCustomTrackers = true,
               _sourceSpecID = 250,
               _specEntriesPortedB3 = true,
+              activeGlowColor = {
+                [1] = 1,
+                [2] = 0.84999999999999998,
+                [3] = 0.29999999999999999,
+                [4] = 1
+              },
+              activeGlowEnabled = true,
+              activeGlowFrequency = 0.25,
+              activeGlowLines = 8,
+              activeGlowScale = 1,
+              activeGlowThickness = 2,
+              activeGlowType = "Pixel Glow",
               anchorTo = "disabled",
               borderColor = {
                 [1] = 0.20000000000000001,
@@ -6366,15 +6459,22 @@ return {
               },
               borderSize = 2,
               builtIn = false,
+              clickableIcons = false,
               containerType = "customBar",
+              dynamicLayout = false,
               enabled = true,
               entries = {},
               growDirection = "DOWN",
+              hideGCD = true,
+              hideNonUsable = false,
               iconSize = 36,
               id = "test_bar_spec",
+              keybindContext = "customTrackers",
               layoutDirection = "VERTICAL",
+              locked = false,
               maxIcons = 8,
               name = "Spec Bar",
+              noDesaturateWithCharges = false,
               offsetX = -200,
               offsetY = 50,
               pos = {
@@ -6427,9 +6527,19 @@ return {
                 iconCount = 0
               },
               shape = "icon",
+              showActiveState = true,
+              showItemCharges = true,
+              showOnlyInCombat = false,
+              showOnlyOnCooldown = false,
+              showOnlyWhenActive = false,
+              showOnlyWhenOffCooldown = false,
+              showProfessionQuality = true,
+              showRechargeSwipe = false,
               spacing = 2,
               specSpecific = true,
-              specSpecificSpells = true
+              specSpecificSpells = true,
+              tooltipContext = "customTrackers",
+              visibilityMode = "always"
             },
             custom_aura = {
               builtIn = false,

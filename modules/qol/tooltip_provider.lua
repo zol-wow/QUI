@@ -225,6 +225,23 @@ local BUILTIN_CDM_KEYS = {
     trackedBar = true,
 }
 
+local function GetCDMTooltipContextForKey(key)
+    if type(key) ~= "string" then return "cdm" end
+    if BUILTIN_CDM_KEYS[key] then return "cdm" end
+
+    local core = GetCore and GetCore()
+    local profile = core and core.db and core.db.profile
+    local ncdm = profile and profile.ncdm
+    local container = ncdm and ncdm.containers and ncdm.containers[key]
+    if type(container) == "table" then
+        if container.tooltipContext == "customTrackers" or container.containerType == "customBar" then
+            return "customTrackers"
+        end
+    end
+
+    return "cdm"
+end
+
 local MAX_CONTEXT_PARENT_DEPTH = 6
 local frameChainScratch = {}
 
@@ -353,14 +370,16 @@ function TooltipProvider:GetTooltipContext(owner)
         local entry = state and state._spellEntry
         local viewerType = entry and entry.viewerType
         if type(viewerType) == "string" and not BUILTIN_CDM_KEYS[viewerType] then
-            SetCachedContext(owner, "customTrackers", now)
-            return "customTrackers"
+            local context = GetCDMTooltipContextForKey(viewerType)
+            SetCachedContext(owner, context, now)
+            return context
         end
 
         local cdmKey = frame._quiCdmKey
         if type(cdmKey) == "string" and not BUILTIN_CDM_KEYS[cdmKey] then
-            SetCachedContext(owner, "customTrackers", now)
-            return "customTrackers"
+            local context = GetCDMTooltipContextForKey(cdmKey)
+            SetCachedContext(owner, context, now)
+            return context
         end
 
         if IsCDMOwnerState(state) then
