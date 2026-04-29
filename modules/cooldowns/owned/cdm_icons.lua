@@ -2984,6 +2984,12 @@ local function UpdateIconCooldown(icon)
                             if icon.Cooldown then
                                 pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
                                 pcall(icon.Cooldown.Clear, icon.Cooldown)
+                                -- Clear() unbound the aura's durObj from the
+                                -- C-side; drop the cached spell durObj so the
+                                -- next tick fetches a fresh one for the
+                                -- post-aura cooldown phase.
+                                icon._cachedDurObj = nil
+                                icon._cachedDurObjSid = nil
                                 ReapplySwipeStyle(icon.Cooldown, icon)
                             end
                         end
@@ -2995,6 +3001,8 @@ local function UpdateIconCooldown(icon)
                     if icon.Cooldown then
                         pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
                         pcall(icon.Cooldown.Clear, icon.Cooldown)
+                        icon._cachedDurObj = nil
+                        icon._cachedDurObjSid = nil
                         ReapplySwipeStyle(icon.Cooldown, icon)
                     end
                 end
@@ -3029,7 +3037,23 @@ local function UpdateIconCooldown(icon)
                     -- draw/no-draw decisions (SetCooldownFromDurationObject clears at
                     -- zero) and skips the numeric tick-apply/clear fallback below.
                     if entry._blizzChild and icon.Cooldown and icon.Cooldown.SetCooldownFromDurationObject and not icon._auraActive then
-                        local spellDurObj = TickCacheGetDuration(cdSid)
+                        -- Cache the DurationObject userdata on the icon so the
+                        -- per-tick rebind feeds the C-side the same userdata
+                        -- across batches. TickCacheGetDuration wipes per batch
+                        -- and returns a fresh userdata each fetch — binding a
+                        -- fresh userdata each tick restarts the C-side swipe
+                        -- animation (visible combat radial flicker). DurationObjects
+                        -- poll live state internally, so reusing the same one
+                        -- still reflects the current cooldown remaining time.
+                        --
+                        -- Refresh the cache when the runtime sid changes (spell
+                        -- override / form swap) or has never been cached.
+                        if not icon._cachedDurObj or icon._cachedDurObjSid ~= cdSid then
+                            icon._cachedDurObj = TickCacheGetDuration(cdSid)
+                            icon._cachedDurObjSid = cdSid
+                        end
+
+                        local spellDurObj = icon._cachedDurObj
                         if spellDurObj then
                             pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, spellDurObj)
                             icon._durObjHookSync = GetTime()
@@ -3780,6 +3804,8 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         icon._showingGCDSwipe = nil
         icon._showingRealCooldownSwipe = nil
         icon._mirrorDriven = nil
+        icon._cachedDurObj = nil
+        icon._cachedDurObjSid = nil
         icon._wasShowingGCDSwipe = nil
         icon._hasCooldownActive = nil
         icon._isTotemInstance = nil
