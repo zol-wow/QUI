@@ -19,6 +19,7 @@ local LSM = ns.LSM
 ---------------------------------------------------------------------------
 local CDMIcons = {}
 ns.CDMIcons = CDMIcons
+CDMIcons._LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 local CDMCooldown = ns.CDMCooldown or {}
 ns.CDMCooldown = CDMCooldown
 
@@ -1029,6 +1030,9 @@ local function ReapplySwipeStyle(cd, icon)
     local CooldownSwipe = QUI.CooldownSwipe
     if CooldownSwipe and CooldownSwipe.ApplyToIcon then
         CooldownSwipe.ApplyToIcon(icon)
+    end
+    if CDMIcons.ApplyCustomBarSwipeStyle then
+        CDMIcons.ApplyCustomBarSwipeStyle(icon)
     end
 end
 
@@ -2086,7 +2090,11 @@ local function CreateIcon(parent, spellEntry)
                 pcall(GameTooltip.Hide, GameTooltip)
                 return
             end
-            if tooltipProvider.ShouldShowTooltip and not tooltipProvider:ShouldShowTooltip("cdm") then
+            local tooltipContext = self._quiTooltipContext
+                or self.__quiTooltipContext
+                or (self.__customTrackerIcon and "customTrackers")
+                or "cdm"
+            if tooltipProvider.ShouldShowTooltip and not tooltipProvider:ShouldShowTooltip(tooltipContext) then
                 pcall(GameTooltip.Hide, GameTooltip)
                 return
             end
@@ -2484,6 +2492,7 @@ end
 
 local function ConfigureIcon(icon, rowConfig)
     if not icon or not rowConfig then return end
+    icon._rowConfig = rowConfig
 
     local size = rowConfig.size or DEFAULT_ICON_SIZE
     local aspectRatio = rowConfig.aspectRatioCrop or 1.0
@@ -2540,6 +2549,14 @@ local function ConfigureIcon(icon, rowConfig)
     -- Duration text styling
     local generalFont = GetGeneralFont()
     local generalOutline = GetGeneralFontOutline()
+    local durationFont = generalFont
+    local stackFont = generalFont
+    if LSM and rowConfig.durationFont and rowConfig.durationFont ~= "" then
+        durationFont = LSM:Fetch("font", rowConfig.durationFont) or durationFont
+    end
+    if LSM and rowConfig.stackFont and rowConfig.stackFont ~= "" then
+        stackFont = LSM:Fetch("font", rowConfig.stackFont) or stackFont
+    end
 
     local durationSize = rowConfig.durationSize or 14
     local hideDurationText = rowConfig.hideDurationText
@@ -2555,7 +2572,7 @@ local function ConfigureIcon(icon, rowConfig)
             if ok and regions then
                 for _, region in ipairs(regions) do
                     if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-                        region:SetFont(generalFont, durationSize, generalOutline)
+                        region:SetFont(durationFont, durationSize, generalOutline)
                         region:SetTextColor(dtc[1], dtc[2], dtc[3], dtc[4] or 1)
                         region:Show()
                         pcall(function()
@@ -2569,7 +2586,7 @@ local function ConfigureIcon(icon, rowConfig)
         end
 
         -- Also style our DurationText
-        icon.DurationText:SetFont(generalFont, durationSize, generalOutline)
+        icon.DurationText:SetFont(durationFont, durationSize, generalOutline)
         icon.DurationText:SetTextColor(dtc[1], dtc[2], dtc[3], dtc[4] or 1)
         icon.DurationText:ClearAllPoints()
         icon.DurationText:SetPoint(dAnchor, icon, dAnchor, dox, doy)
@@ -2598,7 +2615,7 @@ local function ConfigureIcon(icon, rowConfig)
         local sox = rowConfig.stackOffsetX or 0
         local soy = rowConfig.stackOffsetY or 0
 
-        icon.StackText:SetFont(generalFont, stackSize, generalOutline)
+        icon.StackText:SetFont(stackFont, stackSize, generalOutline)
         icon.StackText:SetTextColor(stc[1], stc[2], stc[3], stc[4] or 1)
         icon.StackText:ClearAllPoints()
         icon.StackText:SetPoint(sAnchor, icon, sAnchor, sox, soy)
@@ -2610,7 +2627,7 @@ local function ConfigureIcon(icon, rowConfig)
         local entry = icon._spellEntry
         if entry and entry._blizzChild then
             StyleBlizzNativeStacks(icon, entry._blizzChild,
-                generalFont, stackSize, generalOutline,
+                stackFont, stackSize, generalOutline,
                 stc[1], stc[2], stc[3], stc[4] or 1,
                 sAnchor, sox, soy)
         end
@@ -2700,6 +2717,500 @@ local function GetTrackerSettings(viewerType)
     -- uniformly across all container types.
     if db[viewerType] then return db[viewerType] end
     return db.containers and db.containers[viewerType] or nil
+end
+
+function CDMIcons.IsCustomBarContainer(containerDB)
+    return type(containerDB) == "table" and containerDB.containerType == "customBar"
+end
+
+function CDMIcons.NormalizeCustomBarVisibilityFlags(containerDB)
+    if not CDMIcons.IsCustomBarContainer(containerDB) then return "always" end
+
+    local mode = "always"
+    if containerDB.showOnlyOnCooldown then
+        mode = "onCooldown"
+        containerDB.showOnlyWhenActive = false
+        containerDB.showOnlyWhenOffCooldown = false
+    elseif containerDB.showOnlyWhenActive then
+        mode = "active"
+        containerDB.showOnlyWhenOffCooldown = false
+    elseif containerDB.showOnlyWhenOffCooldown then
+        mode = "offCooldown"
+    end
+
+    containerDB.visibilityMode = mode
+
+    if mode ~= "onCooldown" then
+        containerDB.noDesaturateWithCharges = false
+    end
+
+    if containerDB.dynamicLayout == nil then
+        containerDB.dynamicLayout = false
+    end
+    if containerDB.dynamicLayout and containerDB.clickableIcons then
+        containerDB.clickableIcons = false
+    end
+
+    containerDB.tooltipContext = containerDB.tooltipContext or "customTrackers"
+    containerDB.keybindContext = containerDB.keybindContext or "customTrackers"
+
+    return mode
+end
+
+function CDMIcons.GetCustomBarVisibilityMode(containerDB)
+    if not CDMIcons.IsCustomBarContainer(containerDB) then return "always" end
+    return CDMIcons.NormalizeCustomBarVisibilityFlags(containerDB)
+end
+
+function CDMIcons.IsItemLikeEntry(entry)
+    return entry and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot")
+end
+
+function CDMIcons.ResolveEntryItemID(entry)
+    if not entry then return nil end
+    if entry.type == "item" then
+        return entry.id
+    elseif entry.type == "trinket" or entry.type == "slot" then
+        return GetInventoryItemID("player", entry.id)
+    end
+    return nil
+end
+
+function CDMIcons.GetSpellCastInfo(spellID)
+    if not spellID or not UnitCastingInfo then return false end
+    local _, _, _, startMS, endMS, _, _, _, castSpellID = UnitCastingInfo("player")
+    if castSpellID and castSpellID == spellID and startMS and endMS then
+        return true, startMS / 1000, (endMS - startMS) / 1000, "cast"
+    end
+    return false
+end
+
+function CDMIcons.GetSpellChannelInfo(spellID)
+    if not spellID or not UnitChannelInfo then return false end
+    local _, _, _, startMS, endMS, _, _, channelSpellID = UnitChannelInfo("player")
+    if channelSpellID and channelSpellID == spellID and startMS and endMS then
+        return true, startMS / 1000, (endMS - startMS) / 1000, "channel"
+    end
+    return false
+end
+
+function CDMIcons.GetSpellBuffInfo(spellID, icon, entry)
+    if not spellID then return false end
+
+    local scanner = QUI and QUI.SpellScanner
+    if scanner and scanner.IsSpellActive then
+        local active, expiration, duration = scanner.IsSpellActive(spellID)
+        if active then
+            if expiration and duration then
+                return true, expiration - duration, duration, "buff"
+            end
+            return true, nil, nil, "buff"
+        end
+        if InCombatLockdown() then
+            return false
+        end
+    elseif InCombatLockdown() then
+        return false
+    end
+
+    if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
+        local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
+        if ok and auraData then
+            local expiration = SafeValue(auraData.expirationTime, nil)
+            local duration = SafeValue(auraData.duration, nil)
+            if expiration and duration then
+                return true, expiration - duration, duration, "buff"
+            end
+            return true, nil, nil, "buff"
+        end
+    end
+
+    if icon and icon._auraActive then
+        return true, nil, nil, "buff"
+    end
+
+    return false
+end
+
+function CDMIcons.ResolveSpellActiveState(spellID, icon, entry)
+    if not spellID then return false end
+
+    local active, start, duration, activeType = CDMIcons.GetSpellCastInfo(spellID)
+    if active then return active, start, duration, activeType end
+
+    active, start, duration, activeType = CDMIcons.GetSpellChannelInfo(spellID)
+    if active then return active, start, duration, activeType end
+
+    active, start, duration, activeType = CDMIcons.GetSpellBuffInfo(spellID, icon, entry)
+    if active then return active, start, duration, activeType end
+
+    if C_Spell and C_Spell.GetOverrideSpell then
+        local overrideID = TickCacheGetOverrideSpell(spellID)
+        if overrideID and not IsSecretValue(overrideID) and overrideID ~= spellID then
+            active, start, duration, activeType = CDMIcons.GetSpellCastInfo(overrideID)
+            if active then return active, start, duration, activeType end
+            active, start, duration, activeType = CDMIcons.GetSpellChannelInfo(overrideID)
+            if active then return active, start, duration, activeType end
+            active, start, duration, activeType = CDMIcons.GetSpellBuffInfo(overrideID, icon, entry)
+            if active then return active, start, duration, activeType end
+        end
+    end
+
+    return false
+end
+
+function CDMIcons.ResolveItemActiveState(itemID, icon, entry)
+    if not itemID or not C_Item or not C_Item.GetItemSpell then return false end
+    local ok, _, itemSpellID = pcall(C_Item.GetItemSpell, itemID)
+    if ok and itemSpellID then
+        return CDMIcons.ResolveSpellActiveState(itemSpellID, icon, entry)
+    end
+    return false
+end
+
+function CDMIcons.ResolveCustomBarActiveState(entry, icon, now)
+    local containerDB = GetTrackerSettings(entry and entry.viewerType)
+    if not CDMIcons.IsCustomBarContainer(containerDB) then
+        return icon and icon._auraActive or false
+    end
+    if containerDB.showActiveState == false then
+        return false
+    end
+
+    if entry.type == "macro" then
+        local resolvedID, resolvedType = ResolveMacro(entry)
+        if resolvedID then
+            if resolvedType == "item" then
+                return CDMIcons.ResolveItemActiveState(resolvedID, icon, entry)
+            end
+            return CDMIcons.ResolveSpellActiveState(resolvedID, icon, entry)
+        end
+        return false
+    end
+
+    if CDMIcons.IsItemLikeEntry(entry) then
+        local itemID = CDMIcons.ResolveEntryItemID(entry)
+        if itemID then
+            return CDMIcons.ResolveItemActiveState(itemID, icon, entry)
+        end
+        return false
+    end
+
+    local spellID = icon and icon._runtimeSpellID or entry.spellID or entry.overrideSpellID or entry.id
+    return CDMIcons.ResolveSpellActiveState(spellID, icon, entry)
+end
+
+function CDMIcons.ResolveCustomBarCooldownState(entry, icon, containerDB, now)
+    local state = {
+        isOnCooldown = false,
+        rechargeActive = false,
+        hasChargesRemaining = false,
+        hasCharges = entry and entry.hasCharges or false,
+    }
+    if not entry or not icon then return state end
+
+    local dur = icon._lastDuration or 0
+    local start = icon._lastStart or 0
+    if icon._hasCooldownActive then
+        state.isOnCooldown = true
+    elseif dur > GCD_MAX_DURATION and start > 0 then
+        local remaining = (start + dur) - (now or GetTime())
+        if remaining > 0 then
+            state.isOnCooldown = true
+        end
+    end
+
+    local spellID = icon._runtimeSpellID or entry.spellID or entry.overrideSpellID or entry.id
+    if spellID and not CDMIcons.IsItemLikeEntry(entry) then
+        local ci = TickCacheGetCharges(spellID)
+        if ci then
+            local current = SafeToNumber(ci.currentCharges, nil)
+            local maxC = SafeToNumber(ci.maxCharges, nil)
+            if maxC and maxC > 1 then
+                state.hasCharges = true
+                if current and current > 0 then
+                    state.hasChargesRemaining = true
+                end
+                if ci.isActive == true or (current and current < maxC) then
+                    state.rechargeActive = true
+                    if current and current > 0 then
+                        state.isOnCooldown = false
+                    else
+                        state.isOnCooldown = true
+                    end
+                end
+            end
+        end
+    end
+
+    if containerDB and containerDB.hideGCD and icon._isOnGCD
+       and not icon._auraActive and not state.hasCharges then
+        local hasRealCooldown = false
+        if spellID and C_Spell and C_Spell.GetSpellBaseCooldown then
+            local ok, baseDurMS = pcall(C_Spell.GetSpellBaseCooldown, spellID)
+            if ok and type(baseDurMS) == "number" and baseDurMS > 1500 then
+                hasRealCooldown = true
+            end
+        end
+        if not hasRealCooldown and dur <= GCD_MAX_DURATION then
+            state.isOnCooldown = false
+        end
+    end
+
+    return state
+end
+
+function CDMIcons.ResolveCustomBarUsability(entry, containerDB)
+    if not entry then return true end
+
+    if entry.type == "macro" then
+        local resolvedID, resolvedType = ResolveMacro(entry)
+        if not resolvedID then return true end
+        if resolvedType == "item" then
+            return CDMIcons.ResolveCustomBarUsability({ type = "item", id = resolvedID }, containerDB)
+        end
+        return CDMIcons.ResolveCustomBarUsability({ type = "spell", id = resolvedID, spellID = resolvedID }, containerDB)
+    end
+
+    if entry.type == "item" then
+        if C_Item and C_Item.GetItemInfoInstant and Enum and Enum.ItemClass then
+            local okClass, instantItemID, instantItemType, instantItemSubType, instantEquipLoc, instantIcon, classID =
+                pcall(C_Item.GetItemInfoInstant, entry.id)
+            if okClass and (classID == Enum.ItemClass.Armor or classID == Enum.ItemClass.Weapon) then
+                if C_Item.IsEquippedItem then
+                    local okEquipped, equipped = pcall(C_Item.IsEquippedItem, entry.id)
+                    if okEquipped then
+                        return equipped == true
+                    end
+                end
+            end
+        end
+        if C_Item and C_Item.GetItemCount then
+            local ok, count = pcall(C_Item.GetItemCount, entry.id, false, containerDB and containerDB.showItemCharges == true, true)
+            if ok then
+                if IsSecretValue and IsSecretValue(count) then
+                    return true
+                end
+                count = SafeToNumber(count, nil)
+                return count and count > 0
+            end
+        end
+        return true
+    elseif entry.type == "trinket" or entry.type == "slot" then
+        return GetInventoryItemID("player", entry.id) ~= nil
+    end
+
+    local sid = entry.spellID or entry.overrideSpellID or entry.id
+    if sid then
+        local spellData = ns.CDMSpellData
+        if spellData and type(spellData.IsSpellKnown) == "function"
+           and not spellData:IsSpellKnown(sid) then
+            return false
+        end
+        if C_Spell and C_Spell.IsSpellUsable then
+            local ok, usable = pcall(C_Spell.IsSpellUsable, sid)
+            if ok and usable == false then
+                return false
+            end
+        end
+    end
+
+    return true
+end
+
+function CDMIcons.ComputeCustomBarVisibility(icon, entry, containerDB, now)
+    local cooldown = CDMIcons.ResolveCustomBarCooldownState(entry, icon, containerDB, now)
+    local isActive = (icon and icon._customBarActive) or (icon and icon._auraActive) or false
+    local usable = CDMIcons.ResolveCustomBarUsability(entry, containerDB)
+    local baseVisible = usable or not (containerDB and containerDB.hideNonUsable)
+    local mode = CDMIcons.GetCustomBarVisibilityMode(containerDB)
+    local layoutVisible = baseVisible
+
+    if layoutVisible then
+        if mode == "onCooldown" then
+            layoutVisible = cooldown.isOnCooldown or cooldown.rechargeActive
+        elseif mode == "active" then
+            layoutVisible = isActive
+        elseif mode == "offCooldown" then
+            layoutVisible = (not cooldown.isOnCooldown)
+                and (not isActive or cooldown.hasChargesRemaining)
+        end
+    end
+
+    local inCombat = UnitAffectingCombat and UnitAffectingCombat("player")
+    local combatVisible = not (containerDB and containerDB.showOnlyInCombat) or inCombat
+
+    return {
+        baseVisible = baseVisible,
+        layoutVisible = layoutVisible and true or false,
+        renderVisible = layoutVisible and combatVisible and true or false,
+        isActive = isActive and true or false,
+        isUsable = usable and true or false,
+        isOnCooldown = cooldown.isOnCooldown and true or false,
+        rechargeActive = cooldown.rechargeActive and true or false,
+        hasChargesRemaining = cooldown.hasChargesRemaining and true or false,
+        visibilityMode = mode,
+    }
+end
+
+function CDMIcons.StartCustomBarActiveGlow(icon, containerDB)
+    if not icon or not CDMIcons._LCG or not containerDB or containerDB.activeGlowEnabled == false then return end
+    if icon._customBarActiveGlowShown or icon._customBarActiveGlowPending then return end
+    local width, height = icon:GetSize()
+    if not width or not height or width < 10 or height < 10 then return end
+
+    local glowType = containerDB.activeGlowType or "Pixel Glow"
+    local color = containerDB.activeGlowColor or {1, 0.85, 0.3, 1}
+    local lines = containerDB.activeGlowLines or 8
+    local frequency = containerDB.activeGlowFrequency or 0.25
+    local thickness = containerDB.activeGlowThickness or 2
+    local scale = containerDB.activeGlowScale or 1.0
+
+    if glowType == "Proc Glow" then
+        local duration = 1.0 / ((frequency or 0.25) * 4)
+        duration = math.max(0.5, math.min(2.0, duration))
+        if icon.Border and icon.Border.IsShown and icon.Border:IsShown() then
+            icon._customBarBorderWasShown = true
+            icon.Border:Hide()
+        end
+        if icon.Icon and icon.CreateMaskTexture then
+            if not icon._customBarProcGlowMask then
+                icon._customBarProcGlowMask = icon:CreateMaskTexture()
+                icon._customBarProcGlowMask:SetTexture("Interface\\AddOns\\QUI\\assets\\iconskin\\ProcGlowMask")
+                icon._customBarProcGlowMask:SetAllPoints(icon.Icon)
+            end
+            pcall(icon.Icon.AddMaskTexture, icon.Icon, icon._customBarProcGlowMask)
+        end
+        icon._customBarActiveGlowPending = true
+        C_Timer.After(0, function()
+            icon._customBarActiveGlowPending = nil
+            if not icon or not icon:IsShown() or icon._customBarActiveGlowShown or not icon._customBarActive then return end
+            CDMIcons._LCG.ProcGlow_Start(icon, {
+                color = color,
+                duration = duration,
+                startAnim = true,
+                key = "_QUIActiveGlow",
+            })
+            icon._customBarActiveGlowShown = true
+            icon._customBarActiveGlowType = glowType
+        end)
+    elseif glowType == "Autocast Shine" then
+        CDMIcons._LCG.AutoCastGlow_Start(icon, color, lines, frequency, scale, 0, 0, "_QUIActiveGlow")
+        icon._customBarActiveGlowShown = true
+        icon._customBarActiveGlowType = glowType
+    else
+        CDMIcons._LCG.PixelGlow_Start(icon, color, lines, frequency, nil, thickness, 0, 0, true, "_QUIActiveGlow")
+        icon._customBarActiveGlowShown = true
+        icon._customBarActiveGlowType = "Pixel Glow"
+    end
+end
+
+function CDMIcons.StopCustomBarActiveGlow(icon)
+    if not icon or not CDMIcons._LCG then return end
+    icon._customBarActiveGlowPending = nil
+    local glowWasShown = icon._customBarActiveGlowShown
+
+    local glowType = icon._customBarActiveGlowType or "Pixel Glow"
+    if glowWasShown and glowType == "Proc Glow" then
+        pcall(CDMIcons._LCG.ProcGlow_Stop, icon, "_QUIActiveGlow")
+    elseif glowWasShown and glowType == "Autocast Shine" then
+        pcall(CDMIcons._LCG.AutoCastGlow_Stop, icon, "_QUIActiveGlow")
+    elseif glowWasShown then
+        pcall(CDMIcons._LCG.PixelGlow_Stop, icon, "_QUIActiveGlow")
+    end
+    if icon.Icon and icon._customBarProcGlowMask then
+        pcall(icon.Icon.RemoveMaskTexture, icon.Icon, icon._customBarProcGlowMask)
+    end
+    if icon._customBarBorderWasShown and icon.Border then
+        icon.Border:Show()
+    end
+    icon._customBarBorderWasShown = nil
+    icon._customBarActiveGlowShown = nil
+    icon._customBarActiveGlowType = nil
+end
+
+function CDMIcons.ApplyCustomBarSwipeStyle(icon, containerDB, cooldownState)
+    if not icon or not icon.Cooldown or not icon._spellEntry then return end
+    local entry = icon._spellEntry
+    containerDB = containerDB or GetTrackerSettings(entry.viewerType)
+    if not CDMIcons.IsCustomBarContainer(containerDB) then return end
+
+    cooldownState = cooldownState or CDMIcons.ResolveCustomBarCooldownState(entry, icon, containerDB, GetTime())
+    local showRecharge = cooldownState and cooldownState.rechargeActive and containerDB.showRechargeSwipe == true
+    if cooldownState and (cooldownState.hasCharges or cooldownState.rechargeActive) then
+        icon.Cooldown:SetDrawSwipe(showRecharge)
+        icon.Cooldown:SetDrawEdge(false)
+        if showRecharge then
+            icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
+            icon.Cooldown:SetSwipeColor(0, 0, 0, 0.6)
+        else
+            icon.Cooldown:SetSwipeColor(0, 0, 0, 0)
+        end
+    elseif not icon._customBarActive then
+        icon.Cooldown:SetDrawSwipe(false)
+        icon.Cooldown:SetDrawEdge(false)
+        icon.Cooldown:SetSwipeColor(0, 0, 0, 0)
+    end
+end
+
+function CDMIcons.ApplyCustomBarActiveState(icon, entry, containerDB)
+    if not icon or not entry or not CDMIcons.IsCustomBarContainer(containerDB) then return end
+
+    local active, startTime, duration, activeType = CDMIcons.ResolveCustomBarActiveState(entry, icon, GetTime())
+    icon._customBarActive = active and true or false
+    icon._customBarActiveType = activeType
+    icon._customBarActiveStart = startTime
+    icon._customBarActiveDuration = duration
+
+    if active
+       and containerDB.showActiveState ~= false
+       and not containerDB.showOnlyOnCooldown
+       and not CDMIcons.IsItemLikeEntry(entry)
+       and startTime and duration and duration > 0
+       and icon.Cooldown and icon.Cooldown.SetCooldown then
+        pcall(icon.Cooldown.SetReverse, icon.Cooldown, true)
+        pcall(icon.Cooldown.SetCooldown, icon.Cooldown, startTime, duration)
+        ReapplySwipeStyle(icon.Cooldown, icon)
+        icon._hasCooldownActive = false
+    elseif icon.Cooldown and not icon._auraActive then
+        pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
+    end
+
+    if CDMIcons.ApplyCustomBarSwipeStyle then
+        CDMIcons.ApplyCustomBarSwipeStyle(icon, containerDB)
+    end
+end
+
+function CDMIcons.ApplyCustomBarActiveGlow(icon, containerDB, visibility)
+    if visibility and visibility.renderVisible and visibility.isActive
+       and visibility.visibilityMode ~= "onCooldown" then
+        CDMIcons.StartCustomBarActiveGlow(icon, containerDB)
+    else
+        CDMIcons.StopCustomBarActiveGlow(icon)
+    end
+end
+
+function CDMIcons.ShouldHideIconStackText(icon, containerDB)
+    local row = icon and icon._rowConfig
+    if row and row.hideStackText == true then return true end
+    return containerDB and containerDB.hideStackText == true
+end
+
+function CDMIcons.ShowIconStackText(icon, value, containerDB)
+    if not icon or not icon.StackText then return end
+    if CDMIcons.ShouldHideIconStackText(icon, containerDB) then
+        icon.StackText:SetText("")
+        icon.StackText:Hide()
+        return
+    end
+    icon.StackText:SetText(value)
+    icon.StackText:Show()
+end
+
+function CDMIcons.HideIconStackText(icon)
+    if not icon or not icon.StackText then return end
+    icon.StackText:SetText("")
+    icon.StackText:Hide()
 end
 
 -- _hoistedNcdm is set once per UpdateAllCooldowns batch (avoids 4 table
@@ -2923,19 +3434,39 @@ local function UpdateIconCooldown(icon)
                 end
             end
             -- Hide stack text for trinkets
-            icon.StackText:SetText("")
-            icon.StackText:Hide()
+            CDMIcons.HideIconStackText(icon)
         elseif entry.type == "item" then
             startTime, duration, durObj = GetItemCooldown(entry.id)
-            -- Show item count as stack text (includeUses=true for charge items)
+            -- Show item count/charges as stack text using legacy custom tracker semantics.
             if C_Item and C_Item.GetItemCount then
-                local ok, count = pcall(C_Item.GetItemCount, entry.id, false, true)
-                if ok and count and count > 0 then
-                    icon.StackText:SetText(tostring(count))
-                    icon.StackText:Show()
+                local containerDB = GetTrackerSettings(entry.viewerType)
+                local includeUses = containerDB and containerDB.showItemCharges == true
+                local ok, count = pcall(C_Item.GetItemCount, entry.id, false, includeUses, true)
+                if ok and count then
+                    local stackColor = icon._rowConfig and icon._rowConfig.stackTextColor or {1, 1, 1, 1}
+                    if IsSecretValue and IsSecretValue(count) then
+                        if icon.StackText.SetTextColor then
+                            icon.StackText:SetTextColor(stackColor[1], stackColor[2], stackColor[3], stackColor[4] or 1)
+                        end
+                        CDMIcons.ShowIconStackText(icon, count, containerDB)
+                    else
+                        local numericCount = SafeToNumber(count, 0)
+                        if numericCount > 1 then
+                            if icon.StackText.SetTextColor then
+                                icon.StackText:SetTextColor(stackColor[1], stackColor[2], stackColor[3], stackColor[4] or 1)
+                            end
+                            CDMIcons.ShowIconStackText(icon, tostring(numericCount), containerDB)
+                        elseif numericCount == 1 then
+                            CDMIcons.HideIconStackText(icon)
+                        else
+                            if icon.StackText.SetTextColor then
+                                icon.StackText:SetTextColor((stackColor[1] or 1) * 0.5, (stackColor[2] or 1) * 0.5, (stackColor[3] or 1) * 0.5, stackColor[4] or 1)
+                            end
+                            CDMIcons.ShowIconStackText(icon, "0", containerDB)
+                        end
+                    end
                 else
-                    icon.StackText:SetText("0")
-                    icon.StackText:Show()
+                    CDMIcons.ShowIconStackText(icon, "0", containerDB)
                 end
             end
         else
@@ -3437,6 +3968,16 @@ local function UpdateIconCooldown(icon)
             end
         end
 
+    do
+        local containerDB = GetTrackerSettings(entry.viewerType)
+        if CDMIcons.IsCustomBarContainer(containerDB) then
+            CDMIcons.ApplyCustomBarActiveState(icon, entry, containerDB)
+        else
+            icon._customBarActive = nil
+            CDMIcons.StopCustomBarActiveGlow(icon)
+        end
+    end
+
     -- Stack/charge text: API-driven on each tick.
     -- Cache chargeInfo for this icon — reused by desaturation check below
     -- (was called 3x per cooldown icon per tick, now 1x)
@@ -3520,15 +4061,14 @@ local function UpdateIconCooldown(icon)
                 "hasCharges=", entry.hasCharges,
                 "overrideSpellID=", entry.overrideSpellID)
             if ccc ~= nil then
-                pcall(icon.StackText.SetText, icon.StackText, ccc)
-                icon.StackText:Show()
+                CDMIcons.ShowIconStackText(icon, ccc, GetTrackerSettings(entry.viewerType))
                 _chargeCountForwarded = true
             end
         elseif ci and ci.maxCharges then
             ChargeDebug(entry.name, "FWD path CLEAR: baseSid=", baseSid,
                 "maxCharges=", ci.maxCharges, "(<=1, clearing stacks)",
                 "overrideSpellID=", entry.overrideSpellID)
-            icon.StackText:SetText("")
+            CDMIcons.HideIconStackText(icon)
             _chargeCountForwarded = true
         else
             -- Spell has no charge mechanic (ci nil) but the Blizzard child
@@ -3546,8 +4086,7 @@ local function UpdateIconCooldown(icon)
             if ccc ~= nil then
                 local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, ccc)
                 local displayText = truncOk and truncText or ccc
-                pcall(icon.StackText.SetText, icon.StackText, displayText)
-                icon.StackText:Show()
+                CDMIcons.ShowIconStackText(icon, displayText, GetTrackerSettings(entry.viewerType))
                 _chargeCountForwarded = true
                 ChargeDebug(entry.name, "FWD path STACKING-AURA: baseSid=", baseSid,
                     "ccc=", ccc, "displayText=", displayText)
@@ -3611,8 +4150,7 @@ local function UpdateIconCooldown(icon)
             if stackVal then
                 if isMultiCharge then
                     -- Always show charge count — "0" is meaningful
-                    pcall(icon.StackText.SetText, icon.StackText, stackVal)
-                    icon.StackText:Show()
+                    CDMIcons.ShowIconStackText(icon, stackVal, GetTrackerSettings(entry.viewerType))
                 else
                     local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, stackVal)
                     local displayText = truncOk and truncText or stackVal
@@ -3622,11 +4160,9 @@ local function UpdateIconCooldown(icon)
                         if etOk and etEq then hasText = false end
                     end
                     if hasText then
-                        pcall(icon.StackText.SetText, icon.StackText, displayText)
-                        icon.StackText:Show()
+                        CDMIcons.ShowIconStackText(icon, displayText, GetTrackerSettings(entry.viewerType))
                     else
-                        icon.StackText:SetText("")
-                        icon.StackText:Hide()
+                        CDMIcons.HideIconStackText(icon)
                     end
                 end
             elseif not InCombatLockdown() and not (entry and entry.hasCharges) then
@@ -3640,8 +4176,7 @@ local function UpdateIconCooldown(icon)
                 -- flicker show/hide" symptom on every target aura change.
                 -- The FWD path or the next tick's API read will restore the
                 -- correct value; preserve the previous text in the gap.
-                icon.StackText:SetText("")
-                icon.StackText:Hide()
+                CDMIcons.HideIconStackText(icon)
             end
         else
             -- Harvested entries and other types: hooks drive stack text on
@@ -3659,15 +4194,12 @@ local function UpdateIconCooldown(icon)
                     if etOk and etEq then hasText = false end
                 end
                 if hasText then
-                    pcall(icon.StackText.SetText, icon.StackText, displayText)
-                    icon.StackText:Show()
+                    CDMIcons.ShowIconStackText(icon, displayText, GetTrackerSettings(entry.viewerType))
                 else
-                    icon.StackText:SetText("")
-                    icon.StackText:Hide()
+                    CDMIcons.HideIconStackText(icon)
                 end
             elseif not InCombatLockdown() then
-                icon.StackText:SetText("")
-                icon.StackText:Hide()
+                CDMIcons.HideIconStackText(icon)
             end
         end
     end
@@ -3680,16 +4212,29 @@ local function UpdateIconCooldown(icon)
         -- _desaturateIgnoreAura: per-spell override lets charged abilities that
         -- apply auras still desaturate based on charge/CD state while the aura
         -- is active (e.g. a charged debuff spell should grey out when fully depleted).
-        local auraBlocks = icon._auraActive and not icon._desaturateIgnoreAura
+        local desatSettings = _hoistedNcdm and (_hoistedNcdm[viewerType]
+            or (_hoistedNcdm.containers and _hoistedNcdm.containers[viewerType]))
+        local auraBlocks = (icon._auraActive or (CDMIcons.IsCustomBarContainer(desatSettings) and icon._customBarActive))
+            and not icon._desaturateIgnoreAura
         if viewerType ~= "buff" and not auraBlocks and not icon._rangeTinted and not icon._usabilityTinted then
             -- Per-spell desaturate override takes precedence over tracker-wide setting
             local desatOverride = icon._spellOverrideDesaturate
-            local settings = _hoistedNcdm and _hoistedNcdm[viewerType]
+            local settings = desatSettings
             local shouldDesaturate = settings and settings.desaturateOnCooldown
             if desatOverride == true then
                 shouldDesaturate = true
             elseif desatOverride == false then
                 shouldDesaturate = false
+            end
+            if CDMIcons.IsCustomBarContainer(settings)
+               and settings.noDesaturateWithCharges
+               and settings.showOnlyOnCooldown
+               and entry.hasCharges
+               and icon._customBarActive ~= true then
+                local visibility = CDMIcons.ComputeCustomBarVisibility(icon, entry, settings, _batchTime)
+                if visibility.rechargeActive and not visibility.isOnCooldown then
+                    shouldDesaturate = false
+                end
             end
             if shouldDesaturate then
                 -- GCD-only cooldowns should never desaturate.
@@ -3811,6 +4356,11 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         icon._totemSlot = spellEntry and spellEntry._totemSlot or nil
         icon._totemIconCache = nil
         icon._pendingTotemSlotRefresh = nil
+        icon._customBarActive = nil
+        icon._customBarActiveType = nil
+        icon._customBarActiveStart = nil
+        icon._customBarActiveDuration = nil
+        CDMIcons.StopCustomBarActiveGlow(icon)
 
         -- Update texture
         local texID
@@ -3889,6 +4439,15 @@ function CDMIcons:ReleaseIcon(icon)
     icon._totemIconCache = nil
     icon._pendingTotemSlotRefresh = nil
     icon._lastLayoutFilterHidden = nil
+    icon._customBarActive = nil
+    icon._customBarActiveType = nil
+    icon._customBarActiveStart = nil
+    icon._customBarActiveDuration = nil
+    icon._rowConfig = nil
+    icon._quiTooltipContext = nil
+    icon.__quiTooltipContext = nil
+    icon.__customTrackerIcon = nil
+    CDMIcons.StopCustomBarActiveGlow(icon)
     -- Reset grey-out child alpha (set by greyOutInactive/greyOutInactiveBuffs)
     icon._greyType = nil
     if icon._greyedOut then
@@ -3927,6 +4486,15 @@ end
 
 function CDMIcons:GetIconPool(viewerType)
     return iconPools[viewerType] or {}
+end
+
+function CDMIcons:ForEachIcon(callback)
+    if not callback then return end
+    for viewerType, pool in pairs(iconPools) do
+        for _, icon in ipairs(pool) do
+            callback(icon, viewerType)
+        end
+    end
 end
 
 --- Ensure an icon pool exists for the given container key (Phase G).
@@ -4116,6 +4684,15 @@ function CDMIcons:BuildIcons(viewerType, container)
     for _, icon in ipairs(pool) do
         local entry = icon._spellEntry
         if entry then
+            local containerDB = GetTrackerSettings(entry.viewerType)
+            local tooltipContext = containerDB and containerDB.tooltipContext
+            if CDMIcons.IsCustomBarContainer(containerDB) then
+                tooltipContext = tooltipContext or "customTrackers"
+            end
+            icon._quiTooltipContext = tooltipContext or "cdm"
+            icon.__quiTooltipContext = icon._quiTooltipContext
+            icon.__customTrackerIcon = icon._quiTooltipContext == "customTrackers" or nil
+
             local addonCD = icon.Cooldown
             if addonCD then
                 addonCD:SetDrawSwipe(true)
@@ -4243,6 +4820,11 @@ end
 -- Returns true if any visibility filter wants the icon hidden.
 local function ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
     if not containerDB then return false end
+
+    if CDMIcons.IsCustomBarContainer(containerDB) then
+        local visibility = CDMIcons.ComputeCustomBarVisibility(icon, entry, containerDB, GetTime())
+        return not visibility.layoutVisible
+    end
 
     if containerDB.showOnlyInCombat and not inCombat then
         return true
@@ -4452,6 +5034,32 @@ local function UpdateCooldownContainerVisibility(icon, entry, containerDB, editM
         return
     end
 
+    if CDMIcons.IsCustomBarContainer(containerDB) then
+        local visibility = CDMIcons.ComputeCustomBarVisibility(icon, entry, containerDB, _batchTime)
+        local effectiveMode = containerDB and containerDB.iconDisplayMode or "always"
+        if effectiveMode == "combat" then
+            effectiveMode = (UnitAffectingCombat and UnitAffectingCombat("player")) and "always" or "active"
+        end
+
+        local shouldShow = visibility.renderVisible
+        if effectiveMode == "active" and not visibility.isOnCooldown and not visibility.rechargeActive then
+            local keepForGlow = false
+            if ns._OwnedGlows and ns._OwnedGlows.ShouldIconGlow then
+                keepForGlow = ns._OwnedGlows.ShouldIconGlow(icon)
+            end
+            shouldShow = shouldShow and keepForGlow
+        elseif effectiveMode ~= "always" and effectiveMode ~= "active" then
+            shouldShow = false
+        end
+
+        local filterHidesNow = not visibility.layoutVisible
+        MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
+        ApplyIconVisibility(icon, shouldShow, containerDB.dynamicLayout == true)
+        CDMIcons.ApplyCustomBarActiveGlow(icon, containerDB, visibility)
+        SyncCooldownBling(icon)
+        return
+    end
+
     local isOnCD = icon._hasCooldownActive or false
     if not isOnCD then
         local dur = icon._lastDuration or 0
@@ -4641,8 +5249,34 @@ function CDMIcons:UpdateAllCooldowns(keepTickCaches)
 
                     local effectiveMode = displayMode
                     if effectiveMode == "combat" then
-                        effectiveMode = inCombat and "always" or "active"
+                        effectiveMode = (UnitAffectingCombat and UnitAffectingCombat("player")) and "always" or "active"
                     end
+
+                    if CDMIcons.IsCustomBarContainer(containerDB) then
+                        local visibility = CDMIcons.ComputeCustomBarVisibility(icon, entry, containerDB, _batchTime)
+                        local shouldShow = visibility.renderVisible
+                        if effectiveMode == "active" and not visibility.isOnCooldown and not visibility.rechargeActive then
+                            local keepForGlow = false
+                            if ns._OwnedGlows and ns._OwnedGlows.ShouldIconGlow then
+                                keepForGlow = ns._OwnedGlows.ShouldIconGlow(icon)
+                            end
+                            shouldShow = shouldShow and keepForGlow
+                        elseif effectiveMode ~= "always" and effectiveMode ~= "active" then
+                            shouldShow = false
+                        end
+
+                        local filterHidesNow = not visibility.layoutVisible
+                        MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
+                        ApplyIconVisibility(icon, shouldShow, containerDB.dynamicLayout == true)
+                        CDMIcons.ApplyCustomBarActiveGlow(icon, containerDB, visibility)
+
+                        if visibility.isActive and not containerDB.showOnlyOnCooldown and icon.Icon and icon.Icon.SetDesaturated then
+                            icon.Icon:SetDesaturated(false)
+                            icon._cdDesaturated = nil
+                        end
+
+                        SyncCooldownBling(icon)
+                    else
 
                     -- Compute desired visibility from display mode
                     local shouldShow
@@ -4670,6 +5304,7 @@ function CDMIcons:UpdateAllCooldowns(keepTickCaches)
                     MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
 
                     ApplyIconVisibility(icon, shouldShow, containerDB and containerDB.dynamicLayout)
+                    end
 
                     -- Grey out when linked debuff/buff not active
                     -- greyOutInactive = my debuffs on target, greyOutInactiveBuffs = buffs on player
@@ -4817,6 +5452,8 @@ end
 function CDMIcons:UpdateCooldownsForType(viewerType)
     local pool = iconPools[viewerType]
     if pool then
+        _hoistedNcdm = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
+        _batchTime = GetTime()
         for _, icon in ipairs(pool) do
             UpdateIconCooldown(icon)
         end
@@ -5322,6 +5959,11 @@ cdEventFrame:RegisterEvent("SPELLS_CHANGED")
 cdEventFrame:RegisterEvent("SPELL_UPDATE_USABLE")
 cdEventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
 cdEventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
+cdEventFrame:RegisterEvent("UNIT_SPELLCAST_START")
+cdEventFrame:RegisterEvent("UNIT_SPELLCAST_STOP")
+cdEventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+cdEventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
+cdEventFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
 -- Server-side cooldown table hotfix. User /cdm edits route through
 -- EventRegistry's "CooldownViewerSettings.OnDataChanged" callback (see
 -- registration below) — they are NOT the same event.
@@ -5447,6 +6089,16 @@ local function SafetyTickOnUpdate(self, elapsed)
 end
 
 cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
+    if event == "UNIT_SPELLCAST_START"
+       or event == "UNIT_SPELLCAST_STOP"
+       or event == "UNIT_SPELLCAST_SUCCEEDED"
+       or event == "UNIT_SPELLCAST_CHANNEL_START"
+       or event == "UNIT_SPELLCAST_CHANNEL_STOP" then
+        if arg1 == "player" then
+            ScheduleCDMUpdate(true, CDM_UPDATE_COOLDOWN)
+        end
+        return
+    end
     if event == "PLAYER_TARGET_CHANGED" then
         CDMIcons:UpdateAllIconRanges()
         -- Target debuffs (e.g. Reaper's Mark) need a CDM refresh when target changes

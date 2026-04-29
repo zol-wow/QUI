@@ -677,6 +677,214 @@ local function RemoveImportedCustomBarContainers(core, profile)
     end
 end
 
+local function IsCustomBarContainer(container)
+    return type(container) == "table" and container.containerType == "customBar"
+end
+
+local function GetCustomBarLegacyID(containerKey, container)
+    if type(container) ~= "table" then return nil end
+    if container._legacyId ~= nil then return tostring(container._legacyId) end
+    if container.id ~= nil then return tostring(container.id) end
+    if type(containerKey) == "string" then
+        return containerKey:match("^customBar_(.+)$")
+    end
+    return nil
+end
+
+local function BuildLegacyCustomTrackerBarFromContainer(containerKey, container)
+    if not IsCustomBarContainer(container) then return nil end
+
+    local legacyID = GetCustomBarLegacyID(containerKey, container)
+    if not legacyID or legacyID == "" then return nil end
+
+    local row = type(container.row1) == "table" and container.row1 or {}
+    return {
+        id = legacyID,
+        name = container.name or "Custom Bar",
+        enabled = container.enabled ~= false,
+        locked = container.locked == true,
+        offsetX = (type(container.pos) == "table" and container.pos.ox) or container.offsetX or 0,
+        offsetY = (type(container.pos) == "table" and container.pos.oy) or container.offsetY or 0,
+        growDirection = container.growDirection or "RIGHT",
+        maxIcons = row.iconCount or container.maxIcons or 8,
+        iconSize = row.iconSize or container.iconSize or 28,
+        spacing = row.padding or container.spacing or 4,
+        borderSize = row.borderSize or container.borderSize or 2,
+        borderColor = CloneValue(row.borderColorTable or container.borderColor or container.borderColorTable or {0, 0, 0, 1}),
+        aspectRatioCrop = row.aspectRatioCrop or container.aspectRatioCrop or 1.0,
+        zoom = row.zoom or container.zoom or 0,
+        durationFont = row.durationFont or container.durationFont,
+        durationSize = row.durationSize or container.durationSize or 13,
+        durationColor = CloneValue(row.durationTextColor or container.durationColor or container.durationTextColor or {1, 1, 1, 1}),
+        durationAnchor = row.durationAnchor or container.durationAnchor or "CENTER",
+        durationOffsetX = row.durationOffsetX or container.durationOffsetX or 0,
+        durationOffsetY = row.durationOffsetY or container.durationOffsetY or 0,
+        hideDurationText = row.hideDurationText == true or container.hideDurationText == true,
+        stackFont = row.stackFont or container.stackFont,
+        stackSize = row.stackSize or container.stackSize or 9,
+        stackColor = CloneValue(row.stackTextColor or container.stackColor or container.stackTextColor or {1, 1, 1, 1}),
+        stackAnchor = row.stackAnchor or container.stackAnchor or "BOTTOMRIGHT",
+        stackOffsetX = row.stackOffsetX or container.stackOffsetX or 3,
+        stackOffsetY = row.stackOffsetY or container.stackOffsetY or -1,
+        hideStackText = row.hideStackText == true or container.hideStackText == true,
+        showItemCharges = container.showItemCharges ~= false,
+        showProfessionQuality = container.showProfessionQuality ~= false,
+        showRechargeSwipe = container.showRechargeSwipe == true,
+        noDesaturateWithCharges = container.noDesaturateWithCharges == true,
+        bgOpacity = container.bgOpacity or 0,
+        bgColor = CloneValue(container.bgColor or {0, 0, 0, 1}),
+        hideGCD = container.hideGCD ~= false,
+        hideNonUsable = container.hideNonUsable == true,
+        showOnlyOnCooldown = container.showOnlyOnCooldown == true,
+        showOnlyWhenActive = container.showOnlyWhenActive == true,
+        showOnlyWhenOffCooldown = container.showOnlyWhenOffCooldown == true,
+        showOnlyInCombat = container.showOnlyInCombat == true,
+        dynamicLayout = container.dynamicLayout == true,
+        clickableIcons = container.clickableIcons == true,
+        showActiveState = container.showActiveState ~= false,
+        activeGlowEnabled = container.activeGlowEnabled ~= false,
+        activeGlowType = container.activeGlowType or "Pixel Glow",
+        activeGlowColor = CloneValue(container.activeGlowColor or {1, 0.85, 0.3, 1}),
+        activeGlowLines = container.activeGlowLines or 8,
+        activeGlowFrequency = container.activeGlowFrequency or 0.25,
+        activeGlowThickness = container.activeGlowThickness or 2,
+        activeGlowScale = container.activeGlowScale or 1.0,
+        specSpecificSpells = container.specSpecificSpells == true or container.specSpecific == true,
+        entries = CloneValue(container.entries or {}),
+    }
+end
+
+local function CollectCustomTrackerExportRecords(profile)
+    if type(profile) ~= "table" then return {} end
+
+    local containers = profile.ncdm and profile.ncdm.containers
+    local byLegacyID = {}
+    local customKeys = {}
+    if type(containers) == "table" then
+        for key, container in pairs(containers) do
+            if IsCustomBarContainer(container) then
+                local legacyID = GetCustomBarLegacyID(key, container)
+                if legacyID then
+                    byLegacyID[legacyID] = { key = key, container = container, legacyID = legacyID }
+                    customKeys[#customKeys + 1] = key
+                end
+            end
+        end
+    end
+    table.sort(customKeys)
+
+    local records = {}
+    local seen = {}
+    local bars = profile.customTrackers and profile.customTrackers.bars
+    if type(bars) == "table" then
+        for _, bar in ipairs(bars) do
+            if type(bar) == "table" then
+                local legacyID = bar.id ~= nil and tostring(bar.id) or nil
+                local mapped = legacyID and byLegacyID[legacyID] or nil
+                if mapped then
+                    local exportedBar = BuildLegacyCustomTrackerBarFromContainer(mapped.key, mapped.container)
+                    if exportedBar then
+                        records[#records + 1] = {
+                            bar = exportedBar,
+                            legacyID = mapped.legacyID,
+                            containerKey = mapped.key,
+                        }
+                    end
+                    seen[legacyID] = true
+                else
+                    records[#records + 1] = {
+                        bar = CloneValue(bar),
+                        legacyID = legacyID,
+                        containerKey = legacyID and ("customBar_" .. legacyID) or nil,
+                    }
+                    if legacyID then seen[legacyID] = true end
+                end
+            end
+        end
+    end
+
+    for _, key in ipairs(customKeys) do
+        local mapped = byLegacyID[GetCustomBarLegacyID(key, containers[key])]
+        if mapped and not seen[mapped.legacyID] then
+            local exportedBar = BuildLegacyCustomTrackerBarFromContainer(mapped.key, mapped.container)
+            if exportedBar then
+                records[#records + 1] = {
+                    bar = exportedBar,
+                    legacyID = mapped.legacyID,
+                    containerKey = mapped.key,
+                }
+                seen[mapped.legacyID] = true
+            end
+        end
+    end
+
+    return records
+end
+
+local function ExtractBarsFromExportRecords(records)
+    local bars = {}
+    for _, record in ipairs(records or {}) do
+        if type(record) == "table" and type(record.bar) == "table" then
+            bars[#bars + 1] = CloneValue(record.bar)
+        end
+    end
+    return bars
+end
+
+local function CollectSpecEntriesForExportRecord(record, globals)
+    if type(record) ~= "table" or type(globals) ~= "table" then return nil end
+    if not (record.bar and record.bar.specSpecificSpells) then return nil end
+
+    local legacyID = record.legacyID or (record.bar and record.bar.id)
+    if legacyID ~= nil and type(globals.specTrackerSpells) == "table" then
+        local legacyEntries = globals.specTrackerSpells[legacyID]
+        if type(legacyEntries) == "table" then
+            return CloneValue(legacyEntries)
+        end
+    end
+
+    local containerKey = record.containerKey
+    if (not containerKey or containerKey == "") and legacyID ~= nil then
+        containerKey = "customBar_" .. tostring(legacyID)
+    end
+    local ncdmEntries = globals.ncdm
+        and globals.ncdm.specTrackerSpells
+        and globals.ncdm.specTrackerSpells[containerKey]
+    if type(ncdmEntries) == "table" then
+        return CloneValue(ncdmEntries)
+    end
+
+    return nil
+end
+
+local function CollectLegacySpecEntriesForExportRecords(records, globals)
+    if type(records) ~= "table" or type(globals) ~= "table" then return nil end
+    local result = nil
+    for _, record in ipairs(records) do
+        local entries = CollectSpecEntriesForExportRecord(record, globals)
+        local legacyID = record.legacyID or (record.bar and record.bar.id)
+        if entries and legacyID ~= nil then
+            result = result or {}
+            result[legacyID] = entries
+        end
+    end
+    return result
+end
+
+local function StampCustomTrackerBarsForExport(targetProfile, sourceProfile)
+    local records = CollectCustomTrackerExportRecords(sourceProfile)
+    if #records == 0 then return records end
+
+    if type(targetProfile.customTrackers) == "table" then
+        targetProfile.customTrackers = CloneValue(targetProfile.customTrackers)
+    else
+        targetProfile.customTrackers = {}
+    end
+    targetProfile.customTrackers.bars = ExtractBarsFromExportRecords(records)
+
+    return records
+end
+
 local function GetTrackerEntryResolvedName(entry)
     if type(entry) ~= "table" then
         return nil
@@ -777,16 +985,14 @@ local function BuildCustomTrackerBarDescription(bar)
 end
 
 local function BuildCustomTrackerBarPreviewChildren(profileData)
-    local bars = profileData
-        and profileData.customTrackers
-        and profileData.customTrackers.bars
-
-    if type(bars) ~= "table" then
+    local records = CollectCustomTrackerExportRecords(profileData)
+    if #records == 0 then
         return nil
     end
 
     local children = {}
-    for index, bar in ipairs(bars) do
+    for index, record in ipairs(records) do
+        local bar = record.bar
         local barName = type(bar) == "table" and bar.name or nil
         children[#children + 1] = {
             id = CUSTOM_TRACKER_BAR_ID_PREFIX .. index,
@@ -1498,8 +1704,8 @@ local function CollectSelectedProfileCategories(selectedCategoryIDs, profileData
                 selectedLookup[categoryID] = true
                 selectedCustomTrackerBarIndexes[#selectedCustomTrackerBarIndexes + 1] = barIndex
 
-                local profileBars = profileData and profileData.customTrackers and profileData.customTrackers.bars
-                local selectedBar = type(profileBars) == "table" and profileBars[barIndex] or nil
+                local trackerRecords = CollectCustomTrackerExportRecords(profileData)
+                local selectedBar = trackerRecords[barIndex] and trackerRecords[barIndex].bar or nil
                 local barName = type(selectedBar) == "table" and selectedBar.name or ("Bar " .. barIndex)
                 selectedLabels[#selectedLabels + 1] = ("Custom CDM Bars > %s"):format(tostring(barName))
             end
@@ -1545,8 +1751,8 @@ local function ExportSelectedCustomTrackerBars(targetProfile, sourceProfile, bar
         return false
     end
 
-    local sourceBars = sourceProfile.customTrackers and sourceProfile.customTrackers.bars
-    if type(sourceBars) ~= "table" then
+    local sourceRecords = CollectCustomTrackerExportRecords(sourceProfile)
+    if #sourceRecords == 0 then
         return false
     end
 
@@ -1559,7 +1765,8 @@ local function ExportSelectedCustomTrackerBars(targetProfile, sourceProfile, bar
 
     local exportedAny = false
     for _, barIndex in ipairs(barIndexes) do
-        local sourceBar = sourceBars[barIndex]
+        local record = sourceRecords[barIndex]
+        local sourceBar = record and record.bar
         if type(sourceBar) == "table" then
             table.insert(targetProfile.customTrackers.bars, CloneValue(sourceBar))
             exportedAny = true
@@ -1576,7 +1783,7 @@ end
 -- needed beyond "these specific tables hold tracker spell entries".
 local PROFILE_EXPORT_GLOBALS_KEY = "_quiBundledGlobals"
 
-local function CollectExportGlobals(globals)
+local function CollectExportGlobals(globals, profile)
     if type(globals) ~= "table" then return nil end
     local bundle = nil
     if type(globals.specTrackerSpells) == "table" and next(globals.specTrackerSpells) then
@@ -1589,6 +1796,16 @@ local function CollectExportGlobals(globals)
     then
         bundle = bundle or {}
         bundle.ncdm_specTrackerSpells = globals.ncdm.specTrackerSpells
+    end
+    local records = CollectCustomTrackerExportRecords(profile)
+    local legacySpecEntries = CollectLegacySpecEntriesForExportRecords(records, globals)
+    if legacySpecEntries then
+        bundle = bundle or {}
+        local merged = CloneValue(bundle.specTrackerSpells or {})
+        for key, value in pairs(legacySpecEntries) do
+            merged[key] = value
+        end
+        bundle.specTrackerSpells = merged
     end
     return bundle
 end
@@ -1943,13 +2160,16 @@ local function RunExportProfileSelection(core, selectedCategoryIDs)
     for _, category in ipairs(selectionData.specs) do
         ApplyProfileImportCategory(exportPayload, profile, category)
     end
+    if selectionData.lookup.customTrackers then
+        StampCustomTrackerBarsForExport(exportPayload, profile)
+    end
 
     if not selectionData.lookup.customTrackers and #selectionData.customTrackerBarIndexes > 0 then
         ExportSelectedCustomTrackerBars(exportPayload, profile, selectionData.customTrackerBarIndexes)
     end
 
     if selectionData.lookup.customTrackers or #selectionData.customTrackerBarIndexes > 0 then
-        local bundle = CollectExportGlobals(core and core.db and core.db.global)
+        local bundle = CollectExportGlobals(core and core.db and core.db.global, profile)
         if bundle then
             exportPayload[PROFILE_EXPORT_GLOBALS_KEY] = bundle
         end
@@ -1975,8 +2195,9 @@ function QUICore:ExportProfileToString()
             payload[k] = v
         end
     end
+    StampCustomTrackerBarsForExport(payload, self.db.profile)
 
-    local bundle = CollectExportGlobals(self.db.global)
+    local bundle = CollectExportGlobals(self.db.global, self.db.profile)
     if bundle then
         payload[PROFILE_EXPORT_GLOBALS_KEY] = bundle
     end
@@ -2155,15 +2376,16 @@ end
 
 -- Export a single tracker bar (with its spec-specific entries if enabled)
 function QUICore:ExportSingleTrackerBar(barIndex)
-    if not self.db or not self.db.profile or not self.db.profile.customTrackers
-        or not self.db.profile.customTrackers.bars then
+    if not self.db or not self.db.profile then
         return nil, "No tracker data loaded."
     end
     if not AceSerializer or not LibDeflate then
         return nil, "Export requires AceSerializer-3.0 and LibDeflate."
     end
 
-    local bar = self.db.profile.customTrackers.bars[barIndex]
+    local records = CollectCustomTrackerExportRecords(self.db.profile)
+    local record = records[barIndex]
+    local bar = record and record.bar
     if not bar then
         return nil, "Bar not found."
     end
@@ -2175,8 +2397,8 @@ function QUICore:ExportSingleTrackerBar(barIndex)
     }
 
     -- Include spec-specific entries if the bar uses them
-    if bar.specSpecificSpells and bar.id and self.db.global and self.db.global.specTrackerSpells then
-        exportData.specEntries = self.db.global.specTrackerSpells[bar.id]
+    if bar.specSpecificSpells and self.db.global then
+        exportData.specEntries = CollectSpecEntriesForExportRecord(record, self.db.global)
     end
 
     local serialized = AceSerializer:Serialize(exportData)
@@ -2199,21 +2421,22 @@ end
 
 -- Export all tracker bars
 function QUICore:ExportAllTrackerBars()
-    if not self.db or not self.db.profile or not self.db.profile.customTrackers then
+    if not self.db or not self.db.profile then
         return nil, "No tracker data loaded."
     end
     if not AceSerializer or not LibDeflate then
         return nil, "Export requires AceSerializer-3.0 and LibDeflate."
     end
 
-    local bars = self.db.profile.customTrackers.bars
+    local records = CollectCustomTrackerExportRecords(self.db.profile)
+    local bars = ExtractBarsFromExportRecords(records)
     if not bars or #bars == 0 then
         return nil, "No tracker bars to export."
     end
 
     local exportData = {
         bars = bars,
-        specEntries = self.db.global and self.db.global.specTrackerSpells or nil,
+        specEntries = self.db.global and CollectLegacySpecEntriesForExportRecords(records, self.db.global) or nil,
     }
 
     local serialized = AceSerializer:Serialize(exportData)

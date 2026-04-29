@@ -87,6 +87,10 @@ local function IsAnyKeybindFeatureEnabled()
             end
         end
     end
+    local trackerKeybinds = core.db.profile.customTrackers and core.db.profile.customTrackers.keybinds
+    if trackerKeybinds and trackerKeybinds.showKeybinds then
+        return true
+    end
     return false
 end
 
@@ -106,7 +110,27 @@ local function GetViewerSettings(viewerName)
     end
     -- Custom container: settings live in ncdm.containers[key]
     local ncdm = QUICore.db.profile.ncdm
-    return ncdm and ncdm.containers and ncdm.containers[viewerName]
+    local container = ncdm and ncdm.containers and ncdm.containers[viewerName]
+    if type(container) == "table"
+       and (container.keybindContext == "customTrackers" or container.containerType == "customBar")
+    then
+        local ct = QUICore.db.profile.customTrackers
+        return ct and ct.keybinds or container
+    end
+    return container
+end
+
+local function GetViewerKeybindContext(viewerName)
+    local QUICore = _G.QUI and _G.QUI.QUICore
+    local profile = QUICore and QUICore.db and QUICore.db.profile
+    local ncdm = profile and profile.ncdm
+    local container = ncdm and ncdm.containers and ncdm.containers[viewerName]
+    if type(container) == "table"
+       and (container.keybindContext == "customTrackers" or container.containerType == "customBar")
+    then
+        return "customTrackers"
+    end
+    return "cdm"
 end
 
 -- Helper: get current specialization ID
@@ -1099,7 +1123,11 @@ local function ApplyKeybindToIcon(icon, viewerName)
     local cdmOverridesEnabled = true
     local QUICore_ref = _G.QUI and _G.QUI.QUICore
     if QUICore_ref and QUICore_ref.db and QUICore_ref.db.profile then
-        cdmOverridesEnabled = QUICore_ref.db.profile.keybindOverridesEnabledCDM ~= false
+        if GetViewerKeybindContext(viewerName) == "customTrackers" then
+            cdmOverridesEnabled = QUICore_ref.db.profile.keybindOverridesEnabledTrackers ~= false
+        else
+            cdmOverridesEnabled = QUICore_ref.db.profile.keybindOverridesEnabledCDM ~= false
+        end
     end
     if cdmOverridesEnabled then
         if isItemEntry and itemID then
@@ -1413,7 +1441,7 @@ local function GetCustomContainerKeys()
     local keys = {}
     for key, settings in pairs(ct) do
         if type(settings) == "table" and not settings.builtIn
-            and settings.containerType == "cooldown" then
+            and (settings.containerType == "cooldown" or settings.containerType == "customBar") then
             keys[#keys + 1] = key
         end
     end
@@ -1932,4 +1960,3 @@ if QUI.Registry then
         importCategories = { "cdm", "customTrackers" },
     })
 end
-

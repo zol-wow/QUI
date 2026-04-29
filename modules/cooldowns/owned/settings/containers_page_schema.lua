@@ -224,7 +224,15 @@ local function ResolveKeybindsDB(containerKey)
     end
 
     local ncdm = profile.ncdm
-    return ncdm and ncdm.containers and ncdm.containers[containerKey] or nil
+    local container = ncdm and ncdm.containers and ncdm.containers[containerKey]
+    if type(container) == "table"
+       and (container.keybindContext == "customTrackers" or container.containerType == "customBar")
+    then
+        if type(profile.customTrackers) ~= "table" then profile.customTrackers = {} end
+        if type(profile.customTrackers.keybinds) ~= "table" then profile.customTrackers.keybinds = {} end
+        return profile.customTrackers.keybinds
+    end
+    return container
 end
 
 local function ResolveTrackerDB(containerKey)
@@ -425,7 +433,12 @@ local function AppendTrackerGeneralSection(builder, gui, optionsAPI, tracker, co
         )
     end
 
-    local clickableIconsCheckbox = gui:CreateFormCheckbox(card.frame, nil, "clickableIcons", tracker, refresh, {
+    local clickableIconsCheckbox = gui:CreateFormCheckbox(card.frame, nil, "clickableIcons", tracker, function()
+        if isCustomBar and tracker.clickableIcons then
+            tracker.dynamicLayout = false
+        end
+        refresh()
+    end, {
         description = "Allow icons to receive mouse clicks (tooltips, macros, activation). Turn off to make the container pass clicks through.",
     })
     local desaturateOnCooldownCheckbox = gui:CreateFormCheckbox(card.frame, nil, "desaturateOnCooldown", tracker, refresh, {
@@ -554,6 +567,14 @@ local function AppendTrackerRowSection(builder, gui, optionsAPI, rowNum, rowData
         optionsAPI.BuildSettingRow(card.frame, "Anchor Duration To", durationAnchorDropdown)
     )
 
+    local fontOptions = optionsAPI.GetFontList and optionsAPI.GetFontList() or nil
+    if fontOptions and #fontOptions > 0 then
+        local durationFontDropdown = gui:CreateFormDropdown(card.frame, nil, fontOptions, "durationFont", rowData, refresh, {
+            description = "Font used for the duration countdown text. Leave blank to inherit the global QUI font.",
+        })
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Duration Font", durationFontDropdown))
+    end
+
     local durationXOffsetSlider = gui:CreateFormSlider(card.frame, nil, -80, 80, 1, "durationOffsetX", rowData, refresh, nil, {
         description = "Horizontal pixel offset for the duration text from its anchor.",
     })
@@ -571,10 +592,21 @@ local function AppendTrackerRowSection(builder, gui, optionsAPI, rowNum, rowData
     local stackTextSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 50, 1, "stackSize", rowData, refresh, nil, {
         description = "Font size for the stack count text on icons in this row.",
     })
+    local hideStackTextCheckbox = gui:CreateFormCheckbox(card.frame, nil, "hideStackText", rowData, refresh, {
+        description = "Hide item counts, item charges, spell charges, and stack count text on every icon in this row.",
+    })
     card.AddRow(
         optionsAPI.BuildSettingRow(card.frame, "Duration Text Color", durationTextColorPicker),
         optionsAPI.BuildSettingRow(card.frame, "Stack Text Size", stackTextSizeSlider)
     )
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Hide Stack Text", hideStackTextCheckbox))
+
+    if fontOptions and #fontOptions > 0 then
+        local stackFontDropdown = gui:CreateFormDropdown(card.frame, nil, fontOptions, "stackFont", rowData, refresh, {
+            description = "Font used for the stack count text. Leave blank to inherit the global QUI font.",
+        })
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Stack Font", stackFontDropdown))
+    end
 
     local stackAnchorDropdown = gui:CreateFormDropdown(card.frame, nil, TEXT_ANCHOR_OPTIONS, "stackAnchor", rowData, refresh, {
         description = "Which corner of the icon the stack count is anchored to.",
@@ -1300,6 +1332,9 @@ local function RenderFiltersSection(sectionHost, ctx)
     end
 
     local refresh = function()
+        if ns.CDMIcons and ns.CDMIcons.NormalizeCustomBarVisibilityFlags then
+            ns.CDMIcons.NormalizeCustomBarVisibilityFlags(tracker)
+        end
         RefreshContainer(containerKey)
     end
 
@@ -1317,10 +1352,56 @@ local function RenderFiltersSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Hide Non-Usable", hideNonUsableCheckbox)
     )
 
-    local showOnlyOnCooldownCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showOnlyOnCooldown", tracker, refresh, {
+    local showOnlyOnCooldownCheckbox
+    local showOnlyOffCooldownCheckbox
+    local showOnlyWhenActiveCheckbox
+    local noDesaturateCheckbox
+
+    local function updateNoDesaturateState()
+        if noDesaturateCheckbox and noDesaturateCheckbox.SetEnabled then
+            noDesaturateCheckbox:SetEnabled(tracker.showOnlyOnCooldown == true)
+        end
+    end
+
+    showOnlyOnCooldownCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showOnlyOnCooldown", tracker, function()
+        if tracker.showOnlyOnCooldown then
+            tracker.showOnlyWhenActive = false
+            tracker.showOnlyWhenOffCooldown = false
+            if showOnlyWhenActiveCheckbox and showOnlyWhenActiveCheckbox.SetValue then
+                showOnlyWhenActiveCheckbox:SetValue(false, true)
+            end
+            if showOnlyOffCooldownCheckbox and showOnlyOffCooldownCheckbox.SetValue then
+                showOnlyOffCooldownCheckbox:SetValue(false, true)
+            end
+        else
+            tracker.noDesaturateWithCharges = false
+            if noDesaturateCheckbox and noDesaturateCheckbox.SetValue then
+                noDesaturateCheckbox:SetValue(false, true)
+            end
+        end
+        updateNoDesaturateState()
+        refresh()
+    end, {
         description = "Only show icons while they are on cooldown. Off-cooldown spells are hidden entirely.",
     })
-    local showOnlyOffCooldownCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showOnlyWhenOffCooldown", tracker, refresh, {
+    showOnlyOffCooldownCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showOnlyWhenOffCooldown", tracker, function()
+        if tracker.showOnlyWhenOffCooldown then
+            tracker.showOnlyOnCooldown = false
+            tracker.showOnlyWhenActive = false
+            tracker.noDesaturateWithCharges = false
+            if showOnlyOnCooldownCheckbox and showOnlyOnCooldownCheckbox.SetValue then
+                showOnlyOnCooldownCheckbox:SetValue(false, true)
+            end
+            if showOnlyWhenActiveCheckbox and showOnlyWhenActiveCheckbox.SetValue then
+                showOnlyWhenActiveCheckbox:SetValue(false, true)
+            end
+            if noDesaturateCheckbox and noDesaturateCheckbox.SetValue then
+                noDesaturateCheckbox:SetValue(false, true)
+            end
+        end
+        updateNoDesaturateState()
+        refresh()
+    end, {
         description = "Only show icons when they are off cooldown and ready to cast.",
     })
     card.AddRow(
@@ -1328,7 +1409,24 @@ local function RenderFiltersSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Show Only Off Cooldown", showOnlyOffCooldownCheckbox)
     )
 
-    local showOnlyWhenActiveCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showOnlyWhenActive", tracker, refresh, {
+    showOnlyWhenActiveCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showOnlyWhenActive", tracker, function()
+        if tracker.showOnlyWhenActive then
+            tracker.showOnlyOnCooldown = false
+            tracker.showOnlyWhenOffCooldown = false
+            tracker.noDesaturateWithCharges = false
+            if showOnlyOnCooldownCheckbox and showOnlyOnCooldownCheckbox.SetValue then
+                showOnlyOnCooldownCheckbox:SetValue(false, true)
+            end
+            if showOnlyOffCooldownCheckbox and showOnlyOffCooldownCheckbox.SetValue then
+                showOnlyOffCooldownCheckbox:SetValue(false, true)
+            end
+            if noDesaturateCheckbox and noDesaturateCheckbox.SetValue then
+                noDesaturateCheckbox:SetValue(false, true)
+            end
+        end
+        updateNoDesaturateState()
+        refresh()
+    end, {
         description = "Only show icons while the linked buff/debuff is currently active on the player or their target.",
     })
     local showOnlyInCombatCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showOnlyInCombat", tracker, refresh, {
@@ -1339,7 +1437,12 @@ local function RenderFiltersSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Show Only In Combat", showOnlyInCombatCheckbox)
     )
 
-    local dynamicLayoutCheckbox = gui:CreateFormCheckbox(card.frame, nil, "dynamicLayout", tracker, refresh, {
+    local dynamicLayoutCheckbox = gui:CreateFormCheckbox(card.frame, nil, "dynamicLayout", tracker, function()
+        if tracker.dynamicLayout then
+            tracker.clickableIcons = false
+        end
+        refresh()
+    end, {
         description = "Collapse the row when filters hide icons so remaining icons pack together. Turn off to keep slots reserved in their original positions.",
     })
     local showItemChargesCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showItemCharges", tracker, refresh, {
@@ -1353,13 +1456,22 @@ local function RenderFiltersSection(sectionHost, ctx)
     local showRechargeSwipeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showRechargeSwipe", tracker, refresh, {
         description = "Show the recharge swipe animation on spells with charges while at least one charge is regenerating.",
     })
-    local noDesaturateCheckbox = gui:CreateFormCheckbox(card.frame, nil, "noDesaturateWithCharges", tracker, refresh, {
+    noDesaturateCheckbox = gui:CreateFormCheckbox(card.frame, nil, "noDesaturateWithCharges", tracker, function()
+        if not tracker.showOnlyOnCooldown then
+            tracker.noDesaturateWithCharges = false
+            if noDesaturateCheckbox and noDesaturateCheckbox.SetValue then
+                noDesaturateCheckbox:SetValue(false, true)
+            end
+        end
+        refresh()
+    end, {
         description = "Keep charge-based spells in full color even while regenerating the next charge, ignoring the container's desaturate-on-cooldown rule.",
     })
     card.AddRow(
         optionsAPI.BuildSettingRow(card.frame, "Show Recharge Swipe", showRechargeSwipeCheckbox),
         optionsAPI.BuildSettingRow(card.frame, "No Desaturate With Charges", noDesaturateCheckbox)
     )
+    updateNoDesaturateState()
 
     local qualityCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showProfessionQuality", tracker, refresh, {
         description = "Show the profession-quality indicator on crafted item icons in this container.",
@@ -1615,6 +1727,98 @@ local function RenderEffectsSection(sectionHost, ctx)
     UpdateGlowWidgetStates()
     builder.CloseCard(glowCard)
     builder.Spacer(10)
+
+    if containerType == "customBar" then
+        local tracker = ResolveTrackerDB(containerKey)
+        if type(tracker) == "table" then
+            if tracker.showActiveState == nil then tracker.showActiveState = true end
+            if tracker.activeGlowEnabled == nil then tracker.activeGlowEnabled = true end
+            if tracker.activeGlowType == nil then tracker.activeGlowType = "Pixel Glow" end
+            if tracker.activeGlowColor == nil then tracker.activeGlowColor = {1, 0.85, 0.3, 1} end
+            if tracker.activeGlowLines == nil then tracker.activeGlowLines = 8 end
+            if tracker.activeGlowFrequency == nil then tracker.activeGlowFrequency = 0.25 end
+            if tracker.activeGlowThickness == nil then tracker.activeGlowThickness = 2 end
+            if tracker.activeGlowScale == nil then tracker.activeGlowScale = 1.0 end
+
+            builder.Header("Active State")
+            local activeCard = builder.Card()
+            local activeWidgets = {}
+            local function UpdateActiveGlowWidgetStates()
+                local enabled = tracker.activeGlowEnabled ~= false
+                local glowType = tracker.activeGlowType or "Pixel Glow"
+                if activeWidgets.type then activeWidgets.type:SetEnabled(enabled) end
+                if activeWidgets.color then activeWidgets.color:SetEnabled(enabled) end
+                if activeWidgets.lines then activeWidgets.lines:SetEnabled(enabled and (glowType == "Pixel Glow" or glowType == "Autocast Shine")) end
+                if activeWidgets.frequency then activeWidgets.frequency:SetEnabled(enabled) end
+                if activeWidgets.thickness then activeWidgets.thickness:SetEnabled(enabled and glowType == "Pixel Glow") end
+                if activeWidgets.scale then activeWidgets.scale:SetEnabled(enabled and glowType == "Autocast Shine") end
+            end
+            local showActiveCheckbox = gui:CreateFormCheckbox(activeCard.frame, nil, "showActiveState", tracker, function()
+                RefreshContainer(containerKey)
+                UpdateActiveGlowWidgetStates()
+            end, {
+                description = "Detect casts, channels, and active item/spell effects for visibility and active-duration display.",
+            })
+            local activeGlowCheckbox = gui:CreateFormCheckbox(activeCard.frame, nil, "activeGlowEnabled", tracker, function()
+                RefreshContainer(containerKey)
+                UpdateActiveGlowWidgetStates()
+            end, {
+                description = "Glow icons while their spell or item effect is active.",
+            })
+            activeCard.AddRow(
+                optionsAPI.BuildSettingRow(activeCard.frame, "Show Active State", showActiveCheckbox),
+                optionsAPI.BuildSettingRow(activeCard.frame, "Enable Active Glow", activeGlowCheckbox)
+            )
+            activeWidgets.type = gui:CreateFormDropdown(activeCard.frame, nil, GLOW_TYPE_OPTIONS, "activeGlowType", tracker, function()
+                RefreshContainer(containerKey)
+                UpdateActiveGlowWidgetStates()
+            end, {
+                description = "Which LibCustomGlow style to use while the entry is active.",
+            })
+            activeWidgets.color = gui:CreateFormColorPicker(activeCard.frame, nil, "activeGlowColor", tracker, function()
+                RefreshContainer(containerKey)
+                UpdateActiveGlowWidgetStates()
+            end, nil, {
+                description = "Color used for the active-state glow.",
+            })
+            activeCard.AddRow(
+                optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Type", activeWidgets.type),
+                optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Color", activeWidgets.color)
+            )
+            activeWidgets.lines = gui:CreateFormSlider(activeCard.frame, nil, 4, 16, 1, "activeGlowLines", tracker, function()
+                RefreshContainer(containerKey)
+            end, nil, {
+                description = "Number of glow particles/lines. Only used by Pixel Glow and Autocast Shine.",
+            })
+            activeWidgets.frequency = gui:CreateFormSlider(activeCard.frame, nil, 0.1, 1.0, 0.05, "activeGlowFrequency", tracker, function()
+                RefreshContainer(containerKey)
+            end, nil, {
+                description = "How fast the active glow animates.",
+                precision = 2,
+            })
+            activeCard.AddRow(
+                optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Lines", activeWidgets.lines),
+                optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Speed", activeWidgets.frequency)
+            )
+            activeWidgets.thickness = gui:CreateFormSlider(activeCard.frame, nil, 1, 5, 1, "activeGlowThickness", tracker, function()
+                RefreshContainer(containerKey)
+            end, nil, {
+                description = "Thickness of each Pixel Glow line.",
+            })
+            activeWidgets.scale = gui:CreateFormSlider(activeCard.frame, nil, 0.5, 2.0, 0.1, "activeGlowScale", tracker, function()
+                RefreshContainer(containerKey)
+            end, nil, {
+                description = "Size multiplier for Autocast Shine.",
+            })
+            activeCard.AddRow(
+                optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Thickness", activeWidgets.thickness),
+                optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Scale", activeWidgets.scale)
+            )
+            UpdateActiveGlowWidgetStates()
+            builder.CloseCard(activeCard)
+            builder.Spacer(10)
+        end
+    end
 
     builder.Header("Cast Highlighter")
     local highlighterCard = builder.Card()

@@ -1772,6 +1772,16 @@ local function ResolveCustomTrackerFrameForKey(key)
     if not barID then
         return nil
     end
+
+    local migratedKey = "cdmCustom_customBar_" .. tostring(barID)
+    local migratedResolver = FRAME_RESOLVERS and FRAME_RESOLVERS[migratedKey]
+    if migratedResolver then
+        local frame = migratedResolver()
+        if frame then
+            return frame
+        end
+    end
+
     local trackerModule = QUICore and QUICore.CustomTrackers
     local activeBars = trackerModule and trackerModule.activeBars
     if not activeBars then
@@ -3305,4 +3315,3 @@ if ns.Registry then
         importCategories = { "layout" },
     })
 end
-

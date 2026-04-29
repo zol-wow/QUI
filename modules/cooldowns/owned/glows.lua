@@ -269,6 +269,19 @@ local function RebuildGlowSpellMap()
     wipe(spellIdToGlowIcons)
     local CDMIcons = ns.CDMIcons
     if not CDMIcons then return end
+    if CDMIcons.ForEachIcon then
+        CDMIcons:ForEachIcon(function(icon)
+            if icon._spellEntry then
+                local spellID = icon._spellEntry.spellID
+                local overrideID = icon._spellEntry.overrideSpellID
+                AddGlowMapID(spellID, icon)
+                if overrideID and overrideID ~= spellID then
+                    AddGlowMapID(overrideID, icon)
+                end
+            end
+        end)
+        return
+    end
     for _, viewerType in ipairs({"essential", "utility"}) do
         local pool = CDMIcons:GetIconPool(viewerType)
         for _, icon in ipairs(pool) do
@@ -726,10 +739,21 @@ local function ScanAllGlows()
     local CDMIcons = ns.CDMIcons
     if not CDMIcons then return end
 
+    if CDMIcons.ForEachIcon then
+        CDMIcons:ForEachIcon(function(icon)
+            if not icon:IsShown() then -- skip hidden icons (glow re-applied on layout refresh)
+                -- noop: skip
+            elseif icon._spellEntry then
+                SyncGlowForIcon(icon)
+            end
+        end)
+        return
+    end
+
     for _, viewerType in ipairs({"essential", "utility"}) do
         local pool = CDMIcons:GetIconPool(viewerType)
         for _, icon in ipairs(pool) do
-            if not icon:IsShown() then -- skip hidden icons (glow re-applied on layout refresh)
+            if not icon:IsShown() then
                 -- noop: skip
             elseif icon._spellEntry then
                 SyncGlowForIcon(icon)
@@ -895,5 +919,4 @@ ns._OwnedGlows = {
         return activeGlowIcons[icon] and { active = true } or nil
     end,
 }
-
 
