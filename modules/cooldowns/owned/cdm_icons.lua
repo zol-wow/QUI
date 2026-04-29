@@ -1133,6 +1133,13 @@ local function MirrorCurrentBlizzCooldown(icon, blizzCD)
         icon._durObjHookSync = GetTime()
         icon._showingGCDSwipe = nil
         icon._showingRealCooldownSwipe = true
+        -- Stamp rebind-tracking so the per-tick block treats this initial
+        -- subscribe bind as authoritative for the spell's current sid.
+        -- _lastApiActiveBound stays nil so the first observed cooldown-start
+        -- transition triggers a fresh fetch (the durObj from subscribe time
+        -- may be a 'no cooldown' snapshot that doesn't reflect a later start).
+        icon._lastBoundRuntimeSid = sid
+        icon._lastApiActiveBound = nil
         SyncMirroredCooldownState(icon, blizzCD, true)
         RefreshIconGCDState(icon)
         return true
@@ -1281,6 +1288,13 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                             targetIcon._durObjHookSync = GetTime()
                             targetIcon._showingGCDSwipe = nil
                             targetIcon._showingRealCooldownSwipe = true
+                            -- Stamp rebind-tracking so the per-tick block at
+                            -- line 3031 recognizes this hook-driven bind as
+                            -- already done and doesn't re-fetch a fresh
+                            -- DurationObject userdata next batch.
+                            targetIcon._lastBoundRuntimeSid = targetIcon._runtimeSpellID
+                                or (tEntry.overrideSpellID or tEntry.spellID or tEntry.id)
+                            targetIcon._lastApiActiveBound = true
                         end
                         ChargeDebug(tEntry and tEntry.name, "MIRROR hook: tSkipCharge=", tSkipCharge,
                             "tSkipAura=", tSkipAura,
@@ -2984,6 +2998,12 @@ local function UpdateIconCooldown(icon)
                             if icon.Cooldown then
                                 pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
                                 pcall(icon.Cooldown.Clear, icon.Cooldown)
+                                -- Clear() unbound the aura's durObj from the
+                                -- C-side; reset rebind tracking so the next
+                                -- tick fetches a fresh spell durObj for the
+                                -- post-aura cooldown phase.
+                                icon._lastBoundRuntimeSid = nil
+                                icon._lastApiActiveBound = nil
                                 ReapplySwipeStyle(icon.Cooldown, icon)
                             end
                         end
@@ -2995,6 +3015,8 @@ local function UpdateIconCooldown(icon)
                     if icon.Cooldown then
                         pcall(icon.Cooldown.SetReverse, icon.Cooldown, false)
                         pcall(icon.Cooldown.Clear, icon.Cooldown)
+                        icon._lastBoundRuntimeSid = nil
+                        icon._lastApiActiveBound = nil
                         ReapplySwipeStyle(icon.Cooldown, icon)
                     end
                 end
@@ -3029,18 +3051,46 @@ local function UpdateIconCooldown(icon)
                     -- draw/no-draw decisions (SetCooldownFromDurationObject clears at
                     -- zero) and skips the numeric tick-apply/clear fallback below.
                     if entry._blizzChild and icon.Cooldown and icon.Cooldown.SetCooldownFromDurationObject and not icon._auraActive then
-                        local spellDurObj = TickCacheGetDuration(cdSid)
-                        if spellDurObj then
-                            pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, spellDurObj)
+                        -- Re-bind only on transitions. Re-binding a fresh
+                        -- DurationObject userdata every batch (TickCacheGetDuration
+                        -- wipes per batch) restarted the C-side swipe animation
+                        -- each tick, producing the visible combat radial flicker.
+                        -- Once bound, the DurationObject polls remaining time
+                        -- internally and the C-side animates correctly without
+                        -- further calls.
+                        local prevApiActive = icon._lastApiActiveBound
+                        local needsBind = (not icon._lastBoundRuntimeSid)
+                            or (icon._lastBoundRuntimeSid ~= cdSid)
+                            or (apiIsActive == true and prevApiActive ~= true)
+
+                        if needsBind then
+                            local spellDurObj = TickCacheGetDuration(cdSid)
+                            if spellDurObj then
+                                pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, spellDurObj)
+                                icon._durObjHookSync = GetTime()
+                                icon._showingRealCooldownSwipe = true
+                                icon._showingGCDSwipe = nil
+                                icon._mirrorDriven = true
+                                icon._lastBoundRuntimeSid = cdSid
+                                blizzRealCooldownActive = true
+                                ReapplySwipeStyle(icon.Cooldown, icon)
+                            else
+                                icon._mirrorDriven = false
+                                icon._lastBoundRuntimeSid = nil
+                            end
+                        elseif icon._mirrorDriven then
+                            -- Already bound; the C-side animates from the
+                            -- bound durObj's polling. Keep _durObjHookSync
+                            -- fresh so the secondary-write gate at line 3263
+                            -- stays valid without re-binding.
                             icon._durObjHookSync = GetTime()
-                            icon._showingRealCooldownSwipe = true
-                            icon._showingGCDSwipe = nil
-                            icon._mirrorDriven = true
                             blizzRealCooldownActive = true
-                            ReapplySwipeStyle(icon.Cooldown, icon)
-                        else
-                            icon._mirrorDriven = false
                         end
+
+                        if apiIsActive ~= nil then
+                            icon._lastApiActiveBound = apiIsActive
+                        end
+
                         if entry._blizzChild.Cooldown then
                             SyncMirroredCooldownState(icon, entry._blizzChild.Cooldown, apiIsActive)
                         end
@@ -3780,6 +3830,8 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         icon._showingGCDSwipe = nil
         icon._showingRealCooldownSwipe = nil
         icon._mirrorDriven = nil
+        icon._lastBoundRuntimeSid = nil
+        icon._lastApiActiveBound = nil
         icon._wasShowingGCDSwipe = nil
         icon._hasCooldownActive = nil
         icon._isTotemInstance = nil
