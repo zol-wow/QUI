@@ -5453,7 +5453,7 @@ end
 GUI._searchTimer = nil
 
 -- Create the search box widget for the top bar
-function GUI:CreateSearchBox(parent)
+function GUI:CreateSearchBox(parent, placeholderText)
     local container = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     container:SetSize(160, 28)
 
@@ -5493,7 +5493,7 @@ function GUI:CreateSearchBox(parent)
     -- Placeholder text
     local placeholder = editBox:CreateFontString(nil, "OVERLAY")
     SetFont(placeholder, 10, "", {C.textMuted[1], C.textMuted[2], C.textMuted[3], 1})
-    placeholder:SetText("Search settings...")
+    placeholder:SetText(placeholderText or "Search settings...")
     placeholder:SetPoint("LEFT", 0, 0)
 
     -- Clear button (X)

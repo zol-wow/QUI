@@ -1579,9 +1579,36 @@ CreateFramesDrawer = function(ui)
         return button
     end
 
+    -- Search box (top of drawer). Reuses QUI.GUI:CreateSearchBox.
+    local searchContainer = CreateFrame("Frame", nil, drawer)
+    searchContainer:SetPoint("TOPLEFT", drawer, "TOPLEFT", DRAWER_PADDING, -DRAWER_PADDING)
+    searchContainer:SetPoint("TOPRIGHT", drawer, "TOPRIGHT", -DRAWER_PADDING, -DRAWER_PADDING)
+    searchContainer:SetHeight(28)
+
+    local searchBox
+    do
+        local GUI = _G.QUI and _G.QUI.GUI
+        if GUI and GUI.CreateSearchBox then
+            searchBox = GUI:CreateSearchBox(searchContainer, "Search frames…")
+            searchBox:SetAllPoints(searchContainer)
+            searchBox.onSearch = function(text)
+                drawer._searchFilter = (text or ""):lower()
+                if ui._RebuildDrawer then ui:_RebuildDrawer() end
+            end
+            searchBox.onClear = function()
+                drawer._searchFilter = ""
+                if ui._RebuildDrawer then ui:_RebuildDrawer() end
+            end
+        end
+    end
+
+    drawer._searchContainer = searchContainer
+    drawer._searchBox = searchBox
+    drawer._searchFilter = ""
+
     local controls = CreateFrame("Frame", nil, drawer)
-    controls:SetPoint("TOPLEFT", DRAWER_PADDING, -DRAWER_PADDING)
-    controls:SetPoint("TOPRIGHT", -DRAWER_PADDING, -DRAWER_PADDING)
+    controls:SetPoint("TOPLEFT", searchContainer, "BOTTOMLEFT", 0, -4)
+    controls:SetPoint("TOPRIGHT", searchContainer, "BOTTOMRIGHT", 0, -4)
     controls:SetHeight(DRAWER_CONTROLS_HEIGHT)
 
     local controlsLabel = controls:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1699,6 +1726,15 @@ CreateFramesDrawer = function(ui)
     drawer._content = content
     drawer._rows = {}
 
+    drawer:HookScript("OnHide", function()
+        if drawer._searchBox and drawer._searchBox:GetText() ~= "" then
+            drawer._searchBox:SetText("")
+            drawer._searchBox:ClearFocus()
+        end
+        drawer._searchFilter = ""
+        drawer._activeFilter = nil
+    end)
+
     ui._drawer = drawer
     ui:ApplyConfigPanelScale(drawer)
 end
@@ -1727,18 +1763,32 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
 
     local contentWidth = content:GetWidth()
 
-    -- First pass: collect elements into ordered groups
+    -- First pass: collect elements into ordered groups (filtered by search input)
+    local searchFilter = drawer._searchFilter or ""
+    drawer._activeFilter = (searchFilter ~= "")
+
     local groupOrder = {}
     local groupElements = {}
     for _, key in ipairs(um._elementOrder) do
         local def = um._elements[key]
         if not def then break end
         local group = def.group or "Other"
-        if not groupElements[group] then
-            groupElements[group] = {}
-            groupOrder[#groupOrder + 1] = group
+
+        local include = true
+        if searchFilter ~= "" then
+            local label = (def.label or key or ""):lower()
+            local groupLower = group:lower()
+            include = (label:find(searchFilter, 1, true) ~= nil)
+                or (groupLower:find(searchFilter, 1, true) ~= nil)
         end
-        groupElements[group][#groupElements[group] + 1] = { key = key, def = def }
+
+        if include then
+            if not groupElements[group] then
+                groupElements[group] = {}
+                groupOrder[#groupOrder + 1] = group
+            end
+            groupElements[group][#groupElements[group] + 1] = { key = key, def = def }
+        end
     end
 
     -- Second pass: build headers and rows
@@ -1752,6 +1802,9 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
         end
 
         local isCollapsed = groupCollapsed[group]
+        if drawer._activeFilter then
+            isCollapsed = false
+        end
 
         -- Group header (clickable)
         local header = CreateFrame("Button", nil, content)
@@ -1809,6 +1862,10 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
             end
         end)
         header:SetScript("OnClick", function()
+            -- While the search filter is active, the chevron is forced expanded
+            -- and clicking it is a no-op. Otherwise we'd silently mutate saved
+            -- collapsed state behind a chevron whose visual ignores it.
+            if drawer._activeFilter then return end
             groupCollapsed[group] = not groupCollapsed[group]
             self:_RelayoutDrawer()
         end)
@@ -2290,6 +2347,21 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
         end
     end
 
+    -- Empty-state placeholder (only when filter is active and zero rows survive)
+    if not drawer._emptyStateText then
+        local fs = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        fs:SetPoint("TOP", content, "TOP", 0, -16)
+        fs:SetTextColor(0.55, 0.58, 0.62, 1)
+        fs:SetText("No frames match")
+        fs:Hide()
+        drawer._emptyStateText = fs
+    end
+    if drawer._activeFilter and #groupOrder == 0 then
+        drawer._emptyStateText:Show()
+    else
+        drawer._emptyStateText:Hide()
+    end
+
     drawer._allRows = allRows
     drawer._layerRows = layerRows
     drawer._refreshLayerButtons = function()
@@ -2313,7 +2385,12 @@ function QUI_LayoutMode_UI:_RelayoutDrawer()
     local drawer = self._drawer
     if not drawer or not drawer._allRows then return end
 
-    local groupCollapsed = drawer._groupCollapsed or {}
+    local savedCollapsed = drawer._groupCollapsed or {}
+    local activeFilter = drawer._activeFilter
+    local function isCollapsed(group)
+        if activeFilter then return false end
+        return savedCollapsed[group]
+    end
     local y = 0
 
     for _, entry in ipairs(drawer._allRows) do
@@ -2326,14 +2403,15 @@ function QUI_LayoutMode_UI:_RelayoutDrawer()
 
             -- Update chevron text
             local chevron = entry.frame._chevron or select(1, entry.frame:GetRegions())
+            local collapsed = isCollapsed(entry.group)
             if UIKit and UIKit.SetChevronCaretExpanded and chevron and chevron.GetObjectType and chevron:GetObjectType() == "Frame" then
-                UIKit.SetChevronCaretExpanded(chevron, not groupCollapsed[entry.group])
+                UIKit.SetChevronCaretExpanded(chevron, not collapsed)
             elseif chevron and chevron.SetText then
-                chevron:SetText(groupCollapsed[entry.group] and ">" or "v")
+                chevron:SetText(collapsed and ">" or "v")
             end
         else
-            -- Element rows: show/hide based on group collapsed state
-            if groupCollapsed[entry.group] then
+            -- Element rows: show/hide based on (effective) group collapsed state
+            if isCollapsed(entry.group) then
                 entry.frame:Hide()
             else
                 entry.frame:ClearAllPoints()
