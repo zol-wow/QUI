@@ -293,16 +293,26 @@ local function StyleIcon(icon, settings, isBuff, debuffType)
     end
 
     -- Style and position Blizzard's auto-managed countdown FontString
+    -- (kept positioned for parity even though it's hidden — see ConfigureAuraCooldownFrame)
+    local cdAnchor = settings[tp .. "DurationTextAnchor"] or "CENTER"
+    local cdOffX = settings[tp .. "DurationTextOffsetX"] or 0
+    local cdOffY = settings[tp .. "DurationTextOffsetY"] or 0
     if icon.Cooldown and icon.Cooldown.GetCountdownFontString then
         local cdText = icon.Cooldown:GetCountdownFontString()
         if cdText and cdText.SetFont then
             cdText:SetFont(font, fontSize, outline)
-            local cdAnchor = settings[tp .. "DurationTextAnchor"] or "CENTER"
-            local cdOffX = settings[tp .. "DurationTextOffsetX"] or 0
-            local cdOffY = settings[tp .. "DurationTextOffsetY"] or 0
             pcall(cdText.ClearAllPoints, cdText)
             pcall(cdText.SetPoint, cdText, cdAnchor, icon.Cooldown, cdAnchor, cdOffX, cdOffY)
         end
+    end
+
+    -- Position the custom duration text we render in place of Blizzard's
+    -- countdown (see EnsureDurationText). Honors the same user settings.
+    if icon._quiDuration then
+        local fs = icon._quiDuration
+        if fs.SetFont then fs:SetFont(font, fontSize, outline) end
+        pcall(fs.ClearAllPoints, fs)
+        pcall(fs.SetPoint, fs, cdAnchor, icon, cdAnchor, cdOffX, cdOffY)
     end
 end
 
