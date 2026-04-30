@@ -810,7 +810,8 @@ CreateNudgeHandler = function(ui)
     nudge:SetSize(1, 1)
     nudge:SetPoint("CENTER")
     nudge:EnableKeyboard(false)
-    nudge:SetPropagateKeyboardInput(true)
+    -- SetPropagateKeyboardInput is only valid inside an OnKey handler; the
+    -- OnKeyDown below sets propagation explicitly on every branch.
     nudge:Hide()
 
     -- Acceleration state

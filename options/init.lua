@@ -15,8 +15,9 @@ function GUI:InitializeOptions()
     self:AddSidebarSearchBar(frame)
 
     -- Keyboard shortcut: Ctrl+F focuses the search box while the panel is open.
+    -- SetPropagateKeyboardInput is only valid inside an OnKey handler; the handler
+    -- below sets propagation explicitly on every branch, so no init-time call needed.
     frame:EnableKeyboard(true)
-    frame:SetPropagateKeyboardInput(true)
     frame:SetScript("OnKeyDown", function(self, key)
         if key == "ESCAPE" then
             self:SetPropagateKeyboardInput(false)
