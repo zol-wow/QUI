@@ -736,20 +736,54 @@ local function ResolveEffectsContext(containerKey)
 end
 
 ----------------------------------------------------------------------------
--- Legacy tracker recovery banner — shown above the Entries composer when
--- LegacyResolver flags this container with unresolved proposals or a spec
--- mismatch. Self-contained: pulls state from ns.LegacyResolver, calls back
--- into resolver actions on button click. After an action it hides itself
--- and refreshes the live container; the panel re-renders state on next
--- visit. Returns (frame, height) — height is 0 when no banner needed.
+-- Empty-bar prompt — shown above the Entries composer when a spec-specific
+-- container has no entries for the current spec. Replaces the prior
+-- LegacyResolver-driven proposal banner. Now that v32(d) clears stale
+-- container.entries instead of promoting them, the typical post-import
+-- failure mode is "bar exists but is empty" rather than "bar has bad
+-- entries that need triage." This prompt tells the user how to recover.
+--
+-- The opt-in /qui legacyrecover slash command remains available for users
+-- whose live data is still suspect (e.g. CooldownManager-drag victims who
+-- configured before drag-handler hardening shipped) — the prompt mentions
+-- it as a fallback. No automatic resolver state is read here; the banner
+-- shows purely from container state.
 ----------------------------------------------------------------------------
+local function ContainerHasEntriesForCurrentSpec(containerKey, container)
+    if type(container) ~= "table" then return false end
+    if type(container.entries) == "table" and #container.entries > 0 then
+        return true
+    end
+    local globals = QUI and QUI.db and QUI.db.global
+    local byContainer = globals and globals.ncdm
+        and globals.ncdm.specTrackerSpells
+        and globals.ncdm.specTrackerSpells[containerKey]
+    if type(byContainer) ~= "table" then return false end
+    for _, list in pairs(byContainer) do
+        if type(list) == "table" and #list > 0 then
+            return true
+        end
+    end
+    return false
+end
+
 local function BuildLegacyRecoveryBanner(parent, containerKey)
-    local resolver = ns.LegacyResolver
-    if not resolver or type(resolver.GetRecoveryStateForContainer) ~= "function" then
+    local profile = QUI and QUI.db and QUI.db.profile
+    local containers = profile and profile.ncdm and profile.ncdm.containers
+    local container = containers and containers[containerKey]
+    if type(container) ~= "table" then return nil, 0 end
+
+    -- Only show on spec-specific bars (V2 specSpecific / legacy specSpecificSpells)
+    -- that genuinely have nothing to render. Bars with entries — either in
+    -- container.entries (non-spec-specific) or in per-spec storage (spec-specific
+    -- with data) — render the composer normally without the prompt.
+    if not (container.specSpecific or container.specSpecificSpells) then
         return nil, 0
     end
-    local state = resolver:GetRecoveryStateForContainer(containerKey)
-    if not state then return nil, 0 end
+    if container._legacyResolutionDismissed then return nil, 0 end
+    if ContainerHasEntriesForCurrentSpec(containerKey, container) then
+        return nil, 0
+    end
 
     local gui = GetGUI()
     if not gui then return nil, 0 end
@@ -760,46 +794,30 @@ local function BuildLegacyRecoveryBanner(parent, containerKey)
 
     local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints(frame)
-    if state.kind == "needs-review" then
-        bg:SetColorTexture(0.20, 0.13, 0.04, 0.85)
-    else
-        bg:SetColorTexture(0.06, 0.10, 0.16, 0.85)
-    end
+    bg:SetColorTexture(0.06, 0.10, 0.16, 0.85)
 
     local UIKit = ns.UIKit
     if UIKit and UIKit.CreateBorderLines then
         UIKit.CreateBorderLines(frame)
         if UIKit.UpdateBorderLines then
-            if state.kind == "needs-review" then
-                UIKit.UpdateBorderLines(frame, 1, 0.95, 0.65, 0.20, 0.6)
-            else
-                UIKit.UpdateBorderLines(frame, 1, 0.40, 0.65, 0.95, 0.4)
-            end
+            UIKit.UpdateBorderLines(frame, 1, 0.40, 0.65, 0.95, 0.4)
         end
-    end
-
-    local sourceLabel = resolver:GetSpecLabel(state.sourceSpecID)
-    local titleText, bodyText
-    if state.kind == "needs-review" then
-        local s = state.stats or {}
-        local needs = (s.ambiguous or 0) + (s.noMatch or 0)
-        titleText = ("%d entry(ies) need attention"):format(needs)
-        bodyText = ("Imported from %s. Some entries couldn't be matched automatically."):format(sourceLabel)
-    else
-        titleText = ("Imported from %s"):format(sourceLabel)
-        bodyText = "Switch to that spec to recover entries automatically, or remove this bar if you no longer need it."
     end
 
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", 12, -10)
-    title:SetText(titleText)
+    title:SetText("This bar has no entries for your current spec")
     title:SetTextColor(1, 0.85, 0.55, 1)
 
     local body = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     body:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -4)
     body:SetPoint("RIGHT", frame, "RIGHT", -12, 0)
     body:SetJustifyH("LEFT")
-    body:SetText(bodyText)
+    body:SetText(
+        "Drag spells from your spellbook into the editor below to populate it. "
+        .. "If you imported this bar from an older profile string, the entries may "
+        .. "not have travelled with the export — type /qui legacyrecover to attempt salvage."
+    )
 
     local function HideAndRefresh()
         frame:Hide()
@@ -814,39 +832,20 @@ local function BuildLegacyRecoveryBanner(parent, containerKey)
         return btn
     end
 
+    AddButton("Dismiss", "ghost", function()
+        container._legacyResolutionDismissed = true
+        HideAndRefresh()
+    end)
+
     AddButton("Delete bar", "ghost", function()
-        if resolver.DeleteContainerAndLegacy then
+        local resolver = ns.LegacyResolver
+        if resolver and resolver.DeleteContainerAndLegacy then
             resolver:DeleteContainerAndLegacy(containerKey)
         end
         HideAndRefresh()
     end)
 
-    AddButton("Remove broken entries", "ghost", function()
-        if resolver.RemoveInvalidSpellEntriesForContainer then
-            resolver:RemoveInvalidSpellEntriesForContainer(containerKey)
-        elseif resolver.RemoveBrokenEntriesForContainer then
-            resolver:RemoveBrokenEntriesForContainer(containerKey)
-        end
-        HideAndRefresh()
-    end)
-
-    if state.kind == "needs-review" then
-        local stats = state.stats or {}
-        if (stats.ambiguous or 0) > 0 and resolver.AcceptProposalsForContainer then
-            AddButton("Apply best guess", "primary", function()
-                resolver:AcceptProposalsForContainer(containerKey, { includeAmbiguous = true })
-                HideAndRefresh()
-            end)
-        end
-    else
-        AddButton("Dismiss", "ghost", function()
-            if resolver.DismissContainer then resolver:DismissContainer(containerKey) end
-            HideAndRefresh()
-        end)
-    end
-
     -- Right-align buttons in a row below the body text.
-    local btnRowTop = body
     if #buttons > 0 then
         local x = -12
         for i = #buttons, 1, -1 do
@@ -854,7 +853,7 @@ local function BuildLegacyRecoveryBanner(parent, containerKey)
             local w = (b.text and b.text.GetStringWidth and b.text:GetStringWidth() or 60) + 24
             b:SetWidth(math.max(w, 80))
             b:ClearAllPoints()
-            b:SetPoint("TOPRIGHT", btnRowTop, "BOTTOMRIGHT", x, -8)
+            b:SetPoint("TOPRIGHT", body, "BOTTOMRIGHT", x, -8)
             x = x - (b:GetWidth() + 6)
         end
     end

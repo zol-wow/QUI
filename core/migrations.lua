@@ -125,13 +125,17 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --             db.global.ncdm.specTrackerSpells[containerKey] when present.
 --         (d) FinalizeLegacyTrackerSpecState — promote legacy
 --             specSpecificSpells -> V2 specSpecific, stamp
---             container._sourceSpecID from ncdm._lastSpecID, move
---             container.entries into per-spec storage so the unified
---             renderer's natural per-spec gating takes over (this also
---             tags each entry with _sourceSpecID for tooltip rendering).
---             Repairs the gap (c) leaves when the pre-V2 drag-drop bug
---             stored entries in bar.entries instead of the global
---             per-spec location, so (c) had nothing to port.
+--             container._sourceSpecID from ncdm._lastSpecID, then clear
+--             container.entries on spec-specific bars. The earlier (c)
+--             port already moved any real per-spec data from the global
+--             legacy location into ncdm.specTrackerSpells; whatever is
+--             still sitting in container.entries on a spec-specific bar
+--             is either a stale pre-toggle snapshot (direct upgrade) or
+--             pre-V2 drag-handler garbage (slot indexes / cooldownIDs
+--             that aren't real spellIDs). Promoting that data produced
+--             fallback icons on import; clearing it lets the bar render
+--             empty with a UI prompt to re-add. Users with corner-case
+--             data can recover via the opt-in /qui legacyrecover slash.
 --         (e) MigrateContainerShapeAndEntryKind — collapses the 4-value
 --             containerType taxonomy {aura, auraBar, cooldown, customBar}
 --             into two orthogonal axes: container.shape ∈ {icon, bar} for
@@ -151,8 +155,9 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --         (g) Migrations.RepairCustomTrackerSpecStorage — canonicalize
 --             spec-specific custom tracker buckets from numeric spec keys
 --             ("250") to CLASS-specID keys ("DEATHKNIGHT-250") read by the
---             unified CDM runtime, preserve source-key metadata, and stamp
---             bug-path entries that may still contain spellbook slot IDs.
+--             unified CDM runtime, preserve source-key metadata, and clear
+--             leftover container.entries on spec-specific bars so the
+--             renderer uses per-spec storage exclusively (matches (d)).
 --         (h) RepairResourceBarSettings — copy primary/secondary power-bar
 --             values from legacy ncdm storage into the active top-level
 --             powerBar / secondaryPowerBar tables when the runtime keys
@@ -2798,6 +2803,14 @@ function Migrations.RepairCustomTrackerSpecStorage(profile, globalDB)
                 end
             end
 
+            -- Stamp _sourceSpecID for spec-specific bars even if we don't
+            -- have per-spec entries to write yet (the source-spec hint is
+            -- still useful for the runtime LegacyResolver if the user
+            -- ever opts into salvage). Then clear container.entries so
+            -- the renderer uses per-spec storage exclusively. Pre-V2
+            -- container.entries on a spec-specific bar is dead data —
+            -- either a stale snapshot or drag-handler-bug garbage. See
+            -- FinalizeLegacyTrackerSpecState above for the rationale.
             if container.specSpecific == true
                and type(container.entries) == "table"
                and #container.entries > 0
@@ -2805,35 +2818,13 @@ function Migrations.RepairCustomTrackerSpecStorage(profile, globalDB)
                 local sourceSpecID = type(container._sourceSpecID) == "number"
                     and container._sourceSpecID
                     or GetProfileSourceSpecID(profile)
-                if type(sourceSpecID) == "number" and sourceSpecID > 0 then
+                if type(sourceSpecID) == "number" and sourceSpecID > 0
+                   and container._sourceSpecID == nil
+                then
                     container._sourceSpecID = sourceSpecID
                 end
-                local canonicalKey = sourceSpecID and GetCanonicalSpecKey(sourceSpecID) or nil
-                local moved = {}
-                if canonicalKey then
-                    for _, entry in ipairs(container.entries) do
-                        if type(entry) == "table" then
-                            local copy = CloneValue(entry)
-                            StampLegacySpecEntry(copy, sourceSpecID, tostring(sourceSpecID), {
-                                legacySpellbookSlot = true,
-                            })
-                            moved[#moved + 1] = copy
-                        end
-                    end
-                end
-                if #moved > 0 then
-                    if type(root[containerKey]) ~= "table" then
-                        root[containerKey] = {}
-                    end
-                    if type(root[containerKey][canonicalKey]) == "table" then
-                        MergeSpecEntryLists(root[containerKey][canonicalKey], moved)
-                    else
-                        root[containerKey][canonicalKey] = moved
-                    end
-                    RecordSpecKeyAlias(container, tostring(sourceSpecID), canonicalKey)
-                    container.entries = {}
-                    changed = true
-                end
+                container.entries = {}
+                changed = true
             end
         end
     end
@@ -2976,47 +2967,28 @@ local function FinalizeLegacyTrackerSpecState(profile)
                 container._sourceSpecID = sourceSpecID
             end
 
-            -- (3) Move container.entries into per-spec storage at the source
-            -- spec. Requires db.global access via _currentGlobalDB (set by
-            -- Migrations.Run at the top-level entry point). Skip silently
-            -- if globals aren't available — the migration is idempotent and
-            -- will retry on the next addon-init pass.
-            local globalDB = _currentGlobalDB
-            local stampedSpec = container._sourceSpecID
+            -- (3) Reconcile container.entries with per-spec storage.
+            --
+            -- For spec-specific containers, the canonical live read path is
+            -- db.global.ncdm.specTrackerSpells[key][canonicalSpec]. The
+            -- container.entries field is a stale pre-toggle snapshot — and on
+            -- profiles damaged by the pre-V2 drag handler bug it holds
+            -- spellbook slot indexes / cooldownIDs rather than real spellIDs.
+            -- Promoting that data into live storage produced fallback icons
+            -- on import.
+            --
+            -- New behavior: clear container.entries on spec-specific bars
+            -- once specSpecific is true. The real entries either (a) already
+            -- live in per-spec storage (transform (c) ports legacy global
+            -- data; main's _quiBundledGlobals carries QUI1-export data), or
+            -- (b) genuinely don't exist for this user, in which case the
+            -- bar should render empty with a UI prompt to re-add via
+            -- drag-drop. Users with edge-case data still in container.entries
+            -- can recover via the opt-in /qui legacyrecover slash command.
             if container.specSpecific == true
-               and type(stampedSpec) == "number" and stampedSpec > 0
                and type(container.entries) == "table" and #container.entries > 0
-               and type(globalDB) == "table"
             then
-                if type(globalDB.ncdm) ~= "table" then globalDB.ncdm = {} end
-                if type(globalDB.ncdm.specTrackerSpells) ~= "table" then
-                    globalDB.ncdm.specTrackerSpells = {}
-                end
-                local byContainer = globalDB.ncdm.specTrackerSpells[key]
-                if type(byContainer) ~= "table" then
-                    byContainer = {}
-                    globalDB.ncdm.specTrackerSpells[key] = byContainer
-                end
-                local sourceKey = tostring(stampedSpec)
-                local specKey = GetCanonicalSpecKey(stampedSpec)
-                local moved = {}
-                for _, entry in ipairs(container.entries) do
-                    if type(entry) == "table" then
-                        local copy = CloneValue(entry)
-                        StampLegacySpecEntry(copy, stampedSpec, sourceKey, { legacySpellbookSlot = true })
-                        moved[#moved + 1] = copy
-                    end
-                end
-
-                if #moved > 0 then
-                    if type(byContainer[specKey]) == "table" then
-                        MergeSpecEntryLists(byContainer[specKey], moved)
-                    else
-                        byContainer[specKey] = moved
-                    end
-                    RecordSpecKeyAlias(container, sourceKey, specKey)
-                    container.entries = {}
-                end
+                container.entries = {}
             end
         end
     end

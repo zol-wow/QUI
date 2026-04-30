@@ -807,16 +807,17 @@ local function RunWalk(announce)
     end
 end
 
+-- Auto-walk hooks intentionally disabled: v32(d) no longer promotes
+-- bar.entries into per-spec storage, so there's nothing for the resolver
+-- to clean up on a typical login. The salvage probe stays available as
+-- an opt-in /qui legacyrecover slash command for users with corner-case
+-- profiles whose live data is still suspect (e.g. CooldownManager-drag
+-- victims who configured bars before the drag-handler hardening shipped).
+--
+-- Re-enable by reinstating the OnEvent + Init below if a future migration
+-- decision flips back to auto-promote semantics.
 local function OnEvent(_, event)
-    if event == "PLAYER_LOGIN" then
-        if C_Timer and C_Timer.After then
-            C_Timer.After(2, function() RunWalk(true) end)
-        else
-            RunWalk(true)
-        end
-    elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
-        RunWalk(true)
-    elseif event == "PLAYER_REGEN_ENABLED" then
+    if event == "PLAYER_REGEN_ENABLED" then
         if _pendingPostCombat then
             _pendingPostCombat = false
             RunWalk(true)
@@ -827,8 +828,9 @@ end
 function LegacyResolver:Init()
     if _resolverFrame then return end
     _resolverFrame = CreateFrame("Frame")
-    _resolverFrame:RegisterEvent("PLAYER_LOGIN")
-    _resolverFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    -- Only the post-combat retry stays wired, since RunWalk can be invoked
+    -- manually via the slash command and may need to defer if combat is
+    -- active when the user runs it.
     _resolverFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     _resolverFrame:SetScript("OnEvent", OnEvent)
 end

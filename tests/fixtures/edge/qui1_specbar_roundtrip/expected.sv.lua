@@ -13,32 +13,24 @@ return {
       lastVersion = 0,
       ncdm = {
         specTrackerSpells = {
-          customBar_test_bar_spec = {
-            ["DEATHKNIGHT-250"] = {
+          customBar_test_roundtrip = {
+            ["PRIEST-256"] = {
               [1] = {
-                _legacySourceSpecKey = "250",
-                _sourceSpecID = 250,
-                id = 33333,
+                _legacySourceSpecKey = "PRIEST-256",
+                _sourceSpecID = 256,
+                id = 33206,
                 type = "spell"
               },
               [2] = {
-                _legacySourceSpecKey = "250",
-                _sourceSpecID = 250,
-                id = 44444,
-                type = "spell"
-              }
-            },
-            ["DEATHKNIGHT-251"] = {
-              [1] = {
-                _legacySourceSpecKey = "251",
-                _sourceSpecID = 251,
-                id = 55555,
+                _legacySourceSpecKey = "PRIEST-256",
+                _sourceSpecID = 256,
+                id = 47788,
                 type = "spell"
               },
-              [2] = {
-                _legacySourceSpecKey = "251",
-                _sourceSpecID = 251,
-                id = 66666,
+              [3] = {
+                _legacySourceSpecKey = "PRIEST-256",
+                _sourceSpecID = 256,
+                id = 62618,
                 type = "spell"
               }
             }
@@ -46,28 +38,18 @@ return {
         }
       },
       specTrackerSpells = {
-        test_bar_spec = {
-          ["250"] = {
+        test_roundtrip = {
+          ["PRIEST-256"] = {
             [1] = {
-              id = 33333,
+              id = 33206,
               type = "spell"
             },
             [2] = {
-              id = 33333,
+              id = 47788,
               type = "spell"
             },
             [3] = {
-              id = 44444,
-              type = "spell"
-            }
-          },
-          ["251"] = {
-            [1] = {
-              id = 55555,
-              type = "spell"
-            },
-            [2] = {
-              id = 66666,
+              id = 62618,
               type = "spell"
             }
           }
@@ -6130,63 +6112,11 @@ return {
             width = 300
           }
         },
+        cdm = {
+          engine = "owned"
+        },
         customTrackers = {
           bars = {
-            [1] = {
-              activeGlowFrequency = 0.25,
-              activeGlowLines = 8,
-              activeGlowScale = 1,
-              activeGlowThickness = 2,
-              aspectRatioCrop = 1.25,
-              borderColor = {
-                [1] = 0,
-                [2] = 0,
-                [3] = 0,
-                [4] = 1
-              },
-              borderSize = 1,
-              durationAnchor = "TOP",
-              durationColor = {
-                [1] = 0.80000000000000004,
-                [2] = 0.90000000000000002,
-                [4] = 0.94999999999999996
-              },
-              durationOffsetX = 2,
-              durationOffsetY = -3,
-              durationSize = 17,
-              dynamicLayout = false,
-              enabled = true,
-              entries = {
-                [1] = {
-                  id = 12345,
-                  type = "spell"
-                },
-                [2] = {
-                  id = 67890,
-                  type = "spell"
-                }
-              },
-              hideDurationText = true,
-              hideStackText = true,
-              iconSize = 32,
-              id = "test_bar_1",
-              maxIcons = 6,
-              name = "Test Bar One",
-              noDesaturateWithCharges = false,
-              offsetX = 120,
-              offsetY = -80,
-              showRechargeSwipe = false,
-              specSpecificSpells = false,
-              stackAnchor = "BOTTOMLEFT",
-              stackColor = {
-                [2] = 0.69999999999999996,
-                [3] = 0.20000000000000001
-              },
-              stackOffsetX = -2,
-              stackOffsetY = 4,
-              stackSize = 11,
-              zoom = 0.080000000000000002
-            },
             [2] = {
               activeGlowColor = {
                 [1] = 1,
@@ -6209,9 +6139,9 @@ return {
               },
               bgOpacity = 0,
               borderColor = {
-                [1] = 0.20000000000000001,
-                [2] = 0.20000000000000001,
-                [3] = 0.20000000000000001,
+                [1] = 0,
+                [2] = 0,
+                [3] = 0,
                 [4] = 1
               },
               borderSize = 2,
@@ -6229,19 +6159,19 @@ return {
               dynamicLayout = false,
               enabled = true,
               entries = {},
-              growDirection = "DOWN",
+              growDirection = "RIGHT",
               hideDurationText = false,
               hideGCD = true,
               hideNonUsable = false,
               hideStackText = false,
-              iconSize = 36,
-              id = "test_bar_spec",
+              iconSize = 32,
+              id = "test_roundtrip",
               locked = false,
               maxIcons = 8,
-              name = "Spec Bar",
+              name = "Roundtrip Bar",
               noDesaturateWithCharges = false,
-              offsetX = -200,
-              offsetY = 50,
+              offsetX = 0,
+              offsetY = 0,
               showActiveState = true,
               showItemCharges = true,
               showOnlyInCombat = false,
@@ -6250,7 +6180,7 @@ return {
               showOnlyWhenOffCooldown = false,
               showProfessionQuality = true,
               showRechargeSwipe = false,
-              spacing = 2,
+              spacing = 4,
               specSpecificSpells = true,
               stackAnchor = "BOTTOMRIGHT",
               stackColor = {
@@ -6266,61 +6196,13 @@ return {
             }
           }
         },
-        customTrackersVisibility = {
-          fadeDuration = 0.34999999999999998,
-          fadeOutAlpha = 0.25,
-          hideWhenMounted = false,
-          hideWhenSkyriding = false,
-          showAlways = false,
-          showInCombat = true,
-          showInInstance = true,
-          showOnMouseover = true,
-          showWhenTargetExists = true
-        },
-        frameAnchoring = {
-          cdmCustom_customBar_test_bar_1 = {
-            autoHeight = false,
-            autoWidth = false,
-            heightAdjust = -1,
-            hideWithParent = true,
-            keepInPlace = true,
-            offsetX = 5,
-            offsetY = 7,
-            parent = "playerFrame",
-            point = "BOTTOMRIGHT",
-            relative = "TOPRIGHT",
-            sizeStable = true,
-            widthAdjust = 3
-          },
-          combatTimer = {
-            keepInPlace = true,
-            offsetX = 1,
-            offsetY = -2,
-            parent = "cdmCustom_customBar_test_bar_1",
-            point = "TOP",
-            relative = "BOTTOM"
-          },
-          ["customTracker:test_bar_1"] = {
-            autoHeight = false,
-            autoWidth = false,
-            heightAdjust = -1,
-            hideWithParent = true,
-            keepInPlace = true,
-            offsetX = 5,
-            offsetY = 7,
-            parent = "playerFrame",
-            point = "BOTTOMRIGHT",
-            relative = "TOPRIGHT",
-            sizeStable = true,
-            widthAdjust = 3
-          }
-        },
         ncdm = {
-          _lastSpecID = 250,
+          _lastSpecID = 256,
           containers = {
-            customBar_test_bar_1 = {
-              _legacyId = "test_bar_1",
+            customBar_test_roundtrip = {
+              _legacyId = "test_roundtrip",
               _migratedFromCustomTrackers = true,
+              _sourceSpecID = 256,
               activeGlowColor = {
                 [1] = 1,
                 [2] = 0.84999999999999998,
@@ -6334,185 +6216,34 @@ return {
               activeGlowThickness = 2,
               activeGlowType = "Pixel Glow",
               anchorTo = "disabled",
-              aspectRatioCrop = 1.25,
-              borderColor = {
-                [1] = 0,
-                [2] = 0,
-                [3] = 0,
-                [4] = 1
-              },
-              borderSize = 1,
-              builtIn = false,
-              clickableIcons = false,
-              containerType = "customBar",
-              durationAnchor = "TOP",
-              durationColor = {
-                [1] = 0.80000000000000004,
-                [2] = 0.90000000000000002,
-                [3] = 1,
-                [4] = 0.94999999999999996
-              },
-              durationOffsetX = 2,
-              durationOffsetY = -3,
-              durationSize = 17,
-              dynamicLayout = false,
-              enabled = true,
-              entries = {
-                [1] = {
-                  id = 12345,
-                  type = "spell"
-                },
-                [2] = {
-                  id = 67890,
-                  type = "spell"
-                }
-              },
-              growDirection = "RIGHT",
-              hideDurationText = true,
-              hideGCD = true,
-              hideNonUsable = false,
-              hideStackText = true,
-              iconSize = 32,
-              id = "test_bar_1",
-              keybindContext = "customTrackers",
-              layoutDirection = "HORIZONTAL",
-              locked = false,
-              maxIcons = 6,
-              name = "Test Bar One",
-              noDesaturateWithCharges = false,
-              offsetX = 120,
-              offsetY = -80,
-              pos = {
-                ox = 120,
-                oy = -80
-              },
-              row1 = {
-                aspectRatioCrop = 1.25,
-                borderColorTable = {
-                  [1] = 0,
-                  [2] = 0,
-                  [3] = 0,
-                  [4] = 1
-                },
-                borderSize = 1,
-                durationAnchor = "TOP",
-                durationOffsetX = 2,
-                durationOffsetY = -3,
-                durationSize = 17,
-                durationTextColor = {
-                  [1] = 0.80000000000000004,
-                  [2] = 0.90000000000000002,
-                  [3] = 1,
-                  [4] = 0.94999999999999996
-                },
-                hideDurationText = true,
-                hideStackText = true,
-                iconCount = 6,
-                iconSize = 32,
-                opacity = 1,
-                padding = 4,
-                stackAnchor = "BOTTOMLEFT",
-                stackOffsetX = -2,
-                stackOffsetY = 4,
-                stackSize = 11,
-                stackTextColor = {
-                  [1] = 1,
-                  [2] = 0.69999999999999996,
-                  [3] = 0.20000000000000001,
-                  [4] = 1
-                },
-                xOffset = 0,
-                yOffset = 0,
-                zoom = 0.080000000000000002
-              },
-              row2 = {
-                iconCount = 0
-              },
-              row3 = {
-                iconCount = 0
-              },
-              shape = "icon",
-              showActiveState = true,
-              showItemCharges = true,
-              showOnlyInCombat = false,
-              showOnlyOnCooldown = false,
-              showOnlyWhenActive = false,
-              showOnlyWhenOffCooldown = false,
-              showProfessionQuality = true,
-              showRechargeSwipe = false,
-              spacing = 4,
-              stackAnchor = "BOTTOMLEFT",
-              stackColor = {
-                [1] = 1,
-                [2] = 0.69999999999999996,
-                [3] = 0.20000000000000001,
-                [4] = 1
-              },
-              stackOffsetX = -2,
-              stackOffsetY = 4,
-              stackSize = 11,
-              tooltipContext = "customTrackers",
-              visibilityMode = "always",
-              zoom = 0.080000000000000002
-            },
-            customBar_test_bar_spec = {
-              _legacyId = "test_bar_spec",
-              _legacySpecKeyAliases = {
-                ["250"] = "DEATHKNIGHT-250",
-                ["251"] = "DEATHKNIGHT-251"
-              },
-              _migratedFromCustomTrackers = true,
-              _sourceSpecID = 250,
-              _specEntriesPortedB3 = true,
-              activeGlowColor = {
-                [1] = 1,
-                [2] = 0.84999999999999998,
-                [3] = 0.29999999999999999,
-                [4] = 1
-              },
-              activeGlowEnabled = true,
-              activeGlowFrequency = 0.25,
-              activeGlowLines = 8,
-              activeGlowScale = 1,
-              activeGlowThickness = 2,
-              activeGlowType = "Pixel Glow",
-              anchorTo = "disabled",
-              borderColor = {
-                [1] = 0.20000000000000001,
-                [2] = 0.20000000000000001,
-                [3] = 0.20000000000000001,
-                [4] = 1
-              },
-              borderSize = 2,
               builtIn = false,
               clickableIcons = false,
               containerType = "customBar",
               dynamicLayout = false,
               enabled = true,
               entries = {},
-              growDirection = "DOWN",
+              growDirection = "RIGHT",
               hideGCD = true,
               hideNonUsable = false,
-              iconSize = 36,
-              id = "test_bar_spec",
+              iconSize = 32,
+              id = "test_roundtrip",
               keybindContext = "customTrackers",
-              layoutDirection = "VERTICAL",
+              layoutDirection = "HORIZONTAL",
               locked = false,
-              maxIcons = 8,
-              name = "Spec Bar",
+              name = "Roundtrip Bar",
               noDesaturateWithCharges = false,
-              offsetX = -200,
-              offsetY = 50,
+              offsetX = 0,
+              offsetY = 0,
               pos = {
-                ox = -200,
-                oy = 50
+                ox = 0,
+                oy = 0
               },
               row1 = {
                 aspectRatioCrop = 1,
                 borderColorTable = {
-                  [1] = 0.20000000000000001,
-                  [2] = 0.20000000000000001,
-                  [3] = 0.20000000000000001,
+                  [1] = 0,
+                  [2] = 0,
+                  [3] = 0,
                   [4] = 1
                 },
                 borderSize = 2,
@@ -6529,9 +6260,9 @@ return {
                 hideDurationText = false,
                 hideStackText = false,
                 iconCount = 8,
-                iconSize = 36,
+                iconSize = 32,
                 opacity = 1,
-                padding = 2,
+                padding = 4,
                 stackAnchor = "BOTTOMRIGHT",
                 stackOffsetX = 3,
                 stackOffsetY = -1,
@@ -6561,143 +6292,11 @@ return {
               showOnlyWhenOffCooldown = false,
               showProfessionQuality = true,
               showRechargeSwipe = false,
-              spacing = 2,
+              spacing = 4,
               specSpecific = true,
-              specSpecificSpells = true,
               tooltipContext = "customTrackers",
               visibilityMode = "always"
-            },
-            custom_aura = {
-              builtIn = false,
-              containerType = "aura",
-              enabled = true,
-              name = "Custom Auras",
-              ownedSpells = {
-                [1] = {
-                  id = 33333,
-                  kind = "aura",
-                  type = "spell"
-                },
-                [2] = {
-                  id = 44444,
-                  kind = "aura",
-                  type = "spell"
-                },
-                [3] = {
-                  id = 1,
-                  kind = "cooldown",
-                  macroName = "Defensives",
-                  type = "macro"
-                }
-              },
-              shape = "icon"
-            },
-            custom_bar = {
-              builtIn = false,
-              containerType = "auraBar",
-              enabled = true,
-              name = "Custom Aura Bars",
-              ownedSpells = {
-                [1] = {
-                  id = 55555,
-                  kind = "aura",
-                  type = "spell"
-                }
-              },
-              shape = "bar"
-            },
-            custom_cd = {
-              builtIn = false,
-              containerType = "cooldown",
-              enabled = true,
-              name = "Custom Cooldowns",
-              ownedSpells = {
-                [1] = {
-                  id = 11111,
-                  type = "spell"
-                },
-                [2] = {
-                  id = 222,
-                  kind = "cooldown",
-                  type = "item"
-                },
-                [3] = {
-                  id = 13,
-                  kind = "cooldown",
-                  type = "trinket"
-                }
-              },
-              shape = "icon"
             }
-          },
-          powerBar = {
-            bgColor = {
-              [1] = 0.050000000000000003,
-              [2] = 0.059999999999999998,
-              [3] = 0.070000000000000007,
-              [4] = 0.80000000000000004
-            },
-            borderSize = 1,
-            colorMode = "custom",
-            customColor = {
-              [1] = 0.90000000000000002,
-              [2] = 0.10000000000000001,
-              [3] = 0.25,
-              [4] = 1
-            },
-            height = 18,
-            lockedToEssential = false,
-            textSize = 15,
-            textX = 1,
-            textY = 3,
-            tickThickness = 2,
-            width = 321
-          },
-          secondaryPowerBar = {
-            colorMode = "custom",
-            customColor = {
-              [1] = 0.20000000000000001,
-              [2] = 0.80000000000000004,
-              [3] = 0.40000000000000002,
-              [4] = 1
-            },
-            height = 13,
-            lockedToEssential = false,
-            lockedToPrimary = true,
-            showText = true,
-            textSize = 14,
-            tickThickness = 2,
-            width = 326
-          }
-        },
-        powerBar = {
-          bgColor = {
-            [1] = 0.050000000000000003,
-            [2] = 0.059999999999999998,
-            [3] = 0.070000000000000007,
-            [4] = 0.80000000000000004
-          },
-          borderSize = 1,
-          colorMode = "custom",
-          customColor = {
-            [1] = 0.90000000000000002,
-            [2] = 0.10000000000000001,
-            [3] = 0.25
-          },
-          height = 18,
-          lockedToEssential = false,
-          textSize = 15,
-          textX = 1,
-          textY = 3,
-          tickThickness = 2,
-          width = 321
-        },
-        quiGroupFrames = {
-          party = {
-            enabled = true
-          },
-          raid = {
-            enabled = true
           }
         },
         quiUnitFrames = {
@@ -6726,20 +6325,6 @@ return {
               previewMode = false
             }
           }
-        },
-        secondaryPowerBar = {
-          colorMode = "custom",
-          customColor = {
-            [1] = 0.20000000000000001,
-            [3] = 0.40000000000000002
-          },
-          height = 13,
-          lockedToEssential = false,
-          lockedToPrimary = true,
-          showText = true,
-          textSize = 14,
-          tickThickness = 2,
-          width = 326
         }
       }
     }
