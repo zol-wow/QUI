@@ -2997,7 +2997,20 @@ function CDMIcons.ResolveCustomBarUsability(entry, containerDB)
         end
         return true
     elseif entry.type == "trinket" or entry.type == "slot" then
-        return GetInventoryItemID("player", entry.id) ~= nil
+        local equippedItemID = GetInventoryItemID("player", entry.id)
+        if not equippedItemID then return false end
+        -- Trinket slots (13/14) track the slot rather than a specific item, so
+        -- a passive stat-stick with no on-use would otherwise report usable
+        -- and sit visible forever under hideNonUsable. Mirrors the legacy-
+        -- container check in ComputeFilterHides so custom containers honor
+        -- hideNonUsable for passive trinkets too.
+        if entry.id == 13 or entry.id == 14 then
+            if C_Item and C_Item.GetItemSpell then
+                local okS, spellName = pcall(C_Item.GetItemSpell, equippedItemID)
+                if okS and not spellName then return false end
+            end
+        end
+        return true
     end
 
     local sid = entry.spellID or entry.overrideSpellID or entry.id
