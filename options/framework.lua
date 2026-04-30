@@ -5490,6 +5490,11 @@ function GUI:CreateSearchBox(parent, placeholderText)
     editBox:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
     editBox:SetMaxLetters(50)
 
+    -- Expose the EditBox so consumers can reach it for SetText / ClearFocus
+    -- without knowing the internal layout (the function returns the container
+    -- frame, which doesn't itself have EditBox methods).
+    container._editBox = editBox
+
     -- Placeholder text
     local placeholder = editBox:CreateFontString(nil, "OVERLAY")
     SetFont(placeholder, 10, "", {C.textMuted[1], C.textMuted[2], C.textMuted[3], 1})
@@ -5516,7 +5521,13 @@ function GUI:CreateSearchBox(parent, placeholderText)
     clearBtn:SetScript("OnClick", function()
         editBox:SetText("")
         editBox:ClearFocus()
-        -- OnTextChanged handler will trigger result clearing
+        -- SetText fires OnTextChanged with userInput=false, which only
+        -- updates placeholder/clear-button visibility and returns before
+        -- dispatching onClear. Invoke it directly so the consumer's
+        -- filter state is reset.
+        if container.onClear then
+            container.onClear()
+        end
     end)
 
     -- Text changed handler with debounce

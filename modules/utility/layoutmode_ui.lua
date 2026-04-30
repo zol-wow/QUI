@@ -1727,9 +1727,13 @@ CreateFramesDrawer = function(ui)
     drawer._rows = {}
 
     drawer:HookScript("OnHide", function()
-        if drawer._searchBox and drawer._searchBox:GetText() ~= "" then
-            drawer._searchBox:SetText("")
-            drawer._searchBox:ClearFocus()
+        -- _searchBox is the container Frame returned by CreateSearchBox;
+        -- the EditBox lives on container._editBox. SetText/ClearFocus are
+        -- EditBox methods, so reach through the accessor.
+        local editBox = drawer._searchBox and drawer._searchBox._editBox
+        if editBox and editBox:GetText() ~= "" then
+            editBox:SetText("")
+            editBox:ClearFocus()
         end
         drawer._searchFilter = ""
         drawer._activeFilter = nil
