@@ -1340,12 +1340,23 @@ local function HideBlizzardDecorations()
             slot.BottomRightSlotTexture:Hide()
         end
 
-        -- Hide ALL non-icon regions (decorative textures)
+        -- Hide non-icon decorative regions, but preserve runtime-state overlays
+        -- that Blizzard toggles on filter contexts (upgrade vendor dim/dither
+        -- via ItemContextOverlay, bag search via searchOverlay, status badges
+        -- via IconOverlay/2, quest border via IconQuestTexture).
+        local preserve = {
+            [slot.icon or false] = true,
+            [slot.Icon or false] = true,
+            [slot.ItemContextOverlay or false] = true,
+            [slot.IconOverlay or false] = true,
+            [slot.IconOverlay2 or false] = true,
+            [slot.searchOverlay or false] = true,
+            [slot.IconQuestTexture or false] = true,
+        }
         for i = 1, select("#", slot:GetRegions()) do
             local region = select(i, slot:GetRegions())
             if region and region.GetObjectType and region:GetObjectType() == "Texture" then
-                local isIcon = region == slot.icon or region == slot.Icon
-                if not isIcon then
+                if not preserve[region] then
                     region:SetAlpha(0)
                 end
             end
