@@ -1,0 +1,61 @@
+name: Regenerate Search Cache
+
+# Auto-regenerates options/search_cache.lua on every push to
+# options-v2-phase1 and commits the result back to the branch.
+#
+# Loop prevention: pushes made with the default GITHUB_TOKEN do NOT
+# trigger further workflow runs (per GitHub's default policy). The
+# `[skip ci]` tag on the commit message is belt-and-suspenders for any
+# CI that observes that convention.
+
+on:
+  push:
+    branches:
+      - options-v2-phase1
+
+jobs:
+  regen:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if last commit was made by this workflow
+        id: bot-check
+        run: |
+          AUTHOR=$(git log -1 --pretty=%an)
+          if [ "$AUTHOR" = "github-actions[bot]" ]; then
+            echo "Last commit is from the regen bot; skipping to avoid noisy no-op runs."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Lua 5.1
+        if: steps.bot-check.outputs.skip != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.1
+
+      - name: Regenerate search cache
+        if: steps.bot-check.outputs.skip != 'true'
+        run: lua5.1 tools/generate_search_cache.lua
+
+      - name: Commit and push if cache changed
+        if: steps.bot-check.outputs.skip != 'true'
+        run: |
+          if git diff --quiet -- options/search_cache.lua; then
+            echo "Search cache is already up to date; nothing to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add options/search_cache.lua
+          git commit -m "chore(options): regenerate search cache [skip ci]"
+          git push
