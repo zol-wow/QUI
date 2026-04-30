@@ -285,20 +285,55 @@ local function ResolveFeatureRouteFromPath(path)
     end
 
     local nav = Settings and Settings.Nav
-    local route = nav and type(nav.GetRoute) == "function" and nav:GetRoute(featureId) or nil
-    local resolvedFeatureId = featureId
+
+    local function LookupSegment(candidate)
+        if type(candidate) ~= "string" or candidate == "" or not nav then
+            return nil, nil
+        end
+        if type(nav.GetRoute) == "function" then
+            local directRoute = nav:GetRoute(candidate)
+            if type(directRoute) == "table" then
+                return directRoute, candidate
+            end
+        end
+        if type(nav.GetLookupTarget) == "function" then
+            local lookupRoute, lookupFeature = nav:GetLookupTarget(candidate)
+            if type(lookupRoute) == "table" then
+                local id = candidate
+                if type(lookupFeature) == "table"
+                    and type(lookupFeature.id) == "string"
+                    and lookupFeature.id ~= "" then
+                    id = lookupFeature.id
+                end
+                return lookupRoute, id
+            end
+        end
+        return nil, nil
+    end
 
     -- The first segment of a pin path is the dbTable name (e.g. "preyTracker"),
     -- which often differs from the registered feature id ("preyTrackerPage").
     -- Features declare these aliases via lookupKeys; without this fallback, pins
     -- captured under such features fall through to the legacy tabIndex/subTabIndex
     -- nav map and misroute when another tile owns those legacy coordinates.
-    if type(route) ~= "table" and nav and type(nav.GetLookupTarget) == "function" then
-        local lookupRoute, lookupFeature = nav:GetLookupTarget(featureId)
-        if type(lookupRoute) == "table" then
-            route = lookupRoute
-            if type(lookupFeature) == "table" and type(lookupFeature.id) == "string" and lookupFeature.id ~= "" then
-                resolvedFeatureId = lookupFeature.id
+    local route, resolvedFeatureId = LookupSegment(featureId)
+
+    -- Nested-feature fallback: when a feature stores its settings inside a
+    -- generic container subtable (e.g. general.actionTracker.maxEntries,
+    -- general.focusCastAlert.X, general.quickSalvage.X), the first segment is
+    -- the container ("general") which doesn't resolve to any feature. Walk
+    -- subsequent segments — except the trailing field key — looking for the
+    -- registered feature id or a lookupKey that owns this path. Without this,
+    -- jump-to-pinned routes such pins via entry.tileId metadata only, which is
+    -- often missing or stale on legacy entries and lands users on the wrong tab.
+    if type(route) ~= "table" then
+        local segments = SplitPath(path)
+        for i = 2, #segments - 1 do
+            local nestedRoute, nestedId = LookupSegment(segments[i])
+            if type(nestedRoute) == "table" then
+                route = nestedRoute
+                resolvedFeatureId = nestedId or segments[i]
+                break
             end
         end
     end
@@ -626,6 +661,21 @@ function Pins:List(db)
     end
 
     for path, entry in pairs(store.entries) do
+        -- Mirror Pins:GetNavigationEntry: when the path itself resolves to a
+        -- registered feature, the inferred route is authoritative. Stored
+        -- tabIndex/subTabIndex/tabName/subTabName on legacy entries reflect
+        -- the search context at pin-creation time, which can be stale (older
+        -- pins, layout-mode mini-panels, pre-V2 tile coordinates) and would
+        -- otherwise display a wrong breadcrumb in the Pinned Globals list.
+        -- Inferred routes don't carry tab*Name fields, so leaving those nil
+        -- triggers BuildBreadcrumb's tile-registry fallback (tile.config.name
+        -- + subPages[subPageIndex].name) and produces a fresh, correct crumb.
+        local inferred = ResolveFeatureRouteFromPath(path)
+        local source = entry
+        if inferred and type(inferred.tileId) == "string" and inferred.tileId ~= "" then
+            source = inferred
+        end
+
         items[#items + 1] = {
             path = path,
             entry = entry,
@@ -635,18 +685,18 @@ function Pins:List(db)
             pinnedAt = tonumber(entry.pinnedAt) or 0,
             missCount = tonumber(entry.missCount) or 0,
             disabled = entry.disabled == true,
-            tabIndex = entry.tabIndex,
-            tabName = entry.tabName,
-            subTabIndex = entry.subTabIndex,
-            subTabName = entry.subTabName,
+            tabIndex = source.tabIndex,
+            tabName = source.tabName,
+            subTabIndex = source.subTabIndex,
+            subTabName = source.subTabName,
             sectionName = entry.sectionName,
-            tileId = entry.tileId,
-            subPageIndex = entry.subPageIndex,
-            featureId = entry.featureId,
+            tileId = source.tileId,
+            subPageIndex = source.subPageIndex,
+            featureId = source.featureId,
             providerKey = entry.providerKey,
             category = entry.category,
-            surfaceTabKey = entry.surfaceTabKey,
-            surfaceUnitKey = entry.surfaceUnitKey,
+            surfaceTabKey = source.surfaceTabKey,
+            surfaceUnitKey = source.surfaceUnitKey,
         }
     end
 
@@ -1203,20 +1253,27 @@ function Pins:GetNavigationEntry(path, db)
 
     local inferred = ResolveFeatureRouteFromPath(path)
 
-    local route = nil
+    -- When the path itself resolves to a registered feature, treat the inferred
+    -- route as fully authoritative. The entry's stored tabIndex/subTabIndex/
+    -- tabName/etc. are legacy hints captured from _searchContext at pin time
+    -- and may be stale (older pins from layout-mode mini-panels, pre-V2 tile
+    -- structure, or builder-ordering quirks). Mixing inferred tile data with
+    -- stale legacy tab coordinates makes ResolveSearchNavigation discard the
+    -- directRoute as "disagreeing" and fall back to the wrong tab.
+    local source = entry
     if inferred and type(inferred.tileId) == "string" and inferred.tileId ~= "" then
+        source = inferred
+    end
+
+    local route = nil
+    if type(source.tileId) == "string" and source.tileId ~= "" then
         route = {
-            tileId = inferred.tileId,
-            subPageIndex = inferred.subPageIndex,
-        }
-    elseif type(entry.tileId) == "string" and entry.tileId ~= "" then
-        route = {
-            tileId = entry.tileId,
-            subPageIndex = entry.subPageIndex,
+            tileId = source.tileId,
+            subPageIndex = source.subPageIndex,
         }
     end
 
-    local tabIndex = inferred and inferred.tabIndex ~= nil and inferred.tabIndex or entry.tabIndex
+    local tabIndex = source.tabIndex
     if not route and tabIndex == nil then
         return nil
     end
@@ -1225,15 +1282,15 @@ function Pins:GetNavigationEntry(path, db)
         path = path,
         label = entry.label,
         tabIndex = tabIndex,
-        tabName = inferred and inferred.tabName or entry.tabName,
-        subTabIndex = inferred and inferred.subTabIndex ~= nil and inferred.subTabIndex or entry.subTabIndex,
-        subTabName = inferred and inferred.subTabName or entry.subTabName,
+        tabName = source.tabName,
+        subTabIndex = source.subTabIndex,
+        subTabName = source.subTabName,
         sectionName = entry.sectionName,
         tileId = route and route.tileId or nil,
         subPageIndex = route and route.subPageIndex or nil,
-        featureId = inferred and inferred.featureId or entry.featureId,
-        surfaceTabKey = inferred and inferred.surfaceTabKey or entry.surfaceTabKey,
-        surfaceUnitKey = inferred and inferred.surfaceUnitKey or entry.surfaceUnitKey,
+        featureId = source.featureId,
+        surfaceTabKey = source.surfaceTabKey,
+        surfaceUnitKey = source.surfaceUnitKey,
     }
 end
 

@@ -1974,6 +1974,46 @@ return {
             }
           },
           general = {
+            actionTracker = {
+              backdropColor = {
+                [1] = 0,
+                [2] = 0,
+                [3] = 0,
+                [4] = 0.59999999999999998
+              },
+              blocklistText = "",
+              borderColor = {
+                [1] = 0,
+                [2] = 0,
+                [3] = 0,
+                [4] = 1
+              },
+              borderSize = 1,
+              clearOnCombatEnd = true,
+              clearOnInactivity = false,
+              enabled = false,
+              hideBorder = false,
+              iconBorderColor = {
+                [1] = 0,
+                [2] = 0,
+                [3] = 0,
+                [4] = 0.84999999999999998
+              },
+              iconBorderUseClassColor = false,
+              iconHideBorder = false,
+              iconSize = 28,
+              iconSpacing = 4,
+              inactivityFadeEnabled = false,
+              inactivityFadeSeconds = 20,
+              invertScrollDirection = false,
+              maxEntries = 6,
+              onlyInCombat = true,
+              orientation = "VERTICAL",
+              showBackdrop = true,
+              showFailedCasts = true,
+              xOffset = 0,
+              yOffset = -210
+            },
             addEditModeButton = true,
             addQUIButton = true,
             allowReloadInCombat = false,

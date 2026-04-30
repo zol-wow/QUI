@@ -47,10 +47,9 @@ function V2.Register(frame)
             SubPage("popupBlocker",     "Popups",      "popupBlocker",     4,  "Popups"),
             SubPage("quickSalvage",     "Salvage",     "quickSalvage",     5,  "Salvage"),
             SubPage("consumables",      "Consumables", "consumables",      6,  "Consumables"),
-            SubPage("consumableMacros", "Macros",      "consumableMacros", 7,  "Macros"),
-            SubPage("targetDistance",   "Distance",    "targetDistance",   8,  "Distance"),
-            SubPage("quiPanel",         "Panel",       "quiPanel",         9,  "Panel"),
-            SubPage("reloadBehavior",   "Reload",      "reloadBehavior",   10, "Reload"),
+            SubPage("targetDistance",   "Distance",    "targetDistance",   7,  "Distance"),
+            SubPage("quiPanel",         "Panel",       "quiPanel",         8,  "Panel"),
+            SubPage("reloadBehavior",   "Reload",      "reloadBehavior",   9,  "Reload"),
         },
     })
 end

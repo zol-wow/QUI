@@ -1515,6 +1515,22 @@ local DRAWER_GROUP_HEIGHT = 22
 local DRAWER_MAX_HEIGHT = 500
 local DRAWER_PADDING = 8
 local DRAWER_CONTROLS_HEIGHT = 24
+local DRAWER_SEARCH_HEIGHT = 28
+local DRAWER_SEARCH_GAP = 4
+local DRAWER_CONTROLS_GAP = 6
+-- Fixed vertical chrome above/below the scroll viewport: the drawer must
+-- always be at least this tall so the search box and controls bar are
+-- fully covered by the background/border. (Pre-search, the controls bar
+-- alone wasn't accounted for either, but rows always padded enough height
+-- to mask it. Zero-results filtering exposed the gap.)
+local DRAWER_CHROME_HEIGHT = DRAWER_PADDING
+                           + DRAWER_SEARCH_HEIGHT
+                           + DRAWER_SEARCH_GAP
+                           + DRAWER_CONTROLS_HEIGHT
+                           + DRAWER_CONTROLS_GAP
+                           + DRAWER_PADDING
+-- Minimum scroll viewport so "No frames match" empty-state has breathing room.
+local DRAWER_MIN_SCROLL_HEIGHT = 36
 
 CreateFramesDrawer = function(ui)
     local drawer = CreateFrame("Frame", "QUI_LayoutMode_Drawer", UIParent)
@@ -1583,7 +1599,7 @@ CreateFramesDrawer = function(ui)
     local searchContainer = CreateFrame("Frame", nil, drawer)
     searchContainer:SetPoint("TOPLEFT", drawer, "TOPLEFT", DRAWER_PADDING, -DRAWER_PADDING)
     searchContainer:SetPoint("TOPRIGHT", drawer, "TOPRIGHT", -DRAWER_PADDING, -DRAWER_PADDING)
-    searchContainer:SetHeight(28)
+    searchContainer:SetHeight(DRAWER_SEARCH_HEIGHT)
 
     local searchBox
     do
@@ -1607,8 +1623,8 @@ CreateFramesDrawer = function(ui)
     drawer._searchFilter = ""
 
     local controls = CreateFrame("Frame", nil, drawer)
-    controls:SetPoint("TOPLEFT", searchContainer, "BOTTOMLEFT", 0, -4)
-    controls:SetPoint("TOPRIGHT", searchContainer, "BOTTOMRIGHT", 0, -4)
+    controls:SetPoint("TOPLEFT", searchContainer, "BOTTOMLEFT", 0, -DRAWER_SEARCH_GAP)
+    controls:SetPoint("TOPRIGHT", searchContainer, "BOTTOMRIGHT", 0, -DRAWER_SEARCH_GAP)
     controls:SetHeight(DRAWER_CONTROLS_HEIGHT)
 
     local controlsLabel = controls:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1691,7 +1707,7 @@ CreateFramesDrawer = function(ui)
 
     -- Scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", nil, drawer, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -6)
+    scrollFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -DRAWER_CONTROLS_GAP)
     scrollFrame:SetPoint("BOTTOMRIGHT", -(DRAWER_PADDING + 20), DRAWER_PADDING)
 
     local content = CreateFrame("Frame", nil, scrollFrame)
@@ -2427,10 +2443,16 @@ function QUI_LayoutMode_UI:_RelayoutDrawer()
     end
 
     -- Resize content and drawer
-    local totalHeight = math.abs(y) + DRAWER_PADDING
+    local rowsHeight = math.abs(y)
+    local totalHeight = rowsHeight + DRAWER_PADDING
     drawer._content:SetHeight(totalHeight)
 
-    local drawerHeight = math.min(totalHeight + (DRAWER_PADDING * 2), DRAWER_MAX_HEIGHT)
+    -- Drawer = chrome (search + controls + paddings/gaps) + scroll viewport.
+    -- Floor the viewport at DRAWER_MIN_SCROLL_HEIGHT so a zero-results
+    -- filter still leaves room to render the "No frames match" empty state
+    -- (and so the drawer never collapses below its own search bar).
+    local scrollHeight = math.max(rowsHeight, DRAWER_MIN_SCROLL_HEIGHT)
+    local drawerHeight = math.min(DRAWER_CHROME_HEIGHT + scrollHeight, DRAWER_MAX_HEIGHT)
     drawer:SetHeight(drawerHeight)
 end
 

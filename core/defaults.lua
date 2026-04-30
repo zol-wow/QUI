@@ -181,6 +181,39 @@ local defaults = {
             keyTrackerOffsetX = 0,                -- X offset from anchor
             keyTrackerOffsetY = 0,                -- Y offset from anchor
             keyTrackerWidth = 170,                -- Frame width in pixels
+
+            -- Action Tracker (modules/qol/actiontracker.lua)
+            -- Seeded here so AceDB provides the subtable via its defaults
+            -- metatable from first login. Without this, db.profile.general.
+            -- actionTracker is nil until GetSettings() lazily creates it,
+            -- which means Pins:ApplyAllForDB cannot resolve pinned paths
+            -- like general.actionTracker.maxEntries on a fresh profile and
+            -- accumulates miss-counts that eventually disable the pins.
+            actionTracker = {
+                enabled = false,
+                onlyInCombat = true,
+                clearOnCombatEnd = true,
+                inactivityFadeEnabled = false,
+                inactivityFadeSeconds = 20,
+                clearOnInactivity = false,
+                showFailedCasts = true,
+                maxEntries = 6,
+                iconSize = 28,
+                iconSpacing = 4,
+                iconHideBorder = false,
+                iconBorderUseClassColor = false,
+                iconBorderColor = {0, 0, 0, 0.85},
+                orientation = "VERTICAL",
+                invertScrollDirection = false,
+                xOffset = 0,
+                yOffset = -210,
+                blocklistText = "",
+                showBackdrop = true,
+                hideBorder = false,
+                borderSize = 1,
+                backdropColor = {0, 0, 0, 0.6},
+                borderColor = {0, 0, 0, 1},
+            },
         },
 
         -- Alert & Toast Skinning Settings (enabled via general.skinAlerts)
