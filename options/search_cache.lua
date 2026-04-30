@@ -11604,23 +11604,20 @@ ns.QUI_SearchCache = {
             ["subTabName"] = "Raid Buffs",
             ["tabName"] = "Gameplay",
             ["tileId"] = "gameplay",
-            ["widgetDescriptor"] = {
-                ["category"] = "qol",
-                ["dbKey"] = "selectedAugment",
-                ["dbPath"] = "profile.general.consumableMacros",
-                ["dropdownOptions"] = {
-                },
-                ["featureId"] = "consumables",
-                ["kind"] = "dropdown",
-                ["options"] = {
-                    {
-                        ["text"] = "None",
-                        ["value"] = "none",
-                    },
-                },
-                ["providerKey"] = "consumables",
-            },
             ["widgetType"] = "dropdown",
+        },
+        {
+            ["category"] = "qol",
+            ["description"] = "When enabled, the macro selections below are stored per-character instead of being shared by every character on this AceDB profile. The toggle itself is always per-character. Turning it on copies your current profile selections as a starting point.",
+            ["featureId"] = "consumables",
+            ["label"] = "Character-specific",
+            ["providerKey"] = "consumables",
+            ["sectionName"] = "Macros",
+            ["subPageIndex"] = 6,
+            ["subTabName"] = "Raid Buffs",
+            ["tabName"] = "Gameplay",
+            ["tileId"] = "gameplay",
+            ["widgetType"] = "toggle",
         },
         {
             ["category"] = "qol",
@@ -11633,14 +11630,6 @@ ns.QUI_SearchCache = {
             ["subTabName"] = "Raid Buffs",
             ["tabName"] = "Gameplay",
             ["tileId"] = "gameplay",
-            ["widgetDescriptor"] = {
-                ["category"] = "qol",
-                ["dbKey"] = "chatNotifications",
-                ["dbPath"] = "profile.general.consumableMacros",
-                ["featureId"] = "consumables",
-                ["kind"] = "toggle",
-                ["providerKey"] = "consumables",
-            },
             ["widgetType"] = "toggle",
         },
         {
@@ -11654,14 +11643,6 @@ ns.QUI_SearchCache = {
             ["subTabName"] = "Raid Buffs",
             ["tabName"] = "Gameplay",
             ["tileId"] = "gameplay",
-            ["widgetDescriptor"] = {
-                ["category"] = "qol",
-                ["dbKey"] = "enabled",
-                ["dbPath"] = "profile.general.consumableMacros",
-                ["featureId"] = "consumables",
-                ["kind"] = "toggle",
-                ["providerKey"] = "consumables",
-            },
             ["widgetType"] = "toggle",
         },
         {
@@ -11675,22 +11656,6 @@ ns.QUI_SearchCache = {
             ["subTabName"] = "Raid Buffs",
             ["tabName"] = "Gameplay",
             ["tileId"] = "gameplay",
-            ["widgetDescriptor"] = {
-                ["category"] = "qol",
-                ["dbKey"] = "selectedFlask",
-                ["dbPath"] = "profile.general.consumableMacros",
-                ["dropdownOptions"] = {
-                },
-                ["featureId"] = "consumables",
-                ["kind"] = "dropdown",
-                ["options"] = {
-                    {
-                        ["text"] = "None",
-                        ["value"] = "none",
-                    },
-                },
-                ["providerKey"] = "consumables",
-            },
             ["widgetType"] = "dropdown",
         },
         {
@@ -11704,22 +11669,6 @@ ns.QUI_SearchCache = {
             ["subTabName"] = "Raid Buffs",
             ["tabName"] = "Gameplay",
             ["tileId"] = "gameplay",
-            ["widgetDescriptor"] = {
-                ["category"] = "qol",
-                ["dbKey"] = "selectedHealth",
-                ["dbPath"] = "profile.general.consumableMacros",
-                ["dropdownOptions"] = {
-                },
-                ["featureId"] = "consumables",
-                ["kind"] = "dropdown",
-                ["options"] = {
-                    {
-                        ["text"] = "None",
-                        ["value"] = "none",
-                    },
-                },
-                ["providerKey"] = "consumables",
-            },
             ["widgetType"] = "dropdown",
         },
         {
@@ -11733,22 +11682,6 @@ ns.QUI_SearchCache = {
             ["subTabName"] = "Raid Buffs",
             ["tabName"] = "Gameplay",
             ["tileId"] = "gameplay",
-            ["widgetDescriptor"] = {
-                ["category"] = "qol",
-                ["dbKey"] = "selectedHealthstone",
-                ["dbPath"] = "profile.general.consumableMacros",
-                ["dropdownOptions"] = {
-                },
-                ["featureId"] = "consumables",
-                ["kind"] = "dropdown",
-                ["options"] = {
-                    {
-                        ["text"] = "None",
-                        ["value"] = "none",
-                    },
-                },
-                ["providerKey"] = "consumables",
-            },
             ["widgetType"] = "dropdown",
         },
         {
@@ -11762,22 +11695,6 @@ ns.QUI_SearchCache = {
             ["subTabName"] = "Raid Buffs",
             ["tabName"] = "Gameplay",
             ["tileId"] = "gameplay",
-            ["widgetDescriptor"] = {
-                ["category"] = "qol",
-                ["dbKey"] = "selectedPotion",
-                ["dbPath"] = "profile.general.consumableMacros",
-                ["dropdownOptions"] = {
-                },
-                ["featureId"] = "consumables",
-                ["kind"] = "dropdown",
-                ["options"] = {
-                    {
-                        ["text"] = "None",
-                        ["value"] = "none",
-                    },
-                },
-                ["providerKey"] = "consumables",
-            },
             ["widgetType"] = "dropdown",
         },
         {
@@ -11791,22 +11708,6 @@ ns.QUI_SearchCache = {
             ["subTabName"] = "Raid Buffs",
             ["tabName"] = "Gameplay",
             ["tileId"] = "gameplay",
-            ["widgetDescriptor"] = {
-                ["category"] = "qol",
-                ["dbKey"] = "selectedVantus",
-                ["dbPath"] = "profile.general.consumableMacros",
-                ["dropdownOptions"] = {
-                },
-                ["featureId"] = "consumables",
-                ["kind"] = "dropdown",
-                ["options"] = {
-                    {
-                        ["text"] = "None",
-                        ["value"] = "none",
-                    },
-                },
-                ["providerKey"] = "consumables",
-            },
             ["widgetType"] = "dropdown",
         },
         {
@@ -11820,22 +11721,6 @@ ns.QUI_SearchCache = {
             ["subTabName"] = "Raid Buffs",
             ["tabName"] = "Gameplay",
             ["tileId"] = "gameplay",
-            ["widgetDescriptor"] = {
-                ["category"] = "qol",
-                ["dbKey"] = "selectedWeapon",
-                ["dbPath"] = "profile.general.consumableMacros",
-                ["dropdownOptions"] = {
-                },
-                ["featureId"] = "consumables",
-                ["kind"] = "dropdown",
-                ["options"] = {
-                    {
-                        ["text"] = "None",
-                        ["value"] = "none",
-                    },
-                },
-                ["providerKey"] = "consumables",
-            },
             ["widgetType"] = "dropdown",
         },
         {
