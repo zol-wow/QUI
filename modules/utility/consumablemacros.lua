@@ -303,12 +303,7 @@ local lastBest = {}
 -- Database access
 ---------------------------------------------------------------------------
 
-local function GetDB()
-    local core = Helpers.GetCore and Helpers.GetCore()
-    local profile = core and core.db and core.db.profile
-    local general = profile and profile.general
-    return general and general.consumableMacros
-end
+local GetDB = Helpers.GetConsumableMacrosDB
 
 ---------------------------------------------------------------------------
 -- Core logic

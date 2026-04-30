@@ -196,6 +196,31 @@ function Helpers.GetModuleDB(moduleName)
     return nil
 end
 
+--- Returns the active consumable-macros settings table.
+--- Picks db.char.consumableMacros when its characterSpecific flag is true,
+--- otherwise db.profile.general.consumableMacros. Used by the macro module
+--- and the settings UI so both agree on which scope is currently active.
+--- @return table|nil The active settings table or nil if QUI core/db is not ready
+function Helpers.GetConsumableMacrosDB()
+    local core = Helpers.GetCore()
+    if not core or not core.db then return nil end
+    local charT = core.db.char and core.db.char.consumableMacros
+    if charT and charT.characterSpecific then
+        return charT
+    end
+    local profile = core.db.profile
+    return profile and profile.general and profile.general.consumableMacros
+end
+
+--- Returns the per-character consumable-macros table (where characterSpecific
+--- itself lives). Always returns the char-scope table regardless of which
+--- scope is currently active.
+--- @return table|nil
+function Helpers.GetCharConsumableMacrosDB()
+    local core = Helpers.GetCore()
+    return core and core.db and core.db.char and core.db.char.consumableMacros
+end
+
 --- Deep-copy a defaults table (shallow values, recursive sub-tables).
 --- Used by GetModuleSettings to repair corrupted entries.
 local function DeepCopyDefaults(src)

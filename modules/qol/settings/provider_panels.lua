@@ -425,16 +425,77 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         -- Healthstone / Augment Rune / Vantus Rune / Weapon Consumable the
         -- QUI_* macros should resolve to. Each dropdown is sourced from
         -- ConsumableMacros.XXX_OPTIONS so new items can be added in one place.
-        local cmDB = settings and settings.consumableMacros
-        if cmDB and GUI.CreateFormDropdown then
+        --
+        -- The "Character-specific" toggle (always per-character) decides
+        -- whether the rest of the macros section reads/writes db.profile or
+        -- db.char. cmDB below is a metatable proxy that routes each access to
+        -- the active table, so widget bindings remain stable across toggles.
+        local cmProfileDB = settings and settings.consumableMacros
+        local cmCharDB = ns.Helpers and ns.Helpers.GetCharConsumableMacrosDB
+            and ns.Helpers.GetCharConsumableMacrosDB() or nil
+        if (cmProfileDB or cmCharDB) and GUI.CreateFormDropdown then
             local CM = ns.ConsumableMacros
+            local SEED_KEYS = {
+                "enabled", "selectedFlask", "selectedPotion", "selectedHealth",
+                "selectedHealthstone", "selectedAugment", "selectedVantus",
+                "selectedWeapon", "chatNotifications",
+            }
+            local function ActiveCM()
+                if cmCharDB and cmCharDB.characterSpecific then return cmCharDB end
+                return cmProfileDB
+            end
+            local cmDB = setmetatable({}, {
+                __index = function(_, k)
+                    if k == "characterSpecific" then
+                        return cmCharDB and cmCharDB.characterSpecific or false
+                    end
+                    local active = ActiveCM()
+                    return active and active[k]
+                end,
+                __newindex = function(_, k, v)
+                    if k == "characterSpecific" then
+                        if not cmCharDB then return end
+                        local was = cmCharDB.characterSpecific and true or false
+                        cmCharDB.characterSpecific = v and true or false
+                        -- Seed char from profile on the OFF→ON edge so the
+                        -- user's existing selections survive the flip.
+                        if cmCharDB.characterSpecific and not was and cmProfileDB then
+                            for _, key in ipairs(SEED_KEYS) do
+                                cmCharDB[key] = cmProfileDB[key]
+                            end
+                        end
+                        return
+                    end
+                    local active = ActiveCM()
+                    if active then active[k] = v end
+                end,
+            })
             local function MacroRefresh()
                 if CM then CM:ForceRefresh() end
             end
             local fallback = { { value = "none", text = "None" } }
 
-            U.CreateCollapsible(content, "Macros", 10 * FORM_ROW + 8, function(body)
+            U.CreateCollapsible(content, "Macros", 11 * FORM_ROW + 8, function(body)
                 local sy = -4
+                sy = P(GUI:CreateFormCheckbox(body, "Character-specific", "characterSpecific", cmDB, function()
+                    -- Macros need to re-derive from whichever scope is now
+                    -- active (or be deleted if the new active scope is
+                    -- disabled). DeleteMacros covers the "switched scope and
+                    -- the new one has enabled = false" case; ForceRefresh
+                    -- otherwise rebuilds bodies from current bag inventory.
+                    if CM then
+                        if cmDB.enabled then CM:ForceRefresh() else CM:DeleteMacros() end
+                    end
+                    if DEFAULT_CHAT_FRAME then
+                        DEFAULT_CHAT_FRAME:AddMessage(
+                            "|cff60A5FA[QUI]|r Consumable macro selections are now "
+                            .. (cmDB.characterSpecific
+                                and "|cffffffffper-character|r for this character."
+                                or "|cffffffffshared|r across this profile.")
+                            .. " Reopen this page to refresh the displayed values."
+                        )
+                    end
+                end, { description = "When enabled, the macro selections below are stored per-character instead of being shared by every character on this AceDB profile. The toggle itself is always per-character. Turning it on copies your current profile selections as a starting point." }), body, sy)
                 sy = P(GUI:CreateFormCheckbox(body, "Enable Consumable Macros", "enabled", cmDB, function()
                     if CM then
                         if cmDB.enabled then CM:ForceRefresh() else CM:DeleteMacros() end

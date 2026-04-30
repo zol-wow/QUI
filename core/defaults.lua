@@ -4204,6 +4204,24 @@ local defaults = {
                 boss = false,
             },
         },
+        -- Per-character override for consumable macro selections. When
+        -- characterSpecific = true, the consumable macro module reads its
+        -- selections from this table instead of profile.general.consumableMacros.
+        -- Mirrors the profile-side schema. The toggle itself lives here (not in
+        -- profile) so flipping it on one character cannot leak to alts that
+        -- share the same AceDB profile. See modules/utility/consumablemacros.lua.
+        consumableMacros = {
+            characterSpecific = false,
+            enabled = false,
+            selectedFlask = "none",
+            selectedPotion = "none",
+            selectedHealth = "none",
+            selectedHealthstone = "none",
+            selectedAugment = "none",
+            selectedVantus = "none",
+            selectedWeapon = "none",
+            chatNotifications = true,
+        },
     },
 }
 
