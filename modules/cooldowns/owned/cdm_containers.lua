@@ -1910,6 +1910,21 @@ local function LayoutContainer(trackerKey)
         iconsToLayout = sorted
     end
 
+    -- Migrated customBar containers store growth as the legacy `growDirection`
+    -- field ("LEFT"/"RIGHT"/"UP"/"DOWN"), not `growthDirection`. The composer
+    -- preview reverses the display for LEFT/UP so entries[1] ends up at the
+    -- bar's anchor end; mirror that here so render matches preview.
+    if settings.containerType == "customBar" then
+        local gd = settings.growDirection
+        if gd == "LEFT" or gd == "UP" then
+            local reversed = {}
+            for i = #iconsToLayout, 1, -1 do
+                reversed[#reversed + 1] = iconsToLayout[i]
+            end
+            iconsToLayout = reversed
+        end
+    end
+
     -- Calculate potential row widths (for power bars / castbars)
     local potentialRow1Width = 0
     local potentialBottomRowWidth = 0
