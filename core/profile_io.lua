@@ -1058,7 +1058,7 @@ local PROFILE_IMPORT_CATEGORIES = {
         label = "Layout / Positions",
                 description = "Mover positions, frame placement, and tracked element offsets.",
         recommended = false,
-        topLevelKeys = { "frameAnchoring", "dandersFrames", "abilityTimeline", "blizzardMover" },
+        topLevelKeys = { "frameAnchoring", "dandersFrames", "abilityTimeline", "blizzardMover", "layoutMode" },
         paths = PROFILE_LAYOUT_PATHS,
     },
     {
@@ -1302,7 +1302,7 @@ local PROFILE_IMPORT_CATEGORIES = {
         label = "QoL / Automation",
         description = "Automation helpers, popup blocker, consumables, and utility toggles.",
         recommended = true,
-        topLevelKeys = { "uiHider", "configPanelWidth", "configPanelAlpha", "configPanelScale" },
+        topLevelKeys = { "uiHider", "configPanelWidth", "configPanelAlpha", "configPanelScale", "optionsPanelCollapsibleStates" },
         generalKeys = PROFILE_QOL_GENERAL_KEYS,
     },
     {
