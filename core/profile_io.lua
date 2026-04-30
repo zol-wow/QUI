@@ -472,9 +472,16 @@ local PROFILE_THEME_GENERAL_KEYS = {
     "defaultHealthOpacity",
     "defaultBgOpacity",
     "applyGlobalFontToBlizzard",
+    "overrideSCTFont",
 }
 
 local PROFILE_QOL_GENERAL_KEYS = {
+    "uiScale",
+    "allowReloadInCombat",
+    "autoInsertKey",
+    "consumableMacros",
+    "consumablePersistent",
+    "craftingOrderExpansionFilter",
     "sellJunk",
     "autoRepair",
     "autoRoleAccept",
@@ -532,6 +539,8 @@ local PROFILE_SKINNING_GENERAL_KEYS = {
     "skinKeystoneFrame",
     "skinGameMenu",
     "addQUIButton",
+    "addEditModeButton",
+    "objectiveTrackerClickThrough",
     "gameMenuFontSize",
     "gameMenuDim",
     "skinPowerBarAlt",
@@ -1041,7 +1050,7 @@ local PROFILE_IMPORT_CATEGORIES = {
         label = "Theme / Fonts / Colors",
         description = "Shared fonts, textures, dark mode, and addon-wide color settings.",
         recommended = false,
-        topLevelKeys = { "addonAccentColor", "powerColors" },
+        topLevelKeys = { "addonAccentColor", "powerColors", "themePreset" },
         generalKeys = PROFILE_THEME_GENERAL_KEYS,
     },
     {
@@ -1049,7 +1058,7 @@ local PROFILE_IMPORT_CATEGORIES = {
         label = "Layout / Positions",
                 description = "Mover positions, frame placement, and tracked element offsets.",
         recommended = false,
-        topLevelKeys = { "frameAnchoring", "dandersFrames", "abilityTimeline" },
+        topLevelKeys = { "frameAnchoring", "dandersFrames", "abilityTimeline", "blizzardMover" },
         paths = PROFILE_LAYOUT_PATHS,
     },
     {
@@ -1138,6 +1147,7 @@ local PROFILE_IMPORT_CATEGORIES = {
             "powerBar",
             "secondaryPowerBar",
             "powerColors",
+            "cooldownHighlighter",
         },
         children = {
             { id = "cdmEssential", label = "Essential", description = "Essential cooldown rows and essential viewer settings.", paths = { "ncdm.essential" } },
@@ -1174,7 +1184,7 @@ local PROFILE_IMPORT_CATEGORIES = {
         label = "Action Bars",
         description = "Action bar styling, fade rules, and per-bar behavior.",
         recommended = true,
-        topLevelKeys = { "actionBars" },
+        topLevelKeys = { "actionBars", "actionBarsVisibility" },
         children = {
             {
                 id = "actionBarsMaster",
@@ -1229,13 +1239,13 @@ local PROFILE_IMPORT_CATEGORIES = {
         label = "Minimap / Datatexts",
         description = "Minimap, datatext panel, and extra datatext settings.",
         recommended = true,
-        topLevelKeys = { "minimap", "datatext", "quiDatatexts" },
+        topLevelKeys = { "minimap", "minimapButton", "datatext", "quiDatatexts" },
         children = {
             {
                 id = "minimapSubtab",
                 label = "Minimap",
                 description = "Minimap frame and minimap utility settings.",
-                topLevelKeys = { "minimap" },
+                topLevelKeys = { "minimap", "minimapButton" },
             },
             {
                 id = "datatextSubtab",
@@ -1250,11 +1260,7 @@ local PROFILE_IMPORT_CATEGORIES = {
         label = "Custom CDM Bars",
         description = "Custom CDM bar settings and individual imported bars.",
         recommended = true,
-        topLevelKeys = { "customTrackersVisibility", "keybindOverridesEnabledTrackers" },
-        paths = {
-            "customTrackers.bars",
-            "customTrackers.keybinds",
-        },
+        topLevelKeys = { "customTrackers", "customTrackersVisibility", "keybindOverridesEnabledTrackers" },
         children = {
             {
                 id = "customTrackersShared",
@@ -1281,6 +1287,7 @@ local PROFILE_IMPORT_CATEGORIES = {
             "combatTimer",
             "xpTracker",
             "totemBar",
+            "preyTracker",
         },
     },
     {
@@ -1288,14 +1295,14 @@ local PROFILE_IMPORT_CATEGORIES = {
         label = "Chat",
         description = "Chat frame skinning, formatting, and utility options.",
         recommended = true,
-        topLevelKeys = { "chat" },
+        topLevelKeys = { "chat", "chatVisibility" },
     },
     {
         id = "qol",
         label = "QoL / Automation",
         description = "Automation helpers, popup blocker, consumables, and utility toggles.",
         recommended = true,
-        topLevelKeys = { "uiHider" },
+        topLevelKeys = { "uiHider", "configPanelWidth", "configPanelAlpha", "configPanelScale" },
         generalKeys = PROFILE_QOL_GENERAL_KEYS,
     },
     {
