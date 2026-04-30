@@ -26,6 +26,20 @@ return {
                 _sourceSpecID = 250,
                 id = 44444,
                 type = "spell"
+              },
+              [3] = {
+                _legacySourceSpecKey = "250",
+                _legacySpellbookSlot = 11111,
+                _sourceSpecID = 250,
+                id = 11111,
+                type = "spell"
+              },
+              [4] = {
+                _legacySourceSpecKey = "250",
+                _legacySpellbookSlot = 22222,
+                _sourceSpecID = 250,
+                id = 22222,
+                type = "spell"
               }
             },
             ["DEATHKNIGHT-251"] = {

@@ -125,17 +125,17 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --             db.global.ncdm.specTrackerSpells[containerKey] when present.
 --         (d) FinalizeLegacyTrackerSpecState — promote legacy
 --             specSpecificSpells -> V2 specSpecific, stamp
---             container._sourceSpecID from ncdm._lastSpecID, then clear
---             container.entries on spec-specific bars. The earlier (c)
---             port already moved any real per-spec data from the global
---             legacy location into ncdm.specTrackerSpells; whatever is
---             still sitting in container.entries on a spec-specific bar
---             is either a stale pre-toggle snapshot (direct upgrade) or
---             pre-V2 drag-handler garbage (slot indexes / cooldownIDs
---             that aren't real spellIDs). Promoting that data produced
---             fallback icons on import; clearing it lets the bar render
---             empty with a UI prompt to re-add. Users with corner-case
---             data can recover via the opt-in /qui legacyrecover slash.
+--             container._sourceSpecID from ncdm._lastSpecID, then promote
+--             container.entries into per-spec storage at
+--             db.global.ncdm.specTrackerSpells[key][canonicalSpec] and
+--             clear. Each promoted entry is stamped with _sourceSpecID,
+--             _legacySourceSpecKey, and _legacySpellbookSlot so the
+--             composer can attribute it ("Source: <Spec>", "Legacy data —
+--             may need review") and unresolvable IDs render as the
+--             standard ? fallback. Real spell IDs and pre-V2 drag-handler
+--             garbage both promote unconditionally — the user gets full
+--             visibility into what was imported instead of a silently
+--             empty bar.
 --         (e) MigrateContainerShapeAndEntryKind — collapses the 4-value
 --             containerType taxonomy {aura, auraBar, cooldown, customBar}
 --             into two orthogonal axes: container.shape ∈ {icon, bar} for
@@ -155,9 +155,10 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --         (g) Migrations.RepairCustomTrackerSpecStorage — canonicalize
 --             spec-specific custom tracker buckets from numeric spec keys
 --             ("250") to CLASS-specID keys ("DEATHKNIGHT-250") read by the
---             unified CDM runtime, preserve source-key metadata, and clear
---             leftover container.entries on spec-specific bars so the
---             renderer uses per-spec storage exclusively (matches (d)).
+--             unified CDM runtime, preserve source-key metadata, and
+--             promote any container.entries that leaked back onto a
+--             spec-specific bar through the same per-spec storage path
+--             as (d) before clearing them.
 --         (h) RepairResourceBarSettings — copy primary/secondary power-bar
 --             values from legacy ncdm storage into the active top-level
 --             powerBar / secondaryPowerBar tables when the runtime keys
@@ -360,6 +361,11 @@ local function MergeSpecEntryLists(dst, src)
     end
     return changed
 end
+
+-- Forward declaration: defined further down (depends on _currentGlobalDB
+-- and other v32-era helpers), but called from Migrations.RepairCustomTrackerSpecStorage
+-- which is defined earlier in source order.
+local PromoteLegacyContainerEntriesToPerSpec
 
 -- Helper: set key in target only if target[k] is nil (conservative merge)
 local function SetIfNil(target, key, value)
@@ -2803,26 +2809,16 @@ function Migrations.RepairCustomTrackerSpecStorage(profile, globalDB)
                 end
             end
 
-            -- Stamp _sourceSpecID for spec-specific bars even if we don't
-            -- have per-spec entries to write yet (the source-spec hint is
-            -- still useful for the runtime LegacyResolver if the user
-            -- ever opts into salvage). Then clear container.entries so
-            -- the renderer uses per-spec storage exclusively. Pre-V2
-            -- container.entries on a spec-specific bar is dead data —
-            -- either a stale snapshot or drag-handler-bug garbage. See
-            -- FinalizeLegacyTrackerSpecState above for the rationale.
+            -- Defensive late pass: if any container.entries leaked back
+            -- into a spec-specific bar between v32(d) and here, promote
+            -- it through the same path. PromoteLegacyContainerEntriesToPerSpec
+            -- handles _sourceSpecID stamping internally; the wipe stays
+            -- unconditional for the no-source-spec corner case.
             if container.specSpecific == true
                and type(container.entries) == "table"
                and #container.entries > 0
             then
-                local sourceSpecID = type(container._sourceSpecID) == "number"
-                    and container._sourceSpecID
-                    or GetProfileSourceSpecID(profile)
-                if type(sourceSpecID) == "number" and sourceSpecID > 0
-                   and container._sourceSpecID == nil
-                then
-                    container._sourceSpecID = sourceSpecID
-                end
+                PromoteLegacyContainerEntriesToPerSpec(profile, containerKey, container, globalDB)
                 container.entries = {}
                 changed = true
             end
@@ -2904,10 +2900,79 @@ local function NormalizeCustomCDMBarCompatibility(profile)
 end
 
 ----------------------------------------------------------------------------
+-- Promote legacy container.entries on a spec-specific customBar into the
+-- canonical per-spec storage location at
+-- db.global.ncdm.specTrackerSpells[containerKey][canonicalSpec].
+--
+-- Used by both v32(d) FinalizeLegacyTrackerSpecState and v32(g)
+-- RepairCustomTrackerSpecStorage just before they clear container.entries.
+-- Each promoted entry is cloned and stamped with _sourceSpecID,
+-- _legacySourceSpecKey, and _legacySpellbookSlot so the composer's
+-- "Source: <Spec>" tooltip and "Legacy data" hint can attach to it. Real
+-- spell IDs and pre-V2 drag-handler garbage both go through unconditionally
+-- — the runtime icon factory renders the standard ? fallback for IDs that
+-- C_Spell.GetSpellInfo can't resolve, IsPlayerSpell drives the "Not usable
+-- on your current class" hint for known-but-cross-class entries, and the
+-- _legacySpellbookSlot stamp drives the "Legacy data — may need review"
+-- hint. The user gets visibility into what was imported instead of a
+-- silently empty bar.
+--
+-- Returns true if anything was promoted, false otherwise. Caller still
+-- wipes container.entries unconditionally so a no-source-spec-hint bar
+-- ends up empty (matches prior wipe semantics in that corner case).
+----------------------------------------------------------------------------
+PromoteLegacyContainerEntriesToPerSpec = function(profile, containerKey, container, globalDB)
+    if type(container) ~= "table" then return false end
+    if container.specSpecific ~= true then return false end
+    if type(container.entries) ~= "table" or #container.entries == 0 then return false end
+
+    local sourceSpecID = container._sourceSpecID
+    if type(sourceSpecID) ~= "number" or sourceSpecID <= 0 then
+        sourceSpecID = GetProfileSourceSpecID(profile)
+    end
+    if type(sourceSpecID) ~= "number" or sourceSpecID <= 0 then
+        return false
+    end
+    if container._sourceSpecID == nil then
+        container._sourceSpecID = sourceSpecID
+    end
+
+    globalDB = globalDB or _currentGlobalDB
+    if type(globalDB) ~= "table" then return false end
+    if type(globalDB.ncdm) ~= "table" then globalDB.ncdm = {} end
+    if type(globalDB.ncdm.specTrackerSpells) ~= "table" then
+        globalDB.ncdm.specTrackerSpells = {}
+    end
+    local root = globalDB.ncdm.specTrackerSpells
+    if type(root[containerKey]) ~= "table" then
+        root[containerKey] = {}
+    end
+    local byContainer = root[containerKey]
+
+    local canonicalKey = GetCanonicalSpecKey(sourceSpecID) or tostring(sourceSpecID)
+    if type(byContainer[canonicalKey]) ~= "table" then
+        byContainer[canonicalKey] = {}
+    end
+
+    local promoted = {}
+    for _, entry in ipairs(container.entries) do
+        if type(entry) == "table" then
+            local clone = CloneValue(entry)
+            StampLegacySpecEntry(clone, sourceSpecID, tostring(sourceSpecID),
+                { legacySpellbookSlot = true })
+            promoted[#promoted + 1] = clone
+        end
+    end
+    MergeSpecEntryLists(byContainer[canonicalKey], promoted)
+    DeduplicateEntryList(byContainer[canonicalKey])
+    return true
+end
+
+----------------------------------------------------------------------------
 -- LegacyTrackerSpecState repair (folded into the v32 consolidation gate)
 --
--- Two repairs in one pass for customBar containers migrated from the legacy
--- customTrackers system:
+-- Three repairs in one pass for customBar containers migrated from the
+-- legacy customTrackers system:
 --
 --   1. Field rename promotion: legacy bars stored the toggle as
 --      specSpecificSpells; V2 reads specSpecific. v34 only set specSpecific
@@ -2921,25 +2986,26 @@ end
 --      _sourceSpecID for traceability and as a hint to the runtime
 --      LegacyResolver about which spec to attempt entry recovery on.
 --
---   3. Move entries into per-spec storage: v34's intended end state.
---      For each spec-specific container with _sourceSpecID set, copy
---      container.entries into db.global.ncdm.specTrackerSpells[key][specKey]
---      and clear container.entries. This is what makes the V2 unified
---      renderer behave like every other CDM container — entries live in
---      per-spec storage, the renderer reads the current spec's list, and
---      bars naturally render empty on non-matching specs without any
---      dedicated visibility gate.
---
---      Each migrated entry also gets entry._sourceSpecID stamped on it so
---      tooltip rendering can surface the source spec to the user.
+--   3. Promote container.entries into per-spec storage and clear. The
+--      pre-V2 drag-drop handler bypassed db.global.specTrackerSpells and
+--      stored entries directly under bar.entries (a mix of real spellIDs
+--      and slot-index garbage). Promoting them into
+--      db.global.ncdm.specTrackerSpells[key][canonicalSpec] (via the
+--      shared PromoteLegacyContainerEntriesToPerSpec helper) makes them
+--      visible in the composer with full attribution: "Source: <Spec>",
+--      "Not usable on your current class" for cross-class IDs, "Legacy
+--      data" for slot-index garbage, and the standard ? icon fallback
+--      for IDs C_Spell can't resolve. container.entries is then cleared
+--      so the live renderer reads exclusively from per-spec storage.
 --
 -- Source spec hint is a single value (ncdm._lastSpecID), so all
 -- spec-specific containers in the profile receive the same stamp. Profiles
 -- where bars were configured under different specs will mis-stamp some
 -- bars; the user can dismiss / delete those via the Custom CDM Bars UI.
 --
--- Idempotent: only writes fields that are absent and only moves entries
--- when per-spec destination is empty. Re-runnable.
+-- Idempotent: only writes fields that are absent and only promotes when
+-- container.entries is non-empty. After promotion+clear, re-runs see the
+-- empty entries list and skip.
 ----------------------------------------------------------------------------
 local function FinalizeLegacyTrackerSpecState(profile)
     if not profile then return end
@@ -2977,17 +3043,17 @@ local function FinalizeLegacyTrackerSpecState(profile)
             -- Promoting that data into live storage produced fallback icons
             -- on import.
             --
-            -- New behavior: clear container.entries on spec-specific bars
-            -- once specSpecific is true. The real entries either (a) already
-            -- live in per-spec storage (transform (c) ports legacy global
-            -- data; main's _quiBundledGlobals carries QUI1-export data), or
-            -- (b) genuinely don't exist for this user, in which case the
-            -- bar should render empty with a UI prompt to re-add via
-            -- drag-drop. Users with edge-case data still in container.entries
-            -- can recover via the opt-in /qui legacyrecover slash command.
+            -- Promote container.entries into per-spec storage, then clear.
+            -- See PromoteLegacyContainerEntriesToPerSpec for the rationale:
+            -- the live renderer reads exclusively from per-spec storage,
+            -- and the user gets full per-entry attribution in the composer
+            -- ("Source: <Spec>", "Legacy data", ? for unresolvable) instead
+            -- of a silently empty bar. Caller-side wipe stays unconditional
+            -- so profiles missing _sourceSpecID still end up empty.
             if container.specSpecific == true
                and type(container.entries) == "table" and #container.entries > 0
             then
+                PromoteLegacyContainerEntriesToPerSpec(profile, key, container, _currentGlobalDB)
                 container.entries = {}
             end
         end

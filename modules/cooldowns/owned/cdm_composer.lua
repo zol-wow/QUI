@@ -1408,6 +1408,9 @@ local function GetOrCreateEntryCell(index)
             GameTooltip:AddLine("Not Learned (Dormant)", 0.9, 0.6, 0.2)
             GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
         else
+            if type(self._entry) == "table" and self._entry._legacySpellbookSlot ~= nil then
+                GameTooltip:AddLine("Legacy data — may need review", 0.95, 0.6, 0.2)
+            end
             if self._isUnknownToPlayer then
                 GameTooltip:AddLine("Not usable on your current class", 0.95, 0.5, 0.5)
             elseif not IsEntryRegisteredInBlizzCDM(self._entry) then
