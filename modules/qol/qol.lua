@@ -271,6 +271,22 @@ local allMicroButtonNames = {
     "EJMicroButton", "StoreMicroButton", "MainMenuMicroButton",
 }
 
+-- Additional alert anchor buttons not exposed as globals. Blizzard's HelpTip
+-- system anchors callouts to these; when the parent frame is hidden (e.g.
+-- PerksProgramFrame is closed) the callout's text-wrap math can produce a
+-- runaway size, rendering the GlowFrame as a screen-spanning rectangle.
+-- Resolved lazily because the parent frame may not exist at addon load.
+local extraAlertAnchorResolvers = {
+    function() return PerksProgramFrame and PerksProgramFrame.OpenButton end,
+}
+
+-- Named alert frames not following the <MicroButton>Alert convention.
+-- Hooked via OnShow so they get the same suppression gating as the
+-- standard micro button alerts.
+local extraAlertFrameNames = {
+    "PerksProgramFrameOpenButtonAlertFrame",
+}
+
 -- Detects a HelpTip-shaped frame by structural signature. HelpTip frames are
 -- pooled by Blizzard's HelpTip module; they have Text, CloseButton, and either
 -- Arrow or BouncyArrow regions. We identify them structurally so we can hide
@@ -304,12 +320,17 @@ local function HideHelpTipsOnButton(button)
     end
 end
 
--- Builds a lookup set {[frameRef]=true} of the live micro button frames.
+-- Builds a lookup set {[frameRef]=true} of the live micro button frames
+-- plus any extra alert-anchor buttons (e.g. PerksProgramFrame.OpenButton).
 local function BuildMicroButtonSet()
     local set = {}
     for i = 1, #allMicroButtonNames do
         local btn = _G[allMicroButtonNames[i]]
         if btn then set[btn] = true end
+    end
+    for i = 1, #extraAlertAnchorResolvers do
+        local ok, btn = pcall(extraAlertAnchorResolvers[i])
+        if ok and btn then set[btn] = true end
     end
     return set
 end
@@ -345,6 +366,13 @@ local function HideAllMicroButtonAlerts()
         end
         -- Also hide the named alert frame if it exists
         local alertFrame = _G[buttonName .. "Alert"]
+        if alertFrame and alertFrame:IsShown() then
+            alertFrame:Hide()
+        end
+    end
+    -- Named alert frames not following the <MicroButton>Alert convention.
+    for _, alertName in ipairs(extraAlertFrameNames) do
+        local alertFrame = _G[alertName]
         if alertFrame and alertFrame:IsShown() then
             alertFrame:Hide()
         end
@@ -419,6 +447,25 @@ local function HookTalentReminderAlerts()
     -- children like FlashBorder — so HookScript is taint-safe here.
     for _, buttonName in ipairs(allMicroButtonNames) do
         local alertFrame = _G[buttonName .. "Alert"]
+        if alertFrame and not _quiPopupBlockerHooked[alertFrame] then
+            alertFrame:HookScript("OnShow", function(self)
+                C_Timer.After(0, function()
+                    if not self or not self.Hide then return end
+                    if IsMicrobarEffectivelyHidden() or IsPopupBlockEnabled("blockMicroButtonGlows") then
+                        self:Hide()
+                    end
+                end)
+            end)
+            _quiPopupBlockerHooked[alertFrame] = true
+        end
+    end
+
+    -- Hook OnShow on named alert frames that don't follow the <MicroButton>Alert
+    -- convention (e.g. PerksProgramFrameOpenButtonAlertFrame). These can inflate
+    -- to screen-spanning size when their anchor button is hidden, so suppress
+    -- under the same gating as the standard micro button alerts.
+    for _, alertName in ipairs(extraAlertFrameNames) do
+        local alertFrame = _G[alertName]
         if alertFrame and not _quiPopupBlockerHooked[alertFrame] then
             alertFrame:HookScript("OnShow", function(self)
                 C_Timer.After(0, function()
