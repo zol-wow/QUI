@@ -143,8 +143,7 @@ function Helpers.IsAuraOwnedByPlayerOrPet(auraData, strictSource)
     end
 
     if ownedFlag ~= nil then
-        if strictSource then return false end
-        return ownedFlag == true
+        return strictSource and false or ownedFlag == true
     end
 
     return false
