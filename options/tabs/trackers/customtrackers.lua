@@ -17,6 +17,9 @@ local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 local trackerSurfaceState, GetTrackerSurfaceState = Helpers.CreateStateTable()
 
+local ResolveDragToSpellID = Helpers.ResolveDragToSpellID
+local NotifyDragResolutionFailed = Helpers.NotifyDragResolutionFailed
+
 local function ApplyTrackerSurface(frame, bgColor, borderColor, borderSizePixels)
     if not frame then return end
 
@@ -239,28 +242,13 @@ local function CreateCustomTrackersPage(parent)
                     end
                 end
             elseif cursorType == "spell" then
-                -- id1 is slot index, id2 is bookType ("spell" or "pet")
-                -- Need to look up actual spellID from spellbook
-                local slotIndex = id1
-                local bookType = id2 or "spell"
-                local spellID = id4  -- Try direct spellID first (older API)
-
-                -- If no direct spellID, look it up from spellbook
-                if not spellID and slotIndex then
-                    local spellBank = (bookType == "pet") and Enum.SpellBookSpellBank.Pet or Enum.SpellBookSpellBank.Player
-                    local spellBookInfo = C_SpellBook.GetSpellBookItemInfo(slotIndex, spellBank)
-                    if spellBookInfo then
-                        spellID = spellBookInfo.spellID
-                    end
-                end
-
-                -- Resolve override spell (talents that replace base spells)
-                if spellID then
-                    local overrideID = C_Spell.GetOverrideSpell(spellID)
-                    if overrideID and overrideID ~= spellID then
-                        spellID = overrideID
-                    end
-                end
+                -- Probe each plausible interpretation of the cursor return.
+                -- id4 is the modern API's resolved spellID for spellbook/action
+                -- bar drags but is unreliable / cdID for CooldownManager drags;
+                -- id1 may be a spellbook slot, action-bar spellID, or cdID.
+                -- ResolveDragToSpellID validates each against IsPlayerSpell.
+                local spellID = ResolveDragToSpellID(id4)
+                                or ResolveDragToSpellID(id1)
 
                 if spellID then
                     local trackerModule = QUI and QUI.QUICore and QUI.QUICore.CustomTrackers
@@ -269,6 +257,8 @@ local function CreateCustomTrackersPage(parent)
                         ClearCursor()
                         if refreshCallback then refreshCallback() end
                     end
+                else
+                    NotifyDragResolutionFailed()
                 end
             end
         end)

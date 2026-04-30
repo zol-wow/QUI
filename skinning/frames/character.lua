@@ -121,7 +121,19 @@ local function HideBlizzardDecorations()
     HideNineSlice(CharacterFrameInset and CharacterFrameInset.NineSlice)
     HideNineSlice(CharacterFrameInsetRight and CharacterFrameInsetRight.NineSlice)
     if CharacterFrameBg then CharacterFrameBg:Hide() end
-    if CharacterStatsPane then CharacterStatsPane:Hide() end
+    -- Mask Blizzard's stats pane (alpha 0 + mouse off) instead of Hide() —
+    -- the modules/character mirror needs Blizzard's update path to keep
+    -- writing fresh values into its FontStrings during combat / encounters.
+    if CharacterStatsPane then
+        pcall(CharacterStatsPane.Show, CharacterStatsPane)
+        pcall(CharacterStatsPane.SetAlpha, CharacterStatsPane, 0)
+        if CharacterStatsPane.EnableMouse then
+            pcall(CharacterStatsPane.EnableMouse, CharacterStatsPane, false)
+        end
+        if CharacterStatsPane.ClassBackground then
+            pcall(CharacterStatsPane.ClassBackground.SetAlpha, CharacterStatsPane.ClassBackground, 0)
+        end
+    end
 end
 
 ---------------------------------------------------------------------------

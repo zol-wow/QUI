@@ -3069,9 +3069,15 @@ local function BuildBar(barKey)
 
                 local function ReanchorMicroAlert(button)
                     if not button then return end
-                    local alert = button.FlashBorder or button.alert
+                    local alert = button.alert
                     if not alert and button.GetName then
                         alert = _G[button:GetName() .. "Alert"]
+                    end
+                    -- FlashBorder/FlashContent are the button pulse textures,
+                    -- not alert bubbles. Reanchoring them can detach Blizzard's
+                    -- glow geometry from the micro button and inflate it.
+                    if alert == button.FlashBorder or alert == button.FlashContent then
+                        return
                     end
                     if not alert or not alert:IsShown() then return end
 

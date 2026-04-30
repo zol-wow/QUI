@@ -1639,4 +1639,73 @@ function Helpers.EnsureDefaults(tbl, defaults)
     end
 end
 
+-- ----------------------------------------------------------------------------
+-- ResolveDragToSpellID
+--
+-- GetCursorInfo() returns different shapes depending on drag source:
+--   spellbook:                cursorType="spell", id1=slot,       id4=spellID
+--   action bar / spell menu:  cursorType="spell", id1=spellID,    id4=spellID
+--   Blizzard CooldownManager: cursorType="spell", id1=cooldownID, id4 unreliable
+--
+-- Trusting any single return as a spellID without validation lets cooldownIDs,
+-- spellbook slot indexes, and stale values slip into storage as if they were
+-- spellIDs. Live runtime then renders dead icons because C_Spell.GetSpellInfo
+-- on those values returns nothing usable.
+--
+-- This helper probes every plausible interpretation, validates against the
+-- player's actual castable spells, applies talent override resolution, and
+-- returns nil for anything that doesn't survive. Drop handlers should call
+-- this with id4 first, then id1 as a fallback.
+-- ----------------------------------------------------------------------------
+function Helpers.ResolveDragToSpellID(rawID)
+    if type(rawID) ~= "number" or rawID <= 0 then return nil end
+
+    local function accept(id)
+        if type(id) ~= "number" or id <= 0 then return nil end
+        local info = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(id)
+        if not info or info.isPassive then return nil end
+        if not IsPlayerSpell or not IsPlayerSpell(id) then return nil end
+        if C_Spell and C_Spell.GetOverrideSpell then
+            local override = C_Spell.GetOverrideSpell(id)
+            if override and override ~= 0 and override ~= id then
+                return override
+            end
+        end
+        return id
+    end
+
+    -- Probe 1: as-is. Action-bar drags pass the spellID directly.
+    local resolved = accept(rawID)
+    if resolved then return resolved end
+
+    -- Probe 2: spellbook slot index. Spellbook drags pre-DF API.
+    if C_SpellBook and C_SpellBook.GetSpellBookItemInfo
+       and Enum and Enum.SpellBookSpellBank then
+        local ok, book = pcall(C_SpellBook.GetSpellBookItemInfo, rawID, Enum.SpellBookSpellBank.Player)
+        if ok and book and book.spellID then
+            resolved = accept(book.spellID)
+            if resolved then return resolved end
+        end
+    end
+
+    -- Probe 3: CooldownViewer cooldownID. Blizzard CooldownManager drags.
+    if C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo then
+        local ok, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, rawID)
+        if ok and info and info.spellID then
+            resolved = accept(info.spellID)
+            if resolved then return resolved end
+        end
+    end
+
+    return nil
+end
+
+function Helpers.NotifyDragResolutionFailed()
+    if UIErrorsFrame and UIErrorsFrame.AddMessage then
+        UIErrorsFrame:AddMessage(
+            "QUI: Couldn't resolve that spell. Try dragging from your spellbook.",
+            1, 0.3, 0.3, 1
+        )
+    end
+end
 

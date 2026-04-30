@@ -1503,11 +1503,8 @@ local function CreateCustomMailButton()
     customMailButton:SetFrameLevel((Minimap:GetFrameLevel() or 0) + 10)
     customMailButton:EnableMouse(true)
 
-    customMailButton.bg = ApplyMinimapButtonBackground(customMailButton)
-
     local icon = customMailButton:CreateTexture(nil, "ARTWORK")
-    icon:SetPoint("TOPLEFT", customMailButton, "TOPLEFT", 3, -3)
-    icon:SetPoint("BOTTOMRIGHT", customMailButton, "BOTTOMRIGHT", -3, 3)
+    icon:SetAllPoints()
     icon:SetAtlas(MAIL_ICON_UP_ATLAS)
     customMailButton.icon = icon
 

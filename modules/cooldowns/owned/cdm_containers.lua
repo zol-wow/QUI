@@ -1799,6 +1799,21 @@ local function LayoutContainer(trackerKey)
         iconsToLayout = sorted
     end
 
+    -- Migrated customBar containers store growth as the legacy `growDirection`
+    -- field ("LEFT"/"RIGHT"/"UP"/"DOWN"), not `growthDirection`. The composer
+    -- preview reverses the display for LEFT/UP so entries[1] ends up at the
+    -- bar's anchor end; mirror that here so render matches preview.
+    if settings.containerType == "customBar" then
+        local gd = settings.growDirection
+        if gd == "LEFT" or gd == "UP" then
+            local reversed = {}
+            for i = #iconsToLayout, 1, -1 do
+                reversed[#reversed + 1] = iconsToLayout[i]
+            end
+            iconsToLayout = reversed
+        end
+    end
+
     -- Calculate potential row widths (for power bars / castbars)
     local potentialRow1Width = 0
     local potentialBottomRowWidth = 0
@@ -3719,21 +3734,21 @@ do
                                     NotifyPeerRefresh(dropZone)
                                 end
                             elseif cursorType == "spell" then
-                                local spellID = id4
-                                if not spellID and id1 then
-                                    local spellBank = (id2 == "pet") and Enum.SpellBookSpellBank.Pet or Enum.SpellBookSpellBank.Player
-                                    local spellBookInfo = C_SpellBook.GetSpellBookItemInfo(id1, spellBank)
-                                    if spellBookInfo then spellID = spellBookInfo.spellID end
-                                end
+                                -- Probe id4 (modern API spellID), then id1
+                                -- (spellbook slot / cdID / action-bar spellID).
+                                -- Helpers.ResolveDragToSpellID validates each
+                                -- against IsPlayerSpell + applies talent override.
+                                local spellID = (Helpers.ResolveDragToSpellID and Helpers.ResolveDragToSpellID(id4))
+                                                or (Helpers.ResolveDragToSpellID and Helpers.ResolveDragToSpellID(id1))
                                 if spellID then
-                                    local overrideID = C_Spell.GetOverrideSpell(spellID)
-                                    if overrideID and overrideID ~= spellID then spellID = overrideID end
                                     if ns.CustomCDM then
                                         ns.CustomCDM:AddEntry(dbKey, "spell", spellID)
                                         ClearCursor()
                                         rebuildCustomEntries()
                                         NotifyPeerRefresh(dropZone)
                                     end
+                                elseif Helpers.NotifyDragResolutionFailed then
+                                    Helpers.NotifyDragResolutionFailed()
                                 end
                             end
                         end
