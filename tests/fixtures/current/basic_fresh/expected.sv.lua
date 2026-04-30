@@ -20,7 +20,7 @@ return {
       Default = {
         _defaultsVersion = 3,
         _needsLateAbImport = true,
-        _schemaVersion = 36,
+        _schemaVersion = 32,
         _shippedDefaults = {
           abilityTimeline = {
             bigIcon = {

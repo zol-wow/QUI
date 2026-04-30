@@ -17,7 +17,7 @@ Two custom-tracker bars are seeded:
 - `test_bar_spec`: spec-specific bar (`specSpecificSpells = true`) with entries
   stored directly on the bar (drag-drop-bug path). Exercises transforms (a), (c),
   and (d). QUIDB.specTrackerSpells["test_bar_spec"]["250"] is also present so
-  transform (c)'s global spec-port path and v34's spec-key canonicalization run.
+  transform (c)'s global spec-port path and transform (g)'s spec-key canonicalization run.
 
 Three standalone containers are seeded directly under ncdm.containers:
 - `custom_cd` (containerType=cooldown): mixed entries (spell + item + trinket).
@@ -34,13 +34,13 @@ Expected post-migration state:
 - ncdm.containers.customBar_test_bar_1 and customBar_test_bar_spec populated (v32a)
 - each migrated container has row1 synthesised (v32c), anchorTo = "disabled"
 - customBar_test_bar_spec.specSpecific = true, _sourceSpecID = 250 (v32d)
-- customBar_test_bar_spec.entries cleared; entries moved to canonical per-spec global storage (v32d/v34)
+- customBar_test_bar_spec.entries cleared; entries moved to canonical per-spec global storage (v32d/v32g)
 - every container in ncdm.containers gains a `shape` field (v32e)
 - spell entries on aura/auraBar containers gain `kind = "aura"` (v32e)
 - non-spell entries gain `kind = "cooldown"` (v32e)
 - spell entries on cooldown / customBar containers retain no kind (runtime classifies)
-- powerBar and secondaryPowerBar preserve legacy height/color values from ncdm (v35)
-- _schemaVersion = 35
+- powerBar and secondaryPowerBar preserve legacy height/color values from ncdm (v32h)
+- _schemaVersion = 32
 
-Reference: core/migrations.lua lines 108-148 (v32 documentation), plus
-the v32 migration code below it.
+Reference: core/migrations.lua v32 documentation block (steps a–i),
+plus the v32 migration code below it.

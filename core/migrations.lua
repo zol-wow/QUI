@@ -106,12 +106,14 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --        anchor, and offset settings. Existing profiles inherit the old shared
 --        duration font size and time-based color toggle.)
 -- v32 = OptionsV2BranchConsolidated (the V2 settings branch's data work)
---       Five discrete transforms collapsed into one schema bump because the
+--       Nine discrete transforms collapsed into one schema bump because the
 --       V2 branch never shipped past v31 — there's no point preserving the
 --       intermediate step granularity. Helper functions stay separate for
 --       readability; they're called sequentially behind a single
---       `if stored < 32` gate. Order matters: (e) walks the containers
---       (a)/(c)/(d) finalize, so it must run last.
+--       `if stored < 32` gate. Order matters: container/spec finalization
+--       (a-d) must precede shape stamping (e), and the field-level repair
+--       passes (f-i) run after to reach the already-shaped containers and
+--       resource-bar tables.
 --         (a) MigrateCustomTrackersToContainers — mirror legacy
 --             db.customTrackers.bars[] into db.ncdm.containers[customBar_*]
 --             so the unified V2 renderer can serve them. Non-destructive.
@@ -141,39 +143,30 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --             are left for the runtime classifier. Must run after
 --             (a)/(c)/(d) so the customBar-style containers and per-spec
 --             entry storage already exist in their final shape.
---
--- v33 = RepairCustomTrackerCDMBarFidelity
---       (Options V2: custom tracker bars were consolidated into Custom CDM
---        Bars, but the first v32 mapping missed several legacy row/text
---        fields and did not copy frameAnchoring customTracker:<id> entries
---        to the new cdmCustom_customBar_<id> resolver keys. Re-sync the
---        migrated containers from their legacy source bars so old profiles
---        keep size, spacing, text placement, visibility, and anchoring.)
---
--- v34 = RepairCustomTrackerSpecStorage
---       (Options V2: spec-specific legacy custom tracker entries could land
---        under numeric spec keys such as "250", while the unified CDM runtime
---        reads "CLASS-specID" keys such as "DEATHKNIGHT-250". Canonicalize
---        migrated customBar spec buckets, preserve source-key metadata, and
---        stamp bug-path entries that may still contain spellbook slot IDs.)
---
--- v35 = RepairResourceBarSettings
---       (Options V2: resource bar settings moved in the options UI, and some
---        old profiles can carry primary/secondary bar values under ncdm while
---        the runtime reads top-level powerBar/secondaryPowerBar. Copy legacy
---        values into the active tables when those fields are still defaults.)
---
--- v36 = NormalizeCustomCDMBarCompatibility
---       (Options V2: custom tracker bars now render as custom CDM bars. Stamp
---        the legacy tooltip/keybind contexts, restore old custom tracker
---        default behavior for dynamic layout, normalize mutually-exclusive
---        visibility flags, and backfill active-glow/text fields that the
---        initial customBar mirror left implicit.)
+--         (f) RepairCustomTrackerCDMBarFidelity — re-sync legacy custom
+--             tracker bars into their migrated Custom CDM Bars to recover
+--             row/text fields and frameAnchoring customTracker:<id> →
+--             cdmCustom_customBar_<id> resolver keys that the (a) pass
+--             missed.
+--         (g) Migrations.RepairCustomTrackerSpecStorage — canonicalize
+--             spec-specific custom tracker buckets from numeric spec keys
+--             ("250") to CLASS-specID keys ("DEATHKNIGHT-250") read by the
+--             unified CDM runtime, preserve source-key metadata, and stamp
+--             bug-path entries that may still contain spellbook slot IDs.
+--         (h) RepairResourceBarSettings — copy primary/secondary power-bar
+--             values from legacy ncdm storage into the active top-level
+--             powerBar / secondaryPowerBar tables when the runtime keys
+--             are still defaults.
+--         (i) NormalizeCustomCDMBarCompatibility — stamp legacy tooltip/
+--             keybind contexts, restore old custom-tracker default
+--             behavior for dynamic layout, normalize mutually-exclusive
+--             visibility flags, and backfill active-glow/text fields that
+--             the initial customBar mirror left implicit.
 --
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 36
+local CURRENT_SCHEMA_VERSION = 32
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -3030,7 +3023,7 @@ local function FinalizeLegacyTrackerSpecState(profile)
 end
 
 ---------------------------------------------------------------------------
--- v33: MigrateContainerShapeAndEntryKind
+-- v32 step (e): MigrateContainerShapeAndEntryKind
 --
 -- Collapses the legacy 4-value containerType taxonomy
 -- {aura, auraBar, cooldown, customBar} into two orthogonal axes:
@@ -3621,34 +3614,24 @@ function Migrations.RunOnProfile(profile)
     -- v31: add font, color, anchor, and offset controls for duration text.
     if stored < 31 then EnsureGroupAuraDurationTextStyle(profile) end
 
-    -- v32: V2 settings branch consolidated migration. Five discrete
+    -- v32: V2 settings branch consolidated migration. Nine discrete
     -- transforms run sequentially behind one gate (V2 branch never
     -- shipped past v31, so intermediate version steps were collapsed).
     -- Order matters — see version log for what each function does.
-    -- MigrateContainerShapeAndEntryKind must run last because it walks
-    -- the containers the prior helpers finalize.
+    -- (a-d) finalize containers and per-spec storage; (e) stamps shape
+    -- and entry.kind on the finalized containers; (f-i) apply field-
+    -- level repairs against the already-shaped data.
     if stored < 32 then
         MigrateCustomTrackersToContainers(profile)
         RemovePartyTrackerData(profile)
         FinalizeCustomBarContainers(profile)
         FinalizeLegacyTrackerSpecState(profile)
         MigrateContainerShapeAndEntryKind(profile)
+        RepairCustomTrackerCDMBarFidelity(profile)
+        Migrations.RepairCustomTrackerSpecStorage(profile, _currentGlobalDB)
+        RepairResourceBarSettings(profile)
+        NormalizeCustomCDMBarCompatibility(profile)
     end
-
-    -- v33: repair the legacy custom-tracker-to-CDM-bar mapping so every
-    -- migrated Custom CDM Bar mirrors the source tracker layout exactly.
-    if stored < 33 then RepairCustomTrackerCDMBarFidelity(profile) end
-
-    -- v34: normalize spec-specific custom tracker buckets from legacy
-    -- numeric spec IDs to the CLASS-specID keys read by the CDM runtime.
-    if stored < 34 then Migrations.RepairCustomTrackerSpecStorage(profile, _currentGlobalDB) end
-
-    -- v35: preserve resource bar settings that old profiles/imports can
-    -- carry under ncdm even though runtime now reads top-level tables.
-    if stored < 35 then RepairResourceBarSettings(profile) end
-
-    -- v36: finish custom tracker compatibility on migrated custom CDM bars.
-    if stored < 36 then NormalizeCustomCDMBarCompatibility(profile) end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame

@@ -4,7 +4,7 @@ QUI_DB = {
   },
   profiles = {
     Default = {
-      _schemaVersion = 35,
+      _schemaVersion = 31,
       ncdm = {
         containers = {
           customBar_conflict = {
