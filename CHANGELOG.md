@@ -8,13 +8,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## Unreleased
 
+
+
+## v3.6.0-alpha1 - 2026-04-30
+
+> ⚠️ **Alpha release — please read before installing**
+>
+> This is the first alpha for QUI v3.6. Two big systems changed under the hood, and it's possible some of your settings won't survive perfectly:
+>
+> - **Back up your `WTF` folder before installing.** The simplest path: close WoW, copy your entire `World of Warcraft/_retail_/WTF/` folder somewhere safe. If anything goes sideways you can restore it. At minimum, hold on to `WTF/Account/<your-account>/SavedVariables/QUI_DB.lua` and the per-character `QUIDB.lua` files.
+> - **Custom trackers may lose fidelity.** The Cooldown Manager's custom-tracker engine was overhauled — container shape (icon vs. bar) and entry kind (aura vs. cooldown) are now tracked separately, and legacy trackers are auto-migrated on first load. Migrations preserve as much as possible, but some custom-tracker settings can shift or reset. Before upgrading, **export your profile** via Options → Profiles → Export so you can compare or re-import if something looks off.
+> - This is alpha software. Expect bugs. Please report issues on the GitHub/Discord.
+
 ### Added
-- Section nav: long settings sub-pages can opt in to a sticky chip strip with scroll-spy and click-to-jump. Enabled on Gameplay → Combat. Tiles opt in via `sectionNav = true`; sections auto-register from `featureIds`, or manually via `body:RegisterSection(id, label, frame)` from buildFunc pages.
+- **Options panel V2.** Substantial rewrite of the settings panel: in-page section navigation with a sticky chip strip and scroll-spy on long sub-pages (e.g. Gameplay → Combat), search/pin routing into nested features, restored several settings that had gone missing during V2 migration, and tile-layout perf work.
+- **Layout Mode search.** New search box in the Layout Mode frames drawer, with a clear button.
+- **Help tile rework.** Sticky chip strip for navigation plus a new Tools sub-tab.
+- **Group frames.**
+  - New classification filters: Raid In Combat, Not Cancelable, Big Defensive, External Defensive.
+  - Limit raid groups by difficulty (1–4 in Mythic, 1–6 in flex).
+  - Animated aura health-bar tints; dispellable private auras now show dispel overlays.
+- **Character pane.** Mirrors Blizzard's stats pane during combat so values stay visible (M+, raid combat).
+- **Action bars.**
+  - Totem bar settings panel with grow-direction control.
+  - GSE sequence override support on QUI action bars.
+- **M+ dungeon.** Mob progress display.
+- **Consumables.** Per-character override toggle for macro selections.
+- **Diagnostics.**
+  - `/qui diagnose` — repairs corrupt Edit Mode profiles.
+  - `/qui cdm_cache` — CDM spell cache status + out-of-combat reset.
+  - `/qui combatprof` — `PLAYER_REGEN_ENABLED` stutter diagnosis.
 
 ### Changed
-- `RegisterFeatureTile` no longer honors `spec.advancedDrawer` (the build path was unused; no caller affected). The `Create*AdvancedDrawer` helpers in `options/shared.lua` have been removed.
+- **Cooldown Manager — custom bars & trackers.** Significant work toward feature parity between custom CDM bars and custom trackers. Container shape (icon/bar) and entry kind (aura/cooldown) are now tracked independently; legacy trackers and custom bars are migrated automatically on first load.
+- **Pet frame.** Reparented out of the managed container instead of flagged in-place to prevent combat taint blocks.
 
-
+### Fixed
+- **Combat taint hardening (CDM, action bars, frames, tooltip).** Many edge cases addressed: cooldown swipe restart/flicker, mirror Clear/timing forwarding, hideGCD classification for charged abilities, restricted-aura unpack, flyout taint, autohide bars while flyout open, micromenu pulse suppression, proc swirl restoration, tooltip refit/dedup, boss frame buffs.
+- **Cooldown Manager.**
+  - Stack text preserved through transient API nils for charged abilities.
+  - Target debuff stack updates restored in combat.
+  - Buff-viewer spells now show stacks on custom cooldown containers.
+  - Passive trinkets correctly hidden under "Hide Non-Usable".
+  - Custom cooldown bars re-layout on mid-combat filter flips.
+  - Frames anchored to dynamic-size containers track parent growth.
+  - Charge stack lookup decoupled from Blizzard CDM category.
+- **Buff borders.** Duration text honors anchor/offset on the custom timer; countdown rounds to nearest unit; guards against forbidden children.
+- **Group frames.** Zero absorb overlays clear correctly; `|PLAYER` aura ownership filter applied to unit frames for player/pet/vehicle.
+- **Click-cast.** Scoped per character via `db.char`.
+- **Character pane.** Item context and sibling overlays preserved on slot skin; Settings button widened to fit across UI scales.
+- **Minimap.** Dungeon eye no longer drifts (queue status button mutators hooked); mail icon background dropped and filled to button bounds.
+- **Consumables.** Remaining-time uses ceiling rounding.
+- Various tooltip, skin, mirror, click-cast, and lifecycle hardening.
 
 
 
