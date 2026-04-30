@@ -29,6 +29,7 @@
     <Script file="tiles\related.lua"/>
     <Script file="tiles\minimap.lua"/>
     <Script file="..\modules\frames\settings\unit_frames_surface.lua"/>
+    <Script file="..\modules\frames\settings\unit_frames_castbar_preview.lua"/>
     <Script file="tiles\unit_frames.lua"/>
     <Script file="..\modules\frames\settings\group_frames_surface.lua"/>
     <Script file="tiles\group_frames.lua"/>

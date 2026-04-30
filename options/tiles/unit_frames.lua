@@ -15,7 +15,7 @@ function V2.Register(frame)
         icon = "U",
         name = "Unit Frames",
         primaryCTA = { label = "Edit in Layout Mode", moverKey = "playerFrame" },
-        previewHeight = 180,
+        previewHeight = 220,
         navRoutes = {
             { tabIndex = 5, subTabIndex = 0, subPageIndex = 1 },
         },

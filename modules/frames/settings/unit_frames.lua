@@ -6,7 +6,7 @@ if not SurfaceFeatures or type(SurfaceFeatures.Register) ~= "function" then
     return
 end
 
-local PREVIEW_HEIGHT = 180
+local PREVIEW_HEIGHT = 220
 local LOOKUP_TO_UNIT = {
     playerFrame = "player",
     targetFrame = "target",

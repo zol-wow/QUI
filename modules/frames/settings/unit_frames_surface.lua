@@ -408,6 +408,12 @@ local function BuildMockFrame(host)
         mock._buffIcons[i]   = CreateAuraIcon(BUFF_TEX[i])
     end
 
+    -- Castbar mock — sits in the bottom-region of the host, populated
+    -- per the selected unit's castbar settings by RefreshMock.
+    if ns.QUI_UnitFramesCastbarPreview and ns.QUI_UnitFramesCastbarPreview.Build then
+        mock._castbarMock = ns.QUI_UnitFramesCastbarPreview.Build(host)
+    end
+
     return mock
 end
 
@@ -443,8 +449,9 @@ local function RefreshMock()
 
     local borderSize = math.max(0, unitDB.borderSize or 1)
 
-    -- Scale to fit inside preview host (leave ~20px margin). Portrait, when
-    -- shown, adds to the effective width so the combined frame+portrait fits.
+    -- Scale to fit inside preview host (~20px horizontal margin; ~60px reserved
+    -- at the bottom for the castbar mock). Portrait, when shown, adds to the
+    -- effective width so the combined frame+portrait fits.
     local dbW, dbH = unitDB.width or 200, unitDB.height or 40
     local portraitOn = unitDB.showPortrait
         and (State.selectedUnit == "player" or State.selectedUnit == "target" or State.selectedUnit == "focus")
@@ -455,7 +462,10 @@ local function RefreshMock()
     local effectiveW = dbW + portraitSize + portraitGap
     local effectiveH = math.max(dbH, portraitSize)
     local hostW = math.max(host:GetWidth() - 40, 80)
-    local hostH = math.max(host:GetHeight() - 40, 40)
+    -- Cap effective height at host:GetHeight() - 100; that leaves the
+    -- bottom region of the host (~60px on a 220px pane) reserved for
+    -- the castbar mock.
+    local hostH = math.max(host:GetHeight() - 100, 40)
     local scale = math.min(1, math.min(hostW / effectiveW, hostH / effectiveH))
     local w = math.floor(dbW * scale + 0.5)
     local h = math.floor(dbH * scale + 0.5)
@@ -468,7 +478,7 @@ local function RefreshMock()
         shift = (unitDB.portraitSide == "LEFT") and pEdge or -pEdge
     end
     mock:ClearAllPoints()
-    mock:SetPoint("CENTER", host, "CENTER", shift, 0)
+    mock:SetPoint("CENTER", host, "CENTER", shift, 30)
 
     -- Background + border
     local bgR, bgG, bgB, bgA = ResolveBgColor(general)
@@ -908,6 +918,11 @@ local function RefreshMock()
     else
         mock._classIcon:Hide()
     end
+
+    -- Castbar mock — re-applies all castbar settings to the bottom-region mock.
+    if mock._castbarMock and ns.QUI_UnitFramesCastbarPreview and ns.QUI_UnitFramesCastbarPreview.Refresh then
+        ns.QUI_UnitFramesCastbarPreview.Refresh(mock._castbarMock, State.selectedUnit, unitDB, general)
+    end
 end
 
 -- Expose globally so settings widget callbacks in options/tabs/frames/
@@ -995,7 +1010,7 @@ end
 
 ns.QUI_UnitFramesSettingsSurface = {
     preview = {
-        height = 180,
+        height = 220,
         build = BuildPreviewBlock,
     },
     GetSearchRoot = GetSearchRoot,
