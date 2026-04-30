@@ -10,6 +10,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha2 - 2026-04-30
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** Same advice as v3.6.0-alpha1 below. If you upgraded from v3.6.0-alpha1 already, your data has already been migrated. Anyone coming straight from v3.5.x should still back up `WTF/` and export their profile first.
+
+### Changed
+- **Legacy custom-bar migration is now conservative.** v3.6.0-alpha1 tried to salvage suspect spell IDs from pre-V2 custom bars at runtime, surfacing them through a "LegacyResolver" banner in Settings. That path could promote non-spell garbage (slot indexes, cooldownIDs from older drag handlers) into your per-spec storage, where it then rendered as fallback icons. The migration now clears those entries instead of promoting them — your real per-spec spell data continues to load normally.
+- **Settings panel prompt replaced.** When a spec-specific custom bar has no entries, you'll see "Drag spells from your spellbook into the editor below to populate it." with **Dismiss** and **Delete bar** buttons, replacing the old recovery banner.
+- **`/qui legacyrecover` remains** as an opt-in slash command for anyone who wants the old salvage walk.
+
+### Fixed
+- **QUI1 import round-trip.** Importing a QUI1 export string preserves spec-specific bar entries via the bundled-globals carrier; covered by a new round-trip test fixture so this won't silently regress.
+
+
+
 ## v3.6.0-alpha1 - 2026-04-30
 
 > ⚠️ **Alpha release — please read before installing**
