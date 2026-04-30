@@ -670,6 +670,35 @@ local function SyncCustomTrackerBarsToCDM(core, profile)
     return migrations.SyncCustomTrackerBarsToCDM(profile, globalDB)
 end
 
+-- Cross-character profile imports lose the source-spec association on
+-- spec-specific custom-tracker bars: ncdm._lastSpecID is the only spec
+-- hint a v31 export carries, and the importing client's session
+-- overwrites it on the next save with the importer's current spec. By
+-- the time migrations next run, the original spec is gone.
+--
+-- Stamp bar._sourceSpecID directly from the imported _lastSpecID before
+-- migrations run. v32(c) EnsureCustomTrackerBarContainer clones the bar
+-- into the V2 container via CloneValue, propagating the stamp to
+-- container._sourceSpecID. v32(d)/v32(g) skip stamping when it's
+-- already set, so a priest export imported on a warrior preserves
+-- _sourceSpecID = priestSpec instead of being overwritten with the
+-- warrior's current spec.
+local function StampSourceSpecOnImportedSpecBars(targetProfile, importedProfile)
+    if type(targetProfile) ~= "table" or type(importedProfile) ~= "table" then return end
+    local bars = targetProfile.customTrackers and targetProfile.customTrackers.bars
+    if type(bars) ~= "table" then return end
+    local sourceSpecID = importedProfile.ncdm and importedProfile.ncdm._lastSpecID
+    if type(sourceSpecID) ~= "number" or sourceSpecID <= 0 then return end
+    for _, bar in ipairs(bars) do
+        if type(bar) == "table"
+           and bar.specSpecificSpells == true
+           and bar._sourceSpecID == nil
+        then
+            bar._sourceSpecID = sourceSpecID
+        end
+    end
+end
+
 local function RemoveImportedCustomBarContainers(core, profile)
     local migrations = ns.Migrations
     if migrations and type(migrations.RemoveLegacyCustomBarContainers) == "function" then
@@ -1902,6 +1931,12 @@ local function ApplyFullProfilePayload(core, importedProfile)
 
     ApplyImportedGlobals(core, bundledGlobals)
 
+    -- Capture the imported _lastSpecID onto each spec-specific bar before
+    -- migrations or the live session can overwrite the field. Otherwise
+    -- a priest profile imported on a warrior loses its priest origin the
+    -- moment the warrior's session saves.
+    StampSourceSpecOnImportedSpecBars(profile, importedProfile)
+
     local pins = ns.Settings and ns.Settings.Pins
     if pins and type(pins.HandleFullImportSnapshot) == "function" then
         local migratedImport = CloneValue(importedProfile)
@@ -2029,6 +2064,10 @@ local function RunImportProfileSelection(core, payloadOrErr, selectedCategoryIDs
             payloadOrErr[PROFILE_EXPORT_GLOBALS_KEY],
             selectedLookup.customTrackers and nil or importedCustomTrackerMappings
         )
+        -- Same import-time stamping as the full-profile path: capture the
+        -- imported _lastSpecID onto spec-specific bars before SyncCustomTrackerBarsToCDM
+        -- builds the V2 containers (which clone bar fields verbatim).
+        StampSourceSpecOnImportedSpecBars(profile, payloadOrErr)
         SyncCustomTrackerBarsToCDM(core, profile)
         if type(profile.customTrackers) == "table" and type(profile.customTrackers.bars) == "table" then
             for _, bar in ipairs(profile.customTrackers.bars) do

@@ -6118,6 +6118,7 @@ return {
         customTrackers = {
           bars = {
             [2] = {
+              _sourceSpecID = 256,
               activeGlowColor = {
                 [1] = 1,
                 [2] = 0.84999999999999998,
