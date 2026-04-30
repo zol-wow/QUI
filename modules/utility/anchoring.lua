@@ -117,11 +117,23 @@ end
 -- AceDB serves defaults through metatables, and those defaults should not
 -- suppress module-owned positioning logic unless the user actually saved an
 -- override entry for that key.
+--
+-- Detection uses rawget so a key with no saved override returns nil (the
+-- module owns positioning). But once an override exists, return the AceDB
+-- proxy table — fields whose values match the default get stripped on save,
+-- and the apply path (parent/point/relative reads, etc.) needs them filled
+-- back in. Returning the raw stripped table caused castbars whose default
+-- parent matches the saved value (e.g. playerCastbar parent="playerFrame")
+-- to apply with parent=nil → fall back to UIParent CENTER → bar drifts to
+-- screen center after the first reload following an import.
 local function GetSavedFrameAnchorSettings(anchoringDB, key)
     if type(anchoringDB) ~= "table" or not key then
         return nil
     end
-    local settings = rawget(anchoringDB, key)
+    if rawget(anchoringDB, key) == nil then
+        return nil
+    end
+    local settings = anchoringDB[key]
     if type(settings) == "table" then
         return settings
     end
