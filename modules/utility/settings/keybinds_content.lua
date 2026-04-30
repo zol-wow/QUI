@@ -31,14 +31,6 @@ specChangeListener:SetScript("OnEvent", function(_, event, unit)
     end
 end)
 
-local ANCHOR_OPTIONS = {
-    { value = "TOPLEFT",     text = "Top Left" },
-    { value = "TOPRIGHT",    text = "Top Right" },
-    { value = "BOTTOMLEFT",  text = "Bottom Left" },
-    { value = "BOTTOMRIGHT", text = "Bottom Right" },
-    { value = "CENTER",      text = "Center" },
-}
-
 local function RefreshCDMKeybinds()
     if _G.QUI_RefreshKeybinds then _G.QUI_RefreshKeybinds() end
 end
@@ -53,97 +45,17 @@ local function RefreshAllKeybindDisplays()
 end
 
 ---------------------------------------------------------------------------
--- Viewer keybind section — renders one viewer's keybind display settings
--- as an accent-dot section + card group.
+-- Override list — drop zone + dynamic entry rows + enable toggles.
+-- Self-contained section that draws starting at startY and returns the
+-- final y. The caller is responsible for sizing the host frame; this
+-- function does call host:SetHeight() dynamically as the list grows so
+-- the section height tracks the entry count. Suitable for use as a
+-- single section inside a V2 schema tab.
 ---------------------------------------------------------------------------
-local function BuildViewerKeybindSection(tabContent, title, viewerDB, y)
-    Shared.CreateAccentDotLabel(tabContent, title, y); y = y - 22
-    local card = Shared.CreateSettingsCardGroup(tabContent, y)
-
-    local showW = GUI:CreateFormCheckbox(card.frame, nil, "showKeybinds", viewerDB, RefreshCDMKeybinds,
-        { description = "Show keybind text on each icon in this cooldown viewer." })
-    card.AddRow(Shared.BuildSettingRow(card.frame, "Show Keybinds", showW))
-
-    local anchorW = GUI:CreateFormDropdown(card.frame, nil, ANCHOR_OPTIONS, "keybindAnchor", viewerDB, RefreshCDMKeybinds,
-        { description = "Which corner of the icon the keybind text anchors to." })
-    card.AddRow(Shared.BuildSettingRow(card.frame, "Keybind Anchor", anchorW))
-
-    local sizeW = GUI:CreateFormSlider(card.frame, nil, 6, 18, 1, "keybindTextSize", viewerDB, RefreshCDMKeybinds, nil,
-        { description = "Font size of the keybind text, in pixels." })
-    card.AddRow(Shared.BuildSettingRow(card.frame, "Keybind Text Size", sizeW))
-
-    local colorW = GUI:CreateFormColorPicker(card.frame, nil, "keybindTextColor", viewerDB, RefreshCDMKeybinds, nil,
-        { description = "Color of the keybind text drawn on top of each icon." })
-    card.AddRow(Shared.BuildSettingRow(card.frame, "Keybind Text Color", colorW))
-
-    local xW = GUI:CreateFormSlider(card.frame, nil, -20, 20, 1, "keybindOffsetX", viewerDB, RefreshCDMKeybinds, nil,
-        { description = "Horizontal pixel offset of the keybind text from its anchor corner." })
-    local yW = GUI:CreateFormSlider(card.frame, nil, -20, 20, 1, "keybindOffsetY", viewerDB, RefreshCDMKeybinds, nil,
-        { description = "Vertical pixel offset of the keybind text from its anchor corner." })
-    card.AddRow(
-        Shared.BuildSettingRow(card.frame, "Horizontal Offset", xW),
-        Shared.BuildSettingRow(card.frame, "Vertical Offset", yW)
-    )
-
-    card.Finalize()
-    return y - card.frame:GetHeight() - SECTION_GAP
-end
-
----------------------------------------------------------------------------
--- Keybinds tab — viewer displays + override list
----------------------------------------------------------------------------
--- containerKey is optional. When provided, the viewer-specific sections
--- (Essential / Utility Keybind Display) are filtered to match:
---   "essential"  -> only Essential viewer section renders
---   "utility"    -> only Utility viewer section renders
---   anything else (custom container) -> both viewer sections are skipped
--- The Keybind Text Overrides section is container-agnostic and always
--- renders. When containerKey is nil, legacy "show everything" behavior.
-local function BuildKeybindsTab(tabContent, containerKey)
-    local db = Shared.GetDB()
-    local y = -10
+local function BuildKeybindOverridesSection(tabContent, startY)
+    local y = startY or 0
     local PAD = Shared.PADDING
 
-    GUI:SetSearchContext({ tabIndex = 4, tabName = "Cooldown Manager", subTabIndex = 7, subTabName = "Keybinds" })
-
-    local info = GUI:CreateLabel(
-        tabContent,
-        "Configure CDM keybind text display and override the auto-detected text for specific spells or items.",
-        11, C.textMuted
-    )
-    info:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
-    info:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-    info:SetJustifyH("LEFT")
-    info:SetWordWrap(true)
-    info:SetHeight(30)
-    y = y - 38
-
-    if not db or not db.viewers then
-        local noDataLabel = GUI:CreateLabel(tabContent, "Keybind settings are not available yet.", 12, C.textMuted)
-        noDataLabel:SetPoint("TOPLEFT", PAD, y)
-        tabContent:SetHeight(math.abs(y) + 60)
-        return
-    end
-
-    local showEssential = (containerKey == nil) or (containerKey == "essential")
-    local showUtility   = (containerKey == nil) or (containerKey == "utility")
-
-    local essentialViewer = db.viewers.EssentialCooldownViewer
-    local utilityViewer = db.viewers.UtilityCooldownViewer
-
-    if showEssential and essentialViewer then
-        y = BuildViewerKeybindSection(tabContent, "Essential Keybind Display", essentialViewer, y)
-    end
-
-    if showUtility and utilityViewer then
-        y = BuildViewerKeybindSection(tabContent, "Utility Keybind Display", utilityViewer, y)
-    end
-
-    ---------------------------------------------------------------------------
-    -- Override list — this surface is not "settings rows", so keeps its
-    -- specialized layout (drop zone + dynamic entry rows). Only the
-    -- enable toggles get the card-group treatment.
-    ---------------------------------------------------------------------------
     Shared.CreateAccentDotLabel(tabContent, "Keybind Text Overrides", y); y = y - 22
 
     local overrideInfo = GUI:CreateLabel(
@@ -483,85 +395,9 @@ local function BuildKeybindsTab(tabContent, containerKey)
     specChangeCallback = function() RefreshOverrideList() end
 
     RefreshOverrideList()
-end
-
----------------------------------------------------------------------------
--- Rotation Assist tab — symmetric Essential vs. Utility settings.
----------------------------------------------------------------------------
-local function BuildRotationAssistTab(tabContent)
-    local db = Shared.GetDB()
-    local y = -10
-    local PAD = Shared.PADDING
-
-    GUI:SetSearchContext({ tabIndex = 4, tabName = "Cooldown Manager", subTabIndex = 8, subTabName = "Rotation Assist" })
-
-    local function RefreshRotationHelper()
-        if _G.QUI_RefreshRotationHelper then _G.QUI_RefreshRotationHelper() end
-    end
-
-    if not db or not db.viewers then
-        local noDataLabel = GUI:CreateLabel(tabContent, "Rotation assist settings are not available yet.", 12, C.textMuted)
-        noDataLabel:SetPoint("TOPLEFT", PAD, y)
-        tabContent:SetHeight(math.abs(y) + 60)
-        return
-    end
-
-    local essentialViewer = db.viewers.EssentialCooldownViewer
-    local utilityViewer = db.viewers.UtilityCooldownViewer
-
-    Shared.CreateAccentDotLabel(tabContent, "Rotation Helper Overlay", y); y = y - 22
-
-    local rotationInfo = GUI:CreateLabel(
-        tabContent,
-        "Shows a border on the CDM icon recommended by Blizzard's Assisted Combat. Requires Starter Build to be enabled in Gameplay > Combat.",
-        11, C.textMuted
-    )
-    rotationInfo:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
-    rotationInfo:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
-    rotationInfo:SetJustifyH("LEFT")
-    rotationInfo:SetWordWrap(true)
-    rotationInfo:SetHeight(34)
-    y = y - 42
-
-    local card = Shared.CreateSettingsCardGroup(tabContent, y)
-
-    -- Show on Essential / Show on Utility (paired toggles)
-    local essShowW = GUI:CreateFormCheckbox(card.frame, nil, "showRotationHelper", essentialViewer, RefreshRotationHelper,
-        { description = "Highlight the recommended next ability in the Essential cooldown viewer using Blizzard's Assisted Combat suggestion." })
-    local utilShowW = GUI:CreateFormCheckbox(card.frame, nil, "showRotationHelper", utilityViewer, RefreshRotationHelper,
-        { description = "Highlight the recommended next ability in the Utility cooldown viewer using Blizzard's Assisted Combat suggestion." })
-    card.AddRow(
-        Shared.BuildSettingRow(card.frame, "Show on Essential CDM", essShowW),
-        Shared.BuildSettingRow(card.frame, "Show on Utility CDM", utilShowW)
-    )
-
-    -- Essential Color / Utility Color (paired colors)
-    local essColorW = GUI:CreateFormColorPicker(card.frame, nil, "rotationHelperColor", essentialViewer, RefreshRotationHelper, nil,
-        { description = "Border color drawn around the suggested icon in the Essential viewer." })
-    local utilColorW = GUI:CreateFormColorPicker(card.frame, nil, "rotationHelperColor", utilityViewer, RefreshRotationHelper, nil,
-        { description = "Border color drawn around the suggested icon in the Utility viewer." })
-    card.AddRow(
-        Shared.BuildSettingRow(card.frame, "Essential Border Color", essColorW),
-        Shared.BuildSettingRow(card.frame, "Utility Border Color", utilColorW)
-    )
-
-    -- Essential Thickness / Utility Thickness (paired sliders)
-    local essThickW = GUI:CreateFormSlider(card.frame, nil, 1, 6, 1, "rotationHelperThickness", essentialViewer, RefreshRotationHelper, nil,
-        { description = "Thickness of the suggestion border in the Essential viewer, in pixels." })
-    local utilThickW = GUI:CreateFormSlider(card.frame, nil, 1, 6, 1, "rotationHelperThickness", utilityViewer, RefreshRotationHelper, nil,
-        { description = "Thickness of the suggestion border in the Utility viewer, in pixels." })
-    card.AddRow(
-        Shared.BuildSettingRow(card.frame, "Essential Border Thickness", essThickW),
-        Shared.BuildSettingRow(card.frame, "Utility Border Thickness", utilThickW)
-    )
-
-    card.Finalize()
-    y = y - card.frame:GetHeight() - SECTION_GAP
-
-    tabContent:SetHeight(math.abs(y) + 30)
+    return y - (entryListFrame and entryListFrame:GetHeight() or 0) - 16
 end
 
 ns.QUI_KeybindsOptions = {
-    BuildKeybindsTab = BuildKeybindsTab,
-    BuildRotationAssistTab = BuildRotationAssistTab,
+    BuildKeybindOverridesSection = BuildKeybindOverridesSection,
 }

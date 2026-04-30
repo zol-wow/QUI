@@ -223,6 +223,8 @@ local function RenderProviderSection(sectionHost, ctx, section)
     local providerOptions = MergeOptions({
         includePosition = ctx.options and ctx.options.includePosition,
         tileLayout = ctx.options and ctx.options.tileLayout,
+        layoutModePositionOnly = ctx.options and ctx.options.layoutModePositionOnly,
+        useMinimalDrawerChrome = ctx.options and ctx.options.useMinimalDrawerChrome,
     }, ResolveValue(section.providerOptions, ctx, section))
     if providerOptions.includePosition == nil then
         providerOptions.includePosition = ctx.surface and ctx.surface.includePosition

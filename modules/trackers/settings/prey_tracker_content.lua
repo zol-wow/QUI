@@ -28,7 +28,13 @@ ns.QUI_PreyTrackerOptions = {}
 function ns.QUI_PreyTrackerOptions.BuildPreyTrackerContent(content)
     local db = GetDB()
 
-    GUI:SetSearchContext({ tabIndex = 9, tabName = "Prey Tracker" })
+    -- Don't reset the search context here. The V2 renderer (ResolveFeatureSearchContext
+    -- in options/shared.lua) already populated it with tileId="gameplay" /
+    -- subPageIndex=8 / featureId="preyTrackerPage" before invoking this builder.
+    -- Calling SetSearchContext with only legacy tabIndex/tabName fields would wipe
+    -- those V2 route fields, leaving pinned widgets without a tile and routing
+    -- their Jump-to-setting through the legacy tab-9 nav map (owned by the
+    -- minimap tile).
 
     if not db then
         local noData = GUI:CreateLabel(content, "Prey Tracker settings are not available. Please reload the UI.", 12, C.textMuted)

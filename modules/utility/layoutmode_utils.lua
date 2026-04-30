@@ -103,6 +103,12 @@ end
 -- Legacy `_expanded`/`SetExpanded` fields kept as static no-ops so the old
 -- expansion-state save path (layoutmode_settings.lua) stays harmless.
 function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sections, relayout)
+    -- Layout Mode position-only rendering: suppress every collapsible except
+    -- the one nested inside Utils.BuildPositionCollapsible. Set by the layout
+    -- mode settings panel before invoking the shared renderer.
+    if Utils._layoutModePositionOnly and not Utils._insidePositionCollapsible then
+        return nil
+    end
     Utils:RefreshAccentColor()
     local ACCENT_R, ACCENT_G, ACCENT_B = Utils.ACCENT_R, Utils.ACCENT_G, Utils.ACCENT_B
     local baseHeaderHeight = Utils.HEADER_HEIGHT
@@ -279,23 +285,31 @@ function Utils.BuildPositionCollapsible(content, frameKey, anchorOpts, sections,
     if not AnchorOpts or not AnchorOpts.BuildAnchoringSection then return end
 
     local PLACEHOLDER = 6 * Utils.FORM_ROW + 8
-    Utils.CreateCollapsible(content, "Position", PLACEHOLDER, function(body)
-        local opts = {}
-        if anchorOpts then
-            for k, v in pairs(anchorOpts) do opts[k] = v end
-        end
-        opts.noHeader = true
-        local finalY = AnchorOpts:BuildAnchoringSection(body, frameKey, opts, -4)
-        local realHeight = math.abs(finalY) + 4
-        body:SetHeight(realHeight)
-        local sec = body._logicalSection
-        if sec then
-            sec._contentHeight = realHeight
-            if sec.RefreshContentHeight then
-                sec:RefreshContentHeight()
+    local prevInside = Utils._insidePositionCollapsible
+    Utils._insidePositionCollapsible = true
+    local ok, err = xpcall(function()
+        Utils.CreateCollapsible(content, "Position", PLACEHOLDER, function(body)
+            local opts = {}
+            if anchorOpts then
+                for k, v in pairs(anchorOpts) do opts[k] = v end
             end
-        end
-    end, sections, relayout)
+            opts.noHeader = true
+            local finalY = AnchorOpts:BuildAnchoringSection(body, frameKey, opts, -4)
+            local realHeight = math.abs(finalY) + 4
+            body:SetHeight(realHeight)
+            local sec = body._logicalSection
+            if sec then
+                sec._contentHeight = realHeight
+                if sec.RefreshContentHeight then
+                    sec:RefreshContentHeight()
+                end
+            end
+        end, sections, relayout)
+    end, function(msg) return msg end)
+    Utils._insidePositionCollapsible = prevInside
+    if not ok and geterrorhandler then
+        geterrorhandler()(err)
+    end
 end
 
 ---------------------------------------------------------------------------

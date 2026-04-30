@@ -582,9 +582,37 @@ local function BuildViaProvider(providerKey, parent, width, options)
     end
 
     local function BuildSurfaceContent()
-        return WithSuppressedPosition(options and options.includePosition, function()
+        -- Layout Mode passes `layoutModePositionOnly` and `useMinimalDrawerChrome`
+        -- through options. Apply them around provider.build so the flags hold for
+        -- both the initial render AND the OnShow / NotifyProviderChanged refresh
+        -- paths that re-enter BuildViaProvider with the same options object.
+        local U = ns.QUI_LayoutMode_Utils
+        local prevPositionOnly, prevMinimalChrome
+        local appliedPositionOnly, appliedMinimalChrome = false, false
+        if U and options then
+            if options.layoutModePositionOnly ~= nil then
+                prevPositionOnly = U._layoutModePositionOnly
+                U._layoutModePositionOnly = options.layoutModePositionOnly
+                appliedPositionOnly = true
+            end
+            if options.useMinimalDrawerChrome ~= nil then
+                prevMinimalChrome = U._useMinimalDrawerChrome
+                U._useMinimalDrawerChrome = options.useMinimalDrawerChrome
+                appliedMinimalChrome = true
+            end
+        end
+        local result = WithSuppressedPosition(options and options.includePosition, function()
             return provider.build(parent, providerKey, targetWidth)
         end)
+        if U then
+            if appliedPositionOnly then
+                U._layoutModePositionOnly = prevPositionOnly
+            end
+            if appliedMinimalChrome then
+                U._useMinimalDrawerChrome = prevMinimalChrome
+            end
+        end
+        return result
     end
 
     local height

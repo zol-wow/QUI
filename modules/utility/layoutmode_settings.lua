@@ -458,7 +458,6 @@ local function BuildContent(panel, key)
 
     local providerHeight = 0
     local Settings = ns.Settings
-    local RenderAdapters = Settings and Settings.RenderAdapters
     local Renderer = Settings and Settings.Renderer
     local U = ns.QUI_LayoutMode_Utils
 
@@ -474,28 +473,29 @@ local function BuildContent(panel, key)
 
         local function renderSharedFeature()
             local previousMinimalDrawerChrome = U and U._useMinimalDrawerChrome
+            local previousPositionOnly = U and U._layoutModePositionOnly
             if U then
                 U._useMinimalDrawerChrome = true
+                U._layoutModePositionOnly = usePositionOnly
             end
             local ok2, h = pcall(Renderer.RenderFeature, Renderer, feature, content, {
                 surface = "layout",
                 width = contentWidth,
                 includePosition = true,
                 positionOnly = usePositionOnly,
+                layoutModePositionOnly = usePositionOnly,
+                useMinimalDrawerChrome = true,
                 providerKey = key,
             })
             if U then
                 U._useMinimalDrawerChrome = previousMinimalDrawerChrome
+                U._layoutModePositionOnly = previousPositionOnly
             end
             ok = ok2
             return h
         end
 
-        if usePositionOnly and RenderAdapters and RenderAdapters.WithOnlyPosition then
-            totalHeight = RenderAdapters.WithOnlyPosition(renderSharedFeature)
-        else
-            totalHeight = renderSharedFeature()
-        end
+        totalHeight = renderSharedFeature()
 
         if ok then
             if totalHeight and totalHeight > 0 then

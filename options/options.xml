@@ -15,7 +15,6 @@
     <Script file="..\modules\ui\settings\hud_layering_content.lua"/>
     <Script file="..\modules\ui\settings\autohide_content.lua"/>
     <Script file="..\modules\ui\settings\skinning_content.lua"/>
-    <Script file="..\core\settings\content\frame_anchoring_content.lua"/>
     <Script file="..\core\settings\content\welcome_page.lua"/>
     <Script file="tiles\help_content.lua"/>
     <Script file="..\core\settings\content\help_page.lua"/>
@@ -25,7 +24,6 @@
     <Script file="..\modules\utility\settings\keybinds_content.lua"/>
     <Script file="..\modules\utility\settings\third_party_anchoring_content.lua"/>
     <Script file="..\core\settings\content\anchoring_shared_content.lua"/>
-    <Script file="..\modules\frames\settings\unit_frames_castbar_content.lua"/>
     <Script file="..\modules\frames\settings\click_cast_content.lua"/>
     <Script file="init.lua"/>
     <Script file="tiles\related.lua"/>

@@ -286,12 +286,29 @@ local function ResolveFeatureRouteFromPath(path)
 
     local nav = Settings and Settings.Nav
     local route = nav and type(nav.GetRoute) == "function" and nav:GetRoute(featureId) or nil
+    local resolvedFeatureId = featureId
+
+    -- The first segment of a pin path is the dbTable name (e.g. "preyTracker"),
+    -- which often differs from the registered feature id ("preyTrackerPage").
+    -- Features declare these aliases via lookupKeys; without this fallback, pins
+    -- captured under such features fall through to the legacy tabIndex/subTabIndex
+    -- nav map and misroute when another tile owns those legacy coordinates.
+    if type(route) ~= "table" and nav and type(nav.GetLookupTarget) == "function" then
+        local lookupRoute, lookupFeature = nav:GetLookupTarget(featureId)
+        if type(lookupRoute) == "table" then
+            route = lookupRoute
+            if type(lookupFeature) == "table" and type(lookupFeature.id) == "string" and lookupFeature.id ~= "" then
+                resolvedFeatureId = lookupFeature.id
+            end
+        end
+    end
+
     if type(route) ~= "table" then
         return nil
     end
 
     local resolved = {
-        featureId = featureId,
+        featureId = resolvedFeatureId,
     }
     if type(route.tileId) == "string" and route.tileId ~= "" then
         resolved.tileId = route.tileId

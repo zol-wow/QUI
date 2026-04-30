@@ -51,6 +51,7 @@ local UNIT_DISPLAY_NAMES = {
 local UNIT_SURFACE_TABS = {
     ["Frame"] = "frame",
     ["Bars"] = "bars",
+    ["Castbar"] = "castbar",
     ["Text"] = "text",
     ["Icons"] = "icons",
     ["Indicators"] = "indicators",
@@ -59,6 +60,7 @@ local UNIT_SURFACE_TABS = {
 }
 local FRAME_TAB_FEATURES = {}
 local BARS_TAB_FEATURES = {}
+local CASTBAR_TAB_FEATURES = {}
 local TEXT_TAB_FEATURES = {}
 local ICONS_TAB_FEATURES = {}
 local PORTRAIT_TAB_FEATURES = {}
@@ -1502,6 +1504,585 @@ local function BuildBarsTabFeature(unitKey)
     return feature
 end
 
+local CASTBAR_TICK_SOURCE_OPTIONS = {
+    { value = "auto",        text = "Auto (Static then Runtime)" },
+    { value = "static",      text = "Static Only" },
+    { value = "runtimeOnly", text = "Runtime Calibration Only" },
+}
+
+local CASTBAR_COPY_KEYS = {
+    "width", "height", "fontSize", "borderSize", "texture", "showIcon", "enabled",
+    "iconAnchor", "iconSpacing", "spellTextAnchor", "spellTextOffsetX", "spellTextOffsetY",
+    "timeTextAnchor", "timeTextOffsetX", "timeTextOffsetY", "showSpellText", "showTimeText",
+    "useClassColor", "channelFillForward",
+}
+
+local CASTBAR_UNIT_COPY_LABELS = {
+    player = "Player", target = "Target", targettarget = "ToT",
+    focus = "Focus", pet = "Pet", boss = "Boss",
+}
+
+local function EnsureCastbarSettings(unitDB, unitKey)
+    if type(unitDB.castbar) ~= "table" then
+        unitDB.castbar = {}
+    end
+    local castDB = unitDB.castbar
+    local defaultShowChannelTicks = (unitKey == "player")
+
+    if castDB.enabled == nil then castDB.enabled = true end
+    castDB.fontSize = castDB.fontSize or 12
+    castDB.iconSize = castDB.iconSize or 25
+    castDB.iconScale = castDB.iconScale or 1.0
+    castDB.height = castDB.height or 25
+    castDB.width = castDB.width or 250
+    if castDB.widthAdjustment == nil then castDB.widthAdjustment = 0 end
+    castDB.borderSize = castDB.borderSize or 1
+    castDB.iconBorderSize = castDB.iconBorderSize or 2
+    castDB.texture = castDB.texture or "Solid"
+    if castDB.useClassColor == nil then castDB.useClassColor = false end
+    if castDB.color == nil then
+        castDB.color = { 1, 0.7, 0, 1 }
+    elseif not castDB.color[4] or castDB.color[4] == 0 then
+        castDB.color[4] = 1
+    end
+    if castDB.bgColor == nil then castDB.bgColor = { 0.149, 0.149, 0.149, 1 } end
+    if castDB.notInterruptibleColor == nil then castDB.notInterruptibleColor = { 0.7, 0.2, 0.2, 1 } end
+    if castDB.gcdColor == nil then
+        castDB.gcdColor = { castDB.color[1], castDB.color[2], castDB.color[3], castDB.color[4] or 1 }
+    end
+    if castDB.showChannelTicks == nil then castDB.showChannelTicks = defaultShowChannelTicks end
+    castDB.channelTickThickness = castDB.channelTickThickness or 1
+    castDB.channelTickColor = castDB.channelTickColor or { 1, 1, 1, 0.9 }
+    castDB.channelTickMinConfidence = castDB.channelTickMinConfidence or 0.7
+    castDB.channelTickSourcePolicy = castDB.channelTickSourcePolicy or "auto"
+    if castDB.channelFillForward == nil then castDB.channelFillForward = false end
+    if castDB.maxLength == nil then castDB.maxLength = 0 end
+    if castDB.iconAnchor == nil then castDB.iconAnchor = "LEFT" end
+    if castDB.iconSpacing == nil then castDB.iconSpacing = 0 end
+    if castDB.showIcon == nil then castDB.showIcon = true end
+    if castDB.spellTextAnchor == nil then castDB.spellTextAnchor = "LEFT" end
+    if castDB.spellTextOffsetX == nil then castDB.spellTextOffsetX = 4 end
+    if castDB.spellTextOffsetY == nil then castDB.spellTextOffsetY = 0 end
+    if castDB.showSpellText == nil then castDB.showSpellText = true end
+    if castDB.timeTextAnchor == nil then castDB.timeTextAnchor = "RIGHT" end
+    if castDB.timeTextOffsetX == nil then castDB.timeTextOffsetX = -4 end
+    if castDB.timeTextOffsetY == nil then castDB.timeTextOffsetY = 0 end
+    if castDB.showTimeText == nil then castDB.showTimeText = true end
+    if castDB.previewMode == nil then castDB.previewMode = false end
+
+    if not castDB.anchor then
+        if castDB.lockedToEssential then castDB.anchor = "essential"
+        elseif castDB.lockedToUtility then castDB.anchor = "utility"
+        elseif castDB.lockedToFrame then castDB.anchor = "unitframe"
+        else castDB.anchor = "none" end
+        castDB.lockedToEssential = nil
+        castDB.lockedToUtility = nil
+        castDB.lockedToFrame = nil
+    end
+
+    if unitKey == "player" then
+        if castDB.showGCD == nil then castDB.showGCD = false end
+        if castDB.showGCDReverse == nil then castDB.showGCDReverse = false end
+        if castDB.showGCDMelee == nil then castDB.showGCDMelee = (castDB.showGCDMeleeOnly == true) end
+        if castDB.hideTimeTextOnEmpowered == nil then castDB.hideTimeTextOnEmpowered = false end
+        if castDB.empoweredLevelTextAnchor == nil then castDB.empoweredLevelTextAnchor = "CENTER" end
+        if castDB.empoweredLevelTextOffsetX == nil then castDB.empoweredLevelTextOffsetX = 0 end
+        if castDB.empoweredLevelTextOffsetY == nil then castDB.empoweredLevelTextOffsetY = 0 end
+        if castDB.showEmpoweredLevel == nil then castDB.showEmpoweredLevel = false end
+        if type(castDB.empoweredStageColors) ~= "table" then castDB.empoweredStageColors = {} end
+        if type(castDB.empoweredFillColors) ~= "table" then castDB.empoweredFillColors = {} end
+    end
+
+    return castDB
+end
+
+local function CopyCastbarSettings(sourceDB, targetDB, sourceUnitKey, targetUnitKey)
+    if not sourceDB or not targetDB then return end
+    for _, key in ipairs(CASTBAR_COPY_KEYS) do
+        if sourceDB[key] ~= nil then targetDB[key] = sourceDB[key] end
+    end
+    local skipTicks = (sourceUnitKey == "boss") or (targetUnitKey == "boss")
+        or (sourceUnitKey == "pet") or (targetUnitKey == "pet")
+    if not skipTicks then
+        for _, key in ipairs({ "showChannelTicks", "channelTickThickness", "channelTickMinConfidence", "channelTickSourcePolicy" }) do
+            if sourceDB[key] ~= nil then targetDB[key] = sourceDB[key] end
+        end
+        if sourceDB.channelTickColor then
+            targetDB.channelTickColor = { sourceDB.channelTickColor[1], sourceDB.channelTickColor[2], sourceDB.channelTickColor[3], sourceDB.channelTickColor[4] }
+        end
+    end
+    for _, colorKey in ipairs({ "color", "bgColor", "gcdColor", "notInterruptibleColor" }) do
+        local c = sourceDB[colorKey]
+        if c then targetDB[colorKey] = { c[1], c[2], c[3], c[4] } end
+    end
+    if sourceDB.empoweredStageColors then
+        targetDB.empoweredStageColors = {}
+        for i = 1, 5 do
+            local c = sourceDB.empoweredStageColors[i]
+            if c then targetDB.empoweredStageColors[i] = { c[1], c[2], c[3], c[4] } end
+        end
+    end
+    if sourceDB.empoweredFillColors then
+        targetDB.empoweredFillColors = {}
+        for i = 1, 5 do
+            local c = sourceDB.empoweredFillColors[i]
+            if c then targetDB.empoweredFillColors[i] = { c[1], c[2], c[3], c[4] } end
+        end
+    end
+end
+
+local function RenderCastbarSection(sectionHost, ctx)
+    local gui = GetGUI()
+    local optionsAPI = GetOptionsAPI()
+    local unitKey = ctx and ctx.options and ctx.options.unitKey or nil
+    local unit = ResolveUnitDB(unitKey)
+    if not gui or not optionsAPI or not unit then
+        return nil
+    end
+
+    local castDB = EnsureCastbarSettings(unit.unitDB, unitKey)
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Castbar"))
+    if not builder then
+        return nil
+    end
+
+    local refresh = RefreshUnitFrames
+
+    -- General -----------------------------------------------------------
+    builder.Header("General")
+    local generalCard = builder.Card()
+    local enableCheckbox = gui:CreateFormCheckbox(generalCard.frame, nil, "enabled", castDB, refresh, {
+        description = "Show the castbar for this unit.",
+    })
+    local showIconCheckbox = gui:CreateFormCheckbox(generalCard.frame, nil, "showIcon", castDB, refresh, {
+        description = "Show the spell icon beside the castbar.",
+    })
+    generalCard.AddRow(
+        optionsAPI.BuildSettingRow(generalCard.frame, "Enable Castbar", enableCheckbox),
+        optionsAPI.BuildSettingRow(generalCard.frame, "Show Spell Icon", showIconCheckbox)
+    )
+
+    local channelFillCheckbox = gui:CreateFormCheckbox(generalCard.frame, nil, "channelFillForward", castDB, refresh, {
+        description = "Channeled spells fill the bar from empty to full instead of draining from full to empty.",
+    })
+    if unitKey == "player" then
+        local castColorPicker
+        local useClassColorCheckbox = gui:CreateFormCheckbox(generalCard.frame, nil, "useClassColor", castDB, function()
+            refresh()
+            if castColorPicker and castColorPicker.SetEnabled then
+                castColorPicker:SetEnabled(not castDB.useClassColor)
+            end
+        end, {
+            description = "Fill the player castbar with your class color. Disables the Castbar Color picker while on.",
+        })
+        generalCard.AddRow(
+            optionsAPI.BuildSettingRow(generalCard.frame, "Use Class Color", useClassColorCheckbox),
+            optionsAPI.BuildSettingRow(generalCard.frame, "Channel Fills Forward", channelFillCheckbox)
+        )
+
+        castColorPicker = gui:CreateFormColorPicker(generalCard.frame, nil, "color", castDB, refresh, nil, {
+            description = "Base fill color of the castbar. Ignored while Use Class Color is on.",
+        })
+        if castDB.useClassColor and castColorPicker.SetEnabled then
+            castColorPicker:SetEnabled(false)
+        end
+        local bgColorPicker = gui:CreateFormColorPicker(generalCard.frame, nil, "bgColor", castDB, refresh, nil, {
+            description = "Color of the unfilled portion of the castbar.",
+        })
+        generalCard.AddRow(
+            optionsAPI.BuildSettingRow(generalCard.frame, "Castbar Color", castColorPicker),
+            optionsAPI.BuildSettingRow(generalCard.frame, "Background Color", bgColorPicker)
+        )
+    else
+        generalCard.AddRow(optionsAPI.BuildSettingRow(generalCard.frame, "Channel Fills Forward", channelFillCheckbox))
+
+        local castColorPicker = gui:CreateFormColorPicker(generalCard.frame, nil, "color", castDB, refresh, nil, {
+            description = "Base fill color of the castbar. For target/focus, this is the interruptible-cast color.",
+        })
+        local bgColorPicker = gui:CreateFormColorPicker(generalCard.frame, nil, "bgColor", castDB, refresh, nil, {
+            description = "Color of the unfilled portion of the castbar.",
+        })
+        generalCard.AddRow(
+            optionsAPI.BuildSettingRow(generalCard.frame, "Castbar Color", castColorPicker),
+            optionsAPI.BuildSettingRow(generalCard.frame, "Background Color", bgColorPicker)
+        )
+
+        if unitKey == "target" or unitKey == "focus" then
+            local notInterruptiblePicker = gui:CreateFormColorPicker(generalCard.frame, nil, "notInterruptibleColor", castDB, refresh, nil, {
+                description = "Color applied to the castbar when the target is casting something you can't interrupt.",
+            })
+            generalCard.AddRow(optionsAPI.BuildSettingRow(generalCard.frame, "Uninterruptible Cast Color", notInterruptiblePicker))
+        end
+    end
+
+    local textureDropdown = gui:CreateFormDropdown(generalCard.frame, nil, optionsAPI.GetTextureList(), "texture", castDB, refresh, {
+        description = "Statusbar texture used to fill the castbar. Supports SharedMedia.",
+    })
+    local borderSlider = gui:CreateFormSlider(generalCard.frame, nil, 0, 5, 1, "borderSize", castDB, refresh, nil, {
+        description = "Thickness of the castbar outline in pixels. 0 hides the outline.",
+    })
+    generalCard.AddRow(
+        optionsAPI.BuildSettingRow(generalCard.frame, "Bar Texture", textureDropdown),
+        optionsAPI.BuildSettingRow(generalCard.frame, "Border Size", borderSlider)
+    )
+    builder.CloseCard(generalCard)
+
+    -- GCD (player) ------------------------------------------------------
+    if unitKey == "player" then
+        builder.Header("GCD")
+        local gcdCard = builder.Card()
+        local showGCDCheckbox = gui:CreateFormCheckbox(gcdCard.frame, nil, "showGCD", castDB, refresh, {
+            description = "Animate the player castbar as a sweep during your global cooldown even when you're not casting.",
+        })
+        local reverseCheckbox = gui:CreateFormCheckbox(gcdCard.frame, nil, "showGCDReverse", castDB, refresh, {
+            description = "Reverse the direction of the GCD sweep on the castbar.",
+        })
+        gcdCard.AddRow(
+            optionsAPI.BuildSettingRow(gcdCard.frame, "Show GCD as Castbar", showGCDCheckbox),
+            optionsAPI.BuildSettingRow(gcdCard.frame, "Reverse Direction", reverseCheckbox)
+        )
+
+        local meleeCheckbox = gui:CreateFormCheckbox(gcdCard.frame, nil, "showGCDMelee", castDB, refresh, {
+            description = "Sweep the GCD during instant melee swings, not just during spell casts.",
+        })
+        local gcdColorPicker = gui:CreateFormColorPicker(gcdCard.frame, nil, "gcdColor", castDB, refresh, nil, {
+            description = "Fill color used for the GCD sweep (separate from the normal cast color).",
+        })
+        gcdCard.AddRow(
+            optionsAPI.BuildSettingRow(gcdCard.frame, "Show on Melee Swings", meleeCheckbox),
+            optionsAPI.BuildSettingRow(gcdCard.frame, "GCD Bar Color", gcdColorPicker)
+        )
+        builder.CloseCard(gcdCard)
+    end
+
+    -- Size --------------------------------------------------------------
+    builder.Header("Size")
+    local sizeCard = builder.Card()
+    local widthSlider = gui:CreateFormSlider(sizeCard.frame, nil, 50, 2000, 1, "width", castDB, refresh, nil, {
+        description = "Pixel width of the castbar.",
+    })
+    local heightSlider = gui:CreateFormSlider(sizeCard.frame, nil, 4, 60, 1, "height", castDB, refresh, nil, {
+        description = "Pixel height of the castbar itself.",
+    })
+    sizeCard.AddRow(
+        optionsAPI.BuildSettingRow(sizeCard.frame, "Width", widthSlider),
+        optionsAPI.BuildSettingRow(sizeCard.frame, "Bar Height", heightSlider)
+    )
+
+    local iconSizeSlider = gui:CreateFormSlider(sizeCard.frame, nil, 8, 80, 1, "iconSize", castDB, refresh, nil, {
+        description = "Pixel size of the spell icon beside the castbar.",
+    })
+    local iconScaleSlider = gui:CreateFormSlider(sizeCard.frame, nil, 0.5, 2.0, 0.1, "iconScale", castDB, refresh, nil, {
+        description = "Scale multiplier applied to the spell icon. >1 enlarges it relative to the bar.",
+    })
+    sizeCard.AddRow(
+        optionsAPI.BuildSettingRow(sizeCard.frame, "Icon Size", iconSizeSlider),
+        optionsAPI.BuildSettingRow(sizeCard.frame, "Icon Scale", iconScaleSlider)
+    )
+
+    local previewCheckbox = gui:CreateFormCheckbox(sizeCard.frame, nil, "previewMode", castDB, refresh, {
+        description = "Render a fake spell on the castbar for visual tuning.",
+    })
+    sizeCard.AddRow(optionsAPI.BuildSettingRow(sizeCard.frame, "Castbar Preview", previewCheckbox))
+    builder.CloseCard(sizeCard)
+
+    -- Channel Ticks (skip boss/pet) ------------------------------------
+    if unitKey ~= "boss" and unitKey ~= "pet" then
+        builder.Header("Channel Ticks")
+        local tickCard = builder.Card()
+        local showTicksCheckbox = gui:CreateFormCheckbox(tickCard.frame, nil, "showChannelTicks", castDB, refresh, {
+            description = "Draw tick marks on the castbar at the moments a channeled spell triggers a tick.",
+        })
+        local thicknessSlider = gui:CreateFormSlider(tickCard.frame, nil, 1, 5, 0.5, "channelTickThickness", castDB, refresh, nil, {
+            description = "Thickness of the tick markers, in pixels.",
+        })
+        tickCard.AddRow(
+            optionsAPI.BuildSettingRow(tickCard.frame, "Show Tick Markers", showTicksCheckbox),
+            optionsAPI.BuildSettingRow(tickCard.frame, "Tick Thickness", thicknessSlider)
+        )
+
+        local sourceDropdown = gui:CreateFormDropdown(tickCard.frame, nil, CASTBAR_TICK_SOURCE_OPTIONS, "channelTickSourcePolicy", castDB, refresh, {
+            description = "Where the tick timings come from. Auto tries QUI's static table first, then live calibration.",
+        })
+        local confidenceSlider = gui:CreateFormSlider(tickCard.frame, nil, 0.5, 1.0, 0.05, "channelTickMinConfidence", castDB, refresh, nil, {
+            description = "Minimum calibration confidence required before runtime-detected ticks are drawn.",
+        })
+        tickCard.AddRow(
+            optionsAPI.BuildSettingRow(tickCard.frame, "Tick Source", sourceDropdown),
+            optionsAPI.BuildSettingRow(tickCard.frame, "Min Confidence", confidenceSlider)
+        )
+
+        local tickColorPicker = gui:CreateFormColorPicker(tickCard.frame, nil, "channelTickColor", castDB, refresh, nil, {
+            description = "Color of the tick markers drawn on the castbar.",
+        })
+        tickCard.AddRow(optionsAPI.BuildSettingRow(tickCard.frame, "Tick Color", tickColorPicker))
+        builder.CloseCard(tickCard)
+    end
+
+    -- Text & Display ---------------------------------------------------
+    builder.Header("Text & Display")
+    local textCard = builder.Card()
+    local fontSizeSlider = gui:CreateFormSlider(textCard.frame, nil, 8, 24, 1, "fontSize", castDB, refresh, nil, {
+        description = "Font size used for the spell name and cast time text on the castbar.",
+    })
+    local maxLenSlider = gui:CreateFormSlider(textCard.frame, nil, 0, 30, 1, "maxLength", castDB, refresh, nil, {
+        description = "Maximum number of characters shown for the spell name. 0 disables truncation.",
+    })
+    textCard.AddRow(
+        optionsAPI.BuildSettingRow(textCard.frame, "Font Size", fontSizeSlider),
+        optionsAPI.BuildSettingRow(textCard.frame, "Max Length (0=none)", maxLenSlider)
+    )
+    builder.CloseCard(textCard)
+
+    -- Element Positioning: Icon ----------------------------------------
+    builder.Header("Icon Positioning")
+    local iconCard = builder.Card()
+    local iconAnchorDropdown = gui:CreateFormDropdown(iconCard.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "iconAnchor", castDB, refresh, {
+        description = "Which edge or corner of the castbar the spell icon attaches to.",
+    })
+    local iconSpacingSlider = gui:CreateFormSlider(iconCard.frame, nil, -50, 50, 1, "iconSpacing", castDB, refresh, nil, {
+        description = "Pixel gap between the icon and the castbar. Negative values overlap them.",
+    })
+    iconCard.AddRow(
+        optionsAPI.BuildSettingRow(iconCard.frame, "Icon Anchor", iconAnchorDropdown),
+        optionsAPI.BuildSettingRow(iconCard.frame, "Icon Spacing", iconSpacingSlider)
+    )
+
+    local iconBorderSlider = gui:CreateFormSlider(iconCard.frame, nil, 0, 5, 0.1, "iconBorderSize", castDB, refresh, nil, {
+        description = "Thickness of the border drawn around the spell icon, in pixels.",
+    })
+    iconCard.AddRow(optionsAPI.BuildSettingRow(iconCard.frame, "Icon Border Size", iconBorderSlider))
+    builder.CloseCard(iconCard)
+
+    -- Spell Name Text --------------------------------------------------
+    builder.Header("Spell Name Text")
+    local spellTextCard = builder.Card()
+    local spellAnchorDropdown = gui:CreateFormDropdown(spellTextCard.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "spellTextAnchor", castDB, refresh, {
+        description = "Which edge or corner of the castbar the spell name anchors to.",
+    })
+    local spellShowCheckbox = gui:CreateFormCheckbox(spellTextCard.frame, nil, "showSpellText", castDB, refresh, {
+        description = "Display the spell name on top of the castbar.",
+    })
+    spellTextCard.AddRow(
+        optionsAPI.BuildSettingRow(spellTextCard.frame, "Spell Text Anchor", spellAnchorDropdown),
+        optionsAPI.BuildSettingRow(spellTextCard.frame, "Show Spell Text", spellShowCheckbox)
+    )
+
+    local spellOffXSlider = gui:CreateFormSlider(spellTextCard.frame, nil, -200, 200, 1, "spellTextOffsetX", castDB, refresh, nil, {
+        description = "Horizontal pixel offset of the spell name from its anchor.",
+    })
+    local spellOffYSlider = gui:CreateFormSlider(spellTextCard.frame, nil, -200, 200, 1, "spellTextOffsetY", castDB, refresh, nil, {
+        description = "Vertical pixel offset of the spell name from its anchor.",
+    })
+    spellTextCard.AddRow(
+        optionsAPI.BuildSettingRow(spellTextCard.frame, "Spell X Offset", spellOffXSlider),
+        optionsAPI.BuildSettingRow(spellTextCard.frame, "Spell Y Offset", spellOffYSlider)
+    )
+    builder.CloseCard(spellTextCard)
+
+    -- Time Remaining Text ----------------------------------------------
+    builder.Header("Time Remaining Text")
+    local timeTextCard = builder.Card()
+    local timeAnchorDropdown = gui:CreateFormDropdown(timeTextCard.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "timeTextAnchor", castDB, refresh, {
+        description = "Which edge or corner of the castbar the time remaining text anchors to.",
+    })
+    local timeShowCheckbox = gui:CreateFormCheckbox(timeTextCard.frame, nil, "showTimeText", castDB, refresh, {
+        description = "Display the cast time remaining (e.g. 1.4s) on top of the castbar.",
+    })
+    timeTextCard.AddRow(
+        optionsAPI.BuildSettingRow(timeTextCard.frame, "Time Text Anchor", timeAnchorDropdown),
+        optionsAPI.BuildSettingRow(timeTextCard.frame, "Show Time Text", timeShowCheckbox)
+    )
+
+    local timeOffXSlider = gui:CreateFormSlider(timeTextCard.frame, nil, -200, 200, 1, "timeTextOffsetX", castDB, refresh, nil, {
+        description = "Horizontal pixel offset of the time text from its anchor.",
+    })
+    local timeOffYSlider = gui:CreateFormSlider(timeTextCard.frame, nil, -200, 200, 1, "timeTextOffsetY", castDB, refresh, nil, {
+        description = "Vertical pixel offset of the time text from its anchor.",
+    })
+    timeTextCard.AddRow(
+        optionsAPI.BuildSettingRow(timeTextCard.frame, "Time X Offset", timeOffXSlider),
+        optionsAPI.BuildSettingRow(timeTextCard.frame, "Time Y Offset", timeOffYSlider)
+    )
+    builder.CloseCard(timeTextCard)
+
+    -- Empowered (player) -----------------------------------------------
+    if unitKey == "player" then
+        builder.Header("Empowered Spells")
+        local empoweredCard = builder.Card()
+        local hideTimeCheckbox = gui:CreateFormCheckbox(empoweredCard.frame, nil, "hideTimeTextOnEmpowered", castDB, refresh, {
+            description = "Hide the time remaining text while casting an empowered spell so the stage markers read more clearly.",
+        })
+        local showLevelCheckbox = gui:CreateFormCheckbox(empoweredCard.frame, nil, "showEmpoweredLevel", castDB, refresh, {
+            description = "Display the current empowered stage number on the castbar while casting an empowered spell.",
+        })
+        empoweredCard.AddRow(
+            optionsAPI.BuildSettingRow(empoweredCard.frame, "Hide Time Text on Empowered", hideTimeCheckbox),
+            optionsAPI.BuildSettingRow(empoweredCard.frame, "Show Stage Number", showLevelCheckbox)
+        )
+
+        local levelAnchorDropdown = gui:CreateFormDropdown(empoweredCard.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "empoweredLevelTextAnchor", castDB, refresh, {
+            description = "Where the current empowered stage number is anchored on the castbar.",
+        })
+        empoweredCard.AddRow(optionsAPI.BuildSettingRow(empoweredCard.frame, "Stage Number Anchor", levelAnchorDropdown))
+
+        local levelOffXSlider = gui:CreateFormSlider(empoweredCard.frame, nil, -200, 200, 1, "empoweredLevelTextOffsetX", castDB, refresh, nil, {
+            description = "Horizontal pixel offset of the empowered stage text from its anchor.",
+        })
+        local levelOffYSlider = gui:CreateFormSlider(empoweredCard.frame, nil, -200, 200, 1, "empoweredLevelTextOffsetY", castDB, refresh, nil, {
+            description = "Vertical pixel offset of the empowered stage text from its anchor.",
+        })
+        empoweredCard.AddRow(
+            optionsAPI.BuildSettingRow(empoweredCard.frame, "Stage Number X Offset", levelOffXSlider),
+            optionsAPI.BuildSettingRow(empoweredCard.frame, "Stage Number Y Offset", levelOffYSlider)
+        )
+        builder.CloseCard(empoweredCard)
+
+        local castbarMod = ns.QUI_Castbar
+        local defaultStageColors = (castbarMod and castbarMod.STAGE_COLORS) or {}
+        local defaultFillColors = (castbarMod and castbarMod.STAGE_FILL_COLORS) or {}
+        local stagePickers, fillPickers = {}, {}
+
+        for i = 1, 5 do
+            if not castDB.empoweredStageColors[i] and defaultStageColors[i] then
+                local d = defaultStageColors[i]
+                castDB.empoweredStageColors[i] = { d[1], d[2], d[3], d[4] }
+            end
+            if not castDB.empoweredFillColors[i] and defaultFillColors[i] then
+                local d = defaultFillColors[i]
+                castDB.empoweredFillColors[i] = { d[1], d[2], d[3], d[4] }
+            end
+        end
+
+        builder.Header("Empowered Stage Colors")
+        builder.Description("Background overlay for each stage of an empowered spell.")
+        local stageCard = builder.Card()
+        for i = 1, 5, 2 do
+            local widget1 = gui:CreateFormColorPicker(stageCard.frame, nil, i, castDB.empoweredStageColors, refresh, nil, {
+                description = "Background overlay color for empowered stage " .. i .. ".",
+            })
+            stagePickers[i] = widget1
+            local row1 = optionsAPI.BuildSettingRow(stageCard.frame, "Stage " .. i, widget1)
+            local row2
+            if i + 1 <= 5 then
+                local widget2 = gui:CreateFormColorPicker(stageCard.frame, nil, i + 1, castDB.empoweredStageColors, refresh, nil, {
+                    description = "Background overlay color for empowered stage " .. (i + 1) .. ".",
+                })
+                stagePickers[i + 1] = widget2
+                row2 = optionsAPI.BuildSettingRow(stageCard.frame, "Stage " .. (i + 1), widget2)
+            end
+            if row2 then stageCard.AddRow(row1, row2) else stageCard.AddRow(row1) end
+        end
+        builder.CloseCard(stageCard)
+
+        builder.Header("Empowered Fill Colors")
+        builder.Description("Castbar fill color for each stage of an empowered spell.")
+        local fillCard = builder.Card()
+        for i = 1, 5, 2 do
+            local widget1 = gui:CreateFormColorPicker(fillCard.frame, nil, i, castDB.empoweredFillColors, refresh, nil, {
+                description = "Fill color used for the castbar itself during empowered stage " .. i .. ".",
+            })
+            fillPickers[i] = widget1
+            local row1 = optionsAPI.BuildSettingRow(fillCard.frame, "Fill " .. i, widget1)
+            local row2
+            if i + 1 <= 5 then
+                local widget2 = gui:CreateFormColorPicker(fillCard.frame, nil, i + 1, castDB.empoweredFillColors, refresh, nil, {
+                    description = "Fill color used for the castbar itself during empowered stage " .. (i + 1) .. ".",
+                })
+                fillPickers[i + 1] = widget2
+                row2 = optionsAPI.BuildSettingRow(fillCard.frame, "Fill " .. (i + 1), widget2)
+            end
+            if row2 then fillCard.AddRow(row1, row2) else fillCard.AddRow(row1) end
+        end
+        builder.CloseCard(fillCard)
+
+        builder.Row(function(row)
+            local resetBtn = gui:CreateButton(row, "Reset Empowered Colors to Defaults", 260, 24, function()
+                for i = 1, 5 do
+                    if defaultStageColors[i] then
+                        local d = defaultStageColors[i]
+                        castDB.empoweredStageColors[i] = { d[1], d[2], d[3], d[4] }
+                        if stagePickers[i] and stagePickers[i].swatch then
+                            stagePickers[i].swatch:SetBackdropColor(d[1], d[2], d[3], d[4])
+                        end
+                    end
+                    if defaultFillColors[i] then
+                        local d = defaultFillColors[i]
+                        castDB.empoweredFillColors[i] = { d[1], d[2], d[3], d[4] }
+                        if fillPickers[i] and fillPickers[i].swatch then
+                            fillPickers[i].swatch:SetBackdropColor(d[1], d[2], d[3], d[4])
+                        end
+                    end
+                end
+                refresh()
+            end)
+            resetBtn:SetPoint("LEFT", row, "LEFT", 0, 0)
+        end)
+    end
+
+    -- Copy From Other Unit ---------------------------------------------
+    local copyOptions = {}
+    for _, k in ipairs({ "player", "target", "targettarget", "focus", "pet", "boss" }) do
+        if k ~= unitKey then
+            copyOptions[#copyOptions + 1] = { value = k, text = CASTBAR_UNIT_COPY_LABELS[k] }
+        end
+    end
+    local copySelector = { selected = copyOptions[1] and copyOptions[1].value or nil }
+
+    builder.Header("Copy Settings")
+    local copyCard = builder.Card()
+    local copyDropdown = gui:CreateFormDropdown(copyCard.frame, nil, copyOptions, "selected", copySelector, nil, {
+        description = "Pick another unit's castbar configuration to copy into this one. Click Apply to perform the copy.",
+    })
+    copyCard.AddRow(optionsAPI.BuildSettingRow(copyCard.frame, "Copy From Unit", copyDropdown))
+    builder.CloseCard(copyCard)
+
+    builder.Row(function(row)
+        local applyBtn = gui:CreateButton(row, "Apply Copy", 100, 24, function()
+            local sourceKey = copySelector.selected
+            if not sourceKey then return end
+            local sourceUnitDB = unit.ufdb and unit.ufdb[sourceKey]
+            if sourceUnitDB and sourceUnitDB.castbar then
+                CopyCastbarSettings(sourceUnitDB.castbar, castDB, sourceKey, unitKey)
+                refresh()
+            end
+        end)
+        applyBtn:SetPoint("LEFT", row, "LEFT", 0, 0)
+    end)
+
+    return builder.Height()
+end
+
+local function BuildCastbarTabFeature(unitKey)
+    if CASTBAR_TAB_FEATURES[unitKey] then
+        return CASTBAR_TAB_FEATURES[unitKey]
+    end
+
+    local feature = Schema.Feature({
+        id = "unitFramesCastbarTab:" .. unitKey,
+        surfaces = {
+            unitFrameTab = {
+                sections = { "castbar" },
+                padding = 10,
+                sectionGap = 14,
+                topPadding = 10,
+                bottomPadding = 40,
+            },
+        },
+        sections = {
+            Schema.Section({
+                id = "castbar",
+                kind = "custom",
+                minHeight = 600,
+                render = RenderCastbarSection,
+            }),
+        },
+    })
+
+    CASTBAR_TAB_FEATURES[unitKey] = feature
+    return feature
+end
+
 local function RenderTextNameSection(sectionHost, ctx)
     local gui = GetGUI()
     local optionsAPI = GetOptionsAPI()
@@ -2923,6 +3504,28 @@ function UnitFramesSchema.RenderBarsTab(host, unitKey)
     end
 
     return Renderer:RenderFeature(BuildBarsTabFeature(unitKey), host, {
+        surface = "unitFrameTab",
+        width = width,
+        unitKey = unitKey,
+    }) ~= nil
+end
+
+function UnitFramesSchema.RenderCastbarTab(host, unitKey)
+    if not host then
+        return false
+    end
+
+    local unit = ResolveUnitDB(unitKey)
+    if not unit then
+        return false
+    end
+
+    local width = host.GetWidth and host:GetWidth() or 0
+    if type(width) ~= "number" or width <= 0 then
+        width = 760
+    end
+
+    return Renderer:RenderFeature(BuildCastbarTabFeature(unitKey), host, {
         surface = "unitFrameTab",
         width = width,
         unitKey = unitKey,

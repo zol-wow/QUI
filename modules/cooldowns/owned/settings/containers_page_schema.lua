@@ -914,6 +914,56 @@ local function RenderEntriesSection(sectionHost, ctx)
     return math.max(height, 160)
 end
 
+local function AppendHUDMinWidthSection(builder, gui, optionsAPI)
+    if not builder or not gui or not optionsAPI then
+        return
+    end
+
+    local profile = GetProfileDB()
+    if type(profile) ~= "table" then
+        return
+    end
+    if type(profile.frameAnchoring) ~= "table" then
+        profile.frameAnchoring = {}
+    end
+
+    local hudMinWidth
+    if Helpers and type(Helpers.MigrateHUDMinWidthSettings) == "function" then
+        hudMinWidth = Helpers.MigrateHUDMinWidthSettings(profile.frameAnchoring)
+    end
+    if type(hudMinWidth) ~= "table" then
+        local defaultWidth = (Helpers and Helpers.HUD_MIN_WIDTH_DEFAULT) or 200
+        profile.frameAnchoring.hudMinWidth = { enabled = false, width = defaultWidth }
+        hudMinWidth = profile.frameAnchoring.hudMinWidth
+    end
+
+    local minWidth = (Helpers and Helpers.HUD_MIN_WIDTH_MIN) or 100
+    local maxWidth = (Helpers and Helpers.HUD_MIN_WIDTH_MAX) or 500
+
+    local function refresh()
+        if _G.QUI_RefreshNCDM then
+            _G.QUI_RefreshNCDM()
+        elseif _G.QUI_UpdateAnchoredFrames then
+            _G.QUI_UpdateAnchoredFrames()
+        end
+    end
+
+    builder.Header("HUD Minimum Width (When Anchored)")
+    local card = builder.Card()
+
+    local enableCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", hudMinWidth, refresh, {
+        description = "Enforce a minimum width on player and target frames when they are anchored to the Cooldown Manager, so they don't collapse when the HUD shrinks.",
+    })
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Enable Minimum Width", enableCheckbox))
+
+    local widthSlider = gui:CreateFormSlider(card.frame, nil, minWidth, maxWidth, 1, "width", hudMinWidth, refresh, nil, {
+        description = "Pixel width the CDM-anchored HUD should never shrink below.",
+    })
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Minimum Width", widthSlider))
+
+    builder.CloseCard(card)
+end
+
 local function RenderLayoutSection(sectionHost, ctx)
     local containerKey = ResolveContainerKey(ctx)
     if not containerKey then
@@ -1286,6 +1336,11 @@ local function RenderLayoutSection(sectionHost, ctx)
                 builder.Spacer(6)
                 AppendTrackerRowSection(builder, gui, optionsAPI, rowNum, rowData, refresh)
             end
+        end
+
+        if containerKey == "essential" then
+            builder.Spacer(6)
+            AppendHUDMinWidthSection(builder, gui, optionsAPI)
         end
 
         return builder.Height()
@@ -1844,6 +1899,45 @@ local function RenderEffectsSection(sectionHost, ctx)
     )
     builder.CloseCard(highlighterCard)
 
+    if containerKey == "essential" or containerKey == "utility" then
+        local viewerDB
+        local profile = effectsCtx.profile
+        if profile and profile.viewers then
+            if containerKey == "essential" then
+                viewerDB = profile.viewers.EssentialCooldownViewer
+            else
+                viewerDB = profile.viewers.UtilityCooldownViewer
+            end
+        end
+        if type(viewerDB) == "table" then
+            local function RefreshRotationHelper()
+                if _G.QUI_RefreshRotationHelper then
+                    _G.QUI_RefreshRotationHelper()
+                end
+            end
+
+            builder.Spacer(6)
+            builder.Header("Rotation Helper Overlay")
+            local rhCard = builder.Card()
+            local rhEnableCheckbox = gui:CreateFormCheckbox(rhCard.frame, nil, "showRotationHelper", viewerDB, RefreshRotationHelper, {
+                description = "Highlight the recommended next ability in this cooldown viewer using Blizzard's Assisted Combat suggestion. Requires Starter Build to be enabled in Gameplay > Combat.",
+            })
+            local rhColorPicker = gui:CreateFormColorPicker(rhCard.frame, nil, "rotationHelperColor", viewerDB, RefreshRotationHelper, nil, {
+                description = "Border color drawn around the suggested icon in this viewer.",
+            })
+            rhCard.AddRow(
+                optionsAPI.BuildSettingRow(rhCard.frame, "Show Recommended-Next Border", rhEnableCheckbox),
+                optionsAPI.BuildSettingRow(rhCard.frame, "Border Color", rhColorPicker)
+            )
+
+            local rhThicknessSlider = gui:CreateFormSlider(rhCard.frame, nil, 1, 6, 1, "rotationHelperThickness", viewerDB, RefreshRotationHelper, nil, {
+                description = "Thickness of the suggestion border in pixels.",
+            })
+            rhCard.AddRow(optionsAPI.BuildSettingRow(rhCard.frame, "Border Thickness", rhThicknessSlider))
+            builder.CloseCard(rhCard)
+        end
+    end
+
     return builder.Height()
 end
 
@@ -1902,6 +1996,18 @@ local function RenderKeybindsSection(sectionHost, ctx)
     )
 
     builder.CloseCard(card)
+
+    local keybindsOptions = ns.QUI_KeybindsOptions
+    if keybindsOptions and type(keybindsOptions.BuildKeybindOverridesSection) == "function" then
+        builder.Spacer(10)
+        local startY = -builder.Height(0)
+        local finalY = keybindsOptions.BuildKeybindOverridesSection(sectionHost, startY)
+        if type(finalY) == "number" then
+            local extra = math.max(0, math.abs(finalY) - math.abs(startY))
+            return builder.Height() + extra
+        end
+    end
+
     return builder.Height()
 end
 
