@@ -10,6 +10,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha3 - 2026-04-30
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** Same backup advice applies. If you've been on v3.6.0-alpha1 or alpha2, your data has already been migrated. Coming straight from v3.5.x? Back up `WTF/` and export your profile first.
+
+### Changed
+- **Legacy spec-bar migration: promote and flag, don't wipe.** v3.6.0-alpha2 cleared entries on spec-specific custom bars so pre-V2 drag-handler garbage (slot indexes / cooldownIDs) wouldn't render as fallback `?` icons. The cost was that real spell IDs sitting on those bars got dropped too, leaving silently empty bars. v3.6.0-alpha3 promotes the entries instead, then surfaces a new amber **"Legacy data — may need review"** tooltip line in the Composer on entries that came in via the legacy slot path. Real spell IDs survive the migration; suspect entries are visually flagged so you can clean them up rather than guess what was lost.
+
+### Fixed
+- **Cross-character profile import preserves source spec.** Importing a QUI1 profile from one character to another (e.g. a Priest profile imported on a Warrior) was losing the source-spec association on spec-specific custom-tracker bars — the importing client's session would overwrite `_lastSpecID` with its own current spec before migrations ran, so the original spec hint was gone by the time the migration needed it. The fix stamps `_sourceSpecID` directly onto imported bars at import time on both full and selective imports, so the original spec stays attached through subsequent saves.
+- **Trading Post alert no longer inflates into a screen-spanning yellow rectangle.** When the Trading Post (PerksProgram) frame is hidden, Blizzard's HelpTip anchored to its open button could compute unbounded text-wrap dimensions and balloon. The micro-button alert suppression now reaches non-global anchor buttons and the named alert frame, so the runaway callout is gated alongside standard micro-button glows.
+
+
+
 ## v3.6.0-alpha2 - 2026-04-30
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** Same advice as v3.6.0-alpha1 below. If you upgraded from v3.6.0-alpha1 already, your data has already been migrated. Anyone coming straight from v3.5.x should still back up `WTF/` and export their profile first.
