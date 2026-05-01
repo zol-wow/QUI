@@ -141,60 +141,29 @@ local function ResizeContainer(container, w, h)
 end
 
 ---------------------------------------------------------------------------
--- PERMANENT-AURA FILL CURVE (no-expiration overlay)
+-- PERMANENT-AURA OVERLAY DRIVE (curve trick via IsZero bool)
 --
--- Step NumberCurve mapping total-duration → overlay alpha. Built once,
--- piped through DurationObject:EvaluateTotalDuration so the secret total
--- is consumed C-side and the curve's Lua-defined output (0 or 1) returns
--- as the alpha value — same shape as UnitHealthPercent(unit, true, hpCurve)
--- → frame:SetAlpha in hud_visibility.lua. Nothing about the secret crosses
--- back into Lua compares.
+-- DurationObject:IsZero() returns a (potentially-secret) bool that is
+-- stable for the aura's lifetime — it's a property of the durObj itself,
+-- not derived from elapsed/remaining time, so it doesn't oscillate as
+-- the aura ticks.
 --
---   total == 0       → alpha 1 (overlay visible — bar appears full)
---   total >= 1e-6    → alpha 0 (overlay invisible — timed bar shows through
---                              completely unchanged)
+-- C_CurveUtil.EvaluateColorValueFromBoolean is a C-side helper that
+-- selects between two numbers based on a (potentially-secret) bool —
+-- the secret never crosses back into Lua compares. The result is fed
+-- directly into a C-side sink (Texture:SetAlpha / FontString:SetAlpha)
+-- so even when the result itself is secret-tagged, the value is
+-- consumed natively without taint.
+--
+-- Mapping for the bar overlay:
+--   IsZero=true  (permanent) → alpha 1 (overlay visible — bar full)
+--   IsZero=false (timed)     → alpha 0 (overlay invisible — bar shows
+--                                       SetTimerDuration animation)
+--
+-- Mapping for the duration text:
+--   IsZero=true  (permanent) → alpha 0 (text hidden — no countdown)
+--   IsZero=false (timed)     → alpha 1 (text visible — countdown shows)
 ---------------------------------------------------------------------------
-local _permanentAuraFillCurve
-local function GetPermanentAuraFillCurve()
-    if _permanentAuraFillCurve then return _permanentAuraFillCurve end
-    if not C_CurveUtil or not C_CurveUtil.CreateCurve
-       or not Enum or not Enum.LuaCurveType then
-        return nil
-    end
-    local curve = C_CurveUtil.CreateCurve()
-    curve:SetType(Enum.LuaCurveType.Step)
-    curve:AddPoint(0, 1)
-    curve:AddPoint(0.000001, 0)
-    _permanentAuraFillCurve = curve
-    return curve
-end
-
----------------------------------------------------------------------------
--- PERMANENT-AURA DURATION-TEXT ALPHA CURVE
---
--- Inverted companion to GetPermanentAuraFillCurve. The OnLoop time branch
--- formats durObj:GetRemainingDuration() into the duration text — for a
--- zero-total durObj that produces "0.0", which is wrong for permanent
--- auras. We can't gate the text branch on a Lua compare of secret data,
--- so use the same curve trick to drive the duration FontString's alpha:
---
---   total == 0       → alpha 0 (text hidden — permanent has no countdown)
---   total >= 1e-6    → alpha 1 (text visible — timed shows the countdown)
----------------------------------------------------------------------------
-local _permanentAuraTextAlphaCurve
-local function GetPermanentAuraTextAlphaCurve()
-    if _permanentAuraTextAlphaCurve then return _permanentAuraTextAlphaCurve end
-    if not C_CurveUtil or not C_CurveUtil.CreateCurve
-       or not Enum or not Enum.LuaCurveType then
-        return nil
-    end
-    local curve = C_CurveUtil.CreateCurve()
-    curve:SetType(Enum.LuaCurveType.Step)
-    curve:AddPoint(0, 0)
-    curve:AddPoint(0.000001, 1)
-    _permanentAuraTextAlphaCurve = curve
-    return curve
-end
 
 ---------------------------------------------------------------------------
 -- BAR FRAME FACTORY
@@ -1631,38 +1600,34 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 end
             end
 
-            -- No-expiration overlay drive (curve trick). EvaluateTotalDuration
-            -- runs C-side: it consumes durObj's potentially-secret total
-            -- and returns the curve's Lua-defined output (1 if total==0,
-            -- 0 if total>0). Pipe straight into PermanentFill:SetAlpha
-            -- without ever reading the value in Lua. Permanent auras get
-            -- alpha=1 (overlay covers bar at full size), timed auras get
-            -- alpha=0 (overlay invisible — SetTimerDuration's animation
-            -- shows through completely unchanged).
-            local fillCurve = GetPermanentAuraFillCurve()
-            if fillCurve and durObj.EvaluateTotalDuration and bar.PermanentFill then
-                local ok, alpha = pcall(durObj.EvaluateTotalDuration, durObj, fillCurve, nil)
-                if ok then
-                    pcall(bar.PermanentFill.SetAlpha, bar.PermanentFill, alpha)
-                end
-            end
-
-            -- Duration-text alpha drive: the OnLoop time branch formats
-            -- GetRemainingDuration into the duration text (e.g. "0.0" for
-            -- a permanent zero-total durObj). Hide the FontString for
-            -- permanent auras via the same curve pattern, inverted so
-            -- timed shows the countdown and permanent does not.
-            --
-            -- Skip the curve drive entirely when the configured base
-            -- alpha is 0 (hideText / vertical-no-text settings) — the
-            -- timed branch of the curve outputs 1 (visible), which
-            -- would otherwise override the user's "hide text" choice.
-            if (bar._durationTextBaseAlpha or 1) ~= 0 then
-                local textAlphaCurve = GetPermanentAuraTextAlphaCurve()
-                if textAlphaCurve and durObj.EvaluateTotalDuration and bar.DurationText then
-                    local ok, textAlpha = pcall(durObj.EvaluateTotalDuration, durObj, textAlphaCurve, nil)
-                    if ok then
-                        pcall(bar.DurationText.SetAlpha, bar.DurationText, textAlpha)
+            -- No-expiration overlay + text drive (curve trick via IsZero).
+            -- See header doc above the helpers. IsZero is a stable
+            -- per-aura property (not derived from elapsed/remaining),
+            -- so timed auras like Metamorphosis don't briefly cross a
+            -- threshold during animation and produce flicker.
+            if durObj.IsZero
+               and C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean then
+                local okZ, isZero = pcall(durObj.IsZero, durObj)
+                if okZ then
+                    -- Overlay alpha: permanent → 1 (visible), timed → 0.
+                    if bar.PermanentFill then
+                        local okA, alpha = pcall(C_CurveUtil.EvaluateColorValueFromBoolean,
+                            isZero, 1, 0)
+                        if okA then
+                            pcall(bar.PermanentFill.SetAlpha, bar.PermanentFill, alpha)
+                        end
+                    end
+                    -- Duration-text alpha: permanent → 0 (hidden), timed → 1.
+                    -- Skip when the configured base alpha is 0 (hideText /
+                    -- vertical-no-text settings) — the timed-aura output is
+                    -- 1 (visible), which would otherwise override the
+                    -- user's "hide text" choice.
+                    if bar.DurationText and (bar._durationTextBaseAlpha or 1) ~= 0 then
+                        local okT, textAlpha = pcall(C_CurveUtil.EvaluateColorValueFromBoolean,
+                            isZero, 0, 1)
+                        if okT then
+                            pcall(bar.DurationText.SetAlpha, bar.DurationText, textAlpha)
+                        end
                     end
                 end
             end
