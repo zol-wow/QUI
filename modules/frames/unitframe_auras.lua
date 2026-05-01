@@ -248,6 +248,27 @@ end
 -- AURA UPDATE
 ---------------------------------------------------------------------------
 
+---------------------------------------------------------------------------
+-- FILTER STRING BUILDER
+---------------------------------------------------------------------------
+-- Concatenates a Blizzard aura filter string from the structured filter DB.
+-- base       : "HELPFUL" or "HARMFUL" — required anchor flag.
+-- filterDB   : { modifiers = {FLAG = bool, …}, exclusive = string|nil } or nil
+-- Returns base unchanged if filterDB is missing or empty.
+local function BuildFilterString(base, filterDB)
+    if not filterDB then return base end
+    local parts = { base }
+    if filterDB.modifiers then
+        for flag, enabled in pairs(filterDB.modifiers) do
+            if enabled then parts[#parts + 1] = flag end
+        end
+    end
+    if filterDB.exclusive then
+        parts[#parts + 1] = filterDB.exclusive
+    end
+    return table.concat(parts, "|")
+end
+
 local function UpdateAuras(frame)
     if not frame or not frame.unit then return end
     local unit = frame.unit
@@ -284,11 +305,13 @@ local function UpdateAuras(frame)
     local settings = GetUnitSettings(frame.unitKey)
     local auraSettings = settings and settings.auras or {}
 
+    local debuffFilterString = BuildFilterString("HARMFUL", auraSettings.debuffFilter)
+    local buffFilterString   = BuildFilterString("HELPFUL", auraSettings.buffFilter)
+
     local iconSize = auraSettings.iconSize or 22  -- Debuff icon size
     local buffIconSize = auraSettings.buffIconSize or 22  -- Buff icon size
     local showBuffs = auraSettings.showBuffs ~= false  -- default true
     local showDebuffs = auraSettings.showDebuffs ~= false  -- default true
-    local onlyMyDebuffs = auraSettings.onlyMyDebuffs ~= false  -- default true
 
     -- Check if in preview mode for either aura type
     local unitKey = frame.unitKey
@@ -363,22 +386,15 @@ local function UpdateAuras(frame)
         end
     end
 
-    -- Populate debuffs (skip if preview is active)
+    -- Populate debuffs (skip if preview is active). Filter is applied
+    -- C-side via the filter string; no Lua-side post-filter.
     local debuffCount = 0
     local debuffIndex = 1
-    -- Player frame shows all debuffs; non-player frames respect the
-    -- user-facing onlyMyDebuffs toggle. "Mine" means player or vehicle —
-    -- delegated to Blizzard's |PLAYER filter via IsAuraFilteredOutByInstanceID
-    -- so secret source fields don't have to be inspected from tainted code.
-    local filterDebuffsByMine = (unit ~= "player") and onlyMyDebuffs
     if showDebuffs and not debuffPreviewActive then
         while debuffCount < debuffMaxIcons do
-            local auraData = C_UnitAuras.GetAuraDataByIndex(unit, debuffIndex, "HARMFUL")
+            local auraData = C_UnitAuras.GetAuraDataByIndex(unit, debuffIndex, debuffFilterString)
             if not auraData then break end
             debuffIndex = debuffIndex + 1
-            if filterDebuffsByMine and C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, auraData.auraInstanceID, "HARMFUL|PLAYER") then
-                -- skip: foreign-source debuff while onlyMyDebuffs is on
-            else
 
             debuffCount = debuffCount + 1
 
@@ -455,28 +471,20 @@ local function UpdateAuras(frame)
             icon:ClearAllPoints()
             icon:SetPoint(iconPoint, frame, framePoint, xPos + (borderOffsetX or 0), yPos)
             icon:Show()
-            end
         end
     end
 
-    -- Populate buffs (skip if preview is active).
-    -- Boss frames show all buffs so encounter-critical self-buffs (e.g.
-    -- drake stacks in Voidspire) remain visible; other frames filter to
-    -- player/vehicle-cast buffs to keep class-mate buffs out of the
-    -- player/target/focus/targettarget rows. Filter is delegated to
-    -- Blizzard's |PLAYER filter via IsAuraFilteredOutByInstanceID for
-    -- taint-safe ownership detection on secret source fields.
-    local filterBuffsByMine = not unit:match("^boss%d+$")
+    -- Populate buffs (skip if preview is active). Every buff on every unit
+    -- renders regardless of source — NPC self-buffs (enrages, mechanic
+    -- stacks) on target/focus and party/raid-cast buffs on the player frame
+    -- are all surfaced.
     local buffCount = 0
     local buffIndex = 1
     if showBuffs and not buffPreviewActive then
         while buffCount < buffMaxIcons do
-            local auraData = C_UnitAuras.GetAuraDataByIndex(unit, buffIndex, "HELPFUL")
+            local auraData = C_UnitAuras.GetAuraDataByIndex(unit, buffIndex, buffFilterString)
             if not auraData then break end
             buffIndex = buffIndex + 1
-            if filterBuffsByMine and C_UnitAuras.IsAuraFilteredOutByInstanceID(unit, auraData.auraInstanceID, "HELPFUL|PLAYER") then
-                -- skip: foreign-source buff while ownership filter is on
-            else
 
             buffCount = buffCount + 1
 
@@ -553,7 +561,6 @@ local function UpdateAuras(frame)
             icon:ClearAllPoints()
             icon:SetPoint(iconPoint, frame, framePoint, xPos + (borderOffsetX or 0), yPos)
             icon:Show()
-            end
         end
     end
 end

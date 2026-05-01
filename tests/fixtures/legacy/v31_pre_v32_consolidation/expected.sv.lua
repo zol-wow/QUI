@@ -94,7 +94,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 33,
+        _schemaVersion = 34,
         _shippedDefaults = {
           abilityTimeline = {
             bigIcon = {

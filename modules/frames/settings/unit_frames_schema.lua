@@ -118,6 +118,42 @@ local AURA_GROW_OPTIONS = {
     { value = "DOWN",  text = "Down" },
 }
 
+-- Filter modifier metadata. *_FLAGS lists (further down) carry just the
+-- key strings used to stamp DB defaults; *_DEFS carry UI-side labels and
+-- tooltips. Two separate lists by design.
+local BUFF_MODIFIER_DEFS = {
+    { key = "PLAYER",         label = "Player",         tooltip = "Show only buffs you applied." },
+    { key = "RAID",           label = "Raid",           tooltip = "Show buffs Blizzard's raid frames would show." },
+    { key = "CANCELABLE",     label = "Cancelable",     tooltip = "Show only buffs you can right-click off." },
+    { key = "NOT_CANCELABLE", label = "Not Cancelable", tooltip = "Show only buffs you cannot right-click off." },
+}
+
+local DEBUFF_MODIFIER_DEFS = {
+    { key = "PLAYER",                  label = "Player",         tooltip = "Show only debuffs you applied." },
+    { key = "RAID",                    label = "Raid",           tooltip = "Show debuffs Blizzard's raid frames would show." },
+    { key = "INCLUDE_NAME_PLATE_ONLY", label = "Nameplate Only", tooltip = "Include debuffs flagged as nameplate-only." },
+}
+
+-- "None" is encoded as a sentinel string because the dropdown widget's
+-- UpdateVisual early-returns on nil values (visual would be blank).
+-- The widget's onChange normalizes the sentinel back to nil before the
+-- render-path reads it, so DB stays nil-canonical.
+local AURA_FILTER_NONE_SENTINEL = "NONE"
+
+local BUFF_EXCLUSIVE_OPTIONS = {
+    { value = AURA_FILTER_NONE_SENTINEL, text = "None"                },
+    { value = "EXTERNAL_DEFENSIVE",      text = "External Defensives" },
+    { value = "BIG_DEFENSIVE",           text = "Big Defensives"      },
+    { value = "IMPORTANT",               text = "Important"           },
+}
+
+local DEBUFF_EXCLUSIVE_OPTIONS = {
+    { value = AURA_FILTER_NONE_SENTINEL,  text = "None"                },
+    { value = "CROWD_CONTROL",            text = "Crowd Control"       },
+    { value = "RAID_PLAYER_DISPELLABLE",  text = "Player Dispellable"  },
+    { value = "IMPORTANT",                text = "Important"           },
+}
+
 local function GetGUI()
     return QUI and QUI.GUI or nil
 end
@@ -371,6 +407,30 @@ local function EnsurePrivateAurasSettings(unitDB)
     return unitDB.privateAuras
 end
 
+-- Build a filter sub-table { modifiers = {…false}, exclusive = nil } if absent.
+-- modifierFlags is a sequence of flag-name strings (no values).
+local function EnsureFilterDB(parent, key, modifierFlags)
+    if type(parent[key]) ~= "table" then
+        parent[key] = {}
+    end
+    local filterDB = parent[key]
+    if type(filterDB.modifiers) ~= "table" then
+        filterDB.modifiers = {}
+    end
+    for _, flag in ipairs(modifierFlags) do
+        if filterDB.modifiers[flag] == nil then
+            filterDB.modifiers[flag] = false
+        end
+    end
+    if filterDB.exclusive == nil then
+        filterDB.exclusive = nil  -- explicit no-op; documents intent
+    end
+    return filterDB
+end
+
+local BUFF_MODIFIER_FLAGS   = { "PLAYER", "RAID", "CANCELABLE", "NOT_CANCELABLE" }
+local DEBUFF_MODIFIER_FLAGS = { "PLAYER", "RAID", "INCLUDE_NAME_PLATE_ONLY" }
+
 local function EnsureAuraSettings(unitDB, unitKey)
     if type(unitDB.auras) ~= "table" then
         unitDB.auras = {}
@@ -379,7 +439,6 @@ local function EnsureAuraSettings(unitDB, unitKey)
     local auraDB = unitDB.auras
     if auraDB.showBuffs == nil then auraDB.showBuffs = false end
     if auraDB.showDebuffs == nil then auraDB.showDebuffs = false end
-    if unitKey ~= "player" and auraDB.onlyMyDebuffs == nil then auraDB.onlyMyDebuffs = true end
     if auraDB.iconSize == nil then auraDB.iconSize = 22 end
     if auraDB.buffIconSize == nil then auraDB.buffIconSize = 22 end
     if auraDB.debuffAnchor == nil then auraDB.debuffAnchor = "TOPLEFT" end
@@ -396,6 +455,8 @@ local function EnsureAuraSettings(unitDB, unitKey)
     if auraDB.buffMaxPerRow == nil then auraDB.buffMaxPerRow = 0 end
     if auraDB.debuffHideSwipe == nil then auraDB.debuffHideSwipe = false end
     if auraDB.buffHideSwipe == nil then auraDB.buffHideSwipe = false end
+    EnsureFilterDB(auraDB, "buffFilter",   BUFF_MODIFIER_FLAGS)
+    EnsureFilterDB(auraDB, "debuffFilter", DEBUFF_MODIFIER_FLAGS)
     return auraDB
 end
 
@@ -2474,30 +2535,68 @@ local function RenderAuraIconsSection(sectionHost, ctx, prefix, kind)
         description = "Which corner of the frame the first " .. kindLower .. " icon is anchored to.",
     })
 
-    if prefix == "debuff" and unitKey ~= "player" then
-        local onlyMyCheckbox = gui:CreateFormCheckbox(card.frame, nil, "onlyMyDebuffs", auraDB, refreshAuras, {
-            description = "Only show debuffs cast by you. Useful when the frame is used for your own debuff tracking.",
+    local growDropdown = gui:CreateFormDropdown(card.frame, nil, AURA_GROW_OPTIONS, growKey, auraDB, refreshAuras, {
+        description = "Direction additional " .. kindLower .. " icons are added in after the first.",
+    })
+    card.AddRow(
+        optionsAPI.BuildSettingRow(card.frame, "Icon Size", iconSizeSlider),
+        optionsAPI.BuildSettingRow(card.frame, "Anchor", anchorDropdown)
+    )
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Grow Direction", growDropdown))
+
+    -- Filter modifiers + exclusive picker. Defaults are all-disabled
+    -- (no filtering); user opts in per-frame.
+    local filterKey = (prefix == "debuff") and "debuffFilter" or "buffFilter"
+    local modifierDefs = (prefix == "debuff") and DEBUFF_MODIFIER_DEFS or BUFF_MODIFIER_DEFS
+    local exclusiveOptions = (prefix == "debuff") and DEBUFF_EXCLUSIVE_OPTIONS or BUFF_EXCLUSIVE_OPTIONS
+    local filterDB = auraDB[filterKey]
+    if filterDB and type(filterDB.modifiers) == "table" then
+        local pendingRow = nil
+        for _, modDef in ipairs(modifierDefs) do
+            local checkbox = gui:CreateFormCheckbox(card.frame, nil, modDef.key, filterDB.modifiers, refreshAuras, {
+                description = modDef.tooltip,
+            })
+            local row = optionsAPI.BuildSettingRow(card.frame, modDef.label, checkbox)
+            if pendingRow then
+                card.AddRow(pendingRow, row)
+                pendingRow = nil
+            else
+                pendingRow = row
+            end
+        end
+
+        -- Translate the NONE sentinel back to nil at write time so the
+        -- render-path's `if filterDB.exclusive then` check stays accurate.
+        local function onExclusiveChange(val)
+            if val == AURA_FILTER_NONE_SENTINEL then
+                filterDB.exclusive = nil
+            end
+            refreshAuras()
+        end
+
+        local exclusiveDropdown = gui:CreateFormDropdown(card.frame, nil, exclusiveOptions, "exclusive", filterDB, onExclusiveChange, {
+            description = "Mutually-exclusive category filter. Pick one or None.",
         })
-        local growDropdown = gui:CreateFormDropdown(card.frame, nil, AURA_GROW_OPTIONS, growKey, auraDB, refreshAuras, {
-            description = "Direction additional " .. kindLower .. " icons are added in after the first.",
-        })
-        card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Only My Debuffs", onlyMyCheckbox),
-            optionsAPI.BuildSettingRow(card.frame, "Icon Size", iconSizeSlider)
-        )
-        card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Anchor", anchorDropdown),
-            optionsAPI.BuildSettingRow(card.frame, "Grow Direction", growDropdown)
-        )
-    else
-        local growDropdown = gui:CreateFormDropdown(card.frame, nil, AURA_GROW_OPTIONS, growKey, auraDB, refreshAuras, {
-            description = "Direction additional " .. kindLower .. " icons are added in after the first.",
-        })
-        card.AddRow(
-            optionsAPI.BuildSettingRow(card.frame, "Icon Size", iconSizeSlider),
-            optionsAPI.BuildSettingRow(card.frame, "Anchor", anchorDropdown)
-        )
-        card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Grow Direction", growDropdown))
+
+        -- Initial-load visual fix: when DB is nil, the widget's UpdateVisual
+        -- early-returns and the displayed text stays blank. Manually paint
+        -- "None" so the user sees a sane default value.
+        if filterDB.exclusive == nil
+            and exclusiveDropdown
+            and exclusiveDropdown.dropdown
+            and exclusiveDropdown.dropdown.selected
+        then
+            exclusiveDropdown.dropdown.selected:SetText("None")
+        end
+
+        local exclusiveRow = optionsAPI.BuildSettingRow(card.frame, "Exclusive Filter", exclusiveDropdown)
+
+        if pendingRow then
+            -- Odd modifier count — pair the leftover modifier with the exclusive dropdown.
+            card.AddRow(pendingRow, exclusiveRow)
+        else
+            card.AddRow(exclusiveRow)
+        end
     end
 
     local maxIconsSlider = gui:CreateFormSlider(card.frame, nil, 1, 32, 1, maxKey, auraDB, refreshAuras, nil, {

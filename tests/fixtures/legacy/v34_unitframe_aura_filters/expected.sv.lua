@@ -6069,68 +6069,64 @@ return {
             width = 300
           }
         },
-        abilityTimeline = {
-          bigIcon = {
-            anchorTo = "cdmUtility",
-            enabled = true
-          },
-          timeline = {
-            anchorTo = "cdmEssential",
-            enabled = true
-          }
-        },
-        bigWigs = {
-          emphasized = {
-            anchorTo = "primaryPower",
-            enabled = true
-          },
-          normal = {
-            anchorTo = "cdmEssential",
-            enabled = true
-          }
-        },
         cdm = {
           engine = "owned"
         },
-        dandersFrames = {
-          party = {
-            anchorTo = "cdmUtility",
-            enabled = true
-          },
-          pinned1 = {
-            anchorTo = "playerFrame",
-            enabled = true
-          },
-          raid = {
-            anchorTo = "secondaryPower",
-            enabled = true
-          }
-        },
         quiUnitFrames = {
           focus = {
+            auras = {
+              debuffFilter = {
+                modifiers = {
+                  PLAYER = true
+                }
+              },
+              showDebuffs = true
+            },
             castbar = {
               previewMode = false
-            }
+            },
+            enabled = true
           },
           pet = {
+            auras = {
+              showBuffs = true
+            },
             castbar = {
               previewMode = false
             }
           },
           player = {
+            auras = {
+              showBuffs = true,
+              showDebuffs = true
+            },
             castbar = {
               previewMode = false
             }
           },
           target = {
+            auras = {
+              debuffFilter = {
+                modifiers = {
+                  PLAYER = true
+                }
+              },
+              showBuffs = true,
+              showDebuffs = true
+            },
             castbar = {
               previewMode = false
             }
           },
           targettarget = {
+            auras = {
+              showBuffs = true,
+              showDebuffs = true
+            },
             castbar = {
               previewMode = false
-            }
+            },
+            enabled = true
           }
         }
       }

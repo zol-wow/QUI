@@ -4,9 +4,9 @@
 -- Pre-existing canonical values and unrelated values must pass through.
 return {
     {
-        name = "_schemaVersion advanced to v33",
+        name = "_schemaVersion advanced past v33",
         assert = function(sv, ctx)
-            return sv.QUI_DB.profiles.Default._schemaVersion == 33
+            return sv.QUI_DB.profiles.Default._schemaVersion >= 33
         end,
     },
     {

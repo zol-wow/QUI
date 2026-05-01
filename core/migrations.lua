@@ -179,11 +179,18 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --        secondaryPower) so the new dropdown can render and round-trip the
 --        saved value. The legacy alias arms in each integration's
 --        GetAnchorFrame still resolve unmigrated values as a safety net.)
+-- v34 = MigrateUnitFrameAuraFilters
+--       (3.6.0+: replaces per-unit auras.onlyMyDebuffs checkbox with the
+--        structured debuffFilter.modifiers.PLAYER flag. Translates true →
+--        modifier set, false/absent → modifier unset, then strips the old
+--        key. Buff/debuff filter table shells themselves are stamped
+--        lazily by EnsureAuraSettings; this migration only handles the
+--        old toggle's behavior preservation.)
 --
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 33
+local CURRENT_SCHEMA_VERSION = 34
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -709,6 +716,33 @@ local function MigrateUnitFrames(profile)
 
     -- Remove the legacy key
     profile.unitFrames = nil
+end
+
+---------------------------------------------------------------------------
+-- v34: MigrateUnitFrameAuraFilters
+--   Replaces the per-unit auras.onlyMyDebuffs checkbox with the new
+--   structured debuffFilter.modifiers.PLAYER flag. Idempotent — safe to
+--   re-run because once onlyMyDebuffs is gone there's nothing to migrate.
+---------------------------------------------------------------------------
+local function MigrateUnitFrameAuraFilters(profile)
+    local ufdb = profile and profile.quiUnitFrames
+    if type(ufdb) ~= "table" then return end
+
+    for _, unitTbl in pairs(ufdb) do
+        local auraDB = type(unitTbl) == "table" and unitTbl.auras
+        if type(auraDB) == "table" then
+            if auraDB.onlyMyDebuffs == true then
+                if type(auraDB.debuffFilter) ~= "table" then
+                    auraDB.debuffFilter = {}
+                end
+                if type(auraDB.debuffFilter.modifiers) ~= "table" then
+                    auraDB.debuffFilter.modifiers = {}
+                end
+                auraDB.debuffFilter.modifiers.PLAYER = true
+            end
+            auraDB.onlyMyDebuffs = nil
+        end
+    end
 end
 
 -- Migrate selfFirst → partySelfFirst / raidSelfFirst
@@ -3730,6 +3764,9 @@ function Migrations.RunOnProfile(profile)
     -- integrations to canonical registry keys so the unified categorized
     -- + searchable dropdown can render and round-trip them.
     if stored < 33 then RemapThirdPartyAnchorAliases(profile) end
+
+    -- v34: replace per-unit onlyMyDebuffs checkbox with debuffFilter.modifiers.PLAYER
+    if stored < 34 then MigrateUnitFrameAuraFilters(profile) end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame
