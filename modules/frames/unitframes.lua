@@ -119,33 +119,17 @@ local POWER_COLORS = {
 local tocVersion = tonumber((select(4, GetBuildInfo()))) or 0
 
 local function GetHealthPct(unit, usePredicted)
-    if tocVersion >= 120000 and type(UnitHealthPercent) == "function" then
-        local ok, pct
-        -- 12.01+: Use curve parameter (new API)
-        if CurveConstants and CurveConstants.ScaleTo100 then
-            ok, pct = pcall(UnitHealthPercent, unit, usePredicted, CurveConstants.ScaleTo100)
-        end
-        -- Fallback for older builds
-        if not ok or pct == nil then
-            ok, pct = pcall(UnitHealthPercent, unit, usePredicted)
-        end
-        if ok and pct ~= nil then
-            return pct
-        end
+    -- No `pct == nil` / `pct ~= nil` checks: the API returns a secret value at
+    -- full HP, and comparison on secrets errors out. Pass the raw return through
+    -- to SetFormattedText (C-side), which accepts both numbers and secrets.
+    if tocVersion >= 120000 and type(UnitHealthPercent) == "function"
+       and CurveConstants and CurveConstants.ScaleTo100 then
+        local ok, pct = pcall(UnitHealthPercent, unit, usePredicted, CurveConstants.ScaleTo100)
+        if ok then return pct end
     end
-    -- Manual calculation fallback
-    if UnitHealth and UnitHealthMax then
-        local cur = UnitHealth(unit)
-        local max = UnitHealthMax(unit)
-        local calcOk, result = pcall(function()
-            if cur and max and max > 0 then
-                return (cur / max) * 100
-            end
-            return nil
-        end)
-        if calcOk and result then
-            return result
-        end
+    if type(UnitHealthPercent) == "function" then
+        local ok, pct = pcall(UnitHealthPercent, unit, usePredicted)
+        if ok then return pct end
     end
     return nil
 end
@@ -701,7 +685,7 @@ local function UpdateHealth(frame)
     if not frame or not frame.unit or not frame.healthBar then return end
     local unit = frame.unit
     local settings = GetUnitSettings(frame.unitKey)
-    
+
     -- Don't update if unit doesn't exist
     if not UnitExists(unit) then
         return
@@ -747,9 +731,52 @@ local function UpdateHealth(frame)
             local hidePercentSymbol = settings and settings.hideHealthPercentSymbol == true
 
             if hp then
-                local hpPct = GetHealthPct(unit, false)
-                local healthStr = FormatHealthText(hp, hpPct, displayStyle, divider, maxHP, hidePercentSymbol)
-                frame.healthText:SetText(healthStr)
+                -- Combat-safe text path:
+                --   * usePredicted=true: the false/curve form returns a
+                --     secret-or-nil at exactly 100% HP, breaking the percent
+                --     display at full HP.
+                --   * SetFormattedText (C-side) is required: Lua's
+                --     string.format buckets secret values.
+                --   * %.0f (float) is required for the percent: %d (integer
+                --     coercion) on a secret value silently no-ops the entire
+                --     SetFormattedText call and freezes the displayed text.
+                --   * %s for raw absolute hp: C-side handles secrets natively.
+                --   * pcall wraps each call so a transient secret-conversion
+                --     failure doesn't cascade and bail the rest of UpdateHealth.
+                local hpPct = GetHealthPct(unit, true)
+                local abbr = AbbreviateNumbers or AbbreviateLargeNumbers
+                local pctFmt = hidePercentSymbol and "%.0f" or "%.0f%%"
+                local ok
+                if displayStyle == "percent" then
+                    ok = pcall(frame.healthText.SetFormattedText, frame.healthText, pctFmt, hpPct)
+                elseif displayStyle == "absolute" then
+                    if abbr then
+                        ok = pcall(frame.healthText.SetText, frame.healthText, abbr(hp))
+                    else
+                        ok = pcall(frame.healthText.SetFormattedText, frame.healthText, "%s", hp)
+                    end
+                elseif displayStyle == "both" then
+                    local bothFmt = hidePercentSymbol and ("%s" .. divider .. "%.0f") or ("%s" .. divider .. "%.0f%%")
+                    if abbr then
+                        ok = pcall(frame.healthText.SetFormattedText, frame.healthText, bothFmt, abbr(hp), hpPct)
+                    else
+                        ok = pcall(frame.healthText.SetFormattedText, frame.healthText, bothFmt, hp, hpPct)
+                    end
+                elseif displayStyle == "both_reverse" then
+                    local revFmt = hidePercentSymbol and ("%.0f" .. divider .. "%s") or ("%.0f%%" .. divider .. "%s")
+                    if abbr then
+                        ok = pcall(frame.healthText.SetFormattedText, frame.healthText, revFmt, hpPct, abbr(hp))
+                    else
+                        ok = pcall(frame.healthText.SetFormattedText, frame.healthText, revFmt, hpPct, hp)
+                    end
+                else
+                    -- missing_percent / missing_value need Lua arithmetic; separate concern.
+                    local healthStr = FormatHealthText(hp, hpPct, displayStyle, divider, maxHP, hidePercentSymbol)
+                    ok = pcall(frame.healthText.SetText, frame.healthText, healthStr)
+                end
+                if not ok then
+                    frame.healthText:SetText("")
+                end
                 frame.healthText:Show()
             else
                 frame.healthText:SetText("")

@@ -946,7 +946,9 @@ local function UpdateHealth(frame)
         end
     end
 
-    -- Health text — use SetFormattedText (C-side) which handles secret values natively
+    -- Health text — use SetFormattedText (C-side) which handles secret values natively.
+    -- pcall wraps each call so a transient secret-conversion failure on a single
+    -- unit doesn't bail the rest of the per-frame update path.
     local isRaid = frame._isRaid
     local healthSettings = GetHealthSettings(isRaid)
     if frame.healthText and healthSettings and healthSettings.showHealthText ~= false then
@@ -958,39 +960,43 @@ local function UpdateHealth(frame)
             local style = healthSettings.healthDisplayStyle or "percent"
             local abbr = AbbreviateNumbers or AbbreviateLargeNumbers
             local pctFmt = healthSettings.hideHealthPercentSymbol and "%.0f" or "%.0f%%"
+            local ok
             if style == "percent" then
                 local pct = GetHealthPct(unit)
-                frame.healthText:SetFormattedText(pctFmt, pct)
+                ok = pcall(frame.healthText.SetFormattedText, frame.healthText, pctFmt, pct)
             elseif style == "absolute" then
                 local hp = UnitHealth(unit, true)
                 if abbr then
-                    frame.healthText:SetText(abbr(hp))
+                    ok = pcall(frame.healthText.SetText, frame.healthText, abbr(hp))
                 else
-                    frame.healthText:SetFormattedText("%s", hp)
+                    ok = pcall(frame.healthText.SetFormattedText, frame.healthText, "%s", hp)
                 end
             elseif style == "both" then
                 local hp = UnitHealth(unit, true)
                 local pct = GetHealthPct(unit)
                 local bothFmt = healthSettings.hideHealthPercentSymbol and "%s | %.0f" or "%s | %.0f%%"
                 if abbr then
-                    frame.healthText:SetFormattedText(bothFmt, abbr(hp), pct)
+                    ok = pcall(frame.healthText.SetFormattedText, frame.healthText, bothFmt, abbr(hp), pct)
                 else
-                    frame.healthText:SetFormattedText(bothFmt, hp, pct)
+                    ok = pcall(frame.healthText.SetFormattedText, frame.healthText, bothFmt, hp, pct)
                 end
             elseif style == "deficit" then
                 local miss = UnitHealthMissing(unit, true)
                 if C_StringUtil and C_StringUtil.TruncateWhenZero and C_StringUtil.WrapString then
                     local truncated = C_StringUtil.TruncateWhenZero(miss)
                     local result = C_StringUtil.WrapString(truncated, "-")
-                    frame.healthText:SetText(result)
+                    ok = pcall(frame.healthText.SetText, frame.healthText, result)
                 elseif abbr then
-                    frame.healthText:SetFormattedText("-%s", abbr(miss))
+                    ok = pcall(frame.healthText.SetFormattedText, frame.healthText, "-%s", abbr(miss))
                 else
-                    frame.healthText:SetFormattedText("-%s", miss)
+                    ok = pcall(frame.healthText.SetFormattedText, frame.healthText, "-%s", miss)
                 end
             else
                 local pct = GetHealthPct(unit)
-                frame.healthText:SetFormattedText(pctFmt, pct)
+                ok = pcall(frame.healthText.SetFormattedText, frame.healthText, pctFmt, pct)
+            end
+            if not ok then
+                frame.healthText:SetText("")
             end
             local tc = healthSettings.healthTextColor or COLORS.WHITE
             frame.healthText:SetTextColor(tc[1], tc[2], tc[3], tc[4] or 1)
