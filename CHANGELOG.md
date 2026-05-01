@@ -10,6 +10,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha5 - 2026-05-01
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** Same backup advice. v3.6.0-alpha1/2/3/4 → alpha5: data already migrated. v3.5.x → alpha5: back up `WTF/` and export your profile first.
+>
+> This alpha includes a small **schema migration (v33)** that remaps four legacy third-party anchor aliases (`essential`, `utility`, `primary`, `secondary`) on saved BigWigs / DandersFrames / AbilityTimeline anchor configs to their canonical keys. Runs once, on first load. Existing settings keep working.
+
+### Changed
+- **Third-party "Anchor To" dropdown is now categorized + searchable.** The 3rd Party Addons Frame Positioning tab and the DandersFrames Layout Mode collapsible used a flat per-integration list with no headers and no search. Both surfaces now use the same registry-driven, categorized, searchable + collapsible Anchor To dropdown that every other mover in QUI uses, so anchoring third-party frames matches the rest of the experience.
+
+### Fixed
+- **Bundled QUI fonts (and most third-party LSM fonts) now appear in settings dropdowns.** The font dropdowns in CDM, Frames, Group Frames, Unit Frames, Action Bars, Character pane, and Click-cast were filtering by hardcoded path substrings (`"quaziiui"`, `"sharedmedia"`, `"Fonts\\"`). After the addon was renamed to QUI, asset paths became `Interface\AddOns\QUI\...` and no longer matched `"quaziiui"`, so all five bundled fonts (Quazii, Poppins ×4, Expressway) plus most third-party LSM fonts without "sharedmedia" in their path were silently dropped. Users saw only Blizzard built-in fonts. The path allowlist is gone — LSM is the gatekeeper for what gets registered, and broken file paths are still filtered by the existing prewarm-then-pcall step.
+- **Custom CDM bars now collapse to the anchor edge when filters hide icons.** Custom bars with dynamic layout weren't compacting toward the configured corner when `hideNonUsable` (or any layout-time filter) hid icons — the bar would stretch wider and visible icons would float in the middle. Two root causes:
+  - The frame anchoring system applied custom-bar corners via "size-stable" mode, baking corner-to-corner offsets from the frame's current width. When the bar shrank, both edges drifted symmetrically toward the old center. Buff/debuff/totem bars already opted out; custom-bar anchor keys (minted dynamically as `cdmCustom_*`) now do too.
+  - The HUD min-width floor was being applied to every container, including custom bars, even though only `essential` and `utility` host the HUD frames — so custom bars got their width inflated to the floor. The floor is now gated to those two trackers only.
+
+  Together: custom bars compute their natural icon-span width and stay glued to your chosen corner through filter flips.
+
+
+
 ## v3.6.0-alpha4 - 2026-04-30
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** Same backup advice applies. If you've been on v3.6.0-alpha1/alpha2/alpha3, your data has already been migrated. Coming straight from v3.5.x? Back up `WTF/` and export your profile first.
