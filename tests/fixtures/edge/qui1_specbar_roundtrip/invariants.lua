@@ -34,9 +34,9 @@ return {
         end,
     },
     {
-        name = "_schemaVersion stays at 32 after re-run",
+        name = "_schemaVersion stays at 33 after re-run",
         assert = function(sv, ctx)
-            return sv.QUI_DB.profiles.Default._schemaVersion == 32
+            return sv.QUI_DB.profiles.Default._schemaVersion == 33
         end,
     },
 }

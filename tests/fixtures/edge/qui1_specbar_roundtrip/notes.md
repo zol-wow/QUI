@@ -17,5 +17,5 @@ unchanged. If they go missing in expected, it means the export side
 dropped `db.global.ncdm.specTrackerSpells` and the importing player would
 get an empty bar — the regression this fixture exists to catch.
 
-Profile is already at `_schemaVersion = 32`, so migrations are a no-op.
+Profile is already at `_schemaVersion = 33`, so migrations are a no-op.
 The test is purely on the export/import bundling path.

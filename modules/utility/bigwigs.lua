@@ -194,39 +194,6 @@ function QUI_BigWigs:GetAnchorFrame(anchorName)
 end
 
 ---------------------------------------------------------------------------
--- ANCHOR OPTIONS FOR DROPDOWNS
----------------------------------------------------------------------------
-function QUI_BigWigs:BuildAnchorOptions()
-    local options = {
-        {value = "disabled", text = "Disabled"},
-        {value = "essential", text = "Essential Cooldowns"},
-        {value = "utility", text = "Utility Cooldowns"},
-        {value = "primary", text = "Primary Resource Bar"},
-        {value = "secondary", text = "Secondary Resource Bar"},
-        {value = "playerCastbar", text = "Player Castbar"},
-        {value = "playerFrame", text = "Player Frame"},
-        {value = "targetFrame", text = "Target Frame"},
-    }
-
-    if ns.QUI_Anchoring and ns.QUI_Anchoring.anchorTargets then
-        for name, data in pairs(ns.QUI_Anchoring.anchorTargets) do
-            if name ~= "disabled" and name ~= "essential" and name ~= "utility"
-                and name ~= "primary" and name ~= "secondary" and name ~= "playerCastbar"
-                and name ~= "playerFrame" and name ~= "targetFrame"
-            then
-                local displayName = data.options and data.options.displayName or name
-                displayName = tostring(displayName)
-                displayName = displayName:gsub("^%l", string.upper)
-                displayName = displayName:gsub("([a-z])([A-Z])", "%1 %2")
-                table.insert(options, {value = name, text = displayName})
-            end
-        end
-    end
-
-    return options
-end
-
----------------------------------------------------------------------------
 -- APPLY TO BIGWIGS
 ---------------------------------------------------------------------------
 local function TriggerBigWigsProfileUpdate()

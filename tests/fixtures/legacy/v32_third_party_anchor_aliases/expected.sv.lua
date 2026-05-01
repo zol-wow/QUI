@@ -11,9 +11,6 @@ return {
       imports = {},
       isDone = false,
       lastVersion = 0,
-      ncdm = {
-        specTrackerSpells = {}
-      },
       specTrackerSpells = {}
     },
     profileKeys = {
@@ -6072,191 +6069,41 @@ return {
             width = 300
           }
         },
-        customTrackers = {
-          bars = {
-            [2] = {
-              activeGlowColor = {
-                [1] = 1,
-                [2] = 0.84999999999999998,
-                [3] = 0.29999999999999999,
-                [4] = 1
-              },
-              activeGlowEnabled = true,
-              activeGlowFrequency = 0.25,
-              activeGlowLines = 8,
-              activeGlowScale = 1,
-              activeGlowThickness = 2,
-              activeGlowType = "Pixel Glow",
-              aspectRatioCrop = 1,
-              bgColor = {
-                [1] = 0,
-                [2] = 0,
-                [3] = 0,
-                [4] = 1
-              },
-              bgOpacity = 0,
-              borderColor = {
-                [1] = 0,
-                [2] = 0,
-                [3] = 0,
-                [4] = 1
-              },
-              borderSize = 2,
-              clickableIcons = false,
-              durationAnchor = "CENTER",
-              durationColor = {
-                [1] = 1,
-                [2] = 1,
-                [3] = 1,
-                [4] = 1
-              },
-              durationOffsetX = 0,
-              durationOffsetY = 0,
-              durationSize = 13,
-              dynamicLayout = true,
-              enabled = true,
-              entries = {
-                [1] = {
-                  id = 20484,
-                  type = "spell"
-                }
-              },
-              growDirection = "RIGHT",
-              hideDurationText = false,
-              hideGCD = true,
-              hideNonUsable = false,
-              hideStackText = true,
-              iconSize = 28,
-              id = "conflict",
-              locked = false,
-              maxIcons = 3,
-              name = "Conflicting Visibility",
-              noDesaturateWithCharges = true,
-              offsetX = 0,
-              offsetY = 0,
-              showActiveState = true,
-              showItemCharges = true,
-              showOnlyInCombat = false,
-              showOnlyOnCooldown = true,
-              showOnlyWhenActive = false,
-              showOnlyWhenOffCooldown = false,
-              showProfessionQuality = true,
-              showRechargeSwipe = false,
-              spacing = 4,
-              specSpecificSpells = false,
-              stackAnchor = "BOTTOMRIGHT",
-              stackColor = {
-                [1] = 1,
-                [2] = 1,
-                [3] = 1,
-                [4] = 1
-              },
-              stackOffsetX = 3,
-              stackOffsetY = -1,
-              stackSize = 9,
-              zoom = 0
-            }
+        abilityTimeline = {
+          bigIcon = {
+            anchorTo = "cdmUtility",
+            enabled = true
+          },
+          timeline = {
+            anchorTo = "cdmEssential",
+            enabled = true
           }
         },
-        ncdm = {
-          containers = {
-            customBar_conflict = {
-              _legacyId = "conflict",
-              _migratedFromCustomTrackers = true,
-              activeGlowColor = {
-                [1] = 1,
-                [2] = 0.84999999999999998,
-                [3] = 0.29999999999999999,
-                [4] = 1
-              },
-              activeGlowEnabled = true,
-              activeGlowFrequency = 0.25,
-              activeGlowLines = 8,
-              activeGlowScale = 1,
-              activeGlowThickness = 2,
-              activeGlowType = "Pixel Glow",
-              anchorTo = "disabled",
-              builtIn = false,
-              clickableIcons = false,
-              containerType = "customBar",
-              dynamicLayout = true,
-              enabled = true,
-              entries = {
-                [1] = {
-                  id = 20484,
-                  type = "spell"
-                }
-              },
-              growDirection = "RIGHT",
-              hideGCD = true,
-              hideNonUsable = false,
-              id = "conflict",
-              keybindContext = "customTrackers",
-              layoutDirection = "HORIZONTAL",
-              locked = false,
-              name = "Conflicting Visibility",
-              noDesaturateWithCharges = true,
-              pos = {
-                ox = 0,
-                oy = 0
-              },
-              row1 = {
-                aspectRatioCrop = 1,
-                borderColorTable = {
-                  [1] = 0,
-                  [2] = 0,
-                  [3] = 0,
-                  [4] = 1
-                },
-                borderSize = 2,
-                durationAnchor = "CENTER",
-                durationOffsetX = 0,
-                durationOffsetY = 0,
-                durationSize = 13,
-                durationTextColor = {
-                  [1] = 1,
-                  [2] = 1,
-                  [3] = 1,
-                  [4] = 1
-                },
-                hideDurationText = false,
-                hideStackText = true,
-                iconCount = 3,
-                iconSize = 28,
-                opacity = 1,
-                padding = 4,
-                stackAnchor = "BOTTOMRIGHT",
-                stackOffsetX = 3,
-                stackOffsetY = -1,
-                stackSize = 9,
-                stackTextColor = {
-                  [1] = 1,
-                  [2] = 1,
-                  [3] = 1,
-                  [4] = 1
-                },
-                xOffset = 0,
-                yOffset = 0,
-                zoom = 0
-              },
-              row2 = {
-                iconCount = 0
-              },
-              row3 = {
-                iconCount = 0
-              },
-              shape = "icon",
-              showActiveState = true,
-              showItemCharges = true,
-              showOnlyInCombat = false,
-              showOnlyOnCooldown = true,
-              showOnlyWhenActive = false,
-              showOnlyWhenOffCooldown = false,
-              showProfessionQuality = true,
-              showRechargeSwipe = false,
-              tooltipContext = "customTrackers",
-              visibilityMode = "onCooldown"
-            }
+        bigWigs = {
+          emphasized = {
+            anchorTo = "primaryPower",
+            enabled = true
+          },
+          normal = {
+            anchorTo = "cdmEssential",
+            enabled = true
+          }
+        },
+        cdm = {
+          engine = "owned"
+        },
+        dandersFrames = {
+          party = {
+            anchorTo = "cdmUtility",
+            enabled = true
+          },
+          pinned1 = {
+            anchorTo = "playerFrame",
+            enabled = true
+          },
+          raid = {
+            anchorTo = "secondaryPower",
+            enabled = true
           }
         },
         quiUnitFrames = {

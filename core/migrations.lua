@@ -168,11 +168,22 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --             behavior for dynamic layout, normalize mutually-exclusive
 --             visibility flags, and backfill active-glow/text fields that
 --             the initial customBar mirror left implicit.
+-- v33 = RemapThirdPartyAnchorAliases
+--       (3.6 alpha: third-party integrations (BigWigs, DandersFrames,
+--        AbilityTimeline) now route their "Anchor To" dropdown through the
+--        same registry-driven categorized + searchable widget the rest of
+--        QUI's movers use. The integrations historically stored four legacy
+--        alias values that aren't in the canonical anchor-target registry:
+--        essential, utility, primary, secondary. Rewrite them to the
+--        canonical registry keys (cdmEssential, cdmUtility, primaryPower,
+--        secondaryPower) so the new dropdown can render and round-trip the
+--        saved value. The legacy alias arms in each integration's
+--        GetAnchorFrame still resolve unmigrated values as a safety net.)
 --
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 32
+local CURRENT_SCHEMA_VERSION = 33
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -3473,6 +3484,50 @@ end
 Migrations.MAX_BACKUP_SLOTS = MAX_BACKUP_SLOTS
 
 ---------------------------------------------------------------------------
+-- v33: third-party "Anchor To" alias remap.
+--
+-- BigWigs / DandersFrames / AbilityTimeline historically built their
+-- "Anchor To" dropdown from a per-integration flat list with four legacy
+-- alias values that aren't in the canonical anchor-target registry:
+--   essential  -> cdmEssential
+--   utility    -> cdmUtility
+--   primary    -> primaryPower
+--   secondary  -> secondaryPower
+-- The integrations now route through the same registry-driven categorized
+-- + searchable widget the rest of QUI uses, which only knows the canonical
+-- keys. Rewrite saved values so they round-trip through the new dropdown.
+-- The legacy alias arms in each integration's GetAnchorFrame still resolve
+-- unmigrated values as a safety net.
+---------------------------------------------------------------------------
+local THIRD_PARTY_ANCHOR_ALIAS_MAP = {
+    essential = "cdmEssential",
+    utility = "cdmUtility",
+    primary = "primaryPower",
+    secondary = "secondaryPower",
+}
+
+local THIRD_PARTY_ANCHOR_DB_KEYS = { "bigWigs", "dandersFrames", "abilityTimeline" }
+
+local function RemapThirdPartyAnchorAliases(profile)
+    if type(profile) ~= "table" then return end
+    for _, dbKey in ipairs(THIRD_PARTY_ANCHOR_DB_KEYS) do
+        local section = profile[dbKey]
+        if type(section) == "table" then
+            for entryKey, cfg in pairs(section) do
+                if type(cfg) == "table" and type(cfg.anchorTo) == "string" then
+                    local mapped = THIRD_PARTY_ANCHOR_ALIAS_MAP[cfg.anchorTo]
+                    if mapped then
+                        MigLog("v33 RemapThirdPartyAnchorAliases: %s.%s.anchorTo %s -> %s",
+                            dbKey, tostring(entryKey), cfg.anchorTo, mapped)
+                        cfg.anchorTo = mapped
+                    end
+                end
+            end
+        end
+    end
+end
+
+---------------------------------------------------------------------------
 -- Entry point: Run all profile migrations
 ---------------------------------------------------------------------------
 --
@@ -3670,6 +3725,11 @@ function Migrations.RunOnProfile(profile)
         RepairResourceBarSettings(profile)
         NormalizeCustomCDMBarCompatibility(profile)
     end
+
+    -- v33: rewrite legacy "Anchor To" alias values stored on third-party
+    -- integrations to canonical registry keys so the unified categorized
+    -- + searchable dropdown can render and round-trip them.
+    if stored < 33 then RemapThirdPartyAnchorAliases(profile) end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame

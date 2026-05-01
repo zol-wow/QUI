@@ -7,7 +7,7 @@ QUI_DB = {
     },
     profiles = {
         Default = {
-            _schemaVersion = 32,
+            _schemaVersion = 33,
             _migrationBackup = {
                 slots = {
                     { stamp = 1700000000, profile = { _schemaVersion = 30, custom = "snapshot" } },

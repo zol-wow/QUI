@@ -38,22 +38,12 @@ local THIRD_PARTY_LAYOUT_KEYS = {
     dandersPinned2 = { containerKey = "pinned2", label = "Pinned Set 2" },
 }
 
-local function FilterAnchorOptions(anchorOptions, excludedValue)
-    if not anchorOptions or not excludedValue then
-        return anchorOptions
-    end
-    local filtered = {}
-    for _, option in ipairs(anchorOptions) do
-        if option.value == nil or option.value ~= excludedValue then
-            table.insert(filtered, option)
-        end
-    end
-    return filtered
-end
-
 -- Emit one anchor-config block (accent-dot label + card) inside `tabContent`
 -- starting at `y`. Returns the new y after the block + SECTION_GAP.
-local function BuildAnchorBlock(tabContent, label, cfg, y, anchorOptions, onChange)
+-- `excludeSelf` (optional) is the canonical anchor-target name this block
+-- represents — passed through to the registry-driven dropdown so the
+-- frame can't anchor to itself (used by AbilityTimeline timeline/bigIcon).
+local function BuildAnchorBlock(tabContent, label, cfg, y, onChange, excludeSelf)
     if not cfg then return y end
 
     Shared.CreateAccentDotLabel(tabContent, label, y); y = y - 22
@@ -80,9 +70,20 @@ local function BuildAnchorBlock(tabContent, label, cfg, y, anchorOptions, onChan
         { description = "Let QUI drive the position of " .. label .. ". Turn off to leave the addon's own anchor behavior intact." })
     card.AddRow(Shared.BuildSettingRow(card.frame, "Enable Anchoring", enableW))
 
-    -- Anchor To — full-width dropdown; labels can be long (other tile IDs).
-    local anchorW = GUI:CreateFormDropdown(card.frame, nil, anchorOptions, "anchorTo", cfg, OnAnchorTargetChange,
-        { description = "Which QUI element " .. label .. " should attach to. Choose the HUD piece you want this frame to track." })
+    -- Anchor To — same registry-driven, categorized + searchable widget the
+    -- rest of QUI's movers use. Falls back to a plain dropdown if the helper
+    -- module hasn't loaded yet (defensive; load order makes this unlikely).
+    local AnchorOpts = ns.QUI_Anchoring_Options
+    local anchorW
+    if AnchorOpts and AnchorOpts.CreateAnchorDropdown then
+        anchorW = AnchorOpts:CreateAnchorDropdown(
+            card.frame, nil, cfg, "anchorTo",
+            nil, nil, nil, OnAnchorTargetChange,
+            nil, nil, excludeSelf
+        )
+    else
+        anchorW = GUI:CreateFormDropdown(card.frame, nil, {}, "anchorTo", cfg, OnAnchorTargetChange)
+    end
     card.AddRow(Shared.BuildSettingRow(card.frame, "Anchor To", anchorW))
 
     -- Container Point + Target Point — paired 9-point dropdowns.
@@ -141,7 +142,6 @@ local function BuildThirdPartyContainerLayoutSettings(host, lookupKey)
 
     local P = U.PlaceRow
     local FORM_ROW = U.FORM_ROW
-    local anchorOptions = DF:BuildAnchorOptions()
 
     U.CreateCollapsible(host, "Position", 6 * FORM_ROW + 8, function(body)
         -- Forward decls so the anchor-target handler can reach the sliders.
@@ -161,8 +161,22 @@ local function BuildThirdPartyContainerLayoutSettings(host, lookupKey)
         local sy = -4
         sy = P(GUI:CreateFormCheckbox(body, "Enable", "enabled", cfg, Refresh,
             { description = "Enable QUI-managed anchoring for this container. While off, the container keeps its existing position." }), body, sy)
-        sy = P(GUI:CreateFormDropdown(body, "Anchor To", anchorOptions, "anchorTo", cfg, OnAnchorTargetChange,
-            { description = "Which QUI element this container attaches to." }), body, sy)
+
+        -- Anchor To — same registry-driven, categorized + searchable dropdown
+        -- the rest of QUI's movers use. Falls back to a plain dropdown if the
+        -- helper hasn't loaded yet (defensive; load order makes this unlikely).
+        local AnchorOpts = ns.QUI_Anchoring_Options
+        local anchorW
+        if AnchorOpts and AnchorOpts.CreateAnchorDropdown then
+            anchorW = AnchorOpts:CreateAnchorDropdown(
+                body, "Anchor To", cfg, "anchorTo",
+                nil, nil, nil, OnAnchorTargetChange
+            )
+        else
+            anchorW = GUI:CreateFormDropdown(body, "Anchor To", {}, "anchorTo", cfg, OnAnchorTargetChange)
+        end
+        sy = P(anchorW, body, sy)
+
         sy = P(GUI:CreateFormDropdown(body, "Container Point", ANCHOR_POINTS, "sourcePoint", cfg, Refresh,
             { description = "Which point on this container is used as the attach point." }), body, sy)
         sy = P(GUI:CreateFormDropdown(body, "Target Point", ANCHOR_POINTS, "targetPoint", cfg, Refresh,
@@ -214,15 +228,14 @@ local function BuildIntegrationSection(tabContent, y, opts)
         y = y - 32
     end
 
-    local anchorOptions = opts.buildAnchorOptions()
     for _, entry in ipairs(opts.keys) do
         local cfg = db[entry.key]
-        local entryAnchorOptions = opts.filterExcludeKey and FilterAnchorOptions(anchorOptions, opts.filterExcludeKey[entry.key]) or anchorOptions
         y = BuildAnchorBlock(
             tabContent,
             opts.name .. " \226\128\148 " .. entry.label,  -- "BigWigs — Normal Bars"
-            cfg, y, entryAnchorOptions,
-            function() opts.applyPosition(entry.key) end
+            cfg, y,
+            function() opts.applyPosition(entry.key) end,
+            entry.excludeSelf
         )
     end
 
@@ -252,11 +265,10 @@ local function BuildThirdPartyTab(tabContent)
             {key = "normal",     label = "Normal Bars"},
             {key = "emphasized", label = "Emphasized Bars"},
         },
-        isAvailable          = function() return ns.QUI_BigWigs and ns.QUI_BigWigs:IsAvailable() end,
-        unavailableMessage   = "BigWigs not detected. Install and enable BigWigs to use these anchors.",
-        description          = "Anchor BigWigs bar groups to QUI elements. This writes to BigWigs Bars custom anchor points.",
-        buildAnchorOptions   = function() return ns.QUI_BigWigs:BuildAnchorOptions() end,
-        applyPosition        = function(k) ns.QUI_BigWigs:ApplyPosition(k) end,
+        isAvailable        = function() return ns.QUI_BigWigs and ns.QUI_BigWigs:IsAvailable() end,
+        unavailableMessage = "BigWigs not detected. Install and enable BigWigs to use these anchors.",
+        description        = "Anchor BigWigs bar groups to QUI elements. This writes to BigWigs Bars custom anchor points.",
+        applyPosition      = function(k) ns.QUI_BigWigs:ApplyPosition(k) end,
     })
 
     -- DandersFrames
@@ -272,27 +284,21 @@ local function BuildThirdPartyTab(tabContent)
         isAvailable        = function() return ns.QUI_DandersFrames and ns.QUI_DandersFrames:IsAvailable() end,
         unavailableMessage = "DandersFrames not detected. Install and enable DandersFrames to use these anchors.",
         description        = "Anchor DandersFrames containers to QUI elements. When enabled, QUI controls placement; move them with QUI Layout Mode rather than DandersFrames' own unlock.",
-        buildAnchorOptions = function() return ns.QUI_DandersFrames:BuildAnchorOptions() end,
         applyPosition      = function(k) ns.QUI_DandersFrames:ApplyPosition(k) end,
     })
 
-    -- AbilityTimeline — each key can't anchor to its own target, so the
-    -- anchor option list is filtered per key.
+    -- AbilityTimeline — each entry's `excludeSelf` keeps the frame from
+    -- offering itself as an anchor target in its own dropdown.
     y = BuildIntegrationSection(tabContent, y, {
         name    = "AbilityTimeline",
         dbKey   = "abilityTimeline",
         keys    = {
-            {key = "timeline", label = "Timeline Frame"},
-            {key = "bigIcon",  label = "Big Icon Frame"},
-        },
-        filterExcludeKey = {
-            timeline = "abilityTimelineTimeline",
-            bigIcon  = "abilityTimelineBigIcon",
+            {key = "timeline", label = "Timeline Frame", excludeSelf = "abilityTimelineTimeline"},
+            {key = "bigIcon",  label = "Big Icon Frame", excludeSelf = "abilityTimelineBigIcon"},
         },
         isAvailable        = function() return ns.QUI_AbilityTimeline and ns.QUI_AbilityTimeline:IsAvailable() end,
         unavailableMessage = "AbilityTimeline not detected. Install and enable AbilityTimeline to use these anchors.",
         description        = "Anchor AbilityTimeline frames to QUI elements. This controls the timeline and big icon frame positions.",
-        buildAnchorOptions = function() return ns.QUI_AbilityTimeline:BuildAnchorOptions() end,
         applyPosition      = function(k) ns.QUI_AbilityTimeline:ApplyPosition(k) end,
     })
 

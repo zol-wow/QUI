@@ -1,4 +1,4 @@
--- Profile already at v32 with a spec-specific custom-tracker bar in V2 shape.
+-- Profile already at v33 with a spec-specific custom-tracker bar in V2 shape.
 -- Per-spec entries live in db.global.ncdm.specTrackerSpells and must round-trip
 -- through QUI1 export -> fresh-install import via the _quiBundledGlobals carrier.
 
@@ -6,7 +6,7 @@ QUI_DB = {
     profileKeys = { ["TestChar - TestRealm"] = "Default" },
     profiles = {
         Default = {
-            _schemaVersion = 32,
+            _schemaVersion = 33,
             cdm = { engine = "owned" },
 
             ncdm = {
