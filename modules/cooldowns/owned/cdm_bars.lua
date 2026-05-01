@@ -170,6 +170,33 @@ local function GetPermanentAuraFillCurve()
 end
 
 ---------------------------------------------------------------------------
+-- PERMANENT-AURA DURATION-TEXT ALPHA CURVE
+--
+-- Inverted companion to GetPermanentAuraFillCurve. The OnLoop time branch
+-- formats durObj:GetRemainingDuration() into the duration text — for a
+-- zero-total durObj that produces "0.0", which is wrong for permanent
+-- auras. We can't gate the text branch on a Lua compare of secret data,
+-- so use the same curve trick to drive the duration FontString's alpha:
+--
+--   total == 0       → alpha 0 (text hidden — permanent has no countdown)
+--   total >= 1e-6    → alpha 1 (text visible — timed shows the countdown)
+---------------------------------------------------------------------------
+local _permanentAuraTextAlphaCurve
+local function GetPermanentAuraTextAlphaCurve()
+    if _permanentAuraTextAlphaCurve then return _permanentAuraTextAlphaCurve end
+    if not C_CurveUtil or not C_CurveUtil.CreateCurve
+       or not Enum or not Enum.LuaCurveType then
+        return nil
+    end
+    local curve = C_CurveUtil.CreateCurve()
+    curve:SetType(Enum.LuaCurveType.Step)
+    curve:AddPoint(0, 0)
+    curve:AddPoint(0.000001, 1)
+    _permanentAuraTextAlphaCurve = curve
+    return curve
+end
+
+---------------------------------------------------------------------------
 -- BAR FRAME FACTORY
 ---------------------------------------------------------------------------
 local function CreateBar(parent)
@@ -1051,6 +1078,7 @@ local function ReleaseBar(bar)
     if bar.PermanentFill then
         bar.PermanentFill:SetAlpha(0)
     end
+    bar.DurationText:SetAlpha(1)
 
     if #recyclePool < MAX_RECYCLE_POOL_SIZE then
         recyclePool[#recyclePool + 1] = bar
@@ -1523,6 +1551,9 @@ function CDMBars:UpdateOwnedBarAura(bar)
             end
             if bar.DurationText then
                 pcall(bar.DurationText.SetText, bar.DurationText, "")
+                -- Restore default alpha — the curve-driven hide path may
+                -- have left it at 0 from an earlier combat permanent state.
+                pcall(bar.DurationText.SetAlpha, bar.DurationText, 1)
             end
         end
 
@@ -1588,6 +1619,19 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 local ok, alpha = pcall(durObj.EvaluateTotalDuration, durObj, fillCurve, nil)
                 if ok then
                     pcall(bar.PermanentFill.SetAlpha, bar.PermanentFill, alpha)
+                end
+            end
+
+            -- Duration-text alpha drive: the OnLoop time branch formats
+            -- GetRemainingDuration into the duration text (e.g. "0.0" for
+            -- a permanent zero-total durObj). Hide the FontString for
+            -- permanent auras via the same curve pattern, inverted so
+            -- timed shows the countdown and permanent does not.
+            local textAlphaCurve = GetPermanentAuraTextAlphaCurve()
+            if textAlphaCurve and durObj.EvaluateTotalDuration and bar.DurationText then
+                local ok, textAlpha = pcall(durObj.EvaluateTotalDuration, durObj, textAlphaCurve, nil)
+                if ok then
+                    pcall(bar.DurationText.SetAlpha, bar.DurationText, textAlpha)
                 end
             end
         end
@@ -1703,6 +1747,9 @@ function CDMBars:UpdateOwnedBarAura(bar)
         end
         if bar.DurationText then
             bar.DurationText:SetText("")
+            -- Restore default alpha so a freshly-active bar with
+            -- normal timed text isn't hidden from a stale curve write.
+            pcall(bar.DurationText.SetAlpha, bar.DurationText, 1)
         end
 
         -- Always restore name via C-side SetText — no Lua string comparison
