@@ -60,13 +60,28 @@ local function BuildAnchorBlock(tabContent, label, cfg, y, anchorOptions, onChan
 
     local card = Shared.CreateSettingsCardGroup(tabContent, y)
 
+    -- Forward declarations so the anchor-target change handler can reach the
+    -- offset slider widgets that are created further down.
+    local xW, yW
+
+    -- Changing Anchor To leaves prior offsets calibrated for a different
+    -- target — they teleport the frame when re-applied. Mirror the owned-
+    -- module behavior (BuildAnchoringSection) and zero offsets on change.
+    local function OnAnchorTargetChange()
+        cfg.offsetX = 0
+        cfg.offsetY = 0
+        if xW and xW.SetValue then xW:SetValue(0, true) end
+        if yW and yW.SetValue then yW:SetValue(0, true) end
+        if onChange then onChange() end
+    end
+
     -- Enable — full-width (the primary gate).
     local enableW = GUI:CreateFormCheckbox(card.frame, nil, "enabled", cfg, onChange,
         { description = "Let QUI drive the position of " .. label .. ". Turn off to leave the addon's own anchor behavior intact." })
     card.AddRow(Shared.BuildSettingRow(card.frame, "Enable Anchoring", enableW))
 
     -- Anchor To — full-width dropdown; labels can be long (other tile IDs).
-    local anchorW = GUI:CreateFormDropdown(card.frame, nil, anchorOptions, "anchorTo", cfg, onChange,
+    local anchorW = GUI:CreateFormDropdown(card.frame, nil, anchorOptions, "anchorTo", cfg, OnAnchorTargetChange,
         { description = "Which QUI element " .. label .. " should attach to. Choose the HUD piece you want this frame to track." })
     card.AddRow(Shared.BuildSettingRow(card.frame, "Anchor To", anchorW))
 
@@ -80,10 +95,11 @@ local function BuildAnchorBlock(tabContent, label, cfg, y, anchorOptions, onChan
         Shared.BuildSettingRow(card.frame, "Target Point", dstW)
     )
 
-    -- X / Y offset — paired sliders.
-    local xW = GUI:CreateFormSlider(card.frame, nil, -200, 200, 1, "offsetX", cfg, onChange, nil,
+    -- X / Y offset — paired sliders. Range matches the Layout Mode panel so
+    -- values written in one surface are not display-clamped in the other.
+    xW = GUI:CreateFormSlider(card.frame, nil, -400, 400, 1, "offsetX", cfg, onChange, nil,
         { description = "Horizontal pixel offset from the target anchor point." })
-    local yW = GUI:CreateFormSlider(card.frame, nil, -200, 200, 1, "offsetY", cfg, onChange, nil,
+    yW = GUI:CreateFormSlider(card.frame, nil, -400, 400, 1, "offsetY", cfg, onChange, nil,
         { description = "Vertical pixel offset from the target anchor point." })
     card.AddRow(
         Shared.BuildSettingRow(card.frame, "X Offset", xW),
@@ -127,20 +143,36 @@ local function BuildThirdPartyContainerLayoutSettings(host, lookupKey)
     local FORM_ROW = U.FORM_ROW
     local anchorOptions = DF:BuildAnchorOptions()
 
-    U.CreateCollapsible(host, "Anchoring (drag the mover to place)", 6 * FORM_ROW + 8, function(body)
+    U.CreateCollapsible(host, "Position", 6 * FORM_ROW + 8, function(body)
+        -- Forward decls so the anchor-target handler can reach the sliders.
+        local xW, yW
+
+        -- Changing Anchor To leaves prior offsets calibrated for a different
+        -- target — they teleport the frame when re-applied. Reset offsets to 0
+        -- so the user's first sight of the new target is at its anchor point.
+        local function OnAnchorTargetChange()
+            cfg.offsetX = 0
+            cfg.offsetY = 0
+            if xW and xW.SetValue then xW:SetValue(0, true) end
+            if yW and yW.SetValue then yW:SetValue(0, true) end
+            Refresh()
+        end
+
         local sy = -4
         sy = P(GUI:CreateFormCheckbox(body, "Enable", "enabled", cfg, Refresh,
             { description = "Enable QUI-managed anchoring for this container. While off, the container keeps its existing position." }), body, sy)
-        sy = P(GUI:CreateFormDropdown(body, "Anchor To", anchorOptions, "anchorTo", cfg, Refresh,
+        sy = P(GUI:CreateFormDropdown(body, "Anchor To", anchorOptions, "anchorTo", cfg, OnAnchorTargetChange,
             { description = "Which QUI element this container attaches to." }), body, sy)
         sy = P(GUI:CreateFormDropdown(body, "Container Point", ANCHOR_POINTS, "sourcePoint", cfg, Refresh,
             { description = "Which point on this container is used as the attach point." }), body, sy)
         sy = P(GUI:CreateFormDropdown(body, "Target Point", ANCHOR_POINTS, "targetPoint", cfg, Refresh,
             { description = "Which point on the target frame this container attaches to." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "X Offset", -400, 400, 1, "offsetX", cfg, Refresh, nil,
-            { description = "Horizontal pixel offset between container point and target point." }), body, sy)
-        P(GUI:CreateFormSlider(body, "Y Offset", -400, 400, 1, "offsetY", cfg, Refresh, nil,
-            { description = "Vertical pixel offset between container point and target point." }), body, sy)
+        xW = GUI:CreateFormSlider(body, "X Offset", -400, 400, 1, "offsetX", cfg, Refresh, nil,
+            { description = "Horizontal pixel offset between container point and target point." })
+        sy = P(xW, body, sy)
+        yW = GUI:CreateFormSlider(body, "Y Offset", -400, 400, 1, "offsetY", cfg, Refresh, nil,
+            { description = "Vertical pixel offset between container point and target point." })
+        P(yW, body, sy)
     end, sections, relayout)
 
     U.BuildOpenFullSettingsLink(host, lookupKey, sections, relayout)
@@ -298,5 +330,29 @@ if Registry and Schema and RenderAdapters
                 )
             end,
         },
+        -- Layout Mode reads anchor status from db.profile.frameAnchoring[key]
+        -- by default. DandersFrames stores its anchor in db.dandersFrames.<container>
+        -- and actively wipes the matching frameAnchoring entry, which would
+        -- otherwise make the panel report "Anchoring: Disabled" even when the
+        -- container is in fact anchored. Provide an explicit status here.
+        getAnchorStatus = function(key)
+            local entry = THIRD_PARTY_LAYOUT_KEYS[key]
+            if not entry then return nil end
+            local core = GetCore()
+            local cfg = core and core.db and core.db.profile
+                and core.db.profile.dandersFrames
+                and core.db.profile.dandersFrames[entry.containerKey]
+            if type(cfg) ~= "table" then
+                return { enabled = false }
+            end
+            local hasAnchor = cfg.enabled
+                and type(cfg.anchorTo) == "string"
+                and cfg.anchorTo ~= ""
+                and cfg.anchorTo ~= "disabled"
+            return {
+                enabled = hasAnchor,
+                parent = hasAnchor and cfg.anchorTo or nil,
+            }
+        end,
     }))
 end

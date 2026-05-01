@@ -524,28 +524,57 @@ local function BuildContent(panel, key)
 
     -- Anchoring Details section — appended after provider content
     if U and U.CreateCollapsible then
-        -- Determine anchor status
-        local fa
-        local core = ns.Helpers.GetCore()
-        if core and core.db and core.db.profile then
-            fa = core.db.profile.frameAnchoring
-        end
-        local anchorEntry = fa and fa[key]
-        local isAnchored = type(anchorEntry) == "table"
-
+        -- Determine anchor status. Features whose anchor lives outside the
+        -- shared frameAnchoring table (e.g. DandersFrames stores anchor in
+        -- db.dandersFrames.<container>) can override this via feature.getAnchorStatus.
         local statusText
-        if not isAnchored then
-            statusText = "|cff888888Anchoring:|r  |cffFF6666Disabled|r"
-        else
-            local parent = anchorEntry.parent
-            if not parent or parent == "disabled" then
-                statusText = "|cff888888Anchoring:|r  |cffFF6666Disabled|r"
-            else
-                statusText = "|cff888888Anchoring:|r  |cff34D399Enabled|r"
+        local customStatus
+        if feature and type(feature.getAnchorStatus) == "function" then
+            local ok, result = pcall(feature.getAnchorStatus, key)
+            if ok and type(result) == "table" then
+                customStatus = result
             end
         end
 
-        local chainText = BuildAnchorChainText(key)
+        if customStatus then
+            if customStatus.enabled then
+                statusText = "|cff888888Anchoring:|r  |cff34D399Enabled|r"
+            else
+                statusText = "|cff888888Anchoring:|r  |cffFF6666Disabled|r"
+            end
+        else
+            local fa
+            local core = ns.Helpers.GetCore()
+            if core and core.db and core.db.profile then
+                fa = core.db.profile.frameAnchoring
+            end
+            local anchorEntry = fa and fa[key]
+            local isAnchored = type(anchorEntry) == "table"
+
+            if not isAnchored then
+                statusText = "|cff888888Anchoring:|r  |cffFF6666Disabled|r"
+            else
+                local parent = anchorEntry.parent
+                if not parent or parent == "disabled" then
+                    statusText = "|cff888888Anchoring:|r  |cffFF6666Disabled|r"
+                else
+                    statusText = "|cff888888Anchoring:|r  |cff34D399Enabled|r"
+                end
+            end
+        end
+
+        local chainText
+        if customStatus then
+            if customStatus.enabled and customStatus.parent then
+                local info = ns.FRAME_ANCHOR_INFO and ns.FRAME_ANCHOR_INFO[customStatus.parent]
+                local parentName = info and info.displayName or customStatus.parent
+                chainText = "Anchored to: " .. parentName
+            else
+                chainText = "No anchor chain"
+            end
+        else
+            chainText = BuildAnchorChainText(key)
+        end
 
         local infoSection = CreateFrame("Frame", nil, content)
         local HEADER_HEIGHT = U.HEADER_HEIGHT or 24
