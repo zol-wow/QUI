@@ -10,6 +10,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha6 - 2026-05-01
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** Same backup advice. v3.6.0-alpha1/2/3/4/5 → alpha6: data already migrated. v3.5.x → alpha6: back up `WTF/` and export your profile first.
+>
+> This alpha includes a small **schema migration (v34)** that translates each unit frame's legacy `onlyMyDebuffs = true` flag into the new structured `debuffFilter.modifiers.PLAYER = true`, then removes the old key. Idempotent — visible behavior is preserved. Runs once on first load.
+
+### Added
+- **Modules Control Center.** New **Modules** sub-tab under General that surfaces every binary on/off QUI module in one place — ~76 entries across Display, QoL, Action Bars, Castbars, Group Frames, Unit Frames, Resource Bars, Instance, Cooldown Manager, 3rd Party, Tooltip, Character, and Subsystems categories. Each row is a pill toggle that flips the same DB key the module already used (no parallel store, no migration), with combat-locked greying + tooltip on protected modules and class/spec gating where it matters (Atonement Counter on Disc Priest, Totem Bar on Shaman). Section nav strip jumps between groups; the global Settings search now returns module toggles with a `[Module]` badge and an inline pill so you can flip a module without leaving the search dropdown.
+- **Structured aura filters on unit frames.** Per-frame **buff filter** and **debuff filter** controls on player, target, focus, targettarget, pet, and boss1–5. Each aura settings card now has stackable modifier checkboxes (PLAYER, RAID, CANCELABLE, NOT CANCELABLE, INCLUDE NAME PLATE ONLY) plus an Exclusive Filter dropdown (External Defensive, Big Defensive, Important, Crowd Control, Raid Player Dispellable). Defaults are all-disabled — every aura renders by default; pick the ones that should pass. Filtering runs entirely C-side through Blizzard's filter string, so it stays taint-safe in combat.
+
+### Changed
+- **"Only My Debuffs" checkbox replaced by the new debuff filter.** The per-frame Only-My-Debuffs toggle is gone from the UI — its behavior is now expressed as `debuffFilter.modifiers.PLAYER = true` in the new structured filter system. The v34 migration flips that on for any profile that had the old checkbox enabled, so existing setups keep filtering exactly as they did.
+
+
+
 ## v3.6.0-alpha5 - 2026-05-01
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** Same backup advice. v3.6.0-alpha1/2/3/4 → alpha5: data already migrated. v3.5.x → alpha5: back up `WTF/` and export your profile first.
