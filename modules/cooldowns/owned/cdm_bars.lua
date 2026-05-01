@@ -2145,15 +2145,35 @@ barTimerGroup:SetScript("OnLoop", function()
                             -- _active = false or call LayoutBars — UpdateOwnedBars
                             -- owns state transitions and layout.
                             anyActive = true  -- keep ticking until UpdateOwnedBars confirms
-                            bar._durObj = nil
-                            bar._cSideFill = nil
-                            bar._lastDurationText = nil
-                            bar._lastDurationBucket = nil
-                            if bar.DurationText then
-                                bar.DurationText:SetText("")
-                            end
-                            if bar.StatusBar then
-                                pcall(bar.StatusBar.SetValue, bar.StatusBar, 0)
+                            if bar._cSideFill then
+                                -- C-side SetTimerDuration owns the fill. A
+                                -- transient "remaining = 0" read on a still-
+                                -- active timed aura (e.g. Metamorphosis under
+                                -- restricted scope) would otherwise stomp the
+                                -- bar to SetValue(0), clear _durObj / _cSideFill,
+                                -- and let the next UpdateOwnedBarAura tick re-
+                                -- apply SetTimerDuration — the visible empty↔
+                                -- normal-duration flicker. Don't touch bar fill
+                                -- or the C-side timer state from here; let
+                                -- UpdateOwnedBars (event-driven) own the
+                                -- active/inactive transition and the actual
+                                -- tear-down when the aura genuinely ends.
+                                bar._lastDurationText = nil
+                                bar._lastDurationBucket = nil
+                                if bar.DurationText then
+                                    bar.DurationText:SetText("")
+                                end
+                            else
+                                bar._durObj = nil
+                                bar._cSideFill = nil
+                                bar._lastDurationText = nil
+                                bar._lastDurationBucket = nil
+                                if bar.DurationText then
+                                    bar.DurationText:SetText("")
+                                end
+                                if bar.StatusBar then
+                                    pcall(bar.StatusBar.SetValue, bar.StatusBar, 0)
+                                end
                             end
                         end
                     end
