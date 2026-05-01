@@ -697,6 +697,9 @@ local function BanishBlizzardFrame(frame, showHookedFlag, alphaHookedFlag)
     if not alphaHookedFlag then
         alphaHookedFlag = true
         hooksecurefunc(frame, "SetAlpha", function(self, alpha)
+            if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(alpha) then
+                return
+            end
             if self._quiBanished and alpha > 0 then
                 C_Timer.After(0, function()
                     if self._quiBanished and self:GetAlpha() > 0 then

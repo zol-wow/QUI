@@ -2026,9 +2026,17 @@ local function InstallVisibilityHook(frame)
     -- Detect alpha-based visibility changes (HUD fade system)
     if frame.SetAlpha then
         local curAlpha = frame:GetAlpha()
-        local wasAlphaHidden = type(curAlpha) == "number" and curAlpha < 0.01
+        -- Secret numbers pass the type check but error on comparison.
+        local curAlphaSecret = nsHelpers and nsHelpers.IsSecretValue and nsHelpers.IsSecretValue(curAlpha)
+        local wasAlphaHidden = (not curAlphaSecret) and type(curAlpha) == "number" and curAlpha < 0.01
         hooksecurefunc(frame, "SetAlpha", function(self, alpha)
-            if type(alpha) ~= "number" then return end  -- secret value, ignore
+            if type(alpha) ~= "number" then return end
+            -- Secret numbers pass the type check but error on comparison.
+            -- The HUD curve override (hud_visibility.lua) passes secret
+            -- HP-derived alphas through SetAlpha intentionally.
+            if nsHelpers and nsHelpers.IsSecretValue and nsHelpers.IsSecretValue(alpha) then
+                return
+            end
             local isAlphaHidden = alpha < 0.01
             if isAlphaHidden ~= wasAlphaHidden then
                 wasAlphaHidden = isAlphaHidden

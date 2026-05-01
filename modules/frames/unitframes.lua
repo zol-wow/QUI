@@ -2672,7 +2672,10 @@ local function CreateUnitFrame(unit, unitKey)
             -- visibility system will re-evaluate via its own PEW handler.
             -- Without this guard the frame flashes visible for one frame
             -- before the coalesced visibility check hides it again.
-            if self:GetAlpha() < 0.01 then return end
+            -- Secret alpha (HP-curve override) can't be compared in Lua;
+            -- treat as "may be visible" and let UpdateFrame proceed.
+            local a = self:GetAlpha()
+            if not Helpers.IsSecretValue(a) and a < 0.01 then return end
             UpdateFrame(self)
         elseif event == "PLAYER_TARGET_CHANGED" then
             if self.unitKey == "target" then

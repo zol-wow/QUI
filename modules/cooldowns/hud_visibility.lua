@@ -18,39 +18,33 @@ local UpdateUnitframesVisibility
 local HookCustomTrackerFrameForMouseover
 
 ---------------------------------------------------------------------------
--- HEALTH STATE TRACKER
--- UnitHealth() always returns secret values from addon code in WoW 12.0+
--- and COMBAT_LOG_EVENT_UNFILTERED is restricted. Use RegisterStateDriver
--- with a health macro conditional — evaluated in Blizzard's secure code,
--- completely bypassing addon taint.
----------------------------------------------------------------------------
--- HEALTH STATE DETECTION
--- ALL health APIs return secret values from addon code in WoW 12.0+.
--- Secret values can't be compared, even inside pcall.
+-- HEALTH STATE TRACKER (curve-driven alpha override)
+-- UnitHealth / UnitHealthMax / UnitHealthPercent return secret values for
+-- the player in 12.0+. Build a step NumberCurve mapping fraction→alpha
+-- and pass UnitHealthPercent's secret return straight into frame:SetAlpha
+-- — the value never re-enters Lua, so no taint comparisons happen.
 --
--- UNIT_HEALTH can prove only that health changed, not that a quiet period
--- means full health. Keep the "below max" override until a trusted reset
--- point instead of hiding frames while the player may still be injured.
+--   fraction <  1.0 → alpha 1 (damaged: frame visible)
+--   fraction == 1.0 → alpha 0 (full HP: frame hidden)
+--
+-- Drives unit frame visibility directly when the bool-rule path
+-- (ShouldUnitframesBeVisible) returns false and the user has
+-- "Show when health below 100%" enabled.
 ---------------------------------------------------------------------------
-local _healthBelowMax = false
+local _damagedAlphaCurve
 
-local function UpdateHealthState()
-    local wasBelowMax = _healthBelowMax
-    _healthBelowMax = true
-
-    if not wasBelowMax and UpdateUnitframesVisibility then
-        UpdateUnitframesVisibility()
+local function GetDamagedAlphaCurve()
+    if _damagedAlphaCurve then return _damagedAlphaCurve end
+    if not C_CurveUtil or not C_CurveUtil.CreateCurve
+       or not Enum or not Enum.LuaCurveType then
+        return nil
     end
-end
-
-local function ResetHealthState()
-    if not _healthBelowMax then
-        return
-    end
-    _healthBelowMax = false
-    if UpdateUnitframesVisibility then
-        UpdateUnitframesVisibility()
-    end
+    local curve = C_CurveUtil.CreateCurve()
+    curve:SetType(Enum.LuaCurveType.Step)
+    curve:AddPoint(0.0, 1)  -- below full health
+    curve:AddPoint(1.0, 0)  -- exactly full health
+    _damagedAlphaCurve = curve
+    return curve
 end
 
 ---------------------------------------------------------------------------
@@ -749,6 +743,46 @@ local function GetUnitframeFrames()
     return frames
 end
 
+-- Player-only subset for the curve-driven HP override. The "Show when
+-- health below 100%" condition reads PLAYER hp, so it should only re-show
+-- the player's own frame (and castbar) — target/focus/pet/etc. follow
+-- their own rules.
+local function GetPlayerUnitframes()
+    local frames = {}
+    if _G.QUI_UnitFrames and _G.QUI_UnitFrames.player then
+        table.insert(frames, _G.QUI_UnitFrames.player)
+    end
+    local vis = GetUnitframesVisibilitySettings()
+    if not (vis and vis.alwaysShowCastbars) then
+        if _G.QUI_Castbars and _G.QUI_Castbars.player then
+            table.insert(frames, _G.QUI_Castbars.player)
+        end
+    end
+    return frames
+end
+
+local function GetUnitframeFramesExcludingPlayer()
+    local frames = {}
+    if _G.QUI_UnitFrames then
+        for unitKey, frame in pairs(_G.QUI_UnitFrames) do
+            if frame and unitKey ~= "player" then
+                table.insert(frames, frame)
+            end
+        end
+    end
+    local vis = GetUnitframesVisibilitySettings()
+    if not (vis and vis.alwaysShowCastbars) then
+        if _G.QUI_Castbars then
+            for unitKey, castbar in pairs(_G.QUI_Castbars) do
+                if castbar and unitKey ~= "player" then
+                    table.insert(frames, castbar)
+                end
+            end
+        end
+    end
+    return frames
+end
+
 local function ApplyUnitframeVisibilityAlpha(frame, alpha)
     if not frame then return end
 
@@ -774,10 +808,9 @@ local function ShouldUnitframesBeVisible()
         return true
     end
 
-    -- Health < 100% overrides hide rules (uses UNIT_HEALTH event timing)
-    if vis.showWhenHealthBelow100 and _healthBelowMax then
-        return true
-    end
+    -- "Show when health below 100%" override is applied later as a
+    -- curve-driven alpha in UpdateUnitframesVisibility — it can't live
+    -- here because it'd require comparing a secret HP value in Lua.
 
     if vis.showAlways then
         local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
@@ -848,9 +881,11 @@ local function OnUnitframesFadeUpdate(self, elapsed)
     end
 end
 
--- Start Unitframes fade animation
-local function StartUnitframesFade(targetAlpha)
-    local frames = GetUnitframeFrames()
+-- Start Unitframes fade animation. `framesOverride` lets callers fade a
+-- subset (e.g. non-player frames while the player frame is being driven
+-- directly by the HP curve).
+local function StartUnitframesFade(targetAlpha, framesOverride)
+    local frames = framesOverride or GetUnitframeFrames()
     if #frames == 0 then return end
 
     local forceInstant = IsUnitframesCombatLocked()
@@ -913,6 +948,39 @@ UpdateUnitframesVisibility = function()
 
     local vis = GetUnitframesVisibilitySettings()
     local shouldShow = ShouldUnitframesBeVisible()
+
+    -- Curve-driven "Show when health below 100%" override (PLAYER ONLY).
+    -- When rules say hide and the option is enabled, route the secret HP
+    -- fraction through the step curve and pipe its return straight into
+    -- the player frame's SetAlpha. The value never enters Lua. Other
+    -- frames (target/focus/pet/etc.) follow the normal fade rule because
+    -- they don't track player HP.
+    --   below full → alpha 1 (player frame visible)
+    --   exactly 1.0 → alpha 0 (player frame hidden, hide rules win)
+    local hpCurve = ((not shouldShow) and vis and vis.showWhenHealthBelow100
+        and UnitHealthPercent) and GetDamagedAlphaCurve() or nil
+    if hpCurve then
+        local damagedAlpha = UnitHealthPercent("player", true, hpCurve)
+        for _, frame in ipairs(GetPlayerUnitframes()) do
+            ApplyUnitframeVisibilityAlpha(frame, damagedAlpha)
+        end
+
+        -- Non-player frames + castbars: fade per rule.
+        local fadeAlpha = vis and vis.fadeOutAlpha or 0
+        local nonPlayerFrames = GetUnitframeFramesExcludingPlayer()
+        if #nonPlayerFrames > 0 then
+            StartUnitframesFade(fadeAlpha, nonPlayerFrames)
+        else
+            -- Only player frame exists — stop any in-flight fade so it
+            -- doesn't overwrite the curve-driven alpha.
+            if UnitframesVisibility.fadeFrame then
+                UnitframesVisibility.fadeFrame:SetScript("OnUpdate", nil)
+            end
+            UnitframesVisibility.isFading = false
+            UnitframesVisibility.fadeTargets = nil
+        end
+        return
+    end
 
     -- Sync castbar alpha based on "Always Show Castbars" setting
     if _G.QUI_Castbars then
@@ -1573,19 +1641,16 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
         if unit ~= "player" then return end
     end
 
-    -- Health events — update health state before visibility check
+    -- Health events — re-run unit-frame visibility so the curve-driven
+    -- alpha override picks up the new HP fraction.
     if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
-        UpdateHealthState()
+        if UpdateUnitframesVisibility then UpdateUnitframesVisibility() end
     end
 
     if event == "ADDON_LOADED" then
         local addonName = ...
         if addonName ~= ADDON_NAME then return end
         self:UnregisterEvent("ADDON_LOADED")
-    end
-
-    if event == "PLAYER_ENTERING_WORLD" then
-        ResetHealthState()
     end
 
     if event == "ADDON_LOADED" or event == "PLAYER_ENTERING_WORLD" then
@@ -1605,10 +1670,8 @@ visibilityEventFrame:SetScript("OnEvent", function(self, event, ...)
             -- events (dismount, combat, target, etc.).  Running a full
             -- re-eval here flashes frames because IsMounted() and
             -- IsPlayerInDungeonOrRaid() can still return stale values
-            -- 2+ seconds after a zone transition.
-            -- UpdateHealthState is also skipped — it triggers
-            -- UpdateUnitframesVisibility internally.  UNIT_HEALTH events
-            -- keep the health state current independently.
+            -- 2+ seconds after a zone transition. UNIT_HEALTH events keep
+            -- the curve-driven HP override current independently.
             UpdateCDMVisibility()
             UpdateCustomTrackersVisibility()
         end)
