@@ -1054,6 +1054,7 @@ local function install_search_capture_overrides()
             sectionName = info.sectionName,
             tileId = info.tileId,
             subPageIndex = info.subPageIndex,
+            featureId = info.featureId,
             keywords = build_capture_navigation_keywords(info),
         })
     end
@@ -1248,6 +1249,41 @@ if type(GUI.SeedStaticSearchRoutesFromTiles) == "function" then
     GUI:SeedStaticSearchRoutesFromTiles(frame)
 end
 
+-- Phase 1+ Modules Control Center: emit moduleToggle navigation entries
+-- for features that declare moduleEntry. These power the [Module] badge +
+-- inline pill rendering in the global search dropdown (see Task 9).
+local function emit_module_toggle_entries()
+    local settings = ns.Settings
+    local registry = settings and settings.Registry
+    if not registry or type(registry.IterateFeatures) ~= "function" then
+        return 0
+    end
+
+    local emitted = 0
+    for featureId, feature in registry:IterateFeatures() do
+        local entry = type(feature) == "table" and feature.moduleEntry
+        if type(entry) == "table" and not feature.noSearch then
+            local label = entry.label or feature.name or featureId
+            local caption = entry.caption or ""
+            local group = entry.group or "Modules"
+            GUI:RegisterSearchNavigation("moduleToggle", {
+                label = label,
+                featureId = featureId,
+                tileId = "global",
+                subPageIndex = 3,    -- Modules sub-page index in General tile's
+                                      -- subPages array. See options/tiles/global.lua
+                                      -- — order is profiles, pinnedGlobals, modules,
+                                      -- importExport, thirdParty, clickCast.
+                keywords = { label, caption, group, "module" },
+            })
+            emitted = emitted + 1
+        end
+    end
+    return emitted
+end
+
+local emitted_module_entries = emit_module_toggle_entries()
+
 local function copy_table(source)
     if type(source) ~= "table" then
         return source
@@ -1397,9 +1433,10 @@ local handle = assert(io.open(OUTPUT_PATH, "w"))
 handle:write(output)
 handle:close()
 
-print(("Loaded %d script(s). Generated %d settings entries and %d navigation entries into %s."):format(
+print(("Loaded %d script(s). Generated %d settings entries and %d navigation entries (%d module toggles) into %s."):format(
     loaded_count,
     #settings_entries,
     #navigation_entries,
+    emitted_module_entries,
     OUTPUT_PATH
 ))

@@ -5,6 +5,7 @@
     <Script file="diagnostics_console.lua"/>
     <Script file="aura_events.lua"/>
     <Script file="registry.lua"/>
+    <Script file="modules.lua"/>
     <Script file="media.lua"/>
     <Script file="compatibility.lua"/>
     <Script file="migrations.lua"/>

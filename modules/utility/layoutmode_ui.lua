@@ -1958,6 +1958,15 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
                     end
                     um:SetElementEnabled(key, newState)
                     UpdateToggleVisual()
+                    -- Notify the Modules panel and any other subscribers.
+                    -- Resolve element key → feature id via the shared registry.
+                    local Settings = ns.Settings
+                    local Registry = Settings and Settings.Registry
+                    local feature = Registry and Registry.GetFeatureByMoverKey
+                        and Registry:GetFeatureByMoverKey(key)
+                    if feature and feature.id and ns.QUI_Modules then
+                        ns.QUI_Modules:NotifyChanged(feature.id)
+                    end
                     if drawer._refreshLayerButtons then
                         drawer._refreshLayerButtons()
                     end

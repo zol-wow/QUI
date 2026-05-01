@@ -5937,8 +5937,13 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
 
             -- Type icon/badge
             local typeBadge = navRow:CreateFontString(nil, "OVERLAY")
-            SetFont(typeBadge, 9, "", C.textMuted)
-            local typeLabels = {tab = "TAB", subtab = "SUBTAB", section = "SECTION"}
+            local typeLabels = {tab = "TAB", subtab = "SUBTAB", section = "SECTION", moduleToggle = "[Module]"}
+            local isModuleToggle = entry.navType == "moduleToggle"
+            if isModuleToggle then
+                SetFont(typeBadge, 9, "", C.accent)
+            else
+                SetFont(typeBadge, 9, "", C.textMuted)
+            end
             typeBadge:SetText(typeLabels[entry.navType] or "NAV")
             typeBadge:SetPoint("LEFT", 8, 0)
 
@@ -5951,11 +5956,35 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
             navLabel:SetJustifyH("LEFT")
             navLabel:SetWordWrap(false)
 
-            -- Go button
-            local goText = navRow:CreateFontString(nil, "OVERLAY")
-            SetFont(goText, 10, "", C.accent)
-            goText:SetText("Go >")
-            goText:SetPoint("RIGHT", -10, 0)
+            -- Go button (skipped for moduleToggle — pill replaces it)
+            if not isModuleToggle then
+                local goText = navRow:CreateFontString(nil, "OVERLAY")
+                SetFont(goText, 10, "", C.accent)
+                goText:SetText("Go >")
+                goText:SetPoint("RIGHT", -10, 0)
+            end
+
+            -- Inline ON/OFF pill for moduleToggle results
+            if isModuleToggle and entry.featureId then
+                local registry = ns.Settings and ns.Settings.Registry
+                local feature = registry
+                    and type(registry.GetFeature) == "function"
+                    and registry:GetFeature(entry.featureId)
+                    or nil
+                if feature and feature.moduleEntry
+                   and ns.QUI_ModulesPage and ns.QUI_ModulesPage.CreateModuleTogglePill then
+                    local pill = ns.QUI_ModulesPage.CreateModuleTogglePill(navRow, feature.id, feature.moduleEntry)
+                    pill:SetPoint("RIGHT", navRow, "RIGHT", -8, 0)
+
+                    -- Suppress row navigation when the pill is clicked. Set
+                    -- the flag on MouseDown (before the row's OnClick fires),
+                    -- and clear it inside OnClick after the early-return so
+                    -- subsequent non-pill clicks navigate normally.
+                    pill:SetScript("OnMouseDown", function()
+                        navRow._suppressNavigate = true
+                    end)
+                end
+            end
 
             -- Hover effects
             navRow:SetScript("OnEnter", function(self)
@@ -5970,7 +5999,13 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
             -- Click to navigate. Pass the entry through verbatim — losing
             -- tileId / subPageIndex / featureId / navType here breaks v2
             -- routing and the section-anchor scroll-to-feature path.
+            -- Guard: pill's OnMouseDown sets _suppressNavigate so pill clicks
+            -- don't also trigger navigation; clear the flag here after guarding.
             navRow:SetScript("OnClick", function()
+                if navRow._suppressNavigate then
+                    navRow._suppressNavigate = false
+                    return
+                end
                 GUI:NavigateSearchResult(entry)
             end)
 

@@ -40,6 +40,12 @@ function V2.Register(frame)
                 featureId = "pinnedGlobalsPage",
             },
             {
+                id = "modules",
+                name = "Modules",
+                sectionNav = true,
+                featureId = "modulesPage",
+            },
+            {
                 id = "importExport",
                 name = "Import / Export",
                 sectionNav = true,

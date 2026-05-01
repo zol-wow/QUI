@@ -50,6 +50,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "action_bars",
         },
         {
+            ["featureId"] = "actionBarsGeneral",
             ["keywords"] = {
                 "Action Bars",
                 "General",
@@ -76,6 +77,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "action_bars",
         },
         {
+            ["featureId"] = "actionBarsGeneral",
             ["keywords"] = {
                 "Action Bars",
                 "General",
@@ -102,24 +104,13 @@ ns.QUI_SearchCache = {
             ["tileId"] = "action_bars",
         },
         {
+            ["featureId"] = "actionBarsBuffDebuff",
             ["keywords"] = {
                 "Action Bars",
                 "Buff/Debuff",
             },
             ["label"] = "Action Bars",
             ["navType"] = "tab",
-            ["subPageIndex"] = 2,
-            ["subTabName"] = "Buff/Debuff",
-            ["tabName"] = "Action Bars",
-            ["tileId"] = "action_bars",
-        },
-        {
-            ["keywords"] = {
-                "Action Bars",
-                "Buff/Debuff",
-            },
-            ["label"] = "Action Bars > Buff/Debuff",
-            ["navType"] = "subtab",
             ["subPageIndex"] = 2,
             ["subTabName"] = "Buff/Debuff",
             ["tabName"] = "Action Bars",
@@ -140,6 +131,20 @@ ns.QUI_SearchCache = {
             ["tileId"] = "action_bars",
         },
         {
+            ["featureId"] = "actionBarsBuffDebuff",
+            ["keywords"] = {
+                "Action Bars",
+                "Buff/Debuff",
+            },
+            ["label"] = "Action Bars > Buff/Debuff",
+            ["navType"] = "subtab",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "Buff/Debuff",
+            ["tabName"] = "Action Bars",
+            ["tileId"] = "action_bars",
+        },
+        {
+            ["featureId"] = "actionBarsPerBar",
             ["keywords"] = {
                 "Action Bars",
                 "Per-Bar",
@@ -152,6 +157,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "action_bars",
         },
         {
+            ["featureId"] = "actionBarsPerBar",
             ["keywords"] = {
                 "Action Bars",
                 "Per-Bar",
@@ -187,6 +193,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "uiScale",
             ["keywords"] = {
                 "Appearance",
                 "UI Scale",
@@ -215,6 +222,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "uiScale",
             ["keywords"] = {
                 "Appearance",
                 "UI Scale",
@@ -259,6 +267,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "defaultFonts",
             ["keywords"] = {
                 "Appearance",
                 "Fonts",
@@ -287,6 +296,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "defaultFonts",
             ["keywords"] = {
                 "Appearance",
                 "Fonts",
@@ -324,11 +334,14 @@ ns.QUI_SearchCache = {
             ["label"] = "Appearance",
             ["navType"] = "tab",
             ["subPageIndex"] = 3,
+            ["subTabIndex"] = 2,
             ["subTabName"] = "Skinning",
+            ["tabIndex"] = 10,
             ["tabName"] = "Appearance",
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "skinningPage",
             ["keywords"] = {
                 "Appearance",
                 "Skinning",
@@ -336,9 +349,7 @@ ns.QUI_SearchCache = {
             ["label"] = "Appearance",
             ["navType"] = "tab",
             ["subPageIndex"] = 3,
-            ["subTabIndex"] = 2,
             ["subTabName"] = "Skinning",
-            ["tabIndex"] = 10,
             ["tabName"] = "Appearance",
             ["tileId"] = "appearance",
         },
@@ -357,6 +368,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "skinningPage",
             ["keywords"] = {
                 "Appearance",
                 "Skinning",
@@ -488,11 +500,14 @@ ns.QUI_SearchCache = {
             ["label"] = "Appearance",
             ["navType"] = "tab",
             ["subPageIndex"] = 4,
+            ["subTabIndex"] = 1,
             ["subTabName"] = "Autohide",
+            ["tabIndex"] = 10,
             ["tabName"] = "Appearance",
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "autohidePage",
             ["keywords"] = {
                 "Appearance",
                 "Autohide",
@@ -500,9 +515,7 @@ ns.QUI_SearchCache = {
             ["label"] = "Appearance",
             ["navType"] = "tab",
             ["subPageIndex"] = 4,
-            ["subTabIndex"] = 1,
             ["subTabName"] = "Autohide",
-            ["tabIndex"] = 10,
             ["tabName"] = "Appearance",
             ["tileId"] = "appearance",
         },
@@ -521,6 +534,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "autohidePage",
             ["keywords"] = {
                 "Appearance",
                 "Autohide",
@@ -636,11 +650,14 @@ ns.QUI_SearchCache = {
             ["label"] = "Appearance",
             ["navType"] = "tab",
             ["subPageIndex"] = 5,
+            ["subTabIndex"] = 2,
             ["subTabName"] = "Bar Hiding",
+            ["tabIndex"] = 8,
             ["tabName"] = "Appearance",
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "barHidingPage",
             ["keywords"] = {
                 "Appearance",
                 "Bar Hiding",
@@ -648,9 +665,7 @@ ns.QUI_SearchCache = {
             ["label"] = "Appearance",
             ["navType"] = "tab",
             ["subPageIndex"] = 5,
-            ["subTabIndex"] = 2,
             ["subTabName"] = "Bar Hiding",
-            ["tabIndex"] = 8,
             ["tabName"] = "Appearance",
             ["tileId"] = "appearance",
         },
@@ -669,6 +684,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "barHidingPage",
             ["keywords"] = {
                 "Appearance",
                 "Bar Hiding",
@@ -681,6 +697,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "hudVisibilityPage",
             ["keywords"] = {
                 "Appearance",
                 "HUD Visibility",
@@ -693,6 +710,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "hudVisibilityPage",
             ["keywords"] = {
                 "Appearance",
                 "HUD Visibility",
@@ -705,6 +723,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "hudVisibilityPage",
             ["keywords"] = {
                 "Appearance",
                 "HUD Visibility",
@@ -719,6 +738,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "hudVisibilityPage",
             ["keywords"] = {
                 "Appearance",
                 "HUD Visibility",
@@ -733,6 +753,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "hudVisibilityPage",
             ["keywords"] = {
                 "Appearance",
                 "HUD Visibility",
@@ -747,6 +768,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "hudVisibilityPage",
             ["keywords"] = {
                 "Appearance",
                 "HUD Visibility",
@@ -761,6 +783,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "hudVisibilityPage",
             ["keywords"] = {
                 "Appearance",
                 "HUD Visibility",
@@ -783,10 +806,12 @@ ns.QUI_SearchCache = {
             ["navType"] = "tab",
             ["subPageIndex"] = 7,
             ["subTabName"] = "Frame Levels",
+            ["tabIndex"] = 12,
             ["tabName"] = "Appearance",
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "frameLevelsPage",
             ["keywords"] = {
                 "Appearance",
                 "Frame Levels",
@@ -795,11 +820,11 @@ ns.QUI_SearchCache = {
             ["navType"] = "tab",
             ["subPageIndex"] = 7,
             ["subTabName"] = "Frame Levels",
-            ["tabIndex"] = 12,
             ["tabName"] = "Appearance",
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "frameLevelsPage",
             ["keywords"] = {
                 "Appearance",
                 "Frame Levels",
@@ -902,6 +927,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "blizzardMoverPage",
             ["keywords"] = {
                 "Appearance",
                 "Blizzard Mover",
@@ -914,6 +940,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "appearance",
         },
         {
+            ["featureId"] = "blizzardMoverPage",
             ["keywords"] = {
                 "Appearance",
                 "Blizzard Mover",
@@ -935,6 +962,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "chatFrame1",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Chat",
@@ -947,6 +975,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "chatFrame1",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Chat",
@@ -959,6 +988,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "chatFrame1",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Chat",
@@ -973,6 +1003,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "chatFrame1",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Chat",
@@ -987,6 +1018,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "chatFrame1",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Chat",
@@ -1001,6 +1033,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "chatFrame1",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Chat",
@@ -1015,6 +1048,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "chatFrame1",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Chat",
@@ -1029,6 +1063,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "chatFrame1",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Chat",
@@ -1043,6 +1078,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "chatFrame1",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Chat",
@@ -1057,6 +1093,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "chatFrame1",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Chat",
@@ -1071,6 +1108,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "chatFrame1",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Chat",
@@ -1085,6 +1123,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "chatFrame1",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Chat",
@@ -1099,6 +1138,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "chatFrame1",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Chat",
@@ -1113,6 +1153,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "chatFrame1",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Chat",
@@ -1127,6 +1168,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "tooltipAnchor",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Tooltips",
@@ -1139,6 +1181,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "tooltipAnchor",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Tooltips",
@@ -1151,6 +1194,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "tooltipAnchor",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Tooltips",
@@ -1165,6 +1209,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "tooltipAnchor",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Tooltips",
@@ -1179,6 +1224,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "tooltipAnchor",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Tooltips",
@@ -1193,6 +1239,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "tooltipAnchor",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Tooltips",
@@ -1207,6 +1254,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "tooltipAnchor",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Tooltips",
@@ -1221,6 +1269,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "chat_tooltips",
         },
         {
+            ["featureId"] = "tooltipAnchor",
             ["keywords"] = {
                 "Chat & Tooltips",
                 "Tooltips",
@@ -1244,6 +1293,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "cooldown_manager",
         },
         {
+            ["featureId"] = "cooldownManagerContainersPage",
             ["keywords"] = {
                 "Cooldown Manager",
                 "Page 1",
@@ -1255,6 +1305,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "cooldown_manager",
         },
         {
+            ["featureId"] = "cooldownManagerContainersPage",
             ["keywords"] = {
                 "Cooldown Manager",
                 "Page 1",
@@ -1275,6 +1326,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "xpTracker",
             ["keywords"] = {
                 "Gameplay",
                 "XP Tracker",
@@ -1287,6 +1339,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "xpTracker",
             ["keywords"] = {
                 "Gameplay",
                 "XP Tracker",
@@ -1299,6 +1352,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "xpTracker",
             ["keywords"] = {
                 "Gameplay",
                 "XP Tracker",
@@ -1313,6 +1367,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "xpTracker",
             ["keywords"] = {
                 "Gameplay",
                 "XP Tracker",
@@ -1327,6 +1382,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "xpTracker",
             ["keywords"] = {
                 "Gameplay",
                 "XP Tracker",
@@ -1341,6 +1397,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "partyKeystones",
             ["keywords"] = {
                 "Gameplay",
                 "Keystones",
@@ -1353,6 +1410,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "partyKeystones",
             ["keywords"] = {
                 "Gameplay",
                 "Keystones",
@@ -1365,6 +1423,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "partyKeystones",
             ["keywords"] = {
                 "Gameplay",
                 "Keystones",
@@ -1379,6 +1438,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "skyriding",
             ["keywords"] = {
                 "Gameplay",
                 "Skyriding",
@@ -1391,6 +1451,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "skyriding",
             ["keywords"] = {
                 "Gameplay",
                 "Skyriding",
@@ -1403,6 +1464,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "skyriding",
             ["keywords"] = {
                 "Gameplay",
                 "Skyriding",
@@ -1417,6 +1479,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "skyriding",
             ["keywords"] = {
                 "Gameplay",
                 "Skyriding",
@@ -1431,6 +1494,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "skyriding",
             ["keywords"] = {
                 "Gameplay",
                 "Skyriding",
@@ -1445,6 +1509,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "skyriding",
             ["keywords"] = {
                 "Gameplay",
                 "Skyriding",
@@ -1459,6 +1524,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "skyriding",
             ["keywords"] = {
                 "Gameplay",
                 "Skyriding",
@@ -1473,6 +1539,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "crosshair",
             ["keywords"] = {
                 "Gameplay",
                 "Crosshair",
@@ -1485,6 +1552,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "crosshair",
             ["keywords"] = {
                 "Gameplay",
                 "Crosshair",
@@ -1497,6 +1565,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "crosshair",
             ["keywords"] = {
                 "Gameplay",
                 "Crosshair",
@@ -1511,6 +1580,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "crosshair",
             ["keywords"] = {
                 "Gameplay",
                 "Crosshair",
@@ -1525,6 +1595,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "crosshair",
             ["keywords"] = {
                 "Gameplay",
                 "Crosshair",
@@ -1539,6 +1610,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "crosshair",
             ["keywords"] = {
                 "Gameplay",
                 "Crosshair",
@@ -1553,6 +1625,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "crosshair",
             ["keywords"] = {
                 "Gameplay",
                 "Crosshair",
@@ -1567,6 +1640,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "characterPane",
             ["keywords"] = {
                 "Gameplay",
                 "Character",
@@ -1579,6 +1653,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "characterPane",
             ["keywords"] = {
                 "Gameplay",
                 "Character",
@@ -1591,6 +1666,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "characterPane",
             ["keywords"] = {
                 "Gameplay",
                 "Character",
@@ -1605,6 +1681,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "characterPane",
             ["keywords"] = {
                 "Gameplay",
                 "Character",
@@ -1619,6 +1696,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "characterPane",
             ["keywords"] = {
                 "Gameplay",
                 "Character",
@@ -1633,6 +1711,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "characterPane",
             ["keywords"] = {
                 "Gameplay",
                 "Character",
@@ -1647,6 +1726,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "missingRaidBuffs",
             ["keywords"] = {
                 "Gameplay",
                 "Raid Buffs",
@@ -1659,6 +1739,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "missingRaidBuffs",
             ["keywords"] = {
                 "Gameplay",
                 "Raid Buffs",
@@ -1671,6 +1752,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "missingRaidBuffs",
             ["keywords"] = {
                 "Gameplay",
                 "Raid Buffs",
@@ -1685,6 +1767,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "consumables",
             ["keywords"] = {
                 "Gameplay",
                 "Raid Buffs",
@@ -1699,6 +1782,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "missingRaidBuffs",
             ["keywords"] = {
                 "Gameplay",
                 "Raid Buffs",
@@ -1728,6 +1812,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "consumables",
             ["keywords"] = {
                 "Gameplay",
                 "Raid Buffs",
@@ -1742,6 +1827,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "consumables",
             ["keywords"] = {
                 "Gameplay",
                 "Raid Buffs",
@@ -1756,6 +1842,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "missingRaidBuffs",
             ["keywords"] = {
                 "Gameplay",
                 "Raid Buffs",
@@ -1770,6 +1857,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "missingRaidBuffs",
             ["keywords"] = {
                 "Gameplay",
                 "Raid Buffs",
@@ -1784,6 +1872,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "consumables",
             ["keywords"] = {
                 "Gameplay",
                 "Raid Buffs",
@@ -1813,6 +1902,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "consumables",
             ["keywords"] = {
                 "Gameplay",
                 "Raid Buffs",
@@ -1827,6 +1917,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "readyCheck",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -1839,6 +1930,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "readyCheck",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -1881,6 +1973,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "atonementCounter",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -1895,6 +1988,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "mplusTimer",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -1924,6 +2018,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "actionTracker",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -1938,6 +2033,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "readyCheck",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -1952,6 +2048,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "rotationAssistIcon",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -1966,6 +2063,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "atonementCounter",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -2010,6 +2108,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "mplusTimer",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -2024,6 +2123,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "rotationAssistIcon",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -2038,6 +2138,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "actionTracker",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -2052,6 +2153,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "actionTracker",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -2096,6 +2198,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "mplusProgress",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -2110,6 +2213,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "petWarning",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -2169,6 +2273,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "readyCheck",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -2183,6 +2288,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "actionTracker",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -2197,6 +2303,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "combatTimer",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -2211,6 +2318,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "focusCastAlert",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -2225,6 +2333,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "mplusProgress",
             ["keywords"] = {
                 "Gameplay",
                 "Combat",
@@ -2239,6 +2348,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "preyTrackerPage",
             ["keywords"] = {
                 "Gameplay",
                 "Prey Tracker",
@@ -2251,6 +2361,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "preyTrackerPage",
             ["keywords"] = {
                 "Gameplay",
                 "Prey Tracker",
@@ -2263,6 +2374,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "preyTrackerPage",
             ["keywords"] = {
                 "Gameplay",
                 "Prey Tracker",
@@ -2277,6 +2389,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "preyTrackerPage",
             ["keywords"] = {
                 "Gameplay",
                 "Prey Tracker",
@@ -2291,6 +2404,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "preyTrackerPage",
             ["keywords"] = {
                 "Gameplay",
                 "Prey Tracker",
@@ -2305,6 +2419,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "preyTrackerPage",
             ["keywords"] = {
                 "Gameplay",
                 "Prey Tracker",
@@ -2319,6 +2434,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "preyTrackerPage",
             ["keywords"] = {
                 "Gameplay",
                 "Prey Tracker",
@@ -2333,6 +2449,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "preyTrackerPage",
             ["keywords"] = {
                 "Gameplay",
                 "Prey Tracker",
@@ -2347,6 +2464,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "preyTrackerPage",
             ["keywords"] = {
                 "Gameplay",
                 "Prey Tracker",
@@ -2361,6 +2479,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "preyTrackerPage",
             ["keywords"] = {
                 "Gameplay",
                 "Prey Tracker",
@@ -2375,23 +2494,12 @@ ns.QUI_SearchCache = {
             ["tileId"] = "gameplay",
         },
         {
+            ["featureId"] = "modulesPage",
             ["keywords"] = {
                 "General",
             },
             ["label"] = "General",
             ["navType"] = "tab",
-            ["tabName"] = "General",
-            ["tileId"] = "global",
-        },
-        {
-            ["keywords"] = {
-                "General",
-                "Profiles",
-            },
-            ["label"] = "General",
-            ["navType"] = "tab",
-            ["subPageIndex"] = 1,
-            ["subTabName"] = "Profiles",
             ["tabName"] = "General",
             ["tileId"] = "global",
         },
@@ -2409,6 +2517,20 @@ ns.QUI_SearchCache = {
             ["tileId"] = "global",
         },
         {
+            ["featureId"] = "profilesPage",
+            ["keywords"] = {
+                "General",
+                "Profiles",
+            },
+            ["label"] = "General",
+            ["navType"] = "tab",
+            ["subPageIndex"] = 1,
+            ["subTabName"] = "Profiles",
+            ["tabName"] = "General",
+            ["tileId"] = "global",
+        },
+        {
+            ["featureId"] = "profilesPage",
             ["keywords"] = {
                 "General",
                 "Profiles",
@@ -2421,6 +2543,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "global",
         },
         {
+            ["featureId"] = "pinnedGlobalsPage",
             ["keywords"] = {
                 "General",
                 "Pinned Globals",
@@ -2433,6 +2556,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "global",
         },
         {
+            ["featureId"] = "pinnedGlobalsPage",
             ["keywords"] = {
                 "General",
                 "Pinned Globals",
@@ -2445,17 +2569,40 @@ ns.QUI_SearchCache = {
             ["tileId"] = "global",
         },
         {
+            ["featureId"] = "importExportPage",
             ["keywords"] = {
                 "General",
-                "Import / Export",
+                "Modules",
             },
             ["label"] = "General",
             ["navType"] = "tab",
             ["subPageIndex"] = 3,
-            ["subTabIndex"] = 1,
-            ["subTabName"] = "Import / Export",
-            ["tabIndex"] = 14,
+            ["subTabName"] = "Modules",
             ["tabName"] = "General",
+            ["tileId"] = "global",
+        },
+        {
+            ["featureId"] = "importExportPage",
+            ["keywords"] = {
+                "General",
+                "Modules",
+            },
+            ["label"] = "General > Modules",
+            ["navType"] = "subtab",
+            ["subPageIndex"] = 3,
+            ["subTabName"] = "Modules",
+            ["tabName"] = "General",
+            ["tileId"] = "global",
+        },
+        {
+            ["featureId"] = "primaryPower",
+            ["keywords"] = {
+                "global",
+                "Page 3",
+            },
+            ["label"] = "global > Page 3",
+            ["navType"] = "moduleToggle",
+            ["subPageIndex"] = 3,
             ["tileId"] = "global",
         },
         {
@@ -2465,7 +2612,22 @@ ns.QUI_SearchCache = {
             },
             ["label"] = "General",
             ["navType"] = "tab",
-            ["subPageIndex"] = 3,
+            ["subPageIndex"] = 4,
+            ["subTabIndex"] = 1,
+            ["subTabName"] = "Import / Export",
+            ["tabIndex"] = 14,
+            ["tabName"] = "General",
+            ["tileId"] = "global",
+        },
+        {
+            ["featureId"] = "thirdPartyAnchoring",
+            ["keywords"] = {
+                "General",
+                "Import / Export",
+            },
+            ["label"] = "General",
+            ["navType"] = "tab",
+            ["subPageIndex"] = 4,
             ["subTabName"] = "Import / Export",
             ["tabName"] = "General",
             ["tileId"] = "global",
@@ -2477,19 +2639,7 @@ ns.QUI_SearchCache = {
             },
             ["label"] = "General > Import / Export",
             ["navType"] = "subtab",
-            ["subPageIndex"] = 3,
-            ["subTabName"] = "Import / Export",
-            ["tabName"] = "General",
-            ["tileId"] = "global",
-        },
-        {
-            ["keywords"] = {
-                "General",
-                "Import / Export",
-            },
-            ["label"] = "General > Import / Export",
-            ["navType"] = "subtab",
-            ["subPageIndex"] = 3,
+            ["subPageIndex"] = 4,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Import / Export",
             ["tabIndex"] = 14,
@@ -2497,25 +2647,40 @@ ns.QUI_SearchCache = {
             ["tileId"] = "global",
         },
         {
+            ["featureId"] = "thirdPartyAnchoring",
+            ["keywords"] = {
+                "General",
+                "Import / Export",
+            },
+            ["label"] = "General > Import / Export",
+            ["navType"] = "subtab",
+            ["subPageIndex"] = 4,
+            ["subTabName"] = "Import / Export",
+            ["tabName"] = "General",
+            ["tileId"] = "global",
+        },
+        {
+            ["featureId"] = "clickCastPage",
             ["keywords"] = {
                 "General",
                 "Third-party",
             },
             ["label"] = "General",
             ["navType"] = "tab",
-            ["subPageIndex"] = 4,
+            ["subPageIndex"] = 5,
             ["subTabName"] = "Third-party",
             ["tabName"] = "General",
             ["tileId"] = "global",
         },
         {
+            ["featureId"] = "clickCastPage",
             ["keywords"] = {
                 "General",
                 "Third-party",
             },
             ["label"] = "General > Third-party",
             ["navType"] = "subtab",
-            ["subPageIndex"] = 4,
+            ["subPageIndex"] = 5,
             ["subTabName"] = "Third-party",
             ["tabName"] = "General",
             ["tileId"] = "global",
@@ -2527,19 +2692,7 @@ ns.QUI_SearchCache = {
             },
             ["label"] = "General",
             ["navType"] = "tab",
-            ["subPageIndex"] = 5,
-            ["subTabName"] = "Click-Cast",
-            ["tabName"] = "General",
-            ["tileId"] = "global",
-        },
-        {
-            ["keywords"] = {
-                "General",
-                "Click-Cast",
-            },
-            ["label"] = "General",
-            ["navType"] = "tab",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -2553,22 +2706,10 @@ ns.QUI_SearchCache = {
             },
             ["label"] = "General > Click-Cast",
             ["navType"] = "subtab",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
-            ["tabName"] = "General",
-            ["tileId"] = "global",
-        },
-        {
-            ["keywords"] = {
-                "General",
-                "Click-Cast",
-            },
-            ["label"] = "General > Click-Cast",
-            ["navType"] = "subtab",
-            ["subPageIndex"] = 5,
-            ["subTabName"] = "Click-Cast",
             ["tabName"] = "General",
             ["tileId"] = "global",
         },
@@ -2581,7 +2722,7 @@ ns.QUI_SearchCache = {
             ["label"] = "General",
             ["navType"] = "tab",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -2597,7 +2738,7 @@ ns.QUI_SearchCache = {
             ["label"] = "General > Click-Cast",
             ["navType"] = "subtab",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -2642,6 +2783,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "group_frames",
         },
         {
+            ["featureId"] = "groupFramesPage",
             ["keywords"] = {
                 "Group Frames",
                 "Page 2",
@@ -2653,6 +2795,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "group_frames",
         },
         {
+            ["featureId"] = "groupFramesPage",
             ["keywords"] = {
                 "Group Frames",
                 "Page 2",
@@ -2664,6 +2807,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "group_frames",
         },
         {
+            ["featureId"] = "helpPage",
             ["keywords"] = {
                 "Help",
             },
@@ -2697,6 +2841,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "help",
         },
         {
+            ["featureId"] = "troubleshootingPage",
             ["keywords"] = {
                 "Help",
                 "Tools",
@@ -2721,6 +2866,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "help",
         },
         {
+            ["featureId"] = "troubleshootingPage",
             ["keywords"] = {
                 "Help",
                 "Tools",
@@ -2742,6 +2888,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "minimap",
         },
         {
+            ["featureId"] = "minimap",
             ["keywords"] = {
                 "Minimap & Datatext",
                 "Minimap",
@@ -2754,6 +2901,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "minimap",
         },
         {
+            ["featureId"] = "minimap",
             ["keywords"] = {
                 "Minimap & Datatext",
                 "Minimap",
@@ -2766,6 +2914,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "minimap",
         },
         {
+            ["featureId"] = "datatextPanel",
             ["keywords"] = {
                 "Minimap & Datatext",
                 "Datatext",
@@ -2778,6 +2927,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "minimap",
         },
         {
+            ["featureId"] = "datatextPanel",
             ["keywords"] = {
                 "Minimap & Datatext",
                 "Datatext",
@@ -2813,6 +2963,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "fpsPreset",
             ["keywords"] = {
                 "Quality of Life",
                 "FPS Preset",
@@ -2841,6 +2992,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "fpsPreset",
             ["keywords"] = {
                 "Quality of Life",
                 "FPS Preset",
@@ -2885,6 +3037,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "combatText",
             ["keywords"] = {
                 "Quality of Life",
                 "Combat Text",
@@ -2913,6 +3066,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "combatText",
             ["keywords"] = {
                 "Quality of Life",
                 "Combat Text",
@@ -2957,6 +3111,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "automation",
             ["keywords"] = {
                 "Quality of Life",
                 "Automation",
@@ -2985,6 +3140,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "automation",
             ["keywords"] = {
                 "Quality of Life",
                 "Automation",
@@ -3029,6 +3185,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "popupBlocker",
             ["keywords"] = {
                 "Quality of Life",
                 "Popups",
@@ -3057,6 +3214,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "popupBlocker",
             ["keywords"] = {
                 "Quality of Life",
                 "Popups",
@@ -3101,6 +3259,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "quickSalvage",
             ["keywords"] = {
                 "Quality of Life",
                 "Salvage",
@@ -3129,6 +3288,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "quickSalvage",
             ["keywords"] = {
                 "Quality of Life",
                 "Salvage",
@@ -3173,6 +3333,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "consumableMacros",
             ["keywords"] = {
                 "Quality of Life",
                 "Consumables",
@@ -3201,6 +3362,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "consumableMacros",
             ["keywords"] = {
                 "Quality of Life",
                 "Consumables",
@@ -3245,6 +3407,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "targetDistance",
             ["keywords"] = {
                 "Quality of Life",
                 "Distance",
@@ -3273,6 +3436,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "targetDistance",
             ["keywords"] = {
                 "Quality of Life",
                 "Distance",
@@ -3317,6 +3481,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "quiPanel",
             ["keywords"] = {
                 "Quality of Life",
                 "Panel",
@@ -3345,6 +3510,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "quiPanel",
             ["keywords"] = {
                 "Quality of Life",
                 "Panel",
@@ -3389,6 +3555,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "reloadBehavior",
             ["keywords"] = {
                 "Quality of Life",
                 "Reload",
@@ -3417,6 +3584,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "qol",
         },
         {
+            ["featureId"] = "reloadBehavior",
             ["keywords"] = {
                 "Quality of Life",
                 "Reload",
@@ -3456,6 +3624,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "primaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Primary Resource",
@@ -3468,6 +3637,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "primaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Primary Resource",
@@ -3480,6 +3650,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "primaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Primary Resource",
@@ -3494,6 +3665,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "primaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Primary Resource",
@@ -3508,6 +3680,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "primaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Primary Resource",
@@ -3522,6 +3695,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "primaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Primary Resource",
@@ -3536,6 +3710,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "primaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Primary Resource",
@@ -3550,6 +3725,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "primaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Primary Resource",
@@ -3564,6 +3740,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "secondaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Secondary Resource",
@@ -3576,6 +3753,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "secondaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Secondary Resource",
@@ -3588,6 +3766,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "secondaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Secondary Resource",
@@ -3602,6 +3781,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "secondaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Secondary Resource",
@@ -3616,6 +3796,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "secondaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Secondary Resource",
@@ -3630,6 +3811,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "secondaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Secondary Resource",
@@ -3644,6 +3826,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "secondaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Secondary Resource",
@@ -3658,6 +3841,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "resource_bars",
         },
         {
+            ["featureId"] = "secondaryPower",
             ["keywords"] = {
                 "Resource Bars",
                 "Secondary Resource",
@@ -3681,6 +3865,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "unit_frames",
         },
         {
+            ["featureId"] = "unitFramesPage",
             ["keywords"] = {
                 "Unit Frames",
                 "General",
@@ -3695,6 +3880,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "unit_frames",
         },
         {
+            ["featureId"] = "unitFramesPage",
             ["keywords"] = {
                 "Unit Frames",
                 "Page 1",
@@ -3706,6 +3892,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "unit_frames",
         },
         {
+            ["featureId"] = "unitFramesPage",
             ["keywords"] = {
                 "Unit Frames",
                 "General",
@@ -3720,6 +3907,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "unit_frames",
         },
         {
+            ["featureId"] = "unitFramesPage",
             ["keywords"] = {
                 "Unit Frames",
                 "Page 1",
@@ -3731,6 +3919,7 @@ ns.QUI_SearchCache = {
             ["tileId"] = "unit_frames",
         },
         {
+            ["featureId"] = "welcomePage",
             ["keywords"] = {
                 "Welcome",
             },
@@ -15105,7 +15294,7 @@ ns.QUI_SearchCache = {
         {
             ["description"] = "Optional. Leave empty to overwrite the active profile, or enter a name to import into a named profile instead.",
             ["label"] = "Save As Profile",
-            ["subPageIndex"] = 3,
+            ["subPageIndex"] = 4,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Import / Export",
             ["tabIndex"] = 14,
@@ -15117,7 +15306,7 @@ ns.QUI_SearchCache = {
             ["description"] = "What this binding does: cast a spell or macro, change target/focus/assist, open the unit menu, or send a ping. Spell and Macro reveal an input below for the spell name or macro body.",
             ["label"] = "Action Type",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -15129,7 +15318,7 @@ ns.QUI_SearchCache = {
             ["description"] = "Whether this binding fires on a mouse button (including scroll) or on a keyboard key pressed while hovering a unit frame.",
             ["label"] = "Binding Type",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -15141,7 +15330,7 @@ ns.QUI_SearchCache = {
             ["description"] = "Let click-cast bindings fire when you click boss unit frames during encounters.",
             ["label"] = "Boss",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -15158,7 +15347,7 @@ ns.QUI_SearchCache = {
             ["description"] = "Master toggle for QUI's click-cast system. When on, clicks and key presses on raid/party/unit frames fire the bindings configured below instead of just targeting.",
             ["label"] = "Enable Click-Casting",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -15175,7 +15364,7 @@ ns.QUI_SearchCache = {
             ["description"] = "Let click-cast bindings fire when you click the focus unit frame.",
             ["label"] = "Focus",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -15192,7 +15381,7 @@ ns.QUI_SearchCache = {
             ["description"] = "Modifier key(s) that must be held for this binding to fire. Use None for the unmodified click or key — different modifiers let you stack multiple actions on the same button.",
             ["label"] = "Modifier",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -15204,7 +15393,7 @@ ns.QUI_SearchCache = {
             ["description"] = "Mouse button or scroll direction this binding fires on when hovering a unit frame. Combine with a modifier below to layer multiple actions onto the same button.",
             ["label"] = "Mouse Button",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -15216,7 +15405,7 @@ ns.QUI_SearchCache = {
             ["description"] = "Also split bindings per talent loadout within each spec, so each saved loadout can have its own click-cast layout. Requires Per-Spec Bindings.",
             ["label"] = "Per-Loadout Bindings (separate bindings per talent loadout)",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -15233,7 +15422,7 @@ ns.QUI_SearchCache = {
             ["description"] = "Maintain a separate list of click-cast bindings for each specialization. Bindings you add swap automatically when you change spec.",
             ["label"] = "Per-Spec Bindings",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -15250,7 +15439,7 @@ ns.QUI_SearchCache = {
             ["description"] = "Let click-cast bindings fire when you click the pet unit frame.",
             ["label"] = "Pet",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -15267,7 +15456,7 @@ ns.QUI_SearchCache = {
             ["description"] = "Let click-cast bindings fire when you click the player unit frame, not just group or nameplate frames.",
             ["label"] = "Player",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -15284,7 +15473,7 @@ ns.QUI_SearchCache = {
             ["description"] = "Append a summary of your current click-cast bindings to the unit tooltip whenever you hover a group frame, so you can see at a glance which click does what.",
             ["label"] = "Show Binding Tooltip on Hover",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -15301,7 +15490,7 @@ ns.QUI_SearchCache = {
             ["description"] = "When hovering a dead unit, any spell binding is temporarily replaced by your class's resurrection spell if you know one. Restores the original spell when the unit is alive.",
             ["label"] = "Smart Resurrection (auto-swap to res on dead targets)",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -15318,7 +15507,7 @@ ns.QUI_SearchCache = {
             ["description"] = "Let click-cast bindings fire when you click the target unit frame.",
             ["label"] = "Target",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
@@ -15335,7 +15524,7 @@ ns.QUI_SearchCache = {
             ["description"] = "Let click-cast bindings fire when you click the target-of-target unit frame.",
             ["label"] = "Target of Target",
             ["sectionName"] = "Click-Cast",
-            ["subPageIndex"] = 5,
+            ["subPageIndex"] = 6,
             ["subTabIndex"] = 1,
             ["subTabName"] = "Click-Cast",
             ["tabIndex"] = 7,
