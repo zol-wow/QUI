@@ -4431,6 +4431,13 @@ function CDMIcons:ReleaseIcon(icon)
     if ns._OwnedGlows and ns._OwnedGlows.ClearPandemicState then
         ns._OwnedGlows.ClearPandemicState(icon)
     end
+    -- The keybind FontString and rotation-helper overlay are parented to the
+    -- icon and travel with it through the shared recycle pool. Clear them so
+    -- a recycled icon doesn't bring a previous viewer's keybind text into a
+    -- container whose Show Keybinds is off (or which never paints keybinds).
+    if _G.QUI_ClearKeybindIconState then
+        _G.QUI_ClearKeybindIconState(icon)
+    end
     icon:Hide()
     icon:ClearAllPoints()
     icon._spellEntry = nil
