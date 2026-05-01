@@ -297,25 +297,107 @@ local function IsHelpTipShapedFrame(frame)
     return frame.Arrow ~= nil or frame.BouncyArrow ~= nil
 end
 
+local helpTipGlowFieldNames = {
+    "GlowFrame",
+    "Glow",
+    "GlowTexture",
+    "BorderGlow",
+}
+
+local RUNAWAY_HELPTIP_WIDTH = 420
+local RUNAWAY_HELPTIP_HEIGHT = 240
+local RUNAWAY_HELPTIP_AREA = 70000
+
 -- TAINT SAFETY: Do NOT call ANY HelpTip module methods (Show/Hide/Acknowledge/
 -- SetHelpTipsEnabled). They mutate HelpTip's internal Lua tables and taint
 -- propagates through Blizzard secure reads. Only touch the discovered frame
--- via C-side methods (SetAlpha, EnableMouse, ClearAllPoints) — those don't
--- write to HelpTip's Lua state. We use SetAlpha(0) rather than Hide() so the
--- frame's OnHide handler never fires → HelpTip's framePool:Release is never
--- triggered from our context.
-local function AlphaZeroHelpTip(child)
-    if child.SetAlpha then child:SetAlpha(0) end
-    if child.EnableMouse then child:EnableMouse(false) end
+-- and its glow visuals via C-side methods (SetAlpha, EnableMouse) -- those
+-- don't write to HelpTip's Lua state. We use SetAlpha(0) rather than Hide() so
+-- the frame's OnHide handler never fires -> HelpTip's framePool:Release is
+-- never triggered from our context.
+local function AlphaZeroFrameVisual(frame)
+    if type(frame) ~= "table" then return end
+    if frame.SetAlpha then frame:SetAlpha(0) end
+    if frame.EnableMouse then frame:EnableMouse(false) end
 end
 
-local function HideHelpTipsOnButton(button)
+local function AlphaZeroFrameChildren(frame)
+    if not frame then return end
+
+    if type(frame.GetChildren) == "function" then
+        local children = { frame:GetChildren() }
+        for i = 1, #children do
+            AlphaZeroFrameVisual(children[i])
+        end
+    end
+
+    if type(frame.GetRegions) == "function" then
+        local regions = { frame:GetRegions() }
+        for i = 1, #regions do
+            AlphaZeroFrameVisual(regions[i])
+        end
+    end
+end
+
+local function AlphaZeroHelpTipGlow(frame)
+    if type(frame) ~= "table" then return end
+
+    for i = 1, #helpTipGlowFieldNames do
+        local glow = frame[helpTipGlowFieldNames[i]]
+        if glow then
+            AlphaZeroFrameVisual(glow)
+            AlphaZeroFrameChildren(glow)
+        end
+    end
+end
+
+local function IsOversizedFrame(frame)
+    if type(frame) ~= "table" then return false end
+    if type(frame.GetWidth) ~= "function" or type(frame.GetHeight) ~= "function" then
+        return false
+    end
+
+    local width = frame:GetWidth() or 0
+    local height = frame:GetHeight() or 0
+    return width > RUNAWAY_HELPTIP_WIDTH
+        or height > RUNAWAY_HELPTIP_HEIGHT
+        or (width > 0 and height > 0 and (width * height) > RUNAWAY_HELPTIP_AREA)
+end
+
+local function IsRunawayHelpTipFrame(frame)
+    if IsOversizedFrame(frame) then return true end
+
+    for i = 1, #helpTipGlowFieldNames do
+        local glow = frame[helpTipGlowFieldNames[i]]
+        if IsOversizedFrame(glow) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function HandleMicroButtonHelpTip(frame, suppress)
+    if suppress then
+        AlphaZeroFrameVisual(frame)
+        AlphaZeroHelpTipGlow(frame)
+        return
+    end
+
+    -- Normal microbutton HelpTips are left alone. Only remove the glow when
+    -- Blizzard produced runaway geometry, which renders a screen-sized border.
+    if IsRunawayHelpTipFrame(frame) then
+        AlphaZeroHelpTipGlow(frame)
+    end
+end
+
+local function HideHelpTipsOnButton(button, suppress)
     if not button or type(button.GetChildren) ~= "function" then return end
     local children = { button:GetChildren() }
     for i = 1, #children do
         local child = children[i]
         if IsHelpTipShapedFrame(child) and child.IsShown and child:IsShown() then
-            AlphaZeroHelpTip(child)
+            HandleMicroButtonHelpTip(child, suppress ~= false)
         end
     end
 end
@@ -337,9 +419,9 @@ end
 
 -- Fallback sweep: HelpTip frames are often parented to UIParent with SetPoint
 -- anchored to the micro button (not direct children of the button). Scan
--- UIParent children once per tick and hide any HelpTip-shaped frame that's
+-- UIParent children once per tick and process any HelpTip-shaped frame that's
 -- anchored to a known micro button.
-local function SweepHelpTipsFromUIParent()
+local function SweepHelpTipsFromUIParent(suppress)
     if not UIParent or type(UIParent.GetChildren) ~= "function" then return end
     local micros = BuildMicroButtonSet()
     local kids = { UIParent:GetChildren() }
@@ -352,7 +434,7 @@ local function SweepHelpTipsFromUIParent()
                     local _, relTo = child:GetPoint(p)
                     if relTo and micros[relTo] then hit = true; break end
                 end
-                if hit then AlphaZeroHelpTip(child) end
+                if hit then HandleMicroButtonHelpTip(child, suppress ~= false) end
         end
     end
 end
@@ -362,7 +444,7 @@ local function HideAllMicroButtonAlerts()
         local button = _G[buttonName]
         if button then
             HideTalentMicroButtonAlert(button)
-            HideHelpTipsOnButton(button)
+            HideHelpTipsOnButton(button, true)
         end
         -- Also hide the named alert frame if it exists
         local alertFrame = _G[buttonName .. "Alert"]
@@ -553,17 +635,16 @@ end
 -- taint risk. Triggered by the events that actually cause HelpTips to appear
 -- on micro buttons, so no polling cost.
 local function SweepMicroButtonHelpTips()
-    if not (IsMicrobarEffectivelyHidden() or IsPopupBlockEnabled("blockMicroButtonGlows")) then
-        return
-    end
+    local suppress = IsMicrobarEffectivelyHidden() or IsPopupBlockEnabled("blockMicroButtonGlows")
+
     -- 1) Direct children of each micro button (covers HelpTips parented to button)
     for _, buttonName in ipairs(allMicroButtonNames) do
         local btn = _G[buttonName]
-        if btn then HideHelpTipsOnButton(btn) end
+        if btn then HideHelpTipsOnButton(btn, suppress) end
     end
     -- 2) UIParent children anchored to a micro button (covers HelpTips
     --    parented to UIParent with SetPoint(..., microButton, ...))
-    SweepHelpTipsFromUIParent()
+    SweepHelpTipsFromUIParent(suppress)
 end
 
 -- Events that reliably trigger a micro button HelpTip appearance. Each fires
@@ -586,19 +667,14 @@ helpTipSweepFrame:SetScript("OnEvent", function()
 end)
 
 local function RefreshHelpTipSweeper()
-    local shouldRun = IsPopupBlockEnabled("blockMicroButtonGlows")
-        or IsMicrobarEffectivelyHidden()
-    if shouldRun then
-        -- pcall each RegisterEvent so an event renamed/removed in a future
-        -- WoW patch doesn't break the whole handler chain.
-        for _, ev in ipairs(helpTipSweepEvents) do
-            pcall(helpTipSweepFrame.RegisterEvent, helpTipSweepFrame, ev)
-        end
-        -- Immediate sweep for any HelpTips currently showing
-        SweepMicroButtonHelpTips()
-    else
-        helpTipSweepFrame:UnregisterAllEvents()
+    -- Keep this event-driven guard active even when popup blocking is disabled:
+    -- QUI's reparented microbar can leave Blizzard HelpTip glow geometry in a
+    -- runaway state, and in that mode we only hide the oversized glow visual.
+    for _, ev in ipairs(helpTipSweepEvents) do
+        pcall(helpTipSweepFrame.RegisterEvent, helpTipSweepFrame, ev)
     end
+    -- Immediate sweep for any HelpTips currently showing
+    SweepMicroButtonHelpTips()
 end
 
 local function RefreshPopupBlocker()

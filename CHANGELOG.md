@@ -92,6 +92,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+
+## v3.5.6 - 2026-05-01
+
+### Fixed
+- fix(profile-io): cover orphaned settings dropped by selective export
+- harden rogue flash border suppression
+- fix(qol): suppress runaway PerksProgram trading post alert callout
+- fix(profile-io, trackers): bundle spec-tracker globals on export and validate drag-resolved spell IDs
+- refactor(character): forward secret stat values via SetFormattedText
+- fix(cdm): honor growDirection on migrated customBar containers
+- feat(character): mirror Blizzard stats pane FontStrings during combat
+- fix(character): preserve ItemContextOverlay and sibling overlays on slot skin
+- fix(buffborders): honor duration text anchor/offset on custom timer
+- fix(cdm): restore target debuff stack updates in combat
+- fix(minimap): drop background and fill mail icon to button bounds
+- fix(buffborders): round countdown to nearest unit instead of floor
+- fix(cdm): hide passive trinkets under hideNonUsable filter
+- fix(consumablecheck): ceiling-round remaining time
+- fix(consumablecheck): show hours+minutes in remaining time
 ## v3.5.5 - 2026-04-29
 
 ### Fixed

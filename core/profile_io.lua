@@ -1508,12 +1508,12 @@ end
 
 local function ImportSelectedCustomTrackerBars(core, targetProfile, importedProfile, barIndexes)
     if type(targetProfile) ~= "table" or type(importedProfile) ~= "table" or type(barIndexes) ~= "table" then
-        return false
+        return false, nil
     end
 
     local importedBars = importedProfile.customTrackers and importedProfile.customTrackers.bars
     if type(importedBars) ~= "table" then
-        return false
+        return false, nil
     end
 
     if type(targetProfile.customTrackers) ~= "table" then
@@ -1921,6 +1921,8 @@ local function ApplyFullProfilePayload(core, importedProfile)
         return false, "No profile loaded."
     end
 
+    -- Capture the bundled globals before the profile wipe so they survive
+    -- the loop below (the bundle key lives on the payload, not on profile).
     local bundledGlobals = importedProfile[PROFILE_EXPORT_GLOBALS_KEY]
 
     for key in pairs(profile) do
@@ -1931,6 +1933,8 @@ local function ApplyFullProfilePayload(core, importedProfile)
         -- It refers to the source user's profile state and is meaningless
         -- here. A fresh backup will be created by the migration pipeline
         -- below if the imported data actually needs migrating.
+        -- Also exclude the transient bundle key — it's a payload carrier,
+        -- not a profile field.
         if key ~= "_migrationBackup" and key ~= PROFILE_EXPORT_GLOBALS_KEY then
             profile[key] = CloneValue(value)
         end
@@ -2243,6 +2247,8 @@ function QUICore:ExportProfileToString()
     end
     StampCustomTrackerBarsForExport(payload, self.db.profile)
 
+    -- Bundle the spec-specific tracker entries that live on db.global so
+    -- the importing player gets working bars instead of empty ones.
     local bundle = CollectExportGlobals(self.db.global, self.db.profile)
     if bundle then
         payload[PROFILE_EXPORT_GLOBALS_KEY] = bundle
