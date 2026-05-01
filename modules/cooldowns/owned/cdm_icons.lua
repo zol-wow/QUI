@@ -1274,7 +1274,18 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                 -- _spellEntry to skip recycled icons that have moved on.
                 for targetIcon in pairs(subs) do
                     local tEntry = targetIcon._spellEntry
-                    if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown == self then
+                    -- Aura-kind entries never receive forwarded cooldown timing.
+                    -- A buff/aura entry's _blizzChild can resolve to a cooldown
+                    -- viewer child when that child carries an auraInstanceID
+                    -- (e.g. Demon Hunter Metamorphosis: cooldown viewer child
+                    -- with auraInstanceID while the buff is up). Once the buff
+                    -- fades and _auraActive flips false, the spell's real
+                    -- cooldown would otherwise leak into the aura icon's
+                    -- addonCD via this fan-out — the visible "Metamorphosis CD
+                    -- swipe on a buff icon" bug. Aura swipe styling is driven
+                    -- exclusively by UpdateIconCooldown's aura branch.
+                    if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown == self
+                       and not IsAuraEntry(tEntry) then
                         local cd = targetIcon.Cooldown
                         local tSkipCharge = tEntry and tEntry.hasCharges
                         local tSkipAura = targetIcon._auraActive
@@ -1307,7 +1318,10 @@ local function MirrorBlizzCooldown(icon, blizzChild)
             if not subs then return end
             for targetIcon in pairs(subs) do
                 local tEntry = targetIcon._spellEntry
-                if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown == self then
+                -- Aura-kind entries never receive forwarded cooldown timing
+                -- (see SetCooldownFromDurationObject hook for rationale).
+                if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown == self
+                   and not IsAuraEntry(tEntry) then
                     RefreshIconGCDState(targetIcon)
                     local cd = targetIcon.Cooldown
                     if cd and cd.SetCooldown and not (tEntry and tEntry.hasCharges) and not targetIcon._auraActive then
@@ -1358,6 +1372,9 @@ local function MirrorBlizzCooldown(icon, blizzChild)
             for targetIcon in pairs(subs) do
                 local tEntry = targetIcon._spellEntry
                 if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown == self
+                   -- Aura-kind entries never receive forwarded cooldown timing
+                   -- (see SetCooldownFromDurationObject hook for rationale).
+                   and not IsAuraEntry(tEntry)
                    and not targetIcon._auraActive
                    and not (tEntry and tEntry.hasCharges)
                    -- Skip subscribers whose own cooldown is currently active

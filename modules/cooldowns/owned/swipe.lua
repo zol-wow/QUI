@@ -71,11 +71,24 @@ local function ApplySwipeToIcon(icon, settings)
 
     local entry = icon._spellEntry
     local isBuffIcon = (entry.viewerType == "buff")
+    -- Aura-kind classification is independent of container shape: an aura
+    -- entry on a custom cooldown container or essential/utility (kind="aura")
+    -- still gets aura-mode swipe styling. Falls back to viewerType when
+    -- CDMSpellData is unavailable during early bootstrap.
+    local isAuraEntry
+    local CDMSpellData = ns.CDMSpellData
+    if CDMSpellData and CDMSpellData.IsAuraEntry then
+        isAuraEntry = CDMSpellData.IsAuraEntry(entry, entry.viewerType)
+    else
+        isAuraEntry = (entry.kind == "aura")
+            or isBuffIcon
+            or entry.viewerType == "trackedBar"
+    end
 
     -- Classify: aura, gcd, or cooldown
     -- Buff viewer children are always auras, but cooldownInfo doesn't flag them.
     local mode
-    if isBuffIcon or icon._auraActive then
+    if isAuraEntry or icon._auraActive then
         mode = "aura"
     elseif not isBuffIcon then
         -- Detect active auras on essential/utility icons.
