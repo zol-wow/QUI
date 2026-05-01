@@ -141,6 +141,35 @@ local function ResizeContainer(container, w, h)
 end
 
 ---------------------------------------------------------------------------
+-- PERMANENT-AURA FILL CURVE (no-expiration overlay)
+--
+-- Step NumberCurve mapping total-duration → overlay alpha. Built once,
+-- piped through DurationObject:EvaluateTotalDuration so the secret total
+-- is consumed C-side and the curve's Lua-defined output (0 or 1) returns
+-- as the alpha value — same shape as UnitHealthPercent(unit, true, hpCurve)
+-- → frame:SetAlpha in hud_visibility.lua. Nothing about the secret crosses
+-- back into Lua compares.
+--
+--   total == 0       → alpha 1 (overlay visible — bar appears full)
+--   total >= 1e-6    → alpha 0 (overlay invisible — timed bar shows through
+--                              completely unchanged)
+---------------------------------------------------------------------------
+local _permanentAuraFillCurve
+local function GetPermanentAuraFillCurve()
+    if _permanentAuraFillCurve then return _permanentAuraFillCurve end
+    if not C_CurveUtil or not C_CurveUtil.CreateCurve
+       or not Enum or not Enum.LuaCurveType then
+        return nil
+    end
+    local curve = C_CurveUtil.CreateCurve()
+    curve:SetType(Enum.LuaCurveType.Step)
+    curve:AddPoint(0, 1)
+    curve:AddPoint(0.000001, 0)
+    _permanentAuraFillCurve = curve
+    return curve
+end
+
+---------------------------------------------------------------------------
 -- BAR FRAME FACTORY
 ---------------------------------------------------------------------------
 local function CreateBar(parent)
@@ -152,6 +181,15 @@ local function CreateBar(parent)
     statusBar:SetMinMaxValues(0, 1)
     statusBar:SetValue(0)
     bar.StatusBar = statusBar
+
+    -- PermanentFill overlay: full-bar texture rendered above the StatusBar
+    -- fill but below text. Alpha is curve-driven from the durObj's total
+    -- duration in UpdateOwnedBarAura — visible only for no-expiration
+    -- auras, completely invisible (no visual effect) for timed auras.
+    local permanentFill = statusBar:CreateTexture(nil, "OVERLAY", nil, 1)
+    permanentFill:SetAllPoints(statusBar)
+    permanentFill:SetAlpha(0)
+    bar.PermanentFill = permanentFill
 
     -- Background texture (BACKGROUND, sublevel -8)
     local bg = bar:CreateTexture(nil, "BACKGROUND", nil, -8)
@@ -461,32 +499,46 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
         end
     end
 
-    -- Apply StatusBar texture
+    -- Apply StatusBar texture (and mirror onto PermanentFill so the
+    -- no-expiration overlay matches the bar's texture/style).
+    local resolvedTexturePath
     if statusBar and statusBar.SetStatusBarTexture then
-        local texturePath = LSM:Fetch("statusbar", texture) or LSM:Fetch("statusbar", "Quazii v5")
-        if texturePath then
-            statusBar:SetStatusBarTexture(texturePath)
+        resolvedTexturePath = LSM:Fetch("statusbar", texture) or LSM:Fetch("statusbar", "Quazii v5")
+        if resolvedTexturePath then
+            statusBar:SetStatusBarTexture(resolvedTexturePath)
         end
     end
+    if bar.PermanentFill and resolvedTexturePath then
+        bar.PermanentFill:SetTexture(resolvedTexturePath)
+    end
 
-    -- Apply bar color (override > class > custom) with opacity
+    -- Apply bar color (override > class > custom) with opacity. Mirror the
+    -- resolved color onto PermanentFill via SetVertexColor so the overlay
+    -- matches the bar's fill color.
+    local resolvedR, resolvedG, resolvedB, resolvedA
     if statusBar and statusBar.SetStatusBarColor then
         local c = barColor
         if overrideColor then
-            -- Use per-spell override color
-            statusBar:SetStatusBarColor(overrideColor[1] or 0.2, overrideColor[2] or 0.8, overrideColor[3] or 0.6, barOpacity)
+            resolvedR, resolvedG, resolvedB, resolvedA =
+                overrideColor[1] or 0.2, overrideColor[2] or 0.8, overrideColor[3] or 0.6, barOpacity
         elseif useClassColor then
             local _, class = UnitClass("player")
             local safeClass = Helpers.SafeToString(class, nil)
             local color = safeClass and RAID_CLASS_COLORS[safeClass]
             if color then
-                statusBar:SetStatusBarColor(color.r, color.g, color.b, barOpacity)
+                resolvedR, resolvedG, resolvedB, resolvedA = color.r, color.g, color.b, barOpacity
             else
-                statusBar:SetStatusBarColor(c[1] or 0.2, c[2] or 0.8, c[3] or 0.6, barOpacity)
+                resolvedR, resolvedG, resolvedB, resolvedA =
+                    c[1] or 0.2, c[2] or 0.8, c[3] or 0.6, barOpacity
             end
         else
-            statusBar:SetStatusBarColor(c[1] or 0.2, c[2] or 0.8, c[3] or 0.6, barOpacity)
+            resolvedR, resolvedG, resolvedB, resolvedA =
+                c[1] or 0.2, c[2] or 0.8, c[3] or 0.6, barOpacity
         end
+        statusBar:SetStatusBarColor(resolvedR, resolvedG, resolvedB, resolvedA)
+    end
+    if bar.PermanentFill and resolvedR then
+        bar.PermanentFill:SetVertexColor(resolvedR, resolvedG, resolvedB, resolvedA or 1)
     end
 
     -- Background
@@ -996,6 +1048,9 @@ local function ReleaseBar(bar)
     bar.DurationText:SetText("")
     bar.IconTexture:SetTexture(nil)
     bar.StatusBar:SetValue(0)
+    if bar.PermanentFill then
+        bar.PermanentFill:SetAlpha(0)
+    end
 
     if #recyclePool < MAX_RECYCLE_POOL_SIZE then
         recyclePool[#recyclePool + 1] = bar
@@ -1459,6 +1514,13 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
                 pcall(bar.StatusBar.SetValue, bar.StatusBar, 1)
             end
+            -- Explicit SetValue(1) handles the OOC-resolved permanent
+            -- case; the curve-driven PermanentFill overlay is only for
+            -- the in-combat case where we can't read the bool. Hide it
+            -- here so we don't double-render full.
+            if bar.PermanentFill then
+                pcall(bar.PermanentFill.SetAlpha, bar.PermanentFill, 0)
+            end
             if bar.DurationText then
                 pcall(bar.DurationText.SetText, bar.DurationText, "")
             end
@@ -1510,6 +1572,22 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 if bar.StatusBar.SetTimerDuration then
                     pcall(bar.StatusBar.SetTimerDuration, bar.StatusBar, durObj, nil, 1)
                     bar._cSideFill = true
+                end
+            end
+
+            -- No-expiration overlay drive (curve trick). EvaluateTotalDuration
+            -- runs C-side: it consumes durObj's potentially-secret total
+            -- and returns the curve's Lua-defined output (1 if total==0,
+            -- 0 if total>0). Pipe straight into PermanentFill:SetAlpha
+            -- without ever reading the value in Lua. Permanent auras get
+            -- alpha=1 (overlay covers bar at full size), timed auras get
+            -- alpha=0 (overlay invisible — SetTimerDuration's animation
+            -- shows through completely unchanged).
+            local fillCurve = GetPermanentAuraFillCurve()
+            if fillCurve and durObj.EvaluateTotalDuration and bar.PermanentFill then
+                local ok, alpha = pcall(durObj.EvaluateTotalDuration, durObj, fillCurve, nil)
+                if ok then
+                    pcall(bar.PermanentFill.SetAlpha, bar.PermanentFill, alpha)
                 end
             end
         end
@@ -1619,6 +1697,9 @@ function CDMBars:UpdateOwnedBarAura(bar)
         end
         if bar.StatusBar then
             pcall(bar.StatusBar.SetValue, bar.StatusBar, 0)
+        end
+        if bar.PermanentFill then
+            pcall(bar.PermanentFill.SetAlpha, bar.PermanentFill, 0)
         end
         if bar.DurationText then
             bar.DurationText:SetText("")
