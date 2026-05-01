@@ -626,7 +626,13 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     end
     if bar.DurationText then
         bar.DurationText:SetFont(generalFont, textSize, generalOutline)
-        bar.DurationText:SetAlpha(showText and 1 or 0)
+        local durationBaseAlpha = showText and 1 or 0
+        bar.DurationText:SetAlpha(durationBaseAlpha)
+        -- Captured so the curve-driven text-hide path (UpdateOwnedBarAura
+        -- durObj branch) and the alpha restore sites (inactive branch,
+        -- ReleaseBar, _hideDurationText branch) all agree on the
+        -- configured visibility — never override a "hide text" setting.
+        bar._durationTextBaseAlpha = durationBaseAlpha
     end
 
     -- Apply frame alpha based on active state
@@ -1078,7 +1084,10 @@ local function ReleaseBar(bar)
     if bar.PermanentFill then
         bar.PermanentFill:SetAlpha(0)
     end
-    bar.DurationText:SetAlpha(1)
+    -- Restore configured base alpha (or default to 1 for never-configured
+    -- bars) so the next ConfigureBar call doesn't have to fight a stale
+    -- curve-driven 0 from a previous permanent state.
+    bar.DurationText:SetAlpha(bar._durationTextBaseAlpha or 1)
 
     if #recyclePool < MAX_RECYCLE_POOL_SIZE then
         recyclePool[#recyclePool + 1] = bar
@@ -1531,6 +1540,21 @@ function CDMBars:UpdateOwnedBarAura(bar)
         bar._auraDataUnit = r.auraUnit
         bar._hasAuraExpirationTime = r.hasExpirationTime
         bar._hideDurationText = ShouldHideAuraDurationText(r)
+
+        -- Active-aura fallback: when the resolver returns no DurationObject
+        -- AND auraData.duration is nil / secret / non-positive, treat it
+        -- like permanent. The existing _hideDurationText branch then runs
+        -- SetValue(1) and blanks the duration text. SafeToNumber collapses
+        -- secret/nil/non-numeric inputs to 0 via the C-side issecretvalue
+        -- check (which doesn't taint), so the comparison is on a plain
+        -- non-secret 0 — no Lua compare against any secret value.
+        if not bar._hideDurationText and not r.durObj and r.auraData then
+            local readableDur = Helpers.SafeToNumber(r.auraData.duration, 0)
+            if readableDur <= 0 then
+                bar._hideDurationText = true
+            end
+        end
+
         if bar._hideDurationText then
             bar._durObj = nil
             bar._cSideFill = nil
@@ -1551,9 +1575,10 @@ function CDMBars:UpdateOwnedBarAura(bar)
             end
             if bar.DurationText then
                 pcall(bar.DurationText.SetText, bar.DurationText, "")
-                -- Restore default alpha — the curve-driven hide path may
-                -- have left it at 0 from an earlier combat permanent state.
-                pcall(bar.DurationText.SetAlpha, bar.DurationText, 1)
+                -- Restore the configured base alpha — never override a
+                -- "hide text" setting (vertical bars without text, etc.).
+                pcall(bar.DurationText.SetAlpha, bar.DurationText,
+                    bar._durationTextBaseAlpha or 1)
             end
         end
 
@@ -1627,11 +1652,18 @@ function CDMBars:UpdateOwnedBarAura(bar)
             -- a permanent zero-total durObj). Hide the FontString for
             -- permanent auras via the same curve pattern, inverted so
             -- timed shows the countdown and permanent does not.
-            local textAlphaCurve = GetPermanentAuraTextAlphaCurve()
-            if textAlphaCurve and durObj.EvaluateTotalDuration and bar.DurationText then
-                local ok, textAlpha = pcall(durObj.EvaluateTotalDuration, durObj, textAlphaCurve, nil)
-                if ok then
-                    pcall(bar.DurationText.SetAlpha, bar.DurationText, textAlpha)
+            --
+            -- Skip the curve drive entirely when the configured base
+            -- alpha is 0 (hideText / vertical-no-text settings) — the
+            -- timed branch of the curve outputs 1 (visible), which
+            -- would otherwise override the user's "hide text" choice.
+            if (bar._durationTextBaseAlpha or 1) ~= 0 then
+                local textAlphaCurve = GetPermanentAuraTextAlphaCurve()
+                if textAlphaCurve and durObj.EvaluateTotalDuration and bar.DurationText then
+                    local ok, textAlpha = pcall(durObj.EvaluateTotalDuration, durObj, textAlphaCurve, nil)
+                    if ok then
+                        pcall(bar.DurationText.SetAlpha, bar.DurationText, textAlpha)
+                    end
                 end
             end
         end
@@ -1747,9 +1779,10 @@ function CDMBars:UpdateOwnedBarAura(bar)
         end
         if bar.DurationText then
             bar.DurationText:SetText("")
-            -- Restore default alpha so a freshly-active bar with
-            -- normal timed text isn't hidden from a stale curve write.
-            pcall(bar.DurationText.SetAlpha, bar.DurationText, 1)
+            -- Restore the configured base alpha — never override a
+            -- "hide text" setting (vertical bars without text, etc.).
+            pcall(bar.DurationText.SetAlpha, bar.DurationText,
+                bar._durationTextBaseAlpha or 1)
         end
 
         -- Always restore name via C-side SetText — no Lua string comparison
