@@ -141,17 +141,17 @@ local paAnchorIDs = {}
 ---------------------------------------------------------------------------
 -- ICON STYLING
 ---------------------------------------------------------------------------
-local function ConfigureAuraCooldownFrame(cooldown)
+local function ConfigureAuraCooldownFrame(cooldown, showCountdownNumbers)
     if not cooldown then return end
 
     if cooldown.SetUseAuraDisplayTime then
         pcall(cooldown.SetUseAuraDisplayTime, cooldown, true)
     end
-    -- Blizzard's built-in countdown text floors remaining time, so a 3h
-    -- flask reads "2h" the moment it's cast. Disable Blizzard's text and
-    -- render our own (see SharedDurationTimer + EnsureDurationText).
+    -- Blizzard's built-in countdown text floors remaining time, so when aura
+    -- timing is readable we render our own rounded text. In combat, timing
+    -- fields can be secret; let the C-side countdown render those safely.
     if cooldown.SetHideCountdownNumbers then
-        pcall(cooldown.SetHideCountdownNumbers, cooldown, true)
+        pcall(cooldown.SetHideCountdownNumbers, cooldown, not showCountdownNumbers)
     end
 end
 
@@ -167,11 +167,13 @@ local function FormatDuration(remaining)
     return format("%dh", floor(remaining / 3600 + 0.5))
 end
 
+local durationTextState, GetDurationTextState = Helpers.CreateStateTable()
 local trackedDurationChildren = {}
 do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "BB_durationTrack", tbl = trackedDurationChildren } end
 
 local function EnsureDurationText(child)
-    if child._quiDuration then return child._quiDuration end
+    local state = GetDurationTextState(child)
+    if state.fs then return state.fs end
     local fs = child:CreateFontString(nil, "OVERLAY")
     fs:SetFont(GetGeneralFont(), 12, GetGeneralFontOutline() or "OUTLINE")
     fs:SetPoint("CENTER", child, "CENTER", 0, 0)
@@ -180,9 +182,40 @@ local function EnsureDurationText(child)
     fs:SetShadowColor(0, 0, 0, 1)
     fs:SetShadowOffset(1, -1)
     fs:SetText("")
-    child._quiDuration = fs
+    state.fs = fs
     trackedDurationChildren[child] = true
     return fs
+end
+
+local function ClearCustomDurationText(child)
+    local state = durationTextState[child]
+    if not state then return end
+    state.expiration = nil
+    state.duration = nil
+    state.customActive = nil
+    if state.fs then
+        pcall(state.fs.SetText, state.fs, "")
+        pcall(state.fs.Hide, state.fs)
+    end
+end
+
+local function HasCustomDurationText(child)
+    local state = durationTextState[child]
+    return state and state.fs ~= nil
+end
+
+local function NeedsCsideDurationText(child, timingIsSecret)
+    return timingIsSecret
+        or (InCombatLockdown() and not ns._inInitSafeWindow and not HasCustomDurationText(child))
+end
+
+local function UseCustomDurationText(child, expiration, duration)
+    local fs = EnsureDurationText(child)
+    local state = GetDurationTextState(child)
+    state.expiration = expiration
+    state.duration = duration
+    state.customActive = true
+    fs:Show()
 end
 
 local sharedDurationTimer = CreateFrame("Frame")
@@ -195,16 +228,16 @@ sharedDurationTimer:SetScript("OnUpdate", function(_, elapsed)
     durationTimerElapsed = 0
     local now = GetTime()
     for child in pairs(trackedDurationChildren) do
-        local fs = child._quiDuration
+        local state = durationTextState[child]
+        local fs = state and state.fs
         if fs then
-            if not child:IsShown() then
+            if not child:IsShown() or not state.customActive then
                 fs:SetText("")
             else
-                local exp = child._quiExpiration
-                local dur = child._quiDuration_secs
-                -- During combat aura fields can be secret values; preserve the
-                -- previous text rather than blanking, so the display doesn't
-                -- flicker each tick.
+                local exp = state.expiration
+                local dur = state.duration
+                -- Secret timing is normally handled by the C-side countdown.
+                -- If stale secret state survives here, preserve the last text.
                 if not (IsSecretValue(exp) or IsSecretValue(dur)) then
                     local expN = tonumber(exp) or 0
                     local durN = tonumber(dur) or 0
@@ -308,11 +341,14 @@ local function StyleIcon(icon, settings, isBuff, debuffType)
 
     -- Position the custom duration text we render in place of Blizzard's
     -- countdown (see EnsureDurationText). Honors the same user settings.
-    if icon._quiDuration then
-        local fs = icon._quiDuration
-        if fs.SetFont then fs:SetFont(font, fontSize, outline) end
-        pcall(fs.ClearAllPoints, fs)
-        pcall(fs.SetPoint, fs, cdAnchor, icon, cdAnchor, cdOffX, cdOffY)
+    do
+        local state = durationTextState[icon]
+        local fs = state and state.fs
+        if fs then
+            if fs.SetFont then fs:SetFont(font, fontSize, outline) end
+            pcall(fs.ClearAllPoints, fs)
+            pcall(fs.SetPoint, fs, cdAnchor, icon, cdAnchor, cdOffX, cdOffY)
+        end
     end
 end
 
@@ -486,7 +522,9 @@ local function StyleHeaderChildren(header, settings, isBuff)
         -- Aura cooldowns prefer DurationObjects for 12.0.5+ secret-safe updates,
         -- and fall back to numeric timing only when the values are readable.
         if child.Cooldown then
-            ConfigureAuraCooldownFrame(child.Cooldown)
+            local timingIsSecret = IsSecretValue(data.expirationTime) or IsSecretValue(data.duration)
+            local useCsideText = NeedsCsideDurationText(child, timingIsSecret)
+            ConfigureAuraCooldownFrame(child.Cooldown, useCsideText)
             ApplyCooldownFromAura(
                 child.Cooldown,
                 "player",
@@ -495,10 +533,13 @@ local function StyleHeaderChildren(header, settings, isBuff)
                 data.duration,
                 true
             )
-            -- Custom duration text (Blizzard's countdown floors; we round to nearest)
-            EnsureDurationText(child)
-            child._quiExpiration = data.expirationTime
-            child._quiDuration_secs = data.duration
+            -- Custom duration text uses readable numeric fields. In combat,
+            -- secret timing is rendered by the CooldownFrame's C-side text.
+            if useCsideText then
+                ClearCustomDurationText(child)
+            else
+                UseCustomDurationText(child, data.expirationTime, data.duration)
+            end
             -- Swipe settings
             local showSwipe = not settings.hideSwipe
             child.Cooldown:SetDrawSwipe(showSwipe)
@@ -544,7 +585,8 @@ local function StyleHeaderChildren(header, settings, isBuff)
                 end
                 -- Enchant cooldown from GetWeaponEnchantInfo
                 if child.Cooldown then
-                    ConfigureAuraCooldownFrame(child.Cooldown)
+                    local useCsideText = NeedsCsideDurationText(child, false)
+                    ConfigureAuraCooldownFrame(child.Cooldown, useCsideText)
                     local hasMain, mainExp, _, _, hasOff, offExp = GetWeaponEnchantInfo()
                     local expMs = (slot == 16) and (hasMain and mainExp) or (slot == 17) and (hasOff and offExp) or nil
                     if expMs and not IsSecretValue(expMs) and expMs > 0 then
@@ -555,15 +597,14 @@ local function StyleHeaderChildren(header, settings, isBuff)
                         local total = enchantCachedDuration[slot]
                         local startTime = GetTime() - (total - remainingSec)
                         pcall(child.Cooldown.SetCooldown, child.Cooldown, startTime, total)
-                        EnsureDurationText(child)
-                        child._quiExpiration = GetTime() + remainingSec
-                        child._quiDuration_secs = total
+                        if useCsideText then
+                            ClearCustomDurationText(child)
+                        else
+                            UseCustomDurationText(child, GetTime() + remainingSec, total)
+                        end
                     else
                         pcall(child.Cooldown.Clear, child.Cooldown)
-                        if child._quiDuration then
-                            child._quiExpiration = 0
-                            child._quiDuration_secs = 0
-                        end
+                        ClearCustomDurationText(child)
                     end
                 end
                 StyleIcon(child, settings, true, nil)

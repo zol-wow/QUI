@@ -141,6 +141,31 @@ local function ResizeContainer(container, w, h)
 end
 
 ---------------------------------------------------------------------------
+-- PERMANENT-AURA OVERLAY DRIVE (curve trick via IsZero bool)
+--
+-- DurationObject:IsZero() returns a (potentially-secret) bool that is
+-- stable for the aura's lifetime — it's a property of the durObj itself,
+-- not derived from elapsed/remaining time, so it doesn't oscillate as
+-- the aura ticks.
+--
+-- C_CurveUtil.EvaluateColorValueFromBoolean is a C-side helper that
+-- selects between two numbers based on a (potentially-secret) bool —
+-- the secret never crosses back into Lua compares. The result is fed
+-- directly into a C-side sink (Texture:SetAlpha / FontString:SetAlpha)
+-- so even when the result itself is secret-tagged, the value is
+-- consumed natively without taint.
+--
+-- Mapping for the bar overlay:
+--   IsZero=true  (permanent) → alpha 1 (overlay visible — bar full)
+--   IsZero=false (timed)     → alpha 0 (overlay invisible — bar shows
+--                                       SetTimerDuration animation)
+--
+-- Mapping for the duration text:
+--   IsZero=true  (permanent) → alpha 0 (text hidden — no countdown)
+--   IsZero=false (timed)     → alpha 1 (text visible — countdown shows)
+---------------------------------------------------------------------------
+
+---------------------------------------------------------------------------
 -- BAR FRAME FACTORY
 ---------------------------------------------------------------------------
 local function CreateBar(parent)
@@ -152,6 +177,15 @@ local function CreateBar(parent)
     statusBar:SetMinMaxValues(0, 1)
     statusBar:SetValue(0)
     bar.StatusBar = statusBar
+
+    -- PermanentFill overlay: full-bar texture rendered above the StatusBar
+    -- fill but below text. Alpha is curve-driven from the durObj's total
+    -- duration in UpdateOwnedBarAura — visible only for no-expiration
+    -- auras, completely invisible (no visual effect) for timed auras.
+    local permanentFill = statusBar:CreateTexture(nil, "OVERLAY", nil, 1)
+    permanentFill:SetAllPoints(statusBar)
+    permanentFill:SetAlpha(0)
+    bar.PermanentFill = permanentFill
 
     -- Background texture (BACKGROUND, sublevel -8)
     local bg = bar:CreateTexture(nil, "BACKGROUND", nil, -8)
@@ -214,6 +248,7 @@ local function CreateBar(parent)
     bar._spellID = nil
     bar._active = false
     bar._cSideFill = nil
+    bar._preferDurObjFill = nil
 
     bar:Hide()
     return bar
@@ -461,32 +496,46 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
         end
     end
 
-    -- Apply StatusBar texture
+    -- Apply StatusBar texture (and mirror onto PermanentFill so the
+    -- no-expiration overlay matches the bar's texture/style).
+    local resolvedTexturePath
     if statusBar and statusBar.SetStatusBarTexture then
-        local texturePath = LSM:Fetch("statusbar", texture) or LSM:Fetch("statusbar", "Quazii v5")
-        if texturePath then
-            statusBar:SetStatusBarTexture(texturePath)
+        resolvedTexturePath = LSM:Fetch("statusbar", texture) or LSM:Fetch("statusbar", "Quazii v5")
+        if resolvedTexturePath then
+            statusBar:SetStatusBarTexture(resolvedTexturePath)
         end
     end
+    if bar.PermanentFill and resolvedTexturePath then
+        bar.PermanentFill:SetTexture(resolvedTexturePath)
+    end
 
-    -- Apply bar color (override > class > custom) with opacity
+    -- Apply bar color (override > class > custom) with opacity. Mirror the
+    -- resolved color onto PermanentFill via SetVertexColor so the overlay
+    -- matches the bar's fill color.
+    local resolvedR, resolvedG, resolvedB, resolvedA
     if statusBar and statusBar.SetStatusBarColor then
         local c = barColor
         if overrideColor then
-            -- Use per-spell override color
-            statusBar:SetStatusBarColor(overrideColor[1] or 0.2, overrideColor[2] or 0.8, overrideColor[3] or 0.6, barOpacity)
+            resolvedR, resolvedG, resolvedB, resolvedA =
+                overrideColor[1] or 0.2, overrideColor[2] or 0.8, overrideColor[3] or 0.6, barOpacity
         elseif useClassColor then
             local _, class = UnitClass("player")
             local safeClass = Helpers.SafeToString(class, nil)
             local color = safeClass and RAID_CLASS_COLORS[safeClass]
             if color then
-                statusBar:SetStatusBarColor(color.r, color.g, color.b, barOpacity)
+                resolvedR, resolvedG, resolvedB, resolvedA = color.r, color.g, color.b, barOpacity
             else
-                statusBar:SetStatusBarColor(c[1] or 0.2, c[2] or 0.8, c[3] or 0.6, barOpacity)
+                resolvedR, resolvedG, resolvedB, resolvedA =
+                    c[1] or 0.2, c[2] or 0.8, c[3] or 0.6, barOpacity
             end
         else
-            statusBar:SetStatusBarColor(c[1] or 0.2, c[2] or 0.8, c[3] or 0.6, barOpacity)
+            resolvedR, resolvedG, resolvedB, resolvedA =
+                c[1] or 0.2, c[2] or 0.8, c[3] or 0.6, barOpacity
         end
+        statusBar:SetStatusBarColor(resolvedR, resolvedG, resolvedB, resolvedA)
+    end
+    if bar.PermanentFill and resolvedR then
+        bar.PermanentFill:SetVertexColor(resolvedR, resolvedG, resolvedB, resolvedA or 1)
     end
 
     -- Background
@@ -547,7 +596,13 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     end
     if bar.DurationText then
         bar.DurationText:SetFont(generalFont, textSize, generalOutline)
-        bar.DurationText:SetAlpha(showText and 1 or 0)
+        local durationBaseAlpha = showText and 1 or 0
+        bar.DurationText:SetAlpha(durationBaseAlpha)
+        -- Captured so the curve-driven text-hide path (UpdateOwnedBarAura
+        -- durObj branch) and the alpha restore sites (inactive branch,
+        -- ReleaseBar, _hideDurationText branch) all agree on the
+        -- configured visibility — never override a "hide text" setting.
+        bar._durationTextBaseAlpha = durationBaseAlpha
     end
 
     -- Apply frame alpha based on active state
@@ -794,6 +849,9 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
             if target._active == false then
                 return
             end
+            if target._hideDurationText or target._preferDurObjFill then
+                return
+            end
             if not ChildStillBoundTo(target) then return end
             pcall(target.StatusBar.SetValue, target.StatusBar, value)
             target._lastMirrorFill = GetTime()
@@ -804,6 +862,9 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
             local target = mirrorMap[blizzBarChild]
             if not target then return end
             if target._isTotemInstance and not target._allowTotemMirrorFill then
+                return
+            end
+            if target._hideDurationText or target._preferDurObjFill then
                 return
             end
             if not ChildStillBoundTo(target) then return end
@@ -884,6 +945,7 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
         -- still owns the canonical label (talent renames, etc.).
         local lockedName = target._spellEntry and target._spellEntry.isAura
         if knownDurationFS[fs] then
+            if target._hideDurationText or target._preferDurObjFill then return end
             pcall(target.DurationText.SetText, target.DurationText, text or "")
         elseif knownNameFS[fs] then
             if lockedName then return end
@@ -892,6 +954,7 @@ local function MirrorBlizzBar(ownedBar, blizzBarChild)
             -- Fallback: use justify for unknown FontStrings
             local justify = fs:GetJustifyH()
             if justify == "RIGHT" then
+                if target._hideDurationText or target._preferDurObjFill then return end
                 pcall(target.DurationText.SetText, target.DurationText, text or "")
             else
                 if lockedName then return end
@@ -980,6 +1043,7 @@ local function ReleaseBar(bar)
     bar._instanceKey = nil
     bar._active = false
     bar._cSideFill = nil
+    bar._preferDurObjFill = nil
     bar._lastMirrorFill = nil
     bar._lastPosKey = nil
     bar._lastAnchor = nil
@@ -996,6 +1060,13 @@ local function ReleaseBar(bar)
     bar.DurationText:SetText("")
     bar.IconTexture:SetTexture(nil)
     bar.StatusBar:SetValue(0)
+    if bar.PermanentFill then
+        bar.PermanentFill:SetAlpha(0)
+    end
+    -- Restore configured base alpha (or default to 1 for never-configured
+    -- bars) so the next ConfigureBar call doesn't have to fight a stale
+    -- curve-driven 0 from a previous permanent state.
+    bar.DurationText:SetAlpha(bar._durationTextBaseAlpha or 1)
 
     if #recyclePool < MAX_RECYCLE_POOL_SIZE then
         recyclePool[#recyclePool + 1] = bar
@@ -1385,6 +1456,7 @@ local function UpdateItemBarCooldown(bar, entry)
     bar._hasAuraExpirationTime = nil
     bar._totalDuration = nil
     bar._expirationTime = nil
+    bar._preferDurObjFill = nil
     if bar.StatusBar then
         pcall(bar.StatusBar.SetValue, bar.StatusBar, 0)
     end
@@ -1448,9 +1520,25 @@ function CDMBars:UpdateOwnedBarAura(bar)
         bar._auraDataUnit = r.auraUnit
         bar._hasAuraExpirationTime = r.hasExpirationTime
         bar._hideDurationText = ShouldHideAuraDurationText(r)
+
+        -- Active-aura fallback: when the resolver returns no DurationObject
+        -- AND auraData.duration is nil / secret / non-positive, treat it
+        -- like permanent. The existing _hideDurationText branch then runs
+        -- SetValue(1) and blanks the duration text. SafeToNumber collapses
+        -- secret/nil/non-numeric inputs to 0 via the C-side issecretvalue
+        -- check (which doesn't taint), so the comparison is on a plain
+        -- non-secret 0 — no Lua compare against any secret value.
+        if not bar._hideDurationText and not r.durObj and r.auraData then
+            local readableDur = Helpers.SafeToNumber(r.auraData.duration, 0)
+            if readableDur <= 0 then
+                bar._hideDurationText = true
+            end
+        end
+
         if bar._hideDurationText then
             bar._durObj = nil
             bar._cSideFill = nil
+            bar._preferDurObjFill = nil
             bar._lastDurationText = nil
             bar._lastDurationBucket = nil
             bar._totalDuration = nil
@@ -1459,8 +1547,19 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
                 pcall(bar.StatusBar.SetValue, bar.StatusBar, 1)
             end
+            -- Explicit SetValue(1) handles the OOC-resolved permanent
+            -- case; the curve-driven PermanentFill overlay is only for
+            -- the in-combat case where we can't read the bool. Hide it
+            -- here so we don't double-render full.
+            if bar.PermanentFill then
+                pcall(bar.PermanentFill.SetAlpha, bar.PermanentFill, 0)
+            end
             if bar.DurationText then
                 pcall(bar.DurationText.SetText, bar.DurationText, "")
+                -- Restore the configured base alpha — never override a
+                -- "hide text" setting (vertical bars without text, etc.).
+                pcall(bar.DurationText.SetAlpha, bar.DurationText,
+                    bar._durationTextBaseAlpha or 1)
             end
         end
 
@@ -1485,7 +1584,9 @@ function CDMBars:UpdateOwnedBarAura(bar)
         if durObj and not bar._hideDurationText then
             local prevDurObj = bar._durObj
             bar._durObj = durObj
-            local mirrorFillActive = bar._lastMirrorFill
+            local canUseTimerDuration = bar.StatusBar and bar.StatusBar.SetTimerDuration
+            bar._preferDurObjFill = canUseTimerDuration and true or nil
+            local mirrorFillActive = (not bar._preferDurObjFill) and bar._lastMirrorFill
                 and (GetTime() - bar._lastMirrorFill) < 5
             if mirrorFillActive then
                 -- MirrorBlizzBar hooks are actively driving fill via
@@ -1500,16 +1601,57 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 -- by comparing the DurationObject reference (C userdata
                 -- identity check — safe in combat, no secret values).
                 if durObj ~= prevDurObj then
-                    if bar.StatusBar and bar.StatusBar.SetTimerDuration then
+                    if canUseTimerDuration then
                         pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
-                        pcall(bar.StatusBar.SetTimerDuration, bar.StatusBar, durObj, nil, 1)
+                        local ok = pcall(bar.StatusBar.SetTimerDuration, bar.StatusBar, durObj, nil, 1)
+                        if not ok then
+                            bar._preferDurObjFill = nil
+                            bar._cSideFill = nil
+                        end
                     end
                 end
             elseif bar.StatusBar then
                 pcall(bar.StatusBar.SetMinMaxValues, bar.StatusBar, 0, 1)
-                if bar.StatusBar.SetTimerDuration then
-                    pcall(bar.StatusBar.SetTimerDuration, bar.StatusBar, durObj, nil, 1)
-                    bar._cSideFill = true
+                if canUseTimerDuration then
+                    local ok = pcall(bar.StatusBar.SetTimerDuration, bar.StatusBar, durObj, nil, 1)
+                    if ok then
+                        bar._cSideFill = true
+                    else
+                        bar._preferDurObjFill = nil
+                        bar._cSideFill = nil
+                    end
+                end
+            end
+
+            -- No-expiration overlay + text drive (curve trick via IsZero).
+            -- See header doc above the helpers. IsZero is a stable
+            -- per-aura property (not derived from elapsed/remaining),
+            -- so timed auras like Metamorphosis don't briefly cross a
+            -- threshold during animation and produce flicker.
+            if durObj.IsZero
+               and C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean then
+                local okZ, isZero = pcall(durObj.IsZero, durObj)
+                if okZ then
+                    -- Overlay alpha: permanent → 1 (visible), timed → 0.
+                    if bar.PermanentFill then
+                        local okA, alpha = pcall(C_CurveUtil.EvaluateColorValueFromBoolean,
+                            isZero, 1, 0)
+                        if okA then
+                            pcall(bar.PermanentFill.SetAlpha, bar.PermanentFill, alpha)
+                        end
+                    end
+                    -- Duration-text alpha: permanent → 0 (hidden), timed → 1.
+                    -- Skip when the configured base alpha is 0 (hideText /
+                    -- vertical-no-text settings) — the timed-aura output is
+                    -- 1 (visible), which would otherwise override the
+                    -- user's "hide text" choice.
+                    if bar.DurationText and (bar._durationTextBaseAlpha or 1) ~= 0 then
+                        local okT, textAlpha = pcall(C_CurveUtil.EvaluateColorValueFromBoolean,
+                            isZero, 0, 1)
+                        if okT then
+                            pcall(bar.DurationText.SetAlpha, bar.DurationText, textAlpha)
+                        end
+                    end
                 end
             end
         end
@@ -1608,6 +1750,7 @@ function CDMBars:UpdateOwnedBarAura(bar)
         bar._active = false
         bar._durObj = nil
         bar._cSideFill = nil
+        bar._preferDurObjFill = nil
         bar._allowTotemMirrorFill = nil
         bar._preferTotemDisplay = nil
         bar._totalDuration = nil
@@ -1620,8 +1763,15 @@ function CDMBars:UpdateOwnedBarAura(bar)
         if bar.StatusBar then
             pcall(bar.StatusBar.SetValue, bar.StatusBar, 0)
         end
+        if bar.PermanentFill then
+            pcall(bar.PermanentFill.SetAlpha, bar.PermanentFill, 0)
+        end
         if bar.DurationText then
             bar.DurationText:SetText("")
+            -- Restore the configured base alpha — never override a
+            -- "hide text" setting (vertical bars without text, etc.).
+            pcall(bar.DurationText.SetAlpha, bar.DurationText,
+                bar._durationTextBaseAlpha or 1)
         end
 
         -- Always restore name via C-side SetText — no Lua string comparison
@@ -2019,15 +2169,32 @@ barTimerGroup:SetScript("OnLoop", function()
                             -- _active = false or call LayoutBars — UpdateOwnedBars
                             -- owns state transitions and layout.
                             anyActive = true  -- keep ticking until UpdateOwnedBars confirms
-                            bar._durObj = nil
-                            bar._cSideFill = nil
-                            bar._lastDurationText = nil
-                            bar._lastDurationBucket = nil
-                            if bar.DurationText then
-                                bar.DurationText:SetText("")
-                            end
-                            if bar.StatusBar then
-                                pcall(bar.StatusBar.SetValue, bar.StatusBar, 0)
+                            if bar._cSideFill then
+                                -- C-side SetTimerDuration owns the fill. A
+                                -- transient "remaining = 0" read on a still-
+                                -- active timed aura (e.g. Metamorphosis under
+                                -- restricted scope) would otherwise stomp the
+                                -- bar to SetValue(0), clear _durObj / _cSideFill,
+                                -- and let the next UpdateOwnedBarAura tick re-
+                                -- apply SetTimerDuration — the visible empty↔
+                                -- normal-duration flicker. Don't touch bar fill,
+                                -- text, or the C-side timer state from here; let
+                                -- UpdateOwnedBars (event-driven) own the
+                                -- active/inactive transition and the actual
+                                -- tear-down when the aura genuinely ends. The
+                                -- next readable/secret positive tick can update
+                                -- DurationText without a blank-frame flash.
+                            else
+                                bar._durObj = nil
+                                bar._cSideFill = nil
+                                bar._lastDurationText = nil
+                                bar._lastDurationBucket = nil
+                                if bar.DurationText then
+                                    bar.DurationText:SetText("")
+                                end
+                                if bar.StatusBar then
+                                    pcall(bar.StatusBar.SetValue, bar.StatusBar, 0)
+                                end
                             end
                         end
                     end

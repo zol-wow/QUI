@@ -1568,43 +1568,67 @@ end
 local function ClearAuraHookStackText(entry, icon)
     local child = entry and entry._blizzChild
     local state = child and blizzStackState[child]
-    if state and (not icon or state.icon == icon) then
+    if state and (not icon or state.icon == icon or (state.subscribers and state.subscribers[icon])) then
+        if icon and state.auraTexts then
+            state.auraTexts[icon] = nil
+        elseif state.auraTexts then
+            wipe(state.auraTexts)
+        end
         state.auraText = nil
     end
 end
 
 local function ForwardAuraHookStackText(blizzChild, text, source)
     local state = blizzStackState[blizzChild]
-    if not state or not state.icon then return end
-    local icon = state.icon
-    local entry = icon and icon._spellEntry
-    -- Allow forwarding when the entry is in an aura container OR when the
-    -- QUI container is cooldown-typed but the actual blizzChild lives in
-    -- a buff viewer (e.g. Mana Tea on a custom cooldown container).
-    local cooldownWithBuffChild = entry and not UsesAPIAuraStackText(entry)
-        and IsBuffViewerChild(blizzChild)
+    if not state then return end
+    local subs = state.subscribers
+    if not subs then return end
+
     if not HookTextHasDisplay(text) then
         if not InCombatLockdown() then
             state.auraText = nil
+            if state.auraTexts then
+                wipe(state.auraTexts)
+            end
         end
-        -- Cooldown-container icons stay visible after the aura drops, so
-        -- we must actively clear the addon StackText — the icon won't be
-        -- hidden by aura-state changes the way aura-container icons are.
-        if cooldownWithBuffChild and icon and icon.StackText and not InCombatLockdown() then
-            pcall(icon.StackText.SetText, icon.StackText, "")
-            pcall(icon.StackText.Hide, icon.StackText)
+        for icon in pairs(subs) do
+            local entry = icon and icon._spellEntry
+            -- Cooldown-container icons stay visible after the aura drops, so
+            -- clear their addon StackText OOC. Aura-kind icons are hidden by
+            -- aura-state changes.
+            local cooldownWithBuffChild = entry and not UsesAPIAuraStackText(entry)
+                and IsBuffViewerChild(blizzChild)
+            if cooldownWithBuffChild and entry._blizzChild == blizzChild
+                and icon and icon.StackText and not InCombatLockdown() then
+                pcall(icon.StackText.SetText, icon.StackText, "")
+                pcall(icon.StackText.Hide, icon.StackText)
+            end
         end
         return
     end
-    if not entry or entry._blizzChild ~= blizzChild then return end
-    if not UsesAPIAuraStackText(entry) and not cooldownWithBuffChild then return end
-    if not icon.StackText then return end
 
-    if pcall(icon.StackText.SetText, icon.StackText, text) then
+    local forwarded = false
+    for icon in pairs(subs) do
+        local entry = icon and icon._spellEntry
+        local cooldownWithBuffChild = entry and not UsesAPIAuraStackText(entry)
+            and IsBuffViewerChild(blizzChild)
+        if entry and entry._blizzChild == blizzChild
+            and (UsesAPIAuraStackText(entry) or cooldownWithBuffChild)
+            and icon and icon.StackText then
+            if pcall(icon.StackText.SetText, icon.StackText, text) then
+                if state.auraTexts then
+                    state.auraTexts[icon] = text
+                end
+                forwarded = true
+                pcall(icon.StackText.Show, icon.StackText)
+                ChargeDebug(entry.name, "AURA HOOK", source or "text", "text=", text)
+            end
+        end
+    end
+
+    if forwarded then
         state.auraText = text
         state.lastHookTime = GetTime()
-        pcall(icon.StackText.Show, icon.StackText)
-        ChargeDebug(entry.name, "AURA HOOK", source or "text", "text=", text)
     end
 end
 
@@ -1616,7 +1640,9 @@ local function IsHookStackActive(entry, icon)
     local child = entry._blizzChild
     if UsesAPIAuraStackText(entry) then
         local state = blizzStackState[child]
-        return icon and icon._auraActive and state and state.icon == icon and state.auraText ~= nil
+        if not (icon and icon._auraActive and state) then return false end
+        if state.auraTexts and state.auraTexts[icon] ~= nil then return true end
+        return state.icon == icon and state.auraText ~= nil
     end
     -- Cooldown container backed by a buff-viewer child: stacks come from
     -- the API hook path (ForwardAuraHookStackText), not from reparented
@@ -1624,7 +1650,9 @@ local function IsHookStackActive(entry, icon)
     -- text into our StackText for this icon.
     if IsBuffViewerChild(child) then
         local state = blizzStackState[child]
-        return state and state.icon == icon and state.auraText ~= nil
+        if not state then return false end
+        if state.auraTexts and state.auraTexts[icon] ~= nil then return true end
+        return state.icon == icon and state.auraText ~= nil
     end
     local textOverlay = icon.TextOverlay
     if not textOverlay then return false end
@@ -1657,11 +1685,15 @@ local function HookBlizzStackText(icon, blizzChild)
             state = {}
             blizzStackState[blizzChild] = state
         end
-        if state.icon ~= icon then
-            state.auraText = nil
-        end
         state.icon = icon
         state.blizzChild = blizzChild
+        if not state.subscribers then
+            state.subscribers = setmetatable({}, { __mode = "k" })
+        end
+        if not state.auraTexts then
+            state.auraTexts = setmetatable({}, { __mode = "k" })
+        end
+        state.subscribers[icon] = true
 
         if not state.auraHooked then
             state.auraHooked = true
@@ -1897,12 +1929,19 @@ local function GetAuraApplicationsForSpell(spellID, spellName)
     return nil
 end
 
-local function ApplyAuraStackText(icon, stackValue, showZero, preserveWhenMissing)
+local function ApplyAuraStackText(icon, stackValue, showZero, preserveWhenMissing, stackSource)
     if not icon or not icon.StackText then return end
 
     if stackValue == nil then
         if not preserveWhenMissing then
             ClearIconStackText(icon)
+        end
+        return
+    end
+
+    if stackSource == "display-count" then
+        if pcall(icon.StackText.SetText, icon.StackText, stackValue) then
+            pcall(icon.StackText.Show, icon.StackText)
         end
         return
     end
@@ -1975,7 +2014,17 @@ local function UnhookBlizzStackText(icon)
     local entry = icon._spellEntry
     if not entry or not entry._blizzChild then return end
     local state = blizzStackState[entry._blizzChild]
-    if state then state.icon = nil end
+    if state then
+        if state.icon == icon then
+            state.icon = nil
+        end
+        if state.subscribers then
+            state.subscribers[icon] = nil
+        end
+        if state.auraTexts then
+            state.auraTexts[icon] = nil
+        end
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -3351,7 +3400,7 @@ local function UpdateIconCooldown(icon)
                                 ClearIconStackText(icon)
                                 ClearAuraHookStackText(entry, icon)
                             else
-                                ApplyAuraStackText(icon, r.stacks, entry.hasCharges, InCombatLockdown())
+                                ApplyAuraStackText(icon, r.stacks, entry.hasCharges, InCombatLockdown(), r.stackSource)
                             end
                         end
 
@@ -3738,7 +3787,7 @@ local function UpdateIconCooldown(icon)
                         if not entry.hasCharges
                             and not entry._blizzChild
                             and not IsTotemSlotEntry(entry) then
-                            ApplyAuraStackText(icon, r.stacks, false, InCombatLockdown())
+                            ApplyAuraStackText(icon, r.stacks, false, InCombatLockdown(), r.stackSource)
                         end
                     else
                         icon._isTotemInstance = nil
@@ -4749,16 +4798,9 @@ function CDMIcons:BuildIcons(viewerType, container)
     -- Fallback _blizzChild resolution: if ResolveOwnedEntry couldn't find
     -- a viewer child (e.g., _spellIDToChild wasn't populated yet), retry
     -- now.  Also handles custom entries from GetCustomData which skip
-    -- ResolveOwnedEntry entirely. The QUI container the user picked
-    -- (essential vs utility) is independent of where Blizzard places the
-    -- spell — accept a child from either cooldown viewer so cross-category
-    -- placement still mirrors cooldown data.
-    -- Resolve _blizzChild from any cooldown viewer (essential or utility)
-    -- for ALL container types — including custom containers. Previously
-    -- gated to viewerType == essential/utility, which left custom-container
-    -- entries with _blizzChild = nil and excluded them from the
-    -- HookBlizzStackText subscriber path + the line-2746 aura-detection
-    -- block, so the custom bar's icons rendered no stacks and no swipe.
+    -- ResolveOwnedEntry entirely. Custom containers can mix aura and
+    -- cooldown entries, so resolve the child per entry kind instead of from
+    -- the container shape.
     if ns.CDMSpellData then
         local spellMap = ns.CDMSpellData._spellIDToChild
         local essentialViewer = _G["EssentialCooldownViewer"]
@@ -4775,19 +4817,30 @@ function CDMIcons:BuildIcons(viewerType, container)
                     if entry.overrideSpellID then searchIDs[#searchIDs+1] = entry.overrideSpellID end
                     if entry.spellID and entry.spellID ~= entry.overrideSpellID then searchIDs[#searchIDs+1] = entry.spellID end
                     if entry.id and entry.id ~= entry.spellID and entry.id ~= entry.overrideSpellID then searchIDs[#searchIDs+1] = entry.id end
-                    for _, sid in ipairs(searchIDs) do
-                        local children = spellMap[sid]
-                        if children then
-                            for _, child in ipairs(children) do
-                                local vf = child.viewerFrame
-                                if vf and (vf == essentialViewer or vf == utilityViewer
-                                    or vf == essentialContainer or vf == utilityContainer) then
-                                    entry._blizzChild = child
-                                    break
+                    if IsAuraEntry(entry) and ns.CDMSpellData.FindBuffChildForSpell then
+                        entry._blizzChild = ns.CDMSpellData.FindBuffChildForSpell(
+                            entry.viewerType,
+                            searchIDs[1],
+                            searchIDs[2],
+                            searchIDs[3]
+                        )
+                    end
+
+                    if not entry._blizzChild then
+                        for _, sid in ipairs(searchIDs) do
+                            local children = spellMap[sid]
+                            if children then
+                                for _, child in ipairs(children) do
+                                    local vf = child.viewerFrame
+                                    if vf and (vf == essentialViewer or vf == utilityViewer
+                                        or vf == essentialContainer or vf == utilityContainer) then
+                                        entry._blizzChild = child
+                                        break
+                                    end
                                 end
                             end
+                            if entry._blizzChild then break end
                         end
-                        if entry._blizzChild then break end
                     end
                 end
             end
