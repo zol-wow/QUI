@@ -222,15 +222,9 @@ local function GetFontList()
 
         for _, name in ipairs(LSM:List("font")) do
             local path = LSM:Fetch("font", name) or ""
-            local pathLower = path:lower()
-
-            -- Only allow fonts from WoW defaults, QUI, or SharedMedia
-            local isWoWFont = pathLower:find("^fonts\\") ~= nil or pathLower:find("^fonts/") ~= nil
-            local isQuaziiFont = pathLower:find("quaziiui") ~= nil
-            local isSharedMediaFont = pathLower:find("sharedmedia") ~= nil
-
-            if (isWoWFont or isQuaziiFont or isSharedMediaFont) and path ~= "" then
-                -- Pre-warm the font by actually applying it (forces WoW to load the font file)
+            if path ~= "" then
+                -- Pre-warm the font by actually applying it (forces WoW to load
+                -- the font file). If SetFont rejects the path, drop the entry.
                 local success = pcall(function()
                     fontPrewarmFrame.text:SetFont(path, 12, "")
                 end)
