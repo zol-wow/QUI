@@ -277,6 +277,110 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
     return builder
 end
 
+local function GetFontListWithDefault(optionsAPI)
+    local fonts = {}
+    if optionsAPI and type(optionsAPI.GetFontList) == "function" then
+        for _, option in ipairs(optionsAPI.GetFontList() or {}) do
+            fonts[#fonts + 1] = DeepCopy(option)
+        end
+    end
+    table.insert(fonts, 1, { value = "", text = "(Frame Font)" })
+    return fonts
+end
+
+local function AddAuraDurationTextRows(card, gui, optionsAPI, auras, prefix, labelPrefix, refresh, enabledCond)
+    local showKey = "show" .. labelPrefix .. "DurationText"
+    local fontKey = prefix .. "DurationFont"
+    local fontSizeKey = prefix .. "DurationFontSize"
+    local anchorKey = prefix .. "DurationAnchor"
+    local offsetXKey = prefix .. "DurationOffsetX"
+    local offsetYKey = prefix .. "DurationOffsetY"
+    local useTimeColorKey = prefix .. "DurationUseTimeColor"
+    local colorKey = prefix .. "DurationColor"
+    local controlledRows = {}
+    local colorRow
+
+    local function TextEnabled()
+        return enabledCond() and auras[showKey] ~= false
+    end
+
+    local function UsesStaticColor()
+        local useTimeColor = auras[useTimeColorKey]
+        if useTimeColor == nil then
+            useTimeColor = auras.showDurationColor ~= false
+        end
+        return TextEnabled() and not useTimeColor
+    end
+
+    local updateRows
+    local function onChange()
+        refresh()
+        if updateRows then
+            updateRows()
+        end
+    end
+
+    local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, showKey, auras, onChange, {
+        description = "Show remaining-time text on " .. string.lower(labelPrefix) .. " icons.",
+    })
+    local showRow = optionsAPI.BuildSettingRow(card.frame, "Show " .. labelPrefix .. " Duration Text", showCheckbox)
+
+    local fontDropdown = gui:CreateFormDropdown(card.frame, nil, GetFontListWithDefault(optionsAPI), fontKey, auras, onChange, nil, {
+        searchable = true,
+    })
+    local fontRow = optionsAPI.BuildSettingRow(card.frame, "Duration Font", fontDropdown)
+    controlledRows[#controlledRows + 1] = fontRow
+    card.AddRow(showRow, fontRow)
+
+    local fontSizeSlider = gui:CreateFormSlider(card.frame, nil, 6, 24, 1, fontSizeKey, auras, onChange, nil, {
+        description = "Font size used for the remaining-time text.",
+    })
+    local fontSizeRow = optionsAPI.BuildSettingRow(card.frame, "Duration Font Size", fontSizeSlider)
+    controlledRows[#controlledRows + 1] = fontSizeRow
+    local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, NINE_POINT_OPTIONS, anchorKey, auras, onChange, {
+        description = "Anchor point for the remaining-time text on each icon.",
+    })
+    local anchorRow = optionsAPI.BuildSettingRow(card.frame, "Duration Anchor", anchorDropdown)
+    controlledRows[#controlledRows + 1] = anchorRow
+    card.AddRow(fontSizeRow, anchorRow)
+
+    local offsetXSlider = gui:CreateFormSlider(card.frame, nil, -40, 40, 1, offsetXKey, auras, onChange, nil, {
+        description = "Horizontal pixel offset for duration text.",
+    })
+    local offsetXRow = optionsAPI.BuildSettingRow(card.frame, "Duration X Offset", offsetXSlider)
+    controlledRows[#controlledRows + 1] = offsetXRow
+    local offsetYSlider = gui:CreateFormSlider(card.frame, nil, -40, 40, 1, offsetYKey, auras, onChange, nil, {
+        description = "Vertical pixel offset for duration text.",
+    })
+    local offsetYRow = optionsAPI.BuildSettingRow(card.frame, "Duration Y Offset", offsetYSlider)
+    controlledRows[#controlledRows + 1] = offsetYRow
+    card.AddRow(offsetXRow, offsetYRow)
+
+    local useTimeColorCheckbox = gui:CreateFormCheckbox(card.frame, nil, useTimeColorKey, auras, onChange, {
+        description = "Use green/yellow/red time-based duration colors instead of the static text color.",
+    })
+    local useTimeColorRow = optionsAPI.BuildSettingRow(card.frame, "Use Time-Based Duration Color", useTimeColorCheckbox)
+    controlledRows[#controlledRows + 1] = useTimeColorRow
+    local colorPicker = gui:CreateFormColorPicker(card.frame, nil, colorKey, auras, onChange, nil, {
+        description = "Static duration text color when time-based coloring is off.",
+    })
+    colorRow = optionsAPI.BuildSettingRow(card.frame, "Duration Text Color", colorPicker)
+    card.AddRow(useTimeColorRow, colorRow)
+
+    updateRows = function()
+        local showAlpha = enabledCond() and 1.0 or 0.4
+        local textAlpha = TextEnabled() and 1.0 or 0.4
+        showRow:SetAlpha(showAlpha)
+        for _, row in ipairs(controlledRows) do
+            row:SetAlpha(textAlpha)
+        end
+        colorRow:SetAlpha(UsesStaticColor() and 1.0 or 0.4)
+    end
+
+    updateRows()
+    return updateRows
+end
+
 local function RequestTabRepaint(ctx)
     local repaint = ctx and ctx.state and ctx.state.repaintTabs or nil
     if type(repaint) == "function" then
@@ -792,6 +896,14 @@ local function RenderLayoutSection(sectionHost, ctx)
             description = "Order tanks first, healers second, and damage dealers last.",
         })
         card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Sort by Role (Tank > Healer > DPS)", sortByRoleCheckbox))
+
+        local limitGroupsCheckbox = gui:CreateFormCheckbox(card.frame, nil, "limitGroupsByRaidSize", layout, function()
+            refresh(true)
+            RequestTabRepaint(ctx)
+        end, {
+            description = "Limit visible raid groups by instance size: groups 1-4 in Mythic and 1-6 otherwise.",
+        })
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Limit Groups by Raid Size", limitGroupsCheckbox))
     else
         local showPlayerCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showPlayer", layout, refresh, {
             description = "Include the player's own frame in the party display.",
@@ -1705,7 +1817,7 @@ local function RenderHealerSection(sectionHost, ctx)
     end
 
     builder.Header("Healer")
-    builder.Description("Dispel and target-highlighting helpers for " .. groupFrames.sourceLabel .. " group frames.")
+    builder.Description("Dispel overlays, including Blizzard private-dispel markers when available, and target-highlighting helpers for " .. groupFrames.sourceLabel .. " group frames.")
 
     builder.Header("Dispel Overlay")
     local dispelCard = builder.Card()
@@ -1721,7 +1833,7 @@ local function RenderHealerSection(sectionHost, ctx)
         refresh()
         UpdateDispelRows()
     end, {
-        description = "Outline the frame border in the dispel type's color when a dispellable debuff is active on the unit.",
+        description = "Outline the frame border in the dispel type's color when a dispellable debuff or private-dispel marker is active on the unit.",
     })
     local borderSizeSlider = gui:CreateFormSlider(dispelCard.frame, nil, 1, 16, 1, "borderSize", dispel, refresh, nil, {
         description = "Pixel thickness of the dispel border.",
@@ -2134,6 +2246,7 @@ local function RenderBuffsSection(sectionHost, ctx)
 
     local buffsCard = builder.Card()
     local maxBuffsRow, iconSizeRow, hideSwipeRow, reverseSwipeRow, anchorRow, growDirectionRow, spacingRow, xOffsetRow, yOffsetRow
+    local updateBuffDurationRows
     local UpdateFilterRows
     local function UpdateBuffRows()
         local showBuffs = auras.showBuffs == true
@@ -2149,6 +2262,7 @@ local function RenderBuffsSection(sectionHost, ctx)
         if spacingRow then spacingRow:SetAlpha(showAlpha) end
         if xOffsetRow then xOffsetRow:SetAlpha(showAlpha) end
         if yOffsetRow then yOffsetRow:SetAlpha(showAlpha) end
+        if updateBuffDurationRows then updateBuffDurationRows() end
     end
 
     local showBuffsCheckbox = gui:CreateFormCheckbox(buffsCard.frame, nil, "showBuffs", auras, function()
@@ -2181,6 +2295,17 @@ local function RenderBuffsSection(sectionHost, ctx)
     })
     hideSwipeRow = optionsAPI.BuildSettingRow(buffsCard.frame, "Hide Duration Swipe", hideSwipeCheckbox)
     buffsCard.AddRow(iconSizeRow, hideSwipeRow)
+
+    updateBuffDurationRows = AddAuraDurationTextRows(
+        buffsCard,
+        gui,
+        optionsAPI,
+        auras,
+        "buff",
+        "Buff",
+        refresh,
+        function() return auras.showBuffs == true end
+    )
 
     local reverseSwipeCheckbox = gui:CreateFormCheckbox(buffsCard.frame, nil, "buffReverseSwipe", auras, refresh, {
         description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as time passes.",
@@ -2218,7 +2343,7 @@ local function RenderBuffsSection(sectionHost, ctx)
     builder.Spacer(6)
     builder.Header("Buff Filtering")
     local filterCard = builder.Card()
-    local filterModeRow, onlyMineRow, hidePermanentRow, dedupeRow, raidRow, cancelableRow, importantRow
+    local filterModeRow, onlyMineRow, hidePermanentRow, dedupeRow, raidRow, raidInCombatRow, cancelableRow, notCancelableRow, importantRow, bigDefensiveRow, externalDefensiveRow
     UpdateFilterRows = function()
         local showBuffs = auras.showBuffs == true
         local showAlpha = showBuffs and 1.0 or 0.4
@@ -2228,8 +2353,12 @@ local function RenderBuffsSection(sectionHost, ctx)
         if hidePermanentRow then hidePermanentRow:SetAlpha(showAlpha) end
         if dedupeRow then dedupeRow:SetAlpha(showAlpha) end
         if raidRow then raidRow:SetAlpha(classificationAlpha) end
+        if raidInCombatRow then raidInCombatRow:SetAlpha(classificationAlpha) end
         if cancelableRow then cancelableRow:SetAlpha(classificationAlpha) end
+        if notCancelableRow then notCancelableRow:SetAlpha(classificationAlpha) end
         if importantRow then importantRow:SetAlpha(classificationAlpha) end
+        if bigDefensiveRow then bigDefensiveRow:SetAlpha(classificationAlpha) end
+        if externalDefensiveRow then externalDefensiveRow:SetAlpha(classificationAlpha) end
     end
 
     local filterModeDropdown = gui:CreateFormDropdown(filterCard.frame, nil, FILTER_MODE_OPTIONS, "filterMode", auras, function()
@@ -2259,17 +2388,37 @@ local function RenderBuffsSection(sectionHost, ctx)
         description = "Include buffs flagged by Blizzard as raid-relevant.",
     })
     raidRow = optionsAPI.BuildSettingRow(filterCard.frame, "Raid", raidCheckbox)
+    local raidInCombatCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "raidInCombat", buffClassifications, refresh, {
+        description = "Include buffs flagged as raid-relevant only while in combat.",
+    })
+    raidInCombatRow = optionsAPI.BuildSettingRow(filterCard.frame, "Raid (In Combat)", raidInCombatCheckbox)
+    filterCard.AddRow(raidRow, raidInCombatRow)
+
     local cancelableCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "cancelable", buffClassifications, refresh, {
         description = "Include buffs you can right-click to cancel.",
     })
     cancelableRow = optionsAPI.BuildSettingRow(filterCard.frame, "Cancelable", cancelableCheckbox)
-    filterCard.AddRow(raidRow, cancelableRow)
+    local notCancelableCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "notCancelable", buffClassifications, refresh, {
+        description = "Include buffs you cannot right-click to cancel, such as many external or NPC-applied buffs.",
+    })
+    notCancelableRow = optionsAPI.BuildSettingRow(filterCard.frame, "Not Cancelable", notCancelableCheckbox)
+    filterCard.AddRow(cancelableRow, notCancelableRow)
 
     local importantCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "important", buffClassifications, refresh, {
         description = "Include buffs flagged by Blizzard as important.",
     })
     importantRow = optionsAPI.BuildSettingRow(filterCard.frame, "Important", importantCheckbox)
-    filterCard.AddRow(importantRow)
+    local bigDefensiveCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "bigDefensive", buffClassifications, refresh, {
+        description = "Include major personal defensive buffs such as immunities and high-impact mitigation.",
+    })
+    bigDefensiveRow = optionsAPI.BuildSettingRow(filterCard.frame, "Big Defensive", bigDefensiveCheckbox)
+    filterCard.AddRow(importantRow, bigDefensiveRow)
+
+    local externalDefensiveCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "externalDefensive", buffClassifications, refresh, {
+        description = "Include externally-applied defensive buffs such as Pain Suppression or Ironbark.",
+    })
+    externalDefensiveRow = optionsAPI.BuildSettingRow(filterCard.frame, "External Defensive", externalDefensiveCheckbox)
+    filterCard.AddRow(externalDefensiveRow)
 
     UpdateFilterRows()
     builder.CloseCard(filterCard)
@@ -2320,6 +2469,7 @@ local function RenderDebuffsSection(sectionHost, ctx)
 
     local debuffsCard = builder.Card()
     local maxDebuffsRow, iconSizeRow, hideSwipeRow, reverseSwipeRow, anchorRow, growDirectionRow, spacingRow, xOffsetRow, yOffsetRow
+    local updateDebuffDurationRows
     local UpdateFilterRows
     local function UpdateDebuffRows()
         local showDebuffs = auras.showDebuffs == true
@@ -2335,6 +2485,7 @@ local function RenderDebuffsSection(sectionHost, ctx)
         if spacingRow then spacingRow:SetAlpha(showAlpha) end
         if xOffsetRow then xOffsetRow:SetAlpha(showAlpha) end
         if yOffsetRow then yOffsetRow:SetAlpha(showAlpha) end
+        if updateDebuffDurationRows then updateDebuffDurationRows() end
     end
 
     local showDebuffsCheckbox = gui:CreateFormCheckbox(debuffsCard.frame, nil, "showDebuffs", auras, function()
@@ -2367,6 +2518,17 @@ local function RenderDebuffsSection(sectionHost, ctx)
     })
     hideSwipeRow = optionsAPI.BuildSettingRow(debuffsCard.frame, "Hide Duration Swipe", hideSwipeCheckbox)
     debuffsCard.AddRow(iconSizeRow, hideSwipeRow)
+
+    updateDebuffDurationRows = AddAuraDurationTextRows(
+        debuffsCard,
+        gui,
+        optionsAPI,
+        auras,
+        "debuff",
+        "Debuff",
+        refresh,
+        function() return auras.showDebuffs == true end
+    )
 
     local reverseSwipeCheckbox = gui:CreateFormCheckbox(debuffsCard.frame, nil, "debuffReverseSwipe", auras, refresh, {
         description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as time passes.",
@@ -2404,13 +2566,14 @@ local function RenderDebuffsSection(sectionHost, ctx)
     builder.Spacer(6)
     builder.Header("Debuff Filtering")
     local filterCard = builder.Card()
-    local filterModeRow, raidRow, crowdControlRow, importantRow
+    local filterModeRow, raidRow, raidInCombatRow, crowdControlRow, importantRow
     UpdateFilterRows = function()
         local showDebuffs = auras.showDebuffs == true
         local showAlpha = showDebuffs and 1.0 or 0.4
         local classificationAlpha = (showDebuffs and (auras.filterMode or "off") == "classification") and 1.0 or 0.4
         if filterModeRow then filterModeRow:SetAlpha(showAlpha) end
         if raidRow then raidRow:SetAlpha(classificationAlpha) end
+        if raidInCombatRow then raidInCombatRow:SetAlpha(classificationAlpha) end
         if crowdControlRow then crowdControlRow:SetAlpha(classificationAlpha) end
         if importantRow then importantRow:SetAlpha(classificationAlpha) end
     end
@@ -2428,17 +2591,21 @@ local function RenderDebuffsSection(sectionHost, ctx)
         description = "Include debuffs flagged by Blizzard as raid-relevant.",
     })
     raidRow = optionsAPI.BuildSettingRow(filterCard.frame, "Raid", raidCheckbox)
+    local raidInCombatCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "raidInCombat", debuffClassifications, refresh, {
+        description = "Include debuffs flagged as raid-relevant only while in combat.",
+    })
+    raidInCombatRow = optionsAPI.BuildSettingRow(filterCard.frame, "Raid (In Combat)", raidInCombatCheckbox)
+    filterCard.AddRow(raidRow, raidInCombatRow)
+
     local crowdControlCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "crowdControl", debuffClassifications, refresh, {
         description = "Include crowd-control debuffs (stuns, fears, roots, silences, etc.).",
     })
     crowdControlRow = optionsAPI.BuildSettingRow(filterCard.frame, "Crowd Control", crowdControlCheckbox)
-    filterCard.AddRow(raidRow, crowdControlRow)
-
     local importantCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "important", debuffClassifications, refresh, {
         description = "Include debuffs flagged by Blizzard as important.",
     })
     importantRow = optionsAPI.BuildSettingRow(filterCard.frame, "Important", importantCheckbox)
-    filterCard.AddRow(importantRow)
+    filterCard.AddRow(crowdControlRow, importantRow)
 
     UpdateFilterRows()
     builder.CloseCard(filterCard)
