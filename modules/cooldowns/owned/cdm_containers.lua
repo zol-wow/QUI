@@ -2038,9 +2038,15 @@ local function LayoutContainer(trackerKey)
     -- Save raw content width before min-width inflation (used by resource bars)
     local rawContentWidth = maxRowWidth
 
-    -- HUD min-width floor
+    -- HUD min-width floor — only essential/utility can host the HUD, so only
+    -- those containers should inflate to the floor. Without this trackerKey
+    -- gate, the floor leaks into custom bars (and buff), which inflates their
+    -- width past the natural icon span and parks visible icons in the middle
+    -- of an oversize container instead of glued to the bar's anchor edge.
     local minWidthEnabled, minWidth = GetHUDMinWidth()
-    local applyHUDMinWidth = minWidthEnabled and IsHUDAnchoredToCDM()
+    local applyHUDMinWidth = minWidthEnabled
+        and (trackerKey == "essential" or trackerKey == "utility")
+        and IsHUDAnchoredToCDM()
     if applyHUDMinWidth then
         maxRowWidth = math.max(maxRowWidth, minWidth)
         potentialRow1Width = math.max(potentialRow1Width, minWidth)

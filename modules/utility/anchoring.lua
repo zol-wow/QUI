@@ -2254,6 +2254,18 @@ local DYNAMIC_SIZE_ANCHOR_KEYS = {
     totemBar = true,
 }
 
+-- Custom CDM bars (cdmCustom_*) belong here too: when dynamicLayout drops
+-- filtered icons mid-combat, the container width changes and any corner-to-
+-- corner anchor (e.g. BOTTOMRIGHT→TOPRIGHT to a unit frame) must stay glued
+-- to the anchor edge.  Their keys are minted dynamically so they can't sit
+-- in the static table; the helper below covers both.
+local function IsDynamicSizeAnchorKey(key)
+    if not key then return false end
+    if DYNAMIC_SIZE_ANCHOR_KEYS[key] then return true end
+    if type(key) == "string" and key:find("^cdmCustom_") then return true end
+    return false
+end
+
 local function GetPointOffsetForRect(point, width, height)
     local halfW = (width or 0) * 0.5
     local halfH = (height or 0) * 0.5
@@ -2782,7 +2794,7 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         -- so they track parent edge movement automatically in combat.
         useSizeStable = false
     end
-    if DYNAMIC_SIZE_ANCHOR_KEYS[key] or DYNAMIC_SIZE_ANCHOR_KEYS[settings.parent] then
+    if IsDynamicSizeAnchorKey(key) or IsDynamicSizeAnchorKey(settings.parent) then
         useSizeStable = false
     end
 
@@ -2849,8 +2861,8 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         -- at 1x1 intentionally and grow as icons appear; converting to
         -- CENTER would break the growth-edge anchoring that LayoutIcons
         -- depends on.
-        local skipInflation = DYNAMIC_SIZE_ANCHOR_KEYS[key]
-            or DYNAMIC_SIZE_ANCHOR_KEYS[settings.parent]
+        local skipInflation = IsDynamicSizeAnchorKey(key)
+            or IsDynamicSizeAnchorKey(settings.parent)
         local needsInflation = false
         if not skipInflation and parentFrame and parentFrame ~= UIParent and parentFrame.GetSize then
             local ok, pw, ph = pcall(parentFrame.GetSize, parentFrame)
@@ -3103,8 +3115,8 @@ _G.QUI_ReanchorFramePositionOnly = function(key)
     local offsetX = settings.offsetX or 0
     local offsetY = settings.offsetY or 0
     local useSizeStable = IsSizeStableAnchoringEnabled(settings)
-    if CASTBAR_ANCHOR_KEYS[key] or DYNAMIC_SIZE_ANCHOR_KEYS[key]
-        or DYNAMIC_SIZE_ANCHOR_KEYS[settings.parent] then
+    if CASTBAR_ANCHOR_KEYS[key] or IsDynamicSizeAnchorKey(key)
+        or IsDynamicSizeAnchorKey(settings.parent) then
         useSizeStable = false
     end
 
@@ -3143,8 +3155,8 @@ _G.QUI_AnchorOverlayToParent = function(overlayFrame, key, overlayW, overlayH)
     local offsetX = settings.offsetX or 0
     local offsetY = settings.offsetY or 0
     local useSizeStable = IsSizeStableAnchoringEnabled(settings)
-    if CASTBAR_ANCHOR_KEYS[key] or DYNAMIC_SIZE_ANCHOR_KEYS[key]
-        or DYNAMIC_SIZE_ANCHOR_KEYS[settings.parent] then
+    if CASTBAR_ANCHOR_KEYS[key] or IsDynamicSizeAnchorKey(key)
+        or IsDynamicSizeAnchorKey(settings.parent) then
         useSizeStable = false
     end
 
