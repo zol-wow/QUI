@@ -104,28 +104,6 @@ local function UsesHookStackText(entry, blizzChild)
     return IsBuffViewerChild(blizzChild or (entry and entry._blizzChild))
 end
 
--- True when the actual Blizzard child lives in a buff viewer.  Used to
--- route stack-text handling through the API hook path even when the QUI
--- container is cooldown-typed: Blizzard's buff viewer doesn't drive
--- ChargeCount/Applications reliably after a reparent, so stacks for spells
--- like Mana Tea blank out on custom cooldown containers if we don't
--- detect this case independently of container type.
-local function IsBuffViewerChild(blizzChild)
-    if not blizzChild or not blizzChild.viewerFrame then return false end
-    local buffViewer = _G["BuffIconCooldownViewer"]
-    local buffBarViewer = _G["BuffBarCooldownViewer"]
-    return blizzChild.viewerFrame == buffViewer or blizzChild.viewerFrame == buffBarViewer
-end
-
--- True when the entry's stack text should come from the buff-viewer hook
--- path rather than the reparent path.  Either an aura/auraBar container
--- or a cooldown container backed by a buff-viewer child qualifies.
-local function UsesHookStackText(entry, blizzChild)
-    if UsesAPIAuraStackText(entry) then return true end
-    return IsBuffViewerChild(blizzChild or (entry and entry._blizzChild))
-end
-
-
 -- Per-spell override lookup helper.  Returns the cached override table
 -- for the icon's spell/container, or nil.  Cheap (two table lookups).
 local function GetIconSpellOverride(icon)
@@ -1201,6 +1179,69 @@ local function GetBlizzCooldownPayload(blizzCD)
     return nil, nil, nil
 end
 
+local function EntryMatchesReadableID(icon, entry, id)
+    id = SafeValue(id, nil)
+    if not id then return nil end
+
+    local function same(candidate)
+        candidate = SafeValue(candidate, nil)
+        return candidate ~= nil and candidate == id
+    end
+
+    if icon and same(icon._runtimeSpellID) then return true end
+    if entry then
+        if same(entry.overrideSpellID) then return true end
+        if same(entry.spellID) then return true end
+        if same(entry.id) then return true end
+    end
+
+    return false
+end
+
+local function ChildStillBoundToIcon(icon, blizzChild)
+    if not icon or not blizzChild then return false end
+    local entry = icon._spellEntry
+    if not entry then return false end
+
+    local sawReadableID = false
+    local function checkID(id)
+        local match = EntryMatchesReadableID(icon, entry, id)
+        if match ~= nil then
+            sawReadableID = true
+            if match then return true end
+        end
+        return false
+    end
+
+    local cinfo = blizzChild.cooldownInfo
+    if type(cinfo) == "table" and Helpers.CanAccessTable(cinfo) then
+        if checkID(cinfo.spellID) then return true end
+        if checkID(cinfo.overrideSpellID) then return true end
+        if checkID(cinfo.overrideTooltipSpellID) then return true end
+        local linkedSpellIDs = cinfo.linkedSpellIDs
+        if type(linkedSpellIDs) == "table" and Helpers.CanAccessTable(linkedSpellIDs) then
+            for _, linkedID in ipairs(linkedSpellIDs) do
+                if checkID(linkedID) then return true end
+            end
+        end
+    end
+
+    if blizzChild.GetSpellID then
+        local ok, spellID = pcall(blizzChild.GetSpellID, blizzChild)
+        if ok and checkID(spellID) then return true end
+    end
+    if blizzChild.GetAuraSpellID then
+        local ok, auraSpellID = pcall(blizzChild.GetAuraSpellID, blizzChild)
+        if ok and checkID(auraSpellID) then return true end
+    end
+
+    if sawReadableID then
+        return false
+    end
+
+    return true
+end
+
 -- Keep CooldownFrame ready-flash ("bling") hidden when icon is effectively invisible.
 -- This prevents GCD-ready glow from leaking through when row/container alpha is 0.
 local function SyncCooldownBling(icon)
@@ -1285,7 +1326,8 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                     -- swipe on a buff icon" bug. Aura swipe styling is driven
                     -- exclusively by UpdateIconCooldown's aura branch.
                     if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown == self
-                       and not IsAuraEntry(tEntry) then
+                       and not IsAuraEntry(tEntry)
+                       and ChildStillBoundToIcon(targetIcon, tEntry._blizzChild) then
                         local cd = targetIcon.Cooldown
                         local tSkipCharge = tEntry and tEntry.hasCharges
                         local tSkipAura = targetIcon._auraActive
@@ -1321,7 +1363,8 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                 -- Aura-kind entries never receive forwarded cooldown timing
                 -- (see SetCooldownFromDurationObject hook for rationale).
                 if tEntry and tEntry._blizzChild and tEntry._blizzChild.Cooldown == self
-                   and not IsAuraEntry(tEntry) then
+                   and not IsAuraEntry(tEntry)
+                   and ChildStillBoundToIcon(targetIcon, tEntry._blizzChild) then
                     RefreshIconGCDState(targetIcon)
                     local cd = targetIcon.Cooldown
                     if cd and cd.SetCooldown and not (tEntry and tEntry.hasCharges) and not targetIcon._auraActive then
@@ -1375,6 +1418,7 @@ local function MirrorBlizzCooldown(icon, blizzChild)
                    -- Aura-kind entries never receive forwarded cooldown timing
                    -- (see SetCooldownFromDurationObject hook for rationale).
                    and not IsAuraEntry(tEntry)
+                   and ChildStillBoundToIcon(targetIcon, tEntry._blizzChild)
                    and not targetIcon._auraActive
                    and not (tEntry and tEntry.hasCharges)
                    -- Skip subscribers whose own cooldown is currently active
@@ -1422,7 +1466,7 @@ local function MirrorBlizzCooldown(icon, blizzChild)
     -- an active cooldown running. Forward its current state to the addon CD
     -- so swipe/countdown display correctly without waiting for the next update.
     local addonCD = icon.Cooldown
-    if addonCD then
+    if addonCD and ChildStillBoundToIcon(icon, blizzChild) then
         MirrorCurrentBlizzCooldown(icon, blizzCD)
         -- Mirror reverse state (aura timers show reversed swipe)
         local okR, isReversed = pcall(blizzCD.GetReverse, blizzCD)
@@ -1438,7 +1482,14 @@ local function UnmirrorBlizzCooldown(icon)
 
     -- Disconnect hook references (hooks become no-ops via nil check)
     local state = blizzCDState[icon._blizzCooldown]
-    if state then state.icon = nil end
+    if state then
+        if state.icon == icon then
+            state.icon = nil
+        end
+        if state.subscribers then
+            state.subscribers[icon] = nil
+        end
+    end
 
     -- No reparenting to undo — the Blizzard CD was never moved.
     icon._blizzCooldown = nil
@@ -4429,6 +4480,7 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         icon._showingGCDSwipe = nil
         icon._showingRealCooldownSwipe = nil
         icon._mirrorDriven = nil
+        icon._durObjHookSync = nil
         icon._wasShowingGCDSwipe = nil
         icon._hasCooldownActive = nil
         icon._isTotemInstance = nil
@@ -4518,6 +4570,8 @@ function CDMIcons:ReleaseIcon(icon)
     icon._wasOnGCD = nil
     icon._showingGCDSwipe = nil
     icon._showingRealCooldownSwipe = nil
+    icon._mirrorDriven = nil
+    icon._durObjHookSync = nil
     icon._wasShowingGCDSwipe = nil
     icon._hasCooldownActive = nil
     icon._isTotemInstance = nil
