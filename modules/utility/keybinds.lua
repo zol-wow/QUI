@@ -1349,6 +1349,31 @@ local function ApplyKeybindToIcon(icon, viewerName)
     end
 end
 
+-- Hide all keybind/rotation overlays on an icon and forget cached values.
+-- Called when the icon factory recycles an icon between viewer pools so a
+-- buff slot doesn't inherit a previous essential/utility cycle's keybind text.
+-- Frames stay alive (FontString + overlay) so the next ApplyKeybindToIcon /
+-- ApplyRotationHelperToIcon can re-show them without re-creating widgets.
+local function ClearKeybindIconState(icon)
+    if not icon then return end
+    local iks = iconKeybindState[icon]
+    if not iks then return end
+
+    if iks.text then
+        if iks.shownText then
+            iks.text:SetText("")
+        end
+        if iks.text:IsShown() then iks.text:Hide() end
+    end
+    iks.shownText = nil
+    iks.keybind = nil
+    iks.spellID = nil
+
+    if iks.overlay and iks.overlay:IsShown() then
+        iks.overlay:Hide()
+    end
+end
+
 -- Override management API ----------------------------------------------------
 
 -- Set or clear a keybind override for a spellID (shared across all viewers).
@@ -1944,6 +1969,7 @@ QUI.Keybinds = {
     SetOverrideForItem = SetKeybindOverrideForItem,
     GetOverrideForItem = GetOverrideKeybindForItem,
     ClearAllOverrides = ClearAllKeybindOverrides,
+    ClearIconState = ClearKeybindIconState,
     RefreshRotationHelper = RefreshRotationHelper,
     UpdateAllRotationHelpers = UpdateAllRotationHelpers,
 }
@@ -1951,6 +1977,7 @@ QUI.Keybinds = {
 -- Global refresh function for config panel
 _G.QUI_RefreshKeybinds = UpdateAllKeybinds
 _G.QUI_RefreshRotationHelper = RefreshRotationHelper
+_G.QUI_ClearKeybindIconState = ClearKeybindIconState
 
 if QUI.Registry then
     QUI.Registry:Register("keybinds", {
