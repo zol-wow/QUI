@@ -10,6 +10,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha4 - 2026-04-30
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** Same backup advice applies. If you've been on v3.6.0-alpha1/alpha2/alpha3, your data has already been migrated. Coming straight from v3.5.x? Back up `WTF/` and export your profile first.
+>
+> This alpha also bundles everything from the recently-shipped v3.5.6 stable release.
+
+### Added
+- **Castbar preview in Unit Frames settings.** Animated mock castbar in the Unit Frames preview pane that follows the unit dropdown and reflects every Castbar-tab setting (geometry, colors, texture, border, icon, text anchors, channel ticks, GCD, empowered) live. Per-unit cycle scripts exercise hidden-by-default states (player cast/channel + optional empowered/GCD; target/focus interruptible vs non-interruptible alternation).
+
+### Changed
+- **DandersFrames anchoring polish.** Changing the **Anchor To** dropdown for a DandersFrames container no longer teleports it — offsets reset on target change in both the Frame Positioning tab and the Layout Mode right-click panel, matching owned-module behavior. Layout Mode's "Anchoring Details" panel now reports the true anchoring status for DandersFrames (it previously always showed "Disabled" because Danders stores its anchor in a separate DB path). The "Anchoring (drag the mover to place)" collapsible has been renamed to **Position** to match the rest of the modules, and the standalone tab's offset slider range is now `[-400, 400]` to match the Layout Mode panel.
+
+### Fixed
+- **Castbar drift after profile import + relog.** After importing a profile and logging out/in, castbars (especially `playerCastbar`) could drift to screen center. AceDB strips fields equal to defaults from saved entries, and the apply path was reading those entries raw — so `parent=nil` looked like an unset override and the castbar fell back to UIParent center. The apply path now reads through the AceDB proxy so default-stripped fields are filled back in correctly.
+- **Selective profile export covers more.** Profile exports (especially Select-All) were silently dropping settings that were lazily created at runtime and missing from `defaults.lua`. Newly covered:
+  - Resource-bar custom color/height, UI scale, options-panel size, and several other previously-orphaned fields — Select-All now round-trips every user-configurable field.
+  - `db.layoutMode` (mover handle visibility, snap, side panel position) — now travels in the **Layout** category.
+  - `db.optionsPanelCollapsibleStates` (which options-panel sections you've collapsed) — now travels in the **QoL** category.
+- **`ADDON_ACTION_BLOCKED` on options open.** Clicking the QUI button on the GameMenu (or opening options via `/qui` for the first time) could trigger an `ADDON_ACTION_BLOCKED` error. Removed two redundant `SetPropagateKeyboardInput` calls outside `OnKeyDown`/`OnKeyUp` handlers — 12.0+ enforces that the API is only valid during the current key event.
+- **Rogue flash border suppression hardened.**
+
+
+
 ## v3.6.0-alpha3 - 2026-04-30
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** Same backup advice applies. If you've been on v3.6.0-alpha1 or alpha2, your data has already been migrated. Coming straight from v3.5.x? Back up `WTF/` and export your profile first.
