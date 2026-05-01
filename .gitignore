@@ -14,3 +14,9 @@ docs/settings/settings-architecture-migration-test-plan.md
 docs/settings/settings-architecture-migration-plan.md
 /.tmp_debug
 /.audit
+tests/fixtures/test/everything.txt.dump.txt
+tests/fixtures/test/healing-profile-3-5-6.txt
+tests/fixtures/test/healing-profile-3-5-6.txt.dump.txt
+tests/fixtures/test/selected.txt
+tests/fixtures/test/selected.txt.dump.txt
+tests/fixtures/test/everything.txt
