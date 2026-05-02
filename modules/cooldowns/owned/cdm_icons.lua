@@ -1948,19 +1948,81 @@ end
 -- entries draw from the same cache.
 ns._GetCachedSpellName = GetCachedSpellName
 
-local function GetAuraApplicationsForSpell(spellID, spellName)
+function CDMIcons._GetAuraApplicationsFromData(auraData, unit, source)
+    if not auraData then return nil end
+
+    local apps = auraData.applications
+    if apps ~= nil then
+        return apps, source
+    end
+
+    local auraInstanceID = auraData.auraInstanceID
+    if auraInstanceID and C_UnitAuras and C_UnitAuras.GetAuraApplicationDisplayCount then
+        local ok, stacks = pcall(C_UnitAuras.GetAuraApplicationDisplayCount,
+            unit or auraData.auraDataUnit or "player", auraInstanceID, 1, 99)
+        if ok and stacks ~= nil and (IsSecretValue(stacks) or stacks ~= "") then
+            return stacks, "display-count"
+        end
+    end
+
+    return nil
+end
+
+function CDMIcons._ResolveAuraApplicationsForEntry(spellID, entry, icon)
+    if not (spellID and entry and ns.CDMSpellData and ns.CDMSpellData.ResolveAuraState) then
+        return nil
+    end
+
+    local p = icon and icon._stackAuraParams or {}
+    if icon then icon._stackAuraParams = p end
+    p.spellID = spellID
+    p.entrySpellID = entry.spellID
+    p.entryID = entry.id
+    p.entryName = entry.name
+    p.viewerType = entry.viewerType
+    p.blizzChild = entry._blizzChild
+    p.blizzBarChild = entry._blizzBarChild
+    p.totemSlot = IsTotemSlotEntry(entry) and entry._totemSlot or nil
+    p.disableLooseVisibilityFallback = true
+
+    local r = ns.CDMSpellData:ResolveAuraState(p)
+    if r.blizzBarChild then
+        entry._blizzBarChild = r.blizzBarChild
+    end
+
+    if r.isActive and not r.isTotemInstance then
+        if r.stacks ~= nil then
+            return r.stacks, r.stackSource
+        end
+        return CDMIcons._GetAuraApplicationsFromData(r.auraData, r.auraUnit, "resolved-data")
+    end
+
+    return nil
+end
+
+local function GetAuraApplicationsForSpell(spellID, entryOrName, icon)
     if not spellID or not C_UnitAuras or not C_UnitAuras.GetPlayerAuraBySpellID then
         return nil
     end
+    local entry = type(entryOrName) == "table" and entryOrName or nil
+    local spellName = entry and entry.name or entryOrName
     local auraID = spellID
     if ns.CDMSpellData and ns.CDMSpellData._abilityToAuraSpellID then
         local mapped = ns.CDMSpellData._abilityToAuraSpellID[auraID]
         if mapped then auraID = mapped end
     end
     local ok, ad = pcall(C_UnitAuras.GetPlayerAuraBySpellID, auraID)
-    if ok and ad then return ad.applications end
+    if ok and ad then
+        local apps, source = CDMIcons._GetAuraApplicationsFromData(ad, "player", "player-spell")
+        if apps ~= nil then return apps, source end
+    end
 
-    if not C_UnitAuras.GetAuraDataBySpellName then return nil end
+    if not C_UnitAuras.GetAuraDataBySpellName then
+        if InCombatLockdown() then
+            return CDMIcons._ResolveAuraApplicationsForEntry(spellID, entry, icon)
+        end
+        return nil
+    end
 
     -- Resolve a name and forward it transiently. Caller-supplied spellName
     -- and GetCachedSpellName are both clean strings (or nil), so the `==""`
@@ -1980,8 +2042,16 @@ local function GetAuraApplicationsForSpell(spellID, spellName)
     end
     if nameToUse then
         local nOk, nad = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", nameToUse, "HELPFUL")
-        if nOk and nad then return nad.applications end
+        if nOk and nad then
+            local apps, source = CDMIcons._GetAuraApplicationsFromData(nad, "player", "name-player")
+            if apps ~= nil then return apps, source end
+        end
     end
+
+    if InCombatLockdown() then
+        return CDMIcons._ResolveAuraApplicationsForEntry(spellID, entry, icon)
+    end
+
     return nil
 end
 
@@ -4352,7 +4422,7 @@ local function UpdateIconCooldown(icon)
                 -- the hook path can only render on the one icon that owns the
                 -- reparented Blizzard FontString, so each non-owning icon
                 -- reads its own count via API and writes its own StackText.
-                stackVal = GetAuraApplicationsForSpell(spellID, entry and entry.name)
+                stackVal = GetAuraApplicationsForSpell(spellID, entry, icon)
             end
 
 
@@ -4397,7 +4467,7 @@ local function UpdateIconCooldown(icon)
             -- For other icons sharing the same _blizzChild (same spell in
             -- multiple containers), API-read aura applications per-icon so
             -- they render their own StackText independently of the hook.
-            local stackVal = GetAuraApplicationsForSpell(_runtimeSid, entry and entry.name)
+            local stackVal = GetAuraApplicationsForSpell(_runtimeSid, entry, icon)
             if stackVal then
                 local truncOk, truncText = pcall(C_StringUtil.TruncateWhenZero, stackVal)
                 local displayText = truncOk and truncText or stackVal
