@@ -10,7 +10,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
-## v3.6.0-alpha7 - 2026-05-01
+## v3.6.0-alpha8 - 2026-05-01
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha8: back up `WTF/` and export your profile first.
+
+### Added
+- **Cooldown Manager master toggle.** A single switch under the Modules Control Center now disables the entire CDM subsystem at runtime — provider, containers, spelldata, icons, glows, and highlighter all stop processing events, polling, and forwarding cooldown data. Toggling shows a Reload UI? prompt: the current session hides the addon-owned containers and shuts the runtime down immediately, and a reload completes the engine handoff back to the default UI. Useful for quickly comparing addon-owned vs Blizzard's stock viewers, or for letting another cooldown addon take over without uninstalling QUI.
+- **Action Bars master toggle in the Modules Control Center.** The Action Bars row now uses a feature-registry-backed entry with proper enable/disable handlers — flipping the toggle fires a Reload UI? prompt (action bars cannot be hooked or unhooked at runtime, so a reload is required for the handoff).
+
+### Fixed
+- **CDM `showOnlyOnCooldown` flicker on every cast.** Containers configured to show only while a spell is on cooldown were briefly hiding then re-showing the icon for ~1.5s on every player GCD. Three separate code paths (visibility filters, display-mode gates, desaturation) were independently re-deriving "is this a real cooldown vs a GCD-only cooldown?" using `_lastDuration <= 1.5s` as the heuristic — but during a player-wide GCD Blizzard temporarily writes the 1.5s GCD start/duration onto the source CD frame, and the mirror hook propagates that into `_lastDuration`. So for ~1.5s every cast every spell with a real cooldown got misclassified as GCD-only and its icon was hidden. Centralized into a single `ResolveCooldownActivityState` resolver that reads explicit `_hasRealCooldownActive` / `_hasGCDOnlyCooldown` flags set during `UpdateIconCooldown` instead of the brittle duration heuristic.
+- **CDM charged-ability desaturation lag mid-recharge.** Charged spells could briefly desaturate during the recharge window when the charge-info cache lagged behind the cooldown-info cache. The new resolver consults `TickCacheGetDisplayCount` and `TickCacheGetCooldown.isActive == false` as additional "charges remain" signals so the icon stays lit through the cache stagger.
+- **CDM swipe settings now apply on the next tick instead of waiting.** Toggling Show Buff Swipe / Show GCD Swipe in settings used to require a cooldown event to land before the change took effect on currently-displayed icons. The swipe refresh path now triggers the cooldown pipeline directly, so changes apply immediately on every active icon.
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations in this alpha; existing v34 profiles carry over unchanged. v3.5.x → alpha7: back up `WTF/` and export your profile first.
 
