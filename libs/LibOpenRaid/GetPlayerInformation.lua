@@ -88,7 +88,7 @@ local IsTWWExpansion = function()
 end
 
 local IsDragonflight = function() --and beyond
-	return buildInfo >= 100000
+	return buildInfo >= 100000 and buildInfo < 120000
 end
 
 local IsShadowlands = function()
@@ -96,16 +96,6 @@ local IsShadowlands = function()
     if (gameVersion >= 90000 and gameVersion < 100000) then
         return true
     end
-end
-
--- Helper function to detect Midnight secret values
--- Secret values pass type() checks but fail on comparison/arithmetic
-local function issecretvalue(value)
-    if value == nil then return false end
-    local success = pcall(function()
-        local _ = value > 0
-    end)
-    return not success
 end
 
 function openRaidLib.GetHeroTalentId()
@@ -605,8 +595,7 @@ function openRaidLib.GearManager.BuildPlayerEquipmentList()
 end
 
 local playerHasPetOfNpcId = function(npcId)
-    local petHealth = UnitHealth("pet")
-    if (UnitExists("pet") and not issecretvalue(petHealth) and petHealth >= 1) then
+    if (UnitExists("pet") and UnitHealth("pet") >= 1) then
         local guid = UnitGUID("pet")
         if (guid) then
             local split = {strsplit("-", guid)}
@@ -889,7 +878,7 @@ local handleBuffAura = function(aura)
     local auraInfo = C_UnitAuras.GetAuraDataByAuraInstanceID(auraUnitId, aura.auraInstanceID)
     if (auraInfo) then
         local spellId = auraInfo.spellId
-        if spellId and not issecretvalue(spellId) and (auraSpellID == spellId) then
+        if (auraSpellID == spellId) then
             auraSpellID = nil
             auraDurationTime = auraInfo.duration
             return true
@@ -947,10 +936,6 @@ function openRaidLib.CooldownManager.GetPlayerCooldownStatus(spellId)
         local buffDuration = getAuraDuration(spellId)
         local chargesAvailable, chargesTotal, start, duration = GetSpellCharges(spellId)
         if chargesAvailable then
-            -- Guard against secret values
-            if issecretvalue(chargesAvailable) or issecretvalue(chargesTotal) or issecretvalue(start) or issecretvalue(duration) then
-                return 0, 1, 0, 0, 0
-            end
             if (chargesAvailable == chargesTotal) then
                 return 0, chargesTotal, 0, 0, 0 --all charges are ready to use
             else
@@ -965,18 +950,12 @@ function openRaidLib.CooldownManager.GetPlayerCooldownStatus(spellId)
                 local spellCooldownInfo = GetSpellCooldown(spellId)
                 local start = spellCooldownInfo.startTime
                 local duration = spellCooldownInfo.duration
-                -- Guard against secret values
-                if issecretvalue(start) or issecretvalue(duration) then
-                    return 0, 1, 0, 0, 0
-                end
                 if (start == 0) then --cooldown is ready
                     return 0, 1, 0, 0, 0 --time left, charges, startTime
                 else
                     local timeLeft = start + duration - GetTime()
                     local globalCooldownInfo = GetSpellCooldown(CONST_GLOBALCOOLDOWN_SPELLID)
-                    local gcdStart = globalCooldownInfo.startTime
-                    local gcdDuration = globalCooldownInfo.duration
-                    if not issecretvalue(gcdStart) and not issecretvalue(gcdDuration) and (gcdStart ~= 0 and gcdDuration >= timeLeft) then
+                    if (globalCooldownInfo.startTime ~= 0 and globalCooldownInfo.duration >= timeLeft) then
                         return 0, 1, 0, 0, 0 --time left, charges, startTime
                     else
                         local startTimeOffset = start - GetTime()
@@ -985,16 +964,12 @@ function openRaidLib.CooldownManager.GetPlayerCooldownStatus(spellId)
                 end
             else
                 local start, duration = GetSpellCooldown(spellId)
-                -- Guard against secret values
-                if issecretvalue(start) or issecretvalue(duration) then
-                    return 0, 1, 0, 0, 0
-                end
                 if (start == 0) then --cooldown is ready
                     return 0, 1, 0, 0, 0 --time left, charges, startTime
                 else
                     local timeLeft = start + duration - GetTime()
                     local gcStart, gcDuration = GetSpellCooldown(CONST_GLOBALCOOLDOWN_SPELLID)
-                    if not issecretvalue(gcStart) and not issecretvalue(gcDuration) and (gcStart ~= 0 and gcDuration >= timeLeft) then
+                    if (gcStart ~= 0 and gcDuration >= timeLeft) then
                         return 0, 1, 0, 0, 0 --time left, charges, startTime
                     else
                         local startTimeOffset = start - GetTime()

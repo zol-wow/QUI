@@ -35,6 +35,22 @@ BUGS:
 
 --]=]
 
+local _, _, _, toc = GetBuildInfo()
+local canRegisterEvents = function()
+    return toc <= 119999
+end
+
+local canSendCommNow = function()
+    if toc <= 119999 then
+        return true
+    else
+        if InCombatLockdown() or UnitAffectingCombat("player") then
+            return false
+        end
+        return true
+    end
+end
+
 ---@alias castername string
 ---@alias castspellid string
 ---@alias schedulename string
@@ -59,7 +75,7 @@ end
 
 local major = "LibOpenRaid-1.0"
 
-local CONST_LIB_VERSION = 173
+local CONST_LIB_VERSION = 177
 
 if (LIB_OPEN_RAID_MAX_VERSION) then
     if (CONST_LIB_VERSION <= LIB_OPEN_RAID_MAX_VERSION) then
@@ -81,16 +97,6 @@ end
 
     --locals
     local unpack = table.unpack or _G.unpack
-
-    -- Helper function to detect Midnight secret values
-    -- Secret values pass type() checks but fail on comparison/arithmetic
-    local function issecretvalue(value)
-        if value == nil then return false end
-        local success = pcall(function()
-            local _ = value > 0
-        end)
-        return not success
-    end
 
     openRaidLib.__errors = {} --/dump LibStub:GetLibrary("LibOpenRaid-1.0").__errors
 
@@ -446,8 +452,10 @@ end
         end
     end
 
-    openRaidLib.commHandler.eventFrame:RegisterEvent("CHAT_MSG_ADDON_LOGGED")
-    openRaidLib.commHandler.eventFrame:SetScript("OnEvent", openRaidLib.commHandler.OnReceiveSafeComm)
+    if canRegisterEvents() then
+        openRaidLib.commHandler.eventFrame:RegisterEvent("CHAT_MSG_ADDON_LOGGED")
+        openRaidLib.commHandler.eventFrame:SetScript("OnEvent", openRaidLib.commHandler.OnReceiveSafeComm)
+    end
 
     function openRaidLib.commHandler.aceComm.OnReceiveComm(event, prefix, text, channel, sender, target, zoneChannelID, localID, name, instanceID, bIsSafe)
         --check if the data belong to us
@@ -555,7 +563,10 @@ end
     local receivingMsgInParts = {}
 
     local debugCommReception = CreateFrame("frame")
-    debugCommReception:RegisterEvent("CHAT_MSG_ADDON_LOGGED")
+    if canRegisterEvents() then
+        debugCommReception:RegisterEvent("CHAT_MSG_ADDON_LOGGED")
+    end
+
     debugCommReception:SetScript("OnEvent", function(self, event, prefix, text, channel, sender, target, zoneChannelID, localID, name, instanceID)
         if (prefix == CONST_COMM_PREFIX_LOGGED) then
             local chunkNumber, totalChunks, data = text:match("^%$(%d+)%$(%d+)(.*)")
@@ -615,6 +626,10 @@ end
     --0x2: to raid
     --0x4: to guild
     local sendData = function(dataEncoded, channel, bIsSafe, plainText)
+        if not canSendCommNow() then
+            return
+        end
+
         local aceComm = LibStub:GetLibrary("AceComm-3.0", true)
         if (aceComm) then
             if (bIsSafe) then
@@ -689,6 +704,10 @@ end
     end
 
     function openRaidLib.commHandler.SendCommData(data, flags, bIsSafe)
+        if not canSendCommNow() then
+            return
+        end
+
         local LibDeflate = LibStub:GetLibrary("LibDeflate")
         local dataCompressed = LibDeflate:CompressDeflate(data, {level = 9})
         local dataEncoded = LibDeflate:EncodeForWoWAddonChannel(dataCompressed)
@@ -1117,8 +1136,10 @@ end
 
                         end
 
-                        detailsEventListener:RegisterEvent("UNIT_SPEC", "UnitSpecFound")
-                        detailsEventListener:RegisterEvent("UNIT_TALENTS", "UnitTalentsFound")
+                        if canRegisterEvents() then
+                            detailsEventListener:RegisterEvent("UNIT_SPEC", "UnitSpecFound")
+                            detailsEventListener:RegisterEvent("UNIT_TALENTS", "UnitTalentsFound")
+                        end
                     end
 
                 openRaidLib.bHasEnteredWorld = true
@@ -1195,12 +1216,10 @@ end
         end,
 
         ["UNIT_PET"] = function(unitId)
-            local ok, isPlayer = pcall(UnitIsUnit, unitId, "player")
-            if (ok and not issecretvalue(isPlayer) and isPlayer) then
+            if (UnitIsUnit(unitId, "player")) then
                 openRaidLib.Schedules.NewUniqueTimer(1.1, function() openRaidLib.internalCallback.TriggerEvent("playerPetChange") end, "mainControl", "petStatus_Schedule")
                 --if the pet is alive, register to know when it dies
-                local petHealth = UnitHealth("pet")
-                if (UnitExists("pet") and not issecretvalue(petHealth) and petHealth >= 1) then
+                if (UnitExists("pet") and UnitHealth("pet") >= 1) then
                     eventFrame:RegisterUnitEvent("UNIT_FLAGS", "pet")
                 end
             end
@@ -1208,7 +1227,7 @@ end
 
         ["UNIT_FLAGS"] = function(unitId)
             local petHealth = UnitHealth(unitId)
-            if (UnitExists(unitId) and not issecretvalue(petHealth) and petHealth < 1) then
+            if (petHealth < 1) then
                 eventFrame:UnregisterEvent("UNIT_FLAGS")
                 openRaidLib.eventFunctions["UNIT_PET"]("player")
             end
@@ -1224,7 +1243,9 @@ end
     }
     openRaidLib.eventFunctions = eventFunctions
 
-    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    if canRegisterEvents() then
+        eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    end
 
     eventFrame:SetScript("OnEvent", function(self, event, ...)
         local eventCallbackFunc = eventFunctions[event]
@@ -1233,28 +1254,30 @@ end
 
     --run when PLAYER_ENTERING_WORLD triggers, this avoid any attempt of getting information without the game has completed the load process
     function openRaidLib.OnEnterWorldRegisterEvents()
-        eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
-        eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "pet")
-        eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
-        eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-        eventFrame:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
-        eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-        eventFrame:RegisterEvent("UNIT_PET")
-        eventFrame:RegisterEvent("PLAYER_DEAD")
-        eventFrame:RegisterEvent("PLAYER_ALIVE")
-        eventFrame:RegisterEvent("PLAYER_UNGHOST")
-        eventFrame:RegisterEvent("PLAYER_LOGOUT")
+        if canRegisterEvents() then
+            eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+            eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "pet")
+            eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+            eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+            eventFrame:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
+            eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+            eventFrame:RegisterEvent("UNIT_PET")
+            eventFrame:RegisterEvent("PLAYER_DEAD")
+            eventFrame:RegisterEvent("PLAYER_ALIVE")
+            eventFrame:RegisterEvent("PLAYER_UNGHOST")
+            eventFrame:RegisterEvent("PLAYER_LOGOUT")
 
-        if (checkClientVersion("retail")) then
-            eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
-            eventFrame:RegisterEvent("PLAYER_PVP_TALENT_UPDATE")
-            eventFrame:RegisterEvent("ENCOUNTER_END")
-            eventFrame:RegisterEvent("CHALLENGE_MODE_START")
-            eventFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
-            eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
-            eventFrame:RegisterEvent("TRAIT_TREE_CURRENCY_INFO_UPDATED")
-            eventFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
-            eventFrame:RegisterEvent("ENCOUNTER_START")
+            if (checkClientVersion("retail")) then
+                eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
+                eventFrame:RegisterEvent("PLAYER_PVP_TALENT_UPDATE")
+                eventFrame:RegisterEvent("ENCOUNTER_END")
+                eventFrame:RegisterEvent("CHALLENGE_MODE_START")
+                eventFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
+                eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+                eventFrame:RegisterEvent("TRAIT_TREE_CURRENCY_INFO_UPDATED")
+                eventFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
+                eventFrame:RegisterEvent("ENCOUNTER_START")
+            end
         end
     end
 
@@ -2323,11 +2346,6 @@ end
 --only update the db, no other action is taken
 --cooldownInfo: [1] timeLeft [2] charges [3] startOffset [4] duration [5] updateTime [6] auraDuration
 function openRaidLib.CooldownManager.CooldownSpellUpdate(unitName, spellId, newTimeLeft, newCharges, startTimeOffset, duration, auraDuration)
-    --validate spellId to prevent "table index is secret" errors
-    if (type(spellId) ~= "number") then
-        return
-    end
-
     --get the cooldown table where all cooldowns are stored for this unit
     local unitCooldownTable = cooldownGetUnitTable(unitName)
     --is this a cooldown info?
@@ -2476,11 +2494,6 @@ end
     end
 
     function openRaidLib.CooldownManager.OnPlayerCast(event, spellId, isPlayerPet) --~cast
-        --validate spellId to prevent "table index is secret" errors
-        if (type(spellId) ~= "number") then
-            return
-        end
-
         --player casted a spell, check if the spell is registered as cooldown
         --issue: pet spells isn't in this table yet, might mess with pet interrupts
         if (LIB_OPEN_RAID_PLAYERCOOLDOWNS[spellId]) then --check if the casted spell is a cooldown the player has available
@@ -2694,32 +2707,26 @@ function openRaidLib.CooldownManager.OnReceiveUnitCooldownChanges(data, unitName
 
         local cooldownsAddedUnpacked = openRaidLib.UnpackTable(addedCooldowns, 1, true, true, CONST_COOLDOWN_INFO_SIZE)
         for spellId, cooldownInfo in pairs(cooldownsAddedUnpacked) do
-            --validate spellId to prevent "table index is secret" errors
-            if (type(spellId) == "number") then
-                --add the spell into the list of cooldowns of this unit
-                local timeLeft, charges, timeOffset, duration, updateTime, auraDuration = openRaidLib.CooldownManager.GetCooldownInfoValues(cooldownInfo)
-                openRaidLib.CooldownManager.CooldownSpellUpdate(unitName, spellId, timeLeft, charges, timeOffset, duration, auraDuration)
+            --add the spell into the list of cooldowns of this unit
+            local timeLeft, charges, timeOffset, duration, updateTime, auraDuration = openRaidLib.CooldownManager.GetCooldownInfoValues(cooldownInfo)
+            openRaidLib.CooldownManager.CooldownSpellUpdate(unitName, spellId, timeLeft, charges, timeOffset, duration, auraDuration)
 
-                --mark the filter cache of this unit as dirt
-                openRaidLib.CooldownManager.NeedRebuildFilters[unitName] = true
+            --mark the filter cache of this unit as dirt
+            openRaidLib.CooldownManager.NeedRebuildFilters[unitName] = true
 
-                --trigger public callback
-                openRaidLib.publicCallback.TriggerCallback("CooldownAdded", openRaidLib.GetUnitID(unitName), spellId, cooldownInfo, openRaidLib.GetUnitCooldowns(unitName), openRaidLib.CooldownManager.UnitData)
-            end
+            --trigger public callback
+            openRaidLib.publicCallback.TriggerCallback("CooldownAdded", openRaidLib.GetUnitID(unitName), spellId, cooldownInfo, openRaidLib.GetUnitCooldowns(unitName), openRaidLib.CooldownManager.UnitData)
         end
     end
 
     if (#removedCooldowns > 0) then
         for _, spellId in ipairs(removedCooldowns) do
-            --validate spellId to prevent "table index is secret" errors
-            if (type(spellId) == "number") then
-                --remove the spell from this unit cooldown list
-                currentCooldowns[spellId] = nil
-                --mark the filter cache of this unit as dirt
-                openRaidLib.CooldownManager.NeedRebuildFilters[unitName] = true
-                --trigger public callback
-                openRaidLib.publicCallback.TriggerCallback("CooldownRemoved", openRaidLib.GetUnitID(unitName), spellId, openRaidLib.GetUnitCooldowns(unitName), openRaidLib.CooldownManager.UnitData)
-            end
+            --remove the spell from this unit cooldown list
+            currentCooldowns[spellId] = nil
+            --mark the filter cache of this unit as dirt
+            openRaidLib.CooldownManager.NeedRebuildFilters[unitName] = true
+            --trigger public callback
+            openRaidLib.publicCallback.TriggerCallback("CooldownRemoved", openRaidLib.GetUnitID(unitName), spellId, openRaidLib.GetUnitCooldowns(unitName), openRaidLib.CooldownManager.UnitData)
         end
     end
 
@@ -2821,8 +2828,8 @@ openRaidLib.commHandler.RegisterORComm(CONST_COMM_COOLDOWNUPDATE_PREFIX, functio
     local duration = tonumber(dataAsArray[5])
     local auraDuration = tonumber(dataAsArray[6])
 
-    --check integrity (also validates type to prevent "table index is secret" errors)
-    if (type(spellId) ~= "number" or spellId == 0) then
+    --check integrity
+    if (not spellId or spellId == 0) then
         return openRaidLib.DiagnosticError("CooldownManager|comm received|spellId is invalid")
 
     elseif (not cooldownTimer) then
@@ -2946,11 +2953,6 @@ end
 function openRaidLib.CooldownManager.OnReceiveRequestForCooldownInfoUpdate(data, unitName)
     local spellId = tonumber(data[1])
 
-    --validate spellId to prevent "table index is secret" errors
-    if (type(spellId) ~= "number") then
-        return
-    end
-
     --check if this unit has this cooldown in its list of cooldowns
     if (not cooldownGetSpellInfo(UnitName("player"), spellId)) then
         return
@@ -3023,8 +3025,11 @@ openRaidLib.commHandler.RegisterORComm(CONST_COMM_COOLDOWNREQUEST_PREFIX, openRa
     end
 
     local bagUpdateEventFrame = _G["OpenRaidBagUpdateFrame"] or CreateFrame("frame", "OpenRaidBagUpdateFrame")
-    bagUpdateEventFrame:RegisterEvent("BAG_UPDATE")
-    bagUpdateEventFrame:RegisterEvent("ITEM_CHANGED")
+    --if canRegisterEvents() then
+        bagUpdateEventFrame:RegisterEvent("BAG_UPDATE")
+        bagUpdateEventFrame:RegisterEvent("ITEM_CHANGED")
+    --end
+
     bagUpdateEventFrame:SetScript("OnEvent", function(bagUpdateEventFrame, event, ...)
         if (openRaidLib.KeystoneInfoManager.KeystoneChangedTimer) then
             return
@@ -3159,10 +3164,17 @@ openRaidLib.commHandler.RegisterORComm(CONST_COMM_COOLDOWNREQUEST_PREFIX, openRa
         diagnosticComm("SendPlayerKeystoneInfoToParty| " .. dataToSend) --debug
     end
 
+    local toGuildCooldown = 0
     function openRaidLib.KeystoneInfoManager.SendPlayerKeystoneInfoToGuild()
         if (LIB_OPEN_RAID_MYTHIC_PLUS_DND) then
             return
         end
+
+        if (toGuildCooldown > GetTime()) then
+            return
+        end
+
+        toGuildCooldown = GetTime() + 10
         local dataToSend = getKeystoneInfoToComm()
         openRaidLib.commHandler.SendCommData(dataToSend, CONST_COMM_SENDTO_GUILD)
         diagnosticComm("SendPlayerKeystoneInfoToGuild| " .. dataToSend) --debug
@@ -3578,7 +3590,9 @@ openRaidLib.commHandler.RegisterORComm(CONST_COMM_COOLDOWNREQUEST_PREFIX, openRa
 
 local createLocalCooldownTracker = function()
     local cdTrackerFrame = CreateFrame("frame")
-    cdTrackerFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+    if canRegisterEvents() then
+        cdTrackerFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+    end
     local allCooldownsFromLib = LIB_OPEN_RAID_COOLDOWNS_INFO
 
     ---@type table<castername, table<castspellid, number>>
@@ -3589,25 +3603,15 @@ local createLocalCooldownTracker = function()
             local unitId, castGUID, spellId = ...
 
             --don't track spells casted by the player
-            --use pcall to handle secret values from derived units (focustarget, nameplate*, etc.) in Midnight
-            --the returned boolean itself may also be a secret value, so gate with issecretvalue
-            local okIsPlayer, bUnitIsThePlayer = pcall(UnitIsUnit, unitId, "player")
-            if (not okIsPlayer) then return end
-            if (issecretvalue and issecretvalue(bUnitIsThePlayer)) then return end
+            local bUnitIsThePlayer = UnitIsUnit(unitId, "player")
             if (not bUnitIsThePlayer) then
                 --get the caster name and check if it's a unit in the group
-                --use pcall to handle secret values from nameplate units in Midnight
-                local success, casterName = pcall(GetUnitName, unitId, true)
-                if (success and casterName) then
+                local casterName = GetUnitName(unitId, true)
+                if (casterName) then
                     local unitInGroup = UnitInParty(unitId) or UnitInRaid(unitId)
                     if (unitInGroup) then
                         --check if the library has the spell in the list of cooldowns
-                        --use pcall to prevent "table index is secret" errors in Midnight
-                        --secret values pass all type checks but fail as table indices
-                        local success, spellData = pcall(function() return allCooldownsFromLib[spellId] end)
-                        if (not success) then
-                            return
-                        end
+                        local spellData = allCooldownsFromLib[spellId]
 
                         --check for overwrite spell ids
 
