@@ -10,6 +10,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha10 - 2026-05-02
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha10: back up `WTF/` and export your profile first.
+
+### Changed
+- **Library bumps.** Vendored libraries refreshed to current upstream releases. No QUI behavior change is expected from these on its own.
+  - `LibSharedMedia-3.0` → 12000001 (Midnight)
+  - `LibRangeCheck-3.0` → MINOR 34
+  - `LibDualSpec-1.0` → v1.29.0
+  - `LibOpenRaid` → CONST_LIB_VERSION 177
+
+
+
 ## v3.6.0-alpha9 - 2026-05-01
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha9: back up `WTF/` and export your profile first.
