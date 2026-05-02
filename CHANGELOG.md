@@ -10,7 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
-## v3.6.0-alpha8 - 2026-05-01
+## v3.6.0-alpha9 - 2026-05-01
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha9: back up `WTF/` and export your profile first.
+
+### Fixed
+- **CDM stack text vanishes in combat on icons sharing a Blizzard child.** When two QUI icons mirrored the same buff-viewer child, the non-owning icon read its own stack count via `C_UnitAuras.GetPlayerAuraBySpellID` / `GetAuraDataBySpellName` rather than the hooked path. In combat that fallback went silent: `GetAuraDataBySpellName` isn't reliably callable in combat, and when neither API returned applications the icon's StackText simply blanked. Stack resolution now also consults `C_UnitAuras.GetAuraApplicationDisplayCount` (display-count fallback) and routes through `CDMSpellData:ResolveAuraState` in combat as a last resort, so non-owning icons keep their stack text accurate while the encounter is running.
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha8: back up `WTF/` and export your profile first.
 
