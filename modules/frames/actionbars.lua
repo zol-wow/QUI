@@ -9078,6 +9078,10 @@ do
                 if not db then return end
                 local old = db.enabled ~= false
                 db.enabled = val
+                if ns.QUI_Modules then
+                    ns.QUI_Modules:NotifyChanged("actionBarsGeneral")
+                    ns.QUI_Modules:NotifyChanged("actionBars")
+                end
                 if (val ~= false) ~= old then
                     local QUI = _G.QUI
                     local GUI = QUI and QUI.GUI

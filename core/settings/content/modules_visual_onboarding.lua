@@ -245,6 +245,7 @@ local VISUAL_MODULES = {
         key = "actionBars", group = "Action Bars", label = "Action Bars",
         caption = "Master toggle for the custom action bar system.",
         combatLocked = true,
+        hidden = function() return true end,
     },
     {
         key = "bar1", group = "Action Bars", label = "Action Bar 1",

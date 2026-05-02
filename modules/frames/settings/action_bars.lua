@@ -9,6 +9,64 @@ if not Registry or type(Registry.RegisterFeature) ~= "function"
     return
 end
 
+local function GetActionBarsDB()
+    local QUI = _G.QUI
+    local profile = QUI and QUI.db and QUI.db.profile
+    return profile and profile.actionBars or nil
+end
+
+local function NotifyActionBarsModuleChanged()
+    if ns.QUI_Modules then
+        ns.QUI_Modules:NotifyChanged("actionBarsGeneral")
+        ns.QUI_Modules:NotifyChanged("actionBars")
+    end
+end
+
+local function ShowActionBarsReloadPrompt()
+    local QUI = _G.QUI
+    local GUI = QUI and QUI.GUI
+    if GUI and GUI.ShowConfirmation then
+        GUI:ShowConfirmation({
+            title = "Reload UI?",
+            message = "Enabling or disabling action bars requires a UI reload to take effect.",
+            acceptText = "Reload",
+            cancelText = "Later",
+            onAccept = function()
+                if QUI and QUI.SafeReload then
+                    QUI:SafeReload()
+                end
+            end,
+        })
+    end
+end
+
+local function SetActionBarsModuleEnabled(val)
+    local db = GetActionBarsDB()
+    if not db then return end
+
+    local enabled = val ~= false
+    local old = db.enabled ~= false
+    db.enabled = enabled
+
+    NotifyActionBarsModuleChanged()
+    if enabled ~= old then
+        ShowActionBarsReloadPrompt()
+    end
+end
+
+local ActionBarsModuleEntry = {
+    group = "Action Bars",
+    label = "Action Bars",
+    caption = "Master toggle for QUI's action bar system.",
+    order = -1,
+    combatLocked = true,
+    isEnabled = function()
+        local db = GetActionBarsDB()
+        return db and db.enabled ~= false
+    end,
+    setEnabled = SetActionBarsModuleEnabled,
+}
+
 local function RenderBuilder(host, ownerName, fnName)
     local owner = ns[ownerName]
     local render = owner and owner[fnName]
@@ -54,6 +112,7 @@ Registry:RegisterFeature(Schema.Feature({
     moverKey = "bar1",
     lookupKeys = { "extraActionButton", "zoneAbility", "totemBar" },
     category = "frames",
+    moduleEntry = ActionBarsModuleEntry,
     nav = {
         tileId = "action_bars",
         subPageIndex = 1,
