@@ -40,7 +40,7 @@ License: MIT
 -- @class file
 -- @name LibRangeCheck-3.0
 local MAJOR_VERSION = "LibRangeCheck-3.0"
-local MINOR_VERSION = 32
+local MINOR_VERSION = 34
 
 ---@class lib
 local lib, oldminor = LibStub:NewLibrary(MAJOR_VERSION, MINOR_VERSION)
@@ -53,6 +53,7 @@ local interfaceVersion = select(4, GetBuildInfo())
 local isRetail = WOW_PROJECT_ID == WOW_PROJECT_MAINLINE
 local isEra = WOW_PROJECT_ID == WOW_PROJECT_CLASSIC
 local isTBC = WOW_PROJECT_ID == WOW_PROJECT_BURNING_CRUSADE_CLASSIC
+local isWrath = WOW_PROJECT_ID == WOW_PROJECT_WRATH_CLASSIC
 local isCata = WOW_PROJECT_ID == WOW_PROJECT_CATACLYSM_CLASSIC
 local isMidnight = WOW_PROJECT_ID == WOW_PROJECT_MAINLINE and interfaceVersion >= 120000
 
@@ -60,7 +61,7 @@ local InCombatLockdownRestriction = function(unit) return InCombatLockdown() and
 
 local _G = _G
 local next = next
-local sort = table.sort
+local sort = sort
 local type = type
 local wipe = wipe
 local print = print
@@ -228,6 +229,7 @@ if not isRetail then
 end
 
 tinsert(HarmSpells.MAGE, 44614) -- Flurry (40 yards)
+tinsert(HarmSpells.MAGE, 11366) -- Pyroblast (40 yards)
 tinsert(HarmSpells.MAGE, 5019) -- Shoot (30 yards)
 tinsert(HarmSpells.MAGE, 118) -- Polymorph (30 yards)
 tinsert(HarmSpells.MAGE, 116) -- Frostbolt (40 yards)
@@ -2856,6 +2858,8 @@ else
       207783, -- Cruel Dreamcarver
       212449, -- Sikran's Endless Arsenal
       219915, -- Foul Behemoth's Chelicera
+    },
+    [6] = {
       164766, -- Iwen's Enchanting Rod
       219525, -- Globe of Nourishment
     },
@@ -4349,7 +4353,7 @@ end
 -- @param inCombat if true, only checkers that can be used in combat ar returned
 -- @return **checker**, **range** pair or **nil** if no suitable checker is available. **range** is the actual range the returned **checker** checks for.
 function lib:GetMiscMaxChecker(range, inCombat)
-  return getMaxChecker(inCombat and self.miscRCInCombat or self.miscRC, range)
+  return getMaxChecker(inCombat and self.miscRCInCombat and self.miscRC, range)
 end
 
 --- Return a checker for the given range for friendly units.
@@ -4948,18 +4952,19 @@ function lib:activate()
     local frame = CreateFrame("Frame")
     self.frame = frame
 
-    if not (isMidnight or isTBC) then
-      frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
-    end
     frame:RegisterEvent("CHARACTER_POINTS_CHANGED")
     frame:RegisterEvent("SPELLS_CHANGED")
 
-    if isEra or isCata then
-      frame:RegisterEvent("CVAR_UPDATE")
+    if C_EventUtils and C_EventUtils.IsEventValid("LEARNED_SPELL_IN_TAB") then
+      frame:RegisterEvent("LEARNED_SPELL_IN_TAB")
     end
 
-    if isRetail or isCata then
+    if C_EventUtils and C_EventUtils.IsEventValid("PLAYER_TALENT_UPDATE") then
       frame:RegisterEvent("PLAYER_TALENT_UPDATE")
+    end
+
+    if (isEra or isTBC or isWrath or isCata) then
+      frame:RegisterEvent("CVAR_UPDATE")
     end
 
     local _, playerClass = UnitClass("player")
