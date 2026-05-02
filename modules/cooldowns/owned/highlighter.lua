@@ -5,6 +5,11 @@
 local _, ns = ...
 local Helpers = ns.Helpers
 
+local function IsCDMRuntimeEnabled()
+    local checker = _G.QUI_IsCDMMasterEnabled
+    return type(checker) ~= "function" or checker()
+end
+
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
 local FLASH_TEXTURE = [[Interface\AddOns\QUI\assets\iconskin\Flash]]
@@ -189,6 +194,8 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 
 eventFrame:SetScript("OnEvent", function(_, _, _, _, castSpellID)
+    if not IsCDMRuntimeEnabled() then return end
+
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     if not castSpellID then return end
@@ -202,17 +209,38 @@ end)
 ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
 ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_Highlighter", frame = eventFrame }
 
+local function ClearHighlights()
+    for icon, timer in pairs(activeHighlights) do
+        if timer and timer.Cancel then
+            timer:Cancel()
+        end
+        RemoveHighlight(icon)
+    end
+end
+
+local function DisableRuntime()
+    eventFrame:UnregisterAllEvents()
+    eventFrame:SetScript("OnEvent", nil)
+    ClearHighlights()
+end
+
+ns._OwnedHighlighter = {
+    DisableRuntime = DisableRuntime,
+}
+
 ---------------------------------------------------------------------------
 -- GLOBAL REFRESH
 ---------------------------------------------------------------------------
 _G.QUI_RefreshCooldownHighlighter = function()
+    if not IsCDMRuntimeEnabled() then
+        ClearHighlights()
+        return
+    end
+
     local settings = GetSettings()
     if not settings or not settings.enabled then
         -- Remove all active highlights
-        for icon, timer in pairs(activeHighlights) do
-            timer:Cancel()
-            RemoveHighlight(icon)
-        end
+        ClearHighlights()
     end
 end
 

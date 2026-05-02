@@ -17,8 +17,74 @@ local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local GetTime = GetTime
 
--- Enable CDM immediately when file loads (before any events fire)
-pcall(function() SetCVar("cooldownViewerEnabled", 1) end)
+local function IsCDMRuntimeEnabled()
+    local checker = _G.QUI_IsCDMMasterEnabled
+    return type(checker) ~= "function" or checker()
+end
+
+---------------------------------------------------------------------------
+-- COOLDOWN VIEWER CVAR
+-- The owned engine needs Blizzard's CooldownViewer running as a hidden data
+-- source. Do not use the CVar as a runtime visibility switch: SetCVar fires
+-- Blizzard's shown-state refresh synchronously, and that path can compare
+-- secret charge values while the execution is addon-tainted.
+---------------------------------------------------------------------------
+local cooldownViewerCVarFrame = CreateFrame("Frame")
+local pendingCooldownViewerCVarEnable = false
+
+local function IsCooldownViewerCVarEnabled()
+    if GetCVarBool then
+        local ok, value = pcall(GetCVarBool, "cooldownViewerEnabled")
+        if ok and value ~= nil then
+            return value and true or false
+        end
+    end
+
+    if GetCVar then
+        local ok, value = pcall(GetCVar, "cooldownViewerEnabled")
+        if ok then
+            return tostring(value) == "1"
+        end
+    end
+
+    return nil
+end
+
+local function EnsureCooldownViewerCVarEnabled()
+    if not IsCDMRuntimeEnabled() then
+        return false
+    end
+
+    if InCombatLockdown and InCombatLockdown() then
+        pendingCooldownViewerCVarEnable = true
+        cooldownViewerCVarFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        return false
+    end
+
+    pendingCooldownViewerCVarEnable = false
+    cooldownViewerCVarFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+
+    if IsCooldownViewerCVarEnabled() == true then
+        return true
+    end
+
+    if SetCVar then
+        pcall(SetCVar, "cooldownViewerEnabled", 1)
+    end
+    return true
+end
+
+cooldownViewerCVarFrame:SetScript("OnEvent", function(self, event)
+    if not IsCDMRuntimeEnabled() then
+        pendingCooldownViewerCVarEnable = false
+        self:UnregisterAllEvents()
+        return
+    end
+
+    if event == "PLAYER_REGEN_ENABLED" and pendingCooldownViewerCVarEnable then
+        EnsureCooldownViewerCVarEnabled()
+    end
+end)
 
 ---------------------------------------------------------------------------
 -- MODULE
@@ -53,7 +119,9 @@ local spellLists = {
 }
 local viewersHidden = false
 local scanTimer = nil
+local runtimeEventFrame = nil
 local initialized = false
+local ShowBlizzardViewers
 local lastSpellFingerprints = { essential = "", utility = "", buff = "" }
 local buffChildrenHooked = false  -- one-time hook for buff viewer aura events
 local FireChangeCallback
@@ -397,6 +465,11 @@ local auraCaptureFrame = CreateFrame("Frame")
 auraCaptureFrame:RegisterUnitEvent("UNIT_AURA", "player", "pet")
 auraCaptureFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 auraCaptureFrame:SetScript("OnEvent", function(self, event, unit, updateInfo)
+    if not IsCDMRuntimeEnabled() then
+        self:UnregisterAllEvents()
+        return
+    end
+
     if event == "PLAYER_ENTERING_WORLD" then
         -- Bootstrap capture for auras already applied at login / zone-in.
         -- Without this, only auras applied AFTER load fire addedAuras —
@@ -431,6 +504,26 @@ auraCaptureFrame:SetScript("OnEvent", function(self, event, unit, updateInfo)
         end
     end
 end)
+
+function CDMSpellData:DisableRuntime()
+    initialized = false
+    pendingCooldownViewerCVarEnable = false
+    cooldownViewerCVarFrame:UnregisterAllEvents()
+    auraCaptureFrame:UnregisterAllEvents()
+    auraCaptureFrame:SetScript("OnEvent", nil)
+    if ShowBlizzardViewers then
+        ShowBlizzardViewers()
+    end
+    if scanTimer and scanTimer.Cancel then
+        scanTimer:Cancel()
+        scanTimer = nil
+    end
+    if runtimeEventFrame then
+        runtimeEventFrame:UnregisterAllEvents()
+        runtimeEventFrame:SetScript("OnEvent", nil)
+        runtimeEventFrame = nil
+    end
+end
 
 local function GetCapturedAuraForLookup(spellIDs, entryName)
     if spellIDs then
@@ -2469,7 +2562,7 @@ local function HookViewerAlpha(viewer, viewerName)
             -- call chain (e.g. cutscene exit → SetAttribute → Show).
             -- The alpha enforcer OnUpdate (0.1s) is the backstop.
             C_Timer.After(0, function()
-                if viewersHidden and self:GetAlpha() > 0 then
+                if viewersHidden and IsCDMRuntimeEnabled() and self:GetAlpha() > 0 then
                     self:SetAlpha(0)
                 end
             end)
@@ -2498,6 +2591,14 @@ end
 local alphaEnforcerFrame = CreateFrame("Frame")
 local alphaEnforcerElapsed = 0
 local function AlphaEnforcerOnUpdate(self, dt)
+    if not IsCDMRuntimeEnabled() then
+        self:SetScript("OnUpdate", nil)
+        if ShowBlizzardViewers then
+            ShowBlizzardViewers()
+        end
+        return
+    end
+
     alphaEnforcerElapsed = alphaEnforcerElapsed + dt
     if alphaEnforcerElapsed < 0.1 then return end
     alphaEnforcerElapsed = 0
@@ -2517,6 +2618,7 @@ end
 alphaEnforcerFrame:SetScript("OnUpdate", nil)
 
 local function HideBlizzardViewers()
+    if not IsCDMRuntimeEnabled() then return end
     if viewersHidden then return end
     -- Hide all viewers (alpha 0, no mouse on parent AND children).
     -- QUI creates addon-owned containers; Blizzard children stay here as
@@ -2543,7 +2645,7 @@ local function HideBlizzardViewers()
     alphaEnforcerFrame:SetScript("OnUpdate", AlphaEnforcerOnUpdate)
 end
 
-local function ShowBlizzardViewers()
+ShowBlizzardViewers = function()
     if not viewersHidden then return end
     -- Clear the hidden flag BEFORE setting alpha so the hook doesn't fight us
     viewersHidden = false
@@ -2742,6 +2844,8 @@ end
 ---------------------------------------------------------------------------
 local buffEventPending = false
 local function OnBuffAuraEvent()
+    if not IsCDMRuntimeEnabled() then return end
+
     -- Debounce: batch rapid aura events into a single rescan + reparent.
     -- Keep this short: buff bars already tick on a 100ms loop, so stacking a
     -- second 100ms debounce here makes slot-backed summons feel visually late.
@@ -2749,6 +2853,7 @@ local function OnBuffAuraEvent()
     buffEventPending = true
     C_Timer.After(0.02, function()
         buffEventPending = false
+        if not IsCDMRuntimeEnabled() then return end
         -- Rescan buff viewer to update spell list (needed for reparent)
         ScanCooldownViewer("buff")
         -- Notify containers to reparent children + buffbar to style/position
@@ -2843,6 +2948,7 @@ local function ScanViewer(viewerType)
 end
 
 local function ScanAll()
+    if not IsCDMRuntimeEnabled() then return false end
     if InCombatLockdown() and not ns._inInitSafeWindow then return end
 
     -- Rebuild the spell→child map fresh each scan to prevent unbounded
@@ -2890,7 +2996,12 @@ local function HookBlizzardSettings()
     -- EventRegistry: fires when user adds/removes spells or changes settings
     if EventRegistry and EventRegistry.RegisterCallback then
         EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
-            C_Timer.After(0.1, ScanAll)
+            if not IsCDMRuntimeEnabled() then return end
+            C_Timer.After(0.1, function()
+                if IsCDMRuntimeEnabled() then
+                    ScanAll()
+                end
+            end)
         end, CDMSpellData)
     end
 
@@ -2899,8 +3010,12 @@ local function HookBlizzardSettings()
         local viewer = _G[viewerName]
         if viewer and viewer.RefreshLayout then
             hooksecurefunc(viewer, "RefreshLayout", function()
-                if not Helpers.IsEditModeActive() then
-                    C_Timer.After(0, ScanAll)
+                if IsCDMRuntimeEnabled() and not Helpers.IsEditModeActive() then
+                    C_Timer.After(0, function()
+                        if IsCDMRuntimeEnabled() then
+                            ScanAll()
+                        end
+                    end)
                 end
             end)
         end
@@ -2908,22 +3023,10 @@ local function HookBlizzardSettings()
 end
 
 ---------------------------------------------------------------------------
--- UPDATE CVar: Sync Blizzard CVar with QUI's enable/disable settings
+-- UPDATE CVar: keep Blizzard's hidden data source available.
 ---------------------------------------------------------------------------
 local function UpdateCooldownViewerCVar()
-    local QUICore = ns.Addon
-    local db = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.ncdm
-    if not db then return end
-
-    local essentialEnabled = db.essential and db.essential.enabled
-    local utilityEnabled = db.utility and db.utility.enabled
-    local buffEnabled = db.buff and db.buff.enabled
-
-    if essentialEnabled or utilityEnabled or buffEnabled then
-        pcall(function() SetCVar("cooldownViewerEnabled", 1) end)
-    else
-        pcall(function() SetCVar("cooldownViewerEnabled", 0) end)
-    end
+    EnsureCooldownViewerCVarEnabled()
 end
 
 ---------------------------------------------------------------------------
@@ -5736,6 +5839,12 @@ end
 -- spell data scanning. Replaces the self-bootstrapping event frame.
 ---------------------------------------------------------------------------
 function CDMSpellData:Initialize()
+    if not IsCDMRuntimeEnabled() then
+        return
+    end
+
+    EnsureCooldownViewerCVarEnabled()
+
     -- Hide Blizzard viewers IMMEDIATELY to prevent flash of unstyled buff
     -- icons during the ~0.5s window before the deferred init completes.
     HideBlizzardViewers()
@@ -5746,6 +5855,7 @@ function CDMSpellData:Initialize()
     ScanAll()
     -- Deferred re-scan: handles first login where viewers populate after us.
     C_Timer.After(0.5, function()
+        if not IsCDMRuntimeEnabled() then return end
         UpdateCooldownViewerCVar()
         HideBlizzardViewers()  -- re-apply in case ForceLoadCDM restored them
         ScanAll()
@@ -5762,6 +5872,13 @@ function CDMSpellData:Initialize()
             local scanIdleCount = 0
             local scanSkipCount = 0
             scanTimer = C_Timer.NewTicker(0.5, function()
+                if not IsCDMRuntimeEnabled() then
+                    if scanTimer and scanTimer.Cancel then
+                        scanTimer:Cancel()
+                    end
+                    scanTimer = nil
+                    return
+                end
                 if InCombatLockdown() then return end
                 -- After 6 idle scans (3s of no changes), relax to every 4th tick (2s effective)
                 if scanIdleCount >= 6 then
@@ -5782,6 +5899,7 @@ function CDMSpellData:Initialize()
     -- Register runtime events
     local _spellsChangedToken = 0
     local eventFrame = CreateFrame("Frame")
+    runtimeEventFrame = eventFrame
     eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
     eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -5795,6 +5913,11 @@ function CDMSpellData:Initialize()
     eventFrame:RegisterEvent("CHALLENGE_MODE_START")
     eventFrame:RegisterEvent("PVP_MATCH_ACTIVE")
     eventFrame:SetScript("OnEvent", function(self, event, arg)
+        if not IsCDMRuntimeEnabled() then
+            self:UnregisterAllEvents()
+            return
+        end
+
         if event == "SPELL_UPDATE_COOLDOWN" then
             -- No-op: ScanAll runs on its own 0.5s ticker (line 3178).
             -- Calling it here on every SPELL_UPDATE_COOLDOWN was redundant —
@@ -5828,6 +5951,7 @@ function CDMSpellData:Initialize()
             _spellsChangedToken = _spellsChangedToken + 1
             local token = _spellsChangedToken
             C_Timer.After(0.3, function()
+                if not IsCDMRuntimeEnabled() then return end
                 if token ~= _spellsChangedToken then
                     return
                 end
@@ -5874,10 +5998,12 @@ function CDMSpellData:Initialize()
             -- Hide viewers immediately to prevent flash of unstyled icons
             HideBlizzardViewers()
             C_Timer.After(1.0, function()
+                if not IsCDMRuntimeEnabled() then return end
                 if not initialized then
                     -- Blizzard_CooldownManager may have loaded before us
                     ForceLoadCDM()
                     C_Timer.After(0.5, function()
+                        if not IsCDMRuntimeEnabled() then return end
                         UpdateCooldownViewerCVar()
                         HideBlizzardViewers()
                         ScanAll()

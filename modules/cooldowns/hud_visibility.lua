@@ -165,6 +165,12 @@ local function GetCDMVisibilitySettings()
     return nil
 end
 
+local function IsCDMMasterEnabled()
+    local profile = QUICore and QUICore.db and QUICore.db.profile
+    local ncdm = profile and profile.ncdm
+    return not ncdm or ncdm.enabled ~= false
+end
+
 ---------------------------------------------------------------------------
 -- CDM VISIBILITY CONTROLLER
 ---------------------------------------------------------------------------
@@ -184,6 +190,8 @@ local CDMVisibility = {
 
 -- Determine if CDM should be visible (SHOW logic)
 local function ShouldCDMBeVisible()
+    if not IsCDMMasterEnabled() then return false end
+
     local vis = GetCDMVisibilitySettings()
     if not vis then return true end
 
@@ -301,6 +309,11 @@ end
 
 -- Update CDM visibility
 UpdateCDMVisibility = function()
+    if not IsCDMMasterEnabled() then
+        StartCDMFade(0)
+        return
+    end
+
     if Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
         StartCDMFade(1)
         return
@@ -481,6 +494,8 @@ local function GetCustomTrackersVisibilitySettings()
 end
 
 local function ShouldCustomTrackersBeVisible()
+    if not IsCDMMasterEnabled() then return false end
+
     local vis = GetCustomTrackersVisibilitySettings()
     if not vis then return true end
 
@@ -591,6 +606,11 @@ local function StartCustomTrackersFade(targetAlpha)
 end
 
 UpdateCustomTrackersVisibility = function()
+    if not IsCDMMasterEnabled() then
+        StartCustomTrackersFade(0)
+        return
+    end
+
     if Helpers.IsEditModeActive() or Helpers.IsLayoutModeActive() then
         StartCustomTrackersFade(1)
         return

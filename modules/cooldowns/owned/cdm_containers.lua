@@ -27,6 +27,11 @@ local CreateFrame = CreateFrame
 local InCombatLockdown = InCombatLockdown
 local hooksecurefunc = hooksecurefunc
 
+local function IsCDMRuntimeEnabled()
+    local checker = _G.QUI_IsCDMMasterEnabled
+    return type(checker) ~= "function" or checker()
+end
+
 ---------------------------------------------------------------------------
 -- ADDON_LOADED / PLAYER_ENTERING_WORLD safe window flag: during a combat
 -- /reload, InCombatLockdown() returns true but protected calls are still
@@ -70,6 +75,7 @@ local buffFingerprint = nil  -- fingerprint string for buff icon rebuild skippin
 local applying = {}    -- re-entry guard per tracker
 local refreshTimers = {} -- stored timer handles so overlapping RefreshAll calls cancel prior timers
 local initialized = false
+local runtimeEventFrame = nil
 local RegisterContainerFrame
 local SyncContainerMouseState
 local SyncAllContainerMouseStates
@@ -78,6 +84,15 @@ local ApplyUtilityAnchor
 -- Anchor proxy for Utility below Essential
 local UtilityAnchorProxy = nil
 local CreateContainer  -- forward declaration; assigned in CONTAINER CREATION section
+
+local function CancelRefreshTimers()
+    for i, handle in pairs(refreshTimers) do
+        if handle and handle.Cancel then
+            handle:Cancel()
+        end
+        refreshTimers[i] = nil
+    end
+end
 
 -- Point→center offset (mirrors anchoring.lua GetPointOffsetForRect).
 -- Returns the offset of the named anchor point relative to the frame's center.
@@ -1576,6 +1591,8 @@ end
 -- Ported from cdm_viewer.lua:1069-1554 for addon-owned containers.
 ---------------------------------------------------------------------------
 local function LayoutContainer(trackerKey)
+    if not IsCDMRuntimeEnabled() then return end
+
     local container = containers[trackerKey]
     if not container then return end
 
@@ -2234,6 +2251,10 @@ RefreshAll = function(forceSync)
         return
     end
 
+    if not IsCDMRuntimeEnabled() then
+        return
+    end
+
     if not specTrackingReady then
         specTrackingPendingRefresh = true
         return
@@ -2252,12 +2273,7 @@ RefreshAll = function(forceSync)
     -- Cancel any pending refresh timers from a prior overlapping RefreshAll call.
     -- This prevents interleaved layouts when e.g. a 0.2s profile-change refresh
     -- races against a 0.5s spec-change refresh.
-    for i, handle in pairs(refreshTimers) do
-        if handle and handle.Cancel then
-            handle:Cancel()
-        end
-        refreshTimers[i] = nil
-    end
+    CancelRefreshTimers()
 
     -- Force-scan spell data synchronously BEFORE scheduling layouts.
     -- This ensures layouts read fresh spec data instead of stale lists.
@@ -2405,6 +2421,8 @@ end
 -- UTILITY ANCHOR: Position Utility container below Essential
 ---------------------------------------------------------------------------
 ApplyUtilityAnchor = function()
+    if not IsCDMRuntimeEnabled() then return end
+
     local db = GetDB()
     if not db or not db.utility then
         return
@@ -2523,6 +2541,7 @@ end
 -- Force layout for a specific container during edit mode (used by Composer)
 _G.QUI_ForceLayoutContainer = function(containerKey)
     if not containerKey or not initialized then return end
+    if not IsCDMRuntimeEnabled() then return end
     _forceLayoutKey = containerKey
     LayoutContainer(containerKey)
     _forceLayoutKey = nil
@@ -2682,6 +2701,8 @@ local function ForceBuffIconsVisible()
 end
 
 _G.QUI_OnEditModeEnterCDM = function()
+    if not IsCDMRuntimeEnabled() then return end
+
     -- Force a buff scan + rebuild BEFORE setting _editModeActive,
     -- because LayoutContainer bails out when _editModeActive is true.
     -- This ensures buff icons exist for the user to see during edit mode.
@@ -2762,6 +2783,8 @@ _G.QUI_OnEditModeEnterCDM = function()
 end
 
 _G.QUI_OnEditModeExitCDM = function()
+    if not IsCDMRuntimeEnabled() then return end
+
     _editModeActive = false
 
     -- Persist container positions to DB.
@@ -2841,6 +2864,10 @@ local BLIZZARD_FALLBACKS = {
 -- Initialize: called by cdm_provider.lua after engine selection
 ---------------------------------------------------------------------------
 function ownedEngine:Initialize()
+    if not IsCDMRuntimeEnabled() then
+        return
+    end
+
     -- During a combat /reload this runs inside the ADDON_LOADED safe window
     -- where protected calls are allowed even though InCombatLockdown() returns
     -- true. Set the flag before spell-data bootstrap so Blizzard CDM loading
@@ -3012,6 +3039,7 @@ function ownedEngine:Initialize()
 
     -- Register runtime events (spec change, zone change, cinematics, addon loads)
     local eventFrame = CreateFrame("Frame")
+    runtimeEventFrame = eventFrame
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
     eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -3022,6 +3050,11 @@ function ownedEngine:Initialize()
     eventFrame:RegisterEvent("ADDON_LOADED")
 
     eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
+        if not IsCDMRuntimeEnabled() then
+            self:UnregisterAllEvents()
+            return
+        end
+
         if event == "ADDON_LOADED" and arg1 == "Blizzard_CooldownManager" then
             -- Viewer just loaded -- grab it as buff container
             InitBuffContainer()
@@ -3164,6 +3197,27 @@ function ownedEngine:Initialize()
 
     ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
     ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_Containers", frame = eventFrame }
+end
+
+function ownedEngine:DisableRuntime()
+    initialized = false
+    NCDM.initialized = false
+    specTrackingPendingRefresh = false
+    specTrackingRetryToken = specTrackingRetryToken + 1
+    inInitSafeWindow = false
+    CancelRefreshTimers()
+
+    if runtimeEventFrame then
+        runtimeEventFrame:UnregisterAllEvents()
+        runtimeEventFrame:SetScript("OnEvent", nil)
+        runtimeEventFrame = nil
+    end
+
+    for _, frame in pairs(containers) do
+        if frame and frame.SetAlpha then
+            pcall(frame.SetAlpha, frame, 0)
+        end
+    end
 end
 
 function ownedEngine:Refresh()
@@ -3388,9 +3442,33 @@ do
 
         local function RefreshCDM()
             if _G.QUI_RefreshCDMVisibility then _G.QUI_RefreshCDMVisibility() end
+            if _G.QUI_RefreshCustomTrackersVisibility then _G.QUI_RefreshCustomTrackersVisibility() end
         end
 
-        -- Master CDM toggle — disabling hides all CDM containers
+        local function ShowCDMReloadPrompt(enabled)
+            local QUI = _G.QUI
+            local GUI = QUI and QUI.GUI
+            if not (GUI and GUI.ShowConfirmation) then
+                return
+            end
+
+            GUI:ShowConfirmation({
+                title = "Reload UI?",
+                message = enabled
+                    and "Enabling Cooldown Manager requires a UI reload to hand cooldown viewers back to QUI."
+                    or "Disabling Cooldown Manager requires a UI reload to fully hand cooldown viewers back to the default UI.",
+                acceptText = "Reload",
+                cancelText = "Later",
+                onAccept = function()
+                    if QUI and QUI.SafeReload then
+                        QUI:SafeReload()
+                    end
+                end,
+            })
+        end
+
+        -- Master CDM toggle. The current session is hidden immediately;
+        -- reload completes the engine handoff.
         um:RegisterElement({
             key = "cdm",
             label = "Cooldown Manager",
@@ -3404,8 +3482,16 @@ do
             end,
             setEnabled = function(val)
                 local ncdm = GetNcdmDB()
+                local oldEnabled = ncdm and ncdm.enabled ~= false
+                local enabled = val ~= false
                 if ncdm then ncdm.enabled = val end
                 RefreshCDM()
+                if not enabled and ns.CDMProvider and ns.CDMProvider.DisableRuntime then
+                    ns.CDMProvider:DisableRuntime()
+                end
+                if oldEnabled ~= nil and oldEnabled ~= enabled then
+                    ShowCDMReloadPrompt(enabled)
+                end
             end,
             setGameplayHidden = function(hide)
                 for _, info2 in ipairs(CDM_ELEMENTS) do

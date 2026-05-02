@@ -23,6 +23,11 @@ CDMIcons._LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 local CDMCooldown = ns.CDMCooldown or {}
 ns.CDMCooldown = CDMCooldown
 
+function CDMIcons:IsRuntimeEnabled()
+    local checker = _G.QUI_IsCDMMasterEnabled
+    return type(checker) ~= "function" or checker()
+end
+
 -- CustomCDM exposed on CDMIcons for engine access (provider wires to ns.CustomCDM)
 local CustomCDM = {}
 CDMIcons.CustomCDM = CustomCDM
@@ -6115,6 +6120,12 @@ local function _CDMUpdateCallback()
     _cdmUpdatePending = false
     local mode = _cdmUpdateMode or CDM_UPDATE_COOLDOWN
     _cdmUpdateMode = CDM_UPDATE_COOLDOWN
+
+    if not CDMIcons:IsRuntimeEnabled() then
+        WipeUpdateTickCaches()
+        return
+    end
+
     _lastCDMUpdateTime = GetTime()
 
     if mode == CDM_UPDATE_FULL then
@@ -6148,6 +6159,12 @@ local function GetCDMUpdateDelay(fast)
 end
 
 local function ScheduleCDMUpdate(fast, mode)
+    if not CDMIcons:IsRuntimeEnabled() then
+        cdmUpdateFrame:SetScript("OnUpdate", nil)
+        _cdmUpdatePending = false
+        return
+    end
+
     mode = (mode == CDM_UPDATE_FULL) and CDM_UPDATE_FULL or CDM_UPDATE_COOLDOWN
     _tickCooldownStats.updateRequests = _tickCooldownStats.updateRequests + 1
     if fast then
@@ -6185,6 +6202,11 @@ local safetyTickFrame = CreateFrame("Frame")
 local SAFETY_TICK_INTERVAL = 1.0
 local safetyTickElapsed = 0
 local function SafetyTickOnUpdate(self, elapsed)
+    if not CDMIcons:IsRuntimeEnabled() then
+        self:SetScript("OnUpdate", nil)
+        return
+    end
+
     safetyTickElapsed = safetyTickElapsed + elapsed
     if safetyTickElapsed < SAFETY_TICK_INTERVAL then return end
     safetyTickElapsed = 0
@@ -6206,6 +6228,14 @@ local function SafetyTickOnUpdate(self, elapsed)
 end
 
 cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
+    if not CDMIcons:IsRuntimeEnabled() then
+        self:SetScript("OnUpdate", nil)
+        cdmUpdateFrame:SetScript("OnUpdate", nil)
+        safetyTickFrame:SetScript("OnUpdate", nil)
+        _cdmUpdatePending = false
+        return
+    end
+
     if event == "UNIT_SPELLCAST_START"
        or event == "UNIT_SPELLCAST_STOP"
        or event == "UNIT_SPELLCAST_SUCCEEDED"
@@ -6289,6 +6319,7 @@ if EventRegistry and EventRegistry.RegisterCallback then
     EventRegistry:RegisterCallback(
         "CooldownViewerSettings.OnDataChanged",
         function()
+            if not CDMIcons:IsRuntimeEnabled() then return end
             ns.CDMSpellData:InvalidateChildMap()
             ScheduleCDMUpdate(true, CDM_UPDATE_FULL)
         end,
@@ -6308,6 +6339,7 @@ function CDMIcons:ClearTickCaches()
 end
 
 function CDMIcons:RequestFullUpdate()
+    if not CDMIcons:IsRuntimeEnabled() then return end
     _barsDirty = true
     ScheduleCDMUpdate(true, CDM_UPDATE_FULL)
 end
@@ -6331,11 +6363,13 @@ end
 -- by barTimerGroup independently of ScheduleCDMUpdate.
 if ns.AuraEvents then
     ns.AuraEvents:Subscribe("player", function(unit, updateInfo)
+        if not CDMIcons:IsRuntimeEnabled() then return end
         ns.CDMSpellData:InvalidateChildMap()
         _barsDirty = true
         ScheduleCDMUpdate(true, CDM_UPDATE_FULL)
     end)
     ns.AuraEvents:Subscribe("all", function(unit, updateInfo)
+        if not CDMIcons:IsRuntimeEnabled() then return end
         if unit == "target" then
             ns.CDMSpellData:InvalidateChildMap()
             _barsDirty = true
@@ -6347,6 +6381,12 @@ end
 -- Visual state polling: 250ms OnUpdate for range + usability checks.
 -- Only active when at least one tracker has rangeIndicator or usabilityIndicator.
 local function RangePollOnUpdate(self, elapsed)
+    if not CDMIcons:IsRuntimeEnabled() then
+        self:SetScript("OnUpdate", nil)
+        rangePollActive = false
+        return
+    end
+
     rangePollElapsed = rangePollElapsed + elapsed
     local interval = rangePollInCombat and RANGE_POLL_INTERVAL_COMBAT or RANGE_POLL_INTERVAL_IDLE
     if rangePollElapsed < interval then return end
@@ -6364,6 +6404,12 @@ local rangePollActive = false
 
 --- Call after settings change to start/stop the range poll OnUpdate.
 function CDMIcons:SyncRangePoll()
+    if not CDMIcons:IsRuntimeEnabled() then
+        rangePollActive = false
+        cdEventFrame:SetScript("OnUpdate", nil)
+        return
+    end
+
     local db = GetDB()
     local anyEnabled = db
         and ((db.essential and (db.essential.rangeIndicator or db.essential.usabilityIndicator))
@@ -6380,3 +6426,15 @@ end
 
 -- Start disabled — SyncRangePoll is called from Refresh/init paths
 cdEventFrame:SetScript("OnUpdate", nil)
+
+function CDMIcons:DisableRuntime()
+    cdEventFrame:UnregisterAllEvents()
+    cdEventFrame:SetScript("OnEvent", nil)
+    cdEventFrame:SetScript("OnUpdate", nil)
+    cdmUpdateFrame:SetScript("OnUpdate", nil)
+    safetyTickFrame:SetScript("OnUpdate", nil)
+    _cdmUpdatePending = false
+    rangePollActive = false
+    _barsDirty = false
+    WipeUpdateTickCaches()
+end

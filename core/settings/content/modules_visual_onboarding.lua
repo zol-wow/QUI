@@ -413,6 +413,12 @@ local VISUAL_MODULES = {
     -- Cooldown Manager & Custom Tracker Bars
     ---------------------------------------------------------------------------
     {
+        key = "cdm", group = "Cooldown Manager & Custom Tracker Bars",
+        label = "Cooldown Manager",
+        caption = "Master toggle for cooldown viewers, buff trackers, and tracked bars.",
+        combatLocked = true,
+    },
+    {
         key = "rotationAssistIcon", group = "Cooldown Manager & Custom Tracker Bars",
         label = "Rotation Assist Icon",
         caption = "Large icon showing the next recommended rotation ability.",

@@ -10,13 +10,14 @@
          call them without reaching into the engine table directly.
       2. Publishes a frame resolver that works before the engine has
          finished initializing (Blizzard global fallback).
-      3. Kicks off engine initialization on ADDON_LOADED, inside the
-         safe window where combat /reload hasn't yet locked protected
-         frames.
+      3. Kicks off engine initialization on ADDON_LOADED when the CDM
+         master toggle is enabled, inside the safe window where combat
+         /reload hasn't yet locked protected frames.
 
     Load order: cdm_provider.lua → hud_visibility.lua → owned engine
     files. The owned engine calls SetEngine() at load time to hand its
-    table over; the provider initializes it on ADDON_LOADED.
+    table over; the provider initializes it on ADDON_LOADED unless the
+    profile has disabled CDM completely.
 ]]
 
 local ADDON_NAME, ns = ...
@@ -27,6 +28,8 @@ local ADDON_NAME, ns = ...
 local CDMProvider = {
     engine = nil,         -- the single engine table
     initialized = false,
+    disabled = false,
+    emptyFrames = {},
 }
 
 ---------------------------------------------------------------------------
@@ -39,6 +42,26 @@ local CDMProvider = {
 --- @param engine table  Engine table with contract methods (Initialize, Refresh, etc.)
 function CDMProvider:SetEngine(engine)
     self.engine = engine
+end
+
+local function GetNCDMProfile()
+    local addon = _G.QUI
+    local db = addon and addon.db
+    local profile = db and db.profile
+    return profile and profile.ncdm or nil
+end
+
+function CDMProvider:IsMasterEnabled()
+    local ncdm = GetNCDMProfile()
+    return not ncdm or ncdm.enabled ~= false
+end
+
+function CDMProvider:IsDisabled()
+    return self.disabled == true
+end
+
+function CDMProvider:IsRuntimeEnabled()
+    return self:IsMasterEnabled() and not self:IsDisabled()
 end
 
 ---------------------------------------------------------------------------
@@ -61,6 +84,8 @@ end
 --- Resolve a viewer key to a frame. Works before engine init via the
 --- Blizzard global fallback.
 function CDMProvider:GetViewerFrame(key)
+    if self.disabled then return nil end
+
     local engine = self.engine
     if self.initialized and engine and engine.GetViewerFrame then
         return engine:GetViewerFrame(key)
@@ -71,6 +96,10 @@ end
 
 --- Get all viewer frames for visibility control.
 function CDMProvider:GetViewerFrames()
+    if self.disabled then
+        return self.emptyFrames
+    end
+
     local engine = self.engine
     if self.initialized and engine and engine.GetViewerFrames then
         return engine:GetViewerFrames()
@@ -113,6 +142,33 @@ local function WireGlobals(engine)
     end
 end
 
+local function DisableOwnedRuntime()
+    local engine = CDMProvider.engine
+    if engine and engine.DisableRuntime then
+        engine:DisableRuntime()
+    end
+    if ns.CDMSpellData and ns.CDMSpellData.DisableRuntime then
+        ns.CDMSpellData:DisableRuntime()
+    end
+    if ns.CDMIcons and ns.CDMIcons.DisableRuntime then
+        ns.CDMIcons:DisableRuntime()
+    end
+    if ns._OwnedGlows and ns._OwnedGlows.DisableRuntime then
+        ns._OwnedGlows.DisableRuntime()
+    end
+    if ns._OwnedHighlighter and ns._OwnedHighlighter.DisableRuntime then
+        ns._OwnedHighlighter.DisableRuntime()
+    end
+end
+
+function CDMProvider:DisableRuntime()
+    self.disabled = true
+    DisableOwnedRuntime()
+    if ns.InvalidateCDMFrameCache then
+        ns.InvalidateCDMFrameCache()
+    end
+end
+
 ---------------------------------------------------------------------------
 -- INITIALIZATION
 ---------------------------------------------------------------------------
@@ -124,6 +180,12 @@ function CDMProvider:InitializeEngine()
         return  -- Engine not registered yet
     end
 
+    if not self:IsMasterEnabled() then
+        self:DisableRuntime()
+        return
+    end
+
+    self.disabled = false
     self.initialized = true
 
     if engine.Initialize then
@@ -160,6 +222,10 @@ end
 -- Available immediately for consumer modules to use, even before engine init.
 _G.QUI_GetCDMViewerFrame = function(key)
     return CDMProvider:GetViewerFrame(key)
+end
+
+_G.QUI_IsCDMMasterEnabled = function()
+    return CDMProvider:IsRuntimeEnabled()
 end
 
 ---------------------------------------------------------------------------

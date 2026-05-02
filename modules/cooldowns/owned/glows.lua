@@ -6,6 +6,11 @@
 local _, ns = ...
 local Helpers = ns.Helpers
 
+local function IsCDMRuntimeEnabled()
+    local checker = _G.QUI_IsCDMMasterEnabled
+    return type(checker) ~= "function" or checker()
+end
+
 -- Get LibCustomGlow for custom glow styles
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
@@ -810,8 +815,7 @@ end
 ---------------------------------------------------------------------------
 local _refreshStopScratch = {}
 
-local function RefreshAllGlows()
-    -- Stop all current glows
+local function StopAllTrackedGlows()
     local toStop = _refreshStopScratch
     wipe(toStop)
     for icon in pairs(activeGlowIcons) do
@@ -823,6 +827,15 @@ local function RefreshAllGlows()
     wipe(toStop)
     wipe(activeGlowIcons)
     wipe(_pandemicGlowIcons)
+end
+
+local function RefreshAllGlows()
+    -- Stop all current glows
+    StopAllTrackedGlows()
+
+    if not IsCDMRuntimeEnabled() then
+        return
+    end
 
     -- Rebuild reverse lookup and re-scan with current settings
     RebuildGlowSpellMap()
@@ -852,6 +865,12 @@ local _usabilityGlowElapsed = 0
 local USABILITY_GLOW_DELAY = 0.1
 
 local function UsabilityGlowOnUpdate(self, elapsed)
+    if not IsCDMRuntimeEnabled() then
+        self:SetScript("OnUpdate", nil)
+        _usabilityGlowPending = false
+        return
+    end
+
     _usabilityGlowElapsed = _usabilityGlowElapsed + elapsed
     if _usabilityGlowElapsed < USABILITY_GLOW_DELAY then return end
     self:SetScript("OnUpdate", nil)
@@ -860,6 +879,7 @@ local function UsabilityGlowOnUpdate(self, elapsed)
 end
 
 local function ScheduleUsabilityGlowScan()
+    if not IsCDMRuntimeEnabled() then return end
     if _usabilityGlowPending then return end
     _usabilityGlowPending = true
     _usabilityGlowElapsed = 0
@@ -867,6 +887,13 @@ local function ScheduleUsabilityGlowScan()
 end
 
 eventFrame:SetScript("OnEvent", function(_, event, spellID)
+    if not IsCDMRuntimeEnabled() then
+        StopAllTrackedGlows()
+        usabilityGlowFrame:SetScript("OnUpdate", nil)
+        _usabilityGlowPending = false
+        return
+    end
+
     if event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_USABLE" then
         ScheduleUsabilityGlowScan()
         return
@@ -896,9 +923,23 @@ ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_Glows", frame = ev
 
 -- Low-frequency fallback scan to catch edge cases (e.g. icon replaced
 -- with an already-active proc, no SHOW event fires for it)
-C_Timer.NewTicker(5, function()
-    ScanAllGlows()
+local glowFallbackTicker = C_Timer.NewTicker(5, function()
+    if IsCDMRuntimeEnabled() then
+        ScanAllGlows()
+    end
 end)
+
+local function DisableRuntime()
+    eventFrame:UnregisterAllEvents()
+    eventFrame:SetScript("OnEvent", nil)
+    usabilityGlowFrame:SetScript("OnUpdate", nil)
+    _usabilityGlowPending = false
+    if glowFallbackTicker and glowFallbackTicker.Cancel then
+        glowFallbackTicker:Cancel()
+        glowFallbackTicker = nil
+    end
+    StopAllTrackedGlows()
+end
 
 ---------------------------------------------------------------------------
 -- EXPORTS
@@ -915,6 +956,7 @@ ns._OwnedGlows = {
     IsSpellCastable = IsSpellCastable,
     HookBlizzPandemic = HookBlizzPandemic,
     ClearPandemicState = ClearPandemicState,
+    DisableRuntime = DisableRuntime,
     GetGlowState = function(icon)
         return activeGlowIcons[icon] and { active = true } or nil
     end,
