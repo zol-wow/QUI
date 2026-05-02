@@ -211,6 +211,10 @@ local function RefreshAllSwipes()
 
     local settings = GetSettings()
 
+    if CDMIcons.UpdateAllCooldowns then
+        CDMIcons:UpdateAllCooldowns()
+    end
+
     -- Addon-owned icons (essential, utility, buff)
     for _, viewerType in ipairs({"essential", "utility", "buff"}) do
         local pool = CDMIcons:GetIconPool(viewerType)

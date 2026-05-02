@@ -2843,6 +2843,10 @@ end
 function CDMIcons.NormalizeCustomBarVisibilityFlags(containerDB)
     if not CDMIcons.IsCustomBarContainer(containerDB) then return "always" end
 
+    if containerDB.desaturateOnCooldown == nil then
+        containerDB.desaturateOnCooldown = true
+    end
+
     local mode = "always"
     if containerDB.showOnlyOnCooldown then
         mode = "onCooldown"
@@ -2985,6 +2989,112 @@ function CDMIcons.ResolveItemActiveState(itemID, icon, entry)
     return false
 end
 
+function CDMIcons.ResolveEntryRuntimeSpellID(icon, entry)
+    return (icon and icon._runtimeSpellID)
+        or (entry and (entry.spellID or entry.overrideSpellID or entry.id))
+end
+
+function CDMIcons.ResolveCooldownActivityState(icon, entry, containerDB, now)
+    local state = {
+        isOnCooldown = false,
+        rechargeActive = false,
+        hasChargesRemaining = false,
+        hasCharges = entry and entry.hasCharges or false,
+        gcdOnly = false,
+    }
+    if not icon or not entry then return state end
+
+    now = now or GetTime()
+    local spellID = CDMIcons.ResolveEntryRuntimeSpellID(icon, entry)
+    local isItemLike = CDMIcons.IsItemLikeEntry(entry)
+
+    if spellID and not state.hasCharges then
+        local gdb = QUI and QUI.db and QUI.db.global
+        local svCharges = gdb and gdb.cdmChargeSpells
+        if svCharges and svCharges[spellID] then
+            state.hasCharges = true
+        end
+    end
+
+    if spellID and not isItemLike then
+        local ci = TickCacheGetCharges(spellID)
+        if ci then
+            local current = SafeToNumber(ci.currentCharges, nil)
+            local maxC = SafeToNumber(ci.maxCharges, nil)
+            if maxC and maxC > 1 then
+                state.hasCharges = true
+            end
+
+            if state.hasCharges then
+                if current and current > 0 then
+                    state.hasChargesRemaining = true
+                end
+
+                if ci.isActive == true or (current and maxC and current < maxC) then
+                    state.rechargeActive = true
+                end
+
+                if state.rechargeActive and not state.hasChargesRemaining then
+                    local displayCount = TickCacheGetDisplayCount(spellID)
+                    local readableCount = SafeToNumber(displayCount, nil)
+                    if readableCount and readableCount > 0 then
+                        state.hasChargesRemaining = true
+                    end
+                end
+
+                if state.rechargeActive and not state.hasChargesRemaining then
+                    local cdInfo = TickCacheGetCooldown(spellID)
+                    if cdInfo and cdInfo.isActive == false then
+                        state.hasChargesRemaining = true
+                    end
+                end
+
+                if state.rechargeActive then
+                    state.isOnCooldown = not state.hasChargesRemaining
+                end
+            end
+        end
+    end
+
+    if not state.rechargeActive then
+        if icon._hasRealCooldownActive == true then
+            state.isOnCooldown = true
+        elseif icon._hasRealCooldownActive == false then
+            state.isOnCooldown = false
+        else
+            local dur = icon._lastDuration or 0
+            local start = icon._lastStart or 0
+            if icon._hasCooldownActive and not icon._hasGCDOnlyCooldown then
+                state.isOnCooldown = true
+            elseif dur > GCD_MAX_DURATION and start > 0 then
+                local remaining = (start + dur) - now
+                if remaining > 0 then
+                    state.isOnCooldown = true
+                end
+            end
+        end
+    end
+
+    if containerDB and containerDB.hideGCD and icon._isOnGCD
+       and not icon._auraActive and not state.hasCharges then
+        if icon._hasGCDOnlyCooldown then
+            state.gcdOnly = true
+            state.isOnCooldown = false
+        elseif icon._hasRealCooldownActive == false then
+            state.gcdOnly = true
+            state.isOnCooldown = false
+        else
+            local dur = icon._lastDuration or 0
+            if dur <= GCD_MAX_DURATION then
+                state.gcdOnly = true
+                state.isOnCooldown = false
+            end
+        end
+    end
+
+    return state
+end
+
 function CDMIcons.ResolveCustomBarActiveState(entry, icon, now)
     local containerDB = GetTrackerSettings(entry and entry.viewerType)
     if not CDMIcons.IsCustomBarContainer(containerDB) then
@@ -3018,63 +3128,7 @@ function CDMIcons.ResolveCustomBarActiveState(entry, icon, now)
 end
 
 function CDMIcons.ResolveCustomBarCooldownState(entry, icon, containerDB, now)
-    local state = {
-        isOnCooldown = false,
-        rechargeActive = false,
-        hasChargesRemaining = false,
-        hasCharges = entry and entry.hasCharges or false,
-    }
-    if not entry or not icon then return state end
-
-    local dur = icon._lastDuration or 0
-    local start = icon._lastStart or 0
-    if icon._hasCooldownActive then
-        state.isOnCooldown = true
-    elseif dur > GCD_MAX_DURATION and start > 0 then
-        local remaining = (start + dur) - (now or GetTime())
-        if remaining > 0 then
-            state.isOnCooldown = true
-        end
-    end
-
-    local spellID = icon._runtimeSpellID or entry.spellID or entry.overrideSpellID or entry.id
-    if spellID and not CDMIcons.IsItemLikeEntry(entry) then
-        local ci = TickCacheGetCharges(spellID)
-        if ci then
-            local current = SafeToNumber(ci.currentCharges, nil)
-            local maxC = SafeToNumber(ci.maxCharges, nil)
-            if maxC and maxC > 1 then
-                state.hasCharges = true
-                if current and current > 0 then
-                    state.hasChargesRemaining = true
-                end
-                if ci.isActive == true or (current and current < maxC) then
-                    state.rechargeActive = true
-                    if current and current > 0 then
-                        state.isOnCooldown = false
-                    else
-                        state.isOnCooldown = true
-                    end
-                end
-            end
-        end
-    end
-
-    if containerDB and containerDB.hideGCD and icon._isOnGCD
-       and not icon._auraActive and not state.hasCharges then
-        local hasRealCooldown = false
-        if spellID and C_Spell and C_Spell.GetSpellBaseCooldown then
-            local ok, baseDurMS = pcall(C_Spell.GetSpellBaseCooldown, spellID)
-            if ok and type(baseDurMS) == "number" and baseDurMS > 1500 then
-                hasRealCooldown = true
-            end
-        end
-        if not hasRealCooldown and dur <= GCD_MAX_DURATION then
-            state.isOnCooldown = false
-        end
-    end
-
-    return state
+    return CDMIcons.ResolveCooldownActivityState(icon, entry, containerDB, now)
 end
 
 function CDMIcons.ResolveCustomBarUsability(entry, containerDB)
@@ -3358,6 +3412,27 @@ local _showGCDSwipe = false
 -- the icon shows the recharge/cooldown timer instead of the aura duration.
 local _showBuffSwipe = true
 
+function CDMIcons.RefreshSwipeBatchSettings()
+    local swipeMod = ns._OwnedSwipe
+    local swipeSettings = swipeMod and swipeMod.GetSettings and swipeMod.GetSettings()
+    _showGCDSwipe = swipeSettings and swipeSettings.showGCDSwipe or false
+    _showBuffSwipe = swipeSettings and (swipeSettings.showBuffSwipe ~= false) or false
+end
+
+function CDMIcons.ShouldUseBuffSwipeForIcon(icon, entry)
+    if not _showBuffSwipe then return false end
+    local settings = GetTrackerSettings(entry and entry.viewerType)
+    if settings and settings.showOnlyOnCooldown == true then
+        return false
+    end
+    if CDMIcons.IsCustomBarContainer(settings) then
+        if settings.showActiveState == false then
+            return false
+        end
+    end
+    return true
+end
+
 local function WipeUpdateTickCaches()
     BeginUpdateTickCaches()
     if ns.CDMSpellData and ns.CDMSpellData.WipeTickAuraCache then
@@ -3615,7 +3690,8 @@ local function UpdateIconCooldown(icon)
                 -- so the icon shows the recharge/cooldown timer instead.
                 local _ncAuraActive = false
                 local _ncTotemTexture = nil
-                if ns.CDMSpellData and _showBuffSwipe then
+                local useBuffSwipe = CDMIcons.ShouldUseBuffSwipeForIcon(icon, entry)
+                if ns.CDMSpellData and useBuffSwipe then
                     local p = icon._auraParams or {}
                     icon._auraParams = p
                     p.spellID = sid
@@ -3664,7 +3740,7 @@ local function UpdateIconCooldown(icon)
                             end
                         end
                     end
-                elseif not _showBuffSwipe and icon._auraActive then
+                elseif not useBuffSwipe and icon._auraActive then
                     -- Buff/debuff swipe was just disabled: clear aura state
                     -- so the mirror hook resumes forwarding cooldown data.
                     icon._auraActive = false
@@ -3779,8 +3855,9 @@ local function UpdateIconCooldown(icon)
                 -- the icon shows the recharge/cooldown timer instead.
                 local _chargedAuraActive = false
                 local _chargedTotemTexture = nil
+                local useBuffSwipe = CDMIcons.ShouldUseBuffSwipeForIcon(icon, entry)
                 if (entry.hasCharges or not entry._blizzChild)
-                    and ns.CDMSpellData and _showBuffSwipe then
+                    and ns.CDMSpellData and useBuffSwipe then
                     local _cBaseID = _runtimeSid
 
                     local p = icon._auraParams or {}
@@ -3852,7 +3929,7 @@ local function UpdateIconCooldown(icon)
                             end
                         end
                     end
-                elseif entry.hasCharges and not _showBuffSwipe and icon._auraActive then
+                elseif (entry.hasCharges or not entry._blizzChild) and not useBuffSwipe and icon._auraActive then
                     -- Buff/debuff swipe was just disabled: clear aura state
                     -- so the mirror hook resumes forwarding cooldown data.
                     icon._auraActive = false
@@ -3982,12 +4059,13 @@ local function UpdateIconCooldown(icon)
             -- runtime signal that "something is active right now"; if the
             -- active state is not explained by aura/recharge/real cooldown,
             -- the shared GCD swipe should fill that gap.
-            local gcdSwipeWanted = _showGCDSwipe
-                and not auraSwipeActive
+            local gcdOnlyActive = not auraSwipeActive
                 and not realCooldownActive
                 and icon._isOnGCD == true
                 and apiIsActive == true
-                and spellUsable == true
+            local gcdSwipeWanted = _showGCDSwipe and gcdOnlyActive
+            icon._hasRealCooldownActive = realCooldownActive and true or false
+            icon._hasGCDOnlyCooldown = gcdOnlyActive and true or nil
             if realCooldownActive and not mirrorActive and not startTime and not duration and not durObj
                 and not entry.hasCharges then
                 -- Prefer the spell's DurationObject (secret-safe primary API).
@@ -4344,13 +4422,16 @@ local function UpdateIconCooldown(icon)
         -- is active (e.g. a charged debuff spell should grey out when fully depleted).
         local desatSettings = _hoistedNcdm and (_hoistedNcdm[viewerType]
             or (_hoistedNcdm.containers and _hoistedNcdm.containers[viewerType]))
+        local settings = desatSettings
+        local showOnlyCooldownMode = settings and settings.showOnlyOnCooldown == true
         local auraBlocks = (icon._auraActive or (CDMIcons.IsCustomBarContainer(desatSettings) and icon._customBarActive))
             and not icon._desaturateIgnoreAura
+            and not showOnlyCooldownMode
         if viewerType ~= "buff" and not auraBlocks and not icon._rangeTinted and not icon._usabilityTinted then
             -- Per-spell desaturate override takes precedence over tracker-wide setting
             local desatOverride = icon._spellOverrideDesaturate
-            local settings = desatSettings
             local shouldDesaturate = settings and settings.desaturateOnCooldown
+            local cooldownState = CDMIcons.ResolveCooldownActivityState(icon, entry, settings, _batchTime)
             if desatOverride == true then
                 shouldDesaturate = true
             elseif desatOverride == false then
@@ -4358,27 +4439,14 @@ local function UpdateIconCooldown(icon)
             end
             if CDMIcons.IsCustomBarContainer(settings)
                and settings.noDesaturateWithCharges
-               and settings.showOnlyOnCooldown
-               and entry.hasCharges
-               and icon._customBarActive ~= true then
-                local visibility = CDMIcons.ComputeCustomBarVisibility(icon, entry, settings, _batchTime)
-                if visibility.rechargeActive and not visibility.isOnCooldown then
-                    shouldDesaturate = false
-                end
+               and (entry.hasCharges or cooldownState.hasCharges)
+               and cooldownState.rechargeActive
+               and cooldownState.hasChargesRemaining then
+                shouldDesaturate = false
             end
             if shouldDesaturate then
                 -- GCD-only cooldowns should never desaturate.
-                -- When on GCD AND we know the real CD is over
-                -- (_hasCooldownActive == false, set from the non-secret
-                -- isActive field), clear desaturation immediately instead
-                -- of waiting for the GCD to end (~1.5s visible delay).
-                -- Only preserve existing desaturation during GCD when the
-                -- real CD state is unknown (nil / not yet set).
-                if icon._isOnGCD then
-                    -- isOnGCD == true means the GCD is the dominant cooldown —
-                    -- there is no longer real cooldown underneath.  Always clear
-                    -- desaturation.  (_hasCooldownActive is unreliable here
-                    -- because cdInfo.isActive returns true for GCD itself.)
+                if cooldownState.gcdOnly then
                     ChargeDebug(entry.name, "DESAT GCD bail: _hasCooldownActive=",
                         icon._hasCooldownActive, "_cdDesaturated=", icon._cdDesaturated,
                         "hasCharges=", entry.hasCharges)
@@ -4389,49 +4457,23 @@ local function UpdateIconCooldown(icon)
                     return
                 end
 
-                -- Not on GCD: use the cooldown state we already resolved above.
+                -- Use the cooldown state we already resolved above.
                 -- Do not inspect DurationObjects in Lua here.
-                local hasRealCD = false
-                if not entry.hasCharges then
-                    hasRealCD = realCooldownActive == true
-                end
-                -- _hasCooldownActive fallback: works for both charged and
-                -- non-charged entries (isActive accounts for charge state).
-                -- For charged entries, only desaturate when ALL charges
-                -- are depleted.  GetSpellCooldown.isActive (non-secret) is
-                -- false when charges remain (spell castable) and true when
-                -- all charges consumed.  Combined with charge.isActive
-                -- (non-secret) to confirm recharge is running.
-                if not hasRealCD and icon._hasCooldownActive then
-                    if entry.hasCharges then
-                        local _dsSpellID = _runtimeSid
-                        local _dsCdInfo = TickCacheGetCooldown(_dsSpellID)
-                        if _dsCdInfo and _dsCdInfo.isActive == true then
-                            hasRealCD = true
-                        end
-                        ChargeDebug(entry.name, "DESAT charged check: _dsSpellID=", _dsSpellID,
-                            "_dsCdInfo=", _dsCdInfo and "exists" or "nil",
-                            "cdInfo.isActive=", _dsCdInfo and _dsCdInfo.isActive,
-                            "_hasCooldownActive=", icon._hasCooldownActive,
-                            "hasRealCD=", hasRealCD,
-                            "hasCharges=", entry.hasCharges)
-                    else
-                        hasRealCD = true
-                    end
-                end
-
-                -- apiIsActive (non-secret, 12.0.5+) is authoritative.
-                -- DurationObject remaining can be secret/stale after procs
-                -- reset the CD.  When apiIsActive is definitively false,
-                -- the CD is over — override the DurationObject signal.
-                if hasRealCD and icon._hasCooldownActive == false then
-                    hasRealCD = false
+                local hasRealCD
+                if cooldownState.hasCharges then
+                    hasRealCD = cooldownState.isOnCooldown == true
+                        or cooldownState.rechargeActive == true
+                else
+                    hasRealCD = cooldownState.isOnCooldown == true
+                        or realCooldownActive == true
                 end
 
                 ChargeDebug(entry.name, "DESAT result: hasRealCD=", hasRealCD,
                     "durObj=", durObj and "exists" or "nil",
                     "_hasCooldownActive=", icon._hasCooldownActive,
                     "hasCharges=", entry.hasCharges,
+                    "hasChargesRemaining=", cooldownState.hasChargesRemaining,
+                    "rechargeActive=", cooldownState.rechargeActive,
                     "_isOnGCD=", icon._isOnGCD,
                     "viewerType=", entry.viewerType)
 
@@ -4483,6 +4525,8 @@ function CDMIcons:AcquireIcon(parent, spellEntry)
         icon._durObjHookSync = nil
         icon._wasShowingGCDSwipe = nil
         icon._hasCooldownActive = nil
+        icon._hasRealCooldownActive = nil
+        icon._hasGCDOnlyCooldown = nil
         icon._isTotemInstance = nil
         icon._totemSlot = spellEntry and spellEntry._totemSlot or nil
         icon._totemIconCache = nil
@@ -4574,6 +4618,8 @@ function CDMIcons:ReleaseIcon(icon)
     icon._durObjHookSync = nil
     icon._wasShowingGCDSwipe = nil
     icon._hasCooldownActive = nil
+    icon._hasRealCooldownActive = nil
+    icon._hasGCDOnlyCooldown = nil
     icon._isTotemInstance = nil
     icon._totemSlot = nil
     icon._totemIconCache = nil
@@ -4970,51 +5016,18 @@ local function ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
         return not visibility.layoutVisible
     end
 
+    local cooldownState = CDMIcons.ResolveCooldownActivityState(icon, entry, containerDB, GetTime())
+    local effectiveOnCD = cooldownState.isOnCooldown or cooldownState.rechargeActive
+
     if containerDB.showOnlyInCombat and not inCombat then
         return true
     end
 
     if containerDB.showOnlyOnCooldown then
-        local effectiveOnCD = isOnCD
-        -- hideGCD: treat pure-GCD as not-on-cooldown for visibility purposes.
-        -- The previous heuristic relied on icon._lastDuration <= 1.5 to detect
-        -- a "GCD-only" cooldown, but during a player-wide GCD Blizzard
-        -- temporarily writes the 1.5s GCD start/duration onto the source CD
-        -- frame; SyncMirroredCooldownState mirrors that into _lastDuration,
-        -- which then flips to 1.5 even on spells with a real cooldown
-        -- running. For ~1.5s every GCD the filter misclassified real
-        -- cooldowns as GCD-only and hid the icon, producing the visible
-        -- "cooldown disappears then comes back" flicker on every cast.
-        --
-        -- C_Spell.GetSpellBaseCooldown returns the spell's *defined* cooldown,
-        -- which is unaffected by GCD overlay state and is the reliable
-        -- "is this a GCD-only spell vs a real-cooldown spell" signal.
-        if effectiveOnCD and containerDB.hideGCD and icon._isOnGCD
-           and not icon._auraActive
-           -- Charged abilities are never GCD-only: their cooldown is the
-           -- per-charge recharge timer, which GetSpellBaseCooldown reports
-           -- as 0 (charge spells have no duration-based cooldown). Without
-           -- this exclusion every player GCD would hide every charged
-           -- icon for 1.5s — including its stack text.
-           and not (entry and entry.hasCharges) then
-            local hasRealCooldown = false
-            local sid = icon._runtimeSpellID
-                or (entry and (entry.overrideSpellID or entry.spellID or entry.id))
-            if sid and C_Spell and C_Spell.GetSpellBaseCooldown then
-                local ok, baseDurMs = pcall(C_Spell.GetSpellBaseCooldown, sid)
-                if ok and type(baseDurMs) == "number" and baseDurMs > 1500 then
-                    hasRealCooldown = true
-                end
-            end
-            if not hasRealCooldown then
-                local dur = icon._lastDuration or 0
-                if dur <= 1.5 then effectiveOnCD = false end
-            end
-        end
         if not effectiveOnCD then return true end
     end
 
-    if containerDB.showOnlyWhenOffCooldown and isOnCD then
+    if containerDB.showOnlyWhenOffCooldown and effectiveOnCD then
         return true
     end
 
@@ -5164,10 +5177,7 @@ local function PrepareCooldownUpdateBatch()
     _hoistedNcdm = ncdm
     _batchTime = GetTime()
 
-    local swipeMod = ns._OwnedSwipe
-    local swipeSettings = swipeMod and swipeMod.GetSettings and swipeMod.GetSettings()
-    _showGCDSwipe = swipeSettings and swipeSettings.showGCDSwipe or false
-    _showBuffSwipe = swipeSettings and (swipeSettings.showBuffSwipe ~= false) or false
+    CDMIcons.RefreshSwipeBatchSettings()
 
     return editMode, ncdm, ncdm and ncdm.containers, InCombatLockdown()
 end
@@ -5215,31 +5225,8 @@ local function UpdateCooldownContainerVisibility(icon, entry, containerDB, editM
         return
     end
 
-    local isOnCD = icon._hasCooldownActive or false
-    if not isOnCD then
-        local dur = icon._lastDuration or 0
-        local start = icon._lastStart or 0
-        if dur > 1.5 and start > 0 then
-            local remaining = (start + dur) - _batchTime
-            if remaining > 0 then
-                isOnCD = true
-            end
-        end
-    end
-
-    if not isOnCD and entry.hasCharges then
-        local spellID = icon._runtimeSpellID or entry.spellID or entry.overrideSpellID or entry.id
-        if spellID then
-            local ci = TickCacheGetCharges(spellID)
-            if ci then
-                local current = SafeToNumber(ci.currentCharges, nil)
-                local maxC = SafeToNumber(ci.maxCharges, nil)
-                if current and maxC and current < maxC then
-                    isOnCD = true
-                end
-            end
-        end
-    end
+    local cooldownState = CDMIcons.ResolveCooldownActivityState(icon, entry, containerDB, _batchTime)
+    local isOnCD = cooldownState.isOnCooldown or cooldownState.rechargeActive
 
     local effectiveMode = containerDB and containerDB.iconDisplayMode or "always"
     if effectiveMode == "combat" then
@@ -5298,10 +5285,7 @@ function CDMIcons:UpdateAllCooldowns(keepTickCaches)
     _hoistedNcdm = _ncdm  -- consumed by UpdateIconCooldown
     _batchTime = GetTime()  -- consumed by UpdateIconCooldown + visibility loop
     -- Hoist GCD swipe setting so per-icon code can check it without DB lookups.
-    local _swipeMod = ns._OwnedSwipe
-    local _swipeSettings = _swipeMod and _swipeMod.GetSettings and _swipeMod.GetSettings()
-    _showGCDSwipe = _swipeSettings and _swipeSettings.showGCDSwipe or false
-    _showBuffSwipe = _swipeSettings and (_swipeSettings.showBuffSwipe ~= false) or false
+    CDMIcons.RefreshSwipeBatchSettings()
     local _ncdmContainers = _ncdm and _ncdm.containers
     local inCombat = InCombatLockdown()
 
@@ -5376,31 +5360,8 @@ function CDMIcons:UpdateAllCooldowns(keepTickCaches)
                     -- Cooldown containers: visibility depends on display mode.
                     -- _hasCooldownActive is set when a DurationObject was applied
                     -- (works even when numeric start/dur are secret in combat).
-                    local isOnCD = icon._hasCooldownActive or false
-                    if not isOnCD then
-                        local dur = icon._lastDuration or 0
-                        local start = icon._lastStart or 0
-                        if dur > 1.5 and start > 0 then
-                            local remaining = (start + dur) - _batchTime
-                            if remaining > 0 then
-                                isOnCD = true
-                            end
-                        end
-                    end
-                    -- Also check charge-based cooldowns (per-tick cached)
-                    if not isOnCD and entry.hasCharges then
-                        local spellID = icon._runtimeSpellID or entry.spellID or entry.overrideSpellID or entry.id
-                        if spellID then
-                            local ci = TickCacheGetCharges(spellID)
-                            if ci then
-                                local current = SafeToNumber(ci.currentCharges, nil)
-                                local maxC = SafeToNumber(ci.maxCharges, nil)
-                                if current and maxC and current < maxC then
-                                    isOnCD = true
-                                end
-                            end
-                        end
-                    end
+                    local cooldownState = CDMIcons.ResolveCooldownActivityState(icon, entry, containerDB, _batchTime)
+                    local isOnCD = cooldownState.isOnCooldown or cooldownState.rechargeActive
 
                     local effectiveMode = displayMode
                     if effectiveMode == "combat" then
@@ -5609,6 +5570,7 @@ function CDMIcons:UpdateCooldownsForType(viewerType)
     if pool then
         _hoistedNcdm = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
         _batchTime = GetTime()
+        CDMIcons.RefreshSwipeBatchSettings()
         for _, icon in ipairs(pool) do
             UpdateIconCooldown(icon)
         end
