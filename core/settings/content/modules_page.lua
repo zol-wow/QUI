@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------
--- QUI Modules Panel — content for the Modules sub-tab under General.
+-- QUI Feature Toggles Panel — content for the Feature Toggles sub-tab under General.
 --
 -- Renders a grouped, scrollable list of registered module entries with
 -- pill toggles, collapsible chevron group headers, and a live
@@ -239,8 +239,9 @@ local function BuildModuleCell(parent, item)
     if entry.caption and entry.caption ~= "" then
         cell:EnableMouse(true)
         cell:SetScript("OnEnter", function(self)
+            local ar, ag, ab = GetAccent()
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText(label, 1, 1, 1, 1, true)
+            GameTooltip:SetText(label, ar, ag, ab, 1, true)
             GameTooltip:AddLine(entry.caption, 0.85, 0.85, 0.85, true)
             GameTooltip:Show()
         end)
@@ -318,7 +319,7 @@ local function BuildModulesContent(content)
     -- ----------------------------------------------------------------
     if total == 0 then
         local label = CreateWrappedLabel(content,
-            "No modules registered yet.\nThis panel will populate as modules are onboarded.",
+            "No feature toggles registered yet.\nThis panel will populate as features are onboarded.",
             12, C.textMuted, 500)
         label:SetPoint("TOP", content, "TOP", 0, -60)
         label:SetJustifyH("CENTER")

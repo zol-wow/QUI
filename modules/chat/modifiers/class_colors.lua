@@ -34,6 +34,14 @@ local Helpers = ns.Helpers
 -- upvalue. The function body is assigned later in the file.
 local ApplyEnabled
 
+local function IsSecret(value)
+    return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
+end
+
+local function IsChatMessagingLockedDown()
+    return I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown()
+end
+
 -- Events where Blizzard does NOT auto-color names; these are the ones we toggle.
 local OPT_IN_TYPES = { "CHANNEL", "SAY", "YELL" }
 
@@ -50,7 +58,8 @@ local nameToClass = {}
 -- ---------------------------------------------------------------------------
 
 local function splitNameRealm(author)
-    if not author then return nil, nil end
+    if IsSecret(author) then return nil, nil end
+    if type(author) ~= "string" or author == "" then return nil, nil end
     local hyphen = author:find("-", 1, true)
     if hyphen then return author:sub(1, hyphen - 1), author:sub(hyphen + 1) end
     return author, nil
@@ -133,7 +142,8 @@ local function colorize(name, class, realm)
 end
 
 local function recolorBody(msg)
-    if not msg or msg == "" then return msg end
+    if IsSecret(msg) or IsChatMessagingLockedDown() then return msg end
+    if type(msg) ~= "string" or msg == "" then return msg end
     -- Skip if msg already has any |c..|r block (paranoia — don't double-wrap).
     -- We allow some |c blocks (e.g., from URL detection) but skip if any
     -- |c block contains a known cached name.
@@ -162,7 +172,10 @@ local function modifier(msg, info, event)
     if not info then return msg, info end
 
     -- Always opportunistically populate cache from this event's GUID.
-    local name, realm = splitNameRealm(info.author)
+    local name, realm = nil, nil
+    if not IsChatMessagingLockedDown() then
+        name, realm = splitNameRealm(info.author)
+    end
     if name and info.guid then
         cacheFromGUID(name, realm, info.guid)
     end
@@ -228,7 +241,8 @@ local REGISTERED = false
 
 function ApplyEnabled()
     local settings = I.GetSettings and I.GetSettings()
-    local enabled = settings and settings.modifiers and settings.modifiers.classColors
+    local enabled = (I.IsChatEnabled and I.IsChatEnabled(settings))
+        and settings.modifiers and settings.modifiers.classColors
         and settings.modifiers.classColors.enabled
 
     if enabled then

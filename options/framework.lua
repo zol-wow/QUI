@@ -99,9 +99,22 @@ GUI.RefreshCachedColors = RefreshCachedColors
 -- QUI.db.profile.general.showOptionTooltips (default true).
 -- Safe to call multiple times; HookScript is additive.
 ---------------------------------------------------------------------------
+function GUI:SetTooltipInfo(frame, description, label)
+    if not frame or type(description) ~= "string" or description == "" then return false end
+    frame._quiTooltipDescription = description
+    frame._quiTooltipLabel = label
+    return true
+end
+
+function GUI:GetTooltipTitleColor()
+    local accent = self.Colors and self.Colors.accent or C.accent
+    return accent[1] or 1, accent[2] or 1, accent[3] or 1, accent[4] or 1
+end
+
 function GUI:AttachTooltip(frame, description, label)
-    if not frame or type(description) ~= "string" or description == "" then return end
+    if not GUI:SetTooltipInfo(frame, description, label) then return end
     if type(frame.HookScript) ~= "function" then return end
+    if type(frame.EnableMouse) == "function" then frame:EnableMouse(true) end
     frame._quiHasBaseTooltip = true
     frame:HookScript("OnEnter", function(self)
         local db = _G.QUI and _G.QUI.db and _G.QUI.db.profile
@@ -109,7 +122,7 @@ function GUI:AttachTooltip(frame, description, label)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if type(label) == "string" and label ~= "" then
-            GameTooltip:SetText(label, C.accent[1], C.accent[2], C.accent[3], 1)
+            GameTooltip:SetText(label, GUI:GetTooltipTitleColor())
             GameTooltip:AddLine(description, 1, 1, 1, true)
         else
             GameTooltip:SetText(description, 1, 1, 1, 1, true)
@@ -119,8 +132,10 @@ function GUI:AttachTooltip(frame, description, label)
         end
         GameTooltip:Show()
     end)
-    frame:HookScript("OnLeave", function()
-        if GameTooltip then GameTooltip:Hide() end
+    frame:HookScript("OnLeave", function(self)
+        if GameTooltip and (not GameTooltip.IsOwned or GameTooltip:IsOwned(self)) then
+            GameTooltip:Hide()
+        end
     end)
 end
 
@@ -1860,7 +1875,8 @@ function GUI:CreateColorPicker(parent, label, dbKey, dbTable, onChange, descript
         pcall(self.SetBackdropBorderColor, self, 0.4, 0.4, 0.4, 1)
     end)
 
-    GUI:AttachTooltip(swatch, description, label)
+    GUI:SetTooltipInfo(swatch, description, label)
+    GUI:AttachTooltip(container, description, label)
     return container
 end
 
@@ -2161,7 +2177,7 @@ function GUI:CreateAccentCheckbox(parent, options)
     if UIKit and UIKit.CreateAccentCheckbox then
         local widget = UIKit.CreateAccentCheckbox(parent, options)
         if widget and options.description then
-            GUI:AttachTooltip(widget, options.description, options.label)
+            GUI:SetTooltipInfo(widget, options.description, options.label)
         end
         return widget
     end
@@ -2236,7 +2252,8 @@ function GUI:CreateCheckbox(parent, label, dbKey, dbTable, onChange, description
         end
     end)
 
-    GUI:AttachTooltip(box, description, label)
+    GUI:SetTooltipInfo(box, description, label)
+    GUI:AttachTooltip(container, description, label)
     return container
 end
 
@@ -2312,7 +2329,8 @@ function GUI:CreateCheckboxCentered(parent, label, dbKey, dbTable, onChange, des
         end
     end)
 
-    GUI:AttachTooltip(box, description, label)
+    GUI:SetTooltipInfo(box, description, label)
+    GUI:AttachTooltip(container, description, label)
     return container
 end
 
@@ -2399,7 +2417,8 @@ function GUI:CreateColorPickerCentered(parent, label, dbKey, dbTable, onChange, 
         pcall(self.SetBackdropBorderColor, self, 0.4, 0.4, 0.4, 1)
     end)
 
-    GUI:AttachTooltip(swatch, description, label)
+    GUI:SetTooltipInfo(swatch, description, label)
+    GUI:AttachTooltip(container, description, label)
     return container
 end
 
@@ -2479,7 +2498,8 @@ function GUI:CreateCheckboxInverted(parent, label, dbKey, dbTable, onChange, des
         end
     end)
 
-    GUI:AttachTooltip(box, description, label)
+    GUI:SetTooltipInfo(box, description, label)
+    GUI:AttachTooltip(container, description, label)
     return container
 end
 
@@ -2738,7 +2758,8 @@ function GUI:CreateSlider(parent, label, min, max, step, dbKey, dbTable, onChang
         SetValue(GetValue(), true)
     end)
 
-    GUI:AttachTooltip(slider, options.description, label)
+    GUI:SetTooltipInfo(slider, options.description, label)
+    GUI:AttachTooltip(container, options.description, label)
     return container
 end
 
@@ -3116,7 +3137,8 @@ function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange, de
         closeTimer = 0
     end)
 
-    GUI:AttachTooltip(dropdown, description, label)
+    GUI:SetTooltipInfo(dropdown, description, label)
+    GUI:AttachTooltip(container, description, label)
     return container
 end
 
@@ -3331,7 +3353,8 @@ function GUI:CreateDropdownFullWidth(parent, label, options, dbKey, dbTable, onC
         closeTimer = 0
     end)
 
-    GUI:AttachTooltip(dropdown, description, label)
+    GUI:SetTooltipInfo(dropdown, description, label)
+    GUI:AttachTooltip(container, description, label)
     return container
 end
 
@@ -3340,6 +3363,15 @@ end
 ---------------------------------------------------------------------------
 
 local FORM_ROW_HEIGHT = 28
+
+local function AttachFormWidgetTooltip(container, control, description, label)
+    GUI:SetTooltipInfo(control, description, label)
+    if label then
+        GUI:AttachTooltip(container, description, label)
+    else
+        GUI:SetTooltipInfo(container, description, label)
+    end
+end
 
 ---------------------------------------------------------------------------
 -- WIDGET: TOGGLE SWITCH (V3)
@@ -3501,7 +3533,8 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
         relatedTo = registryInfo and registryInfo.relatedTo or nil,
     })
 
-    GUI:AttachTooltip(toggle, registryInfo and registryInfo.description or nil, label)
+    local tooltipDescription = registryInfo and registryInfo.description or nil
+    AttachFormWidgetTooltip(container, toggle, tooltipDescription, label)
     return container
 end
 
@@ -3650,7 +3683,8 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange, r
         relatedTo = registryInfo and registryInfo.relatedTo or nil,
     })
 
-    GUI:AttachTooltip(toggle, registryInfo and registryInfo.description or nil, label)
+    local tooltipDescription = registryInfo and registryInfo.description or nil
+    AttachFormWidgetTooltip(container, toggle, tooltipDescription, label)
     return container
 end
 
@@ -3732,7 +3766,8 @@ function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange,
 
     SetValue(GetValue(), true)
 
-    GUI:AttachTooltip(box, registryInfo and registryInfo.description or nil, label)
+    local tooltipDescription = registryInfo and registryInfo.description or nil
+    AttachFormWidgetTooltip(container, box, tooltipDescription, label)
     return container
 end
 
@@ -3990,7 +4025,8 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
         relatedTo = registryInfo and registryInfo.relatedTo or nil,
     })
 
-    GUI:AttachTooltip(editBox, registryInfo and registryInfo.description or nil, label)
+    local tooltipDescription = registryInfo and registryInfo.description or nil
+    AttachFormWidgetTooltip(container, editBox, tooltipDescription, label)
     return container
 end
 
@@ -4391,7 +4427,8 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         relatedTo = registryInfo and registryInfo.relatedTo or nil,
     })
 
-    GUI:AttachTooltip(slider, registryInfo and registryInfo.description or nil, label)
+    local tooltipDescription = registryInfo and registryInfo.description or nil
+    AttachFormWidgetTooltip(container, slider, tooltipDescription, label)
     return container
 end
 
@@ -4997,7 +5034,8 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         relatedTo = registryInfo and registryInfo.relatedTo or nil,
     })
 
-    GUI:AttachTooltip(dropdown, registryInfo and registryInfo.description or nil, label)
+    local tooltipDescription = registryInfo and registryInfo.description or nil
+    AttachFormWidgetTooltip(container, dropdown, tooltipDescription, label)
     return container
 end
 
@@ -5166,7 +5204,8 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
         relatedTo = registryInfo and registryInfo.relatedTo or nil,
     })
 
-    GUI:AttachTooltip(swatch, registryInfo and registryInfo.description or nil, label)
+    local tooltipDescription = registryInfo and registryInfo.description or nil
+    AttachFormWidgetTooltip(container, swatch, tooltipDescription, label)
     return container
 end
 

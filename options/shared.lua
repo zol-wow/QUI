@@ -1215,6 +1215,76 @@ local function CreatePreviewArea(parent, yOffset, height)
 end
 ns.QUI_Options.CreatePreviewArea = CreatePreviewArea
 
+local function ResolveTooltipInfo(frame, depth)
+    if not frame or (depth or 0) > 6 then
+        return nil, nil
+    end
+
+    local description = frame._quiTooltipDescription
+    if type(description) == "string" and description ~= "" then
+        local label = frame._quiTooltipLabel
+        if type(label) == "string" and label ~= "" then
+            return description, label
+        end
+        return description, nil
+    end
+
+    if type(frame.GetChildren) ~= "function" then
+        return nil, nil
+    end
+
+    for _, child in ipairs({ frame:GetChildren() }) do
+        local childDescription, childLabel = ResolveTooltipInfo(child, (depth or 0) + 1)
+        if childDescription then
+            return childDescription, childLabel
+        end
+    end
+
+    return nil, nil
+end
+
+local function SetSettingControlEnabled(control, enabled)
+    if not control then
+        return
+    end
+
+    if type(control.SetEnabled) == "function" then
+        control:SetEnabled(enabled and true or false)
+        return
+    end
+
+    if type(control.EnableMouse) == "function" then
+        control:EnableMouse(enabled and true or false)
+    end
+    if type(control.SetAlpha) == "function" then
+        control:SetAlpha(enabled and 1 or 0.4)
+    end
+end
+
+local function SetSettingRowEnabled(row, enabled)
+    if not row then
+        return
+    end
+
+    enabled = enabled and true or false
+
+    local label = row._label
+    if label and row._labelColor then
+        local c = row._labelColor
+        label:SetTextColor(c[1], c[2], c[3], enabled and c[4] or 0.45)
+    end
+
+    local desc = row._desc
+    if desc and row._descColor then
+        local c = row._descColor
+        desc:SetTextColor(c[1], c[2], c[3], enabled and c[4] or 0.35)
+    end
+
+    SetSettingControlEnabled(row._widget, enabled)
+    row._enabled = enabled
+end
+ns.QUI_Options.SetSettingRowEnabled = SetSettingRowEnabled
+
 --[[
     ns.QUI_Options.BuildSettingRow(parent, labelText, widget, desc)
 
@@ -1247,6 +1317,7 @@ local function BuildSettingRow(parent, labelText, widget, desc)
     label:SetNonSpaceWrap(false)
     label:SetText(labelText or "")
     cell._label = label
+    cell._labelColor = { textCol[1], textCol[2], textCol[3], 1 }
 
     if desc then
         local d = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1255,6 +1326,7 @@ local function BuildSettingRow(parent, labelText, widget, desc)
         d:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -1)
         d:SetText(desc)
         cell._desc = d
+        cell._descColor = { mutedCol[1], mutedCol[2], mutedCol[3], 1 }
     end
 
     if widget then
@@ -1272,7 +1344,17 @@ local function BuildSettingRow(parent, labelText, widget, desc)
         pins:AttachSettingRow(cell, widget, labelText)
     end
 
+    local tooltipDesc, tooltipLabel = ResolveTooltipInfo(widget)
+    if not tooltipDesc and type(desc) == "string" and desc ~= "" then
+        tooltipDesc = desc
+    end
+    if tooltipDesc and QUI.GUI and type(QUI.GUI.AttachTooltip) == "function" then
+        cell:EnableMouse(true)
+        QUI.GUI:AttachTooltip(cell, tooltipDesc, tooltipLabel or labelText)
+    end
+
     cell._widgetLabel = labelText  -- For search jump-to-setting
+    cell.SetEnabled = SetSettingRowEnabled
     return cell
 end
 

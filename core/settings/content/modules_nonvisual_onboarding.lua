@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------
--- QUI Modules — Non-visual onboarding (Phase 3)
+-- QUI Feature Toggles — Non-visual onboarding (Phase 3)
 --
 -- Registers feature manifests with moduleEntry blocks for binary-toggleable
 -- modules that do NOT have a Layout Mode element. Each entry either:
@@ -107,6 +107,108 @@ local function DBProfile(key)
         return p and p[key]
     end
 end
+
+local function DBChar(key)
+    return function()
+        local QUI = _G.QUI
+        local c = QUI and QUI.db and QUI.db.char
+        return key and c and c[key] or c
+    end
+end
+
+local function ShowReloadConfirmation(message)
+    local QUI = _G.QUI
+    local GUI = QUI and QUI.GUI
+    if GUI and GUI.ShowConfirmation then
+        GUI:ShowConfirmation({
+            title = "Reload UI?",
+            message = message,
+            acceptText = "Reload",
+            cancelText = "Later",
+            onAccept = function() QUI:SafeReload() end,
+        })
+    end
+end
+
+---------------------------------------------------------------------------
+-- Frames group
+---------------------------------------------------------------------------
+
+RegisterNonVisualFeature("unitFrames", {
+    group        = "Frames",
+    label        = "Unit Frames",
+    caption      = "Master toggle for player, target, focus, pet, and boss unit frames.",
+    combatLocked = true,
+    isEnabled    = function()
+        local db = DBProfile("quiUnitFrames")()
+        return db and db.enabled ~= false
+    end,
+    setEnabled   = function(val)
+        local db = DBProfile("quiUnitFrames")()
+        if not db then return end
+        local enabled = val ~= false
+        local old = db.enabled ~= false
+        if old == enabled then return end
+        db.enabled = enabled
+        if ns.QUI_Modules then
+            ns.QUI_Modules:NotifyChanged("unitFrames")
+        end
+        if type(_G.QUI_RefreshUnitFrames) == "function" then
+            _G.QUI_RefreshUnitFrames()
+        end
+        ShowReloadConfirmation("Enabling or disabling unit frames requires a UI reload to take effect.")
+    end,
+})
+
+RegisterNonVisualFeature("groupFrames", {
+    group        = "Frames",
+    label        = "Group Frames",
+    caption      = "Master toggle for party, raid, and spotlight group frames.",
+    combatLocked = true,
+    isEnabled    = function()
+        local db = DBProfile("quiGroupFrames")()
+        return db and db.enabled ~= false
+    end,
+    setEnabled   = function(val)
+        local db = DBProfile("quiGroupFrames")()
+        if not db then return end
+        local enabled = val ~= false
+        local old = db.enabled ~= false
+        if old == enabled then return end
+        db.enabled = enabled
+        if ns.QUI_Modules then
+            ns.QUI_Modules:NotifyChanged("groupFrames")
+        end
+        if type(_G.QUI_RefreshGroupFrames) == "function" then
+            _G.QUI_RefreshGroupFrames()
+        end
+        ShowReloadConfirmation("Enabling or disabling group frames requires a UI reload to take effect.")
+    end,
+})
+
+RegisterNonVisualFeature("clickCast", {
+    group        = "Frames",
+    label        = "Click-Cast",
+    caption      = "Mouse and key bindings on unit, party, and raid frames.",
+    combatLocked = true,
+    isEnabled    = function()
+        local db = DBChar("clickCast")()
+        return db and db.enabled ~= false
+    end,
+    setEnabled   = function(val)
+        local db = DBChar("clickCast")()
+        if not db then return end
+        db.enabled = val ~= false
+        if ns.QUI_Modules then
+            ns.QUI_Modules:NotifyChanged("clickCast")
+        end
+        local cc = ns.QUI_GroupFrameClickCast
+        local inCombat = type(InCombatLockdown) == "function" and InCombatLockdown()
+        if cc and type(cc.RefreshBindings) == "function" and not inCombat then
+            cc:RefreshBindings()
+        end
+    end,
+})
 
 ---------------------------------------------------------------------------
 -- QoL group
@@ -239,7 +341,7 @@ Register(
     "Chat",
     "Chat Engine",
     "Glass chat frames, URL clickability, timestamps, copy buttons, and message history.",
-    false,
+    true,
     DBProfile("chat"),
     "enabled",
     "QUI_RefreshChat"

@@ -135,6 +135,11 @@ local masterFilter = function(self, event, msg, ...)
         return nil
     end
 
+    local settings = I.GetSettings and I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then
+        return nil
+    end
+
     if #modifiers == 0 then
         return nil
     end

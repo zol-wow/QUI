@@ -27,6 +27,7 @@ local scrollButtonState = setmetatable({}, { __mode = "k" })
 local minimalScrollBarState = setmetatable({}, { __mode = "k" })
 local minimalThumbState = setmetatable({}, { __mode = "k" })
 local scrollBarHookState = setmetatable({}, { __mode = "k" })
+local tabGlowState = setmetatable({}, { __mode = "k" })
 
 local CHAT_SCROLLBAR_HIT_WIDTH = 18
 local CHAT_SCROLLBAR_TRACK_WIDTH = 10
@@ -38,6 +39,11 @@ local CHAT_SCROLLBAR_INSET_BOTTOM = 4
 local CHAT_SCROLLBAR_BUTTON_GAP = 2
 local CHAT_SCROLLBAR_TRACK_ALPHA = 0
 local CHAT_SCROLLBAR_THUMB_ALPHA = 1
+
+local function IsChatLayoutLockedDown()
+    return (type(InCombatLockdown) == "function" and InCombatLockdown())
+        or (I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown())
+end
 
 ---------------------------------------------------------------------------
 -- Blizzard texture names to strip for glass effect
@@ -87,6 +93,7 @@ end
 ---------------------------------------------------------------------------
 local function CreateGlassBackdrop(chatFrame)
     local settings = I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
     if not settings or not settings.glass or not settings.glass.enabled then return end
 
     -- Create or update backdrop (stored in shared weak table, NOT on frame).
@@ -143,7 +150,7 @@ local function SetupMessageFade(chatFrame)
     local settings = I.GetSettings()
     if not settings or not settings.fade then return end
 
-    if settings.fade.enabled then
+    if I.IsChatEnabled and I.IsChatEnabled(settings) and settings.fade.enabled then
         chatFrame:SetFading(true)
         chatFrame:SetTimeVisible(settings.fade.delay or 60)
     else
@@ -523,7 +530,7 @@ end
 
 local function StyleChatScrollChrome(chatFrame)
     local settings = I.GetSettings and I.GetSettings()
-    if not settings or not settings.enabled then return end
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
 
     if settings.glass and settings.glass.enabled then
         StripChatFrameBackground(chatFrame)
@@ -705,6 +712,33 @@ local function LayoutUnreadPulse(tab)
     local glow = tab and tab.glow
     if not glow or not glow.SetTexture then return end
 
+    if not tabGlowState[tab] then
+        local points = {}
+        if glow.GetNumPoints and glow.GetPoint then
+            for i = 1, glow:GetNumPoints() do
+                local point, relativeTo, relativePoint, x, y = glow:GetPoint(i)
+                points[i] = {
+                    point = point,
+                    relativeTo = relativeTo,
+                    relativePoint = relativePoint,
+                    x = x,
+                    y = y,
+                }
+            end
+        end
+        local width, height
+        if glow.GetSize then
+            width, height = glow:GetSize()
+        end
+        tabGlowState[tab] = {
+            texture = glow.GetTexture and glow:GetTexture() or nil,
+            blendMode = glow.GetBlendMode and glow:GetBlendMode() or nil,
+            points = points,
+            width = width,
+            height = height,
+        }
+    end
+
     local anchor = I.tabBackdrops[tab] or tab
     glow:ClearAllPoints()
     glow:SetPoint("TOPLEFT", anchor, "TOPLEFT", 1, -1)
@@ -716,9 +750,71 @@ local function LayoutUnreadPulse(tab)
     end
 end
 
+local function RestoreTexture(region)
+    if not region then return end
+    if region.SetAlpha then region:SetAlpha(1) end
+    if region.Show then region:Show() end
+end
+
+local function RemoveTabStyle(tab)
+    if not tab then return end
+
+    local backdrop = I.tabBackdrops[tab]
+    if backdrop then backdrop:Hide() end
+
+    for _, key in ipairs(STRIPPED_PARENTKEYS) do
+        RestoreTexture(tab[key])
+    end
+    if tab.GetRegions then
+        for _, region in ipairs({tab:GetRegions()}) do
+            if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+                local path = region.GetTexture and region:GetTexture()
+                if type(path) == "string" then
+                    local lower = path:lower()
+                    if lower:find("chatframetab%-") then
+                        RestoreTexture(region)
+                    end
+                end
+            end
+        end
+    end
+
+    local glowState = tabGlowState[tab]
+    if tab.glow and glowState then
+        if tab.glow.ClearAllPoints then tab.glow:ClearAllPoints() end
+        if tab.glow.SetSize and glowState.width and glowState.height then
+            tab.glow:SetSize(glowState.width, glowState.height)
+        end
+        if tab.glow.SetPoint and glowState.points then
+            for i = 1, #glowState.points do
+                local p = glowState.points[i]
+                tab.glow:SetPoint(p.point, p.relativeTo, p.relativePoint, p.x, p.y)
+            end
+        end
+        if tab.glow.SetTexture and glowState.texture ~= nil then
+            tab.glow:SetTexture(glowState.texture)
+        end
+        if tab.glow.SetBlendMode and glowState.blendMode then
+            tab.glow:SetBlendMode(glowState.blendMode)
+        end
+    end
+    if FCFTab_UpdateColors then pcall(FCFTab_UpdateColors, tab) end
+    if FCFTab_UpdateAlpha then pcall(FCFTab_UpdateAlpha, tab) end
+end
+
+local function RemoveAllTabStyles()
+    for i = 1, NUM_CHAT_WINDOWS do
+        RemoveTabStyle(_G["ChatFrame" .. i .. "Tab"])
+    end
+    local TF = ns.QUI.Chat and ns.QUI.Chat.TabFilters
+    if TF and TF.UpdateTabIndicators then
+        TF.UpdateTabIndicators()
+    end
+end
+
 local function UpdateTabColors(tab)
     local settings = I.GetSettings()
-    if not settings or not I.tabBackdrops[tab] then return end
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) or not I.tabBackdrops[tab] then return end
 
     local chatFrame = I.GetTabChatFrame(tab)
     if I.IsTemporaryChatFrame(chatFrame) then return end
@@ -783,7 +879,7 @@ local function StyleTab(tab)
     if I.IsTemporaryChatFrame(chatFrame) then return end
 
     local settings = I.GetSettings()
-    if not settings then return end
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
 
     -- Strip default tab artwork. Implementation is shared with UpdateTabColors
     -- so Blizzard's per-event re-Show of Active*/Highlight* gets re-stripped
@@ -829,7 +925,7 @@ end
 
 local function StyleAllTabs()
     local settings = I.GetSettings()
-    if not settings or not settings.enabled then return end
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
 
     for i = 1, NUM_CHAT_WINDOWS do
         local tab = _G["ChatFrame" .. i .. "Tab"]
@@ -849,7 +945,8 @@ end
 ---------------------------------------------------------------------------
 local function ApplyMessagePadding(chatFrame)
     local settings = I.GetSettings()
-    if not settings then return end
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
+    if IsChatLayoutLockedDown() then return end
 
     local padding = settings.messagePadding or 0
     local rightPadding = 0
@@ -868,6 +965,16 @@ local function ApplyMessagePadding(chatFrame)
     end
 end
 
+local function RemoveMessagePadding(chatFrame)
+    if not chatFrame or IsChatLayoutLockedDown() then return end
+    local container = chatFrame.FontStringContainer
+    if container then
+        container:ClearAllPoints()
+        container:SetPoint("TOPLEFT", chatFrame, "TOPLEFT", 0, 0)
+        container:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", 0, 0)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Main skin function for a single chat frame (orchestrator)
 -- Calls into co-located leaves (StripDefaultTextures, CreateGlassBackdrop, etc.)
@@ -877,7 +984,7 @@ local function SkinChatFrame(chatFrame)
     if not chatFrame or chatFrame:IsForbidden() or I.IsTemporaryChatFrame(chatFrame) then return end
 
     local settings = I.GetSettings()
-    if not settings or not settings.enabled then return end
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
 
     local frameName = chatFrame:GetName()
     if not frameName then return end
@@ -950,7 +1057,9 @@ Skinning.SetupFade            = SetupMessageFade
 Skinning.UpdateTabColors      = UpdateTabColors
 Skinning.StyleTab             = StyleTab
 Skinning.StyleAllTabs         = StyleAllTabs
+Skinning.RemoveAllTabStyles   = RemoveAllTabStyles
 Skinning.ApplyPadding         = ApplyMessagePadding
+Skinning.RemovePadding        = RemoveMessagePadding
 Skinning.StyleScrollChrome    = StyleChatScrollChrome
 Skinning.SkinFrame            = SkinChatFrame
 Skinning.SkinAll              = SkinAllChatFrames

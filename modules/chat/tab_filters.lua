@@ -27,6 +27,11 @@ local TF = ns.QUI.Chat.TabFilters
 -- capture ApplyEnabled before its body is assigned later in the file.
 local ApplyEnabled
 
+local function IsChatFilterLockedDown()
+    return (type(InCombatLockdown) == "function" and InCombatLockdown())
+        or (I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown())
+end
+
 -- ---------------------------------------------------------------------------
 -- Reconciliation
 -- ---------------------------------------------------------------------------
@@ -50,14 +55,84 @@ local function listToSet(list, lowerCase)
     return set
 end
 
+local originalFilters = setmetatable({}, { __mode = "k" })
+
+local function copyList(list)
+    local copy = {}
+    if type(list) == "table" then
+        for i = 1, #list do
+            copy[i] = list[i]
+        end
+    end
+    return copy
+end
+
+local function reconcileToLists(frame, desiredGroupsList, desiredChannelsList)
+    local desiredGroups = listToSet(desiredGroupsList)
+    local actualGroups = listToSet(frame.messageTypeList)
+
+    for group in pairs(desiredGroups) do
+        if not actualGroups[group] and ChatFrame_AddMessageGroup then
+            ChatFrame_AddMessageGroup(frame, group)
+        end
+    end
+    for group in pairs(actualGroups) do
+        if not desiredGroups[group] and ChatFrame_RemoveMessageGroup then
+            ChatFrame_RemoveMessageGroup(frame, group)
+        end
+    end
+
+    local desiredChannels = listToSet(desiredChannelsList, true)
+    local actualChannels = listToSet(frame.channelList, true)
+
+    for channel in pairs(desiredChannels) do
+        if not actualChannels[channel] and ChatFrame_AddChannel then
+            ChatFrame_AddChannel(frame, channel)
+        end
+    end
+    for channel in pairs(actualChannels) do
+        if not desiredChannels[channel] and ChatFrame_RemoveChannel then
+            ChatFrame_RemoveChannel(frame, channel)
+        end
+    end
+end
+
+local function captureOriginalFilters(frame)
+    if not frame or originalFilters[frame] then return end
+    originalFilters[frame] = {
+        groups = copyList(frame.messageTypeList),
+        channels = copyList(frame.channelList),
+    }
+end
+
+local function restoreFrame(frame)
+    if not frame or IsChatFilterLockedDown() then return end
+    local original = originalFilters[frame]
+    if not original then return end
+    reconcileToLists(frame, original.groups, original.channels)
+end
+
+local function restoreAll()
+    local n = _G.NUM_CHAT_WINDOWS or 10
+    for i = 1, n do
+        restoreFrame(_G["ChatFrame" .. i])
+    end
+end
+
 -- Diff `frame.messageTypeList` / `frame.channelList` against the stored
 -- desired sets and call Add/Remove APIs to bring them in sync. No-op when
 -- the frame has no stored entry, or `customized = false`.
 local function reconcileFrame(frame, frameID)
     if not frame then return end
     if frame.IsForbidden and frame:IsForbidden() then return end
+    if IsChatFilterLockedDown() then return end
 
     local settings = I.GetSettings and I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then
+        restoreFrame(frame)
+        return
+    end
+
     local tabsConfig = settings and settings.tabs
     local entry = tabsConfig and tabsConfig[frameID]
     if not entry or not entry.customized then return end
@@ -67,6 +142,7 @@ local function reconcileFrame(frame, frameID)
     -- in the settings UI before any save happens.
     if type(entry.groups) ~= "table" then entry.groups = {} end
     if type(entry.channels) ~= "table" then entry.channels = {} end
+    captureOriginalFilters(frame)
 
     -- Group reconciliation. Groups are uppercase keys ("SAY", "EMOTE")
     -- consistently in both stored config and frame.messageTypeList — no
@@ -167,7 +243,8 @@ end
 
 local function updateTabIndicators()
     local settings = I.GetSettings and I.GetSettings()
-    local tabsConfig = settings and settings.tabs
+    local chatEnabled = I.IsChatEnabled and I.IsChatEnabled(settings)
+    local tabsConfig = chatEnabled and settings and settings.tabs
 
     local n = _G.NUM_CHAT_WINDOWS or 10
     for i = 1, n do
@@ -231,6 +308,13 @@ end
 -- ---------------------------------------------------------------------------
 
 function ApplyEnabled()
+    local settings = I.GetSettings and I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then
+        restoreAll()
+        updateTabIndicators()
+        return
+    end
+
     reconcileAll()
     updateTabIndicators()
 end
@@ -243,11 +327,14 @@ ApplyEnabled()
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE")
 eventFrame:SetScript("OnEvent", function(self, event, name)
     if event == "ADDON_LOADED" and name == ADDON_NAME then
         ApplyEnabled()
     elseif event == "PLAYER_LOGIN" then
+        ApplyEnabled()
+    elseif event == "PLAYER_REGEN_ENABLED" then
         ApplyEnabled()
     elseif event == "CHAT_MSG_CHANNEL_NOTICE" then
         -- Channel list may have changed (join/leave). Settings UI re-reads

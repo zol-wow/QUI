@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------
--- QUI Modules — Visual onboarding (Phase 2)
+-- QUI Feature Toggles — Visual onboarding (Phase 2)
 --
 -- Registers feature manifests with moduleEntry blocks for every static
 -- visual module that already exists as a Layout Mode element. The
@@ -78,9 +78,8 @@ local function HiddenUnlessDisciplinePriest()
     return true
 end
 
-local function HiddenUnlessShaman()
-    local _, class = UnitClass("player")
-    return class ~= "SHAMAN"
+local function HiddenFromFeatureToggles()
+    return true
 end
 
 ---------------------------------------------------------------------------
@@ -99,19 +98,27 @@ local VISUAL_MODULES = {
     -- Display
     ---------------------------------------------------------------------------
     {
+        key = "minimap", group = "Display", label = "Minimap",
+        caption = "Master toggle for the custom minimap treatment.",
+        combatLocked = true,
+    },
+    {
         key = "buffFrame", group = "Display", label = "Buff Frame",
         caption = "Active beneficial auras with custom borders.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "debuffFrame", group = "Display", label = "Debuff Frame",
         caption = "Active harmful auras with custom borders.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "chatFrame1", group = "Display", label = "Chat Frame",
         caption = "Custom chat frame replacing the default window.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "lootFrame", group = "Display", label = "Loot Frame",
@@ -122,31 +129,37 @@ local VISUAL_MODULES = {
         key = "lootRollAnchor", group = "Display", label = "Loot Roll Anchor",
         caption = "Repositions the Need/Greed loot-roll dialog.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "alertAnchor", group = "Display", label = "Alert Anchor",
         caption = "Anchor for raid and encounter alert messages.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "toastAnchor", group = "Display", label = "Toast Anchor",
         caption = "Anchor for achievement and event toast notifications.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "bnetToastAnchor", group = "Display", label = "BNet Toast Anchor",
         caption = "Anchor for Battle.net friend-activity toast notifications.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "powerBarAlt", group = "Display", label = "Encounter Power Bar",
         caption = "Skinned alternate power bar shown during certain encounters.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "tooltipAnchor", group = "Display", label = "Tooltip Anchor",
         caption = "Repositions the game tooltip to a custom screen position.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
 
     ---------------------------------------------------------------------------
@@ -245,73 +258,84 @@ local VISUAL_MODULES = {
         key = "actionBars", group = "Action Bars", label = "Action Bars",
         caption = "Master toggle for the custom action bar system.",
         combatLocked = true,
-        hidden = function() return true end,
     },
     {
         key = "bar1", group = "Action Bars", label = "Action Bar 1",
         caption = "Primary action bar (main bar).",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "bar2", group = "Action Bars", label = "Action Bar 2",
         caption = "Second action bar.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "bar3", group = "Action Bars", label = "Action Bar 3",
         caption = "Third action bar.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "bar4", group = "Action Bars", label = "Action Bar 4",
         caption = "Fourth action bar.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "bar5", group = "Action Bars", label = "Action Bar 5",
         caption = "Fifth action bar.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "bar6", group = "Action Bars", label = "Action Bar 6",
         caption = "Sixth action bar.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "bar7", group = "Action Bars", label = "Action Bar 7",
         caption = "Seventh action bar.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "bar8", group = "Action Bars", label = "Action Bar 8",
         caption = "Eighth action bar.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "petBar", group = "Action Bars", label = "Pet Bar",
         caption = "Action bar for pet abilities.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "stanceBar", group = "Action Bars", label = "Stance Bar",
         caption = "Bar for stance, form, and presence buttons.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "microMenu", group = "Action Bars", label = "Micro Menu",
         caption = "Row of micro-buttons for the main menus.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "bagBar", group = "Action Bars", label = "Bag Bar",
         caption = "Bag slot buttons for quick inventory access.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "totemBar", group = "Action Bars", label = "Totem Bar",
         caption = "Shaman totem call buttons and active totem display.",
         combatLocked = true,
-        hidden = HiddenUnlessShaman,
+        hidden = HiddenFromFeatureToggles,
     },
 
     ---------------------------------------------------------------------------
@@ -321,26 +345,31 @@ local VISUAL_MODULES = {
         key = "playerCastbar", group = "Castbars", label = "Player Castbar",
         caption = "Custom castbar for the player character.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "targetCastbar", group = "Castbars", label = "Target Castbar",
         caption = "Custom castbar for the current target.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "focusCastbar", group = "Castbars", label = "Focus Castbar",
         caption = "Custom castbar for the focus target.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "petCastbar", group = "Castbars", label = "Pet Castbar",
         caption = "Custom castbar for the player's pet.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "totCastbar", group = "Castbars", label = "Target of Target Castbar",
         caption = "Custom castbar for the target's target.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
 
     ---------------------------------------------------------------------------
@@ -350,16 +379,19 @@ local VISUAL_MODULES = {
         key = "partyFrames", group = "Group Frames", label = "Party Frames",
         caption = "Custom party member frames for groups of up to five.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "raidFrames", group = "Group Frames", label = "Raid Frames",
         caption = "Custom raid member frames for groups larger than five.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "spotlightFrames", group = "Group Frames", label = "Spotlight",
         caption = "Separate large frames highlighting priority raid targets.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
 
     ---------------------------------------------------------------------------
@@ -369,31 +401,37 @@ local VISUAL_MODULES = {
         key = "playerFrame", group = "Unit Frames", label = "Player Frame",
         caption = "Custom frame displaying player health, power, and buffs.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "targetFrame", group = "Unit Frames", label = "Target Frame",
         caption = "Custom frame for the current target unit.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "totFrame", group = "Unit Frames", label = "Target of Target",
         caption = "Frame showing the unit your target is targeting.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "focusFrame", group = "Unit Frames", label = "Focus Frame",
         caption = "Custom frame for the focus target unit.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "petFrame", group = "Unit Frames", label = "Pet Frame",
         caption = "Custom frame for the player's pet.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "bossFrames", group = "Unit Frames", label = "Boss Frames",
         caption = "Frames for boss and encounter-special enemy units.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
 
     ---------------------------------------------------------------------------
@@ -403,11 +441,13 @@ local VISUAL_MODULES = {
         key = "primaryPower", group = "Resource Bars", label = "Primary Power",
         caption = "Custom bar for the player's primary resource (mana, rage, energy, etc.).",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "secondaryPower", group = "Resource Bars", label = "Secondary Power",
         caption = "Custom bar for secondary resources such as combo points or holy power.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
 
     ---------------------------------------------------------------------------
@@ -433,21 +473,25 @@ local VISUAL_MODULES = {
         key = "dandersParty", group = "3rd Party", label = "DF Party",
         caption = "DandersFrames party layout (requires optional companion addon).",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "dandersRaid", group = "3rd Party", label = "DF Raid",
         caption = "DandersFrames raid layout (requires optional companion addon).",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "dandersPinned1", group = "3rd Party", label = "DF Pinned 1",
         caption = "DandersFrames first pinned frame container.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
     {
         key = "dandersPinned2", group = "3rd Party", label = "DF Pinned 2",
         caption = "DandersFrames second pinned frame container.",
         combatLocked = true,
+        hidden = HiddenFromFeatureToggles,
     },
 }
 

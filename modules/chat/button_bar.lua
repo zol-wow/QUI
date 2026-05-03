@@ -233,6 +233,20 @@ local function runSlashCommand(text)
     end
 end
 
+local function GetSafeFrameHeight(frame, fallback)
+    fallback = fallback or 100
+    if not frame or not frame.GetHeight then return fallback end
+
+    local height = frame:GetHeight()
+    if Helpers.IsSecretValue and Helpers.IsSecretValue(height) then
+        return fallback
+    end
+
+    height = tonumber(height)
+    if not height or height <= 0 then return fallback end
+    return height
+end
+
 local function buildBar(chatFrame, frameID, config)
     local bar = bars[chatFrame]
     if bar then
@@ -255,20 +269,21 @@ local function buildBar(chatFrame, frameID, config)
     if buttonSpacing < 0 then buttonSpacing = 0 end
 
     local position = config.position or "outside_left"
+    local chatHeight = GetSafeFrameHeight(chatFrame, 100)
     if position == "outside_left" then
-        bar:SetSize(70, math.max(chatFrame:GetHeight() or 100, 20))
+        bar:SetSize(70, math.max(chatHeight, 20))
         bar:SetPoint("TOPRIGHT",    chatFrame, "TOPLEFT",    ox, oy)
         bar:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMLEFT", ox, oy)
     elseif position == "outside_right" then
-        bar:SetSize(70, math.max(chatFrame:GetHeight() or 100, 20))
+        bar:SetSize(70, math.max(chatHeight, 20))
         bar:SetPoint("TOPLEFT",    chatFrame, "TOPRIGHT",    ox, oy)
         bar:SetPoint("BOTTOMLEFT", chatFrame, "BOTTOMRIGHT", ox, oy)
     elseif position == "inside_left" then
-        bar:SetSize(70, math.max((chatFrame:GetHeight() or 100) - 24, 20))
+        bar:SetSize(70, math.max(chatHeight - 24, 20))
         bar:SetPoint("TOPLEFT",    chatFrame, "TOPLEFT",    4 + ox, -24 + oy)
         bar:SetPoint("BOTTOMLEFT", chatFrame, "BOTTOMLEFT", 4 + ox,   4 + oy)
     elseif position == "inside_right" then
-        bar:SetSize(70, math.max((chatFrame:GetHeight() or 100) - 24, 20))
+        bar:SetSize(70, math.max(chatHeight - 24, 20))
         bar:SetPoint("TOPRIGHT",    chatFrame, "TOPRIGHT",    -4 + ox, -24 + oy)
         bar:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", -4 + ox,   4 + oy)
     elseif position == "inside_tabs" then
@@ -372,6 +387,11 @@ local function reconcileFrame(chatFrame, frameID)
     if chatFrame.IsForbidden and chatFrame:IsForbidden() then return end
 
     local settings = I.GetSettings and I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then
+        teardownBar(chatFrame)
+        return
+    end
+
     local barsConfig = settings and settings.buttonBars
     local entry = barsConfig and barsConfig[frameID]
 

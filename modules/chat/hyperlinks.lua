@@ -30,6 +30,14 @@ local Helpers = ns.Helpers
 -- ApplyEnabled before the function body is assigned later in the file.
 local ApplyEnabled
 
+local function IsSecret(value)
+    return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
+end
+
+local function IsChatMessagingLockedDown()
+    return I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown()
+end
+
 -- ---------------------------------------------------------------------------
 -- Coord detection modifier
 -- ---------------------------------------------------------------------------
@@ -45,13 +53,13 @@ local function wrapCoord(x, y, originalText)
 end
 
 local function coordsModifier(msg, info, event)
-    if not msg or msg == "" then return msg, info end
-    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(msg) then
+    if IsSecret(msg) or IsChatMessagingLockedDown() then
         return msg, info
     end
+    if type(msg) ~= "string" or msg == "" then return msg, info end
 
     local settings = I.GetSettings and I.GetSettings()
-    local s = settings and settings.hyperlinks
+    local s = (I.IsChatEnabled and I.IsChatEnabled(settings)) and settings.hyperlinks
     if not s or not s.coordinates then return msg, info end
 
     -- Skip if msg already contains our addon protocol (don't double-wrap).
@@ -87,7 +95,7 @@ function HL.LookupFriendlyLabel(url)
     if type(url) ~= "string" or url == "" then return nil end
 
     local settings = I.GetSettings and I.GetSettings()
-    local s = settings and settings.hyperlinks
+    local s = (I.IsChatEnabled and I.IsChatEnabled(settings)) and settings.hyperlinks
     if not s or not s.friendlyURLs then return nil end
 
     for i = 1, #URL_LABELS do
@@ -145,6 +153,9 @@ end
 
 hooksecurefunc("SetItemRef", function(link, text, button, ...)
     if type(link) ~= "string" then return end
+    local settings = I.GetSettings and I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
+
     if link:find("^addon:quaziiuichat:waypoint:") then
         handleWaypoint(link)
     elseif link:find("^addon:quaziiuichat:player:") then
@@ -298,8 +309,14 @@ local REGISTERED = false
 
 function ApplyEnabled()
     local settings = I.GetSettings and I.GetSettings()
-    local s = settings and settings.hyperlinks
-    if not s then return end
+    local s = (I.IsChatEnabled and I.IsChatEnabled(settings)) and settings.hyperlinks
+    if not s then
+        if REGISTERED then
+            Pipeline.Unregister("hyperlinks_coords")
+            REGISTERED = false
+        end
+        return
+    end
 
     if s.coordinates and not REGISTERED then
         Pipeline.Register("hyperlinks_coords", 250, coordsModifier)

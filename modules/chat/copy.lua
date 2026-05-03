@@ -374,6 +374,9 @@ end
 local function SetupURLClickHandler()
     -- Register for hyperlink clicks
     EventRegistry:RegisterCallback("SetItemRef", function(_, link, text, button)
+        local settings = I.GetSettings and I.GetSettings()
+        if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
+
         local url = ExtractURLFromLink(link)
         if url then
             ShowCopyPopup(url)
@@ -417,11 +420,15 @@ end
 -- Extract all messages from a chat frame
 local function GetLiveChatLines(chatFrame)
     local lines = {}
+    if I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown() then
+        return lines
+    end
+
     local numMessages = chatFrame:GetNumMessages()
 
     for i = 1, numMessages do
         local message, r, g, b = chatFrame:GetMessageInfo(i)
-        if type(message) == "string" and not IsMessageProtected(message) then
+        if not IsMessageProtected(message) and type(message) == "string" then
             local cleaned = CleanMessage(message)
             if cleaned and cleaned ~= "" then
                 tinsert(lines, cleaned)
@@ -463,7 +470,7 @@ local function GetPersistedChatLines(chatFrame)
     local lines = {}
     for i = 1, #messages do
         local message = messages[i]
-        if type(message) == "string" and not IsMessageProtected(message) then
+        if not IsMessageProtected(message) and type(message) == "string" then
             local cleaned = CleanMessage(message)
             if cleaned and cleaned ~= "" then
                 tinsert(lines, cleaned)
@@ -478,6 +485,10 @@ local function GetConfiguredChatLines(chatFrame)
     local source = settings and settings.copyHistorySource or "live"
 
     if source == "persisted" then
+        return GetPersistedChatLines(chatFrame), "persisted"
+    end
+
+    if I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown() then
         return GetPersistedChatLines(chatFrame), "persisted"
     end
 
@@ -594,6 +605,9 @@ end
 
 -- Show the chat copy frame with messages from a chat frame
 local function ShowChatCopyFrame(chatFrame)
+    local settings = I.GetSettings and I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
+
     local frame = CreateChatCopyFrame()
     RefreshPopupAccent(frame)
     local lines, source = GetConfiguredChatLines(chatFrame)
@@ -733,6 +747,11 @@ local function UpdateCopyButtonVisibility(button, chatFrame, immediate)
     if not button or not chatFrame then return end
 
     local settings = I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then
+        button:Hide()
+        return
+    end
+
     local mode = settings and settings.copyButtonMode or "always"
     local buttonHovered = button.IsMouseOver and button:IsMouseOver()
     local chatHovered = chatFrame.IsMouseOver and chatFrame:IsMouseOver()
@@ -820,6 +839,7 @@ local function SetupCopyButtonHoverMode(chatFrame)
     -- Hook chat frame enter/leave for copy button fade.
     chatFrame:HookScript("OnEnter", function()
         local settings = I.GetSettings()
+        if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
         local mode = settings and settings.copyButtonMode or "always"
         if mode ~= "disabled" and button then
             button:Show()
@@ -828,6 +848,7 @@ local function SetupCopyButtonHoverMode(chatFrame)
     end)
     chatFrame:HookScript("OnLeave", function()
         local settings = I.GetSettings()
+        if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
         local mode = settings and settings.copyButtonMode or "always"
         if mode ~= "disabled" and button then
             if C_Timer and C_Timer.After then
@@ -844,6 +865,10 @@ end
 -- Apply copy button mode for a chat frame
 local function ApplyCopyButtonMode(chatFrame)
     local settings = I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then
+        HideCopyButton(chatFrame)
+        return
+    end
 
     -- Backwards compatibility: migrate old boolean copyButton to new copyButtonMode
     local mode = settings and settings.copyButtonMode

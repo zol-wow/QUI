@@ -38,9 +38,22 @@ local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
 -- Helpers
 -- ---------------------------------------------------------------------------
 
+local function IsSecret(value)
+    return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
+end
+
+local function IsChatMessagingLockedDown()
+    return I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown()
+end
+
+local function IsCombatLockedDown()
+    return type(InCombatLockdown) == "function" and InCombatLockdown()
+end
+
 -- Strip "-Realm" suffix.
 local function bareName(author)
-    if not author then return nil end
+    if IsSecret(author) then return nil end
+    if type(author) ~= "string" or author == "" then return nil end
     local hyphen = author:find("-", 1, true)
     if hyphen then return author:sub(1, hyphen - 1) end
     return author
@@ -113,7 +126,10 @@ end
 -- casing of the matched substring (we only lowercase for the search).
 -- Returns newMsg, matched (boolean).
 local function highlightTrigger(msg, trigger, hex)
-    if not msg or msg == "" or not trigger or trigger == "" then
+    if IsSecret(msg) or IsSecret(trigger) then
+        return msg, false
+    end
+    if type(msg) ~= "string" or msg == "" or type(trigger) ~= "string" or trigger == "" then
         return msg, false
     end
     local lowerMsg     = msg:lower()
@@ -146,10 +162,8 @@ end
 
 local function modifier(msg, info, event)
     if not info then return msg, info end
+    if IsSecret(msg) or IsChatMessagingLockedDown() then return msg, info end
     if not msg or type(msg) ~= "string" or msg == "" then return msg, info end
-    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(msg) then
-        return msg, info
-    end
 
     local settings = I.GetSettings and I.GetSettings()
     local s = settings and settings.modifiers and settings.modifiers.keywordAlert
@@ -157,7 +171,7 @@ local function modifier(msg, info, event)
 
     -- Skip own messages if requested.
     if s.skipSelf and info.author and playerName then
-        if bareName(info.author) == playerName then
+        if not IsSecret(info.author) and not IsSecret(playerName) and bareName(info.author) == playerName then
             return msg, info
         end
     end
@@ -183,7 +197,7 @@ local function modifier(msg, info, event)
             pcall(PlaySoundFile, resolved, "Master")
         end
         -- Tab flash
-        if s.flashTab and FCF_StartAlertFlash then
+        if s.flashTab and FCF_StartAlertFlash and not IsCombatLockedDown() and not IsChatMessagingLockedDown() then
             local frame = _G.DEFAULT_CHAT_FRAME or _G.ChatFrame1
             if frame then
                 pcall(FCF_StartAlertFlash, frame)
@@ -206,7 +220,8 @@ local function ApplyEnabled()
     refreshIdentity()
 
     local settings = I.GetSettings and I.GetSettings()
-    local enabled = settings and settings.modifiers and settings.modifiers.keywordAlert
+    local enabled = (I.IsChatEnabled and I.IsChatEnabled(settings))
+        and settings.modifiers and settings.modifiers.keywordAlert
         and settings.modifiers.keywordAlert.enabled
 
     if enabled then

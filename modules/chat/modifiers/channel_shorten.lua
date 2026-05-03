@@ -107,8 +107,13 @@ local function IsSecret(value)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
 end
 
+local function IsChatMessagingLockedDown()
+    return I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown()
+end
+
 local function shouldTransformMessage(message, r, g, b, infoID, accessID, typeID, event)
     if not ACTIVE_REPLACEMENTS or not event then return false end
+    if IsChatMessagingLockedDown() then return false end
     if IsSecret(message) or type(message) ~= "string" or message == "" then return false end
 
     local tag = EVENT_TO_TAG[event]
@@ -117,6 +122,10 @@ local function shouldTransformMessage(message, r, g, b, infoID, accessID, typeID
 end
 
 local function transformMessage(message, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...)
+    if IsChatMessagingLockedDown() then
+        return message, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...
+    end
+
     local tag = event and EVENT_TO_TAG[event]
     local replacement = tag and ACTIVE_REPLACEMENTS and ACTIVE_REPLACEMENTS[tag]
 
@@ -129,6 +138,7 @@ end
 
 local function onAddMessage(frame, message, r, g, b, infoID, accessID, typeID, event)
     if not ACTIVE_REPLACEMENTS or not event then return end
+    if IsChatMessagingLockedDown() then return end
     local tag = EVENT_TO_TAG[event]
     if not tag or not ACTIVE_REPLACEMENTS[tag] then return end
     if not frame or not frame.TransformMessages then return end
@@ -155,7 +165,8 @@ end
 
 local function ApplyEnabled()
     local settings = I.GetSettings and I.GetSettings()
-    local s = settings and settings.modifiers and settings.modifiers.channelShorten
+    local s = (I.IsChatEnabled and I.IsChatEnabled(settings))
+        and settings.modifiers and settings.modifiers.channelShorten
     local enabled = s and s.enabled
     local preset = (s and s.preset) or "letter"
 

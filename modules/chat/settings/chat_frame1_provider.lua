@@ -7,8 +7,22 @@ local ADDON_NAME, ns = ...
 
 local Settings = ns.Settings
 local ProviderPanels = Settings and Settings.ProviderPanels
+local Helpers = ns.Helpers
 if not ProviderPanels or type(ProviderPanels.RegisterAfterLoad) ~= "function" then
     return
+end
+
+local function IsChatLayoutLockedDown()
+    local I = ns.QUI and ns.QUI.Chat and ns.QUI.Chat._internals
+    return (type(InCombatLockdown) == "function" and InCombatLockdown())
+        or (I and I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown())
+end
+
+local function SafeFrameNumber(value, fallback)
+    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value) then
+        return fallback or 0
+    end
+    return tonumber(value) or fallback or 0
 end
 
 ProviderPanels:RegisterAfterLoad(function(ctx)
@@ -36,6 +50,25 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             rawset(tableRef, "_quiTransientOptionsProxy", true)
         end
         return tableRef
+    end
+
+    local function SetControlEnabled(control, enabled)
+        if not control then
+            return
+        end
+
+        enabled = enabled and true or false
+        if type(control.SetEnabled) == "function" then
+            control:SetEnabled(enabled)
+            return
+        end
+
+        if type(control.EnableMouse) == "function" then
+            control:EnableMouse(enabled)
+        end
+        if type(control.SetAlpha) == "function" then
+            control:SetAlpha(enabled and 1 or 0.4)
+        end
     end
 
     -- Build dropdown options for the per-frame editor selectors. Excludes
@@ -78,8 +111,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local sectionPresets = {
             general = {
                 "chatModule", "frameSize", "introMessage", "defaultTab",
-                "chatBackground", "inputBoxBackground", "commandHistory",
-                "messageFade", "urlDetection", "chatHyperlinks",
+                "chatBackground", "inputBoxBackground", "messageFade",
+                "urlDetection", "chatHyperlinks",
                 "uiCleanup", "copyButton",
             },
             filters = { "tabFilters" },
@@ -89,7 +122,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 "redundantTextCleanup", "newMessageSound",
             },
             history = {
-                "persistentMessageHistory", "messageHistory",
+                "commandHistory", "persistentMessageHistory", "messageHistory",
             },
         }
 
@@ -135,14 +168,15 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             __index = function(_, k)
                 local f = _G.ChatFrame1
                 if not f then return 0 end
-                if k == "width" then return math.floor((f:GetWidth() or 0) + 0.5) end
-                if k == "height" then return math.floor((f:GetHeight() or 0) + 0.5) end
+                if k == "width" then return math.floor(SafeFrameNumber(f:GetWidth(), 0) + 0.5) end
+                if k == "height" then return math.floor(SafeFrameNumber(f:GetHeight(), 0) + 0.5) end
                 return 0
             end,
             __newindex = function(_, k, v)
                 local f = _G.ChatFrame1
                 if not f or type(v) ~= "number" then return end
-                local w, h = f:GetWidth() or 0, f:GetHeight() or 0
+                if IsChatLayoutLockedDown() then return end
+                local w, h = SafeFrameNumber(f:GetWidth(), 0), SafeFrameNumber(f:GetHeight(), 0)
                 if k == "width" then w = v end
                 if k == "height" then h = v end
                 if _G.FCF_SetWindowSize then
@@ -330,9 +364,22 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         if chat.glass then
             CreateChatSection("chatBackground", "Chat Background", 3 * FORM_ROW + 8, function(body)
                 local sy = -4
-                sy = P(GUI:CreateFormCheckbox(body, "Chat Background Texture", "enabled", chat.glass, Refresh, { description = "Draw an opaque background behind the chat frame so text stays readable over busy scenery." }), body, sy)
-                sy = P(GUI:CreateFormSlider(body, "Background Opacity", 0, 1.0, 0.05, "bgAlpha", chat.glass, Refresh, nil, { description = "Opacity of the chat background (0 is invisible, 1 is fully opaque)." }), body, sy)
-                P(GUI:CreateFormColorPicker(body, "Background Color", "bgColor", chat.glass, Refresh, nil, { description = "Color of the chat background." }), body, sy)
+                local bgAlphaSlider, bgColorPicker
+                local function UpdateChatBackgroundStates()
+                    local enabled = chat.glass.enabled == true
+                    SetControlEnabled(bgAlphaSlider, enabled)
+                    SetControlEnabled(bgColorPicker, enabled)
+                end
+                local bgEnableCheckbox = GUI:CreateFormCheckbox(body, "Chat Background Texture", "enabled", chat.glass, function()
+                    Refresh()
+                    UpdateChatBackgroundStates()
+                end, { description = "Draw an opaque background behind the chat frame so text stays readable over busy scenery." })
+                sy = P(bgEnableCheckbox, body, sy)
+                bgAlphaSlider = GUI:CreateFormSlider(body, "Background Opacity", 0, 1.0, 0.05, "bgAlpha", chat.glass, Refresh, nil, { description = "Opacity of the chat background (0 is invisible, 1 is fully opaque)." })
+                sy = P(bgAlphaSlider, body, sy)
+                bgColorPicker = GUI:CreateFormColorPicker(body, "Background Color", "bgColor", chat.glass, Refresh, nil, { description = "Color of the chat background." })
+                P(bgColorPicker, body, sy)
+                UpdateChatBackgroundStates()
             end, sections, relayout)
         end
 
@@ -340,14 +387,29 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         if chat.editBox then
             CreateChatSection("inputBoxBackground", "Input Box Background", 5 * FORM_ROW + 8, function(body)
                 local sy = -4
-                sy = P(GUI:CreateFormCheckbox(body, "Input Box Background Texture", "enabled", chat.editBox, Refresh, { description = "Draw an opaque background behind the chat input box for better contrast while typing." }), body, sy)
-                sy = P(GUI:CreateFormSlider(body, "Background Opacity", 0, 1.0, 0.05, "bgAlpha", chat.editBox, Refresh, nil, { description = "Opacity of the input box background (0 is invisible, 1 is fully opaque)." }), body, sy)
-                sy = P(GUI:CreateFormColorPicker(body, "Background Color", "bgColor", chat.editBox, Refresh, nil, { description = "Color of the input box background." }), body, sy)
-                sy = P(GUI:CreateFormCheckbox(body, "Position Input Box at Top", "positionTop", chat.editBox, Refresh, { description = "Move the input box above the chat tabs instead of below the chat frame." }), body, sy)
+                local inputAlphaSlider, inputColorPicker, inputPositionCheckbox
+                local function UpdateInputBackgroundStates()
+                    local enabled = chat.editBox.enabled == true
+                    SetControlEnabled(inputAlphaSlider, enabled)
+                    SetControlEnabled(inputColorPicker, enabled)
+                    SetControlEnabled(inputPositionCheckbox, enabled)
+                end
+                local inputEnableCheckbox = GUI:CreateFormCheckbox(body, "Input Box Background Texture", "enabled", chat.editBox, function()
+                    Refresh()
+                    UpdateInputBackgroundStates()
+                end, { description = "Draw an opaque background behind the chat input box for better contrast while typing." })
+                sy = P(inputEnableCheckbox, body, sy)
+                inputAlphaSlider = GUI:CreateFormSlider(body, "Background Opacity", 0, 1.0, 0.05, "bgAlpha", chat.editBox, Refresh, nil, { description = "Opacity of the input box background (0 is invisible, 1 is fully opaque)." })
+                sy = P(inputAlphaSlider, body, sy)
+                inputColorPicker = GUI:CreateFormColorPicker(body, "Background Color", "bgColor", chat.editBox, Refresh, nil, { description = "Color of the input box background." })
+                sy = P(inputColorPicker, body, sy)
+                inputPositionCheckbox = GUI:CreateFormCheckbox(body, "Position Input Box at Top", "positionTop", chat.editBox, Refresh, { description = "Move the input box above the chat tabs instead of below the chat frame." })
+                sy = P(inputPositionCheckbox, body, sy)
                 local info = GUI:CreateLabel(body, "Moves input box above chat tabs with opaque background.", 10, {0.5, 0.5, 0.5, 1})
                 info:SetPoint("TOPLEFT", 0, sy)
                 info:SetPoint("RIGHT", body, "RIGHT", 0, 0)
                 info:SetJustifyH("LEFT")
+                UpdateInputBackgroundStates()
             end, sections, relayout)
         end
 
@@ -368,18 +430,44 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             end
             local ebh = chat.editboxHistory
 
-            sy = P(GUI:CreateFormCheckbox(body, "Persistent command history", "enabled", ebh, Refresh, { description = "Save messages you send so the Up/Down arrows recall them after a /reload. Stored per-character. Disabling stops new captures and recall but does not delete prior entries." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Max history entries", 50, 500, 1, "maxEntries", ebh, Refresh, nil, { description = "Maximum number of recalled messages to keep per character. Oldest entries are dropped first when the cap is reached." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Filter sensitive commands", "filterSensitive", ebh, Refresh, { description = "Skip storing commands that frequently contain secrets or raw Lua. Filtered prefixes: /password, /logout, /quit, /exit, /dnd, /afk, /camp, /script, /run, /console." }), body, sy)
-            P(GUI:CreateFormCheckbox(body, "Restore chat type on recall", "restoreChatType", ebh, Refresh, { description = "When recalling a message with Up/Down, also restore its original chat type (Say, Yell, Whisper target, channel) so pressing Enter sends to the same destination." }), body, sy)
+            local historyControls = {}
+            local function TrackHistoryControl(control)
+                historyControls[#historyControls + 1] = control
+                return control
+            end
+            local function UpdateCommandHistoryStates()
+                local enabled = ebh.enabled == true
+                for i = 1, #historyControls do
+                    SetControlEnabled(historyControls[i], enabled)
+                end
+            end
+            local historyCheckbox = GUI:CreateFormCheckbox(body, "Persistent command history", "enabled", ebh, function()
+                Refresh()
+                UpdateCommandHistoryStates()
+            end, { description = "Save messages you send so the Up/Down arrows recall them after a /reload. Stored per-character. Disabling stops new captures and recall but does not delete prior entries." })
+            sy = P(historyCheckbox, body, sy)
+            sy = P(TrackHistoryControl(GUI:CreateFormSlider(body, "Max history entries", 50, 500, 1, "maxEntries", ebh, Refresh, nil, { description = "Maximum number of recalled messages to keep per character. Oldest entries are dropped first when the cap is reached." })), body, sy)
+            sy = P(TrackHistoryControl(GUI:CreateFormCheckbox(body, "Filter sensitive commands", "filterSensitive", ebh, Refresh, { description = "Skip storing commands that frequently contain secrets or raw Lua. Filtered prefixes: /password, /logout, /quit, /exit, /dnd, /afk, /camp, /script, /run, /console." })), body, sy)
+            P(TrackHistoryControl(GUI:CreateFormCheckbox(body, "Restore chat type on recall", "restoreChatType", ebh, Refresh, { description = "When recalling a message with Up/Down, also restore its original chat type (Say, Yell, Whisper target, channel) so pressing Enter sends to the same destination." })), body, sy)
+            UpdateCommandHistoryStates()
         end, sections, relayout)
 
         -- Message Fade
         if chat.fade then
             CreateChatSection("messageFade", "Message Fade", 2 * FORM_ROW + 8, function(body)
                 local sy = -4
-                sy = P(GUI:CreateFormCheckbox(body, "Fade Messages After Inactivity", "enabled", chat.fade, Refresh, { description = "Fade old chat messages out after no new messages have arrived for the delay below." }), body, sy)
-                P(GUI:CreateFormSlider(body, "Fade Delay (seconds)", 1, 120, 1, "delay", chat.fade, Refresh, nil, { description = "Seconds of inactivity before chat messages start fading." }), body, sy)
+                local fadeDelaySlider
+                local function UpdateFadeStates()
+                    SetControlEnabled(fadeDelaySlider, chat.fade.enabled == true)
+                end
+                local fadeCheckbox = GUI:CreateFormCheckbox(body, "Fade Messages After Inactivity", "enabled", chat.fade, function()
+                    Refresh()
+                    UpdateFadeStates()
+                end, { description = "Fade old chat messages out after no new messages have arrived for the delay below." })
+                sy = P(fadeCheckbox, body, sy)
+                fadeDelaySlider = GUI:CreateFormSlider(body, "Fade Delay (seconds)", 1, 120, 1, "delay", chat.fade, Refresh, nil, { description = "Seconds of inactivity before chat messages start fading." })
+                P(fadeDelaySlider, body, sy)
+                UpdateFadeStates()
             end, sections, relayout)
         end
 
@@ -544,6 +632,29 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 return e
             end
 
+            local dependentControls = {}
+            local dependentRegions = {}
+            local function TrackFilterControl(control)
+                dependentControls[#dependentControls + 1] = control
+                return control
+            end
+            local function TrackFilterRegion(region)
+                dependentRegions[#dependentRegions + 1] = region
+                return region
+            end
+            local function UpdateTabFilterDependentStates()
+                local enabled = getCurEntry().customized == true
+                for i = 1, #dependentControls do
+                    SetControlEnabled(dependentControls[i], enabled)
+                end
+                for i = 1, #dependentRegions do
+                    local region = dependentRegions[i]
+                    if region and type(region.SetAlpha) == "function" then
+                        region:SetAlpha(enabled and 1 or 0.45)
+                    end
+                end
+            end
+
             -- Customized toggle. Triggers reconcile + indicator update via
             -- the chat module's _afterRefresh chain (Refresh -> tab_filters
             -- ApplyEnabled). When toggled OFF the stored entry is preserved
@@ -581,7 +692,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             end
             sy = sy - 18
 
-            local customizedCheckbox = GUI:CreateFormCheckbox(body, "Customize this tab's filters", "_customized", customizedProxy, Refresh,
+            local customizedCheckbox = GUI:CreateFormCheckbox(body, "Customize this tab's filters", "_customized", customizedProxy, function()
+                Refresh()
+                UpdateTabFilterDependentStates()
+            end,
                 { description = "When on, this tab shows ONLY the message groups and channels selected below. Inclusion-only — to silence a group, deselect it. When off, Blizzard's defaults apply unchanged." })
             if markLayoutItem then markLayoutItem(customizedCheckbox) end
             sy = P(customizedCheckbox, body, sy)
@@ -591,7 +705,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             -- its final shape on the first render. Explicit layout sequence
             -- markers preserve header/group/channel ordering when the shared
             -- dual-column pass later sorts children and font-string regions.
-            local groupsHeader = GUI:CreateLabel(body, "    Message groups", 10, {0.5, 0.5, 0.5, 1})
+            local groupsHeader = TrackFilterRegion(GUI:CreateLabel(body, "    Message groups", 10, {0.5, 0.5, 0.5, 1}))
             if markLayoutItem then markLayoutItem(groupsHeader, true) end
             groupsHeader:SetPoint("TOPLEFT", 0, sy)
             groupsHeader:SetPoint("RIGHT", body, "RIGHT", 0, 0)
@@ -603,13 +717,13 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 function(list) getCurEntry().groups = list end
             )
             for _, key in ipairs(CHAT_GROUPS) do
-                local cb = GUI:CreateFormCheckbox(body, "    " .. key, key, groupsProxy, function()
+                local cb = TrackFilterControl(GUI:CreateFormCheckbox(body, "    " .. key, key, groupsProxy, function()
                     local e = getCurEntry()
                     if e.customized and ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabFilters then
                         ns.QUI.Chat.TabFilters.SaveTabConfig(selectedTabFilterFrame, e.groups, e.channels)
                     end
                     Refresh()
-                end, { description = "Show " .. key .. " messages on this tab. Only takes effect while 'Customize this tab's filters' is on." })
+                end, { description = "Show " .. key .. " messages on this tab. Only takes effect while 'Customize this tab's filters' is on." }))
                 if markLayoutItem then markLayoutItem(cb) end
                 cb:SetPoint("TOPLEFT", 0, sy)
                 cb:SetPoint("RIGHT", body, "RIGHT", 0, 0)
@@ -617,7 +731,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 sy = sy - FORM_ROW
             end
 
-            local channelsHeader = GUI:CreateLabel(body, "    Channels (current join list)", 10, {0.5, 0.5, 0.5, 1})
+            local channelsHeader = TrackFilterRegion(GUI:CreateLabel(body, "    Channels (current join list)", 10, {0.5, 0.5, 0.5, 1}))
             if markLayoutItem then markLayoutItem(channelsHeader, true) end
             channelsHeader:SetPoint("TOPLEFT", 0, sy - 4)
             channelsHeader:SetPoint("RIGHT", body, "RIGHT", 0, 0)
@@ -630,7 +744,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             )
             local channels = getChannelNamesNow()
             if #channels == 0 then
-                local noChan = GUI:CreateLabel(body, "        (Not currently in any custom channels.)", 10, {0.5, 0.5, 0.5, 1})
+                local noChan = TrackFilterRegion(GUI:CreateLabel(body, "        (Not currently in any custom channels.)", 10, {0.5, 0.5, 0.5, 1}))
                 if markLayoutItem then markLayoutItem(noChan, true) end
                 noChan:SetPoint("TOPLEFT", 0, sy)
                 noChan:SetPoint("RIGHT", body, "RIGHT", 0, 0)
@@ -638,13 +752,13 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 sy = sy - 16
             else
                 for _, channelName in ipairs(channels) do
-                    local cb = GUI:CreateFormCheckbox(body, "    " .. channelName, channelName, channelsProxy, function()
+                    local cb = TrackFilterControl(GUI:CreateFormCheckbox(body, "    " .. channelName, channelName, channelsProxy, function()
                         local e = getCurEntry()
                         if e.customized and ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabFilters then
                             ns.QUI.Chat.TabFilters.SaveTabConfig(selectedTabFilterFrame, e.groups, e.channels)
                         end
                         Refresh()
-                    end, { description = "Show messages from channel '" .. channelName .. "' on this tab." })
+                    end, { description = "Show messages from channel '" .. channelName .. "' on this tab." }))
                     if markLayoutItem then markLayoutItem(cb) end
                     cb:SetPoint("TOPLEFT", 0, sy)
                     cb:SetPoint("RIGHT", body, "RIGHT", 0, 0)
@@ -660,19 +774,22 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             resetRow:SetHeight(FORM_ROW)
 
             local resetBtn
-            resetBtn = GUI:CreateButton(resetRow, "Reset to Blizzard defaults", 200, 24, function()
+            resetBtn = TrackFilterControl(GUI:CreateButton(resetRow, "Reset to Blizzard defaults", 200, 24, function()
                 if ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabFilters then
                     ns.QUI.Chat.TabFilters.ResetTab(selectedTabFilterFrame)
                 end
                 NotifyProviderFor(resetBtn, { structural = true })
-            end)
+            end))
             resetBtn:SetPoint("TOPLEFT", 0, 0)
 
-            local resetHelp = GUI:CreateLabel(resetRow, "Clears stored config. /reload to fully restore Blizzard's original groups.", 10, {0.5, 0.5, 0.5, 1})
+            local resetHelp = TrackFilterRegion(GUI:CreateLabel(resetRow, "Clears stored config. /reload to fully restore Blizzard's original groups.", 10, {0.5, 0.5, 0.5, 1}))
             resetHelp:SetPoint("LEFT", resetBtn, "RIGHT", 12, 0)
             resetHelp:SetPoint("RIGHT", resetRow, "RIGHT", 0, 0)
             resetHelp:SetJustifyH("LEFT")
             sy = sy - FORM_ROW - 4
+
+            refreshList[#refreshList + 1] = UpdateTabFilterDependentStates
+            UpdateTabFilterDependentStates()
 
             if body then
                 body._contentHeight = math.abs(sy) + 4
@@ -806,10 +923,36 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             headerLabel:SetJustifyH("LEFT")
             sy = sy - 18
 
-            sy = P(GUI:CreateFormCheckbox(body, "Show button bar for this frame", "enabled", entry, Refresh,
-                { description = "Master toggle for the custom button bar on this chat frame. When off, no bar is shown for this frame; the per-button selections below are preserved." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Hide in combat", "hideInCombat", entry, Refresh,
-                { description = "Hide this chat frame's button bar while you are in combat, then restore it after combat ends." }), body, sy)
+            local dependentControls = {}
+            local dependentRegions = {}
+            local function TrackBarControl(control)
+                dependentControls[#dependentControls + 1] = control
+                return control
+            end
+            local function TrackBarRegion(region)
+                dependentRegions[#dependentRegions + 1] = region
+                return region
+            end
+            local function UpdateButtonBarDependentStates()
+                local enabled = entry.enabled == true
+                for i = 1, #dependentControls do
+                    SetControlEnabled(dependentControls[i], enabled)
+                end
+                for i = 1, #dependentRegions do
+                    local region = dependentRegions[i]
+                    if region and type(region.SetAlpha) == "function" then
+                        region:SetAlpha(enabled and 1 or 0.45)
+                    end
+                end
+            end
+
+            local enabledCheckbox = GUI:CreateFormCheckbox(body, "Show button bar for this frame", "enabled", entry, function()
+                Refresh()
+                UpdateButtonBarDependentStates()
+            end, { description = "Master toggle for the custom button bar on this chat frame. When off, no bar is shown for this frame; the per-button selections below are preserved." })
+            sy = P(enabledCheckbox, body, sy)
+            sy = P(TrackBarControl(GUI:CreateFormCheckbox(body, "Hide in combat", "hideInCombat", entry, Refresh,
+                { description = "Hide this chat frame's button bar while you are in combat, then restore it after combat ends." })), body, sy)
 
             local positionOptions = {
                 { value = "outside_left",  text = "Outside left (vertical strip)" },
@@ -819,21 +962,21 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 { value = "inside_tabs",   text = "Inside tab row (horizontal)" },
                 { value = "hidden",        text = "Hidden (configured but not shown)" },
             }
-            sy = P(GUI:CreateFormDropdown(body, "Position", positionOptions, "position", entry, Refresh,
-                { description = "Where the button bar attaches relative to the chat frame. outside_left/outside_right anchor outside the chat frame's edge; inside_left/inside_right anchor inside above the scrollback; inside_tabs lays buttons horizontally next to this chat frame's tab." }), body, sy)
+            sy = P(TrackBarControl(GUI:CreateFormDropdown(body, "Position", positionOptions, "position", entry, Refresh,
+                { description = "Where the button bar attaches relative to the chat frame. outside_left/outside_right anchor outside the chat frame's edge; inside_left/inside_right anchor inside above the scrollback; inside_tabs lays buttons horizontally next to this chat frame's tab." })), body, sy)
 
-            sy = P(GUI:CreateFormSlider(body, "X offset", -200, 200, 1, "offsetX", entry, Refresh, nil,
-                { description = "Fine-tune the bar's horizontal position relative to the selected anchor. Positive values move right. In Inside tab row mode the anchor follows this chat frame's tab." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Y offset", -200, 200, 1, "offsetY", entry, Refresh, nil,
-                { description = "Fine-tune the bar's vertical position relative to the selected anchor. Positive values move up. In Inside tab row mode the anchor follows this chat frame's tab." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Button spacing", 0, 24, 1, "buttonSpacing", entry, Refresh, nil,
-                { description = "Pixels between buttons in this chat frame's button bar." }), body, sy)
+            sy = P(TrackBarControl(GUI:CreateFormSlider(body, "X offset", -200, 200, 1, "offsetX", entry, Refresh, nil,
+                { description = "Fine-tune the bar's horizontal position relative to the selected anchor. Positive values move right. In Inside tab row mode the anchor follows this chat frame's tab." })), body, sy)
+            sy = P(TrackBarControl(GUI:CreateFormSlider(body, "Y offset", -200, 200, 1, "offsetY", entry, Refresh, nil,
+                { description = "Fine-tune the bar's vertical position relative to the selected anchor. Positive values move up. In Inside tab row mode the anchor follows this chat frame's tab." })), body, sy)
+            sy = P(TrackBarControl(GUI:CreateFormSlider(body, "Button spacing", 0, 24, 1, "buttonSpacing", entry, Refresh, nil,
+                { description = "Pixels between buttons in this chat frame's button bar." })), body, sy)
 
             -- Built-in buttons checklist. Each entry in entry.buttons is
             -- { id = "<builtinKey>", visible = bool }. The proxy maps each
             -- builtin key to the visible flag of its matching array entry,
             -- creating one if missing on first toggle.
-            local builtinHeader = GUI:CreateLabel(body, "    Built-in buttons", 10, {0.5, 0.5, 0.5, 1})
+            local builtinHeader = TrackBarRegion(GUI:CreateLabel(body, "    Built-in buttons", 10, {0.5, 0.5, 0.5, 1}))
             builtinHeader:SetPoint("TOPLEFT", 0, sy)
             builtinHeader:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             builtinHeader:SetJustifyH("LEFT")
@@ -871,8 +1014,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 reload      = "Reload UI",
             }
             for _, id in ipairs(BB.GetBuiltinOrder()) do
-                sy = P(GUI:CreateFormCheckbox(body, "    " .. (labels[id] or id), id, builtinProxy, Refresh,
-                    { description = "Show the '" .. (labels[id] or id) .. "' button on this chat frame's button bar." }), body, sy)
+                sy = P(TrackBarControl(GUI:CreateFormCheckbox(body, "    " .. (labels[id] or id), id, builtinProxy, Refresh,
+                    { description = "Show the '" .. (labels[id] or id) .. "' button on this chat frame's button bar." })), body, sy)
             end
 
             -- Custom slash-command buttons editor. Each row binds three form
@@ -881,7 +1024,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             -- in order, creating an icon-textured button when `icon` is set
             -- and a text button otherwise. Add/Remove trigger structural
             -- rebuilds so the row count stays in sync with the data.
-            local customHeader = GUI:CreateLabel(body, "    Custom slash-command buttons", 10, {0.5, 0.5, 0.5, 1})
+            local customHeader = TrackBarRegion(GUI:CreateLabel(body, "    Custom slash-command buttons", 10, {0.5, 0.5, 0.5, 1}))
             customHeader:SetPoint("TOPLEFT", 0, sy - 4)
             customHeader:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             customHeader:SetJustifyH("LEFT")
@@ -895,29 +1038,29 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end
                 if cb.icon == nil then cb.icon = "" end
 
-                local rowLabel = GUI:CreateLabel(body, "    Button " .. idx, 10, {0.7, 0.85, 0.7, 1})
+                local rowLabel = TrackBarRegion(GUI:CreateLabel(body, "    Button " .. idx, 10, {0.7, 0.85, 0.7, 1}))
                 rowLabel:SetPoint("TOPLEFT", 0, sy)
                 rowLabel:SetPoint("RIGHT", body, "RIGHT", 0, 0)
                 rowLabel:SetJustifyH("LEFT")
                 sy = sy - 16
 
-                sy = P(GUI:CreateFormEditBox(body, "Label", "label", cb, Refresh,
-                    { description = "Text shown on the button when no icon is set." }), body, sy)
-                sy = P(GUI:CreateFormEditBox(body, "Slash command", "slashCommand", cb, Refresh,
-                    { description = "Slash command to run on click — e.g. /target Boss, /readycheck. Must include the leading slash." }), body, sy)
-                sy = P(GUI:CreateFormEditBox(body, "Icon path (optional)", "icon", cb, Refresh,
-                    { description = "Texture path for an icon-style button — e.g. Interface/Icons/Spell_Holy_HolyBolt or any registered AddOn texture path. Leave blank to render as a text button." }), body, sy)
+                sy = P(TrackBarControl(GUI:CreateFormEditBox(body, "Label", "label", cb, Refresh,
+                    { description = "Text shown on the button when no icon is set." })), body, sy)
+                sy = P(TrackBarControl(GUI:CreateFormEditBox(body, "Slash command", "slashCommand", cb, Refresh,
+                    { description = "Slash command to run on click — e.g. /target Boss, /readycheck. Must include the leading slash." })), body, sy)
+                sy = P(TrackBarControl(GUI:CreateFormEditBox(body, "Icon path (optional)", "icon", cb, Refresh,
+                    { description = "Texture path for an icon-style button — e.g. Interface/Icons/Spell_Holy_HolyBolt or any registered AddOn texture path. Leave blank to render as a text button." })), body, sy)
 
                 local removeRow = CreateFrame("Frame", nil, body)
                 removeRow:SetPoint("TOPLEFT", 0, sy - 2)
                 removeRow:SetPoint("RIGHT", body, "RIGHT", 0, 0)
                 removeRow:SetHeight(FORM_ROW)
                 local removeBtn
-                removeBtn = GUI:CreateButton(removeRow, "Remove", 100, 22, function()
+                removeBtn = TrackBarControl(GUI:CreateButton(removeRow, "Remove", 100, 22, function()
                     table.remove(entry.customButtons, idx)
                     Refresh()
                     NotifyProviderFor(removeBtn, { structural = true })
-                end)
+                end))
                 removeBtn:SetPoint("TOPLEFT", 16, 0)
                 sy = sy - (FORM_ROW + 4)
             end
@@ -928,12 +1071,13 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             addRow:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             addRow:SetHeight(FORM_ROW)
             local addBtn
-            addBtn = GUI:CreateButton(addRow, "Add custom button", 200, 24, function()
+            addBtn = TrackBarControl(GUI:CreateButton(addRow, "Add custom button", 200, 24, function()
                 entry.customButtons[#entry.customButtons + 1] = { label = "", slashCommand = "", icon = "" }
                 Refresh()
                 NotifyProviderFor(addBtn, { structural = true })
-            end)
+            end))
             addBtn:SetPoint("TOPLEFT", 0, 0)
+            UpdateButtonBarDependentStates()
         end
 
         -- Multi-frame button bar editor. Frame-selector dropdown writes to
@@ -980,7 +1124,17 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         CreateChatSection("timestamps", "Timestamps", 4 * FORM_ROW + 8, function(body)
             local sy = -4
             if not chat.timestamps then chat.timestamps = {enabled = false, format = "24h", color = {0.6, 0.6, 0.6}} end
-            sy = P(GUI:CreateFormCheckbox(body, "Show Timestamps", "enabled", chat.timestamps, Refresh, { description = "Use QUI's colored timestamp prefix on new chat messages. While enabled, Blizzard's native chat timestamp is suppressed so the two do not stack." }), body, sy)
+            local formatDropdown, timestampColorPicker
+            local function UpdateTimestampStates()
+                local enabled = chat.timestamps.enabled == true
+                SetControlEnabled(formatDropdown, enabled)
+                SetControlEnabled(timestampColorPicker, enabled)
+            end
+            local timestampsCheckbox = GUI:CreateFormCheckbox(body, "Show Timestamps", "enabled", chat.timestamps, function()
+                Refresh()
+                UpdateTimestampStates()
+            end, { description = "Use QUI's colored timestamp prefix on new chat messages. While enabled, Blizzard's native chat timestamp is suppressed so the two do not stack." })
+            sy = P(timestampsCheckbox, body, sy)
             local info = GUI:CreateLabel(body, "Only new messages are stamped. QUI replaces Blizzard timestamps while enabled.", 10, {0.5, 0.5, 0.5, 1})
             info:SetPoint("TOPLEFT", 0, sy)
             info:SetPoint("RIGHT", body, "RIGHT", 0, 0)
@@ -990,8 +1144,11 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 {value = "24h", text = "24-Hour (15:27)"},
                 {value = "12h", text = "12-Hour (3:27 PM)"},
             }
-            sy = P(GUI:CreateFormDropdown(body, "Format", formatOptions, "format", chat.timestamps, Refresh, { description = "Timestamp format: 24-hour (15:27) or 12-hour with AM/PM (3:27 PM)." }), body, sy)
-            P(GUI:CreateFormColorPicker(body, "Timestamp Color", "color", chat.timestamps, Refresh, nil, { description = "Color of the timestamp prefix on chat messages." }), body, sy)
+            formatDropdown = GUI:CreateFormDropdown(body, "Format", formatOptions, "format", chat.timestamps, Refresh, { description = "Timestamp format: 24-hour (15:27) or 12-hour with AM/PM (3:27 PM)." })
+            sy = P(formatDropdown, body, sy)
+            timestampColorPicker = GUI:CreateFormColorPicker(body, "Timestamp Color", "color", chat.timestamps, Refresh, nil, { description = "Color of the timestamp prefix on chat messages." })
+            P(timestampColorPicker, body, sy)
+            UpdateTimestampStates()
         end, sections, relayout)
 
         -- Message Modifiers (Phase A)
@@ -1007,15 +1164,32 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local classColors = chat.modifiers.classColors
             local channelShorten = chat.modifiers.channelShorten
 
-            sy = P(GUI:CreateFormCheckbox(body, "Class colors on player names", "enabled", classColors, Refresh, { description = "Color player names in chat by their class color (e.g. Mage names appear in light blue, Druid names in orange)." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "    Recolor names mentioned in body text", "recolorBodyText", classColors, Refresh, { description = "Performs an extra regex pass on every chat message to recolor known player names anywhere in the body. Slightly more expensive than the default name-only coloring." }), body, sy)
+            local recolorBodyCheckbox, channelPresetDropdown
+            local function UpdateMessageModifierStates()
+                SetControlEnabled(recolorBodyCheckbox, classColors.enabled == true)
+                SetControlEnabled(channelPresetDropdown, channelShorten.enabled == true)
+            end
 
-            sy = P(GUI:CreateFormCheckbox(body, "Shorten channel labels", "enabled", channelShorten, Refresh, { description = "Replace verbose channel tags like [Guild] with compact labels like [G] in chat output." }), body, sy)
+            local classColorsCheckbox = GUI:CreateFormCheckbox(body, "Class colors on player names", "enabled", classColors, function()
+                Refresh()
+                UpdateMessageModifierStates()
+            end, { description = "Color player names in chat by their class color (e.g. Mage names appear in light blue, Druid names in orange)." })
+            sy = P(classColorsCheckbox, body, sy)
+            recolorBodyCheckbox = GUI:CreateFormCheckbox(body, "    Recolor names mentioned in body text", "recolorBodyText", classColors, Refresh, { description = "Performs an extra regex pass on every chat message to recolor known player names anywhere in the body. Slightly more expensive than the default name-only coloring." })
+            sy = P(recolorBodyCheckbox, body, sy)
+
+            local channelShortenCheckbox = GUI:CreateFormCheckbox(body, "Shorten channel labels", "enabled", channelShorten, function()
+                Refresh()
+                UpdateMessageModifierStates()
+            end, { description = "Replace verbose channel tags like [Guild] with compact labels like [G] in chat output." })
+            sy = P(channelShortenCheckbox, body, sy)
             local presetOptions = {
                 {value = "letter", text = "Letter \226\128\148 [G], [O], [P]"},
                 {value = "number", text = "Number \226\128\148 same as Letter; numbered channels deferred"},
             }
-            P(GUI:CreateFormDropdown(body, "Preset", presetOptions, "preset", channelShorten, Refresh, { description = "Channel label preset. Letter uses [G]/[O]/[P]/[R]/[I] etc. Number is currently identical to Letter for the 11 covered Blizzard chat events; numbered custom channels (CHAT_MSG_CHANNEL) are out of scope for Phase A." }), body, sy)
+            channelPresetDropdown = GUI:CreateFormDropdown(body, "Preset", presetOptions, "preset", channelShorten, Refresh, { description = "Channel label preset. Letter uses [G]/[O]/[P]/[R]/[I] etc. Number is currently identical to Letter for the 11 covered Blizzard chat events; numbered custom channels (CHAT_MSG_CHANNEL) are out of scope for Phase A." })
+            P(channelPresetDropdown, body, sy)
+            UpdateMessageModifierStates()
         end, sections, relayout)
 
         -- Keyword Alert (Phase A.1)
@@ -1035,14 +1209,30 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local ka = chat.modifiers.keywordAlert
             if type(ka.keywords) ~= "table" then ka.keywords = {} end
 
-            sy = P(GUI:CreateFormCheckbox(body, "Enable keyword alerts", "enabled", ka, Refresh, { description = "Highlight chat messages containing your configured keywords or character/guild name. Optionally play a sound and flash the chat tab when a match is found." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "    Trigger on my character name", "includeOwnName", ka, Refresh, { description = "Always treat your own character name as a keyword. Recommended on so you're alerted when someone @-mentions you." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "    Trigger on my first name", "includeFirstName", ka, Refresh, { description = "When your character name contains a space (e.g., 'Foo Bar'), trigger on the first part. Most player names don't have spaces." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "    Trigger on my guild name", "includeGuildName", ka, Refresh, { description = "Trigger an alert when your guild name appears in chat. Only fires when you are in a guild." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "    Skip my own messages", "skipSelf", ka, Refresh, { description = "Don't trigger alerts for messages you send yourself. Recommended on." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "    Flash chat tab on alert", "flashTab", ka, Refresh, { description = "Briefly flash the chat tab in addition to highlighting the matched text." }), body, sy)
+            local keywordDependentControls = {}
+            local function TrackKeywordControl(control)
+                keywordDependentControls[#keywordDependentControls + 1] = control
+                return control
+            end
+            local function UpdateKeywordAlertStates()
+                local enabled = ka.enabled == true
+                for i = 1, #keywordDependentControls do
+                    SetControlEnabled(keywordDependentControls[i], enabled)
+                end
+            end
 
-            sy = P(GUI:CreateFormColorPicker(body, "Highlight Color", "highlightColor", ka, Refresh, nil, { description = "Color used to wrap matched keywords in chat output." }), body, sy)
+            local keywordEnableCheckbox = GUI:CreateFormCheckbox(body, "Enable keyword alerts", "enabled", ka, function()
+                Refresh()
+                UpdateKeywordAlertStates()
+            end, { description = "Highlight chat messages containing your configured keywords or character/guild name. Optionally play a sound and flash the chat tab when a match is found." })
+            sy = P(keywordEnableCheckbox, body, sy)
+            sy = P(TrackKeywordControl(GUI:CreateFormCheckbox(body, "    Trigger on my character name", "includeOwnName", ka, Refresh, { description = "Always treat your own character name as a keyword. Recommended on so you're alerted when someone @-mentions you." })), body, sy)
+            sy = P(TrackKeywordControl(GUI:CreateFormCheckbox(body, "    Trigger on my first name", "includeFirstName", ka, Refresh, { description = "When your character name contains a space (e.g., 'Foo Bar'), trigger on the first part. Most player names don't have spaces." })), body, sy)
+            sy = P(TrackKeywordControl(GUI:CreateFormCheckbox(body, "    Trigger on my guild name", "includeGuildName", ka, Refresh, { description = "Trigger an alert when your guild name appears in chat. Only fires when you are in a guild." })), body, sy)
+            sy = P(TrackKeywordControl(GUI:CreateFormCheckbox(body, "    Skip my own messages", "skipSelf", ka, Refresh, { description = "Don't trigger alerts for messages you send yourself. Recommended on." })), body, sy)
+            sy = P(TrackKeywordControl(GUI:CreateFormCheckbox(body, "    Flash chat tab on alert", "flashTab", ka, Refresh, { description = "Briefly flash the chat tab in addition to highlighting the matched text." })), body, sy)
+
+            sy = P(TrackKeywordControl(GUI:CreateFormColorPicker(body, "Highlight Color", "highlightColor", ka, Refresh, nil, { description = "Color used to wrap matched keywords in chat output." })), body, sy)
 
             -- Sound dropdown via LSM if available, else a text input fallback.
             -- Architectural note: when LSM is loaded the sound list is the same
@@ -1052,12 +1242,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
             if LSM and U.GetSoundList then
                 local soundList = U.GetSoundList()
-                sy = P(GUI:CreateFormDropdown(body, "Alert Sound", soundList, "soundFile", ka, Refresh, { description = "Sound played when a keyword match is detected. List sourced from LibSharedMedia." }), body, sy)
+                sy = P(TrackKeywordControl(GUI:CreateFormDropdown(body, "Alert Sound", soundList, "soundFile", ka, Refresh, { description = "Sound played when a keyword match is detected. List sourced from LibSharedMedia." })), body, sy)
             else
-                sy = P(GUI:CreateFormEditBox(body, "Alert Sound", "soundFile", ka, Refresh, {
+                sy = P(TrackKeywordControl(GUI:CreateFormEditBox(body, "Alert Sound", "soundFile", ka, Refresh, {
                     maxLetters = 260, live = false,
                     onEditFocusGained = function(self) self:HighlightText() end,
-                }, { description = "Path to the sound file to play on alert. Example: Sound\\Interface\\RaidWarning.ogg" }), body, sy)
+                }, { description = "Path to the sound file to play on alert. Example: Sound\\Interface\\RaidWarning.ogg" })), body, sy)
             end
 
             -- Custom keywords list. The settings framework does not currently
@@ -1101,10 +1291,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end,
             })
 
-            local keywordsField = GUI:CreateFormEditBox(body, "Custom Keywords", "keywordsText", keywordsProxy, Refresh, {
+            local keywordsField = TrackKeywordControl(GUI:CreateFormEditBox(body, "Custom Keywords", "keywordsText", keywordsProxy, Refresh, {
                 maxLetters = 500, live = false,
                 onEditFocusGained = function(self) self:HighlightText() end,
-            }, { description = "Comma-separated list of additional keywords to highlight. Example: 'flask, food, summon'. Case-insensitive. Keywords containing commas are not supported by this input." })
+            }, { description = "Comma-separated list of additional keywords to highlight. Example: 'flask, food, summon'. Case-insensitive. Keywords containing commas are not supported by this input." }))
             keywordsField:SetPoint("TOPLEFT", 0, sy)
             keywordsField:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             sy = sy - FORM_ROW
@@ -1113,6 +1303,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             helpLabel:SetPoint("TOPLEFT", 0, sy + 4)
             helpLabel:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             helpLabel:SetJustifyH("LEFT")
+            UpdateKeywordAlertStates()
         end, sections, relayout)
 
         -- Redundant Text Cleanup (Phase A.2)
@@ -1133,12 +1324,29 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             end
             local rtp = rt.patterns
 
-            sy = P(GUI:CreateFormCheckbox(body, "Enable cleanup", "enabled", rt, Refresh, { description = "Compresses verbose loot/XP/honor/reputation/currency messages into short forms." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "    Loot collapse", "loot", rtp, Refresh, { description = "'You receive item: X' \226\134\146 '\226\156\147 X'" }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "    Currency collapse", "currency", rtp, Refresh, { description = "Collapses currency-receive messages into a compact arrow form." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "    XP collapse", "xp", rtp, Refresh, { description = "Collapses experience-gain messages to '+N XP'." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "    Honor collapse", "honor", rtp, Refresh, { description = "Collapses honor-gain messages to '+N Honor'." }), body, sy)
-            P(GUI:CreateFormCheckbox(body, "    Reputation collapse", "reputation", rtp, Refresh, { description = "Collapses reputation-change messages to a compact up/down arrow form." }), body, sy)
+            local cleanupPatternControls = {}
+            local function TrackCleanupControl(control)
+                cleanupPatternControls[#cleanupPatternControls + 1] = control
+                return control
+            end
+            local function UpdateCleanupPatternStates()
+                local enabled = rt.enabled == true
+                for i = 1, #cleanupPatternControls do
+                    SetControlEnabled(cleanupPatternControls[i], enabled)
+                end
+            end
+
+            local cleanupCheckbox = GUI:CreateFormCheckbox(body, "Enable cleanup", "enabled", rt, function()
+                Refresh()
+                UpdateCleanupPatternStates()
+            end, { description = "Compresses verbose loot/XP/honor/reputation/currency messages into short forms." })
+            sy = P(cleanupCheckbox, body, sy)
+            sy = P(TrackCleanupControl(GUI:CreateFormCheckbox(body, "    Loot collapse", "loot", rtp, Refresh, { description = "'You receive item: X' \226\134\146 '\226\156\147 X'" })), body, sy)
+            sy = P(TrackCleanupControl(GUI:CreateFormCheckbox(body, "    Currency collapse", "currency", rtp, Refresh, { description = "Collapses currency-receive messages into a compact arrow form." })), body, sy)
+            sy = P(TrackCleanupControl(GUI:CreateFormCheckbox(body, "    XP collapse", "xp", rtp, Refresh, { description = "Collapses experience-gain messages to '+N XP'." })), body, sy)
+            sy = P(TrackCleanupControl(GUI:CreateFormCheckbox(body, "    Honor collapse", "honor", rtp, Refresh, { description = "Collapses honor-gain messages to '+N Honor'." })), body, sy)
+            P(TrackCleanupControl(GUI:CreateFormCheckbox(body, "    Reputation collapse", "reputation", rtp, Refresh, { description = "Collapses reputation-change messages to a compact up/down arrow form." })), body, sy)
+            UpdateCleanupPatternStates()
         end, sections, relayout)
 
         -- Persistent Message History (Phase B)
@@ -1164,10 +1372,42 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 hist.perChannelRetention = {}
             end
 
-            sy = P(GUI:CreateFormCheckbox(body, "Persist chat history across /reload", "enabled", hist, Refresh, { description = "Save displayed chat messages to your character's saved variables and replay them on next login or reload. Captured per character; cleared by 'Clear history now'." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Retention (days)", 1, 30, 1, "retentionDays", hist, Refresh, nil, { description = "Default age limit for stored messages. Older entries are pruned at login. Per-channel overrides below take precedence when set." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Store whispers", "storeWhispers", hist, Refresh, { description = "Include whispers in the persistent history. Default OFF: Blizzard's built-in HistoryKeeper already restores recent whispers, so enabling this can produce duplicate restored whispers." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Show session separators", "showSeparators", hist, Refresh, { description = "Insert '──── Previous session ────' and '──── Resumed ────' markers around the restored block on login." }), body, sy)
+            local historyDependentControls = {}
+            local historyDependentRegions = {}
+            local historyOverrideControls = {}
+            local function TrackPersistentHistoryControl(control)
+                historyDependentControls[#historyDependentControls + 1] = control
+                return control
+            end
+            local function TrackPersistentHistoryRegion(region)
+                historyDependentRegions[#historyDependentRegions + 1] = region
+                return region
+            end
+            local function UpdatePersistentHistoryStates()
+                local enabled = hist.enabled == true
+                for i = 1, #historyDependentControls do
+                    SetControlEnabled(historyDependentControls[i], enabled)
+                end
+                for i = 1, #historyDependentRegions do
+                    local region = historyDependentRegions[i]
+                    if region and type(region.SetAlpha) == "function" then
+                        region:SetAlpha(enabled and 1 or 0.45)
+                    end
+                end
+                for i = 1, #historyOverrideControls do
+                    local rec = historyOverrideControls[i]
+                    SetControlEnabled(rec.days, enabled and rec.proxy and rec.proxy.enabled == true)
+                end
+            end
+
+            local historyEnabledCheckbox = GUI:CreateFormCheckbox(body, "Persist chat history across /reload", "enabled", hist, function()
+                Refresh()
+                UpdatePersistentHistoryStates()
+            end, { description = "Save displayed chat messages to your character's saved variables and replay them on next login or reload. Captured per character; cleared by 'Clear history now'." })
+            sy = P(historyEnabledCheckbox, body, sy)
+            sy = P(TrackPersistentHistoryControl(GUI:CreateFormSlider(body, "Retention (days)", 1, 30, 1, "retentionDays", hist, Refresh, nil, { description = "Default age limit for stored messages. Older entries are pruned at login. Per-channel overrides below take precedence when set." })), body, sy)
+            sy = P(TrackPersistentHistoryControl(GUI:CreateFormCheckbox(body, "Store whispers", "storeWhispers", hist, Refresh, { description = "Include whispers in the persistent history. Default OFF: Blizzard's built-in HistoryKeeper already restores recent whispers, so enabling this can produce duplicate restored whispers." })), body, sy)
+            sy = P(TrackPersistentHistoryControl(GUI:CreateFormCheckbox(body, "Show session separators", "showSeparators", hist, Refresh, { description = "Insert '──── Previous session ────' and '──── Resumed ────' markers around the restored block on login." })), body, sy)
 
             -- Clear-now button with confirmation popup.
             local clearRow = CreateFrame("Frame", nil, body)
@@ -1207,14 +1447,15 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             -- Each chat-type group below gets its own toggle + slider row. When
             -- the toggle is on, the override-days value is written into
             -- hist.perChannelRetention[<key>]; when off, the entry is removed
-            -- (nil = use default). Slider stays visible always for simplicity.
-            local advancedHeader = GUI:CreateLabel(body, "Advanced: per-channel retention overrides", 11, {0.7, 0.85, 0.7, 1})
+            -- (nil = use default). The days slider is disabled unless its
+            -- override toggle is on.
+            local advancedHeader = TrackPersistentHistoryRegion(GUI:CreateLabel(body, "Advanced: per-channel retention overrides", 11, {0.7, 0.85, 0.7, 1}))
             advancedHeader:SetPoint("TOPLEFT", 0, sy - 4)
             advancedHeader:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             advancedHeader:SetJustifyH("LEFT")
             sy = sy - 18
 
-            local advancedHelp = GUI:CreateLabel(body, "Override the default retention for individual chat types. Off = use default.", 10, {0.5, 0.5, 0.5, 1})
+            local advancedHelp = TrackPersistentHistoryRegion(GUI:CreateLabel(body, "Override the default retention for individual chat types. Off = use default.", 10, {0.5, 0.5, 0.5, 1}))
             advancedHelp:SetPoint("TOPLEFT", 0, sy)
             advancedHelp:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             advancedHelp:SetJustifyH("LEFT")
@@ -1271,8 +1512,14 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
             for _, group in ipairs(CHANNEL_GROUPS) do
                 local proxy = makeGroupProxy(group.key)
-                sy = P(GUI:CreateFormCheckbox(body, "    Override " .. group.label, "enabled", proxy, Refresh, { description = "When on, " .. group.label .. " messages use the days slider on the right instead of the default retention. When off, the default applies." }), body, sy)
-                sy = P(GUI:CreateFormSlider(body, "        " .. group.label .. " days", 1, 30, 1, "days", proxy, Refresh, nil, { description = "Retention in days for " .. group.label .. " messages when the override toggle above is on. Ignored otherwise." }), body, sy)
+                local overrideCheckbox = TrackPersistentHistoryControl(GUI:CreateFormCheckbox(body, "    Override " .. group.label, "enabled", proxy, function()
+                    Refresh()
+                    UpdatePersistentHistoryStates()
+                end, { description = "When on, " .. group.label .. " messages use the days slider on the right instead of the default retention. When off, the default applies." }))
+                local daysSlider = GUI:CreateFormSlider(body, "        " .. group.label .. " days", 1, 30, 1, "days", proxy, Refresh, nil, { description = "Retention in days for " .. group.label .. " messages when the override toggle above is on. Ignored otherwise." })
+                historyOverrideControls[#historyOverrideControls + 1] = { proxy = proxy, days = daysSlider }
+                sy = P(overrideCheckbox, body, sy)
+                sy = P(daysSlider, body, sy)
             end
 
             -- Reset all overrides button.
@@ -1281,17 +1528,18 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             resetRow:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             resetRow:SetHeight(FORM_ROW)
 
-            local resetBtn = GUI:CreateButton(resetRow, "Reset all overrides", 180, 24, function()
+            local resetBtn = TrackPersistentHistoryControl(GUI:CreateButton(resetRow, "Reset all overrides", 180, 24, function()
                 wipe(hist.perChannelRetention)
                 NotifyProviderFor(resetBtn, { structural = true })
                 Refresh()
-            end)
+            end))
             resetBtn:SetPoint("TOPLEFT", 0, 0)
 
-            local resetHelp = GUI:CreateLabel(resetRow, "Clears every per-channel override above. Default retention applies to all channels.", 10, {0.5, 0.5, 0.5, 1})
+            local resetHelp = TrackPersistentHistoryRegion(GUI:CreateLabel(resetRow, "Clears every per-channel override above. Default retention applies to all channels.", 10, {0.5, 0.5, 0.5, 1}))
             resetHelp:SetPoint("LEFT", resetBtn, "RIGHT", 12, 0)
             resetHelp:SetPoint("RIGHT", resetRow, "RIGHT", 0, 0)
             resetHelp:SetJustifyH("LEFT")
+            UpdatePersistentHistoryStates()
         end, sections, relayout)
 
         -- UI Cleanup
@@ -1323,13 +1571,23 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 {value = 2500, text = "2,500 Lines"},
                 {value = 5000, text = "5,000 Lines"},
             }
-            sy = P(GUI:CreateFormDropdown(body, "Copy Button", copyButtonOptions, "copyButtonMode", chat, Refresh, { description = "Controls whether the copy glyph stays faintly visible, hides when idle, or is disabled." }), body, sy)
-            sy = P(GUI:CreateFormDropdown(body, "Copy Source", copySourceOptions, "copyHistorySource", chat, Refresh, { description = "Choose whether the copy popup reads the current live scrollback or the persisted history buffer. Persisted history must be enabled above." }), body, sy)
+            local copySourceDropdown
+            local function UpdateCopyButtonStates()
+                SetControlEnabled(copySourceDropdown, chat.copyButtonMode ~= "disabled")
+            end
+            local copyButtonDropdown = GUI:CreateFormDropdown(body, "Copy Button", copyButtonOptions, "copyButtonMode", chat, function()
+                Refresh()
+                UpdateCopyButtonStates()
+            end, { description = "Controls whether the copy glyph stays faintly visible, hides when idle, or is disabled." })
+            sy = P(copyButtonDropdown, body, sy)
+            copySourceDropdown = GUI:CreateFormDropdown(body, "Copy Source", copySourceOptions, "copyHistorySource", chat, Refresh, { description = "Choose whether the copy popup reads the current live scrollback or the persisted history buffer. Persisted history must be enabled above." })
+            sy = P(copySourceDropdown, body, sy)
             sy = P(GUI:CreateFormDropdown(body, "Scrollback Lines", scrollbackOptions, "scrollbackLines", chat, Refresh, { description = "Sets the live chat frame scrollback cap. Changing this can clear the current visible buffer once per frame." }), body, sy)
             local info = GUI:CreateLabel(body, "The copy popup uses live scrollback by default. Persisted source is useful when you need older saved lines.", 10, {0.5, 0.5, 0.5, 1})
             info:SetPoint("TOPLEFT", 0, sy)
             info:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             info:SetJustifyH("LEFT")
+            UpdateCopyButtonStates()
         end, sections, relayout)
 
         -- Message History
@@ -1355,7 +1613,23 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 chat.newMessageSound.entries = {{ channel = "guild_officer", sound = "None" }}
             end
 
-            sy = P(GUI:CreateFormCheckbox(body, "Play Sound on New Message", "enabled", chat.newMessageSound, Refresh, { description = "Master toggle for playing sounds on incoming chat messages. Configure per-channel sounds below." }), body, sy)
+            local soundDependentControls = {}
+            local function TrackSoundControl(control)
+                soundDependentControls[#soundDependentControls + 1] = control
+                return control
+            end
+            local function UpdateNewMessageSoundStates()
+                local enabled = chat.newMessageSound.enabled == true
+                for i = 1, #soundDependentControls do
+                    SetControlEnabled(soundDependentControls[i], enabled)
+                end
+            end
+
+            local soundEnableCheckbox = GUI:CreateFormCheckbox(body, "Play Sound on New Message", "enabled", chat.newMessageSound, function()
+                Refresh()
+                UpdateNewMessageSoundStates()
+            end, { description = "Master toggle for playing sounds on incoming chat messages. Configure per-channel sounds below." })
+            sy = P(soundEnableCheckbox, body, sy)
 
             local soundEntriesContainer = CreateFrame("Frame", nil, body)
             soundEntriesContainer:SetPoint("TOPLEFT", 0, sy)
@@ -1393,6 +1667,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
             local function RebuildSoundEntries()
                 soundEntriesContainer:SetHeight(0)
+                for i = #soundDependentControls, 1, -1 do
+                    soundDependentControls[i] = nil
+                end
                 for _, child in ipairs({ soundEntriesContainer:GetChildren() }) do
                     child:Hide()
                     child:SetParent(nil)
@@ -1417,7 +1694,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                         Refresh()
                         RebuildSoundEntries()
                     end
-                    local channelDropdown = GUI:CreateFormDropdown(row, "Channel", channelOpts, "channel", entry, OnChannelChange, { description = "Chat channel this sound entry listens for. Each channel can only be assigned to one entry." })
+                    local channelDropdown = TrackSoundControl(GUI:CreateFormDropdown(row, "Channel", channelOpts, "channel", entry, OnChannelChange, { description = "Chat channel this sound entry listens for. Each channel can only be assigned to one entry." }))
                     if GUI.SetWidgetProviderSyncOptions then
                         GUI:SetWidgetProviderSyncOptions(channelDropdown, { auto = true, structural = true })
                     end
@@ -1425,7 +1702,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     channelDropdown:SetPoint("RIGHT", row, "RIGHT", -80, 0)
 
                     local soundList = U.GetSoundList()
-                    local soundDropdown = GUI:CreateFormDropdown(row, "Sound", soundList, "sound", entry, Refresh, { description = "Sound to play when a message arrives on this channel." })
+                    local soundDropdown = TrackSoundControl(GUI:CreateFormDropdown(row, "Sound", soundList, "sound", entry, Refresh, { description = "Sound to play when a message arrives on this channel." }))
                     soundDropdown:SetPoint("TOPLEFT", 0, -FORM_ROW)
                     soundDropdown:SetPoint("RIGHT", row, "RIGHT", -80, 0)
 
@@ -1435,6 +1712,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                         Refresh()
                         NotifyProviderFor(removeBtn, { structural = true })
                     end)
+                    TrackSoundControl(removeBtn)
                     removeBtn:SetPoint("RIGHT", row, "RIGHT", 0, -FORM_ROW/2)
 
                     row:SetHeight(FORM_ROW * 2)
@@ -1456,14 +1734,14 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
                 local nextChannel = GetFirstAvailableChannel()
                 if nextChannel then
-                    local addBtn = GUI:CreateButton(soundEntriesContainer, "+ Add Channel + Sound", 180, 24, function()
+                    local addBtn = TrackSoundControl(GUI:CreateButton(soundEntriesContainer, "+ Add Channel + Sound", 180, 24, function()
                         local channel = GetFirstAvailableChannel()
                         if not channel then return end
                         table.insert(chat.newMessageSound.entries, { channel = channel, sound = "None" })
                         RebuildSoundEntries()
                         Refresh()
                         NotifyProviderFor(addBtn, { structural = true })
-                    end)
+                    end))
                     addBtn:SetPoint("TOPLEFT", 0, -rowY - 4)
                     rowY = rowY + 28
                 end
@@ -1476,6 +1754,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     section:SetHeight(24 + totalHeight)
                     relayout()
                 end
+                UpdateNewMessageSoundStates()
             end
 
             RebuildSoundEntries()

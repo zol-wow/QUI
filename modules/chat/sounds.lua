@@ -41,6 +41,10 @@ local SOUND_CHANNEL_EVENTS = {
 local soundEventFrame = nil
 local registeredSoundEvents = {}
 
+local function IsSecret(value)
+    return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
+end
+
 local function EventMatchesChannel(event, channel)
     local events = SOUND_CHANNEL_EVENTS[channel]
     if not events then return false end
@@ -64,7 +68,8 @@ end
 
 local function PlayNewMessageSound(event, ...)
     local settings = I.GetSettings()
-    if not settings or not settings.newMessageSound or not settings.newMessageSound.enabled then
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings))
+        or not settings.newMessageSound or not settings.newMessageSound.enabled then
         return
     end
 
@@ -80,8 +85,8 @@ local function PlayNewMessageSound(event, ...)
     local guid = select(12, ...)
     local myGUID = UnitGUID("player")
     if guid and myGUID
-        and not Helpers.IsSecretValue(guid)
-        and not Helpers.IsSecretValue(myGUID)
+        and not IsSecret(guid)
+        and not IsSecret(myGUID)
         and guid == myGUID then
         return
     end
@@ -89,14 +94,15 @@ local function PlayNewMessageSound(event, ...)
     local author = select(2, ...)
     local playerName = UnitName("player")
     if author and playerName
+        and not IsSecret(author)
+        and not IsSecret(playerName)
         and type(author) == "string"
-        and not Helpers.IsSecretValue(author)
-        and not Helpers.IsSecretValue(playerName) then
+        and type(playerName) == "string" then
         local ok, hasRealm = pcall(string.find, author, "-", 1, true)
         if ok then
             if hasRealm then
                 local playerRealm = GetNormalizedRealmName and GetNormalizedRealmName()
-                if playerRealm and not Helpers.IsSecretValue(playerRealm)
+                if playerRealm and not IsSecret(playerRealm)
                     and author == (playerName .. "-" .. playerRealm) then
                     return
                 end
@@ -126,7 +132,8 @@ end
 
 local function SetupNewMessageSound()
     local settings = I.GetSettings()
-    if not settings or not settings.newMessageSound or not settings.newMessageSound.enabled then
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings))
+        or not settings.newMessageSound or not settings.newMessageSound.enabled then
         if soundEventFrame then
             for event in pairs(registeredSoundEvents) do
                 soundEventFrame:UnregisterEvent(event)

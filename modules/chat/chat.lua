@@ -86,6 +86,13 @@ if not I.surfaceState then
     I.surfaceState, I.GetSurfaceState = Helpers.CreateStateTable() -- backdrop/popup frame -> { bg, border }
 end
 
+function I.IsChatMessagingLockedDown()
+    return C_ChatInfo
+        and C_ChatInfo.InChatMessagingLockdown
+        and C_ChatInfo.InChatMessagingLockdown()
+        or false
+end
+
 local skinnedFrames   = I.skinnedFrames
 local tabBackdrops    = I.tabBackdrops
 local GetSurfaceState = I.GetSurfaceState
@@ -103,20 +110,79 @@ local URL_PATTERNS = {
 ---------------------------------------------------------------------------
 local GetSettings = Helpers.CreateDBGetter("chat")
 
+local function IsChatEnabled(settings)
+    return settings and settings.enabled ~= false
+end
+
 local SCROLLBACK_MAX_LINES = 5000
+local BLIZZARD_TIMESTAMP_SETTING = "showTimestamps"
+local BLIZZARD_TIMESTAMP_NONE = "none"
 local blizzardTimestampFormat
+local blizzardTimestampSetting
 local timestampOverrideActive = false
 
-local function GetBlizzardTimestampCVar()
+local function GetBlizzardTimestampSetting()
+    if Settings and Settings.GetValue then
+        local ok, value = pcall(Settings.GetValue, BLIZZARD_TIMESTAMP_SETTING)
+        if ok and value ~= nil then
+            return value
+        end
+    end
+
     if type(GetCVar) == "function" then
-        return GetCVar("showTimestamps")
+        local ok, value = pcall(GetCVar, BLIZZARD_TIMESTAMP_SETTING)
+        if ok then
+            return value
+        end
     end
     return nil
 end
 
+local function SetBlizzardTimestampSetting(value)
+    if value == nil then return false end
+
+    if Settings and Settings.SetValue then
+        local ok = pcall(Settings.SetValue, BLIZZARD_TIMESTAMP_SETTING, value)
+        if ok then
+            return true
+        end
+    end
+
+    if C_CVar and C_CVar.SetCVar then
+        local ok = pcall(C_CVar.SetCVar, BLIZZARD_TIMESTAMP_SETTING, tostring(value))
+        if ok then
+            return true
+        end
+    end
+
+    if type(SetCVar) == "function" then
+        local ok = pcall(SetCVar, BLIZZARD_TIMESTAMP_SETTING, value)
+        if ok then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function IsBlizzardTimestampValueOff(value)
+    return value == nil or value == "" or value == BLIZZARD_TIMESTAMP_NONE or value == "0"
+end
+
 local function IsBlizzardTimestampCVarOff()
-    local value = GetBlizzardTimestampCVar()
-    return value == nil or value == "" or value == "none" or value == "0"
+    return IsBlizzardTimestampValueOff(GetBlizzardTimestampSetting())
+end
+
+local function GetSavedBlizzardTimestampSetting(settings)
+    local timestamps = settings and settings.timestamps
+    return timestamps and timestamps._blizzardTimestampSetting
+end
+
+local function SaveBlizzardTimestampSetting(settings, value)
+    local timestamps = settings and settings.timestamps
+    if timestamps then
+        timestamps._blizzardTimestampSetting = value
+    end
 end
 
 local function GetBlizzardTimestampFormat()
@@ -124,16 +190,15 @@ local function GetBlizzardTimestampFormat()
         return _G.CHAT_TIMESTAMP_FORMAT
     end
 
-    local value = GetBlizzardTimestampCVar()
-    if not IsBlizzardTimestampCVarOff() and type(value) == "string" and value:find("%%", 1, true) then
+    local value = GetBlizzardTimestampSetting()
+    if not IsBlizzardTimestampValueOff(value) and type(value) == "string" and value:find("%%", 1, true) then
         return value
     end
     return nil
 end
 
 local function ShouldUseQUITimestamps(settings)
-    return settings
-        and settings.enabled
+    return IsChatEnabled(settings)
         and settings.timestamps
         and settings.timestamps.enabled
 end
@@ -142,21 +207,37 @@ local function ApplyTimestampMode(settings)
     settings = settings or GetSettings()
 
     if ShouldUseQUITimestamps(settings) then
+        local nativeSetting = GetBlizzardTimestampSetting()
         local nativeFormat = GetBlizzardTimestampFormat()
+        local savedSetting = GetSavedBlizzardTimestampSetting(settings)
         if not timestampOverrideActive then
+            blizzardTimestampSetting = savedSetting or nativeSetting
             blizzardTimestampFormat = nativeFormat
             timestampOverrideActive = true
-        elseif nativeFormat ~= nil or IsBlizzardTimestampCVarOff() then
+        elseif not IsBlizzardTimestampValueOff(nativeSetting) then
+            blizzardTimestampSetting = nativeSetting
+            blizzardTimestampFormat = nativeFormat
+        elseif nativeFormat ~= nil then
             blizzardTimestampFormat = nativeFormat
         end
         _G.CHAT_TIMESTAMP_FORMAT = nil
+        if not IsBlizzardTimestampValueOff(nativeSetting) then
+            SaveBlizzardTimestampSetting(settings, nativeSetting)
+            SetBlizzardTimestampSetting(BLIZZARD_TIMESTAMP_NONE)
+        end
         return
     end
 
     if timestampOverrideActive then
+        local restoreSetting = blizzardTimestampSetting or GetSavedBlizzardTimestampSetting(settings)
+        if restoreSetting ~= nil and IsBlizzardTimestampCVarOff() then
+            SetBlizzardTimestampSetting(restoreSetting)
+        end
         if _G.CHAT_TIMESTAMP_FORMAT == nil then
             _G.CHAT_TIMESTAMP_FORMAT = blizzardTimestampFormat
         end
+        SaveBlizzardTimestampSetting(settings, nil)
+        blizzardTimestampSetting = nil
         blizzardTimestampFormat = nil
         timestampOverrideActive = false
     end
@@ -271,6 +352,7 @@ end
 -- Expose helpers for sibling files. Functions are stored on _internals once their
 -- locals are defined; siblings access via ns.QUI.Chat._internals.<name>.
 I.GetSettings         = GetSettings
+I.IsChatEnabled       = IsChatEnabled
 I.IsTemporaryChatFrame= IsTemporaryChatFrame
 I.GetTabChatFrame     = GetTabChatFrame
 I.ApplySurfaceStyle   = ApplySurfaceStyle
@@ -290,8 +372,8 @@ end
 
 local function WrapChatText(text, prefix, suffix)
     if C_StringUtil and C_StringUtil.WrapString then
-        local wrapped = C_StringUtil.WrapString(text, prefix, suffix)
-        if wrapped ~= nil then
+        local ok, wrapped = pcall(C_StringUtil.WrapString, text, prefix, suffix)
+        if ok and (IsSecret(wrapped) or wrapped ~= nil) then
             return wrapped, true
         end
     end
@@ -309,6 +391,21 @@ local function AddTimestamp(text)
         return text, false
     end
     ApplyTimestampMode(settings)
+
+    if IsSecret(text) then
+        local fmt = settings.timestamps.format == "12h" and "%I:%M %p" or "%H:%M"
+        local timestamp = date(fmt)
+        local color = settings.timestamps.color
+        local prefix
+        if color then
+            local hex = string.format("%02x%02x%02x", color[1]*255, color[2]*255, color[3]*255)
+            prefix = string.format("|cff%s[%s]|r ", hex, timestamp)
+        else
+            prefix = string.format("[%s] ", timestamp)
+        end
+
+        return WrapChatText(text, prefix, nil)
+    end
 
     if not text or type(text) ~= "string" then
         return text, false
@@ -337,7 +434,7 @@ local function MakeURLsClickable(text)
         return text, false
     end
 
-    if not text or type(text) ~= "string" or IsSecret(text) then
+    if IsSecret(text) or not text or type(text) ~= "string" then
         return text, false
     end
 
@@ -413,11 +510,9 @@ local function InstallMessageFilters()
         -- IsSecret first: type(msg) on a secret string taints the
         -- dispatch chain and propagates into Blizzard's downstream
         -- string conversion of secret senders (HistoryKeeper:35,
-        -- ChatFrameOverrides:542). Returning nil on secret is also
-        -- functionally equivalent to letting it through — AddTimestamp's
-        -- WrapString output is still secret-tagged, the IsSecret(modified)
-        -- check below would discard it, and AddTimestamp itself contains
-        -- another type(text) compare that would taint anyway.
+        -- ChatFrameOverrides:542). Returning nil on secret lets Blizzard's
+        -- formatter handle the opaque payload; C-side text wrapping is only
+        -- used after the filter callback has safe arguments to return.
         if IsSecret(msg) or not msg or type(msg) ~= "string" then
             return nil
         end
@@ -429,7 +524,7 @@ local function InstallMessageFilters()
         end
 
         local settings = GetSettings()
-        if not settings or not settings.enabled then return nil end
+        if not IsChatEnabled(settings) then return nil end
 
         local modified = msg
         local changed = false
@@ -530,14 +625,24 @@ local function HookNewChatWindows()
 
     -- Hook tab clicks to update selection state colors AND editbox backdrop
     hooksecurefunc("FCF_Tab_OnClick", function(self)
+        if (type(InCombatLockdown) == "function" and InCombatLockdown())
+            or (I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown()) then
+            return
+        end
+
         local tabID = self:GetID()
         C_Timer.After(0.05, function()
+            if (type(InCombatLockdown) == "function" and InCombatLockdown())
+                or (I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown()) then
+                return
+            end
+
             RefreshAllTabColors()
 
             local chatFrame = _G["ChatFrame" .. tabID]
             local settings = GetSettings()
 
-            if chatFrame and settings and settings.editBox and settings.editBox.positionTop then
+            if chatFrame and IsChatEnabled(settings) and settings.editBox and settings.editBox.positionTop then
                 -- Use ChatFrame1's backdrop as the SINGLE shared backdrop for top position mode
                 -- Parent to UIParent so it stays visible when ChatFrame1 is hidden
                 -- (WoW hides ChatFrame1 when other tabs are selected)
@@ -572,24 +677,25 @@ end
 ---------------------------------------------------------------------------
 local function RefreshAll()
     local settings = GetSettings()
+    local chatEnabled = IsChatEnabled(settings)
     ApplyTimestampMode(settings)
 
     -- Handle each skinned frame
     for chatFrame in pairs(skinnedFrames) do
         -- Handle glass backdrop
-        if not settings or not settings.enabled or not settings.glass or not settings.glass.enabled then
+        if not chatEnabled or not settings.glass or not settings.glass.enabled then
             ns.QUI.Chat.Skinning.RemoveBackdrop(chatFrame)
         end
 
         -- Handle button visibility
-        if not settings or not settings.enabled or not settings.hideButtons then
+        if not chatEnabled or not settings.hideButtons then
             ns.QUI.Chat.Cleanup.ShowButtons(chatFrame)
         else
             ns.QUI.Chat.Cleanup.HideButtons(chatFrame)
         end
 
         -- Handle editbox styling
-        if not settings or not settings.enabled or not settings.editBox or not settings.editBox.enabled then
+        if not chatEnabled or not settings.editBox or not settings.editBox.enabled then
             ns.QUI.Chat.EditBoxBasics.RemoveEditBoxStyle(chatFrame)
         else
             -- Show editbox backdrop if it exists (for bottom position mode)
@@ -602,8 +708,12 @@ local function RefreshAll()
         -- Handle message fade (native API)
         ns.QUI.Chat.Skinning.SetupFade(chatFrame)
 
+        if not chatEnabled and ns.QUI.Chat.Skinning.RemovePadding then
+            ns.QUI.Chat.Skinning.RemovePadding(chatFrame)
+        end
+
         -- Handle copy button based on mode
-        if not settings or not settings.enabled then
+        if not chatEnabled then
             ns.QUI.Chat.Copy.HideButton(chatFrame)
         else
             ns.QUI.Chat.Copy.ApplyButtonMode(chatFrame)
@@ -611,9 +721,11 @@ local function RefreshAll()
     end
 
     -- Re-apply all styling if enabled
-    if settings and settings.enabled then
+    if chatEnabled then
         ns.QUI.Chat.Skinning.SkinAll()
         ns.QUI.Chat.Skinning.StyleAllTabs()
+    elseif ns.QUI.Chat.Skinning.RemoveAllTabStyles then
+        ns.QUI.Chat.Skinning.RemoveAllTabStyles()
     end
 
     -- Update new message sound registration (works even when chat module disabled)
@@ -648,7 +760,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
 
         -- Always install hooks/filters so the GUI master toggle (chat.enabled)
         -- can flip without requiring a /reload. Each install is idempotent and
-        -- the runtime branches that do real work re-check settings.enabled, so
+        -- the runtime branches that do real work re-check the master toggle, so
         -- registering when the module is currently disabled is inert.
         ns.QUI.Chat.Copy.SetupURLClick()
         InstallMessageFilters()
@@ -660,10 +772,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             end)
         end)
 
-        -- Hook for new chat windows (handler re-checks settings.enabled internally)
+        -- Hook for new chat windows (handler re-checks the master toggle internally)
         HookNewChatWindows()
 
-        -- Skin existing chat frames + tabs (both gate on settings.enabled)
+        -- Skin existing chat frames + tabs (both gate on the master toggle)
         ns.QUI.Chat.Skinning.SkinAll()
         ns.QUI.Chat.Skinning.StyleAllTabs()
         ApplyTimestampMode()

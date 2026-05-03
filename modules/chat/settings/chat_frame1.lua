@@ -10,17 +10,31 @@ end
 -- limits are loose enough to allow large displays without being unbounded.
 local CHAT_RESIZE_MIN_W, CHAT_RESIZE_MAX_W = 296, 1400
 local CHAT_RESIZE_MIN_H, CHAT_RESIZE_MAX_H = 120, 900
+local Helpers = ns.Helpers
+
+local function IsChatLayoutLockedDown()
+    local I = ns.QUI and ns.QUI.Chat and ns.QUI.Chat._internals
+    return (type(InCombatLockdown) == "function" and InCombatLockdown())
+        or (I and I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown())
+end
+
+local function SafeFrameNumber(value, fallback)
+    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value) then
+        return fallback or 0
+    end
+    return tonumber(value) or fallback or 0
+end
 
 local function ChatGetSize()
     local f = _G.ChatFrame1
     if not f then return CHAT_RESIZE_MIN_W, CHAT_RESIZE_MIN_H end
-    return f:GetWidth() or 0, f:GetHeight() or 0
+    return SafeFrameNumber(f:GetWidth(), CHAT_RESIZE_MIN_W), SafeFrameNumber(f:GetHeight(), CHAT_RESIZE_MIN_H)
 end
 
 local function ChatSetSize(w, h)
     local f = _G.ChatFrame1
     if not f or type(w) ~= "number" or type(h) ~= "number" then return end
-    if InCombatLockdown() then return end
+    if IsChatLayoutLockedDown() then return end
     if _G.FCF_SetWindowSize then
         _G.FCF_SetWindowSize(f, w, h)
     else

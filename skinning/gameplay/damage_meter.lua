@@ -79,8 +79,149 @@ local function SecretSafeUpdateName(self)
     SetEntryTextFromMethod(self, "GetNameText", "GetName")
 end
 
+local function GetEntryValueFontString(self)
+    if not self then return nil end
+    if type(self.GetValue) == "function" then
+        local ok, fontString = pcall(self.GetValue, self)
+        if ok and fontString then return fontString end
+    end
+    local statusBar = self.StatusBar
+    return statusBar and statusBar.Value or nil
+end
+
+local function GetEntryNumberDisplayType(self)
+    local numbers = Enum and Enum.DamageMeterNumbers
+    return (self and self.numberDisplayType) or (numbers and numbers.Minimal) or 0
+end
+
+local function EntryShowsValuePerSecondAsPrimary(self)
+    return self and self.showsValuePerSecondAsPrimary == true
+end
+
+local function EntrySuppressesValuePerSecond(self)
+    return self and self.suppressValuePerSecond == true
+end
+
+local function GetEntryMainValue(self)
+    if EntryShowsValuePerSecondAsPrimary(self) then
+        local valuePerSecond = self and self.valuePerSecond
+        if valuePerSecond then return valuePerSecond end
+    end
+
+    local value = self and self.value
+    if value then return value end
+    return 0
+end
+
+local function GetEntryParentheticalValue(self)
+    if EntryShowsValuePerSecondAsPrimary(self) then
+        local value = self and self.value
+        if value then return value, true end
+        return nil, false
+    end
+
+    if EntrySuppressesValuePerSecond(self) then
+        return nil, false
+    end
+
+    local valuePerSecond = self and self.valuePerSecond
+    if valuePerSecond then return valuePerSecond, true end
+
+    return 0, true
+end
+
+local function FormatEntryNumber(value, fallbackText)
+    if value then
+        if C_StringUtil and C_StringUtil.RoundToNearestString then
+            local ok, text = pcall(C_StringUtil.RoundToNearestString, value)
+            if ok then return text, true end
+        end
+    end
+
+    return fallbackText, fallbackText and true or false
+end
+
+local function WrapEntryParentheticalText(text, hasText)
+    if not hasText then return "", false end
+    if C_StringUtil and C_StringUtil.WrapString then
+        local ok, wrapped = pcall(C_StringUtil.WrapString, text, " (", ")")
+        if ok then return wrapped, true end
+    end
+    return "", false
+end
+
+local function SetEntryValueText(fontString, mainText, hasMainText, parentheticalText, hasParentheticalText)
+    if not fontString then return end
+
+    if not hasMainText then
+        mainText = ""
+    end
+
+    if not hasParentheticalText then
+        SecureCallMethod(fontString, "SetText", mainText)
+        return
+    end
+
+    if type(fontString.SetFormattedText) == "function" then
+        SecureCallMethod(fontString, "SetFormattedText", "%s%s", mainText, parentheticalText)
+    else
+        SecureCallMethod(fontString, "SetText", mainText)
+    end
+end
+
+local function SecretSafeUpdateDeathRecapValue(self, fontString)
+    local deathTimeSeconds = self and self.deathTimeSeconds
+    local text, hasText = FormatEntryNumber(deathTimeSeconds, nil)
+
+    if not hasText then
+        SecureCallMethod(fontString, "SetText", "")
+        return true
+    end
+
+    if type(fontString.SetFormattedText) == "function" then
+        SecureCallMethod(fontString, "SetFormattedText", "%ss", text)
+    else
+        SecureCallMethod(fontString, "SetText", text)
+    end
+    return true
+end
+
+-- The stock value formatter computes percentages in Lua
+-- (`value / sessionTotalValue`) and faults when either side is secret under
+-- addon taint. Treat damage-meter payload values as secret every time: keep
+-- the visible main/parenthetical numbers with C-side helpers and omit the
+-- percentage, which cannot be computed safely in Lua.
+local function SecretSafeSetValueText(self)
+    local fontString = GetEntryValueFontString(self)
+    if not fontString then return false end
+
+    local deathRecapID = self and self.deathRecapID
+    if deathRecapID and deathRecapID ~= 0 then
+        return SecretSafeUpdateDeathRecapValue(self, fontString)
+    end
+
+    local mainText, hasMainText = FormatEntryNumber(GetEntryMainValue(self), "0")
+    local parentheticalText = nil
+    local hasParentheticalText = false
+    local numbers = Enum and Enum.DamageMeterNumbers
+    local compact = numbers and numbers.Compact or 1
+    local complete = numbers and numbers.Complete or 2
+    local numberDisplayType = GetEntryNumberDisplayType(self)
+
+    if numberDisplayType == compact or numberDisplayType == complete then
+        local parentheticalValue, hasParentheticalValue = GetEntryParentheticalValue(self)
+        local formattedParenthetical, hasFormattedParenthetical =
+            FormatEntryNumber(parentheticalValue, hasParentheticalValue and "0" or nil)
+        parentheticalText, hasParentheticalText =
+            WrapEntryParentheticalText(formattedParenthetical, hasFormattedParenthetical)
+    end
+
+    SetEntryValueText(fontString, mainText, hasMainText, parentheticalText, hasParentheticalText)
+    return true
+end
+
 local function SecretSafeUpdateValue(self)
-    SetEntryTextFromMethod(self, "GetValueText", "GetValue")
+    SecretSafeSetValueText(self)
 end
 
 local function SecretSafeUpdateIcon(self)
@@ -103,15 +244,8 @@ local function SecretSafeUpdateStatusBar(self)
     local statusBarOK, statusBar = SafeGetMethodResult(self, "GetStatusBar")
     if not statusBarOK or not statusBar then return end
 
-    local maxValue = self.maxValue
-    if not Helpers.IsSecretValue(maxValue) and maxValue == nil then
-        maxValue = 0
-    end
-
-    local value = self.value
-    if not Helpers.IsSecretValue(value) and value == nil then
-        value = 0
-    end
+    local maxValue = self.maxValue or 0
+    local value = self.value or 0
 
     SafeGetMethodResult(statusBar, "SetMinMaxValues", 0, maxValue)
     SafeGetMethodResult(statusBar, "SetValue", value)
@@ -1037,8 +1171,27 @@ local function MeterSliderSetSize(key, w, h)
     if not cw or not ch then return end
     SaveMeterSize(key, cw, ch)
     local target = ResolveResizeTargetForKey(key)
+    local lm = ns.QUI_LayoutMode
+    local handle = lm and lm.isActive and lm._handles and lm._handles[key]
+    if handle then
+        handle:SetSize(cw, ch)
+    end
     if target then
         SecureCallMethod(target, "SetSize", cw, ch)
+        if handle then
+            local targetParent = target.GetParent and target:GetParent() or nil
+            if handle._savedTargetParent or targetParent == handle then
+                pcall(target.ClearAllPoints, target)
+                pcall(target.SetAllPoints, target, handle)
+            end
+        end
+    end
+    if handle then
+        if _G.QUI_LayoutModeSyncHandle then
+            _G.QUI_LayoutModeSyncHandle(key)
+        elseif _G.QUI_LayoutModeMarkChanged then
+            _G.QUI_LayoutModeMarkChanged()
+        end
     end
 end
 

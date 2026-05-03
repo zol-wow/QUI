@@ -79,12 +79,18 @@ local cursors = setmetatable({}, { __mode = "k" })
 -- walking past newest can restore it.
 local originalTypes = setmetatable({}, { __mode = "k" })
 
+local function IsChatAttributeLockedDown()
+    return (type(InCombatLockdown) == "function" and InCombatLockdown())
+        or (I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown())
+end
+
 -- ---------------------------------------------------------------------------
 -- Capture: post-hook on ChatEdit_OnEnterPressed
 -- ---------------------------------------------------------------------------
 
 local function captureSent(editBox)
     local settings = I.GetSettings and I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
     local s = settings and settings.editboxHistory
     if not s or not s.enabled then return end
 
@@ -139,7 +145,7 @@ local function applyEntryToEditBox(editBox, entry, settings)
 
     editBox:SetText(entry.m or "")
 
-    if settings and settings.restoreChatType and entry.ct then
+    if settings and settings.restoreChatType and entry.ct and not IsChatAttributeLockedDown() then
         editBox:SetAttribute("chatType", entry.ct)
         if entry.tg then
             if entry.ct == "WHISPER" or entry.ct == "BN_WHISPER" then
@@ -159,6 +165,7 @@ end
 
 local function navigateUp(editBox)
     local settings = I.GetSettings and I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
     local s = settings and settings.editboxHistory
     if not s or not s.enabled then return end
 
@@ -185,6 +192,7 @@ end
 
 local function navigateDown(editBox)
     local settings = I.GetSettings and I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
     local s = settings and settings.editboxHistory
     if not s or not s.enabled then return end
 
@@ -200,7 +208,7 @@ local function navigateDown(editBox)
         cursors[editBox] = nil
         local orig = originalTypes[editBox]
         editBox:SetText("")
-        if orig and s.restoreChatType and orig.ct then
+        if orig and s.restoreChatType and orig.ct and not IsChatAttributeLockedDown() then
             editBox:SetAttribute("chatType", orig.ct)
             if ChatEdit_UpdateHeader then ChatEdit_UpdateHeader(editBox) end
         end
@@ -219,19 +227,37 @@ end
 
 local hookedEditBoxes = setmetatable({}, { __mode = "k" })
 
+local function IsEditBoxHistoryEnabled()
+    local settings = I.GetSettings and I.GetSettings()
+    return (I.IsChatEnabled and I.IsChatEnabled(settings))
+        and settings.editboxHistory and settings.editboxHistory.enabled
+end
+
+local function ApplyAltArrowModeToEditBox(editBox)
+    if editBox and editBox.SetAltArrowKeyMode then
+        editBox:SetAltArrowKeyMode(not IsEditBoxHistoryEnabled())
+    end
+end
+
+local function ApplyAltArrowMode()
+    for editBox in pairs(hookedEditBoxes) do
+        ApplyAltArrowModeToEditBox(editBox)
+    end
+end
+
 function InitializeForFrame(chatFrame)
     if not chatFrame then return end
     if I.IsTemporaryChatFrame and I.IsTemporaryChatFrame(chatFrame) then return end
     local frameName = chatFrame.GetName and chatFrame:GetName() or nil
     local editBox = chatFrame.editBox or (frameName and _G[frameName .. "EditBox"]) or nil
-    if not editBox or hookedEditBoxes[editBox] then return end
-    hookedEditBoxes[editBox] = true
+    if not editBox then return end
 
-    -- Disable Blizzard's alt-arrow-key history mode so plain Up/Down drive
-    -- our handler instead of being absorbed for cursor movement.
-    if editBox.SetAltArrowKeyMode then
-        editBox:SetAltArrowKeyMode(false)
-    end
+    -- This can run before DB-backed settings are ready. Re-apply every time
+    -- so a later login/refresh call can restore plain Up/Down recall.
+    ApplyAltArrowModeToEditBox(editBox)
+
+    if hookedEditBoxes[editBox] then return end
+    hookedEditBoxes[editBox] = true
 
     -- Pre-hook OnEnterPressed by SetScript-wrapping. HookScript only adds
     -- post-hooks, by which time Blizzard's OnEnterPressed has already
@@ -277,10 +303,11 @@ EBH.InitializeForAllFrames = InitializeForAllFrames
 -- ---------------------------------------------------------------------------
 -- ApplyEnabled: settings change hook
 -- ---------------------------------------------------------------------------
--- Settings drive per-call behavior in capture/recall. Nothing to install or
--- uninstall — hooks remain in place. ApplyEnabled is a no-op slot for
--- _afterRefresh symmetry with other modifier files.
+-- Settings drive per-call behavior in capture/recall. Hooks remain in place;
+-- ApplyEnabled just restores native arrow-key behavior when the feature or
+-- chat master toggle is off.
 local function ApplyEnabled()
+    ApplyAltArrowMode()
 end
 
 -- Initial hook setup at file-load (defensive — frames may not exist yet).

@@ -116,6 +116,7 @@ local function captureToHistory(frame, msg, r, g, b, chatTypeID, ...)
     if type(msg) ~= "string" or msg == "" then return end
 
     local settings = I.GetSettings and I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
     local s = settings and settings.history
     if not s or not s.enabled then return end
 
@@ -232,6 +233,7 @@ local function repump()
 
     local ok, err = pcall(function()
         local settings = I.GetSettings and I.GetSettings()
+        if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
         local s = settings and settings.history
         if not s or not s.enabled then return end
 

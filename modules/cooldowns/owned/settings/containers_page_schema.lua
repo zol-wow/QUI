@@ -461,16 +461,28 @@ local function AppendTrackerGeneralSection(builder, gui, optionsAPI, tracker, co
     )
 
     if not isEssential then
-        local anchorBelowEssentialCheckbox = gui:CreateFormCheckbox(card.frame, nil, "anchorBelowEssential", tracker, RefreshUtilityAnchor, {
+        local anchorGapRow
+        local function UpdateAnchorBelowEssentialState()
+            if anchorGapRow and anchorGapRow.SetEnabled then
+                anchorGapRow:SetEnabled(tracker.anchorBelowEssential == true)
+            end
+        end
+
+        local anchorBelowEssentialCheckbox = gui:CreateFormCheckbox(card.frame, nil, "anchorBelowEssential", tracker, function()
+            RefreshUtilityAnchor()
+            UpdateAnchorBelowEssentialState()
+        end, {
             description = "Anchor this container below the essential container so they stack together.",
         })
         local anchorGapSlider = gui:CreateFormSlider(card.frame, nil, -200, 200, 1, "anchorGap", tracker, RefreshUtilityAnchor, nil, {
             description = "Pixel gap between the essential container and this one when Anchor Below Essential is on.",
         })
+        anchorGapRow = optionsAPI.BuildSettingRow(card.frame, "Anchor Gap", anchorGapSlider)
         card.AddRow(
             optionsAPI.BuildSettingRow(card.frame, "Anchor Below Essential", anchorBelowEssentialCheckbox),
-            optionsAPI.BuildSettingRow(card.frame, "Anchor Gap", anchorGapSlider)
+            anchorGapRow
         )
+        UpdateAnchorBelowEssentialState()
     end
 
     builder.CloseCard(card)
@@ -950,7 +962,17 @@ local function AppendHUDMinWidthSection(builder, gui, optionsAPI)
     builder.Header("HUD Minimum Width (When Anchored)")
     local card = builder.Card()
 
-    local enableCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", hudMinWidth, refresh, {
+    local widthRow
+    local function UpdateMinWidthState()
+        if widthRow and widthRow.SetEnabled then
+            widthRow:SetEnabled(hudMinWidth.enabled == true)
+        end
+    end
+
+    local enableCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", hudMinWidth, function()
+        refresh()
+        UpdateMinWidthState()
+    end, {
         description = "Enforce a minimum width on player and target frames when they are anchored to the Cooldown Manager, so they don't collapse when the HUD shrinks.",
     })
     card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Enable Minimum Width", enableCheckbox))
@@ -958,7 +980,9 @@ local function AppendHUDMinWidthSection(builder, gui, optionsAPI)
     local widthSlider = gui:CreateFormSlider(card.frame, nil, minWidth, maxWidth, 1, "width", hudMinWidth, refresh, nil, {
         description = "Pixel width the CDM-anchored HUD should never shrink below.",
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Minimum Width", widthSlider))
+    widthRow = optionsAPI.BuildSettingRow(card.frame, "Minimum Width", widthSlider)
+    card.AddRow(widthRow)
+    UpdateMinWidthState()
 
     builder.CloseCard(card)
 end
@@ -1125,22 +1149,22 @@ local function RenderLayoutSection(sectionHost, ctx)
             builder.Header("Inactive Behavior")
             local inactiveCard = builder.Card()
             local inactiveAlphaRow, desaturateRow, reserveSlotRow
-            local function updateInactiveRowAlpha()
+            local function updateInactiveRowState()
                 local mode = tracker.inactiveMode or "hide"
                 if inactiveAlphaRow then
-                    inactiveAlphaRow:SetAlpha(mode == "fade" and 1.0 or 0.4)
+                    inactiveAlphaRow:SetEnabled(mode == "fade")
                 end
                 if desaturateRow then
-                    desaturateRow:SetAlpha(mode ~= "always" and 1.0 or 0.4)
+                    desaturateRow:SetEnabled(mode ~= "always")
                 end
                 if reserveSlotRow then
-                    reserveSlotRow:SetAlpha(mode == "hide" and 1.0 or 0.4)
+                    reserveSlotRow:SetEnabled(mode == "hide")
                 end
             end
 
             local inactiveModeDropdown = gui:CreateFormDropdown(inactiveCard.frame, nil, INACTIVE_MODE_OPTIONS, "inactiveMode", tracker, function()
                 refresh()
-                updateInactiveRowAlpha()
+                updateInactiveRowState()
             end, {
                 description = "What happens to bars when the tracked buff is not active: always show, fade to the alpha below, or hide entirely.",
             })
@@ -1163,7 +1187,7 @@ local function RenderLayoutSection(sectionHost, ctx)
             reserveSlotRow = optionsAPI.BuildSettingRow(inactiveCard.frame, "Reserve Slot When Inactive", reserveSlotCheckbox)
             inactiveCard.AddRow(desaturateRow, reserveSlotRow)
             builder.CloseCard(inactiveCard)
-            updateInactiveRowAlpha()
+            updateInactiveRowState()
 
             builder.Spacer(6)
             builder.Header("Dimensions & Appearance")
@@ -1174,9 +1198,16 @@ local function RenderLayoutSection(sectionHost, ctx)
             local widthSlider = gui:CreateFormSlider(dimensionsCard.frame, nil, 100, 400, 1, "barWidth", tracker, refresh, nil, {
                 description = "Width of each bar in pixels. Ignored when Auto Width From Anchor is on.",
             })
+            local barWidthRow, autoWidthOffsetRow
+            local function updateAutoWidthState()
+                local autoWidth = tracker.autoWidth == true
+                if barWidthRow then barWidthRow:SetEnabled(not autoWidth) end
+                if autoWidthOffsetRow then autoWidthOffsetRow:SetEnabled(autoWidth) end
+            end
+            barWidthRow = optionsAPI.BuildSettingRow(dimensionsCard.frame, "Bar Width", widthSlider)
             dimensionsCard.AddRow(
                 optionsAPI.BuildSettingRow(dimensionsCard.frame, "Bar Height", heightSlider),
-                optionsAPI.BuildSettingRow(dimensionsCard.frame, "Bar Width", widthSlider)
+                barWidthRow
             )
 
             local borderSlider = gui:CreateFormSlider(dimensionsCard.frame, nil, 0, 4, 1, "borderSize", tracker, refresh, nil, {
@@ -1206,16 +1237,21 @@ local function RenderLayoutSection(sectionHost, ctx)
                 dimensionsCard.AddRow(optionsAPI.BuildSettingRow(dimensionsCard.frame, "Text Size", textSizeSlider))
             end
 
-            local autoWidthCheckbox = gui:CreateFormCheckbox(dimensionsCard.frame, nil, "autoWidth", tracker, refresh, {
+            local autoWidthCheckbox = gui:CreateFormCheckbox(dimensionsCard.frame, nil, "autoWidth", tracker, function()
+                refresh()
+                updateAutoWidthState()
+            end, {
                 description = "Stretch bars to match the width of the frame they anchor to (e.g. the player frame).",
             })
             local autoWidthOffsetSlider = gui:CreateFormSlider(dimensionsCard.frame, nil, -20, 20, 1, "autoWidthOffset", tracker, refresh, nil, {
                 description = "Pixel adjustment applied to the auto-matched width. Useful for aligning with a frame's inner or outer edge.",
             })
+            autoWidthOffsetRow = optionsAPI.BuildSettingRow(dimensionsCard.frame, "Auto Width Adjust", autoWidthOffsetSlider)
             dimensionsCard.AddRow(
                 optionsAPI.BuildSettingRow(dimensionsCard.frame, "Auto Width From Anchor", autoWidthCheckbox),
-                optionsAPI.BuildSettingRow(dimensionsCard.frame, "Auto Width Adjust", autoWidthOffsetSlider)
+                autoWidthOffsetRow
             )
+            updateAutoWidthState()
 
             local stackDirectionDropdown = gui:CreateFormDropdown(dimensionsCard.frame, nil, STACK_DIRECTION_OPTIONS, "growUp", tracker, refresh, {
                 description = "Direction new bars are added from the anchor: stacking upward/rightward or downward/leftward.",
@@ -1232,16 +1268,27 @@ local function RenderLayoutSection(sectionHost, ctx)
             builder.Spacer(6)
             builder.Header("Colors")
             local colorCard = builder.Card()
-            local classColorCheckbox = gui:CreateFormCheckbox(colorCard.frame, nil, "useClassColor", tracker, refresh, {
+            local barColorRow
+            local function updateBarColorState()
+                if barColorRow then
+                    barColorRow:SetEnabled(tracker.useClassColor ~= true)
+                end
+            end
+            local classColorCheckbox = gui:CreateFormCheckbox(colorCard.frame, nil, "useClassColor", tracker, function()
+                refresh()
+                updateBarColorState()
+            end, {
                 description = "Color each bar by the player's class instead of the custom Bar Color below.",
             })
             local barColorPicker = gui:CreateFormColorPicker(colorCard.frame, nil, "barColor", tracker, refresh, nil, {
                 description = "Fallback bar color used when Use Class Color is off.",
             })
+            barColorRow = optionsAPI.BuildSettingRow(colorCard.frame, "Bar Color (Fallback)", barColorPicker)
             colorCard.AddRow(
                 optionsAPI.BuildSettingRow(colorCard.frame, "Use Class Color", classColorCheckbox),
-                optionsAPI.BuildSettingRow(colorCard.frame, "Bar Color (Fallback)", barColorPicker)
+                barColorRow
             )
+            updateBarColorState()
 
             local barOpacitySlider = gui:CreateFormSlider(colorCard.frame, nil, 0, 1, 0.05, "barOpacity", tracker, refresh, nil, {
                 description = "Opacity of the bar fill. 0 is fully transparent, 1 is fully opaque.",
@@ -1264,22 +1311,22 @@ local function RenderLayoutSection(sectionHost, ctx)
             builder.Header("Orientation")
             local orientationCard = builder.Card()
             local fillDirectionRow, iconPositionRow, showTextRow
-            local function updateOrientationRowAlpha()
-                local alpha = (tracker.orientation == "vertical") and 1.0 or 0.4
+            local function updateOrientationRowState()
+                local enabled = tracker.orientation == "vertical"
                 if fillDirectionRow then
-                    fillDirectionRow:SetAlpha(alpha)
+                    fillDirectionRow:SetEnabled(enabled)
                 end
                 if iconPositionRow then
-                    iconPositionRow:SetAlpha(alpha)
+                    iconPositionRow:SetEnabled(enabled)
                 end
                 if showTextRow then
-                    showTextRow:SetAlpha(alpha)
+                    showTextRow:SetEnabled(enabled)
                 end
             end
 
             local orientationDropdown = gui:CreateFormDropdown(orientationCard.frame, nil, BAR_ORIENTATION_OPTIONS, "orientation", tracker, function()
                 refresh()
-                updateOrientationRowAlpha()
+                updateOrientationRowState()
             end, {
                 description = "Render bars horizontally (width fills left to right) or vertically (height fills upward). Vertical mode enables the controls below.",
             })
@@ -1302,7 +1349,7 @@ local function RenderLayoutSection(sectionHost, ctx)
             showTextRow = optionsAPI.BuildSettingRow(orientationCard.frame, "Show Text (Vertical)", showTextCheckbox)
             orientationCard.AddRow(iconPositionRow, showTextRow)
             builder.CloseCard(orientationCard)
-            updateOrientationRowAlpha()
+            updateOrientationRowState()
         end
 
         return builder.Height()
@@ -1410,9 +1457,12 @@ local function RenderFiltersSection(sectionHost, ctx)
     local showOnlyOffCooldownCheckbox
     local showOnlyWhenActiveCheckbox
     local noDesaturateCheckbox
+    local noDesaturateRow
 
     local function updateNoDesaturateState()
-        if noDesaturateCheckbox and noDesaturateCheckbox.SetEnabled then
+        if noDesaturateRow and noDesaturateRow.SetEnabled then
+            noDesaturateRow:SetEnabled(tracker.showOnlyOnCooldown == true)
+        elseif noDesaturateCheckbox and noDesaturateCheckbox.SetEnabled then
             noDesaturateCheckbox:SetEnabled(tracker.showOnlyOnCooldown == true)
         end
     end
@@ -1521,9 +1571,10 @@ local function RenderFiltersSection(sectionHost, ctx)
     end, {
         description = "Keep charge-based spells in full color even while regenerating the next charge, ignoring the container's desaturate-on-cooldown rule.",
     })
+    noDesaturateRow = optionsAPI.BuildSettingRow(card.frame, "No Desaturate With Charges", noDesaturateCheckbox)
     card.AddRow(
         optionsAPI.BuildSettingRow(card.frame, "Show Recharge Swipe", showRechargeSwipeCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "No Desaturate With Charges", noDesaturateCheckbox)
+        noDesaturateRow
     )
     updateNoDesaturateState()
 
@@ -1654,11 +1705,17 @@ local function RenderEffectsSection(sectionHost, ctx)
     local overlayCard = builder.Card()
     local overlayColorPicker
     local swipeColorPicker
+    local overlayColorRow
+    local swipeColorRow
     local function UpdateSwipeColorStates()
-        if overlayColorPicker then
+        if overlayColorRow then
+            overlayColorRow:SetEnabled((effectsCtx.swipeDB.overlayColorMode or "default") == "custom")
+        elseif overlayColorPicker then
             overlayColorPicker:SetEnabled((effectsCtx.swipeDB.overlayColorMode or "default") == "custom")
         end
-        if swipeColorPicker then
+        if swipeColorRow then
+            swipeColorRow:SetEnabled((effectsCtx.swipeDB.swipeColorMode or "default") == "custom")
+        elseif swipeColorPicker then
             swipeColorPicker:SetEnabled((effectsCtx.swipeDB.swipeColorMode or "default") == "custom")
         end
     end
@@ -1671,9 +1728,10 @@ local function RenderEffectsSection(sectionHost, ctx)
     overlayColorPicker = gui:CreateFormColorPicker(overlayCard.frame, nil, "overlayColor", effectsCtx.swipeDB, RefreshSwipe, nil, {
         description = "Custom color used for the buff/debuff overlay when Buff Overlay Color is set to Custom.",
     })
+    overlayColorRow = optionsAPI.BuildSettingRow(overlayCard.frame, "Overlay Custom Color", overlayColorPicker)
     overlayCard.AddRow(
         optionsAPI.BuildSettingRow(overlayCard.frame, "Buff Overlay Color", overlayModeDropdown),
-        optionsAPI.BuildSettingRow(overlayCard.frame, "Overlay Custom Color", overlayColorPicker)
+        overlayColorRow
     )
     local swipeModeDropdown = gui:CreateFormDropdown(overlayCard.frame, nil, COLOR_MODE_OPTIONS, "swipeColorMode", effectsCtx.swipeDB, function()
         RefreshSwipe()
@@ -1684,9 +1742,10 @@ local function RenderEffectsSection(sectionHost, ctx)
     swipeColorPicker = gui:CreateFormColorPicker(overlayCard.frame, nil, "swipeColor", effectsCtx.swipeDB, RefreshSwipe, nil, {
         description = "Custom color used for the cooldown swipe when Cooldown Swipe Color is set to Custom.",
     })
+    swipeColorRow = optionsAPI.BuildSettingRow(overlayCard.frame, "Swipe Custom Color", swipeColorPicker)
     overlayCard.AddRow(
         optionsAPI.BuildSettingRow(overlayCard.frame, "Cooldown Swipe Color", swipeModeDropdown),
-        optionsAPI.BuildSettingRow(overlayCard.frame, "Swipe Custom Color", swipeColorPicker)
+        swipeColorRow
     )
     UpdateSwipeColorStates()
     builder.CloseCard(overlayCard)
@@ -1714,26 +1773,35 @@ local function RenderEffectsSection(sectionHost, ctx)
     local glowYOffsetKey = effectsCtx.glowPrefix .. "YOffset"
     local glowWidgets = {}
     local function UpdateGlowWidgetStates()
+        local enabled = effectsCtx.glowDB[glowEnabledKey] ~= false
         local glowType = effectsCtx.glowDB[glowTypeKey] or "Pixel Glow"
         local isPixel = glowType == "Pixel Glow"
         local isAutocast = glowType == "Autocast Shine"
         local isButton = glowType == "Button Glow"
         local isTexture = glowType == "Flash" or glowType == "Hammer"
-        if glowWidgets.lines then glowWidgets.lines:SetEnabled(isPixel or isAutocast) end
-        if glowWidgets.thickness then glowWidgets.thickness:SetEnabled(isPixel) end
-        if glowWidgets.scale then glowWidgets.scale:SetEnabled(isAutocast) end
-        if glowWidgets.xOffset then glowWidgets.xOffset:SetEnabled(not isButton and not isTexture) end
-        if glowWidgets.yOffset then glowWidgets.yOffset:SetEnabled(not isButton and not isTexture) end
+        if glowWidgets.pandemicRow then glowWidgets.pandemicRow:SetEnabled(enabled) end
+        if glowWidgets.typeRow then glowWidgets.typeRow:SetEnabled(enabled) end
+        if glowWidgets.colorRow then glowWidgets.colorRow:SetEnabled(enabled) end
+        if glowWidgets.linesRow then glowWidgets.linesRow:SetEnabled(enabled and (isPixel or isAutocast)) end
+        if glowWidgets.thicknessRow then glowWidgets.thicknessRow:SetEnabled(enabled and isPixel) end
+        if glowWidgets.scaleRow then glowWidgets.scaleRow:SetEnabled(enabled and isAutocast) end
+        if glowWidgets.frequencyRow then glowWidgets.frequencyRow:SetEnabled(enabled) end
+        if glowWidgets.xOffsetRow then glowWidgets.xOffsetRow:SetEnabled(enabled and not isButton and not isTexture) end
+        if glowWidgets.yOffsetRow then glowWidgets.yOffsetRow:SetEnabled(enabled and not isButton and not isTexture) end
     end
-    local glowEnableCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, glowEnabledKey, effectsCtx.glowDB, RefreshGlows, {
+    local glowEnableCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, glowEnabledKey, effectsCtx.glowDB, function()
+        RefreshGlows()
+        UpdateGlowWidgetStates()
+    end, {
         description = "Override the Blizzard proc glow with QUI's custom glow style for icons in this container.",
     })
     local pandemicCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, effectsCtx.pandemicKey, effectsCtx.glowDB, RefreshGlows, {
         description = "Also emit the glow during the pandemic refresh window (the last ~30% of the active debuff's duration) to signal optimal refresh timing.",
     })
+    glowWidgets.pandemicRow = optionsAPI.BuildSettingRow(glowCard.frame, "Mirror Pandemic Refresh Glow", pandemicCheckbox)
     glowCard.AddRow(
         optionsAPI.BuildSettingRow(glowCard.frame, "Enable Custom Glow", glowEnableCheckbox),
-        optionsAPI.BuildSettingRow(glowCard.frame, "Mirror Pandemic Refresh Glow", pandemicCheckbox)
+        glowWidgets.pandemicRow
     )
     local glowTypeDropdown = gui:CreateFormDropdown(glowCard.frame, nil, GLOW_TYPE_OPTIONS, glowTypeKey, effectsCtx.glowDB, function()
         RefreshGlows()
@@ -1744,39 +1812,47 @@ local function RenderEffectsSection(sectionHost, ctx)
     local glowColorPicker = gui:CreateFormColorPicker(glowCard.frame, nil, glowColorKey, effectsCtx.glowDB, RefreshGlows, nil, {
         description = "Color used for the custom glow effect.",
     })
+    glowWidgets.typeRow = optionsAPI.BuildSettingRow(glowCard.frame, "Glow Type", glowTypeDropdown)
+    glowWidgets.colorRow = optionsAPI.BuildSettingRow(glowCard.frame, "Glow Color", glowColorPicker)
     glowCard.AddRow(
-        optionsAPI.BuildSettingRow(glowCard.frame, "Glow Type", glowTypeDropdown),
-        optionsAPI.BuildSettingRow(glowCard.frame, "Glow Color", glowColorPicker)
+        glowWidgets.typeRow,
+        glowWidgets.colorRow
     )
-    glowWidgets.lines = gui:CreateFormSlider(glowCard.frame, nil, 1, 30, 1, glowLinesKey, effectsCtx.glowDB, RefreshGlows, nil, {
+    local glowLinesSlider = gui:CreateFormSlider(glowCard.frame, nil, 1, 30, 1, glowLinesKey, effectsCtx.glowDB, RefreshGlows, nil, {
         description = "Number of glow particles/lines. Only used by Pixel Glow and Autocast Shine.",
     })
-    glowWidgets.thickness = gui:CreateFormSlider(glowCard.frame, nil, 1, 10, 1, glowThicknessKey, effectsCtx.glowDB, RefreshGlows, nil, {
+    local glowThicknessSlider = gui:CreateFormSlider(glowCard.frame, nil, 1, 10, 1, glowThicknessKey, effectsCtx.glowDB, RefreshGlows, nil, {
         description = "Thickness of each glow line. Only used by Pixel Glow.",
     })
+    glowWidgets.linesRow = optionsAPI.BuildSettingRow(glowCard.frame, "Lines", glowLinesSlider)
+    glowWidgets.thicknessRow = optionsAPI.BuildSettingRow(glowCard.frame, "Thickness", glowThicknessSlider)
     glowCard.AddRow(
-        optionsAPI.BuildSettingRow(glowCard.frame, "Lines", glowWidgets.lines),
-        optionsAPI.BuildSettingRow(glowCard.frame, "Thickness", glowWidgets.thickness)
+        glowWidgets.linesRow,
+        glowWidgets.thicknessRow
     )
-    glowWidgets.scale = gui:CreateFormSlider(glowCard.frame, nil, 0.5, 3.0, 0.1, glowScaleKey, effectsCtx.glowDB, RefreshGlows, nil, {
+    local glowScaleSlider = gui:CreateFormSlider(glowCard.frame, nil, 0.5, 3.0, 0.1, glowScaleKey, effectsCtx.glowDB, RefreshGlows, nil, {
         description = "Size multiplier for the Autocast Shine glow.",
     })
     local glowFrequencySlider = gui:CreateFormSlider(glowCard.frame, nil, 0.1, 2.0, 0.05, glowFrequencyKey, effectsCtx.glowDB, RefreshGlows, nil, {
         description = "How fast the glow animates. Higher values rotate/pulse faster.",
     })
+    glowWidgets.scaleRow = optionsAPI.BuildSettingRow(glowCard.frame, "Shine Scale", glowScaleSlider)
+    glowWidgets.frequencyRow = optionsAPI.BuildSettingRow(glowCard.frame, "Animation Speed", glowFrequencySlider)
     glowCard.AddRow(
-        optionsAPI.BuildSettingRow(glowCard.frame, "Shine Scale", glowWidgets.scale),
-        optionsAPI.BuildSettingRow(glowCard.frame, "Animation Speed", glowFrequencySlider)
+        glowWidgets.scaleRow,
+        glowWidgets.frequencyRow
     )
-    glowWidgets.xOffset = gui:CreateFormSlider(glowCard.frame, nil, -20, 20, 1, glowXOffsetKey, effectsCtx.glowDB, RefreshGlows, nil, {
+    local glowXOffsetSlider = gui:CreateFormSlider(glowCard.frame, nil, -20, 20, 1, glowXOffsetKey, effectsCtx.glowDB, RefreshGlows, nil, {
         description = "Horizontal pixel offset for the glow effect. Ignored by Button Glow and texture glows.",
     })
-    glowWidgets.yOffset = gui:CreateFormSlider(glowCard.frame, nil, -20, 20, 1, glowYOffsetKey, effectsCtx.glowDB, RefreshGlows, nil, {
+    local glowYOffsetSlider = gui:CreateFormSlider(glowCard.frame, nil, -20, 20, 1, glowYOffsetKey, effectsCtx.glowDB, RefreshGlows, nil, {
         description = "Vertical pixel offset for the glow effect. Ignored by Button Glow and texture glows.",
     })
+    glowWidgets.xOffsetRow = optionsAPI.BuildSettingRow(glowCard.frame, "X Offset", glowXOffsetSlider)
+    glowWidgets.yOffsetRow = optionsAPI.BuildSettingRow(glowCard.frame, "Y Offset", glowYOffsetSlider)
     glowCard.AddRow(
-        optionsAPI.BuildSettingRow(glowCard.frame, "X Offset", glowWidgets.xOffset),
-        optionsAPI.BuildSettingRow(glowCard.frame, "Y Offset", glowWidgets.yOffset)
+        glowWidgets.xOffsetRow,
+        glowWidgets.yOffsetRow
     )
     UpdateGlowWidgetStates()
     builder.CloseCard(glowCard)
@@ -1798,14 +1874,16 @@ local function RenderEffectsSection(sectionHost, ctx)
             local activeCard = builder.Card()
             local activeWidgets = {}
             local function UpdateActiveGlowWidgetStates()
-                local enabled = tracker.activeGlowEnabled ~= false
+                local showActive = tracker.showActiveState ~= false
+                local enabled = showActive and tracker.activeGlowEnabled ~= false
                 local glowType = tracker.activeGlowType or "Pixel Glow"
-                if activeWidgets.type then activeWidgets.type:SetEnabled(enabled) end
-                if activeWidgets.color then activeWidgets.color:SetEnabled(enabled) end
-                if activeWidgets.lines then activeWidgets.lines:SetEnabled(enabled and (glowType == "Pixel Glow" or glowType == "Autocast Shine")) end
-                if activeWidgets.frequency then activeWidgets.frequency:SetEnabled(enabled) end
-                if activeWidgets.thickness then activeWidgets.thickness:SetEnabled(enabled and glowType == "Pixel Glow") end
-                if activeWidgets.scale then activeWidgets.scale:SetEnabled(enabled and glowType == "Autocast Shine") end
+                if activeWidgets.enableRow then activeWidgets.enableRow:SetEnabled(showActive) end
+                if activeWidgets.typeRow then activeWidgets.typeRow:SetEnabled(enabled) end
+                if activeWidgets.colorRow then activeWidgets.colorRow:SetEnabled(enabled) end
+                if activeWidgets.linesRow then activeWidgets.linesRow:SetEnabled(enabled and (glowType == "Pixel Glow" or glowType == "Autocast Shine")) end
+                if activeWidgets.frequencyRow then activeWidgets.frequencyRow:SetEnabled(enabled) end
+                if activeWidgets.thicknessRow then activeWidgets.thicknessRow:SetEnabled(enabled and glowType == "Pixel Glow") end
+                if activeWidgets.scaleRow then activeWidgets.scaleRow:SetEnabled(enabled and glowType == "Autocast Shine") end
             end
             local showActiveCheckbox = gui:CreateFormCheckbox(activeCard.frame, nil, "showActiveState", tracker, function()
                 RefreshContainer(containerKey)
@@ -1819,54 +1897,61 @@ local function RenderEffectsSection(sectionHost, ctx)
             end, {
                 description = "Glow icons while their spell or item effect is active.",
             })
+            activeWidgets.enableRow = optionsAPI.BuildSettingRow(activeCard.frame, "Enable Active Glow", activeGlowCheckbox)
             activeCard.AddRow(
                 optionsAPI.BuildSettingRow(activeCard.frame, "Show Active State", showActiveCheckbox),
-                optionsAPI.BuildSettingRow(activeCard.frame, "Enable Active Glow", activeGlowCheckbox)
+                activeWidgets.enableRow
             )
-            activeWidgets.type = gui:CreateFormDropdown(activeCard.frame, nil, GLOW_TYPE_OPTIONS, "activeGlowType", tracker, function()
+            local activeGlowTypeDropdown = gui:CreateFormDropdown(activeCard.frame, nil, GLOW_TYPE_OPTIONS, "activeGlowType", tracker, function()
                 RefreshContainer(containerKey)
                 UpdateActiveGlowWidgetStates()
             end, {
                 description = "Which LibCustomGlow style to use while the entry is active.",
             })
-            activeWidgets.color = gui:CreateFormColorPicker(activeCard.frame, nil, "activeGlowColor", tracker, function()
+            local activeGlowColorPicker = gui:CreateFormColorPicker(activeCard.frame, nil, "activeGlowColor", tracker, function()
                 RefreshContainer(containerKey)
                 UpdateActiveGlowWidgetStates()
             end, nil, {
                 description = "Color used for the active-state glow.",
             })
+            activeWidgets.typeRow = optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Type", activeGlowTypeDropdown)
+            activeWidgets.colorRow = optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Color", activeGlowColorPicker)
             activeCard.AddRow(
-                optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Type", activeWidgets.type),
-                optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Color", activeWidgets.color)
+                activeWidgets.typeRow,
+                activeWidgets.colorRow
             )
-            activeWidgets.lines = gui:CreateFormSlider(activeCard.frame, nil, 4, 16, 1, "activeGlowLines", tracker, function()
+            local activeGlowLinesSlider = gui:CreateFormSlider(activeCard.frame, nil, 4, 16, 1, "activeGlowLines", tracker, function()
                 RefreshContainer(containerKey)
             end, nil, {
                 description = "Number of glow particles/lines. Only used by Pixel Glow and Autocast Shine.",
             })
-            activeWidgets.frequency = gui:CreateFormSlider(activeCard.frame, nil, 0.1, 1.0, 0.05, "activeGlowFrequency", tracker, function()
+            local activeGlowFrequencySlider = gui:CreateFormSlider(activeCard.frame, nil, 0.1, 1.0, 0.05, "activeGlowFrequency", tracker, function()
                 RefreshContainer(containerKey)
             end, nil, {
                 description = "How fast the active glow animates.",
                 precision = 2,
             })
+            activeWidgets.linesRow = optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Lines", activeGlowLinesSlider)
+            activeWidgets.frequencyRow = optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Speed", activeGlowFrequencySlider)
             activeCard.AddRow(
-                optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Lines", activeWidgets.lines),
-                optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Speed", activeWidgets.frequency)
+                activeWidgets.linesRow,
+                activeWidgets.frequencyRow
             )
-            activeWidgets.thickness = gui:CreateFormSlider(activeCard.frame, nil, 1, 5, 1, "activeGlowThickness", tracker, function()
+            local activeGlowThicknessSlider = gui:CreateFormSlider(activeCard.frame, nil, 1, 5, 1, "activeGlowThickness", tracker, function()
                 RefreshContainer(containerKey)
             end, nil, {
                 description = "Thickness of each Pixel Glow line.",
             })
-            activeWidgets.scale = gui:CreateFormSlider(activeCard.frame, nil, 0.5, 2.0, 0.1, "activeGlowScale", tracker, function()
+            local activeGlowScaleSlider = gui:CreateFormSlider(activeCard.frame, nil, 0.5, 2.0, 0.1, "activeGlowScale", tracker, function()
                 RefreshContainer(containerKey)
             end, nil, {
                 description = "Size multiplier for Autocast Shine.",
             })
+            activeWidgets.thicknessRow = optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Thickness", activeGlowThicknessSlider)
+            activeWidgets.scaleRow = optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Scale", activeGlowScaleSlider)
             activeCard.AddRow(
-                optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Thickness", activeWidgets.thickness),
-                optionsAPI.BuildSettingRow(activeCard.frame, "Active Glow Scale", activeWidgets.scale)
+                activeWidgets.thicknessRow,
+                activeWidgets.scaleRow
             )
             UpdateActiveGlowWidgetStates()
             builder.CloseCard(activeCard)
@@ -1876,15 +1961,26 @@ local function RenderEffectsSection(sectionHost, ctx)
 
     builder.Header("Cast Highlighter")
     local highlighterCard = builder.Card()
-    local highlighterEnableCheckbox = gui:CreateFormCheckbox(highlighterCard.frame, nil, "enabled", effectsCtx.highlighterDB, RefreshHighlighter, {
+    local highlighterRows = {}
+    local function UpdateHighlighterWidgetStates()
+        local enabled = effectsCtx.highlighterDB.enabled == true
+        if highlighterRows.type then highlighterRows.type:SetEnabled(enabled) end
+        if highlighterRows.color then highlighterRows.color:SetEnabled(enabled) end
+        if highlighterRows.duration then highlighterRows.duration:SetEnabled(enabled) end
+    end
+    local highlighterEnableCheckbox = gui:CreateFormCheckbox(highlighterCard.frame, nil, "enabled", effectsCtx.highlighterDB, function()
+        RefreshHighlighter()
+        UpdateHighlighterWidgetStates()
+    end, {
         description = "Flash each spell's icon briefly when you cast it, highlighting exactly which tracked ability just went out.",
     })
     local highlighterTypeDropdown = gui:CreateFormDropdown(highlighterCard.frame, nil, GLOW_TYPE_OPTIONS, "glowType", effectsCtx.highlighterDB, RefreshHighlighter, {
         description = "Which LibCustomGlow style to use for the post-cast highlight.",
     })
+    highlighterRows.type = optionsAPI.BuildSettingRow(highlighterCard.frame, "Glow Type", highlighterTypeDropdown)
     highlighterCard.AddRow(
         optionsAPI.BuildSettingRow(highlighterCard.frame, "Enable Cast Highlighter", highlighterEnableCheckbox),
-        optionsAPI.BuildSettingRow(highlighterCard.frame, "Glow Type", highlighterTypeDropdown)
+        highlighterRows.type
     )
     local highlighterColorPicker = gui:CreateFormColorPicker(highlighterCard.frame, nil, "color", effectsCtx.highlighterDB, RefreshHighlighter, nil, {
         description = "Color used for the post-cast highlight effect.",
@@ -1892,10 +1988,13 @@ local function RenderEffectsSection(sectionHost, ctx)
     local highlighterDurationSlider = gui:CreateFormSlider(highlighterCard.frame, nil, 0.1, 2.0, 0.1, "duration", effectsCtx.highlighterDB, RefreshHighlighter, nil, {
         description = "How long the highlight stays on the icon after each cast, in seconds.",
     })
+    highlighterRows.color = optionsAPI.BuildSettingRow(highlighterCard.frame, "Highlight Color", highlighterColorPicker)
+    highlighterRows.duration = optionsAPI.BuildSettingRow(highlighterCard.frame, "Highlight Duration", highlighterDurationSlider)
     highlighterCard.AddRow(
-        optionsAPI.BuildSettingRow(highlighterCard.frame, "Highlight Color", highlighterColorPicker),
-        optionsAPI.BuildSettingRow(highlighterCard.frame, "Highlight Duration", highlighterDurationSlider)
+        highlighterRows.color,
+        highlighterRows.duration
     )
+    UpdateHighlighterWidgetStates()
     builder.CloseCard(highlighterCard)
 
     if containerKey == "essential" or containerKey == "utility" then
@@ -1918,21 +2017,33 @@ local function RenderEffectsSection(sectionHost, ctx)
             builder.Spacer(6)
             builder.Header("Rotation Helper Overlay")
             local rhCard = builder.Card()
-            local rhEnableCheckbox = gui:CreateFormCheckbox(rhCard.frame, nil, "showRotationHelper", viewerDB, RefreshRotationHelper, {
+            local rhRows = {}
+            local function UpdateRotationHelperWidgetStates()
+                local enabled = viewerDB.showRotationHelper == true
+                if rhRows.color then rhRows.color:SetEnabled(enabled) end
+                if rhRows.thickness then rhRows.thickness:SetEnabled(enabled) end
+            end
+            local rhEnableCheckbox = gui:CreateFormCheckbox(rhCard.frame, nil, "showRotationHelper", viewerDB, function()
+                RefreshRotationHelper()
+                UpdateRotationHelperWidgetStates()
+            end, {
                 description = "Highlight the recommended next ability in this cooldown viewer using Blizzard's Assisted Combat suggestion. Requires Starter Build to be enabled in Gameplay > Combat.",
             })
             local rhColorPicker = gui:CreateFormColorPicker(rhCard.frame, nil, "rotationHelperColor", viewerDB, RefreshRotationHelper, nil, {
                 description = "Border color drawn around the suggested icon in this viewer.",
             })
+            rhRows.color = optionsAPI.BuildSettingRow(rhCard.frame, "Border Color", rhColorPicker)
             rhCard.AddRow(
                 optionsAPI.BuildSettingRow(rhCard.frame, "Show Recommended-Next Border", rhEnableCheckbox),
-                optionsAPI.BuildSettingRow(rhCard.frame, "Border Color", rhColorPicker)
+                rhRows.color
             )
 
             local rhThicknessSlider = gui:CreateFormSlider(rhCard.frame, nil, 1, 6, 1, "rotationHelperThickness", viewerDB, RefreshRotationHelper, nil, {
                 description = "Thickness of the suggestion border in pixels.",
             })
-            rhCard.AddRow(optionsAPI.BuildSettingRow(rhCard.frame, "Border Thickness", rhThicknessSlider))
+            rhRows.thickness = optionsAPI.BuildSettingRow(rhCard.frame, "Border Thickness", rhThicknessSlider)
+            rhCard.AddRow(rhRows.thickness)
+            UpdateRotationHelperWidgetStates()
             builder.CloseCard(rhCard)
         end
     end
@@ -1961,15 +2072,29 @@ local function RenderKeybindsSection(sectionHost, ctx)
     builder.Header("Keybinds")
     local card = builder.Card()
 
-    local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showKeybinds", viewerDB, RefreshKeybinds, {
+    local keybindRows = {}
+    local function UpdateKeybindWidgetStates()
+        local enabled = viewerDB.showKeybinds == true
+        if keybindRows.anchor then keybindRows.anchor:SetEnabled(enabled) end
+        if keybindRows.size then keybindRows.size:SetEnabled(enabled) end
+        if keybindRows.color then keybindRows.color:SetEnabled(enabled) end
+        if keybindRows.xOffset then keybindRows.xOffset:SetEnabled(enabled) end
+        if keybindRows.yOffset then keybindRows.yOffset:SetEnabled(enabled) end
+    end
+
+    local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showKeybinds", viewerDB, function()
+        RefreshKeybinds()
+        UpdateKeybindWidgetStates()
+    end, {
         description = "Show the bound key text on each icon in this container.",
     })
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, KEYBIND_ANCHOR_OPTIONS, "keybindAnchor", viewerDB, RefreshKeybinds, {
         description = "Which corner of each icon the keybind text is anchored to.",
     })
+    keybindRows.anchor = optionsAPI.BuildSettingRow(card.frame, "Keybind Anchor", anchorDropdown)
     card.AddRow(
         optionsAPI.BuildSettingRow(card.frame, "Show Keybinds", showCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, "Keybind Anchor", anchorDropdown)
+        keybindRows.anchor
     )
 
     local sizeSlider = gui:CreateFormSlider(card.frame, nil, 6, 18, 1, "keybindTextSize", viewerDB, RefreshKeybinds, nil, {
@@ -1978,9 +2103,11 @@ local function RenderKeybindsSection(sectionHost, ctx)
     local colorPicker = gui:CreateFormColorPicker(card.frame, nil, "keybindTextColor", viewerDB, RefreshKeybinds, nil, {
         description = "Color used for the keybind text.",
     })
+    keybindRows.size = optionsAPI.BuildSettingRow(card.frame, "Text Size", sizeSlider)
+    keybindRows.color = optionsAPI.BuildSettingRow(card.frame, "Text Color", colorPicker)
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Text Size", sizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Text Color", colorPicker)
+        keybindRows.size,
+        keybindRows.color
     )
 
     local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "keybindOffsetX", viewerDB, RefreshKeybinds, nil, {
@@ -1989,10 +2116,13 @@ local function RenderKeybindsSection(sectionHost, ctx)
     local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "keybindOffsetY", viewerDB, RefreshKeybinds, nil, {
         description = "Vertical pixel offset for the keybind text from its anchor corner.",
     })
+    keybindRows.xOffset = optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider)
+    keybindRows.yOffset = optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider)
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider)
+        keybindRows.xOffset,
+        keybindRows.yOffset
     )
+    UpdateKeybindWidgetStates()
 
     builder.CloseCard(card)
 

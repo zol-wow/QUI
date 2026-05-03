@@ -151,6 +151,14 @@ local EVENT_TO_KEY = {
 
 local Helpers = ns.Helpers
 
+local function IsSecret(value)
+    return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
+end
+
+local function IsChatMessagingLockedDown()
+    return I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown()
+end
+
 local function AddMessageEventFilter(event, filter)
     if ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter then
         ChatFrameUtil.AddMessageEventFilter(event, filter)
@@ -168,14 +176,15 @@ local function RemoveMessageEventFilter(event, filter)
 end
 
 local function tryCollapse(msg, event)
+    if IsSecret(msg) or IsChatMessagingLockedDown() then return msg end
     if not msg or type(msg) ~= "string" or msg == "" then return msg end
-    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(msg) then return msg end
 
     local key = EVENT_TO_KEY[event]
     if not key then return msg end
 
     local settings = I.GetSettings and I.GetSettings()
-    local s = settings and settings.modifiers and settings.modifiers.redundantText
+    local s = (I.IsChatEnabled and I.IsChatEnabled(settings))
+        and settings.modifiers and settings.modifiers.redundantText
     if not s or not s.enabled then return msg end
     if not s.patterns or s.patterns[key] == false then return msg end
 
@@ -198,13 +207,13 @@ local function tryCollapse(msg, event)
 end
 
 local function filter(self, event, msg, ...)
-    if not msg or type(msg) ~= "string"
-        or (Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(msg)) then
+    if IsSecret(msg) or IsChatMessagingLockedDown()
+        or not msg or type(msg) ~= "string" then
         return nil
     end
 
     local newMsg = tryCollapse(msg, event)
-    if newMsg and not (Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(newMsg)) and newMsg ~= msg then
+    if newMsg and not IsSecret(newMsg) and newMsg ~= msg then
         if Helpers and Helpers.HasSecretValue and Helpers.HasSecretValue(...) then
             return nil
         end
@@ -242,7 +251,8 @@ end
 
 function ApplyEnabled()
     local settings = I.GetSettings and I.GetSettings()
-    local enabled = settings and settings.modifiers and settings.modifiers.redundantText
+    local enabled = (I.IsChatEnabled and I.IsChatEnabled(settings))
+        and settings.modifiers and settings.modifiers.redundantText
         and settings.modifiers.redundantText.enabled
 
     if enabled then

@@ -41,7 +41,7 @@ function V2.Register(frame)
             },
             {
                 id = "modules",
-                name = "Modules",
+                name = "Feature Toggles",
                 sectionNav = true,
                 featureId = "modulesPage",
             },

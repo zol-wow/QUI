@@ -31,6 +31,11 @@ local EDITBOX_TEXTURES = {
 local EDITBOX_BACKDROP_HEIGHT = 24
 local EDITBOX_TEXT_PAD_X = 8
 
+local function IsChatLayoutLockedDown()
+    return (type(InCombatLockdown) == "function" and InCombatLockdown())
+        or (I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown())
+end
+
 local function MatchChatFrameWidth(chatFrame, editBox, backdrop)
     if not chatFrame or not editBox or not backdrop or not chatFrame.GetWidth then return end
 
@@ -92,8 +97,10 @@ end
 ---------------------------------------------------------------------------
 local function StyleEditBox(chatFrame)
     local settings = I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
     if not settings or not settings.editBox or not settings.editBox.enabled then return end
     if not settings.glass or not settings.glass.enabled then return end
+    if IsChatLayoutLockedDown() then return end
 
     local frameName = chatFrame:GetName()
     if not frameName then return end
@@ -178,7 +185,8 @@ local function StyleEditBox(chatFrame)
             editBox:HookScript("OnEditFocusGained", function(self)
                 local s = I.GetSettings()
                 local state = I.editBoxState[self]
-                if s and s.editBox and s.editBox.positionTop and state and state.backdropRef then
+                if I.IsChatEnabled and I.IsChatEnabled(s)
+                    and s.editBox and s.editBox.positionTop and state and state.backdropRef then
                     state.backdropRef:Show()
                 end
             end)
@@ -242,6 +250,8 @@ local function GetDefaultTabIndex(settings)
 end
 
 local function SelectDefaultTab(settings)
+    if IsChatLayoutLockedDown() then return end
+
     local tabIndex = GetDefaultTabIndex(settings)
     if not tabIndex or tabIndex <= 1 then return end
 
@@ -263,7 +273,7 @@ defaultTabFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 defaultTabFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 defaultTabFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
     local settings = I.GetSettings()
-    if not settings or not settings.enabled then return end
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
 
     if event == "PLAYER_ENTERING_WORLD" then
         local isInitialLogin, isReloadingUi = arg1, arg2
