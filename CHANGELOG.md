@@ -10,6 +10,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha12 - 2026-05-03
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha12: back up `WTF/` and export your profile first.
+
+### Added
+- **Custom CDM bar drag-reorder.** Custom CDM containers now support drag-to-reorder of entries within a row, including for spec-specific bars. Drag is constrained to the same source spec — attempting to drag across specs surfaces a brief on-screen warning. Each cell's tooltip reflects whether drag is available.
+- **Custom CDM bar visibility resolver.** Non-charged custom-bar entries that lack a Blizzard mirror child now resolve real cooldown vs GCD via runtime spell-cooldown timing plus an optional cast-alias fallback (when a spell's runtime ID differs from its cast ID). Adds `_hasGCDOnlyCooldown` and refines `HasRealCooldownState` so "show only on cooldown" filters work correctly on custom entries.
+- **Skinning for temporary chat windows.** Whispers and other temporary chat frames opened mid-session now pick up QUI's chat theme (backdrop, tabs, scrollbar, edit box) the same as the persistent chat frames.
+
+### Changed
+- **Chat timestamp setting routes through `Settings.GetValue`/`Settings.SetValue`** with a CVar fallback, and the user's Blizzard timestamp choice is persisted in the profile so QUI's override can restore it cleanly when toggled off. Timestamp behavior also gates on `C_ChatInfo.InChatMessagingLockdown` to avoid touching restricted state during combat.
+- **CDM cooldown info is read through secret-aware accessors.** New `GetCooldownInfoField` / `IsCooldownInfoActive` / `IsCooldownInfoRealCooldown` helpers detect secret values in `C_Spell.GetSpellCooldownInfo` payloads and return tri-state (`true` / `false` / `nil` for unknown), eliminating places where addon code could be tainted by reading secret cooldown timing.
+- **Damage meter entry rendering rewritten.** The skin now picks the correct primary value (DPS vs total) per entry based on `numberDisplayType` and `showsValuePerSecondAsPrimary`, and respects `suppressValuePerSecond` to avoid drawing redundant parenthetical numbers.
+- **Options framework hover tooltips attach to the container, not the inner widget.** Checkboxes, color swatches, sliders, and dropdowns all expose their tooltip across the full row, so the description shows up consistently regardless of which sub-element you hover.
+
+### Fixed
+- **Custom CDM "Remove" on spec-specific bars.** Right-click → Remove from a spec-specific custom CDM bar was operating on the rendered index rather than the actual per-spec list index, which could remove the wrong entry (or fail silently for entries surfaced from a non-active spec). The remove path now passes the source spec key and the entry's per-spec index.
+
+
+
 ## v3.6.0-alpha11 - 2026-05-03
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha11: back up `WTF/` and export your profile first.
