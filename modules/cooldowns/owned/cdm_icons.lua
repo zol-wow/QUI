@@ -1967,6 +1967,8 @@ local function IsHookStackActive(entry, icon)
     return false
 end
 
+local GetTrackerSettings
+
 local function HookBlizzStackText(icon, blizzChild)
     if not blizzChild then return end
 
@@ -3211,7 +3213,7 @@ end
 -- COOLDOWN UPDATE
 -- Update cooldown state for a single icon.
 ---------------------------------------------------------------------------
-local function GetTrackerSettings(viewerType)
+function GetTrackerSettings(viewerType)
     local db = GetDB()
     if not db or not viewerType then return nil end
     -- Built-in containers (essential, utility, buff, trackedBar) live at the
