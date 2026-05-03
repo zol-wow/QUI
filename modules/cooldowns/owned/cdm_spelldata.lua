@@ -4919,10 +4919,10 @@ end
 -- Resolve the mutable entry list for a container. Honors specSpecific —
 -- specSpecific containers mutate the current spec's private list instead
 -- of the container's shared field.
-local function GetMutableEntryList(db, containerKey, createIfMissing)
+local function GetMutableEntryList(db, containerKey, createIfMissing, specKey)
     if not db then return nil end
     if db.specSpecific then
-        return GetSpecEntryList(containerKey, nil, createIfMissing)
+        return GetSpecEntryList(containerKey, specKey, createIfMissing)
     end
     local field = GetEntryListField(db)
     if createIfMissing and db[field] == nil then db[field] = {} end
@@ -5004,13 +5004,14 @@ function CDMSpellData:AddEntry(containerKey, entry)
     return true
 end
 
-function CDMSpellData:RemoveEntry(containerKey, index)
+function CDMSpellData:RemoveEntry(containerKey, index, specKey)
     if CombatGuard() then return false end
 
     local db = GetContainerDB(containerKey)
     if not db then return false end
-    local list = GetMutableEntryList(db, containerKey, false)
+    local list = GetMutableEntryList(db, containerKey, false, specKey)
     if type(list) ~= "table" then return false end
+    if type(index) ~= "number" then return false end
     if index < 1 or index > #list then return false end
 
     local entry = list[index]

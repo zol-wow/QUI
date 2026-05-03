@@ -1431,8 +1431,12 @@ local function GetOrCreateEntryCell(index)
                     GameTooltip:AddLine(("Source: %s"):format(label), 0.6, 0.85, 1)
                 end
             end
-            GameTooltip:AddLine("Drag to reorder or move between rows", 0.5, 0.5, 0.5)
-            GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
+            if self._dragDisabled then
+                GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
+            else
+                GameTooltip:AddLine("Drag to reorder or move between rows", 0.5, 0.5, 0.5)
+                GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
+            end
         end
         GameTooltip:Show()
     end)
@@ -1886,7 +1890,13 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex, isDormant)
         -- Remove
         items[#items + 1] = { label = "Remove", color = { 0.9, 0.3, 0.3 }, action = function()
             if InCombatLockdown() then return end
-            spellData:RemoveEntry(activeContainer, entryIndex)
+            local removeIndex = entryIndex
+            local removeSpecKey = nil
+            if db.containerType == "customBar" and db.specSpecific and type(entry) == "table" then
+                removeIndex = entry._renderSpecIndex or entryIndex
+                removeSpecKey = entry._renderSpecKey
+            end
+            spellData:RemoveEntry(activeContainer, removeIndex, removeSpecKey)
             C_Timer.After(0.02, function()
                 RefreshCDM()
                 RefreshEntryList()
@@ -1987,9 +1997,8 @@ RefreshEntryList = function()
     -- from every spec's list in db.global.ncdm.specTrackerSpells[key] so
     -- the user can see (and right-click → Remove) entries from any spec
     -- regardless of which spec they're currently on. Each entry carries
-    -- a render-time _renderSpecKey that the right-click menu and tooltip
-    -- read; the entry itself stays in its per-spec list (so removes hit
-    -- the correct list).
+    -- render-time source metadata that the right-click menu and tooltip read;
+    -- the entry itself stays in its per-spec list (so removes hit the correct list).
     if isCustomBar and db.specSpecific then
         entries = {}
         local globalDB = ns.Addon and ns.Addon.db and ns.Addon.db.global
@@ -2003,9 +2012,10 @@ RefreshEntryList = function()
             for _, specKey in ipairs(specKeys) do
                 local list = byContainer[specKey]
                 if type(list) == "table" then
-                    for _, entry in ipairs(list) do
+                    for entryIndex, entry in ipairs(list) do
                         if type(entry) == "table" then
                             entry._renderSpecKey = specKey
+                            entry._renderSpecIndex = entryIndex
                             entries[#entries + 1] = entry
                         end
                     end
@@ -2017,6 +2027,8 @@ RefreshEntryList = function()
         if type(db.entries) == "table" then
             for _, entry in ipairs(db.entries) do
                 if type(entry) == "table" then
+                    entry._renderSpecKey = nil
+                    entry._renderSpecIndex = nil
                     entries[#entries + 1] = entry
                 end
             end
@@ -2119,6 +2131,7 @@ RefreshEntryList = function()
         cell._rowNum = rowNum or nil
         cell._isDormant = false
         cell._isUnknownToPlayer = not IsEntryUsableOnCurrentPlayer(entry)
+        cell._dragDisabled = isCustomBar and db.specSpecific
         -- Mirrors the tooltip warning: red-tint icons that are usable on
         -- this class but currently absent from Blizzard's CDM viewer.
         -- Skip when unknown-to-player (already desaturated for that state).
@@ -2136,12 +2149,17 @@ RefreshEntryList = function()
         cell:SetAlpha(cell._isUnknownToPlayer and 0.6 or 1)
 
         -- Wire drag
-        cell:SetScript("OnDragStart", function()
-            StartDrag(cell, idx, rowNum)
-        end)
-        cell:SetScript("OnDragStop", function()
-            StopDrag()
-        end)
+        if cell._dragDisabled then
+            cell:SetScript("OnDragStart", nil)
+            cell:SetScript("OnDragStop", nil)
+        else
+            cell:SetScript("OnDragStart", function()
+                StartDrag(cell, idx, rowNum)
+            end)
+            cell:SetScript("OnDragStop", function()
+                StopDrag()
+            end)
+        end
 
         -- OnClick handles both drag-stop (left) and context menu (right)
         cell:SetScript("OnClick", function(self, button)
