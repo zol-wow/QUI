@@ -174,6 +174,11 @@ function CDMIcons.IsCooldownInfoRealCooldown(info)
         return false
     end
 
+    local enabled = CDMIcons.GetCooldownInfoField(info, "isEnabled")
+    if enabled == false then
+        return false
+    end
+
     local start, duration, timingSecret = CDMIcons.GetCooldownInfoStartDuration(info)
     if type(duration) == "number" then
         if duration <= GCD_MAX_DURATION then
@@ -181,6 +186,9 @@ function CDMIcons.IsCooldownInfoRealCooldown(info)
         end
         if type(start) == "number" and start <= 0 then
             return false
+        end
+        if active == true then
+            return true
         end
     end
 
@@ -200,8 +208,9 @@ function CDMIcons.IsCooldownInfoRealCooldown(info)
         return nil
     end
 
-    -- No active cooldown category means the duration came from GCD, resource
-    -- recovery, spell hold, or other non-cooldown logic.
+    -- No active cooldown category, no readable >GCD duration, and no secret
+    -- timing means the duration came from GCD, resource recovery, spell hold,
+    -- or other non-cooldown logic.
     return false
 end
 
@@ -497,7 +506,7 @@ local function GetChargeMetadataDB()
 end
 
 local function TickCacheGetCharges(spellID)
-    if not spellID then return nil end
+    if not spellID or IsSecretValue(spellID) then return nil end
     local now = GetCooldownCacheNow()
     local cached = _tickChargeCache[spellID]
     if cached ~= nil then
@@ -509,7 +518,13 @@ local function TickCacheGetCharges(spellID)
         _tickChargeCacheTime[spellID] = nil
     end
     _tickCooldownStats.chargeQueries = _tickCooldownStats.chargeQueries + 1
-    local chargeInfo = C_Spell.GetSpellCharges and C_Spell.GetSpellCharges(spellID) or nil
+    local chargeInfo = nil
+    if C_Spell.GetSpellCharges then
+        local ok, result = pcall(C_Spell.GetSpellCharges, spellID)
+        if ok then
+            chargeInfo = result
+        end
+    end
     _tickChargeCache[spellID] = chargeInfo or false
     _tickChargeCacheTime[spellID] = now
     -- Persist multi-charge detection OOC for combat fallback.
@@ -535,7 +550,7 @@ local function TickCacheGetCharges(spellID)
 end
 
 local function TickCacheGetCooldown(spellID)
-    if not spellID then return nil end
+    if not spellID or IsSecretValue(spellID) then return nil end
     local now = GetCooldownCacheNow()
     local cached = _tickCooldownCache[spellID]
     if cached ~= nil then
@@ -547,14 +562,15 @@ local function TickCacheGetCooldown(spellID)
         _tickCooldownCacheTime[spellID] = nil
     end
     _tickCooldownStats.cooldownQueries = _tickCooldownStats.cooldownQueries + 1
-    local cdInfo = C_Spell.GetSpellCooldown(spellID)
+    local ok, cdInfo = pcall(C_Spell.GetSpellCooldown, spellID)
+    if not ok then cdInfo = nil end
     _tickCooldownCache[spellID] = cdInfo or false
     _tickCooldownCacheTime[spellID] = now
     return cdInfo
 end
 
 local function TickCacheGetDuration(spellID)
-    if not spellID then return nil end
+    if not spellID or IsSecretValue(spellID) then return nil end
     local now = GetCooldownCacheNow()
     local cached = _tickDurationCache[spellID]
     if cached ~= nil then
@@ -566,7 +582,7 @@ local function TickCacheGetDuration(spellID)
         _tickDurationCacheTime[spellID] = nil
     end
     _tickCooldownStats.durationQueries = _tickCooldownStats.durationQueries + 1
-    local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, spellID, true)
+    local ok, durObj = pcall(C_Spell.GetSpellCooldownDuration, spellID)
     local result = (ok and durObj) or nil
     _tickDurationCache[spellID] = result or false
     _tickDurationCacheTime[spellID] = now
@@ -574,7 +590,7 @@ local function TickCacheGetDuration(spellID)
 end
 
 local function TickCacheGetChargeDuration(spellID)
-    if not spellID or not C_Spell.GetSpellChargeDuration then return nil end
+    if not spellID or IsSecretValue(spellID) or not C_Spell.GetSpellChargeDuration then return nil end
     local now = GetCooldownCacheNow()
     local cached = _tickChargeDurationCache[spellID]
     if cached ~= nil then
@@ -594,7 +610,7 @@ local function TickCacheGetChargeDuration(spellID)
 end
 
 local function TickCacheGetOverrideSpell(spellID)
-    if not spellID or not C_Spell.GetOverrideSpell then return nil end
+    if not spellID or IsSecretValue(spellID) or not C_Spell.GetOverrideSpell then return nil end
     local now = GetCooldownCacheNow()
     local cached = _tickOverrideCache[spellID]
     if cached ~= nil then
@@ -606,9 +622,10 @@ local function TickCacheGetOverrideSpell(spellID)
         _tickOverrideCacheTime[spellID] = nil
     end
     _tickCooldownStats.overrideQueries = _tickCooldownStats.overrideQueries + 1
-    local overrideID = C_Spell.GetOverrideSpell(spellID)
-    if overrideID and IsSecretValue(overrideID) then
-        return overrideID
+    local ok, overrideID = pcall(C_Spell.GetOverrideSpell, spellID)
+    if not ok then return nil end
+    if IsSecretValue(overrideID) then
+        return nil
     end
     _tickOverrideCache[spellID] = overrideID or false
     _tickOverrideCacheTime[spellID] = now
@@ -616,7 +633,7 @@ local function TickCacheGetOverrideSpell(spellID)
 end
 
 local function TickCacheGetDisplayCount(spellID)
-    if not spellID or not C_Spell.GetSpellDisplayCount then return nil end
+    if not spellID or IsSecretValue(spellID) or not C_Spell.GetSpellDisplayCount then return nil end
     local now = GetCooldownCacheNow()
     local cached = _tickDisplayCountCache[spellID]
     if cached ~= nil then
@@ -630,7 +647,7 @@ local function TickCacheGetDisplayCount(spellID)
     _tickCooldownStats.displayCountQueries = _tickCooldownStats.displayCountQueries + 1
     local ok, val = pcall(C_Spell.GetSpellDisplayCount, spellID)
     local result = (ok and val) or nil
-    if result and IsSecretValue(result) then
+    if IsSecretValue(result) then
         return result
     end
     _tickDisplayCountCache[spellID] = result or false
@@ -943,7 +960,7 @@ local function GetBestSpellCooldown(spellID)
         chargeBased = maxCharges and maxCharges > 1
         -- Use the non-secret charge isActive boolean for recharge rendering.
         -- It means the recharge UI should run, not that all charges are gone.
-        local chargeActive = chargeInfo.isActive == true
+        local chargeActive = (not IsSecretValue(chargeInfo.isActive)) and chargeInfo.isActive == true
         if chargeActive then
             isActive = true
             realCooldownActive = true
@@ -992,7 +1009,7 @@ local function GetBestSpellCooldown(spellID)
             if chargeInfo then
                 local maxCharges = SafeToNumber(chargeInfo.maxCharges, nil)
                 overrideChargeBased = maxCharges and maxCharges > 1
-                local chargeActive2 = chargeInfo.isActive == true
+                local chargeActive2 = (not IsSecretValue(chargeInfo.isActive)) and chargeInfo.isActive == true
                 if chargeActive2 then
                     isActive = true
                     realCooldownActive = true
@@ -1291,7 +1308,7 @@ local function MirrorCurrentBlizzCooldown(icon, blizzCD)
         if sid then
             local apiActive, realActive, onGCD = CDMIcons.ClassifySpellCooldownState(sid)
             local gcdOnly = realActive ~= true and onGCD == true and apiActive ~= false
-            local okDur, durObj = pcall(C_Spell.GetSpellCooldownDuration, sid, true)
+            local okDur, durObj = pcall(C_Spell.GetSpellCooldownDuration, sid)
             if okDur and durObj and (realActive == true or (gcdOnly and IsGCDSwipeEnabled())) then
                 synced = pcall(addonCD.SetCooldownFromDurationObject, addonCD, durObj) and true or false
                 if synced then
@@ -4263,13 +4280,17 @@ local function UpdateIconCooldown(icon)
                         and entry._blizzChild and icon.Cooldown and icon.Cooldown.SetCooldownFromDurationObject and not icon._auraActive then
                         local spellDurObj = TickCacheGetDuration(cdSid)
                         if spellDurObj then
-                            pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, spellDurObj)
-                            icon._durObjHookSync = GetTime()
-                            icon._showingRealCooldownSwipe = true
-                            icon._showingGCDSwipe = nil
-                            icon._mirrorDriven = true
-                            blizzRealCooldownActive = true
-                            ReapplySwipeStyle(icon.Cooldown, icon)
+                            local applied = pcall(icon.Cooldown.SetCooldownFromDurationObject, icon.Cooldown, spellDurObj)
+                            if applied then
+                                icon._durObjHookSync = GetTime()
+                                icon._showingRealCooldownSwipe = true
+                                icon._showingGCDSwipe = nil
+                                icon._mirrorDriven = true
+                                blizzRealCooldownActive = true
+                                ReapplySwipeStyle(icon.Cooldown, icon)
+                            else
+                                icon._mirrorDriven = false
+                            end
                         else
                             icon._mirrorDriven = false
                         end
@@ -4645,7 +4666,7 @@ local function UpdateIconCooldown(icon)
                 -- re-fire when a self-buff defensive transitions from aura to
                 -- pure-cooldown display (e.g. Divine Protection, Divine Shield).
                 if _runtimeSid and C_Spell and C_Spell.GetSpellCooldownDuration then
-                    local okDur, spellDurObj = pcall(C_Spell.GetSpellCooldownDuration, _runtimeSid, true)
+                    local okDur, spellDurObj = pcall(C_Spell.GetSpellCooldownDuration, _runtimeSid)
                     if okDur and spellDurObj then
                         durObj = spellDurObj
                     end
@@ -4888,9 +4909,8 @@ local function UpdateIconCooldown(icon)
             -- maxCharges is non-secret (12.0.5+), always readable in combat.
             -- Resource overlay counts (Soul Fragments etc.) use
             -- GetSpellDisplayCount in the non-charge branch below.
-            local isMultiCharge = _cachedChargeInfo
-                and _cachedChargeInfo.maxCharges
-                and _cachedChargeInfo.maxCharges > 1
+            local cachedMaxCharges = _cachedChargeInfo and SafeToNumber(_cachedChargeInfo.maxCharges, nil)
+            local isMultiCharge = cachedMaxCharges and cachedMaxCharges > 1
 
             if isMultiCharge then
                 -- GetSpellDisplayCount is the canonical charge display API.
