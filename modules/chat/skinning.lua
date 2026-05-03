@@ -100,14 +100,17 @@ local function CreateGlassBackdrop(chatFrame)
     if not I.chatBackdrops[chatFrame] then
         local backdrop = CreateFrame("Frame", nil, chatFrame)
         backdrop:SetFrameLevel(math.max(1, chatFrame:GetFrameLevel() - 1))
-        backdrop:SetPoint("TOPLEFT", 0, 2)
-        backdrop:SetPoint("BOTTOMRIGHT", 0, -8)
         I.chatBackdrops[chatFrame] = backdrop
     end
 
+    local backdrop = I.chatBackdrops[chatFrame]
+    backdrop:ClearAllPoints()
+    backdrop:SetPoint("TOPLEFT", 0, 2)
+    backdrop:SetPoint("BOTTOMRIGHT", 0, -8)
+
     local bgColor, borderColor = I.GetChatSurfaceColors(settings)
-    I.ApplySurfaceStyle(I.chatBackdrops[chatFrame], bgColor, borderColor, 1)
-    I.chatBackdrops[chatFrame]:Show()
+    I.ApplySurfaceStyle(backdrop, bgColor, borderColor, 1)
+    backdrop:Show()
 end
 
 ---------------------------------------------------------------------------
@@ -607,6 +610,46 @@ local function RestyleChatScrollChromeAfterFadeIn(chatFrame)
     end
 end
 
+local function StyleCombatLogQuickButtonFrame()
+    local combatLog = _G.COMBATLOG or _G.ChatFrame2
+    local quickFrame = _G.CombatLogQuickButtonFrame_Custom
+    if not combatLog or not quickFrame or not quickFrame.ClearAllPoints then return end
+
+    -- Blizzard anchors this bar to COMBATLOG plus the scrollbar width. QUI's
+    -- scrollbar sits inside the chat surface, so that extra width makes the
+    -- combat-log filter strip protrude past the visible chat window.
+    quickFrame:ClearAllPoints()
+    quickFrame:SetPoint("BOTTOMLEFT", combatLog, "TOPLEFT", 0, 3)
+    quickFrame:SetPoint("BOTTOMRIGHT", combatLog, "TOPRIGHT", 0, 3)
+
+    if quickFrame.SetWidth and combatLog.GetWidth then
+        local width = tonumber(combatLog:GetWidth())
+        if width and width > 0 then
+            quickFrame:SetWidth(width)
+        end
+    end
+end
+
+local function RestyleCombatLogQuickButtonFrame()
+    StyleCombatLogQuickButtonFrame()
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, StyleCombatLogQuickButtonFrame)
+    end
+end
+
+local combatLogHooksInstalled = false
+local function InstallCombatLogHooks()
+    if combatLogHooksInstalled or not hooksecurefunc then return end
+    if not _G.Blizzard_CombatLog_Update_QuickButtons then return end
+
+    combatLogHooksInstalled = true
+    hooksecurefunc("Blizzard_CombatLog_Update_QuickButtons", RestyleCombatLogQuickButtonFrame)
+    if _G.Blizzard_CombatLog_QuickButtonFrame_OnLoad then
+        hooksecurefunc("Blizzard_CombatLog_QuickButtonFrame_OnLoad", RestyleCombatLogQuickButtonFrame)
+    end
+    RestyleCombatLogQuickButtonFrame()
+end
+
 local scrollChromeHooksInstalled = false
 local function InstallScrollChromeHooks()
     if scrollChromeHooksInstalled or not hooksecurefunc then return end
@@ -624,6 +667,7 @@ local function InstallScrollChromeHooks()
     if FCF_FadeOutScrollbar then
         hooksecurefunc("FCF_FadeOutScrollbar", RestyleChatScrollChrome)
     end
+    InstallCombatLogHooks()
 end
 
 ---------------------------------------------------------------------------
@@ -636,11 +680,108 @@ local STRIPPED_PARENTKEYS = {
     "Left", "Middle", "Right",
     "ActiveLeft", "ActiveMiddle", "ActiveRight",
     "HighlightLeft", "HighlightMiddle", "HighlightRight",
+    "leftSelectedTexture", "middleSelectedTexture", "rightSelectedTexture",
+    "leftHighlightTexture", "middleHighlightTexture", "rightHighlightTexture",
+    "conversationIcon",
 }
 
 local TAB_CHROME_HEIGHT = 22
 local TAB_TEXT_PAD_X = 8
 local UNREAD_PULSE_HEIGHT = 3
+
+local function GetTabChromeWidth(tab)
+    local chatFrame = I.GetTabChatFrame and I.GetTabChatFrame(tab)
+    if not I.IsTemporaryChatFrame(chatFrame) or not tab.GetWidth then return nil end
+
+    local tabWidth = tonumber(tab:GetWidth())
+    local extraPadding = tonumber(tab.sizePadding) or 0
+    if not tabWidth or extraPadding <= 0 then return nil end
+
+    -- Blizzard adds sizePadding to temporary tabs for the whisper/conversation
+    -- icon. QUI hides that icon, so omit the icon reserve from our visible skin.
+    return math.max(1, tabWidth - extraPadding)
+end
+
+local function GetTabForChatFrame(chatFrame)
+    if not chatFrame then return nil end
+    if chatFrame.GetName then
+        local frameName = chatFrame:GetName()
+        if frameName then
+            return _G[frameName .. "Tab"]
+        end
+    end
+    if chatFrame.GetID then
+        local frameID = chatFrame:GetID()
+        if frameID then
+            return _G["ChatFrame" .. frameID .. "Tab"]
+        end
+    end
+    return nil
+end
+
+local function VisitChatFrameTab(chatFrame, seen, callback)
+    local tab = GetTabForChatFrame(chatFrame)
+    if tab and not seen[tab] then
+        seen[tab] = true
+        callback(tab)
+    end
+end
+
+local function VisitChatFrame(chatFrame, seen, callback)
+    if chatFrame and not seen[chatFrame] then
+        seen[chatFrame] = true
+        callback(chatFrame)
+    end
+end
+
+local function ForEachChatFrame(callback)
+    local seen = {}
+    local numChatWindows = _G.NUM_CHAT_WINDOWS or NUM_CHAT_WINDOWS or 10
+
+    for i = 1, numChatWindows do
+        VisitChatFrame(_G["ChatFrame" .. i], seen, callback)
+    end
+
+    if type(_G.CHAT_FRAMES) == "table" then
+        for _, frameName in pairs(_G.CHAT_FRAMES) do
+            VisitChatFrame(_G[frameName], seen, callback)
+        end
+    end
+
+    local dock = _G.GENERAL_CHAT_DOCK
+    if not dock then return end
+
+    local dockedFrames
+    if type(_G.FCFDock_GetChatFrames) == "function" then
+        local ok, frames = pcall(_G.FCFDock_GetChatFrames, dock)
+        if ok then dockedFrames = frames end
+    end
+    dockedFrames = dockedFrames or dock.DOCKED_CHAT_FRAMES or _G.DOCKED_CHAT_FRAMES
+
+    if type(dockedFrames) ~= "table" then return end
+    for _, chatFrame in pairs(dockedFrames) do
+        VisitChatFrame(chatFrame, seen, callback)
+    end
+end
+
+local function ForEachChatTab(callback)
+    local seen = {}
+
+    -- Temporary whisper windows are docked chat frames. Walk the same combined
+    -- frame list used by SkinAll so their tabs are styled with regular tabs.
+    ForEachChatFrame(function(chatFrame)
+        VisitChatFrameTab(chatFrame, seen, callback)
+    end)
+end
+
+local function IsDockSelectedTab(tab)
+    if not tab or type(_G.FCFDock_GetSelectedWindow) ~= "function" or not _G.GENERAL_CHAT_DOCK then
+        return false
+    end
+
+    local ok, selectedFrame = pcall(_G.FCFDock_GetSelectedWindow, _G.GENERAL_CHAT_DOCK)
+    return ok and GetTabForChatFrame(selectedFrame) == tab
+end
 
 -- Idempotent strip used by both the initial paint and every Blizzard repaint.
 -- SetAlpha alone wasn't sticking — Blizzard's FCFTab_UpdateColors does
@@ -684,7 +825,12 @@ local function LayoutTabChrome(tab)
     -- same height while leaving Blizzard's own tab hitboxes/layout intact.
     backdrop:ClearAllPoints()
     backdrop:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 0, 0)
-    backdrop:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, 0)
+    local chromeWidth = GetTabChromeWidth(tab)
+    if chromeWidth then
+        backdrop:SetWidth(chromeWidth)
+    else
+        backdrop:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, 0)
+    end
     backdrop:SetHeight(TAB_CHROME_HEIGHT)
 
     local fontString = tab:GetFontString()
@@ -720,14 +866,11 @@ local function UpdateTabColors(tab)
     local settings = I.GetSettings()
     if not settings or not I.tabBackdrops[tab] then return end
 
-    local chatFrame = I.GetTabChatFrame(tab)
-    if I.IsTemporaryChatFrame(chatFrame) then return end
-
     local alpha = settings.glass and settings.glass.bgAlpha or 0.4
 
     -- Check if this tab is selected
     local isSelected = false
-    for i = 1, NUM_CHAT_WINDOWS do
+    for i = 1, (_G.NUM_CHAT_WINDOWS or NUM_CHAT_WINDOWS or 10) do
         local cf = _G["ChatFrame" .. i]
         if cf and cf:IsShown() then
             local frameTab = _G["ChatFrame" .. i .. "Tab"]
@@ -740,6 +883,9 @@ local function UpdateTabColors(tab)
 
     -- Also check button state
     if tab.GetButtonState and tab:GetButtonState() == "PUSHED" then
+        isSelected = true
+    end
+    if not isSelected and IsDockSelectedTab(tab) then
         isSelected = true
     end
 
@@ -778,9 +924,7 @@ end
 
 local function StyleTab(tab)
     if not tab then return end
-
-    local chatFrame = I.GetTabChatFrame(tab)
-    if I.IsTemporaryChatFrame(chatFrame) then return end
+    if tab.IsForbidden and tab:IsForbidden() then return end
 
     local settings = I.GetSettings()
     if not settings then return end
@@ -831,12 +975,7 @@ local function StyleAllTabs()
     local settings = I.GetSettings()
     if not settings or not settings.enabled then return end
 
-    for i = 1, NUM_CHAT_WINDOWS do
-        local tab = _G["ChatFrame" .. i .. "Tab"]
-        if tab then
-            StyleTab(tab)
-        end
-    end
+    ForEachChatTab(StyleTab)
 
     local TF = ns.QUI.Chat and ns.QUI.Chat.TabFilters
     if TF and TF.UpdateTabIndicators then
@@ -931,12 +1070,26 @@ end
 local function SkinAllChatFrames()
     InstallScrollChromeHooks()
 
-    for i = 1, NUM_CHAT_WINDOWS do
-        local chatFrame = _G["ChatFrame" .. i]
-        if chatFrame then
+    ForEachChatFrame(function(chatFrame)
+        if I.IsTemporaryChatFrame(chatFrame) then
+            -- Whisper/popout chat frames keep their Blizzard frame hitbox, but
+            -- their visible body and input should align with regular QUI chat.
+            local settings = I.GetSettings()
+            if settings and settings.enabled and settings.glass and settings.glass.enabled then
+                StripDefaultTextures(chatFrame)
+                CreateGlassBackdrop(chatFrame)
+            end
+            if ns.QUI.Chat.EditBoxBasics and ns.QUI.Chat.EditBoxBasics.StyleEditBox then
+                ns.QUI.Chat.EditBoxBasics.StyleEditBox(chatFrame)
+            end
+            ApplyMessagePadding(chatFrame)
+        else
             SkinChatFrame(chatFrame)
         end
-    end
+    end)
+
+    InstallCombatLogHooks()
+    RestyleCombatLogQuickButtonFrame()
 end
 
 ---------------------------------------------------------------------------
@@ -961,3 +1114,13 @@ ns.QUI.Chat.SkinFrame = SkinChatFrame
 ns.QUI.Chat.SkinAll   = SkinAllChatFrames
 
 InstallScrollChromeHooks()
+InstallCombatLogHooks()
+
+local combatLogEventFrame = CreateFrame("Frame")
+combatLogEventFrame:RegisterEvent("ADDON_LOADED")
+combatLogEventFrame:RegisterEvent("PLAYER_LOGIN")
+combatLogEventFrame:SetScript("OnEvent", function(_, event, addonName)
+    if event == "ADDON_LOADED" and addonName ~= "Blizzard_CombatLog" then return end
+    InstallCombatLogHooks()
+    RestyleCombatLogQuickButtonFrame()
+end)

@@ -485,6 +485,11 @@ end
 -- Refresh tab colors (used by tab-click hook to update selection state)
 ---------------------------------------------------------------------------
 local function RefreshAllTabColors()
+    if ns.QUI.Chat.Skinning and ns.QUI.Chat.Skinning.StyleAllTabs then
+        ns.QUI.Chat.Skinning.StyleAllTabs()
+        return
+    end
+
     for i = 1, NUM_CHAT_WINDOWS do
         local tab = _G["ChatFrame" .. i .. "Tab"]
         if tab and tabBackdrops[tab] then

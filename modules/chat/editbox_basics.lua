@@ -91,6 +91,8 @@ end
 -- Style edit box (chat input area)
 ---------------------------------------------------------------------------
 local function StyleEditBox(chatFrame)
+    if not chatFrame or (chatFrame.IsForbidden and chatFrame:IsForbidden()) then return end
+
     local settings = I.GetSettings()
     if not settings or not settings.editBox or not settings.editBox.enabled then return end
     if not settings.glass or not settings.glass.enabled then return end
