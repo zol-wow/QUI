@@ -46,6 +46,7 @@ local defaults = {
             gameMenuDim = true,  -- Dim background when game menu is open
             skinPowerBarAlt = true,  -- Skin encounter/quest power bar (PlayerPowerBarAlt)
             skinStatusTrackingBars = true,  -- Skin bottom HUD XP / reputation / status tracking bars
+            skinDamageMeter = true,  -- Skin Blizzard's built-in Damage Meter (12.0+) when enabled
             statusTrackingBarsBarColorMode = "accent",  -- blizzard | custom | class | accent
             statusTrackingBarsBarColor = { 0.2, 0.5, 1.0, 1.0 },  -- fill when mode is custom (alpha optional)
             statusTrackingBarsBarHeight = 0,  -- 0 = keep Blizzard default height for slot
@@ -214,6 +215,23 @@ local defaults = {
                 backdropColor = {0, 0, 0, 0.6},
                 borderColor = {0, 0, 0, 1},
             },
+        },
+
+        damageMeter = {
+            -- Shadow of Blizzard's built-in Damage Meter settings (Midnight 12.0+).
+            -- QUI options page writes here; sync layer pushes through to Blizzard.
+            -- See skinning/gameplay/damage_meter.lua and modules/ui/settings/skinning_content.lua.
+            enabled         = false,                                -- match Blizzard's stock (off by default)
+            visibility      = 0,                                    -- Enum.DamageMeterVisibility.Always (verified)
+            style           = 0,                                    -- Enum.DamageMeterStyle.Default (verified)
+            numberDisplay   = 0,                                    -- Enum.DamageMeterNumbers.Minimal (verified)
+            useClassColor   = true,
+            showBarIcons    = true,
+            barHeight       = 25,                                   -- DAMAGE_METER_DEFAULT_BAR_HEIGHT
+            barSpacing      = 4,                                    -- DAMAGE_METER_DEFAULT_BAR_SPACING
+            textSize        = 100,                                  -- 50–150 in Edit Mode, internally 0–1 scale
+            windowAlpha     = 100,                                  -- 50–100% in Edit Mode, internally 0–1 alpha
+            backgroundAlpha = 100,                                  -- 0–100% in Edit Mode, internally 0–1 alpha
         },
 
         -- Alert & Toast Skinning Settings (enabled via general.skinAlerts)
@@ -1265,8 +1283,73 @@ local defaults = {
                 format = "24h",          -- "24h" or "12h"
                 color = {0.6, 0.6, 0.6}, -- Gray color
             },
+            -- Message modifiers pipeline (Phase A)
+            modifiers = {
+                classColors = {
+                    enabled = true,
+                    recolorBodyText = false,  -- recolor names mentioned in body text (more expensive regex; opt-in)
+                },
+                channelShorten = {
+                    enabled = true,
+                    preset = "letter",        -- "letter" | "number"
+                },
+                keywordAlert = {
+                    enabled = false,                        -- default off; opt-in (sounds + flashes can be intrusive)
+                    keywords = {},                           -- list of strings (user-added)
+                    includeOwnName = true,                   -- always-on trigger: own character name
+                    includeFirstName = false,                -- additional always-on trigger: own first name (if name has spaces — rare)
+                    includeGuildName = false,                -- additional always-on trigger: own guild name when in a guild
+                    skipSelf = true,                         -- don't alert on own messages
+                    highlightColor = { 0.204, 0.831, 0.600, 1 },  -- mint accent #34D399
+                    soundFile = "Sound\\Interface\\RaidWarning.ogg",  -- LSM-resolvable; falls back to literal path
+                    flashTab = false,                        -- FCF_StartAlertFlash on the tab
+                },
+                redundantText = {
+                    enabled = false,                      -- default off; changes message format. Conservative default.
+                    patterns = {
+                        loot = true,                       -- "You receive item: %s" → "✓ %s"; "PlayerX receives item: %s" → "✓ PlayerX %s"
+                        currency = true,                   -- LOOT_CURRENCY_SELF / LOOT_CURRENCY → "↑%dx %s"
+                        xp = true,                         -- COMBATLOG_XPGAIN_FIRSTPERSON → "+%d XP"
+                        honor = true,                      -- COMBATLOG_HONORGAIN_NO_RANK / similar → "+%d Honor"
+                        reputation = true,                 -- FACTION_STANDING_INCREASED → "↑%d %s" / DECREASED → "↓%d %s"
+                    },
+                },
+            },
+            -- Persistent message history (Phase B)
+            -- Settings live on profile; captured entries live per-character at db.char.chat.history
+            history = {
+                enabled = true,                       -- master toggle for capture + login re-pump
+                retentionDays = 7,                    -- global default retention (1-30)
+                storeWhispers = false,                -- opt-in; warns about Blizzard HistoryKeeper duplicate restoration
+                showSeparators = true,                -- "── Previous session ──" / "── Resumed ──" markers around restored block
+                perChannelRetention = {},             -- map: chatTypeKey -> override days. Empty = use default.
+            },
+            -- Persistent edit-box command history (Phase C)
+            -- Settings live on profile; captured entries live per-character at db.char.chat.editboxHistory.entries
+            editboxHistory = {
+                enabled = true,                       -- persist Up/Down arrow recall across /reload
+                maxEntries = 200,                     -- 50-500 slider; FIFO trim
+                filterSensitive = true,               -- skip /password, /logout, /quit, /exit, /dnd, /afk, /camp, /script, /run, /console
+                restoreChatType = true,               -- Up arrow restores chat type and target on recall
+            },
+            -- Hyperlink enhancements (Phase D)
+            hyperlinks = {
+                coordinates = true,                   -- (x, y) and [x, y] become clickable waypoints
+                friendlyURLs = false,                 -- opinionated rendering; opt-in (Wowhead/Raidbots/Logs labels)
+                interactiveNames = true,              -- click class-colored names → quick-action menu
+            },
+            -- Per-tab content filtering (Phase E)
+            -- Map: chatFrameID -> { customized = true, groups = {...}, channels = {...} }
+            -- Empty by default; populated when users opt in via the Tab Filters settings tile.
+            tabs = {},
+            -- Custom button bar (Phase F)
+            -- Map: chatFrameID -> { enabled, position, buttons = {...}, customButtons = {...} }
+            -- Empty by default; populated when users enable a bar for a specific chat frame.
+            buttonBars = {},
             -- Copy button mode: "always", "hover", "hidden", "disabled"
             copyButtonMode = "always",
+            copyHistorySource = "live",   -- "live" = current scrollback, "persisted" = saved history when enabled
+            scrollbackLines = 0,          -- 0 = client default; options expose 500-5000
             -- Default chat tab on login/reload (1 = General, 2-10 = other tabs)
             defaultTab = 1,
             defaultTabPerSpec = false,    -- Use spec-specific default tabs

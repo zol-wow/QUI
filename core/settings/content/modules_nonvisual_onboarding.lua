@@ -228,6 +228,24 @@ Register(
 )
 
 ---------------------------------------------------------------------------
+-- Chat group
+---------------------------------------------------------------------------
+
+-- Chat module master toggle. QUI_RefreshChat tears down glass, tabs, edit
+-- box styling, copy buttons, and fade; message filters and link hooks are
+-- permanent but re-check db.profile.chat.enabled on every event.
+Register(
+    "chat",
+    "Chat",
+    "Chat Engine",
+    "Glass chat frames, URL clickability, timestamps, copy buttons, and message history.",
+    false,
+    DBProfile("chat"),
+    "enabled",
+    "QUI_RefreshChat"
+)
+
+---------------------------------------------------------------------------
 -- Consumable Macros (QoL) — custom setEnabled routes through the module API
 ---------------------------------------------------------------------------
 

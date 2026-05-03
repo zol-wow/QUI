@@ -449,6 +449,58 @@ Utils.PlaceRow = Helpers.PlaceRow
 Utils.EnsureDefaults = Helpers.EnsureDefaults
 
 ---------------------------------------------------------------------------
+-- FRAME SIZE SECTION
+-- Width/Height sliders bound through a proxy table. Used by Layout Mode
+-- mover panels for resizable frames (damage meter windows, ChatFrame1).
+-- opts.getSize() must return (width, height); opts.setSize(w, h) applies +
+-- persists. Caller controls clamps and persistence path.
+---------------------------------------------------------------------------
+function Utils.BuildSizeCollapsible(content, opts, sections, relayout)
+    local GUI = QUI and QUI.GUI
+    if not GUI or type(opts) ~= "table"
+        or type(opts.getSize) ~= "function"
+        or type(opts.setSize) ~= "function" then
+        return
+    end
+
+    local minW = opts.minW or 100
+    local maxW = opts.maxW or 1400
+    local minH = opts.minH or 100
+    local maxH = opts.maxH or 900
+    local widthDescription  = opts.widthDescription  or "Frame width in pixels."
+    local heightDescription = opts.heightDescription or "Frame height in pixels."
+
+    local function ReadSize()
+        local w, h = opts.getSize()
+        return tonumber(w) or 0, tonumber(h) or 0
+    end
+
+    local proxy = setmetatable({}, {
+        __index = function(_, k)
+            local w, h = ReadSize()
+            if k == "width"  then return math.floor(w + 0.5) end
+            if k == "height" then return math.floor(h + 0.5) end
+            return 0
+        end,
+        __newindex = function(_, k, v)
+            if type(v) ~= "number" then return end
+            local cw, ch = ReadSize()
+            if k == "width"  then opts.setSize(v, ch) end
+            if k == "height" then opts.setSize(cw, v) end
+        end,
+    })
+
+    local PLACEHOLDER = 2 * Utils.FORM_ROW + 8
+    Utils.CreateCollapsible(content, "Frame Size", PLACEHOLDER, function(body)
+        local sy = -4
+        local widthSlider  = GUI:CreateFormSlider(body, "Width",  minW, maxW, 1, "width",  proxy, nil, nil, { description = widthDescription })
+        sy = Utils.PlaceRow(widthSlider, body, sy)
+        local heightSlider = GUI:CreateFormSlider(body, "Height", minH, maxH, 1, "height", proxy, nil, nil, { description = heightDescription })
+        Utils.PlaceRow(heightSlider, body, sy)
+    end, sections, relayout)
+end
+
+---------------------------------------------------------------------------
 -- BACKDROP & BORDER SECTION (shared by combatTimer, brezCounter)
 ---------------------------------------------------------------------------
 

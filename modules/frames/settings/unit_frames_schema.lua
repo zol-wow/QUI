@@ -784,7 +784,7 @@ local function RenderDefaultColorsSection(sectionHost, ctx)
         "defaultHealthOpacity",
         db.general,
         RefreshUnitFrames,
-        nil,
+        { deferOnDrag = true },
         {
             description = "Opacity of the filled portion of the health bar. 1.0 is fully opaque.",
         }
@@ -803,7 +803,7 @@ local function RenderDefaultColorsSection(sectionHost, ctx)
         "defaultBgOpacity",
         db.general,
         RefreshUnitFrames,
-        nil,
+        { deferOnDrag = true },
         {
             description = "Opacity of the bar background shown behind the health fill.",
         }
@@ -817,7 +817,7 @@ local function RenderDefaultColorsSection(sectionHost, ctx)
         "defaultOpacity",
         db.general,
         RefreshUnitFrames,
-        nil,
+        { deferOnDrag = true },
         {
             description = "Overall opacity of the unit frame, multiplied on top of the individual bar opacities.",
         }
@@ -896,7 +896,7 @@ local function RenderDarkModeSection(sectionHost, ctx)
         "darkModeHealthOpacity",
         db.general,
         RefreshUnitFrames,
-        nil,
+        { deferOnDrag = true },
         {
             description = "Opacity of the health fill while Dark Mode is on.",
         }
@@ -915,7 +915,7 @@ local function RenderDarkModeSection(sectionHost, ctx)
         "darkModeBgOpacity",
         db.general,
         RefreshUnitFrames,
-        nil,
+        { deferOnDrag = true },
         {
             description = "Opacity of the bar background while Dark Mode is on.",
         }
@@ -929,7 +929,7 @@ local function RenderDarkModeSection(sectionHost, ctx)
         "darkModeOpacity",
         db.general,
         RefreshUnitFrames,
-        nil,
+        { deferOnDrag = true },
         {
             description = "Overall frame opacity while Dark Mode is on, multiplied on top of the individual bar opacities.",
         }
@@ -1222,10 +1222,10 @@ local function RenderFrameAppearanceSection(sectionHost, ctx)
         end
     end
 
-    local widthSlider = gui:CreateFormSlider(card.frame, nil, 100, 500, 1, "width", unit.unitDB, widthCallback, nil, {
+    local widthSlider = gui:CreateFormSlider(card.frame, nil, 100, 500, 1, "width", unit.unitDB, widthCallback, { deferOnDrag = true }, {
         description = "Frame width in pixels.",
     })
-    local heightSlider = gui:CreateFormSlider(card.frame, nil, 20, 100, 1, "height", unit.unitDB, RefreshUnitFrames, nil, {
+    local heightSlider = gui:CreateFormSlider(card.frame, nil, 20, 100, 1, "height", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Frame height in pixels. This is the total frame height, including the power bar if one is shown.",
     })
     card.AddRow(
@@ -1233,7 +1233,7 @@ local function RenderFrameAppearanceSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Height", heightSlider)
     )
 
-    local borderSlider = gui:CreateFormSlider(card.frame, nil, 0, 5, 1, "borderSize", unit.unitDB, RefreshUnitFrames, nil, {
+    local borderSlider = gui:CreateFormSlider(card.frame, nil, 0, 5, 1, "borderSize", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Border thickness in pixels around the frame. Set to 0 to hide the border entirely.",
     })
     local textureDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.GetTextureList(), "texture", unit.unitDB, RefreshUnitFrames, {
@@ -1245,7 +1245,7 @@ local function RenderFrameAppearanceSection(sectionHost, ctx)
     )
 
     if unitKey == "boss" then
-        local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "spacing", unit.unitDB, RefreshUnitFrames, nil, {
+        local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "spacing", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
             description = "Vertical spacing in pixels between adjacent boss frames in an encounter.",
         })
         card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Spacing", spacingSlider))
@@ -1390,7 +1390,7 @@ local function RenderBarsAbsorbSection(sectionHost, ctx)
     local enabledCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", absorbs, RefreshUnitFrames, {
         description = "Overlay an indicator on the health bar showing the size of incoming damage absorbs.",
     })
-    local opacitySlider = gui:CreateFormSlider(card.frame, nil, 0, 1, 0.05, "opacity", absorbs, RefreshUnitFrames, nil, {
+    local opacitySlider = gui:CreateFormSlider(card.frame, nil, 0, 1, 0.05, "opacity", absorbs, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Opacity of the absorb shield overlay.",
     })
     card.AddRow(
@@ -1435,7 +1435,7 @@ local function RenderBarsHealPredictionSection(sectionHost, ctx)
     local enabledCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", healPrediction, RefreshUnitFrames, {
         description = "Overlay an indicator on the health bar showing heals being cast on this unit before they land.",
     })
-    local opacitySlider = gui:CreateFormSlider(card.frame, nil, 0, 1, 0.05, "opacity", healPrediction, RefreshUnitFrames, nil, {
+    local opacitySlider = gui:CreateFormSlider(card.frame, nil, 0, 1, 0.05, "opacity", healPrediction, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Opacity of the incoming-heal overlay.",
     })
     card.AddRow(
@@ -1473,7 +1473,7 @@ local function RenderBarsPowerSection(sectionHost, ctx)
     local showPowerCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showPowerBar", unit.unitDB, RefreshUnitFrames, {
         description = "Show a power bar below the health bar on this frame.",
     })
-    local powerHeightSlider = gui:CreateFormSlider(card.frame, nil, 1, 20, 1, "powerBarHeight", unit.unitDB, RefreshUnitFrames, nil, {
+    local powerHeightSlider = gui:CreateFormSlider(card.frame, nil, 1, 20, 1, "powerBarHeight", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Height of the power bar in pixels. Counted as part of the overall frame Height.",
     })
     card.AddRow(
@@ -1779,7 +1779,7 @@ local function RenderCastbarSection(sectionHost, ctx)
     local textureDropdown = gui:CreateFormDropdown(generalCard.frame, nil, optionsAPI.GetTextureList(), "texture", castDB, refresh, {
         description = "Statusbar texture used to fill the castbar. Supports SharedMedia.",
     })
-    local borderSlider = gui:CreateFormSlider(generalCard.frame, nil, 0, 5, 1, "borderSize", castDB, refresh, nil, {
+    local borderSlider = gui:CreateFormSlider(generalCard.frame, nil, 0, 5, 1, "borderSize", castDB, refresh, { deferOnDrag = true }, {
         description = "Thickness of the castbar outline in pixels. 0 hides the outline.",
     })
     generalCard.AddRow(
@@ -1819,10 +1819,10 @@ local function RenderCastbarSection(sectionHost, ctx)
     -- Size --------------------------------------------------------------
     builder.Header("Size")
     local sizeCard = builder.Card()
-    local widthSlider = gui:CreateFormSlider(sizeCard.frame, nil, 50, 2000, 1, "width", castDB, refresh, nil, {
+    local widthSlider = gui:CreateFormSlider(sizeCard.frame, nil, 50, 2000, 1, "width", castDB, refresh, { deferOnDrag = true }, {
         description = "Pixel width of the castbar.",
     })
-    local heightSlider = gui:CreateFormSlider(sizeCard.frame, nil, 4, 60, 1, "height", castDB, refresh, nil, {
+    local heightSlider = gui:CreateFormSlider(sizeCard.frame, nil, 4, 60, 1, "height", castDB, refresh, { deferOnDrag = true }, {
         description = "Pixel height of the castbar itself.",
     })
     sizeCard.AddRow(
@@ -1830,10 +1830,10 @@ local function RenderCastbarSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(sizeCard.frame, "Bar Height", heightSlider)
     )
 
-    local iconSizeSlider = gui:CreateFormSlider(sizeCard.frame, nil, 8, 80, 1, "iconSize", castDB, refresh, nil, {
+    local iconSizeSlider = gui:CreateFormSlider(sizeCard.frame, nil, 8, 80, 1, "iconSize", castDB, refresh, { deferOnDrag = true }, {
         description = "Pixel size of the spell icon beside the castbar.",
     })
-    local iconScaleSlider = gui:CreateFormSlider(sizeCard.frame, nil, 0.5, 2.0, 0.1, "iconScale", castDB, refresh, nil, {
+    local iconScaleSlider = gui:CreateFormSlider(sizeCard.frame, nil, 0.5, 2.0, 0.1, "iconScale", castDB, refresh, { deferOnDrag = true }, {
         description = "Scale multiplier applied to the spell icon. >1 enlarges it relative to the bar.",
     })
     sizeCard.AddRow(
@@ -1854,7 +1854,7 @@ local function RenderCastbarSection(sectionHost, ctx)
         local showTicksCheckbox = gui:CreateFormCheckbox(tickCard.frame, nil, "showChannelTicks", castDB, refresh, {
             description = "Draw tick marks on the castbar at the moments a channeled spell triggers a tick.",
         })
-        local thicknessSlider = gui:CreateFormSlider(tickCard.frame, nil, 1, 5, 0.5, "channelTickThickness", castDB, refresh, nil, {
+        local thicknessSlider = gui:CreateFormSlider(tickCard.frame, nil, 1, 5, 0.5, "channelTickThickness", castDB, refresh, { deferOnDrag = true }, {
             description = "Thickness of the tick markers, in pixels.",
         })
         tickCard.AddRow(
@@ -1865,7 +1865,7 @@ local function RenderCastbarSection(sectionHost, ctx)
         local sourceDropdown = gui:CreateFormDropdown(tickCard.frame, nil, CASTBAR_TICK_SOURCE_OPTIONS, "channelTickSourcePolicy", castDB, refresh, {
             description = "Where the tick timings come from. Auto tries QUI's static table first, then live calibration.",
         })
-        local confidenceSlider = gui:CreateFormSlider(tickCard.frame, nil, 0.5, 1.0, 0.05, "channelTickMinConfidence", castDB, refresh, nil, {
+        local confidenceSlider = gui:CreateFormSlider(tickCard.frame, nil, 0.5, 1.0, 0.05, "channelTickMinConfidence", castDB, refresh, { deferOnDrag = true }, {
             description = "Minimum calibration confidence required before runtime-detected ticks are drawn.",
         })
         tickCard.AddRow(
@@ -1883,10 +1883,10 @@ local function RenderCastbarSection(sectionHost, ctx)
     -- Text & Display ---------------------------------------------------
     builder.Header("Text & Display")
     local textCard = builder.Card()
-    local fontSizeSlider = gui:CreateFormSlider(textCard.frame, nil, 8, 24, 1, "fontSize", castDB, refresh, nil, {
+    local fontSizeSlider = gui:CreateFormSlider(textCard.frame, nil, 8, 24, 1, "fontSize", castDB, refresh, { deferOnDrag = true }, {
         description = "Font size used for the spell name and cast time text on the castbar.",
     })
-    local maxLenSlider = gui:CreateFormSlider(textCard.frame, nil, 0, 30, 1, "maxLength", castDB, refresh, nil, {
+    local maxLenSlider = gui:CreateFormSlider(textCard.frame, nil, 0, 30, 1, "maxLength", castDB, refresh, { deferOnDrag = true }, {
         description = "Maximum number of characters shown for the spell name. 0 disables truncation.",
     })
     textCard.AddRow(
@@ -1901,7 +1901,7 @@ local function RenderCastbarSection(sectionHost, ctx)
     local iconAnchorDropdown = gui:CreateFormDropdown(iconCard.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "iconAnchor", castDB, refresh, {
         description = "Which edge or corner of the castbar the spell icon attaches to.",
     })
-    local iconSpacingSlider = gui:CreateFormSlider(iconCard.frame, nil, -50, 50, 1, "iconSpacing", castDB, refresh, nil, {
+    local iconSpacingSlider = gui:CreateFormSlider(iconCard.frame, nil, -50, 50, 1, "iconSpacing", castDB, refresh, { deferOnDrag = true }, {
         description = "Pixel gap between the icon and the castbar. Negative values overlap them.",
     })
     iconCard.AddRow(
@@ -1909,7 +1909,7 @@ local function RenderCastbarSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(iconCard.frame, "Icon Spacing", iconSpacingSlider)
     )
 
-    local iconBorderSlider = gui:CreateFormSlider(iconCard.frame, nil, 0, 5, 0.1, "iconBorderSize", castDB, refresh, nil, {
+    local iconBorderSlider = gui:CreateFormSlider(iconCard.frame, nil, 0, 5, 0.1, "iconBorderSize", castDB, refresh, { deferOnDrag = true }, {
         description = "Thickness of the border drawn around the spell icon, in pixels.",
     })
     iconCard.AddRow(optionsAPI.BuildSettingRow(iconCard.frame, "Icon Border Size", iconBorderSlider))
@@ -1929,10 +1929,10 @@ local function RenderCastbarSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(spellTextCard.frame, "Show Spell Text", spellShowCheckbox)
     )
 
-    local spellOffXSlider = gui:CreateFormSlider(spellTextCard.frame, nil, -200, 200, 1, "spellTextOffsetX", castDB, refresh, nil, {
+    local spellOffXSlider = gui:CreateFormSlider(spellTextCard.frame, nil, -200, 200, 1, "spellTextOffsetX", castDB, refresh, { deferOnDrag = true }, {
         description = "Horizontal pixel offset of the spell name from its anchor.",
     })
-    local spellOffYSlider = gui:CreateFormSlider(spellTextCard.frame, nil, -200, 200, 1, "spellTextOffsetY", castDB, refresh, nil, {
+    local spellOffYSlider = gui:CreateFormSlider(spellTextCard.frame, nil, -200, 200, 1, "spellTextOffsetY", castDB, refresh, { deferOnDrag = true }, {
         description = "Vertical pixel offset of the spell name from its anchor.",
     })
     spellTextCard.AddRow(
@@ -1955,10 +1955,10 @@ local function RenderCastbarSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(timeTextCard.frame, "Show Time Text", timeShowCheckbox)
     )
 
-    local timeOffXSlider = gui:CreateFormSlider(timeTextCard.frame, nil, -200, 200, 1, "timeTextOffsetX", castDB, refresh, nil, {
+    local timeOffXSlider = gui:CreateFormSlider(timeTextCard.frame, nil, -200, 200, 1, "timeTextOffsetX", castDB, refresh, { deferOnDrag = true }, {
         description = "Horizontal pixel offset of the time text from its anchor.",
     })
-    local timeOffYSlider = gui:CreateFormSlider(timeTextCard.frame, nil, -200, 200, 1, "timeTextOffsetY", castDB, refresh, nil, {
+    local timeOffYSlider = gui:CreateFormSlider(timeTextCard.frame, nil, -200, 200, 1, "timeTextOffsetY", castDB, refresh, { deferOnDrag = true }, {
         description = "Vertical pixel offset of the time text from its anchor.",
     })
     timeTextCard.AddRow(
@@ -1987,10 +1987,10 @@ local function RenderCastbarSection(sectionHost, ctx)
         })
         empoweredCard.AddRow(optionsAPI.BuildSettingRow(empoweredCard.frame, "Stage Number Anchor", levelAnchorDropdown))
 
-        local levelOffXSlider = gui:CreateFormSlider(empoweredCard.frame, nil, -200, 200, 1, "empoweredLevelTextOffsetX", castDB, refresh, nil, {
+        local levelOffXSlider = gui:CreateFormSlider(empoweredCard.frame, nil, -200, 200, 1, "empoweredLevelTextOffsetX", castDB, refresh, { deferOnDrag = true }, {
             description = "Horizontal pixel offset of the empowered stage text from its anchor.",
         })
-        local levelOffYSlider = gui:CreateFormSlider(empoweredCard.frame, nil, -200, 200, 1, "empoweredLevelTextOffsetY", castDB, refresh, nil, {
+        local levelOffYSlider = gui:CreateFormSlider(empoweredCard.frame, nil, -200, 200, 1, "empoweredLevelTextOffsetY", castDB, refresh, { deferOnDrag = true }, {
             description = "Vertical pixel offset of the empowered stage text from its anchor.",
         })
         empoweredCard.AddRow(
@@ -2164,7 +2164,7 @@ local function RenderTextNameSection(sectionHost, ctx)
     local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showName", unit.unitDB, RefreshUnitFrames, {
         description = "Show the unit's name on this frame.",
     })
-    local sizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 24, 1, "nameFontSize", unit.unitDB, RefreshUnitFrames, nil, {
+    local sizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 24, 1, "nameFontSize", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Font size used for the unit's name.",
     })
     card.AddRow(
@@ -2183,10 +2183,10 @@ local function RenderTextNameSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Anchor", anchorDropdown)
     )
 
-    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "nameOffsetX", unit.unitDB, RefreshUnitFrames, nil, {
+    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "nameOffsetX", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Horizontal pixel offset for the name text from its anchor. Positive moves right, negative moves left.",
     })
-    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -50, 50, 1, "nameOffsetY", unit.unitDB, RefreshUnitFrames, nil, {
+    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -50, 50, 1, "nameOffsetY", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Vertical pixel offset for the name text from its anchor. Positive moves up, negative moves down.",
     })
     card.AddRow(
@@ -2194,7 +2194,7 @@ local function RenderTextNameSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider)
     )
 
-    local maxLengthSlider = gui:CreateFormSlider(card.frame, nil, 0, 30, 1, "maxNameLength", unit.unitDB, RefreshUnitFrames, nil, {
+    local maxLengthSlider = gui:CreateFormSlider(card.frame, nil, 0, 30, 1, "maxNameLength", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Truncate names longer than this many characters. Set to 0 to disable truncation entirely.",
     })
     card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Max Length (0 = none)", maxLengthSlider))
@@ -2250,7 +2250,7 @@ local function RenderTextTargetOfTargetSection(sectionHost, ctx)
         dividerCell
     )
 
-    local limitSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "totNameCharLimit", unit.unitDB, RefreshUnitFrames, nil, {
+    local limitSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "totNameCharLimit", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Maximum characters shown for the target-of-target's name. Set to 0 to show the full name.",
     })
     card.AddRow(optionsAPI.BuildSettingRow(card.frame, "ToT Name Character Limit", limitSlider))
@@ -2301,7 +2301,7 @@ local function RenderTextHealthSection(sectionHost, ctx)
     local colorPicker = gui:CreateFormColorPicker(card.frame, nil, "healthTextColor", unit.unitDB, RefreshUnitFrames, nil, {
         description = "Color used for the health text when class/reaction coloring is not applied to health text.",
     })
-    local sizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 24, 1, "healthFontSize", unit.unitDB, RefreshUnitFrames, nil, {
+    local sizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 24, 1, "healthFontSize", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Font size used for the health text.",
     })
     card.AddRow(
@@ -2312,7 +2312,7 @@ local function RenderTextHealthSection(sectionHost, ctx)
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "healthAnchor", unit.unitDB, RefreshUnitFrames, {
         description = "Where on the frame the health text is anchored. X/Y Offset below nudges it from this anchor point.",
     })
-    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "healthOffsetX", unit.unitDB, RefreshUnitFrames, nil, {
+    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "healthOffsetX", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Horizontal pixel offset for the health text from its anchor. Positive moves right, negative moves left.",
     })
     card.AddRow(
@@ -2320,7 +2320,7 @@ local function RenderTextHealthSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider)
     )
 
-    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -50, 50, 1, "healthOffsetY", unit.unitDB, RefreshUnitFrames, nil, {
+    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -50, 50, 1, "healthOffsetY", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Vertical pixel offset for the health text from its anchor. Positive moves up, negative moves down.",
     })
     card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider))
@@ -2379,7 +2379,7 @@ local function RenderTextPowerSection(sectionHost, ctx)
     })
     customColorCell = optionsAPI.BuildSettingRow(card.frame, "Custom Power Text Color", colorPicker)
     customColorCell:SetAlpha(unit.unitDB.powerTextUsePowerColor and 0.4 or 1.0)
-    local sizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 24, 1, "powerTextFontSize", unit.unitDB, RefreshUnitFrames, nil, {
+    local sizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 24, 1, "powerTextFontSize", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Font size used for the power text.",
     })
     card.AddRow(
@@ -2390,7 +2390,7 @@ local function RenderTextPowerSection(sectionHost, ctx)
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "powerTextAnchor", unit.unitDB, RefreshUnitFrames, {
         description = "Where on the frame the power text is anchored. X/Y Offset below nudges it from this anchor point.",
     })
-    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "powerTextOffsetX", unit.unitDB, RefreshUnitFrames, nil, {
+    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "powerTextOffsetX", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Horizontal pixel offset for the power text from its anchor. Positive moves right, negative moves left.",
     })
     card.AddRow(
@@ -2398,7 +2398,7 @@ local function RenderTextPowerSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider)
     )
 
-    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -50, 50, 1, "powerTextOffsetY", unit.unitDB, RefreshUnitFrames, nil, {
+    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -50, 50, 1, "powerTextOffsetY", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Vertical pixel offset for the power text from its anchor. Positive moves up, negative moves down.",
     })
     card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Y Offset", yOffsetSlider))
@@ -2429,7 +2429,7 @@ local function RenderTextStanceSection(sectionHost, ctx)
     local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", stanceDB, RefreshUnitFrames, {
         description = "Show a text label on the player frame naming your current stance, shapeshift form, or aura.",
     })
-    local sizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 24, 1, "fontSize", stanceDB, RefreshUnitFrames, nil, {
+    local sizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 24, 1, "fontSize", stanceDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Font size used for the stance/form text.",
     })
     card.AddRow(
@@ -2440,7 +2440,7 @@ local function RenderTextStanceSection(sectionHost, ctx)
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "anchor", stanceDB, RefreshUnitFrames, {
         description = "Where on the player frame the stance/form text is anchored.",
     })
-    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "offsetX", stanceDB, RefreshUnitFrames, nil, {
+    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "offsetX", stanceDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Horizontal pixel offset for the stance/form text from its anchor.",
     })
     card.AddRow(
@@ -2448,7 +2448,7 @@ local function RenderTextStanceSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "X Offset", xOffsetSlider)
     )
 
-    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "offsetY", stanceDB, RefreshUnitFrames, nil, {
+    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "offsetY", stanceDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Vertical pixel offset for the stance/form text from its anchor.",
     })
     local classColorCheckbox = gui:CreateFormCheckbox(card.frame, nil, "useClassColor", stanceDB, RefreshUnitFrames, {
@@ -2470,10 +2470,10 @@ local function RenderTextStanceSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Show Icon", showIconCheckbox)
     )
 
-    local iconSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 32, 1, "iconSize", stanceDB, RefreshUnitFrames, nil, {
+    local iconSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 32, 1, "iconSize", stanceDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Pixel size of the stance/form icon.",
     })
-    local iconOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "iconOffsetX", stanceDB, RefreshUnitFrames, nil, {
+    local iconOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "iconOffsetX", stanceDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Horizontal offset between the stance/form icon and its adjacent text.",
     })
     card.AddRow(
@@ -2528,7 +2528,7 @@ local function RenderAuraIconsSection(sectionHost, ctx, prefix, kind)
         optionsAPI.BuildSettingRow(card.frame, "Hide Duration Swipe", hideSwipeCheckbox)
     )
 
-    local iconSizeSlider = gui:CreateFormSlider(card.frame, nil, 12, 50, 1, iconSizeKey, auraDB, refreshAuras, nil, {
+    local iconSizeSlider = gui:CreateFormSlider(card.frame, nil, 12, 50, 1, iconSizeKey, auraDB, refreshAuras, { deferOnDrag = true }, {
         description = "Pixel size of each " .. kindLower .. " icon.",
     })
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, AURA_CORNER_OPTIONS, anchorKey, auraDB, refreshAuras, {
@@ -2599,10 +2599,10 @@ local function RenderAuraIconsSection(sectionHost, ctx, prefix, kind)
         end
     end
 
-    local maxIconsSlider = gui:CreateFormSlider(card.frame, nil, 1, 32, 1, maxKey, auraDB, refreshAuras, nil, {
+    local maxIconsSlider = gui:CreateFormSlider(card.frame, nil, 1, 32, 1, maxKey, auraDB, refreshAuras, { deferOnDrag = true }, {
         description = "Hard cap on how many " .. kindLower .. " icons this frame displays at once.",
     })
-    local maxPerRowSlider = gui:CreateFormSlider(card.frame, nil, 0, 16, 1, maxRowKey, auraDB, refreshAuras, nil, {
+    local maxPerRowSlider = gui:CreateFormSlider(card.frame, nil, 0, 16, 1, maxRowKey, auraDB, refreshAuras, { deferOnDrag = true }, {
         description = "How many icons fit in a row before wrapping. Set to 0 to keep them all on a single row.",
     })
     card.AddRow(
@@ -2610,10 +2610,10 @@ local function RenderAuraIconsSection(sectionHost, ctx, prefix, kind)
         optionsAPI.BuildSettingRow(card.frame, "Max Per Row (0 = unlimited)", maxPerRowSlider)
     )
 
-    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, offsetXKey, auraDB, refreshAuras, nil, {
+    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, offsetXKey, auraDB, refreshAuras, { deferOnDrag = true }, {
         description = "Horizontal pixel offset for the " .. kindLower .. " block from its anchor corner.",
     })
-    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, offsetYKey, auraDB, refreshAuras, nil, {
+    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, offsetYKey, auraDB, refreshAuras, { deferOnDrag = true }, {
         description = "Vertical pixel offset for the " .. kindLower .. " block from its anchor corner.",
     })
     card.AddRow(
@@ -2650,7 +2650,7 @@ local function RenderAuraTextSection(sectionHost, ctx, prefix, kind)
     builder.Header(kind .. " Stack & Duration")
     local card = builder.Card()
 
-    local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 10, 1, prefix .. "Spacing", auraDB, refreshAuras, nil, {
+    local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 10, 1, prefix .. "Spacing", auraDB, refreshAuras, { deferOnDrag = true }, {
         description = "Pixel gap between adjacent " .. kindLower .. " icons.",
     })
     local showStackCheckbox = gui:CreateFormCheckbox(card.frame, nil, prefix .. "ShowStack", auraDB, refreshAuras, {
@@ -2661,7 +2661,7 @@ local function RenderAuraTextSection(sectionHost, ctx, prefix, kind)
         optionsAPI.BuildSettingRow(card.frame, "Stack Show", showStackCheckbox)
     )
 
-    local stackSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 40, 1, prefix .. "StackSize", auraDB, refreshAuras, nil, {
+    local stackSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 40, 1, prefix .. "StackSize", auraDB, refreshAuras, { deferOnDrag = true }, {
         description = "Font size used for the stack count on " .. kindLower .. " icons.",
     })
     local stackAnchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, prefix .. "StackAnchor", auraDB, refreshAuras, {
@@ -2672,10 +2672,10 @@ local function RenderAuraTextSection(sectionHost, ctx, prefix, kind)
         optionsAPI.BuildSettingRow(card.frame, "Stack Anchor", stackAnchorDropdown)
     )
 
-    local stackXOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "StackOffsetX", auraDB, refreshAuras, nil, {
+    local stackXOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "StackOffsetX", auraDB, refreshAuras, { deferOnDrag = true }, {
         description = "Horizontal pixel offset for the stack count from its anchor.",
     })
-    local stackYOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "StackOffsetY", auraDB, refreshAuras, nil, {
+    local stackYOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "StackOffsetY", auraDB, refreshAuras, { deferOnDrag = true }, {
         description = "Vertical pixel offset for the stack count from its anchor.",
     })
     card.AddRow(
@@ -2694,7 +2694,7 @@ local function RenderAuraTextSection(sectionHost, ctx, prefix, kind)
         optionsAPI.BuildSettingRow(card.frame, "Duration Show", showDurationCheckbox)
     )
 
-    local durationSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 40, 1, prefix .. "DurationSize", auraDB, refreshAuras, nil, {
+    local durationSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 40, 1, prefix .. "DurationSize", auraDB, refreshAuras, { deferOnDrag = true }, {
         description = "Font size used for the duration countdown on " .. kindLower .. " icons.",
     })
     local durationAnchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, prefix .. "DurationAnchor", auraDB, refreshAuras, {
@@ -2705,10 +2705,10 @@ local function RenderAuraTextSection(sectionHost, ctx, prefix, kind)
         optionsAPI.BuildSettingRow(card.frame, "Duration Anchor", durationAnchorDropdown)
     )
 
-    local durationXOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "DurationOffsetX", auraDB, refreshAuras, nil, {
+    local durationXOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "DurationOffsetX", auraDB, refreshAuras, { deferOnDrag = true }, {
         description = "Horizontal pixel offset for the duration countdown from its anchor.",
     })
-    local durationYOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "DurationOffsetY", auraDB, refreshAuras, nil, {
+    local durationYOffsetSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, prefix .. "DurationOffsetY", auraDB, refreshAuras, { deferOnDrag = true }, {
         description = "Vertical pixel offset for the duration countdown from its anchor.",
     })
     card.AddRow(
@@ -2919,10 +2919,10 @@ local function RenderPortraitSettingsSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Portrait Side", sideDropdown)
     )
 
-    local sizeSlider = gui:CreateFormSlider(card.frame, nil, 20, 150, 1, "portraitSize", unit.unitDB, RefreshUnitFrames, nil, {
+    local sizeSlider = gui:CreateFormSlider(card.frame, nil, 20, 150, 1, "portraitSize", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Portrait width and height in pixels.",
     })
-    local borderSlider = gui:CreateFormSlider(card.frame, nil, 0, 5, 1, "portraitBorderSize", unit.unitDB, RefreshUnitFrames, nil, {
+    local borderSlider = gui:CreateFormSlider(card.frame, nil, 0, 5, 1, "portraitBorderSize", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Border thickness in pixels around the portrait. Set to 0 to hide the border entirely.",
     })
     card.AddRow(
@@ -2930,10 +2930,10 @@ local function RenderPortraitSettingsSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Portrait Border", borderSlider)
     )
 
-    local gapSlider = gui:CreateFormSlider(card.frame, nil, 0, 10, 1, "portraitGap", unit.unitDB, RefreshUnitFrames, nil, {
+    local gapSlider = gui:CreateFormSlider(card.frame, nil, 0, 10, 1, "portraitGap", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Pixel gap between the portrait and the unit frame.",
     })
-    local offsetXSlider = gui:CreateFormSlider(card.frame, nil, -500, 500, 1, "portraitOffsetX", unit.unitDB, RefreshUnitFrames, nil, {
+    local offsetXSlider = gui:CreateFormSlider(card.frame, nil, -500, 500, 1, "portraitOffsetX", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Extra horizontal pixel offset applied to the portrait on top of its Side and Gap placement.",
     })
     card.AddRow(
@@ -2941,7 +2941,7 @@ local function RenderPortraitSettingsSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Portrait Offset X", offsetXSlider)
     )
 
-    local offsetYSlider = gui:CreateFormSlider(card.frame, nil, -500, 500, 1, "portraitOffsetY", unit.unitDB, RefreshUnitFrames, nil, {
+    local offsetYSlider = gui:CreateFormSlider(card.frame, nil, -500, 500, 1, "portraitOffsetY", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Extra vertical pixel offset applied to the portrait.",
     })
     local classColorCheckbox = gui:CreateFormCheckbox(card.frame, nil, "portraitBorderUseClassColor", unit.unitDB, function()
@@ -3015,7 +3015,7 @@ local function AddIndicatorCardRows(card, optionsAPI, gui, db, labels, xKey, yKe
     local enableCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", db, RefreshUnitFrames, {
         description = labels.descEnable,
     })
-    local sizeSlider = gui:CreateFormSlider(card.frame, nil, labels.sizeMin or 8, labels.sizeMax or 48, 1, "size", db, RefreshUnitFrames, nil, {
+    local sizeSlider = gui:CreateFormSlider(card.frame, nil, labels.sizeMin or 8, labels.sizeMax or 48, 1, "size", db, RefreshUnitFrames, { deferOnDrag = true }, {
         description = labels.descSize,
     })
     card.AddRow(
@@ -3026,7 +3026,7 @@ local function AddIndicatorCardRows(card, optionsAPI, gui, db, labels, xKey, yKe
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "anchor", db, RefreshUnitFrames, {
         description = labels.descAnchor,
     })
-    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, xKey, db, RefreshUnitFrames, nil, {
+    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, xKey, db, RefreshUnitFrames, { deferOnDrag = true }, {
         description = labels.descX,
     })
     card.AddRow(
@@ -3034,7 +3034,7 @@ local function AddIndicatorCardRows(card, optionsAPI, gui, db, labels, xKey, yKe
         optionsAPI.BuildSettingRow(card.frame, labels.x, xOffsetSlider)
     )
 
-    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, yKey, db, RefreshUnitFrames, nil, {
+    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, yKey, db, RefreshUnitFrames, { deferOnDrag = true }, {
         description = labels.descY,
     })
     card.AddRow(optionsAPI.BuildSettingRow(card.frame, labels.y, yOffsetSlider))
@@ -3335,7 +3335,7 @@ local function RenderPrivateAurasSection(sectionHost, ctx)
     local enableCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", privateAuras, RefreshUnitFrames, {
         description = "Enable private auras on this unit frame.",
     })
-    local maxSlider = gui:CreateFormSlider(card.frame, nil, 1, 5, 1, "maxPerFrame", privateAuras, RefreshUnitFrames, nil, {
+    local maxSlider = gui:CreateFormSlider(card.frame, nil, 1, 5, 1, "maxPerFrame", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Maximum number of private-aura icons the client will draw on this frame at once.",
     })
     card.AddRow(
@@ -3343,10 +3343,10 @@ local function RenderPrivateAurasSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Max Per Frame", maxSlider)
     )
 
-    local sizeSlider = gui:CreateFormSlider(card.frame, nil, 10, 40, 1, "iconSize", privateAuras, RefreshUnitFrames, nil, {
+    local sizeSlider = gui:CreateFormSlider(card.frame, nil, 10, 40, 1, "iconSize", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Pixel size of each private-aura icon.",
     })
-    local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 8, 1, "spacing", privateAuras, RefreshUnitFrames, nil, {
+    local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 8, 1, "spacing", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Pixel gap between adjacent private-aura icons.",
     })
     card.AddRow(
@@ -3365,10 +3365,10 @@ local function RenderPrivateAurasSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Grow Direction", growDropdown)
     )
 
-    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "anchorOffsetX", privateAuras, RefreshUnitFrames, nil, {
+    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "anchorOffsetX", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Horizontal pixel offset for the private-aura block from its anchor.",
     })
-    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "anchorOffsetY", privateAuras, RefreshUnitFrames, nil, {
+    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "anchorOffsetY", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Vertical pixel offset for the private-aura block from its anchor.",
     })
     card.AddRow(
@@ -3390,7 +3390,7 @@ local function RenderPrivateAurasSection(sectionHost, ctx)
     local reverseCheckbox = gui:CreateFormCheckbox(card.frame, nil, "reverseSwipe", privateAuras, RefreshUnitFrames, {
         description = "Reverse the swipe direction so it fills clockwise as time elapses instead of sweeping away.",
     })
-    local borderSlider = gui:CreateFormSlider(card.frame, nil, -100, 10, 0.5, "borderScale", privateAuras, RefreshUnitFrames, nil, {
+    local borderSlider = gui:CreateFormSlider(card.frame, nil, -100, 10, 0.5, "borderScale", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Scale applied to the private-aura icon border. Set to -100 to hide the border entirely.",
     })
     card.AddRow(
@@ -3398,10 +3398,10 @@ local function RenderPrivateAurasSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Border Scale", borderSlider)
     )
 
-    local textScaleSlider = gui:CreateFormSlider(card.frame, nil, 0.5, 5, 0.5, "textScale", privateAuras, RefreshUnitFrames, nil, {
+    local textScaleSlider = gui:CreateFormSlider(card.frame, nil, 0.5, 5, 0.5, "textScale", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Scale factor applied to the stack count and countdown number on each private-aura icon.",
     })
-    local frameLevelSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "frameLevel", privateAuras, RefreshUnitFrames, nil, {
+    local frameLevelSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "frameLevel", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Frame-level offset added to the private-aura container so icons render above or below other elements on this frame.",
     })
     card.AddRow(
@@ -3409,10 +3409,10 @@ local function RenderPrivateAurasSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Frame Level Offset", frameLevelSlider)
     )
 
-    local textOffsetXSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "textOffsetX", privateAuras, RefreshUnitFrames, nil, {
+    local textOffsetXSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "textOffsetX", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Horizontal offset for the stack count / countdown number within each private-aura icon.",
     })
-    local textOffsetYSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "textOffsetY", privateAuras, RefreshUnitFrames, nil, {
+    local textOffsetYSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "textOffsetY", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Vertical offset for the stack count / countdown number within each private-aura icon.",
     })
     card.AddRow(

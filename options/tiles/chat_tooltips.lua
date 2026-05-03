@@ -26,6 +26,30 @@ function V2.Register(frame)
                 navRoutes = { { tabIndex = 2, subTabIndex = 5 } },
             },
             {
+                id = "filters",
+                name = "Filters",
+                sectionNav = true,
+                featureId = "chatFrame1Filters",
+            },
+            {
+                id = "buttonBar",
+                name = "Button Bar",
+                sectionNav = true,
+                featureId = "chatFrame1ButtonBar",
+            },
+            {
+                id = "alerts",
+                name = "Alerts",
+                sectionNav = true,
+                featureId = "chatFrame1Alerts",
+            },
+            {
+                id = "history",
+                name = "History",
+                sectionNav = true,
+                featureId = "chatFrame1History",
+            },
+            {
                 id = "tooltips",
                 name = "Tooltips",
                 sectionNav = true,

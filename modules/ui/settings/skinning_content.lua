@@ -6,7 +6,6 @@
 local ADDON_NAME, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
-local C = GUI.Colors
 
 -- Import shared utilities
 local Shared = ns.QUI_Options
@@ -18,13 +17,294 @@ local Registry = Settings and Settings.Registry
 local Schema = Settings and Settings.Schema
 local RenderAdapters = Settings and Settings.RenderAdapters
 
+local THEME_COLORS_SUBPAGE_INDEX = 9
+
+local function RefreshSkinSurfaces()
+    if ns.Registry then
+        ns.Registry:RefreshAll("skinning")
+    end
+    if _G.QUI_RefreshStatusTrackingBarSkin then
+        _G.QUI_RefreshStatusTrackingBarSkin()
+    end
+end
+
+local function RefreshChatSurfaces()
+    if _G.QUI_RefreshChat then
+        _G.QUI_RefreshChat()
+    end
+end
+
+local function RefreshTooltipSkin()
+    if ns.QUI_RefreshTooltipSkinColors then
+        ns.QUI_RefreshTooltipSkinColors()
+    elseif ns.QUI_RefreshTooltips then
+        ns.QUI_RefreshTooltips()
+    end
+end
+
+local function QueueAccentPanelRefresh()
+    if not GUI.RefreshAccentColor then return end
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            if GUI.RefreshAccentColor then GUI:RefreshAccentColor() end
+        end)
+    else
+        GUI:RefreshAccentColor()
+    end
+end
+
+local function WatchAccentPickerClose()
+    if not GUI.RefreshAccentColor or GUI._accentPickerWatcher then return end
+    local watcher = CreateFrame("Frame")
+    GUI._accentPickerWatcher = watcher
+    watcher:SetScript("OnUpdate", function(self)
+        if not ColorPickerFrame:IsShown() then
+            self:SetScript("OnUpdate", nil)
+            GUI._accentPickerWatcher = nil
+            QueueAccentPanelRefresh()
+        end
+    end)
+end
+
+local function BuildThemePresetOptions()
+    local options = {}
+    for _, preset in ipairs(GUI.ThemePresets or {}) do
+        options[#options + 1] = { value = preset.name, text = preset.name }
+    end
+    options[#options + 1] = { value = "Class Colored", text = "Class Colored" }
+    options[#options + 1] = { value = "Faction Auto", text = "Faction Auto" }
+    options[#options + 1] = { value = "Custom", text = "Custom" }
+    return options
+end
+
+local function ApplyThemePreset(general, presetName)
+    if type(general) ~= "table" or type(presetName) ~= "string" then return end
+    general.themePreset = presetName
+    general.skinUseClassColor = (presetName == "Class Colored")
+
+    local r, g, b = 0.376, 0.647, 0.980
+    if GUI.ResolveThemePreset then
+        r, g, b = GUI:ResolveThemePreset(presetName)
+    end
+    general.addonAccentColor = { r, g, b, 1 }
+    if GUI.ApplyAccentColor then
+        GUI:ApplyAccentColor(r, g, b)
+    end
+    RefreshSkinSurfaces()
+    RefreshTooltipSkin()
+    QueueAccentPanelRefresh()
+end
+
+local function ApplyThemeColors()
+    local db = Shared.GetDB()
+    local general = db and db.general
+    if type(general) ~= "table" then return end
+
+    local presetName = type(general.themePreset) == "string" and general.themePreset or "Custom"
+    general.skinUseClassColor = (presetName == "Class Colored")
+
+    local r, g, b
+    if GUI.ResolveThemePreset then
+        r, g, b = GUI:ResolveThemePreset(presetName)
+    end
+    if not r then
+        local accent = general.addonAccentColor or {0.376, 0.647, 0.980, 1}
+        r, g, b = accent[1], accent[2], accent[3]
+    end
+    if presetName ~= "Custom" then
+        general.addonAccentColor = { r, g, b, 1 }
+    end
+    if GUI.ApplyAccentColor then
+        GUI:ApplyAccentColor(r, g, b)
+    end
+    RefreshSkinSurfaces()
+    RefreshTooltipSkin()
+    RefreshChatSurfaces()
+    QueueAccentPanelRefresh()
+end
+
+local function ReloadConfirm()
+    GUI:ShowConfirmation({
+        title = "Reload UI?",
+        message = "Skinning changes require a reload to take effect.",
+        acceptText = "Reload",
+        cancelText = "Later",
+        onAccept = function() QUI:SafeReload() end,
+    })
+end
+
+local function BuildThemeColorsTab(tabContent)
+    local PAD = 10
+    local FORM_ROW = 32
+    local P = Helpers.PlaceRow
+    local db = Shared.GetDB()
+
+    GUI:SetSearchContext({
+        tileId = "appearance",
+        tabName = "Appearance",
+        subPageIndex = THEME_COLORS_SUBPAGE_INDEX,
+        subTabName = "Theme & Colors",
+        featureId = "themeColorsPage",
+        category = "appearance",
+    })
+
+    if not db then return end
+    if not db.general then db.general = {} end
+    if not db.chat then db.chat = {} end
+    if not db.tooltip then db.tooltip = {} end
+
+    local general = db.general
+    local chat = db.chat
+    local tooltip = db.tooltip
+
+    if general.themePreset == nil then general.themePreset = "Custom" end
+    if general.skinUseClassColor == nil then general.skinUseClassColor = (general.themePreset == "Class Colored") end
+    if general.addonAccentColor == nil then general.addonAccentColor = {0.376, 0.647, 0.980, 1} end
+    if general.skinBgColor == nil then general.skinBgColor = {0.05, 0.05, 0.05, 0.95} end
+    if general.hideSkinBorders == nil then general.hideSkinBorders = false end
+    if general.skinBorderUseClassColor == nil then general.skinBorderUseClassColor = false end
+    if general.skinBorderColor == nil then
+        local accent = general.addonAccentColor or {0.376, 0.647, 0.980, 1}
+        general.skinBorderColor = { accent[1], accent[2], accent[3], accent[4] or 1 }
+    end
+
+    if not chat.glass then chat.glass = {} end
+    if chat.glass.enabled == nil then chat.glass.enabled = true end
+    if chat.glass.bgAlpha == nil then chat.glass.bgAlpha = 0.25 end
+    if chat.glass.bgColor == nil then chat.glass.bgColor = {0, 0, 0} end
+
+    if not chat.editBox then chat.editBox = {} end
+    if chat.editBox.enabled == nil then chat.editBox.enabled = true end
+    if chat.editBox.bgAlpha == nil then chat.editBox.bgAlpha = 0.25 end
+    if chat.editBox.bgColor == nil then chat.editBox.bgColor = {0, 0, 0} end
+
+    if tooltip.skinTooltips == nil then tooltip.skinTooltips = true end
+    if tooltip.bgColor == nil then tooltip.bgColor = {0.05, 0.05, 0.05, 1} end
+    if tooltip.bgOpacity == nil then tooltip.bgOpacity = 0.75 end
+    if tooltip.showBorder == nil then tooltip.showBorder = true end
+    if tooltip.borderThickness == nil then tooltip.borderThickness = 1 end
+    if tooltip.borderColor == nil then tooltip.borderColor = {0.376, 0.647, 0.980, 1} end
+    if tooltip.borderUseClassColor == nil then tooltip.borderUseClassColor = true end
+    if tooltip.borderUseAccentColor == nil then tooltip.borderUseAccentColor = false end
+    if tooltip.borderUseClassColor and tooltip.borderUseAccentColor then
+        tooltip.borderUseAccentColor = false
+    end
+
+    local sections, relayout, CreateCollapsible = Shared.CreateTilePage(tabContent, PAD)
+
+    CreateCollapsible("Theme Accent", 2 * FORM_ROW + 8, function(body)
+        local sy = -4
+        local themeDropdown
+        local accentColorPicker
+        themeDropdown = GUI:CreateFormDropdown(body, "Theme Preset", BuildThemePresetOptions(), "themePreset", general, function(presetName)
+            ApplyThemePreset(general, presetName)
+            if accentColorPicker and accentColorPicker.UpdateVisual then
+                accentColorPicker:UpdateVisual(general.addonAccentColor)
+            end
+        end, { description = "Global accent preset used by the options panel and accent-colored UI surfaces." })
+        sy = P(themeDropdown, body, sy)
+        accentColorPicker = GUI:CreateFormColorPicker(body, "Custom Accent Color", "addonAccentColor", general, function(r, g, b)
+            general.themePreset = "Custom"
+            general.skinUseClassColor = false
+            if themeDropdown and themeDropdown.UpdateVisual then
+                themeDropdown:UpdateVisual("Custom")
+            end
+            if GUI.ApplyAccentColor then
+                GUI:ApplyAccentColor(r, g, b)
+            end
+            RefreshSkinSurfaces()
+            RefreshTooltipSkin()
+            WatchAccentPickerClose()
+        end, { noAlpha = true },
+            { description = "Custom accent color used when Theme Preset is set to Custom." })
+        P(accentColorPicker, body, sy)
+    end)
+
+    CreateCollapsible("Global Skin Colors", 4 * FORM_ROW + 8, function(body)
+        local sy = -4
+        sy = P(GUI:CreateFormColorPicker(body, "Background Color", "skinBgColor", general, RefreshSkinSurfaces, { hasAlpha = true },
+            { description = "Background fill color applied to globally skinned frames. Alpha controls how opaque the fill is." }), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Hide Borders", "hideSkinBorders", general, RefreshSkinSurfaces,
+            { description = "Hide the 1px accent border drawn around globally skinned frames." }), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Use Class Color for Borders", "skinBorderUseClassColor", general, RefreshSkinSurfaces,
+            { description = "Color global skin borders with your class color instead of the custom color below." }), body, sy)
+        P(GUI:CreateFormColorPicker(body, "Border Color", "skinBorderColor", general, RefreshSkinSurfaces, { noAlpha = true },
+            { description = "Custom global skin border color used when class color is off." }), body, sy)
+    end)
+
+    CreateCollapsible("Chat Background", 6 * FORM_ROW + 8, function(body)
+        local sy = -4
+        sy = P(GUI:CreateFormCheckbox(body, "Chat Background Texture", "enabled", chat.glass, RefreshChatSurfaces,
+            { description = "Draw an opaque background behind the chat frame so text stays readable over busy scenery." }), body, sy)
+        sy = P(GUI:CreateFormSlider(body, "Chat Background Opacity", 0, 1.0, 0.05, "bgAlpha", chat.glass, RefreshChatSurfaces, nil,
+            { description = "Opacity of the chat background (0 is invisible, 1 is fully opaque)." }), body, sy)
+        sy = P(GUI:CreateFormColorPicker(body, "Chat Background Color", "bgColor", chat.glass, RefreshChatSurfaces, nil,
+            { description = "Color of the chat background." }), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Input Box Background Texture", "enabled", chat.editBox, RefreshChatSurfaces,
+            { description = "Draw an opaque background behind the chat input box for better contrast while typing." }), body, sy)
+        sy = P(GUI:CreateFormSlider(body, "Input Box Background Opacity", 0, 1.0, 0.05, "bgAlpha", chat.editBox, RefreshChatSurfaces, nil,
+            { description = "Opacity of the input box background (0 is invisible, 1 is fully opaque)." }), body, sy)
+        P(GUI:CreateFormColorPicker(body, "Input Box Background Color", "bgColor", chat.editBox, RefreshChatSurfaces, nil,
+            { description = "Color of the input box background." }), body, sy)
+    end)
+
+    CreateCollapsible("Tooltip Skinning", 8 * FORM_ROW + 8, function(body)
+        local sy = -4
+        sy = P(GUI:CreateFormCheckbox(body, "Skin Tooltips", "skinTooltips", tooltip, ReloadConfirm,
+            { description = "Apply the QUI theme colors and border to all game tooltips. Requires a UI reload to take effect." }), body, sy)
+        sy = P(GUI:CreateFormColorPicker(body, "Background Color", "bgColor", tooltip, RefreshTooltipSkin, nil,
+            { description = "Background color applied to skinned tooltips." }), body, sy)
+        sy = P(GUI:CreateFormSlider(body, "Background Opacity", 0, 1, 0.05, "bgOpacity", tooltip, RefreshTooltipSkin, {precision = 2},
+            { description = "Opacity of the tooltip background (0 is invisible, 1 is fully opaque)." }), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Show Border", "showBorder", tooltip, RefreshTooltipSkin,
+            { description = "Draw a border around skinned tooltips." }), body, sy)
+        sy = P(GUI:CreateFormSlider(body, "Border Thickness", 1, 10, 1, "borderThickness", tooltip, RefreshTooltipSkin, nil,
+            { description = "Thickness of the tooltip border in pixels." }), body, sy)
+
+        local borderColorPicker = GUI:CreateFormColorPicker(body, "Border Color", "borderColor", tooltip, RefreshTooltipSkin, nil,
+            { description = "Color of the tooltip border. Overridden by Class Color or Accent Color below if either is enabled." })
+        sy = P(borderColorPicker, body, sy)
+
+        local accentColorBorderCheck
+        local classColorBorderCheck = GUI:CreateFormCheckbox(body, "Use Class Color for Border", "borderUseClassColor", tooltip, function(val)
+            if val then
+                tooltip.borderUseAccentColor = false
+                if accentColorBorderCheck and accentColorBorderCheck.SetValue then accentColorBorderCheck:SetValue(false) end
+            end
+            if borderColorPicker and borderColorPicker.SetEnabled then
+                borderColorPicker:SetEnabled(not val and not tooltip.borderUseAccentColor)
+            end
+            RefreshTooltipSkin()
+        end, { description = "Color the tooltip border by the inspected unit's class (falls back to your class for non-unit tooltips)." })
+        sy = P(classColorBorderCheck, body, sy)
+
+        accentColorBorderCheck = GUI:CreateFormCheckbox(body, "Use Accent Color for Border", "borderUseAccentColor", tooltip, function(val)
+            if val then
+                tooltip.borderUseClassColor = false
+                if classColorBorderCheck and classColorBorderCheck.SetValue then classColorBorderCheck:SetValue(false) end
+            end
+            if borderColorPicker and borderColorPicker.SetEnabled then
+                borderColorPicker:SetEnabled(not val and not tooltip.borderUseClassColor)
+            end
+            RefreshTooltipSkin()
+        end, { description = "Color the tooltip border using the UI accent color." })
+        P(accentColorBorderCheck, body, sy)
+
+        if borderColorPicker and borderColorPicker.SetEnabled then
+            borderColorPicker:SetEnabled(not tooltip.borderUseClassColor and not tooltip.borderUseAccentColor)
+        end
+    end)
+
+    relayout()
+end
+
 local function BuildSkinningTab(tabContent)
     local PAD = 10
     local FORM_ROW = 32
     local P = Helpers.PlaceRow
     local db = Shared.GetDB()
 
-    GUI:SetSearchContext({tabIndex = 10, tabName = "Skinning & Autohide", subTabIndex = 2, subTabName = "Skinning"})
+    GUI:SetSearchContext({tabIndex = 10, tabName = "Appearance", subTabIndex = 2, subTabName = "Skinning"})
 
     if not db or not db.general then return end
 
@@ -41,16 +321,6 @@ local function BuildSkinningTab(tabContent)
     end
     if general.skinKeystoneFrame == nil then general.skinKeystoneFrame = true end
     local sections, relayout, CreateCollapsible = Shared.CreateTilePage(tabContent, PAD)
-
-    -- Helper to refresh all skinned frames
-    local function RefreshAllSkinning()
-        if ns.Registry then
-            ns.Registry:RefreshAll("skinning")
-        end
-        if _G.QUI_RefreshStatusTrackingBarSkin then
-            _G.QUI_RefreshStatusTrackingBarSkin()
-        end
-    end
 
     local function EnsureBorderOverrideDefaults(settings, prefix)
         if type(settings) ~= "table" then return end
@@ -77,13 +347,13 @@ local function BuildSkinningTab(tabContent)
         local useClassKey = kp ~= "" and (kp .. "BorderUseClassColor") or "borderUseClassColor"
         local colorKey = kp ~= "" and (kp .. "BorderColor") or "borderColor"
 
-        sy = P(GUI:CreateFormCheckbox(body, "Override Global Border", overrideKey, settings, RefreshAllSkinning,
-            { description = "Use a border style specific to this skin instead of the global default chosen above." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Border", hideKey, settings, RefreshAllSkinning,
+        sy = P(GUI:CreateFormCheckbox(body, "Override Global Border", overrideKey, settings, RefreshSkinSurfaces,
+            { description = "Use a border style specific to this skin instead of the global default chosen in Theme & Colors." }), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Hide Border", hideKey, settings, RefreshSkinSurfaces,
             { description = "Hide the border on this skin entirely. Only takes effect when the override above is enabled." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Use Class Color Border", useClassKey, settings, RefreshAllSkinning,
+        sy = P(GUI:CreateFormCheckbox(body, "Use Class Color Border", useClassKey, settings, RefreshSkinSurfaces,
             { description = "Color this skin's border with your class color. Only takes effect when the override above is enabled." }), body, sy)
-        sy = P(GUI:CreateFormColorPicker(body, "Border Color", colorKey, settings, RefreshAllSkinning, { noAlpha = true },
+        sy = P(GUI:CreateFormColorPicker(body, "Border Color", colorKey, settings, RefreshSkinSurfaces, { noAlpha = true },
             { description = "Custom border color used when override is on and class color is off." }), body, sy)
         return sy
     end
@@ -95,66 +365,14 @@ local function BuildSkinningTab(tabContent)
         local hideKey = kp ~= "" and (kp .. "HideBackground") or "hideBackground"
         local colorKey = kp ~= "" and (kp .. "BackgroundColor") or "backgroundColor"
 
-        sy = P(GUI:CreateFormCheckbox(body, "Override Global Background", overrideKey, settings, RefreshAllSkinning,
-            { description = "Use a background color specific to this skin instead of the global default chosen above." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Background", hideKey, settings, RefreshAllSkinning,
+        sy = P(GUI:CreateFormCheckbox(body, "Override Global Background", overrideKey, settings, RefreshSkinSurfaces,
+            { description = "Use a background color specific to this skin instead of the global default chosen in Theme & Colors." }), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Hide Background", hideKey, settings, RefreshSkinSurfaces,
             { description = "Hide the background fill on this skin entirely. Only takes effect when the override above is enabled." }), body, sy)
-        sy = P(GUI:CreateFormColorPicker(body, "Background Color", colorKey, settings, RefreshAllSkinning, nil,
+        sy = P(GUI:CreateFormColorPicker(body, "Background Color", colorKey, settings, RefreshSkinSurfaces, nil,
             { description = "Custom background color used when override is enabled." }), body, sy)
         return sy
     end
-
-    local function ReloadConfirm()
-        GUI:ShowConfirmation({
-            title = "Reload UI?", message = "Skinning changes require a reload to take effect.",
-            acceptText = "Reload", cancelText = "Later",
-            onAccept = function() QUI:SafeReload() end,
-        })
-    end
-
-    ---------------------------------------------------------------------------
-    -- Choose Default Color
-    ---------------------------------------------------------------------------
-    if general.skinBgColor == nil then general.skinBgColor = {0.05, 0.05, 0.05, 0.95} end
-
-    CreateCollapsible("Choose Default Color", 7 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Use Class Colors", "skinUseClassColor", general, function()
-            if general.skinUseClassColor then
-                local _, class = UnitClass("player")
-                local color = RAID_CLASS_COLORS[class]
-                if color and GUI.ApplyAccentColor then GUI:ApplyAccentColor(color.r, color.g, color.b) end
-            else
-                local c = general.addonAccentColor or {0.376, 0.647, 0.980, 1}
-                if GUI.ApplyAccentColor then GUI:ApplyAccentColor(c[1], c[2], c[3]) end
-            end
-            RefreshAllSkinning()
-            if GUI.RefreshAccentColor then GUI:RefreshAccentColor() end
-        end, { description = "Drive the addon's accent color from your class color instead of the custom accent below." }), body, sy)
-        sy = P(GUI:CreateFormColorPicker(body, "Accent Color", "addonAccentColor", general, function(r, g, b)
-            if GUI.ApplyAccentColor then GUI:ApplyAccentColor(r, g, b) end
-            RefreshAllSkinning()
-            if not GUI._accentPickerWatcher then
-                local watcher = CreateFrame("Frame")
-                GUI._accentPickerWatcher = watcher
-                watcher:SetScript("OnUpdate", function(self)
-                    if not ColorPickerFrame:IsShown() then
-                        self:SetScript("OnUpdate", nil); GUI._accentPickerWatcher = nil
-                        if GUI.RefreshAccentColor then GUI:RefreshAccentColor() end
-                    end
-                end)
-            end
-        end, { noAlpha = true },
-            { description = "Custom accent color used throughout the addon UI when Use Class Colors is off." }), body, sy)
-        sy = P(GUI:CreateFormColorPicker(body, "Background Color", "skinBgColor", general, RefreshAllSkinning, { hasAlpha = true },
-            { description = "Background fill color applied to every skinned frame. Alpha controls how opaque the fill is." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Borders", "hideSkinBorders", general, RefreshAllSkinning,
-            { description = "Hide the 1px accent border drawn around every skinned frame." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Use Class Color for Borders", "skinBorderUseClassColor", general, RefreshAllSkinning,
-            { description = "Color the skin borders with your class color instead of the custom color below." }), body, sy)
-        sy = P(GUI:CreateFormColorPicker(body, "Border Color", "skinBorderColor", general, RefreshAllSkinning, { noAlpha = true },
-            { description = "Custom border color used when class color is off." }), body, sy)
-    end)
 
     ---------------------------------------------------------------------------
     -- Game Menu
@@ -252,8 +470,26 @@ local function BuildSkinningTab(tabContent)
     if general.skinCraftingOrders == nil then general.skinCraftingOrders = false end
     if general.skinProfessions == nil then general.skinProfessions = false end
     if general.skinStatusTrackingBars == nil then general.skinStatusTrackingBars = true end
+    if general.skinDamageMeter == nil then general.skinDamageMeter = true end
+    if not db.damageMeter then db.damageMeter = {} end
+    local dm = db.damageMeter
+    if dm.enabled         == nil then dm.enabled         = false end
+    if dm.visibility      == nil then dm.visibility      = 0 end
+    if dm.style           == nil then dm.style           = 0 end
+    if dm.numberDisplay   == nil then dm.numberDisplay   = 0 end
+    if dm.useClassColor   == nil then dm.useClassColor   = true end
+    if dm.showBarIcons    == nil then dm.showBarIcons    = true end
+    if dm.barHeight       == nil then dm.barHeight       = 25 end
+    if dm.barSpacing      == nil then dm.barSpacing      = 4 end
+    if dm.textSize        == nil then dm.textSize        = 100 end
+    if dm.windowAlpha     == nil then dm.windowAlpha     = 100 end
+    if dm.backgroundAlpha == nil then dm.backgroundAlpha = 100 end
 
-    CreateCollapsible("Skin Blizzard Frames", 12 * FORM_ROW + 8, function(body)
+    local function WriteDM()
+        if _G.QUI_DamageMeter_ApplyToBlizzard then _G.QUI_DamageMeter_ApplyToBlizzard() end
+    end
+
+    CreateCollapsible("Skin Blizzard Frames", 13 * FORM_ROW + 8, function(body)
         local sy = -4
         sy = P(GUI:CreateFormCheckbox(body, "Alert Frames (Req. Reload)", "skinAlerts", general, ReloadConfirm,
             { description = "Skin the achievement, loot, and level-up alert popups. Requires a reload." }), body, sy)
@@ -261,6 +497,9 @@ local function BuildSkinningTab(tabContent)
             { description = "Skin the Auction House window and its tabs. Requires a reload." }), body, sy)
         sy = P(GUI:CreateFormCheckbox(body, "Crafting Orders (Req. Reload)", "skinCraftingOrders", general, ReloadConfirm,
             { description = "Skin the Crafting Orders interface used by professions. Requires a reload." }), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Damage Meter", "skinDamageMeter", general, function()
+            if _G.QUI_RefreshDamageMeterSkin then _G.QUI_RefreshDamageMeterSkin() end
+        end, { description = "Skin Blizzard's built-in damage meter (Midnight 12.0+) when enabled in WoW's Gameplay Enhancements options." }), body, sy)
         sy = P(GUI:CreateFormCheckbox(body, "Encounter Power Bar (Req. Reload)", "skinPowerBarAlt", general, ReloadConfirm,
             { description = "Skin the alternate power bar some encounters use (e.g., boss add health bars). Requires a reload." }), body, sy)
         sy = P(GUI:CreateFormCheckbox(body, "Inspect Frame (Req. Reload)", "skinInspectFrame", general, ReloadConfirm,
@@ -354,6 +593,44 @@ local function BuildSkinningTab(tabContent)
         AddBgOverrides(body, sy, general, "statusTrackingBars")
     end)
 
+    CreateCollapsible("Damage Meter", 11 * FORM_ROW + 8, function(body)
+        local sy = -4
+        sy = P(GUI:CreateFormCheckbox(body, "Enable Damage Meter", "enabled", dm, WriteDM,
+            { description = "Master toggle for Blizzard's built-in damage meter (Midnight 12.0+). Mirrors the damageMeterEnabled CVar." }), body, sy)
+        sy = P(GUI:CreateFormDropdown(body, "Visibility", {
+            { text = "Always",     value = 0 },
+            { text = "In Combat",  value = 1 },
+            { text = "Hidden",     value = 2 },
+        }, "visibility", dm, WriteDM,
+            { description = "When the meter is visible. Always = always shown when enabled; In Combat = only visible while you're in combat; Hidden = enabled but invisible." }), body, sy)
+        sy = P(GUI:CreateFormDropdown(body, "Style", {
+            { text = "Default",    value = 0 },
+            { text = "Bordered",   value = 1 },
+            { text = "Thin",       value = 3 },
+        }, "style", dm, WriteDM,
+            { description = "Bar layout style. Default = standard rows; Bordered = framed rows; Thin = compact rows with text above bar." }), body, sy)
+        sy = P(GUI:CreateFormDropdown(body, "Number Display", {
+            { text = "Minimal",    value = 0 },
+            { text = "Compact",    value = 1 },
+            { text = "Complete",   value = 2 },
+        }, "numberDisplay", dm, WriteDM,
+            { description = "How values are formatted on each bar. Minimal = single value; Compact = value (per-second); Complete = value (per-second) percentage%." }), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Use Class Colors", "useClassColor", dm, WriteDM,
+            { description = "Color each row's bar by the player's class color. Disable for monochrome." }), body, sy)
+        sy = P(GUI:CreateFormCheckbox(body, "Show Bar Icons", "showBarIcons", dm, WriteDM,
+            { description = "Show the spec or class icon on the left side of each row." }), body, sy)
+        sy = P(GUI:CreateFormSlider(body, "Bar Height", 15, 40, 1, "barHeight", dm, WriteDM, nil,
+            { description = "Pixel height of each row (15-40)." }), body, sy)
+        sy = P(GUI:CreateFormSlider(body, "Bar Spacing", 2, 10, 1, "barSpacing", dm, WriteDM, nil,
+            { description = "Pixel spacing between rows (2-10)." }), body, sy)
+        sy = P(GUI:CreateFormSlider(body, "Text Size", 50, 150, 10, "textSize", dm, WriteDM, nil,
+            { description = "Text size as a percentage of default (50-150, step 10)." }), body, sy)
+        sy = P(GUI:CreateFormSlider(body, "Window Alpha", 50, 100, 1, "windowAlpha", dm, WriteDM, nil,
+            { description = "Window transparency as a percentage (50-100). Lower values make the meter more see-through." }), body, sy)
+        P(GUI:CreateFormSlider(body, "Background Alpha", 0, 100, 1, "backgroundAlpha", dm, WriteDM, nil,
+            { description = "Background transparency as a percentage (0-100). 0 hides the row backgrounds entirely." }), body, sy)
+    end)
+
     -- Objective Tracker — flattened into Skinning. All
     -- widgets inline instead of nesting the layout-mode provider. Position
     -- is handled by Layout Mode and intentionally omitted here.
@@ -411,8 +688,31 @@ end
 
 -- Export
 ns.QUI_SkinningOptions = {
-    BuildSkinningTab = BuildSkinningTab
+    BuildSkinningTab = BuildSkinningTab,
+    BuildThemeColorsTab = BuildThemeColorsTab,
 }
+
+if Registry and Schema
+    and type(Registry.RegisterFeature) == "function"
+    and type(Schema.Feature) == "function"
+    and type(Schema.Section) == "function" then
+    Registry:RegisterFeature(Schema.Feature({
+        id = "themeColorsPage",
+        moverKey = "themeColors",
+        lookupKeys = { "theme", "colors", "accent", "skinColors", "chatBackground", "tooltipSkinning" },
+        category = "appearance",
+        nav = { tileId = "appearance", subPageIndex = THEME_COLORS_SUBPAGE_INDEX },
+        apply = ApplyThemeColors,
+        sections = {
+            Schema.Section({
+                id = "settings",
+                kind = "page",
+                minHeight = 80,
+                build = BuildThemeColorsTab,
+            }),
+        },
+    }))
+end
 
 if Registry and Schema and RenderAdapters
     and type(Registry.RegisterFeature) == "function"

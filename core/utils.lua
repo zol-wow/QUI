@@ -12,6 +12,7 @@ local pairs = pairs
 local ipairs = ipairs
 local tostring = tostring
 local tonumber = tonumber
+local select = select
 local table_remove = table.remove
 
 -- Cache LibSharedMedia reference
@@ -41,6 +42,18 @@ end
 --- @return boolean True if value is a secret value
 function Helpers.IsSecretValue(value)
     return issecretvalue and issecretvalue(value) or false
+end
+
+--- Check whether any value in a vararg list is secret.
+--- @return boolean True if at least one value is a secret value
+function Helpers.HasSecretValue(...)
+    if not issecretvalue then return false end
+    for i = 1, select("#", ...) do
+        if issecretvalue(select(i, ...)) then
+            return true
+        end
+    end
+    return false
 end
 
 --- Check if a table can be accessed (not tainted/restricted)

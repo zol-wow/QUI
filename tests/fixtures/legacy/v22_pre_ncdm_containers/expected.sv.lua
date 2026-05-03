@@ -19,7 +19,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 34,
+        _schemaVersion = 35,
         _shippedDefaults = {
           abilityTimeline = {
             bigIcon = {
@@ -638,6 +638,7 @@ return {
             }
           },
           chat = {
+            buttonBars = {},
             copyButtonMode = "always",
             defaultTab = 1,
             defaultTabBySpec = {},
@@ -652,6 +653,12 @@ return {
               enabled = true,
               height = 20,
               positionTop = false
+            },
+            editboxHistory = {
+              enabled = true,
+              filterSensitive = true,
+              maxEntries = 200,
+              restoreChatType = true
             },
             enabled = true,
             fade = {
@@ -672,9 +679,57 @@ return {
               enabled = true
             },
             hideButtons = true,
+            history = {
+              enabled = true,
+              perChannelRetention = {},
+              retentionDays = 7,
+              showSeparators = true,
+              storeWhispers = false
+            },
+            hyperlinks = {
+              coordinates = true,
+              friendlyURLs = false,
+              interactiveNames = true
+            },
             messageHistory = {
               enabled = true,
               maxHistory = 50
+            },
+            modifiers = {
+              channelShorten = {
+                enabled = true,
+                preset = "letter"
+              },
+              classColors = {
+                enabled = true,
+                recolorBodyText = false
+              },
+              keywordAlert = {
+                enabled = false,
+                flashTab = false,
+                highlightColor = {
+                  [1] = 0.20399999999999999,
+                  [2] = 0.83099999999999996,
+                  [3] = 0.59999999999999998,
+                  [4] = 1
+                },
+                includeFirstName = false,
+                includeGuildName = false,
+                includeOwnName = true,
+                keywords = {},
+                skipSelf = true,
+                soundFile = "Sound\\Interface\\RaidWarning.ogg"
+              },
+              redundantText = {
+                enabled = false,
+                patterns = {
+                  currency = true,
+                  honor = true,
+                  loot = true,
+                  reputation = true,
+                  xp = true
+                }
+              }
             },
             newMessageSound = {
               enabled = false,
@@ -686,6 +741,7 @@ return {
               }
             },
             showIntroMessage = true,
+            tabs = {},
             timestamps = {
               color = {
                 [1] = 0.59999999999999998,
@@ -989,6 +1045,19 @@ return {
             showInInstance = false,
             showOnMouseover = false,
             showWhenTargetExists = false
+          },
+          damageMeter = {
+            backgroundAlpha = 100,
+            barHeight = 25,
+            barSpacing = 4,
+            enabled = false,
+            numberDisplay = 0,
+            showBarIcons = true,
+            style = 0,
+            textSize = 100,
+            useClassColor = true,
+            visibility = 0,
+            windowAlpha = 100
           },
           dandersFrames = {
             party = {
@@ -2209,6 +2278,7 @@ return {
             },
             skinCharacterFrame = true,
             skinCraftingOrders = true,
+            skinDamageMeter = true,
             skinGameMenu = true,
             skinInspectFrame = true,
             skinInstanceFrames = false,

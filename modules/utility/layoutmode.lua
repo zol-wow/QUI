@@ -1952,6 +1952,16 @@ AddHandleScripts = function(handle, def)
     end)
 
     handle:SetScript("OnDragStop", function(self)
+        -- WoW fires OnDragStop unconditionally after any OnDragStart, including
+        -- the early-return paths above (combat lockdown, locked anchor). Without
+        -- this guard, a rejected click+drag on a locked/anchored mover would run
+        -- the full save flow with stale state: _snapAnchorKey nil and
+        -- _wasAnchoredOnDragStart never set this drag, so the existing-anchor
+        -- preservation block at the bottom is skipped. The handler would then
+        -- overwrite the pending position with raw UIParent-CENTER offsets,
+        -- corrupt fa[key]'s offsets while leaving fa[key].parent intact, flip
+        -- the X/Y label to the screen-absolute offset, and shrink the border.
+        if not self._dragging then return end
         self._dragging = false
         self._bg:SetAlpha(self:IsMouseOver() and HANDLE_HOVER_ALPHA or HANDLE_BG_ALPHA)
 
@@ -2769,73 +2779,81 @@ do
                 overlay:SetPoint("TOPLEFT", frame, "TOPLEFT", -8, 32)
                 overlay:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 8, -32)
 
-                -- Corner resize grip — drag to resize ChatFrame1 directly.
-                if not overlay._chatResizeGrip then
-                    local grip = CreateFrame("Button", nil, overlay)
-                    grip:SetSize(20, 20)
-                    grip:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", -2, -2)
-                    grip:SetFrameLevel(overlay:GetFrameLevel() + 10)
-                    grip:EnableMouse(true)
+                -- Four-corner resize grips — drag any corner to resize ChatFrame1.
+                if not overlay._chatResizeGrips then
+                    RefreshAccentColor()
+                    overlay._chatResizeGrips = {}
+                    local CORNERS = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" }
+                    for _, corner in ipairs(CORNERS) do
+                        local grip = CreateFrame("Button", nil, overlay)
+                        grip:SetSize(20, 20)
+                        grip:SetFrameLevel(overlay:GetFrameLevel() + 10)
+                        grip:EnableMouse(true)
 
-                    -- Accent-colored corner indicator (two mint bars forming an L).
-                    local barH = grip:CreateTexture(nil, "OVERLAY")
-                    barH:SetColorTexture(0.204, 0.827, 0.600, 0.9)
-                    barH:SetPoint("TOPRIGHT", 0, 0)
-                    barH:SetSize(18, 3)
+                        local insetX = (corner == "TOPLEFT" or corner == "BOTTOMLEFT") and 2 or -2
+                        local insetY = (corner == "TOPLEFT" or corner == "TOPRIGHT") and -2 or 2
+                        grip:ClearAllPoints()
+                        grip:SetPoint(corner, overlay, corner, insetX, insetY)
 
-                    local barV = grip:CreateTexture(nil, "OVERLAY")
-                    barV:SetColorTexture(0.204, 0.827, 0.600, 0.9)
-                    barV:SetPoint("TOPRIGHT", 0, 0)
-                    barV:SetSize(3, 18)
+                        local barH = grip:CreateTexture(nil, "OVERLAY")
+                        barH:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.9)
+                        barH:SetSize(18, 3)
+                        barH:SetPoint(corner, 0, 0)
 
-                    local hl = grip:CreateTexture(nil, "HIGHLIGHT")
-                    hl:SetColorTexture(1, 1, 1, 0.35)
-                    hl:SetAllPoints()
-                    hl:SetBlendMode("ADD")
+                        local barV = grip:CreateTexture(nil, "OVERLAY")
+                        barV:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.9)
+                        barV:SetSize(3, 18)
+                        barV:SetPoint(corner, 0, 0)
 
-                    grip:SetScript("OnEnter", function(self)
-                        if GameTooltip then
-                            GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
-                            GameTooltip:SetText("Drag to resize chat frame")
-                            GameTooltip:Show()
-                        end
-                    end)
-                    grip:SetScript("OnLeave", function()
-                        if GameTooltip then GameTooltip:Hide() end
-                    end)
-                    grip:SetScript("OnMouseDown", function(self, button)
-                        if button ~= "LeftButton" then return end
-                        if InCombatLockdown and InCombatLockdown() then return end
-                        local f = _G.ChatFrame1
-                        if not f then return end
-                        if f.SetResizable then f:SetResizable(true) end
-                        f:StartSizing("TOPRIGHT")
-                    end)
-                    grip:SetScript("OnMouseUp", function(self, button)
-                        local f = _G.ChatFrame1
-                        if f then
-                            f:StopMovingOrSizing()
-                            if _G.FCF_SavePositionAndDimensions then
-                                _G.FCF_SavePositionAndDimensions(f)
+                        local hl = grip:CreateTexture(nil, "HIGHLIGHT")
+                        hl:SetColorTexture(1, 1, 1, 0.35)
+                        hl:SetAllPoints()
+                        hl:SetBlendMode("ADD")
+
+                        local tooltipAnchor = (corner == "TOPLEFT" or corner == "BOTTOMLEFT")
+                            and "ANCHOR_BOTTOMLEFT" or "ANCHOR_BOTTOMRIGHT"
+                        grip:SetScript("OnEnter", function(self)
+                            if GameTooltip then
+                                GameTooltip:SetOwner(self, tooltipAnchor)
+                                GameTooltip:SetText("Drag to resize chat frame")
+                                GameTooltip:Show()
                             end
-                        end
-                        if _G.QUI_RefreshChatSizeSliders then
-                            _G.QUI_RefreshChatSizeSliders()
-                        end
-                    end)
+                        end)
+                        grip:SetScript("OnLeave", function()
+                            if GameTooltip then GameTooltip:Hide() end
+                        end)
+                        grip:SetScript("OnMouseDown", function(_, button)
+                            if button ~= "LeftButton" then return end
+                            if InCombatLockdown and InCombatLockdown() then return end
+                            local f = _G.ChatFrame1
+                            if not f then return end
+                            if f.SetResizable then f:SetResizable(true) end
+                            f:StartSizing(corner)
+                        end)
+                        grip:SetScript("OnMouseUp", function(_, button)
+                            if button ~= "LeftButton" then return end
+                            local f = _G.ChatFrame1
+                            if f then
+                                f:StopMovingOrSizing()
+                                if _G.FCF_SavePositionAndDimensions then
+                                    _G.FCF_SavePositionAndDimensions(f)
+                                end
+                            end
+                            if _G.QUI_RefreshChatSizeSliders then
+                                _G.QUI_RefreshChatSizeSliders()
+                            end
+                        end)
 
-                    overlay._chatResizeGrip = grip
+                        overlay._chatResizeGrips[corner] = grip
+                    end
                 end
             end,
             onOpen = function()
-                -- Deferred: CreateChildOverlay sets SetClampedToScreen(true)
-                -- after onOpen fires, so override on next frame.
+                -- CreateChildOverlay sets SetClampedToScreen(true) — keep that
+                -- so dragging/resizing the chat in Layout Mode stays on-screen.
                 C_Timer.After(0, function()
                     local f = _G.ChatFrame1
-                    if f then
-                        f:SetClampedToScreen(false)
-                        if f.SetResizable then f:SetResizable(true) end
-                    end
+                    if f and f.SetResizable then f:SetResizable(true) end
                 end)
             end,
         })
@@ -3500,6 +3518,47 @@ _G.QUI_LayoutModeSyncAllHandles = function()
                 and entry.parent ~= "screen" and entry.parent ~= "disabled" then
                 SyncHandle(childKey)
             end
+        end
+    end
+end
+
+-- Save the current visual handle position through the normal pending-position
+-- path. Used by resize grips whose corner drag changes the handle center.
+_G.QUI_LayoutModeSaveCurrentHandlePosition = function(key)
+    if not QUI_LayoutMode.isActive or not key then return end
+    local handle = QUI_LayoutMode._handles and QUI_LayoutMode._handles[key]
+    if not handle then return end
+
+    local def = QUI_LayoutMode._elements and QUI_LayoutMode._elements[key]
+    local ox, oy = HandleToOffsets(handle)
+
+    local anchorKey, anchorPtSelf, anchorPtTarget
+    if not (def and def.usesCustomPositionPersistence) then
+        local pending = QUI_LayoutMode._pendingPositions[key]
+        if pending and pending.anchorTarget then
+            anchorKey = pending.anchorTarget
+            anchorPtSelf = pending.anchorPointSelf
+            anchorPtTarget = pending.anchorPointTarget
+        else
+            local fa = GetFrameAnchoring()
+            local entry = fa and fa[key]
+            if type(entry) == "table" and entry.parent and entry.parent ~= "disabled" then
+                anchorKey = entry.parent
+                anchorPtSelf = entry.point or "CENTER"
+                anchorPtTarget = entry.relative or "CENTER"
+            end
+        end
+    end
+
+    SavePendingPosition(key, "CENTER", "CENTER", ox, oy, anchorKey, anchorPtSelf, anchorPtTarget)
+
+    if handle._coords then
+        if anchorKey then
+            local fa = GetFrameAnchoring()
+            local entry = fa and fa[key]
+            handle._coords:SetText(string.format("X: %d  Y: %d", entry and entry.offsetX or ox, entry and entry.offsetY or oy))
+        else
+            handle._coords:SetText(string.format("X: %d  Y: %d", ox, oy))
         end
     end
 end

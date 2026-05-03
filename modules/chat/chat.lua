@@ -12,34 +12,84 @@ local UIKit = ns.UIKit
 ---------------------------------------------------------------------------
 -- Local references
 ---------------------------------------------------------------------------
-local LSM = ns.LSM
-local skinnedFrames = {}        -- Track which frames have been styled
-local urlPopup = nil            -- Copy popup frame (created on demand)
-local chatCopyFrame = nil       -- Chat history copy frame (created on demand)
-local copyButtons = {}          -- Track copy buttons per chat frame
 
 -- Weak-keyed tables to store per-frame state WITHOUT writing properties to Blizzard frames
--- This avoids taint from `chatFrame.__quiXxx = value` writes
-local chatBackdrops = Helpers.CreateStateTable()       -- chatFrame -> backdrop frame
-local editBoxBackdrops = Helpers.CreateStateTable()    -- chatFrame -> editbox backdrop frame
-local editBoxState = Helpers.CreateStateTable()        -- editBox -> { styled, topModeHooked, historyInitialized, historyPosition, savedMessage, backdropRef }
-local tabBackdrops = Helpers.CreateStateTable()        -- tab -> backdrop frame
-local copyButtonHookState = Helpers.CreateStateTable() -- chatFrame -> true (hover mode hooked)
-local _chatButtonsHidden = Helpers.CreateStateTable()  -- frame -> true/false (flag for hide-on-show hooks)
-local surfaceState, GetSurfaceState = Helpers.CreateStateTable() -- backdrop/popup frame -> { bg, border }
+-- (avoids taint from `chatFrame.__quiXxx = value` writes). Surfaced on
+-- ns.QUI.Chat._internals so sibling files (skinning.lua, cleanup.lua, copy.lua,
+-- sounds.lua, editbox_basics.lua, editbox_history.lua) can share the same instances.
+ns.QUI.Chat = ns.QUI.Chat or {}
+ns.QUI.Chat._internals = ns.QUI.Chat._internals or {}
+local I = ns.QUI.Chat._internals
 
--- Localized table functions for performance
-local tinsert = table.insert
-local tconcat = table.concat
+-- Modifier files append callbacks here. RefreshAll runs them at end.
+ns.QUI.Chat._afterRefresh = ns.QUI.Chat._afterRefresh or {}
 
--- Blizzard texture names to strip for glass effect
-local CHAT_FRAME_TEXTURES = {
-    "Background",
-    "TopLeftTexture", "TopRightTexture",
-    "BottomLeftTexture", "BottomRightTexture",
-    "TopTexture", "BottomTexture",
-    "LeftTexture", "RightTexture",
+-- Shared color palette. Single source of truth for the chat module —
+-- skinning.lua's tab accent and copy.lua's popup styling read from here.
+-- Local fallback palette. The accent here is only used when the options
+-- framework hasn't loaded yet (or fails to load) — otherwise consumers
+-- resolve the live theme accent through I.GetAccent below, so changing
+-- theme preset in options propagates to chat surfaces without needing
+-- a separate copy here that would silently go stale.
+I.QUI_COLORS = I.QUI_COLORS or {
+    bg       = {0.067, 0.094, 0.153, 0.97},
+    accent   = {0.204, 0.827, 0.600, 1},     -- #34D399 fallback (mint)
+    text     = {0.953, 0.957, 0.965, 1},
+    textDim  = {0.72,  0.72,  0.76,  1},     -- inactive tab label
 }
+
+-- Live theme accent resolver. Reads QUI.GUI.Colors.accent (mutated in place
+-- by GUI:ApplyAccentColor on theme preset change) so a user switching from
+-- mint to a custom accent sees chat tabs follow on next repaint, instead of
+-- being stuck on whatever value was captured at module load.
+function I.GetAccent()
+    -- _G.QUI here is the global addon (this file's local QUI is ns.QUI, the
+    -- chat-module namespace — different table). The framework mutates
+    -- _G.QUI.GUI.Colors.accent in place on preset change, so reading at call
+    -- time picks up the current accent without a subscription.
+    local guiColors = _G.QUI and _G.QUI.GUI and _G.QUI.GUI.Colors
+    return (guiColors and guiColors.accent) or I.QUI_COLORS.accent
+end
+
+function I.GetThemeColors()
+    local guiColors = _G.QUI and _G.QUI.GUI and _G.QUI.GUI.Colors
+    local accent = I.GetAccent()
+    return {
+        bg = (guiColors and guiColors.bg) or I.QUI_COLORS.bg,
+        bgDark = (guiColors and guiColors.bgDark) or {0.03, 0.04, 0.06, 1},
+        bgContent = (guiColors and guiColors.bgContent) or {1, 1, 1, 0.02},
+        text = (guiColors and guiColors.text) or I.QUI_COLORS.text,
+        textDim = (guiColors and guiColors.textDim) or I.QUI_COLORS.textDim,
+        textMuted = (guiColors and guiColors.textMuted) or I.QUI_COLORS.textDim,
+        border = (guiColors and guiColors.border) or {1, 1, 1, 0.08},
+        accent = accent,
+        accentHover = (guiColors and guiColors.accentHover) or accent,
+    }
+end
+
+-- skinnedFrames tracks which chat frames have been styled. Regular (non-weak)
+-- table because the "already skinned" semantic must persist for the lifetime of
+-- the addon. Promoted to _internals so skinning.lua's SkinChatFrame and
+-- chat.lua's RefreshAll share the same instance.
+I.skinnedFrames = I.skinnedFrames or {}
+
+I.chatBackdrops       = I.chatBackdrops       or Helpers.CreateStateTable()
+I.editBoxBackdrops    = I.editBoxBackdrops    or Helpers.CreateStateTable()
+I.editBoxState        = I.editBoxState        or Helpers.CreateStateTable()
+I.tabBackdrops        = I.tabBackdrops        or Helpers.CreateStateTable()
+I._chatButtonsHidden  = I._chatButtonsHidden  or Helpers.CreateStateTable()
+I.copyButtonHookState = I.copyButtonHookState or Helpers.CreateStateTable()
+if not I.scrollbackState or not I.GetScrollbackState then
+    I.scrollbackState, I.GetScrollbackState = Helpers.CreateStateTable()
+end
+if not I.surfaceState then
+    I.surfaceState, I.GetSurfaceState = Helpers.CreateStateTable() -- backdrop/popup frame -> { bg, border }
+end
+
+local skinnedFrames   = I.skinnedFrames
+local tabBackdrops    = I.tabBackdrops
+local GetSurfaceState = I.GetSurfaceState
+local GetScrollbackState = I.GetScrollbackState
 
 -- URL detection patterns (standard protocol and www formats)
 local URL_PATTERNS = {
@@ -48,25 +98,69 @@ local URL_PATTERNS = {
     "%f[%S](www%.[-%w_%%]+%.%a%a+)",        -- www.domain.tld
 }
 
--- Edit box textures to remove for clean styling
-local EDITBOX_TEXTURES = {
-    "FocusLeft", "FocusMid", "FocusRight",
-    "Header", "HeaderSuffix", "LanguageHeader",
-    "Prompt", "NewcomerHint",
-}
-
--- QUI Color palette for popup styling
-local QUI_COLORS = {
-    bg = {0.067, 0.094, 0.153, 0.97},
-    accent = {0.376, 0.647, 0.980, 1},
-    text = {0.953, 0.957, 0.965, 1},
-}
-
 ---------------------------------------------------------------------------
 -- Get settings from database
 ---------------------------------------------------------------------------
 local GetSettings = Helpers.CreateDBGetter("chat")
-local HAS_PROTECTED_CHAT_HISTORY = (tonumber((select(4, GetBuildInfo()))) or 0) >= 120000
+
+local SCROLLBACK_MAX_LINES = 5000
+local blizzardTimestampFormat
+local timestampOverrideActive = false
+
+local function GetBlizzardTimestampCVar()
+    if type(GetCVar) == "function" then
+        return GetCVar("showTimestamps")
+    end
+    return nil
+end
+
+local function IsBlizzardTimestampCVarOff()
+    local value = GetBlizzardTimestampCVar()
+    return value == nil or value == "" or value == "none" or value == "0"
+end
+
+local function GetBlizzardTimestampFormat()
+    if _G.CHAT_TIMESTAMP_FORMAT ~= nil then
+        return _G.CHAT_TIMESTAMP_FORMAT
+    end
+
+    local value = GetBlizzardTimestampCVar()
+    if not IsBlizzardTimestampCVarOff() and type(value) == "string" and value:find("%%", 1, true) then
+        return value
+    end
+    return nil
+end
+
+local function ShouldUseQUITimestamps(settings)
+    return settings
+        and settings.enabled
+        and settings.timestamps
+        and settings.timestamps.enabled
+end
+
+local function ApplyTimestampMode(settings)
+    settings = settings or GetSettings()
+
+    if ShouldUseQUITimestamps(settings) then
+        local nativeFormat = GetBlizzardTimestampFormat()
+        if not timestampOverrideActive then
+            blizzardTimestampFormat = nativeFormat
+            timestampOverrideActive = true
+        elseif nativeFormat ~= nil or IsBlizzardTimestampCVarOff() then
+            blizzardTimestampFormat = nativeFormat
+        end
+        _G.CHAT_TIMESTAMP_FORMAT = nil
+        return
+    end
+
+    if timestampOverrideActive then
+        if _G.CHAT_TIMESTAMP_FORMAT == nil then
+            _G.CHAT_TIMESTAMP_FORMAT = blizzardTimestampFormat
+        end
+        blizzardTimestampFormat = nil
+        timestampOverrideActive = false
+    end
+end
 
 local function IsTemporaryChatFrame(chatFrame)
     if not chatFrame then return false end
@@ -112,94 +206,126 @@ local function ApplySurfaceStyle(frame, bgColor, borderColor, borderSizePixels)
     end
 end
 
----------------------------------------------------------------------------
--- Strip Blizzard default textures from chat frame
----------------------------------------------------------------------------
-local function StripDefaultTextures(chatFrame)
-    local frameName = chatFrame:GetName()
-    if not frameName then return end
+local function GetChatSurfaceColors(settings)
+    settings = settings or GetSettings()
 
-    for _, textureName in ipairs(CHAT_FRAME_TEXTURES) do
-        local texture = _G[frameName .. textureName]
-        if texture and texture.SetTexture then
-            texture:SetTexture(0)
-            texture:SetAlpha(0)
-        end
+    local glass = settings and settings.glass
+    local bg = (glass and glass.bgColor) or {0, 0, 0}
+    local alpha = glass and glass.bgAlpha
+    if alpha == nil then
+        alpha = bg[4] or 0.25
+    end
+
+    local accent = I.GetAccent and I.GetAccent() or I.QUI_COLORS.accent
+    return {bg[1] or 0, bg[2] or 0, bg[3] or 0, alpha},
+           {accent[1] or 1, accent[2] or 1, accent[3] or 1, 0.55}
+end
+
+local function NormalizeScrollbackLines(settings)
+    local lines = tonumber(settings and settings.scrollbackLines) or 0
+    if lines <= 0 then return 0 end
+    if lines > SCROLLBACK_MAX_LINES then lines = SCROLLBACK_MAX_LINES end
+    return math.floor(lines + 0.5)
+end
+
+local function ReadCurrentMaxLines(chatFrame)
+    if not chatFrame or not chatFrame.GetMaxLines then return nil end
+    local ok, value = pcall(chatFrame.GetMaxLines, chatFrame)
+    if not ok then return nil end
+    if Helpers.IsSecretValue and Helpers.IsSecretValue(value) then return nil end
+    return tonumber(value)
+end
+
+local function ApplyScrollbackLines(chatFrame, settings)
+    if not chatFrame or not chatFrame.SetMaxLines then return end
+
+    settings = settings or GetSettings()
+    local state = GetScrollbackState(chatFrame)
+    local current = ReadCurrentMaxLines(chatFrame)
+    if current and not state.originalLines then
+        state.originalLines = current
+    end
+
+    local configured = NormalizeScrollbackLines(settings)
+    local target = configured
+    if configured == 0 then
+        target = state.originalLines or 0
+    end
+
+    if target <= 0 then
+        state.appliedLines = nil
+        return
+    end
+
+    if state.appliedLines == target or current == target then
+        state.appliedLines = target
+        return
+    end
+
+    local ok = pcall(chatFrame.SetMaxLines, chatFrame, target)
+    if ok then
+        state.appliedLines = target
     end
 end
 
----------------------------------------------------------------------------
--- Create glass-style backdrop for chat frame
----------------------------------------------------------------------------
-local function CreateGlassBackdrop(chatFrame)
-    local settings = GetSettings()
-    if not settings or not settings.glass or not settings.glass.enabled then return end
-
-    -- Create or update backdrop (stored in local weak table, NOT on frame)
-    if not chatBackdrops[chatFrame] then
-        local backdrop = CreateFrame("Frame", nil, chatFrame)
-        backdrop:SetFrameLevel(math.max(1, chatFrame:GetFrameLevel() - 1))
-        backdrop:SetPoint("TOPLEFT", -8, 2)
-        backdrop:SetPoint("BOTTOMRIGHT", 8, -8)
-        chatBackdrops[chatFrame] = backdrop
-    end
-
-    -- Apply color and transparency
-    local alpha = settings.glass.bgAlpha or 0.25
-    local bgColor = settings.glass.bgColor or {0, 0, 0}
-    ApplySurfaceStyle(chatBackdrops[chatFrame], {bgColor[1], bgColor[2], bgColor[3], alpha}, {bgColor[1], bgColor[2], bgColor[3], alpha}, 1)
-    chatBackdrops[chatFrame]:Show()
-end
-
----------------------------------------------------------------------------
--- Remove glass backdrop (when disabled)
----------------------------------------------------------------------------
-local function RemoveGlassBackdrop(chatFrame)
-    if chatBackdrops[chatFrame] then
-        chatBackdrops[chatFrame]:Hide()
-    end
-end
-
----------------------------------------------------------------------------
--- Force font outline on chat text (always enabled)
----------------------------------------------------------------------------
-local function StyleFontStrings(chatFrame)
-    -- Style the main font string container
-    local fontFile, fontSize, fontFlags = chatFrame:GetFont()
-    if fontFile and fontSize then
-        -- Add OUTLINE if not already present
-        local newFlags = fontFlags or ""
-        if not newFlags:find("OUTLINE") then
-            newFlags = "OUTLINE"
-        end
-        chatFrame:SetFont(fontFile, fontSize, newFlags)
-        chatFrame:SetShadowOffset(0, 0)
-    end
-end
+-- Expose helpers for sibling files. Functions are stored on _internals once their
+-- locals are defined; siblings access via ns.QUI.Chat._internals.<name>.
+I.GetSettings         = GetSettings
+I.IsTemporaryChatFrame= IsTemporaryChatFrame
+I.GetTabChatFrame     = GetTabChatFrame
+I.ApplySurfaceStyle   = ApplySurfaceStyle
+I.GetChatSurfaceColors= GetChatSurfaceColors
+I.ApplyScrollbackLines= ApplyScrollbackLines
 
 ---------------------------------------------------------------------------
 -- Timestamp - Prepend time to messages
 ---------------------------------------------------------------------------
+local function IsSecret(value)
+    return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
+end
+
+local function HasSecretValue(...)
+    return Helpers and Helpers.HasSecretValue and Helpers.HasSecretValue(...)
+end
+
+local function WrapChatText(text, prefix, suffix)
+    if C_StringUtil and C_StringUtil.WrapString then
+        local wrapped = C_StringUtil.WrapString(text, prefix, suffix)
+        if wrapped ~= nil then
+            return wrapped, true
+        end
+    end
+
+    if IsSecret(text) then
+        return text, false
+    end
+
+    return (prefix or "") .. text .. (suffix or ""), true
+end
+
 local function AddTimestamp(text)
     local settings = GetSettings()
     if not settings or not settings.timestamps or not settings.timestamps.enabled then
-        return text
+        return text, false
     end
+    ApplyTimestampMode(settings)
 
-    -- Restricted chat payloads can be secret strings during encounters.
-    -- Leave them untouched so Blizzard can render them without coercion.
-    if not text or type(text) ~= "string" or Helpers.IsSecretValue(text) then
-        return text
+    if not text or type(text) ~= "string" then
+        return text, false
     end
 
     local fmt = settings.timestamps.format == "12h" and "%I:%M %p" or "%H:%M"
     local timestamp = date(fmt)
     local color = settings.timestamps.color
+    local prefix
     if color then
         local hex = string.format("%02x%02x%02x", color[1]*255, color[2]*255, color[3]*255)
-        return string.format("|cff%s[%s]|r %s", hex, timestamp, text)
+        prefix = string.format("|cff%s[%s]|r ", hex, timestamp)
+    else
+        prefix = string.format("[%s] ", timestamp)
     end
-    return string.format("[%s] %s", timestamp, text)
+
+    return WrapChatText(text, prefix, nil)
 end
 
 ---------------------------------------------------------------------------
@@ -208,11 +334,15 @@ end
 local function MakeURLsClickable(text)
     local settings = GetSettings()
     if not settings or not settings.urls or not settings.urls.enabled then
-        return text
+        return text, false
     end
 
-    -- During M+ keystones and raid encounters, chat messages may be
-    -- "secret values" that can't be modified - use pcall to handle gracefully
+    if not text or type(text) ~= "string" or IsSecret(text) then
+        return text, false
+    end
+
+    -- URL detection inspects message text with Lua patterns, so only run it
+    -- after secret payloads have been ruled out.
     local success, result = pcall(function()
         -- Get URL color
         local r, g, b = 0.078, 0.608, 0.992  -- Default blue
@@ -221,257 +351,51 @@ local function MakeURLsClickable(text)
         end
         local colorHex = string.format("%02x%02x%02x", r * 255, g * 255, b * 255)
 
-        -- Create clickable hyperlink format
-        local linkFormat = "|cff" .. colorHex .. "|Haddon:quaziiuichat:%1|h[%1]|h|r"
+        -- Per-URL replacement so we can consult the Phase D friendly-label
+        -- lookup before rendering. Defensive nil checks: hyperlinks.lua
+        -- loads later in chat.xml, so during early init the lookup may not
+        -- exist yet — fall back to the raw URL as the visible label.
+        local function wrap(url)
+            local label
+            local HL = ns.QUI.Chat and ns.QUI.Chat.Hyperlinks
+            if HL and HL.LookupFriendlyLabel then
+                label = HL.LookupFriendlyLabel(url)
+            end
+            return "|cff" .. colorHex
+                .. "|Haddon:quaziiuichat:url:" .. url
+                .. "|h[" .. (label or url) .. "]|h|r"
+        end
 
         local processed = text
         for _, pattern in ipairs(URL_PATTERNS) do
-            processed = processed:gsub(pattern, linkFormat)
+            processed = processed:gsub(pattern, wrap)
         end
         return processed
     end)
 
     -- If protected content, return original unmodified text
     if success then
-        return result
+        return result, result ~= text
     else
-        return text
+        return text, false
     end
-end
-
----------------------------------------------------------------------------
--- Create URL copy popup (on demand) - QUI styled
----------------------------------------------------------------------------
-local function CreateCopyPopup()
-    if urlPopup then return urlPopup end
-
-    urlPopup = CreateFrame("Frame", "QUI_ChatCopyPopup", UIParent)
-    urlPopup:SetSize(420, 90)
-    urlPopup:SetPoint("CENTER")
-    urlPopup:SetFrameStrata("DIALOG")
-    ApplySurfaceStyle(urlPopup, QUI_COLORS.bg, QUI_COLORS.accent, 2)
-    urlPopup:EnableMouse(true)
-    urlPopup:SetMovable(true)
-    urlPopup:RegisterForDrag("LeftButton")
-    urlPopup:SetScript("OnDragStart", urlPopup.StartMoving)
-    urlPopup:SetScript("OnDragStop", urlPopup.StopMovingOrSizing)
-    urlPopup:Hide()
-
-    -- Title text with accent color
-    local title = urlPopup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", 0, -12)
-    title:SetText("Press Ctrl+C to copy")
-    title:SetTextColor(QUI_COLORS.accent[1], QUI_COLORS.accent[2], QUI_COLORS.accent[3], 1)
-
-    -- EditBox for URL
-    local editBox = CreateFrame("EditBox", nil, urlPopup, "InputBoxTemplate")
-    editBox:SetSize(380, 24)
-    editBox:SetPoint("CENTER", 0, -8)
-    editBox:SetAutoFocus(true)
-    editBox:SetTextColor(QUI_COLORS.text[1], QUI_COLORS.text[2], QUI_COLORS.text[3], 1)
-    editBox:SetScript("OnEscapePressed", function() urlPopup:Hide() end)
-    editBox:SetScript("OnEnterPressed", function() urlPopup:Hide() end)
-    urlPopup.editBox = editBox
-
-    -- Close button
-    local closeBtn = CreateFrame("Button", nil, urlPopup, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", -2, -2)
-    closeBtn:SetSize(24, 24)
-
-    -- Add to special frames so ESC closes it
-    if not tContains(UISpecialFrames, "QUI_ChatCopyPopup") then
-        tinsert(UISpecialFrames, "QUI_ChatCopyPopup")
-    end
-
-    return urlPopup
-end
-
----------------------------------------------------------------------------
--- Show copy popup with URL
----------------------------------------------------------------------------
-local function ShowCopyPopup(url)
-    local popup = CreateCopyPopup()
-    popup.editBox:SetText(url)
-    popup.editBox:HighlightText()
-    popup:Show()
-    popup.editBox:SetFocus()
-end
-
----------------------------------------------------------------------------
--- New message sound (SharedMedia compatible)
----------------------------------------------------------------------------
-local SOUND_CHANNEL_EVENTS = {
-    guild = { "CHAT_MSG_GUILD" },
-    officer = { "CHAT_MSG_OFFICER" },
-    guild_officer = { "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER" },
-    party = { "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER" },
-    raid = { "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER", "CHAT_MSG_RAID_WARNING" },
-    whisper = { "CHAT_MSG_WHISPER", "CHAT_MSG_BN_WHISPER" },
-    all = {
-        "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
-        "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER",
-        "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER", "CHAT_MSG_RAID_WARNING",
-        "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER",
-        "CHAT_MSG_WHISPER", "CHAT_MSG_BN_WHISPER",
-    },
-}
-
-local soundEventFrame = nil
-local registeredSoundEvents = {}
-
-local function EventMatchesChannel(event, channel)
-    local events = SOUND_CHANNEL_EVENTS[channel]
-    if not events then return false end
-    for _, registeredEvent in ipairs(events) do
-        if registeredEvent == event then
-            return true
-        end
-    end
-    return false
-end
-
-local function PlayConfiguredMessageSound(entry)
-    local soundName = entry.sound or "None"
-    if soundName and soundName ~= "None" and LSM then
-        local path = LSM:Fetch("sound", soundName)
-        if path and type(path) == "string" then
-            PlaySoundFile(path, "Master")
-        end
-    end
-end
-
-local function PlayNewMessageSound(event, ...)
-    local settings = GetSettings()
-    if not settings or not settings.newMessageSound or not settings.newMessageSound.enabled then
-        return
-    end
-
-    local entries = settings.newMessageSound.entries
-    if not entries or #entries == 0 then return end
-
-    -- Skip messages from self (never play when we are the sender).
-    -- In restricted contexts (raids/M+) whisper payloads and UnitName/UnitGUID
-    -- can return secret values; comparing or string-indexing those taints the
-    -- chat event dispatch and makes Blizzard's ChatHistory_GetAccessID fail on
-    -- its forbidden `accessIDs` table. Bail out of the self-check rather than
-    -- taint — worst case we play one duplicate sound on our own message.
-    local guid = select(12, ...)
-    local myGUID = UnitGUID("player")
-    if guid and myGUID
-        and not Helpers.IsSecretValue(guid)
-        and not Helpers.IsSecretValue(myGUID)
-        and guid == myGUID then
-        return
-    end
-
-    local author = select(2, ...)
-    local playerName = UnitName("player")
-    if author and playerName
-        and type(author) == "string"
-        and not Helpers.IsSecretValue(author)
-        and not Helpers.IsSecretValue(playerName) then
-        local ok, hasRealm = pcall(string.find, author, "-", 1, true)
-        if ok then
-            if hasRealm then
-                local playerRealm = GetNormalizedRealmName and GetNormalizedRealmName()
-                if playerRealm and not Helpers.IsSecretValue(playerRealm)
-                    and author == (playerName .. "-" .. playerRealm) then
-                    return
-                end
-            elseif author == playerName then
-                return
-            end
-        end
-    end
-
-    -- Prefer exact channel entries first; only fall back to "all".
-    for _, entry in ipairs(entries) do
-        local channel = entry.channel or "guild_officer"
-        if channel ~= "all" and EventMatchesChannel(event, channel) then
-            PlayConfiguredMessageSound(entry)
-            return
-        end
-    end
-
-    for _, entry in ipairs(entries) do
-        local channel = entry.channel or "guild_officer"
-        if channel == "all" and EventMatchesChannel(event, channel) then
-            PlayConfiguredMessageSound(entry)
-            return
-        end
-    end
-end
-
-local function SetupNewMessageSound()
-    local settings = GetSettings()
-    if not settings or not settings.newMessageSound or not settings.newMessageSound.enabled then
-        if soundEventFrame then
-            for event in pairs(registeredSoundEvents) do
-                soundEventFrame:UnregisterEvent(event)
-                registeredSoundEvents[event] = nil
-            end
-        end
-        return
-    end
-
-    local allEvents = {}
-    local entries = settings.newMessageSound.entries
-    if entries then
-        for _, entry in ipairs(entries) do
-            local channel = entry.channel or "guild_officer"
-            local events = SOUND_CHANNEL_EVENTS[channel]
-            if events then
-                for _, e in ipairs(events) do
-                    allEvents[e] = true
-                end
-            end
-        end
-    end
-
-    if not soundEventFrame then
-        soundEventFrame = CreateFrame("Frame")
-        soundEventFrame:SetScript("OnEvent", function(self, event, ...)
-            PlayNewMessageSound(event, ...)
-        end)
-    end
-
-    for event in pairs(registeredSoundEvents) do
-        if not allEvents[event] then
-            soundEventFrame:UnregisterEvent(event)
-            registeredSoundEvents[event] = nil
-        end
-    end
-
-    for event in pairs(allEvents) do
-        if not registeredSoundEvents[event] then
-            soundEventFrame:RegisterEvent(event)
-            registeredSoundEvents[event] = true
-        end
-    end
-end
-
----------------------------------------------------------------------------
--- Setup URL click handler
----------------------------------------------------------------------------
-local function SetupURLClickHandler()
-    -- Register for hyperlink clicks
-    EventRegistry:RegisterCallback("SetItemRef", function(_, link, text, button)
-        if not link then return end
-
-        local url = link:match("^addon:quaziiuichat:(.*)")
-        if url then
-            ShowCopyPopup(url)
-            return true
-        end
-    end)
 end
 
 ---------------------------------------------------------------------------
 -- Chat Message Filters (safe alternative to AddMessage replacement)
--- ChatFrame_AddMessageEventFilter is the Blizzard-approved way to modify
--- chat messages before display without tainting frame methods.
+-- Prefer ChatFrameUtil's secure registry on current clients; it wraps addon
+-- callbacks so inaccessible secret chat args skip the filter without tainting
+-- the rest of Blizzard's chat handler.
 ---------------------------------------------------------------------------
 local messageFiltersInstalled = false
+
+local function AddMessageEventFilter(event, filter)
+    if ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter then
+        ChatFrameUtil.AddMessageEventFilter(event, filter)
+    elseif ChatFrame_AddMessageEventFilter then
+        ChatFrame_AddMessageEventFilter(event, filter)
+    end
+end
 
 local function InstallMessageFilters()
     if messageFiltersInstalled then return end
@@ -486,40 +410,54 @@ local function InstallMessageFilters()
 
     -- Build a filter function that processes timestamps and URLs
     local function MessageFilter(self, event, msg, ...)
-        if not msg or type(msg) ~= "string" or Helpers.IsSecretValue(msg) then
-            return false
+        -- IsSecret first: type(msg) on a secret string taints the
+        -- dispatch chain and propagates into Blizzard's downstream
+        -- string conversion of secret senders (HistoryKeeper:35,
+        -- ChatFrameOverrides:542). Returning nil on secret is also
+        -- functionally equivalent to letting it through — AddTimestamp's
+        -- WrapString output is still secret-tagged, the IsSecret(modified)
+        -- check below would discard it, and AddTimestamp itself contains
+        -- another type(text) compare that would taint anyway.
+        if IsSecret(msg) or not msg or type(msg) ~= "string" then
+            return nil
         end
 
         -- Whisper history is now protected more aggressively in 12.x and
         -- rewriting those payloads can taint Blizzard's chat bookkeeping.
         if whisperEvents[event] then
-            return false
+            return nil
         end
 
         local settings = GetSettings()
-        if not settings or not settings.enabled then return false end
+        if not settings or not settings.enabled then return nil end
 
         local modified = msg
+        local changed = false
         local success = pcall(function()
             -- Apply timestamps
             if settings.timestamps and settings.timestamps.enabled then
-                modified = AddTimestamp(modified)
+                local nextMessage, didChange = AddTimestamp(modified)
+                modified = nextMessage
+                changed = changed or didChange
             end
 
-            -- Apply URL detection
+            -- Apply URL detection. msg is non-secret by construction
+            -- (gated above), so no per-call IsSecret check needed here.
             if settings.urls and settings.urls.enabled then
-                modified = MakeURLsClickable(modified)
+                local nextMessage, didChange = MakeURLsClickable(modified)
+                modified = nextMessage
+                changed = changed or didChange
             end
         end)
 
-        if not success or Helpers.IsSecretValue(modified) then
-            return false
+        if not success or not changed or IsSecret(modified) then
+            return nil
         end
 
-        if modified ~= msg then
-            return false, modified, ...
+        if HasSecretValue(...) then
+            return nil
         end
-        return false
+        return false, modified, ...
     end
 
     -- Register filter for all standard chat events
@@ -539,915 +477,18 @@ local function InstallMessageFilters()
     }
 
     for _, event in ipairs(chatEvents) do
-        ChatFrame_AddMessageEventFilter(event, MessageFilter)
+        AddMessageEventFilter(event, MessageFilter)
     end
 end
 
 ---------------------------------------------------------------------------
--- Chat Copy Frame (full chat history copy)
+-- Refresh tab colors (used by tab-click hook to update selection state)
 ---------------------------------------------------------------------------
-
--- Check if message contains protected/secure content
-local function IsMessageProtected(message)
-    if Helpers.IsSecretValue(message) then return true end
-    if type(message) ~= "string" then return false end
-    -- Protected content uses |K...|k pattern
-    if message:find("|K") then return true end
-    return false
-end
-
--- Strip textures, icons, and hyperlink formatting from message
-local function CleanMessage(message)
-    if Helpers.IsSecretValue(message) or type(message) ~= "string" then return "" end
-
-    local cleaned = message
-    -- Remove texture escapes |T...|t
-    cleaned = cleaned:gsub("|T[^|]*|t", "")
-    -- Remove atlas textures |A...|a
-    cleaned = cleaned:gsub("|A[^|]*|a", "")
-    -- Convert raid icons to text
-    cleaned = cleaned:gsub("|TInterface\\TargetingFrame\\UI%-RaidTargetingIcon_(%d):[^|]*|t", "{rt%1}")
-    -- Strip hyperlink formatting but keep visible text |H...|h[text]|h -> text
-    cleaned = cleaned:gsub("|H[^|]*|h%[?([^%]|]*)%]?|h", "%1")
-    -- Remove color codes (strip start and end separately for robustness)
-    cleaned = cleaned:gsub("|c%x%x%x%x%x%x%x%x", "")
-    cleaned = cleaned:gsub("|r", "")
-    cleaned = cleaned:gsub("|n", "\n")
-
-    return cleaned
-end
-
--- Extract all messages from a chat frame
-local function GetChatLines(chatFrame)
-    local lines = {}
-    local numMessages = chatFrame:GetNumMessages()
-
-    for i = 1, numMessages do
-        local message, r, g, b = chatFrame:GetMessageInfo(i)
-        if type(message) == "string" and not IsMessageProtected(message) then
-            local cleaned = CleanMessage(message)
-            if cleaned and cleaned ~= "" then
-                tinsert(lines, cleaned)
-            end
-        end
-    end
-
-    return lines
-end
-
--- Create the chat copy frame (on demand)
-local function CreateChatCopyFrame()
-    if chatCopyFrame then return chatCopyFrame end
-
-    chatCopyFrame = CreateFrame("Frame", "QUI_ChatCopyFrame", UIParent)
-    chatCopyFrame:SetSize(500, 400)
-    chatCopyFrame:SetPoint("CENTER")
-    chatCopyFrame:SetFrameStrata("DIALOG")
-    ApplySurfaceStyle(chatCopyFrame, QUI_COLORS.bg, QUI_COLORS.accent, 2)
-    chatCopyFrame:EnableMouse(true)
-    chatCopyFrame:SetMovable(true)
-    chatCopyFrame:SetResizable(true)
-    chatCopyFrame:SetResizeBounds(300, 200, 800, 600)
-    chatCopyFrame:RegisterForDrag("LeftButton")
-    chatCopyFrame:SetScript("OnDragStart", chatCopyFrame.StartMoving)
-    chatCopyFrame:SetScript("OnDragStop", chatCopyFrame.StopMovingOrSizing)
-    chatCopyFrame:Hide()
-
-    -- Title
-    local title = chatCopyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOP", 0, -10)
-    title:SetText("Chat History - Select and Ctrl+C to copy")
-    title:SetTextColor(QUI_COLORS.accent[1], QUI_COLORS.accent[2], QUI_COLORS.accent[3], 1)
-
-    -- Scroll frame
-    local scrollFrame = CreateFrame("ScrollFrame", nil, chatCopyFrame, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 12, -35)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 40)
-
-    -- Edit box for text selection
-    local editBox = CreateFrame("EditBox", nil, scrollFrame)
-    editBox:SetMultiLine(true)
-    editBox:SetFontObject(ChatFontNormal)
-    editBox:SetWidth(scrollFrame:GetWidth())
-    editBox:SetAutoFocus(false)
-    editBox:SetTextColor(QUI_COLORS.text[1], QUI_COLORS.text[2], QUI_COLORS.text[3], 1)
-    editBox:SetScript("OnEscapePressed", function() chatCopyFrame:Hide() end)
-    scrollFrame:SetScrollChild(editBox)
-    chatCopyFrame.editBox = editBox
-    chatCopyFrame.scrollFrame = scrollFrame
-
-    -- Close button
-    local closeBtn = CreateFrame("Button", nil, chatCopyFrame, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", -2, -2)
-    closeBtn:SetSize(24, 24)
-
-    -- Select All button
-    local selectAllBtn = CreateFrame("Button", nil, chatCopyFrame, "UIPanelButtonTemplate")
-    selectAllBtn:SetSize(100, 22)
-    selectAllBtn:SetPoint("BOTTOMLEFT", 12, 10)
-    selectAllBtn:SetText("Select All")
-    selectAllBtn:SetScript("OnClick", function()
-        editBox:SetFocus()
-        editBox:HighlightText()
-    end)
-
-    -- Resize grip
-    local resizeBtn = CreateFrame("Button", nil, chatCopyFrame)
-    resizeBtn:SetSize(16, 16)
-    resizeBtn:SetPoint("BOTTOMRIGHT", -4, 4)
-    resizeBtn:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-    resizeBtn:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
-    resizeBtn:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
-    resizeBtn:SetScript("OnMouseDown", function() chatCopyFrame:StartSizing("BOTTOMRIGHT") end)
-    resizeBtn:SetScript("OnMouseUp", function()
-        chatCopyFrame:StopMovingOrSizing()
-        editBox:SetWidth(scrollFrame:GetWidth())
-    end)
-
-    -- Add to special frames so ESC closes it
-    if not tContains(UISpecialFrames, "QUI_ChatCopyFrame") then
-        tinsert(UISpecialFrames, "QUI_ChatCopyFrame")
-    end
-
-    return chatCopyFrame
-end
-
--- Show the chat copy frame with messages from a chat frame
-local function ShowChatCopyFrame(chatFrame)
-    local frame = CreateChatCopyFrame()
-    local lines = GetChatLines(chatFrame)
-
-    local text
-    if #lines == 0 then
-        text = "(No copyable messages in chat history)"
-    else
-        text = tconcat(lines, "\n")
-    end
-
-    frame.editBox:SetText(text)
-    frame.editBox:SetWidth(frame.scrollFrame:GetWidth())
-    frame:Show()
-    frame.editBox:SetFocus()
-    frame.editBox:HighlightText()
-end
-
----------------------------------------------------------------------------
--- Copy Button (per chat frame)
----------------------------------------------------------------------------
-
-local COPY_BUTTON_IDLE_ALPHA = 0.35
-
--- Create or get the copy button for a chat frame
-local function GetOrCreateCopyButton(chatFrame)
-    local frameName = chatFrame:GetName()
-    if not frameName then return nil end
-
-    -- Return existing button
-    if copyButtons[chatFrame] then
-        return copyButtons[chatFrame]
-    end
-
-    local button = CreateFrame("Button", frameName .. "QuaziiCopyButton", chatFrame)
-    button:SetSize(20, 22)
-    -- Position at visual top-right (matching glass backdrop +8 offset, plus padding)
-    button:SetPoint("TOPRIGHT", chatFrame, "TOPRIGHT", 4, -2)
-    button:SetFrameLevel(chatFrame:GetFrameLevel() + 5)
-
-    -- Copy icon texture (simple document icon)
-    local icon = button:CreateTexture(nil, "ARTWORK")
-    icon:SetAllPoints()
-    icon:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
-    button.icon = icon
-
-    -- Semi-transparent by default
-    button:SetAlpha(COPY_BUTTON_IDLE_ALPHA)
-
-    -- Hover effect on button itself
-    button:SetScript("OnEnter", function(self)
-        self:SetAlpha(1)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Copy Chat", 1, 1, 1)
-        GameTooltip:AddLine("Click to copy chat history", 0.8, 0.8, 0.8)
-        GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", function(self)
-        local settings = GetSettings()
-        local mode = settings and settings.copyButtonMode or "always"
-        -- In hover mode, hide when leaving button (unless mouse is over chat frame)
-        if mode == "hover" then
-            if not chatFrame:IsMouseOver() then
-                self:SetAlpha(0)
-            end
-        else
-            self:SetAlpha(COPY_BUTTON_IDLE_ALPHA)
-        end
-        GameTooltip:Hide()
-    end)
-
-    -- Click handler
-    button:SetScript("OnClick", function()
-        ShowChatCopyFrame(chatFrame)
-    end)
-
-    copyButtons[chatFrame] = button
-    return button
-end
-
--- Setup hover mode for chat frame (show button on chat frame hover)
-local function SetupCopyButtonHoverMode(chatFrame)
-    -- Check flag first to prevent duplicate hooks (use local table, NOT frame property)
-    if copyButtonHookState[chatFrame] then return end
-    copyButtonHookState[chatFrame] = true
-
-    local button = copyButtons[chatFrame]
-    if not button then return end
-
-    -- Hook chat frame enter/leave for hover mode
-    chatFrame:HookScript("OnEnter", function()
-        local settings = GetSettings()
-        local mode = settings and settings.copyButtonMode or "always"
-        if mode == "hover" and button then
-            button:SetAlpha(COPY_BUTTON_IDLE_ALPHA)
-            button:Show()
-        end
-    end)
-    chatFrame:HookScript("OnLeave", function()
-        local settings = GetSettings()
-        local mode = settings and settings.copyButtonMode or "always"
-        if mode == "hover" and button then
-            -- Only hide if mouse isn't over the button
-            if not button:IsMouseOver() then
-                button:SetAlpha(0)
-            end
-        end
-    end)
-end
-
--- Apply copy button mode for a chat frame
-local function ApplyCopyButtonMode(chatFrame)
-    local settings = GetSettings()
-
-    -- Backwards compatibility: migrate old boolean copyButton to new copyButtonMode
-    local mode = settings and settings.copyButtonMode
-    if not mode and settings then
-        -- Old format: copyButton was boolean
-        if settings.copyButton == false then
-            mode = "disabled"
-        else
-            mode = "always"
-        end
-    end
-    mode = mode or "always"
-
-    -- Mode: disabled - hide existing button, don't create new one
-    if mode == "disabled" then
-        if copyButtons[chatFrame] then
-            copyButtons[chatFrame]:Hide()
-        end
-        return
-    end
-
-    -- Mode: always or hover - create and show
-    local button = GetOrCreateCopyButton(chatFrame)
-    if not button then return end
-
-    if mode == "always" then
-        button:SetAlpha(COPY_BUTTON_IDLE_ALPHA)
-        button:Show()
-    elseif mode == "hover" then
-        -- Start hidden, show on chat frame hover
-        button:SetAlpha(0)
-        button:Show()
-        -- Setup hover hooks if not already done
-        if not copyButtonHookState[chatFrame] then
-            SetupCopyButtonHoverMode(chatFrame)
-        end
-    end
-end
-
--- Hide copy button
-local function HideCopyButton(chatFrame)
-    if copyButtons[chatFrame] then
-        copyButtons[chatFrame]:Hide()
-    end
-end
-
----------------------------------------------------------------------------
--- Message Fade System (uses native ScrollingMessageFrame API)
----------------------------------------------------------------------------
-local function SetupMessageFade(chatFrame)
-    local settings = GetSettings()
-    if not settings or not settings.fade then return end
-
-    if settings.fade.enabled then
-        chatFrame:SetFading(true)
-        chatFrame:SetTimeVisible(settings.fade.delay or 60)
-    else
-        chatFrame:SetFading(false)
-    end
-end
-
----------------------------------------------------------------------------
--- Hide chat buttons (social, channel, scroll)
----------------------------------------------------------------------------
--- Flag + hook + hide pattern used by all chat button frames.
--- Can't use Helpers.DeferredHideOnShow because the _chatButtonsHidden
--- guard allows toggling visibility back on at runtime.
-local _chatButtonHooked = Helpers.CreateStateTable()
-local function HideChatButtonOnShow(frame)
-    _chatButtonsHidden[frame] = true
-    if not _chatButtonHooked[frame] then
-        _chatButtonHooked[frame] = true
-        hooksecurefunc(frame, "Show", function(self)
-            C_Timer.After(0, function()
-                if not _chatButtonsHidden[self] then return end
-                if self and self.Hide then self:Hide() end
-            end)
-        end)
-    end
-    frame:Hide()
-end
-
-local function HideChatButtons(chatFrame)
-    local settings = GetSettings()
-    if not settings or not settings.hideButtons then return end
-
-    -- Hide button frame and prevent Blizzard from re-showing it
-    if chatFrame.buttonFrame then
-        HideChatButtonOnShow(chatFrame.buttonFrame)
-        chatFrame.buttonFrame:SetWidth(0.1)  -- Collapse to minimal width
-    end
-
-    -- Hide scroll bar and buttons
-    if chatFrame.ScrollBar then
-        chatFrame.ScrollBar:Hide()
-    end
-    if chatFrame.ScrollToBottomButton then
-        chatFrame.ScrollToBottomButton:Hide()
-    end
-
-    -- Also try global names for older frames
-    local frameName = chatFrame:GetName()
-    if frameName then
-        local buttonFrame = _G[frameName .. "ButtonFrame"]
-        if buttonFrame then
-            HideChatButtonOnShow(buttonFrame)
-            buttonFrame:SetWidth(0.1)
-        end
-
-        local scrollBar = _G[frameName .. "ScrollBar"]
-        if scrollBar then scrollBar:Hide() end
-    end
-
-    -- Hide QuickJoinToastButton (global frame, not per-chat)
-    if QuickJoinToastButton then
-        HideChatButtonOnShow(QuickJoinToastButton)
-    end
-
-    -- Remove screen clamping so chat can move to edges
-    if not InCombatLockdown() then
-        chatFrame:SetClampedToScreen(false)
-        chatFrame:SetClampRectInsets(0, 0, 0, 0)
-    end
-end
-
----------------------------------------------------------------------------
--- Show chat buttons (restore when disabled)
----------------------------------------------------------------------------
-local function ShowChatButtons(chatFrame)
-    if chatFrame.buttonFrame then
-        _chatButtonsHidden[chatFrame.buttonFrame] = false  -- Disable hide-on-show hook
-        chatFrame.buttonFrame:Show()
-        chatFrame.buttonFrame:SetWidth(29)  -- Restore default width
-    end
-    if chatFrame.ScrollBar then
-        chatFrame.ScrollBar:Show()
-    end
-    if chatFrame.ScrollToBottomButton then
-        chatFrame.ScrollToBottomButton:Show()
-    end
-
-    local frameName = chatFrame:GetName()
-    if frameName then
-        local buttonFrame = _G[frameName .. "ButtonFrame"]
-        if buttonFrame then
-            _chatButtonsHidden[buttonFrame] = false  -- Disable hide-on-show hook
-            buttonFrame:Show()
-            buttonFrame:SetWidth(29)
-        end
-
-        local scrollBar = _G[frameName .. "ScrollBar"]
-        if scrollBar then scrollBar:Show() end
-    end
-
-    -- Show QuickJoinToastButton
-    if QuickJoinToastButton then
-        _chatButtonsHidden[QuickJoinToastButton] = false  -- Disable hide-on-show hook
-        QuickJoinToastButton:Show()
-    end
-
-    -- Restore screen clamping
-    if not InCombatLockdown() then
-        chatFrame:SetClampedToScreen(true)
-    end
-end
-
----------------------------------------------------------------------------
--- Chat Message History Navigation System
----------------------------------------------------------------------------
--- Store sent message in history
-local function StoreMessageInHistory(editBox, messageText)
-    if not editBox or not messageText then return end
-
-    local settings = GetSettings()
-    if not settings or not settings.messageHistory or not settings.messageHistory.enabled then
-        return
-    end
-
-    local fullMessage = editBox:GetText()
-    local historyEntries = QUI_ChatMessageHistory
-    local ebState = editBoxState[editBox]
-    if not ebState then ebState = {}; editBoxState[editBox] = ebState end
-
-    -- Avoid storing duplicates
-    if historyEntries[#historyEntries] ~= messageText then
-        -- Preserve chat type prefix when message matches end of full message
-        if fullMessage:sub(-#messageText) == messageText then
-            messageText = fullMessage
-        end
-
-        -- Store if still unique
-        if historyEntries[#historyEntries] ~= messageText then
-            tinsert(historyEntries, messageText)
-            ebState.historyPosition = #historyEntries
-        end
-    end
-end
-
--- Navigate through message history with arrow keys
-local function NavigateMessageHistory(editBox, keyPressed)
-    local settings = GetSettings()
-    if not settings or not settings.messageHistory or not settings.messageHistory.enabled then
-        return
-    end
-
-    -- Don't navigate during chat messaging lockdown
-    if C_ChatInfo and C_ChatInfo.InChatMessagingLockdown and C_ChatInfo.InChatMessagingLockdown() then
-        return
-    end
-
-    local historyEntries = QUI_ChatMessageHistory
-    local ebState = editBoxState[editBox]
-    if not ebState then ebState = {}; editBoxState[editBox] = ebState end
-    local currentPosition = ebState.historyPosition or #historyEntries
-    local savedMessage = ebState.savedMessage
-
-    if keyPressed == "UP" and currentPosition > 0 then
-        -- Save current message when starting navigation from the end
-        if currentPosition == #historyEntries then
-            ebState.savedMessage = editBox:GetText()
-        end
-
-        -- Navigate to older message
-        editBox:SetText(historyEntries[currentPosition])
-        ebState.historyPosition = currentPosition - 1
-
-    elseif keyPressed == "DOWN" then
-        -- Navigate to newer message
-        if currentPosition + 1 < #historyEntries then
-            editBox:SetText(historyEntries[currentPosition + 2])
-            ebState.historyPosition = currentPosition + 1
-        -- Return to saved original message
-        elseif savedMessage then
-            editBox:SetText(savedMessage)
-            ebState.savedMessage = nil
-        end
-    end
-end
-
--- Initialize message history system for an edit box
-local function InitializeChatHistory(editBox)
-    if not editBox then return end
-
-    -- Prevent duplicate initialization (use local state table, NOT frame property)
-    if not editBoxState[editBox] then
-        editBoxState[editBox] = {}
-    end
-    local ebState = editBoxState[editBox]
-    if ebState.historyInitialized then return end
-    ebState.historyInitialized = true
-
-    local settings = GetSettings()
-    if not settings or not settings.messageHistory or not settings.messageHistory.enabled then
-        return
-    end
-
-    -- Midnight moved whisper bookkeeping into protected HistoryKeeper tables.
-    -- Hooking edit-box history methods from addon code can taint that path and
-    -- break incoming whispers in combat/instances. Keep Blizzard's native
-    -- history behavior instead of layering our own hooks on top.
-    if HAS_PROTECTED_CHAT_HISTORY then
-        editBox:SetAltArrowKeyMode(false)
-        return
-    end
-
-    local maxEntries = settings.messageHistory.maxHistory or 50
-
-    -- Initialize global history storage
-    if not QUI_ChatMessageHistory then
-        QUI_ChatMessageHistory = {}
-    end
-
-    local historyEntries = QUI_ChatMessageHistory
-
-    -- Trim history to maximum allowed entries
-    if #historyEntries > maxEntries then
-        local trimmedHistory = {}
-        local startIndex = #historyEntries - maxEntries + 1
-        for i = startIndex, #historyEntries do
-            tinsert(trimmedHistory, historyEntries[i])
-        end
-        QUI_ChatMessageHistory = trimmedHistory
-        historyEntries = QUI_ChatMessageHistory
-    end
-
-    -- Initialize navigation state in local table
-    ebState.historyPosition = #historyEntries
-    ebState.savedMessage = nil
-
-    -- Disable Alt arrow key mode to allow normal arrow key navigation
-    editBox:SetAltArrowKeyMode(false)
-
-    -- Capture messages when they're added to history
-    hooksecurefunc(editBox, "AddHistoryLine", function(self, messageText)
-        StoreMessageInHistory(self, messageText)
-    end)
-
-    -- Handle arrow key navigation
-    editBox:HookScript("OnKeyDown", function(self, keyPressed)
-        if keyPressed == "UP" or keyPressed == "DOWN" then
-            NavigateMessageHistory(self, keyPressed)
-        end
-    end)
-
-    -- Reset navigation state when edit box loses focus
-    editBox:HookScript("OnEditFocusLost", function(self)
-        local state = editBoxState[self]
-        if state then
-            state.savedMessage = nil
-            state.historyPosition = #historyEntries
-        end
-    end)
-end
-
--- Initialize chat history for a chat frame
-local function InitializeChatFrameHistory(chatFrame)
-    if not chatFrame or IsTemporaryChatFrame(chatFrame) then return end
-    
-    local frameName = chatFrame:GetName()
-    if frameName then
-        local editBox = chatFrame.editBox or _G[frameName .. "EditBox"]
-        if editBox then
-            InitializeChatHistory(editBox)
-        end
-    end
-end
-
----------------------------------------------------------------------------
--- Style edit box (chat input area)
----------------------------------------------------------------------------
-local function StyleEditBox(chatFrame)
-    local settings = GetSettings()
-    if not settings or not settings.editBox or not settings.editBox.enabled then return end
-    if not settings.glass or not settings.glass.enabled then return end
-
-    local frameName = chatFrame:GetName()
-    if not frameName then return end
-
-    -- Find edit box
-    local editBox = chatFrame.editBox or _G[frameName .. "EditBox"]
-    if not editBox then return end
-
-    -- Ensure editBox state table exists
-    if not editBoxState[editBox] then
-        editBoxState[editBox] = {}
-    end
-    local ebState = editBoxState[editBox]
-
-    -- Only strip Blizzard textures once
-    if not ebState.styled then
-        ebState.styled = true
-
-        -- Hide child FRAMES by global name (these are frames, not textures)
-        local childSuffixes = {
-            "Left", "Mid", "Right",
-            "FocusLeft", "FocusMid", "FocusRight",
-        }
-        for _, suffix in ipairs(childSuffixes) do
-            local child = _G[frameName .. "EditBox" .. suffix]
-            if child and child.Hide then
-                child:Hide()
-            end
-        end
-
-        -- Alpha out focus textures via editBox properties
-        if editBox.focusLeft then editBox.focusLeft:SetAlpha(0) end
-        if editBox.focusMid then editBox.focusMid:SetAlpha(0) end
-        if editBox.focusRight then editBox.focusRight:SetAlpha(0) end
-
-        -- Remove Blizzard textures by property name
-        for _, name in ipairs(EDITBOX_TEXTURES) do
-            local tex = editBox[name]
-            if tex and tex.Hide then
-                tex:Hide()
-            end
-        end
-
-        -- Hide all texture regions on the editbox itself
-        local regions = {editBox:GetRegions()}
-        for _, region in ipairs(regions) do
-            if region and region.GetObjectType and region:GetObjectType() == "Texture" then
-                region:SetAlpha(0)
-            end
-        end
-    end
-
-    -- Create glass backdrop for edit box (once per chatFrame, stored in local table)
-    -- Parent to chatFrame (not editBox) so we can control visibility independently
-    if not editBoxBackdrops[chatFrame] then
-        local backdrop = CreateFrame("Frame", nil, chatFrame)
-        editBoxBackdrops[chatFrame] = backdrop
-    end
-
-    local backdrop = editBoxBackdrops[chatFrame]
-    local positionTop = settings.editBox.positionTop
-
-    -- Position backdrop and editbox based on setting
-    backdrop:ClearAllPoints()
-    if positionTop then
-        -- Position at TOP, overlaying tabs with opaque black background
-        backdrop:SetFrameLevel(chatFrame:GetFrameLevel() + 10)
-        backdrop:SetPoint("BOTTOMLEFT", chatFrame, "TOPLEFT", -8, 0)
-        backdrop:SetPoint("BOTTOMRIGHT", chatFrame, "TOPRIGHT", 8, 0)
-        backdrop:SetHeight(24)
-        ApplySurfaceStyle(backdrop, {0, 0, 0, 1}, {0, 0, 0, 1}, 1)
-
-        -- Anchor editbox to CENTER of backdrop (vertically centered, full width)
-        editBox:ClearAllPoints()
-        editBox:SetPoint("LEFT", backdrop, "LEFT", -8, 0)
-        editBox:SetPoint("RIGHT", backdrop, "RIGHT", -4, 0)
-        editBox:SetPoint("CENTER", backdrop, "CENTER", 0, 0)
-
-        -- Store backdrop reference in local state table for hooks to access
-        ebState.backdropRef = backdrop
-
-        -- For top position: Only show backdrop when editbox has focus (user is typing)
-        if not ebState.topModeHooked then
-            ebState.topModeHooked = true
-            editBox:HookScript("OnEditFocusGained", function(self)
-                local s = GetSettings()
-                local state = editBoxState[self]
-                if s and s.editBox and s.editBox.positionTop and state and state.backdropRef then
-                    state.backdropRef:Show()
-                end
-            end)
-            editBox:HookScript("OnEditFocusLost", function(self)
-                local state = editBoxState[self]
-                if state and state.backdropRef then
-                    state.backdropRef:Hide()
-                end
-            end)
-        end
-
-        -- Start hidden - will show when user focuses editbox (presses Enter)
-        backdrop:Hide()
-        if editBox:HasFocus() then
-            backdrop:Show()
-        end
-    else
-        -- Default: Position at BOTTOM
-        backdrop:SetFrameLevel(math.max(1, editBox:GetFrameLevel() - 1))
-        backdrop:SetPoint("TOPLEFT", chatFrame, "BOTTOMLEFT", -8, -6)
-        backdrop:SetPoint("TOPRIGHT", chatFrame, "BOTTOMRIGHT", 8, -6)
-        backdrop:SetHeight(24)  -- Fixed height matching top mode
-
-        -- Apply user-configured opacity
-        local alpha = settings.editBox.bgAlpha or 0.25
-        local bgColor = settings.editBox.bgColor or {0, 0, 0}
-        ApplySurfaceStyle(backdrop, {bgColor[1], bgColor[2], bgColor[3], alpha}, {bgColor[1], bgColor[2], bgColor[3], alpha}, 1)
-
-        -- Anchor editbox to backdrop (same as top mode for consistent alignment)
-        -- Left offset of -8 aligns text with chat messages
-        editBox:ClearAllPoints()
-        editBox:SetPoint("LEFT", backdrop, "LEFT", -8, 0)
-        editBox:SetPoint("RIGHT", backdrop, "RIGHT", -4, 0)
-        editBox:SetPoint("CENTER", backdrop, "CENTER", 0, 0)
-
-        -- Store backdrop reference in local state table for consistency
-        ebState.backdropRef = backdrop
-
-        -- Bottom position: always show backdrop (standard behavior)
-        backdrop:Show()
-    end
-end
-
----------------------------------------------------------------------------
--- Style chat tabs (General, Combat Log, etc.)
----------------------------------------------------------------------------
-local function UpdateTabColors(tab)
-    local settings = GetSettings()
-    if not settings or not tabBackdrops[tab] then return end
-
-    local chatFrame = GetTabChatFrame(tab)
-    if IsTemporaryChatFrame(chatFrame) then return end
-
-    local alpha = settings.glass and settings.glass.bgAlpha or 0.4
-
-    -- Check if this tab is selected
-    local isSelected = false
-    for i = 1, NUM_CHAT_WINDOWS do
-        local chatFrame = _G["ChatFrame" .. i]
-        if chatFrame and chatFrame:IsShown() then
-            local frameTab = _G["ChatFrame" .. i .. "Tab"]
-            if frameTab == tab then
-                isSelected = true
-                break
-            end
-        end
-    end
-
-    -- Also check button state
-    if tab.GetButtonState and tab:GetButtonState() == "PUSHED" then
-        isSelected = true
-    end
-
-    if isSelected then
-        -- Selected: mint accent border
-        ApplySurfaceStyle(tabBackdrops[tab], {0, 0, 0, alpha + 0.2}, QUI_COLORS.accent, 1)
-    else
-        -- Unselected: standard glass
-        ApplySurfaceStyle(tabBackdrops[tab], {0, 0, 0, alpha}, {0, 0, 0, alpha}, 1)
-    end
-end
-
-local function StyleChatTab(tab)
-    if not tab then return end
-
-    local chatFrame = GetTabChatFrame(tab)
-    if IsTemporaryChatFrame(chatFrame) then return end
-
-    local settings = GetSettings()
-    if not settings or not settings.styleTabs then return end
-
-    -- Strip default textures
-    local tabName = tab:GetName()
-    if tabName then
-        local textures = {
-            "Left", "Middle", "Right",
-            "SelectedLeft", "SelectedMiddle", "SelectedRight",
-            "HighlightLeft", "HighlightMiddle", "HighlightRight",
-        }
-        for _, suffix in ipairs(textures) do
-            local tex = _G[tabName .. suffix]
-            if tex and tex.SetAlpha then
-                tex:SetAlpha(0)
-            end
-        end
-    end
-
-    -- Create glass backdrop (once, stored in local table NOT on tab frame)
-    if not tabBackdrops[tab] then
-        local backdrop = CreateFrame("Frame", nil, tab)
-        backdrop:SetFrameLevel(math.max(1, tab:GetFrameLevel() - 1))
-        backdrop:SetPoint("TOPLEFT", 2, -4)
-        backdrop:SetPoint("BOTTOMRIGHT", -2, 2)
-        tabBackdrops[tab] = backdrop
-    end
-
-    -- Update colors
-    UpdateTabColors(tab)
-
-    -- Style font with outline
-    local fontString = tab:GetFontString()
-    if fontString then
-        local font, size = fontString:GetFont()
-        if font then
-            fontString:SetFont(font, size or 12, "OUTLINE")
-            fontString:SetShadowOffset(0, 0)
-        end
-    end
-end
-
-local function StyleAllChatTabs()
-    local settings = GetSettings()
-    if not settings or not settings.styleTabs then return end
-
-    for i = 1, NUM_CHAT_WINDOWS do
-        local tab = _G["ChatFrame" .. i .. "Tab"]
-        if tab then
-            StyleChatTab(tab)
-        end
-    end
-end
-
 local function RefreshAllTabColors()
     for i = 1, NUM_CHAT_WINDOWS do
         local tab = _G["ChatFrame" .. i .. "Tab"]
         if tab and tabBackdrops[tab] then
-            UpdateTabColors(tab)
-        end
-    end
-end
-
----------------------------------------------------------------------------
--- Apply message padding (text inset via FontStringContainer positioning)
----------------------------------------------------------------------------
-local function ApplyMessagePadding(chatFrame)
-    local settings = GetSettings()
-    if not settings then return end
-
-    local padding = settings.messagePadding or 0
-
-    -- Modern chat frames use FontStringContainer for message display
-    local container = chatFrame.FontStringContainer
-    if container then
-        container:ClearAllPoints()
-        if padding > 0 then
-            -- Left padding only - pushes text rightward
-            container:SetPoint("TOPLEFT", chatFrame, "TOPLEFT", padding, 0)
-            container:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", 0, 0)
-        else
-            container:SetPoint("TOPLEFT", chatFrame, "TOPLEFT", 0, 0)
-            container:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", 0, 0)
-        end
-    end
-end
-
----------------------------------------------------------------------------
--- Remove edit box styling (restore when disabled)
----------------------------------------------------------------------------
-local function RemoveEditBoxStyle(chatFrame)
-    -- Hide backdrop stored in local table
-    if editBoxBackdrops[chatFrame] then
-        editBoxBackdrops[chatFrame]:Hide()
-    end
-end
-
----------------------------------------------------------------------------
--- Main skin function for a single chat frame
----------------------------------------------------------------------------
-local function SkinChatFrame(chatFrame)
-    if not chatFrame or chatFrame:IsForbidden() or IsTemporaryChatFrame(chatFrame) then return end
-
-    local settings = GetSettings()
-    if not settings or not settings.enabled then return end
-
-    local frameName = chatFrame:GetName()
-    if not frameName then return end
-
-    -- Mark as skinned
-    skinnedFrames[chatFrame] = true
-
-    -- Apply glass effect
-    if settings.glass and settings.glass.enabled then
-        StripDefaultTextures(chatFrame)
-        CreateGlassBackdrop(chatFrame)
-    end
-
-    -- Apply font styling (always enabled)
-    StyleFontStrings(chatFrame)
-
-    -- Setup message fade (handles both enabling and disabling)
-    SetupMessageFade(chatFrame)
-
-    -- Hide chat buttons (social, channel, scroll)
-    if settings.hideButtons then
-        HideChatButtons(chatFrame)
-    end
-
-    -- Style edit box
-    if settings.editBox and settings.editBox.enabled then
-        StyleEditBox(chatFrame)
-    end
-
-    -- Initialize chat history
-    InitializeChatFrameHistory(chatFrame)
-
-    -- Apply message padding
-    ApplyMessagePadding(chatFrame)
-
-    -- Apply copy button based on mode
-    ApplyCopyButtonMode(chatFrame)
-end
-
----------------------------------------------------------------------------
--- Skin all existing chat frames
----------------------------------------------------------------------------
-local function SkinAllChatFrames()
-    for i = 1, NUM_CHAT_WINDOWS do
-        local chatFrame = _G["ChatFrame" .. i]
-        if chatFrame then
-            SkinChatFrame(chatFrame)
+            ns.QUI.Chat.Skinning.UpdateTabColors(tab)
         end
     end
 end
@@ -1459,8 +500,8 @@ local function HookNewChatWindows()
     -- Hook temporary windows (whispers, etc.)
     hooksecurefunc("FCF_OpenTemporaryWindow", function(...)
         C_Timer.After(0.1, function()
-            SkinAllChatFrames()
-            StyleAllChatTabs()
+            ns.QUI.Chat.Skinning.SkinAll()
+            ns.QUI.Chat.Skinning.StyleAllTabs()
         end)
     end)
 
@@ -1468,9 +509,22 @@ local function HookNewChatWindows()
     if FCF_OpenNewWindow then
         hooksecurefunc("FCF_OpenNewWindow", function(...)
             C_Timer.After(0.1, function()
-                SkinAllChatFrames()
-                StyleAllChatTabs()
+                ns.QUI.Chat.Skinning.SkinAll()
+                ns.QUI.Chat.Skinning.StyleAllTabs()
             end)
+        end)
+    end
+
+    -- Blizzard's FCFTab_UpdateColors resets the tab's FontString color and the
+    -- glow's vertex color from Blizzard's selectedColorTable on every call —
+    -- not just on user clicks but also on dock changes, alert flashes, and
+    -- chat type registration. Re-apply our theme-driven colors after each
+    -- pass so accent/dim text and the reskinned glow color survive.
+    if FCFTab_UpdateColors then
+        hooksecurefunc("FCFTab_UpdateColors", function(tab)
+            if tab and tabBackdrops[tab] then
+                ns.QUI.Chat.Skinning.UpdateTabColors(tab)
+            end
         end)
     end
 
@@ -1487,17 +541,18 @@ local function HookNewChatWindows()
                 -- Use ChatFrame1's backdrop as the SINGLE shared backdrop for top position mode
                 -- Parent to UIParent so it stays visible when ChatFrame1 is hidden
                 -- (WoW hides ChatFrame1 when other tabs are selected)
-                local sharedBackdrop = editBoxBackdrops[ChatFrame1]
+                local sharedBackdrop = I.editBoxBackdrops[ChatFrame1]
                 if sharedBackdrop then
                     sharedBackdrop:SetParent(UIParent)
                     sharedBackdrop:ClearAllPoints()
                     sharedBackdrop:SetFrameLevel(ChatFrame1:GetFrameLevel() + 10)
-                    sharedBackdrop:SetPoint("BOTTOMLEFT", ChatFrame1, "TOPLEFT", -8, 0)
-                    sharedBackdrop:SetPoint("BOTTOMRIGHT", ChatFrame1, "TOPRIGHT", 8, 0)
+                    sharedBackdrop:SetPoint("BOTTOMLEFT", ChatFrame1, "TOPLEFT", 0, 0)
+                    sharedBackdrop:SetPoint("BOTTOMRIGHT", ChatFrame1, "TOPRIGHT", 0, 0)
                     sharedBackdrop:SetHeight(24)
+                    ApplySurfaceStyle(sharedBackdrop, {0, 0, 0, 1}, {0, 0, 0, 1}, 1)
 
                     -- Update editbox state reference (stored in local table, NOT on frame)
-                    local ebState = editBoxState[ChatFrame1EditBox]
+                    local ebState = I.editBoxState[ChatFrame1EditBox]
                     if ebState then
                         ebState.backdropRef = sharedBackdrop
                     end
@@ -1517,51 +572,64 @@ end
 ---------------------------------------------------------------------------
 local function RefreshAll()
     local settings = GetSettings()
+    ApplyTimestampMode(settings)
 
     -- Handle each skinned frame
     for chatFrame in pairs(skinnedFrames) do
         -- Handle glass backdrop
         if not settings or not settings.enabled or not settings.glass or not settings.glass.enabled then
-            RemoveGlassBackdrop(chatFrame)
+            ns.QUI.Chat.Skinning.RemoveBackdrop(chatFrame)
         end
 
         -- Handle button visibility
         if not settings or not settings.enabled or not settings.hideButtons then
-            ShowChatButtons(chatFrame)
+            ns.QUI.Chat.Cleanup.ShowButtons(chatFrame)
         else
-            HideChatButtons(chatFrame)
+            ns.QUI.Chat.Cleanup.HideButtons(chatFrame)
         end
 
         -- Handle editbox styling
         if not settings or not settings.enabled or not settings.editBox or not settings.editBox.enabled then
-            RemoveEditBoxStyle(chatFrame)
+            ns.QUI.Chat.EditBoxBasics.RemoveEditBoxStyle(chatFrame)
         else
             -- Show editbox backdrop if it exists (for bottom position mode)
             -- Top position mode handles visibility via OnShow/OnHide hooks
-            if editBoxBackdrops[chatFrame] and not settings.editBox.positionTop then
-                editBoxBackdrops[chatFrame]:Show()
+            if I.editBoxBackdrops[chatFrame] and not settings.editBox.positionTop then
+                I.editBoxBackdrops[chatFrame]:Show()
             end
         end
 
         -- Handle message fade (native API)
-        SetupMessageFade(chatFrame)
+        ns.QUI.Chat.Skinning.SetupFade(chatFrame)
 
         -- Handle copy button based on mode
         if not settings or not settings.enabled then
-            HideCopyButton(chatFrame)
+            ns.QUI.Chat.Copy.HideButton(chatFrame)
         else
-            ApplyCopyButtonMode(chatFrame)
+            ns.QUI.Chat.Copy.ApplyButtonMode(chatFrame)
         end
     end
 
     -- Re-apply all styling if enabled
     if settings and settings.enabled then
-        SkinAllChatFrames()
-        StyleAllChatTabs()
+        ns.QUI.Chat.Skinning.SkinAll()
+        ns.QUI.Chat.Skinning.StyleAllTabs()
     end
 
     -- Update new message sound registration (works even when chat module disabled)
-    SetupNewMessageSound()
+    ns.QUI.Chat.Sounds.Setup()
+
+    -- Modifier after-refresh hooks (e.g., class_colors, channel_shorten).
+    -- Each modifier registers its ApplyEnabled here. pcall isolates failures.
+    local hooks = ns.QUI.Chat._afterRefresh
+    if hooks then
+        for i = 1, #hooks do
+            local ok, err = pcall(hooks[i])
+            if not ok and geterrorhandler then
+                geterrorhandler()(err)
+            end
+        end
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1569,86 +637,38 @@ end
 ---------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("CVAR_UPDATE")
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
         self:UnregisterEvent("ADDON_LOADED")
 
-        local settings = GetSettings()
-
         -- Setup new message sound (works independently of chat skinning)
-        SetupNewMessageSound()
+        ns.QUI.Chat.Sounds.Setup()
 
-        if not settings or not settings.enabled then return end
-
-        -- Setup URL click handler (once)
-        SetupURLClickHandler()
-
-        -- Install chat message filters (timestamps + URLs) via safe API
+        -- Always install hooks/filters so the GUI master toggle (chat.enabled)
+        -- can flip without requiring a /reload. Each install is idempotent and
+        -- the runtime branches that do real work re-check settings.enabled, so
+        -- registering when the module is currently disabled is inert.
+        ns.QUI.Chat.Copy.SetupURLClick()
         InstallMessageFilters()
 
         -- Hook chat frame opening to ensure edit box gets history initialization
         hooksecurefunc("ChatFrame_OpenChat", function(text, chatFrame)
             C_Timer.After(0.1, function()
-                InitializeChatFrameHistory(chatFrame)
+                ns.QUI.Chat.EditBoxHistory.InitializeForFrame(chatFrame)
             end)
         end)
 
-        -- Skin existing chat frames
-        SkinAllChatFrames()
-
-        -- Style chat tabs
-        StyleAllChatTabs()
-
-        -- Hook for new chat windows
+        -- Hook for new chat windows (handler re-checks settings.enabled internally)
         HookNewChatWindows()
-    end
-end)
 
----------------------------------------------------------------------------
--- Default Tab Selection on Login/Reload/Spec Change
----------------------------------------------------------------------------
-local function GetDefaultTabIndex(settings)
-    if settings.defaultTabPerSpec then
-        local specID = Helpers.GetCurrentSpecID()
-        if specID and settings.defaultTabBySpec then
-            return settings.defaultTabBySpec[specID]
-        end
-        return nil
-    end
-    return settings.defaultTab
-end
-
-local function SelectDefaultTab(settings)
-    local tabIndex = GetDefaultTabIndex(settings)
-    if not tabIndex or tabIndex <= 1 then return end
-
-    local chatFrame = _G["ChatFrame" .. tabIndex]
-    if not chatFrame then return end
-
-    local tab = _G["ChatFrame" .. tabIndex .. "Tab"]
-    if not tab then return end
-
-    -- Verify the tab exists and has a name (not a deleted/empty slot)
-    local name = GetChatWindowInfo(tabIndex)
-    if not name or name == "" then return end
-
-    FCF_Tab_OnClick(tab, "LeftButton")
-end
-
-local defaultTabFrame = CreateFrame("Frame")
-defaultTabFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-defaultTabFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
-defaultTabFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
-    local settings = GetSettings()
-    if not settings or not settings.enabled then return end
-
-    if event == "PLAYER_ENTERING_WORLD" then
-        local isInitialLogin, isReloadingUi = arg1, arg2
-        if not (isInitialLogin or isReloadingUi) then return end
-        C_Timer.After(0.5, function() SelectDefaultTab(settings) end)
-    elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
-        if not settings.defaultTabPerSpec then return end
-        C_Timer.After(0.3, function() SelectDefaultTab(settings) end)
+        -- Skin existing chat frames + tabs (both gate on settings.enabled)
+        ns.QUI.Chat.Skinning.SkinAll()
+        ns.QUI.Chat.Skinning.StyleAllTabs()
+        ApplyTimestampMode()
+    elseif event == "PLAYER_LOGIN" or event == "CVAR_UPDATE" then
+        ApplyTimestampMode()
     end
 end)
 
@@ -1657,15 +677,14 @@ end)
 ---------------------------------------------------------------------------
 _G.QUI_RefreshChat = RefreshAll
 
-QUI.Chat = {
-    Refresh = RefreshAll,
-    SkinFrame = SkinChatFrame,
-    SkinAll = SkinAllChatFrames,
-}
+QUI.Chat.Refresh   = RefreshAll
+-- QUI.Chat.SkinFrame / SkinAll aliases are assigned at the bottom of skinning.lua
+-- (skinning.lua loads after chat.lua per chat.xml, so Skinning.* is not yet
+-- defined here).
 
 if ns.Registry then
     ns.Registry:Register("chat", {
-        refresh = _G.QUI_RefreshChat,
+        refresh = function() if _G.QUI_RefreshChat then _G.QUI_RefreshChat() end end,
         priority = 45,
         group = "chat",
         importCategories = { "chat" },

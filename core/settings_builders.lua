@@ -524,6 +524,13 @@ SettingsBuilders.WithSuppressedPosition = WithSuppressedPosition
 SettingsBuilders.WithOnlyPosition = WithOnlyPosition
 SettingsBuilders.RenderWithTileChrome = RenderWithTileChrome
 
+-- Exposed so providers using deferred widget creation (e.g. chat tab
+-- filters) can re-trigger the dual-column pairing pass once their
+-- deferred widgets have actually been added to the body. The original
+-- pass runs at section creation + one frame later — too early to
+-- include widgets that get added via C_Timer.After drains.
+SettingsBuilders.ApplyDualColumnLayoutWhenReady = ApplyDualColumnLayoutWhenReady
+
 local function BuildViaProvider(providerKey, parent, width, options)
     if not parent then return 80 end
 
@@ -602,7 +609,7 @@ local function BuildViaProvider(providerKey, parent, width, options)
             end
         end
         local result = WithSuppressedPosition(options and options.includePosition, function()
-            return provider.build(parent, providerKey, targetWidth)
+            return provider.build(parent, providerKey, targetWidth, options)
         end)
         if U then
             if appliedPositionOnly then

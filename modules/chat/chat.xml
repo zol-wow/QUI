@@ -1,6 +1,21 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
     <Script file="chat.lua"/>
+    <Script file="pipeline.lua"/>
+    <Script file="modifiers/class_colors.lua"/>
+    <Script file="modifiers/channel_shorten.lua"/>
+    <Script file="modifiers/keyword_alert.lua"/>
+    <Script file="modifiers/redundant_text.lua"/>
+    <Script file="history.lua"/>
+    <Script file="hyperlinks.lua"/>
+    <Script file="tab_filters.lua"/>
+    <Script file="button_bar.lua"/>
+    <Script file="cleanup.lua"/>
+    <Script file="copy.lua"/>
+    <Script file="sounds.lua"/>
+    <Script file="editbox_history.lua"/>
+    <Script file="editbox_basics.lua"/>
+    <Script file="skinning.lua"/>
     <Script file="settings/chat_frame1.lua"/>
     <Script file="settings/chat_frame1_provider.lua"/>
 </Ui>

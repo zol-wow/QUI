@@ -807,6 +807,18 @@ local function EnsureSlotBorders(slot)
     slot.BorderRight:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT", 0, 0)
 end
 
+local function IsForbiddenObject(object)
+    if not object or not object.IsForbidden then return false end
+    local ok, forbidden = pcall(object.IsForbidden, object)
+    return ok and forbidden
+end
+
+local function IsObjectTypeSafe(object, objectType)
+    if not object or not object.IsObjectType then return false end
+    local ok, matches = pcall(object.IsObjectType, object, objectType)
+    return ok and matches
+end
+
 local function SlotHasVisibleAura(slot)
     if not slot or not slot.GetNumChildren then return false end
     local numOk, numChildren = pcall(slot.GetNumChildren, slot)
@@ -815,7 +827,7 @@ local function SlotHasVisibleAura(slot)
     if not childrenOk or not children then return false end
     for i = 1, numChildren do
         local child = children[i]
-        if child and not (child.IsForbidden and child:IsForbidden()) and child.IsShown then
+        if child and not IsForbiddenObject(child) and child.IsShown then
             local ok, shown = pcall(child.IsShown, child)
             if ok and shown then return true end
         end
@@ -849,33 +861,57 @@ local function StyleSlotBorders(slot, settings)
 end
 
 local function StyleSlotTextRecursive(node, settings, depth)
-    if not node or depth > 5 then return end
+    if not node or depth > 5 or IsForbiddenObject(node) then return end
+    settings = settings or DEFAULTS
 
     local font = GetGeneralFont()
     local outline = GetGeneralFontOutline()
     local fontSize = settings.fontSize or 12
 
     -- Style FontString regions on this node
-    for i = 1, (node.GetNumRegions and node:GetNumRegions() or 0) do
-        local region = select(i, node:GetRegions())
-        if region and region.IsObjectType and region:IsObjectType("FontString") and region.SetFont then
+    local numRegions = 0
+    local regions
+    if node.GetNumRegions and node.GetRegions then
+        local numOk, count = pcall(node.GetNumRegions, node)
+        if numOk and type(count) == "number" and count > 0 then
+            local regionsOk, regionList = pcall(function() return { node:GetRegions() } end)
+            if regionsOk and regionList then
+                numRegions = count
+                regions = regionList
+            end
+        end
+    end
+    for i = 1, numRegions do
+        local region = regions and regions[i]
+        if region and not IsForbiddenObject(region) and IsObjectTypeSafe(region, "FontString") and region.SetFont then
             pcall(region.SetFont, region, font, fontSize, outline)
             -- Reposition duration/stack text using debuff settings
-            local text = region:GetText()
+            local text
+            if region.GetText then
+                local textOk, textValue = pcall(region.GetText, region)
+                if textOk then
+                    text = SafeValue(textValue, nil)
+                end
+            end
             if text then
                 local anchor = settings.debuffDurationTextAnchor or "CENTER"
                 local offX = settings.debuffDurationTextOffsetX or 0
                 local offY = settings.debuffDurationTextOffsetY or 0
+                local parent
+                if region.GetParent then
+                    local parentOk, parentValue = pcall(region.GetParent, region)
+                    if parentOk then parent = parentValue end
+                end
                 pcall(region.ClearAllPoints, region)
-                pcall(region.SetPoint, region, anchor, region:GetParent(), anchor, offX, offY)
+                pcall(region.SetPoint, region, anchor, parent or node, anchor, offX, offY)
             end
         end
     end
 
     -- Style Cooldown countdown FontStrings
-    if node.IsObjectType and node:IsObjectType("Cooldown") and node.GetCountdownFontString then
-        local cdText = node:GetCountdownFontString()
-        if cdText and cdText.SetFont then
+    if IsObjectTypeSafe(node, "Cooldown") and node.GetCountdownFontString then
+        local cdOk, cdText = pcall(node.GetCountdownFontString, node)
+        if cdOk and cdText and not IsForbiddenObject(cdText) and cdText.SetFont then
             pcall(cdText.SetFont, cdText, font, fontSize, outline)
             local anchor = settings.debuffDurationTextAnchor or "CENTER"
             local offX = settings.debuffDurationTextOffsetX or 0
@@ -886,9 +922,21 @@ local function StyleSlotTextRecursive(node, settings, depth)
     end
 
     -- Recurse into children
-    for i = 1, (node.GetNumChildren and node:GetNumChildren() or 0) do
-        local child = select(i, node:GetChildren())
-        if child then
+    local numChildren = 0
+    local children
+    if node.GetNumChildren and node.GetChildren then
+        local numOk, count = pcall(node.GetNumChildren, node)
+        if numOk and type(count) == "number" and count > 0 then
+            local childrenOk, childList = pcall(function() return { node:GetChildren() } end)
+            if childrenOk and childList then
+                numChildren = count
+                children = childList
+            end
+        end
+    end
+    for i = 1, numChildren do
+        local child = children and children[i]
+        if child and not IsForbiddenObject(child) then
             StyleSlotTextRecursive(child, settings, depth + 1)
         end
     end

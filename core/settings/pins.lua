@@ -245,6 +245,96 @@ local UNIT_FRAMES_FEATURE_ROUTE = {
     unitFramesPrivateAurasTab = { surfaceTabKey = "privateAuras", subTabName = "Priv. Auras" },
 }
 
+local CHAT_SEARCH_CONTEXT = {
+    tileId = "chat_tooltips",
+}
+
+local CHAT_FEATURE_SUBPAGE_INDEX = {
+    chatFrame1 = 1,
+    chatFrame1Filters = 2,
+    chatFrame1ButtonBar = 3,
+    chatFrame1Alerts = 4,
+    chatFrame1History = 5,
+}
+
+local function NormalizeRouteKey(value)
+    if type(value) ~= "string" or value == "" then
+        return nil
+    end
+    local normalized = value:gsub("[^%w]", ""):lower()
+    return normalized ~= "" and normalized or nil
+end
+
+local CHAT_FEATURE_BY_LEGACY_SECTION = {
+    tabfilters = "chatFrame1Filters",
+    buttonbar = "chatFrame1ButtonBar",
+    timestamps = "chatFrame1Alerts",
+    messagemodifiers = "chatFrame1Alerts",
+    keywordalert = "chatFrame1Alerts",
+    redundanttextcleanup = "chatFrame1Alerts",
+    newmessagesound = "chatFrame1Alerts",
+    persistentmessagehistory = "chatFrame1History",
+    uicleanup = "chatFrame1History",
+    copybutton = "chatFrame1History",
+    messagehistory = "chatFrame1History",
+}
+
+local CHAT_FEATURE_BY_DB_SEGMENT = {
+    tabs = "chatFrame1Filters",
+    buttonbars = "chatFrame1ButtonBar",
+    timestamps = "chatFrame1Alerts",
+    modifiers = "chatFrame1Alerts",
+    newmessagesound = "chatFrame1Alerts",
+    history = "chatFrame1History",
+    messagehistory = "chatFrame1History",
+    copybuttonmode = "chatFrame1History",
+    hidebuttons = "chatFrame1History",
+}
+
+local function BuildChatRoute(featureId)
+    local subPageIndex = CHAT_FEATURE_SUBPAGE_INDEX[featureId]
+    if not subPageIndex then
+        return nil
+    end
+    return {
+        featureId = featureId,
+        tileId = CHAT_SEARCH_CONTEXT.tileId,
+        subPageIndex = subPageIndex,
+    }
+end
+
+local function ResolveChatRouteFromPath(path)
+    local segments = SplitPath(path)
+    if #segments == 0 then
+        return nil
+    end
+
+    local featureId = segments[1]
+    if CHAT_FEATURE_SUBPAGE_INDEX[featureId] then
+        if featureId == "chatFrame1" then
+            local sectionKey = NormalizeRouteKey(segments[2])
+            local sectionFeatureId = sectionKey and CHAT_FEATURE_BY_LEGACY_SECTION[sectionKey] or nil
+            if sectionFeatureId then
+                return BuildChatRoute(sectionFeatureId)
+            end
+        end
+        return BuildChatRoute(featureId)
+    end
+
+    local chatIndex = nil
+    if NormalizeRouteKey(segments[1]) == "chat" then
+        chatIndex = 1
+    elseif NormalizeRouteKey(segments[1]) == "profile" and NormalizeRouteKey(segments[2]) == "chat" then
+        chatIndex = 2
+    end
+    if not chatIndex then
+        return nil
+    end
+
+    local dbKey = NormalizeRouteKey(segments[chatIndex + 1])
+    return BuildChatRoute((dbKey and CHAT_FEATURE_BY_DB_SEGMENT[dbKey]) or "chatFrame1")
+end
+
 local function ResolveFeatureRouteFromPath(path)
     if type(path) ~= "string" or path == "" then
         return nil
@@ -253,6 +343,11 @@ local function ResolveFeatureRouteFromPath(path)
     local featureId = path:match("^([^.]+)")
     if type(featureId) ~= "string" or featureId == "" then
         return nil
+    end
+
+    local chatRoute = ResolveChatRouteFromPath(path)
+    if chatRoute then
+        return chatRoute
     end
 
     if featureId == "unitFramesGeneralTab" then

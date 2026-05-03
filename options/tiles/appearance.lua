@@ -112,6 +112,18 @@ function V2.Register(frame)
                 featureId = "blizzardMoverPage",
                 navRoutes = { { tabIndex = 2, subTabIndex = 12 } },
             },
+            {
+                id = "themeColors",
+                name = "Theme & Colors",
+                sectionNav = true,
+                featureId = "themeColorsPage",
+                searchContext = {
+                    tileId = "appearance",
+                    tabName = SEARCH_TAB_NAME,
+                    subPageIndex = 9,
+                    subTabName = "Theme & Colors",
+                },
+            },
         },
         relatedSettings = {
             { label = "Chat & Tooltips",    tileId = "chat_tooltips", subPageIndex = 1 },

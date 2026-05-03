@@ -12,7 +12,7 @@ ProviderFeatures:Register({
     category = "qol",
     nav = {
         tileId = "chat_tooltips",
-        subPageIndex = 2,
+        subPageIndex = 6,
     },
     apply = function()
         if ns.QUI_RefreshTooltips then

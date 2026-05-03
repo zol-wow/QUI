@@ -186,11 +186,19 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --        key. Buff/debuff filter table shells themselves are stamped
 --        lazily by EnsureAuraSettings; this migration only handles the
 --        old toggle's behavior preservation.)
+-- v35 = Phase C edit-box history schema initialization
+--       (3.6.0+: marks the introduction of persistent per-character
+--        Up/Down arrow recall at db.char.chat.editboxHistory. The prior
+--        session-only history was in-memory and not persisted, so there
+--        is nothing on the profile to migrate from — this entry is a
+--        no-op stamp on the profile. Per-character storage is reached
+--        through QUI.db.char (not the profile), and gets initialized
+--        lazily by editbox_history.lua's getStore().)
 --
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 34
+local CURRENT_SCHEMA_VERSION = 35
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -3767,6 +3775,18 @@ function Migrations.RunOnProfile(profile)
 
     -- v34: replace per-unit onlyMyDebuffs checkbox with debuffFilter.modifiers.PLAYER
     if stored < 34 then MigrateUnitFrameAuraFilters(profile) end
+
+    -- v35: Phase C edit-box history schema initialization. The prior
+    -- session-only arrow-key history was in-memory and not persisted, so
+    -- there is nothing on the profile to migrate from. This entry exists
+    -- to document the schema bump and reserve the version for any future
+    -- post-version logic that needs to run. Per-character storage is
+    -- reached via QUI.db.char.chat.editboxHistory (not the profile);
+    -- editbox_history.lua's getStore() lazily initializes it on first
+    -- capture or recall.
+    if stored < 35 then
+        -- intentionally empty
+    end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame

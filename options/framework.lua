@@ -364,8 +364,17 @@ function GUI:ResetStaticSearchIndex()
     self.StaticNavigationRegistryKeys = {}
 end
 
+function GUI:ResetRuntimeSearchIndex()
+    self.SettingsRegistry = {}
+    self.SettingsRegistryKeys = {}
+    self.NavigationRegistry = {}
+    self.NavigationRegistryKeys = {}
+end
+
 function GUI:ApplyGeneratedSearchCache(cache)
     self:ResetStaticSearchIndex()
+    self:ResetRuntimeSearchIndex()
+    self._generatedSearchCacheVersion = nil
 
     if type(cache) ~= "table" then
         return false
@@ -380,6 +389,10 @@ function GUI:ApplyGeneratedSearchCache(cache)
 
     self._generatedSearchCacheVersion = cache.version
     return true
+end
+
+function GUI:HasGeneratedSearchCache()
+    return self._generatedSearchCacheVersion ~= nil
 end
 
 function GUI:RegisterStaticNavigationEntry(entry)
@@ -559,8 +572,22 @@ local function BuildSearchSettingsRegistryKey(context, label)
     }, "\31")
 end
 
+local function IsTransientOptionsBinding(dbTable)
+    return type(dbTable) == "table" and dbTable._quiTransientOptionsProxy == true
+end
+
+local function ShouldRegisterSearchSetting(registryInfo, dbTable)
+    if IsTransientOptionsBinding(dbTable) then
+        return false
+    end
+    return not (type(registryInfo) == "table" and registryInfo.searchable == false)
+end
+
 function GUI:BuildSearchWidgetDescriptor(kind, dbKey, dbTable, extra)
     if type(dbKey) ~= "string" or dbKey == "" then
+        return nil
+    end
+    if IsTransientOptionsBinding(dbTable) then
         return nil
     end
 
@@ -592,7 +619,8 @@ end
 
 function GUI:RegisterSearchSettingWidget(entry)
     local context = self._searchContext or {}
-    if self._suppressSearchRegistration
+    if self:HasGeneratedSearchCache()
+        or self._suppressSearchRegistration
         or type(entry) ~= "table"
         or type(entry.label) ~= "string"
         or entry.label == "" then
@@ -631,7 +659,17 @@ function GUI:RegisterSearchSettingWidget(entry)
     return stored
 end
 
+local function RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, entry)
+    if not ShouldRegisterSearchSetting(registryInfo, dbTable) then
+        return nil
+    end
+    return GUI:RegisterSearchSettingWidget(entry)
+end
+
 function GUI:RegisterSearchNavigation(navType, info)
+    if self:HasGeneratedSearchCache() then
+        return nil
+    end
     return self:RegisterNavigationItem(navType, info)
 end
 
@@ -651,6 +689,9 @@ end
 
 -- Register a widget instance for sync tracking
 local function RegisterWidgetInstance(widget, dbTable, dbKey)
+    if IsTransientOptionsBinding(dbTable) then
+        return
+    end
     local widgetKey = GetWidgetKey(dbTable, dbKey)
     widget._syncDBTable = dbTable
     widget._syncDBKey = dbKey
@@ -706,6 +747,11 @@ end
 
 local function ApplyWidgetSyncContext(widget, dbTable, dbKey)
     if not widget then return end
+    if IsTransientOptionsBinding(dbTable) then
+        widget._syncDBTable = nil
+        widget._syncDBKey = nil
+        return
+    end
     widget._syncDBTable = dbTable
     widget._syncDBKey = dbKey
     if not widget._providerSyncContext then
@@ -777,6 +823,9 @@ end
 local function MaybeBindPinnedWidget(widget, kind, label, dbKey, dbTable, interactiveFrame, registryInfo)
     local pins = ns.Settings and ns.Settings.Pins
     if not pins or type(pins.BindWidget) ~= "function" then
+        return
+    end
+    if IsTransientOptionsBinding(dbTable) then
         return
     end
     if registryInfo and registryInfo.pinnable == false then
@@ -3401,6 +3450,12 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
     container.SetValue = BindWidgetMethod(container, SetValue)
     container.UpdateVisual = UpdateVisual
 
+    -- Soft-refresh: re-read from dbTable and update visual without firing
+    -- onChange or writing back. Used by providers that mutate dbTable
+    -- bindings out-of-band (e.g. multi-frame editors) and want the visible
+    -- widget state to follow without a full structural rebuild.
+    container.Refresh = function() UpdateVisual(GetValue()) end
+
     -- Register for cross-widget sync
     RegisterWidgetInstance(container, dbTable, dbKey)
     MaybeBindPinnedWidget(container, "checkbox", label, dbKey, dbTable, toggle, registryInfo)
@@ -3434,7 +3489,7 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
         container:SetAlpha(enabled and 1 or 0.4)
     end
 
-    GUI:RegisterSearchSettingWidget({
+    RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
         label = label,
         widgetType = "toggle",
         widgetBuilder = function(p)
@@ -3583,7 +3638,7 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange, r
         container:SetAlpha(enabled and 1 or 0.4)
     end
 
-    GUI:RegisterSearchSettingWidget({
+    RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
         label = label,
         widgetType = "toggle",
         widgetBuilder = function(p)
@@ -3851,6 +3906,15 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
     container.SetValue = BindWidgetMethod(container, SetValue)
     container.UpdateVisual = UpdateVisual
 
+    -- Soft-refresh: re-read from dbTable and update the displayed text
+    -- without firing onChange. Skip when the editBox currently has focus —
+    -- clobbering an in-progress edit is worse than a brief visual lag that
+    -- self-corrects when the user blurs the field.
+    container.Refresh = function()
+        if editBox:HasFocus() then return end
+        UpdateVisual(GetValue())
+    end
+
     RegisterWidgetInstance(container, dbTable, dbKey)
     SetValue(GetValue(), true)
 
@@ -3912,7 +3976,7 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
     end
     container.isEnabled = true
 
-    GUI:RegisterSearchSettingWidget({
+    RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
         label = label,
         widgetType = "editbox",
         widgetBuilder = function(p)
@@ -4310,7 +4374,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     -- Initialize enabled state
     container.isEnabled = true
 
-    GUI:RegisterSearchSettingWidget({
+    RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
         label = label,
         widgetType = "slider",
         widgetBuilder = function(p)
@@ -4899,6 +4963,11 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     container.SetOptions = BindWidgetMethod(container, SetOptions)
     container.UpdateVisual = UpdateVisual
 
+    -- Soft-refresh: re-read from dbTable and update the displayed selection
+    -- without firing onChange. Used by providers that mutate dbTable bindings
+    -- out-of-band (e.g. multi-frame editors).
+    container.Refresh = function() UpdateVisual(GetValue()) end
+
     -- Register for cross-widget sync
     RegisterWidgetInstance(container, dbTable, dbKey)
     MaybeBindPinnedWidget(container, "dropdown", label, dbKey, dbTable, dropdown, registryInfo)
@@ -4913,7 +4982,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     end
     container.isEnabled = true
 
-    GUI:RegisterSearchSettingWidget({
+    RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
         label = label,
         widgetType = "dropdown",
         widgetBuilder = function(p)
@@ -5083,7 +5152,7 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
         container:SetAlpha(enabled and 1 or 0.4)
     end
 
-    GUI:RegisterSearchSettingWidget({
+    RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
         label = label,
         widgetType = "colorpicker",
         widgetBuilder = function(p)
