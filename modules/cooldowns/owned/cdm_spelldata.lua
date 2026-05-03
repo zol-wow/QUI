@@ -4922,6 +4922,11 @@ end
 local function GetMutableEntryList(db, containerKey, createIfMissing, specKey)
     if not db then return nil end
     if db.specSpecific then
+        if specKey == false then
+            local field = GetEntryListField(db)
+            if createIfMissing and db[field] == nil then db[field] = {} end
+            return db[field]
+        end
         return GetSpecEntryList(containerKey, specKey, createIfMissing)
     end
     local field = GetEntryListField(db)
@@ -5032,13 +5037,14 @@ function CDMSpellData:RemoveEntry(containerKey, index, specKey)
     return true
 end
 
-function CDMSpellData:ReorderEntry(containerKey, fromIndex, toIndex)
+function CDMSpellData:ReorderEntry(containerKey, fromIndex, toIndex, specKey)
     if CombatGuard() then return false end
 
     local db = GetContainerDB(containerKey)
     if not db then return false end
-    local list = GetMutableEntryList(db, containerKey, false)
+    local list = GetMutableEntryList(db, containerKey, false, specKey)
     if type(list) ~= "table" then return false end
+    if type(fromIndex) ~= "number" or type(toIndex) ~= "number" then return false end
 
     local len = #list
     if fromIndex < 1 or fromIndex > len then return false end

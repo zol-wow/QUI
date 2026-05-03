@@ -1303,6 +1303,7 @@ local dragState = {
     fromIndex = nil,
     fromCell = nil,
     fromRowNum = nil,  -- row number the dragged entry belongs to
+    fromSpecKey = nil, -- source bucket for spec-specific custom bars
 }
 
 local function BuildEntryListSection(parent)
@@ -1431,12 +1432,10 @@ local function GetOrCreateEntryCell(index)
                     GameTooltip:AddLine(("Source: %s"):format(label), 0.6, 0.85, 1)
                 end
             end
-            if self._dragDisabled then
-                GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
-            else
-                GameTooltip:AddLine("Drag to reorder or move between rows", 0.5, 0.5, 0.5)
-                GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
+            if self._dragTooltipText then
+                GameTooltip:AddLine(self._dragTooltipText, 0.5, 0.5, 0.5)
             end
+            GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
         end
         GameTooltip:Show()
     end)
@@ -1590,6 +1589,11 @@ local function UpdateDropIndicator()
         return
     end
 
+    if bestCell and dragState.fromSpecKey ~= bestCell._entrySpecKey then
+        indicator:Hide()
+        return
+    end
+
     -- Anchor centered on the cell edge so the indicator is never clipped
     -- outside the scroll content area (especially at the first cell in a row)
     indicator:ClearAllPoints()
@@ -1611,6 +1615,7 @@ local function StartDrag(cell, entryIndex, rowNum)
     dragState.fromIndex = entryIndex
     dragState.fromCell = cell
     dragState.fromRowNum = rowNum or nil
+    dragState.fromSpecKey = cell and cell._entrySpecKey or nil
     -- Highlight the dragged cell
     cell:SetBackdropBorderColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
     -- Hide highlight textures on all other cells so hover glow doesn't
@@ -1660,7 +1665,9 @@ StopDrag = function()
         entryListContent:SetScript("OnUpdate", nil)
     end
 
-    local targetIdx, targetRow = GetDropTarget()
+    local targetIdx, targetRow, targetCell = GetDropTarget()
+    local fromSpecKey = dragState.fromSpecKey
+    local targetSpecKey = targetCell and targetCell._entrySpecKey or nil
 
     -- Clean up all header highlights (reset every header to its default color)
     for _, hdr in ipairs(sectionHeaders) do
@@ -1678,6 +1685,7 @@ StopDrag = function()
     dragState.fromIndex = nil
     dragState.fromCell = nil
     dragState.fromRowNum = nil
+    dragState.fromSpecKey = nil
 
     if not fromIdx then return end
     -- Need either a cell target or a row header target
@@ -1685,6 +1693,12 @@ StopDrag = function()
 
     local spellData = GetCDMSpellData()
     if not spellData or not activeContainer then return end
+
+    if fromSpecKey ~= targetSpecKey then
+        UIErrorsFrame:AddMessage("Can only reorder within the same source spec", 1.0, 0.3, 0.3, 1.0, 3)
+        UIErrorsFrame:SetFrameStrata("TOOLTIP")
+        return
+    end
 
     local isCooldown = (ResolveContainerType(activeContainer) == "cooldown")
     local crossRow = isCooldown and targetRow and fromRowNum and targetRow ~= fromRowNum
@@ -1727,7 +1741,7 @@ StopDrag = function()
                 adjustedTarget = targetIdx - 1
             end
             if adjustedTarget ~= fromIdx then
-                spellData:ReorderEntry(activeContainer, fromIdx, adjustedTarget)
+                spellData:ReorderEntry(activeContainer, fromIdx, adjustedTarget, fromSpecKey)
             end
         end
         C_Timer.After(0.02, function()
@@ -1746,7 +1760,7 @@ StopDrag = function()
             adjustedTarget = targetIdx - 1
         end
 
-        spellData:ReorderEntry(activeContainer, fromIdx, adjustedTarget)
+        spellData:ReorderEntry(activeContainer, fromIdx, adjustedTarget, fromSpecKey)
         C_Timer.After(0.02, function()
             RefreshCDM()
             RefreshEntryList()
@@ -2025,10 +2039,10 @@ RefreshEntryList = function()
         -- Also surface any unmigrated entries still sitting in db.entries
         -- (defensive — should be empty after v32 migration).
         if type(db.entries) == "table" then
-            for _, entry in ipairs(db.entries) do
+            for entryIndex, entry in ipairs(db.entries) do
                 if type(entry) == "table" then
-                    entry._renderSpecKey = nil
-                    entry._renderSpecIndex = nil
+                    entry._renderSpecKey = false
+                    entry._renderSpecIndex = entryIndex
                     entries[#entries + 1] = entry
                 end
             end
@@ -2127,11 +2141,18 @@ RefreshEntryList = function()
         local cell = GetOrCreateEntryCell(cellIndex)
         cell:SetParent(entryListContent)
         cell._entry = entry
-        cell._entryIndex = idx
+        cell._entryIndex = (isCustomBar and db.specSpecific and type(entry) == "table" and entry._renderSpecIndex) or idx
+        cell._entrySpecKey = (isCustomBar and db.specSpecific and type(entry) == "table") and entry._renderSpecKey or nil
         cell._rowNum = rowNum or nil
         cell._isDormant = false
         cell._isUnknownToPlayer = not IsEntryUsableOnCurrentPlayer(entry)
-        cell._dragDisabled = isCustomBar and db.specSpecific
+        if isCooldown then
+            cell._dragTooltipText = "Drag to reorder or move between rows"
+        elseif isCustomBar and db.specSpecific and cell._entrySpecKey then
+            cell._dragTooltipText = "Drag to reorder within this source spec"
+        else
+            cell._dragTooltipText = "Drag to reorder"
+        end
         -- Mirrors the tooltip warning: red-tint icons that are usable on
         -- this class but currently absent from Blizzard's CDM viewer.
         -- Skip when unknown-to-player (already desaturated for that state).
@@ -2149,17 +2170,12 @@ RefreshEntryList = function()
         cell:SetAlpha(cell._isUnknownToPlayer and 0.6 or 1)
 
         -- Wire drag
-        if cell._dragDisabled then
-            cell:SetScript("OnDragStart", nil)
-            cell:SetScript("OnDragStop", nil)
-        else
-            cell:SetScript("OnDragStart", function()
-                StartDrag(cell, idx, rowNum)
-            end)
-            cell:SetScript("OnDragStop", function()
-                StopDrag()
-            end)
-        end
+        cell:SetScript("OnDragStart", function()
+            StartDrag(cell, cell._entryIndex, rowNum)
+        end)
+        cell:SetScript("OnDragStop", function()
+            StopDrag()
+        end)
 
         -- OnClick handles both drag-stop (left) and context menu (right)
         cell:SetScript("OnClick", function(self, button)
@@ -2192,8 +2208,10 @@ RefreshEntryList = function()
         -- Dormant entries store as { id = spellID, type = "spell" } for context menu
         cell._entry = { id = spellID, type = "spell" }
         cell._entryIndex = nil
+        cell._entrySpecKey = nil
         cell._rowNum = nil
         cell._isDormant = true
+        cell._dragTooltipText = nil
 
         local icon = "Interface\\Icons\\INV_Misc_QuestionMark"
         if C_Spell and C_Spell.GetSpellInfo then
