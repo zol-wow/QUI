@@ -909,6 +909,18 @@ local function GetBestSpellCooldown(spellID)
         return nil, nil, bestDurObj, isActive
     end
 
+    -- Some normal spells still expose only readable numeric cooldown timing
+    -- here while the newer isActive flag is absent/false. Custom CDM bars do
+    -- not have a Blizzard viewer child to mirror from, so dropping this safe
+    -- payload makes non-charged custom entries disappear under "show only on
+    -- cooldown" while charged entries keep working.
+    if IsSafeNumeric(bestStart) and IsSafeNumeric(bestDuration)
+       and bestStart > 0 and bestDuration > GCD_MAX_DURATION
+       and (bestStart + bestDuration) > GetTime()
+    then
+        return bestStart, bestDuration, nil, true
+    end
+
     return nil, nil, nil, isActive
 end
 
@@ -953,7 +965,18 @@ local function CooldownHasExpiredNow(startTime, duration, durObj, now)
     return false
 end
 
-local function HasRealCooldownState(icon, entry, duration, apiIsActive, mirrorActive, blizzRealCooldownActive)
+function CDMIcons.SpellHasBaseCooldownLongerThanGCD(spellID)
+    if not spellID or not (C_Spell and C_Spell.GetSpellBaseCooldown) then
+        return false
+    end
+    local ok, cooldownMS = pcall(C_Spell.GetSpellBaseCooldown, spellID)
+    if not ok or not IsSafeNumeric(cooldownMS) then
+        return false
+    end
+    return (cooldownMS / 1000) > GCD_MAX_DURATION
+end
+
+local function HasRealCooldownState(icon, entry, duration, apiIsActive, mirrorActive, blizzRealCooldownActive, durObj, runtimeSpellID)
     if not icon or not entry then
         return false
     end
@@ -975,6 +998,11 @@ local function HasRealCooldownState(icon, entry, duration, apiIsActive, mirrorAc
     end
 
     if mirrorActive then
+        return true
+    end
+
+    if durObj and apiIsActive == true
+       and CDMIcons.SpellHasBaseCooldownLongerThanGCD(runtimeSpellID or entry.spellID or entry.overrideSpellID or entry.id) then
         return true
     end
 
@@ -1923,6 +1951,8 @@ end
 -- read a clean string instead of a fresh, possibly-secret one. Cache
 -- entries are stable across the session — spell names don't mutate.
 local _spellNameCache = {}
+CDMIcons._recentCastSpellByName = CDMIcons._recentCastSpellByName or {}
+CDMIcons._recentCastAliasTTL = 600
 
 -- Returns ONLY clean (non-secret) names so the cache value is safe to
 -- compare against "" downstream (cdm_bars.lua, swipe.lua, profile_io.lua
@@ -1941,6 +1971,58 @@ local function GetCachedSpellName(spellID)
     if name == nil or IsSecretValue(name) then return nil end
     _spellNameCache[spellID] = name
     return name
+end
+
+function CDMIcons.GetSpellNameForAlias(spellID)
+    if not spellID then return nil end
+    local cached = GetCachedSpellName(spellID)
+    if cached then return cached end
+    if C_Spell and C_Spell.GetSpellName then
+        local okName, name = pcall(C_Spell.GetSpellName, spellID)
+        if okName and name and not IsSecretValue(name) then
+            return name
+        end
+    end
+    if not (C_Spell and C_Spell.GetSpellInfo) then return nil end
+    local ok, info = pcall(C_Spell.GetSpellInfo, spellID)
+    if ok and info and info.name and not IsSecretValue(info.name) then
+        return info.name
+    end
+    return nil
+end
+
+function CDMIcons.NormalizeSpellAliasName(name)
+    if type(name) ~= "string" or name == "" then return nil end
+    return string.lower(name)
+end
+
+function CDMIcons.RecordRecentPlayerSpellCast(spellID)
+    if not spellID then return end
+    local spellName = CDMIcons.GetSpellNameForAlias(spellID)
+    local key = CDMIcons.NormalizeSpellAliasName(spellName)
+    if not key then return end
+    CDMIcons._recentCastSpellByName[key] = {
+        spellID = spellID,
+        time = GetTime(),
+    }
+    if CDMIcons.DebugSpellEvent then
+        CDMIcons.DebugSpellEvent(spellID, spellName, "spellcast", "recordedAlias=", key)
+    end
+end
+
+function CDMIcons.GetRecentCastAliasForEntry(entry)
+    if not entry then return nil end
+    local key = CDMIcons.NormalizeSpellAliasName(entry.name)
+    if not key then
+        key = CDMIcons.NormalizeSpellAliasName(CDMIcons.GetSpellNameForAlias(entry.spellID or entry.overrideSpellID or entry.id))
+    end
+    local rec = key and CDMIcons._recentCastSpellByName[key]
+    if not rec then return nil end
+    if (GetTime() - (rec.time or 0)) > CDMIcons._recentCastAliasTTL then
+        CDMIcons._recentCastSpellByName[key] = nil
+        return nil
+    end
+    return rec.spellID
 end
 
 -- Shared with cdm_spelldata.lua's ResolveOwnedEntry so harvested spell
@@ -3206,16 +3288,16 @@ function CDMIcons.ResolveCustomBarCooldownState(entry, icon, containerDB, now)
     return CDMIcons.ResolveCooldownActivityState(icon, entry, containerDB, now)
 end
 
-function CDMIcons.ResolveCustomBarUsability(entry, containerDB)
+function CDMIcons.ResolveCustomBarUsability(entry, containerDB, cooldownState)
     if not entry then return true end
 
     if entry.type == "macro" then
         local resolvedID, resolvedType = ResolveMacro(entry)
         if not resolvedID then return true end
         if resolvedType == "item" then
-            return CDMIcons.ResolveCustomBarUsability({ type = "item", id = resolvedID }, containerDB)
+            return CDMIcons.ResolveCustomBarUsability({ type = "item", id = resolvedID }, containerDB, cooldownState)
         end
-        return CDMIcons.ResolveCustomBarUsability({ type = "spell", id = resolvedID, spellID = resolvedID }, containerDB)
+        return CDMIcons.ResolveCustomBarUsability({ type = "spell", id = resolvedID, spellID = resolvedID }, containerDB, cooldownState)
     end
 
     if entry.type == "item" then
@@ -3266,6 +3348,15 @@ function CDMIcons.ResolveCustomBarUsability(entry, containerDB)
            and not spellData:IsSpellKnown(sid) then
             return false
         end
+        -- C_Spell.IsSpellUsable can report false while a known spell is on
+        -- cooldown. For custom bars that combine Hide Non-Usable with Show
+        -- Only On Cooldown, treating that as unusable hides the exact spells
+        -- the user wants to see. Unknown spells were rejected above; active
+        -- cooldown/recharge means the entry is valid and should pass this
+        -- filter.
+        if cooldownState and (cooldownState.isOnCooldown or cooldownState.rechargeActive) then
+            return true
+        end
         if C_Spell and C_Spell.IsSpellUsable then
             local ok, usable = pcall(C_Spell.IsSpellUsable, sid)
             if ok and usable == false then
@@ -3280,7 +3371,7 @@ end
 function CDMIcons.ComputeCustomBarVisibility(icon, entry, containerDB, now)
     local cooldown = CDMIcons.ResolveCustomBarCooldownState(entry, icon, containerDB, now)
     local isActive = (icon and icon._customBarActive) or (icon and icon._auraActive) or false
-    local usable = CDMIcons.ResolveCustomBarUsability(entry, containerDB)
+    local usable = CDMIcons.ResolveCustomBarUsability(entry, containerDB, cooldown)
     local baseVisible = usable or not (containerDB and containerDB.hideNonUsable)
     local mode = CDMIcons.GetCustomBarVisibilityMode(containerDB)
     local layoutVisible = baseVisible
@@ -3299,6 +3390,20 @@ function CDMIcons.ComputeCustomBarVisibility(icon, entry, containerDB, now)
     local inCombat = UnitAffectingCombat and UnitAffectingCombat("player")
     local combatVisible = not (containerDB and containerDB.showOnlyInCombat) or inCombat
 
+    if CDMIcons.DebugIconEvent then
+        CDMIcons.DebugIconEvent(icon, "visibility",
+            "mode=", mode,
+            "layout=", tostring((layoutVisible and true) or false),
+            "render=", tostring(((layoutVisible and combatVisible) and true) or false),
+            "base=", tostring((baseVisible and true) or false),
+            "usable=", tostring((usable and true) or false),
+            "onCD=", tostring((cooldown.isOnCooldown and true) or false),
+            "recharge=", tostring((cooldown.rechargeActive and true) or false),
+            "active=", tostring((isActive and true) or false),
+            "gcdOnly=", tostring(cooldown.gcdOnly and true or false),
+            "hideNonUsable=", tostring(containerDB and containerDB.hideNonUsable),
+            "showOnlyOnCooldown=", tostring(containerDB and containerDB.showOnlyOnCooldown))
+    end
     return {
         baseVisible = baseVisible,
         layoutVisible = layoutVisible and true or false,
@@ -3846,6 +3951,18 @@ local function UpdateIconCooldown(icon)
                     if childCi and not IsSecretValue(childCi.isOnGCD) then
                         icon._isOnGCD = childCi.isOnGCD or false
                     end
+                    if childCi and IsSafeNumeric(childCi.startTime) and IsSafeNumeric(childCi.duration) then
+                        startTime = childCi.startTime
+                        duration = childCi.duration
+                    end
+                    if CDMIcons.DebugIconEvent then
+                        CDMIcons.DebugIconEvent(icon, "spell-api",
+                            "sid=", tostring(cdSid),
+                            "start=", childCi and tostring(SafeValue(childCi.startTime, "secret")) or "nil",
+                            "duration=", childCi and tostring(SafeValue(childCi.duration, "secret")) or "nil",
+                            "isActive=", childCi and tostring(SafeValue(childCi.isActive, "secret")) or "nil",
+                            "isOnGCD=", childCi and tostring(SafeValue(childCi.isOnGCD, "secret")) or "nil")
+                    end
                     -- Forward the spell's DurationObject from
                     -- C_Spell.GetSpellCooldownDuration via SetCooldownFromDurationObject
                     -- (the one secret-safe setter). This reflects resource waits for
@@ -3870,9 +3987,45 @@ local function UpdateIconCooldown(icon)
                         end
                         if entry._blizzChild.Cooldown then
                             SyncMirroredCooldownState(icon, entry._blizzChild.Cooldown, apiIsActive)
+                            if CDMIcons.DebugIconEvent then
+                                local okTimes, rawStart, rawDuration, rawEnabled = pcall(entry._blizzChild.Cooldown.GetCooldownTimes, entry._blizzChild.Cooldown)
+                                local okChildID, childSpellID = false, nil
+                                if entry._blizzChild.GetSpellID then
+                                    okChildID, childSpellID = pcall(entry._blizzChild.GetSpellID, entry._blizzChild)
+                                end
+                                CDMIcons.DebugIconEvent(icon, "blizz-child",
+                                    "childSpellID=", okChildID and tostring(SafeValue(childSpellID, "secret")) or "nil",
+                                    "cooldownID=", tostring(SafeValue(rawget(entry._blizzChild, "cooldownID"), "secret")),
+                                    "start=", okTimes and tostring(SafeValue(rawStart, "secret")) or "err",
+                                    "duration=", okTimes and tostring(SafeValue(rawDuration, "secret")) or "err",
+                                    "enabled=", okTimes and tostring(SafeValue(rawEnabled, "secret")) or "err",
+                                    "apiActive=", tostring(apiIsActive),
+                                    "iconHasCD=", tostring(icon._hasCooldownActive),
+                                    "lastStart=", tostring(icon._lastStart),
+                                    "lastDuration=", tostring(icon._lastDuration))
+                            end
+                        end
+                        if icon._hasCooldownActive
+                           and IsSafeNumeric(icon._lastStart)
+                           and IsSafeNumeric(icon._lastDuration)
+                           and icon._lastStart > 0
+                           and icon._lastDuration > 0 then
+                            startTime = icon._lastStart
+                            duration = icon._lastDuration
+                            if duration > GCD_MAX_DURATION then
+                                blizzRealCooldownActive = true
+                            end
+                        elseif IsSafeNumeric(startTime)
+                           and IsSafeNumeric(duration)
+                           and startTime > 0
+                           and duration > 0 then
+                            if duration > GCD_MAX_DURATION and apiIsActive == true then
+                                blizzRealCooldownActive = true
+                            end
+                        else
+                            startTime, duration, durObj = nil, nil, nil
                         end
                     end
-                    startTime, duration, durObj = nil, nil, nil
                 else
                     -- Aura active: still refresh GCD + cooldown activity
                     -- from API so desaturation clears when the CD ends.
@@ -4018,6 +4171,29 @@ local function UpdateIconCooldown(icon)
                 if not _chargedAuraActive then
                     -- Custom entry / charged recharge: full API resolution.
                     startTime, duration, durObj, apiIsActive = GetBestSpellCooldown(_runtimeSid)
+                    if not durObj
+                       and not (IsSafeNumeric(startTime) and IsSafeNumeric(duration) and duration > GCD_MAX_DURATION)
+                       and not entry._blizzChild
+                    then
+                        local aliasID = CDMIcons.GetRecentCastAliasForEntry(entry)
+                        if aliasID and aliasID ~= _runtimeSid then
+                            local aStart, aDuration, aDurObj, aActive = GetBestSpellCooldown(aliasID)
+                            if aDurObj or (IsSafeNumeric(aStart) and IsSafeNumeric(aDuration) and aDuration > GCD_MAX_DURATION) then
+                                if CDMIcons.DebugIconEvent then
+                                    CDMIcons.DebugIconEvent(icon, "alias",
+                                        "from=", tostring(_runtimeSid),
+                                        "to=", tostring(aliasID),
+                                        "aStart=", tostring(aStart),
+                                        "aDuration=", tostring(aDuration),
+                                        "aDurObj=", aDurObj and "yes" or "no",
+                                        "aActive=", tostring(aActive))
+                                end
+                                _runtimeSid = aliasID
+                                icon._runtimeSpellID = aliasID
+                                startTime, duration, durObj, apiIsActive = aStart, aDuration, aDurObj, aActive
+                            end
+                        end
+                    end
                 else
                     -- Aura active: keep _hasCooldownActive in sync so
                     -- desaturation clears when the recharge completes.
@@ -4032,6 +4208,19 @@ local function UpdateIconCooldown(icon)
                 local _tickCi = TickCacheGetCooldown(_runtimeSid)
                 if _tickCi and not IsSecretValue(_tickCi.isOnGCD) then
                     icon._isOnGCD = _tickCi.isOnGCD or false
+                end
+                if CDMIcons.DebugIconEvent then
+                    CDMIcons.DebugIconEvent(icon, "resolve",
+                        "sid=", tostring(_runtimeSid),
+                        "start=", tostring(startTime),
+                        "duration=", tostring(duration),
+                        "durObj=", durObj and "yes" or "no",
+                        "apiActive=", tostring(apiIsActive),
+                        "isOnGCD=", tostring(icon._isOnGCD),
+                        "hasCharges=", tostring(entry.hasCharges),
+                        "blizzChild=", entry._blizzChild and "yes" or "no",
+                        "kind=", tostring(entry.kind),
+                        "type=", tostring(entry.type))
                 end
                 -- Texture: mirror runtime override each tick (same as
                 -- non-charged path). Keeps _desiredTexture set to block
@@ -4113,14 +4302,17 @@ local function UpdateIconCooldown(icon)
                     spellUsable = (isUsable == true)
                 end
             end
-            local realCooldownActive = HasRealCooldownState(icon, entry, duration, apiIsActive, mirrorActive, blizzRealCooldownActive)
+            local realCooldownActive = HasRealCooldownState(icon, entry, duration, apiIsActive, mirrorActive, blizzRealCooldownActive, durObj, _runtimeSid)
             -- For non-charged spells, spell usability is the best runtime split
             -- between "pure GCD" (still usable) and "real cooldown/resource
             -- wait" (not usable).  Do not let a mirrored GCD DurationObject
             -- masquerade as a real cooldown.  Skipped for item entries since
             -- spellUsable doesn't apply there.
             if not entry.hasCharges and not auraSwipeActive and not isItemEntry then
-                if spellUsable == true then
+                local hasNumericRealCooldown = IsSafeNumeric(duration) and duration > GCD_MAX_DURATION
+                if spellUsable == true
+                   and not hasNumericRealCooldown
+                   and not (durObj and apiIsActive == true and CDMIcons.SpellHasBaseCooldownLongerThanGCD(_runtimeSid)) then
                     mirrorActive = false
                     blizzRealCooldownActive = false
                     realCooldownActive = false
@@ -4141,6 +4333,17 @@ local function UpdateIconCooldown(icon)
             local gcdSwipeWanted = _showGCDSwipe and gcdOnlyActive
             icon._hasRealCooldownActive = realCooldownActive and true or false
             icon._hasGCDOnlyCooldown = gcdOnlyActive and true or nil
+            if CDMIcons.DebugIconEvent then
+                CDMIcons.DebugIconEvent(icon, "classify",
+                    "real=", tostring(realCooldownActive),
+                    "gcdOnly=", tostring(gcdOnlyActive),
+                    "gcdSwipe=", tostring(gcdSwipeWanted),
+                    "usable=", tostring(spellUsable),
+                    "mirror=", tostring(mirrorActive),
+                    "blizzReal=", tostring(blizzRealCooldownActive),
+                    "durObj=", durObj and "yes" or "no",
+                    "baseLong=", tostring(CDMIcons.SpellHasBaseCooldownLongerThanGCD(_runtimeSid)))
+            end
             if realCooldownActive and not mirrorActive and not startTime and not duration and not durObj
                 and not entry.hasCharges then
                 -- Prefer the spell's DurationObject (secret-safe primary API).
@@ -4835,6 +5038,9 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
     else
         spellEntry.name = GetCachedSpellName(entry.id) or ""
     end
+    if CDMIcons.DebugEntryBuild then
+        CDMIcons.DebugEntryBuild(entry, spellEntry, viewerType)
+    end
     return spellEntry
 end
 
@@ -5295,6 +5501,15 @@ local function UpdateCooldownContainerVisibility(icon, entry, containerDB, editM
         local filterHidesNow = not visibility.layoutVisible
         MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
         ApplyIconVisibility(icon, shouldShow, containerDB.dynamicLayout == true)
+        if CDMIcons.DebugIconEvent then
+            CDMIcons.DebugIconEvent(icon, "show",
+                "shouldShow=", tostring(shouldShow),
+                "shown=", tostring(icon:IsShown()),
+                "alpha=", tostring(icon.GetAlpha and icon:GetAlpha() or nil),
+                "effectiveMode=", tostring(effectiveMode),
+                "filterHidden=", tostring(filterHidesNow),
+                "dynamic=", tostring(containerDB and containerDB.dynamicLayout))
+        end
         CDMIcons.ApplyCustomBarActiveGlow(icon, containerDB, visibility)
         SyncCooldownBling(icon)
         return
@@ -5459,6 +5674,15 @@ function CDMIcons:UpdateAllCooldowns(keepTickCaches)
                         local filterHidesNow = not visibility.layoutVisible
                         MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
                         ApplyIconVisibility(icon, shouldShow, containerDB.dynamicLayout == true)
+                        if CDMIcons.DebugIconEvent then
+                            CDMIcons.DebugIconEvent(icon, "show",
+                                "shouldShow=", tostring(shouldShow),
+                                "shown=", tostring(icon:IsShown()),
+                                "alpha=", tostring(icon.GetAlpha and icon:GetAlpha() or nil),
+                                "effectiveMode=", tostring(effectiveMode),
+                                "filterHidden=", tostring(filterHidesNow),
+                                "dynamic=", tostring(containerDB and containerDB.dynamicLayout))
+                        end
                         CDMIcons.ApplyCustomBarActiveGlow(icon, containerDB, visibility)
 
                         if visibility.isActive and not containerDB.showOnlyOnCooldown and icon.Icon and icon.Icon.SetDesaturated then
@@ -5657,13 +5881,44 @@ end
 SLASH_QUI_CDMICONDEBUG1 = "/cdmicondebug"
 SlashCmdList["QUI_CDMICONDEBUG"] = function(msg)
     local filter = msg and strtrim(msg) or ""
+    local cmd, rest = filter:match("^(%S+)%s*(.-)$")
+    local lower = cmd and cmd:lower() or ""
     if filter == "" then
         _G.QUI_CDM_ICON_DEBUG = not _G.QUI_CDM_ICON_DEBUG
         print("|cff34D399[CDM-IconDebug]|r", _G.QUI_CDM_ICON_DEBUG and "ON (all icons)" or "OFF")
         return
     end
-    _G.QUI_CDM_ICON_DEBUG = filter
-    print("|cff34D399[CDM-IconDebug]|r ON - filter:", filter)
+    if lower == "off" or lower == "0" or lower == "false" then
+        _G.QUI_CDM_ICON_DEBUG = nil
+        print("|cff34D399[CDM-IconDebug]|r OFF")
+        return
+    end
+    if lower == "dump" then
+        _G.QUI_CDM_ICON_DEBUG = (rest and rest ~= "") and rest or true
+        print("|cff34D399[CDM-IconDebug]|r dump - filter:", tostring(_G.QUI_CDM_ICON_DEBUG))
+        if DumpDebugIcon then
+            CDMIcons:ForEachIcon(function(icon)
+                DumpDebugIcon(icon)
+            end)
+        end
+        return
+    end
+    if lower == "all" then
+        _G.QUI_CDM_ICON_DEBUG = true
+    else
+        _G.QUI_CDM_ICON_DEBUG = filter
+    end
+    print("|cff34D399[CDM-IconDebug]|r ON - filter:", tostring(_G.QUI_CDM_ICON_DEBUG))
+end
+
+function CDMIcons.ShouldDebugSpell(spellID, spellName)
+    local dbg = _G.QUI_CDM_ICON_DEBUG
+    if not dbg then return false end
+    if dbg == true then return true end
+    local filter = tostring(dbg):lower()
+    if spellID and tostring(spellID) == filter then return true end
+    local name = spellName and tostring(spellName):lower() or ""
+    return name ~= "" and name:find(filter, 1, true) ~= nil
 end
 
 local function ShouldDebugIcon(icon)
@@ -5683,9 +5938,55 @@ local function ShouldDebugIcon(icon)
         or eid == filter
 end
 
+function CDMIcons.DebugSpellEvent(spellID, spellName, label, ...)
+    if not CDMIcons.ShouldDebugSpell(spellID, spellName) then return end
+    print("|cff34D399[CDM-IconTrace]|r", tostring(label), tostring(spellName or "?"), "spellID=", tostring(spellID), ...)
+end
+
+function CDMIcons.DebugIconEvent(icon, label, ...)
+    if not ShouldDebugIcon(icon) then return end
+    local now = GetTime()
+    icon._debugEventTimes = icon._debugEventTimes or {}
+    local last = icon._debugEventTimes[label]
+    if last and (now - last) < 0.25 then return end
+    icon._debugEventTimes[label] = now
+    local entry = icon._spellEntry
+    print("|cff34D399[CDM-IconTrace]|r", tostring(label),
+        entry and (entry.name or "?") or "?",
+        "viewer=", entry and tostring(entry.viewerType) or "nil",
+        "entryID=", entry and tostring(entry.id) or "nil",
+        ...)
+end
+
+function CDMIcons.DebugEntryBuild(entry, spellEntry, viewerType)
+    if not CDMIcons.ShouldDebugSpell(spellEntry and (spellEntry.spellID or spellEntry.id), spellEntry and spellEntry.name) then return end
+    print("|cff34D399[CDM-IconTrace]|r", "build",
+        spellEntry and (spellEntry.name or "?") or "?",
+        "viewer=", tostring(viewerType),
+        "entryType=", entry and tostring(entry.type) or "nil",
+        "entryID=", entry and tostring(entry.id) or "nil",
+        "spellID=", spellEntry and tostring(spellEntry.spellID) or "nil",
+        "kind=", spellEntry and tostring(spellEntry.kind) or "nil",
+        "isAura=", spellEntry and tostring(spellEntry.isAura) or "nil")
+end
+
+function CDMIcons.DebugLayoutFilter(icon, filterHides, settings, effectiveOnCD)
+    CDMIcons.DebugIconEvent(icon, "layout-filter",
+        "hide=", tostring(filterHides and true or false),
+        "effectiveOnCD=", tostring(effectiveOnCD),
+        "dynamic=", tostring(settings and settings.dynamicLayout),
+        "containerType=", tostring(settings and settings.containerType),
+        "showOnlyOnCooldown=", tostring(settings and settings.showOnlyOnCooldown))
+end
+
 DebugIconSwipe = function(icon, ...)
     if not ShouldDebugIcon(icon) then return end
-    print("|cff34D399[CDM-IconSwipe]|r", ...)
+    local entry = icon and icon._spellEntry
+    print("|cff34D399[CDM-IconSwipe]|r",
+        entry and (entry.name or "?") or "?",
+        "viewer=", entry and tostring(entry.viewerType) or "nil",
+        "entryID=", entry and tostring(entry.id) or "nil",
+        ...)
 end
 
 DumpDebugIcon = function(icon)
@@ -5697,11 +5998,32 @@ DumpDebugIcon = function(icon)
     print(P, entry.name or "?", "viewerType=", tostring(entry.viewerType),
         "spellID=", tostring(entry.spellID), "entry.id=", tostring(entry.id))
     print(P, "  shown=", tostring(icon:IsShown()),
+        "alpha=", tostring(icon.GetAlpha and icon:GetAlpha() or nil),
         "auraActive=", tostring(icon._auraActive),
+        "customActive=", tostring(icon._customBarActive),
+        "hasCooldownActive=", tostring(icon._hasCooldownActive),
+        "hasRealCooldown=", tostring(icon._hasRealCooldownActive),
+        "gcdOnly=", tostring(icon._hasGCDOnlyCooldown),
+        "isOnGCD=", tostring(icon._isOnGCD),
+        "lastStart=", tostring(icon._lastStart),
+        "lastDuration=", tostring(icon._lastDuration),
         "isTotemInstance=", tostring(icon._isTotemInstance),
         "entry._totemSlot=", tostring(entry._totemSlot),
         "icon._totemSlot=", tostring(icon._totemSlot),
         "instanceKey=", tostring(entry._instanceKey))
+    local containerDB = GetTrackerSettings(entry.viewerType)
+    if CDMIcons.IsCustomBarContainer(containerDB) then
+        local visibility = CDMIcons.ComputeCustomBarVisibility(icon, entry, containerDB, GetTime())
+        print(P, "  customVisibility mode=", tostring(visibility.visibilityMode),
+            "layout=", tostring(visibility.layoutVisible),
+            "render=", tostring(visibility.renderVisible),
+            "usable=", tostring(visibility.isUsable),
+            "onCD=", tostring(visibility.isOnCooldown),
+            "recharge=", tostring(visibility.rechargeActive),
+            "active=", tostring(visibility.isActive),
+            "dynamic=", tostring(containerDB.dynamicLayout),
+            "displayMode=", tostring(containerDB.iconDisplayMode))
+    end
     if icon.Icon and icon.Icon.GetTexture then
         local okTex, tex = pcall(icon.Icon.GetTexture, icon.Icon)
         print(P, "  iconTexture=", okTex and tostring(tex) or "err")
@@ -6297,7 +6619,7 @@ local function SafetyTickOnUpdate(self, elapsed)
     WipeUpdateTickCaches()
 end
 
-cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
+cdEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
     if not CDMIcons:IsRuntimeEnabled() then
         self:SetScript("OnUpdate", nil)
         cdmUpdateFrame:SetScript("OnUpdate", nil)
@@ -6312,6 +6634,9 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1)
        or event == "UNIT_SPELLCAST_CHANNEL_START"
        or event == "UNIT_SPELLCAST_CHANNEL_STOP" then
         if arg1 == "player" then
+            if event == "UNIT_SPELLCAST_SUCCEEDED" then
+                CDMIcons.RecordRecentPlayerSpellCast(arg3)
+            end
             ScheduleCDMUpdate(true, CDM_UPDATE_COOLDOWN)
         end
         return

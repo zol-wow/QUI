@@ -1808,6 +1808,9 @@ local function LayoutContainer(trackerKey)
                 local isOnCD = icon._hasCooldownActive or false
                 local inCombatNow = UnitAffectingCombat and UnitAffectingCombat("player") or false
                 local filterHides = ComputeFilterHides(icon, entry, settings, inCombatNow, isOnCD)
+                if ns.CDMIcons and ns.CDMIcons.DebugLayoutFilter then
+                    ns.CDMIcons.DebugLayoutFilter(icon, filterHides, settings, isOnCD)
+                end
                 icon._lastLayoutFilterHidden = filterHides and true or false
                 if filterHides then
                     icon:Hide()
