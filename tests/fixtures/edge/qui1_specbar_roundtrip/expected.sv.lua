@@ -683,6 +683,7 @@ return {
           chat = {
             buttonBars = {},
             copyButtonMode = "always",
+            copyHistorySource = "live",
             defaultTab = 1,
             defaultTabBySpec = {},
             defaultTabPerSpec = false,
@@ -783,6 +784,7 @@ return {
                 }
               }
             },
+            scrollbackLines = 0,
             showIntroMessage = true,
             tabs = {},
             timestamps = {

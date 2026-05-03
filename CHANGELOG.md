@@ -10,6 +10,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha11 - 2026-05-03
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha11: back up `WTF/` and export your profile first.
+
+### Added
+- **QUI chat module.** A full chat overhaul with a master toggle:
+  - **Glass backdrop, themed tabs and edit box** with full-width input and per-tab unread pulse anchored to the tab chrome.
+  - **Themed scrollbars** on every chat frame (and the matching scroll-to-bottom chevron) styled as one accent-colored chrome strip.
+  - **Copy button** redesigned as a small accent glyph in the top-right corner of each chat frame, with a smooth fade tied to chat hover. Two visibility modes: *Fade When Idle* and *Hide When Idle*. New **Copy Source** option chooses between the live scrollback and persisted history when copying.
+  - **Persistent chat history** that replays on login/reload (per-frame), pruned automatically when a chat window is closed.
+  - **Per-tab filters.** Inclusion-only message-group and channel filters per tab, with a small accent pill on customized tabs.
+  - **Per-frame Button Bar.** Add user-defined slash-command buttons to any chat frame. Configurable position (outside/inside left/right, inside the tab row), per-frame X/Y offsets, button spacing, and *Hide in combat*.
+  - **Edit Box command history** with arrow-key recall.
+  - **Timestamps**, **URL detection**, **clickable coordinates and player names**, **channel-name shortening**, **class colors**, **redundant-text cleanup** (loot/XP/honor/rep), **keyword alerts**, and **new-message sound**.
+  - **Scrollback Lines** dropdown (client default, 500–5000) to extend the live scrollback cap.
+  - **Hide chat buttons** for the social/channel chrome (the scrollbar stays visible).
+- **Damage Meter QUI skin.** The Blizzard built-in damage meter (added in 12.0+) now picks up QUI's theme — backdrop, dropdowns, entry rows, and matching themed scrollbars on session windows and source popups. Eleven Blizzard meter settings are surfaced in QUI options, and the addon takes over Edit-Mode-style placement so meters move via QUI's Layout Mode.
+- **Theme & Colors sub-page** on the Appearance tile. Picks up everything color-related in one place: theme preset / custom accent, global skin colors and borders, chat backgrounds, and tooltip skin (skin/opacity/border thickness/class or accent border).
+- **Layout Mode polish for chat and damage meter.** Four-corner resize grips on chat frames (with accent-themed grip color) and on damage meter session windows. New **Frame Size** sliders for ChatFrame1 width/height and the damage meter, plus a screen-clamp guard so chat can't be dragged off-screen.
+
+### Changed
+- **Chat tile split into five sub-pages** in settings: General, Filters, Button Bar, Alerts, History. Tooltips moves to a sixth sub-page on the same tile. Search and deep-links now route to the matching sub-page automatically.
+- **Native Blizzard chat timestamp is suppressed while QUI's timestamp is on**, so toggling the Blizzard `showTimestamps` CVar no longer doubles up the time prefix. Disabling QUI's timestamps restores whatever Blizzard format you had.
+
+### Fixed
+- **Chat input now resizes with the chat frame.** The edit box backdrop tracks chat-frame width on resize instead of staying at the original width.
+- **Chat send path repaired for 12.0.** Slash commands fired from QUI button-bar buttons now dispatch through the supported macro-text path; sent-message capture for the command history sees the actual typed text instead of the cleared input.
+- **Damage meter: stack of 12.0 taint-safety fixes.** Local-player and pooled entry rows are patched before any secret-string source name lands, so the meter's `UpdateName`/`UpdateValue`/`UpdateIcon` no longer faults during encounters; session-duration text uses secret-safe formatters; Edit Mode movers are suppressed in favor of QUI's Layout Mode.
+- **Settings search index** now treats the precomputed search cache as authoritative, so chat sub-page entries don't double up between cache and runtime registration. Tab Filters' transient option proxies are skipped from search/sync/pin.
+- **Group / Unit frames sliders** no longer rebuild on every pixel of drag — `onChange` fires on mouse release.
+
+
+
 ## v3.6.0-alpha10 - 2026-05-02
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha10: back up `WTF/` and export your profile first.
