@@ -2585,6 +2585,7 @@ local function UpdateIconCooldown(icon)
             local itemID = GetInventoryItemID("player", slotID)
             if itemID then
                 startTime, duration, durObj = GetSlotCooldown(slotID)
+                apiIsActive = (startTime ~= nil and duration ~= nil)
                 -- Update texture in case trinket was swapped
                 if icon.Icon then
                     local ok, tex = pcall(C_Item.GetItemIconByID, itemID)
@@ -2593,12 +2594,15 @@ local function UpdateIconCooldown(icon)
                         icon._lastTexture = tex
                     end
                 end
+            else
+                apiIsActive = false
             end
             -- Hide stack text for trinkets
             icon.StackText:SetText("")
             icon.StackText:Hide()
         elseif entry.type == "item" then
             startTime, duration, durObj = GetItemCooldown(entry.id)
+            apiIsActive = (startTime ~= nil and duration ~= nil)
             -- Show item count as stack text (includeUses=true for charge items)
             if C_Item and C_Item.GetItemCount then
                 local ok, count = pcall(C_Item.GetItemCount, entry.id, false, true)
@@ -2928,6 +2932,7 @@ local function UpdateIconCooldown(icon)
             and not _chargeCountForwarded
             and icon._durObjHookSync
             and apiIsActive ~= false
+            and entry._blizzChild
             and (_batchTime - icon._durObjHookSync) < 10
 
 
