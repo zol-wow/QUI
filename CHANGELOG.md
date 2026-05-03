@@ -10,6 +10,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha13 - 2026-05-03
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha13: back up `WTF/` and export your profile first.
+
+### Added
+- **`/qspell` slash command** for dumping everything QUI can read about a spell (identity, override/base, knowledge state, cooldown/charges, active player aura, description). Accepts a spell ID, hyperlink, or partial name. Useful for debugging custom CDM bar entries.
+- **Settings search now deep-links into sub-pages.** Group Frames and Action Bars search results carry their tile, sub-page, provider, and surface-tab context, so clicking a result jumps to the right tab + section instead of just the parent page. The cache also tracks `surfaceTabKey` / `surfaceUnitKey` so per-unit settings (party vs raid) deep-link correctly.
+
+### Changed
+- **CDM owned engine: secret-safety pass through the cooldown classifier.** The tick caches (`TickCacheGetCharges` / `Cooldown` / `Duration` / `ChargeDuration` / `OverrideSpell` / `DisplayCount`) all bail when the spell ID itself is a secret value and `pcall` every `C_Spell.*` lookup so a tainted argument can't propagate. `chargeInfo.isActive` is now treated as nil unless it's a non-secret boolean.
+- **`IsCooldownInfoRealCooldown` reads `isEnabled`** and treats `duration > GCD` with `isActive==true` as a real cooldown immediately, fixing non-charged custom-bar entries that misclassified resource-recovery payloads as real cooldowns and vice versa.
+- **GCD classification now uses a per-tick trusted snapshot.** `C_Spell.GetSpellCooldownInfo.isOnGCD` is secret in combat, so QUI captures the non-secret GCD state once at the top of each tick (`CaptureTrustedGCDState`) and looks up that snapshot from the classifier instead of reading `isOnGCD` per-call. Affects any code that distinguished "GCD-only" vs "real cooldown" rendering during combat.
+- **Stack-text resolution rewritten** with new helpers for linked-aura ID lookup, buff-viewer-backed cooldown containers, and a per-icon last-good-value cache. Charge counters on cooldown icons backed by a buff-viewer child should hold steady through fast refreshes instead of blanking briefly.
+- **Search cache regen runs through a new auditor.** `tools/audit_search_cache.lua` flags zero-setting features (allowlisted ones aside) and cross-checks the regenerated cache. CI's dev-build, search-cache-regen, and release workflows now all run both the generator and the auditor.
+
+### Fixed
+- **Mirror cooldown apply path** only sets `_mirrorDriven=true` when `SetCooldownFromDurationObject` actually returned successfully — the previous code was optimistic, which could leave icons stuck believing the C-side was driving the swipe when the call had failed under `pcall`.
+- **`GetTrackerSettings` forward declaration** so `HookBlizzStackText` can call into it without a load-order race.
+
+
+
 ## v3.6.0-alpha12 - 2026-05-03
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha12: back up `WTF/` and export your profile first.
