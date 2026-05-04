@@ -1410,6 +1410,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             sy = P(TrackPersistentHistoryControl(GUI:CreateFormCheckbox(body, "Store whispers", "storeWhispers", hist, Refresh, { description = "Include whispers in the persistent history. Default OFF: Blizzard's built-in HistoryKeeper already restores recent whispers, so enabling this can produce duplicate restored whispers." })), body, sy)
             sy = P(TrackPersistentHistoryControl(GUI:CreateFormCheckbox(body, "Show session separators", "showSeparators", hist, Refresh, { description = "Insert '──── Previous session ────' and '──── Resumed ────' markers around the restored block on login." })), body, sy)
 
+            local copySourceOptions = {
+                { value = "live",      text = "Live (current scrollback)" },
+                { value = "persisted", text = "Persisted (full saved history)" },
+            }
+            sy = P(TrackPersistentHistoryControl(GUI:CreateFormDropdown(body, "Copy popup source", copySourceOptions, "copyHistorySource", chat, Refresh, { description = "Which message set the chat-frame copy popup pulls from. 'Live' shows what's currently in the chat tab's visible scrollback. 'Persisted' shows the full saved history including entries scrolled out of view or restored from a previous session." })), body, sy)
+
             -- Clear-now button with confirmation popup.
             local clearRow = CreateFrame("Frame", nil, body)
             clearRow:SetPoint("TOPLEFT", 0, sy)

@@ -30143,6 +30143,39 @@ ns.QUI_SearchCache = {
         },
         {
             ["category"] = "chat",
+            ["description"] = "Which message set the chat-frame copy popup pulls from. 'Live' shows what's currently in the chat tab's visible scrollback. 'Persisted' shows the full saved history including entries scrolled out of view or restored from a previous session.",
+            ["featureId"] = "chatFrame1History",
+            ["label"] = "Copy popup source",
+            ["providerKey"] = "chatFrame1",
+            ["sectionName"] = "Persistent Message History",
+            ["subPageIndex"] = 5,
+            ["subTabName"] = "History",
+            ["tabName"] = "Chat & Tooltips",
+            ["tileId"] = "chat_tooltips",
+            ["widgetDescriptor"] = {
+                ["category"] = "chat",
+                ["dbKey"] = "copyHistorySource",
+                ["dbPath"] = "profile.chat",
+                ["dropdownOptions"] = {
+                },
+                ["featureId"] = "chatFrame1History",
+                ["kind"] = "dropdown",
+                ["options"] = {
+                    {
+                        ["text"] = "Live (current scrollback)",
+                        ["value"] = "live",
+                    },
+                    {
+                        ["text"] = "Persisted (full saved history)",
+                        ["value"] = "persisted",
+                    },
+                },
+                ["providerKey"] = "chatFrame1",
+            },
+            ["widgetType"] = "dropdown",
+        },
+        {
+            ["category"] = "chat",
             ["description"] = "Hard cap on stored chat lines per character. Oldest entries beyond this are dropped at flush.",
             ["featureId"] = "chatFrame1History",
             ["label"] = "Max stored messages",
