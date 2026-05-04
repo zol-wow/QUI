@@ -112,7 +112,9 @@ local BUILTINS = {
     reload = {
         label = "Reload",
         action = function()
-            if type(_G.ReloadUI) == "function" then
+            if _G.QUI and type(_G.QUI.SafeReload) == "function" then
+                _G.QUI:SafeReload()
+            elseif type(_G.ReloadUI) == "function" then
                 _G.ReloadUI()
             end
         end,
@@ -175,9 +177,50 @@ local visibilityHookedFrames = setmetatable({}, { __mode = "k" })
 -- Bar creation / layout
 -- ---------------------------------------------------------------------------
 
+local function isInCombat()
+    return type(InCombatLockdown) == "function" and InCombatLockdown()
+end
+
+local function normalizeMacroText(text)
+    if type(text) ~= "string" then return nil end
+    text = text:match("^%s*(.-)%s*$") or ""
+    if text == "" then return nil end
+    if text:sub(1, 1) ~= "/" then
+        text = "/" .. text
+    end
+    return text
+end
+
+local function hasCustomMacroButtons(config)
+    if type(config) ~= "table" or type(config.customButtons) ~= "table" then
+        return false
+    end
+
+    for i = 1, #config.customButtons do
+        local cb = config.customButtons[i]
+        if type(cb) == "table" and normalizeMacroText(cb.slashCommand) then
+            return true
+        end
+    end
+
+    return false
+end
+
 local function createButton(parent, def, customAction)
     local hasIcon = type(def.icon) == "string" and def.icon ~= ""
-    local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
+    local macroText = normalizeMacroText(def.macroText)
+    -- Custom commands need a secure action button; RunMacroText is protected
+    -- when called from an insecure addon click handler.
+    local template = macroText and "SecureActionButtonTemplate,BackdropTemplate" or "BackdropTemplate"
+    local btn = CreateFrame("Button", nil, parent, template)
+
+    if macroText then
+        btn:RegisterForClicks("AnyUp")
+        btn:SetAttribute("type", "macro")
+        btn:SetAttribute("macrotext", macroText)
+    else
+        btn:SetScript("OnClick", customAction or def.action or function() end)
+    end
 
     if hasIcon then
         btn:SetSize(22, 22)
@@ -203,7 +246,6 @@ local function createButton(parent, def, customAction)
     end
 
     btn.tooltipText = def.tooltip or def.label
-    btn:SetScript("OnClick", customAction or def.action or function() end)
     btn:SetScript("OnEnter", function(self)
         if self.tooltipText then
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
@@ -215,22 +257,6 @@ local function createButton(parent, def, customAction)
 
     applySkin(btn)
     return btn
-end
-
--- Execute a user-defined slash command. RunMacroText is Blizzard's canonical
--- programmatic entry point for macro/typed commands — slash commands, chat
--- messages, emotes — and is exactly what one line of an in-game macro does.
--- We previously routed through ChatFrame_OpenChat + the editbox send path,
--- but the 12.0 chat-send chain no longer dispatches from that programmatic
--- entry: the editbox would populate visibly but stay unsent until the user
--- pressed Enter manually. RunMacroText sends synchronously with no editbox
--- detour. Secure-only commands (e.g. /cast) still won't run because the
--- click context from a non-secure addon button is tainted regardless.
-local function runSlashCommand(text)
-    if type(text) ~= "string" or text == "" then return end
-    if type(_G.RunMacroText) == "function" then
-        _G.RunMacroText(text)
-    end
 end
 
 local function GetSafeFrameHeight(frame, fallback)
@@ -248,6 +274,11 @@ local function GetSafeFrameHeight(frame, fallback)
 end
 
 local function buildBar(chatFrame, frameID, config)
+    local hasSecureButtons = hasCustomMacroButtons(config)
+    if hasSecureButtons and isInCombat() then
+        return
+    end
+
     local bar = bars[chatFrame]
     if bar then
         -- Tear down children and rebuild — config changes are infrequent and
@@ -260,6 +291,7 @@ local function buildBar(chatFrame, frameID, config)
         bar = CreateFrame("Frame", "QUIChatButtonBar" .. tostring(frameID), UIParent)
         bars[chatFrame] = bar
     end
+    bar._hasSecureCustomButtons = hasSecureButtons
 
     bar:ClearAllPoints()
 
@@ -322,13 +354,12 @@ local function buildBar(chatFrame, frameID, config)
             local hasIcon    = type(cb) == "table" and type(cb.icon) == "string" and cb.icon ~= ""
             local hasCommand = type(cb) == "table" and type(cb.slashCommand) == "string" and cb.slashCommand ~= ""
             if hasCommand and (hasLabel or hasIcon) then
-                local cmd = cb.slashCommand
-                local action = function() runSlashCommand(cmd) end
                 widgets[#widgets + 1] = createButton(bar, {
                     label   = cb.label,
                     tooltip = cb.slashCommand,
                     icon    = cb.icon,
-                }, action)
+                    macroText = cb.slashCommand,
+                })
             end
         end
     end
@@ -354,6 +385,7 @@ end
 local function teardownBar(chatFrame)
     local bar = bars[chatFrame]
     if not bar then return end
+    if bar._hasSecureCustomButtons and isInCombat() then return end
     bar:Hide()
     bar:ClearAllPoints()
     for _, child in ipairs({ bar:GetChildren() }) do
@@ -364,6 +396,7 @@ end
 
 local function hideBar(chatFrame)
     local bar = bars[chatFrame]
+    if bar and bar._hasSecureCustomButtons and isInCombat() then return end
     if bar then bar:Hide() end
 end
 
@@ -376,10 +409,6 @@ local function isChatFrameVisible(chatFrame)
     if chatFrame.IsShown and not chatFrame:IsShown() then return false end
     if chatFrame.IsVisible and not chatFrame:IsVisible() then return false end
     return true
-end
-
-local function isInCombat()
-    return type(InCombatLockdown) == "function" and InCombatLockdown()
 end
 
 local function reconcileFrame(chatFrame, frameID)

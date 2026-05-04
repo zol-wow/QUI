@@ -6328,6 +6328,9 @@ CDMSpellData._spellIDToChild = _spellIDToChild
 CDMSpellData._abilityToAuraSpellID = _abilityToAuraSpellID
 CDMSpellData.ResolveEntryKind = ResolveEntryKind
 CDMSpellData.IsAuraEntry = IsAuraEntry
+CDMSpellData.GetCapturedAuraForLookup = GetCapturedAuraForLookup
+CDMSpellData.TickCacheGetAuraDuration = TickCacheGetAuraDuration
+CDMSpellData.GetAuraApplications = GetAuraApplications
 
 --- Resolve the live spell ID from a Blizzard viewer child, falling back to
 --- entry IDs.  Used by both icons (tooltips) and bars (name text) so that

@@ -85,45 +85,36 @@ local function ApplySwipeToIcon(icon, settings)
             or entry.viewerType == "trackedBar"
     end
 
-    -- Classify: aura, gcd, or cooldown
-    -- Buff viewer children are always auras, but cooldownInfo doesn't flag them.
+    -- Classify: aura, gcd, or cooldown.
+    -- Buff viewer children are always auras. Aura-kind entries always
+    -- visualize as aura mode. icon._auraActive is the event-driven flag
+    -- maintained by the dispatcher. For all other entries (cooldown-kind,
+    -- non-buff), delegate runtime aura-active detection to the shared
+    -- helper used by the resolver (CDMIcons.ResolveIconDurationObject) so
+    -- visual mode and source-DurationObject selection cannot diverge.
     local mode
     if isAuraEntry or icon._auraActive then
         mode = "aura"
     elseif not isBuffIcon then
-        -- Detect active auras on essential/utility icons.
-        -- Primary: check Blizzard's wasSetFromAura property on the viewer
-        -- child frame (set by Blizzard internally, works in combat).
-        -- Fallback 1: buff pool cross-reference (combat-safe).
-        -- Fallback 2: aura API queries (out of combat only).
-        local blizzChild = entry._blizzChild
-        if blizzChild and type(blizzChild.wasSetFromAura) == "boolean" and blizzChild.wasSetFromAura then
-            mode = "aura"
+        local CDMIcons = ns.CDMIcons
+        if CDMIcons and CDMIcons.IsAuraCurrentlyActive then
+            local active = CDMIcons.IsAuraCurrentlyActive(entry)
+            if active then mode = "aura" end
         end
+        -- Buff-pool cross-reference (preserved here, not in the helper —
+        -- it depends on the current state of OTHER icons, which is a
+        -- visual concern, not a per-entry property).
         if not mode then
             local sid = entry.overrideSpellID or entry.spellID
-            if sid then
-                -- Buff pool cross-reference (combat-safe)
-                local CDMIcons = ns.CDMIcons
-                if CDMIcons then
-                    local buffPool = CDMIcons:GetIconPool("buff")
+            if sid and CDMIcons then
+                local buffPool = CDMIcons:GetIconPool("buff")
+                if buffPool then
                     for _, buffIcon in ipairs(buffPool) do
                         local be = buffIcon._spellEntry
-                        if be and (be.overrideSpellID == sid or be.spellID == sid) and buffIcon:IsShown() then
+                        if be and (be.overrideSpellID == sid or be.spellID == sid)
+                           and buffIcon:IsShown() then
                             mode = "aura"
                             break
-                        end
-                    end
-                end
-                -- Aura API fallback (out of combat only)
-                if not mode and not InCombatLockdown() then
-                    local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, sid)
-                    if ok and auraData and Helpers.IsAuraOwnedByPlayerOrPet(auraData, true) then
-                        mode = "aura"
-                    elseif entry.name and entry.name ~= "" then
-                        local ok2, auraNameData = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", entry.name, "HELPFUL")
-                        if ok2 and auraNameData and Helpers.IsAuraOwnedByPlayerOrPet(auraNameData, true) then
-                            mode = "aura"
                         end
                     end
                 end
