@@ -124,6 +124,10 @@ end
 local MAX_RECYCLE_POOL_SIZE = 20
 local DEFAULT_ICON_SIZE = 39
 local BASE_CROP = 0.08
+local ICON_FRAME_LEVEL_OFFSET = 1
+local COOLDOWN_FRAME_LEVEL_OFFSET = 1
+local TEXT_OVERLAY_FRAME_LEVEL_OFFSET = 6
+local NATIVE_STACK_FRAME_LEVEL_OFFSET = 1
 local GCD_SPELL_ID = 61304
 local GCD_MAX_DURATION = 1.75
 
@@ -1852,6 +1856,26 @@ local function SyncClickButtonFrameLevel(icon)
     end
 end
 
+local function SyncNativeStackFrameLevel(icon, frame, requiredLevel)
+    if not frame or not frame.GetParent or frame:GetParent() ~= icon.TextOverlay then return end
+    if not frame.GetFrameLevel or not frame.SetFrameLevel then return end
+    local ok, currentLevel = pcall(frame.GetFrameLevel, frame)
+    if ok and currentLevel ~= requiredLevel then
+        pcall(frame.SetFrameLevel, frame, requiredLevel)
+    end
+end
+
+local function SyncNativeStackFrameLevels(icon)
+    if not icon or not icon.TextOverlay then return end
+    local entry = icon._spellEntry
+    local blizzChild = entry and entry._blizzChild
+    if not blizzChild then return end
+
+    local requiredLevel = icon.TextOverlay:GetFrameLevel() + NATIVE_STACK_FRAME_LEVEL_OFFSET
+    SyncNativeStackFrameLevel(icon, blizzChild.ChargeCount, requiredLevel)
+    SyncNativeStackFrameLevel(icon, blizzChild.Applications, requiredLevel)
+end
+
 -- Keep text above cooldown (baseline) and optionally above another frame level.
 -- Also keeps clickButton above text if one exists.
 function CDMIcons:EnsureTextOverlayLevel(icon, minLevel)
@@ -1864,12 +1888,41 @@ function CDMIcons:EnsureTextOverlayLevel(icon, minLevel)
             requiredLevel = baselineLevel
         end
     end
+    if icon.GetFrameLevel then
+        local baselineLevel = icon:GetFrameLevel() + TEXT_OVERLAY_FRAME_LEVEL_OFFSET
+        if not requiredLevel or requiredLevel < baselineLevel then
+            requiredLevel = baselineLevel
+        end
+    end
 
     if requiredLevel and icon.TextOverlay:GetFrameLevel() < requiredLevel then
         icon.TextOverlay:SetFrameLevel(requiredLevel)
     end
 
+    SyncNativeStackFrameLevels(icon)
     SyncClickButtonFrameLevel(icon)
+end
+
+local function NormalizeIconFrameLevels(icon)
+    if not icon then return end
+
+    local parent = icon.GetParent and icon:GetParent()
+    if parent and parent.GetFrameLevel and icon.GetFrameLevel and icon.SetFrameLevel then
+        local requiredIconLevel = parent:GetFrameLevel() + ICON_FRAME_LEVEL_OFFSET
+        if icon:GetFrameLevel() < requiredIconLevel then
+            icon:SetFrameLevel(requiredIconLevel)
+        end
+    end
+
+    if icon.Cooldown and icon.GetFrameLevel
+        and icon.Cooldown.GetFrameLevel and icon.Cooldown.SetFrameLevel then
+        local requiredCooldownLevel = icon:GetFrameLevel() + COOLDOWN_FRAME_LEVEL_OFFSET
+        if icon.Cooldown:GetFrameLevel() < requiredCooldownLevel then
+            icon.Cooldown:SetFrameLevel(requiredCooldownLevel)
+        end
+    end
+
+    CDMIcons:EnsureTextOverlayLevel(icon)
 end
 
 local function EnsureClickButton(icon)
@@ -2190,6 +2243,7 @@ local function ConfigureIcon(icon, rowConfig)
         icon.Cooldown:ClearAllPoints()
         icon.Cooldown:SetAllPoints(icon)
     end
+    NormalizeIconFrameLevels(icon)
 
     -- Border
     local borderSize = rowConfig.borderSize or 0

@@ -74,6 +74,8 @@ local _state = {
     rangeCheckTicker = nil,
     unitGuidCache = {},
     cachedMarkers = {},
+    lastGroupRosterUpdateTime = 0,
+    raidRosterSortCache = {},
     unitEventRegistrationEnabled = false,
     unitEventFrames = {},
     unitEventActive = {
@@ -3320,6 +3322,12 @@ local function ConfigureRaidHeader(header)
     header:SetAttribute("_initialAttribute-unit-height", h)
 end
 
+_state.SetHeaderAttributeIfChanged = function(header, name, value)
+    if header:GetAttribute(name) ~= value then
+        header:SetAttribute(name, value)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- MULTI-HEADER: Configure per-group raid headers
 ---------------------------------------------------------------------------
@@ -3363,7 +3371,7 @@ local function ConfigureRaidGroupHeaders()
             header:SetAttribute("showSolo", false)
             header:SetAttribute("columnSpacing", spacing)
             header:SetAttribute("columnAnchorPoint", columnAnchorPoint)
-            header:SetAttribute("sortDir", "ASC")
+            _state.SetHeaderAttributeIfChanged(header, "sortDir", "ASC")
 
             if section then
                 local unitsPerColumn = math_max(1, math_min(section.memberCount, GetRaidSectionUnitsPerColumn(layout)))
@@ -3374,20 +3382,20 @@ local function ConfigureRaidGroupHeaders()
                 -- leaves the secure header in an invalid intermediate state
                 -- where Blizzard's private-aura anchor hook calls Hide on a
                 -- stale child frame, throwing "calling 'Hide' on bad self".
-                header:SetAttribute("nameList", section.nameList)
-                header:SetAttribute("sortMethod", "NAMELIST")
-                header:SetAttribute("sortDir", "ASC")
-                header:SetAttribute("groupBy", nil)
-                header:SetAttribute("groupFilter", nil)
-                header:SetAttribute("groupingOrder", nil)
+                _state.SetHeaderAttributeIfChanged(header, "nameList", section.nameList)
+                _state.SetHeaderAttributeIfChanged(header, "sortMethod", "NAMELIST")
+                _state.SetHeaderAttributeIfChanged(header, "sortDir", "ASC")
+                _state.SetHeaderAttributeIfChanged(header, "groupBy", nil)
+                _state.SetHeaderAttributeIfChanged(header, "groupFilter", nil)
+                _state.SetHeaderAttributeIfChanged(header, "groupingOrder", nil)
             elseif useNameListSections then
                 header:SetAttribute("maxColumns", 1)
                 header:SetAttribute("unitsPerColumn", 1)
-                header:SetAttribute("groupBy", nil)
-                header:SetAttribute("groupFilter", nil)
-                header:SetAttribute("groupingOrder", nil)
-                header:SetAttribute("nameList", nil)
-                header:SetAttribute("sortMethod", "INDEX")
+                _state.SetHeaderAttributeIfChanged(header, "groupBy", nil)
+                _state.SetHeaderAttributeIfChanged(header, "groupFilter", nil)
+                _state.SetHeaderAttributeIfChanged(header, "groupingOrder", nil)
+                _state.SetHeaderAttributeIfChanged(header, "nameList", nil)
+                _state.SetHeaderAttributeIfChanged(header, "sortMethod", "INDEX")
             else
                 header:SetAttribute("maxColumns", 1)
                 header:SetAttribute("unitsPerColumn", 5)
@@ -3900,6 +3908,77 @@ local function NormalizeRaidRole(role)
     return "NONE"
 end
 
+_state.GetRaidSortNameParts = function(name)
+    if type(name) ~= "string" then
+        return "", ""
+    end
+
+    local dash = string.find(name, "-", 1, true)
+    if dash then
+        return string.lower(name:sub(1, dash - 1)), string.lower(name:sub(dash + 1))
+    end
+
+    return string.lower(name), ""
+end
+
+_state.UnitNameMatchesRoster = function(unit, rosterName)
+    if not unit or not rosterName then return false end
+
+    local unitName, unitRealm = UnitName(unit)
+    if not unitName then return false end
+
+    if string.find(rosterName, "-", 1, true) then
+        if unitRealm and unitRealm ~= "" then
+            return rosterName == (unitName .. "-" .. unitRealm)
+        end
+        return rosterName == unitName
+    end
+
+    return rosterName == unitName
+end
+
+_state.GetPlayerRosterNames = function()
+    local playerName, playerRealm = UnitName("player")
+    if not playerName then return nil, nil end
+    if playerRealm and playerRealm ~= "" then
+        return playerName, playerName .. "-" .. playerRealm
+    end
+    return playerName, playerName
+end
+
+_state.IsPlayerRosterName = function(name, playerName, playerFullName)
+    return name and (name == playerName or name == playerFullName)
+end
+
+_state.GetStableRaidRosterRole = function(name, unit, rosterRole, unitMatchesRoster, now)
+    local role = NormalizeRaidRole(rosterRole)
+
+    if role == "NONE" and unitMatchesRoster then
+        local unitRole = NormalizeRaidRole(UnitGroupRolesAssigned(unit))
+        if unitRole ~= "NONE" then
+            role = unitRole
+        end
+    end
+
+    local cache = _state.raidRosterSortCache
+    local cached = cache[name]
+    local inSettlingWindow = now
+        and _state.lastGroupRosterUpdateTime
+        and (now - _state.lastGroupRosterUpdateTime) <= 2.0
+
+    if role == "NONE" and inSettlingWindow and cached and cached.role and cached.role ~= "NONE" then
+        role = cached.role
+    end
+
+    if cached then
+        cached.role = role
+    else
+        cache[name] = { role = role }
+    end
+
+    return role
+end
+
 local function CompareRaidSectionMembers(a, b, sortMethod, sortByRole, playerFirst)
     if playerFirst and a.isPlayer ~= b.isPlayer then
         return a.isPlayer
@@ -3910,6 +3989,12 @@ local function CompareRaidSectionMembers(a, b, sortMethod, sortByRole, playerFir
     end
 
     if sortMethod == "NAME" then
+        if a.sortName ~= b.sortName then
+            return a.sortName < b.sortName
+        end
+        if a.sortRealm ~= b.sortRealm then
+            return a.sortRealm < b.sortRealm
+        end
         if a.name ~= b.name then
             return a.name < b.name
         end
@@ -3924,6 +4009,7 @@ end
 
 GetRaidDisplaySections = function()
     if not IsInRaid() then
+        wipe(_state.raidRosterSortCache)
         return {}
     end
 
@@ -3940,13 +4026,26 @@ GetRaidDisplaySections = function()
     local playerSectionKey
     local sectionsByKey = {}
     local sections = {}
+    local seenRosterNames = {}
+    local playerName, playerFullName = _state.GetPlayerRosterNames()
+    local now = GetTime()
 
     for i = 1, GetNumGroupMembers() do
         local unit = "raid" .. i
-        local name, _, subgroup = GetRaidRosterInfo(i)
+        local name, _, subgroup, _, _, rosterClassFile, _, _, _, _, _, rosterRole = GetRaidRosterInfo(i)
         if name and _state.IsRaidSubgroupAllowed(subgroup, layout) then
-            local _, classFile = UnitClass(unit)
-            local role = NormalizeRaidRole(UnitGroupRolesAssigned(unit))
+            seenRosterNames[name] = true
+
+            local unitMatchesRoster = _state.UnitNameMatchesRoster(unit, name)
+            local classFile = rosterClassFile
+            if not classFile and unitMatchesRoster then
+                local _, unitClassFile = UnitClass(unit)
+                classFile = unitClassFile
+            end
+            classFile = classFile or "UNKNOWN"
+
+            local role = _state.GetStableRaidRosterRole(name, unit, rosterRole, unitMatchesRoster, now)
+            local sortName, sortRealm = _state.GetRaidSortNameParts(name)
             local sectionKey, sectionOrder
 
             if groupBy == "NONE" then
@@ -3973,19 +4072,28 @@ GetRaidDisplaySections = function()
                 table_insert(sections, section)
             end
 
-            local isPlayer = UnitIsUnit(unit, "player")
+            local isPlayer = _state.IsPlayerRosterName(name, playerName, playerFullName)
+                or (unitMatchesRoster and UnitIsUnit(unit, "player"))
             table_insert(section.members, {
                 name = name,
                 index = i,
                 subgroup = subgroup or 0,
-                classFile = classFile or "UNKNOWN",
+                classFile = classFile,
                 role = role,
                 isPlayer = isPlayer,
+                sortName = sortName,
+                sortRealm = sortRealm,
             })
 
             if isPlayer then
                 playerSectionKey = sectionKey
             end
+        end
+    end
+
+    for name in pairs(_state.raidRosterSortCache) do
+        if not seenRosterNames[name] then
+            _state.raidRosterSortCache[name] = nil
         end
     end
 
@@ -4954,6 +5062,7 @@ local function OnEvent(self, event, arg1, ...)
     if not _state.cachedModuleEnabled then return end
 
     if event == "GROUP_ROSTER_UPDATE" then
+        _state.lastGroupRosterUpdateTime = GetTime()
         -- Coalesce: show the throttle frame. Multiple GRU events in the same
         -- render frame collapse into one OnUpdate tick (Show on already-shown
         -- frame is a no-op). The heavy work runs once, next frame.
