@@ -1,6 +1,8 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
     <Script file="cdm_spelldata.lua"/>
+    <Script file="cdm_resolvers.lua"/>
+    <Script file="cdm_icon_factory.lua"/>
     <Script file="cdm_icons.lua"/>
     <Script file="cdm_bars.lua"/>
     <Script file="cdm_containers.lua"/>
