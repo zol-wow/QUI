@@ -434,7 +434,10 @@ local function MakeURLsClickable(text)
         return text, false
     end
 
-    if IsSecret(text) or not text or type(text) ~= "string" then
+    if IsSecret(text) then
+        return text, false
+    end
+    if not text or type(text) ~= "string" then
         return text, false
     end
 
@@ -513,7 +516,17 @@ local function InstallMessageFilters()
         -- ChatFrameOverrides:542). Returning nil on secret lets Blizzard's
         -- formatter handle the opaque payload; C-side text wrapping is only
         -- used after the filter callback has safe arguments to return.
-        if IsSecret(msg) or not msg or type(msg) ~= "string" then
+        if IsSecret(msg) then
+            return nil
+        end
+        if not msg or type(msg) ~= "string" then
+            return nil
+        end
+
+        -- If any passthrough chat arg is secret, do not run addon-side
+        -- formatting. Even when returning nil later, doing normal string work
+        -- in this dispatch can taint Blizzard's chat-history token path.
+        if HasSecretValue(...) then
             return nil
         end
 
@@ -549,9 +562,6 @@ local function InstallMessageFilters()
             return nil
         end
 
-        if HasSecretValue(...) then
-            return nil
-        end
         return false, modified, ...
     end
 

@@ -155,6 +155,10 @@ local function IsSecret(value)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
 end
 
+local function HasSecretValue(...)
+    return Helpers and Helpers.HasSecretValue and Helpers.HasSecretValue(...)
+end
+
 local function IsChatMessagingLockedDown()
     return I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown()
 end
@@ -207,16 +211,19 @@ local function tryCollapse(msg, event)
 end
 
 local function filter(self, event, msg, ...)
-    if IsSecret(msg) or IsChatMessagingLockedDown()
-        or not msg or type(msg) ~= "string" then
+    if IsSecret(msg) or IsChatMessagingLockedDown() then
+        return nil
+    end
+    if not msg or type(msg) ~= "string" then
+        return nil
+    end
+
+    if HasSecretValue(...) then
         return nil
     end
 
     local newMsg = tryCollapse(msg, event)
     if newMsg and not IsSecret(newMsg) and newMsg ~= msg then
-        if Helpers and Helpers.HasSecretValue and Helpers.HasSecretValue(...) then
-            return nil
-        end
         return false, newMsg, ...
     end
     return nil

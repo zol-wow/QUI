@@ -27,6 +27,10 @@ local function IsSecret(value)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
 end
 
+local function HasSecretValue(...)
+    return Helpers and Helpers.HasSecretValue and Helpers.HasSecretValue(...)
+end
+
 local function SafeFilterValue(value)
     if IsSecret(value) then return nil end
     return value
@@ -131,7 +135,17 @@ local masterFilter = function(self, event, msg, ...)
     -- Blizzard's per-chatType formatter when it string-converts secret
     -- sender names (e.g. LookingForGroup channel). Same defensive
     -- ordering as copy.lua:135 and history.lua's captureToHistory.
-    if IsSecret(msg) or not msg or type(msg) ~= "string" then
+    if IsSecret(msg) then
+        return nil
+    end
+    if not msg or type(msg) ~= "string" then
+        return nil
+    end
+
+    -- The pipeline cannot safely return modified messages unless all original
+    -- args can be forwarded unchanged. Bail before modifiers do addon-side
+    -- string work that could taint Blizzard's downstream HistoryKeeper path.
+    if HasSecretValue(...) then
         return nil
     end
 
@@ -144,10 +158,8 @@ local masterFilter = function(self, event, msg, ...)
         return nil
     end
 
-    local canReturnArgs = not (Helpers and Helpers.HasSecretValue and Helpers.HasSecretValue(...))
-
     -- Build minimal info table for modifier consumption. Raw varargs are only
-    -- exposed when every passthrough value can be safely returned unchanged.
+    -- exposed after every passthrough value has been checked above.
     -- CHAT_MSG_* args (after msg): author, _, language, channelString, target,
     -- flags, channelNumber, channelName, _, lineID, guid, bnSenderID, ...
     local info = {
@@ -160,19 +172,13 @@ local masterFilter = function(self, event, msg, ...)
         lineID        = SafeFilterValue(select(10, ...)),
         guid          = SafeFilterValue(select(11, ...)),
     }
-    if canReturnArgs then
-        info._raw = { ... }
-    end
+    info._raw = { ... }
 
     local newMsg, _ = Pipeline.Run(msg, info, event)
 
     if not newMsg
         or IsSecret(newMsg)
         or newMsg == msg then
-        return nil
-    end
-
-    if not canReturnArgs then
         return nil
     end
 

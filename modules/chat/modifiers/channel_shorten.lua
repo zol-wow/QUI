@@ -114,7 +114,8 @@ end
 local function shouldTransformMessage(message, r, g, b, infoID, accessID, typeID, event)
     if not ACTIVE_REPLACEMENTS or not event then return false end
     if IsChatMessagingLockedDown() then return false end
-    if IsSecret(message) or type(message) ~= "string" or message == "" then return false end
+    if IsSecret(message) then return false end
+    if type(message) ~= "string" or message == "" then return false end
 
     local tag = EVENT_TO_TAG[event]
     local replacement = tag and ACTIVE_REPLACEMENTS[tag]
@@ -129,8 +130,10 @@ local function transformMessage(message, r, g, b, infoID, accessID, typeID, even
     local tag = event and EVENT_TO_TAG[event]
     local replacement = tag and ACTIVE_REPLACEMENTS and ACTIVE_REPLACEMENTS[tag]
 
-    if replacement and not IsSecret(message) and type(message) == "string" then
-        message = message:gsub(replacement.pattern, replacement.replacement, 1)
+    if replacement and not IsSecret(message) then
+        if type(message) == "string" then
+            message = message:gsub(replacement.pattern, replacement.replacement, 1)
+        end
     end
 
     return message, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...

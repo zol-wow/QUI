@@ -45,6 +45,10 @@ local function IsSecret(value)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
 end
 
+local function HasSecretValue(...)
+    return Helpers and Helpers.HasSecretValue and Helpers.HasSecretValue(...)
+end
+
 local function EventMatchesChannel(event, channel)
     local events = SOUND_CHANNEL_EVENTS[channel]
     if not events then return false end
@@ -67,6 +71,10 @@ local function PlayConfiguredMessageSound(entry)
 end
 
 local function PlayNewMessageSound(event, ...)
+    if HasSecretValue(...) then
+        return
+    end
+
     local settings = I.GetSettings()
     if not (I.IsChatEnabled and I.IsChatEnabled(settings))
         or not settings.newMessageSound or not settings.newMessageSound.enabled then
@@ -84,26 +92,29 @@ local function PlayNewMessageSound(event, ...)
     -- taint — worst case we play one duplicate sound on our own message.
     local guid = select(12, ...)
     local myGUID = UnitGUID("player")
-    if guid and myGUID
-        and not IsSecret(guid)
-        and not IsSecret(myGUID)
-        and guid == myGUID then
+    if IsSecret(myGUID) then
+        myGUID = nil
+    end
+    if guid ~= nil and myGUID ~= nil and guid == myGUID then
         return
     end
 
     local author = select(2, ...)
     local playerName = UnitName("player")
-    if author and playerName
-        and not IsSecret(author)
-        and not IsSecret(playerName)
+    if IsSecret(playerName) then
+        playerName = nil
+    end
+    if author ~= nil and playerName ~= nil
         and type(author) == "string"
         and type(playerName) == "string" then
         local ok, hasRealm = pcall(string.find, author, "-", 1, true)
         if ok then
             if hasRealm then
                 local playerRealm = GetNormalizedRealmName and GetNormalizedRealmName()
-                if playerRealm and not IsSecret(playerRealm)
-                    and author == (playerName .. "-" .. playerRealm) then
+                if IsSecret(playerRealm) then
+                    playerRealm = nil
+                end
+                if playerRealm ~= nil and author == (playerName .. "-" .. playerRealm) then
                     return
                 end
             elseif author == playerName then
