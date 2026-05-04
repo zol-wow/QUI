@@ -2098,8 +2098,23 @@ ApplyResolvedCooldown = function(icon)
     ApplyCooldownDesaturation(icon, entry, nil, mode)
 
     local hasNumericCooldown = mode == "item-cooldown" and numericCooldownActive
+    local keySource = sourceID
+    if keySource and IsSecretValue(keySource) then
+        keySource = durObj or mode
+    end
+    local key = mode .. ":" .. tostring(keySource)
+
     if (not durObj and not hasNumericCooldown) or mode == "inactive" then
         CancelCooldownExpiryRefresh(icon)
+        if mode == "aura"
+           and InCombatLockdown()
+           and icon._lastAuraDurObj
+           and icon._lastDurObjKey == key
+        then
+            icon._showingRealCooldownSwipe = true
+            CDMIcons.ClearGCDSwipe(icon)
+            return true
+        end
         if mode == "aura" then
             icon._lastDurObjKey = nil
             if addonCD.SetReverse then
@@ -2127,11 +2142,6 @@ ApplyResolvedCooldown = function(icon)
     -- Dedupe: only re-bind when the source DurObj changes (mode swap, override
     -- swap, aura→CD transition, etc.). Re-binding on every event restarts the
     -- C-side sweep + countdown text — visible as text vanishing briefly.
-    local keySource = sourceID
-    if keySource and IsSecretValue(keySource) then
-        keySource = durObj or mode
-    end
-    local key = mode .. ":" .. tostring(keySource)
     local shouldScheduleExpiry = cdActive == true
         and (resolvedCdInfo ~= nil or hasNumericCooldown)
         and (mode == "cooldown" or mode == "charge" or mode == "item-cooldown")
@@ -4684,6 +4694,7 @@ local function UpdateIconCooldown(icon)
                             end
                         end
 
+                        ApplyResolvedCooldown(icon)
                         ReapplySwipeStyle(icon.Cooldown, icon)
                         return  -- Aura path complete
                     else
