@@ -6,6 +6,7 @@
     <Script file="modifiers/channel_shorten.lua"/>
     <Script file="modifiers/keyword_alert.lua"/>
     <Script file="modifiers/redundant_text.lua"/>
+    <Script file="history_storage.lua"/>
     <Script file="history.lua"/>
     <Script file="hyperlinks.lua"/>
     <Script file="tab_filters.lua"/>

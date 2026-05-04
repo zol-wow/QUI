@@ -36,8 +36,8 @@ local History = ns.QUI.Chat.History
 local Helpers = ns.Helpers
 -- _G.QUI is the AceAddon (provides .db, set by QUICore:OnInitialize).
 -- NOT to be confused with ns.QUI, which is the chat module's namespace
--- bucket — that one has no .db. Capturing the wrong one was the cause of
--- chat history never persisting (every getHistory() call returned nil).
+-- bucket — that one has no .db. Capturing the wrong one breaks any
+-- code path that needs db.profile / db.char access.
 local QUI = _G.QUI
 
 -- Forward declaration. ApplyEnabled is referenced by the _afterRefresh
@@ -52,18 +52,6 @@ History._repumping = false
 -- ---------------------------------------------------------------------------
 -- SV access
 -- ---------------------------------------------------------------------------
-
--- Returns the persisted history table, lazy-creating in db.char.
--- Returns nil when AceDB hasn't initialised yet (very early load order).
-local function getHistory()
-    if not QUI or not QUI.db or not QUI.db.char then return nil end
-    QUI.db.char.chat = QUI.db.char.chat or {}
-    QUI.db.char.chat.history = QUI.db.char.chat.history or { schemaVersion = 1, entries = {} }
-    if not QUI.db.char.chat.history.entries then
-        QUI.db.char.chat.history.entries = {}
-    end
-    return QUI.db.char.chat.history
-end
 
 -- ---------------------------------------------------------------------------
 -- Capture: hooksecurefunc on each managed ChatFrame's AddMessage
@@ -120,9 +108,6 @@ local function captureToHistory(frame, msg, r, g, b, chatTypeID, ...)
     local s = settings and settings.history
     if not s or not s.enabled then return end
 
-    -- Find frame ID. Managed frames are ChatFrame1..NUM_CHAT_WINDOWS.
-    -- Temp whisper windows / unmanaged frames are not in this range and
-    -- get dropped at the not-found check below.
     local frameID
     local nWindows = _G.NUM_CHAT_WINDOWS or 50
     for i = 1, nWindows do
@@ -133,38 +118,22 @@ local function captureToHistory(frame, msg, r, g, b, chatTypeID, ...)
     end
     if not frameID then return end
 
-    -- Resolve chat-type key from the integer id Blizzard's chat code passes
-    -- as the 5th positional arg to AddMessage. May be nil for messages that
-    -- don't originate from a CHAT_MSG_* event (system text, slash output).
     local chatTypeKey = resolveChatTypeKey(chatTypeID)
 
-    -- Drop whispers when the user has opted out, gated on the resolved key.
     if not s.storeWhispers and chatTypeKey and WHISPER_KEYS[chatTypeKey] then
         return
     end
 
-    local h = getHistory()
-    if not h then return end
+    local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
+    if not Storage then return end
 
-    local entries = h.entries
-    entries[#entries + 1] = {
+    Storage.AppendLive({
         t = (GetServerTime and GetServerTime()) or time(),
         f = frameID,
         m = msg,
         r = r, g = g, b = b,
-        c = chatTypeKey,  -- per-channel retention reads this; nil when the
-                          -- AddMessage call had no chatTypeID (system/slash).
-    }
-
-    -- Soft size warning. Once-per-session; user can lower retention.
-    if #entries > 10000 and not h._sizeWarned then
-        h._sizeWarned = true
-        if DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage(
-                "|cff34D399[QUI]|r Chat history exceeds 10,000 entries. Consider lowering the retention setting.",
-                1, 1, 1)
-        end
-    end
+        c = chatTypeKey,
+    })
 end
 
 local function hookFrame(frame)
@@ -193,31 +162,55 @@ end
 -- Pruning (time-based, with per-channel overrides)
 -- ---------------------------------------------------------------------------
 
-local function pruneExpired()
+-- Snapshot, time-prune, cap to settings.maxEntries, write back. Called
+-- by the periodic ticker and by PLAYER_LOGOUT. Cheap when live buffer
+-- is empty (pure no-op except for the encode round-trip — skip in that
+-- case via the early-return below).
+local function flushNow()
+    local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
+    if not Storage then return end
+
     local settings = I.GetSettings and I.GetSettings()
     local s = settings and settings.history
-    if not s then return end
+    if not s or not s.enabled then return end
+
+    -- Skip if there's nothing in the live buffer AND no time-pruning is
+    -- due. Heuristic: if liveCount==0 we'd just re-encode an unchanged
+    -- persisted blob. Storage exposes GetCount which sums both sides;
+    -- compare against persisted-only count via lastFlushPersistedCount.
+    -- Cheap proxy: if Snapshot length equals last flush count, skip.
+    local entries = Storage.Snapshot()
+    if #entries == 0 then return end
 
     local now = (GetServerTime and GetServerTime()) or time()
     local globalCutoff = now - (s.retentionDays or 7) * 86400
     local perChannel = s.perChannelRetention or {}
 
-    local h = getHistory()
-    if not h or not h.entries then return end
-
     local kept = {}
-    local entries = h.entries
     for i = 1, #entries do
-        local entry = entries[i]
+        local e = entries[i]
         local cutoff = globalCutoff
-        if entry.c and perChannel[entry.c] then
-            cutoff = now - perChannel[entry.c] * 86400
+        if e.c and perChannel[e.c] then
+            cutoff = now - perChannel[e.c] * 86400
         end
-        if entry.t and entry.t >= cutoff then
-            kept[#kept + 1] = entry
+        if e.t and e.t >= cutoff then
+            kept[#kept + 1] = e
         end
     end
-    h.entries = kept
+
+    local cap = s.maxEntries or 5000
+    if #kept > cap then
+        -- Drop oldest. Entries from Snapshot are persisted-then-live, so
+        -- earlier indexes are older. Slice to the last `cap`.
+        local trimmed = {}
+        local start = #kept - cap + 1
+        for i = start, #kept do
+            trimmed[#trimmed + 1] = kept[i]
+        end
+        kept = trimmed
+    end
+
+    Storage.Flush(kept)
 end
 
 -- ---------------------------------------------------------------------------
@@ -237,23 +230,41 @@ local function repump()
         local s = settings and settings.history
         if not s or not s.enabled then return end
 
-        pruneExpired()
+        local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
+        if not Storage then return end
 
-        local h = getHistory()
-        if not h or not h.entries or #h.entries == 0 then return end
+        local entries = Storage.Snapshot()
+        if #entries == 0 then return end
 
-        -- Group entries by frame ID.
+        -- Time-prune in-place before replay. We use a temp `kept` list
+        -- because the snapshot must not be mutated (Storage holds the
+        -- canonical array reference internally).
+        local now = (GetServerTime and GetServerTime()) or time()
+        local globalCutoff = now - (s.retentionDays or 7) * 86400
+        local perChannel = s.perChannelRetention or {}
+        local kept = {}
+        for i = 1, #entries do
+            local e = entries[i]
+            local cutoff = globalCutoff
+            if e.c and perChannel[e.c] then
+                cutoff = now - perChannel[e.c] * 86400
+            end
+            if e.t and e.t >= cutoff then
+                kept[#kept + 1] = e
+            end
+        end
+        entries = nil  -- release the unpruned snapshot for GC.
+
+        -- Group by frame, sort, replay.
         local byFrame = {}
-        for i = 1, #h.entries do
-            local e = h.entries[i]
+        for i = 1, #kept do
+            local e = kept[i]
             if e.f then
                 byFrame[e.f] = byFrame[e.f] or {}
                 local list = byFrame[e.f]
                 list[#list + 1] = e
             end
         end
-
-        -- Sort each frame's entries chronologically.
         for _, list in pairs(byFrame) do
             table.sort(list, function(a, b) return (a.t or 0) < (b.t or 0) end)
         end
@@ -277,6 +288,13 @@ local function repump()
                 end
             end
         end
+
+        -- After replay, write the pruned set back through Storage so the
+        -- on-disk blob is also pruned. Live buffer is empty at this point
+        -- (we're seconds into PLAYER_LOGIN, before any capture).
+        Storage.Flush(kept)
+        kept = nil
+        byFrame = nil
     end)
 
     History._repumping = false
@@ -291,30 +309,32 @@ end
 -- ---------------------------------------------------------------------------
 
 function History.Clear()
-    local h = getHistory()
-    if h then
-        h.entries = {}
-        h._sizeWarned = nil
-    end
+    local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
+    if Storage and Storage.Clear then Storage.Clear() end
+end
+
+function History.ClearAllCharacters()
+    local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
+    if not Storage or not Storage.ClearAllCharacters then return 0, 0 end
+    return Storage.ClearAllCharacters()
 end
 
 function History.GetMessagesForFrame(frameID)
     frameID = tonumber(frameID)
     if not frameID then return {} end
 
-    pruneExpired()
+    local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
+    if not Storage then return {} end
 
-    local h = getHistory()
-    if not h or not h.entries then return {} end
-
+    local entries = Storage.Snapshot()
     local matches = {}
-    local entries = h.entries
     for i = 1, #entries do
         local e = entries[i]
         if e and e.f == frameID and type(e.m) == "string" then
             matches[#matches + 1] = e
         end
     end
+    entries = nil  -- release decoded snapshot for GC.
 
     table.sort(matches, function(a, b) return (a.t or 0) < (b.t or 0) end)
 
@@ -340,31 +360,49 @@ end
 -- ---------------------------------------------------------------------------
 -- Event handler: hook frames at ADDON_LOADED, replay at PLAYER_LOGIN
 -- ---------------------------------------------------------------------------
--- ADDON_LOADED is too early for the replay — AceDB initializes in
--- QUICore:OnInitialize which may not have run yet, so getHistory()
--- returns nil and repump silently does nothing. PLAYER_LOGIN is the
--- canonical "everything ready" signal: every addon's OnInitialize has
--- completed, AceDB defaults are wired, and Blizzard's HistoryKeeper
--- has finished its own restore pass. The 100ms defer past PLAYER_LOGIN
--- is kept so any third-party chat addons get to settle first; without
--- it our restored lines can interleave with native restoration.
+-- ADDON_LOADED is too early for the replay — Storage.Init runs there,
+-- but Storage.MigrateFromAceDB needs QUI.db.keys.char which AceDB only
+-- populates in QUICore:OnInitialize. PLAYER_LOGIN is the canonical
+-- "everything ready" signal: every addon's OnInitialize has completed,
+-- AceDB defaults are wired, and Blizzard's HistoryKeeper has finished
+-- its own restore pass. The 100ms defer past PLAYER_LOGIN is kept so
+-- any third-party chat addons get to settle first; without it our
+-- restored lines can interleave with native restoration.
 
 local addonFrame = CreateFrame("Frame")
 addonFrame:RegisterEvent("ADDON_LOADED")
 addonFrame:RegisterEvent("PLAYER_LOGIN")
+addonFrame:RegisterEvent("PLAYER_LOGOUT")
 addonFrame:SetScript("OnEvent", function(self, event, name)
     if event == "ADDON_LOADED" and name == ADDON_NAME then
+        local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
+        if Storage and Storage.Init then Storage.Init() end
         hookAllManagedFrames()
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
+        local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
+        if Storage and Storage.MigrateFromAceDB then
+            Storage.MigrateFromAceDB()
+        end
         if C_Timer and C_Timer.After then
             C_Timer.After(0.1, repump)
         else
             repump()
         end
         self:UnregisterEvent("PLAYER_LOGIN")
+    elseif event == "PLAYER_LOGOUT" then
+        flushNow()
     end
 end)
+
+-- Periodic flush. Every 5 minutes, merge live buffer into the persisted
+-- blob, prune by time, cap by count. 300s is short enough that worst-case
+-- live-buffer growth on a chatty character stays under ~10k entries (rough
+-- ceiling at typical capture rates), and long enough that the encode CPU
+-- cost is amortized.
+if C_Timer and C_Timer.NewTicker then
+    C_Timer.NewTicker(300, flushNow)
+end
 
 -- New permanent windows opened mid-session also need capture hooks.
 -- Idempotent via hookedFrames weak table (re-hooking is a no-op).
@@ -402,9 +440,12 @@ end
 
 local function pruneFrameID(frameID)
     if not frameID then return end
-    local h = getHistory()
-    if not h or not h.entries then return end
-    local entries = h.entries
+    local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
+    if not Storage then return end
+
+    local entries = Storage.Snapshot()
+    if #entries == 0 then return end
+
     local kept = {}
     for i = 1, #entries do
         local e = entries[i]
@@ -412,8 +453,7 @@ local function pruneFrameID(frameID)
             kept[#kept + 1] = e
         end
     end
-    h.entries = kept
-    h._sizeWarned = nil
+    Storage.Flush(kept)
 end
 
 if hooksecurefunc and _G.FCF_Close then

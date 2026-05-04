@@ -1323,6 +1323,7 @@ local defaults = {
                 storeWhispers = false,                -- opt-in; warns about Blizzard HistoryKeeper duplicate restoration
                 showSeparators = true,                -- "── Previous session ──" / "── Resumed ──" markers around restored block
                 perChannelRetention = {},             -- map: chatTypeKey -> override days. Empty = use default.
+                maxEntries = 5000,                    -- hard FIFO cap; flush trims oldest beyond this.
             },
             -- Persistent edit-box command history (Phase C)
             -- Settings live on profile; captured entries live per-character at db.char.chat.editboxHistory.entries

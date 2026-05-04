@@ -164,7 +164,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         -- Frame Size drives ChatFrame1 directly via FCF_SetWindowSize, so
         -- Blizzard persists the dimensions in ChatConfig on logout. The proxy
         -- table lets CreateFormSlider read/write live frame dimensions.
-        local sizeProxy = setmetatable({}, {
+        local sizeProxy = MarkTransientOptionsBinding(setmetatable({}, {
             __index = function(_, k)
                 local f = _G.ChatFrame1
                 if not f then return 0 end
@@ -188,7 +188,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     _G.FCF_SavePositionAndDimensions(f)
                 end
             end,
-        })
+        }))
 
         -- Master enable toggle. Disabling tears down all chat customization
         -- (glass, tabs, edit box, copy buttons, fade, message filters); the
@@ -446,7 +446,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 UpdateCommandHistoryStates()
             end, { description = "Save messages you send so the Up/Down arrows recall them after a /reload. Stored per-character. Disabling stops new captures and recall but does not delete prior entries." })
             sy = P(historyCheckbox, body, sy)
-            sy = P(TrackHistoryControl(GUI:CreateFormSlider(body, "Max history entries", 50, 500, 1, "maxEntries", ebh, Refresh, nil, { description = "Maximum number of recalled messages to keep per character. Oldest entries are dropped first when the cap is reached." })), body, sy)
+            sy = P(TrackHistoryControl(GUI:CreateFormSlider(body, "Max command history", 50, 500, 1, "maxEntries", ebh, Refresh, nil, { description = "Maximum number of recalled messages to keep per character. Oldest entries are dropped first when the cap is reached." })), body, sy)
             sy = P(TrackHistoryControl(GUI:CreateFormCheckbox(body, "Filter sensitive commands", "filterSensitive", ebh, Refresh, { description = "Skip storing commands that frequently contain secrets or raw Lua. Filtered prefixes: /password, /logout, /quit, /exit, /dnd, /afk, /camp, /script, /run, /console." })), body, sy)
             P(TrackHistoryControl(GUI:CreateFormCheckbox(body, "Restore chat type on recall", "restoreChatType", ebh, Refresh, { description = "When recalling a message with Up/Down, also restore its original chat type (Say, Yell, Whisper target, channel) so pressing Enter sends to the same destination." })), body, sy)
             UpdateCommandHistoryStates()
@@ -993,7 +993,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 return rec
             end
 
-            local builtinProxy = setmetatable({}, {
+            local builtinProxy = MarkTransientOptionsBinding(setmetatable({}, {
                 __index = function(_, id)
                     local rec = findOrCreate(id)
                     return rec.visible and true or false
@@ -1002,7 +1002,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     local rec = findOrCreate(id)
                     rec.visible = v and true or false
                 end,
-            })
+            }))
 
             local labels = {
                 qui_options = "QUI options (/qui)",
@@ -1279,7 +1279,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end
                 return out
             end
-            local keywordsProxy = setmetatable({}, {
+            local keywordsProxy = MarkTransientOptionsBinding(setmetatable({}, {
                 __index = function(_, k)
                     if k == "keywordsText" then return joinKeywords(ka.keywords) end
                     return nil
@@ -1289,7 +1289,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                         ka.keywords = splitKeywords(v)
                     end
                 end,
-            })
+            }))
 
             local keywordsField = TrackKeywordControl(GUI:CreateFormEditBox(body, "Custom Keywords", "keywordsText", keywordsProxy, Refresh, {
                 maxLetters = 500, live = false,
@@ -1356,7 +1356,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         -- expose a nested-tile primitive, and the inline form keeps every control
         -- visible and reachable without extra clicks. Per-channel override toggles
         -- and sliders sit at the bottom of the tile, after a divider label.
-        CreateChatSection("persistentMessageHistory", "Persistent Message History", 16 * FORM_ROW + 8, function(body)
+        CreateChatSection("persistentMessageHistory", "Persistent Message History", 17 * FORM_ROW + 12, function(body)
             local sy = -4
             if not chat.history then
                 chat.history = {
@@ -1406,6 +1406,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             end, { description = "Save displayed chat messages to your character's saved variables and replay them on next login or reload. Captured per character; cleared by 'Clear history now'." })
             sy = P(historyEnabledCheckbox, body, sy)
             sy = P(TrackPersistentHistoryControl(GUI:CreateFormSlider(body, "Retention (days)", 1, 30, 1, "retentionDays", hist, Refresh, nil, { description = "Default age limit for stored messages. Older entries are pruned at login. Per-channel overrides below take precedence when set." })), body, sy)
+            sy = P(TrackPersistentHistoryControl(GUI:CreateFormSlider(body, "Max stored messages", 500, 50000, 500, "maxEntries", hist, Refresh, nil, { description = "Hard cap on stored chat lines per character. Oldest entries beyond this are dropped at flush." })), body, sy)
             sy = P(TrackPersistentHistoryControl(GUI:CreateFormCheckbox(body, "Store whispers", "storeWhispers", hist, Refresh, { description = "Include whispers in the persistent history. Default OFF: Blizzard's built-in HistoryKeeper already restores recent whispers, so enabling this can produce duplicate restored whispers." })), body, sy)
             sy = P(TrackPersistentHistoryControl(GUI:CreateFormCheckbox(body, "Show session separators", "showSeparators", hist, Refresh, { description = "Insert '──── Previous session ────' and '──── Resumed ────' markers around the restored block on login." })), body, sy)
 
@@ -1416,11 +1417,14 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             clearRow:SetHeight(FORM_ROW)
 
             local clearBtn = GUI:CreateButton(clearRow, "Clear history now", 180, 24, function()
-                StaticPopupDialogs["QUI_CHAT_HISTORY_CLEAR"] = {
-                    text = "Clear all persisted chat history for this character? This cannot be undone.",
-                    button1 = "Clear",
-                    button2 = "Cancel",
-                    OnAccept = function()
+                GUI:ShowConfirmation({
+                    title = "Clear Chat History?",
+                    message = "Clear persisted chat history for this character?",
+                    warningText = "This cannot be undone.",
+                    acceptText = "Clear",
+                    cancelText = "Cancel",
+                    isDestructive = true,
+                    onAccept = function()
                         if ns.QUI and ns.QUI.Chat and ns.QUI.Chat.History and ns.QUI.Chat.History.Clear then
                             ns.QUI.Chat.History.Clear()
                             if DEFAULT_CHAT_FRAME then
@@ -1428,12 +1432,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                             end
                         end
                     end,
-                    timeout = 0,
-                    whileDead = true,
-                    hideOnEscape = true,
-                    preferredIndex = 3,
-                }
-                StaticPopup_Show("QUI_CHAT_HISTORY_CLEAR")
+                })
             end)
             clearBtn:SetPoint("TOPLEFT", 0, 0)
 
@@ -1441,6 +1440,43 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             clearHelp:SetPoint("LEFT", clearBtn, "RIGHT", 12, 0)
             clearHelp:SetPoint("RIGHT", clearRow, "RIGHT", 0, 0)
             clearHelp:SetJustifyH("LEFT")
+            sy = sy - FORM_ROW - 4
+
+            local clearAllRow = CreateFrame("Frame", nil, body)
+            clearAllRow:SetPoint("TOPLEFT", 0, sy)
+            clearAllRow:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            clearAllRow:SetHeight(FORM_ROW)
+
+            local clearAllBtn = GUI:CreateButton(clearAllRow, "Clear all characters", 180, 24, function()
+                GUI:ShowConfirmation({
+                    title = "Clear All Chat History?",
+                    message = "Clear persisted chat history for all characters in this SavedVariables database?",
+                    warningText = "This cannot be undone.",
+                    acceptText = "Clear All",
+                    cancelText = "Cancel",
+                    isDestructive = true,
+                    onAccept = function()
+                        if ns.QUI and ns.QUI.Chat and ns.QUI.Chat.History and ns.QUI.Chat.History.ClearAllCharacters then
+                            local characters, entries = ns.QUI.Chat.History.ClearAllCharacters()
+                            if DEFAULT_CHAT_FRAME then
+                                DEFAULT_CHAT_FRAME:AddMessage(string.format(
+                                    "|cff34D399[QUI]|r Chat history cleared for %d character%s (%d entr%s).",
+                                    characters or 0,
+                                    characters == 1 and "" or "s",
+                                    entries or 0,
+                                    entries == 1 and "y" or "ies"
+                                ), 1, 1, 1)
+                            end
+                        end
+                    end,
+                })
+            end)
+            clearAllBtn:SetPoint("TOPLEFT", 0, 0)
+
+            local clearAllHelp = GUI:CreateLabel(clearAllRow, "Erases persisted message entries for every character. Does not change settings.", 10, {0.5, 0.5, 0.5, 1})
+            clearAllHelp:SetPoint("LEFT", clearAllBtn, "RIGHT", 12, 0)
+            clearAllHelp:SetPoint("RIGHT", clearAllRow, "RIGHT", 0, 0)
+            clearAllHelp:SetJustifyH("LEFT")
             sy = sy - FORM_ROW - 4
 
             -- Advanced: per-channel retention overrides.
@@ -1483,7 +1519,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             -- CreateFormCheckbox / CreateFormSlider widgets read/write a map
             -- entry transparently.
             local function makeGroupProxy(key)
-                return setmetatable({}, {
+                return MarkTransientOptionsBinding(setmetatable({}, {
                     __index = function(_, k)
                         if k == "enabled" then
                             return hist.perChannelRetention[key] ~= nil
@@ -1507,7 +1543,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                             end
                         end
                     end,
-                })
+                }))
             end
 
             for _, group in ipairs(CHANNEL_GROUPS) do

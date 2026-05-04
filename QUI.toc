@@ -9,6 +9,7 @@
 ## Version: 3.6.0-alpha15
 ## Category: User Interface
 ## SavedVariables: QUI_DB, QUIDB
+## SavedVariablesPerCharacter: QUI_ChatHistory
 ## OptionalDeps: DandersFrames, BigWigs
 
 ## X-Contributors: Quazii (original creator), LiQiuDGG, Mondo, Zol

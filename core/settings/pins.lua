@@ -86,6 +86,10 @@ local function JoinPath(base, leaf)
     return base .. "." .. leaf
 end
 
+local function IsTransientOptionsBinding(tableRef)
+    return type(tableRef) == "table" and rawget(tableRef, "_quiTransientOptionsProxy") == true
+end
+
 local function IsNumberLike(value)
     return type(value) == "number" and value == value
 end
@@ -640,6 +644,9 @@ function Pins:ResolveProfileTablePath(targetTable, db)
     if type(targetTable) ~= "table" or not db then
         return nil
     end
+    if IsTransientOptionsBinding(targetTable) then
+        return nil
+    end
 
     local profile = db.profile
     if type(profile) ~= "table" then
@@ -673,7 +680,7 @@ function Pins:ResolveProfileTablePath(targetTable, db)
         visited[node] = true
 
         for key, value in pairs(node) do
-            if type(value) == "table" and not SKIP_KEYS[key] then
+            if type(value) == "table" and not SKIP_KEYS[key] and not IsTransientOptionsBinding(value) then
                 local keyName = tostring(key)
                 local childPath = JoinPath(prefix, keyName)
                 if not self._profilePathCache[value] then
@@ -700,6 +707,9 @@ end
 
 function Pins:GetResolvedWidgetPath(binding, db)
     if type(binding) ~= "table" then
+        return nil
+    end
+    if IsTransientOptionsBinding(binding.dbTable) then
         return nil
     end
 

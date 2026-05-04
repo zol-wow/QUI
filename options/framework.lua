@@ -489,6 +489,12 @@ local function CopySerializableValue(value, depth, seen)
     return copy
 end
 
+local SEARCH_DB_PATH_SKIP_KEYS = {
+    _migrationBackup = true,
+    _schemaVersion = true,
+    _defaultsVersion = true,
+}
+
 local function FindDBTablePath(target, current, prefix, seen, depth)
     if target == nil or current == nil or type(current) ~= "table" then
         return nil
@@ -509,7 +515,11 @@ local function FindDBTablePath(target, current, prefix, seen, depth)
     seen[current] = true
 
     for key, value in pairs(current) do
-        if type(key) == "string" and type(value) == "table" then
+        if type(key) == "string"
+            and type(value) == "table"
+            and not SEARCH_DB_PATH_SKIP_KEYS[key]
+            and rawget(value, "_quiTransientOptionsProxy") ~= true
+        then
             local path = FindDBTablePath(target, value, prefix .. "." .. key, seen, depth)
             if path then
                 seen[current] = nil
@@ -524,6 +534,9 @@ end
 
 function GUI:ResolveSearchDBTablePath(dbTable)
     if type(dbTable) ~= "table" then
+        return nil
+    end
+    if rawget(dbTable, "_quiTransientOptionsProxy") == true then
         return nil
     end
 
@@ -596,7 +609,7 @@ local function BuildSearchSettingsRegistryKey(context, label)
 end
 
 local function IsTransientOptionsBinding(dbTable)
-    return type(dbTable) == "table" and dbTable._quiTransientOptionsProxy == true
+    return type(dbTable) == "table" and rawget(dbTable, "_quiTransientOptionsProxy") == true
 end
 
 local function ShouldRegisterSearchSetting(registryInfo, dbTable)

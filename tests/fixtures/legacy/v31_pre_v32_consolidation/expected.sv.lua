@@ -757,6 +757,7 @@ return {
             hideButtons = true,
             history = {
               enabled = true,
+              maxEntries = 5000,
               perChannelRetention = {},
               retentionDays = 7,
               showSeparators = true,
