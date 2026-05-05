@@ -214,6 +214,7 @@ local function GetChargeMetadataDB()
     if not db.cdmChargeSpells then db.cdmChargeSpells = {} end
     return db.cdmChargeSpells
 end
+CDMResolvers.GetChargeMetadataDB = GetChargeMetadataDB  -- consumed by cdm_icons.lua via upvalue alias
 
 function CDMResolvers.TickCacheGetCharges(spellID)
     if not spellID then return nil end

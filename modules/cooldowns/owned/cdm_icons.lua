@@ -41,6 +41,7 @@ local HasRealCooldownState = Resolvers.HasRealCooldownState
 local ResolveAuraStateForIcon = Resolvers.ResolveAuraStateForIcon
 local ResolveAuraDurationObjectForIcon = Resolvers.ResolveAuraDurationObjectForIcon
 local IsAuraEntry = Resolvers.IsAuraEntry
+local GetChargeMetadataDB = Resolvers.GetChargeMetadataDB
 
 ---------------------------------------------------------------------------
 -- COMPAT SHIMS
