@@ -181,7 +181,11 @@ local function StyleEditBox(chatFrame)
         -- Store backdrop reference in local state table for hooks to access
         ebState.backdropRef = backdrop
 
-        -- For top position: Only show backdrop when editbox has focus (user is typing)
+        -- For top position: Only show backdrop when editbox has focus (user is typing).
+        -- Mouse is also disabled while unfocused so clicks fall through to the chat
+        -- tabs that occupy the same strip — Blizzard sometimes leaves the editBox
+        -- shown (chatStyle="im", lockShow, sticky channels) and an invisible-but-
+        -- mouse-enabled editBox would otherwise eat tab clicks.
         if not ebState.topModeHooked then
             ebState.topModeHooked = true
             editBox:HookScript("OnEditFocusGained", function(self)
@@ -189,14 +193,21 @@ local function StyleEditBox(chatFrame)
                 local state = I.editBoxState[self]
                 if I.IsChatEnabled and I.IsChatEnabled(s)
                     and s.editBox and s.editBox.positionTop and state and state.backdropRef then
+                    self:EnableMouse(true)
                     state.backdropRef:Show()
                 end
             end)
             editBox:HookScript("OnEditFocusLost", function(self)
+                local s = I.GetSettings()
+                if not (I.IsChatEnabled and I.IsChatEnabled(s)
+                    and s.editBox and s.editBox.positionTop) then
+                    return
+                end
                 local state = I.editBoxState[self]
                 if state and state.backdropRef then
                     state.backdropRef:Hide()
                 end
+                self:EnableMouse(false)
             end)
         end
 
@@ -204,6 +215,9 @@ local function StyleEditBox(chatFrame)
         backdrop:Hide()
         if editBox:HasFocus() then
             backdrop:Show()
+            editBox:EnableMouse(true)
+        else
+            editBox:EnableMouse(false)
         end
     else
         -- Default: Position at BOTTOM
@@ -224,6 +238,8 @@ local function StyleEditBox(chatFrame)
 
         -- Bottom position: always show backdrop (standard behavior)
         backdrop:Show()
+        -- Restore mouse on the editBox in case top mode previously disabled it.
+        editBox:EnableMouse(true)
     end
 end
 
@@ -231,9 +247,17 @@ end
 -- Remove edit box styling (restore when disabled)
 ---------------------------------------------------------------------------
 local function RemoveEditBoxStyle(chatFrame)
+    if not chatFrame then return end
     -- Hide backdrop stored in local table
     if I.editBoxBackdrops[chatFrame] then
         I.editBoxBackdrops[chatFrame]:Hide()
+    end
+    -- Restore mouse on the editBox — top mode disables it while unfocused so
+    -- clicks fall through to the tabs, and that state must not survive teardown.
+    local frameName = chatFrame.GetName and chatFrame:GetName()
+    local editBox = chatFrame.editBox or (frameName and _G[frameName .. "EditBox"])
+    if editBox and editBox.EnableMouse then
+        editBox:EnableMouse(true)
     end
 end
 
