@@ -4989,15 +4989,12 @@ local function UpdateIconVisualState(icon, cachedDB)
     -- Skip items/trinkets (self-use, no range/usability concept)
     if entry.type == "item" or entry.type == "trinket" or entry.type == "slot" then return end
 
-    -- Resolve current spell ID (prefer cached override from cooldown update cycle
-    -- to avoid redundant GetOverrideSpell API calls during range polling)
-    local spellID = entry.spellID or entry.id
-    if icon._cachedOverrideID then
-        spellID = icon._cachedOverrideID
-    elseif C_Spell and C_Spell.GetOverrideSpell then
-        local currentOverride = TickCacheGetOverrideSpell(entry.spellID or entry.id)
-        if currentOverride then spellID = currentOverride end
-    end
+    -- Reuse the override resolved during the last cooldown update cycle.
+    -- _runtimeSpellID is written by UpdateIconCooldown on every cooldown
+    -- event (cdm_icon_factory.lua), so any override change has already
+    -- propagated by the time the range poll runs. Avoids a per-icon
+    -- TickCacheGetOverrideSpell call on every poll.
+    local spellID = icon._runtimeSpellID or entry.spellID or entry.id
     if not spellID then return end
 
     ---------------------------------------------------------------------------
@@ -5290,6 +5287,12 @@ local function SafetyTickOnUpdate(self, elapsed)
     safetyTickElapsed = safetyTickElapsed + elapsed
     if safetyTickElapsed < SAFETY_TICK_INTERVAL then return end
     safetyTickElapsed = 0
+    -- OOC nothing changes that an event won't surface (cooldown finish, aura
+    -- expire, override flip all fire SPELL_UPDATE_COOLDOWN / UNIT_AURA / etc).
+    -- The dirty-gate below only short-circuits when events fired recently,
+    -- which never happens at idle OOC — so the safety tick was running at
+    -- full cost on unchanged state and generating tick-cache allocation churn.
+    if not InCombatLockdown() then return end
     -- Dirty-gate: if the event-driven path ran within the last interval,
     -- the state is already fresh and this tick would be redundant work.
     -- Safety tick is a fallback for late-resolving DurationObjects, not a

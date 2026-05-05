@@ -197,7 +197,7 @@ local function IsSpellCastable(icon)
     if not icon or not icon._spellEntry then return false end
     if icon._auraActive then return false end
     if icon._hasCooldownActive then return false end
-    local spellID = icon._cachedOverrideID
+    local spellID = icon._runtimeSpellID
         or icon._spellEntry.overrideSpellID
         or icon._spellEntry.spellID
     if not spellID then return false end
