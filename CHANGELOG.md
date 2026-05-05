@@ -10,6 +10,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha20 - 2026-05-05
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha20: back up `WTF/` and export your profile first.
+
+### Fixed
+- **GCD swipe now shows on every same-spell cast.** (Resolves the known issue called out in alpha19.) Same-spell back-to-back casts shared the dedupe key `gcd-only:<sid>`, so `ApplyResolvedCooldown` short-circuited and left the cooldown frame bound to the previous pulse's already-expired timer — visually, the swipe stopped firing on subsequent casts of the same ability. The dedupe state is now invalidated at known per-pulse signals (`UNIT_SPELLCAST_SUCCEEDED`, plus the full-walk branch of `SPELL_UPDATE_COOLDOWN` that covers the GCD spell, GCD-flag flips, and arg-less fires) so the next pass takes the bind path. Real-cooldown and aura dedupe paths are unaffected (real CDs already had distinct keys per pulse; auras dedupe on DurationObject userdata identity).
+
+
+
 ## v3.6.0-alpha19 - 2026-05-05
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha19: back up `WTF/` and export your profile first.
