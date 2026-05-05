@@ -1630,6 +1630,7 @@ local function HookTextHasDisplay(text)
     end
     return text ~= nil and text ~= ""
 end
+CDMIcons.HookTextHasDisplay = HookTextHasDisplay  -- consumed by cdm_icon_factory.lua via _FinalizeImports
 
 function CDMIcons.ValueIsPresent(value)
     if IsSecretValue(value) then

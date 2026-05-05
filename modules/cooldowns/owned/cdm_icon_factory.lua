@@ -36,14 +36,20 @@ local ResolveAuraStateForIcon    = Resolvers.ResolveAuraStateForIcon
 local HasRealCooldownState       = Resolvers.HasRealCooldownState
 local ResolveMacro               = Resolvers.ResolveMacro
 local IsAuraEntry                = Resolvers.IsAuraEntry
--- Cooldown getters + entry helpers from cdm_icons.lua (local functions there;
--- imported via CDMIcons shims so the factory never calls bare globals).
--- These four are bound late by _FinalizeImports() at the end of cdm_icons.lua's
--- load — at this point in the load order, ns.CDMIcons is still nil.
+-- Helpers from cdm_icons.lua (local functions or namespace exposures there;
+-- factory uses bare names via these upvalues so call sites stay clean).
+-- All bound late by _FinalizeImports() at the end of cdm_icons.lua's load
+-- because ns.CDMIcons is still nil at this point in the load order.
 local GetBestSpellCooldown
 local GetItemCooldown
 local GetSlotCooldown
 local IsTotemSlotEntry
+local ApplyAuraStateToIcon
+local ApplyResolvedCooldown
+local ReapplySwipeStyle
+local UpdateIconProfessionQuality
+local ChargeDebug
+local HookTextHasDisplay
 
 local InCombatLockdown = InCombatLockdown
 local CreateFrame      = CreateFrame
@@ -1420,9 +1426,15 @@ CDMIconFactory.UpdateIconCooldown = UpdateIconCooldown
 -- so they all see the late-bound values.
 ---------------------------------------------------------------------------
 function CDMIconFactory._FinalizeImports(icons)
-    CDMIcons              = icons
-    GetBestSpellCooldown  = icons.GetBestSpellCooldown
-    GetItemCooldown       = icons.GetItemCooldown
-    GetSlotCooldown       = icons.GetSlotCooldown
-    IsTotemSlotEntry      = icons.IsTotemSlotEntry
+    CDMIcons                    = icons
+    GetBestSpellCooldown        = icons.GetBestSpellCooldown
+    GetItemCooldown             = icons.GetItemCooldown
+    GetSlotCooldown             = icons.GetSlotCooldown
+    IsTotemSlotEntry            = icons.IsTotemSlotEntry
+    ApplyAuraStateToIcon        = icons.ApplyAuraStateToIcon
+    ApplyResolvedCooldown       = icons.ApplyResolvedCooldown
+    ReapplySwipeStyle           = icons.ReapplySwipeStyle
+    UpdateIconProfessionQuality = icons.UpdateIconProfessionQuality
+    ChargeDebug                 = icons.ChargeDebug
+    HookTextHasDisplay          = icons.HookTextHasDisplay
 end
