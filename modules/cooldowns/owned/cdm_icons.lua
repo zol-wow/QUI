@@ -5322,6 +5322,25 @@ local function ApplyResolvedCooldownAll()
     end
 end
 
+-- Cast events start a new GCD pulse for every visible icon. The dedupe
+-- key for "gcd-only" is stable across pulses (same spellID), so without
+-- this invalidation back-to-back casts of the same spell skip the rebind
+-- and the C-side cooldown frame stays on the previous (already-expired)
+-- pulse's timer. Real-cooldown / aura bindings keep their dedupe — their
+-- keys stay distinct across pulses (real CDs are long-lived; auras use
+-- DurationObject userdata identity to detect refresh).
+local function InvalidateGCDOnlyBindings()
+    for _, pool in pairs(iconPools) do
+        for _, icon in ipairs(pool) do
+            local lk = icon._lastDurObjKey
+            if lk and lk:sub(1, 9) == "gcd-only:" then
+                icon._lastDurObjKey = nil
+                icon._lastDurObj = nil
+            end
+        end
+    end
+end
+
 -- SPELL_UPDATE_COOLDOWN payload: { spellID, baseSpellID, category, startRecoveryCategory }.
 -- When spellID is non-nil, only one spell changed — re-resolve icons whose base
 -- matches spellID or baseSpellID instead of walking every icon. baseSpellID is set
@@ -5563,6 +5582,11 @@ function CDMIcons.EventFrameOnEvent(self, event, arg1, arg2, arg3)
                 -- spell's CD takes hold and other icons pick up the GCD
                 -- overlay. SetCooldownFromDurationObject creates a live
                 -- C-side binding; we only need to re-bind on source change.
+                -- Invalidate gcd-only dedupe keys first: the next pulse uses
+                -- the same key as the previous one, so without this the
+                -- cooldown frame would stay bound to the (already-expired)
+                -- previous pulse's DurationObject.
+                InvalidateGCDOnlyBindings()
                 ApplyResolvedCooldownAll()
             end
             ScheduleCDMUpdate(true, CDM_UPDATE_COOLDOWN)
@@ -5674,15 +5698,16 @@ function CDMIcons.EventFrameOnEvent(self, event, arg1, arg2, arg3)
     --   1. arg1 == nil — Blizzard's "update all" signal
     --   2. arg1 == GCD_SPELL_ID (61304) — explicit GCD spell signal
     --   3. gcdChanged — any icon's _isOnGCD just flipped
-    -- NOTE: GCD swipe rendering still has a known issue (deferred-batch path
-    -- in UpdateIconCooldown vs immediate ApplyResolvedCooldown path use
-    -- different GCD signals); this scoping does not regress that further.
-    -- Tracked for a followup session.
     if trustIsOnGCD then
         CDMIcons._trustIsOnGCDForBatch = true
         if arg1 and arg1 ~= GCD_SPELL_ID and not gcdChanged then
             ApplyResolvedCooldownForSpellID(arg1, arg2)
         else
+            -- arg1 == GCD_SPELL_ID or gcdChanged or arg1 == nil all signal a
+            -- new GCD pulse may be starting. Invalidate gcd-only dedupe keys
+            -- so the rebind path runs (key matches across pulses; without
+            -- this the cooldown frame stays on the prior pulse's timer).
+            InvalidateGCDOnlyBindings()
             ApplyResolvedCooldownAll()
         end
         CDMIcons._trustIsOnGCDForBatch = false
