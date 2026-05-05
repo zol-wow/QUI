@@ -393,6 +393,61 @@ local function GetSettings()
     return core and core.db and core.db.profile and core.db.profile.damageMeter
 end
 
+-- Walk the appearance subtable for a given window scope and key path. Today
+-- ignores windowId and reads from `appearance.global` only. When per-window
+-- overrides ship later, this is the only function that needs to learn about
+-- non-global scopes — call sites stay stable.
+local function ResolveAppearance(_windowId, ...)
+    local s = GetSettings()
+    local appearance = s and s.appearance
+    local section = appearance and appearance.global
+    for i = 1, select("#", ...) do
+        if not section then return nil end
+        section = section[(select(i, ...))]
+    end
+    return section
+end
+
+-- Resolve a user-pickable texture into a usable path. nil name → fall back
+-- to FALLBACK_TEXTURE (preserves pre-customization behavior).
+local function ResolveTexture(windowId, key, lsmType)
+    local name = ResolveAppearance(windowId, "textures", key)
+    if name and LSM then
+        return LSM:Fetch(lsmType, name) or FALLBACK_TEXTURE
+    end
+    return FALLBACK_TEXTURE
+end
+
+-- Resolve a user-pickable font into (path, size, outline). The fontstring
+-- argument is needed because size = 0 means "preserve the fontstring's
+-- existing size" (matches the legacy behavior at the styleText callsite).
+local function ResolveFont(windowId, fontKey, fs)
+    local name    = ResolveAppearance(windowId, "fonts", fontKey, "name")
+    local size    = ResolveAppearance(windowId, "fonts", fontKey, "size")
+    local outline = ResolveAppearance(windowId, "fonts", fontKey, "outline")
+
+    local path = (name and LSM and LSM:Fetch("font", name))
+              or (Helpers.GetGeneralFont and Helpers.GetGeneralFont())
+              or "Fonts\\FRIZQT__.TTF"
+
+    if not size or size == 0 then
+        if fs and fs.GetFont then
+            local _, existing = fs:GetFont()
+            size = existing or 11
+        else
+            size = 11
+        end
+    end
+
+    if outline == "_inherit" or outline == nil then
+        outline = (Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline()) or ""
+    elseif outline == "_none" then
+        outline = ""
+    end
+
+    return path, size, outline
+end
+
 local function IsModuleEnabled()
     local g = GetGeneralSettings()
     if not g then return false end
@@ -717,6 +772,44 @@ local function ForceLockWindow(window)
 end
 
 ---------------------------------------------------------------------------
+-- StyleWindowHeaderText(window)
+-- Restyle the session window's header-area fontstrings (SessionTimer,
+-- SessionDropdown.SessionName, DamageMeterTypeDropdown.TypeName,
+-- MinimizeContainer.NotActive) using the user-pickable "header" font.
+-- nil/sentinel defaults preserve each fontstring's stock Blizzard font/
+-- size/outline so existing installs see no visual change. Idempotent --
+-- safe to call on every EnsureWindowSkinned invocation.
+---------------------------------------------------------------------------
+local function StyleWindowHeaderText(window)
+    if not window then return end
+
+    local function styleHeaderFs(fs)
+        if not fs or not fs.SetFont then return end
+        local path, size, outline = ResolveFont(window, "header", fs)
+        fs:SetFont(path, size, outline)
+    end
+
+    -- SessionTimer: direct child of the session window.
+    styleHeaderFs(window.SessionTimer)
+
+    -- NotActive: child of MinimizeContainer.
+    local mc = window.MinimizeContainer
+    if mc then
+        styleHeaderFs(mc.NotActive)
+    end
+
+    -- SessionName: child of SessionDropdown.
+    if window.SessionDropdown then
+        styleHeaderFs(window.SessionDropdown.SessionName)
+    end
+
+    -- TypeName: child of DamageMeterTypeDropdown.
+    if window.DamageMeterTypeDropdown then
+        styleHeaderFs(window.DamageMeterTypeDropdown.TypeName)
+    end
+end
+
+---------------------------------------------------------------------------
 -- EnsureWindowSkinned(window)
 -- Idempotent. Skins the session window's chrome.
 ---------------------------------------------------------------------------
@@ -754,6 +847,7 @@ local function EnsureWindowSkinned(window)
         if mc and mc.SourceWindow then
             SkinSourceWindow(mc.SourceWindow)
         end
+        StyleWindowHeaderText(window)
         return
     end
 
@@ -766,6 +860,8 @@ local function EnsureWindowSkinned(window)
     if window.SessionDropdown        then SkinDropdown(window.SessionDropdown)        end
     if window.DamageMeterTypeDropdown then SkinDropdown(window.DamageMeterTypeDropdown) end
     if window.SettingsDropdown       then SkinDropdown(window.SettingsDropdown)       end
+
+    StyleWindowHeaderText(window)
 
     -- The SourceWindow exists as a child of MinimizeContainer at all times
     -- but is hidden until first row click. Skin proactively so first show is clean.
@@ -788,10 +884,13 @@ end
 -- Hide stock background/edge atlases on each row's StatusBar; build a
 -- 1px QUI-accent backdrop around the row. Idempotent.
 --
--- IMPORTANT: do NOT call SetStatusBarTexture — class color rides on
--- the bar texture's vertex color and would be lost when the texture
--- swaps. Blizzard's atlas is flat enough to read as our QUI texture
--- once chrome is stripped.
+-- Bar fill texture: we apply the user-pickable LSM texture here. Class
+-- color tinting is preserved because Blizzard's own SetStatusBarColor
+-- calls fire on the meter's update cycle and re-tint whatever texture
+-- is currently set. Most LSM statusbar textures are white/grayscale
+-- gradients designed for vertex tinting and will read correctly with
+-- class color overlay; users picking textures with baked-in coloring
+-- may see degraded tinting and should pick a different texture.
 ---------------------------------------------------------------------------
 local function SkinRow(row)
     if not row then return end
@@ -814,6 +913,10 @@ local function SkinRow(row)
         HideRegion(statusBar.BackgroundEdge)
     end
 
+    if statusBar.SetStatusBarTexture then
+        statusBar:SetStatusBarTexture(ResolveTexture(row, "bar", "statusbar"))
+    end
+
     -- Row backdrop child for the dark row bg + accent border.
     local backdrop = SkinBase.GetFrameData(row, "qdmRowBackdrop")
     if not backdrop then
@@ -827,25 +930,25 @@ local function SkinRow(row)
     end
     local px = SkinBase.GetPixelSize(backdrop, 1)
     backdrop:SetBackdrop({
-        bgFile = FALLBACK_TEXTURE,
-        edgeFile = FALLBACK_TEXTURE,
+        bgFile = ResolveTexture(row, "background", "background"),
+        edgeFile = ResolveTexture(row, "border", "border"),
         edgeSize = px,
         insets = { left = px, right = px, top = px, bottom = px },
     })
     backdrop:SetBackdropColor(0.18, 0.18, 0.20, 1)
     backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
 
-    -- Restyle name / value fontstrings using QUI font.
-    local fontPath = (Helpers.GetGeneralFont and Helpers.GetGeneralFont()) or "Fonts\\FRIZQT__.TTF"
-    local outline  = (Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline()) or ""
-    local function styleText(fs)
+    -- Restyle name / value fontstrings using user-pickable fonts (or fall
+    -- back to QUI's general font / outline / existing fontstring size when
+    -- the user hasn't picked anything).
+    local function styleText(fs, fontKey)
         if not fs or not fs.SetFont then return end
-        local _, size = fs:GetFont()
-        fs:SetFont(fontPath, size or 11, outline)
+        local path, size, outline = ResolveFont(row, fontKey, fs)
+        fs:SetFont(path, size, outline)
         fs:SetTextColor(0.95, 0.95, 0.95, 1)
     end
-    styleText(statusBar.Name)
-    styleText(statusBar.Value)
+    styleText(statusBar.Name,  "rowName")
+    styleText(statusBar.Value, "rowValue")
 
     SkinBase.SetFrameData(row, "qdmRowSkinned", true)
 end
@@ -1876,6 +1979,7 @@ RefreshAll = function()
             backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
         end
         StyleDamageMeterScrollBar(ResolveWindowScrollBar(window), sr, sg, sb)
+        StyleWindowHeaderText(window)
         -- Re-skin every visible row.
         if window.ForEachEntryFrame then
             window:ForEachEntryFrame(function(frame)

@@ -11,50 +11,7 @@ return {
       imports = {},
       isDone = false,
       lastVersion = 0,
-      ncdm = {
-        specTrackerSpells = {
-          customBar_test_roundtrip = {
-            ["PRIEST-256"] = {
-              [1] = {
-                _legacySourceSpecKey = "PRIEST-256",
-                _sourceSpecID = 256,
-                id = 33206,
-                type = "spell"
-              },
-              [2] = {
-                _legacySourceSpecKey = "PRIEST-256",
-                _sourceSpecID = 256,
-                id = 47788,
-                type = "spell"
-              },
-              [3] = {
-                _legacySourceSpecKey = "PRIEST-256",
-                _sourceSpecID = 256,
-                id = 62618,
-                type = "spell"
-              }
-            }
-          }
-        }
-      },
-      specTrackerSpells = {
-        test_roundtrip = {
-          ["PRIEST-256"] = {
-            [1] = {
-              id = 33206,
-              type = "spell"
-            },
-            [2] = {
-              id = 47788,
-              type = "spell"
-            },
-            [3] = {
-              id = 62618,
-              type = "spell"
-            }
-          }
-        }
-      }
+      specTrackerSpells = {}
     },
     profileKeys = {
       ["TestChar - TestRealm"] = "Default"
@@ -62,6 +19,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
+        _needsLateAbImport = true,
         _schemaVersion = 35,
         _shippedDefaults = {
           abilityTimeline = {
@@ -6204,191 +6162,34 @@ return {
             width = 300
           }
         },
-        cdm = {
-          engine = "owned"
+        cooldownSwipe = {
+          showBuffSwipe = true,
+          showGCDSwipe = true
         },
-        customTrackers = {
-          bars = {
-            [2] = {
-              _sourceSpecID = 256,
-              activeGlowColor = {
-                [1] = 1,
-                [2] = 0.84999999999999998,
-                [3] = 0.29999999999999999,
-                [4] = 1
-              },
-              activeGlowEnabled = true,
-              activeGlowFrequency = 0.25,
-              activeGlowLines = 8,
-              activeGlowScale = 1,
-              activeGlowThickness = 2,
-              activeGlowType = "Pixel Glow",
-              aspectRatioCrop = 1,
-              bgColor = {
-                [1] = 0,
-                [2] = 0,
-                [3] = 0,
-                [4] = 1
-              },
-              bgOpacity = 0,
-              borderColor = {
-                [1] = 0,
-                [2] = 0,
-                [3] = 0,
-                [4] = 1
-              },
-              borderSize = 2,
-              clickableIcons = false,
-              durationAnchor = "CENTER",
-              durationColor = {
-                [1] = 1,
-                [2] = 1,
-                [3] = 1,
-                [4] = 1
-              },
-              durationOffsetX = 0,
-              durationOffsetY = 0,
-              durationSize = 13,
-              dynamicLayout = false,
-              enabled = true,
-              entries = {},
-              growDirection = "RIGHT",
-              hideDurationText = false,
-              hideGCD = true,
-              hideNonUsable = false,
-              hideStackText = false,
-              iconSize = 32,
-              id = "test_roundtrip",
-              locked = false,
-              maxIcons = 8,
-              name = "Roundtrip Bar",
-              noDesaturateWithCharges = false,
-              offsetX = 0,
-              offsetY = 0,
-              showActiveState = true,
-              showItemCharges = true,
-              showOnlyInCombat = false,
-              showOnlyOnCooldown = false,
-              showOnlyWhenActive = false,
-              showOnlyWhenOffCooldown = false,
-              showProfessionQuality = true,
-              showRechargeSwipe = false,
-              spacing = 4,
-              specSpecificSpells = true,
-              stackAnchor = "BOTTOMRIGHT",
-              stackColor = {
-                [1] = 1,
-                [2] = 1,
-                [3] = 1,
-                [4] = 1
-              },
-              stackOffsetX = 3,
-              stackOffsetY = -1,
-              stackSize = 9,
-              zoom = 0
-            }
-          }
-        },
-        ncdm = {
-          _lastSpecID = 256,
-          containers = {
-            customBar_test_roundtrip = {
-              _legacyId = "test_roundtrip",
-              _migratedFromCustomTrackers = true,
-              _sourceSpecID = 256,
-              activeGlowColor = {
-                [1] = 1,
-                [2] = 0.84999999999999998,
-                [3] = 0.29999999999999999,
-                [4] = 1
-              },
-              activeGlowEnabled = true,
-              activeGlowFrequency = 0.25,
-              activeGlowLines = 8,
-              activeGlowScale = 1,
-              activeGlowThickness = 2,
-              activeGlowType = "Pixel Glow",
-              anchorTo = "disabled",
-              builtIn = false,
-              clickableIcons = false,
-              containerType = "customBar",
-              dynamicLayout = false,
-              enabled = true,
-              entries = {},
-              growDirection = "RIGHT",
-              hideGCD = true,
-              hideNonUsable = false,
-              iconSize = 32,
-              id = "test_roundtrip",
-              keybindContext = "customTrackers",
-              layoutDirection = "HORIZONTAL",
-              locked = false,
-              name = "Roundtrip Bar",
-              noDesaturateWithCharges = false,
-              offsetX = 0,
-              offsetY = 0,
-              pos = {
-                ox = 0,
-                oy = 0
-              },
-              row1 = {
-                aspectRatioCrop = 1,
-                borderColorTable = {
-                  [1] = 0,
-                  [2] = 0,
-                  [3] = 0,
-                  [4] = 1
+        damageMeter = {
+          appearance = {
+            global = {
+              fonts = {
+                header = {
+                  name = "Expressway",
+                  outline = "THICKOUTLINE",
+                  size = 14
                 },
-                borderSize = 2,
-                durationAnchor = "CENTER",
-                durationOffsetX = 0,
-                durationOffsetY = 0,
-                durationSize = 13,
-                durationTextColor = {
-                  [1] = 1,
-                  [2] = 1,
-                  [3] = 1,
-                  [4] = 1
+                rowName = {
+                  name = "Poppins Bold",
+                  outline = "OUTLINE",
+                  size = 12
                 },
-                hideDurationText = false,
-                hideStackText = false,
-                iconCount = 8,
-                iconSize = 32,
-                opacity = 1,
-                padding = 4,
-                stackAnchor = "BOTTOMRIGHT",
-                stackOffsetX = 3,
-                stackOffsetY = -1,
-                stackSize = 9,
-                stackTextColor = {
-                  [1] = 1,
-                  [2] = 1,
-                  [3] = 1,
-                  [4] = 1
-                },
-                xOffset = 0,
-                yOffset = 0,
-                zoom = 0
+                rowValue = {
+                  name = "Poppins Medium",
+                  size = 11
+                }
               },
-              row2 = {
-                iconCount = 0
-              },
-              row3 = {
-                iconCount = 0
-              },
-              shape = "icon",
-              showActiveState = true,
-              showItemCharges = true,
-              showOnlyInCombat = false,
-              showOnlyOnCooldown = false,
-              showOnlyWhenActive = false,
-              showOnlyWhenOffCooldown = false,
-              showProfessionQuality = true,
-              showRechargeSwipe = false,
-              spacing = 4,
-              specSpecific = true,
-              tooltipContext = "customTrackers",
-              visibilityMode = "always"
+              textures = {
+                background = "Square",
+                bar = "Quazii v3",
+                border = "Quazii v2"
+              }
             }
           }
         },

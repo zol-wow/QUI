@@ -220,7 +220,7 @@ local defaults = {
         damageMeter = {
             -- Shadow of Blizzard's built-in Damage Meter settings (Midnight 12.0+).
             -- QUI options page writes here; sync layer pushes through to Blizzard.
-            -- See skinning/gameplay/damage_meter.lua and modules/ui/settings/skinning_content.lua.
+            -- See skinning/gameplay/damage_meter.lua and modules/ui/settings/damage_meter_content.lua.
             enabled         = false,                                -- match Blizzard's stock (off by default)
             visibility      = 0,                                    -- Enum.DamageMeterVisibility.Always (verified)
             style           = 0,                                    -- Enum.DamageMeterStyle.Default (verified)
@@ -232,6 +232,19 @@ local defaults = {
             textSize        = 100,                                  -- 50–150 in Edit Mode, internally 0–1 scale
             windowAlpha     = 100,                                  -- 50–100% in Edit Mode, internally 0–1 alpha
             backgroundAlpha = 100,                                  -- 0–100% in Edit Mode, internally 0–1 alpha
+            -- QUI texture/font customization (Appearance > Damage Meter sub-page).
+            -- nil/0/"_inherit" sentinels mean "fall back to current behavior".
+            -- See spec: docs/superpowers/specs/2026-05-05-damage-meter-style-design.md
+            appearance = {
+                global = {
+                    textures = { bar = nil, background = nil, border = nil },
+                    fonts = {
+                        rowName  = { name = nil, size = 0, outline = "_inherit" },
+                        rowValue = { name = nil, size = 0, outline = "_inherit" },
+                        header   = { name = nil, size = 0, outline = "_inherit" },
+                    },
+                },
+            },
         },
 
         -- Alert & Toast Skinning Settings (enabled via general.skinAlerts)

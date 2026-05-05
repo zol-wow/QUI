@@ -471,24 +471,6 @@ local function BuildSkinningTab(tabContent)
     if general.skinProfessions == nil then general.skinProfessions = false end
     if general.skinStatusTrackingBars == nil then general.skinStatusTrackingBars = true end
     if general.skinDamageMeter == nil then general.skinDamageMeter = true end
-    if not db.damageMeter then db.damageMeter = {} end
-    local dm = db.damageMeter
-    if dm.enabled         == nil then dm.enabled         = false end
-    if dm.visibility      == nil then dm.visibility      = 0 end
-    if dm.style           == nil then dm.style           = 0 end
-    if dm.numberDisplay   == nil then dm.numberDisplay   = 0 end
-    if dm.useClassColor   == nil then dm.useClassColor   = true end
-    if dm.showBarIcons    == nil then dm.showBarIcons    = true end
-    if dm.barHeight       == nil then dm.barHeight       = 25 end
-    if dm.barSpacing      == nil then dm.barSpacing      = 4 end
-    if dm.textSize        == nil then dm.textSize        = 100 end
-    if dm.windowAlpha     == nil then dm.windowAlpha     = 100 end
-    if dm.backgroundAlpha == nil then dm.backgroundAlpha = 100 end
-
-    local function WriteDM()
-        if _G.QUI_DamageMeter_ApplyToBlizzard then _G.QUI_DamageMeter_ApplyToBlizzard() end
-    end
-
     CreateCollapsible("Skin Blizzard Frames", 13 * FORM_ROW + 8, function(body)
         local sy = -4
         sy = P(GUI:CreateFormCheckbox(body, "Alert Frames (Req. Reload)", "skinAlerts", general, ReloadConfirm,
@@ -497,9 +479,6 @@ local function BuildSkinningTab(tabContent)
             { description = "Skin the Auction House window and its tabs. Requires a reload." }), body, sy)
         sy = P(GUI:CreateFormCheckbox(body, "Crafting Orders (Req. Reload)", "skinCraftingOrders", general, ReloadConfirm,
             { description = "Skin the Crafting Orders interface used by professions. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Damage Meter", "skinDamageMeter", general, function()
-            if _G.QUI_RefreshDamageMeterSkin then _G.QUI_RefreshDamageMeterSkin() end
-        end, { description = "Skin Blizzard's built-in damage meter (Midnight 12.0+) when enabled in WoW's Gameplay Enhancements options." }), body, sy)
         sy = P(GUI:CreateFormCheckbox(body, "Encounter Power Bar (Req. Reload)", "skinPowerBarAlt", general, ReloadConfirm,
             { description = "Skin the alternate power bar some encounters use (e.g., boss add health bars). Requires a reload." }), body, sy)
         sy = P(GUI:CreateFormCheckbox(body, "Inspect Frame (Req. Reload)", "skinInspectFrame", general, ReloadConfirm,
@@ -591,44 +570,6 @@ local function BuildSkinningTab(tabContent)
             { description = "Vertical pixel offset of the text from its anchor." }), body, sy)
         sy = AddBorderOverrides(body, sy, general, "statusTrackingBars")
         AddBgOverrides(body, sy, general, "statusTrackingBars")
-    end)
-
-    CreateCollapsible("Damage Meter", 11 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Enable Damage Meter", "enabled", dm, WriteDM,
-            { description = "Master toggle for Blizzard's built-in damage meter (Midnight 12.0+). Mirrors the damageMeterEnabled CVar." }), body, sy)
-        sy = P(GUI:CreateFormDropdown(body, "Visibility", {
-            { text = "Always",     value = 0 },
-            { text = "In Combat",  value = 1 },
-            { text = "Hidden",     value = 2 },
-        }, "visibility", dm, WriteDM,
-            { description = "When the meter is visible. Always = always shown when enabled; In Combat = only visible while you're in combat; Hidden = enabled but invisible." }), body, sy)
-        sy = P(GUI:CreateFormDropdown(body, "Style", {
-            { text = "Default",    value = 0 },
-            { text = "Bordered",   value = 1 },
-            { text = "Thin",       value = 3 },
-        }, "style", dm, WriteDM,
-            { description = "Bar layout style. Default = standard rows; Bordered = framed rows; Thin = compact rows with text above bar." }), body, sy)
-        sy = P(GUI:CreateFormDropdown(body, "Number Display", {
-            { text = "Minimal",    value = 0 },
-            { text = "Compact",    value = 1 },
-            { text = "Complete",   value = 2 },
-        }, "numberDisplay", dm, WriteDM,
-            { description = "How values are formatted on each bar. Minimal = single value; Compact = value (per-second); Complete = value (per-second) percentage%." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Use Class Colors", "useClassColor", dm, WriteDM,
-            { description = "Color each row's bar by the player's class color. Disable for monochrome." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Show Bar Icons", "showBarIcons", dm, WriteDM,
-            { description = "Show the spec or class icon on the left side of each row." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Bar Height", 15, 40, 1, "barHeight", dm, WriteDM, nil,
-            { description = "Pixel height of each row (15-40)." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Bar Spacing", 2, 10, 1, "barSpacing", dm, WriteDM, nil,
-            { description = "Pixel spacing between rows (2-10)." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Text Size", 50, 150, 10, "textSize", dm, WriteDM, nil,
-            { description = "Text size as a percentage of default (50-150, step 10)." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Window Alpha", 50, 100, 1, "windowAlpha", dm, WriteDM, nil,
-            { description = "Window transparency as a percentage (50-100). Lower values make the meter more see-through." }), body, sy)
-        P(GUI:CreateFormSlider(body, "Background Alpha", 0, 100, 1, "backgroundAlpha", dm, WriteDM, nil,
-            { description = "Background transparency as a percentage (0-100). 0 hides the row backgrounds entirely." }), body, sy)
     end)
 
     -- Objective Tracker — flattened into Skinning. All

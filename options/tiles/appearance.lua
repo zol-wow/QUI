@@ -124,6 +124,18 @@ function V2.Register(frame)
                     subTabName = "Theme & Colors",
                 },
             },
+            {
+                id = "damageMeter",
+                name = "Damage Meter",
+                sectionNav = true,
+                featureId = "damageMeterPage",
+                searchContext = {
+                    tileId = "appearance",
+                    tabName = SEARCH_TAB_NAME,
+                    subPageIndex = 10,
+                    subTabName = "Damage Meter",
+                },
+            },
         },
         relatedSettings = {
             { label = "Chat & Tooltips",    tileId = "chat_tooltips", subPageIndex = 1 },

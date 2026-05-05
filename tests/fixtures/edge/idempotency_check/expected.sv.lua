@@ -1050,6 +1050,25 @@ return {
             showWhenTargetExists = false
           },
           damageMeter = {
+            appearance = {
+              global = {
+                fonts = {
+                  header = {
+                    outline = "_inherit",
+                    size = 0
+                  },
+                  rowName = {
+                    outline = "_inherit",
+                    size = 0
+                  },
+                  rowValue = {
+                    outline = "_inherit",
+                    size = 0
+                  }
+                },
+                textures = {}
+              }
+            },
             backgroundAlpha = 100,
             barHeight = 25,
             barSpacing = 4,

@@ -15,6 +15,7 @@
     <Script file="..\modules\ui\settings\hud_layering_content.lua"/>
     <Script file="..\modules\ui\settings\autohide_content.lua"/>
     <Script file="..\modules\ui\settings\skinning_content.lua"/>
+    <Script file="..\modules\ui\settings\damage_meter_content.lua"/>
     <Script file="..\core\settings\content\welcome_page.lua"/>
     <Script file="..\core\settings\content\modules_page.lua"/>
     <Script file="..\core\settings\content\modules_visual_onboarding.lua"/>
