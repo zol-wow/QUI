@@ -10,6 +10,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha19 - 2026-05-05
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha19: back up `WTF/` and export your profile first.
+
+### Known issues
+- **GCD swipe rendering on CDM icons can behave inconsistently right now.** The shared GCD swipe (the brief 1.5s sweep that overlays icons during the global cooldown) is showing up on the wrong icons or not at all in some configurations. This is a pre-existing issue and is being tracked for a follow-up alpha — the event-scoping work in this build is unrelated. If you want to mute the symptom in the meantime, disable Show GCD Swipe under each affected CDM container's settings.
+
+### Added
+- **Channel-shorten Number preset now actually drops to the channel number.** Previously the Number preset was identical to Letter and numbered chat channels (`CHAT_MSG_CHANNEL`) were out of scope. Both presets now handle numbered channels:
+  - **Letter** abbreviates the channel name: `[1. General]` → `[Gen]`, `[2. Trade - Stormwind]` → `[T]`, `[4. Trade (Services)]` → `[S]`. Falls back to the first three alphanumeric characters for unknown / custom channels.
+  - **Number** drops the name and keeps just the number: `[1. General]` → `[1]`.
+
+  Built-in abbreviations cover Blizzard's standard channels (Trade, LFG, Guild Recruitment, etc.) before falling through to the 3-character rule.
+
+### Changed
+- **Login is dramatically faster on populated chat histories.** Eager prune on each `FCF_Close` fire previously decompressed and re-encoded the full chat history blob; Blizzard fires `FCF_Close` ~15 times during chat layout restoration at login, costing ~9s of CPU on a populated history. The hook now queues frame IDs + close timestamps and folds the prune into the existing 5-minute / `PLAYER_LOGOUT` flush. **Measured on a chatty character: `ADDON_LOADED` → `PLAYER_LOGIN` gap dropped from 9.2s to 1.9s; QUI CPU during login dropped from 7.4s to 0.07s. FCF_Close hook total: 9001ms / 15 fires → 0.1ms / 15 fires.** The cross-contamination guarantee is preserved — entries belonging to a closed frame are still dropped before the next SV write, so a recycled slot on next login won't replay stale content.
+- **CDM event handlers scoped to reduce raid-combat GC churn.**
+  - `UNIT_SPELLCAST_*` events now register via `RegisterUnitEvent("...", "player")` instead of unit-agnostic, cutting other-unit cast traffic in raid.
+  - `SPELL_UPDATE_COOLDOWN` with a non-nil, non-GCD spell ID now scopes to matching icons through a new per-spellID dispatch path; the full pool walk only runs when the event fires with no spell ID, with the GCD spell ID, or when the icon's GCD flag flipped.
+  - `SPELL_ACTIVATION_OVERLAY_GLOW_*` and `UNIT_SPELLCAST_SUCCEEDED` also use scoped resolves.
+  - Highlighter consolidated to dispatch from the central CDM event frame instead of registering its own `UNIT_SPELLCAST_SUCCEEDED`.
+- **`TickCacheGetOverrideSpell` / `TickCacheGetDisplayCount` no longer short-circuit on secret returns** — the cache now stores and serves them so secret-bearing spell IDs stop hitting the C API on every call.
+
+### Fixed
+- **Chat tab clicks no longer get eaten in top-mode chat layouts.** When the edit box is positioned at the top of the chat frame, it shares the strip with the chat tabs. Blizzard sometimes leaves the edit box shown (chatStyle `im`, `lockShow`, sticky channels) which left an invisible-but-mouse-enabled frame eating tab clicks. The unfocused top-mode edit box now disables mouse so clicks fall through to the tabs; mouse is restored on focus, on bottom-mode config, and on edit-box style teardown.
+
+
+
 ## v3.6.0-alpha18 - 2026-05-04
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing v34 profiles carry over unchanged. v3.5.x → alpha18: back up `WTF/` and export your profile first.
