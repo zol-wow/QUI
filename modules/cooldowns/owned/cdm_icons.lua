@@ -1349,6 +1349,7 @@ ApplyResolvedCooldown = function(icon)
         end
         if mode == "aura" then
             icon._lastDurObjKey = nil
+            icon._lastDurObj = nil
             if addonCD.SetReverse then
                 pcall(addonCD.SetReverse, addonCD, false)
             end
@@ -1359,6 +1360,7 @@ ApplyResolvedCooldown = function(icon)
         end
         if icon._lastDurObjKey ~= nil then
             icon._lastDurObjKey = nil
+            icon._lastDurObj = nil
             if not icon._showingGCDSwipe then
                 if addonCD.SetReverse then
                     pcall(addonCD.SetReverse, addonCD, false)
@@ -1374,10 +1376,16 @@ ApplyResolvedCooldown = function(icon)
     -- Dedupe: only re-bind when the source DurObj changes (mode swap, override
     -- swap, aura→CD transition, etc.). Re-binding on every event restarts the
     -- C-side sweep + countdown text — visible as text vanishing briefly.
+    -- Aura mode also compares the DurationObject userdata identity: aura
+    -- refreshes retain the same auraInstanceID (so the key is stable) but
+    -- C_UnitAuras.GetAuraDuration returns a new userdata wrapper, which is
+    -- our refresh signal. Same C-userdata identity check the bar path uses
+    -- in cdm_bars.lua — safe in combat, no secret values.
     local shouldScheduleExpiry = cdActive == true
         and (resolvedCdInfo ~= nil or hasNumericCooldown)
         and (mode == "cooldown" or mode == "charge" or mode == "item-cooldown")
-    if icon._lastDurObjKey == key then
+    if icon._lastDurObjKey == key
+       and (mode ~= "aura" or durObj == icon._lastDurObj) then
         if shouldScheduleExpiry then
             if resolvedCdInfo then
                 ScheduleCooldownExpiryRefresh(icon, key, resolvedCdInfo)
@@ -1395,6 +1403,7 @@ ApplyResolvedCooldown = function(icon)
         return true
     end
     icon._lastDurObjKey = key
+    icon._lastDurObj = durObj
 
     local applied
     if durObj then
@@ -1407,6 +1416,7 @@ ApplyResolvedCooldown = function(icon)
     end
     if not applied then
         icon._lastDurObjKey = nil
+        icon._lastDurObj = nil
         CancelCooldownExpiryRefresh(icon)
         return false
     end
