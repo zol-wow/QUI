@@ -2849,11 +2849,13 @@ do
                 end
             end,
             onOpen = function()
-                -- CreateChildOverlay sets SetClampedToScreen(true) — keep that
-                -- so dragging/resizing the chat in Layout Mode stays on-screen.
+                -- Override the framework's default clamp so the chat frame
+                -- can be dragged past the screen edge in Layout Mode.
                 C_Timer.After(0, function()
                     local f = _G.ChatFrame1
-                    if f and f.SetResizable then f:SetResizable(true) end
+                    if not f then return end
+                    if f.SetResizable then f:SetResizable(true) end
+                    if f.SetClampedToScreen then f:SetClampedToScreen(false) end
                 end)
             end,
         })
