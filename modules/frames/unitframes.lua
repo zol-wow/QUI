@@ -4904,18 +4904,25 @@ do
                 if auras.buffFilterOnlyMine == nil then auras.buffFilterOnlyMine = true end
                 if auras.buffClassifications == nil then auras.buffClassifications = {} end
                 if auras.debuffClassifications == nil then auras.debuffClassifications = {} end
-                Helpers.EnsureDefaults(auras.buffClassifications, {
-                    raid = false,
-                    raidInCombat = false,
+                local buffClassifications = auras.buffClassifications
+                if rawget(buffClassifications, "helpful") == nil and (buffClassifications.raid or buffClassifications.raidInCombat) then
+                    buffClassifications.helpful = true
+                end
+                Helpers.EnsureDefaults(buffClassifications, {
+                    helpful = false,
                     cancelable = false,
                     notCancelable = false,
                     important = false,
                     bigDefensive = false,
                     externalDefensive = false,
                 })
-                Helpers.EnsureDefaults(auras.debuffClassifications, {
-                    raid = false,
-                    raidInCombat = false,
+                local debuffClassifications = auras.debuffClassifications
+                if rawget(debuffClassifications, "harmful") == nil and (debuffClassifications.raid or debuffClassifications.raidInCombat) then
+                    debuffClassifications.harmful = true
+                end
+                Helpers.EnsureDefaults(debuffClassifications, {
+                    harmful = false,
+                    dispellable = false,
                     crowdControl = false,
                     important = false,
                 })
@@ -4941,9 +4948,9 @@ do
                         RefreshUF()
                     end), body, sy)
                     local debuffClass = auras.debuffClassifications
-                    local row = GUI:CreateFormCheckbox(body, "Raid", "raid", debuffClass, RefreshUF)
+                    local row = GUI:CreateFormCheckbox(body, "Harmful", "harmful", debuffClass, RefreshUF)
                     debuffClassRows[#debuffClassRows + 1] = row; sy = P(row, body, sy)
-                    row = GUI:CreateFormCheckbox(body, "Raid (In Combat)", "raidInCombat", debuffClass, RefreshUF)
+                    row = GUI:CreateFormCheckbox(body, "Dispellable", "dispellable", debuffClass, RefreshUF)
                     debuffClassRows[#debuffClassRows + 1] = row; sy = P(row, body, sy)
                     row = GUI:CreateFormCheckbox(body, "Crowd Control", "crowdControl", debuffClass, RefreshUF)
                     debuffClassRows[#debuffClassRows + 1] = row; sy = P(row, body, sy)
@@ -4961,7 +4968,7 @@ do
 
             -- Auras - Buffs
             local buffRows = 8
-            if isPlayerTargetAuraFilterUnit then buffRows = buffRows + 9 end
+            if isPlayerTargetAuraFilterUnit then buffRows = buffRows + 8 end
             CreateCollapsible(content, "Buff Icons", buffRows * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormCheckbox(body, "Show Buffs", "showBuffs", auras, RefreshUF), body, sy)
@@ -4977,9 +4984,7 @@ do
                     end), body, sy)
                     sy = P(GUI:CreateFormCheckbox(body, "Only My Buffs", "buffFilterOnlyMine", auras, RefreshUF), body, sy)
                     local buffClass = auras.buffClassifications
-                    local row = GUI:CreateFormCheckbox(body, "Raid", "raid", buffClass, RefreshUF)
-                    buffClassRows[#buffClassRows + 1] = row; sy = P(row, body, sy)
-                    row = GUI:CreateFormCheckbox(body, "Raid (In Combat)", "raidInCombat", buffClass, RefreshUF)
+                    local row = GUI:CreateFormCheckbox(body, "Helpful", "helpful", buffClass, RefreshUF)
                     buffClassRows[#buffClassRows + 1] = row; sy = P(row, body, sy)
                     row = GUI:CreateFormCheckbox(body, "Cancelable", "cancelable", buffClass, RefreshUF)
                     buffClassRows[#buffClassRows + 1] = row; sy = P(row, body, sy)

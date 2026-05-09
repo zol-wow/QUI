@@ -15,6 +15,8 @@ local GetTime = GetTime
 local C_Timer = C_Timer
 local math_floor = math.floor
 local pairs = pairs
+local rawget = rawget
+local type = type
 
 -- QUI_UF is created in unitframes.lua and exported to ns.QUI_UnitFrames.
 -- This file loads after unitframes.lua, so the reference is available.
@@ -49,10 +51,8 @@ local PREVIEW_AURAS = {
 }
 
 -- Maps DB toggle keys to Blizzard classification filter strings.
--- Keep this in sync with the group frame aura classification options.
 local BUFF_CLASSIFICATION_MAP = {
-    raid              = "HELPFUL|RAID",
-    raidInCombat      = "HELPFUL|RAID_IN_COMBAT",
+    helpful           = { "HELPFUL|RAID", "HELPFUL|RAID_IN_COMBAT" },
     cancelable        = "HELPFUL|CANCELABLE",
     notCancelable     = "HELPFUL|NOT_CANCELABLE",
     important         = "HELPFUL|IMPORTANT",
@@ -61,8 +61,8 @@ local BUFF_CLASSIFICATION_MAP = {
 }
 
 local DEBUFF_CLASSIFICATION_MAP = {
-    raid         = "HARMFUL|RAID",
-    raidInCombat = "HARMFUL|RAID_IN_COMBAT",
+    harmful     = { "HARMFUL|RAID", "HARMFUL|RAID_IN_COMBAT" },
+    dispellable = "HARMFUL|RAID_PLAYER_DISPELLABLE",
     crowdControl = "HARMFUL|CROWD_CONTROL",
     important    = "HARMFUL|IMPORTANT",
 }
@@ -264,14 +264,40 @@ local function GetAuraIcon(container, index, parent, size, auraSettings, isDebuf
     return icon
 end
 
+local function IsClassificationEnabled(classifications, key)
+    if key == "helpful" then
+        local value = rawget(classifications, "helpful")
+        if value ~= nil then return value end
+        -- Legacy migration: previous Player/Target buff filters stored the
+        -- two raid-frame filters as separate raid/raidInCombat toggles.
+        return classifications.raid or classifications.raidInCombat
+    end
+
+    if key == "harmful" then
+        local value = rawget(classifications, "harmful")
+        if value ~= nil then return value end
+        -- Legacy migration: previous Player/Target debuff filters stored the
+        -- two raid-frame filters as separate raid/raidInCombat toggles.
+        return classifications.raid or classifications.raidInCombat
+    end
+
+    return classifications[key]
+end
+
 local function BuildClassificationFilters(classifications, classificationMap)
     if not classifications or not classificationMap then return nil end
 
     local filters
-    for key, filterString in pairs(classificationMap) do
-        if classifications[key] then
+    for key, filterSpec in pairs(classificationMap) do
+        if IsClassificationEnabled(classifications, key) then
             filters = filters or {}
-            filters[#filters + 1] = filterString
+            if type(filterSpec) == "table" then
+                for _, filterString in ipairs(filterSpec) do
+                    filters[#filters + 1] = filterString
+                end
+            else
+                filters[#filters + 1] = filterSpec
+            end
         end
     end
 

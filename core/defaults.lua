@@ -1777,8 +1777,8 @@ local defaults = {
                     buffFilterMode = "off",
                     debuffFilterMode = "off",
                     buffFilterOnlyMine = true,
-                    buffClassifications = { raid = false, raidInCombat = false, cancelable = false, notCancelable = false, important = false, bigDefensive = false, externalDefensive = false },
-                    debuffClassifications = { raid = false, raidInCombat = false, crowdControl = false, important = false },
+                    buffClassifications = { helpful = false, cancelable = false, notCancelable = false, important = false, bigDefensive = false, externalDefensive = false },
+                    debuffClassifications = { harmful = false, dispellable = false, crowdControl = false, important = false },
                 },
                 -- Status indicators (player only)
                 indicators = {
@@ -2005,8 +2005,8 @@ local defaults = {
                     buffFilterMode = "off",
                     debuffFilterMode = "off",
                     buffFilterOnlyMine = true,
-                    buffClassifications = { raid = false, raidInCombat = false, cancelable = false, notCancelable = false, important = false, bigDefensive = false, externalDefensive = false },
-                    debuffClassifications = { raid = false, raidInCombat = false, crowdControl = false, important = false },
+                    buffClassifications = { helpful = false, cancelable = false, notCancelable = false, important = false, bigDefensive = false, externalDefensive = false },
+                    debuffClassifications = { harmful = false, dispellable = false, crowdControl = false, important = false },
                 },
                 -- Target marker (raid icons like skull, cross, etc.)
                 targetMarker = {

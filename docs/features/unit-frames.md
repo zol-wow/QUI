@@ -29,7 +29,7 @@ To reposition frames, use `/qui editmode` to enter the drag-and-drop edit mode.
 - **Portrait** -- Optional unit portrait on the left or right side with border options.
 - **Castbar** -- Per-unit castbar with configurable width, height, color, and spell icon. Can be anchored to its unit frame or placed standalone. Highlights interruptible casts with customizable non-interruptible cast color, displays channel tick marks, and supports GCD display as a castbar for instant spells.
 - **Target inline ToT** -- On the target frame, shows the target-of-target name inline as ">> TotName" after the target's name.
-- **Auras (buffs/debuffs)** -- Configurable icon size, anchor position, growth direction, maximum icon count, duration/stack text, and Player/Target type filtering for Blizzard aura classifications.
+- **Auras (buffs/debuffs)** -- Configurable icon size, anchor position, growth direction, maximum icon count, duration/stack text, and Player/Target type filtering for Blizzard aura classifications including Helpful buffs and Harmful, Dispellable, Crowd Control, and Important debuffs.
 - **Indicators** -- Rested indicator, combat indicator, stance indicator (player only), target marker (raid icons), and leader/assistant icons.
 - **Absorb shields** -- Visual overlay on the health bar showing absorb amounts with configurable opacity and texture.
 - **Heal prediction** -- Incoming heal overlay on the health bar.

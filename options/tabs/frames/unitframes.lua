@@ -913,18 +913,25 @@ local function CreateUnitFramesPage(parent)
                 if auraDB.buffFilterOnlyMine == nil then auraDB.buffFilterOnlyMine = true end
                 if auraDB.buffClassifications == nil then auraDB.buffClassifications = {} end
                 if auraDB.debuffClassifications == nil then auraDB.debuffClassifications = {} end
-                Helpers.EnsureDefaults(auraDB.buffClassifications, {
-                    raid = false,
-                    raidInCombat = false,
+                local buffClassifications = auraDB.buffClassifications
+                if rawget(buffClassifications, "helpful") == nil and (buffClassifications.raid or buffClassifications.raidInCombat) then
+                    buffClassifications.helpful = true
+                end
+                Helpers.EnsureDefaults(buffClassifications, {
+                    helpful = false,
                     cancelable = false,
                     notCancelable = false,
                     important = false,
                     bigDefensive = false,
                     externalDefensive = false,
                 })
-                Helpers.EnsureDefaults(auraDB.debuffClassifications, {
-                    raid = false,
-                    raidInCombat = false,
+                local debuffClassifications = auraDB.debuffClassifications
+                if rawget(debuffClassifications, "harmful") == nil and (debuffClassifications.raid or debuffClassifications.raidInCombat) then
+                    debuffClassifications.harmful = true
+                end
+                Helpers.EnsureDefaults(debuffClassifications, {
+                    harmful = false,
+                    dispellable = false,
                     crowdControl = false,
                     important = false,
                 })
@@ -1004,9 +1011,9 @@ local function CreateUnitFramesPage(parent)
                 y = y - FORM_ROW
 
                 local debuffClass = auraDB.debuffClassifications
-                local row = GUI:CreateFormCheckbox(tabContent, "Raid", "raid", debuffClass, RefreshAuras)
+                local row = GUI:CreateFormCheckbox(tabContent, "Harmful", "harmful", debuffClass, RefreshAuras)
                 row:SetPoint("TOPLEFT", PAD, y); row:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0); debuffClassRows[#debuffClassRows + 1] = row; y = y - FORM_ROW
-                row = GUI:CreateFormCheckbox(tabContent, "Raid (In Combat)", "raidInCombat", debuffClass, RefreshAuras)
+                row = GUI:CreateFormCheckbox(tabContent, "Dispellable", "dispellable", debuffClass, RefreshAuras)
                 row:SetPoint("TOPLEFT", PAD, y); row:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0); debuffClassRows[#debuffClassRows + 1] = row; y = y - FORM_ROW
                 row = GUI:CreateFormCheckbox(tabContent, "Crowd Control", "crowdControl", debuffClass, RefreshAuras)
                 row:SetPoint("TOPLEFT", PAD, y); row:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0); debuffClassRows[#debuffClassRows + 1] = row; y = y - FORM_ROW
@@ -1225,9 +1232,7 @@ local function CreateUnitFramesPage(parent)
                 y = y - FORM_ROW
 
                 local buffClass = auraDB.buffClassifications
-                local row = GUI:CreateFormCheckbox(tabContent, "Raid", "raid", buffClass, RefreshAuras)
-                row:SetPoint("TOPLEFT", PAD, y); row:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0); buffClassRows[#buffClassRows + 1] = row; y = y - FORM_ROW
-                row = GUI:CreateFormCheckbox(tabContent, "Raid (In Combat)", "raidInCombat", buffClass, RefreshAuras)
+                local row = GUI:CreateFormCheckbox(tabContent, "Helpful", "helpful", buffClass, RefreshAuras)
                 row:SetPoint("TOPLEFT", PAD, y); row:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0); buffClassRows[#buffClassRows + 1] = row; y = y - FORM_ROW
                 row = GUI:CreateFormCheckbox(tabContent, "Cancelable", "cancelable", buffClass, RefreshAuras)
                 row:SetPoint("TOPLEFT", PAD, y); row:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0); buffClassRows[#buffClassRows + 1] = row; y = y - FORM_ROW
