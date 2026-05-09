@@ -1,6 +1,6 @@
 local ADDON_NAME, ns = ...
 
-local SpellList = ns.QUI_GroupFramesSpellListSettings
+local AuraDefaults = ns.QUI_GroupFramesAuraDefaults
 
 local AuraIndicatorsEditor = ns.QUI_GroupFramesAuraIndicatorsSettings or {}
 ns.QUI_GroupFramesAuraIndicatorsSettings = AuraIndicatorsEditor
@@ -9,6 +9,10 @@ local FORM_ROW = 32
 local DROP_ROW = 52
 local SLIDER_HEIGHT = 65
 local PAD = 10
+local SUGGEST_CELL_SIZE = 36
+local SUGGEST_ICON_SIZE = 28
+local SUGGEST_CELL_GAP = 2
+local SUGGEST_CELL_STRIDE = SUGGEST_CELL_SIZE + SUGGEST_CELL_GAP
 
 local NINE_POINT_OPTIONS = {
     { value = "TOPLEFT", text = "Top Left" },
@@ -367,23 +371,10 @@ local function GetIndicatorLabel(indicator, index)
 end
 
 local function GetSuggestionSpells(entries)
-    local assigned = {}
-    for _, entry in ipairs(entries or {}) do
-        assigned[entry.spellID] = true
+    if AuraDefaults and type(AuraDefaults.GetSuggestionSpells) == "function" then
+        return AuraDefaults.GetSuggestionSpells(entries)
     end
-
-    local suggestions = {}
-    local added = {}
-    local presets = SpellList and SpellList.GetDefaultPresets and SpellList.GetDefaultPresets() or {}
-    for _, preset in ipairs(presets) do
-        for _, spell in ipairs(preset.spells or {}) do
-            if not assigned[spell.id] and not added[spell.id] then
-                suggestions[#suggestions + 1] = spell
-                added[spell.id] = true
-            end
-        end
-    end
-    return suggestions
+    return {}
 end
 
 function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChange)
@@ -603,50 +594,67 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
         wipe(activeAuraRows)
     end
 
-    local function AcquireSuggestRow()
-        local row = table.remove(suggestRows)
-        if row then
-            row:Show()
-            row:ClearAllPoints()
-            return row
+    local function AcquireSuggestCell()
+        local cell = table.remove(suggestRows)
+        if cell then
+            cell:Show()
+            cell:ClearAllPoints()
+            return cell
         end
 
-        row = CreateFrame("Frame", nil, auraListArea)
-        row:SetHeight(22)
-        row.icon = row:CreateTexture(nil, "ARTWORK")
-        row.icon:SetSize(14, 14)
-        row.icon:SetPoint("LEFT", 4, 0)
-        row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        cell = CreateFrame("Button", nil, auraListArea, "BackdropTemplate")
+        cell:SetSize(SUGGEST_CELL_SIZE, SUGGEST_CELL_SIZE)
+        cell:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        ApplyPixelBackdrop(cell, 1, true)
+        cell:SetBackdropColor(0, 0, 0, 0)
+        cell:SetBackdropBorderColor(0.2, 0.2, 0.2, 0.5)
 
-        row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        row.name:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
-        row.name:SetJustifyH("LEFT")
+        cell.icon = cell:CreateTexture(nil, "ARTWORK")
+        cell.icon:SetSize(SUGGEST_ICON_SIZE, SUGGEST_ICON_SIZE)
+        cell.icon:SetPoint("CENTER")
+        cell.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-        row.add = CreateFrame("Button", nil, row)
-        row.add:SetSize(18, 18)
-        row.add:SetPoint("RIGHT", row, "RIGHT", -2, 0)
-        row.addText = row.add:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        row.addText:SetPoint("CENTER")
-        row.addText:SetText("+")
-        row.addText:SetTextColor(0.3, 0.8, 0.3, 1)
-        row.add:SetScript("OnEnter", function()
-            row.addText:SetTextColor(0.4, 1, 0.4, 1)
+        cell.highlight = cell:CreateTexture(nil, "HIGHLIGHT")
+        cell.highlight:SetAllPoints()
+        cell.highlight:SetColorTexture((C.accent and C.accent[1]) or 0.3, (C.accent and C.accent[2]) or 0.7, (C.accent and C.accent[3]) or 1, 0.15)
+
+        cell:SetScript("OnEnter", function(self)
+            self:SetBackdropBorderColor((C.accent and C.accent[1]) or 0.3, (C.accent and C.accent[2]) or 0.7, (C.accent and C.accent[3]) or 1, 0.8)
+            if GameTooltip and self._spell then
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetFrameStrata("TOOLTIP")
+                GameTooltip:SetFrameLevel(250)
+                GameTooltip:AddLine(self._spell.name or GetSpellName(self._spell.id) or ("Spell " .. tostring(self._spell.id)), 1, 1, 1)
+                GameTooltip:AddLine("ID: " .. tostring(self._spell.id), 0.5, 0.5, 0.5)
+                if self._spell.source then
+                    GameTooltip:AddLine(self._spell.source, 0.45, 0.65, 0.95)
+                end
+                GameTooltip:AddLine("Click to add", 0.5, 0.5, 0.5)
+                GameTooltip:Show()
+            end
         end)
-        row.add:SetScript("OnLeave", function()
-            row.addText:SetTextColor(0.3, 0.8, 0.3, 1)
+        cell:SetScript("OnLeave", function(self)
+            self:SetBackdropBorderColor(0.2, 0.2, 0.2, 0.5)
+            if GameTooltip then
+                GameTooltip:Hide()
+            end
         end)
-        row.name:SetPoint("RIGHT", row.add, "LEFT", -4, 0)
 
-        return row
+        return cell
     end
 
     local activeSuggestRows = {}
     local function ReleaseSuggestRows()
-        for _, row in ipairs(activeSuggestRows) do
-            row:Hide()
-            row:ClearAllPoints()
-            row.add:SetScript("OnClick", nil)
-            table.insert(suggestRows, row)
+        for _, cell in ipairs(activeSuggestRows) do
+            cell:Hide()
+            cell:ClearAllPoints()
+            cell:SetScript("OnClick", nil)
+            cell._spell = nil
+            cell:SetAlpha(1)
+            if cell.icon then
+                cell.icon:SetDesaturated(false)
+            end
+            table.insert(suggestRows, cell)
         end
         wipe(activeSuggestRows)
     end
@@ -928,19 +936,31 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
         inputRow:SetPoint("RIGHT", auraListArea, "RIGHT", 0, 0)
         y = y - 28
 
-        for _, spell in ipairs(GetSuggestionSpells(entries)) do
-            local row = AcquireSuggestRow()
-            row:SetParent(auraListArea)
-            row:SetPoint("TOPLEFT", 0, y)
-            row:SetPoint("RIGHT", auraListArea, "RIGHT", 0, 0)
-            row.icon:SetTexture(GetSpellTexture(spell.id))
-            row.name:SetText(spell.name or GetSpellName(spell.id) or ("Spell " .. tostring(spell.id)))
-            row.add:SetScript("OnClick", function()
-                AddNewAura(spell.id)
-                rebuildAuraList()
-            end)
-            activeSuggestRows[#activeSuggestRows + 1] = row
-            y = y - 22
+        local suggestions = GetSuggestionSpells(entries)
+        if #suggestions > 0 then
+            local contentWidth = auraListArea:GetWidth()
+            if type(contentWidth) ~= "number" or contentWidth < SUGGEST_CELL_STRIDE then
+                contentWidth = 520
+            end
+            local cols = math.max(1, math.floor(contentWidth / SUGGEST_CELL_STRIDE))
+            local rows = math.ceil(#suggestions / cols)
+            for index, spell in ipairs(suggestions) do
+                local cell = AcquireSuggestCell()
+                local col = (index - 1) % cols
+                local row = math.floor((index - 1) / cols)
+                cell:SetParent(auraListArea)
+                cell:SetPoint("TOPLEFT", col * SUGGEST_CELL_STRIDE, y - (row * SUGGEST_CELL_STRIDE))
+                cell._spell = spell
+                cell.icon:SetTexture(spell.icon or GetSpellTexture(spell.id))
+                cell:SetScript("OnClick", function(_, button)
+                    if button == "LeftButton" or button == "RightButton" then
+                        AddNewAura(spell.id)
+                        rebuildAuraList()
+                    end
+                end)
+                activeSuggestRows[#activeSuggestRows + 1] = cell
+            end
+            y = y - (rows * SUGGEST_CELL_STRIDE) - 4
         end
 
         local selectedEntry = entries[selectedAuraIndex]

@@ -2,6 +2,7 @@ local ADDON_NAME, ns = ...
 
 local GroupFrameSpellList = ns.QUI_GroupFramesSpellListSettings or {}
 ns.QUI_GroupFramesSpellListSettings = GroupFrameSpellList
+local AuraDefaults = ns.QUI_GroupFramesAuraDefaults
 
 local function GetSpellName(spellId)
     if C_Spell and C_Spell.GetSpellName then
@@ -92,134 +93,6 @@ local function CreateMiniToggle(parent)
     return toggle
 end
 
-local AURA_FILTER_PRESETS = {
-    {
-        name = "Restoration Druid",
-        specID = 105,
-        spells = {
-            { id = 774, name = "Rejuvenation" },
-            { id = 8936, name = "Regrowth" },
-            { id = 33763, name = "Lifebloom" },
-            { id = 155777, name = "Germination" },
-            { id = 48438, name = "Wild Growth" },
-            { id = 102342, name = "Ironbark" },
-            { id = 33786, name = "Cyclone" },
-        },
-    },
-    {
-        name = "Restoration Shaman",
-        specID = 264,
-        spells = {
-            { id = 61295, name = "Riptide" },
-            { id = 974, name = "Earth Shield" },
-            { id = 383648, name = "Earth Shield (Ele)" },
-            { id = 98008, name = "Spirit Link Totem" },
-            { id = 108271, name = "Astral Shift" },
-        },
-    },
-    {
-        name = "Holy Paladin",
-        specID = 65,
-        spells = {
-            { id = 53563, name = "Beacon of Light" },
-            { id = 156910, name = "Beacon of Faith" },
-            { id = 200025, name = "Beacon of Virtue" },
-            { id = 156322, name = "Eternal Flame" },
-            { id = 223306, name = "Bestow Faith" },
-            { id = 1022, name = "Blessing of Protection" },
-            { id = 6940, name = "Blessing of Sacrifice" },
-            { id = 1044, name = "Blessing of Freedom" },
-        },
-    },
-    {
-        name = "Discipline Priest",
-        specID = 256,
-        spells = {
-            { id = 194384, name = "Atonement" },
-            { id = 17, name = "Power Word: Shield" },
-            { id = 41635, name = "Prayer of Mending" },
-            { id = 10060, name = "Power Infusion" },
-            { id = 47788, name = "Guardian Spirit" },
-            { id = 33206, name = "Pain Suppression" },
-        },
-    },
-    {
-        name = "Holy Priest",
-        specID = 257,
-        spells = {
-            { id = 139, name = "Renew" },
-            { id = 77489, name = "Echo of Light" },
-            { id = 41635, name = "Prayer of Mending" },
-            { id = 10060, name = "Power Infusion" },
-            { id = 47788, name = "Guardian Spirit" },
-            { id = 64844, name = "Divine Hymn" },
-        },
-    },
-    {
-        name = "Mistweaver Monk",
-        specID = 270,
-        spells = {
-            { id = 119611, name = "Renewing Mist" },
-            { id = 124682, name = "Enveloping Mist" },
-            { id = 115175, name = "Soothing Mist" },
-            { id = 191840, name = "Essence Font" },
-            { id = 116849, name = "Life Cocoon" },
-        },
-    },
-    {
-        name = "Preservation Evoker",
-        specID = 1468,
-        spells = {
-            { id = 364343, name = "Echo" },
-            { id = 366155, name = "Reversion" },
-            { id = 367364, name = "Echo Reversion" },
-            { id = 355941, name = "Dream Breath" },
-            { id = 376788, name = "Echo Dream Breath" },
-            { id = 363502, name = "Dream Flight" },
-            { id = 373267, name = "Lifebind" },
-        },
-    },
-    {
-        name = "Augmentation Evoker",
-        specID = 1473,
-        spells = {
-            { id = 410089, name = "Prescience" },
-            { id = 395152, name = "Ebon Might" },
-            { id = 360827, name = "Blistering Scales" },
-            { id = 413984, name = "Shifting Sands" },
-            { id = 410263, name = "Inferno's Blessing" },
-            { id = 410686, name = "Symbiotic Bloom" },
-            { id = 369459, name = "Source of Magic" },
-        },
-    },
-    {
-        name = "Common Defensives",
-        spells = {
-            { id = 31821, name = "Aura Mastery" },
-            { id = 97463, name = "Rallying Cry" },
-            { id = 15286, name = "Vampiric Embrace" },
-            { id = 64843, name = "Divine Hymn" },
-            { id = 51052, name = "Anti-Magic Zone" },
-            { id = 196718, name = "Darkness" },
-        },
-    },
-}
-
-local SPEC_TO_PRESET = {}
-for _, preset in ipairs(AURA_FILTER_PRESETS) do
-    if preset.specID then
-        SPEC_TO_PRESET[preset.specID] = preset
-    end
-end
-
-local COMMON_DEFENSIVES_PRESET
-for _, preset in ipairs(AURA_FILTER_PRESETS) do
-    if not preset.specID then
-        COMMON_DEFENSIVES_PRESET = preset
-        break
-    end
-end
-
 local BUFF_BLACKLIST_PRESETS = {
     {
         name = "Raid Buffs",
@@ -256,14 +129,6 @@ local DEBUFF_BLACKLIST_PRESETS = {
         },
     },
 }
-
-local function GetPlayerSpecID()
-    local specIndex = GetSpecialization and GetSpecialization()
-    if specIndex then
-        return GetSpecializationInfo(specIndex)
-    end
-    return nil
-end
 
 local function RebuildSpellToggleRows(container, listTable, presets, onChange)
     if type(listTable) ~= "table" then
@@ -429,15 +294,10 @@ local function RebuildSpellToggleRows(container, listTable, presets, onChange)
 end
 
 function GroupFrameSpellList.GetDefaultPresets()
-    local presets = {}
-    local specID = GetPlayerSpecID()
-    if specID and SPEC_TO_PRESET[specID] then
-        presets[#presets + 1] = SPEC_TO_PRESET[specID]
+    if AuraDefaults and type(AuraDefaults.GetDefaultPresets) == "function" then
+        return AuraDefaults.GetDefaultPresets()
     end
-    if COMMON_DEFENSIVES_PRESET then
-        presets[#presets + 1] = COMMON_DEFENSIVES_PRESET
-    end
-    return presets
+    return {}
 end
 
 function GroupFrameSpellList.GetBuffBlacklistPresets()

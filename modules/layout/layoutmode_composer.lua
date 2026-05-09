@@ -14,8 +14,14 @@ local FORM_ROW = 32
 local DROP_ROW = 52
 local SLIDER_HEIGHT = 65
 local PAD = 10
+local SUGGEST_CELL_SIZE = 36
+local SUGGEST_ICON_SIZE = 28
+local SUGGEST_CELL_GAP = 2
+local SUGGEST_CELL_STRIDE = SUGGEST_CELL_SIZE + SUGGEST_CELL_GAP
 local PREVIEW_SCALE = 2
 local UIKit = ns.UIKit
+local AuraDefaults = ns.QUI_GroupFramesAuraDefaults
+local IconLayout = ns.QUI_GroupFrameIconLayout
 
 ---------------------------------------------------------------------------
 -- PIXEL HELPERS (from groupframedesigner.lua)
@@ -383,70 +389,6 @@ local HEALTH_TINT_ANIMATION_DURATIONS = {
     pulse = 0.28,
 }
 
----------------------------------------------------------------------------
--- SPELL PRESETS
----------------------------------------------------------------------------
-local AURA_FILTER_PRESETS = {
-    { name = "Restoration Druid", specID = 105, spells = {
-        { id = 774, name = "Rejuvenation" }, { id = 8936, name = "Regrowth" },
-        { id = 33763, name = "Lifebloom" }, { id = 155777, name = "Germination" },
-        { id = 48438, name = "Wild Growth" }, { id = 102342, name = "Ironbark" }, { id = 33786, name = "Cyclone" },
-    }},
-    { name = "Restoration Shaman", specID = 264, spells = {
-        { id = 61295, name = "Riptide" }, { id = 974, name = "Earth Shield" },
-        { id = 383648, name = "Earth Shield (Ele)" }, { id = 98008, name = "Spirit Link Totem" },
-        { id = 108271, name = "Astral Shift" },
-    }},
-    { name = "Holy Paladin", specID = 65, spells = {
-        { id = 53563, name = "Beacon of Light" }, { id = 156910, name = "Beacon of Faith" },
-        { id = 200025, name = "Beacon of Virtue" }, { id = 156322, name = "Eternal Flame" },
-        { id = 223306, name = "Bestow Faith" }, { id = 1022, name = "Blessing of Protection" },
-        { id = 6940, name = "Blessing of Sacrifice" }, { id = 1044, name = "Blessing of Freedom" },
-    }},
-    { name = "Discipline Priest", specID = 256, spells = {
-        { id = 194384, name = "Atonement" }, { id = 17, name = "Power Word: Shield" },
-        { id = 41635, name = "Prayer of Mending" }, { id = 10060, name = "Power Infusion" },
-        { id = 47788, name = "Guardian Spirit" }, { id = 33206, name = "Pain Suppression" },
-    }},
-    { name = "Holy Priest", specID = 257, spells = {
-        { id = 139, name = "Renew" }, { id = 77489, name = "Echo of Light" },
-        { id = 41635, name = "Prayer of Mending" }, { id = 10060, name = "Power Infusion" },
-        { id = 47788, name = "Guardian Spirit" }, { id = 64844, name = "Divine Hymn" },
-    }},
-    { name = "Mistweaver Monk", specID = 270, spells = {
-        { id = 119611, name = "Renewing Mist" }, { id = 124682, name = "Enveloping Mist" },
-        { id = 115175, name = "Soothing Mist" }, { id = 191840, name = "Essence Font" },
-        { id = 116849, name = "Life Cocoon" },
-    }},
-    { name = "Preservation Evoker", specID = 1468, spells = {
-        { id = 364343, name = "Echo" }, { id = 366155, name = "Reversion" },
-        { id = 367364, name = "Echo Reversion" }, { id = 355941, name = "Dream Breath" },
-        { id = 376788, name = "Echo Dream Breath" }, { id = 363502, name = "Dream Flight" },
-        { id = 373267, name = "Lifebind" },
-    }},
-    { name = "Augmentation Evoker", specID = 1473, spells = {
-        { id = 410089, name = "Prescience" }, { id = 395152, name = "Ebon Might" },
-        { id = 360827, name = "Blistering Scales" }, { id = 413984, name = "Shifting Sands" },
-        { id = 410263, name = "Inferno's Blessing" }, { id = 410686, name = "Symbiotic Bloom" },
-        { id = 369459, name = "Source of Magic" },
-    }},
-    { name = "Common Defensives", spells = {
-        { id = 31821, name = "Aura Mastery" }, { id = 97463, name = "Rallying Cry" },
-        { id = 15286, name = "Vampiric Embrace" }, { id = 64843, name = "Divine Hymn" },
-        { id = 51052, name = "Anti-Magic Zone" }, { id = 196718, name = "Darkness" },
-    }},
-}
-
-local SPEC_TO_PRESET = {}
-for _, preset in ipairs(AURA_FILTER_PRESETS) do
-    if preset.specID then SPEC_TO_PRESET[preset.specID] = preset end
-end
-
-local COMMON_DEFENSIVES_PRESET
-for _, preset in ipairs(AURA_FILTER_PRESETS) do
-    if not preset.specID then COMMON_DEFENSIVES_PRESET = preset; break end
-end
-
 local BUFF_BLACKLIST_PRESETS = {
     { name = "Raid Buffs", spells = {
         { id = 1459, name = "Arcane Intellect" }, { id = 6673, name = "Battle Shout" },
@@ -480,7 +422,6 @@ end
 local FAKE_BUFF_ICONS = { 136034, 135940, 136081, 135932, 136063, 135987, 136070, 135864 }
 local FAKE_DEBUFF_ICONS = { 136207, 136130, 135813, 136118, 135959, 136066, 136133, 135835 }
 local FAKE_DEFENSIVE_ICONS = { 135936, 135919, 135874 }  -- Shield Wall, Divine Shield, Ice Block
-local FAKE_AURA_IND_ICONS = { 135928, 136051, 136085, 135907 }  -- Renew, Rejuv, PoM, Riptide
 local FAKE_PRIVATE_AURA_ICON = 136116  -- generic aura
 local FAKE_CLASS = "PALADIN"
 local FAKE_NAME = "Healena"
@@ -1283,10 +1224,7 @@ local function BuildSpellListSection(parent, getListTable, onChange, y, customPr
     if customPresets then
         presets = customPresets
     else
-        local specID = GetPlayerSpecID()
-        presets = {}
-        if specID and SPEC_TO_PRESET[specID] then presets[#presets+1] = SPEC_TO_PRESET[specID] end
-        if COMMON_DEFENSIVES_PRESET then presets[#presets+1] = COMMON_DEFENSIVES_PRESET end
+        presets = AuraDefaults and AuraDefaults.GetDefaultPresets and AuraDefaults.GetDefaultPresets() or {}
     end
     local listTable = getListTable()
     if listTable then RebuildSpellToggleRows(spellListContainer, listTable, presets, onChange) end
@@ -1630,7 +1568,7 @@ local function BuildIndicatorsSettings(content, gfdb, onChange)
     relayout()
 end
 
-local function BuildHealerSettings(content, gfdb, onChange)
+local function BuildDispelOverlaySettings(content, gfdb, onChange)
     local healer = gfdb.healer; if not healer then gfdb.healer = {} healer = gfdb.healer end
     local dispel = healer.dispelOverlay; if not dispel then healer.dispelOverlay = {} dispel = healer.dispelOverlay end
     local dispelColors = dispel.colors
@@ -1638,7 +1576,6 @@ local function BuildHealerSettings(content, gfdb, onChange)
         dispel.colors = { Magic = {0.2,0.6,1.0,1}, Curse = {0.6,0.0,1.0,1}, Disease = {0.6,0.4,0.0,1}, Poison = {0.0,0.6,0.0,1} }
         dispelColors = dispel.colors
     end
-    local targetHL = healer.targetHighlight; if not targetHL then healer.targetHighlight = {} targetHL = healer.targetHighlight end
     local sections = {}
     local function relayout() RelayoutComposerSections(content, sections) end
 
@@ -1657,6 +1594,15 @@ local function BuildHealerSettings(content, gfdb, onChange)
         L:Row(GUI:CreateFormColorPicker(body, "Poison Color", "Poison", dispelColors, onChange, nil, { description = "Color used when the active dispellable debuff is of Poison type." }), FORM_ROW, dispelCond)
         L:Finish()
     end, sections, relayout)
+
+    relayout()
+end
+
+local function BuildHealerSettings(content, gfdb, onChange)
+    local healer = gfdb.healer; if not healer then gfdb.healer = {} healer = gfdb.healer end
+    local targetHL = healer.targetHighlight; if not targetHL then healer.targetHighlight = {} targetHL = healer.targetHighlight end
+    local sections = {}
+    local function relayout() RelayoutComposerSections(content, sections) end
 
     CreateComposerCollapsible(content, "Target Highlight", function(body, updateH)
         local targetCond = function() return targetHL.enabled end
@@ -2160,43 +2106,61 @@ local function BuildAuraIndicatorsSettings(content, gfdb, onChange)
             wipe(activeAuraRows)
         end
 
-        local function AcquireSuggestRow()
-            local row = table.remove(suggestRows)
-            if row then
-                row:Show()
-                row:ClearAllPoints()
-                return row
+        local function AcquireSuggestCell()
+            local cell = table.remove(suggestRows)
+            if cell then
+                cell:Show()
+                cell:ClearAllPoints()
+                return cell
             end
 
-            row = CreateFrame("Frame", nil, auraListArea)
-            row:SetHeight(22)
-            row.icon = row:CreateTexture(nil, "ARTWORK")
-            row.icon:SetSize(14, 14)
-            row.icon:SetPoint("LEFT", 4, 0)
-            row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            cell = CreateFrame("Button", nil, auraListArea, "BackdropTemplate")
+            cell:SetSize(SUGGEST_CELL_SIZE, SUGGEST_CELL_SIZE)
+            cell:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+            ApplyPixelBackdrop(cell, 1, true)
+            cell:SetBackdropColor(0, 0, 0, 0)
+            cell:SetBackdropBorderColor(0.2, 0.2, 0.2, 0.5)
 
-            row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            row.name:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
-            row.name:SetJustifyH("LEFT")
+            cell.icon = cell:CreateTexture(nil, "ARTWORK")
+            cell.icon:SetSize(SUGGEST_ICON_SIZE, SUGGEST_ICON_SIZE)
+            cell.icon:SetPoint("CENTER")
+            cell.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-            row.add = CreateFrame("Button", nil, row)
-            row.add:SetSize(18, 18)
-            row.add:SetPoint("RIGHT", -2, 0)
-            row.addText = row.add:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            row.addText:SetPoint("CENTER")
-            row.addText:SetText("+")
-            row.addText:SetTextColor(0.3, 0.8, 0.3)
+            cell.highlight = cell:CreateTexture(nil, "HIGHLIGHT")
+            cell.highlight:SetAllPoints()
+            cell.highlight:SetColorTexture(C.accent[1] or 0.3, C.accent[2] or 0.7, C.accent[3] or 1, 0.15)
 
-            return row
+            cell:SetScript("OnEnter", function(self)
+                self:SetBackdropBorderColor(C.accent[1] or 0.3, C.accent[2] or 0.7, C.accent[3] or 1, 0.8)
+                if GameTooltip and self._spell then
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:SetFrameStrata("TOOLTIP")
+                    GameTooltip:SetFrameLevel(250)
+                    GameTooltip:AddLine(self._spell.name or GetSpellName(self._spell.id) or ("Spell " .. tostring(self._spell.id)), 1, 1, 1)
+                    GameTooltip:AddLine("ID: " .. tostring(self._spell.id), 0.5, 0.5, 0.5)
+                    if self._spell.source then
+                        GameTooltip:AddLine(self._spell.source, 0.45, 0.65, 0.95)
+                    end
+                    GameTooltip:AddLine("Click to add", 0.5, 0.5, 0.5)
+                    GameTooltip:Show()
+                end
+            end)
+            cell:SetScript("OnLeave", function(self)
+                self:SetBackdropBorderColor(0.2, 0.2, 0.2, 0.5)
+                if GameTooltip then GameTooltip:Hide() end
+            end)
+
+            return cell
         end
 
         local activeSuggestRows = {}
         local function ReleaseSuggestRows()
-            for _, row in ipairs(activeSuggestRows) do
-                row:Hide()
-                row:ClearAllPoints()
-                row.add:SetScript("OnClick", nil)
-                table.insert(suggestRows, row)
+            for _, cell in ipairs(activeSuggestRows) do
+                cell:Hide()
+                cell:ClearAllPoints()
+                cell:SetScript("OnClick", nil)
+                cell._spell = nil
+                table.insert(suggestRows, cell)
             end
             wipe(activeSuggestRows)
         end
@@ -2464,47 +2428,31 @@ local function BuildAuraIndicatorsSettings(content, gfdb, onChange)
             inputRow:SetPoint("RIGHT", auraListArea, "RIGHT", 0, 0)
             y = y - 28
 
-            local assigned = {}
-            for _, entry in ipairs(entries) do
-                assigned[entry.spellID] = true
-            end
-
-            local suggestions = {}
-            if specID and SPEC_TO_PRESET[specID] then
-                for _, spell in ipairs(SPEC_TO_PRESET[specID].spells) do
-                    if not assigned[spell.id] then
-                        suggestions[#suggestions + 1] = spell
-                    end
+            local suggestions = AuraDefaults and AuraDefaults.GetSuggestionSpells and AuraDefaults.GetSuggestionSpells(entries) or {}
+            if #suggestions > 0 then
+                local contentWidth = auraListArea:GetWidth()
+                if type(contentWidth) ~= "number" or contentWidth < SUGGEST_CELL_STRIDE then
+                    contentWidth = 520
                 end
-            end
-            if COMMON_DEFENSIVES_PRESET then
-                for _, spell in ipairs(COMMON_DEFENSIVES_PRESET.spells) do
-                    if not assigned[spell.id] then
-                        suggestions[#suggestions + 1] = spell
-                    end
+                local cols = math.max(1, math.floor(contentWidth / SUGGEST_CELL_STRIDE))
+                local rows = math.ceil(#suggestions / cols)
+                for index, spell in ipairs(suggestions) do
+                    local cell = AcquireSuggestCell()
+                    local col = (index - 1) % cols
+                    local row = math.floor((index - 1) / cols)
+                    cell:SetParent(auraListArea)
+                    cell:SetPoint("TOPLEFT", col * SUGGEST_CELL_STRIDE, y - (row * SUGGEST_CELL_STRIDE))
+                    cell._spell = spell
+                    cell.icon:SetTexture(spell.icon or 134400)
+                    cell:SetScript("OnClick", function(_, button)
+                        if button == "LeftButton" or button == "RightButton" then
+                            AddNewAura(spell.id)
+                            RebuildAuraList()
+                        end
+                    end)
+                    activeSuggestRows[#activeSuggestRows + 1] = cell
                 end
-            end
-
-            for _, spell in ipairs(suggestions) do
-                local row = AcquireSuggestRow()
-                row:SetParent(auraListArea)
-                row:SetPoint("TOPLEFT", 0, y)
-                row:SetPoint("RIGHT", auraListArea, "RIGHT", 0, 0)
-
-                local tex
-                if C_Spell and C_Spell.GetSpellTexture then
-                    local ok, t = pcall(C_Spell.GetSpellTexture, spell.id)
-                    if ok and t then tex = t end
-                end
-                row.icon:SetTexture(tex or 134400)
-                row.name:SetText(spell.name or GetSpellName(spell.id) or ("Spell " .. spell.id))
-                row.add:SetScript("OnClick", function()
-                    AddNewAura(spell.id)
-                    RebuildAuraList()
-                end)
-
-                activeSuggestRows[#activeSuggestRows + 1] = row
-                y = y - 22
+                y = y - (rows * SUGGEST_CELL_STRIDE) - 4
             end
 
             local selectedEntry = entries[selectedAuraIndex]
@@ -3214,22 +3162,7 @@ local function BuildPinnedAurasSettings(content, gfdb, onChange)
                 if s.spellID then assignedSet[s.spellID] = true end
             end
 
-            -- Gather preset spells for current spec
-            local presetSpells = {}
-            if SPEC_TO_PRESET[specID] then
-                for _, spell in ipairs(SPEC_TO_PRESET[specID].spells) do
-                    if not assignedSet[spell.id] then
-                        presetSpells[#presetSpells + 1] = spell
-                    end
-                end
-            end
-            if COMMON_DEFENSIVES_PRESET then
-                for _, spell in ipairs(COMMON_DEFENSIVES_PRESET.spells) do
-                    if not assignedSet[spell.id] then
-                        presetSpells[#presetSpells + 1] = spell
-                    end
-                end
-            end
+            local presetSpells = AuraDefaults and AuraDefaults.GetSuggestionSpells and AuraDefaults.GetSuggestionSpells(slots) or {}
 
             for _, spell in ipairs(presetSpells) do
                 local row = AcquireSuggestRow(spellListArea)
@@ -3298,6 +3231,7 @@ local ELEMENT_BUILDERS = {
     name = BuildNameSettings, buffs = BuildBuffsSettings,
     debuffs = BuildDebuffsSettings, indicators = BuildIndicatorsSettings,
     healer = BuildHealerSettings, defensive = BuildDefensiveSettings,
+    dispelOverlay = BuildDispelOverlaySettings,
     auraIndicators = BuildAuraIndicatorsSettings, pinnedAuras = BuildPinnedAurasSettings,
     privateAuras = BuildPrivateAurasSettings,
 }
@@ -3744,45 +3678,36 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         end
     end
 
-    -- Helper: create a row of fake icons for an element preview
+    local function ResolvePreviewSpellTexture(spellID)
+        if C_Spell and C_Spell.GetSpellTexture then
+            local ok, texture = pcall(C_Spell.GetSpellTexture, spellID)
+            if ok and texture then
+                return texture
+            end
+        end
+        return 134400
+    end
+
+    -- Helper: create an icon strip for an element preview.
     local function CreateIconStrip(parentFrame, icons, count, size, anchor, grow, spacing, offX, offY, refKey)
         if count <= 0 then return end
-        local totalW, totalH = size, size
-        if grow == "LEFT" or grow == "RIGHT" or grow == "CENTER" then
-            totalW = count * size + math.max(count - 1, 0) * spacing
-        elseif grow == "UP" or grow == "DOWN" then
-            totalH = count * size + math.max(count - 1, 0) * spacing
-        end
         local container = CreateFrame("Frame", nil, parentFrame)
         container:SetFrameLevel(parentFrame:GetFrameLevel() + 8)
-        container:SetSize(totalW, totalH)
-        container:SetPoint(anchor, parentFrame, anchor, offX, offY)
+        container:SetAllPoints(parentFrame)
+        local iconAnchor = IconLayout and IconLayout.GetIconAnchorForGrow
+            and IconLayout.GetIconAnchorForGrow(anchor, grow) or anchor
         for i = 1, count do
             local icon = container:CreateTexture(nil, "OVERLAY")
             icon:SetSize(size, size)
             icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
             icon:SetTexture(icons[((i - 1) % #icons) + 1])
-            if grow == "LEFT" then
-                local pos = (i - 1) * (size + spacing)
-                if i == 1 then icon:SetPoint("RIGHT", container, "RIGHT", 0, 0)
-                else icon:SetPoint("RIGHT", container, "RIGHT", -pos, 0) end
-            elseif grow == "RIGHT" then
-                local pos = (i - 1) * (size + spacing)
-                if i == 1 then icon:SetPoint("LEFT", container, "LEFT", 0, 0)
-                else icon:SetPoint("LEFT", container, "LEFT", pos, 0) end
-            elseif grow == "UP" then
-                local pos = (i - 1) * (size + spacing)
-                if i == 1 then icon:SetPoint("BOTTOM", container, "BOTTOM", 0, 0)
-                else icon:SetPoint("BOTTOM", container, "BOTTOM", 0, pos) end
-            elseif grow == "DOWN" then
-                local pos = (i - 1) * (size + spacing)
-                if i == 1 then icon:SetPoint("TOP", container, "TOP", 0, 0)
-                else icon:SetPoint("TOP", container, "TOP", 0, -pos) end
-            else -- CENTER or default
-                local pos = (i - 1) * (size + spacing)
-                if i == 1 then icon:SetPoint("LEFT", container, "LEFT", 0, 0)
-                else icon:SetPoint("LEFT", container, "LEFT", pos, 0) end
+            local slotX, slotY = 0, 0
+            if IconLayout and IconLayout.CalculateSlotOffset then
+                slotX, slotY = IconLayout.CalculateSlotOffset(i, size, spacing, grow, count)
+            else
+                slotX = (i - 1) * (size + spacing)
             end
+            icon:SetPoint(iconAnchor, parentFrame, anchor, offX + slotX, offY + slotY)
         end
         if refKey then childRefs[refKey] = container end
         return container
@@ -3817,18 +3742,18 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         previewLayer:SetFrameLevel(frame:GetFrameLevel() + 8)
         childRefs.auraIndicatorContainer = previewLayer
 
-        local iconCount = 0
+        local previewAuraIcons = {}
         for _, entry in ipairs(aiDB.entries or {}) do
             if entry.enabled ~= false then
                 for _, indicator in ipairs(entry.indicators or {}) do
                     if indicator.enabled ~= false and indicator.type == "icon" then
-                        iconCount = iconCount + 1
+                        previewAuraIcons[#previewAuraIcons + 1] = ResolvePreviewSpellTexture(entry.spellID)
                     end
                 end
             end
         end
 
-        if iconCount > 0 then
+        if #previewAuraIcons > 0 then
             local aiSize = (aiDB.iconSize or 14) * PREVIEW_SCALE
             local aiMax = aiDB.maxIndicators or 3
             local aiAnchor = aiDB.anchor or "CENTER"
@@ -3839,7 +3764,7 @@ local function CreateDesignerPreview(container, previewType, childRefs)
             if aiAnchor == "BOTTOMLEFT" or aiAnchor == "BOTTOM" or aiAnchor == "BOTTOMRIGHT" then
                 aiOffY = aiOffY + previewBottomPad
             end
-            CreateIconStrip(previewLayer, FAKE_AURA_IND_ICONS, math.min(iconCount, aiMax), aiSize, aiAnchor, aiGrow, aiSpacing, aiOffX, aiOffY)
+            CreateIconStrip(previewLayer, previewAuraIcons, math.min(#previewAuraIcons, aiMax), aiSize, aiAnchor, aiGrow, aiSpacing, aiOffX, aiOffY)
         end
 
         local firstTint = nil

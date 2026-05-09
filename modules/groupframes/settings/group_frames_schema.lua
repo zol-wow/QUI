@@ -95,14 +95,15 @@ local TAB_SEARCH_CONTEXTS = {
     health = { subTabIndex = 7, subTabName = "Health" },
     power = { subTabIndex = 8, subTabName = "Power" },
     name = { subTabIndex = 9, subTabName = "Name" },
-    buffs = { subTabIndex = 10, subTabName = "Buffs" },
-    debuffs = { subTabIndex = 11, subTabName = "Debuffs" },
-    indicators = { subTabIndex = 12, subTabName = "Indicators" },
-    auraIndicators = { subTabIndex = 13, subTabName = "Aura Ind." },
-    pinnedAuras = { subTabIndex = 14, subTabName = "Pinned" },
-    privateAuras = { subTabIndex = 15, subTabName = "Priv. Auras" },
-    healer = { subTabIndex = 16, subTabName = "Healer" },
-    defensive = { subTabIndex = 17, subTabName = "Defensive" },
+    indicators = { subTabIndex = 10, subTabName = "Indicators" },
+    healer = { subTabIndex = 11, subTabName = "Healer" },
+    auraIndicators = { subTabIndex = 12, subTabName = "Auras" },
+    privateAuras = { subTabIndex = 13, subTabName = "Private Auras" },
+    defensive = { subTabIndex = 14, subTabName = "Defensives" },
+    dispelOverlay = { subTabIndex = 15, subTabName = "Dispel Overlay" },
+    debuffs = { subTabIndex = 16, subTabName = "Debuffs" },
+    buffs = { subTabIndex = 17, subTabName = "Buffs" },
+    pinnedAuras = { subTabIndex = 18, subTabName = "Pinned Auras" },
 }
 local GROUP_FRAMES_SEARCH_TILE_ID = "group_frames"
 local GROUP_FRAMES_SEARCH_FEATURE_ID = "groupFramesPage"
@@ -1805,7 +1806,18 @@ local function RenderPrivateAurasSection(sectionHost, ctx)
     return builder.Height()
 end
 
-local function RenderHealerSection(sectionHost, ctx)
+local function EnsureDispelColors(dispel)
+    if type(dispel.colors) ~= "table" then
+        dispel.colors = {
+            Magic = { 0.2, 0.6, 1.0, 1 },
+            Curse = { 0.6, 0.0, 1.0, 1 },
+            Disease = { 0.6, 0.4, 0.0, 1 },
+            Poison = { 0.0, 0.6, 0.0, 1 },
+        }
+    end
+end
+
+local function RenderDispelOverlaySection(sectionHost, ctx)
     local gui = GetGUI()
     local optionsAPI = GetOptionsAPI()
     local groupFrames = ResolveGroupFramesDB(ctx and ctx.options and ctx.options.contextMode)
@@ -1818,20 +1830,12 @@ local function RenderHealerSection(sectionHost, ctx)
         return nil
     end
     local dispel = EnsureSubTable(healer, "dispelOverlay")
-    local targetHighlight = EnsureSubTable(healer, "targetHighlight")
-    if not dispel or not targetHighlight then
+    if not dispel then
         return nil
     end
-    if type(dispel.colors) ~= "table" then
-        dispel.colors = {
-            Magic = { 0.2, 0.6, 1.0, 1 },
-            Curse = { 0.6, 0.0, 1.0, 1 },
-            Disease = { 0.6, 0.4, 0.0, 1 },
-            Poison = { 0.0, 0.6, 0.0, 1 },
-        }
-    end
+    EnsureDispelColors(dispel)
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("healer"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("dispelOverlay"))
     if not builder then
         return nil
     end
@@ -1840,10 +1844,9 @@ local function RenderHealerSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Healer")
-    builder.Description("Dispel overlays, including Blizzard private-dispel markers when available, and target-highlighting helpers for " .. groupFrames.sourceLabel .. " group frames.")
-
     builder.Header("Dispel Overlay")
+    builder.Description("Dispel overlays, including Blizzard private-dispel markers when available, for " .. groupFrames.sourceLabel .. " group frames.")
+
     local dispelCard = builder.Card()
     local dispelRows = {}
     local function UpdateDispelRows()
@@ -1908,7 +1911,38 @@ local function RenderHealerSection(sectionHost, ctx)
     UpdateDispelRows()
     builder.CloseCard(dispelCard)
 
-    builder.Spacer(6)
+    return builder.Height()
+end
+
+local function RenderHealerSection(sectionHost, ctx)
+    local gui = GetGUI()
+    local optionsAPI = GetOptionsAPI()
+    local groupFrames = ResolveGroupFramesDB(ctx and ctx.options and ctx.options.contextMode)
+    if not gui or not optionsAPI or not groupFrames then
+        return nil
+    end
+
+    local healer = EnsureSubTable(groupFrames.contextDB, "healer")
+    if not healer then
+        return nil
+    end
+    local targetHighlight = EnsureSubTable(healer, "targetHighlight")
+    if not targetHighlight then
+        return nil
+    end
+
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("healer"))
+    if not builder then
+        return nil
+    end
+
+    local refresh = function()
+        RefreshGroupFrames(groupFrames.contextMode)
+    end
+
+    builder.Header("Healer")
+    builder.Description("Target-highlighting helpers for " .. groupFrames.sourceLabel .. " group frames.")
+
     builder.Header("Target Highlight")
     local targetCard = builder.Card()
     local targetColorRow, targetFillRow
@@ -1970,7 +2004,7 @@ local function RenderDefensiveSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Defensive")
+    builder.Header("Defensives")
     builder.Description("Defensive-cooldown icon strip placement for " .. groupFrames.sourceLabel .. " group frames.")
 
     local card = builder.Card()
@@ -2752,7 +2786,7 @@ local function RenderAuraIndicatorsSection(sectionHost, ctx)
         return nil
     end
     if not AuraIndicatorsEditor or type(AuraIndicatorsEditor.RenderTrackedAuras) ~= "function" then
-        return RenderUnavailableLabel(sectionHost, "Aura indicator settings unavailable.")
+        return RenderUnavailableLabel(sectionHost, "Aura settings unavailable.")
     end
 
     local auraIndicators = EnsureSubTable(groupFrames.contextDB, "auraIndicators")
@@ -2776,7 +2810,7 @@ local function RenderAuraIndicatorsSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Aura Indicators")
+    builder.Header("Auras")
     builder.Description("Track specific buffs and debuffs on " .. groupFrames.sourceLabel .. " group frames as icons, bars, or health-bar tints.")
 
     local defaultsCard = builder.Card()
@@ -3033,6 +3067,13 @@ local HEALER_TAB_FEATURE = CreateSingleSectionTabFeature(
     RenderHealerSection
 )
 
+local DISPEL_OVERLAY_TAB_FEATURE = CreateSingleSectionTabFeature(
+    "groupFramesDispelOverlayTab",
+    "dispelOverlay",
+    140,
+    RenderDispelOverlaySection
+)
+
 local DEFENSIVE_TAB_FEATURE = CreateSingleSectionTabFeature(
     "groupFramesDefensiveTab",
     "defensive",
@@ -3124,6 +3165,10 @@ end
 
 function GroupFramesSchema.RenderHealerTab(host, contextMode)
     return RenderFeatureTab(HEALER_TAB_FEATURE, host, contextMode)
+end
+
+function GroupFramesSchema.RenderDispelOverlayTab(host, contextMode)
+    return RenderFeatureTab(DISPEL_OVERLAY_TAB_FEATURE, host, contextMode)
 end
 
 function GroupFramesSchema.RenderDefensiveTab(host, contextMode)

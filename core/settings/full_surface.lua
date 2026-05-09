@@ -436,6 +436,8 @@ function FullSurface.CreateTabStrip(parent, options)
     local buttonPadding = options.buttonPadding or 24
     local labelSize = options.labelSize or 11
     local wrapRows = options.wrapRows == true
+    local fixedRows = options.fixedRows == true
+    local rowResolver = options.rowResolver
     local fallbackWidth = options.fallbackWidth or 780
 
     local strip = CreateFrame("Frame", nil, parent)
@@ -481,7 +483,7 @@ function FullSurface.CreateTabStrip(parent, options)
         button:SetWidth(width)
         button:ClearAllPoints()
 
-        if wrapRows then
+        if wrapRows or fixedRows then
             button:SetPoint("TOPLEFT", strip, "TOPLEFT", xOffset, yOffset)
         else
             button:SetPoint("LEFT", strip, "LEFT", xOffset, 0)
@@ -515,6 +517,49 @@ function FullSurface.CreateTabStrip(parent, options)
             button._tabKey = definition.key
             button._label:SetText(definition.label)
             widths[index] = button._label:GetStringWidth() + buttonPadding
+        end
+
+        if fixedRows then
+            local rows = {}
+            local rowLookup = {}
+            local rowKeys = {}
+
+            for index, definition in ipairs(tabs) do
+                local rowKey = definition.row
+                if type(rowResolver) == "function" then
+                    local resolved = rowResolver(definition)
+                    if resolved ~= nil then
+                        rowKey = resolved
+                    end
+                end
+                rowKey = rowKey or 1
+                if not rowLookup[rowKey] then
+                    rowLookup[rowKey] = {}
+                    rows[#rows + 1] = rowLookup[rowKey]
+                    rowKeys[#rowKeys + 1] = rowKey
+                end
+                rowLookup[rowKey][#rowLookup[rowKey] + 1] = index
+            end
+
+            table.sort(rowKeys)
+            rows = {}
+            for _, rowKey in ipairs(rowKeys) do
+                rows[#rows + 1] = rowLookup[rowKey]
+            end
+
+            for rowIndex, row in ipairs(rows) do
+                local xOffset = 0
+                local yOffset = -((rowIndex - 1) * (rowHeight + rowSpacing))
+                for _, buttonIndex in ipairs(row) do
+                    local button = buttons[buttonIndex]
+                    PaintButton(button, widths[buttonIndex], activeKey, onClick, xOffset, yOffset)
+                    xOffset = xOffset + widths[buttonIndex] + buttonSpacing
+                end
+            end
+
+            local totalRows = #rows
+            strip:SetHeight(totalRows * rowHeight + math.max(0, totalRows - 1) * rowSpacing)
+            return
         end
 
         if wrapRows then

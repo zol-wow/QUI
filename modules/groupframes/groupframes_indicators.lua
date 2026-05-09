@@ -10,6 +10,7 @@ local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local LSM = ns.LSM
 local QUICore = ns.Addon
+local IconLayout = ns.QUI_GroupFrameIconLayout
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
 local SafeToNumber = Helpers.SafeToNumber
@@ -1042,26 +1043,13 @@ local function PositionIconContainer(frame, ai)
         return
     end
 
-    local anchor = ai.anchor or "TOPLEFT"
-    local offX = ai.anchorOffsetX or 0
-    local offY = ai.anchorOffsetY or 0
-    local bottomPad = frame._bottomPad or 0
-    if state.iconContainerAnchor == anchor
-        and state.iconContainerOffX == offX
-        and state.iconContainerOffY == offY
-        and state.iconContainerBottomPad == bottomPad then
+    if state.iconContainerAnchored == true then
         return
     end
-    state.iconContainerAnchor = anchor
-    state.iconContainerOffX = offX
-    state.iconContainerOffY = offY
-    state.iconContainerBottomPad = bottomPad
 
     container:ClearAllPoints()
-    if anchor:find("BOTTOM") then
-        offY = offY + bottomPad
-    end
-    container:SetPoint(anchor, frame, anchor, offX, offY)
+    container:SetAllPoints(frame)
+    state.iconContainerAnchored = true
 end
 
 local function SetHealthBarOverride(frame, indicator, auraData)
@@ -1173,6 +1161,9 @@ local function RenderIconIndicators(frame, ai, iconPayloads)
         state.iconGrowDir = nil
         state.iconSpacing = nil
         state.iconAnchor = nil
+        state.iconOffX = nil
+        state.iconOffY = nil
+        state.iconBottomPad = nil
         state.iconHideSwipe = nil
         state.iconReverseSwipe = nil
         if state.iconContainer then
@@ -1189,6 +1180,12 @@ local function RenderIconIndicators(frame, ai, iconPayloads)
     local maxIcons = ai.maxIndicators or 5
     local anchor = ai.anchor or "TOPLEFT"
     local count = math_min(#iconPayloads, maxIcons)
+    local anchorOffX = ai.anchorOffsetX or 0
+    local anchorOffY = ai.anchorOffsetY or 0
+    local bottomPad = frame._bottomPad or 0
+    if anchor:find("BOTTOM") then
+        anchorOffY = anchorOffY + bottomPad
+    end
     local hideSwipe = ai.hideSwipe == true
     local reverseSwipe = ai.reverseSwipe == true
     local layoutChanged = state.iconCount ~= count
@@ -1196,6 +1193,9 @@ local function RenderIconIndicators(frame, ai, iconPayloads)
         or state.iconGrowDir ~= growDir
         or state.iconSpacing ~= spacing
         or state.iconAnchor ~= anchor
+        or state.iconOffX ~= anchorOffX
+        or state.iconOffY ~= anchorOffY
+        or state.iconBottomPad ~= bottomPad
         or state.iconHideSwipe ~= hideSwipe
         or state.iconReverseSwipe ~= reverseSwipe
     state.iconCount = count
@@ -1203,11 +1203,17 @@ local function RenderIconIndicators(frame, ai, iconPayloads)
     state.iconGrowDir = growDir
     state.iconSpacing = spacing
     state.iconAnchor = anchor
+    state.iconOffX = anchorOffX
+    state.iconOffY = anchorOffY
+    state.iconBottomPad = bottomPad
     state.iconHideSwipe = hideSwipe
     state.iconReverseSwipe = reverseSwipe
 
     PositionIconContainer(frame, ai)
     container:Show()
+
+    local iconAnchor = IconLayout and IconLayout.GetIconAnchorForGrow
+        and IconLayout.GetIconAnchorForGrow(anchor, growDir) or anchor
 
     for idx = 1, count do
         local payload = iconPayloads[idx]
@@ -1223,21 +1229,13 @@ local function RenderIconIndicators(frame, ai, iconPayloads)
 
         if layoutChanged then
             icon:ClearAllPoints()
-
-            local vertPart = anchor:find("TOP") and "TOP" or (anchor:find("BOTTOM") and "BOTTOM" or "")
-            local firstHoriz = growDir == "LEFT" and "RIGHT" or "LEFT"
-            local firstAnchor = vertPart .. firstHoriz
-
-            if idx == 1 then
-                icon:SetPoint(firstAnchor, container, firstAnchor, 0, 0)
+            local slotX, slotY = 0, 0
+            if IconLayout and IconLayout.CalculateSlotOffset then
+                slotX, slotY = IconLayout.CalculateSlotOffset(idx, iconSize, spacing, growDir, count)
             else
-                local prev = state.icons[idx - 1]
-                if growDir == "LEFT" then
-                    icon:SetPoint("RIGHT", prev, "LEFT", -spacing, 0)
-                else
-                    icon:SetPoint("LEFT", prev, "RIGHT", spacing, 0)
-                end
+                slotX = (idx - 1) * (iconSize + spacing)
             end
+            icon:SetPoint(iconAnchor, frame, anchor, anchorOffX + slotX, anchorOffY + slotY)
         end
 
         UpdateIconData(icon, frame.unit, payload.auraData)
@@ -1247,18 +1245,6 @@ local function RenderIconIndicators(frame, ai, iconPayloads)
     for idx = #state.icons, count + 1, -1 do
         ReleaseIcon(state.icons[idx])
         state.icons[idx] = nil
-    end
-
-    if layoutChanged and growDir == "CENTER" and count > 0 then
-        local totalSpan = count * iconSize + math_max(count - 1, 0) * spacing
-        local startX = -totalSpan / 2
-        local vertPart2 = anchor:find("TOP") and "TOP" or (anchor:find("BOTTOM") and "BOTTOM" or "")
-        local iconPoint = vertPart2 == "" and "LEFT" or (vertPart2 .. "LEFT")
-        for idx = 1, count do
-            local icon = state.icons[idx]
-            icon:ClearAllPoints()
-            icon:SetPoint(iconPoint, container, anchor, startX + (idx - 1) * (iconSize + spacing), 0)
-        end
     end
 
     -- Release payloads back to pool — breaks auraData reference chain

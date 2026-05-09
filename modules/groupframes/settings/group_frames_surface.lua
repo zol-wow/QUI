@@ -8,7 +8,7 @@
         level tabs (Appearance, Layout, Dimensions, Range & Pet,
         Spotlight) render through the shared schema surface;
         element tabs (Health, Power, Name, Buffs, Debuffs, Healer,
-        Defensive, Aura Ind., Pinned, Priv. Auras, Indicators) invoke
+        Defensives, Auras, Pinned Auras, Private Auras, Indicators) invoke
         the composer's element builders through QUI_BuildGroupFrameElement.
       - General tab hosts the Enable toggle + Copy Settings.
       - Spotlight tab is gated to raid context (not supported for party).
@@ -197,7 +197,7 @@ end
 ---------------------------------------------------------------------------
 local function BuildTabStrip(parent)
     return FullSurface.CreateTabStrip(parent, {
-        wrapRows = true,
+        fixedRows = true,
         rowSpacing = 2,
         fallbackWidth = 780,
     })

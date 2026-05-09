@@ -55,30 +55,32 @@ local RenderName = BuildSchemaRender("RenderNameTab", "Name")
 local RenderBuffs = BuildSchemaRender("RenderBuffsTab", "Buffs")
 local RenderDebuffs = BuildSchemaRender("RenderDebuffsTab", "Debuffs")
 local RenderIndicators = BuildSchemaRender("RenderIndicatorsTab", "Indicators")
-local RenderAuraIndicators = BuildSchemaRender("RenderAuraIndicatorsTab", "Aura Ind.")
-local RenderPinnedAuras = BuildSchemaRender("RenderPinnedAurasTab", "Pinned")
-local RenderPrivateAuras = BuildSchemaRender("RenderPrivateAurasTab", "Priv. Auras")
+local RenderAuraIndicators = BuildSchemaRender("RenderAuraIndicatorsTab", "Auras")
+local RenderPinnedAuras = BuildSchemaRender("RenderPinnedAurasTab", "Pinned Auras")
+local RenderPrivateAuras = BuildSchemaRender("RenderPrivateAurasTab", "Private Auras")
 local RenderHealer = BuildSchemaRender("RenderHealerTab", "Healer")
-local RenderDefensive = BuildSchemaRender("RenderDefensiveTab", "Defensive")
+local RenderDefensive = BuildSchemaRender("RenderDefensiveTab", "Defensives")
+local RenderDispelOverlay = BuildSchemaRender("RenderDispelOverlayTab", "Dispel Overlay")
 
 local TAB_DEFINITIONS = {
-    { key = "general", label = "General", render = RenderGeneral },
-    { key = "appearance", label = "Appearance", render = RenderAppearance },
-    { key = "layout", label = "Layout", render = RenderLayout },
-    { key = "dimensions", label = "Dimensions", render = RenderDimensions },
-    { key = "rangepet", label = "Range & Pet", render = RenderRangePet },
-    { key = "spotlight", label = "Spotlight", visible = function(state) return state.contextMode == "raid" end, render = RenderSpotlight },
-    { key = "health", label = "Health", render = RenderHealth },
-    { key = "power", label = "Power", render = RenderPower },
-    { key = "name", label = "Name", render = RenderName },
-    { key = "buffs", label = "Buffs", render = RenderBuffs },
-    { key = "debuffs", label = "Debuffs", render = RenderDebuffs },
-    { key = "indicators", label = "Indicators", render = RenderIndicators },
-    { key = "auraIndicators", label = "Aura Ind.", render = RenderAuraIndicators },
-    { key = "pinnedAuras", label = "Pinned", render = RenderPinnedAuras },
-    { key = "privateAuras", label = "Priv. Auras", render = RenderPrivateAuras },
-    { key = "healer", label = "Healer", render = RenderHealer },
-    { key = "defensive", label = "Defensive", render = RenderDefensive },
+    { key = "general", label = "General", row = 1, render = RenderGeneral },
+    { key = "appearance", label = "Appearance", row = 1, render = RenderAppearance },
+    { key = "layout", label = "Layout", row = 1, render = RenderLayout },
+    { key = "dimensions", label = "Dimensions", row = 1, render = RenderDimensions },
+    { key = "rangepet", label = "Range & Pet", row = 1, render = RenderRangePet },
+    { key = "spotlight", label = "Spotlight", row = 1, visible = function(state) return state.contextMode == "raid" end, render = RenderSpotlight },
+    { key = "health", label = "Health", row = 1, render = RenderHealth },
+    { key = "power", label = "Power", row = 1, render = RenderPower },
+    { key = "name", label = "Name", row = 1, render = RenderName },
+    { key = "indicators", label = "Indicators", row = 1, render = RenderIndicators },
+    { key = "healer", label = "Healer", row = 1, render = RenderHealer },
+    { key = "auraIndicators", label = "Auras", row = 2, render = RenderAuraIndicators },
+    { key = "privateAuras", label = "Private Auras", row = 2, render = RenderPrivateAuras },
+    { key = "defensive", label = "Defensives", row = 2, render = RenderDefensive },
+    { key = "dispelOverlay", label = "Dispel Overlay", row = 2, render = RenderDispelOverlay },
+    { key = "debuffs", label = "Debuffs", row = 2, render = RenderDebuffs },
+    { key = "buffs", label = "Buffs", row = 2, render = RenderBuffs },
+    { key = "pinnedAuras", label = "Pinned Auras", row = 2, render = RenderPinnedAuras },
 }
 
 function Model.GetTabDefinitions()
