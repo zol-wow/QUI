@@ -57,10 +57,10 @@ assert(exit1 == 0,
     "Test 1: advisory-only run should exit 0, got: " .. tostring(exit1))
 
 -- ---------------------------------------------------------------------------
--- Test 2: strict fixture (modules/cooldowns/owned) → exit 1, [strict] shown
+-- Test 2: strict fixture (modules/cdm) → exit 1, [strict] shown
 -- ---------------------------------------------------------------------------
 
-local cmd2 = 'lua tools/test_taint.lua --no-color --only "modules/cooldowns" tests/taint/cli-fixture'
+local cmd2 = 'lua tools/test_taint.lua --no-color --only "modules/cdm" tests/taint/cli-fixture'
 local out2, exit2 = runCmd(cmd2)
 
 assert(out2:find("strict.lua"),

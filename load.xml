@@ -8,8 +8,6 @@
     <Include file="core\core.xml"/>
     <!-- Feature Modules -->
     <Include file="modules\modules.xml"/>
-    <!-- Skinning Modules -->
-    <Include file="skinning\skinning.xml"/>
     <!-- Load Edit Mode Profiles -->
     <Include file="importstrings\importstrings.xml"/>
 </Ui>

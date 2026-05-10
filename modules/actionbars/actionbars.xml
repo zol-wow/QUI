@@ -1,0 +1,10 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
+    <Script file="actionbars.lua"/>
+    <Script file="gse_compat.lua"/>
+    <Include file="buffborders_template.xml"/>
+    <Script file="buffborders.lua"/>
+    <Script file="settings/action_bars.lua"/>
+    <Script file="settings/action_bars_per_bar.lua"/>
+    <Script file="totems.lua"/>
+</Ui>

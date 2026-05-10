@@ -371,7 +371,7 @@ print("loop header expression tests passed")
 
 -- Test: file under strict_paths → finding severity = strict
 local strictCfg = Config.loadFromString([[
-return { strict_paths = { "modules/cooldowns/owned/" } }
+return { strict_paths = { "modules/cdm/" } }
 ]])
 
 local r13 = Registry.new()
@@ -382,7 +382,7 @@ local info = C_Spell.GetSpellCharges(1)
 local n = info + 1
 ]]
 local findings20 = Analyzer.analyze(
-    source20, "modules/cooldowns/owned/cdm_icons.lua", r13, strictCfg)
+    source20, "modules/cdm/cdm_icons.lua", r13, strictCfg)
 assert_eq(#findings20, 1, "one finding")
 assert_eq(findings20[1].severity, "strict", "promoted to strict by path")
 
@@ -397,7 +397,7 @@ local info = C_Spell.GetSpellCharges(1)
 local n = Helpers.SafeValue(info, 0)
 ]]
 local findings22 = Analyzer.analyze(
-    source22, "modules/cooldowns/owned/cdm_icons.lua", r13, strictCfg)
+    source22, "modules/cdm/cdm_icons.lua", r13, strictCfg)
 assert_eq(findings22[1].severity, "review", "unwrap stays review")
 
 print("severity test passed")

@@ -965,7 +965,7 @@ local defaults = {
                 rotationHelperColor = { 0, 1, 0.84, 1 },  -- #00FFD6 cyan/mint border
                 rotationHelperThickness = 1,  -- Border thickness in pixels
             },
-            -- BuffIconCooldownViewer removed - now handled by qui_buffbar.lua
+            -- BuffIconCooldownViewer removed - now handled by owned CDM.
             -- Settings are at db.profile.ncdm.buff instead
         },
 
@@ -3063,7 +3063,7 @@ local defaults = {
 
             -- Click-casting moved to db.char (per-character) in v3.5.3.
             -- See ns.defaults.char.clickCast at the bottom of this file and
-            -- the migration in modules/frames/groupframes_clickcast.lua.
+            -- the migration in modules/groupframes/groupframes_clickcast.lua.
             -- Stale profile data intentionally left alone for downgrade safety.
 
             -- Test/preview mode (shared)
@@ -4347,7 +4347,7 @@ local defaults = {
         -- spells, so a single AceDB profile shared across an account would
         -- leak one class's bindings onto every alt. Legacy profile data at
         -- profile.quiGroupFrames.clickCast is one-time copied here by the
-        -- migration in modules/frames/groupframes_clickcast.lua.
+        -- migration in modules/groupframes/groupframes_clickcast.lua.
         clickCast = {
             enabled = true,
             bindings = {},

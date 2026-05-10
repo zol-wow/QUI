@@ -1,0 +1,20 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
+    <Script file="settings/group_frames_spell_list.lua"/>
+    <Script file="settings/group_frames_aura_indicators_editor.lua"/>
+    <Script file="settings/group_frames_pinned_editor.lua"/>
+    <Script file="settings/group_frames_schema.lua"/>
+    <Script file="settings/group_frames_model.lua"/>
+    <Script file="settings/group_frames.lua"/>
+    <Include file="groupframes_template.xml"/>
+    <Script file="groupframes.lua"/>
+    <Script file="groupframes_auras.lua"/>
+    <Script file="groupframes_indicators.lua"/>
+    <Script file="groupframes_pinned_auras.lua"/>
+    <Script file="groupframes_private_auras.lua"/>
+    <Script file="groupframes_clickcast.lua"/>
+    <Script file="groupframes_blizzard.lua"/>
+    <Script file="groupframes_editmode.lua"/>
+    <Script file="raidbuffs.lua"/>
+    <Script file="settings/raid_buffs.lua"/>
+</Ui>

@@ -1,6 +1,6 @@
 local ADDON_NAME = "QUI"
 local ROOT = "."
-local OUTPUT_PATH = "options/search_cache.lua"
+local OUTPUT_PATH = "QUI_Options/search_cache.lua"
 _G.unpack = _G.unpack or table.unpack
 local unpack = _G.unpack
 
@@ -58,10 +58,9 @@ local function collect_scripts_from_xml(xml_path, out, seen)
     end
 end
 
--- QUI_Options/options.xml lives in a sibling LoD addon and references this
--- repo's files via "..\QUI\..." (i.e., one level up from the QUI_Options
--- addon root, then into the QUI addon root). The headless generator runs
--- from the QUI repo root, so strip that prefix to get repo-relative paths.
+-- QUI_Options/options.xml lives in a sibling LoD addon. Local option UI
+-- scripts live under QUI_Options in this repo; references to the main addon
+-- use "..\QUI\..." and are stripped to repo-relative paths for headless runs.
 local function collect_qui_options_scripts(out, seen)
     local xml_path = normalize_path("QUI_Options/options.xml")
     if seen[xml_path] then
@@ -87,10 +86,12 @@ local function collect_qui_options_scripts(out, seen)
             local repo_path = normalized:match("^%.%./QUI/(.+)$")
             if repo_path then
                 repo_path = normalize_path(repo_path)
-                if not emitted[repo_path] then
-                    emitted[repo_path] = true
-                    out[#out + 1] = repo_path
-                end
+            else
+                repo_path = normalize_path(join_path(xml_path, normalized))
+            end
+            if not emitted[repo_path] then
+                emitted[repo_path] = true
+                out[#out + 1] = repo_path
             end
         end
     end
@@ -102,10 +103,10 @@ local function should_load_script(path)
     if path == "init.lua" or path == OUTPUT_PATH then
         return false
     end
-    if path:match("^libs/") or path:match("^skinning/") or path:match("^importstrings/") then
+    if path:match("^libs/") or path:match("^importstrings/") then
         return false
     end
-    if path == "options/blizzard_options.lua" then
+    if path == "QUI_Options/blizzard_options.lua" then
         return false
     end
 
@@ -119,14 +120,14 @@ local function should_load_script(path)
         return true
     end
 
-    if path == "modules/utility/layoutmode_utils.lua" then
+    if path == "modules/layout/layoutmode_utils.lua" then
         return true
     end
     if path:match("^modules/.+/settings/") then
         return true
     end
 
-    if path:match("^options/") then
+    if path:match("^QUI_Options/") then
         return true
     end
 

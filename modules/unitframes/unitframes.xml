@@ -1,0 +1,12 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
+    <Script file="settings/unit_frames_schema.lua"/>
+    <Script file="settings/unit_frames_model.lua"/>
+    <Script file="settings/unit_frames.lua"/>
+    <Script file="castbar.lua"/>
+    <Script file="unitframes.lua"/>
+    <Script file="unitframe_auras.lua"/>
+    <Script file="unitframe_private_auras.lua"/>
+    <Script file="unitframe_editmode.lua"/>
+    <Script file="unitframe_blizzard.lua"/>
+</Ui>

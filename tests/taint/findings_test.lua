@@ -10,7 +10,7 @@ end
 
 -- Test 1: construct a finding
 local f = Findings.new {
-    file = "modules/cooldowns/owned/cdm_icons.lua",
+    file = "modules/cdm/cdm_icons.lua",
     line = 412,
     col = 18,
     severity = "advisory",
@@ -18,7 +18,7 @@ local f = Findings.new {
     sink = "tonumber",
     message = "tainted value used in arithmetic without guard or unwrap",
 }
-assert_eq(f.file, "modules/cooldowns/owned/cdm_icons.lua", "file")
+assert_eq(f.file, "modules/cdm/cdm_icons.lua", "file")
 assert_eq(f.line, 412, "line")
 assert_eq(f.severity, "advisory", "severity")
 assert_eq(f.suppressed, false, "default suppressed=false")
@@ -26,7 +26,7 @@ assert_eq(f.suppressed, false, "default suppressed=false")
 -- Test 2: render text
 local text = Findings.renderText({f})
 local expected = [[
-modules/cooldowns/owned/cdm_icons.lua:412:18 [advisory] tonumber: tainted value used in arithmetic without guard or unwrap (source: C_Spell.GetSpellCharges)
+modules/cdm/cdm_icons.lua:412:18 [advisory] tonumber: tainted value used in arithmetic without guard or unwrap (source: C_Spell.GetSpellCharges)
 ]]
 assert_eq(text, expected, "single finding text render")
 
@@ -38,10 +38,10 @@ local f2 = Findings.new {
     message = "review unwrap call site",
 }
 local text2 = Findings.renderText({f, f2})
--- Sorted: alphabetically, "modules/cooldowns/owned/cdm_icons.lua" sorts before
+-- Sorted: alphabetically, "modules/cdm/cdm_icons.lua" sorts before
 -- "modules/foo.lua" because 'c' < 'f'.
 local expected2 = [[
-modules/cooldowns/owned/cdm_icons.lua:412:18 [advisory] tonumber: tainted value used in arithmetic without guard or unwrap (source: C_Spell.GetSpellCharges)
+modules/cdm/cdm_icons.lua:412:18 [advisory] tonumber: tainted value used in arithmetic without guard or unwrap (source: C_Spell.GetSpellCharges)
 modules/foo.lua:10:1 [review] <unwrap>: review unwrap call site (source: Helpers.SafeValue)
 ]]
 assert_eq(text2, expected2, "two findings text render")
@@ -89,7 +89,7 @@ print("findings hardening test passed")
 
 -- JSON render test
 local jsonOut = Findings.renderJSON({f, f2})
-assert(jsonOut:find('"file": "modules/cooldowns/owned/cdm_icons.lua"', 1, true),
+assert(jsonOut:find('"file": "modules/cdm/cdm_icons.lua"', 1, true),
     "first file in JSON")
 assert(jsonOut:find('"file": "modules/foo.lua"', 1, true), "second file in JSON")
 assert(jsonOut:sub(1, 1) == "[", "JSON starts with [")
@@ -99,7 +99,7 @@ print("findings JSON test passed")
 local githubOut = Findings.renderGitHub({f, f2})
 assert(githubOut:find("::warning file=modules/foo.lua,line=10,col=1::", 1, true),
     "review→warning annotation")
-assert(githubOut:find("::warning file=modules/cooldowns/owned/cdm_icons.lua,line=412,col=18::", 1, true),
+assert(githubOut:find("::warning file=modules/cdm/cdm_icons.lua,line=412,col=18::", 1, true),
     "advisory→warning annotation")
 print("findings GitHub render test passed")
 

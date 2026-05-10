@@ -1,5 +1,5 @@
 return {
-    strict_paths = { "modules/cooldowns/owned/" },
+    strict_paths = { "modules/cdm/" },
     ignore_paths = {},
     coverage = { secretWhenCooldownsRestricted = true },
 }

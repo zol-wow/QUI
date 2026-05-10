@@ -1,5 +1,5 @@
 local ROOT = "."
-local CACHE_PATH = "options/search_cache.lua"
+local CACHE_PATH = "QUI_Options/search_cache.lua"
 
 local KNOWN_ZERO_SETTING_FEATURES = {
     autohidePage = true,
@@ -31,9 +31,9 @@ local function collect_lua_files()
     local is_windows = package.config:sub(1, 1) == "\\"
     local command
     if is_windows then
-        command = 'powershell -NoProfile -Command "Get-ChildItem -Path modules,options -Recurse -File -Filter *.lua | ForEach-Object { $_.FullName }"'
+        command = 'powershell -NoProfile -Command "Get-ChildItem -Path modules,QUI_Options -Recurse -File -Filter *.lua | ForEach-Object { $_.FullName }"'
     else
-        command = 'find modules options -type f -name "*.lua"'
+        command = 'find modules QUI_Options -type f -name "*.lua"'
     end
 
     local pipe, err = io.popen(command)
@@ -91,7 +91,7 @@ local function scan_source_features(files)
                 add_ref(registered, id, path, "Registry")
             end
 
-            if path:match("/options/tiles/") or path:match("^options/tiles/") or path:match("/options/init%.lua$") or path == "options/init.lua" then
+            if path:match("/QUI_Options/tiles/") or path:match("^QUI_Options/tiles/") or path:match("/QUI_Options/init%.lua$") or path == "QUI_Options/init.lua" then
                 for id in text:gmatch("featureId%s*=%s*\"([^\"]+)\"") do
                     add_ref(tile_refs, id, path, "FeatureTile")
                 end

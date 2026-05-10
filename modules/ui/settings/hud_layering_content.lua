@@ -47,7 +47,7 @@ local function BuildHUDLayeringContent(content)
 
     local function RefreshCDM()
         if NCDM and NCDM.ApplySettings then NCDM:ApplySettings("essential"); NCDM:ApplySettings("utility") end
-        if _G.QUI_RefreshBuffBar then _G.QUI_RefreshBuffBar() end
+        if _G.QUI_RefreshCDMBuffLayout then _G.QUI_RefreshCDMBuffLayout() end
     end
     local function RefreshPowerBars()
         local c = GetCore(); local d = c and c.db and c.db.profile

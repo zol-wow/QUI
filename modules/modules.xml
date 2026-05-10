@@ -1,16 +1,22 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
-    <!-- Load order matters: cooldowns first, then frames that depend on them -->
-    <Include file="cooldowns\cooldowns.xml"/>
+    <!-- Load order matters: CDM first, then visual frame systems that depend on it -->
+    <Include file="cdm\cdm.xml"/>
     <Include file="ui\ui.xml"/>
-    <Include file="frames\frames.xml"/>
-    <Include file="data\data.xml"/>
+    <Include file="minimap\minimap.xml"/>
+    <Include file="actionbars\actionbars.xml"/>
+    <Include file="resourcebars\resourcebars.xml"/>
+    <Include file="unitframes\unitframes.xml"/>
+    <Include file="groupframes\groupframes.xml"/>
+    <Include file="layout\layout.xml"/>
     <Include file="utility\utility.xml"/>
+    <Include file="integrations\integrations.xml"/>
     <Include file="combat\combat.xml"/>
-    <Include file="character\character.xml"/>
+    <Include file="skinning\character_pane\character.xml"/>
     <Include file="trackers\trackers.xml"/>
     <Include file="qol\qol.xml"/>
     <Include file="dungeon\dungeon.xml"/>
     <Include file="chat\chat.xml"/>
     <Include file="debug\debug.xml"/>
+    <Include file="skinning\skinning.xml"/>
 </Ui>

@@ -7,7 +7,7 @@ return {
         -- prefixes are classified strict (CI-blocking) instead of advisory.
         -- Add only after auditing — promoted findings must be either fixed
         -- or annotated with `-- @secret-safe: <reason>` to keep CI green.
-        "modules/cooldowns/",
+        "modules/cdm/",
         "modules/chat/",
     },
     ignore_paths = {

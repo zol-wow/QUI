@@ -1,0 +1,28 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
+    <Script file="cdm_provider.lua"/>
+    <Script file="cdm_shared.lua"/>
+    <Script file="hud_visibility.lua"/>
+    <Script file="cdm_index.lua"/>
+    <Script file="cdm_catalog.lua"/>
+    <Script file="cdm_runtime_store.lua"/>
+    <Script file="cdm_scheduler.lua"/>
+    <Script file="cdm_sources.lua"/>
+    <Script file="cdm_renderers.lua"/>
+    <Script file="cdm_spelldata.lua"/>
+    <Script file="cdm_blizz_mirror.lua"/>
+    <Script file="cdm_resolvers.lua"/>
+    <Script file="cdm_icon_factory.lua"/>
+    <Script file="cdm_icons.lua"/>
+    <Script file="cdm_bars.lua"/>
+    <Script file="cdm_layout.lua"/>
+    <Script file="cdm_buff_layout.lua"/>
+    <Script file="cdm_containers.lua"/>
+    <Script file="cdm_layout_mode.lua"/>
+    <Script file="settings\containers_page_schema.lua"/>
+    <Script file="settings\containers_page_model.lua"/>
+    <Script file="settings\containers_page.lua"/>
+    <Script file="cdm_composer.lua"/>
+    <Script file="cdm_debug.lua"/>
+    <Script file="cdm_effects.lua"/>
+</Ui>

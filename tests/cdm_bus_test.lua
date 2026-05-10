@@ -1,6 +1,6 @@
 -- tests/cdm_bus_test.lua
 -- Headless verification of resolver bus semantics. Run: lua tests/cdm_bus_test.lua
--- Mirrors bus primitives from modules/cooldowns/owned/cdm_resolvers.lua —
+-- Mirrors bus primitives from modules/cdm/cdm_resolvers.lua —
 -- keep in sync if production changes. See spec:
 -- docs/superpowers/specs/2026-05-05-cdm-blizzard-child-decoupling-design.md §3.
 
