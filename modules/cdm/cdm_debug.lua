@@ -14,7 +14,8 @@
 --       Toggles or sets the per-subsystem flag. Filter strings match
 --       substring-of-name or exact-of-id. Use "off" to disable, "all"/"on"
 --       for global enable. /cdmdebug icon dump [filter] also walks every
---       icon and dumps state. /cdmdebug taint requires /rl after enabling.
+--       icon and dumps state. /cdmdebug taint [filter] requires /rl after
+--       enabling.
 --   /cdmdebug off                   Clear every flag at once.
 --
 --   /cdmevents <spellID>            Trace events for spellID (off/clear to stop).
@@ -22,6 +23,8 @@
 --   /cdmcharge <name>               Charge-spell recharge swipe diagnostic.
 --   /cdmflicker <name>              5-second sub-tick flicker probe.
 --   /cdmprobe                       Resolver/mirror parity sweep.
+--   /cdmcdtest <cooldownID>         Mirror one child onto test cooldowns.
+--   /cdmraw                         Dump raw C_CooldownViewer/category data.
 --   /cdmprofiles                    Dump _specProfiles state.
 --   /cdmclean                       Purge cross-class spell corruption from
 --                                   _specProfiles.
@@ -359,7 +362,9 @@ local okDur = true; local dur = icon.DurationText.GetText(icon.DurationText)
     end
     if icon._blizzMirrorCooldownID and ns.CDMBlizzMirror
        and ns.CDMBlizzMirror.GetStateByCooldownID then
-        local m = ns.CDMBlizzMirror.GetStateByCooldownID(icon._blizzMirrorCooldownID)
+        local m = ns.CDMBlizzMirror.GetStateByCooldownID(
+            icon._blizzMirrorCooldownID,
+            icon._blizzMirrorCategory)
         local links = "nil"
         if m and type(m.linkedSpellIDs) == "table" then
             local out = {}
@@ -369,6 +374,7 @@ local okDur = true; local dur = icon.DurationText.GetText(icon.DurationText)
             links = table.concat(out, ",")
         end
         print(P, "  blizzMirror=", tostring(icon._blizzMirrorCooldownID),
+            "boundCat=", tostring(icon._blizzMirrorCategory),
             "cat=", tostring(m and m.viewerCategory),
             "active=", tostring(m and m.isActive),
             "fromAura=", tostring(m and m.wasSetFromAura),
@@ -380,7 +386,9 @@ local okDur = true; local dur = icon.DurationText.GetText(icon.DurationText)
             "tooltip=", tostring(m and m.overrideTooltipSpellID),
             "links=", links)
         if ns.CDMBlizzMirror.GetChildDebugLines then
-            local childLines = ns.CDMBlizzMirror.GetChildDebugLines(icon._blizzMirrorCooldownID)
+            local childLines = ns.CDMBlizzMirror.GetChildDebugLines(
+                icon._blizzMirrorCooldownID,
+                icon._blizzMirrorCategory)
             if type(childLines) == "table" then
                 for _, line in ipairs(childLines) do
                     print(P, "  blizzChild", line)
@@ -417,7 +425,7 @@ local DEBUG_FLAGS = {
     aura   = { global = "QUI_CDM_AURA_DEBUG",   label = "[CDM-Aura]",   takesFilter = true  },
     charge = { global = "QUI_CDM_CHARGE_DEBUG", label = "[CDM-Charge]", takesFilter = true  },
     totem  = { global = "QUI_CDM_TOTEM_DEBUG",  label = "[CDM-Totem]",  takesFilter = false },
-    taint  = { global = "QUI_CDM_TAINT_DEBUG",  label = "[CDM-Taint]",  takesFilter = false, requiresReload = true },
+    taint  = { global = "QUI_CDM_TAINT_DEBUG",  label = "[CDM-Taint]",  takesFilter = true,  requiresReload = true },
 }
 
 local DEBUG_FLAG_ORDER = { "icon", "bar", "blizz", "aura", "charge", "totem", "taint" }
@@ -809,6 +817,233 @@ local ok = true; local wrapped = C_StringUtil.WrapString(curText, "  |cff888888\
         rows, agree, disagree,
         rows > 0 and (100 * agree / rows) or 0,
         resolverInactive))
+end
+
+local _cooldownMethodTestFrame
+
+local function CooldownTestValue(v)
+    if issecretvalue and issecretvalue(v) then
+        return "<SECRET:" .. type(v) .. ">"
+    end
+    if v == nil then return "nil" end
+    if type(v) == "boolean" then return v and "true" or "false" end
+    return tostring(v)
+end
+
+local function CooldownTestPlainNumber(v)
+    if issecretvalue and issecretvalue(v) then return false end
+    return type(v) == "number"
+end
+
+local function CooldownTestCall(owner, method, ...)
+    local fn = owner and owner[method]
+    if not fn then return false, "missing " .. tostring(method) end
+    return pcall(fn, owner, ...)
+end
+
+local function CooldownTestSummary(cd)
+    local okTimes, startMS, durationMS = CooldownTestCall(cd, "GetCooldownTimes")
+    local okDuration, displayDuration = CooldownTestCall(cd, "GetCooldownDuration")
+    local okShown, shown = CooldownTestCall(cd, "IsShown")
+    return string.format("shown=%s times=%s/%s duration=%s",
+        okShown and CooldownTestValue(shown) or "err",
+        okTimes and CooldownTestValue(startMS) or "err",
+        okTimes and CooldownTestValue(durationMS) or "err",
+        okDuration and CooldownTestValue(displayDuration) or "err")
+end
+
+local function EnsureCooldownMethodTestFrame()
+    if _cooldownMethodTestFrame then return _cooldownMethodTestFrame end
+    if InCombatLockdown and InCombatLockdown() then
+        return nil, "Run /cdmcdtest once out of combat to create the test frame."
+    end
+
+    local f = CreateFrame("Frame", "QUI_CDMCooldownMethodTestFrame", UIParent)
+    f:SetSize(390, 118)
+    f:SetPoint("CENTER", UIParent, "CENTER", 0, 160)
+    f:SetFrameStrata("DIALOG")
+    f:EnableMouse(true)
+    f:SetMovable(true)
+    f:RegisterForDrag("LeftButton")
+    f:SetScript("OnDragStart", f.StartMoving)
+    f:SetScript("OnDragStop", f.StopMovingOrSizing)
+
+    local bg = f:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetColorTexture(0, 0, 0, 0.82)
+
+    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOPLEFT", 8, -5)
+    title:SetText("|cff34d399[cdmcdtest]|r child cooldown method test")
+    f.title = title
+
+    f.rows = {}
+    local labels = {
+        { key = "durObj", text = "DurationObj" },
+        { key = "set", text = "SetCooldown" },
+        { key = "duration", text = "Duration" },
+        { key = "expiration", text = "Expiration" },
+    }
+    for i, item in ipairs(labels) do
+        local cell = CreateFrame("Frame", nil, f)
+        cell:SetSize(56, 56)
+        cell:SetPoint("TOPLEFT", 14 + (i - 1) * 92, -28)
+
+        local tex = cell:CreateTexture(nil, "BACKGROUND")
+        tex:SetAllPoints()
+        tex:SetColorTexture(0.12, 0.12, 0.12, 1)
+        cell.tex = tex
+
+        local cd = CreateFrame("Cooldown", nil, cell, "CooldownFrameTemplate")
+        cd:SetAllPoints()
+        if cd.SetDrawSwipe then cd:SetDrawSwipe(true) end
+        if cd.SetDrawEdge then cd:SetDrawEdge(true) end
+        cell.cd = cd
+
+        local label = cell:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        label:SetPoint("TOP", cell, "BOTTOM", 0, -3)
+        label:SetText(item.text)
+        cell.label = label
+
+        f.rows[item.key] = cell
+    end
+
+    _cooldownMethodTestFrame = f
+    return f
+end
+
+local function ApplyCooldownMethodCell(row, payload, methodKey)
+    local cd = row and row.cd
+    if not cd then return false, "missing test cooldown", "" end
+    CooldownTestCall(cd, "Clear")
+    CooldownTestCall(cd, "SetReverse", false)
+
+    if methodKey == "durObj" then
+        local durObj = payload.setDurationObjectArg
+        if not durObj then return false, "missing DurationObject", CooldownTestSummary(cd) end
+        local clear = payload.setDurationObjectClearIfZero
+        if clear == nil then
+            return CooldownTestCall(cd, "SetCooldownFromDurationObject", durObj, true)
+        end
+        return CooldownTestCall(cd, "SetCooldownFromDurationObject", durObj, clear)
+    elseif methodKey == "set" then
+        local startTime = payload.setCooldownStart
+        local duration = payload.setCooldownDuration
+        if startTime == nil or duration == nil then
+            return false, "missing start/duration", CooldownTestSummary(cd)
+        end
+        if payload.setCooldownModRate ~= nil then
+            return CooldownTestCall(cd, "SetCooldown", startTime, duration, payload.setCooldownModRate)
+        end
+        return CooldownTestCall(cd, "SetCooldown", startTime, duration)
+    elseif methodKey == "duration" then
+        local duration = payload.setCooldownDurationOnly
+        if duration == nil then return false, "missing duration", CooldownTestSummary(cd) end
+        if payload.setCooldownDurationModRate ~= nil then
+            return CooldownTestCall(cd, "SetCooldownDuration", duration, payload.setCooldownDurationModRate)
+        end
+        return CooldownTestCall(cd, "SetCooldownDuration", duration)
+    elseif methodKey == "expiration" then
+        local expiration = payload.setCooldownExpirationTime
+        local duration = payload.setCooldownExpirationDuration
+        if expiration == nil
+           and CooldownTestPlainNumber(payload.setCooldownStart)
+           and CooldownTestPlainNumber(duration) then
+            expiration = payload.setCooldownStart + duration
+        end
+        if expiration == nil or duration == nil then
+            return false, "missing expiration/duration", CooldownTestSummary(cd)
+        end
+        if payload.setCooldownExpirationModRate ~= nil then
+            return CooldownTestCall(cd, "SetCooldownFromExpirationTime", expiration, duration, payload.setCooldownExpirationModRate)
+        end
+        return CooldownTestCall(cd, "SetCooldownFromExpirationTime", expiration, duration)
+    end
+
+    return false, "unknown method", CooldownTestSummary(cd)
+end
+
+SLASH_CDMCDTEST1 = "/cdmcdtest"
+SlashCmdList["CDMCDTEST"] = function(msg)
+    local text = msg and msg:gsub("^%s+", ""):gsub("%s+$", "") or ""
+    local cooldownID = tonumber(text:match("^(%d+)"))
+    local P = "|cff34d399[cdmcdtest]|r"
+    if not cooldownID then
+        print(P, "Usage: /cdmcdtest <cooldownID>")
+        return
+    end
+
+    local mirror = ns.CDMBlizzMirror
+    if mirror and mirror.BindNewChildren then
+        mirror.BindNewChildren()
+    end
+    if not (mirror and mirror.GetCooldownMethodTestPayload) then
+        print(P, "Mirror payload API unavailable.")
+        return
+    end
+
+    local payload = mirror.GetCooldownMethodTestPayload(cooldownID)
+    if not payload then
+        print(P, "No mirrored child payload for cooldownID", tostring(cooldownID))
+        return
+    end
+
+    local frame, err = EnsureCooldownMethodTestFrame()
+    if not frame then
+        print(P, err)
+        return
+    end
+
+    if frame.title then
+        frame.title:SetText("|cff34d399[cdmcdtest]|r cdID=" .. tostring(cooldownID)
+            .. " cat=" .. tostring(payload.state and payload.state.viewerCategory)
+            .. " active=" .. tostring(payload.state and payload.state.isActive == true))
+    end
+    if frame.Show then frame:Show() end
+
+    print(P, "cdID=", tostring(cooldownID),
+        "cat=", tostring(payload.state and payload.state.viewerCategory),
+        "active=", tostring(payload.state and payload.state.isActive == true),
+        "lastSetter=", tostring(payload.lastCooldownSetter),
+        "durObj=", CooldownTestValue(payload.durObj),
+        "source=", tostring(payload.durObjSource))
+    print(P, "aura",
+        "hasInst=", tostring(payload.state and payload.state.hasAuraInstanceID == true),
+        "unit=", tostring(payload.state and payload.state.auraUnit),
+        "auraDur=", CooldownTestValue(payload.state and payload.state.auraDurObj),
+        "auraSource=", tostring(payload.state and payload.state.auraDurObjSource),
+        "auraUnknown=", tostring(payload.state and payload.state.auraDurationStateUnknown))
+    print(P, "childCd",
+        "shown=", tostring(payload.childCooldownShown == true),
+        "times=", CooldownTestValue(payload.childCooldownStartMS) .. "/" .. CooldownTestValue(payload.childCooldownDurationMS),
+        "duration=", CooldownTestValue(payload.childCooldownDurationValue))
+    print(P, "args",
+        "start=", CooldownTestValue(payload.setCooldownStart),
+        "duration=", CooldownTestValue(payload.setCooldownDuration),
+        "durationOnly=", CooldownTestValue(payload.setCooldownDurationOnly),
+        "expiration=", CooldownTestValue(payload.setCooldownExpirationTime))
+    if type(payload.auraProbeLines) == "table" then
+        for _, line in ipairs(payload.auraProbeLines) do
+            print(P, line)
+        end
+    end
+
+    for key, row in pairs(frame.rows) do
+        if row.tex and payload.iconTexture and not (issecretvalue and issecretvalue(payload.iconTexture)) then
+            row.tex:SetTexture(payload.iconTexture)
+        end
+        local ok, result = ApplyCooldownMethodCell(row, payload, key)
+        local summary = CooldownTestSummary(row.cd)
+        if row.label then
+            local textLabel = key
+            if key == "durObj" then textLabel = "DurationObj"
+            elseif key == "set" then textLabel = "SetCooldown"
+            elseif key == "duration" then textLabel = "Duration"
+            elseif key == "expiration" then textLabel = "Expiration" end
+            row.label:SetText(textLabel .. " " .. (ok and "OK" or "ERR"))
+        end
+        print(P, key, ok and "OK" or ("ERR " .. tostring(result)), summary)
+    end
 end
 
 -- /cdmprofiles — dump _specProfiles contents and current spec state.
@@ -1291,6 +1526,8 @@ end
 -- TAINT DEBUG (EditBox sink)
 --
 -- Toggle: /run QUI_CDM_TAINT_DEBUG = true; /rl
+-- Filter: /run QUI_CDM_TAINT_FILTER = "Sync"; /rl
+-- Buffer: /run QUI_CDM_TAINT_BUFFER_MAX = 1000; /rl
 --
 -- Instrumented call sites use Taint(label, k1, v1, k2, v2, ...) to emit a
 -- single line describing each field's secrecy status. Secrets are rendered
@@ -1318,8 +1555,47 @@ local _taintFrame
 local _taintEditBox
 local _taintScroll
 local _taintBuffer = {}
-local _taintBufferMax = 200
+local _taintBufferMax = 1000
 local _taintAutoScroll = true
+local _taintLastMessage
+local _taintLastRepeat = 0
+
+local function _getTaintBufferMax()
+    local n = tonumber(_G.QUI_CDM_TAINT_BUFFER_MAX)
+    if not n then return _taintBufferMax end
+    if n < 50 then return 50 end
+    if n > 5000 then return 5000 end
+    return math.floor(n)
+end
+
+local function _taintMessageAllowed(label, message)
+    local filter = _G.QUI_CDM_TAINT_FILTER
+    if type(_G.QUI_CDM_TAINT_DEBUG) == "string" then
+        filter = _G.QUI_CDM_TAINT_DEBUG
+    end
+    if type(filter) ~= "string" or filter == "" then return true end
+
+    local needle = filter:lower()
+    local labelText = tostring(label):lower()
+    return labelText:find(needle, 1, true) ~= nil
+        or message:lower():find(needle, 1, true) ~= nil
+end
+
+local function _appendTaintMessage(message)
+    if _taintLastMessage == message and #_taintBuffer > 0 then
+        _taintLastRepeat = _taintLastRepeat + 1
+        _taintBuffer[#_taintBuffer] = message .. " | repeat=" .. tostring(_taintLastRepeat) .. ":num"
+    else
+        _taintLastMessage = message
+        _taintLastRepeat = 1
+        _taintBuffer[#_taintBuffer + 1] = message
+    end
+
+    local maxLines = _getTaintBufferMax()
+    while #_taintBuffer > maxLines do
+        table.remove(_taintBuffer, 1)
+    end
+end
 
 local function _ensureTaintFrame()
     if _taintFrame then return end
@@ -1339,7 +1615,7 @@ local function _ensureTaintFrame()
 
     local title = _taintFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", 8, -4)
-    title:SetText("|cffFF6699[CDM Taint]|r drag to move \194\183 click text to select \194\183 Ctrl+A / Ctrl+C to copy \194\183 ESC to unfocus")
+    title:SetText("|cffFF6699[CDM Taint]|r drag to move \194\183 click text to select \194\183 Ctrl+A / Ctrl+C to copy \194\183 filter: /cdmdebug taint <text>")
 
     _taintScroll = CreateFrame("ScrollFrame", "QUI_CDMTaintDebugScroll", _taintFrame, "UIPanelScrollFrameTemplate")
     _taintScroll:SetPoint("TOPLEFT", 8, -22)
@@ -1360,8 +1636,6 @@ end
 
 function CDMDebug.Taint(label, ...)
     if not _G.QUI_CDM_TAINT_DEBUG then return end
-    _ensureTaintFrame()
-    if not _taintEditBox then return end
 
     local n = select("#", ...)
     local message = "[Taint] " .. tostring(label)
@@ -1371,14 +1645,16 @@ function CDMDebug.Taint(label, ...)
         message = message .. " | " .. _formatTaintField(k, v)
     end
 
-    _taintBuffer[#_taintBuffer + 1] = message
-    while #_taintBuffer > _taintBufferMax do
-        table.remove(_taintBuffer, 1)
-    end
+    if not _taintMessageAllowed(label, message) then return end
+
+    _ensureTaintFrame()
+    if not _taintEditBox then return end
+
+    _appendTaintMessage(message)
 
     _taintEditBox:SetText(table.concat(_taintBuffer, "\n"))
 
-    if _taintAutoScroll and _taintScroll then
+    if _taintAutoScroll and _taintScroll and C_Timer and C_Timer.After then
         C_Timer.After(0, function()
             if _taintScroll then
                 local maxScroll = _taintScroll:GetVerticalScrollRange()
@@ -1386,6 +1662,46 @@ function CDMDebug.Taint(label, ...)
             end
         end)
     end
+end
+
+local function _renderDebugLinesToEditBox(lines)
+    _ensureTaintFrame()
+    if not _taintEditBox then return end
+
+    for key in pairs(_taintBuffer) do
+        _taintBuffer[key] = nil
+    end
+    _taintLastMessage = nil
+    _taintLastRepeat = 0
+
+    if type(lines) == "table" then
+        for i, line in ipairs(lines) do
+            _taintBuffer[i] = tostring(line)
+        end
+    end
+
+    _taintEditBox:SetText(table.concat(_taintBuffer, "\n"))
+    if _taintScroll then
+        _taintScroll:SetVerticalScroll(0)
+    end
+end
+
+SLASH_QUI_CDMRAW1 = "/cdmraw"
+SlashCmdList["QUI_CDMRAW"] = function()
+    local P = "|cff34d399[CDM raw]|r"
+    local mirror = ns.CDMBlizzMirror
+    if mirror and mirror.BindNewChildren then
+        mirror.BindNewChildren()
+    end
+    if not (mirror and mirror.GetRawCooldownViewerDebugLines) then
+        _renderDebugLinesToEditBox({ "[CDM raw] mirror raw dump API unavailable" })
+        print(P, "raw dump API unavailable")
+        return
+    end
+
+    local lines = mirror.GetRawCooldownViewerDebugLines()
+    _renderDebugLinesToEditBox(lines)
+    print(P, "dumped", tostring(type(lines) == "table" and #lines or 0), "line(s) to the CDM debug text window.")
 end
 
 ---------------------------------------------------------------------------

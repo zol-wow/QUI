@@ -85,7 +85,7 @@ local icon = {
 
 ns.CDMIconFactory.UpdateIconCooldown(icon)
 
-assert(queriedAura == true, "active mirror with no durObj should still probe spellID aura fallback")
-assert(appliedDuration == auraDuration, "spellID aura fallback should supply the DurationObject")
+assert(queriedAura == false, "icon sync must not query aura APIs; UNIT_AURA mirror path owns aura duration")
+assert(appliedDuration == nil, "active mirror with no durObj should show without inventing a duration")
 
 print("OK: cdm_icon_factory_blizz_fallback_test")

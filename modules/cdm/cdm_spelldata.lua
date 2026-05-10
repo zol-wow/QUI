@@ -1282,6 +1282,7 @@ function CDMSpellData:ResolveAuraState(params)
     local entryTexture = params.entryTexture
     local viewerType = params.viewerType
     local blizzardMirrorCooldownID = params.blizzardMirrorCooldownID
+    local blizzardMirrorCategory = params.blizzardMirrorCategory
     local debugAura = ShouldDebugAuraState(entryName, spellID, entryID)
     local isBuiltinAuraViewer = viewerType == "buff" or viewerType == "trackedBar"
 
@@ -1392,7 +1393,9 @@ function CDMSpellData:ResolveAuraState(params)
                     end
                 end
                 if blizzardMirrorCooldownID and mirror.GetStateByCooldownID then
-                    local backedState = mirror.GetStateByCooldownID(blizzardMirrorCooldownID)
+                    local backedState = mirror.GetStateByCooldownID(
+                        blizzardMirrorCooldownID,
+                        blizzardMirrorCategory)
                     local backedCat = backedState and backedState.viewerCategory
                     if backedCat == "buff" or backedCat == "trackedBar" then
                         local backedID = backedState.overrideTooltipSpellID
@@ -1529,7 +1532,9 @@ function CDMSpellData:ResolveAuraState(params)
             -- linked ID resolves to a direct BuffIcon/BuffBar child.
             if not entryIsAura then
                 if blizzardMirrorCooldownID and mirror.GetStateByCooldownID then
-                    local backedState = mirror.GetStateByCooldownID(blizzardMirrorCooldownID)
+                    local backedState = mirror.GetStateByCooldownID(
+                        blizzardMirrorCooldownID,
+                        blizzardMirrorCategory)
                     local backedCat = backedState and backedState.viewerCategory
                     if backedCat == "essential" or backedCat == "utility" then
                         rememberCooldownInfoLinkedAuraIDs(backedState)
@@ -1563,7 +1568,6 @@ function CDMSpellData:ResolveAuraState(params)
                     rememberCooldownInfoLinkedAuraIDs(info)
                     if not info or not info.hasAura then return false end
                     if type(info.linkedSpellIDs) ~= "table" then return false end
-                    if not cooldownLinkedAuraFallbackAllowed() then return false end
                     if not mirror.GetMirroredStateForViewer then return false end
                     local getAuraState = mirror.GetDirectMirroredStateForViewer
                         or mirror.GetMirroredStateForViewer
@@ -2223,6 +2227,16 @@ function CDMSpellData:ResolveAuraState(params)
         end
         if not appsResolved
             and childAuraInstID
+            and r.auraData then
+            local directApps = GetCleanAuraApplications(r.auraData)
+            if IsUsableResolvedAuraData(auraUnit, r.auraData) and directApps ~= nil then
+                apps = directApps
+                stackSource = "resolved-data"
+                appsResolved = true
+            end
+        end
+        if not appsResolved
+            and childAuraInstID
             and not InCombatLockdown()
             and Sources and Sources.QueryAuraDataByAuraInstanceID then
             local instData = QueryAuraData(auraUnit, childAuraInstID)
@@ -2234,6 +2248,7 @@ function CDMSpellData:ResolveAuraState(params)
             end
         end
         if not appsResolved
+            and not childAuraInstID
             and not mirrorRestrictsAuraFallbacks
             and entryName and entryName ~= ""
             and Sources and Sources.QueryAuraDataBySpellName then

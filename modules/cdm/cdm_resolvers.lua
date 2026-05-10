@@ -479,7 +479,7 @@ function CDMResolvers.HasRealCooldownState(icon, entry, duration, apiIsActive, b
         return false
     end
 
-    if icon._auraActive or entry.viewerType == "buff" then
+    if icon._auraActive or CDMResolvers.IsAuraEntry(entry) then
         return false
     end
 
@@ -817,6 +817,7 @@ function CDMResolvers.ResolveAuraStateForIcon(icon, entry, sid)
     p.totemSlot = CDMIcons.IsTotemSlotEntry(entry) and entry._totemSlot or nil
     p.disableLooseVisibilityFallback = true
     p.blizzardMirrorCooldownID = icon._blizzMirrorCooldownID
+    p.blizzardMirrorCategory = icon._blizzMirrorCategory
 
     return CDMSpellData:ResolveAuraState(p)
 end
@@ -969,6 +970,26 @@ function CDMResolvers.ResolveIconDurationObject(icon)
         return nil, "inactive", nil
     end
 
+    -- GCD-only state is live spell state and should not be masked by a
+    -- stale mirrored child duration. Real cooldowns still fall through to the
+    -- mirror branch below when QueryDuration finds a spell-owned duration.
+    do
+        local cdInfo = QueryCooldown(sid)
+        local cdInfoActive = cdInfo and CDMIcons.GetCooldownInfoField(cdInfo, "isActive")
+        if cdInfoActive == true and GetTrustedIsOnGCD(sid) == true then
+            local realDurObj = QueryDuration(sid)
+            if not realDurObj and CDMIcons.IsGCDSwipeEnabled() then
+                local gcdDur
+                if Sources and Sources.QuerySpellCooldownDuration then
+                    gcdDur = Sources.QuerySpellCooldownDuration(sid, false)
+                end
+                if gcdDur then
+                    return gcdDur, "gcd-only", sid
+                end
+            end
+        end
+    end
+
     -- 1.5. Blizzard CDM mirror — for cooldown-kind entries with a known
     -- viewer child, prefer Blizzard's privileged durObj over our own
     -- spell cooldown source query. Blizzard's child receives
@@ -986,7 +1007,7 @@ function CDMResolvers.ResolveIconDurationObject(icon)
         local mirrorCooldownID = icon._blizzMirrorCooldownID
         local mirror = ns.CDMBlizzMirror
         if mirrorCooldownID and mirror and mirror.GetStateByCooldownID then
-            m = mirror.GetStateByCooldownID(mirrorCooldownID)
+            m = mirror.GetStateByCooldownID(mirrorCooldownID, icon._blizzMirrorCategory)
         end
         if not m and Sources and Sources.QueryMirroredCooldownState then
             m = Sources.QueryMirroredCooldownState(sid, entry.viewerType)
@@ -994,7 +1015,15 @@ function CDMResolvers.ResolveIconDurationObject(icon)
         if m and m.isActive and m.durObj then
             local sourceCooldownID = m.cooldownID or mirrorCooldownID or sid
             local sourceSpellID = m.overrideSpellID or m.spellID or sid
-            return m.durObj, "cooldown",
+            local mode = (m.durObjSource == "aura-duration"
+                or m.durObjSource == "aura-child"
+                or m.durObjSource == "aura-child-frame"
+                or m.durObjSource == "aura-related-child") and "aura" or "cooldown"
+            if m.durObjSource == "spell-charge"
+                or m.durObjSource == "resource-duration" then
+                mode = "charge"
+            end
+            return m.durObj, mode,
                 "mirror:" .. tostring(sourceCooldownID) .. ":" .. tostring(m.mirrorEpoch),
                 nil, nil, sourceSpellID
         end

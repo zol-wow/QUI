@@ -506,11 +506,12 @@ local function ShowNativeIconWidgets(icon)
     if icon.TextOverlay  then icon.TextOverlay.Show(icon.TextOverlay)  end
 end
 
-local function SetIconBlizzMirrorBinding(icon, cooldownID)
+local function SetIconBlizzMirrorBinding(icon, cooldownID, viewerCategory)
     if not (icon and cooldownID) then return end
     icon._mirrorNativeDurObjApplied = nil
     icon._lastMirrorNativeAuraSourceID = nil
     icon._blizzMirrorCooldownID = cooldownID
+    icon._blizzMirrorCategory = viewerCategory
     ShowNativeIconWidgets(icon)
     local icons = ns.CDMIcons
     if icons and icons.ConfigureIcon and icon._rowConfig then
@@ -523,6 +524,7 @@ local function ClearIconBlizzMirrorBinding(icon)
     icon._mirrorNativeDurObjApplied = nil
     icon._lastMirrorNativeAuraSourceID = nil
     icon._blizzMirrorCooldownID = nil
+    icon._blizzMirrorCategory = nil
     ShowNativeIconWidgets(icon)
 end
 
@@ -660,10 +662,10 @@ local function ResolveBlizzCooldownIDForEntry(entry)
             for _, id in ipairs(ids) do
                 local found = mirror.GetDirectCooldownIDForViewer(id, cat)
                 if found then
-                    local state = mirror.GetStateByCooldownID and mirror.GetStateByCooldownID(found)
+                    local state = mirror.GetStateByCooldownID and mirror.GetStateByCooldownID(found, cat)
                     DebugBlizzEntry(debugBlizz, entry, "lookup-direct",
                         "cat=", cat, "id=", tostring(id), FormatMirrorState(state))
-                    return found
+                    return found, cat
                 end
             end
             DebugBlizzEntry(debugBlizz, entry, "lookup-direct-miss",
@@ -674,38 +676,44 @@ local function ResolveBlizzCooldownIDForEntry(entry)
         for _, id in ipairs(ids) do
             local found = mirror.GetCooldownIDForViewer(id, cat)
             if found then
-                local state = mirror.GetStateByCooldownID and mirror.GetStateByCooldownID(found)
+                local state = mirror.GetStateByCooldownID and mirror.GetStateByCooldownID(found, cat)
                 DebugBlizzEntry(debugBlizz, entry, "lookup-loose",
                     "cat=", cat, "id=", tostring(id), FormatMirrorState(state))
-                return found
+                return found, cat
             end
         end
         DebugBlizzEntry(debugBlizz, entry, "lookup-loose-miss",
             "cat=", cat, "ids=", FormatIDList(ids))
         return nil
     end
+    local resolvedCat
+    local function choose(cat)
+        cdID, resolvedCat = lookupInViewer(cat)
+        return cdID ~= nil
+    end
+
     if viewerCat == "essential" then
-        cdID = lookupInViewer("essential") or lookupInViewer("utility")
+        if not choose("essential") then choose("utility") end
     elseif viewerCat == "utility" then
-        cdID = lookupInViewer("utility") or lookupInViewer("essential")
+        if not choose("utility") then choose("essential") end
     elseif viewerCat == "buff" then
-        cdID = lookupInViewer("buff") or lookupInViewer("trackedBar")
+        if not choose("buff") then choose("trackedBar") end
     elseif viewerCat == "trackedBar" then
-        cdID = lookupInViewer("trackedBar") or lookupInViewer("buff")
+        if not choose("trackedBar") then choose("buff") end
     else
         -- Custom bar (or unknown viewer): probe categories. Cooldown-kind
         -- entries probe essential/utility; aura-kind probe buff/trackedBar.
         local kind = entry.kind
         if kind == "aura" then
-            cdID = lookupInViewer("buff") or lookupInViewer("trackedBar")
+            if not choose("buff") then choose("trackedBar") end
         else
-            cdID = lookupInViewer("essential") or lookupInViewer("utility")
+            if not choose("essential") then choose("utility") end
         end
     end
     if not cdID then return nil end
 
     if mirror.GetStateByCooldownID then
-        local state = mirror.GetStateByCooldownID(cdID)
+        local state = mirror.GetStateByCooldownID(cdID, resolvedCat)
         local actualCat = state and state.viewerCategory
         local expected
         if viewerCat == "essential" or viewerCat == "utility" then
@@ -726,17 +734,17 @@ local function ResolveBlizzCooldownIDForEntry(entry)
     -- Only bind if a live child currently exists for this cooldownID;
     -- otherwise fall back to native rendering for this acquire (the icon
     -- can rebind on the next refresh once Blizzard creates the child).
-    if mirror.HasChildForCooldownID and not mirror.HasChildForCooldownID(cdID) then
+    if mirror.HasChildForCooldownID and not mirror.HasChildForCooldownID(cdID, resolvedCat) then
         DebugBlizzEntry(debugBlizz, entry, "reject-no-child", "cdID=", tostring(cdID))
         return nil
     end
-    local state = mirror.GetStateByCooldownID and mirror.GetStateByCooldownID(cdID)
+    local state = mirror.GetStateByCooldownID and mirror.GetStateByCooldownID(cdID, resolvedCat)
     DebugBlizzEntry(debugBlizz, entry, "resolved", FormatMirrorState(state))
-    return cdID
+    return cdID, resolvedCat
 end
 
 local function TryBindIconToBlizz(icon, spellEntry)
-    local cdID = ResolveBlizzCooldownIDForEntry(spellEntry)
+    local cdID, catName = ResolveBlizzCooldownIDForEntry(spellEntry)
     if not cdID then
         -- Recycled icon may carry a stale Blizzard binding; clear it so
         -- native rendering takes over.
@@ -744,10 +752,13 @@ local function TryBindIconToBlizz(icon, spellEntry)
         return false
     end
     -- Same binding as before: no-op.
-    if icon._blizzMirrorCooldownID == cdID then return true end
+    if icon._blizzMirrorCooldownID == cdID
+        and icon._blizzMirrorCategory == catName then
+        return true
+    end
     -- Different binding — clear and rebind
     if icon._blizzMirrorCooldownID then ClearIconBlizzMirrorBinding(icon) end
-    SetIconBlizzMirrorBinding(icon, cdID)
+    SetIconBlizzMirrorBinding(icon, cdID, catName)
     return true
 end
 
@@ -826,7 +837,8 @@ local function SyncBlizzMirrorIconState(icon)
     })
 
     local mirror = ns.CDMBlizzMirror
-    local m = mirror and mirror.GetStateByCooldownID and mirror.GetStateByCooldownID(cooldownID)
+    local m = mirror and mirror.GetStateByCooldownID
+        and mirror.GetStateByCooldownID(cooldownID, icon._blizzMirrorCategory)
     if not m then
         DebugBlizzEntry(debugBlizz, entry, "state-sync-missing", "cdID=", tostring(cooldownID))
         return false
@@ -884,86 +896,14 @@ local function SyncBlizzMirrorIconState(icon)
             "mirrorActive", mirrorActive)
     end
 
-    -- Two-stage durObj resolution.
-    --
-    -- Stage 1: trust m.durObj. The mirror's durObj came either from
-    -- Blizzard's SetCooldownFromDurationObject hook on the child Cooldown or from
-    -- VerifyStateFreshness (C_UnitAuras.GetAuraDuration on the stamped
-    -- instID — same value Blizzard's mixin would resolve to).
-    --
-    -- Stage 2: spellID-based fallback. Some Blizzard CDM entries have
-    -- bugs where the child's Cooldown frame never receives a durObj push
-    -- (Reaping is a known case — the buff is on the unit but the swipe
-    -- stays empty). When stage 1 yields nothing, probe the catalog spell
-    -- IDs through C_UnitAuras.GetUnitAuraBySpellID. Finding a non-nil
-    -- aura means it IS on the unit → icon is active even if GetAuraDuration
-    -- subsequently returns nil (durationless / permanent auras like
-    -- stances and forms). When we DO get a durObj from the fallback we
-    -- push it onto icon.Cooldown ourselves since Blizzard's mixin isn't.
-    -- If both stages report no aura at all, a Blizzard-active mirror still
-    -- shows the icon without a swipe; otherwise the icon is inactive.
+    -- Aura duration is owned by the mirror. Prefer the Blizzard child
+    -- DurationObject when it exists; UNIT_AURA duration objects are the
+    -- fallback. Icon sync is a pure consumer: if m.durObj is nil, render the
+    -- active aura without a swipe and wait for the next mirror stamp.
     local durObj = m.durObj
-    local durObjSource = durObj and "mirror" or nil
-    local fallbackFoundAura = false   -- aura is on unit per GetUnitAuraBySpellID
+    local durObjSource = durObj and (m.durObjSource or "mirror") or nil
+    local fallbackFoundAura = false
     local fallbackInstID
-
-    if not durObj
-        and Sources
-        and Sources.QueryUnitAuraBySpellID then
-        local filter = (auraUnit == "target") and "HARMFUL" or "HELPFUL"
-        local seen = {}
-        -- Probe a candidate spellID through GetUnitAuraBySpellID.
-        -- Return-true means "stop probing further candidates"; only the
-        -- first hit matters because we just need to know whether the
-        -- aura is on the unit and which instID to ask GetAuraDuration
-        -- about. A non-nil aura means the icon IS active (durationless
-        -- auras like stances/forms/permanent buffs return non-nil aura
-        -- but nil duration — the icon should still show).
-        local function probe(sid)
-            if fallbackFoundAura then return true end
-            if type(sid) ~= "number" or sid <= 0 or seen[sid] then return end
-            seen[sid] = true
-            local ad = Sources.QueryUnitAuraBySpellID(auraUnit, sid, filter)
-            local mirrorMod = ns.CDMBlizzMirror
-            if mirrorMod and mirrorMod.TaintLog then
-                mirrorMod.TaintLog("Sync.probe",
-                    "cdID", cooldownID, "sid", sid,
-                    "auraUnit", auraUnit, "filter", filter,
-                    "ad", ad)
-            end
-            if not ad then return end
-            fallbackFoundAura = true
-            local instID = ad.auraInstanceID
-            if instID and Sources.QueryAuraDuration then
-                local dur = Sources.QueryAuraDuration(auraUnit, instID)
-                if mirrorMod and mirrorMod.TaintLog then
-                    mirrorMod.TaintLog("Sync.probe.dur",
-                        "cdID", cooldownID, "instID", instID,
-                        "dur", dur)
-                end
-                if dur then
-                    durObj = dur
-                    durObjSource = "spellID-fallback"
-                    fallbackInstID = instID
-                end
-            end
-            return true
-        end
-        if not probe(m.overrideTooltipSpellID) then
-            if not probe(m.overrideSpellID) then
-                if not probe(m.spellID) then
-                    if type(m.linkedSpellIDs) == "table" then
-                        for _, lid in ipairs(m.linkedSpellIDs) do
-                            if probe(lid) then break end
-                        end
-                    end
-                    if not fallbackFoundAura then
-                        probe(runtimeSid)
-                    end
-                end
-            end
-        end
-    end
 
     -- Activeness is "is the aura on the unit", NOT "do we have a swipe
     -- duration". A durationless aura (form, stance, permanent buff) is
@@ -1460,7 +1400,7 @@ local okI = true; local aIcon = r.auraData.icon
             -- aura swipe wins, then real cooldown/recharge, then GCD.
             -- isOnGCD is only used when this batch came from
             -- SPELL_UPDATE_COOLDOWN; outside that event it can be stale.
-            local auraSwipeActive = icon._auraActive or entry.viewerType == "buff"
+            local auraSwipeActive = icon._auraActive or IsAuraEntry(entry)
             local realCooldownActive = HasRealCooldownState(icon, entry, duration, apiIsActive, blizzRealCooldownActive, durObj, _runtimeSid)
             -- GCD is simple: isOnGCD says the current active display is the
             -- global cooldown. isActive is the non-secret "render cooldown UI"
