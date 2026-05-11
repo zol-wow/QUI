@@ -7,7 +7,23 @@ function wipe(tbl)
     end
 end
 
-local ns = {}
+local secretValueMT = {
+    __eq = function()
+        error("secret value compared")
+    end,
+}
+
+local function NewSecretValue(label)
+    return setmetatable({ label = label }, secretValueMT)
+end
+
+local ns = {
+    Helpers = {
+        IsSecretValue = function(value)
+            return getmetatable(value) == secretValueMT
+        end,
+    },
+}
 
 assert(loadfile("modules/cdm/cdm_runtime_store.lua"))("QUI", ns)
 
@@ -68,5 +84,29 @@ store.SetIconState(icon, {
 })
 
 assert(store.Version() == afterIconWrite, "identical SetIconState should not churn version")
+
+local secretStacks = NewSecretValue("one")
+local nextSecretStacks = NewSecretValue("two")
+local secretState = store.SetState("secret:test", {
+    mode = "aura",
+    active = true,
+    stacks = secretStacks,
+    stackSource = "display-count",
+})
+local secretVersion = store.Version()
+
+local ok, updatedSecretState = pcall(function()
+    return store.SetState("secret:test", {
+        mode = "aura",
+        active = true,
+        stacks = nextSecretStacks,
+        stackSource = "display-count",
+    })
+end)
+
+assert(ok, "SetState should not compare secret values")
+assert(updatedSecretState == secretState, "secret value refresh should reuse the state table")
+assert(store.Version() == secretVersion + 1, "unknown secret equality should refresh the stored state")
+assert(rawequal(updatedSecretState.stacks, nextSecretStacks), "secret value refresh should store the latest value")
 
 print("OK: cdm_runtime_store_test")

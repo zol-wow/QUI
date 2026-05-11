@@ -1,4 +1,5 @@
 local ADDON_NAME, ns = ...
+local Helpers = ns.Helpers or {}
 
 ---------------------------------------------------------------------------
 -- CDM Runtime Store
@@ -26,6 +27,17 @@ local function ValueID(value)
     return tostring(value)
 end
 
+local function IsSecretValue(value)
+    return Helpers.IsSecretValue and Helpers.IsSecretValue(value) or false
+end
+
+local function ValuesEqual(left, right)
+    if IsSecretValue(left) or IsSecretValue(right) then
+        return nil
+    end
+    return left == right
+end
+
 local function StateEquals(target, state, key)
     if not target then return false end
     if target.key ~= key then return false end
@@ -33,7 +45,7 @@ local function StateEquals(target, state, key)
 
     if state then
         for k, v in pairs(state) do
-            if target[k] ~= v then
+            if ValuesEqual(target[k], v) ~= true then
                 return false
             end
         end
@@ -41,7 +53,7 @@ local function StateEquals(target, state, key)
 
     for k, v in pairs(target) do
         if k ~= "epoch" and k ~= "key" and k ~= "frame" and k ~= "frameKind" then
-            if not state or state[k] ~= v then
+            if not state or ValuesEqual(state[k], v) ~= true then
                 return false
             end
         end
