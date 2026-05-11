@@ -10,6 +10,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha24 - 2026-05-10
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing alpha23 profiles carry over unchanged. v3.5.x → alpha24: back up `WTF/` and export your profile first.
+>
+> **Reminder: QUI ships as two folders — `QUI/` and `QUI_Options/`.** Both must live next to each other in `Interface/AddOns/`. The release zip already contains both.
+
+### Changed
+- **Cooldown icons no longer fight Blizzard's hidden cooldown viewer.** QUI now observes Blizzard's viewer state without taking over its frames — the QUI icons render natively in every case, with fewer visibility glitches and fewer taint paths.
+- **Spells that live in multiple viewer categories now track independently.** A spell that has both a cast (essential) and a tracked buff/bar entry used to share one state and last-write-wins between them; each entry now keeps its own duration and updates separately.
+
+### Fixed
+- **GCD swipe is no longer hidden by a stale cooldown.** When a spell is ready (or off cooldown) but still inside its global cooldown window, the GCD swipe shows instead of the previous cooldown lingering on the icon.
+- **Stuck "active" cooldown swipes that lingered after a spell came off cooldown** clear as soon as live state catches up, instead of waiting for the next event.
+- **Charged spells that are fully recharged show the GCD swipe during use** instead of going blank between casts.
+- **Real cooldowns longer than the GCD remain visible** during the GCD window — they keep showing their own cooldown swipe even while the GCD is active.
+- **Target debuffs that Blizzard files under multiple cooldown IDs** (cast in essentials + buff in trackedBar) stay bound to the right entry through every refresh, instead of swapping or going blank.
+
+### Internal
+- `/qui cdm_cache` now reports Blizzard mirror state counts, runtime store entries, and stale-mirror skip counters — useful when triaging cooldown-display reports.
+
+
+
 ## v3.6.0-alpha23 - 2026-05-09
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing alpha22 profiles carry over unchanged. v3.5.x → alpha23: back up `WTF/` and export your profile first.
