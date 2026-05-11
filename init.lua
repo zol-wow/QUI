@@ -264,12 +264,35 @@ function QUI:SlashCommandOpen(input)
             local ic    = (IC and IC.GetCacheStats) and IC:GetCacheStats() or {}
             local br    = (BR and BR.GetCacheStats) and BR:GetCacheStats() or {}
             local fr    = ns.GetCDMFrameCacheStats and ns.GetCDMFrameCacheStats() or {}
+            local bm    = (ns.CDMBlizzMirror and ns.CDMBlizzMirror.GetCacheStats)
+                and ns.CDMBlizzMirror.GetCacheStats() or {}
+            local rt    = (ns.CDMRuntimeStore and ns.CDMRuntimeStore.GetStats)
+                and ns.CDMRuntimeStore.GetStats() or {}
+            local rs    = (ns.CDMResolvers and ns.CDMResolvers.GetMirrorPolicyStats)
+                and ns.CDMResolvers.GetMirrorPolicyStats() or {}
             local combat = InCombatLockdown() and "true" or "false"
             print(("|cff60A5FAQUI cdm_cache:|r status (combat=%s)"):format(combat))
             print(("  hud_visibility frames:    dirty=%s size=%d"):format(
                 tostring(fr.dirty), tonumber(fr.size) or 0))
             print(("  child map (spellID→child): dirty=%s size=%d"):format(
                 tostring(s.childMapDirty), tonumber(s.childMapSize) or 0))
+            print(("  captured aura index:      entries=%d units=%d spellKeys=%d nameKeys=%d"):format(
+                tonumber(s.capturedAuraEntries) or 0,
+                tonumber(s.capturedAuraUnits) or 0,
+                tonumber(s.capturedAuraSpellKeys) or 0,
+                tonumber(s.capturedAuraNameKeys) or 0))
+            print(("  Blizzard mirror:          states=%d info=%d spellMap=%d directMap=%d"):format(
+                tonumber(bm.mirrorStates) or 0,
+                tonumber(bm.cooldownInfo) or 0,
+                tonumber(bm.spellMapEntries) or 0,
+                tonumber(bm.directSpellMapEntries) or 0))
+            print(("  runtime store:            states=%d version=%d"):format(
+                tonumber(rt.states) or 0,
+                tonumber(rt.version) or 0))
+            print(("  stale mirror skips:       gcd=%d inactive=%d total=%d"):format(
+                tonumber(rs.staleGCDSkips) or 0,
+                tonumber(rs.staleInactiveSkips) or 0,
+                tonumber(rs.staleMirrorSkips) or 0))
             print(("  learned cooldowns:        dirty=%s size=%d"):format(
                 tostring(s.learnedDirty), tonumber(s.learnedSize) or 0))
             print(("  tick aura caches:         data=%d dur=%d exp=%d app=%d"):format(
@@ -301,6 +324,8 @@ function QUI:SlashCommandOpen(input)
             if SD.ClearChildCaches       then SD:ClearChildCaches()       end
             if IC and IC.ClearTextureCycleCache then IC:ClearTextureCycleCache() end
             if BR and BR.ClearPerBarCaches      then BR:ClearPerBarCaches()      end
+            if ns.CDMRuntimeStore and ns.CDMRuntimeStore.ClearAll then ns.CDMRuntimeStore.ClearAll() end
+            if ns.CDMResolvers and ns.CDMResolvers.ResetMirrorPolicyStats then ns.CDMResolvers.ResetMirrorPolicyStats() end
             -- Rebuild — re-derive owned spells from current viewer state.
             if SD.CheckAllDormantSpells   then SD:CheckAllDormantSpells()   end
             if SD.ReconcileAllContainers  then SD:ReconcileAllContainers()  end

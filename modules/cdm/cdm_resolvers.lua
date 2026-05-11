@@ -155,7 +155,10 @@ local function SafeBoolean(val)
     if Shared and Shared.SafeBoolean then
         return Shared.SafeBoolean(val)
     end
-    return type(val) == "boolean" and val or nil
+    if type(val) == "boolean" then
+        return val
+    end
+    return nil
 end
 
 local function GetAuraDataInstanceID(auraData)
@@ -166,6 +169,7 @@ local ok = true; local instID = auraData.auraInstanceID
 end
 
 local GCD_MAX_DURATION = 1.75
+local GCD_SPELL_ID = 61304
 
 ---------------------------------------------------------------------------
 -- RUNTIME RESOLUTION QUERIES
@@ -446,6 +450,167 @@ local function GetTrustedIsOnGCD(spellID)
     return nil
 end
 
+local function GetCooldownInfoBoolean(info, key)
+    if not info or not CDMIcons or not CDMIcons.GetCooldownInfoField then
+        return nil
+    end
+    local value, isSecret = CDMIcons.GetCooldownInfoField(info, key)
+    if isSecret then
+        return nil
+    end
+    if type(value) == "boolean" then
+        return value
+    end
+    return nil
+end
+
+local function GetCurrentIsOnGCD(spellID, info)
+    local trusted = GetTrustedIsOnGCD(spellID)
+    if trusted ~= nil then
+        return trusted
+    end
+    return GetCooldownInfoBoolean(info, "isOnGCD")
+end
+
+local function QueryGCDDurationObject(spellID)
+    if not (Sources and Sources.QuerySpellCooldownDuration) then
+        return nil
+    end
+
+    local durObj = nil
+    if spellID then
+        durObj = Sources.QuerySpellCooldownDuration(spellID, false)
+    end
+    if not durObj and spellID ~= GCD_SPELL_ID then
+        durObj = Sources.QuerySpellCooldownDuration(GCD_SPELL_ID, false)
+    end
+    return durObj
+end
+
+local function SpellHasBaseCooldownLongerThanGCD(spellID)
+    if spellID
+       and CDMIcons
+       and CDMIcons.SpellHasBaseCooldownLongerThanGCD
+       and CDMIcons.SpellHasBaseCooldownLongerThanGCD(spellID) == true then
+        return true
+    end
+    return false
+end
+
+local function HasRealCooldownProof(spellID, durObj, cdInfo, currentOnGCD)
+    if currentOnGCD == true then
+        if CDMIcons and CDMIcons.IsCooldownInfoRealCooldown then
+            local realCooldown = CDMIcons.IsCooldownInfoRealCooldown(cdInfo)
+            if realCooldown == true then
+                return true
+            elseif realCooldown == false then
+                return false
+            end
+        end
+        return SpellHasBaseCooldownLongerThanGCD(spellID)
+    end
+    if durObj then
+        return true
+    end
+    return SpellHasBaseCooldownLongerThanGCD(spellID)
+end
+
+local _mirrorPolicyStats = {
+    staleGCDSkips = 0,
+    staleInactiveSkips = 0,
+}
+
+local function IsMirrorChargeSource(durObjSource)
+    return durObjSource == "spell-charge" or durObjSource == "resource-duration"
+end
+
+local function GetMirroredChargeActive(spellID)
+    local ci = QueryCharges(spellID)
+    if not ci then
+        return nil
+    end
+    return SafeBoolean(ci.isActive)
+end
+
+local function IsChargeSpellNotRecharging(spellID, entry)
+    local ci = QueryCharges(spellID)
+    if not ci then
+        return false
+    end
+    if SafeBoolean(ci.isActive) ~= false then
+        return false
+    end
+    local maxCharges = ci.maxCharges
+    return (entry and entry.hasCharges == true)
+        or (IsSafeNumeric(maxCharges) and maxCharges > 1)
+end
+
+local function ShouldTreatLiveDurationAsGCD(spellID, entry, cdInfo, currentOnGCD)
+    if currentOnGCD ~= true then
+        return false
+    end
+    if IsChargeSpellNotRecharging(spellID, entry) then
+        return true
+    end
+    if CDMIcons and CDMIcons.IsCooldownInfoRealCooldown then
+        local realCooldown = CDMIcons.IsCooldownInfoRealCooldown(cdInfo)
+        if realCooldown == true then
+            return false
+        elseif realCooldown == false then
+            return true
+        end
+    end
+    return false
+end
+
+local function GetMirroredCooldownPolicy(mode, durObjSource, liveCdActive, currentOnGCD, gcdDurObj, realCooldownDurObj, realCooldownLikely, gcdSwipeEnabled, liveChargeActive)
+    if mode == "charge" and IsMirrorChargeSource(durObjSource) then
+        if liveChargeActive == false then
+            if currentOnGCD == true then
+                if gcdSwipeEnabled == true and not gcdDurObj then
+                    return true, nil, "gcd-only"
+                end
+                return false, "stale-gcd", nil
+            end
+            return false, "stale-inactive", nil
+        end
+        return true, nil, nil
+    end
+
+    if mode ~= "cooldown" or durObjSource ~= "spell-cooldown" then
+        return true, nil, nil
+    end
+    if liveCdActive == false then
+        return false, "stale-inactive", nil
+    end
+    if currentOnGCD == true and realCooldownLikely ~= true then
+        if gcdSwipeEnabled == true and not gcdDurObj then
+            return true, nil, "gcd-only"
+        end
+        return false, "stale-gcd", nil
+    end
+    return true, nil, nil
+end
+
+function CDMResolvers.ShouldUseMirroredCooldownDuration(mode, durObjSource, liveCdActive, currentOnGCD, gcdDurObj, realCooldownDurObj, realCooldownLikely, gcdSwipeEnabled, liveChargeActive)
+    return GetMirroredCooldownPolicy(mode, durObjSource, liveCdActive, currentOnGCD, gcdDurObj, realCooldownDurObj, realCooldownLikely, gcdSwipeEnabled, liveChargeActive)
+end
+
+function CDMResolvers.GetMirrorPolicyStats()
+    local staleGCD = _mirrorPolicyStats.staleGCDSkips or 0
+    local staleInactive = _mirrorPolicyStats.staleInactiveSkips or 0
+    return {
+        staleGCDSkips = staleGCD,
+        staleInactiveSkips = staleInactive,
+        staleMirrorSkips = staleGCD + staleInactive,
+    }
+end
+
+function CDMResolvers.ResetMirrorPolicyStats()
+    _mirrorPolicyStats.staleGCDSkips = 0
+    _mirrorPolicyStats.staleInactiveSkips = 0
+end
+
 function CDMResolvers.ClassifySpellCooldownState(spellID, info)
     if not info and spellID then
         info = QueryCooldown(spellID)
@@ -454,8 +619,8 @@ function CDMResolvers.ClassifySpellCooldownState(spellID, info)
     local active = CDMIcons.IsCooldownInfoActive(info)
     local realActive = CDMIcons.IsCooldownInfoRealCooldown(info)
     local onGCD = false
-    local trustedOnGCD = GetTrustedIsOnGCD(spellID)
-    if trustedOnGCD == true then
+    local currentOnGCD = GetCurrentIsOnGCD(spellID, info)
+    if currentOnGCD == true then
         onGCD = true
     end
 
@@ -890,7 +1055,7 @@ function CDMResolvers.ResolveItemDurationObjectForIcon(icon, entry)
     if itemSpellID then
         local cdInfo = QueryCooldown(itemSpellID)
         local cdInfoActive = cdInfo and CDMIcons.GetCooldownInfoField(cdInfo, "isActive")
-        if cdInfoActive == true and GetTrustedIsOnGCD(itemSpellID) ~= true then
+        if cdInfoActive == true and GetCurrentIsOnGCD(itemSpellID, cdInfo) ~= true then
             local durObj = QueryDuration(itemSpellID)
             if durObj then
                 return durObj, "item-cooldown",
@@ -970,24 +1135,15 @@ function CDMResolvers.ResolveIconDurationObject(icon)
         return nil, "inactive", nil
     end
 
-    -- GCD-only state is live spell state and should not be masked by a
-    -- stale mirrored child duration. Real cooldowns still fall through to the
-    -- mirror branch below when QueryDuration finds a spell-owned duration.
-    do
-        local cdInfo = QueryCooldown(sid)
-        local cdInfoActive = cdInfo and CDMIcons.GetCooldownInfoField(cdInfo, "isActive")
-        if cdInfoActive == true and GetTrustedIsOnGCD(sid) == true then
-            local realDurObj = QueryDuration(sid)
-            if not realDurObj and CDMIcons.IsGCDSwipeEnabled() then
-                local gcdDur
-                if Sources and Sources.QuerySpellCooldownDuration then
-                    gcdDur = Sources.QuerySpellCooldownDuration(sid, false)
-                end
-                if gcdDur then
-                    return gcdDur, "gcd-only", sid
-                end
-            end
-        end
+    -- Keep GCD as an explicit lowest-priority duration candidate. Some
+    -- CooldownInfo payloads report isOnGCD=true while isActive=false; using
+    -- isActive as the gate drops the GCD swipe even though usability is in
+    -- the GCD window. Aura, charge, and real cooldown lanes below still win.
+    local gcdCdInfo = QueryCooldown(sid)
+    local currentOnGCD = GetCurrentIsOnGCD(sid, gcdCdInfo)
+    local gcdDurObj
+    if currentOnGCD == true and CDMIcons.IsGCDSwipeEnabled() then
+        gcdDurObj = QueryGCDDurationObject(sid)
     end
 
     -- 1.5. Blizzard CDM mirror — for cooldown-kind entries with a known
@@ -1023,9 +1179,31 @@ function CDMResolvers.ResolveIconDurationObject(icon)
                 or m.durObjSource == "resource-duration" then
                 mode = "charge"
             end
-            return m.durObj, mode,
-                "mirror:" .. tostring(sourceCooldownID) .. ":" .. tostring(m.mirrorEpoch),
-                nil, nil, sourceSpellID
+            local liveCdActive = gcdCdInfo and CDMIcons.GetCooldownInfoField(gcdCdInfo, "isActive")
+            local liveChargeActive = nil
+            if mode == "charge" and IsMirrorChargeSource(m.durObjSource) then
+                liveChargeActive = GetMirroredChargeActive(sourceSpellID)
+            end
+            local realCooldownDurObj = nil
+            if mode == "cooldown" and m.durObjSource == "spell-cooldown" then
+                realCooldownDurObj = QueryDuration(sourceSpellID)
+            end
+            local realCooldownLikely = HasRealCooldownProof(sourceSpellID, realCooldownDurObj, gcdCdInfo, currentOnGCD)
+            local useMirror, skipReason, mirrorMode = GetMirroredCooldownPolicy(
+                mode, m.durObjSource, liveCdActive, currentOnGCD, gcdDurObj, realCooldownDurObj,
+                realCooldownLikely, CDMIcons.IsGCDSwipeEnabled(), liveChargeActive)
+            if useMirror then
+                if mirrorMode == "gcd-only" then
+                    return m.durObj, "gcd-only", sourceSpellID
+                end
+                return m.durObj, mode,
+                    "mirror:" .. tostring(sourceCooldownID) .. ":" .. tostring(m.mirrorEpoch),
+                    nil, nil, sourceSpellID
+            elseif skipReason == "stale-gcd" then
+                _mirrorPolicyStats.staleGCDSkips = (_mirrorPolicyStats.staleGCDSkips or 0) + 1
+            elseif skipReason == "stale-inactive" then
+                _mirrorPolicyStats.staleInactiveSkips = (_mirrorPolicyStats.staleInactiveSkips or 0) + 1
+            end
         end
     end
 
@@ -1044,8 +1222,9 @@ function CDMResolvers.ResolveIconDurationObject(icon)
         end
     end
 
-    -- 3. Spell cooldown active → spell DurObj. The trusted
-    -- SPELL_UPDATE_COOLDOWN snapshot distinguishes real CD from GCD overlay.
+    -- 3. Spell cooldown active → spell DurObj. A trusted
+    -- SPELL_UPDATE_COOLDOWN snapshot, or live isOnGCD when no snapshot is
+    -- available, distinguishes real CD from GCD overlay.
     -- Two distinct queries:
     --   real CD branch:   GetSpellCooldownDuration(sid, true)  via QueryDuration
     --                     — returns the spell's own CD, ignoring the GCD that
@@ -1058,26 +1237,31 @@ function CDMResolvers.ResolveIconDurationObject(icon)
     --                     (which forces ignoreGCD=true) would return nil
     --                     for spells with no real CD currently active.
     do
-        local cdInfo = QueryCooldown(sid)
+        local cdInfo = gcdCdInfo or QueryCooldown(sid)
         local cdInfoActive = cdInfo and CDMIcons.GetCooldownInfoField(cdInfo, "isActive")
         if cdInfoActive == true then
-            local cdInfoOnGCD = GetTrustedIsOnGCD(sid)
+            local cdInfoOnGCD = GetCurrentIsOnGCD(sid, cdInfo)
             local durObj = QueryDuration(sid)
-            if durObj then
+            local durationIsGCD = ShouldTreatLiveDurationAsGCD(sid, entry, cdInfo, cdInfoOnGCD)
+            if durObj and not durationIsGCD then
                 return durObj, "cooldown", sid
             end
             if cdInfoOnGCD == true then
                 if CDMIcons.IsGCDSwipeEnabled() then
-                    local gcdDur
-                    if Sources and Sources.QuerySpellCooldownDuration then
-                        gcdDur = Sources.QuerySpellCooldownDuration(sid, false)
-                    end
+                    local gcdDur = QueryGCDDurationObject(sid)
                     if gcdDur then
                         return gcdDur, "gcd-only", sid
+                    end
+                    if durObj and durationIsGCD then
+                        return durObj, "gcd-only", sid
                     end
                 end
             end
         end
+    end
+
+    if gcdDurObj then
+        return gcdDurObj, "gcd-only", sid
     end
 
     return nil, "inactive", nil

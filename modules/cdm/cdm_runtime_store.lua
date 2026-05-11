@@ -26,6 +26,30 @@ local function ValueID(value)
     return tostring(value)
 end
 
+local function StateEquals(target, state, key)
+    if not target then return false end
+    if target.key ~= key then return false end
+    state = type(state) == "table" and state or nil
+
+    if state then
+        for k, v in pairs(state) do
+            if target[k] ~= v then
+                return false
+            end
+        end
+    end
+
+    for k, v in pairs(target) do
+        if k ~= "epoch" and k ~= "key" and k ~= "frame" and k ~= "frameKind" then
+            if not state or state[k] ~= v then
+                return false
+            end
+        end
+    end
+
+    return true
+end
+
 function CDMRuntimeStore.BuildEntryKey(entry, fallbackContainer)
     if not entry then return nil end
     local containerKey = entry.viewerType or fallbackContainer or "unknown"
@@ -42,6 +66,9 @@ end
 function CDMRuntimeStore.SetState(key, state)
     if type(key) ~= "string" or key == "" then return nil end
     local target = _stateByKey[key]
+    if StateEquals(target, state, key) then
+        return target
+    end
     if not target then
         target = {}
         _stateByKey[key] = target

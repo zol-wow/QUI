@@ -97,6 +97,8 @@ end
 local _spellIndex = {}      -- baseID -> entry (entry shared across aliases)
 local _version = 0
 local _built = false
+local _orderedSpellMap = nil
+local _orderedSpellMapVersion = -1
 
 function CDMIndex.Version() return _version end
 
@@ -304,7 +306,14 @@ end)
 -- call — callers can rebuild after a "refresh_layout" notification.
 ---------------------------------------------------------------------------
 function CDMIndex.GetOrderedSpellMap()
+    if _orderedSpellMap and _orderedSpellMapVersion == _version then
+        return _orderedSpellMap
+    end
+
     local map = {}
+    _orderedSpellMap = map
+    _orderedSpellMapVersion = _version
+
     if not (CooldownViewerSettings and CooldownViewerSettings.GetDataProvider) then
         return map
     end

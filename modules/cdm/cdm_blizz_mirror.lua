@@ -759,6 +759,40 @@ local function PackState(cooldownID, viewerCategory)
     }
 end
 
+local function CountMapEntries(tbl)
+    local count = 0
+    if type(tbl) == "table" then
+        for _ in pairs(tbl) do
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function CountNestedMapEntries(tbl)
+    local count = 0
+    if type(tbl) == "table" then
+        for _, childMap in pairs(tbl) do
+            count = count + CountMapEntries(childMap)
+        end
+    end
+    return count
+end
+
+function CDMBlizzMirror.GetCacheStats()
+    return {
+        mirrorStates = CountMapEntries(_mirrorState),
+        childFrames = CountMapEntries(_childByInstanceKey),
+        cooldownInfo = CountMapEntries(_cooldownInfoByKey),
+        defaultCooldownInfo = CountMapEntries(_cooldownInfoByID),
+        spellMapEntries = CountNestedMapEntries(_cdIDByCatSpell),
+        directSpellMapEntries = CountNestedMapEntries(_directCDIDByCatSpell),
+        spellNameEntries = CountMapEntries(_spellNameToCDID),
+        totemSpellIDEntries = CountMapEntries(_totemSpellIDToCDID),
+        activeTotems = CountMapEntries(_totemActiveCDID),
+    }
+end
+
 -- Resolve (spellID, viewerCategory) -> cooldownID. The viewer category
 -- IS the disambiguator — a single spellID can be in multiple viewers
 -- (e.g., a cast in essential and its buff in TrackedBuff). Callers that

@@ -636,4 +636,10 @@ reapingState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(70765, "buff"), "Re
 assert(reapingState.isActive == true, "spell activation overlay should refresh durationless buff child state")
 assert(iconRefreshCount > refreshBeforeOverlay, "spell activation overlay should request an icon refresh")
 
+local mirrorStats = ns.CDMBlizzMirror.GetCacheStats and ns.CDMBlizzMirror.GetCacheStats()
+assert(mirrorStats, "mirror should expose cache stats")
+assert(mirrorStats.mirrorStates >= 1, "mirror stats should include mirrored state count")
+assert(mirrorStats.cooldownInfo >= 1, "mirror stats should include cooldown info count")
+assert(mirrorStats.spellMapEntries >= 1, "mirror stats should include spell map entry count")
+
 print("OK: cdm_blizz_mirror_duration_test")

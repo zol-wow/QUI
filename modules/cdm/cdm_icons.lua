@@ -109,7 +109,10 @@ local function SafeBoolean(val)
     if Shared and Shared.SafeBoolean then
         return Shared.SafeBoolean(val)
     end
-    return type(val) == "boolean" and val or nil
+    if type(val) == "boolean" then
+        return val
+    end
+    return nil
 end
 
 function CDMIcons.ApplyDurationObjectCooldown(cd, durObj, clearWhenZero, reverse)
@@ -1322,6 +1325,12 @@ ApplyResolvedCooldown = function(icon)
                 local trusted = trustedSid and CDMIcons._trustedGCDSpellState and CDMIcons._trustedGCDSpellState[trustedSid]
                 if type(trusted) == "boolean" then
                     cdInfoOnGCD = trusted
+                end
+            end
+            if cdInfoOnGCD == nil then
+                local liveOnGCD, liveOnGCDSecret = CDMIcons.GetCooldownInfoField(cdInfo, "isOnGCD")
+                if not liveOnGCDSecret and type(liveOnGCD) == "boolean" then
+                    cdInfoOnGCD = liveOnGCD
                 end
             end
             _dbgIsActive = cdInfoActive

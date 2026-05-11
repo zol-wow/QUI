@@ -76,4 +76,35 @@ assert(entry.cooldownID == 88, "wrong cooldownID")
 assert(entry.primarySpellID == 12345, "late-bound CDMSources should normalize primary spellID")
 assert(index.Get(12347) == entry, "linked aliases should share the same index entry")
 
+local orderedCalls = 0
+_G.CooldownViewerSettings = {
+    GetDataProvider = function()
+        return {
+            GetOrderedCooldownIDsForCategory = function(_, category, includeHidden)
+                orderedCalls = orderedCalls + 1
+                assert(includeHidden == true, "ordered map should include hidden provider rows")
+                if category == 0 then
+                    return { 88 }
+                end
+                return {}
+            end,
+        }
+    end,
+}
+
+local firstOrdered = index.GetOrderedSpellMap()
+local callsAfterFirst = orderedCalls
+local secondOrdered = index.GetOrderedSpellMap()
+
+assert(secondOrdered == firstOrdered, "ordered spell map should be cached by index version")
+assert(orderedCalls == callsAfterFirst, "cached ordered spell map should not re-walk provider")
+assert(firstOrdered[12345] and firstOrdered[12345].cooldownID == 88,
+    "ordered spell map should index base spellID")
+
+index.Notify("manual")
+local thirdOrdered = index.GetOrderedSpellMap()
+
+assert(thirdOrdered ~= firstOrdered, "ordered spell map should rebuild after index invalidation")
+assert(orderedCalls > callsAfterFirst, "ordered map rebuild should re-walk provider after invalidation")
+
 print("OK: cdm_index_test")

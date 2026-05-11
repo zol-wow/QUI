@@ -158,4 +158,8 @@ assert(state.durObj == stackDuration, "test must use the resolved aura instance 
 assert(state.stacks == nil, "resolved aura instances with no applications must not inherit loose name fallback stacks")
 assert(queriedLooseStackName == false, "resolved aura instances should not query loose name stack fallbacks")
 
+local cacheStats = ns.CDMSpellData:GetCacheStats()
+assert(type(cacheStats.capturedAuraEntries) == "number", "cache stats should include captured aura entry count")
+assert(type(cacheStats.capturedAuraUnits) == "number", "cache stats should include captured aura unit count")
+
 print("OK: cdm_spelldata_linked_aura_mirror_test")

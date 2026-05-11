@@ -4094,13 +4094,63 @@ function CDMSpellData:GetCacheStats()
         for _ in pairs(t) do n = n + 1 end
         return n
     end
+    local function capturedStats()
+        local seenEntries = {}
+        local seenUnits = {}
+        local entryCount = 0
+        local unitCount = 0
+
+        local function addEntry(entry)
+            if type(entry) == "table" and not seenEntries[entry] then
+                seenEntries[entry] = true
+                entryCount = entryCount + 1
+            end
+        end
+
+        local function addUnit(unit)
+            if unit and not seenUnits[unit] then
+                seenUnits[unit] = true
+                unitCount = unitCount + 1
+            end
+        end
+
+        for _, entry in pairs(_capturedAuraBySpellID) do
+            addEntry(entry)
+            addUnit(entry and entry.unit)
+        end
+        for _, entry in pairs(_capturedAuraByName) do
+            addEntry(entry)
+            addUnit(entry and entry.unit)
+        end
+        for unit, map in pairs(_capturedAuraByUnitSpellID) do
+            addUnit(unit)
+            for _, entry in pairs(map) do
+                addEntry(entry)
+                addUnit(entry and entry.unit)
+            end
+        end
+        for unit, map in pairs(_capturedAuraByUnitName) do
+            addUnit(unit)
+            for _, entry in pairs(map) do
+                addEntry(entry)
+                addUnit(entry and entry.unit)
+            end
+        end
+
+        return entryCount, unitCount
+    end
     local learnedSize = 0
     if type(learnedCooldownsCache) == "table" then
         learnedSize = #learnedCooldownsCache
     end
+    local capturedAuraEntries, capturedAuraUnits = capturedStats()
     return {
         childMapDirty       = false,
         childMapSize        = 0,
+        capturedAuraEntries = capturedAuraEntries,
+        capturedAuraUnits   = capturedAuraUnits,
+        capturedAuraSpellKeys = size(_capturedAuraBySpellID),
+        capturedAuraNameKeys  = size(_capturedAuraByName),
         learnedDirty        = learnedCooldownsCacheDirty and true or false,
         learnedSize         = learnedSize,
         tickAuraData        = 0,
