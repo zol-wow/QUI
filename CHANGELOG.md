@@ -10,6 +10,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha25 - 2026-05-10
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing alpha24 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as two folders — `QUI/` and `QUI_Options/`.** Both must live next to each other in `Interface/AddOns/`. The release zip already contains both.
+
+### Fixed
+- **Cooldown manager no longer errors on combat-secret aura stacks.** Aura entries with stack counts that Blizzard marks secret in combat (boss debuff stacks, encounter-only buffs) used to throw a "secret value compared" error inside the runtime state cache. The cache now treats secret values as "unknown" and refreshes safely, so those icons stay live through the encounter.
+
+
+
 ## v3.6.0-alpha24 - 2026-05-10
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing alpha23 profiles carry over unchanged. v3.5.x → alpha24: back up `WTF/` and export your profile first.
