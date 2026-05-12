@@ -4,4 +4,6 @@
     <Script file="memaudit.lua"/>
     <Script file="editmode_diagnose.lua"/>
     <Script file="combat_end_profiler.lua"/>
+    <Script file="aura_probe.lua"/>
+    <Script file="cdm_debug.lua"/>
 </Ui>

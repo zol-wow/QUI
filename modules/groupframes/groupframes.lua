@@ -1845,8 +1845,11 @@ local function UpdateDispelOverlay(frame)
 
     if not hasDispellable then
         local GFPA = ns.QUI_GroupFramePrivateAuras
-        if GFPA and GFPA.RefreshPrivateDispelState then
-            local privateState = GFPA:RefreshPrivateDispelState(unit)
+        if GFPA then
+            local privateState = GFPA.GetPrivateDispelState and GFPA:GetPrivateDispelState(unit)
+            if not privateState and GFPA.RefreshPrivateDispelState then
+                privateState = GFPA:RefreshPrivateDispelState(unit)
+            end
             if privateState and (privateState.auraInstanceID or privateState.slot) then
                 hasDispellable = true
                 fromPrivateSlots = true
@@ -5526,7 +5529,7 @@ function QUI_GF:RefreshAllFrames(reason)
     -- iterations of unitFrameMap (was 4 passes, now 1 + private auras).
     local GFA = ns.QUI_GroupFrameAuras
     if GFA and GFA.InvalidateLayout then GFA:InvalidateLayout() end
-    local auraCacheRender = GFA and GFA.ScanUnitAuras and GFA.RenderFrame
+    local auraCacheAvailable = GFA and GFA.ScanUnitAuras and GFA.RenderFrame
     local GFI = ns.QUI_GroupFrameIndicators
 
     for unit, list in pairs(self.unitFrameMap) do
@@ -5537,6 +5540,8 @@ function QUI_GF:RefreshAllFrames(reason)
                 if frame.healthBar then ApplyStatusBarTexture(frame.healthBar) end
                 if frame.healPredictionBar then ApplyStatusBarTexture(frame.healPredictionBar) end
                 if frame.powerBar then ApplyStatusBarTexture(frame.powerBar) end
+                local auraCacheRender = auraCacheAvailable
+                    and (not GFA.HasActiveConsumersForFrame or GFA:HasActiveConsumersForFrame(frame))
                 if auraCacheRender and not auraScanned then
                     GFA.ScanUnitAuras(unit)
                     auraScanned = true
@@ -5544,7 +5549,7 @@ function QUI_GF:RefreshAllFrames(reason)
                 UpdateFrame(frame)
 
                 -- Auras: render from the per-unit cache when available.
-                if auraCacheRender then
+                if auraCacheAvailable then
                     GFA:RenderFrame(frame)
                 elseif GFA and GFA.RefreshFrame then
                     GFA:RefreshFrame(frame)

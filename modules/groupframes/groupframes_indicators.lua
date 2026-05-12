@@ -337,6 +337,23 @@ local function GetAuraIndicatorSettings(isRaid)
     return vdb and vdb.auraIndicators or nil
 end
 
+local function HasConfiguredIndicatorEntries(ai)
+    if not ai or ai.enabled == false then return false end
+    local entries = ai.entries
+    if type(entries) ~= "table" or #entries == 0 then return false end
+
+    for _, entry in ipairs(entries) do
+        if entry and entry.enabled ~= false and entry.spellID then
+            return true
+        end
+    end
+    return false
+end
+
+function QUI_GFI:HasActiveConfig(isRaid)
+    return HasConfiguredIndicatorEntries(GetAuraIndicatorSettings(isRaid)) == true
+end
+
 local function GetTrackedSpellName(spellID)
     local key = tonumber(spellID) or spellID
     local cached = spellNameCache[key]
@@ -619,13 +636,26 @@ end
 -- by entry index. UpdateFrameIndicators then reads that map directly instead
 -- of building per-call lookup tables and running FindTrackedAuraData inline.
 function QUI_GFI:PopulateCacheMatches(unit, cache)
-    if not cache or not cache.indicatorMatches then return end
-    wipe(cache.indicatorMatches)
+    if not cache or not cache.indicatorMatches then return false end
+    local matches = cache.indicatorMatches
+    local changed = false
 
     local ai = GetAuraIndicatorSettings(IsInRaid())
-    if not ai or ai.enabled == false then return end
+    if not ai or ai.enabled == false then
+        if next(matches) then
+            wipe(matches)
+            return true
+        end
+        return false
+    end
     local entries = ai.entries
-    if type(entries) ~= "table" or #entries == 0 then return end
+    if type(entries) ~= "table" or #entries == 0 then
+        if next(matches) then
+            wipe(matches)
+            return true
+        end
+        return false
+    end
 
     local helpfulByID = cache.buffsBySpellID
     local buffsByName = cache.buffsByName
@@ -635,8 +665,9 @@ function QUI_GFI:PopulateCacheMatches(unit, cache)
     local harmfulAuras = cache.debuffs
 
     for i, entry in ipairs(entries) do
+        local auraData = nil
         if entry.enabled ~= false and entry.spellID then
-            local auraData = FindTrackedAuraData(
+            auraData = FindTrackedAuraData(
                 unit,
                 entry.spellID,
                 helpfulByID,
@@ -647,11 +678,22 @@ function QUI_GFI:PopulateCacheMatches(unit, cache)
                 harmfulAuras,
                 entry.onlyMine == true
             )
-            if auraData then
-                cache.indicatorMatches[i] = auraData
-            end
+        end
+        if matches[i] ~= auraData then
+            matches[i] = auraData
+            changed = true
         end
     end
+
+    local entryCount = #entries
+    for entryIdx in pairs(matches) do
+        if entryIdx > entryCount then
+            matches[entryIdx] = nil
+            changed = true
+        end
+    end
+
+    return changed
 end
 
 local function CreateIconIndicator(parent)

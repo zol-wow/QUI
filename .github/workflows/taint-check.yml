@@ -3,7 +3,6 @@ name: taint-check
 on:
   pull_request:
   push:
-    branches: [main]
 
 jobs:
   self-test:

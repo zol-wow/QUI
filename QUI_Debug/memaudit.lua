@@ -1,4 +1,5 @@
 local ADDON_NAME, ns = ...
+local TARGET_ADDON_NAME = "QUI"
 ----------------------------------------------------------------------------
 -- Memory Audit — runtime probe for cache/pool sizes
 --
@@ -43,6 +44,93 @@ local function CountEntries(tbl)
     return count, deepCount
 end
 
+local function HasProbe(name)
+    for i = 1, #probes do
+        if probes[i] and probes[i].name == name then
+            return true
+        end
+    end
+    return false
+end
+
+local function AddProbe(name, fn)
+    if not HasProbe(name) then
+        probes[#probes + 1] = { name = name, fn = fn }
+    end
+end
+
+local function CallStats(owner, methodName)
+    if owner and owner[methodName] then
+        local ok, stats = pcall(owner[methodName], owner)
+        if ok and type(stats) == "table" then
+            return stats
+        end
+    end
+    return {}
+end
+
+local function CallFunction(fn)
+    if type(fn) == "function" then
+        local ok, stats = pcall(fn)
+        if ok and type(stats) == "table" then
+            return stats
+        end
+    end
+    return {}
+end
+
+local function N(value)
+    return tonumber(value) or 0
+end
+
+local function RegisterCDMCacheProbes()
+    AddProbe("CDM_cache_auraIndex", function()
+        local s = CallStats(ns.CDMSpellData, "GetCacheStats")
+        return N(s.capturedAuraEntries),
+            N(s.capturedAuraUnits) + N(s.capturedAuraSpellKeys) + N(s.capturedAuraNameKeys)
+    end)
+
+    AddProbe("CDM_cache_blizzMirror", function()
+        local bm = CallFunction(ns.CDMBlizzMirror and ns.CDMBlizzMirror.GetCacheStats)
+        return N(bm.mirrorStates) + N(bm.packedStates),
+            N(bm.childFrames) + N(bm.cooldownInfo) + N(bm.defaultCooldownInfo)
+            + N(bm.spellMapEntries) + N(bm.directSpellMapEntries)
+            + N(bm.spellNameEntries) + N(bm.totemSpellIDEntries) + N(bm.activeTotems)
+            + N(bm.auraCandidateCaches) + N(bm.spellCandidateCaches)
+    end)
+
+    AddProbe("CDM_cache_iconPools", function()
+        local ic = CallStats(ns.CDMIcons, "GetCacheStats")
+        return N(ic.activeIcons) + N(ic.recycleIcons),
+            N(ic.activeIconPools) + N(ic.textureCycleCache)
+    end)
+
+    AddProbe("CDM_cache_runtimeStore", function()
+        local rt = CallFunction(ns.CDMRuntimeStore and ns.CDMRuntimeStore.GetStats)
+        return N(rt.states), 0
+    end)
+
+    AddProbe("CDM_cache_tickAura", function()
+        local s = CallStats(ns.CDMSpellData, "GetCacheStats")
+        return N(s.tickAuraData) + N(s.tickAuraDuration)
+            + N(s.tickAuraExpiration) + N(s.tickAuraApplication), 0
+    end)
+
+    AddProbe("CDM_cache_resolveMemo", function()
+        local s = CallStats(ns.CDMSpellData, "GetCacheStats")
+        return N(s.resolveIconMemo) + N(s.resolveAuraMemo),
+            N(s.learnedSize) + N(s.totemSlotMap)
+    end)
+
+    AddProbe("CDM_cache_framesBars", function()
+        local br = CallStats(ns.CDMBars, "GetCacheStats")
+        local fr = CallFunction(ns.GetCDMFrameCacheStats)
+        return N(br.activeBars) + N(fr.size), 0
+    end)
+end
+
+RegisterCDMCacheProbes()
+
 local function TakeSnapshot()
     local snap = {}
     for i = 1, #probes do
@@ -67,7 +155,7 @@ local function TakeSnapshot()
     end
 
     pcall(UpdateAddOnMemoryUsage)
-    local ok, mem = pcall(GetAddOnMemoryUsage, ADDON_NAME)
+    local ok, mem = pcall(GetAddOnMemoryUsage, TARGET_ADDON_NAME)
     snap._totalKB = ok and mem or 0
     snap._time = GetTime()
     snap._combat = InCombatLockdown() and true or false
@@ -211,7 +299,8 @@ local function PrintAutoLine(snap, prev)
 
     -- If the total grew, surface which probed tables grew (to attribute the
     -- delta) and how much of the delta is unaccounted-for (== outside probes).
-    if prev and (snap._totalKB - prev._totalKB) > 0 then
+    if prev then
+        local totalGrew = (snap._totalKB - prev._totalKB) > 0
         local growers = {}
         for name, val in pairs(snap) do
             if name:sub(1, 1) ~= "_" and prev[name] then
@@ -245,7 +334,7 @@ local function PrintAutoLine(snap, prev)
                 parts[#parts + 1] = string.format("%s +%d", growers[i].name, growers[i].delta)
             end
             P("  |cffAAAAAA→ probed grew:|r " .. table.concat(parts, ", "))
-        else
+        elseif totalGrew then
             P("  |cffAAAAAA→ no probed table grew — retention is outside probes|r")
         end
 
@@ -352,10 +441,10 @@ end
 _G.QUI_MemAudit = function(subcmd, arg)
     if subcmd == "gc" then
         pcall(UpdateAddOnMemoryUsage)
-        local ok1, before = pcall(GetAddOnMemoryUsage, ADDON_NAME)
+        local ok1, before = pcall(GetAddOnMemoryUsage, TARGET_ADDON_NAME)
         collectgarbage("collect")
         pcall(UpdateAddOnMemoryUsage)
-        local ok2, after = pcall(GetAddOnMemoryUsage, ADDON_NAME)
+        local ok2, after = pcall(GetAddOnMemoryUsage, TARGET_ADDON_NAME)
         if ok1 and ok2 then
             print(string.format("|cff60A5FAQUI GC:|r Before: %s  After: %s  Freed: |cff44FF44%s|r",
                 FormatKB(before), FormatKB(after), FormatKB(before - after)))

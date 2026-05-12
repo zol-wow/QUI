@@ -1,4 +1,5 @@
 local ADDON_NAME, ns = ...
+local TARGET_ADDON_NAME = "QUI"
 local Helpers = ns.Helpers
 
 local QUI_PerfMonitor = {}
@@ -73,7 +74,7 @@ local graphContainer        -- the memory graph frame
 local function DetectCPUAPI()
     -- Tier 1: C_AddOnProfiler (12.0+, no CVar needed)
     if C_AddOnProfiler and C_AddOnProfiler.GetAddOnMetric and Enum and Enum.AddOnProfilerMetric then
-        local ok, val = pcall(C_AddOnProfiler.GetAddOnMetric, ADDON_NAME, Enum.AddOnProfilerMetric.RecentAverageTime)
+        local ok, val = pcall(C_AddOnProfiler.GetAddOnMetric, TARGET_ADDON_NAME, Enum.AddOnProfilerMetric.RecentAverageTime)
         if ok then
             cpuAPITier = "profiler"
             return
@@ -157,8 +158,8 @@ local function DrainPerfRegistry()
     -- The registry is naturally re-initialized on /reload via ns being fresh.
 end
 
--- Public API: called by debug.xml's init or modules directly if they load after
--- performance.lua. Safe to call multiple times.
+-- Public API: modules may call this after performance.lua has loaded. Safe to
+-- call multiple times.
 function QUI_PerfMonitor:Register(name, frame, scriptType)
     ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
     ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = {
@@ -337,7 +338,7 @@ end
 local function Sample()
     -- Memory
     pcall(UpdateAddOnMemoryUsage)
-    local ok, mem = pcall(GetAddOnMemoryUsage, ADDON_NAME)
+    local ok, mem = pcall(GetAddOnMemoryUsage, TARGET_ADDON_NAME)
     if ok and mem then
         currentMem = mem
         if mem > peakMem then peakMem = mem end
@@ -350,14 +351,14 @@ local function Sample()
     local frameTimeMs = fps > 0 and (1000 / fps) or 16.667
 
     if cpuAPITier == "profiler" then
-        local cpuOk, val = pcall(C_AddOnProfiler.GetAddOnMetric, ADDON_NAME, Enum.AddOnProfilerMetric.RecentAverageTime)
+        local cpuOk, val = pcall(C_AddOnProfiler.GetAddOnMetric, TARGET_ADDON_NAME, Enum.AddOnProfilerMetric.RecentAverageTime)
         if cpuOk and val then
             currentCPU = val
             currentCPUPct = (val / frameTimeMs) * 100
         end
     elseif cpuAPITier == "scriptProfile" then
         pcall(UpdateAddOnCPUUsage)
-        local cpuOk, val = pcall(GetAddOnCPUUsage, ADDON_NAME)
+        local cpuOk, val = pcall(GetAddOnCPUUsage, TARGET_ADDON_NAME)
         if cpuOk and val then
             local now = GetTime()
             local dt = now - lastScriptTime

@@ -47,9 +47,8 @@ local ApplyResolvedCooldown
 local ReapplySwipeStyle
 local UpdateIconProfessionQuality
 local HookTextHasDisplay
--- ChargeDebug now lives in cdm_debug.lua and is bound via _BindDebugImports.
--- Initialized as a no-op so calls before binding (none expected, but defensive)
--- don't crash.
+-- ChargeDebug lives in the load-on-demand debug addon and is bound via
+-- _BindDebugImports. Initialized as a no-op so calls before binding don't crash.
 local ChargeDebug = function() end
 
 local InCombatLockdown = InCombatLockdown
@@ -302,7 +301,9 @@ function CDMIconFactory:AcquireIcon(parent, spellEntry)
         icon._customBarActiveStart = nil
         icon._customBarActiveDuration = nil
         CDMIcons.StopCustomBarActiveGlow(icon)
-        CDMIcons.ChargeDebug(spellEntry and spellEntry.name, "ACQUIRE", "reused", "viewerType=", spellEntry and spellEntry.viewerType)
+        if _G.QUI_CDM_CHARGE_DEBUG then
+            CDMIcons.ChargeDebug(spellEntry and spellEntry.name, "ACQUIRE", "reused", "viewerType=", spellEntry and spellEntry.viewerType)
+        end
 
         -- Update texture
         local texID
@@ -348,7 +349,9 @@ function CDMIconFactory:AcquireIcon(parent, spellEntry)
         return icon
     end
     local newIcon = CreateIcon(parent, spellEntry)
-    CDMIcons.ChargeDebug(spellEntry and spellEntry.name, "ACQUIRE", "new", "viewerType=", spellEntry and spellEntry.viewerType)
+    if _G.QUI_CDM_CHARGE_DEBUG then
+        CDMIcons.ChargeDebug(spellEntry and spellEntry.name, "ACQUIRE", "new", "viewerType=", spellEntry and spellEntry.viewerType)
+    end
     -- Update click-to-cast secure attributes for new icons
     if spellEntry.viewerType ~= "buff" then
         CDMIcons.UpdateIconSecureAttributes(newIcon, spellEntry, spellEntry.viewerType)
@@ -509,7 +512,12 @@ end
 local function SetIconBlizzMirrorBinding(icon, cooldownID, viewerCategory)
     if not (icon and cooldownID) then return end
     icon._mirrorNativeDurObjApplied = nil
-    icon._lastMirrorNativeAuraSourceID = nil
+    -- Three-field change-detection state for SyncBlizzMirrorIconState. Used
+    -- to be a single concatenated string `_lastMirrorNativeAuraSourceID` —
+    -- per-tick string allocation was ~150 KB/s of garbage.
+    icon._lastMirrorNativeAuraSourceCat = nil
+    icon._lastMirrorNativeAuraSourceCDID = nil
+    icon._lastMirrorNativeAuraSourceEpoch = nil
     icon._blizzMirrorCooldownID = cooldownID
     icon._blizzMirrorCategory = viewerCategory
     ShowNativeIconWidgets(icon)
@@ -522,7 +530,9 @@ end
 local function ClearIconBlizzMirrorBinding(icon)
     if not icon or not icon._blizzMirrorCooldownID then return end
     icon._mirrorNativeDurObjApplied = nil
-    icon._lastMirrorNativeAuraSourceID = nil
+    icon._lastMirrorNativeAuraSourceCat = nil
+    icon._lastMirrorNativeAuraSourceCDID = nil
+    icon._lastMirrorNativeAuraSourceEpoch = nil
     icon._blizzMirrorCooldownID = nil
     icon._blizzMirrorCategory = nil
     ShowNativeIconWidgets(icon)
@@ -531,8 +541,8 @@ end
 CDMIconFactory.SetIconBlizzMirrorBinding   = SetIconBlizzMirrorBinding
 CDMIconFactory.ClearIconBlizzMirrorBinding = ClearIconBlizzMirrorBinding
 
--- Blizzard mirror debug helpers live in cdm_debug.lua. Placeholders below are
--- rebound by cdm_debug.lua's BindAll() at the end of its load.
+-- Blizzard mirror debug helpers live in the load-on-demand debug addon.
+-- Placeholders below are rebound by cdm_debug.lua's BindAll() when loaded.
 local ShouldDebugBlizzEntry = function() return false end
 local FormatMirrorState     = function() return "nil" end
 local FormatIDList          = function() return "nil" end
@@ -600,147 +610,32 @@ local function DebugBlizzSyncSnapshot(enabled, icon, entry, mirrorState, resolve
         FormatMirrorState(mirrorState))
 end
 
--- Resolve (entry, viewerType) -> cooldownID via the mirror's per-category
--- maps. Returns nil if the entry doesn't map to a Blizzard child.
+-- Resolve entry -> exact Blizzard mirror identity. Bars use the same resolver,
+-- so entry type/category semantics stay centralized.
 local function ResolveBlizzCooldownIDForEntry(entry)
-    local mirror = ns.CDMBlizzMirror
-    if not mirror or not mirror.GetCooldownIDForViewer then return nil end
-    if not entry then return nil end
-    -- Item / macro / trinket / slot / totem entries don't have a Blizzard
-    -- child (those categories live in QUI's custom-bar renderer only).
-    local etype = entry.type
-    if etype and etype ~= "spell" and etype ~= "aura" then return nil end
-    local sid = entry.overrideSpellID or entry.spellID or entry.id
-    if type(sid) ~= "number" or sid <= 0 then return nil end
-    local viewerCat = entry.viewerType
-    local cdID
-    local strictAuraBinding = entry.kind == "aura"
-        or entry.isAura == true
-        or viewerCat == "buff"
-        or viewerCat == "trackedBar"
+    local resolver = Resolvers and Resolvers.ResolveBlizzardMirrorIdentity
+    if not (entry and resolver) then return nil end
 
-    local function buildLookupIDs()
-        local ids, seen = {}, {}
-        local function add(id)
-            if type(id) ~= "number" or id <= 0 or seen[id] then return end
-            seen[id] = true
-            ids[#ids + 1] = id
+    local debugBlizz
+    if _G.QUI_CDM_BLIZZ_DEBUG or _G.QUI_CDM_ICON_DEBUG then
+        debugBlizz = ShouldDebugBlizzEntry(entry)
+        if debugBlizz then
+            DebugBlizzEntry(debugBlizz, entry, "begin-shared")
         end
-        -- Talent overrides (e.g. apex talents) renumber spellIDs at runtime:
-        -- the user-facing tooltip ID stays stable while CDM's spellID→cdID
-        -- map keys on Blizzard's current override IDs. Probe the override of
-        -- each candidate so saved entries pinned to pre-override IDs still
-        -- bind. QueryOverrideSpell is pcall-wrapped and returns nil on miss.
-        local function addWithOverride(id)
-            add(id)
-            if type(id) == "number" and id > 0 then
-                add(QueryOverrideSpell(id))
-            end
-        end
-        addWithOverride(entry.overrideSpellID)
-        addWithOverride(entry.spellID)
-        addWithOverride(entry.id)
-        addWithOverride(sid)
-        if not strictAuraBinding and type(entry.linkedSpellIDs) == "table" then
-            for _, linkedID in ipairs(entry.linkedSpellIDs) do
-                addWithOverride(linkedID)
-            end
-        end
-        return ids
     end
 
-    local lookupIDs = buildLookupIDs()
-    local debugBlizz = ShouldDebugBlizzEntry(entry, lookupIDs)
-    DebugBlizzEntry(debugBlizz, entry, "begin",
-        "strictAura=", tostring(strictAuraBinding),
-        "lookupIDs=", FormatIDList(lookupIDs))
-
-    local function lookupInViewer(cat)
-        local ids = lookupIDs
-        if strictAuraBinding and (cat == "buff" or cat == "trackedBar") then
-            if not mirror.GetDirectCooldownIDForViewer then return nil end
-            for _, id in ipairs(ids) do
-                local found = mirror.GetDirectCooldownIDForViewer(id, cat)
-                if found then
-                    local state = mirror.GetStateByCooldownID and mirror.GetStateByCooldownID(found, cat)
-                    DebugBlizzEntry(debugBlizz, entry, "lookup-direct",
-                        "cat=", cat, "id=", tostring(id), FormatMirrorState(state))
-                    return found, cat
-                end
-            end
-            DebugBlizzEntry(debugBlizz, entry, "lookup-direct-miss",
-                "cat=", cat, "ids=", FormatIDList(ids))
-            return nil
+    local cooldownID, category, state = resolver(entry)
+    if not cooldownID then
+        if debugBlizz then
+            DebugBlizzEntry(debugBlizz, entry, "miss")
         end
-
-        for _, id in ipairs(ids) do
-            local found = mirror.GetCooldownIDForViewer(id, cat)
-            if found then
-                local state = mirror.GetStateByCooldownID and mirror.GetStateByCooldownID(found, cat)
-                DebugBlizzEntry(debugBlizz, entry, "lookup-loose",
-                    "cat=", cat, "id=", tostring(id), FormatMirrorState(state))
-                return found, cat
-            end
-        end
-        DebugBlizzEntry(debugBlizz, entry, "lookup-loose-miss",
-            "cat=", cat, "ids=", FormatIDList(ids))
         return nil
     end
-    local resolvedCat
-    local function choose(cat)
-        cdID, resolvedCat = lookupInViewer(cat)
-        return cdID ~= nil
-    end
 
-    if viewerCat == "essential" then
-        if not choose("essential") then choose("utility") end
-    elseif viewerCat == "utility" then
-        if not choose("utility") then choose("essential") end
-    elseif viewerCat == "buff" then
-        if not choose("buff") then choose("trackedBar") end
-    elseif viewerCat == "trackedBar" then
-        if not choose("trackedBar") then choose("buff") end
-    else
-        -- Custom bar (or unknown viewer): probe categories. Cooldown-kind
-        -- entries probe essential/utility; aura-kind probe buff/trackedBar.
-        local kind = entry.kind
-        if kind == "aura" then
-            if not choose("buff") then choose("trackedBar") end
-        else
-            if not choose("essential") then choose("utility") end
-        end
+    if debugBlizz then
+        DebugBlizzEntry(debugBlizz, entry, "resolved", FormatMirrorState(state))
     end
-    if not cdID then return nil end
-
-    if mirror.GetStateByCooldownID then
-        local state = mirror.GetStateByCooldownID(cdID, resolvedCat)
-        local actualCat = state and state.viewerCategory
-        local expected
-        if viewerCat == "essential" or viewerCat == "utility" then
-            expected = actualCat == "essential" or actualCat == "utility"
-        elseif viewerCat == "buff" or viewerCat == "trackedBar" then
-            expected = actualCat == "buff" or actualCat == "trackedBar"
-        elseif strictAuraBinding then
-            expected = actualCat == "buff" or actualCat == "trackedBar"
-        else
-            expected = actualCat == "essential" or actualCat == "utility"
-        end
-        if not expected then
-            DebugBlizzEntry(debugBlizz, entry, "reject-category", FormatMirrorState(state))
-            return nil
-        end
-    end
-
-    -- Only bind if a live child currently exists for this cooldownID;
-    -- otherwise fall back to native rendering for this acquire (the icon
-    -- can rebind on the next refresh once Blizzard creates the child).
-    if mirror.HasChildForCooldownID and not mirror.HasChildForCooldownID(cdID, resolvedCat) then
-        DebugBlizzEntry(debugBlizz, entry, "reject-no-child", "cdID=", tostring(cdID))
-        return nil
-    end
-    local state = mirror.GetStateByCooldownID and mirror.GetStateByCooldownID(cdID, resolvedCat)
-    DebugBlizzEntry(debugBlizz, entry, "resolved", FormatMirrorState(state))
-    return cdID, resolvedCat
+    return cooldownID, category
 end
 
 local function TryBindIconToBlizz(icon, spellEntry)
@@ -807,6 +702,34 @@ local function RetryUnboundIconsForChild(cdID, catName)
     end
 end
 
+local function ApplyMirrorStackText(icon, mirrorState, showZero)
+    if not (icon and mirrorState and mirrorState.stackTextShown == true) then
+        return false
+    end
+    if not (CDMIcons and CDMIcons.ApplyAuraCountText) then
+        return false
+    end
+
+    local stackText = mirrorState.stackText
+    if stackText == nil then
+        return false
+    end
+
+    local count = icon._mirrorStackCountPayload
+    if not count then
+        count = {}
+        icon._mirrorStackCountPayload = count
+    end
+    count.sinkText = stackText
+    count.value = stackText
+    count.shown = true
+    count.source = mirrorState.stackTextSource or "Applications"
+
+    CDMIcons.ApplyAuraCountText(icon, count, showZero, true)
+    icon._lastMirrorStackTextEpoch = mirrorState.stackTextEpoch
+    return true
+end
+
 -- Register the listener with the mirror as soon as the mirror module is
 -- available. The icon factory loads after the mirror per cdm.xml, so
 -- ns.CDMBlizzMirror should be present already; gate on existence to keep
@@ -829,18 +752,23 @@ local function SyncBlizzMirrorIconState(icon)
         if ovId then runtimeSid = ovId end
     end
     icon._runtimeSpellID = runtimeSid
-    local debugBlizz = ShouldDebugBlizzEntry(entry, {
-        runtimeSid,
-        entry.spellID,
-        entry.overrideSpellID,
-        entry.id,
-    })
+    local debugBlizz
+    if _G.QUI_CDM_BLIZZ_DEBUG or _G.QUI_CDM_ICON_DEBUG then
+        debugBlizz = ShouldDebugBlizzEntry(entry, {
+            runtimeSid,
+            entry.spellID,
+            entry.overrideSpellID,
+            entry.id,
+        })
+    end
 
     local mirror = ns.CDMBlizzMirror
     local m = mirror and mirror.GetStateByCooldownID
         and mirror.GetStateByCooldownID(cooldownID, icon._blizzMirrorCategory)
     if not m then
-        DebugBlizzEntry(debugBlizz, entry, "state-sync-missing", "cdID=", tostring(cooldownID))
+        if debugBlizz then
+            DebugBlizzEntry(debugBlizz, entry, "state-sync-missing", "cdID=", tostring(cooldownID))
+        end
         return false
     end
 
@@ -848,7 +776,9 @@ local function SyncBlizzMirrorIconState(icon)
         or m.viewerCategory == "buff"
         or m.viewerCategory == "trackedBar"
     if not isAuraBacked then
-        DebugBlizzEntry(debugBlizz, entry, "state-sync-skip-cooldown", FormatMirrorState(m))
+        if debugBlizz then
+            DebugBlizzEntry(debugBlizz, entry, "state-sync-skip-cooldown", FormatMirrorState(m))
+        end
         return false
     end
 
@@ -874,7 +804,7 @@ local function SyncBlizzMirrorIconState(icon)
     -- as <SECRET> here, the sanitization missed it (probably need a
     -- broader strip or the C_CurveUtil decode is failing).
     local mirrorMod = ns.CDMBlizzMirror
-    if mirrorMod and mirrorMod.TaintLog then
+    if _G.QUI_CDM_TAINT_DEBUG and mirrorMod and mirrorMod.TaintLog then
         mirrorMod.TaintLog("Sync.in",
             "cdID", cooldownID,
             "runtimeSid", runtimeSid,
@@ -917,10 +847,11 @@ local function SyncBlizzMirrorIconState(icon)
     local priorHadAuraDurObj = icon._lastAuraDurObj and true or false
     icon._auraActive = active
     icon._auraUnit = auraUnit
+    icon._auraInstanceID = active and m.auraInstanceID or nil
     icon._totemSlot = entry._totemSlot or nil
     icon._isTotemInstance = nil
 
-    if ns.CDMBlizzMirror and ns.CDMBlizzMirror.TaintLog then
+    if _G.QUI_CDM_TAINT_DEBUG and ns.CDMBlizzMirror and ns.CDMBlizzMirror.TaintLog then
         ns.CDMBlizzMirror.TaintLog("Sync.out",
             "cdID", cooldownID,
             "active", active,
@@ -967,24 +898,26 @@ local function SyncBlizzMirrorIconState(icon)
     end
 
     if active then
-        if m.stackTextShown == false and CDMIcons and CDMIcons.ClearIconStackText then
-            CDMIcons.ClearIconStackText(icon)
-            icon._lastMirrorStackTextEpoch = m.stackTextEpoch
-        elseif m.stackText and icon.StackText and CDMIcons then
-            local stackSettings = CDMIcons.GetTrackerSettings and CDMIcons.GetTrackerSettings(entry.viewerType) or nil
-            if CDMIcons.ShouldHideIconStackText and CDMIcons.ShouldHideIconStackText(icon, stackSettings) then
-                if CDMIcons.ClearIconStackText then
-                    CDMIcons.ClearIconStackText(icon)
-                end
-            else
-                icon.StackText.SetText(icon.StackText, m.stackText)
-                icon.StackText.Show(icon.StackText)
-                icon._stackTextSource = m.stackTextSource or "Applications"
+        local mirrorStackApplied = ApplyMirrorStackText(icon, m, entry.hasCharges)
+        if m.stackTextShown == false then
+            if CDMIcons and CDMIcons.ClearIconStackText then
+                CDMIcons.ClearIconStackText(icon)
             end
             icon._lastMirrorStackTextEpoch = m.stackTextEpoch
-        elseif r and r.isActive and not r.isTotemInstance and CDMIcons and CDMIcons.ApplyAuraStackText then
-            CDMIcons.ApplyAuraStackText(icon, r.stacks, entry.hasCharges, InCombatLockdown(), r.stackSource)
-        elseif not InCombatLockdown() and CDMIcons and CDMIcons.ClearIconStackText then
+        elseif not mirrorStackApplied
+            and r and r.isActive and not r.isTotemInstance
+            and CDMIcons and CDMIcons.ApplyAuraCountText then
+            local preserveMissingCount = InCombatLockdown()
+            CDMIcons.ApplyAuraCountText(icon, r.count, entry.hasCharges, preserveMissingCount)
+            icon._lastMirrorStackTextEpoch = m.stackTextEpoch
+        elseif not mirrorStackApplied
+            and not InCombatLockdown()
+            and CDMIcons and CDMIcons.ClearIconStackText then
+            -- Only clear when neither mirror nor resolver applied a count.
+            -- Without the mirrorStackApplied guard, this branch erases the
+            -- text that ApplyMirrorStackText just wrote whenever stackText
+            -- is shown but the resolver fallback didn't fire (regression
+            -- introduced when stack-text apply moved into ApplyMirrorStackText).
             CDMIcons.ClearIconStackText(icon)
         end
     else
@@ -1002,11 +935,18 @@ local function SyncBlizzMirrorIconState(icon)
     end
 
     local epoch = m.mirrorEpoch or 0
-    local mirrorDurationSourceID = active and durObj
-        and ((durObjSource or "mirror") .. ":" .. tostring(cooldownID) .. ":" .. tostring(epoch))
-        or nil
-    local priorMirrorDurationSourceID = icon._lastMirrorNativeAuraSourceID
-    icon._lastMirrorNativeAuraSourceID = mirrorDurationSourceID
+    -- Multi-field change-detection (replaces a per-tick `cat..":"..tostring(cdID)..":"..tostring(epoch)`
+    -- string concatenation that was ~150 KB/s of garbage in raid combat).
+    local mirrorActiveDur = active and durObj
+    local newSrcCat   = mirrorActiveDur and (durObjSource or "mirror") or nil
+    local newSrcCDID  = mirrorActiveDur and cooldownID or nil
+    local newSrcEpoch = mirrorActiveDur and epoch or nil
+    local priorSrcCat   = icon._lastMirrorNativeAuraSourceCat
+    local priorSrcCDID  = icon._lastMirrorNativeAuraSourceCDID
+    local priorSrcEpoch = icon._lastMirrorNativeAuraSourceEpoch
+    icon._lastMirrorNativeAuraSourceCat   = newSrcCat
+    icon._lastMirrorNativeAuraSourceCDID  = newSrcCDID
+    icon._lastMirrorNativeAuraSourceEpoch = newSrcEpoch
     icon._mirrorNativeDurObjApplied = nil
 
     icon._lastBlizzSwipeEpoch = epoch
@@ -1016,9 +956,11 @@ local function SyncBlizzMirrorIconState(icon)
        and CDMIcons.RequestBuffIconLayoutRefresh then
         CDMIcons.RequestBuffIconLayoutRefresh()
     end
-    local durationSourceChanged = priorMirrorDurationSourceID ~= mirrorDurationSourceID
+    local durationSourceChanged = priorSrcCat ~= newSrcCat
+        or priorSrcCDID ~= newSrcCDID
+        or priorSrcEpoch ~= newSrcEpoch
         or priorHadAuraDurObj ~= (durObj and true or false)
-    if priorActive ~= active or priorEpoch ~= epoch or durationSourceChanged then
+    if debugBlizz and (priorActive ~= active or priorEpoch ~= epoch or durationSourceChanged) then
         DebugBlizzEntry(debugBlizz, entry, "state-sync",
             FormatMirrorState(m),
             "runtimeSid=", tostring(runtimeSid),
@@ -1049,6 +991,7 @@ local function UpdateIconCooldown(icon)
         return
     end
     local entry = icon._spellEntry
+    local stackTextWritesAllowed = CDMIcons.ShouldAllowStackTextWrites and CDMIcons.ShouldAllowStackTextWrites() == true
 
     -- Runtime override: resolve from the BASE spell each tick so dynamic
     -- transforms (Glacial Spike ↔ Frostbolt, Mind Blast → Void Blast)
@@ -1081,15 +1024,14 @@ local function UpdateIconCooldown(icon)
                     if r.isActive then
                         ApplyAuraStateToIcon(icon, entry, auraSpellID, r)
 
-                        -- Stacks: forward r.stacks directly to C-side where
-                        -- possible. Blizzard aura APIs can return secret or
-                        -- otherwise non-finite values in combat, so keep stack
-                        -- formatting behind pcall and collapse invalid counts
-                        -- to empty text.
+                        -- Count text: forward resolver sink text directly to
+                        -- C-side where possible. Blizzard aura APIs can return
+                        -- secret values in combat, so Lua only reads the safe
+                        -- count.value field.
                         if r.isTotemInstance then
                             CDMIcons.ClearIconStackText(icon)
                         else
-                            CDMIcons.ApplyAuraStackText(icon, r.stacks, entry.hasCharges, InCombatLockdown(), r.stackSource)
+                            CDMIcons.ApplyAuraCountText(icon, r.count, entry.hasCharges, InCombatLockdown())
                         end
 
                         -- Keep texture showing the active aura buff.
@@ -1212,11 +1154,13 @@ local okI = true; local aIcon = r.auraData.icon
                 end
             end
             -- Hide stack text for trinkets
-            CDMIcons.HideIconStackText(icon, "slot-clear")
+            if stackTextWritesAllowed then
+                CDMIcons.HideIconStackText(icon, "slot-clear")
+            end
         elseif entry.type == "item" then
             startTime, duration, durObj = GetItemCooldown(entry.id)
             -- Show item count/charges as stack text using legacy custom tracker semantics.
-            if Sources and Sources.QueryItemCount then
+            if stackTextWritesAllowed and Sources and Sources.QueryItemCount then
                 local containerDB = CDMIcons.GetTrackerSettings(entry.viewerType)
                 local includeUses = containerDB and containerDB.showItemCharges == true
                 local count = Sources.QueryItemCount(entry.id, false, includeUses, true)
@@ -1277,14 +1221,12 @@ local okI = true; local aIcon = r.auraData.icon
                         ReapplySwipeStyle(icon.Cooldown, icon)
                     end
                     -- Non-charged aura entries (e.g. Mana Tea added via the
-                    -- cooldown CDM picker / a custom container) write stacks
-                    -- here from r.stacks. ApplyAuraStackText has explicit
-                    -- IsSecretValue handling and routes through the same
-                    -- C-side pcall pattern as the kind="aura" branch.
-                    -- Charged entries skip this so the cooldownChargesCount
-                    -- forwarding path can drive the StackText for them.
+                    -- cooldown CDM picker / a custom container) write count
+                    -- text here from the shared resolver payload. Charged
+                    -- entries skip this so the cooldownChargesCount forwarding
+                    -- path can drive the StackText for them.
                     if not entry.hasCharges and not IsTotemSlotEntry(entry) then
-                        CDMIcons.ApplyAuraStackText(icon, r.stacks, false, InCombatLockdown(), r.stackSource)
+                        CDMIcons.ApplyAuraCountText(icon, r.count, false, InCombatLockdown())
                     end
                 elseif r then
                     local wasAuraActive = icon._auraActive
@@ -1316,7 +1258,7 @@ local okI = true; local aIcon = r.auraData.icon
                     if aliasID and aliasID ~= _runtimeSid then
                         local aStart, aDuration, aDurObj, aActive, aRealActive = GetBestSpellCooldown(aliasID)
                         if aDurObj or (CDMIcons.IsSafeNumeric(aStart) and CDMIcons.IsSafeNumeric(aDuration) and aDuration > GCD_MAX_DURATION) then
-                            if CDMIcons.DebugIconEvent then
+                            if _G.QUI_CDM_ICON_DEBUG and CDMIcons.DebugIconEvent then
                                 CDMIcons.DebugIconEvent(icon, "alias",
                                     "from=", tostring(_runtimeSid),
                                     "to=", tostring(aliasID),
@@ -1340,7 +1282,7 @@ local okI = true; local aIcon = r.auraData.icon
             -- isOnGCD was captured synchronously in SPELL_UPDATE_COOLDOWN;
             -- this query is for active/duration data only.
             local _tickCi = QueryCooldown(_runtimeSid)
-            if CDMIcons.DebugIconEvent then
+            if _G.QUI_CDM_ICON_DEBUG and CDMIcons.DebugIconEvent then
                 CDMIcons.DebugIconEvent(icon, "resolve",
                     "sid=", tostring(_runtimeSid),
                     "start=", tostring(startTime),
@@ -1426,7 +1368,7 @@ local okI = true; local aIcon = r.auraData.icon
                 and not activeDurationOwned
             -- _hasRealCooldownActive is owned by the resolver
             -- (cooldown source isActive in ApplyResolvedCooldown).
-            if CDMIcons.DebugIconEvent then
+            if _G.QUI_CDM_ICON_DEBUG and CDMIcons.DebugIconEvent then
                 CDMIcons.DebugIconEvent(icon, "classify",
                     "real=", tostring(realCooldownActive),
                     "gcdOnly=", tostring(gcdOnlyActive),
@@ -1434,8 +1376,7 @@ local okI = true; local aIcon = r.auraData.icon
                     "gcdSnapshot=", tostring(gcdStateTrusted),
                     "durationOwned=", tostring(activeDurationOwned),
                     "blizzReal=", tostring(blizzRealCooldownActive),
-                    "durObj=", durObj and "yes" or "no",
-                    "baseLong=", tostring(CDMIcons.SpellHasBaseCooldownLongerThanGCD(_runtimeSid)))
+                    "durObj=", durObj and "yes" or "no")
             end
             -- Per-tick chain does NOT touch cooldown flags or icon.Cooldown.
             -- ApplyResolvedCooldown (event-driven via UNIT_SPELLCAST_SUCCEEDED,
@@ -1489,7 +1430,8 @@ local okI = true; local aIcon = r.auraData.icon
         end
     end
 
-    -- Stack/charge text: API-driven on each tick.
+    -- Stack/charge text: mirror-first. API charge text is only a fallback
+    -- for icons without a mirror-backed stack decision.
     -- Cache chargeInfo for this icon — reused by desaturation check below
     -- (was called 3x per cooldown icon per tick, now 1x)
     local _cachedChargeInfo = nil
@@ -1506,16 +1448,26 @@ local okI = true; local aIcon = r.auraData.icon
         end
     end
 
-    -- Forward charge count from the source facade. The Blizzard CDM hook
-    -- path that previously drove stack text was retired alongside the
-    -- viewer-child mirror, so all stack text now comes from this API path.
-    --
-    -- Gate: GetSpellCharges on the base spell returns maxCharges > 1.
-    -- maxCharges is non-secret (12.0.5+) and updates dynamically when
-    -- the spell gains charges (e.g., Mind Blast base ID reports max=2
-    -- when Void Blast is active). Single-charge spells (max=1) excluded.
+    local _stackTextResolved = false
+    local _stackVal  -- raw value (may be secret), forwarded to C-side
+    local _stackSource
+    local _stackMirrorBacked = false
+    local _stackMirrorEmpty = false
+
+    if stackTextWritesAllowed and entry.type == "spell" and CDMIcons.ResolveIconStackText then
+        _stackVal, _stackSource, _stackMirrorBacked = CDMIcons.ResolveIconStackText(icon)
+        _stackTextResolved = true
+        if _stackMirrorBacked and CDMIcons.ValueIsMissing(_stackVal) then
+            _stackMirrorEmpty = true
+            CDMIcons.HideIconStackText(icon, "mirror-stack-empty")
+            icon._stackTextSource = nil
+        end
+    end
+
+    -- Forward charge count from the source facade only when the mirror did
+    -- not already decide stack text for this icon.
     local _chargeCountForwarded = false
-    do
+    if not _stackMirrorBacked then
         local baseSid = entry.spellID or entry.id
         local ci = baseSid and QueryCharges(baseSid)
         local ciMax = ci and ci.maxCharges
@@ -1529,8 +1481,10 @@ local okI = true; local aIcon = r.auraData.icon
             if ociMax and ociMax > 1 then
                 ci = oci
                 ciMax = ociMax
-                ChargeDebug(entry.name, "FWD override fallback: overrideSpellID=", entry.overrideSpellID,
-                    "maxCharges=", ociMax, "currentCharges=", oci.currentCharges)
+                if _G.QUI_CDM_CHARGE_DEBUG then
+                    ChargeDebug(entry.name, "FWD override fallback: overrideSpellID=", entry.overrideSpellID,
+                        "maxCharges=", ociMax, "currentCharges=", oci.currentCharges)
+                end
             end
         end
         if ciMax and ciMax > 1 then
@@ -1539,13 +1493,15 @@ local okI = true; local aIcon = r.auraData.icon
             -- ci.currentCharges is the same value Blizzard's own viewer reads
             -- when populating cooldownChargesCount for charge spells.
             local ccc = ci.currentCharges
-            local _dbgCccSource = ccc ~= nil and "api" or nil
-            ChargeDebug(entry.name, "FWD path: baseSid=", baseSid,
-                "maxCharges=", ciMax, "currentCharges=", ci.currentCharges,
-                "ccc=", ccc, "cccSource=", _dbgCccSource or "nil",
-                "hasCharges=", entry.hasCharges,
-                "overrideSpellID=", entry.overrideSpellID)
-            if ccc ~= nil then
+            if _G.QUI_CDM_CHARGE_DEBUG then
+                local _dbgCccSource = ccc ~= nil and "api" or nil
+                ChargeDebug(entry.name, "FWD path: baseSid=", baseSid,
+                    "maxCharges=", ciMax, "currentCharges=", ci.currentCharges,
+                    "ccc=", ccc, "cccSource=", _dbgCccSource or "nil",
+                    "hasCharges=", entry.hasCharges,
+                    "overrideSpellID=", entry.overrideSpellID)
+            end
+            if ccc ~= nil and stackTextWritesAllowed then
                 CDMIcons.ShowIconStackText(icon, ccc, CDMIcons.GetTrackerSettings(entry.viewerType), "fwd-charge-count")
                 _chargeCountForwarded = true
             end
@@ -1555,29 +1511,38 @@ local okI = true; local aIcon = r.auraData.icon
     -- Charged entries where the FWD path couldn't find charges fall through
     -- to the API path below for the owned StackText value.
 
-    if _chargeCountForwarded then
+    if _G.QUI_CDM_CHARGE_DEBUG and _chargeCountForwarded then
         ChargeDebug(entry.name, "SKIP API path: chargeCountForwarded=", _chargeCountForwarded)
     end
-    if not _chargeCountForwarded then
+    if not _chargeCountForwarded and stackTextWritesAllowed then
         if entry.type == "item" then
             -- Item stack text was already set above in the cooldown section;
             -- nothing to do here — just prevent the else clause from clearing it.
         elseif entry.type == "spell" then
-            -- Custom spell entry: check charges/stacks via API.
-            -- Values may be secret in combat — pass directly to C-side functions
-            -- (TruncateWhenZero, SetText) without reading in Lua.
+            -- Custom spell entry: prefer mirror-captured text. Values may be
+            -- secret in combat; pass directly to C-side functions when shown.
             local spellID = _runtimeSid
-            local stackVal  -- raw value (may be secret), forwarded to C-side
-            local stackSource
+            local stackVal = _stackVal
+            local stackSource = _stackSource
+            local stackMirrorBacked = _stackMirrorBacked
+            local stackMirrorEmpty = _stackMirrorEmpty
+
+            if not _stackTextResolved and CDMIcons.ResolveIconStackText then
+                stackVal, stackSource, stackMirrorBacked = CDMIcons.ResolveIconStackText(icon)
+            end
 
             -- Only show charge count when maxCharges is readable and > 1
             -- (multi-charge spell).
-            -- Resource overlay counts (Soul Fragments etc.) use
-            -- GetSpellDisplayCount in the non-charge branch below.
             local cachedMaxCharges = _cachedChargeInfo and _cachedChargeInfo.maxCharges
             local isMultiCharge = cachedMaxCharges and cachedMaxCharges > 1
 
-            if isMultiCharge then
+            if stackMirrorBacked and CDMIcons.ValueIsMissing(stackVal) then
+                if not stackMirrorEmpty then
+                    stackMirrorEmpty = true
+                    CDMIcons.HideIconStackText(icon, "mirror-stack-empty")
+                    icon._stackTextSource = nil
+                end
+            elseif CDMIcons.ValueIsMissing(stackVal) and isMultiCharge then
                 -- GetSpellDisplayCount is the canonical charge display API.
                 if spellID then
                     stackVal = QueryDisplayCount(spellID)
@@ -1585,44 +1550,24 @@ local okI = true; local aIcon = r.auraData.icon
                         stackSource = "spell-display-count"
                     end
                 end
-                ChargeDebug(entry.name, "API path: spellID=", spellID,
-                    "maxCharges=", _cachedChargeInfo.maxCharges,
-                    "currentCharges=", _cachedChargeInfo.currentCharges,
-                    "displayCount=", stackVal, "isMultiCharge=", isMultiCharge)
-            else
-                -- Prefer stacking aura applications before generic display
-                -- counts so buff-backed spell entries show their real stacks.
-                stackVal, stackSource = CDMIcons.GetAuraApplicationsForSpell(spellID, entry, icon)
-
-                -- Non-charge resource overlays (Soul Fragments, etc.) fall
-                -- back to SpellDisplayCount. This mirrors action-button count
-                -- text without trusting the CooldownViewer child's native
-                -- cooldownChargesCount, which can carry unrelated counts for
-                -- ordinary cooldown spells.
-                local displayCount
-                if CDMIcons.ValueIsMissing(stackVal) and spellID then
-                    displayCount = QueryDisplayCount(spellID)
-                    stackVal = displayCount
-                    if CDMIcons.ValueIsPresent(displayCount) and type(displayCount) == "number" then
-                        stackSource = "spell-display-count"
-                        local displayText = C_StringUtil.TruncateWhenZero(displayCount)
-                        if not HookTextHasDisplay(displayText) then
-                            stackVal = nil
-                            stackSource = nil
-                        end
-                    end
+                if _G.QUI_CDM_CHARGE_DEBUG then
+                    ChargeDebug(entry.name, "API path: spellID=", spellID,
+                        "maxCharges=", _cachedChargeInfo.maxCharges,
+                        "currentCharges=", _cachedChargeInfo.currentCharges,
+                        "displayCount=", stackVal, "isMultiCharge=", isMultiCharge)
                 end
-                ChargeDebug(entry.name, "API non-charge stack: spellID=", spellID,
-                    "displayCount=", tostring(displayCount),
-                    "stackSource=", stackSource or "nil",
-                    "stackVal=", tostring(stackVal))
+            elseif CDMIcons.ValueIsMissing(stackVal) then
+                if _G.QUI_CDM_CHARGE_DEBUG then
+                    ChargeDebug(entry.name, "no stack text: spellID=", spellID,
+                        "mirrorBacked=", tostring(stackMirrorBacked),
+                        "isMultiCharge=", tostring(isMultiCharge))
+                end
             end
 
 
             -- Forward to C-side for display. Multi-charge spells always
             -- show their count (including "0" when depleted). Non-charge
-            -- stacks use TruncateWhenZero to hide zero (resource overlays,
-            -- non-charge spells that return 0 from GetSpellDisplayCount).
+            -- mirror text uses TruncateWhenZero to hide zero.
             if CDMIcons.ValueIsPresent(stackVal) then
                 if isMultiCharge then
                     -- Always show charge count — "0" is meaningful
@@ -1641,6 +1586,8 @@ local okI = true; local aIcon = r.auraData.icon
                         CDMIcons.HideIconStackText(icon, "api-aura-stack-empty")
                     end
                 end
+            elseif stackMirrorEmpty then
+                -- Mirror-backed icons with no mirror stack text intentionally stay empty.
             elseif not InCombatLockdown() and not (entry and entry.hasCharges) then
                 -- Don't hide charged-ability stack text on a transient API
                 -- nil. UNIT_AURA on the target (from other players' buffs/
@@ -1677,10 +1624,9 @@ local okI = true; local aIcon = r.auraData.icon
         end
     end
 
-    -- Desaturation for cooldown entries based on resolver-owned cooldown state.
-    local desatSettings = CDMIcons._hoistedNcdm and (CDMIcons._hoistedNcdm[entry.viewerType]
-        or (CDMIcons._hoistedNcdm.containers and CDMIcons._hoistedNcdm.containers[entry.viewerType]))
-    CDMIcons.ApplyCooldownDesaturation(icon, entry, desatSettings or CDMIcons.ResolveTrackerSettingsNow(entry.viewerType), icon._resolvedCooldownMode)
+    -- Desaturation is owned by the resolver (ApplyResolvedCooldown).
+    -- Per-tick batch must not re-apply it here — that race against the
+    -- resolver's release for mirror-backed icons produced visible flicker.
 
     -- Self-heal usability tint: icon rebuilds (BuildIcons via ScanAll)
     -- wipe _usabilityTinted.  Restore from _lastVisualState which
@@ -1718,8 +1664,8 @@ end
 ---------------------------------------------------------------------------
 -- DEBUG IMPORT BINDING
 -- ChargeDebug, ShouldDebugBlizzEntry, FormatMirrorState, DebugBlizzEntry
--- are all defined in cdm_debug.lua (loads last). Hot-path callers in this
--- file keep their existing local-upvalue calls.
+-- are defined by the load-on-demand debug addon. Hot-path callers in this file
+-- keep their existing local-upvalue calls.
 ---------------------------------------------------------------------------
 function CDMIconFactory._BindDebugImports()
     local d = ns.CDMDebug

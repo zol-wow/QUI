@@ -23,6 +23,5 @@
     <Script file="settings\containers_page_model.lua"/>
     <Script file="settings\containers_page.lua"/>
     <Script file="cdm_composer.lua"/>
-    <Script file="cdm_debug.lua"/>
     <Script file="cdm_effects.lua"/>
 </Ui>

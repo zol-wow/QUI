@@ -400,6 +400,15 @@ function QUI_LayoutMode:Open()
         return
     end
 
+    -- Load QUI_Options so per-mover provider features are registered with
+    -- Settings.Registry. Without this, right-clicking a mover only shows the
+    -- "No settings available" placeholder until the user opens the settings
+    -- panel manually.
+    local QUI = _G.QUI
+    if QUI and type(QUI.EnsureOptionsLoaded) == "function" then
+        QUI:EnsureOptionsLoaded()
+    end
+
     -- Pick up any accent color changes before creating/showing handles
     RefreshAccentColor()
     if ns.QUI_LayoutMode_UI and ns.QUI_LayoutMode_UI.RefreshAccentColor then

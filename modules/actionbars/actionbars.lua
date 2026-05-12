@@ -135,6 +135,10 @@ local MICRO_BUTTON_NAMES = {
 
 -- Standard action bar keys (bars 1-8, not pet/stance)
 local STANDARD_BAR_KEYS = {"bar1", "bar2", "bar3", "bar4", "bar5", "bar6", "bar7", "bar8"}
+local STANDARD_BAR_KEY_SET = {
+    bar1 = true, bar2 = true, bar3 = true, bar4 = true,
+    bar5 = true, bar6 = true, bar7 = true, bar8 = true,
+}
 
 -- All managed bar keys (includes pet/stance/microbar/bags which are reparented into owned containers)
 local ALL_MANAGED_BAR_KEYS = {"bar1", "bar2", "bar3", "bar4", "bar5", "bar6", "bar7", "bar8", "pet", "stance", "microbar", "bags"}
@@ -168,6 +172,10 @@ ns.ActionBarsOwned = ActionBarsOwned
 -- Forward declaration: defined ~line 3296, called from SafeUpdate (below)
 local UpdateAssistedCombatRotationFrame
 local UpdateAllAssistedHighlights
+local ResetButtonChargeCapabilityCache
+local ResetAllChargeCapabilityCaches
+local IsButtonInsideVisibleLayout
+local MarkSpellIdMapDirty
 -- Forward declaration: defined in usability section, called from OnOwnedEvent
 local ScheduleUsabilityUpdate
 
@@ -185,12 +193,17 @@ ActionBarsOwned.mirrorButtons = ActionBarsOwned.nativeButtons
 function ActionBarsOwned.SafeSyncAction(self)
     local oldAction = self.action
     local action = self:GetAttribute("action")
+    local actionChanged
     if action then
+        actionChanged = oldAction and oldAction ~= action
         self.action = action
+        if actionChanged and ResetButtonChargeCapabilityCache then
+            ResetButtonChargeCapabilityCache(self)
+        end
         -- Keep slotMap in sync when bar 1 pages (action ID changes)
         local slotMap = ActionBarsOwned.slotMap
         if slotMap then
-            if oldAction and oldAction ~= action then
+            if actionChanged then
                 slotMap[oldAction] = nil
             end
             if action > 0 then
@@ -211,7 +224,7 @@ function ActionBarsOwned.SafeSyncAction(self)
     ActionBarsOwned.SafeUpdate(self)
     -- Refresh assisted combat highlights after page change — the button
     -- now shows a different spell so the old highlight may be stale.
-    if oldAction and oldAction ~= action and UpdateAllAssistedHighlights then
+    if actionChanged and UpdateAllAssistedHighlights then
         UpdateAllAssistedHighlights()
     end
 end
@@ -231,6 +244,27 @@ end
 -- drop out automatically.
 ActionBarsOwned._activeButtons = ActionBarsOwned._activeButtons
     or setmetatable({}, { __mode = "k" })
+ActionBarsOwned._activeStandardButtons = ActionBarsOwned._activeStandardButtons
+    or setmetatable({}, { __mode = "k" })
+
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = {
+        name = "AB_activeButtons",
+        fn = function()
+            local count = 0
+            for _ in pairs(ActionBarsOwned._activeButtons) do count = count + 1 end
+            return count, 0
+        end,
+    }
+    mp[#mp + 1] = {
+        name = "AB_activeStandardButtons",
+        fn = function()
+            local count = 0
+            for _ in pairs(ActionBarsOwned._activeStandardButtons) do count = count + 1 end
+            return count, 0
+        end,
+    }
+end
 
 local UpdateButtonProfessionQuality
 local SafeHasAction
@@ -261,7 +295,18 @@ function ActionBarsOwned.SafeUpdate(self)
             end
         end
 
-        ActionBarsOwned._activeButtons[self] = true
+        local barKey = self._quiBarKey
+        local visibleInLayout = not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(self, barKey)
+        if visibleInLayout then
+            ActionBarsOwned._activeButtons[self] = true
+        else
+            ActionBarsOwned._activeButtons[self] = nil
+        end
+        if visibleInLayout and STANDARD_BAR_KEY_SET[barKey] then
+            ActionBarsOwned._activeStandardButtons[self] = true
+        else
+            ActionBarsOwned._activeStandardButtons[self] = nil
+        end
         -- Icon — GSE override buttons use the sequence macro icon instead
         -- of the action slot texture, so SafeUpdate doesn't overwrite it.
         local gseSeq = self:GetAttribute("gse-button")
@@ -391,6 +436,7 @@ function ActionBarsOwned.SafeUpdate(self)
         end
         -- Empty slot
         ActionBarsOwned._activeButtons[self] = nil
+        ActionBarsOwned._activeStandardButtons[self] = nil
         self.icon:Hide()
         if self.SlotBackground then self.SlotBackground:Show() end
         self:SetChecked(false)
@@ -596,6 +642,27 @@ local function GetFadeSettings()
     return db and db.fade
 end
 
+local effectiveSettingsCache = {}
+local effectiveSettingsCacheStats = { hits = 0, builds = 0, invalidations = 0 }
+
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "AB_settingsCacheHits", counter = true, fn = function() return effectiveSettingsCacheStats.hits end }
+    mp[#mp + 1] = { name = "AB_settingsCacheBuilds", counter = true, fn = function() return effectiveSettingsCacheStats.builds end }
+    mp[#mp + 1] = { name = "AB_settingsCacheInvalidations", counter = true, fn = function() return effectiveSettingsCacheStats.invalidations end }
+end
+
+local function InvalidateEffectiveSettingsCache(barKey)
+    effectiveSettingsCacheStats.invalidations = effectiveSettingsCacheStats.invalidations + 1
+    if barKey then
+        effectiveSettingsCache[barKey] = nil
+        return
+    end
+
+    for key in pairs(effectiveSettingsCache) do
+        effectiveSettingsCache[key] = nil
+    end
+end
+
 -- Effective settings (global merged with per-bar overrides)
 local function GetEffectiveSettings(barKey)
     local global = GetGlobalSettings()
@@ -606,6 +673,13 @@ local function GetEffectiveSettings(barKey)
         return global
     end
 
+    local cached = effectiveSettingsCache[barKey]
+    if cached and cached.global == global and cached.bar == barSettings then
+        effectiveSettingsCacheStats.hits = effectiveSettingsCacheStats.hits + 1
+        return cached.effective
+    end
+
+    effectiveSettingsCacheStats.builds = effectiveSettingsCacheStats.builds + 1
     local effective = {}
     for key, value in pairs(global) do
         effective[key] = value
@@ -614,8 +688,16 @@ local function GetEffectiveSettings(barKey)
         effective[key] = value
     end
 
+    effectiveSettingsCache[barKey] = {
+        global = global,
+        bar = barSettings,
+        effective = effective,
+    }
     return effective
 end
+
+ActionBarsOwned.GetEffectiveSettings = GetEffectiveSettings
+ActionBarsOwned.InvalidateEffectiveSettingsCache = InvalidateEffectiveSettingsCache
 
 ---------------------------------------------------------------------------
 -- HELPERS
@@ -852,7 +934,10 @@ end
 
 -- Determine bar key from button name
 local function GetBarKeyFromButton(button)
-    local name = button and button:GetName()
+    if button and button._quiBarKey then return button._quiBarKey end
+
+    local getName = button and button.GetName
+    local name = getName and getName(button)
     if not name then return nil end
 
     if name:match("^ActionButton%d+$") then return "bar1" end
@@ -878,7 +963,18 @@ end
 
 -- Get button index from button name
 local function GetButtonIndex(button)
-    local name = button and button:GetName()
+    if not button then return nil end
+    local index = button._quiButtonIndex
+    if type(index) == "number" then return index end
+    if button.GetAttribute then
+        index = button:GetAttribute("qui-button-index")
+        if type(index) == "number" then return index end
+        index = tonumber(index)
+        if index then return index end
+    end
+
+    local getName = button.GetName
+    local name = getName and getName(button)
     if not name then return nil end
     return tonumber(name:match("%d+$"))
 end
@@ -1392,6 +1488,39 @@ local function GetOwnedLayout(barKey)
         layout.buttonHeight
 end
 
+do
+    ActionBarsOwned._visibleButtonCounts = ActionBarsOwned._visibleButtonCounts or {}
+
+    local function ClampVisibleButtonCount(barKey, iconCount, buttonCount)
+        local maxButtons = buttonCount or BUTTON_COUNTS[barKey] or 12
+        local count = type(iconCount) == "number" and iconCount or maxButtons
+        if count < 0 then count = 0 end
+        if maxButtons > 0 and count > maxButtons then count = maxButtons end
+        return count
+    end
+
+    local function GetVisibleButtonCount(barKey)
+        if not barKey then return nil end
+        local visibleCounts = ActionBarsOwned._visibleButtonCounts
+        local buttons = ActionBarsOwned.nativeButtons and ActionBarsOwned.nativeButtons[barKey]
+        local buttonCount = buttons and #buttons or BUTTON_COUNTS[barKey] or 12
+        local _, _, iconCount = GetOwnedLayout(barKey)
+        local count = ClampVisibleButtonCount(barKey, iconCount, buttonCount)
+        visibleCounts[barKey] = count
+        return count
+    end
+
+    IsButtonInsideVisibleLayout = function(button, barKey)
+        if not button then return false end
+        if not STANDARD_BAR_KEY_SET[barKey] then return true end
+
+        local index = GetButtonIndex(button)
+        if not index then return true end
+
+        return index <= GetVisibleButtonCount(barKey)
+    end
+end
+
 LayoutNativeButtons = function(barKey)
     local container = ActionBarsOwned.containers[barKey]
     local buttons = ActionBarsOwned.nativeButtons[barKey]
@@ -1411,8 +1540,26 @@ LayoutNativeButtons = function(barKey)
 
     local isVertical = (orientation == "vertical")
 
+    local oldVisibleCount = ActionBarsOwned._visibleButtonCounts[barKey]
     local numVisible = math.min(iconCount, #buttons)
-    if numVisible == 0 then return end
+    ActionBarsOwned._visibleButtonCounts[barKey] = numVisible
+    if oldVisibleCount ~= numVisible and MarkSpellIdMapDirty then
+        MarkSpellIdMapDirty()
+    end
+    if numVisible == 0 then
+        for _, btn in ipairs(buttons) do
+            ActionBarsOwned._activeButtons[btn] = nil
+            ActionBarsOwned._activeStandardButtons[btn] = nil
+        end
+        return
+    end
+    if STANDARD_BAR_KEY_SET[barKey] then
+        for i = numVisible + 1, #buttons do
+            local btn = buttons[i]
+            ActionBarsOwned._activeButtons[btn] = nil
+            ActionBarsOwned._activeStandardButtons[btn] = nil
+        end
+    end
 
     -- Desired visual button size from settings
     local desiredSize
@@ -2346,6 +2493,60 @@ local function GetOriginalBlizzButtons(barKey)
     return buttons
 end
 
+local function SharedOwnedButtonUpdateCooldown(self)
+    ActionBarsOwned.UpdateCooldown(self)
+end
+
+local function SharedOwnedButtonUpdateCount(self)
+    local action = self.action
+    local count = self.Count
+    if not action or not HasAction(action) then
+        if count then count:SetText("") end
+        return
+    end
+
+    if C_ActionBar and C_ActionBar.GetActionDisplayCount then
+        if count then count:SetText(C_ActionBar.GetActionDisplayCount(action) or "") end
+    elseif count then
+        count:SetText("")
+    end
+end
+
+local function SharedOwnedButtonSetTooltip(self)
+    if GetCVar("UberTooltips") == "1" then
+        GameTooltip_SetDefaultAnchor(GameTooltip, self)
+    else
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    end
+    if GameTooltip:SetAction(self.action) then
+        self.UpdateTooltip = self.SetTooltip
+    else
+        self.UpdateTooltip = nil
+    end
+end
+
+local function SharedOwnedButtonOnEvent(self, event, ...)
+    if event == "ACTIONBAR_UPDATE_COOLDOWN"
+        or event == "LOSS_OF_CONTROL_ADDED"
+        or event == "LOSS_OF_CONTROL_UPDATE" then
+        ActionBarsOwned.UpdateCooldown(self)
+    else
+        ActionBarsOwned.SafeUpdate(self)
+    end
+end
+
+local function SharedOwnedButtonPostDrag(self)
+    OwnedButton_PostDrag(self)
+end
+
+ActionBarsOwned._sharedHandlers = ActionBarsOwned._sharedHandlers or {
+    UpdateCooldown = SharedOwnedButtonUpdateCooldown,
+    UpdateCount = SharedOwnedButtonUpdateCount,
+    SetTooltip = SharedOwnedButtonSetTooltip,
+    OnEvent = SharedOwnedButtonOnEvent,
+    PostDrag = SharedOwnedButtonPostDrag,
+}
+
 local function EnsureOwnedActionButton(container, barKey, btnName, index)
     local btn = _G[btnName]
     local existed = btn ~= nil
@@ -2385,6 +2586,8 @@ local function EnsureOwnedActionButton(container, barKey, btnName, index)
     else
         btn:SetParent(container)
     end
+    btn._quiBarKey = barKey
+    btn._quiButtonIndex = index
     btn:SetAttribute("qui-button-index", index)
 
     btn:SetAttribute("qui-refresh-ref", "btn-refresh-" .. barKey .. "-" .. index)
@@ -2403,21 +2606,8 @@ local function SetupPagedOwnedActionButton(btn, index)
         self:CallMethod("SafeSyncAction")
     ]])
     btn.SafeSyncAction = ActionBarsOwned.SafeSyncAction
-    btn.UpdateCooldown = function(self)
-        ActionBarsOwned.UpdateCooldown(self)
-    end
-    btn.UpdateCount = function(self)
-        local action = self.action
-        if not action or not HasAction(action) then
-            if self.Count then self.Count:SetText("") end
-            return
-        end
-        if C_ActionBar and C_ActionBar.GetActionDisplayCount then
-            if self.Count then self.Count:SetText(C_ActionBar.GetActionDisplayCount(action) or "") end
-        elseif self.Count then
-            self.Count:SetText("")
-        end
-    end
+    btn.UpdateCooldown = SharedOwnedButtonUpdateCooldown
+    btn.UpdateCount = SharedOwnedButtonUpdateCount
 end
 
 local function SetupFixedOwnedActionButton(container, btn, action)
@@ -2494,55 +2684,21 @@ end
 
 local function SetupStandardOwnedButtonRuntime(container, btn)
     btn:UnregisterAllEvents()
-    btn:SetScript("OnEvent", function(self, event, ...)
-        if event == "ACTIONBAR_UPDATE_COOLDOWN"
-            or event == "LOSS_OF_CONTROL_ADDED"
-            or event == "LOSS_OF_CONTROL_UPDATE" then
-            ActionBarsOwned.UpdateCooldown(self)
-        else
-            ActionBarsOwned.SafeUpdate(self)
-        end
-    end)
+    btn:SetScript("OnEvent", SharedOwnedButtonOnEvent)
     btn.Update = ActionBarsOwned.SafeUpdate
     btn.UpdateAction = ActionBarsOwned.SafeSyncAction
     btn.SafeSyncAction = ActionBarsOwned.SafeSyncAction
-    btn.UpdateCooldown = function(self)
-        ActionBarsOwned.UpdateCooldown(self)
-    end
+    btn.UpdateCooldown = SharedOwnedButtonUpdateCooldown
     btn.UpdatePressAndHoldAction = function() end
-    btn.UpdateCount = function(self)
-        local action = self.action
-        if not action or not HasAction(action) then
-            self.Count:SetText("")
-            return
-        end
-        if C_ActionBar and C_ActionBar.GetActionDisplayCount then
-            self.Count:SetText(C_ActionBar.GetActionDisplayCount(action) or "")
-        else
-            self.Count:SetText("")
-        end
-    end
+    btn.UpdateCount = SharedOwnedButtonUpdateCount
     if SetActionUIButton and btn.action and btn.cooldown then
         SetActionUIButton(btn, btn.action, btn.cooldown)
     end
 
-    btn.SetTooltip = function(self)
-        if GetCVar("UberTooltips") == "1" then
-            GameTooltip_SetDefaultAnchor(GameTooltip, self)
-        else
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        end
-        if GameTooltip:SetAction(self.action) then
-            self.UpdateTooltip = self.SetTooltip
-        else
-            self.UpdateTooltip = nil
-        end
-    end
+    btn.SetTooltip = SharedOwnedButtonSetTooltip
 
     btn:SetAttribute("buttonlock", GetCVar("lockActionBars") == "1")
-    btn.QUI_PostDrag = function(self)
-        OwnedButton_PostDrag(self)
-    end
+    btn.QUI_PostDrag = SharedOwnedButtonPostDrag
 
     if not btn.quiSecureHooksInstalled then
         btn.quiSecureHooksInstalled = true
@@ -2715,9 +2871,7 @@ local function BuildBar(barKey)
         -- bar drag state fails to persist across /reload because the
         -- native sync path never runs.  The container is already
         -- hidden + reparented above, which is enough to make them
-        -- invisible.  Bartender4 uses the same approach (see
-        -- HideBlizzard.lua:78 — `hideActionBarFrame(PetActionBar, true)`
-        -- only touches the container, never the child buttons).
+        -- invisible while preserving the native child-button event path.
         if barKey ~= "pet" then
             local origButtons = GetOriginalBlizzButtons(barKey)
             for _, blizzBtn in ipairs(origButtons) do
@@ -3630,11 +3784,16 @@ local ApplyPageArrowVisibility
 -- 200 file-scope local variable limit.  Public functions are stored as
 -- ActionBarsOwned fields.
 
-local _abCooldownStats = { events = 0, batches = 0, buttons = 0 }
+local _abCooldownStats = { events = 0, batches = 0, buttons = 0, chargeInfoQueries = 0, chargeInfoSkips = 0, chargeInfoActive = 0, chargeDurationQueries = 0, chargeDurationActive = 0 }
 do local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "AB_cooldownEvents",  counter = true, fn = function() return _abCooldownStats.events  end }
     mp[#mp + 1] = { name = "AB_cooldownBatches", counter = true, fn = function() return _abCooldownStats.batches end }
     mp[#mp + 1] = { name = "AB_cooldownButtons", counter = true, fn = function() return _abCooldownStats.buttons end }
+    mp[#mp + 1] = { name = "AB_chargeInfoQueries", counter = true, fn = function() return _abCooldownStats.chargeInfoQueries end }
+    mp[#mp + 1] = { name = "AB_chargeInfoSkips", counter = true, fn = function() return _abCooldownStats.chargeInfoSkips end }
+    mp[#mp + 1] = { name = "AB_chargeInfoActive", counter = true, fn = function() return _abCooldownStats.chargeInfoActive end }
+    mp[#mp + 1] = { name = "AB_chargeDurationQueries", counter = true, fn = function() return _abCooldownStats.chargeDurationQueries end }
+    mp[#mp + 1] = { name = "AB_chargeDurationActive", counter = true, fn = function() return _abCooldownStats.chargeDurationActive end }
 end
 
 do
@@ -3646,7 +3805,6 @@ do
         and (tonumber((select(2, GetBuildInfo()))) or 0) >= 66562
 
     local DEFAULT_CD_INFO  = { startTime = 0, duration = 0, isEnabled = false, isActive = false, modRate = 0 }
-    local DEFAULT_CHG_INFO = { currentCharges = 0, maxCharges = 0, cooldownStartTime = 0, cooldownDuration = 0, chargeModRate = 0, isActive = false }
     local DEFAULT_LOC_INFO = { startTime = 0, duration = 0, modRate = 0, isActive = false, shouldReplaceNormalCooldown = false }
 
     local function GetOrCreateChargeCooldown(button)
@@ -3689,6 +3847,131 @@ do
     -- cache we hit Clear() 270 times per tick (cooldown + charge + LoC frames)
     -- for buttons that are already cleared.
     local _buttonWasActive = setmetatable({}, { __mode = "k" })
+    local _buttonChargeAction = setmetatable({}, { __mode = "k" })
+    local _buttonMayHaveCharges = setmetatable({}, { __mode = "k" })
+    local _cooldownBatchToken = 0
+    local _cooldownBatchActive = false
+    local _batchChargeInfoSeen = {}
+    local _batchChargeActive = {}
+    local _batchChargeMayHaveCharges = {}
+    local _batchChargeDurationSeen = {}
+    local _batchChargeDurationObject = {}
+    do local mp = ns._memprobes or {}; ns._memprobes = mp
+        mp[#mp + 1] = {
+            name = "AB_chargeCapabilityCache",
+            fn = function()
+                local count = 0
+                for _ in pairs(_buttonChargeAction) do count = count + 1 end
+                return count, 0
+            end,
+        }
+    end
+
+    ResetButtonChargeCapabilityCache = function(button)
+        _buttonChargeAction[button] = nil
+        _buttonMayHaveCharges[button] = nil
+    end
+
+    ResetAllChargeCapabilityCaches = function()
+        wipe(_buttonChargeAction)
+        wipe(_buttonMayHaveCharges)
+        wipe(_batchChargeInfoSeen)
+        wipe(_batchChargeActive)
+        wipe(_batchChargeMayHaveCharges)
+        wipe(_batchChargeDurationSeen)
+        wipe(_batchChargeDurationObject)
+    end
+
+    local function BeginCooldownBatch()
+        _cooldownBatchToken = _cooldownBatchToken + 1
+        if _cooldownBatchToken > 1000000000 then
+            _cooldownBatchToken = 1
+            wipe(_batchChargeInfoSeen)
+            wipe(_batchChargeActive)
+            wipe(_batchChargeMayHaveCharges)
+            wipe(_batchChargeDurationSeen)
+            wipe(_batchChargeDurationObject)
+        end
+        _cooldownBatchActive = true
+    end
+
+    local function EndCooldownBatch()
+        _cooldownBatchActive = false
+    end
+
+    local function ChargeInfoMayHaveCharges(chargeInfo)
+        if not chargeInfo then return false end
+        local maxCharges = chargeInfo.maxCharges
+        if Helpers.IsSecretValue(maxCharges) then
+            return true
+        end
+        maxCharges = Helpers.SafeToNumber(maxCharges, 0) or 0
+        return maxCharges > 1
+    end
+
+    local function GetActionChargeActive(button, action)
+        if not C_ActionBar.GetActionCharges then return nil end
+        local actionCanBeCached = not Helpers.IsSecretValue(action)
+        if actionCanBeCached
+            and _cooldownBatchActive
+            and _batchChargeInfoSeen[action] == _cooldownBatchToken then
+            if _batchChargeMayHaveCharges[action] == false then
+                _abCooldownStats.chargeInfoSkips = _abCooldownStats.chargeInfoSkips + 1
+            end
+            return _batchChargeActive[action] or nil
+        end
+
+        if actionCanBeCached
+            and _buttonChargeAction[button] == action
+            and _buttonMayHaveCharges[button] == false then
+            _abCooldownStats.chargeInfoSkips = _abCooldownStats.chargeInfoSkips + 1
+            return nil
+        end
+
+        _abCooldownStats.chargeInfoQueries = _abCooldownStats.chargeInfoQueries + 1
+        local chargeInfo = C_ActionBar.GetActionCharges(action)
+        local mayHaveCharges = ChargeInfoMayHaveCharges(chargeInfo)
+        if actionCanBeCached then
+            _buttonChargeAction[button] = action
+            _buttonMayHaveCharges[button] = mayHaveCharges
+            if _cooldownBatchActive then
+                _batchChargeInfoSeen[action] = _cooldownBatchToken
+                _batchChargeMayHaveCharges[action] = mayHaveCharges
+            end
+        end
+        if mayHaveCharges and chargeInfo and chargeInfo.isActive then
+            _abCooldownStats.chargeInfoActive = _abCooldownStats.chargeInfoActive + 1
+            if actionCanBeCached and _cooldownBatchActive then
+                _batchChargeActive[action] = true
+            end
+            return true
+        end
+        if actionCanBeCached and _cooldownBatchActive then
+            _batchChargeActive[action] = nil
+        end
+        return nil
+    end
+
+    local function GetActionChargeDurationObject(action)
+        if not C_ActionBar.GetActionChargeDuration then return nil end
+        local actionCanBeCached = not Helpers.IsSecretValue(action)
+        if actionCanBeCached
+            and _cooldownBatchActive
+            and _batchChargeDurationSeen[action] == _cooldownBatchToken then
+            return _batchChargeDurationObject[action]
+        end
+
+        _abCooldownStats.chargeDurationQueries = _abCooldownStats.chargeDurationQueries + 1
+        local durationObject = C_ActionBar.GetActionChargeDuration(action)
+        if actionCanBeCached and _cooldownBatchActive then
+            _batchChargeDurationSeen[action] = _cooldownBatchToken
+            _batchChargeDurationObject[action] = durationObject
+        end
+        if durationObject then
+            _abCooldownStats.chargeDurationActive = _abCooldownStats.chargeDurationActive + 1
+        end
+        return durationObject
+    end
 
     function ActionBarsOwned.UpdateCooldown(button)
         -- Hot path: called every ~100ms for all active buttons. Every
@@ -3703,20 +3986,18 @@ do
         if not cooldown then return end
 
         if USE_DURATION_OBJECTS then
-            -- Fast path: check primary cooldown first (1 API call).
-            -- If not active, skip charges/LoC entirely (saves 2 API calls per
-            -- button for the majority of buttons not on cooldown at any moment).
+            -- Fast path: check primary cooldown first, then read only the
+            -- non-secret charge capability/active fields. Never read
+            -- currentCharges in combat; fetch the DurationObject only when
+            -- isActive says a charge is recharging.
             local cdInfo  = C_ActionBar.GetActionCooldown(action) or DEFAULT_CD_INFO
-            local chgInfo = C_ActionBar.GetActionCharges(action) or DEFAULT_CHG_INFO
             local cdActive = cdInfo.isActive
-            local chActive = chgInfo.isActive
+            local cdDurationObject = cdActive and C_ActionBar.GetActionCooldownDuration(action) or nil
+            local chActive = GetActionChargeActive(button, action)
+            local chargeDurObj = chActive and GetActionChargeDurationObject(action) or nil
             if not cdActive and not chActive then
                 -- Idle button: only clear the frames on the active→inactive
                 -- transition. Subsequent idle scans skip the Clear() churn.
-                -- Note: a charged spell with an unspent charge (e.g. 1/2)
-                -- is still "active" here because its recharge swipe must
-                -- drive the charge cooldown frame even though the primary
-                -- cooldown is idle.
                 if _buttonWasActive[button] then
                     _buttonWasActive[button] = nil
                     cooldown:Clear()
@@ -3737,14 +4018,14 @@ do
 
             -- Normal cooldown (only fetch DurationObject when needed)
             if showNormal then
-                SetOrClearCooldown(cooldown, true, C_ActionBar.GetActionCooldownDuration(action))
+                SetOrClearCooldown(cooldown, true, cdDurationObject)
             else
                 cooldown:Clear()
             end
 
             -- Charge cooldown (lazy-create frame)
             if showCharge then
-                SetOrClearCooldown(GetOrCreateChargeCooldown(button), true, C_ActionBar.GetActionChargeDuration(action))
+                SetOrClearCooldown(GetOrCreateChargeCooldown(button), true, chargeDurObj)
             elseif button.chargeCooldown then
                 button.chargeCooldown:Clear()
             end
@@ -3775,10 +4056,18 @@ do
         -- Fast path: iterate only buttons with actions (LibActionButton
         -- pattern). Typical raid: ~30-50 active of 96 total.
         local activeButtons = ActionBarsOwned._activeButtons
+        BeginCooldownBatch()
         if next(activeButtons) ~= nil then
             for btn in pairs(activeButtons) do
-                ActionBarsOwned.UpdateCooldown(btn)
+                local barKey = btn._quiBarKey
+                if not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(btn, barKey) then
+                    ActionBarsOwned.UpdateCooldown(btn)
+                else
+                    activeButtons[btn] = nil
+                    ActionBarsOwned._activeStandardButtons[btn] = nil
+                end
             end
+            EndCooldownBatch()
             return
         end
 
@@ -3789,12 +4078,14 @@ do
             local buttons = ActionBarsOwned.nativeButtons[barKey]
             if buttons then
                 for _, btn in ipairs(buttons) do
-                    if HasAction(btn.action or 0) then
+                    if (not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(btn, barKey))
+                        and HasAction(btn.action or 0) then
                         ActionBarsOwned.UpdateCooldown(btn)
                     end
                 end
             end
         end
+        EndCooldownBatch()
     end
 
 end -- do block (cooldown ownership)
@@ -3874,10 +4165,14 @@ end
 local spellIdToButtons = {}
 local flyoutButtons = {}  -- buttons with flyout actions (checked as fallback)
 local spellIdButtonListPool = {}
+local spellIdMapDirty = true
+local spellIdMapStats = { rebuilds = 0, dirtyMarks = 0, ensures = 0 }
 do local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "AB_spellIdToButtons", tbl = spellIdToButtons }
     mp[#mp + 1] = { name = "AB_flyoutButtons",    tbl = flyoutButtons }
     mp[#mp + 1] = { name = "AB_spellIdListPool",  tbl = spellIdButtonListPool }
+    mp[#mp + 1] = { name = "AB_spellIdMapRebuilds", counter = true, fn = function() return spellIdMapStats.rebuilds end }
+    mp[#mp + 1] = { name = "AB_spellIdMapDirtyMarks", counter = true, fn = function() return spellIdMapStats.dirtyMarks end }
 end
 
 local function AcquireSpellButtonList()
@@ -3901,28 +4196,46 @@ local function RebuildSpellIdMap()
         local btns = ActionBarsOwned.nativeButtons[barKey]
         if btns then
             for _, btn in ipairs(btns) do
-                local spellId = GetButtonSpellId(btn)
-                if spellId then
-                    ForEachSpellCandidate(spellId, function(candidateId)
-                        local list = spellIdToButtons[candidateId]
-                        if not list then
-                            list = AcquireSpellButtonList()
-                            spellIdToButtons[candidateId] = list
-                        end
-                        list[#list + 1] = btn
-                    end)
-                else
-                    -- Check if this is a flyout button (rare but possible)
-                    local action = btn.action
-                    if action and HasAction(action) then
-                        local ok, actionType = pcall(GetActionInfo, action)
-                        if ok and actionType == "flyout" then
-                            flyoutButtons[#flyoutButtons + 1] = btn
+                if not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(btn, barKey) then
+                    local spellId = GetButtonSpellId(btn)
+                    if spellId then
+                        ForEachSpellCandidate(spellId, function(candidateId)
+                            local list = spellIdToButtons[candidateId]
+                            if not list then
+                                list = AcquireSpellButtonList()
+                                spellIdToButtons[candidateId] = list
+                            end
+                            list[#list + 1] = btn
+                        end)
+                    else
+                        -- Check if this is a flyout button (rare but possible)
+                        local action = btn.action
+                        if action and HasAction(action) then
+                            local ok, actionType = pcall(GetActionInfo, action)
+                            if ok and actionType == "flyout" then
+                                flyoutButtons[#flyoutButtons + 1] = btn
+                            end
                         end
                     end
                 end
             end
         end
+    end
+    spellIdMapDirty = false
+    spellIdMapStats.rebuilds = spellIdMapStats.rebuilds + 1
+end
+
+MarkSpellIdMapDirty = function()
+    if not spellIdMapDirty then
+        spellIdMapStats.dirtyMarks = spellIdMapStats.dirtyMarks + 1
+    end
+    spellIdMapDirty = true
+end
+
+local function EnsureSpellIdMap()
+    spellIdMapStats.ensures = spellIdMapStats.ensures + 1
+    if spellIdMapDirty then
+        RebuildSpellIdMap()
     end
 end
 
@@ -4190,7 +4503,9 @@ function ActionBarsOwned.UpdateAllOverlayGlows()
         local btns = ActionBarsOwned.nativeButtons[barKey]
         if btns then
             for _, btn in ipairs(btns) do
-                ActionBarsOwned.UpdateOverlayGlow(btn)
+                if not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(btn, barKey) then
+                    ActionBarsOwned.UpdateOverlayGlow(btn)
+                end
             end
         end
     end
@@ -4201,6 +4516,7 @@ end
 local spellGlowVisited = {}
 local function ForEachButtonForSpellGlow(spellId, callback)
     if not spellId or not callback then return false end
+    EnsureSpellIdMap()
 
     local matched = false
     local visited = spellGlowVisited
@@ -4266,6 +4582,9 @@ function ActionBarsOwned.OnSpellActivationGlowHide(spellId)
 end
 
 ActionBarsOwned.RebuildSpellIdMap = RebuildSpellIdMap
+ActionBarsOwned.MarkSpellIdMapDirty = MarkSpellIdMapDirty
+ActionBarsOwned.EnsureSpellIdMap = EnsureSpellIdMap
+ActionBarsOwned.GetSpellIdMapStats = function() return spellIdMapStats end
 ActionBarsOwned.UpdateAllSpellHighlights = UpdateAllSpellHighlights
 ActionBarsOwned.ShowActionButtonGlow = ShowActionButtonGlow
 ActionBarsOwned.HideActionButtonGlow = HideActionButtonGlow
@@ -4335,17 +4654,22 @@ function ActionBarsOwned.UpdateAllButtonVisuals()
             local btns = ActionBarsOwned.nativeButtons[barKey]
             if btns then
                 for _, btn in ipairs(btns) do
-                    local action = btn.action or 0
-                    if HasAction(action) then
-                        local state = GetFrameState(btn)
-                        state.wasEmpty = false
-                        pcall(ActionBarsOwned.SafeUpdate, btn)
-                    else
-                        local state = GetFrameState(btn)
-                        if not state.wasEmpty then
-                            state.wasEmpty = true
+                    if not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(btn, barKey) then
+                        local action = btn.action or 0
+                        if HasAction(action) then
+                            local state = GetFrameState(btn)
+                            state.wasEmpty = false
                             pcall(ActionBarsOwned.SafeUpdate, btn)
+                        else
+                            local state = GetFrameState(btn)
+                            if not state.wasEmpty then
+                                state.wasEmpty = true
+                                pcall(ActionBarsOwned.SafeUpdate, btn)
+                            end
                         end
+                    else
+                        ActionBarsOwned._activeButtons[btn] = nil
+                        ActionBarsOwned._activeStandardButtons[btn] = nil
                     end
                 end
             end
@@ -4356,20 +4680,31 @@ function ActionBarsOwned.UpdateAllButtonVisuals()
         -- transitions are handled by SafeSyncAction/ACTIONBAR_SLOT_CHANGED
         -- paths calling SafeUpdate directly on the affected button.
         for btn in pairs(ActionBarsOwned._activeButtons) do
-            local state = GetFrameState(btn)
-            state.wasEmpty = false
-            pcall(ActionBarsOwned.SafeUpdate, btn)
+            local barKey = btn._quiBarKey
+            if not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(btn, barKey) then
+                local state = GetFrameState(btn)
+                state.wasEmpty = false
+                pcall(ActionBarsOwned.SafeUpdate, btn)
+            else
+                ActionBarsOwned._activeButtons[btn] = nil
+                ActionBarsOwned._activeStandardButtons[btn] = nil
+            end
         end
     end
 
-    -- Rebuild spell-to-button reverse lookup for glow events
-    ActionBarsOwned.RebuildSpellIdMap()
+    -- Slot/icon state changed; rebuild the reverse lookup only if a glow
+    -- event needs it.
+    if MarkSpellIdMapDirty then MarkSpellIdMapDirty() end
 end
 
 -- Force the next UpdateAllButtonVisuals call to do a full scan (covers
 -- mass action-table shuffles where individual slot events aren't reliable).
 function ActionBarsOwned.ForceFullVisualRescan()
     _visualFirstRunDone = false
+    if ResetAllChargeCapabilityCaches then
+        ResetAllChargeCapabilityCaches()
+    end
+    if MarkSpellIdMapDirty then MarkSpellIdMapDirty() end
 end
 
 ---------------------------------------------------------------------------
@@ -4487,11 +4822,13 @@ abUpdateFrame:SetScript("OnUpdate", function(self)
     end
 end)
 
--- Profiler: split cooldown-path vs state-path vs visual-path work so we
--- can see which is hot. We wrap the update functions at the SetScript
--- handler level rather than the OnUpdate tick, so the measurement
--- reflects only the actual refresh cost (not throttled no-op ticks).
-do
+-- Optional profiler split for cooldown/state/visual paths. The default module
+-- profiler entry below still covers the event frame; these extra wrappers are
+-- only installed when explicitly requested because they add an extra Lua call
+-- to every actionbar refresh.
+ActionBarsOwned._perfProbesEnabled = false
+if ns.QUI_ENABLE_ACTIONBAR_SPLIT_PERF_PROBES == true or _G.QUI_ENABLE_ACTIONBAR_SPLIT_PERF_PROBES == true then
+    ActionBarsOwned._perfProbesEnabled = true
     local origAllCd    = ActionBarsOwned.UpdateAllCooldowns
     local origAllVis   = ActionBarsOwned.UpdateAllButtonVisuals
     local origAllState = ActionBarsOwned.UpdateAllButtonStates
@@ -4559,6 +4896,9 @@ abSlotFrame:SetScript("OnUpdate", function(self)
             local entry = slotMap[slot]
             if entry then
                 local btn, barKey = entry.button, entry.barKey
+                if ResetButtonChargeCapabilityCache then
+                    ResetButtonChargeCapabilityCache(btn)
+                end
                 pcall(ActionBarsOwned.SafeUpdate, btn)
                 ActionBarsOwned.UpdateCooldown(btn)
                 ActionBarsOwned.UpdateOverlayGlow(btn)
@@ -4588,8 +4928,8 @@ abSlotFrame:SetScript("OnUpdate", function(self)
         end
     end
     wipe(abDirtySlots)
-    -- Rebuild spell-to-button map after slot content changes (drag/drop)
-    ActionBarsOwned.RebuildSpellIdMap()
+    -- Slot content changed; rebuild the spell lookup lazily on the next glow.
+    if MarkSpellIdMapDirty then MarkSpellIdMapDirty() end
     if SyncOwnedFlyoutInfoToHandler then
         SyncOwnedFlyoutInfoToHandler()
     end
@@ -4958,8 +5298,8 @@ local function OnOwnedEvent(self, event, ...)
                 end
             end
         end
-        -- Rebuild spell-to-button map (slot contents may have changed)
-        ActionBarsOwned.RebuildSpellIdMap()
+        -- Slot contents may have changed; rebuild the lookup lazily.
+        if MarkSpellIdMapDirty then MarkSpellIdMapDirty() end
         if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
 
     elseif event == "PLAYER_ENTER_COMBAT" or event == "PLAYER_LEAVE_COMBAT" then
@@ -6391,6 +6731,15 @@ local usabilityState = {
     updatePending = false,
 }
 
+do
+
+local _abUsabilityStats = { activeScans = 0, fallbackScans = 0, buttons = 0 }
+do local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "AB_usabilityActiveScans", counter = true, fn = function() return _abUsabilityStats.activeScans end }
+    mp[#mp + 1] = { name = "AB_usabilityFallbackScans", counter = true, fn = function() return _abUsabilityStats.fallbackScans end }
+    mp[#mp + 1] = { name = "AB_usabilityButtons", counter = true, fn = function() return _abUsabilityStats.buttons end }
+end
+
 -- Get or create a QUI-owned tint overlay for range/usability coloring.
 -- Uses MOD (multiplicative) blend on ARTWORK sublevel 1, so it renders
 -- above the icon (sublevel 0) but below OVERLAY borders/gloss.
@@ -6505,16 +6854,34 @@ local function UpdateAllButtonUsability()
     if not globalSettings then return end
     if not globalSettings.rangeIndicator and not globalSettings.usabilityIndicator then return end
 
-    -- Only check action bars 1-8 (not pet/stance/micro/bags)
-    for i = 1, 8 do
-        local barKey = "bar" .. i
-        -- Skip bars that are fully faded out
+    local activeStandardButtons = ActionBarsOwned._activeStandardButtons
+    if activeStandardButtons and next(activeStandardButtons) ~= nil then
+        _abUsabilityStats.activeScans = _abUsabilityStats.activeScans + 1
+        for button in pairs(activeStandardButtons) do
+            local barKey = button._quiBarKey or GetBarKeyFromButton(button)
+            local fadeState = ActionBarsOwned.fadeState and ActionBarsOwned.fadeState[barKey]
+            if (not fadeState or fadeState.currentAlpha > 0)
+                and (not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(button, barKey))
+                and (not button.IsVisible or button:IsVisible()) then
+                _abUsabilityStats.buttons = _abUsabilityStats.buttons + 1
+                UpdateButtonUsability(button, globalSettings)
+            elseif IsButtonInsideVisibleLayout and not IsButtonInsideVisibleLayout(button, barKey) then
+                ActionBarsOwned._activeButtons[button] = nil
+                activeStandardButtons[button] = nil
+            end
+        end
+        return
+    end
+
+    -- Fallback before the first visual pass has populated _activeButtons.
+    _abUsabilityStats.fallbackScans = _abUsabilityStats.fallbackScans + 1
+    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
         local fadeState = ActionBarsOwned.fadeState and ActionBarsOwned.fadeState[barKey]
         if not fadeState or fadeState.currentAlpha > 0 then
-            local buttons = GetBarButtons(barKey)
-            for _, button in ipairs(buttons) do
-                -- UpdateButtonUsability internally checks fadeHidden/hiddenEmpty
-                if button:IsVisible() then
+            for _, button in ipairs(GetBarButtons(barKey)) do
+                if (not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(button, barKey))
+                    and (not button.IsVisible or button:IsVisible()) then
+                    _abUsabilityStats.buttons = _abUsabilityStats.buttons + 1
                     UpdateButtonUsability(button, globalSettings)
                 end
             end
@@ -6522,15 +6889,60 @@ local function UpdateAllButtonUsability()
     end
 end
 
+ActionBarsOwned.UpdateAllButtonUsability = UpdateAllButtonUsability
+
+local usabilityUpdateFrame
+local function UsabilityUpdateFrameOnUpdate(self, elapsed)
+    self.elapsed = (self.elapsed or 0) + (elapsed or 0)
+    if self.elapsed < 0.05 then return end
+
+    self.elapsed = 0
+    usabilityState.updatePending = false
+    self:Hide()
+    UpdateAllButtonUsability()
+end
+
+local function EnsureUsabilityUpdateFrame()
+    if usabilityUpdateFrame then return usabilityUpdateFrame end
+
+    usabilityUpdateFrame = CreateFrame("Frame")
+    usabilityUpdateFrame.elapsed = 0
+    usabilityUpdateFrame:Hide()
+    usabilityUpdateFrame:SetScript("OnUpdate", UsabilityUpdateFrameOnUpdate)
+    ActionBarsOwned._usabilityUpdateFrame = usabilityUpdateFrame
+    return usabilityUpdateFrame
+end
+
+local function UsabilityCheckFrameOnEvent(self, event, ...)
+    if event == "PLAYER_REGEN_DISABLED" then
+        usabilityState.inCombat = true
+        self.elapsed = 0
+        return
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        usabilityState.inCombat = false
+        ScheduleUsabilityUpdate()
+        return
+    end
+    ScheduleUsabilityUpdate()
+end
+
+local function UsabilityCheckFrameOnUpdate(self, elapsed)
+    self.elapsed = self.elapsed + elapsed
+    local interval = usabilityState.inCombat and usabilityState.INTERVAL_COMBAT or usabilityState.INTERVAL_IDLE
+    if self.elapsed < interval then return end
+    self.elapsed = 0
+    UpdateAllButtonUsability()
+end
+
 -- Debounced event handler (prevents rapid-fire updates)
 ScheduleUsabilityUpdate = function()
     if usabilityState.updatePending then return end
     usabilityState.updatePending = true
-    C_Timer.After(0.05, function()
-        usabilityState.updatePending = false
-        UpdateAllButtonUsability()
-    end)
+    local frame = EnsureUsabilityUpdateFrame()
+    frame.elapsed = 0
+    frame:Show()
 end
+ActionBarsOwned.ScheduleUsabilityUpdate = ScheduleUsabilityUpdate
 
 -- Reset all button tints
 local function ResetAllButtonTints()
@@ -6574,18 +6986,7 @@ local function UpdateUsabilityPolling()
         checkFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
         checkFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
 
-        checkFrame:SetScript("OnEvent", function(self, event, ...)
-            if event == "PLAYER_REGEN_DISABLED" then
-                usabilityState.inCombat = true
-                self.elapsed = 0  -- reset so combat interval kicks in immediately
-                return
-            elseif event == "PLAYER_REGEN_ENABLED" then
-                usabilityState.inCombat = false
-                ScheduleUsabilityUpdate()  -- one-shot refresh after combat
-                return
-            end
-            ScheduleUsabilityUpdate()
-        end)
+        checkFrame:SetScript("OnEvent", UsabilityCheckFrameOnEvent)
 
         -- Initial update
         ScheduleUsabilityUpdate()
@@ -6599,13 +7000,7 @@ local function UpdateUsabilityPolling()
     -- UpdateButtonUsability skips overlay work when tint is unchanged,
     -- so less frequent polling has no visible impact.
     if rangeEnabled then
-        checkFrame:SetScript("OnUpdate", function(self, elapsed)
-            self.elapsed = self.elapsed + elapsed
-            local interval = usabilityState.inCombat and usabilityState.INTERVAL_COMBAT or usabilityState.INTERVAL_IDLE
-            if self.elapsed < interval then return end
-            self.elapsed = 0
-            UpdateAllButtonUsability()
-        end)
+        checkFrame:SetScript("OnUpdate", UsabilityCheckFrameOnUpdate)
         checkFrame:Show()
     else
         checkFrame:SetScript("OnUpdate", nil)
@@ -6616,6 +7011,10 @@ local function UpdateUsabilityPolling()
             ResetAllButtonTints()
         end
     end
+end
+
+ActionBarsOwned.UpdateUsabilityPolling = UpdateUsabilityPolling
+
 end
 
 ---------------------------------------------------------------------------
@@ -6955,7 +7354,6 @@ ApplyAllFlyoutDirections = function()
 end
 
 ActionBarsOwned.SuppressButtonProcVisuals = SuppressButtonProcVisuals
-ActionBarsOwned.UpdateUsabilityPolling = UpdateUsabilityPolling
 ActionBarsOwned.DRAG_PREVIEW_ALPHA = DRAG_PREVIEW_ALPHA
 
 end -- do (button skinning / usability / bar spacing)
@@ -8053,6 +8451,7 @@ end
 
 local ownedFlyoutInfo = {}
 local ownedFlyoutInfoDiscovered = false
+local ownedFlyoutSeen = {}
 
 local function PopulateOwnedFlyoutInfoEntry(info, flyoutID, numSlots, isKnown)
     if not info then return end
@@ -8099,7 +8498,8 @@ local function UpdateOwnedFlyoutInfo()
         return
     end
 
-    local seen = {}
+    local seen = ownedFlyoutSeen
+    wipe(seen)
     for flyoutID = 1, 300 do
         local ok, _, _, numSlots, isKnown = pcall(GetFlyoutInfo, flyoutID)
         if ok and type(numSlots) == "number" and numSlots > 0 then
@@ -8115,6 +8515,7 @@ local function UpdateOwnedFlyoutInfo()
             ownedFlyoutInfo[flyoutID] = nil
         end
     end
+    wipe(seen)
 end
 
 HideOwnedFlyout = function()
@@ -8222,38 +8623,44 @@ local function IsSpellFlyoutButtonFrame(button, flyout)
         or name:match("^SpellFlyoutPopupButton%d+$") ~= nil
 end
 
+local spellFlyoutButtonsScratch = {}
+local spellFlyoutSeenScratch = {}
+
+local function AddCollectedSpellFlyoutButton(button, flyout, buttons, seen)
+    if not button or seen[button] then return end
+    if not (button.IsObjectType and button:IsObjectType("Button")) then return end
+    if not IsSpellFlyoutButtonFrame(button, flyout) then return end
+
+    seen[button] = true
+    buttons[#buttons + 1] = button
+end
+
 local function CollectSpellFlyoutButtons(flyout)
-    local buttons, seen = {}, {}
-
-    local function AddButton(button)
-        if not button or seen[button] then return end
-        if not (button.IsObjectType and button:IsObjectType("Button")) then return end
-        if not IsSpellFlyoutButtonFrame(button, flyout) then return end
-
-        seen[button] = true
-        table.insert(buttons, button)
-    end
+    local buttons, seen = spellFlyoutButtonsScratch, spellFlyoutSeenScratch
+    wipe(buttons)
+    wipe(seen)
 
     if flyout and flyout.GetChildren then
         local nChildren = select('#', flyout:GetChildren())
         for i = 1, nChildren do
             local child = select(i, flyout:GetChildren())
-            AddButton(child)
+            AddCollectedSpellFlyoutButton(child, flyout, buttons, seen)
             if child and child.GetChildren then
                 local nGrand = select('#', child:GetChildren())
                 for j = 1, nGrand do
                     local grandChild = select(j, child:GetChildren())
-                    AddButton(grandChild)
+                    AddCollectedSpellFlyoutButton(grandChild, flyout, buttons, seen)
                 end
             end
         end
     end
 
     for i = 1, 40 do
-        AddButton(_G["SpellFlyoutButton" .. i])
-        AddButton(_G["SpellFlyoutPopupButton" .. i])
+        AddCollectedSpellFlyoutButton(_G["SpellFlyoutButton" .. i], flyout, buttons, seen)
+        AddCollectedSpellFlyoutButton(_G["SpellFlyoutPopupButton" .. i], flyout, buttons, seen)
     end
 
+    wipe(seen)
     return buttons
 end
 
@@ -8855,6 +9262,8 @@ end
 function ActionBarsOwned:Refresh()
     if not self.initialized then return end
 
+    InvalidateEffectiveSettingsCache()
+
     if InCombatLockdown() then
         self.pendingRefresh = true
         return
@@ -9242,6 +9651,8 @@ do
         local FORM_ROW = U and U.FORM_ROW or 32
 
         local function RefreshActionBars()
+            InvalidateEffectiveSettingsCache()
+
             for _, bk in ipairs(ALL_MANAGED_BAR_KEYS) do
                 local buttons = ActionBarsOwned.nativeButtons[bk]
                 local settings = GetEffectiveSettings(bk)

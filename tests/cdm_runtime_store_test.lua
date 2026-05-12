@@ -73,25 +73,48 @@ store.SetIconState(icon, {
     mode = "gcd-only",
     sourceID = 12345,
     active = false,
+    key = "gcd-only:12345",
 })
 
 local afterIconWrite = store.Version()
+local cachedIconKey = icon._cdmRuntimeKey
+
+assert(cachedIconKey == "essential:spell:12345:slot-1", "SetIconState should cache the resolved runtime key on the icon")
+assert(icon._cdmRuntimeKeyEntry == icon._spellEntry, "SetIconState should remember which entry produced the cached key")
 
 store.SetIconState(icon, {
     mode = "gcd-only",
     sourceID = 12345,
     active = false,
+    key = "gcd-only:12345",
 })
 
 assert(store.Version() == afterIconWrite, "identical SetIconState should not churn version")
+assert(icon._cdmRuntimeKey == cachedIconKey, "identical SetIconState should reuse the cached runtime key")
 
-local secretStacks = NewSecretValue("one")
-local nextSecretStacks = NewSecretValue("two")
+icon._spellEntry = {
+    viewerType = "utility",
+    type = "spell",
+    id = 67890,
+    _instanceKey = "slot-2",
+}
+
+store.SetIconState(icon, {
+    mode = "cooldown",
+    sourceID = 67890,
+    active = true,
+})
+
+assert(icon._cdmRuntimeKey == "utility:spell:67890:slot-2", "changing the icon entry should refresh the cached runtime key")
+assert(icon._cdmRuntimeKeyEntry == icon._spellEntry, "entry refresh should update the key owner")
+
+local secretOpaqueValue = NewSecretValue("one")
+local nextSecretOpaqueValue = NewSecretValue("two")
 local secretState = store.SetState("secret:test", {
     mode = "aura",
     active = true,
-    stacks = secretStacks,
-    stackSource = "display-count",
+    opaqueValue = secretOpaqueValue,
+    opaqueSource = "display-count",
 })
 local secretVersion = store.Version()
 
@@ -99,14 +122,15 @@ local ok, updatedSecretState = pcall(function()
     return store.SetState("secret:test", {
         mode = "aura",
         active = true,
-        stacks = nextSecretStacks,
-        stackSource = "display-count",
+        opaqueValue = nextSecretOpaqueValue,
+        opaqueSource = "display-count",
     })
 end)
 
 assert(ok, "SetState should not compare secret values")
 assert(updatedSecretState == secretState, "secret value refresh should reuse the state table")
 assert(store.Version() == secretVersion + 1, "unknown secret equality should refresh the stored state")
-assert(rawequal(updatedSecretState.stacks, nextSecretStacks), "secret value refresh should store the latest value")
+assert(rawequal(updatedSecretState.opaqueValue, nextSecretOpaqueValue),
+    "secret value refresh should store the latest value")
 
 print("OK: cdm_runtime_store_test")

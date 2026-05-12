@@ -10,6 +10,7 @@ QUI.pullAliasOwned = false
 
 local QUI_PULL_SLASH_KEY = "QUIPULL_ALIAS"
 local QUI_OPTIONS_ADDON = "QUI_Options"
+local QUI_DEBUG_ADDON = "QUI_Debug"
 local PULL_COMMAND_OWNERS = {
     ["BigWigs"] = true,
     ["BigWigs_Core"] = true,
@@ -60,6 +61,23 @@ function QUI:EnsureOptionsLoaded()
     end
 
     return false, "settings UI did not initialize"
+end
+
+function QUI:IsDebugToolsLoaded()
+    return IsAddonLoaded(QUI_DEBUG_ADDON)
+end
+
+function QUI:EnsureDebugToolsLoaded()
+    if self:IsDebugToolsLoaded() then
+        return true
+    end
+
+    local ok, reason = LoadAddon(QUI_DEBUG_ADDON)
+    if not ok then
+        return false, reason or "missing debug companion addon"
+    end
+
+    return self:IsDebugToolsLoaded(), "debug companion addon did not initialize"
 end
 
 function QUI:OpenOptions()
@@ -776,9 +794,14 @@ function QUI:PLAYER_ENTERING_WORLD(_, isInitialLogin, isReloadingUi)
         if self.db.char.debug.reload then
             self.DEBUG_MODE = true
             self.db.char.debug.reload = false
-            self:DebugPrint("Debug Mode Enabled")
         end
-    else
+    end
+
+    if self.DEBUG_MODE then
+        local ok, reason = self:EnsureDebugToolsLoaded()
+        if not ok then
+            self:Print("|cff60A5FAQUI:|r Debug tools could not be loaded (" .. tostring(reason) .. ").")
+        end
         self:DebugPrint("Debug Mode Enabled")
     end
 

@@ -27,6 +27,57 @@ local function ValueID(value)
     return tostring(value)
 end
 
+local function ResolveEntryKeyParts(entry, fallbackContainer)
+    if not entry then return nil end
+    local containerKey = entry.viewerType or fallbackContainer or "unknown"
+    local entryType = entry.type or "spell"
+    local entryID = entry.id or entry.spellID or entry.overrideSpellID or entry.name or "unknown"
+    local instanceKey = entry._instanceKey or entry.position or entry.index or ""
+    return containerKey, entryType, entryID, instanceKey
+end
+
+local function BuildEntryKeyFromParts(containerKey, entryType, entryID, instanceKey)
+    return containerKey .. ":" .. entryType .. ":" .. ValueID(entryID) .. ":" .. ValueID(instanceKey)
+end
+
+local function ClearFrameKeyCache(frame)
+    if not frame then return end
+    frame._cdmRuntimeKey = nil
+    frame._cdmRuntimeKeyEntry = nil
+    frame._cdmRuntimeKeyFallback = nil
+    frame._cdmRuntimeKeyContainer = nil
+    frame._cdmRuntimeKeyType = nil
+    frame._cdmRuntimeKeyID = nil
+    frame._cdmRuntimeKeyInstance = nil
+end
+
+local function GetFrameEntryKey(frame, fallbackContainer)
+    if not frame then return nil end
+    local entry = frame._spellEntry
+    local containerKey, entryType, entryID, instanceKey = ResolveEntryKeyParts(entry, fallbackContainer)
+    if not containerKey then return nil end
+
+    if frame._cdmRuntimeKey
+        and frame._cdmRuntimeKeyEntry == entry
+        and frame._cdmRuntimeKeyFallback == fallbackContainer
+        and frame._cdmRuntimeKeyContainer == containerKey
+        and frame._cdmRuntimeKeyType == entryType
+        and frame._cdmRuntimeKeyID == entryID
+        and frame._cdmRuntimeKeyInstance == instanceKey then
+        return frame._cdmRuntimeKey
+    end
+
+    local key = BuildEntryKeyFromParts(containerKey, entryType, entryID, instanceKey)
+    frame._cdmRuntimeKey = key
+    frame._cdmRuntimeKeyEntry = entry
+    frame._cdmRuntimeKeyFallback = fallbackContainer
+    frame._cdmRuntimeKeyContainer = containerKey
+    frame._cdmRuntimeKeyType = entryType
+    frame._cdmRuntimeKeyID = entryID
+    frame._cdmRuntimeKeyInstance = instanceKey
+    return key
+end
+
 local function IsSecretValue(value)
     return Helpers.IsSecretValue and Helpers.IsSecretValue(value) or false
 end
@@ -38,6 +89,10 @@ local function ValuesEqual(left, right)
     return left == right
 end
 
+local function IsStoreMetadataKey(key)
+    return key == "epoch" or key == "key" or key == "frame" or key == "frameKind"
+end
+
 local function StateEquals(target, state, key)
     if not target then return false end
     if target.key ~= key then return false end
@@ -45,14 +100,14 @@ local function StateEquals(target, state, key)
 
     if state then
         for k, v in pairs(state) do
-            if ValuesEqual(target[k], v) ~= true then
+            if not IsStoreMetadataKey(k) and ValuesEqual(target[k], v) ~= true then
                 return false
             end
         end
     end
 
     for k, v in pairs(target) do
-        if k ~= "epoch" and k ~= "key" and k ~= "frame" and k ~= "frameKind" then
+        if not IsStoreMetadataKey(k) then
             if not state or ValuesEqual(state[k], v) ~= true then
                 return false
             end
@@ -63,12 +118,9 @@ local function StateEquals(target, state, key)
 end
 
 function CDMRuntimeStore.BuildEntryKey(entry, fallbackContainer)
-    if not entry then return nil end
-    local containerKey = entry.viewerType or fallbackContainer or "unknown"
-    local entryType = entry.type or "spell"
-    local entryID = entry.id or entry.spellID or entry.overrideSpellID or entry.name or "unknown"
-    local instanceKey = entry._instanceKey or entry.position or entry.index or ""
-    return containerKey .. ":" .. entryType .. ":" .. ValueID(entryID) .. ":" .. ValueID(instanceKey)
+    local containerKey, entryType, entryID, instanceKey = ResolveEntryKeyParts(entry, fallbackContainer)
+    if not containerKey then return nil end
+    return BuildEntryKeyFromParts(containerKey, entryType, entryID, instanceKey)
 end
 
 function CDMRuntimeStore.Version()
@@ -102,8 +154,7 @@ end
 
 function CDMRuntimeStore.SetIconState(icon, state)
     if not icon then return nil end
-    local entry = icon._spellEntry
-    local key = CDMRuntimeStore.BuildEntryKey(entry)
+    local key = GetFrameEntryKey(icon)
     if not key then return nil end
     local stored = CDMRuntimeStore.SetState(key, state)
     if stored then
@@ -117,8 +168,7 @@ end
 
 function CDMRuntimeStore.SetBarState(bar, state)
     if not bar then return nil end
-    local entry = bar._spellEntry
-    local key = CDMRuntimeStore.BuildEntryKey(entry, "trackedBar")
+    local key = GetFrameEntryKey(bar, "trackedBar")
     if not key then return nil end
     local stored = CDMRuntimeStore.SetState(key, state)
     if stored then
@@ -143,6 +193,7 @@ function CDMRuntimeStore.ClearFrame(frame)
     local key = _keyByFrame[frame]
     _keyByFrame[frame] = nil
     _stateByFrame[frame] = nil
+    ClearFrameKeyCache(frame)
     if key then
         _stateByKey[key] = nil
         _version = _version + 1

@@ -45,16 +45,18 @@ jobs:
 
       - name: Create addon zip
         run: |
-          mkdir -p build/QUI build/QUI_Options
+          mkdir -p build/QUI build/QUI_Options build/QUI_Debug
 
           rsync -av --progress . build/QUI/ \
             --exclude='.git' \
             --exclude='.github' \
             --exclude='.gitignore' \
             --exclude='build' \
-            --exclude='QUI_Options'
+            --exclude='QUI_Options' \
+            --exclude='QUI_Debug'
 
           rsync -av --progress QUI_Options/ build/QUI_Options/
+          rsync -av --progress QUI_Debug/ build/QUI_Debug/
 
           # re-add specific md files we want in the release
           cp README.md build/QUI/ 2>/dev/null || true
@@ -63,7 +65,7 @@ jobs:
 
           # create the zip from inside build/ so the paths are QUI/... and QUI_Options/...
           cd build
-          zip -r ../QUI-${{ steps.version.outputs.version }}.zip QUI QUI_Options
+          zip -r ../QUI-${{ steps.version.outputs.version }}.zip QUI QUI_Options QUI_Debug
 
       - name: Extract changelog for release
         id: changelog

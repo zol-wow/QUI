@@ -1154,12 +1154,12 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
 
     -- Glow toggle
     local glowCheck = GUI:CreateFormCheckbox(overridePanel, "Glow Enabled", "glowEnabled", proxyDB, OnOverrideChange,
-        { description = "Allow this spell to show the proc/usable glow. Turn off if the glow for this specific spell becomes distracting." })
+        { description = "Allow this spell to show the spell activation overlay glow. Turn off if the glow for this specific spell becomes distracting." })
     PlaceWidget(glowCheck)
 
     -- Proc on Usable toggle (glow when spell is castable: off CD + has resources)
     local procCheck = GUI:CreateFormCheckbox(overridePanel, "Proc on Usable", "procOnUsable", proxyDB, OnOverrideChange,
-        { description = "Glow this spell whenever it becomes castable (off cooldown AND resources available), not only on real proc auras." })
+        { description = "Glow this spell whenever it becomes castable, not only on real spell activation overlays." })
     PlaceWidget(procCheck)
 
     -- Glow color
@@ -1169,7 +1169,7 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
         spellData:SetSpellOverride(containerKey, spellID, "glowColor", glowColorDB.glowColor)
         OnOverrideChange()
     end, nil,
-        { description = "Per-spell override for the proc/usable glow color. Falls back to the container's glow color when unchanged." })
+        { description = "Per-spell override for the spell activation overlay glow color. Falls back to the container's glow color when unchanged." })
     PlaceWidget(glowColorPicker)
 
     -- Bar color override (only for bar-type containers)

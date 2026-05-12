@@ -6,6 +6,7 @@ function CreateFrame() return {} end
 
 local auraDuration = { token = "aura-duration-object" }
 local queriedAura = false
+local appliedMirrorCount
 
 local ns = {
     Helpers = {},
@@ -16,7 +17,13 @@ local ns = {
         QueryCooldown = function() return nil end,
         QueryOverrideSpell = function() return nil end,
         QueryDisplayCount = function() return nil end,
-        ResolveAuraStateForIcon = function() return nil end,
+        ResolveAuraStateForIcon = function()
+            return {
+                isActive = true,
+                isTotemInstance = false,
+                count = nil,
+            }
+        end,
         HasRealCooldownState = function() return false end,
         ResolveMacro = function() return nil end,
         IsAuraEntry = function() return true end,
@@ -50,6 +57,10 @@ local ns = {
                 overrideTooltipSpellID = 1242998,
                 linkedSpellIDs = { 1242998 },
                 mirrorEpoch = 3,
+                stackText = "5",
+                stackTextSource = "Applications",
+                stackTextShown = true,
+                stackTextEpoch = 9,
             }
         end,
     },
@@ -69,6 +80,9 @@ ns.CDMIconFactory._FinalizeImports({
     end,
     ReapplySwipeStyle = function() end,
     ClearIconStackText = function() end,
+    ApplyAuraCountText = function(_, count)
+        appliedMirrorCount = count
+    end,
     RequestBuffIconLayoutRefresh = function() end,
 })
 
@@ -87,5 +101,11 @@ ns.CDMIconFactory.UpdateIconCooldown(icon)
 
 assert(queriedAura == false, "icon sync must not query aura APIs; UNIT_AURA mirror path owns aura duration")
 assert(appliedDuration == nil, "active mirror with no durObj should show without inventing a duration")
+assert(appliedMirrorCount and appliedMirrorCount.sinkText == "5",
+    "mirrored aura icons should render Blizzard-captured stack text when resolver count is missing")
+assert(appliedMirrorCount.source == "Applications",
+    "mirrored aura icon stack text should preserve the Blizzard source")
+assert(appliedMirrorCount.shown == true,
+    "mirrored aura icon stack text should be marked visible")
 
 print("OK: cdm_icon_factory_blizz_fallback_test")

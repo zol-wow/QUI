@@ -410,6 +410,30 @@ local function GetPinnedAuraSettings(isRaid)
     return vdb.pinnedAuras
 end
 
+local function HasConfiguredPinnedSlots(pa)
+    if not pa or not pa.enabled then return false end
+
+    local specID = GetPlayerSpecID()
+    if not specID then return false end
+
+    local specSlots = pa.specSlots
+    if type(specSlots) ~= "table" then return false end
+
+    local slots = specSlots[specID]
+    if type(slots) ~= "table" or #slots == 0 then return false end
+
+    for _, slot in ipairs(slots) do
+        if slot and slot.spellID then
+            return true
+        end
+    end
+    return false
+end
+
+function QUI_GFP:HasActiveConfig(isRaid)
+    return HasConfiguredPinnedSlots(GetPinnedAuraSettings(isRaid)) == true
+end
+
 ---------------------------------------------------------------------------
 -- PHASE 4: Cache-time match population
 ---------------------------------------------------------------------------
@@ -418,19 +442,44 @@ end
 -- shared cache's lookup tables, and stashes matches in cache.pinnedMatches
 -- keyed by slot index. UpdateFramePinnedAuras then reads that map directly.
 function QUI_GFP:PopulateCacheMatches(unit, cache)
-    if not cache or not cache.pinnedMatches then return end
-    wipe(cache.pinnedMatches)
+    if not cache or not cache.pinnedMatches then return false end
+    local matches = cache.pinnedMatches
+    local changed = false
 
     local pa = GetPinnedAuraSettings(IsInRaid())
-    if not pa or not pa.enabled then return end
+    if not pa or not pa.enabled then
+        if next(matches) then
+            wipe(matches)
+            return true
+        end
+        return false
+    end
 
     local specID = GetPlayerSpecID()
-    if not specID then return end
+    if not specID then
+        if next(matches) then
+            wipe(matches)
+            return true
+        end
+        return false
+    end
 
     local specSlots = pa.specSlots
-    if not specSlots then return end
+    if not specSlots then
+        if next(matches) then
+            wipe(matches)
+            return true
+        end
+        return false
+    end
     local slots = specSlots[specID]
-    if not slots or #slots == 0 then return end
+    if not slots or #slots == 0 then
+        if next(matches) then
+            wipe(matches)
+            return true
+        end
+        return false
+    end
 
     local helpfulByID = cache.buffsBySpellID
     local buffsByName = cache.buffsByName
@@ -439,18 +488,30 @@ function QUI_GFP:PopulateCacheMatches(unit, cache)
     local helpfulAuras = cache.buffs
 
     for slotIdx, slot in ipairs(slots) do
+        local auraData = nil
         if slot.spellID then
-            local auraData = FindTrackedAuraData(
+            auraData = FindTrackedAuraData(
                 unit, slot.spellID,
                 helpfulByID, buffsByName,
                 harmfulByID, debuffsByName,
                 helpfulAuras
             )
-            if auraData then
-                cache.pinnedMatches[slotIdx] = auraData
-            end
+        end
+        if matches[slotIdx] ~= auraData then
+            matches[slotIdx] = auraData
+            changed = true
         end
     end
+
+    local slotCount = #slots
+    for slotIdx in pairs(matches) do
+        if slotIdx > slotCount then
+            matches[slotIdx] = nil
+            changed = true
+        end
+    end
+
+    return changed
 end
 
 ---------------------------------------------------------------------------

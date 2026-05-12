@@ -128,7 +128,7 @@ function CDMScheduler.ScheduleRuntimeUpdate(fast, mode, trustIsOnGCD)
     end
 
     mode = (mode == UPDATE_FULL) and UPDATE_FULL or UPDATE_COOLDOWN
-    local delay = (_getDelay and _getDelay(fast)) or 0.05
+    local delay = (_getDelay and _getDelay(fast, mode, trustIsOnGCD == true)) or 0.05
 
     if _pending then
         if mode == UPDATE_FULL then

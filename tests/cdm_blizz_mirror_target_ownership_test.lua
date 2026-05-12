@@ -42,11 +42,28 @@ local targetAuraChild = {
 }
 targetAuraChild.Cooldown.GetParent = function() return targetAuraChild end
 
+local unknownSelfAuraChild = {
+    cooldownID = 88002,
+    isActive = true,
+    auraDataUnit = "target",
+    Cooldown = {
+        SetCooldown = noop,
+        SetCooldownFromDurationObject = noop,
+        SetCooldownFromExpirationTime = noop,
+        SetCooldownDuration = noop,
+        SetCooldownUNIX = noop,
+        Clear = noop,
+    },
+    Show = noop,
+    Hide = noop,
+}
+unknownSelfAuraChild.Cooldown.GetParent = function() return unknownSelfAuraChild end
+
 EssentialCooldownViewer = { GetChildren = function() end }
 UtilityCooldownViewer = { GetChildren = function() end }
 BuffIconCooldownViewer = {
     GetChildren = function()
-        return targetAuraChild
+        return targetAuraChild, unknownSelfAuraChild
     end,
 }
 BuffBarCooldownViewer = { GetChildren = function() end }
@@ -54,7 +71,7 @@ BuffBarCooldownViewer = { GetChildren = function() end }
 C_CooldownViewer = {
     GetCooldownViewerCategorySet = function(category)
         if category == 2 then
-            return { 88001 }
+            return { 88001, 88002 }
         end
         return {}
     end,
@@ -72,6 +89,19 @@ C_CooldownViewer = {
                 isKnown = true,
             }
         end
+        if cooldownID == 88002 then
+            return {
+                cooldownID = 88002,
+                spellID = 500101,
+                overrideSpellID = 500101,
+                overrideTooltipSpellID = 500102,
+                linkedSpellIDs = { 500102 },
+                selfAura = nil,
+                hasAura = true,
+                charges = false,
+                isKnown = true,
+            }
+        end
     end,
 }
 
@@ -80,6 +110,8 @@ local targetAuraOwned = false
 local targetInstanceOwned = {
     [991] = false,
     [992] = true,
+    [993] = false,
+    [994] = true,
 }
 local foreignChildDuration = { token = "foreign-child-duration" }
 local ownedChildDuration = { token = "owned-child-duration" }
@@ -113,6 +145,13 @@ ns.CDMSources.QueryUnitAuraBySpellID = function(unit, spellID)
             isFromPlayerOrPlayerPet = targetAuraOwned,
         }
     end
+    if unit == "target" and spellID == 500102 then
+        return {
+            spellId = 500102,
+            auraInstanceID = 993,
+            isFromPlayerOrPlayerPet = false,
+        }
+    end
     return nil
 end
 
@@ -126,6 +165,12 @@ ns.CDMSources.QueryAuraDuration = function(unit, auraInstanceID)
     if unit == "target" and auraInstanceID == 991 then
         return { token = "foreign-target-duration" }
     end
+    if unit == "target" and auraInstanceID == 993 then
+        return { token = "unknown-self-foreign-duration" }
+    end
+    if unit == "target" and auraInstanceID == 994 then
+        return { token = "unknown-self-owned-duration" }
+    end
     return nil
 end
 
@@ -133,7 +178,7 @@ ns.CDMSources.QueryAuraDataByAuraInstanceID = function(unit, auraInstanceID)
     local owned = targetInstanceOwned[auraInstanceID]
     if unit == "target" and owned ~= nil then
         return {
-            spellId = 500002,
+            spellId = auraInstanceID == 993 and 500102 or 500002,
             auraInstanceID = auraInstanceID,
             isFromPlayerOrPlayerPet = owned,
         }
@@ -142,6 +187,38 @@ ns.CDMSources.QueryAuraDataByAuraInstanceID = function(unit, auraInstanceID)
 end
 
 ns.CDMBlizzMirror.ForceRescan()
+
+local unknownSelfState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(88002),
+    "unknown-self target aura mirror state missing after rescan")
+assert(unknownSelfState.isActive ~= true,
+    "target-side aura children with unknown selfAura must not activate before ownership is proven")
+assert(unknownSelfState.hasAuraInstanceID ~= true,
+    "unknown-self target aura children must not stamp foreign auraInstanceIDs")
+assert(unknownSelfState.durObj == nil,
+    "unknown-self target aura children must not use foreign target DurationObjects")
+
+unknownSelfAuraChild.auraInstanceID = 993
+unknownSelfAuraChild.Cooldown:SetCooldown()
+
+unknownSelfState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(88002),
+    "unknown-self target aura mirror state missing after foreign child cooldown")
+assert(unknownSelfState.isActive ~= true,
+    "unknown-self target child auraInstanceIDs must remain inactive when ownership fails")
+assert(unknownSelfState.hasAuraInstanceID ~= true,
+    "unknown-self target child auraInstanceIDs must not stamp foreign instances")
+assert(unknownSelfState.durObj == nil,
+    "unknown-self target child auraInstanceIDs must not use foreign target DurationObjects")
+
+unknownSelfAuraChild.auraInstanceID = 994
+unknownSelfAuraChild.Cooldown:SetCooldown()
+
+unknownSelfState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(88002),
+    "unknown-self owned target aura mirror state missing")
+assert(unknownSelfState.isActive == true,
+    "unknown-self owned target child auraInstanceIDs should activate once ownership is proven")
+assert(unknownSelfState.hasAuraInstanceID == true,
+    "unknown-self owned target child auraInstanceIDs should stamp the mirror")
+
 targetAuraChild.Cooldown:SetCooldownFromDurationObject(foreignChildDuration)
 
 local state = assert(ns.CDMBlizzMirror.GetStateByCooldownID(88001), "target aura mirror state missing after child duration")

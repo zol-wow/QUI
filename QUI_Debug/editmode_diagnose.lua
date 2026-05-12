@@ -1,4 +1,5 @@
 local ADDON_NAME, ns = ...
+local DIAGNOSE_ADDON_NAME = "QUI"
 local Helpers = ns.Helpers
 
 ----------------------------------------------------------------------------
@@ -66,7 +67,7 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_ACTION_BLOCKED")
 eventFrame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
 eventFrame:SetScript("OnEvent", function(_, event, addonName, addonFunc)
-    if addonName ~= ADDON_NAME then return end
+    if addonName ~= DIAGNOSE_ADDON_NAME then return end
     local kind = (event == "ADDON_ACTION_BLOCKED") and "BLOCKED" or "FORBIDDEN"
     RecordBlock(kind, addonFunc)
 end)

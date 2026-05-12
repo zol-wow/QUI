@@ -661,10 +661,9 @@ eventFrame:RegisterEvent("PVP_MATCH_ACTIVE")
 -- Subscribe to centralized aura dispatcher for private aura refresh
 if ns.AuraEvents then
     ns.AuraEvents:Subscribe("roster", function(unit, updateInfo)
-        -- Drop non-group-frame units fast. The dispel overlay path in
-        -- groupframes.lua calls RefreshPrivateDispelState on-demand for the
-        -- units it actually renders, so an eager scan for target/focus/boss/
-        -- nameplate/arena units on every UNIT_AURA just burns CPU in raids.
+        -- Drop non-group-frame units fast. The dispel overlay path reads this
+        -- roster cache and only scans on cold misses, so eager target/focus/
+        -- boss/nameplate/arena scans would just burn CPU in raids.
         local GF = ns.QUI_GroupFrames
         if not GF or not GF.initialized then return end
         local frames = GF.unitFrameMap and GF.unitFrameMap[unit]

@@ -252,7 +252,7 @@ function CDMCatalog.RebuildBlizzardCatalogMaps(spellToCDID, inCooldowns, inAuras
                         local ov = CDMCatalog.IsUsableID(info.overrideSpellID) and info.overrideSpellID or nil
                         local tooltip = CDMCatalog.IsUsableID(info.overrideTooltipSpellID) and info.overrideTooltipSpellID or nil
 
-                        if auraIDsForSpell and (info.hasAura == true or info.selfAura == true) then
+                        if auraIDsForSpell then
                             AppendAuraIDs(auraIDsForSpell, sid, auraIDs)
                             if ov and ov ~= sid then
                                 AppendAuraIDs(auraIDsForSpell, ov, auraIDs)

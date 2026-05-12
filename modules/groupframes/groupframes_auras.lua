@@ -101,6 +101,37 @@ local auraStats = {
     deltaFallback = 0,
     fastUpdates = 0,
     fullUpdateEvents = 0,
+    deltaAddedAuras = 0,
+    deltaRemovedAuras = 0,
+    deltaUpdatedIDs = 0,
+    deltaUpdatedSkipped = 0,
+    deltaFreshFetches = 0,
+    deltaMixedDeltas = 0,
+    mixedIconRefreshes = 0,
+    panelBuffRebuilds = 0,
+    panelDebuffRebuilds = 0,
+    panelBuffIncrementalAttempts = 0,
+    panelBuffIncremental = 0,
+    panelBuffIncrementalDirtySkip = 0,
+    panelBuffIncrementalFilterSkip = 0,
+    panelBuffIncrementalChanged = 0,
+    panelBuffIncrementalNoop = 0,
+    defensiveSetChanges = 0,
+    curatedMatchRefreshes = 0,
+    indicatorMatchChanges = 0,
+    pinnedMatchChanges = 0,
+    indicatorFrameRefreshes = 0,
+    indicatorFrameSkips = 0,
+    pinnedFrameRefreshes = 0,
+    pinnedFrameSkips = 0,
+    panelFrameRefreshes = 0,
+    panelFrameSkips = 0,
+    panelFrameDisplaySkips = 0,
+    panelNoDisplay = 0,
+    panelIconUpdates = 0,
+    panelIconSkips = 0,
+    noConsumerSkips = 0,
+    framesRefreshed = 0,
 }
 do local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "GF_unitAuraCache", tbl = unitAuraCache }
@@ -111,6 +142,37 @@ do local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "GF_auraDeltaFallback", fn = function() return auraStats.deltaFallback end, counter = true }
     mp[#mp + 1] = { name = "GF_auraFastUpdates", fn = function() return auraStats.fastUpdates end, counter = true }
     mp[#mp + 1] = { name = "GF_auraFullUpdateEvents", fn = function() return auraStats.fullUpdateEvents end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraDeltaAdded", fn = function() return auraStats.deltaAddedAuras end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraDeltaRemoved", fn = function() return auraStats.deltaRemovedAuras end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraDeltaUpdated", fn = function() return auraStats.deltaUpdatedIDs end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraDeltaUpdatedSkipped", fn = function() return auraStats.deltaUpdatedSkipped end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraFreshFetches", fn = function() return auraStats.deltaFreshFetches end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraMixedDeltas", fn = function() return auraStats.deltaMixedDeltas end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraMixedIconRefreshes", fn = function() return auraStats.mixedIconRefreshes end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPanelBuffRebuilds", fn = function() return auraStats.panelBuffRebuilds end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPanelDebuffRebuilds", fn = function() return auraStats.panelDebuffRebuilds end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPanelBuffIncAttempts", fn = function() return auraStats.panelBuffIncrementalAttempts end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPanelBuffIncremental", fn = function() return auraStats.panelBuffIncremental end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPanelBuffIncDirtySkip", fn = function() return auraStats.panelBuffIncrementalDirtySkip end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPanelBuffIncFilterSkip", fn = function() return auraStats.panelBuffIncrementalFilterSkip end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPanelBuffChanges", fn = function() return auraStats.panelBuffIncrementalChanged end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPanelBuffNoops", fn = function() return auraStats.panelBuffIncrementalNoop end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraDefensiveSetChanges", fn = function() return auraStats.defensiveSetChanges end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraCuratedRefreshes", fn = function() return auraStats.curatedMatchRefreshes end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraIndicatorMatchChanges", fn = function() return auraStats.indicatorMatchChanges end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPinnedMatchChanges", fn = function() return auraStats.pinnedMatchChanges end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraIndicatorRefreshes", fn = function() return auraStats.indicatorFrameRefreshes end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraIndicatorRefreshSkips", fn = function() return auraStats.indicatorFrameSkips end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPinnedRefreshes", fn = function() return auraStats.pinnedFrameRefreshes end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPinnedRefreshSkips", fn = function() return auraStats.pinnedFrameSkips end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPanelRefreshes", fn = function() return auraStats.panelFrameRefreshes end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPanelRefreshSkips", fn = function() return auraStats.panelFrameSkips end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPanelDisplaySkips", fn = function() return auraStats.panelFrameDisplaySkips end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPanelNoDisplay", fn = function() return auraStats.panelNoDisplay end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPanelIconUpdates", fn = function() return auraStats.panelIconUpdates end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraPanelIconSkips", fn = function() return auraStats.panelIconSkips end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraNoConsumerSkips", fn = function() return auraStats.noConsumerSkips end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraFramesRefreshed", fn = function() return auraStats.framesRefreshed end, counter = true }
 end
 
 local DISPEL_FILTER = "HARMFUL|RAID_PLAYER_DISPELLABLE"
@@ -146,6 +208,8 @@ end
 -- display arrays. Kept as an upvalue so the cache-mutation path can call it
 -- without taking on a load-order dependency on the filter infrastructure.
 local RebuildPanelSubsetsAndSort
+local RefreshCuratedCacheMatches
+local ApplyBuffPanelDelta
 
 local function CreateAuraCacheEntry()
     return {
@@ -178,6 +242,12 @@ local function CreateAuraCacheEntry()
         -- Bookkeeping
         panelBuffsDirty = false,
         panelDebuffsDirty = false,
+        panelBuffsChanged = true,
+        panelDebuffsChanged = true,
+        defensiveSetChanged = true,
+        indicatorMatchesChanged = true,
+        pinnedMatchesChanged = true,
+        curatedForceRefresh = true,
         hasFullScan = false,
     }
 end
@@ -216,6 +286,12 @@ local function ResetAuraCache(cache)
     wipe(cache.panelDebuffsSorted)
     cache.panelBuffsDirty = false
     cache.panelDebuffsDirty = false
+    cache.panelBuffsChanged = true
+    cache.panelDebuffsChanged = true
+    cache.defensiveSetChanged = true
+    cache.indicatorMatchesChanged = true
+    cache.pinnedMatchesChanged = true
+    cache.curatedForceRefresh = true
     cache.hasFullScan = false
 end
 
@@ -341,7 +417,125 @@ local function ResolveAuraBucket(unit, auraData)
     return nil
 end
 
-local function AppendAuraToBucket(cache, bucketName, auraData)
+local function RefreshSpellIDLookupAfterRemoval(bucket, lookup, spellID)
+    if not spellID or not lookup then return end
+    lookup[spellID] = nil
+    for i = 1, #bucket do
+        local auraData = bucket[i]
+        if SafeValue(auraData and auraData.spellId, nil) == spellID then
+            lookup[spellID] = auraData
+        end
+    end
+end
+
+local function RefreshSpellNameLookupAfterRemoval(bucket, lookup, spellName)
+    if not spellName or not lookup then return end
+    lookup[spellName] = nil
+    for i = 1, #bucket do
+        local auraData = bucket[i]
+        if SafeValue(auraData and auraData.name, nil) == spellName then
+            lookup[spellName] = auraData
+        end
+    end
+end
+
+local function RemoveIDFromOrder(order, instID)
+    if not order then return end
+    for i = 1, #order do
+        if order[i] == instID then
+            table_remove(order, i)
+            return
+        end
+    end
+end
+
+local function AddBuffDerivedData(unit, cache, auraData)
+    local instID = auraData and auraData.auraInstanceID
+    if not instID then return end
+
+    local spellID = SafeValue(auraData.spellId, nil)
+    if spellID then
+        cache.buffsBySpellID[spellID] = auraData
+    end
+
+    local spellName = SafeValue(auraData.name, nil)
+    if spellName then
+        cache.buffsByName[spellName] = auraData
+    end
+
+    if ClassifyDefensive(unit, auraData) then
+        cache.defensives[instID] = true
+        cache.defensiveOrder[#cache.defensiveOrder + 1] = instID
+        return true
+    end
+    return false
+end
+
+local function RemoveBuffDerivedData(cache, auraData, instID)
+    if not auraData or not instID then return false end
+    local defensiveChanged = cache.defensives[instID] == true
+
+    local spellID = SafeValue(auraData.spellId, nil)
+    if spellID and cache.buffsBySpellID[spellID] == auraData then
+        RefreshSpellIDLookupAfterRemoval(cache.buffs, cache.buffsBySpellID, spellID)
+    end
+
+    local spellName = SafeValue(auraData.name, nil)
+    if spellName and cache.buffsByName[spellName] == auraData then
+        RefreshSpellNameLookupAfterRemoval(cache.buffs, cache.buffsByName, spellName)
+    end
+
+    cache.defensives[instID] = nil
+    RemoveIDFromOrder(cache.defensiveOrder, instID)
+    return defensiveChanged
+end
+
+local function AddDebuffDerivedData(unit, cache, auraData)
+    local instID = auraData and auraData.auraInstanceID
+    if not instID then return end
+
+    local dispelName = auraData.dispelName
+    local hasDispelType = dispelName ~= nil and not IsSecretValue(dispelName)
+    if hasDispelType then
+        cache.allDispellable[instID] = true
+    end
+
+    local classified = ClassifyDispellable(unit, instID)
+    if classified == true or (classified == nil and hasDispelType) then
+        cache.playerDispellable[instID] = true
+        cache.playerDispellableOrder[#cache.playerDispellableOrder + 1] = instID
+    end
+
+    local spellID = SafeValue(auraData.spellId, nil)
+    if spellID then
+        cache.debuffsBySpellID[spellID] = auraData
+    end
+
+    local spellName = SafeValue(auraData.name, nil)
+    if spellName then
+        cache.debuffsByName[spellName] = auraData
+    end
+end
+
+local function RemoveDebuffDerivedData(cache, auraData, instID)
+    if not auraData or not instID then return end
+
+    local spellID = SafeValue(auraData.spellId, nil)
+    if spellID and cache.debuffsBySpellID[spellID] == auraData then
+        RefreshSpellIDLookupAfterRemoval(cache.debuffs, cache.debuffsBySpellID, spellID)
+    end
+
+    local spellName = SafeValue(auraData.name, nil)
+    if spellName and cache.debuffsByName[spellName] == auraData then
+        RefreshSpellNameLookupAfterRemoval(cache.debuffs, cache.debuffsByName, spellName)
+    end
+
+    cache.playerDispellable[instID] = nil
+    cache.allDispellable[instID] = nil
+    RemoveIDFromOrder(cache.playerDispellableOrder, instID)
+end
+
+local function AppendAuraToBucket(unit, cache, bucketName, auraData)
     local bucket = bucketName == "buffs" and cache.buffs or cache.debuffs
     bucket[#bucket + 1] = auraData
 
@@ -353,9 +547,11 @@ local function AppendAuraToBucket(cache, bucketName, auraData)
     if bucketName == "buffs" then
         cache.buffsByID[instID] = auraData
         cache.buffsIndexByID[instID] = #bucket
+        return AddBuffDerivedData(unit, cache, auraData)
     else
         cache.debuffsByID[instID] = auraData
         cache.debuffsIndexByID[instID] = #bucket
+        AddDebuffDerivedData(unit, cache, auraData)
     end
 end
 
@@ -376,6 +572,7 @@ local function RemoveAuraFromBucket(cache, bucketName, instID)
         return false
     end
 
+    local oldAura = byInstanceID[instID]
     table_remove(bucket, idx)
     indexMap[instID] = nil
     byInstanceID[instID] = nil
@@ -386,6 +583,12 @@ local function RemoveAuraFromBucket(cache, bucketName, instID)
         if auraInstID then
             indexMap[auraInstID] = i
         end
+    end
+
+    if bucketName == "buffs" then
+        return true, RemoveBuffDerivedData(cache, oldAura, instID)
+    else
+        RemoveDebuffDerivedData(cache, oldAura, instID)
     end
 
     return true
@@ -490,7 +693,26 @@ local function ApplyAuraDelta(unit, updateInfo)
 
     local buffsDirty = false
     local debuffsDirty = false
+    local buffFreshUpdated = false
+    local debuffFreshUpdated = false
+    cache.panelBuffsChanged = false
+    cache.panelDebuffsChanged = false
+    cache.defensiveSetChanged = false
     local GetAuraByInstanceID = C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID
+    local nAdded = updateInfo.addedAuras and #updateInfo.addedAuras or 0
+    local nRemoved = updateInfo.removedAuraInstanceIDs and #updateInfo.removedAuraInstanceIDs or 0
+    local nUpdated = updateInfo.updatedAuraInstanceIDs and #updateInfo.updatedAuraInstanceIDs or 0
+
+    auraStats.deltaAddedAuras = auraStats.deltaAddedAuras + nAdded
+    auraStats.deltaRemovedAuras = auraStats.deltaRemovedAuras + nRemoved
+    auraStats.deltaUpdatedIDs = auraStats.deltaUpdatedIDs + nUpdated
+    if nUpdated > 0 and (nAdded > 0 or nRemoved > 0) then
+        auraStats.deltaMixedDeltas = auraStats.deltaMixedDeltas + 1
+    end
+    local skipUpdatedFetches = nUpdated > 0
+        and (nAdded > 0 or nRemoved > 0)
+        and C_UnitAuras
+        and C_UnitAuras.GetAuraDuration
 
     if updateInfo.addedAuras then
         for i = 1, #updateInfo.addedAuras do
@@ -499,9 +721,12 @@ local function ApplyAuraDelta(unit, updateInfo)
             if not bucketName then
                 return false
             end
-            AppendAuraToBucket(cache, bucketName, auraData)
+            local defensiveChanged = AppendAuraToBucket(unit, cache, bucketName, auraData)
             if bucketName == "buffs" then
                 buffsDirty = true
+                if defensiveChanged then
+                    cache.defensiveSetChanged = true
+                end
             else
                 debuffsDirty = true
             end
@@ -509,31 +734,39 @@ local function ApplyAuraDelta(unit, updateInfo)
     end
 
     if updateInfo.updatedAuraInstanceIDs and #updateInfo.updatedAuraInstanceIDs > 0 then
-        if not GetAuraByInstanceID then
-            return false
-        end
-
-        for i = 1, #updateInfo.updatedAuraInstanceIDs do
-            local instID = updateInfo.updatedAuraInstanceIDs[i]
-            local bucketName = nil
-            if cache.buffsByID[instID] then
-                bucketName = "buffs"
-            elseif cache.debuffsByID[instID] then
-                bucketName = "debuffs"
+        if skipUpdatedFetches then
+            auraStats.deltaUpdatedSkipped = auraStats.deltaUpdatedSkipped + nUpdated
+        else
+            if not GetAuraByInstanceID then
+                return false
             end
 
-            if bucketName then
-                local freshAura = GetAuraByInstanceID(unit, instID)
-                if not freshAura then
-                    return false
+            for i = 1, #updateInfo.updatedAuraInstanceIDs do
+                local instID = updateInfo.updatedAuraInstanceIDs[i]
+                local bucketName = nil
+                if cache.buffsByID[instID] then
+                    bucketName = "buffs"
+                elseif cache.debuffsByID[instID] then
+                    bucketName = "debuffs"
                 end
-                if not ReplaceAuraInBucket(cache, bucketName, instID, freshAura) then
-                    return false
-                end
-                if bucketName == "buffs" then
-                    buffsDirty = true
-                else
-                    debuffsDirty = true
+
+                if bucketName then
+                    auraStats.deltaFreshFetches = auraStats.deltaFreshFetches + 1
+                    local freshAura = GetAuraByInstanceID(unit, instID)
+                    if not freshAura then
+                        return false
+                    end
+                    if not ReplaceAuraInBucket(cache, bucketName, instID, freshAura) then
+                        return false
+                    end
+                    if bucketName == "buffs" then
+                        buffsDirty = true
+                        buffFreshUpdated = true
+                        cache.defensiveSetChanged = true
+                    else
+                        debuffsDirty = true
+                        debuffFreshUpdated = true
+                    end
                 end
             end
         end
@@ -543,8 +776,12 @@ local function ApplyAuraDelta(unit, updateInfo)
         for i = 1, #updateInfo.removedAuraInstanceIDs do
             local instID = updateInfo.removedAuraInstanceIDs[i]
             if cache.buffsByID[instID] then
-                if RemoveAuraFromBucket(cache, "buffs", instID) then
+                local removed, defensiveChanged = RemoveAuraFromBucket(cache, "buffs", instID)
+                if removed then
                     buffsDirty = true
+                    if defensiveChanged then
+                        cache.defensiveSetChanged = true
+                    end
                 end
             elseif cache.debuffsByID[instID] then
                 if RemoveAuraFromBucket(cache, "debuffs", instID) then
@@ -554,17 +791,36 @@ local function ApplyAuraDelta(unit, updateInfo)
         end
     end
 
+    local changed = buffsDirty or debuffsDirty
     if buffsDirty then
-        RebuildBuffMaps(unit, cache)
-        cache.panelBuffsDirty = true
+        if buffFreshUpdated then
+            RebuildBuffMaps(unit, cache)
+            cache.panelBuffsDirty = true
+            cache.panelBuffsChanged = true
+        elseif ApplyBuffPanelDelta then
+            auraStats.panelBuffIncrementalAttempts = auraStats.panelBuffIncrementalAttempts + 1
+            if not ApplyBuffPanelDelta(unit, cache, updateInfo) then
+                cache.panelBuffsDirty = true
+            end
+        else
+            cache.panelBuffsDirty = true
+        end
     end
     if debuffsDirty then
-        RebuildDebuffMaps(unit, cache)
+        if debuffFreshUpdated then
+            RebuildDebuffMaps(unit, cache)
+        end
         cache.panelDebuffsDirty = true
+        cache.panelDebuffsChanged = true
+    end
+    if cache.defensiveSetChanged then
+        auraStats.defensiveSetChanges = auraStats.defensiveSetChanges + 1
     end
 
-    if (buffsDirty or debuffsDirty) and RebuildPanelSubsetsAndSort then
+    if (cache.panelBuffsDirty or cache.panelDebuffsDirty) and RebuildPanelSubsetsAndSort then
         RebuildPanelSubsetsAndSort(unit, cache)
+    elseif changed and RefreshCuratedCacheMatches then
+        RefreshCuratedCacheMatches(unit, cache)
     end
 
     return true
@@ -593,7 +849,12 @@ QUI_GFA.PruneAuraCache = PruneAuraCache
 -- the assignment hasn't run yet (load order during early init).
 QUI_GFA.RebuildPanelSubsetsAndSort = function(unit, cache)
     if RebuildPanelSubsetsAndSort then
-        RebuildPanelSubsetsAndSort(unit, cache or unitAuraCache[unit])
+        cache = cache or unitAuraCache[unit]
+        if cache then
+            cache.panelBuffsDirty = true
+            cache.panelDebuffsDirty = true
+        end
+        RebuildPanelSubsetsAndSort(unit, cache)
     end
 end
 
@@ -1316,6 +1577,132 @@ local function AuraPassesFilter(unit, auraInstanceID, filterStrings)
     return false
 end
 
+local function AuraPassesPanelBuffFilter(unit, auraData, fCache)
+    if not auraData then return false end
+
+    local instID = auraData.auraInstanceID
+    if not instID then return false end
+
+    if fCache.hidePermanent then
+        local dur = SafeToNumber(auraData.duration, -1)
+        if dur == 0 then
+            return false
+        end
+    end
+
+    if fCache.onlyMine and IsAuraFilteredOut and not IsSecretValue(instID) then
+        local fo = IsAuraFilteredOut(unit, instID, "HELPFUL|PLAYER")
+        if fo and not IsSecretValue(fo) then
+            return false
+        end
+    end
+
+    if fCache.filterMode == "classification" and #fCache.buffFilters > 0 then
+        if not AuraPassesFilter(unit, instID, fCache.buffFilters) then
+            return false
+        end
+    elseif fCache.filterMode == "whitelist" and fCache.buffWhitelist then
+        if not AuraPassesSpellFilter(auraData, fCache.buffWhitelist, nil) then
+            return false
+        end
+    end
+
+    if fCache.buffBlacklist and not AuraPassesSpellFilter(auraData, nil, fCache.buffBlacklist) then
+        return false
+    end
+
+    return true
+end
+
+local function RemovePanelAura(panelSet, sorted, instID)
+    if not instID or not panelSet or not panelSet[instID] then return false end
+    panelSet[instID] = nil
+    for i = 1, #sorted do
+        local auraData = sorted[i]
+        if auraData and auraData.auraInstanceID == instID then
+            table_remove(sorted, i)
+            return true
+        end
+    end
+    return true
+end
+
+RefreshCuratedCacheMatches = function(unit, cache)
+    if not cache then return end
+    auraStats.curatedMatchRefreshes = auraStats.curatedMatchRefreshes + 1
+    local forceRefresh = cache.curatedForceRefresh == true
+    cache.curatedForceRefresh = nil
+
+    local GFI = ns.QUI_GroupFrameIndicators
+    local indicatorChanged = false
+    if GFI and GFI.PopulateCacheMatches then
+        indicatorChanged = GFI:PopulateCacheMatches(unit, cache) == true
+        if indicatorChanged then
+            auraStats.indicatorMatchChanges = auraStats.indicatorMatchChanges + 1
+        end
+    end
+    cache.indicatorMatchesChanged = indicatorChanged or forceRefresh
+
+    local GFP = ns.QUI_GroupFramePinnedAuras
+    local pinnedChanged = false
+    if GFP and GFP.PopulateCacheMatches then
+        pinnedChanged = GFP:PopulateCacheMatches(unit, cache) == true
+        if pinnedChanged then
+            auraStats.pinnedMatchChanges = auraStats.pinnedMatchChanges + 1
+        end
+    end
+    cache.pinnedMatchesChanged = pinnedChanged or forceRefresh
+end
+
+ApplyBuffPanelDelta = function(unit, cache, updateInfo)
+    if not cache or not updateInfo then return false end
+    if cache.panelBuffsDirty then
+        auraStats.panelBuffIncrementalDirtySkip = auraStats.panelBuffIncrementalDirtySkip + 1
+        return false
+    end
+    if cachedFilterVersion ~= layoutVersion then
+        auraStats.panelBuffIncrementalFilterSkip = auraStats.panelBuffIncrementalFilterSkip + 1
+        return false
+    end
+
+    local fCache = IsInRaid() and filterCaches.raid or filterCaches.party
+    local panelBuffs = cache.panelBuffs
+    local panelBuffsSorted = cache.panelBuffsSorted
+    local changed = false
+
+    if updateInfo.removedAuraInstanceIDs then
+        for i = 1, #updateInfo.removedAuraInstanceIDs do
+            if RemovePanelAura(panelBuffs, panelBuffsSorted, updateInfo.removedAuraInstanceIDs[i]) then
+                changed = true
+            end
+        end
+    end
+
+    if updateInfo.addedAuras then
+        for i = 1, #updateInfo.addedAuras do
+            local auraData = updateInfo.addedAuras[i]
+            local instID = auraData and auraData.auraInstanceID
+            if instID and cache.buffsByID[instID] == auraData then
+                if AuraPassesPanelBuffFilter(unit, auraData, fCache) and not panelBuffs[instID] then
+                    panelBuffs[instID] = true
+                    panelBuffsSorted[#panelBuffsSorted + 1] = auraData
+                    changed = true
+                end
+            end
+        end
+    end
+
+    cache.panelBuffsDirty = false
+    cache.panelBuffsChanged = changed
+    auraStats.panelBuffIncremental = auraStats.panelBuffIncremental + 1
+    if changed then
+        auraStats.panelBuffIncrementalChanged = auraStats.panelBuffIncrementalChanged + 1
+    else
+        auraStats.panelBuffIncrementalNoop = auraStats.panelBuffIncrementalNoop + 1
+    end
+    return true
+end
+
 ---------------------------------------------------------------------------
 -- AURA PRIORITY: Sort auras by importance
 ---------------------------------------------------------------------------
@@ -1363,118 +1750,96 @@ end
 RebuildPanelSubsetsAndSort = function(unit, cache)
     if not cache then return end
 
+    local rebuildBuffs = cache.panelBuffsDirty == true
+    local rebuildDebuffs = cache.panelDebuffsDirty == true
+    if not rebuildBuffs and not rebuildDebuffs then
+        return
+    end
+
     if cachedFilterVersion ~= layoutVersion then
         RebuildFilterCache()
+        rebuildBuffs = true
+        rebuildDebuffs = true
     end
 
     local fCache = IsInRaid() and filterCaches.raid or filterCaches.party
     local useClassification = fCache.filterMode == "classification"
     local useWhitelist = fCache.filterMode == "whitelist"
-    local onlyMine = fCache.onlyMine
-    local hidePermanent = fCache.hidePermanent
 
-    local panelBuffs = cache.panelBuffs
-    local panelBuffsSorted = cache.panelBuffsSorted
-    wipe(panelBuffs)
-    wipe(panelBuffsSorted)
+    if rebuildBuffs then
+        cache.panelBuffsChanged = true
+        auraStats.panelBuffRebuilds = auraStats.panelBuffRebuilds + 1
+        local panelBuffs = cache.panelBuffs
+        local panelBuffsSorted = cache.panelBuffsSorted
+        wipe(panelBuffs)
+        wipe(panelBuffsSorted)
 
-    local buffFilters = useClassification and #fCache.buffFilters > 0 and fCache.buffFilters or nil
-    local buffs = cache.buffs
-    for i = 1, #buffs do
-        local auraData = buffs[i]
-        local instID = auraData and auraData.auraInstanceID
-        if instID then
-            local passes = true
-            -- hidePermanent: drop duration==0 buffs
-            if hidePermanent then
-                local dur = SafeToNumber(auraData.duration, -1)
-                if dur == 0 then
-                    passes = false
+        local buffs = cache.buffs
+        for i = 1, #buffs do
+            local auraData = buffs[i]
+            local instID = auraData and auraData.auraInstanceID
+            if instID then
+                if AuraPassesPanelBuffFilter(unit, auraData, fCache) then
+                    panelBuffs[instID] = true
+                    panelBuffsSorted[#panelBuffsSorted + 1] = auraData
                 end
-            end
-            -- onlyMine: HELPFUL|PLAYER filter (player-cast buffs only)
-            if passes and onlyMine and IsAuraFilteredOut and not IsSecretValue(instID) then
-                local fo = IsAuraFilteredOut(unit, instID, "HELPFUL|PLAYER")
-                if fo and not IsSecretValue(fo) then
-                    passes = false
-                end
-            end
-            if passes and buffFilters and not AuraPassesFilter(unit, instID, buffFilters) then
-                passes = false
-            end
-            if passes and useWhitelist and fCache.buffWhitelist then
-                if not AuraPassesSpellFilter(auraData, fCache.buffWhitelist, nil) then
-                    passes = false
-                end
-            end
-            if passes and fCache.buffBlacklist then
-                if not AuraPassesSpellFilter(auraData, nil, fCache.buffBlacklist) then
-                    passes = false
-                end
-            end
-            if passes then
-                panelBuffs[instID] = true
-                panelBuffsSorted[#panelBuffsSorted + 1] = auraData
             end
         end
+
+        -- Buffs have equal priority — no sort needed (matches existing render
+        -- behavior where the buff path skips table.sort entirely).
+        cache.panelBuffsDirty = false
     end
 
-    -- Buffs have equal priority — no sort needed (matches existing render
-    -- behavior where the buff path skips table.sort entirely).
-    cache.panelBuffsDirty = false
+    if rebuildDebuffs then
+        cache.panelDebuffsChanged = true
+        auraStats.panelDebuffRebuilds = auraStats.panelDebuffRebuilds + 1
+        local panelDebuffs = cache.panelDebuffs
+        local panelDebuffsSorted = cache.panelDebuffsSorted
+        wipe(panelDebuffs)
+        wipe(panelDebuffsSorted)
 
-    local panelDebuffs = cache.panelDebuffs
-    local panelDebuffsSorted = cache.panelDebuffsSorted
-    wipe(panelDebuffs)
-    wipe(panelDebuffsSorted)
-
-    local debuffFilters = useClassification and #fCache.debuffFilters > 0 and fCache.debuffFilters or nil
-    local debuffs = cache.debuffs
-    for i = 1, #debuffs do
-        local auraData = debuffs[i]
-        local instID = auraData and auraData.auraInstanceID
-        if instID then
-            local passes = true
-            if debuffFilters and not AuraPassesFilter(unit, instID, debuffFilters) then
-                passes = false
-            end
-            if passes and useWhitelist and fCache.debuffWhitelist then
-                if not AuraPassesSpellFilter(auraData, fCache.debuffWhitelist, nil) then
+        local debuffFilters = useClassification and #fCache.debuffFilters > 0 and fCache.debuffFilters or nil
+        local debuffs = cache.debuffs
+        for i = 1, #debuffs do
+            local auraData = debuffs[i]
+            local instID = auraData and auraData.auraInstanceID
+            if instID then
+                local passes = true
+                if debuffFilters and not AuraPassesFilter(unit, instID, debuffFilters) then
                     passes = false
                 end
-            end
-            if passes and fCache.debuffBlacklist then
-                if not AuraPassesSpellFilter(auraData, nil, fCache.debuffBlacklist) then
-                    passes = false
+                if passes and useWhitelist and fCache.debuffWhitelist then
+                    if not AuraPassesSpellFilter(auraData, fCache.debuffWhitelist, nil) then
+                        passes = false
+                    end
+                end
+                if passes and fCache.debuffBlacklist then
+                    if not AuraPassesSpellFilter(auraData, nil, fCache.debuffBlacklist) then
+                        passes = false
+                    end
+                end
+                if passes then
+                    panelDebuffs[instID] = true
+                    panelDebuffsSorted[#panelDebuffsSorted + 1] = auraData
                 end
             end
-            if passes then
-                panelDebuffs[instID] = true
-                panelDebuffsSorted[#panelDebuffsSorted + 1] = auraData
-            end
         end
-    end
 
-    if #panelDebuffsSorted > 1 then
-        wipe(_cacheAuraPrioMap)
-        for i = 1, #panelDebuffsSorted do
-            _cacheAuraPrioMap[panelDebuffsSorted[i]] = GetAuraPriority(panelDebuffsSorted[i])
+        if #panelDebuffsSorted > 1 then
+            wipe(_cacheAuraPrioMap)
+            for i = 1, #panelDebuffsSorted do
+                _cacheAuraPrioMap[panelDebuffsSorted[i]] = GetAuraPriority(panelDebuffsSorted[i])
+            end
+            table.sort(panelDebuffsSorted, CachePrioritySort)
         end
-        table.sort(panelDebuffsSorted, CachePrioritySort)
+        cache.panelDebuffsDirty = false
     end
-    cache.panelDebuffsDirty = false
 
     -- Phase 4: indicator + pinned modules populate cache.indicatorMatches /
     -- cache.pinnedMatches keyed by entry index. Each module computes once
     -- per delta; render walks its configured entry list and looks up.
-    local GFI = ns.QUI_GroupFrameIndicators
-    if GFI and GFI.PopulateCacheMatches then
-        GFI:PopulateCacheMatches(unit, cache)
-    end
-    local GFP = ns.QUI_GroupFramePinnedAuras
-    if GFP and GFP.PopulateCacheMatches then
-        GFP:PopulateCacheMatches(unit, cache)
-    end
+    RefreshCuratedCacheMatches(unit, cache)
 end
 
 ---------------------------------------------------------------------------
@@ -1486,15 +1851,160 @@ end
 local EMPTY_AURA_LIST = {}  -- Sentinel for missing-cache reads (do not mutate)
 local _renderBuffs = {}     -- Reusable scratch: pre-sorted buffs after frame-local dedup
 
-local function UpdateFrameAuras(frame)
+local function GetVisualDBForContext(isRaid)
+    local db = GetDB()
+    if not db then return nil end
+
+    return (isRaid and db.raid or db.party) or db
+end
+
+local function GetVisualDBForFrame(frame)
+    return GetVisualDBForContext(frame and frame._isRaid)
+end
+
+local function GetFrameAuraSettings(frame)
+    local vdb = GetVisualDBForFrame(frame)
+    return vdb and vdb.auras or nil
+end
+
+local function GetPanelDisplayFlags(auraSettings)
+    if not auraSettings then return false, false end
+
+    local buffsEnabled = auraSettings.showBuffs == true and (auraSettings.maxBuffs or 0) > 0
+    local debuffsEnabled = auraSettings.showDebuffs == true and (auraSettings.maxDebuffs or 3) > 0
+    return buffsEnabled, debuffsEnabled
+end
+
+local function HasPanelAuraDisplay(vdb)
+    local buffsEnabled, debuffsEnabled = GetPanelDisplayFlags(vdb and vdb.auras)
+    return buffsEnabled or debuffsEnabled
+end
+
+local function HasDispelOverlay(vdb)
+    local healer = vdb and vdb.healer
+    local dispel = healer and healer.dispelOverlay
+    return dispel and dispel.enabled ~= false
+end
+
+local function HasDefensiveIndicator(vdb)
+    local healer = vdb and vdb.healer
+    local defensive = healer and healer.defensiveIndicator
+    return defensive and defensive.enabled == true
+end
+
+local function HasConfiguredIndicatorEntries(vdb)
+    local ai = vdb and vdb.auraIndicators
+    if not ai or ai.enabled == false then return false end
+
+    local entries = ai.entries
+    if type(entries) ~= "table" or #entries == 0 then return false end
+
+    for _, entry in ipairs(entries) do
+        if entry and entry.enabled ~= false and entry.spellID then
+            return true
+        end
+    end
+    return false
+end
+
+local function HasConfiguredPinnedSlots(vdb)
+    local pa = vdb and vdb.pinnedAuras
+    if not pa or not pa.enabled then return false end
+
+    local specSlots = pa.specSlots
+    if type(specSlots) ~= "table" then return false end
+
+    for _, slots in pairs(specSlots) do
+        if type(slots) == "table" then
+            for _, slot in ipairs(slots) do
+                if slot and slot.spellID then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function HasActiveAuraConsumers(isRaid)
+    local vdb = GetVisualDBForContext(isRaid)
+    if not vdb then return false end
+
+    if HasPanelAuraDisplay(vdb) then return true end
+    if HasDispelOverlay(vdb) then return true end
+    if HasDefensiveIndicator(vdb) then return true end
+
+    local GFI = ns.QUI_GroupFrameIndicators
+    if GFI and GFI.HasActiveConfig then
+        if GFI:HasActiveConfig(isRaid) then return true end
+    elseif HasConfiguredIndicatorEntries(vdb) then
+        return true
+    end
+
+    local GFP = ns.QUI_GroupFramePinnedAuras
+    if GFP and GFP.HasActiveConfig then
+        if GFP:HasActiveConfig(isRaid) then return true end
+    elseif HasConfiguredPinnedSlots(vdb) then
+        return true
+    end
+
+    return false
+end
+
+local function FrameHasActiveAuraConsumers(frame)
+    return frame and HasActiveAuraConsumers(frame._isRaid) == true
+end
+
+local function AnyVisibleFrameHasActiveAuraConsumers(frames, nFrames)
+    local partyActive = nil
+    local raidActive = nil
+    for i = 1, nFrames do
+        local frame = frames[i]
+        if frame and frame:IsShown() then
+            if frame._isRaid then
+                if raidActive == nil then
+                    raidActive = HasActiveAuraConsumers(true)
+                end
+                if raidActive then return true end
+            else
+                if partyActive == nil then
+                    partyActive = HasActiveAuraConsumers(false)
+                end
+                if partyActive then return true end
+            end
+        end
+    end
+    return false
+end
+
+function QUI_GFA:HasActiveConsumersForContext(isRaid)
+    return HasActiveAuraConsumers(isRaid)
+end
+
+function QUI_GFA:HasActiveConsumersForFrame(frame)
+    return FrameHasActiveAuraConsumers(frame)
+end
+
+local function PanelRefreshNeededForFrame(frame, cache)
+    if not cache then return true end
+
+    local auraSettings = GetFrameAuraSettings(frame)
+    local buffsEnabled, debuffsEnabled = GetPanelDisplayFlags(auraSettings)
+    if buffsEnabled and (cache.panelBuffsChanged == true or cache.defensiveSetChanged == true) then
+        return true
+    end
+    if debuffsEnabled and cache.panelDebuffsChanged == true then
+        return true
+    end
+    return false
+end
+
+local function UpdateFrameAuras(frame, forceIconRefresh)
     if not frame or not frame.unit then return end
 
-    local db = GetDB()
-    if not db then return end
-    local isRaid = frame._isRaid
-    local vdb = (isRaid and db.raid or db.party) or db
-    if not vdb.auras then return end
-    local auraSettings = vdb.auras
+    local auraSettings = GetFrameAuraSettings(frame)
+    if not auraSettings then return end
+    local panelBuffsEnabled, panelDebuffsEnabled = GetPanelDisplayFlags(auraSettings)
 
     -- Cache pulse setting for this frame (read by UpdateAuraIcon, avoids per-icon GetDB)
     local showPulse = auraSettings.showExpiringPulse ~= false
@@ -1519,6 +2029,22 @@ local function UpdateFrameAuras(frame)
         return
     end
 
+    if not panelBuffsEnabled and not panelDebuffsEnabled then
+        auraStats.panelNoDisplay = auraStats.panelNoDisplay + 1
+        if frame.debuffIcons then
+            for _, icon in ipairs(frame.debuffIcons) do
+                ClearAuraIcon(icon)
+            end
+        end
+        if frame.buffIcons then
+            for _, icon in ipairs(frame.buffIcons) do
+                ClearAuraIcon(icon)
+            end
+        end
+        frameLayoutVersions[frame] = layoutVersion
+        return
+    end
+
     -- Phase 2: cache rebuild owns classification + filter + sort. The render
     -- path reads pre-classified, pre-sorted arrays. Lazy-rebuild covers the
     -- case where layoutVersion bumped (settings changed) but no UNIT_AURA
@@ -1529,7 +2055,7 @@ local function UpdateFrameAuras(frame)
     end
 
     -- Process debuffs
-    if auraSettings.showDebuffs then
+    if panelDebuffsEnabled then
         local maxDebuffs = auraSettings.maxDebuffs or 3
         local iconSize = auraSettings.debuffIconSize or 16
 
@@ -1573,15 +2099,23 @@ local function UpdateFrameAuras(frame)
                 frame.debuffIcons[i]:SetSize(iconSize, iconSize)
             end
             local icon = frame.debuffIcons[i]
-            icon._durationTextSettingKey = "showDebuffDurationText"
-            icon._durationUseTimeColorKey = "debuffDurationUseTimeColor"
-            icon._durationColorKey = "debuffDurationColor"
-            ApplyDurationTextStyle(icon, auraSettings, "debuff")
-            SafeSetDrawSwipe(icon and icon.cooldown, auraSettings.debuffHideSwipe ~= true)
-            SafeSetReverse(icon and icon.cooldown, auraSettings.debuffReverseSwipe == true)
             if auraData then
-                icon._cachedShowPulse = showPulse
-                UpdateAuraIcon(icon, auraData, unit)
+                local state = icon._auraState
+                if not forceIconRefresh and not needsLayout and icon:IsShown()
+                    and state and state.auraInstanceID == auraData.auraInstanceID
+                then
+                    auraStats.panelIconSkips = auraStats.panelIconSkips + 1
+                else
+                    auraStats.panelIconUpdates = auraStats.panelIconUpdates + 1
+                    icon._durationTextSettingKey = "showDebuffDurationText"
+                    icon._durationUseTimeColorKey = "debuffDurationUseTimeColor"
+                    icon._durationColorKey = "debuffDurationColor"
+                    ApplyDurationTextStyle(icon, auraSettings, "debuff")
+                    SafeSetDrawSwipe(icon and icon.cooldown, auraSettings.debuffHideSwipe ~= true)
+                    SafeSetReverse(icon and icon.cooldown, auraSettings.debuffReverseSwipe == true)
+                    icon._cachedShowPulse = showPulse
+                    UpdateAuraIcon(icon, auraData, unit)
+                end
             else
                 ClearAuraIcon(icon)
             end
@@ -1598,7 +2132,7 @@ local function UpdateFrameAuras(frame)
     end
 
     -- Process buffs (if enabled)
-    if auraSettings.showBuffs and (auraSettings.maxBuffs or 0) > 0 then
+    if panelBuffsEnabled then
         local maxBuffs = auraSettings.maxBuffs
         local iconSize = auraSettings.buffIconSize or 14
 
@@ -1681,15 +2215,23 @@ local function UpdateFrameAuras(frame)
                 frame.buffIcons[i]:SetSize(iconSize, iconSize)
             end
             local bIcon = frame.buffIcons[i]
-            bIcon._durationTextSettingKey = "showBuffDurationText"
-            bIcon._durationUseTimeColorKey = "buffDurationUseTimeColor"
-            bIcon._durationColorKey = "buffDurationColor"
-            ApplyDurationTextStyle(bIcon, auraSettings, "buff")
-            SafeSetDrawSwipe(bIcon and bIcon.cooldown, auraSettings.buffHideSwipe ~= true)
-            SafeSetReverse(bIcon and bIcon.cooldown, auraSettings.buffReverseSwipe == true)
             if auraData then
-                bIcon._cachedShowPulse = showPulse
-                UpdateAuraIcon(bIcon, auraData, unit)
+                local state = bIcon._auraState
+                if not forceIconRefresh and not needsLayout and bIcon:IsShown()
+                    and state and state.auraInstanceID == auraData.auraInstanceID
+                then
+                    auraStats.panelIconSkips = auraStats.panelIconSkips + 1
+                else
+                    auraStats.panelIconUpdates = auraStats.panelIconUpdates + 1
+                    bIcon._durationTextSettingKey = "showBuffDurationText"
+                    bIcon._durationUseTimeColorKey = "buffDurationUseTimeColor"
+                    bIcon._durationColorKey = "buffDurationColor"
+                    ApplyDurationTextStyle(bIcon, auraSettings, "buff")
+                    SafeSetDrawSwipe(bIcon and bIcon.cooldown, auraSettings.buffHideSwipe ~= true)
+                    SafeSetReverse(bIcon and bIcon.cooldown, auraSettings.buffReverseSwipe == true)
+                    bIcon._cachedShowPulse = showPulse
+                    UpdateAuraIcon(bIcon, auraData, unit)
+                end
             else
                 ClearAuraIcon(bIcon)
             end
@@ -1750,6 +2292,51 @@ regenFrame:SetScript("OnEvent", function(self, event)
     if pendingMouseFix then FixAllIconMouse() end
 end)
 
+local function RefreshUpdatedAuraIcons(frames, nFrames, unit, updated)
+    if not updated then return false end
+    local nUpdated = #updated
+    if nUpdated == 0 then return true end
+
+    local GetDuration = C_UnitAuras and C_UnitAuras.GetAuraDuration
+    local GetDisplayCount = C_UnitAuras and C_UnitAuras.GetAuraApplicationDisplayCount
+    if not GetDuration then return false end
+
+    for f = 1, nFrames do
+        local frame = frames[f]
+        if frame:IsShown() then
+            for listIdx = 1, 2 do
+                local icons = listIdx == 1 and frame.debuffIcons or frame.buffIcons
+                if icons then
+                    for _, icon in ipairs(icons) do
+                        if not icon:IsShown() then break end
+                        local state = icon._auraState
+                        local instID = state and state.auraInstanceID
+                        if instID then
+                            local hit = false
+                            for i = 1, nUpdated do
+                                if updated[i] == instID then hit = true; break end
+                            end
+                            if hit then
+                                local cd = icon.cooldown
+                                if cd and cd.SetCooldownFromDurationObject then
+                                    local dObj = GetDuration(unit, instID)
+                                    if dObj then cd:SetCooldownFromDurationObject(dObj, true) end
+                                end
+                                if icon.stackText and GetDisplayCount then
+                                    local s = GetDisplayCount(unit, instID, 2, 99)
+                                    if s then icon.stackText:SetText(s) end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return true
+end
+
 -- Subscribe to centralized aura dispatcher for group frame aura updates.
 -- Stack/duration-only updates stay on the icon fast path. Add/remove/full
 -- changes mutate the shared cache first, then all consumers read that state.
@@ -1768,6 +2355,10 @@ if ns.AuraEvents then
         if not frames then return end
         local nFrames = #frames
         if nFrames == 0 then return end
+        if not AnyVisibleFrameHasActiveAuraConsumers(frames, nFrames) then
+            auraStats.noConsumerSkips = auraStats.noConsumerSkips + 1
+            return
+        end
 
         -- Fast path: pure stack/duration update (no auras added or removed).
         -- The display set is identical — skip full scan + all overlay updates.
@@ -1786,45 +2377,7 @@ if ns.AuraEvents then
             if nUpdated == 0 then return end
             auraStats.fastUpdates = auraStats.fastUpdates + 1
 
-            local GetDuration = C_UnitAuras.GetAuraDuration
-            local GetDisplayCount = C_UnitAuras.GetAuraApplicationDisplayCount
-            if not GetDuration then return end
-
-            -- Refresh only icons whose aura is in the updated set — for every
-            -- frame displaying this unit (main raid panel + spotlight).
-            for f = 1, nFrames do
-                local frame = frames[f]
-                if frame:IsShown() then
-                    for listIdx = 1, 2 do
-                        local icons = listIdx == 1 and frame.debuffIcons or frame.buffIcons
-                        if icons then
-                            for _, icon in ipairs(icons) do
-                                if not icon:IsShown() then break end
-                                local state = icon._auraState
-                                local instID = state and state.auraInstanceID
-                                if instID then
-                                    -- Linear scan for match (nUpdated is typically 1-3)
-                                    local hit = false
-                                    for i = 1, nUpdated do
-                                        if updated[i] == instID then hit = true; break end
-                                    end
-                                    if hit then
-                                        local cd = icon.cooldown
-                                        if cd and cd.SetCooldownFromDurationObject then
-                                            local dObj = GetDuration(unit, instID)
-                                            if dObj then cd:SetCooldownFromDurationObject(dObj, true) end
-                                        end
-                                        if icon.stackText and GetDisplayCount then
-                                            local s = GetDisplayCount(unit, instID, 2, 99)
-                                            if s then icon.stackText:SetText(s) end
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
+            RefreshUpdatedAuraIcons(frames, nFrames, unit, updated)
             return
         end
 
@@ -1849,14 +2402,58 @@ if ns.AuraEvents then
         end
         local GFI = ns.QUI_GroupFrameIndicators
         local GFP = ns.QUI_GroupFramePinnedAuras
+        local cache = unitAuraCache[unit]
+        local refreshIndicators = true
+        local refreshPinned = true
+        local refreshPanelAuras = true
+        if cacheUpdated and cache then
+            refreshIndicators = cache.indicatorMatchesChanged ~= false
+            refreshPinned = cache.pinnedMatchesChanged ~= false
+            refreshPanelAuras = cache.panelBuffsChanged == true
+                or cache.panelDebuffsChanged == true
+                or cache.defensiveSetChanged == true
+        end
         for f = 1, nFrames do
             local frame = frames[f]
             if frame:IsShown() then
+                auraStats.framesRefreshed = auraStats.framesRefreshed + 1
                 if GF.UpdateDispelOverlay then GF:UpdateDispelOverlay(frame) end
                 if GF.UpdateDefensiveIndicator then GF:UpdateDefensiveIndicator(frame) end
-                if GFI and GFI.RefreshFrame then GFI:RefreshFrame(frame) end
-                if GFP and GFP.RefreshFrame then GFP:RefreshFrame(frame) end
-                UpdateFrameAuras(frame)
+                if GFI and GFI.RefreshFrame then
+                    if refreshIndicators then
+                        auraStats.indicatorFrameRefreshes = auraStats.indicatorFrameRefreshes + 1
+                        GFI:RefreshFrame(frame)
+                    else
+                        auraStats.indicatorFrameSkips = auraStats.indicatorFrameSkips + 1
+                    end
+                end
+                if GFP and GFP.RefreshFrame then
+                    if refreshPinned then
+                        auraStats.pinnedFrameRefreshes = auraStats.pinnedFrameRefreshes + 1
+                        GFP:RefreshFrame(frame)
+                    else
+                        auraStats.pinnedFrameSkips = auraStats.pinnedFrameSkips + 1
+                    end
+                end
+                if refreshPanelAuras then
+                    if PanelRefreshNeededForFrame(frame, cache) then
+                        auraStats.panelFrameRefreshes = auraStats.panelFrameRefreshes + 1
+                        UpdateFrameAuras(frame, not cacheUpdated)
+                    else
+                        auraStats.panelFrameSkips = auraStats.panelFrameSkips + 1
+                        auraStats.panelFrameDisplaySkips = auraStats.panelFrameDisplaySkips + 1
+                    end
+                else
+                    auraStats.panelFrameSkips = auraStats.panelFrameSkips + 1
+                end
+            end
+        end
+        if cacheUpdated and type(updateInfo) == "table"
+            and updateInfo.updatedAuraInstanceIDs
+            and (updateInfo.addedAuras or updateInfo.removedAuraInstanceIDs)
+        then
+            if RefreshUpdatedAuraIcons(frames, nFrames, unit, updateInfo.updatedAuraInstanceIDs) then
+                auraStats.mixedIconRefreshes = auraStats.mixedIconRefreshes + 1
             end
         end
     end)
@@ -1877,6 +2474,7 @@ function QUI_GFA:InvalidateLayout()
     for _, cache in pairs(unitAuraCache) do
         cache.panelBuffsDirty = true
         cache.panelDebuffsDirty = true
+        cache.curatedForceRefresh = true
     end
 end
 
@@ -1895,23 +2493,26 @@ function QUI_GFA:RefreshAll()
     cachedShowDurationColor = db and db.auras and db.auras.showDurationColor ~= false
 
     for unit, list in pairs(GF.unitFrameMap) do
-        ScanUnitAuras(unit)
+        local shouldScan = AnyVisibleFrameHasActiveAuraConsumers(list, #list)
+        if shouldScan then
+            ScanUnitAuras(unit)
+        end
         for i = 1, #list do
             local frame = list[i]
             if frame and frame:IsShown() then
-                UpdateFrameAuras(frame)
+                UpdateFrameAuras(frame, true)
             end
         end
     end
 end
 
 function QUI_GFA:RefreshFrame(frame)
-    if frame and frame.unit then
+    if frame and frame.unit and FrameHasActiveAuraConsumers(frame) then
         ScanUnitAuras(frame.unit)
     end
-    UpdateFrameAuras(frame)
+    UpdateFrameAuras(frame, true)
 end
 
 function QUI_GFA:RenderFrame(frame)
-    UpdateFrameAuras(frame)
+    UpdateFrameAuras(frame, true)
 end

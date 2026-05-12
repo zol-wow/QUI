@@ -6,6 +6,8 @@
 
 _G.geterrorhandler = function() return function(err) error(err, 0) end end
 
+local unpack = table.unpack or unpack
+
 local ns = { CDMResolvers = {} }
 local _subscribers = {}
 

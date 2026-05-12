@@ -39,7 +39,7 @@ end
 --- @return table|nil
 function M.loadFromString(source)
     if not source then return defaults() end
-    local chunk, err = (loadstring or load)(source, "taintrc")
+    local chunk, err = (rawget(_G, "loadstring") or load)(source, "taintrc")
     if not chunk then return nil end
     local ok, result = pcall(chunk)
     if not ok or type(result) ~= "table" then return nil end

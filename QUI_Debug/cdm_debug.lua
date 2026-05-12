@@ -20,6 +20,7 @@
 --
 --   /cdmevents <spellID>            Trace events for spellID (off/clear to stop).
 --   /cdmtrace <name>                Log isActive/isOnGCD transitions for a spell.
+--   /cdmgcd <spellID|name> [sec]    Watch the GCD swipe decision chain.
 --   /cdmcharge <name>               Charge-spell recharge swipe diagnostic.
 --   /cdmflicker <name>              5-second sub-tick flicker probe.
 --   /cdmprobe                       Resolver/mirror parity sweep.
@@ -31,6 +32,7 @@
 
 local _, ns = ...
 
+local Helpers     = ns.Helpers
 local CDMIcons    = ns.CDMIcons
 local iconPools   = ns.CDMIconFactory and ns.CDMIconFactory._iconPools or {}
 local Sources     = ns.CDMSources
@@ -147,7 +149,7 @@ end
 function CDMIcons.EventTraceAPISummary(spellID)
     local cdActive, cdOnGCD = nil, nil
     local chargeActive, currentCharges, maxCharges = nil, nil, nil
-    local usable, noMana = nil, nil
+    local usable, resourceBlocked = nil, nil
     local itemStart, itemDuration, itemEnabled = nil, nil, nil
     local itemSpellID = CDMIcons.GetItemUseSpellID(spellID)
     local itemSpellCdActive, itemSpellCdOnGCD = nil, nil
@@ -175,9 +177,9 @@ function CDMIcons.EventTraceAPISummary(spellID)
         end
     end
     if Sources and Sources.QuerySpellUsable then
-        local isUsable, isNoMana = Sources.QuerySpellUsable(spellID)
+        local isUsable, isResourceBlocked = Sources.QuerySpellUsable(spellID)
         usable = isUsable
-        noMana = isNoMana
+        resourceBlocked = isResourceBlocked
     end
     if Sources and Sources.QueryItemCooldown then
         local startTime, duration, enabled = Sources.QueryItemCooldown(spellID)
@@ -187,14 +189,14 @@ function CDMIcons.EventTraceAPISummary(spellID)
     end
 
     return string.format(
-        "api cdActive=%s isOnGCD=%s charges=%s/%s chargeActive=%s usable=%s noMana=%s itemCd=%s/%s/%s itemSpell=%s itemSpellCd=%s/%s",
+        "api cdActive=%s isOnGCD=%s charges=%s/%s chargeActive=%s usable=%s resourceBlocked=%s itemCd=%s/%s/%s itemSpell=%s itemSpellCd=%s/%s",
         CDMIcons.EventTraceValue(cdActive),
         CDMIcons.EventTraceValue(cdOnGCD),
         CDMIcons.EventTraceValue(currentCharges),
         CDMIcons.EventTraceValue(maxCharges),
         CDMIcons.EventTraceValue(chargeActive),
         CDMIcons.EventTraceValue(usable),
-        CDMIcons.EventTraceValue(noMana),
+        CDMIcons.EventTraceValue(resourceBlocked),
         CDMIcons.EventTraceValue(itemStart),
         CDMIcons.EventTraceValue(itemDuration),
         CDMIcons.EventTraceValue(itemEnabled),
@@ -617,6 +619,369 @@ SlashCmdList["CDMTRACE"] = function(msg)
     print("|cff34d399[cdmtrace]|r tracing transitions for '" .. name .. "'")
 end
 
+local function CDMGCDIsSecret(value)
+    if Helpers and Helpers.IsSecretValue then
+        return Helpers.IsSecretValue(value)
+    end
+    return issecretvalue and issecretvalue(value) or false
+end
+
+local function CDMGCDValue(value)
+    if CDMGCDIsSecret(value) then
+        return "<SECRET:" .. type(value) .. ">"
+    end
+    if value == nil then return "nil" end
+    if type(value) == "table" or type(value) == "userdata" then
+        return "yes"
+    end
+    return tostring(value)
+end
+
+local function CDMGCDIDMatches(value, targetID)
+    if CDMGCDIsSecret(value) then return false end
+    return value == targetID
+end
+
+local function CDMGCDFirstID(...)
+    for i = 1, select("#", ...) do
+        local value = select(i, ...)
+        if not CDMGCDIsSecret(value) and value ~= nil then
+            return value
+        end
+    end
+    return nil
+end
+
+local function CDMGCDCall(owner, methodName)
+    if not (owner and owner[methodName]) then
+        return "n/a"
+    end
+    local ok, value = pcall(owner[methodName], owner)
+    if not ok then
+        return "err"
+    end
+    return CDMGCDValue(value)
+end
+
+local function CDMGCDResolveIconDurationObject(icon)
+    if not CDMIcons.ResolveIconDurationObject then
+        return nil, nil, nil
+    end
+    return CDMIcons.ResolveIconDurationObject(icon)
+end
+
+local function CDMGCDMirrorState(icon)
+    local mirror = ns.CDMBlizzMirror
+    if not (icon and icon._blizzMirrorCooldownID and mirror and mirror.GetStateByCooldownID) then
+        return nil
+    end
+    return mirror.GetStateByCooldownID(icon._blizzMirrorCooldownID, icon._blizzMirrorCategory)
+end
+
+local function CDMGCDMirrorSummary(icon)
+    local m = CDMGCDMirrorState(icon)
+    if not m then
+        return "none"
+    end
+    return string.format(
+        "id=%s cat=%s active=%s dur=%s source=%s childActive=%s cooldownActive=%s fromCooldown=%s fromCharges=%s",
+        CDMGCDValue(m.cooldownID or icon._blizzMirrorCooldownID),
+        CDMGCDValue(m.viewerCategory or icon._blizzMirrorCategory),
+        CDMGCDValue(m.isActive),
+        CDMGCDValue(m.durObj),
+        CDMGCDValue(m.durObjSource),
+        CDMGCDValue(m.childIsActive),
+        CDMGCDValue(m.cooldownIsActive),
+        CDMGCDValue(m.wasSetFromCooldown),
+        CDMGCDValue(m.wasSetFromCharges))
+end
+
+local function CDMGCDIconMatches(icon, needle, targetID)
+    local entry = icon and icon._spellEntry
+    if not entry then return false end
+    if targetID then
+        return CDMGCDIDMatches(icon._runtimeSpellID, targetID)
+            or CDMGCDIDMatches(entry.overrideSpellID, targetID)
+            or CDMGCDIDMatches(entry.spellID, targetID)
+            or CDMGCDIDMatches(entry.id, targetID)
+            or CDMGCDIDMatches(entry.itemID, targetID)
+    end
+    local name = entry.name
+    if CDMGCDIsSecret(name) then return false end
+    if type(name) ~= "string" then return false end
+    return name:lower():find(needle, 1, true) ~= nil
+end
+
+local function CDMGCDParseRequest(msg)
+    local text = msg and msg:gsub("^%s+", ""):gsub("%s+$", "") or ""
+    if text == "" then
+        return "", 5, false, false
+    end
+
+    local lower = text:lower()
+    if lower == "off" or lower == "stop" or lower == "clear" then
+        return text, 0, false, true
+    end
+
+    local duration = 5
+    local once = false
+    local base, tail = text:match("^(.-)%s+(%S+)$")
+    if base and base ~= "" then
+        local tailLower = tail:lower()
+        local tailNumber = tonumber(tail)
+        if tailLower == "once" then
+            text = base
+            once = true
+        elseif tailLower == "watch" then
+            text = base
+        elseif tailNumber then
+            text = base
+            duration = tailNumber
+        end
+    end
+
+    if duration < 1 then duration = 1 end
+    if duration > 15 then duration = 15 end
+    return text, duration, once, false
+end
+
+local function CDMGCDStopWatch(silent)
+    local frame = CDMIcons._gcdWatchFrame
+    if frame and frame.SetScript then
+        frame:SetScript("OnUpdate", nil)
+    end
+    CDMIcons._gcdWatchFrame = nil
+    if not silent then
+        print("|cffffaa00[cdmgcd]|r watch stopped.")
+    end
+end
+
+local function CDMGCDPrintWatchSample(elapsed, needle, targetID)
+    local matches = 0
+    for _, pool in pairs(iconPools) do
+        for _, icon in ipairs(pool) do
+            if CDMGCDIconMatches(icon, needle, targetID) then
+                matches = matches + 1
+                local entry = icon._spellEntry
+                local sid = CDMGCDFirstID(
+                    icon._runtimeSpellID,
+                    entry.overrideSpellID,
+                    entry.spellID,
+                    entry.id,
+                    entry.itemID)
+                local cdInfo = sid and Sources and Sources.QuerySpellCooldown
+                    and Sources.QuerySpellCooldown(sid)
+                local cdActive = cdInfo and CDMIcons.GetCooldownInfoField
+                    and CDMIcons.GetCooldownInfoField(cdInfo, "isActive")
+                local cdOnGCD = cdInfo and CDMIcons.GetCooldownInfoField
+                    and CDMIcons.GetCooldownInfoField(cdInfo, "isOnGCD")
+                local gcdDur = sid and Sources and Sources.QuerySpellCooldownDuration
+                    and Sources.QuerySpellCooldownDuration(sid, false)
+                local realDur = sid and Sources and Sources.QuerySpellCooldownDuration
+                    and Sources.QuerySpellCooldownDuration(sid, true)
+                local usable, resourceBlocked = nil, nil
+                if sid and Sources and Sources.QuerySpellUsable then
+                    usable, resourceBlocked = Sources.QuerySpellUsable(sid)
+                end
+                local _, mode = CDMGCDResolveIconDurationObject(icon)
+                local cd = icon.Cooldown
+
+                print(string.format(
+                    "|cff34d399[cdmgcd]|r +%.2f #%d sid=%s active=%s onGCD=%s usable=%s resourceBlocked=%s gcdDur=%s realDur=%s mode=%s showingGCD=%s draw=%s intended=%s shown=%s mirror={%s}",
+                    elapsed,
+                    matches,
+                    CDMGCDValue(sid),
+                    CDMGCDValue(cdActive),
+                    CDMGCDValue(cdOnGCD),
+                    CDMGCDValue(usable),
+                    CDMGCDValue(resourceBlocked),
+                    CDMGCDValue(gcdDur),
+                    CDMGCDValue(realDur),
+                    tostring(mode),
+                    tostring(icon._showingGCDSwipe),
+                    CDMGCDCall(cd, "GetDrawSwipe"),
+                    tostring(cd and cd._quiIntendedDrawSwipe),
+                    CDMGCDCall(icon, "IsShown"),
+                    CDMGCDMirrorSummary(icon)))
+            end
+        end
+    end
+
+    if matches == 0 then
+        print(string.format("|cffffaa00[cdmgcd]|r +%.2f no icon found", elapsed))
+    end
+    return matches
+end
+
+local function CDMGCDStartWatch(text, needle, targetID, duration)
+    CDMGCDStopWatch(true)
+    if not (CreateFrame and GetTime) then
+        print("|cffffaa00[cdmgcd]|r watch unavailable.")
+        return
+    end
+
+    local frame = CreateFrame("Frame")
+    local startTime = GetTime()
+    local nextSample = 0
+    local sampleCount = 0
+    local lastMatches = 0
+    local interval = 0.2
+
+    CDMIcons._gcdWatchFrame = frame
+    print(string.format(
+        "|cff34d399[cdmgcd]|r watching '%s' for %.1fs - cast/use it now",
+        text,
+        duration))
+
+    frame:SetScript("OnUpdate", function(self)
+        local elapsed = GetTime() - startTime
+        if elapsed < nextSample and elapsed < duration then
+            return
+        end
+        if elapsed > duration then
+            elapsed = duration
+        end
+
+        sampleCount = sampleCount + 1
+        lastMatches = CDMGCDPrintWatchSample(elapsed, needle, targetID)
+        nextSample = nextSample + interval
+
+        if elapsed >= duration then
+            self:SetScript("OnUpdate", nil)
+            if CDMIcons._gcdWatchFrame == self then
+                CDMIcons._gcdWatchFrame = nil
+            end
+            print(string.format(
+                "|cff34d399[cdmgcd]|r ended samples=%d matches=%d",
+                sampleCount,
+                lastMatches))
+        end
+    end)
+end
+
+-- /cdmgcd <spellID|name> [sec|once|off] - Watch every gate that can suppress GCD swipe.
+SLASH_CDMGCD1 = "/cdmgcd"
+SlashCmdList["CDMGCD"] = function(msg)
+    local text, duration, once, stop = CDMGCDParseRequest(msg)
+    if stop then
+        CDMGCDStopWatch(false)
+        return
+    end
+    if text == "" then
+        print("|cffffaa00[cdmgcd]|r Usage: /cdmgcd <spellID or spell name> [seconds|once|off]")
+        return
+    end
+    if not CDMIcons:IsRuntimeEnabled() then
+        print("|cffffaa00[cdmgcd]|r Owned engine not enabled.")
+        return
+    end
+
+    local targetID = tonumber(text:match("^(%d+)$"))
+    local needle = targetID and nil or text:lower()
+    local swipe = ns._OwnedSwipe or (_G.QUI and _G.QUI.CooldownSwipe)
+    local settings = swipe and swipe.GetSettings and swipe.GetSettings() or nil
+    local settingsShowGCD = settings and settings.showGCDSwipe
+    local settingsShowCooldown = settings and settings.showCooldownSwipe
+    local runtimeShowGCD = CDMIcons.IsGCDSwipeEnabled and CDMIcons.IsGCDSwipeEnabled()
+
+    print(string.format(
+        "|cff34d399[cdmgcd]|r settings showGCDSwipe=%s showCooldownSwipe=%s runtimeGCDEnabled=%s swipeModule=%s",
+        CDMGCDValue(settingsShowGCD),
+        CDMGCDValue(settingsShowCooldown),
+        CDMGCDValue(runtimeShowGCD),
+        swipe and "yes" or "nil"))
+
+    local matches = 0
+    for _, pool in pairs(iconPools) do
+        for _, icon in ipairs(pool) do
+            if CDMGCDIconMatches(icon, needle, targetID) then
+                matches = matches + 1
+                local entry = icon._spellEntry
+                local sid = CDMGCDFirstID(
+                    icon._runtimeSpellID,
+                    entry.overrideSpellID,
+                    entry.spellID,
+                    entry.id,
+                    entry.itemID)
+                local cdInfo = sid and Sources and Sources.QuerySpellCooldown
+                    and Sources.QuerySpellCooldown(sid)
+                local cdActive = cdInfo and CDMIcons.GetCooldownInfoField
+                    and CDMIcons.GetCooldownInfoField(cdInfo, "isActive")
+                local cdOnGCD = cdInfo and CDMIcons.GetCooldownInfoField
+                    and CDMIcons.GetCooldownInfoField(cdInfo, "isOnGCD")
+                local gcdDur = sid and Sources and Sources.QuerySpellCooldownDuration
+                    and Sources.QuerySpellCooldownDuration(sid, false)
+                local realDur = sid and Sources and Sources.QuerySpellCooldownDuration
+                    and Sources.QuerySpellCooldownDuration(sid, true)
+                local chargeDur = sid and Sources and Sources.QuerySpellChargeDuration
+                    and Sources.QuerySpellChargeDuration(sid)
+                local charges = sid and Sources and Sources.QuerySpellCharges
+                    and Sources.QuerySpellCharges(sid)
+                local chargeActive = charges and charges.isActive
+                local maxCharges = charges and charges.maxCharges
+                local usable, resourceBlocked = nil, nil
+                if sid and Sources and Sources.QuerySpellUsable then
+                    usable, resourceBlocked = Sources.QuerySpellUsable(sid)
+                end
+                local durObj, mode, sourceID = CDMGCDResolveIconDurationObject(icon)
+                local cd = icon.Cooldown
+
+                print(string.format(
+                    "|cff34d399[cdmgcd]|r #%d %s sid=%s viewer=%s kind=%s type=%s shown=%s",
+                    matches,
+                    CDMGCDValue(entry.name),
+                    CDMGCDValue(sid),
+                    CDMGCDValue(entry.viewerType),
+                    CDMGCDValue(entry.kind),
+                    CDMGCDValue(entry.type),
+                    CDMGCDCall(icon, "IsShown")))
+                print(string.format(
+                    "|cff34d399[cdmgcd]|r api isActive=%s isOnGCD=%s usable=%s resourceBlocked=%s gcdDur=%s realDur=%s chargeDur=%s chargeActive=%s maxCharges=%s",
+                    CDMGCDValue(cdActive),
+                    CDMGCDValue(cdOnGCD),
+                    CDMGCDValue(usable),
+                    CDMGCDValue(resourceBlocked),
+                    CDMGCDValue(gcdDur),
+                    CDMGCDValue(realDur),
+                    CDMGCDValue(chargeDur),
+                    CDMGCDValue(chargeActive),
+                    CDMGCDValue(maxCharges)))
+                print(string.format(
+                    "|cff34d399[cdmgcd]|r mirror %s",
+                    CDMGCDMirrorSummary(icon)))
+                print(string.format(
+                    "|cff34d399[cdmgcd]|r resolver mode=%s durObj=%s source=%s resolvedMode=%s lastKey=%s",
+                    tostring(mode),
+                    CDMGCDValue(durObj),
+                    CDMGCDValue(sourceID),
+                    tostring(icon._resolvedCooldownMode),
+                    tostring(icon._lastDurObjKey)))
+                print(string.format(
+                    "|cff34d399[cdmgcd]|r icon showingGCD=%s showingReal=%s hasReal=%s hasCooldown=%s aura=%s",
+                    tostring(icon._showingGCDSwipe),
+                    tostring(icon._showingRealCooldownSwipe),
+                    tostring(icon._hasRealCooldownActive),
+                    tostring(icon._hasCooldownActive),
+                    tostring(icon._auraActive)))
+                print(string.format(
+                    "|cff34d399[cdmgcd]|r cooldown drawSwipe=%s intendedDrawSwipe=%s drawEdge=%s intendedDrawEdge=%s color=%s",
+                    CDMGCDCall(cd, "GetDrawSwipe"),
+                    tostring(cd and cd._quiIntendedDrawSwipe),
+                    CDMGCDCall(cd, "GetDrawEdge"),
+                    tostring(cd and cd._quiIntendedDrawEdge),
+                    CDMGCDValue(cd and cd._quiIntendedSwipeColor)))
+            end
+        end
+    end
+
+    if matches == 0 then
+        print("|cffffaa00[cdmgcd]|r no icon found for '" .. text .. "'")
+    end
+    if not once then
+        CDMGCDStartWatch(text, needle, targetID, duration)
+    end
+end
+
 -- /cdmcharge <name> — Diagnostic for charge-spell recharge swipe issues.
 -- Walks visible CDM icons, finds entries matching the name, prints the
 -- relevant gates: hasCharges, classifier output, charge/cd DurObj presence.
@@ -830,6 +1195,10 @@ local function CooldownTestValue(v)
     return tostring(v)
 end
 
+local function CooldownTestIsSecret(v)
+    return (issecretvalue and issecretvalue(v)) or false
+end
+
 local function CooldownTestPlainNumber(v)
     if issecretvalue and issecretvalue(v) then return false end
     return type(v) == "number"
@@ -852,6 +1221,243 @@ local function CooldownTestSummary(cd)
         okDuration and CooldownTestValue(displayDuration) or "err")
 end
 
+local COOLDOWN_TEXT_TEST_MAX_ROWS = 12
+
+local function CooldownTestSetDisplayText(fs, value, fallback)
+    if not (fs and fs.SetText) then return end
+    if value == nil then
+        fs:SetText(fallback or "<nil>")
+        return
+    end
+    if CooldownTestIsSecret(value) then
+        if C_StringUtil and C_StringUtil.WrapString then
+            local wrapped = C_StringUtil.WrapString(value, "", "")
+            if wrapped then
+                fs:SetText(wrapped)
+                return
+            end
+        end
+        fs:SetText(value)
+        return
+    end
+
+    local text = tostring(value)
+    if text == "" then text = "<empty>" end
+    fs:SetText(text)
+end
+
+local function CooldownTextPrintSecret(prefix, label, shown, value)
+    if not (prefix and DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage) then return end
+    if not (C_StringUtil and C_StringUtil.WrapString) then
+        print(prefix, "text", tostring(label), "shown=", shown, "value=<SECRET>")
+        return
+    end
+
+    local wrapped = C_StringUtil.WrapString(value,
+        tostring(prefix) .. " text " .. tostring(label) .. " shown= " .. tostring(shown) .. " value= ",
+        "")
+    if wrapped then
+        DEFAULT_CHAT_FRAME:AddMessage(wrapped)
+    else
+        print(prefix, "text", tostring(label), "shown=", shown, "value=<SECRET>")
+    end
+end
+
+local function CooldownTextObjectType(owner)
+    local ok, kind = CooldownTestCall(owner, "GetObjectType")
+    return ok and kind or nil
+end
+
+local function CooldownTextAddProbe(probes, seen, label, owner, readOwner)
+    if #probes >= COOLDOWN_TEXT_TEST_MAX_ROWS then return end
+    local target = readOwner or owner
+    if not target or seen[target] then return end
+    if not target.GetText then return end
+    seen[target] = true
+
+    local okText, text = CooldownTestCall(target, "GetText")
+    local okShown, shown = CooldownTestCall(owner or target, "IsShown")
+    probes[#probes + 1] = {
+        label = label,
+        textOk = okText == true,
+        text = okText and text or nil,
+        shownOk = okShown == true,
+        shown = okShown and shown or nil,
+    }
+end
+
+local function CooldownTextSelectRegion(owner, index)
+    if not (owner and owner.GetRegions) then return nil end
+    local ok, region = pcall(function()
+        return select(index, owner:GetRegions())
+    end)
+    return ok and region or nil
+end
+
+local function CooldownTextSelectChild(owner, index)
+    if not (owner and owner.GetChildren) then return nil end
+    local ok, child = pcall(function()
+        return select(index, owner:GetChildren())
+    end)
+    return ok and child or nil
+end
+
+local function CooldownTextCollectFontStrings(owner, label, probes, seen, visited, depth)
+    if not owner or #probes >= COOLDOWN_TEXT_TEST_MAX_ROWS then return end
+    if visited[owner] or depth > 4 then return end
+    visited[owner] = true
+
+    if CooldownTextObjectType(owner) == "FontString" then
+        CooldownTextAddProbe(probes, seen, label, owner)
+        return
+    end
+
+    local okNumRegions, numRegions = CooldownTestCall(owner, "GetNumRegions")
+    if okNumRegions and type(numRegions) == "number" then
+        for i = 1, numRegions do
+            local region = CooldownTextSelectRegion(owner, i)
+            if region and CooldownTextObjectType(region) == "FontString" then
+                CooldownTextAddProbe(probes, seen, label .. ".region" .. tostring(i), region)
+                if #probes >= COOLDOWN_TEXT_TEST_MAX_ROWS then return end
+            end
+        end
+    end
+
+    local okNumChildren, numChildren = CooldownTestCall(owner, "GetNumChildren")
+    if okNumChildren and type(numChildren) == "number" then
+        for i = 1, numChildren do
+            local child = CooldownTextSelectChild(owner, i)
+            if child then
+                CooldownTextCollectFontStrings(child, label .. ".child" .. tostring(i),
+                    probes, seen, visited, depth + 1)
+                if #probes >= COOLDOWN_TEXT_TEST_MAX_ROWS then return end
+            end
+        end
+    elseif owner.GetChildren then
+        local okChildren, children = pcall(function()
+            return { owner:GetChildren() }
+        end)
+        if okChildren and type(children) == "table" then
+            for i = 1, #children do
+                CooldownTextCollectFontStrings(children[i], label .. ".child" .. tostring(i),
+                    probes, seen, visited, depth + 1)
+                if #probes >= COOLDOWN_TEXT_TEST_MAX_ROWS then return end
+            end
+        end
+    end
+end
+
+local function CooldownTextCollectDirectFontStrings(owner, label, probes, seen)
+    if not owner or #probes >= COOLDOWN_TEXT_TEST_MAX_ROWS then return end
+    if CooldownTextObjectType(owner) == "FontString" then
+        CooldownTextAddProbe(probes, seen, label, owner)
+        return
+    end
+
+    local okNumRegions, numRegions = CooldownTestCall(owner, "GetNumRegions")
+    if not (okNumRegions and type(numRegions) == "number") then return end
+    for i = 1, numRegions do
+        local region = CooldownTextSelectRegion(owner, i)
+        if region and CooldownTextObjectType(region) == "FontString" then
+            CooldownTextAddProbe(probes, seen, label .. ".region" .. tostring(i), region)
+            if #probes >= COOLDOWN_TEXT_TEST_MAX_ROWS then return end
+        end
+    end
+end
+
+local function CooldownTextBuildProbes(payload)
+    local probes = {}
+    local seen = {}
+    local visited = {}
+    local child = payload and payload.child
+    local state = payload and payload.state
+
+    if child then
+        CooldownTextCollectDirectFontStrings(child, "child", probes, seen)
+        CooldownTextAddProbe(probes, seen, "child.DisplayText", child.DisplayText)
+        CooldownTextAddProbe(probes, seen, "child.Text", child.Text)
+        CooldownTextAddProbe(probes, seen, "child.Count", child.Count)
+        CooldownTextAddProbe(probes, seen, "child.StackText", child.StackText)
+        CooldownTextAddProbe(probes, seen, "child.Stacks", child.Stacks)
+    end
+
+    if state and state.stackText ~= nil then
+        probes[#probes + 1] = {
+            label = "mirror." .. tostring(state.stackTextSource or "stackText"),
+            textOk = true,
+            text = state.stackText,
+            shownOk = true,
+            shown = state.stackTextShown,
+        }
+    elseif state then
+        probes[#probes + 1] = {
+            label = "mirror." .. tostring(state.stackTextSource or "stackText"),
+            textOk = true,
+            text = nil,
+            shownOk = true,
+            shown = state.stackTextShown,
+        }
+    end
+
+    if child then
+        local applications = child.Applications
+        if applications then
+            CooldownTextAddProbe(probes, seen, "Applications", applications)
+            CooldownTextAddProbe(probes, seen, "Applications.DisplayText", applications.DisplayText)
+            CooldownTextAddProbe(probes, seen, "Applications.Applications", applications.Applications)
+            CooldownTextCollectFontStrings(applications, "Applications",
+                probes, seen, visited, 0)
+        end
+
+        local chargeCount = child.ChargeCount
+        if chargeCount then
+            CooldownTextAddProbe(probes, seen, "ChargeCount", chargeCount)
+            CooldownTextAddProbe(probes, seen, "ChargeCount.Current", chargeCount.Current)
+            CooldownTextAddProbe(probes, seen, "ChargeCount.DisplayText", chargeCount.DisplayText)
+            CooldownTextCollectFontStrings(chargeCount, "ChargeCount",
+                probes, seen, visited, 0)
+        end
+
+        CooldownTextCollectFontStrings(child.Cooldown, "Cooldown",
+            probes, seen, visited, 0)
+        CooldownTextCollectFontStrings(child, "child",
+            probes, seen, visited, 0)
+    end
+
+    return probes
+end
+
+local function CooldownTextApplyRows(frame, payload, prefix)
+    local rows = frame and frame.textRows
+    if not rows then return end
+
+    local probes = CooldownTextBuildProbes(payload)
+    for i = 1, #rows do
+        local row = rows[i]
+        local probe = probes[i]
+        if probe then
+            local shown = probe.shownOk and CooldownTestValue(probe.shown) or "err"
+            row.source:SetText(tostring(probe.label) .. " shown=" .. shown)
+            CooldownTestSetDisplayText(row.value, probe.text,
+                probe.textOk and "<nil>" or "<GetText error>")
+            row:Show()
+            if prefix and not CooldownTestIsSecret(probe.text) then
+                print(prefix, "text", tostring(probe.label),
+                    "shown=", shown,
+                    "value=", probe.textOk and CooldownTestValue(probe.text) or "err")
+            elseif prefix and probe.textOk then
+                CooldownTextPrintSecret(prefix, probe.label, shown, probe.text)
+            elseif prefix then
+                print(prefix, "text", tostring(probe.label), "shown=", shown, "value=err")
+            end
+        else
+            row.source:SetText("")
+            row.value:SetText("")
+            row:Hide()
+        end
+    end
+end
+
 local function EnsureCooldownMethodTestFrame()
     if _cooldownMethodTestFrame then return _cooldownMethodTestFrame end
     if InCombatLockdown and InCombatLockdown() then
@@ -859,7 +1465,7 @@ local function EnsureCooldownMethodTestFrame()
     end
 
     local f = CreateFrame("Frame", "QUI_CDMCooldownMethodTestFrame", UIParent)
-    f:SetSize(390, 118)
+    f:SetSize(640, 360)
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 160)
     f:SetFrameStrata("DIALOG")
     f:EnableMouse(true)
@@ -906,6 +1512,34 @@ local function EnsureCooldownMethodTestFrame()
         cell.label = label
 
         f.rows[item.key] = cell
+    end
+
+    local textHeader = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    textHeader:SetPoint("TOPLEFT", 14, -94)
+    textHeader:SetText("Child text probes")
+    f.textHeader = textHeader
+
+    f.textRows = {}
+    for i = 1, COOLDOWN_TEXT_TEST_MAX_ROWS do
+        local row = CreateFrame("Frame", nil, f)
+        row:SetSize(612, 18)
+        row:SetPoint("TOPLEFT", 14, -112 - (i - 1) * 19)
+
+        local source = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        source:SetPoint("LEFT")
+        source:SetSize(272, 16)
+        source:SetJustifyH("LEFT")
+        source:SetText("")
+        row.source = source
+
+        local value = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        value:SetPoint("LEFT", source, "RIGHT", 8, 0)
+        value:SetSize(330, 16)
+        value:SetJustifyH("LEFT")
+        value:SetText("")
+        row.value = value
+
+        f.textRows[i] = row
     end
 
     _cooldownMethodTestFrame = f
@@ -1027,6 +1661,7 @@ SlashCmdList["CDMCDTEST"] = function(msg)
             print(P, line)
         end
     end
+    CooldownTextApplyRows(frame, payload, P)
 
     for key, row in pairs(frame.rows) do
         if row.tex and payload.iconTexture and not (issecretvalue and issecretvalue(payload.iconTexture)) then
@@ -1263,8 +1898,8 @@ end
 -- Emitters and predicates relocated from the engine files. Consumer files
 -- declare a `local X = function() end` placeholder at file-top, then in
 -- their tail register a _BindDebugImports() that pulls from ns.CDMDebug.
--- We invoke each consumer's _BindDebugImports at the end of THIS file
--- (cdm_debug.lua loads last among the engine files per cdm.xml).
+-- We invoke each consumer's _BindDebugImports at the end of THIS file when the
+-- load-on-demand debug addon is loaded.
 ---------------------------------------------------------------------------
 local CDMDebug = {}
 ns.CDMDebug = CDMDebug

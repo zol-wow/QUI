@@ -65,7 +65,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/cdm/cdm_debug.lua"))("QUI", ns)
+assert(loadfile("QUI_Debug/cdm_debug.lua"))("QUI_Debug", ns)
 
 local Debug = ns.CDMDebug
 assert(Debug and Debug.Taint, "CDMDebug.Taint should be exported")

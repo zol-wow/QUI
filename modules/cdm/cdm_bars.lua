@@ -5,8 +5,8 @@
     All bars are simple Frame objects with StatusBar children — no protected
     attributes, eliminating combat taint concerns for frame operations.
 
-    All bar state is derived from QUI's resolver pipeline (composer entries +
-    C_Spell + C_UnitAuras). Blizzard CDM viewer children are not consulted.
+    All bar state flows through QUI's resolver pipeline. When a composer entry
+    is backed by a native viewer child, bars render that mirror payload directly.
 
     Pattern mirrors cdm_icons.lua pool management.
 ]]
@@ -295,9 +295,155 @@ local function GetBarSpellData(bar)
     }
 end
 
--- DebugBarLabel implementation lives in cdm_debug.lua. The placeholder
--- below is rebound by cdm_debug.lua's BindAll() at the end of its load.
+-- DebugBarLabel implementation lives in the load-on-demand debug addon.
+-- The placeholder below is rebound by cdm_debug.lua's BindAll() when loaded.
 local DebugBarLabel = function() end
+
+local function IsSecretValue(value)
+    return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value) or false
+end
+
+local function NormalizeBarMirrorCategory(category)
+    if category == nil or IsSecretValue(category) or type(category) ~= "string" then
+        return nil
+    end
+    if category == "essential"
+        or category == "utility"
+        or category == "buff"
+        or category == "trackedBar" then
+        return category
+    end
+    return nil
+end
+
+local function ResolveBarMirrorCategory(entry)
+    if not entry then return nil end
+    return NormalizeBarMirrorCategory(entry.blizzardMirrorCategory)
+        or NormalizeBarMirrorCategory(entry.viewerCategory)
+        or NormalizeBarMirrorCategory(entry.viewerType)
+end
+
+local function ResolveBarMirrorCooldownID(entry)
+    local cooldownID = entry and entry.cooldownID
+    if cooldownID == nil or IsSecretValue(cooldownID) then return nil end
+    return cooldownID
+end
+
+local function ResolveBarMirrorIdentity(entry)
+    local resolvers = ns.CDMResolvers
+    local resolver = resolvers and resolvers.ResolveBlizzardMirrorIdentity
+    if resolver then
+        local cooldownID, category = resolver(entry)
+        if cooldownID ~= nil then
+            return cooldownID, category
+        end
+    end
+    return ResolveBarMirrorCooldownID(entry), ResolveBarMirrorCategory(entry)
+end
+
+local _mirrorBarResult = {
+    isActive = false,
+    -- count is owned by _mirrorBarResult (allocated on first use), so the
+    -- per-tick BuildMirrorCountPayload singleton in cdm_resolvers.lua never
+    -- leaks across bar update ticks.
+    count = { value = nil, sinkText = nil, shown = false, source = nil },
+}
+
+local function BuildBarAuraResultFromMirrorPayload(payload)
+    if not (payload and payload.mirrorBacked == true) then
+        return nil
+    end
+
+    local r = _mirrorBarResult
+    r.isActive = payload.active == true
+    r.auraInstanceID = nil
+    r.auraUnit = payload.auraUnit
+    r.durObj = payload.durObj
+    r.auraData = nil
+    -- payload.count is a singleton scratch (cdm_resolvers.lua's
+    -- _mirrorCountScratch), not safe to alias across calls — copy fields.
+    local rc = r.count
+    local pc = payload.count
+    if pc then
+        rc.value = pc.value
+        rc.sinkText = pc.sinkText
+        rc.shown = pc.shown
+        rc.source = pc.source
+    else
+        rc.value = nil
+        rc.sinkText = nil
+        rc.shown = false
+        rc.source = nil
+    end
+    r.resolvedAuraSpellID = payload.spellID
+    r.hasExpirationTime = payload.hasExpirationTime
+    r.hideDurationText = payload.hideDurationText
+    r.durationStateUnknown = payload.durationStateUnknown
+    r.totemSlot = payload.totemSlot
+    r.totemName = payload.totemName
+    r.totemIcon = payload.totemIcon
+    r.isTotemInstance = payload.isTotemInstance and true or false
+    r.mode = payload.mode
+    r.mirrorBacked = true
+    r.mirrorState = payload.state
+
+    if r.isActive and r.hasExpirationTime == nil and not r.durObj then
+        r.hasExpirationTime = false
+        r.hideDurationText = true
+    end
+
+    return r
+end
+
+local function ResolveBarMirrorPayload(entry, cooldownID, category, spellID)
+    local resolvers = ns.CDMResolvers
+    local resolver = resolvers and resolvers.ResolveMirrorRenderPayloadForEntry
+    if resolver then
+        return resolver(entry, cooldownID, category, spellID)
+    end
+    return nil
+end
+
+local function WrapStackSuffix(stackValue)
+    if C_StringUtil and C_StringUtil.WrapString then
+        return C_StringUtil.WrapString(stackValue, " (", ")")
+    end
+    return stackValue
+end
+
+local function ApplyNameTextWithCount(fontString, name, count)
+    if not fontString or not fontString.SetFormattedText or name == nil then
+        return false, "missing-name"
+    end
+
+    if not count or count.shown ~= true then
+        fontString.SetFormattedText(fontString, "%s", name)
+        return true, "name-only", nil, false
+    end
+
+    local countText = count.sinkText
+    if countText == nil then
+        countText = count.value
+    end
+
+    local countSecret = IsSecretValue(countText)
+    if not countSecret and (countText == nil or countText == "") then
+        fontString.SetFormattedText(fontString, "%s", name)
+        return true, "name-only", nil, false
+    end
+
+    local wrappedStack = WrapStackSuffix(countText)
+    local wrappedSecret = IsSecretValue(wrappedStack)
+    if not wrappedSecret and (wrappedStack == nil or wrappedStack == "") then
+        fontString.SetFormattedText(fontString, "%s", name)
+        return true, "name-only", wrappedStack, countSecret
+    end
+
+    fontString.SetFormattedText(fontString, "%s%s", name, wrappedStack)
+    return true, "wrapped-count", wrappedStack, countSecret or wrappedSecret
+end
+
+CDMBars.ApplyNameTextWithCount = ApplyNameTextWithCount
 
 local function ShouldHideAuraDurationText(r)
     if not r or not r.isActive then return false end
@@ -668,8 +814,9 @@ end
 ---------------------------------------------------------------------------
 -- BUILD BARS FROM OWNED SPELL LIST: Create bars from owned spell data.
 -- All state (StatusBar fill, IconTexture, NameText, DurationText) is driven
--- by UpdateOwnedBarAura → CDMSpellData:ResolveAuraState (composer entries +
--- C_Spell + C_UnitAuras). Blizzard CDM viewer children are not consulted.
+-- by UpdateOwnedBarAura -> CDMSpellData:ResolveAuraState. Composer entries
+-- can also provide a mirrored native child identity for exact aura/cooldown
+-- state.
 ---------------------------------------------------------------------------
 function CDMBars:BuildBarsFromOwned(container, spellList)
     if not container then return end
@@ -779,8 +926,8 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
 end
 
 ---------------------------------------------------------------------------
--- UPDATE OWNED BAR AURA: Delegates to shared CDMSpellData:ResolveAuraState()
--- and applies results to bar StatusBar fill / duration text / stacks.
+-- UPDATE OWNED BAR AURA: Applies mirror payloads directly when present,
+-- otherwise delegates to shared CDMSpellData:ResolveAuraState().
 ---------------------------------------------------------------------------
 -- Phase B.3: drive bar fill from item / trinket-slot cooldowns. Custom
 -- auraBar containers accept item entries alongside spells; duration-bar
@@ -917,34 +1064,43 @@ function CDMBars:UpdateOwnedBarAura(bar)
     local entry = bar._spellEntry
     if not ns.CDMSpellData then return end
 
-    -- Phase B.3: item / trinket-slot entries take the item cooldown path
-    if entry and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot") then
-        UpdateItemBarCooldown(bar, entry)
-        return
+    local mirrorCooldownID, mirrorCategory = ResolveBarMirrorIdentity(entry)
+    local mirrorPayload = ResolveBarMirrorPayload(entry, mirrorCooldownID, mirrorCategory, spellID)
+    local r = BuildBarAuraResultFromMirrorPayload(mirrorPayload)
+    if not r then
+        -- Phase B.3: item / trinket-slot entries take the item cooldown path
+        if entry and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot") then
+            UpdateItemBarCooldown(bar, entry)
+            return
+        end
+
+        local p = bar._auraParams or {}
+        bar._auraParams = p
+        p.spellID = spellID
+        p.entrySpellID = entry and entry.spellID
+        p.entryID = entry and entry.id
+        p.entryName = entry and entry.name
+        p.entryKind = entry and entry.kind
+        p.entryIsAura = entry and ns.CDMSpellData.IsAuraEntry
+            and ns.CDMSpellData.IsAuraEntry(entry, entry.viewerType)
+        p.viewerType = entry and entry.viewerType
+        p.totemSlot = bar._totemSlot
+        p.disableLooseVisibilityFallback = true
+        p.blizzardMirrorCooldownID = mirrorCooldownID
+        p.blizzardMirrorCategory = mirrorCategory
+
+        r = ns.CDMSpellData:ResolveAuraState(p)
     end
-
-    local Helpers = ns.Helpers
-
-    local p = bar._auraParams or {}
-    bar._auraParams = p
-    p.spellID = spellID
-    p.entrySpellID = entry and entry.spellID
-    p.entryID = entry and entry.id
-    p.entryName = entry and entry.name
-    p.entryKind = entry and entry.kind
-    p.entryIsAura = entry and ns.CDMSpellData.IsAuraEntry
-        and ns.CDMSpellData.IsAuraEntry(entry, entry.viewerType)
-    p.viewerType = entry and entry.viewerType
-    p.totemSlot = bar._totemSlot
-    p.disableLooseVisibilityFallback = true
-
-    local r = ns.CDMSpellData:ResolveAuraState(p)
-    StoreBarRuntimeState(bar, r.isActive and "aura" or "inactive", r.isActive, {
+    local count = r.count
+    StoreBarRuntimeState(bar, r.mode or (r.isActive and "aura" or "inactive"), r.isActive, {
         durObj = r.durObj,
         auraUnit = r.auraUnit,
-        stacks = r.stacks,
-        stackSource = r.stackSource,
+        countShown = count and count.shown == true,
+        countValue = count and count.value or nil,
+        countSource = count and count.source or nil,
         hasExpirationTime = r.hasExpirationTime,
+        mirrorBacked = r.mirrorBacked == true,
+        mirrorState = r.mirrorState,
     })
 
     local _bname = entry and entry.name
@@ -1095,7 +1251,7 @@ function CDMBars:UpdateOwnedBarAura(bar)
             end
         end
 
-        -- Name + stacks text.  Display-count payloads are already formatted
+        -- Name + count text.  Display-count payloads are already formatted
         -- by C_UnitAuras, while auraData applications are numeric counts.
         -- Keep both paths in C-side helpers so secret values are forwarded
         -- without Lua concatenation.
@@ -1112,42 +1268,24 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 name = ns.CDMSpellData:ResolveDisplayName(entry)
             end
             if name ~= nil then
-                local stacks = ""
-                local stackMethod = "none"
-                local stackOk, stackText
-                if r.stacks then
-                    if r.stackSource == "display-count" then
-                        stackMethod = "wrap-display-count"
-                        stackOk = true
-                        stackText = C_StringUtil.WrapString(r.stacks, " (", ")")
-                    elseif type(r.stacks) == "number" then
-                        stackMethod = "truncate-wrap-number"
-                        stackOk = true
-                        stackText = (function()
-                            return C_StringUtil.WrapString(
-                                C_StringUtil.TruncateWhenZero(r.stacks), " (", ")")
-                        end)()
-                    else
-                        stackMethod = "wrap-text"
-                        stackOk = true
-                        stackText = C_StringUtil.WrapString(r.stacks, " (", ")")
-                    end
-                    stacks = stackOk and stackText or ""
+                local setOk, countMethod, countText, countSecret =
+                    ApplyNameTextWithCount(bar.NameText, name, r.count)
+                if _G.QUI_CDM_BAR_DEBUG then
+                    local resolvedCount = r.count
+                    local countShown = resolvedCount and resolvedCount.shown == true
+                    DebugBarLabel(
+                        entry, spellID,
+                        "label",
+                        "name=", tostring(name),
+                        "countShown=", tostring(countShown),
+                        "countSecret=", tostring(countSecret == true),
+                        "countSource=", tostring(resolvedCount and resolvedCount.source or nil),
+                        "countMethod=", countMethod,
+                        "countOk=", tostring(setOk),
+                        "countText=", countSecret and "<secret>" or tostring(countText),
+                        "setOk=", tostring(setOk),
+                        "setErr=", "nil")
                 end
-                local setOk = true
-                local setErr
-                bar.NameText.SetFormattedText(bar.NameText, "%s%s", name, stacks)
-                DebugBarLabel(entry, spellID,
-                    "label",
-                    "name=", tostring(name),
-                    "stackNil=", tostring(r.stacks == nil),
-                    "stackSecret=", tostring(false),
-                    "stackSource=", tostring(r.stackSource),
-                    "stackMethod=", stackMethod,
-                    "stackOk=", tostring(stackOk),
-                    "stackText=", tostring(stackText),
-                    "setOk=", tostring(setOk),
-                    "setErr=", setOk and "nil" or tostring(setErr))
             end
         end
     else

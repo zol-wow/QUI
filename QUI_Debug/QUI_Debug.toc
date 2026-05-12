@@ -1,0 +1,12 @@
+## Interface: 120000, 120001, 120005, 120007
+## Title: |cFF30D1FFQUI Debug Tools|r
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+## Notes: Load-on-demand diagnostics and profiling tools for QUI
+## Author: Zol
+## Version: 3.6.0-alpha25
+## Category: User Interface
+## RequiredDeps: QUI
+## LoadOnDemand: 1
+
+bootstrap.lua
+debug.xml

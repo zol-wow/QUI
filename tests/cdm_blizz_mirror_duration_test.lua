@@ -44,6 +44,7 @@ C_Timer = {
 }
 
 local cooldownDuration = { token = "cooldown-duration-object" }
+local gcdDuration = { token = "gcd-duration-object" }
 local chargeDuration = { token = "charge-duration-object" }
 local auraSpellCooldownDuration = { token = "aura-spell-cooldown-duration-object" }
 local auraHookDuration = { token = "aura-hook-duration-object" }
@@ -57,8 +58,49 @@ local amzCooldownDuration = { token = "amz-cooldown-duration-object" }
 local amzAuraDuration = { token = "amz-aura-duration-object" }
 local iconRefreshCount = 0
 
+local function MakeTextOwner()
+    return {
+        text = nil,
+        SetText = function(self, text)
+            self.text = text
+        end,
+        GetText = function(self)
+            return self.text
+        end,
+        Show = noop,
+        Hide = noop,
+        SetShown = noop,
+    }
+end
+
 C_Spell = {
+    GetSpellCooldown = function(spellID)
+        if spellID == 555000 then
+            return {
+                isActive = true,
+                isEnabled = true,
+                isOnGCD = true,
+                startTime = 120,
+                duration = 1.5,
+            }
+        end
+        if spellID == 1233448 then
+            return {
+                isActive = true,
+                isEnabled = true,
+                isOnGCD = false,
+                startTime = 120,
+                duration = 12,
+            }
+        end
+    end,
     GetSpellCooldownDuration = function(spellID, ignoreGCD)
+        if spellID == 555000 then
+            if ignoreGCD == false then
+                return gcdDuration
+            end
+            return nil
+        end
         if spellID == 1233448 and ignoreGCD == true then
             return cooldownDuration
         end
@@ -79,6 +121,8 @@ C_Spell = {
 local child = {
     cooldownID = 27902,
     isActive = true,
+    cooldownChargesShown = true,
+    ChargeCount = MakeTextOwner(),
     Cooldown = {
         SetCooldown = noop,
         SetCooldownFromDurationObject = noop,
@@ -91,10 +135,49 @@ local child = {
     Hide = noop,
 }
 child.Cooldown.GetParent = function() return child end
+child.ChargeCount.DisplayText = MakeTextOwner()
+child.ChargeCount.Current = MakeTextOwner()
+
+local chargedChild = {
+    cooldownID = 444001,
+    isActive = true,
+    wasSetFromCharges = true,
+    ChargeCount = MakeTextOwner(),
+    Cooldown = {
+        SetCooldown = noop,
+        SetCooldownFromDurationObject = noop,
+        SetCooldownFromExpirationTime = noop,
+        SetCooldownDuration = noop,
+        SetCooldownUNIX = noop,
+        Clear = noop,
+    },
+    Show = noop,
+    Hide = noop,
+}
+chargedChild.Cooldown.GetParent = function() return chargedChild end
+chargedChild.ChargeCount.DisplayText = MakeTextOwner()
+
+local gcdChild = {
+    cooldownID = 27903,
+    isActive = true,
+    wasSetFromCooldown = true,
+    Cooldown = {
+        SetCooldown = noop,
+        SetCooldownFromDurationObject = noop,
+        SetCooldownFromExpirationTime = noop,
+        SetCooldownDuration = noop,
+        SetCooldownUNIX = noop,
+        Clear = noop,
+    },
+    Show = noop,
+    Hide = noop,
+}
+gcdChild.Cooldown.GetParent = function() return gcdChild end
 
 local auraChild = {
     cooldownID = 73542,
     isActive = true,
+    Applications = MakeTextOwner(),
     Cooldown = {
         SetCooldown = noop,
         SetCooldownFromDurationObject = noop,
@@ -107,6 +190,7 @@ local auraChild = {
     Hide = noop,
 }
 auraChild.Cooldown.GetParent = function() return auraChild end
+auraChild.Applications.DisplayText = MakeTextOwner()
 
 local auraFallbackChild = {
     cooldownID = 141686,
@@ -210,7 +294,7 @@ amzBuffChild.Cooldown.GetParent = function() return amzBuffChild end
 
 EssentialCooldownViewer = {
     GetChildren = function()
-        return child
+        return child, chargedChild, gcdChild
     end,
 }
 UtilityCooldownViewer = {
@@ -228,7 +312,7 @@ BuffBarCooldownViewer = { GetChildren = function() end }
 C_CooldownViewer = {
     GetCooldownViewerCategorySet = function(category)
         if category == 0 then
-            return { 27902 }
+            return { 27902, 444001, 27903 }
         end
         if category == 1 then
             return { 27911 }
@@ -252,6 +336,32 @@ C_CooldownViewer = {
                 selfAura = true,
                 hasAura = true,
                 charges = false,
+                isKnown = true,
+            }
+        end
+        if cooldownID == 27903 then
+            return {
+                cooldownID = 27903,
+                spellID = 555000,
+                overrideSpellID = 555000,
+                overrideTooltipSpellID = nil,
+                linkedSpellIDs = nil,
+                selfAura = true,
+                hasAura = false,
+                charges = false,
+                isKnown = true,
+            }
+        end
+        if cooldownID == 444001 then
+            return {
+                cooldownID = 444001,
+                spellID = 444347,
+                overrideSpellID = 444347,
+                overrideTooltipSpellID = nil,
+                linkedSpellIDs = nil,
+                selfAura = false,
+                hasAura = false,
+                charges = true,
                 isKnown = true,
             }
         end
@@ -363,13 +473,93 @@ local ns = {
 assert(loadfile("modules/cdm/cdm_sources.lua"))("QUI", ns)
 assert(loadfile("modules/cdm/cdm_blizz_mirror.lua"))("QUI", ns)
 
+auraChild.Applications:SetText("3")
+auraChild.Applications.DisplayText:SetText("5")
+child.ChargeCount:SetText("1")
+child.ChargeCount.DisplayText:SetText("")
+child.ChargeCount.Current:SetText("4")
+chargedChild.ChargeCount:SetText("1")
+chargedChild.ChargeCount.DisplayText:SetText("2")
 ns.CDMBlizzMirror.ForceRescan()
+
+local stackState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(73542, "buff"),
+    "aura mirror stack state missing")
+assert(stackState.stackText == "5", "applications DisplayText should be preferred over parent text")
+assert(stackState.stackTextSource == "Applications", "applications DisplayText should keep its mirror source")
+
+stackState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902, "essential"),
+    "non-charge mirror stack state missing")
+assert(stackState.stackText == "4", "visible non-charge cooldown count text should be mirrored")
+assert(stackState.stackTextSource == "ChargeCount", "visible cooldown count text should keep its mirror source")
+
+child.cooldownChargesShown = false
+child.ChargeCount.Current:SetText("2")
+stackState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902, "essential"),
+    "non-charge mirror stack state missing after hidden count")
+assert(stackState.stackText == nil, "hidden non-charge cooldown count text should not be mirrored")
+assert(stackState.stackTextSource == nil, "hidden non-charge cooldown count text should not keep a source")
+
+child.cooldownChargesShown = true
+child.ChargeCount.Current:SetText("4")
+
+stackState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(444001, "essential"),
+    "charge mirror stack state missing")
+assert(stackState.stackText == "2", "real charge DisplayText should be preferred over parent text")
+assert(stackState.stackTextSource == "ChargeCount", "real charge DisplayText should keep its mirror source")
+
+auraChild.Applications.DisplayText:SetText("1")
+stackState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(73542, "buff"),
+    "aura mirror stack state missing after single stack text")
+assert(stackState.stackText == nil, "single application text should not be mirrored as stack text")
+assert(stackState.stackTextSource == nil, "single application text should not set a mirror stack source")
+
+auraChild.Applications.DisplayText:SetText("4")
+stackState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(73542, "buff"),
+    "aura mirror stack state missing after multi-stack text")
+assert(stackState.stackText == "4", "multi-application text should be mirrored")
+assert(stackState.stackTextSource == "Applications", "multi-application text should keep its mirror source")
+
+auraChild.Applications.DisplayText:SetText("")
+stackState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(73542, "buff"),
+    "aura mirror stack state missing after empty stack text")
+assert(stackState.stackText == nil, "empty application text should clear mirrored stack text")
+
+auraChild.Applications:SetText("6")
+stackState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(73542, "buff"),
+    "aura mirror stack state missing after parent stack text")
+assert(stackState.stackText == "6", "parent Applications text should be mirrored when nested text is empty")
+assert(stackState.stackTextSource == "Applications", "parent Applications text should keep its mirror source")
+
+chargedChild.ChargeCount.DisplayText:SetText("1")
+stackState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(444001, "essential"),
+    "charge mirror stack state missing")
+assert(stackState.stackText == "1", "charge count text should still mirror one charge")
+assert(stackState.stackTextSource == "ChargeCount", "charge count text should keep its mirror source")
+
+chargedChild.ChargeCount.DisplayText:SetText("")
+chargedChild.ChargeCount:SetText("3")
+stackState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(444001, "essential"),
+    "charge mirror stack state missing after parent charge text")
+assert(stackState.stackText == "3", "parent ChargeCount text should be mirrored when nested text is empty")
+assert(stackState.stackTextSource == "ChargeCount", "parent ChargeCount text should keep its mirror source")
+
 child.Cooldown:SetCooldown()
 
 local state = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902), "mirror state missing")
 assert(state.isActive == true, "SetCooldown should mark the mirror active")
 assert(state.durObj == cooldownDuration, "SetCooldown should derive a safe spell cooldown DurationObject")
 assert(state.cooldownDurObj == cooldownDuration, "spell cooldown should be carried in the cooldown lane")
+assert(state.resolvedMode == "cooldown", "spell cooldown mirror state should expose cooldown mode")
+
+gcdChild.Cooldown:SetCooldown()
+
+local gcdState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27903), "GCD mirror state missing")
+assert(gcdState.isActive == true, "GCD SetCooldown should mark the mirror active")
+assert(gcdState.durObj == gcdDuration, "GCD SetCooldown should derive a GCD DurationObject")
+assert(gcdState.gcdDurObj == gcdDuration, "GCD duration should be carried in the GCD lane")
+assert(gcdState.cooldownDurObj == nil, "GCD duration should not populate the real cooldown lane")
+assert(gcdState.durObjSource == "gcd-duration", "selected GCD mirror source should identify the GCD lane")
+assert(gcdState.resolvedMode == "gcd-only", "GCD mirror state should expose gcd-only mode")
 
 child.wasSetFromAura = true
 child.wasSetFromCooldown = false
@@ -388,9 +578,103 @@ child.wasSetFromCharges = false
 child.Cooldown:SetCooldownFromDurationObject(cooldownDuration)
 
 state = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902), "mirror state missing after cooldown hook")
-assert(state.auraDurObj == nil, "cooldown hook should clear stale aura duration once Blizzard switches sources")
+assert(state.auraDurObj == auraHookDuration, "cooldown hook should preserve higher-priority aura duration")
 assert(state.cooldownDurObj == cooldownDuration, "cooldown duration should stay in the cooldown lane")
-assert(state.durObj == cooldownDuration, "cooldown duration should be selected after the aura lane clears")
+assert(state.durObj == auraHookDuration, "aura duration should stay selected ahead of cooldown")
+assert(state.durObjSource == "aura-duration", "selected duration source should still identify the aura lane")
+
+child.wasSetFromAura = false
+child.wasSetFromCooldown = false
+child.wasSetFromCharges = true
+child.Cooldown:SetCooldownFromDurationObject(chargeDuration)
+
+state = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902), "mirror state missing after charge hook")
+assert(state.auraDurObj == auraHookDuration, "charge hook should preserve higher-priority aura duration")
+assert(state.resourceDurObj == chargeDuration, "charge duration should be carried in the resource lane")
+assert(state.cooldownDurObj == cooldownDuration, "charge duration must not overwrite cooldown duration lane")
+assert(state.durObj == auraHookDuration, "aura duration should stay selected ahead of charge and cooldown")
+
+child.isActive = true
+child.cooldownIsActive = nil
+child.wasSetFromCooldown = true
+child.wasSetFromCharges = false
+child.Cooldown:Clear()
+
+state = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902), "mirror state missing after transient cooldown clear")
+assert(state.isActive == true, "transient non-aura Clear should preserve active child state")
+assert(state.cooldownDurObj == cooldownDuration, "transient non-aura Clear should preserve the cooldown duration lane")
+assert(state.resourceDurObj == chargeDuration, "transient non-aura Clear should preserve the charge duration lane")
+assert(state.durObj == auraHookDuration, "transient non-aura Clear should preserve the higher-priority aura duration")
+
+child.cooldownIsActive = false
+child.Cooldown:Clear()
+
+state = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902), "mirror state missing after inactive cooldown clear")
+assert(state.isActive == false, "explicit inactive non-aura Clear should clear active state")
+assert(state.cooldownDurObj == nil, "explicit inactive non-aura Clear should clear the cooldown duration lane")
+assert(state.durObj == nil, "explicit inactive non-aura Clear should clear the selected duration")
+
+child.isActive = true
+child.cooldownIsActive = nil
+child.wasSetFromAura = false
+child.wasSetFromCooldown = true
+child.wasSetFromCharges = false
+child.Cooldown:SetCooldownFromDurationObject(cooldownDuration)
+state = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902), "mirror state missing after cooldown reset")
+assert(state.durObj == cooldownDuration, "cooldown duration should be selected when no aura or charge lane exists")
+
+child.wasSetFromAura = false
+child.wasSetFromCooldown = false
+child.wasSetFromCharges = true
+child.Cooldown:SetCooldownFromDurationObject(chargeDuration)
+state = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902), "mirror state missing after charge priority hook")
+assert(state.resourceDurObj == chargeDuration, "charge priority test should populate the charge lane")
+assert(state.cooldownDurObj == cooldownDuration, "charge priority test should keep the cooldown lane")
+assert(state.durObj == chargeDuration, "charge/recharge duration should be selected ahead of cooldown")
+assert(state.durObjSource == "spell-charge", "selected duration source should identify the charge lane")
+
+child.cooldownIsActive = false
+child.Cooldown:Clear()
+
+child.isActive = true
+child.cooldownIsActive = nil
+child.wasSetFromAura = false
+child.wasSetFromCooldown = true
+child.wasSetFromCharges = false
+child.Cooldown:SetCooldownFromDurationObject(cooldownDuration)
+state = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902), "mirror state missing before GCD priority hook")
+assert(state.durObj == cooldownDuration, "GCD priority test should start on the cooldown lane")
+
+local originalGetSpellCooldown = C_Spell.GetSpellCooldown
+C_Spell.GetSpellCooldown = function(spellID)
+    if spellID == 1233448 then
+        return {
+            isActive = true,
+            isEnabled = true,
+            isOnGCD = true,
+            startTime = 120,
+            duration = 1.5,
+        }
+    end
+    return originalGetSpellCooldown(spellID)
+end
+
+child.wasSetFromAura = false
+child.wasSetFromCooldown = false
+child.wasSetFromCharges = false
+child.Cooldown:SetCooldownFromDurationObject(gcdDuration)
+C_Spell.GetSpellCooldown = originalGetSpellCooldown
+
+state = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902), "mirror state missing after GCD priority hook")
+assert(state.gcdDurObj == gcdDuration, "GCD duration should be carried in the GCD lane")
+assert(state.cooldownDurObj == cooldownDuration, "GCD duration must not clear the cooldown lane")
+assert(state.durObj == cooldownDuration, "cooldown duration should stay selected ahead of GCD")
+
+child.cooldownIsActive = false
+child.Cooldown:Clear()
+
+local packedStateAgain = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902), "second packed mirror state missing")
+assert(packedStateAgain == state, "mirror lookups for the same instance should reuse the packed state table")
 
 auraChild.Cooldown:SetCooldownFromDurationObject(auraSpellCooldownDuration)
 
@@ -636,9 +920,52 @@ reapingState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(70765, "buff"), "Re
 assert(reapingState.isActive == true, "spell activation overlay should refresh durationless buff child state")
 assert(iconRefreshCount > refreshBeforeOverlay, "spell activation overlay should request an icon refresh")
 
+-- Totem-backed buff entry: guardian-summoning self-buffs (e.g. Raise
+-- Abomination) carry hasAura=false on the parent cdID, so the aura-viewer
+-- branch in SelectDurationForState has no auraDurObj to select. The mirror
+-- captures the duration via PLAYER_TOTEM_UPDATE -> _ActivateTotemCooldownID
+-- and SelectDurationForState must fall through to the totem lane, then
+-- resolve mode as "aura" so the buff viewer renders a swipe instead of
+-- dead-ending at durObj=nil.
+local totemBuffDuration = { token = "totem-buff-duration-object" }
+MAX_TOTEMS = 4
+GetTotemInfo = function(slot)
+    if slot == 1 then
+        return true, "Reaping", 0, 60, "Interface\\Icons\\Reaping", 0, 1235261
+    end
+    return false
+end
+GetTotemDuration = function(slot)
+    if slot == 1 then
+        return totemBuffDuration
+    end
+    return nil
+end
+
+ns.CDMBlizzMirror.HandlePlayerTotemUpdate()
+
+local totemBuffState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(70765, "buff"),
+    "Reaping buff mirror state missing after totem update")
+assert(totemBuffState.isActive == true,
+    "PLAYER_TOTEM_UPDATE should mark the totem-backed buff cdID active")
+assert(totemBuffState.totemDurObj == totemBuffDuration,
+    "PLAYER_TOTEM_UPDATE should populate the totem lane on the buff cdID")
+assert(totemBuffState.durObj == totemBuffDuration,
+    "buff viewer should fall through to the totem lane when no auraDurObj exists")
+assert(totemBuffState.durObjSource == "totem-duration",
+    "selected duration source should identify the totem lane")
+assert(totemBuffState.resolvedMode == "aura",
+    "totem-backed buff entry should resolve mode as aura for buff viewer rendering")
+
+-- Tear down the totem so it doesn't bleed into the mirror stats counts
+-- below (stale active totems hold the buff cdID's mirror state open).
+GetTotemInfo = function() return false end
+ns.CDMBlizzMirror.HandlePlayerTotemUpdate()
+
 local mirrorStats = ns.CDMBlizzMirror.GetCacheStats and ns.CDMBlizzMirror.GetCacheStats()
 assert(mirrorStats, "mirror should expose cache stats")
 assert(mirrorStats.mirrorStates >= 1, "mirror stats should include mirrored state count")
+assert(mirrorStats.packedStates >= 1, "mirror stats should include packed state count")
 assert(mirrorStats.cooldownInfo >= 1, "mirror stats should include cooldown info count")
 assert(mirrorStats.spellMapEntries >= 1, "mirror stats should include spell map entry count")
 

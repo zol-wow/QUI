@@ -72,8 +72,8 @@ function CDMSources.QuerySpellDisplayCount(spellID)
 end
 
 function CDMSources.QuerySpellCount(spellID)
-    if not spellID or not (C_Spell and C_Spell.GetSpellCount) then return nil end
-    local ok, result = pcall(C_Spell.GetSpellCount, spellID)
+    if not spellID or not (C_Spell and C_Spell.GetSpellCastCount) then return nil end
+    local ok, result = pcall(C_Spell.GetSpellCastCount, spellID)
     if ok then return result end
     return nil
 end
@@ -118,6 +118,12 @@ function CDMSources.QuerySpellHasRange(spellID)
     local ok, result = pcall(C_Spell.SpellHasRange, spellID)
     if ok then return result end
     return nil
+end
+
+function CDMSources.EnableSpellRangeCheck(spellID, enable)
+    if not spellID or not (C_Spell and C_Spell.EnableSpellRangeCheck) then return false end
+    local ok = pcall(C_Spell.EnableSpellRangeCheck, spellID, enable == true)
+    return ok == true
 end
 
 function CDMSources.QuerySpellHarmful(spellNameOrID)

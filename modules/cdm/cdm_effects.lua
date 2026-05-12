@@ -173,6 +173,7 @@ local function ForEachIconSpellID(icon, callback)
     wipe(rawSeen)
     wipe(candidateSeen)
 end
+
 -- Safe wrapper: spell usability can return secret values in Midnight.
 local function SafeIsSpellUsable(spellID)
     if not spellID or not (Sources and Sources.QuerySpellUsable) then return true, false end
@@ -182,7 +183,7 @@ local function SafeIsSpellUsable(spellID)
     return usable and true or false, noMana and true or false
 end
 
--- Check if an icon's spell is fully castable: off cooldown, no active aura, has resources.
+-- Explicit per-spell override: glow when this ability becomes castable.
 local function IsSpellCastable(icon)
     if not icon or not icon._spellEntry then return false end
     if icon._auraActive then return false end
@@ -239,6 +240,7 @@ end
 local ClearPandemicState
 local SyncGlowForIcon
 local UpdatePandemicGlow
+local HasProcOnUsableOverride
 
 -- Track which icons currently have active glows
 local activeGlowIcons = {}  -- [icon] = true
@@ -246,10 +248,13 @@ local activeGlowIcons = {}  -- [icon] = true
 -- Reverse lookup: spellID -> list of icons that track it.
 -- Allows O(1) dispatch on SHOW/HIDE events instead of scanning all icons.
 local spellIdToGlowIcons = {}  -- [spellID] = {icon, ...}
+local procOnUsableGlowIcons = {}
+local procOnUsableGlowMapReady = false
 do local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "CDM_overlayedSpells", tbl = overlayedSpells }
-    mp[#mp + 1] = { name = "CDM_glowSpellMap",    tbl = spellIdToGlowIcons }
-    mp[#mp + 1] = { name = "CDM_activeGlows",     tbl = activeGlowIcons }
+    mp[#mp + 1] = { name = "CDM_overlayedSpells",       tbl = overlayedSpells }
+    mp[#mp + 1] = { name = "CDM_glowSpellMap",          tbl = spellIdToGlowIcons }
+    mp[#mp + 1] = { name = "CDM_procOnUsableGlowIcons", tbl = procOnUsableGlowIcons }
+    mp[#mp + 1] = { name = "CDM_activeGlows",           tbl = activeGlowIcons }
 end
 
 local function AddGlowMapID(spellID, icon)
@@ -262,36 +267,39 @@ local function AddGlowMapID(spellID, icon)
     list[#list + 1] = icon
 end
 
+local function AddIconToGlowMaps(icon)
+    if not icon or not icon._spellEntry then return end
+    local spellID = icon._spellEntry.spellID
+    local overrideID = icon._spellEntry.overrideSpellID
+    AddGlowMapID(spellID, icon)
+    if overrideID and overrideID ~= spellID then
+        AddGlowMapID(overrideID, icon)
+    end
+    if HasProcOnUsableOverride and HasProcOnUsableOverride(icon) then
+        procOnUsableGlowIcons[#procOnUsableGlowIcons + 1] = icon
+    end
+end
+
 local function RebuildGlowSpellMap()
     wipe(spellIdToGlowIcons)
+    wipe(procOnUsableGlowIcons)
+    procOnUsableGlowMapReady = false
     local CDMIcons = ns.CDMIcons
     if not CDMIcons then return end
     if CDMIcons.ForEachIcon then
         CDMIcons:ForEachIcon(function(icon)
-            if icon._spellEntry then
-                local spellID = icon._spellEntry.spellID
-                local overrideID = icon._spellEntry.overrideSpellID
-                AddGlowMapID(spellID, icon)
-                if overrideID and overrideID ~= spellID then
-                    AddGlowMapID(overrideID, icon)
-                end
-            end
+            AddIconToGlowMaps(icon)
         end)
+        procOnUsableGlowMapReady = true
         return
     end
     for _, viewerType in ipairs({"essential", "utility"}) do
         local pool = CDMIcons:GetIconPool(viewerType)
         for _, icon in ipairs(pool) do
-            if icon._spellEntry then
-                local spellID = icon._spellEntry.spellID
-                local overrideID = icon._spellEntry.overrideSpellID
-                AddGlowMapID(spellID, icon)
-                if overrideID and overrideID ~= spellID then
-                    AddGlowMapID(overrideID, icon)
-                end
-            end
+            AddIconToGlowMaps(icon)
         end
     end
+    procOnUsableGlowMapReady = true
 end
 
 -- SETTINGS ACCESS
@@ -711,6 +719,46 @@ SyncGlowForIcon = function(icon)
     UpdatePandemicGlow(icon)
 end
 
+HasProcOnUsableOverride = function(icon)
+    local entry = icon and icon._spellEntry
+    if not entry then return false end
+    if entry.kind == "aura" or entry.kind == "auraBar" then return false end
+    local CDMSpellData = ns.CDMSpellData
+    if CDMSpellData and CDMSpellData.IsAuraEntry and CDMSpellData.IsAuraEntry(entry) then
+        return false
+    end
+    local spellOvr = GetSpellGlowOverride(icon)
+    return spellOvr and spellOvr.glowEnabled ~= false and spellOvr.procOnUsable == true
+end
+
+local function ScanProcOnUsableGlows()
+    local CDMIcons = ns.CDMIcons
+    if not CDMIcons then return end
+
+    if not procOnUsableGlowMapReady then
+        RebuildGlowSpellMap()
+    end
+
+    if procOnUsableGlowMapReady then
+        for i = 1, #procOnUsableGlowIcons do
+            local icon = procOnUsableGlowIcons[i]
+            if icon and icon:IsShown() and icon._spellEntry and HasProcOnUsableOverride(icon) then
+                SyncGlowForIcon(icon)
+            end
+        end
+        return
+    end
+
+    for _, viewerType in ipairs({"essential", "utility"}) do
+        local pool = CDMIcons:GetIconPool(viewerType)
+        for _, icon in ipairs(pool) do
+            if icon and icon:IsShown() and icon._spellEntry and HasProcOnUsableOverride(icon) then
+                SyncGlowForIcon(icon)
+            end
+        end
+    end
+end
+
 ---------------------------------------------------------------------------
 -- SCAN ALL ICONS AND SYNC GLOW STATE
 ---------------------------------------------------------------------------
@@ -820,70 +868,45 @@ end
 
 ---------------------------------------------------------------------------
 -- EVENT HANDLING
--- SPELL_ACTIVATION_OVERLAY_GLOW events drive proc glow updates.
+-- Spell activation overlay events drive proc glow updates.
 -- Track overlay state in overlayedSpells table for API-free fallback.
 ---------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_SHOW")
 eventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_GLOW_HIDE")
+eventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_SHOW")
+eventFrame:RegisterEvent("SPELL_ACTIVATION_OVERLAY_HIDE")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 eventFrame:RegisterEvent("SPELL_UPDATE_USABLE")
-eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
-
--- Coalesced usability glow scan: a short delay lets CDM's update finish first
--- so icon._hasCooldownActive is current when we check IsSpellCastable.
-local usabilityGlowFrame = CreateFrame("Frame")
-local _usabilityGlowPending = false
-local _usabilityGlowElapsed = 0
-local USABILITY_GLOW_DELAY = 0.1
-
-local function UsabilityGlowOnUpdate(self, elapsed)
-    if not IsCDMRuntimeEnabled() then
-        self:SetScript("OnUpdate", nil)
-        _usabilityGlowPending = false
-        return
-    end
-
-    _usabilityGlowElapsed = _usabilityGlowElapsed + elapsed
-    if _usabilityGlowElapsed < USABILITY_GLOW_DELAY then return end
-    self:SetScript("OnUpdate", nil)
-    _usabilityGlowPending = false
-    ScanAllGlows()
-end
-
-local function ScheduleUsabilityGlowScan()
-    if not IsCDMRuntimeEnabled() then return end
-    if _usabilityGlowPending then return end
-    _usabilityGlowPending = true
-    _usabilityGlowElapsed = 0
-    usabilityGlowFrame:SetScript("OnUpdate", UsabilityGlowOnUpdate)
-end
+eventFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
 
 eventFrame:SetScript("OnEvent", function(_, event, spellID)
     if not IsCDMRuntimeEnabled() then
         StopAllTrackedGlows()
-        usabilityGlowFrame:SetScript("OnUpdate", nil)
-        _usabilityGlowPending = false
         return
     end
 
-    if event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_USABLE" then
-        ScheduleUsabilityGlowScan()
+    if event == "SPELL_UPDATE_USABLE" or event == "SPELL_UPDATE_COOLDOWN" then
+        ScanProcOnUsableGlows()
         return
     end
-    if event == "PLAYER_TARGET_CHANGED" then
-        ScheduleUsabilityGlowScan()
-        return
-    end
-    if event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW" and spellID then
+    if (event == "SPELL_ACTIVATION_OVERLAY_GLOW_SHOW"
+        or event == "SPELL_ACTIVATION_OVERLAY_SHOW") and spellID then
         MarkOverlaySource(spellID)
         ScanGlowsForSpell(spellID)
         return
-    elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE" and spellID then
-        ClearOverlaySource(spellID)
-        ScanGlowsForSpell(spellID)
+    elseif event == "SPELL_ACTIVATION_OVERLAY_GLOW_HIDE"
+        or event == "SPELL_ACTIVATION_OVERLAY_HIDE" then
+        if spellID then
+            ClearOverlaySource(spellID)
+            ScanGlowsForSpell(spellID)
+        else
+            wipe(overlayedSpells)
+            wipe(overlayedSpellCounts)
+            wipe(overlayedSourceMap)
+            ScanAllGlows()
+        end
         return
     elseif event == "PLAYER_ENTERING_WORLD" then
         wipe(overlayedSpells)
@@ -896,23 +919,9 @@ end)
 ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
 ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_Glows", frame = eventFrame }
 
--- Low-frequency fallback scan to catch edge cases (e.g. icon replaced
--- with an already-active proc, no SHOW event fires for it)
-local glowFallbackTicker = C_Timer.NewTicker(5, function()
-    if IsCDMRuntimeEnabled() then
-        ScanAllGlows()
-    end
-end)
-
 local function DisableRuntime()
     eventFrame:UnregisterAllEvents()
     eventFrame:SetScript("OnEvent", nil)
-    usabilityGlowFrame:SetScript("OnUpdate", nil)
-    _usabilityGlowPending = false
-    if glowFallbackTicker and glowFallbackTicker.Cancel then
-        glowFallbackTicker:Cancel()
-        glowFallbackTicker = nil
-    end
     StopAllTrackedGlows()
 end
 

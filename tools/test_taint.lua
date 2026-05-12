@@ -234,7 +234,7 @@ local fIdx = io.open(apiIndexPath, "rb")
 if fIdx then
     local src = fIdx:read("*a")
     fIdx:close()
-    local chunk, err = (loadstring or load)(src, "api-index")
+    local chunk, err = (rawget(_G, "loadstring") or load)(src, "api-index")
     if not chunk then
         io.stderr:write("WARNING: failed to parse api-index: " .. tostring(err) .. "\n")
     else

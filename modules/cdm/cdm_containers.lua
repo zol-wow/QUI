@@ -431,6 +431,27 @@ local function InitSpecTracking()
     specTrackingPendingRefresh = false
     _previousSpecID = GetCurrentSpecID()
 
+    -- On a combat /reload, GetCurrentSpecID() returns nil during the
+    -- ADDON_LOADED safe window because Blizzard hasn't re-stamped the
+    -- spec APIs yet. Spec can't change in combat, so the spec ID
+    -- persisted from the previous session is still valid. Falling back
+    -- to it lets the synchronous safe-window RefreshAll fire
+    -- immediately; without this, the spec only resolves at the 1s
+    -- retry, which runs outside the safe window and gets stuck behind
+    -- combat lockdown until PLAYER_REGEN_ENABLED — making CDM invisible
+    -- for the entire combat /reload. Cross-session character swap
+    -- protection (the original reason for the spec gate) is preserved:
+    -- _lastSpecID lives per-profile, so a swap picks up the new
+    -- character's own cached value, and RunCrossSessionDetection still
+    -- reconciles if the spec changed while logged out.
+    if (not _previousSpecID) or _previousSpecID == 0 then
+        local db = GetDB()
+        local cached = db and db._lastSpecID
+        if cached and cached ~= 0 then
+            _previousSpecID = cached
+        end
+    end
+
     if _previousSpecID and _previousSpecID ~= 0 then
         local readyNow = RunCrossSessionDetection(_previousSpecID)
         specTrackingReady = readyNow
@@ -1742,7 +1763,7 @@ local function LayoutContainer(trackerKey)
                 local isOnCD = icon._hasCooldownActive or false
                 local inCombatNow = UnitAffectingCombat and UnitAffectingCombat("player") or false
                 local filterHides = ComputeFilterHides(icon, entry, settings, inCombatNow, isOnCD)
-                if ns.CDMIcons and ns.CDMIcons.DebugLayoutFilter then
+                if _G.QUI_CDM_ICON_DEBUG and ns.CDMIcons and ns.CDMIcons.DebugLayoutFilter then
                     ns.CDMIcons.DebugLayoutFilter(icon, filterHides, settings, isOnCD)
                 end
                 icon._lastLayoutFilterHidden = filterHides and true or false
@@ -1914,10 +1935,6 @@ local function RunPostLayoutRefresh()
     end
     if _G.QUI_RefreshCustomGlows then
         _G.QUI_RefreshCustomGlows()
-    end
-    -- Sync range poll OnUpdate based on current settings.
-    if ns.CDMIcons and ns.CDMIcons.SyncRangePoll then
-        ns.CDMIcons:SyncRangePoll()
     end
     -- Reapply icon visibility after layout so "active only" display mode
     -- hides inactive icons that LayoutContainer() showed.

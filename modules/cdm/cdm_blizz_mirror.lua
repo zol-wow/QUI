@@ -44,12 +44,14 @@ local _instanceKeyByCatID  = {
 }
 local _defaultInstanceKeyByID = {} -- [cooldownID] = first-seen instance key
 local _mirrorState         = {}    -- [instanceKey] = { durObj, isActive, mirrorEpoch, lastTouch }
+local _packedStateByInstanceKey = {} -- [instanceKey] = read-only public state table
 local _categoryByFrame     = {}    -- [child frame] = catNum (lazy-init category fallback)
 local _childByCooldownFrame = setmetatable({}, { __mode = "k" }) -- [child.Cooldown] = child frame
 local _forceShowingChild    = setmetatable({}, { __mode = "k" }) -- [child] = true for mirror-internal Show()
 local _textOwnerHooked      = setmetatable({}, { __mode = "k" }) -- [Applications/ChargeCount owner] = true
 local _mirrorTextRefreshPending = false
 local SetHostPandemicState
+local GCD_MAX_DURATION = 1.75
 -- CooldownViewerCooldown info captured from C_CooldownViewer.GetCooldownViewerCooldownInfo:
 --   cooldownID, spellID, overrideSpellID, overrideTooltipSpellID,
 --   linkedSpellIDs (numberArray), selfAura (bool), hasAura (bool),
@@ -100,13 +102,18 @@ local EnsureState
 local BindChildHooks
 local HandlePlayerTotemUpdate
 local SafeFrameBooleanField
+local SafeFrameShownField
+local RawFrameField
 local RequestMirrorTextRefresh
 local ClearMirrorStackState
 local AuraInstanceMatchesExpectedOwner
+local CleanScalar
+local CleanBool
 
 do
     local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "CDM_blizzMirror_state",         tbl = _mirrorState }
+    mp[#mp + 1] = { name = "CDM_blizzMirror_packedState",   tbl = _packedStateByInstanceKey }
     mp[#mp + 1] = { name = "CDM_blizzMirror_essentialMap",  tbl = _cdIDByCatSpell.essential }
     mp[#mp + 1] = { name = "CDM_blizzMirror_utilityMap",    tbl = _cdIDByCatSpell.utility }
     mp[#mp + 1] = { name = "CDM_blizzMirror_buffMap",       tbl = _cdIDByCatSpell.buff }
@@ -143,6 +150,16 @@ local CATEGORY_NUM_BY_NAME = {
     buff       = 2,
     trackedBar = 3,
 }
+
+local COOLDOWN_RELATED_CATEGORIES = { "essential", "utility" }
+local AURA_RELATED_CATEGORIES = { "buff", "trackedBar" }
+local SELF_AURA_UNITS = { "player", "pet" }
+local TARGET_AURA_UNITS = { "target" }
+local ALL_AURA_UNITS = { "player", "pet", "target" }
+local EMPTY_LIST = {}
+
+local _auraDurationCandidatesByInfo = setmetatable({}, { __mode = "k" })
+local _spellDurationCandidatesByInfo = setmetatable({}, { __mode = "k" })
 
 local AURA_CHILD_DURATION_SOURCE = "aura-child"
 
@@ -238,6 +255,32 @@ local function ResolveChildCatalogCategories(cdID, viewerCatName)
     return categories
 end
 
+local function DurationModeForSource(source, viewerCategory)
+    if source == "aura-duration"
+        or source == "aura-child"
+        or source == "aura-child-frame"
+        or source == "aura-related-child" then
+        return "aura"
+    end
+    -- Totem lane surfaced through an aura viewer (buff / trackedBar) is the
+    -- duration of the buff itself — guardian-summoning self-buffs land here
+    -- (e.g. Raise Abomination), where hasAura=false on the parent cdID and
+    -- the only duration source is the totem timer slot.
+    if source == "totem-duration" and IsAuraViewerCategoryName(viewerCategory) then
+        return "aura"
+    end
+    if source == "spell-charge" or source == "resource-duration" then
+        return "charge"
+    end
+    if source == "gcd-duration" then
+        return "gcd-only"
+    end
+    if source then
+        return "cooldown"
+    end
+    return nil
+end
+
 local function SelectDurationForState(cdID, s)
     if not s then return nil, nil, nil end
 
@@ -245,6 +288,14 @@ local function SelectDurationForState(cdID, s)
     if IsAuraViewerCategoryName(cat) then
         if s.auraDurObj then
             return s.auraDurObj, s.auraDurObjSource or "aura-duration", nil
+        end
+        -- Guardian-summoning self-buffs (Raise Abomination, Army of the
+        -- Dead, etc.) carry hasAura=false on the parent cdID; their only
+        -- duration source is the totem timer slot captured via
+        -- PLAYER_TOTEM_UPDATE. Surface that lane so the buff viewer can
+        -- render a swipe instead of dead-ending at durObj=nil.
+        if s.totemDurObj then
+            return s.totemDurObj, s.totemDurObjSource or "totem-duration", nil
         end
         return nil, nil, s.auraDurationStateUnknown
     end
@@ -255,11 +306,11 @@ local function SelectDurationForState(cdID, s)
     if s.totemDurObj then
         return s.totemDurObj, s.totemDurObjSource or "totem-duration", nil
     end
-    if s.cooldownDurObj then
-        return s.cooldownDurObj, s.cooldownDurObjSource or "cooldown-frame", nil
-    end
     if s.resourceDurObj then
         return s.resourceDurObj, s.resourceDurObjSource or "resource-duration", nil
+    end
+    if s.cooldownDurObj then
+        return s.cooldownDurObj, s.cooldownDurObjSource or "cooldown-frame", nil
     end
     if s.gcdDurObj then
         return s.gcdDurObj, s.gcdDurObjSource or "gcd-duration", nil
@@ -276,6 +327,8 @@ local function RefreshSelectedDurationState(cdID, s)
     local durObj, source, unknown = SelectDurationForState(cdID, s)
     s.durObj = durObj
     s.durObjSource = source
+    local cat = s and (s.viewerCategory or GetInstanceCategoryName(cdID))
+    s.resolvedMode = DurationModeForSource(source, cat)
     s.durationStateUnknown = unknown or nil
     return durObj, source, unknown
 end
@@ -307,6 +360,12 @@ local function ClearAllDurationLanes(cdID, s)
     RefreshSelectedDurationState(cdID, s)
 end
 
+-- Lane writes are ASYMMETRIC by design: cooldown writes wipe the gcd lane,
+-- but gcd writes do NOT wipe the cooldown lane. Rationale: a real cooldown
+-- supersedes a transient GCD write (which is a side-effect of the GCD pulse
+-- on a spell that already had a real CD scheduled), but a GCD pulse must not
+-- erase the real CD that was scheduled earlier. SelectDurationForState picks
+-- cooldown ahead of gcd so co-existing lanes resolve correctly.
 local function SetDurationLane(cdID, s, lane, durObj, source)
     if not s then return end
     if lane == "aura" then
@@ -314,6 +373,9 @@ local function SetDurationLane(cdID, s, lane, durObj, source)
         s.auraDurObjSource = source or "aura-duration"
         s.auraDurationStateUnknown = nil
     elseif lane == "cooldown" then
+        s.gcdDurObj = nil
+        s.gcdDurObjSource = nil
+        s.gcdDurationStateUnknown = nil
         s.cooldownDurObj = durObj
         s.cooldownDurObjSource = source or "cooldown-frame"
         s.cooldownDurationStateUnknown = nil
@@ -386,18 +448,14 @@ end
 -- exposes a normal aura path. Removed-aura events verify stamped instances
 -- immediately; PackState stays read-only and does not poll.
 --
--- auraInstanceID is secret in combat (re-randomized on encounter/M+/PvP
--- start). It is only ever stored as a Lua table value and forwarded to
--- the C-side GetAuraDuration sink — never used as a Lua key, never
--- compared with == against another instID.
+-- auraInstanceID is NeverSecret. It is stable inside an active encounter/
+-- combat context, but re-randomized on encounter/M+/PvP start.
 ---------------------------------------------------------------------------
 -- Stamp the auraInstanceID for a known cdID. Caller has already resolved
 -- which cdID this aura belongs to (from the non-secret catalog spellID it
 -- queried for) so we never need to reach into ad's potentially-secret
--- fields for identity. We only read ad.auraInstanceID — stored as a Lua
--- value, never used as a key, never compared with == — and forwarded to
--- C-side sinks (C_UnitAuras.GetAuraDuration / GetAuraDataByAuraInstanceID)
--- where secrets are accepted natively.
+-- fields for identity. We read ad.auraInstanceID and forward it to C-side
+-- sinks (C_UnitAuras.GetAuraDuration / GetAuraDataByAuraInstanceID).
 local function StampAuraInstanceForCooldown(unit, cdID, ad, viewerCategory)
     if not (ad and cdID) then return end
     local s = EnsureState(cdID, nil, viewerCategory)
@@ -429,27 +487,37 @@ local function StampAuraInstanceForCooldown(unit, cdID, ad, viewerCategory)
     end
     s.mirrorEpoch = (s.mirrorEpoch or 0) + 1
     s.lastTouch = GetTime()
-    if CDMBlizzMirror.TaintLog then
+    if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
         CDMBlizzMirror.TaintLog("Stamp", "unit", unit, "cdID", cdID)
     end
 end
 
 local function ClearMirrorAuraState(cdID, s, reason)
     if not s then return end
-    if not (s.isActive == true or s.durObj or s.auraDurObj or s.auraInstanceID
+    -- Guard only on aura-side state. A live cooldown / gcd / totem / resource
+    -- lane is not aura state and must not trigger this clear path. Callers
+    -- (aura-owner-mismatch, unit-aura-removed, freshness, target-changed)
+    -- only care about aura invalidation.
+    if not (s.auraDurObj or s.auraInstanceID
         or s.pandemicActive or s.pandemicStateKnown
         or s.stackText or s.stackTextSource or s.stackTextShown == true) then
         return
     end
 
-    s.isActive = false
-    ClearAllDurationLanes(cdID, s)
+    ClearAuraDurationLane(cdID, s)
     s.auraInstanceID = nil
     s.auraInstanceIDSource = nil
     s.auraUnit = nil
     s.pandemicActive = false
     s.pandemicStateKnown = nil
     local clearedStack = ClearMirrorStackState(s)
+    -- Only flip the overall isActive flag if no other lane is still
+    -- holding state. Preserves real cooldowns that outlive their aura
+    -- (e.g., target debuff faded mid-CD; spell is still on cooldown so
+    -- the swipe must keep rendering).
+    if not (s.cooldownDurObj or s.gcdDurObj or s.totemDurObj or s.resourceDurObj) then
+        s.isActive = false
+    end
     s.mirrorEpoch = (s.mirrorEpoch or 0) + 1
     s.lastTouch = GetTime()
     if SetHostPandemicState then
@@ -458,7 +526,7 @@ local function ClearMirrorAuraState(cdID, s, reason)
     if clearedStack then
         RequestMirrorTextRefresh()
     end
-    if CDMBlizzMirror.TaintLog then
+    if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
         CDMBlizzMirror.TaintLog("ClearAuraState",
             "cdID", cdID, "reason", reason or "unknown")
     end
@@ -600,14 +668,10 @@ local function VerifyStateFreshness(cdID, s, clearOnMissing)
     --     promote-on-verify path is the only way isActive can become
     --     true for them. The hook still owns s.durObj for duration-
     --     bearing auras; we only fill it in here when the hook hasn't.
-    -- All `== nil` / `~= nil` checks below were rewritten to truthy
-    -- (`not v` / `v`) form because the values being checked
-    -- (auraInstanceID, durObj) can be secret in combat, and `==` against
-    -- a secret errors. Truthy checks are C-level type-tag tests and are
-    -- safe for secrets. Without this fix the resolver silently dies inside
-    -- the icon visibility loop's pcall — UpdateIconCooldown becomes a
-    -- no-op and `icon._auraActive` never flips true → icons stay hidden
-    -- in combat even when the aura is on the unit.
+    -- Use truthy checks for duration objects here; auraInstanceID is
+    -- NeverSecret, but DurationObjects may still be restricted in combat.
+    -- Without this defensive shape the resolver can die inside the icon
+    -- visibility loop's pcall, leaving `icon._auraActive` stale.
     if not s then return end
     if not s.auraInstanceID then return end
     if not (Sources and Sources.QueryAuraDuration) then return end
@@ -618,7 +682,7 @@ local function VerifyStateFreshness(cdID, s, clearOnMissing)
         return
     end
     local durObj = Sources.QueryAuraDuration(auraUnit, s.auraInstanceID)
-    if CDMBlizzMirror.TaintLog then
+    if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
         CDMBlizzMirror.TaintLog("Verify",
             "auraUnit", s.auraUnit,
             "instID", s.auraInstanceID,
@@ -711,52 +775,63 @@ local function PackState(cooldownID, viewerCategory)
     -- through and let consumers default safely with `m.selfAura == false`
     -- / `== true` checks (nil compares equal to neither, so consumers
     -- that branch on the explicit value default to the safer side).
-    return {
-        durObj                 = s.durObj,
-        durObjSource           = s.durObjSource,
-        durationStateUnknown   = s.durationStateUnknown,
-        auraDurObj             = s.auraDurObj,
-        auraDurObjSource       = s.auraDurObjSource,
-        auraDurationStateUnknown = s.auraDurationStateUnknown,
-        cooldownDurObj         = s.cooldownDurObj,
-        cooldownDurObjSource   = s.cooldownDurObjSource,
-        cooldownDurationStateUnknown = s.cooldownDurationStateUnknown,
-        resourceDurObj         = s.resourceDurObj,
-        resourceDurObjSource   = s.resourceDurObjSource,
-        resourceDurationStateUnknown = s.resourceDurationStateUnknown,
-        gcdDurObj              = s.gcdDurObj,
-        gcdDurObjSource        = s.gcdDurObjSource,
-        gcdDurationStateUnknown = s.gcdDurationStateUnknown,
-        totemDurObj            = s.totemDurObj,
-        totemDurObjSource      = s.totemDurObjSource,
-        isActive               = s.isActive,
-        mirrorEpoch            = s.mirrorEpoch,
-        hasAuraInstanceID      = s.auraInstanceID and true or false,
-        auraUnit               = s.auraUnit,
-        viewerCategory         = catName,
-        spellID                = info and info.spellID or nil,
-        overrideSpellID        = info and info.overrideSpellID or nil,
-        hasAura                = info and info.hasAura,
-        selfAura               = info and info.selfAura,
-        linkedSpellIDs         = info and info.linkedSpellIDs or nil,
-        overrideTooltipSpellID = info and info.overrideTooltipSpellID or nil,
-        pandemicActive         = s.pandemicActive,
-        pandemicStateKnown     = s.pandemicStateKnown,
-        stackText              = s.stackText,
-        stackTextSource        = s.stackTextSource,
-        stackTextShown         = s.stackTextShown,
-        stackTextEpoch         = s.stackTextEpoch,
-        totemSlot              = s.totemSlot,
-        totemName              = s.totemName,
-        totemIcon              = s.totemIcon,
-        totemSpellID           = s.totemSpellID,
-        cooldownID             = cooldownID,
-        childIsActive          = SafeFrameBooleanField(child, "isActive"),
-        cooldownIsActive       = SafeFrameBooleanField(child, "cooldownIsActive"),
-        wasSetFromAura         = SafeFrameBooleanField(child, "wasSetFromAura"),
-        wasSetFromCooldown     = SafeFrameBooleanField(child, "wasSetFromCooldown"),
-        wasSetFromCharges      = SafeFrameBooleanField(child, "wasSetFromCharges"),
-    }
+    local packed = _packedStateByInstanceKey[key]
+    if not packed then
+        packed = {}
+        _packedStateByInstanceKey[key] = packed
+    end
+
+    packed.durObj                 = s.durObj
+    packed.durObjSource           = s.durObjSource
+    packed.resolvedMode           = s.resolvedMode
+    packed.durationStateUnknown   = s.durationStateUnknown
+    packed.auraDurObj             = s.auraDurObj
+    packed.auraDurObjSource       = s.auraDurObjSource
+    packed.auraDurationStateUnknown = s.auraDurationStateUnknown
+    packed.cooldownDurObj         = s.cooldownDurObj
+    packed.cooldownDurObjSource   = s.cooldownDurObjSource
+    packed.cooldownDurationStateUnknown = s.cooldownDurationStateUnknown
+    packed.resourceDurObj         = s.resourceDurObj
+    packed.resourceDurObjSource   = s.resourceDurObjSource
+    packed.resourceDurationStateUnknown = s.resourceDurationStateUnknown
+    packed.gcdDurObj              = s.gcdDurObj
+    packed.gcdDurObjSource        = s.gcdDurObjSource
+    packed.gcdDurationStateUnknown = s.gcdDurationStateUnknown
+    packed.totemDurObj            = s.totemDurObj
+    packed.totemDurObjSource      = s.totemDurObjSource
+    packed.isActive               = s.isActive
+    packed.mirrorEpoch            = s.mirrorEpoch
+    packed.auraInstanceID         = s.auraInstanceID
+    packed.hasAuraInstanceID      = s.auraInstanceID and true or false
+    packed.auraUnit               = s.auraUnit
+    packed.viewerCategory         = catName
+    packed.spellID                = info and info.spellID or nil
+    packed.overrideSpellID        = info and info.overrideSpellID or nil
+    packed.hasAura                = info and info.hasAura
+    packed.selfAura               = info and info.selfAura
+    packed.linkedSpellIDs         = info and info.linkedSpellIDs or nil
+    packed.overrideTooltipSpellID = info and info.overrideTooltipSpellID or nil
+    packed.pandemicActive         = s.pandemicActive
+    packed.pandemicStateKnown     = s.pandemicStateKnown
+    packed.stackText              = s.stackText
+    packed.stackTextSource        = s.stackTextSource
+    packed.stackTextShown         = s.stackTextShown
+    packed.stackTextEpoch         = s.stackTextEpoch
+    packed.cooldownChargesCount   = RawFrameField(child, "cooldownChargesCount")
+    packed.cooldownChargesShown   = SafeFrameBooleanField(child, "cooldownChargesShown")
+    packed.chargeCountFrameShown  = SafeFrameShownField(child and child.ChargeCount)
+    packed.totemSlot              = s.totemSlot
+    packed.totemName              = s.totemName
+    packed.totemIcon              = s.totemIcon
+    packed.totemSpellID           = s.totemSpellID
+    packed.cooldownID             = cooldownID
+    packed.childIsActive          = SafeFrameBooleanField(child, "isActive")
+    packed.cooldownIsActive       = SafeFrameBooleanField(child, "cooldownIsActive")
+    packed.wasSetFromAura         = SafeFrameBooleanField(child, "wasSetFromAura")
+    packed.wasSetFromCooldown     = SafeFrameBooleanField(child, "wasSetFromCooldown")
+    packed.wasSetFromCharges      = SafeFrameBooleanField(child, "wasSetFromCharges")
+
+    return packed
 end
 
 local function CountMapEntries(tbl)
@@ -782,9 +857,12 @@ end
 function CDMBlizzMirror.GetCacheStats()
     return {
         mirrorStates = CountMapEntries(_mirrorState),
+        packedStates = CountMapEntries(_packedStateByInstanceKey),
         childFrames = CountMapEntries(_childByInstanceKey),
         cooldownInfo = CountMapEntries(_cooldownInfoByKey),
         defaultCooldownInfo = CountMapEntries(_cooldownInfoByID),
+        auraCandidateCaches = CountMapEntries(_auraDurationCandidatesByInfo),
+        spellCandidateCaches = CountMapEntries(_spellDurationCandidatesByInfo),
         spellMapEntries = CountNestedMapEntries(_cdIDByCatSpell),
         directSpellMapEntries = CountNestedMapEntries(_directCDIDByCatSpell),
         spellNameEntries = CountMapEntries(_spellNameToCDID),
@@ -1247,6 +1325,11 @@ local function SafeFrameField(frame, key)
     return value
 end
 
+RawFrameField = function(frame, key)
+    if not frame then return nil end
+    return frame[key]
+end
+
 local function DecodePotentialSecretBoolean(value)
     if issecretvalue and issecretvalue(value) then
         if C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean then
@@ -1268,6 +1351,11 @@ SafeFrameBooleanField = function(frame, key)
     if not frame then return nil end
     local value = frame[key]
     return DecodePotentialSecretBoolean(value)
+end
+
+SafeFrameShownField = function(frame)
+    if not (frame and frame.IsShown) then return nil end
+    return DecodePotentialSecretBoolean(frame:IsShown())
 end
 
 local function IsAuraViewerCategory(cdID, stateOrCategory)
@@ -1316,15 +1404,105 @@ local function AddLinkedCooldownAuraMappedCandidates(candidates, seen, linkedSpe
 end
 
 local function BuildAuraDurationSpellCandidates(info)
+    if not info then return EMPTY_LIST end
+    local queryCooldownAura = Sources and Sources.QueryCooldownAuraBySpellID
+    local cached = _auraDurationCandidatesByInfo[info]
+    if cached and cached.queryCooldownAura == queryCooldownAura then
+        return cached.candidates
+    end
+
     local candidates, seen = {}, {}
-    if not info then return candidates end
 
     AddCooldownAuraMappedCandidate(candidates, seen, info.overrideTooltipSpellID)
     AddLinkedCooldownAuraMappedCandidates(candidates, seen, info.linkedSpellIDs)
     AddCooldownAuraMappedCandidate(candidates, seen, info.overrideSpellID)
     AddCooldownAuraMappedCandidate(candidates, seen, info.spellID)
 
+    _auraDurationCandidatesByInfo[info] = {
+        queryCooldownAura = queryCooldownAura,
+        candidates = candidates,
+    }
     return candidates
+end
+
+local function BuildSpellDurationCandidates(info)
+    if not info then return EMPTY_LIST end
+    local cached = _spellDurationCandidatesByInfo[info]
+    if cached then return cached end
+
+    local candidates, seen = {}, {}
+    AddDurationSpellCandidate(candidates, seen, info.overrideTooltipSpellID)
+    AddDurationSpellCandidate(candidates, seen, info.overrideSpellID)
+    AddDurationSpellCandidate(candidates, seen, info.spellID)
+    AddLinkedDurationSpellCandidates(candidates, seen, info.linkedSpellIDs)
+
+    _spellDurationCandidatesByInfo[info] = candidates
+    return candidates
+end
+
+local function CooldownInfoRealState(info, spellID)
+    if not info then return nil end
+
+    local active = CleanBool(info.isActive)
+    if active == false then
+        return false
+    end
+
+    local enabled = CleanBool(info.isEnabled)
+    if enabled == false then
+        return false
+    end
+
+    local duration = CleanScalar(info.duration)
+    local start = CleanScalar(info.startTime)
+    if not start then
+        start = CleanScalar(info.start)
+    end
+    if type(duration) == "number" then
+        if duration <= GCD_MAX_DURATION then
+            return false
+        end
+        if type(start) == "number" and start <= 0 then
+            return false
+        end
+        if active == true then
+            return true
+        end
+    end
+
+    local activeCategory = CleanScalar(info.activeCategory)
+    if activeCategory ~= nil then
+        return true
+    end
+
+    local startRecovery = CleanScalar(info.timeUntilEndOfStartRecovery)
+    if type(startRecovery) == "number" and startRecovery > 0 then
+        return false
+    end
+
+    return nil
+end
+
+local function ShouldUseSpellGCDDuration(spellID)
+    if not (spellID and Sources and Sources.QuerySpellCooldown) then
+        return false
+    end
+    local info = Sources.QuerySpellCooldown(spellID)
+    if CleanBool(info and info.isOnGCD) ~= true then
+        return false
+    end
+    return CooldownInfoRealState(info, spellID) ~= true
+end
+
+local function ShouldUseGCDDurationForCooldownID(cdID, child, state)
+    local info = cdID and GetInstanceInfo(cdID, state and state.viewerCategory or GetFrameCategoryName(child))
+    local candidates = BuildSpellDurationCandidates(info)
+    for _, spellID in ipairs(candidates) do
+        if ShouldUseSpellGCDDuration(spellID) then
+            return true
+        end
+    end
+    return false
 end
 
 local function ResolveSpellDurationObjectForCooldownID(cdID, child, state)
@@ -1341,14 +1519,7 @@ local function ResolveSpellDurationObjectForCooldownID(cdID, child, state)
     end
 
     local info = cdID and GetInstanceInfo(cdID, state and state.viewerCategory or GetFrameCategoryName(child))
-
-    local candidates, seen = {}, {}
-    if info then
-        AddDurationSpellCandidate(candidates, seen, info.overrideTooltipSpellID)
-        AddDurationSpellCandidate(candidates, seen, info.overrideSpellID)
-        AddDurationSpellCandidate(candidates, seen, info.spellID)
-        AddLinkedDurationSpellCandidates(candidates, seen, info.linkedSpellIDs)
-    end
+    local candidates = BuildSpellDurationCandidates(info)
 
     local fromCharges = child and SafeFrameBooleanField(child, "wasSetFromCharges") == true
     local chargesFirst = fromCharges or (info and info.charges == true)
@@ -1360,9 +1531,19 @@ local function ResolveSpellDurationObjectForCooldownID(cdID, child, state)
                 return durObj, "spell-charge"
             end
         end
+        local useGCDDuration = ShouldUseSpellGCDDuration(spellID)
+        if useGCDDuration and Sources.QuerySpellCooldownDuration then
+            local durObj = Sources.QuerySpellCooldownDuration(spellID, false)
+            if durObj then
+                return durObj, "gcd-duration"
+            end
+        end
         if Sources.QuerySpellCooldownDuration then
             local durObj = Sources.QuerySpellCooldownDuration(spellID, true)
             if durObj then
+                if useGCDDuration then
+                    return durObj, "gcd-duration"
+                end
                 return durObj, "spell-cooldown"
             end
         end
@@ -1384,12 +1565,23 @@ local function CleanAuraUnitValue(unit)
     return nil
 end
 
+local function GetChildAuraUnit(child)
+    if not child then return nil end
+    return CleanAuraUnitValue(child.auraDataUnit or child.auraUnit)
+end
+
+local function AuraViewerNeedsTargetOwnershipProof(cdID, stateOrCategory, child)
+    if not IsAuraViewerCategory(cdID, stateOrCategory) then return false end
+    if IsTargetAuraViewerCategory(cdID, stateOrCategory) then return true end
+    return GetChildAuraUnit(child) == "target"
+end
+
 local function BuildExpectedAuraUnitsForCooldownID(cdID, viewerCategory)
     local info = GetInstanceInfo(cdID, viewerCategory)
     if info and info.selfAura == false then
-        return { "target" }
+        return TARGET_AURA_UNITS
     end
-    return { "player", "pet" }
+    return SELF_AURA_UNITS
 end
 
 AuraInstanceMatchesExpectedOwner = function(unit, auraInstanceID)
@@ -1407,34 +1599,51 @@ local function StampAuraInstanceIDForCooldown(unit, cdID, auraInstanceID, viewer
     local s = EnsureState(cdID, nil, viewerCategory)
     if not s then return false end
 
-    local units
     local cleanUnit = CleanAuraUnitValue(unit)
-    if cleanUnit then
-        units = { cleanUnit }
-    else
-        units = BuildExpectedAuraUnitsForCooldownID(cdID, viewerCategory)
-    end
 
     local acceptedUnit
     local stampedUnit
     local stampedDurObj
     if Sources and Sources.QueryAuraDuration then
-        for _, tryUnit in ipairs(units) do
-            if AuraInstanceMatchesExpectedOwner(tryUnit, auraInstanceID) then
-                acceptedUnit = acceptedUnit or tryUnit
-                local durObj = Sources.QueryAuraDuration(tryUnit, auraInstanceID)
-                if durObj then
-                    stampedUnit = tryUnit
-                    stampedDurObj = durObj
-                    break
+        if cleanUnit then
+            if not AuraInstanceMatchesExpectedOwner(cleanUnit, auraInstanceID) then
+                return false
+            end
+            acceptedUnit = cleanUnit
+            local durObj = Sources.QueryAuraDuration(cleanUnit, auraInstanceID)
+            if durObj then
+                stampedUnit = cleanUnit
+                stampedDurObj = durObj
+            end
+        else
+            local units = BuildExpectedAuraUnitsForCooldownID(cdID, viewerCategory)
+            for i = 1, #units do
+                local tryUnit = units[i]
+                if AuraInstanceMatchesExpectedOwner(tryUnit, auraInstanceID) then
+                    acceptedUnit = acceptedUnit or tryUnit
+                    local durObj = Sources.QueryAuraDuration(tryUnit, auraInstanceID)
+                    if durObj then
+                        stampedUnit = tryUnit
+                        stampedDurObj = durObj
+                        break
+                    end
                 end
             end
         end
     else
-        for _, tryUnit in ipairs(units) do
-            if AuraInstanceMatchesExpectedOwner(tryUnit, auraInstanceID) then
-                acceptedUnit = tryUnit
-                break
+        if cleanUnit then
+            if not AuraInstanceMatchesExpectedOwner(cleanUnit, auraInstanceID) then
+                return false
+            end
+            acceptedUnit = cleanUnit
+        else
+            local units = BuildExpectedAuraUnitsForCooldownID(cdID, viewerCategory)
+            for i = 1, #units do
+                local tryUnit = units[i]
+                if AuraInstanceMatchesExpectedOwner(tryUnit, auraInstanceID) then
+                    acceptedUnit = tryUnit
+                    break
+                end
             end
         end
     end
@@ -1467,20 +1676,37 @@ local function CaptureAuraInstanceFromChildFrame(cdID, viewerCategory, child, so
         source or "aura-child-frame")
 end
 
+-- Per-category seen-set pools. These functions fire per UNIT_AURA × every
+-- cooldown viewer child (~500-1000 calls/sec in combat). The per-call
+-- `seen = {}` plus the `cat .. ":" .. tostring(relatedID)` key strings were
+-- producing ~300-600 KB/s of transient garbage. Cats are known up front
+-- (COOLDOWN_RELATED_CATEGORIES / AURA_RELATED_CATEGORIES), so we pre-allocate
+-- one set per cat and wipe at function top.
+local _captureRelatedSeenCD = {}
+for _, cat in ipairs(COOLDOWN_RELATED_CATEGORIES) do
+    _captureRelatedSeenCD[cat] = {}
+end
+local _captureRelatedSeenAura = {}
+for _, cat in ipairs(AURA_RELATED_CATEGORIES) do
+    _captureRelatedSeenAura[cat] = {}
+end
+
 local function CaptureAuraInstanceFromRelatedCooldownChildren(cdID, viewerCategory)
     local info = GetInstanceInfo(cdID, viewerCategory)
     if not info then return false end
 
     local candidates = BuildAuraDurationSpellCandidates(info)
-    local seen = {}
-    for _, cat in ipairs({ "essential", "utility" }) do
+    for _, cat in ipairs(COOLDOWN_RELATED_CATEGORIES) do
+        wipe(_captureRelatedSeenCD[cat])
+    end
+    for _, cat in ipairs(COOLDOWN_RELATED_CATEGORIES) do
         local catMap = _cdIDByCatSpell[cat]
         local directMap = _directCDIDByCatSpell[cat]
+        local seenCat = _captureRelatedSeenCD[cat]
         for _, spellID in ipairs(candidates) do
             local relatedID = (catMap and catMap[spellID]) or (directMap and directMap[spellID])
-            local key = relatedID and (cat .. ":" .. tostring(relatedID)) or nil
-            if key and not seen[key] then
-                seen[key] = true
+            if relatedID and not seenCat[relatedID] then
+                seenCat[relatedID] = true
                 local child = GetInstanceChild(relatedID, cat)
                 if CaptureAuraInstanceFromChildFrame(cdID, viewerCategory, child, "aura-related-child") then
                     return true
@@ -1497,15 +1723,21 @@ local function CaptureAuraInstanceFromRelatedAuraChildren(cdID, viewerCategory)
     if not info then return false end
 
     local candidates = BuildAuraDurationSpellCandidates(info)
-    local seen = {}
-    for _, cat in ipairs({ "buff", "trackedBar" }) do
+    for _, cat in ipairs(AURA_RELATED_CATEGORIES) do
+        wipe(_captureRelatedSeenAura[cat])
+    end
+    for _, cat in ipairs(AURA_RELATED_CATEGORIES) do
         local catMap = _cdIDByCatSpell[cat]
         local directMap = _directCDIDByCatSpell[cat]
+        local seenCat = _captureRelatedSeenAura[cat]
+        local isSelfCat = cat == viewerCategory
         for _, spellID in ipairs(candidates) do
             local relatedID = (directMap and directMap[spellID]) or (catMap and catMap[spellID])
-            local key = relatedID and (cat .. ":" .. tostring(relatedID)) or nil
-            if key and key ~= MakeInstanceKey(cdID, viewerCategory) and not seen[key] then
-                seen[key] = true
+            -- Skip the (cdID, viewerCategory) instance itself, then dedupe
+            -- across category iterations. Replaces the per-call string key
+            -- `cat .. ":" .. tostring(relatedID)`.
+            if relatedID and not (isSelfCat and relatedID == cdID) and not seenCat[relatedID] then
+                seenCat[relatedID] = true
                 local child = GetInstanceChild(relatedID, cat)
                 if CaptureAuraInstanceFromChildFrame(cdID, viewerCategory, child, "aura-related-child") then
                     return true
@@ -1702,7 +1934,7 @@ local function AppendFrameAuraDurationProbeLines(lines, label, frame)
     if not (issecretvalue and issecretvalue(unit)) and type(unit) == "string" and unit ~= "" then
         units = { unit }
     else
-        units = { "player", "pet", "target" }
+        units = ALL_AURA_UNITS
     end
 
     for _, tryUnit in ipairs(units) do
@@ -1874,9 +2106,9 @@ local function BuildAuraProbeLines(cdID, viewerCategory)
 
     local units
     if info.selfAura == false then
-        units = { "target" }
+        units = TARGET_AURA_UNITS
     else
-        units = { "player", "pet" }
+        units = SELF_AURA_UNITS
     end
 
     for _, unit in ipairs(units) do
@@ -1942,6 +2174,42 @@ local function FindMirrorFontString(owner)
     return nil
 end
 
+local function FindDirectMirrorFontString(owner)
+    if not owner then return nil end
+    if owner.GetObjectType and owner:GetObjectType() == "FontString" then
+        return owner
+    end
+    if owner.GetNumRegions and owner.GetRegions then
+        for i = 1, owner:GetNumRegions() do
+            local region = select(i, owner:GetRegions())
+            if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+                return region
+            end
+        end
+    end
+    return nil
+end
+
+local function FindNamedMirrorTextOwner(owner, ...)
+    if not owner then return nil end
+    for i = 1, select("#", ...) do
+        local key = select(i, ...)
+        local candidate = owner[key]
+        if candidate and (candidate.GetText or candidate.SetText or candidate.SetFormattedText) then
+            return candidate
+        end
+    end
+    return nil
+end
+
+local function FindMirrorTextOwner(owner, ...)
+    return FindNamedMirrorTextOwner(owner, ...) or FindMirrorFontString(owner)
+end
+
+local function FindDirectMirrorTextOwner(owner, ...)
+    return FindNamedMirrorTextOwner(owner, ...) or FindDirectMirrorFontString(owner)
+end
+
 ClearMirrorStackState = function(s)
     if not s then return false end
     if not (s.stackText or s.stackTextSource or s.stackTextShown == true) then
@@ -1954,13 +2222,98 @@ ClearMirrorStackState = function(s)
     return true
 end
 
-local function CaptureChildStackText(child, source, text)
+local STACK_TEXT_SOURCE_PRIORITY = {
+    FrameText = 1,
+    ChargeCount = 2,
+    Applications = 3,
+}
+
+local function StackTextSourcePriority(source)
+    return STACK_TEXT_SOURCE_PRIORITY[source] or 0
+end
+
+local function CanReplaceStackTextSource(currentSource, source)
+    if not currentSource then return true end
+    return StackTextSourcePriority(source) >= StackTextSourcePriority(currentSource)
+end
+
+local function MirrorStackTextHasDisplay(source, text)
+    if text == nil then return false end
+    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(text) then
+        return true
+    end
+    if issecretvalue and issecretvalue(text) then
+        return true
+    end
+
+    local textType = type(text)
+    if source == "Applications" then
+        if textType == "string" then
+            return not (text == "" or text == "0" or text == "1")
+        end
+        if textType == "number" then
+            return text > 1
+        end
+        return true
+    end
+
+    if textType == "string" then
+        return text ~= ""
+    end
+    return true
+end
+
+local function ChildHasAuthoritativeCountText(child, fromTextWrite)
+    local cdID = child and child.cooldownID
+    if not cdID then return false end
+
+    local chargesShown = SafeFrameBooleanField(child, "cooldownChargesShown")
+    if chargesShown == true then
+        return true
+    end
+    if chargesShown == false then
+        return false
+    end
+
+    local chargeFrameShown = SafeFrameShownField(child.ChargeCount)
+    if chargeFrameShown == true then
+        return true
+    end
+    if chargeFrameShown == false and not fromTextWrite then
+        return false
+    end
+
+    if fromTextWrite == true then
+        return true
+    end
+
+    if SafeFrameBooleanField(child, "wasSetFromCharges") == true then
+        return true
+    end
+
+    local catName = GetFrameCategoryName(child) or GetInstanceCategoryName(cdID)
+    local info = GetInstanceInfo(cdID, catName)
+    return CleanBool(info and info.charges) == true
+end
+
+local function CaptureChildStackText(child, source, text, fromTextWrite)
     local cdID = child and child.cooldownID
     if not (cdID and source) then return end
     local s = EnsureState(cdID, child)
     if not s then return end
 
-    if text then
+    if source == "ChargeCount" and not ChildHasAuthoritativeCountText(child, fromTextWrite) then
+        if (not s.stackTextSource or s.stackTextSource == source) and ClearMirrorStackState(s) then
+            s.lastTouch = GetTime()
+            RequestMirrorTextRefresh()
+        end
+        return
+    end
+
+    if MirrorStackTextHasDisplay(source, text) then
+        if not CanReplaceStackTextSource(s.stackTextSource, source) then
+            return
+        end
         s.stackText = text
         s.stackTextSource = source
         s.stackTextShown = true
@@ -1988,9 +2341,30 @@ local function ClearChildStackText(child, source)
     end
 end
 
-local function CaptureTextFromOwner(child, source, owner)
+local function CaptureTextFromOwner(child, source, owner, fromTextWrite)
     if not (owner and owner.GetText) then return end
-    CaptureChildStackText(child, source, owner:GetText())
+    CaptureChildStackText(child, source, owner:GetText(), fromTextWrite)
+end
+
+local function CaptureTextFromPreferredOwner(child, source, owner, readOwner, fallbackText, fromTextWrite)
+    if readOwner and readOwner ~= owner and readOwner.GetText then
+        local text = readOwner:GetText()
+        if MirrorStackTextHasDisplay(source, text) then
+            CaptureChildStackText(child, source, text, fromTextWrite)
+            return
+        end
+        if fallbackText ~= nil and MirrorStackTextHasDisplay(source, fallbackText) then
+            CaptureChildStackText(child, source, fallbackText, fromTextWrite)
+            return
+        end
+        CaptureChildStackText(child, source, text, fromTextWrite)
+        return
+    end
+    if fallbackText ~= nil then
+        CaptureChildStackText(child, source, fallbackText, fromTextWrite)
+        return
+    end
+    CaptureTextFromOwner(child, source, owner, fromTextWrite)
 end
 
 local function HookTextOwner(child, source, owner, readOwner)
@@ -2000,17 +2374,17 @@ local function HookTextOwner(child, source, owner, readOwner)
 
     if owner.SetText then
         hooksecurefunc(owner, "SetText", function(_, text)
-            CaptureChildStackText(child, source, text)
+            CaptureTextFromPreferredOwner(child, source, owner, readOwner, text, true)
         end)
     end
     if owner.SetFormattedText then
         hooksecurefunc(owner, "SetFormattedText", function(self)
-            CaptureTextFromOwner(child, source, self)
+            CaptureTextFromPreferredOwner(child, source, self, readOwner, nil, true)
         end)
     end
     if owner.Show then
         hooksecurefunc(owner, "Show", function()
-            CaptureTextFromOwner(child, source, readOwner)
+            CaptureTextFromPreferredOwner(child, source, owner, readOwner)
         end)
     end
     if owner.Hide then
@@ -2024,12 +2398,12 @@ local function HookTextOwner(child, source, owner, readOwner)
             if decoded == false then
                 ClearChildStackText(child, source)
             else
-                CaptureTextFromOwner(child, source, readOwner)
+                CaptureTextFromPreferredOwner(child, source, owner, readOwner)
             end
         end)
     end
 
-    CaptureTextFromOwner(child, source, readOwner)
+    CaptureTextFromPreferredOwner(child, source, owner, readOwner)
 end
 
 local function BindChildTextHooks(child)
@@ -2037,7 +2411,7 @@ local function BindChildTextHooks(child)
 
     local applications = child.Applications
     if applications then
-        local textOwner = applications.Applications or FindMirrorFontString(applications)
+        local textOwner = FindMirrorTextOwner(applications, "DisplayText", "Applications")
         HookTextOwner(child, "Applications", applications, textOwner)
         if textOwner and textOwner ~= applications then
             HookTextOwner(child, "Applications", textOwner)
@@ -2046,12 +2420,15 @@ local function BindChildTextHooks(child)
 
     local chargeCount = child.ChargeCount
     if chargeCount then
-        local textOwner = chargeCount.Current or FindMirrorFontString(chargeCount)
+        local textOwner = FindMirrorTextOwner(chargeCount, "Current", "DisplayText")
         HookTextOwner(child, "ChargeCount", chargeCount, textOwner)
         if textOwner and textOwner ~= chargeCount then
             HookTextOwner(child, "ChargeCount", textOwner)
         end
     end
+
+    local frameText = FindDirectMirrorTextOwner(child, "DisplayText", "Text", "Count", "StackText", "Stacks")
+    HookTextOwner(child, "FrameText", frameText)
 end
 
 local function ReadChildSemanticActive(child, cdID)
@@ -2097,7 +2474,7 @@ local function RefreshChildSemanticState(child, cdID, fallbackActive)
     -- Target-side aura viewer children can report active for a matching
     -- target debuff regardless of caster. Only trust them after the
     -- source-filtered auraInstance path has stamped this state.
-    if active and IsTargetAuraViewerCategory(cdID, s) and not s.auraInstanceID then
+    if active and AuraViewerNeedsTargetOwnershipProof(cdID, s, child) and not s.auraInstanceID then
         local captured = CaptureAuraInstanceFromChildFrame(cdID, s.viewerCategory, child)
             or CaptureAuraInstanceFromRelatedCooldownChildren(cdID, s.viewerCategory)
         if not captured and not s.auraInstanceID then
@@ -2120,7 +2497,8 @@ local function RefreshChildSemanticState(child, cdID, fallbackActive)
     if active then
         local info = GetInstanceInfo(cdID, s.viewerCategory)
         if not s.auraUnit then
-            s.auraUnit = (info and info.selfAura == false) and "target" or "player"
+            s.auraUnit = GetChildAuraUnit(child)
+                or ((info and info.selfAura == false) and "target" or "player")
         end
         if IsAuraViewerCategory(cdID, s) and not s.auraDurObj then
             local captured = CaptureAuraInstanceFromChildFrame(cdID, s.viewerCategory, child)
@@ -2146,6 +2524,21 @@ local function RefreshChildSemanticState(child, cdID, fallbackActive)
     end
     s.lastTouch = GetTime()
     return active
+end
+
+local function ShouldPreserveTransientNonAuraCooldownClear(cdID, child, s)
+    if not s or IsAuraViewerCategory(cdID, s) then return false end
+    if not (s.cooldownDurObj or s.resourceDurObj or s.gcdDurObj) then
+        return false
+    end
+    if SafeFrameBooleanField(child, "cooldownIsActive") == false then
+        return false
+    end
+    if SafeFrameBooleanField(child, "isActive") ~= true then
+        return false
+    end
+    return SafeFrameBooleanField(child, "wasSetFromCooldown") == true
+        or SafeFrameBooleanField(child, "wasSetFromCharges") == true
 end
 
 local function RefreshAuraViewerChildActiveStates()
@@ -2212,8 +2605,8 @@ end
 --
 -- Toggle: /run QUI_CDM_TAINT_DEBUG = true; /rl
 --
--- Implementation lives in cdm_debug.lua. The placeholder below is rebound
--- by cdm_debug.lua's BindAll() at the end of its load; cdm_debug.lua
+-- Implementation lives in the load-on-demand debug addon. The placeholder
+-- below is rebound by cdm_debug.lua's BindAll() when loaded; cdm_debug.lua
 -- also re-attaches the public CDMBlizzMirror.TaintLog method.
 ---------------------------------------------------------------------------
 local TaintLog = function() end
@@ -2241,7 +2634,7 @@ end
 -- on nil is safe (returns false), so checking it first costs nothing.
 -- The post-strip `==` and `>` operations only run on values we've
 -- proven non-secret.
-local function CleanScalar(v)
+CleanScalar = function(v)
     if issecretvalue and issecretvalue(v) then return nil end
     -- v is non-secret here. nil passes through, non-secret values pass
     -- through. No `==` against v needed.
@@ -2256,7 +2649,7 @@ end
 -- it's clean we get a real true/false back. When the decode fails
 -- entirely we return nil to signal "couldn't determine" rather than
 -- forcing a default that destroys real data.
-local function CleanBool(v)
+CleanBool = function(v)
     if issecretvalue and issecretvalue(v) then
         if C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean then
             local scalar = C_CurveUtil.EvaluateColorValueFromBoolean(v, 1, 0)
@@ -2293,15 +2686,18 @@ local function SanitizeCooldownInfo(cdID, info)
     if not info then return nil end
     -- Log the RAW field types/secret-status before sanitization so we can
     -- see whether the API returned secrets in the user's environment.
-    TaintLog("Sanitize",
-        "cdID", cdID,
-        "raw.spellID",                info.spellID,
-        "raw.overrideSpellID",        info.overrideSpellID,
-        "raw.overrideTooltipSpellID", info.overrideTooltipSpellID,
-        "raw.selfAura",               info.selfAura,
-        "raw.hasAura",                info.hasAura,
-        "raw.charges",                info.charges,
-        "raw.isKnown",                info.isKnown)
+    if _G.QUI_CDM_TAINT_DEBUG then
+        TaintLog(
+            "Sanitize",
+            "cdID", cdID,
+            "raw.spellID",                info.spellID,
+            "raw.overrideSpellID",        info.overrideSpellID,
+            "raw.overrideTooltipSpellID", info.overrideTooltipSpellID,
+            "raw.selfAura",               info.selfAura,
+            "raw.hasAura",                info.hasAura,
+            "raw.charges",                info.charges,
+            "raw.isKnown",                info.isKnown)
+    end
     return {
         cooldownID             = cdID,
         spellID                = CleanScalar(info.spellID),
@@ -2423,6 +2819,9 @@ local function ClearCatalogMaps()
     end
     wipe(_cooldownInfoByID)
     wipe(_cooldownInfoByKey)
+    wipe(_auraDurationCandidatesByInfo)
+    wipe(_spellDurationCandidatesByInfo)
+    wipe(_packedStateByInstanceKey)
     wipe(_childByCooldownID)
     wipe(_childByInstanceKey)
     wipe(_viewerCategoryByID)
@@ -2535,8 +2934,9 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
             if IsAuraViewerCategory(cdID, s) then
                 local capturedAura = CaptureAuraInstanceFromChildFrame(cdID, s.viewerCategory, owner)
                     or CaptureAuraInstanceFromRelatedCooldownChildren(cdID, s.viewerCategory)
+                local needsTargetOwnershipProof = AuraViewerNeedsTargetOwnershipProof(cdID, s, owner)
                 local trusted = capturedAura
-                    or (not IsTargetAuraViewerCategory(cdID, s))
+                    or (not needsTargetOwnershipProof)
                     or (s.auraInstanceID and true or false)
                 if not trusted then
                     capturedAura = CaptureAuraForCooldownIDFromExpectedUnits(cdID, s.viewerCategory)
@@ -2561,7 +2961,7 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
                 end
                 s.mirrorEpoch = (s.mirrorEpoch or 0) + 1
                 s.lastTouch   = GetTime()
-                if CDMBlizzMirror.TaintLog then
+                if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
                     CDMBlizzMirror.TaintLog("hook.SCFDO.aura-cat",
                         "cdID", cdID,
                         "trusted", trusted,
@@ -2576,16 +2976,20 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
             local lane = fromAura and "aura" or (fromCharges and "resource" or "cooldown")
             local source = fromAura and "aura-duration"
                 or (fromCharges and "spell-charge" or "cooldown-frame")
-            local capturedRelatedAura = (not fromAura)
-                and CaptureAuraInstanceFromRelatedAuraChildren(cdID, s.viewerCategory)
-            if not fromAura and not capturedRelatedAura then
-                ClearAuraDurationLane(cdID, s)
+            if not fromAura and not fromCharges
+                and ShouldUseGCDDurationForCooldownID(cdID, owner, s) then
+                lane = "gcd"
+                source = "gcd-duration"
             end
+            -- Capture for side effect: writes the aura lane via the related-
+            -- aura-child path. SetDurationLane below runs RefreshSelectedDurationState
+            -- on tail, which picks the freshly-captured aura ahead of this lane.
+            CaptureAuraInstanceFromRelatedAuraChildren(cdID, s.viewerCategory)
             SetDurationLane(cdID, s, lane, durObj, source)
             s.isActive    = true
             s.mirrorEpoch = (s.mirrorEpoch or 0) + 1
             s.lastTouch   = GetTime()
-            if CDMBlizzMirror.TaintLog then
+            if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
                 CDMBlizzMirror.TaintLog("hook.SCFDO", "cdID", cdID,
                     "durObjSource", s.durObjSource)
             end
@@ -2604,8 +3008,9 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
         if IsAuraViewerCategory(cdID, s) then
             local capturedAura = CaptureAuraInstanceFromChildFrame(cdID, s.viewerCategory, owner)
                 or CaptureAuraInstanceFromRelatedCooldownChildren(cdID, s.viewerCategory)
+            local needsTargetOwnershipProof = AuraViewerNeedsTargetOwnershipProof(cdID, s, owner)
             local trusted = capturedAura
-                or (not IsTargetAuraViewerCategory(cdID, s))
+                or (not needsTargetOwnershipProof)
                 or (s.auraInstanceID and true or false)
             if not trusted then
                 capturedAura = CaptureAuraForCooldownIDFromExpectedUnits(cdID, s.viewerCategory)
@@ -2628,7 +3033,7 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
             end
             s.mirrorEpoch = (s.mirrorEpoch or 0) + 1
             s.lastTouch   = GetTime()
-            if CDMBlizzMirror.TaintLog then
+            if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
                 CDMBlizzMirror.TaintLog("hook." .. methodName, "cdID", cdID,
                     "durObjSource", s.durObjSource,
                     "hasDurObj", s.durObj and true or false,
@@ -2640,24 +3045,23 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
         s.mirrorEpoch = (s.mirrorEpoch or 0) + 1
         s.lastTouch   = GetTime()
         local durObj, source = ResolveSpellDurationObjectForCooldownID(cdID, owner, s)
-        local capturedRelatedAura = CaptureAuraInstanceFromRelatedAuraChildren(cdID, s.viewerCategory)
+        -- Capture for side effect: writes the aura lane via the related-aura-
+        -- child path. SetDurationLane below refreshes the selection on tail,
+        -- which picks the freshly-captured aura ahead of this lane.
+        CaptureAuraInstanceFromRelatedAuraChildren(cdID, s.viewerCategory)
         if durObj then
-            local fromAura = SafeFrameBooleanField(owner, "wasSetFromAura") == true
-            local lane = source == "spell-charge" and "resource" or "cooldown"
-            if not fromAura and not capturedRelatedAura then
-                ClearAuraDurationLane(cdID, s)
-            end
+            local lane = source == "spell-charge" and "resource"
+                or (source == "gcd-duration" and "gcd" or "cooldown")
             SetDurationLane(cdID, s, lane, durObj, source)
         elseif not s.auraInstanceID then
             local fromAura = SafeFrameBooleanField(owner, "wasSetFromAura") == true
             if fromAura then
                 MarkDurationLaneUnknown(cdID, s, "aura")
             else
-                ClearAuraDurationLane(cdID, s)
                 MarkDurationLaneUnknown(cdID, s, "cooldown")
             end
         end
-        if CDMBlizzMirror.TaintLog then
+        if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
             CDMBlizzMirror.TaintLog("hook." .. methodName, "cdID", cdID,
                 "durObjSource", s.durObjSource,
                 "hasDurObj", s.durObj and true or false,
@@ -2711,7 +3115,7 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
                         s.lastTouch = GetTime()
                     end
                 end
-                if CDMBlizzMirror.TaintLog then
+                if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
                     CDMBlizzMirror.TaintLog("hook.Clear.skip-aura-cat",
                         "cdID", cdID)
                 end
@@ -2720,6 +3124,15 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
 
             -- Non-aura cdID (essential / utility / cooldown-only):
             -- Clear is the de-active edge.
+            if ShouldPreserveTransientNonAuraCooldownClear(cdID, owner, s) then
+                s.isActive = true
+                s.lastTouch = GetTime()
+                if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
+                    CDMBlizzMirror.TaintLog("hook.Clear.preserve-active", "cdID", cdID)
+                end
+                return
+            end
+
             s.isActive = false
             ClearAllDurationLanes(cdID, s)
             s.pandemicActive = false
@@ -2728,7 +3141,7 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
                 SetHostPandemicState(cdID, nil, false)
             end
             s.lastTouch = GetTime()
-            if CDMBlizzMirror.TaintLog then
+            if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
                 CDMBlizzMirror.TaintLog("hook.Clear", "cdID", cdID)
             end
         end)
@@ -2895,7 +3308,7 @@ local function BindNewChildren()
                 if cdID then
                     local wasBound = child._quiMirrorBound == true
                     local bound = BindChildToCatalogCategories(child, cdID, catNum)
-                    if CDMBlizzMirror.TaintLog then
+                    if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
                         CDMBlizzMirror.TaintLog("LazyBind", "cdID", cdID,
                             "viewerCat", CATEGORY_NAMES[catNum],
                             "bound", bound)
@@ -3440,7 +3853,7 @@ end
 
 function HandlePlayerTotemUpdate()
     if type(GetTotemInfo) ~= "function" then
-        if CDMBlizzMirror.TaintLog then
+        if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
             CDMBlizzMirror.TaintLog("totem.update.no-api")
         end
         return
@@ -3454,11 +3867,11 @@ function HandlePlayerTotemUpdate()
         _RebuildSpellNameIndex()
     end
 
-    local nameIndexCount = 0
-    for _ in pairs(_spellNameToCDID) do nameIndexCount = nameIndexCount + 1 end
-    local spellIDIndexCount = 0
-    for _ in pairs(_totemSpellIDToCDID) do spellIDIndexCount = spellIDIndexCount + 1 end
-    if CDMBlizzMirror.TaintLog then
+    if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
+        local nameIndexCount = 0
+        for _ in pairs(_spellNameToCDID) do nameIndexCount = nameIndexCount + 1 end
+        local spellIDIndexCount = 0
+        for _ in pairs(_totemSpellIDToCDID) do spellIDIndexCount = spellIDIndexCount + 1 end
         CDMBlizzMirror.TaintLog("totem.update.enter",
             "nameIndexEntries", nameIndexCount,
             "spellIDIndexEntries", spellIDIndexCount,
@@ -3475,10 +3888,10 @@ function HandlePlayerTotemUpdate()
         local hasTotemSecret = issecretvalue and issecretvalue(hasTotem) or false
         local iconSecret = issecretvalue and issecretvalue(totemIcon) or false
         local spellIDSecret = issecretvalue and issecretvalue(totemSpellID) or false
-        local nameRender = nameSecret and "<SECRET>" or tostring(totemName)
-        local iconRender = iconSecret and "<SECRET>" or totemIcon
-        local spellIDRender = spellIDSecret and "<SECRET>" or totemSpellID
-        if CDMBlizzMirror.TaintLog then
+        if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
+            local nameRender = nameSecret and "<SECRET>" or tostring(totemName)
+            local iconRender = iconSecret and "<SECRET>" or totemIcon
+            local spellIDRender = spellIDSecret and "<SECRET>" or totemSpellID
             CDMBlizzMirror.TaintLog("totem.scan",
                 "slot", slot,
                 "ok", tok,
@@ -3515,7 +3928,7 @@ function HandlePlayerTotemUpdate()
             if key then
                 matchCount = matchCount + _AddCooldownIDsFromIndexBucket(matches, _spellNameToCDID[key])
             end
-            if CDMBlizzMirror.TaintLog then
+            if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
                 CDMBlizzMirror.TaintLog("totem.match",
                     "slot", slot,
                     "key", key,
@@ -3538,7 +3951,7 @@ function HandlePlayerTotemUpdate()
                 seen[cdID] = true
                 changed = _ActivateTotemCooldownID(cdID, slot, durObj, cleanTotemName, cleanTotemIcon, cleanTotemSpellID)
                     or changed
-                if CDMBlizzMirror.TaintLog then
+                if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
                     CDMBlizzMirror.TaintLog("totem.activate",
                         "slot", slot,
                         "cdID", cdID,
@@ -3567,7 +3980,7 @@ function HandlePlayerTotemUpdate()
                 s.lastTouch   = GetTime()
                 changed       = true
             end
-            if CDMBlizzMirror.TaintLog then
+            if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
                 CDMBlizzMirror.TaintLog("totem.deactivate", "cdID", cdID)
             end
         end
@@ -3579,6 +3992,33 @@ function HandlePlayerTotemUpdate()
 end
 
 CDMBlizzMirror.HandlePlayerTotemUpdate = HandlePlayerTotemUpdate
+
+function CDMBlizzMirror.HandlePlayerTargetChanged()
+    -- Proactively invalidate every mirror state stamped from the prior
+    -- target. Without this, target-side stamps (e.g. VP / DP debuffs)
+    -- linger after the user drops their target.
+    --
+    -- Keying off s.auraUnit (not info.selfAura) is correct: it records
+    -- the unit that actually held the aura at stamp time, regardless
+    -- of how Blizzard's misleading selfAura flag classifies the cdID.
+    --
+    -- ClearMirrorAuraState wipes ONLY the aura lane; the cooldown / gcd
+    -- / totem / resource lanes survive a target swap (target change
+    -- doesn't end a cooldown the player is still on).
+    for cdID, s in pairs(_mirrorState) do
+        if s.auraUnit == "target" then
+            s.auraUnit = nil
+            ClearMirrorAuraState(cdID, s, "target-changed")
+        end
+    end
+    -- Re-capture for the new target. If there's no target, this is
+    -- a no-op (AuraUtil.ForEachAura on an invalid unit yields nothing)
+    -- and the prior invalidation pass leaves all target-side states
+    -- correctly cleared.
+    CaptureAurasFromUnit("target")
+    RefreshAuraViewerChildActiveStates()
+    RefreshCooldownViewerRelatedAuraStates()
+end
 
 function CDMBlizzMirror.HandleUnitAuraChanged(unit, updateInfo)
     -- Catch CooldownViewer children created post-Walk: pet summon, talent
@@ -3693,27 +4133,7 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
     end
 
     if event == "PLAYER_TARGET_CHANGED" then
-        -- Proactively invalidate every mirror state stamped from the
-        -- prior target. Without this, target-side stamps (e.g. VP / DP
-        -- debuffs) linger after the user drops their target.
-        --
-        -- Keying off s.auraUnit (not info.selfAura) is correct: it
-        -- records the unit that actually held the aura at stamp time,
-        -- regardless of how Blizzard's misleading selfAura flag
-        -- classifies the cdID.
-        for cdID, s in pairs(_mirrorState) do
-            if s.auraUnit == "target" then
-                s.auraUnit = nil
-                ClearMirrorAuraState(cdID, s, "target-changed")
-            end
-        end
-        -- Re-capture for the new target. If there's no target, this is
-        -- a no-op (AuraUtil.ForEachAura on an invalid unit yields nothing)
-        -- and the prior invalidation pass leaves all target-side states
-        -- correctly cleared.
-        CaptureAurasFromUnit("target")
-        RefreshAuraViewerChildActiveStates()
-        RefreshCooldownViewerRelatedAuraStates()
+        CDMBlizzMirror.HandlePlayerTargetChanged()
         return
     end
 
@@ -3727,9 +4147,10 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
             _walkPendingOnRegen = false
             Walk()
         end
-        -- Re-stamp on combat exit: auraInstanceIDs re-randomize on combat
-        -- enter for some scenarios (encounter/M+/PvP), so the values stamped
-        -- pre-combat may be stale post-combat.
+        -- Re-stamp on combat exit: OOC aura APIs can walk the full state
+        -- without restricted-scope query limits, so this is the safest
+        -- backstop after encounter/M+/PvP boundary refreshes and UNIT_AURA
+        -- surgical eviction.
         RefreshAuraViewerChildActiveStates()
         RefreshCooldownViewerRelatedAuraStates()
         CaptureAurasFromUnit("player")
