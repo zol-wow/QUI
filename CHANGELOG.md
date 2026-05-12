@@ -10,6 +10,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha28 - 2026-05-12
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing alpha27 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **Alts that share an AceDB profile no longer overwrite each other's CDM spec data.** Two characters on the same QUI profile now each have their own per-spec owned/dormant/removed spell lists. Logging in or switching specs on a shared profile no longer imports another character's spell set, and the next save no longer clobbers the one you weren't logged into.
+- **Combat /reload on a shared profile keeps the cooldown manager visible.** The legacy profile-side spec cache is still trusted during combat lockdown (when the character key can't be resolved yet), so the layout refreshes immediately and then migrates to the per-character store once player identity is known.
+
+
+
 ## v3.6.0-alpha27 - 2026-05-12
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing alpha26 profiles carry over unchanged.
