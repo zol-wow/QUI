@@ -10,6 +10,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha29 - 2026-05-12
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing alpha28 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **Totem-summoning self-buffs now render the totem's duration on the swipe**, not whatever aura happens to win the buff lookup. The aura-viewer mirror prefers the active totem duration when there is one for that cooldown ID — so Mana Totem, Healing Stream, etc. count down to the actual totem expiry.
+- **Cooldown viewers no longer show aura/totem timers on the cooldown swipe.** The cooldown swipe now strictly reflects recharge / cooldown state; aura uptime stays in the aura viewer where it belongs.
+- **Composer's "Not usable on your current class" entries clear themselves after a spec or hero-talent swap.** Dormancy reconciliation now runs on `PLAYER_SPECIALIZATION_CHANGED` and `SPELLS_CHANGED` (debounced 0.35s) and on every preview refresh — no need to close and reopen the composer to make stale Reaper's Mark / Festering Wound entries fall off.
+- **Totem slot scan uses the dynamic slot-count API** (`GetNumTotemSlots`) instead of a fixed `MAX_TOTEMS + 1` probe. Picks up classes whose slot count differs from the constant without an extra probe, and reports the actually-scanned count in taint logs.
+
+### Performance
+- **Removed defensive aura-cache rescans at combat / encounter / M+ / PvP boundaries.** `auraInstanceID` is treated as stable per the current Blizzard documentation, so the cache no longer rebuilds on `PLAYER_REGEN_ENABLED`, encounter starts, or zone-in / login bootstrap. Event-driven eviction (removed-aura validation against `GetAuraDataByAuraInstanceID`) plus `isFullUpdate` rescans cover the same ground without the burst at every boundary.
+
+### Internal
+- **Damage meter skinning drops unnecessary `SecureCallMethod` wrappers** on plain frame methods (`SetText`, `SetSize`, `Hide`, `Show`, `SetMovable`, `SetResizable`, `SetWidth`, `SetHeight`). These targets aren't secure-handler frames, so the wrapper was free overhead.
+- New regression tests cover the aura/totem/cooldown-viewer lane selection and the composer's spec-change reconciliation.
+
+
+
 ## v3.6.0-alpha28 - 2026-05-12
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing alpha27 profiles carry over unchanged.
