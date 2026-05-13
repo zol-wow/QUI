@@ -569,8 +569,8 @@ child.Cooldown:SetCooldownFromDurationObject(auraHookDuration)
 state = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902), "mirror state missing after aura hook")
 assert(state.auraDurObj == auraHookDuration, "non-aura entries should keep Blizzard aura duration in the aura lane")
 assert(state.cooldownDurObj == cooldownDuration, "aura duration must not overwrite cooldown duration lane")
-assert(state.durObj == auraHookDuration, "non-aura entries should select aura duration ahead of cooldown")
-assert(state.durObjSource == "aura-duration", "selected duration source should identify the aura lane")
+assert(state.durObj == cooldownDuration, "non-aura cooldown entries should keep selecting cooldown duration over aura")
+assert(state.durObjSource == "spell-cooldown", "selected duration source should identify the cooldown lane")
 
 child.wasSetFromAura = false
 child.wasSetFromCooldown = true
@@ -578,10 +578,10 @@ child.wasSetFromCharges = false
 child.Cooldown:SetCooldownFromDurationObject(cooldownDuration)
 
 state = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902), "mirror state missing after cooldown hook")
-assert(state.auraDurObj == auraHookDuration, "cooldown hook should preserve higher-priority aura duration")
+assert(state.auraDurObj == auraHookDuration, "cooldown hook should preserve the aura duration lane")
 assert(state.cooldownDurObj == cooldownDuration, "cooldown duration should stay in the cooldown lane")
-assert(state.durObj == auraHookDuration, "aura duration should stay selected ahead of cooldown")
-assert(state.durObjSource == "aura-duration", "selected duration source should still identify the aura lane")
+assert(state.durObj == cooldownDuration, "cooldown duration should stay selected ahead of aura")
+assert(state.durObjSource == "cooldown-frame", "selected duration source should still identify the cooldown lane")
 
 child.wasSetFromAura = false
 child.wasSetFromCooldown = false
@@ -589,10 +589,10 @@ child.wasSetFromCharges = true
 child.Cooldown:SetCooldownFromDurationObject(chargeDuration)
 
 state = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902), "mirror state missing after charge hook")
-assert(state.auraDurObj == auraHookDuration, "charge hook should preserve higher-priority aura duration")
+assert(state.auraDurObj == auraHookDuration, "charge hook should preserve the aura duration lane")
 assert(state.resourceDurObj == chargeDuration, "charge duration should be carried in the resource lane")
 assert(state.cooldownDurObj == cooldownDuration, "charge duration must not overwrite cooldown duration lane")
-assert(state.durObj == auraHookDuration, "aura duration should stay selected ahead of charge and cooldown")
+assert(state.durObj == chargeDuration, "charge/recharge duration should be selected ahead of cooldown and aura")
 
 child.isActive = true
 child.cooldownIsActive = nil
@@ -604,7 +604,7 @@ state = assert(ns.CDMBlizzMirror.GetStateByCooldownID(27902), "mirror state miss
 assert(state.isActive == true, "transient non-aura Clear should preserve active child state")
 assert(state.cooldownDurObj == cooldownDuration, "transient non-aura Clear should preserve the cooldown duration lane")
 assert(state.resourceDurObj == chargeDuration, "transient non-aura Clear should preserve the charge duration lane")
-assert(state.durObj == auraHookDuration, "transient non-aura Clear should preserve the higher-priority aura duration")
+assert(state.durObj == chargeDuration, "transient non-aura Clear should preserve the selected charge duration")
 
 child.cooldownIsActive = false
 child.Cooldown:Clear()
@@ -886,8 +886,8 @@ assert(amzUtilityState.cooldownDurObj == amzCooldownDuration, "AMZ utility shoul
 assert(amzUtilityState.hasAuraInstanceID == true, "AMZ utility should borrow the related buff child aura instance")
 assert(amzUtilityState.auraUnit == "player", "AMZ utility should trust the related buff child aura unit")
 assert(amzUtilityState.auraDurObj == amzAuraDuration, "AMZ utility should borrow the related buff child aura duration")
-assert(amzUtilityState.durObj == amzAuraDuration, "AMZ utility should select the related aura duration ahead of cooldown")
-assert(amzUtilityState.durObjSource == "aura-related-child", "AMZ utility selected duration should identify the related aura child")
+assert(amzUtilityState.durObj == amzCooldownDuration, "AMZ utility should keep selecting its cooldown duration over the related aura")
+assert(amzUtilityState.durObjSource == "spell-cooldown", "AMZ utility selected duration should identify the cooldown lane")
 
 local reapingState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(70765, "buff"), "Reaping buff mirror state missing")
 assert(reapingState.isActive == false, "Reaping test should start inactive")
@@ -928,6 +928,7 @@ assert(iconRefreshCount > refreshBeforeOverlay, "spell activation overlay should
 -- resolve mode as "aura" so the buff viewer renders a swipe instead of
 -- dead-ending at durObj=nil.
 local totemBuffDuration = { token = "totem-buff-duration-object" }
+local totemChildDuration = { token = "totem-child-duration-object" }
 MAX_TOTEMS = 4
 GetTotemInfo = function(slot)
     if slot == 1 then
@@ -942,6 +943,8 @@ GetTotemDuration = function(slot)
     return nil
 end
 
+reapingChild.Cooldown:SetCooldownFromDurationObject(totemChildDuration)
+
 ns.CDMBlizzMirror.HandlePlayerTotemUpdate()
 
 local totemBuffState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(70765, "buff"),
@@ -951,16 +954,45 @@ assert(totemBuffState.isActive == true,
 assert(totemBuffState.totemDurObj == totemBuffDuration,
     "PLAYER_TOTEM_UPDATE should populate the totem lane on the buff cdID")
 assert(totemBuffState.durObj == totemBuffDuration,
-    "buff viewer should fall through to the totem lane when no auraDurObj exists")
+    "totem-backed buff viewer should prefer the totem-slot duration over child cooldown duration")
 assert(totemBuffState.durObjSource == "totem-duration",
     "selected duration source should identify the totem lane")
 assert(totemBuffState.resolvedMode == "aura",
     "totem-backed buff entry should resolve mode as aura for buff viewer rendering")
 
+local highSlotTotemDuration = { token = "high-slot-totem-duration-object" }
+GetNumTotemSlots = function() return 6 end
+GetTotemInfo = function(slot)
+    if slot == 6 then
+        return true, "Reaping", 0, 60, "Interface\\Icons\\Reaping", 0, 1235261
+    end
+    return false
+end
+GetTotemDuration = function(slot)
+    if slot == 6 then
+        return highSlotTotemDuration
+    end
+    return nil
+end
+
+ns.CDMBlizzMirror.HandlePlayerTotemUpdate(6)
+
+totemBuffState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(70765, "buff"),
+    "Reaping buff mirror state missing after high-slot totem update")
+assert(totemBuffState.isActive == true,
+    "PLAYER_TOTEM_UPDATE should scan the full totem slot count")
+assert(totemBuffState.totemSlot == 6,
+    "PLAYER_TOTEM_UPDATE should preserve the active totem slot")
+assert(totemBuffState.totemDurObj == highSlotTotemDuration,
+    "PLAYER_TOTEM_UPDATE should populate the totem lane from high-numbered slots")
+assert(totemBuffState.durObj == highSlotTotemDuration,
+    "totem-backed buff viewer should select the high-slot totem duration")
+
 -- Tear down the totem so it doesn't bleed into the mirror stats counts
 -- below (stale active totems hold the buff cdID's mirror state open).
 GetTotemInfo = function() return false end
 ns.CDMBlizzMirror.HandlePlayerTotemUpdate()
+GetNumTotemSlots = nil
 
 local mirrorStats = ns.CDMBlizzMirror.GetCacheStats and ns.CDMBlizzMirror.GetCacheStats()
 assert(mirrorStats, "mirror should expose cache stats")

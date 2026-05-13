@@ -21,6 +21,7 @@ local tonumber = tonumber
 local math_floor = math.floor
 local math_abs = math.abs
 local math_max = math.max
+local math_huge = math.huge
 local table_insert = table.insert
 local table_remove = table.remove
 local string_lower = string.lower
@@ -192,6 +193,44 @@ end
 
 local function GetCDMSpellData()
     return ns.CDMSpellData
+end
+
+local function CountDormantSpells(db)
+    local count = 0
+    local dormant = db and db.dormantSpells
+    if type(dormant) ~= "table" then
+        return 0
+    end
+    for _ in pairs(dormant) do
+        count = count + 1
+    end
+    return count
+end
+
+local function RefreshActiveContainerDormancy()
+    if not activeContainer or InCombatLockdown() then return end
+
+    local db = GetContainerDB(activeContainer)
+    if not db or db.containerType == "customBar" or type(db.ownedSpells) ~= "table" then
+        return
+    end
+
+    local spellData = GetCDMSpellData()
+    if not spellData or type(spellData.CheckDormantSpells) ~= "function" then
+        return
+    end
+
+    local ownedBefore = #db.ownedSpells
+    local dormantBefore = CountDormantSpells(db)
+
+    spellData:CheckDormantSpells(activeContainer)
+
+    local ownedAfter = type(db.ownedSpells) == "table" and #db.ownedSpells or 0
+    local dormantAfter = CountDormantSpells(db)
+    if (ownedBefore ~= ownedAfter or dormantBefore ~= dormantAfter)
+        and ns.CDMContainers and ns.CDMContainers.SaveActiveSpecProfile then
+        ns.CDMContainers.SaveActiveSpecProfile()
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -637,6 +676,8 @@ RefreshPreview = function()
 
     local gridArea = previewFrame._gridArea
     if not gridArea then return end
+
+    RefreshActiveContainerDormancy()
 
     -- Clear old preview icons
     for _, obj in ipairs(previewIcons) do
@@ -2016,21 +2057,9 @@ RefreshEntryList = function()
     if not db then return end
 
     -- Self-heal dormancy before reading entries. The data layer's
-    -- SPELLS_CHANGED debounce (0.3s) can lag behind a hero-talent or
-    -- spec swap that happened just before the user opened the composer,
-    -- leaving unlearned spells (e.g. Reaper's Mark after swapping
-    -- Deathbringer → Sanlay'n) sitting in ownedSpells and rendering
-    -- as "Not usable on your current class" instead of moving to the
-    -- Dormant section. CheckDormantSpells is idempotent and bails on
-    -- containers without an ownedSpells list (customBar), so calling
-    -- it per-render is safe and free for unaffected containers.
-    do
-        local sd = ns.CDMSpellData
-        if sd and type(sd.CheckDormantSpells) == "function"
-           and not InCombatLockdown() then
-            sd:CheckDormantSpells(activeContainer)
-        end
-    end
+    -- SPELLS_CHANGED debounce can lag behind talent or spec swaps, so
+    -- the composer reconciles the visible container before rendering.
+    RefreshActiveContainerDormancy()
 
     -- customBar containers (migrated from customTrackers) store their
     -- entry list under `entries` (mixed spell/item/slot/macro types),
@@ -2372,14 +2401,22 @@ end
 -- our callback runs the viewer's children are already current. Pending
 -- flag coalesces bursts of events.
 local composerCDMRefreshPending = false
-local function ScheduleComposerCDMRefresh()
+local function ScheduleComposerCDMRefresh(delay)
+    if type(delay) ~= "number" or delay ~= delay or delay < 0
+        or delay == math_huge or delay == -math_huge then
+        delay = 0
+    end
     if composerCDMRefreshPending then return end
     composerCDMRefreshPending = true
-    C_Timer.After(0, function()
+    C_Timer.After(delay, function()
         composerCDMRefreshPending = false
-        if composerFrame and composerFrame:IsShown() then
+        local composerVisible = composerFrame and composerFrame:IsShown()
+        local previewVisible = previewFrame and previewFrame:IsShown()
+        if composerVisible then
             RefreshEntryList()
-            if RefreshPreview then RefreshPreview() end
+        end
+        if (composerVisible or previewVisible) and RefreshPreview then
+            RefreshPreview()
         end
     end)
 end
@@ -2398,7 +2435,16 @@ end
 -- Server-side cooldown table hotfixes still come through a real event.
 local composerCDMEventFrame = CreateFrame("Frame")
 composerCDMEventFrame:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED")
-composerCDMEventFrame:SetScript("OnEvent", ScheduleComposerCDMRefresh)
+composerCDMEventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+composerCDMEventFrame:RegisterEvent("SPELLS_CHANGED")
+composerCDMEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+composerCDMEventFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_SPECIALIZATION_CHANGED" or event == "SPELLS_CHANGED" then
+        ScheduleComposerCDMRefresh(0.35)
+    else
+        ScheduleComposerCDMRefresh()
+    end
+end)
 
 ---------------------------------------------------------------------------
 -- ADD SECTION (Below Entry List)

@@ -286,6 +286,9 @@ local function SelectDurationForState(cdID, s)
 
     local cat = s.viewerCategory or GetInstanceCategoryName(cdID)
     if IsAuraViewerCategoryName(cat) then
+        if s.totemDurObj and _totemActiveCDID[cdID] then
+            return s.totemDurObj, s.totemDurObjSource or "totem-duration", nil
+        end
         if s.auraDurObj then
             return s.auraDurObj, s.auraDurObjSource or "aura-duration", nil
         end
@@ -300,12 +303,8 @@ local function SelectDurationForState(cdID, s)
         return nil, nil, s.auraDurationStateUnknown
     end
 
-    if s.auraDurObj then
-        return s.auraDurObj, s.auraDurObjSource or "aura-duration", nil
-    end
-    if s.totemDurObj then
-        return s.totemDurObj, s.totemDurObjSource or "totem-duration", nil
-    end
+    -- Cooldown viewers keep aura/totem lanes for active state and text, but
+    -- their swipe should represent recharge/cooldown state, not aura uptime.
     if s.resourceDurObj then
         return s.resourceDurObj, s.resourceDurObjSource or "resource-duration", nil
     end
@@ -317,8 +316,7 @@ local function SelectDurationForState(cdID, s)
     end
 
     return nil, nil,
-        s.auraDurationStateUnknown
-        or s.cooldownDurationStateUnknown
+        s.cooldownDurationStateUnknown
         or s.resourceDurationStateUnknown
         or s.gcdDurationStateUnknown
 end
@@ -3833,6 +3831,34 @@ local function _AddCooldownIDsFromIndexBucket(out, bucket)
     return added
 end
 
+local function CleanTotemSlotNumber(value)
+    if issecretvalue and issecretvalue(value) then return nil end
+    if type(value) ~= "number" or value < 1 then return nil end
+    return math.floor(value)
+end
+
+local function GetTotemSlotScanLimit(updatedSlot)
+    local maxSlots
+    if type(GetNumTotemSlots) == "function" then
+        local ok, slotCount = pcall(GetNumTotemSlots)
+        if ok then
+            maxSlots = CleanTotemSlotNumber(slotCount)
+        end
+    end
+
+    if not maxSlots then
+        -- Preserve the legacy extra-slot probe only when the dynamic
+        -- slot-count API is unavailable.
+        maxSlots = (CleanTotemSlotNumber(MAX_TOTEMS) or 4) + 1
+    end
+
+    local cleanUpdatedSlot = CleanTotemSlotNumber(updatedSlot)
+    if cleanUpdatedSlot and cleanUpdatedSlot > maxSlots then
+        maxSlots = cleanUpdatedSlot
+    end
+    return maxSlots
+end
+
 local function _ActivateTotemCooldownID(cdID, slot, durObj, totemName, totemIcon, totemSpellID)
     if not cdID then return false end
     _totemActiveCDID[cdID] = slot
@@ -3851,7 +3877,7 @@ local function _ActivateTotemCooldownID(cdID, slot, durObj, totemName, totemIcon
     return true
 end
 
-function HandlePlayerTotemUpdate()
+function HandlePlayerTotemUpdate(updatedSlot)
     if type(GetTotemInfo) ~= "function" then
         if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
             CDMBlizzMirror.TaintLog("totem.update.no-api")
@@ -3867,6 +3893,8 @@ function HandlePlayerTotemUpdate()
         _RebuildSpellNameIndex()
     end
 
+    local maxSlots = GetTotemSlotScanLimit(updatedSlot)
+
     if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
         local nameIndexCount = 0
         for _ in pairs(_spellNameToCDID) do nameIndexCount = nameIndexCount + 1 end
@@ -3875,14 +3903,12 @@ function HandlePlayerTotemUpdate()
         CDMBlizzMirror.TaintLog("totem.update.enter",
             "nameIndexEntries", nameIndexCount,
             "spellIDIndexEntries", spellIDIndexCount,
-            "MAX_TOTEMS", MAX_TOTEMS)
+            "slotCount", maxSlots)
     end
 
     local seen = {}
     local changed = false
-    local maxSlots = (type(MAX_TOTEMS) == "number" and MAX_TOTEMS) or 4
-    -- Probe one extra slot in case MAX_TOTEMS is locally underreported.
-    for slot = 1, maxSlots + 1 do
+    for slot = 1, maxSlots do
         local tok = true; local hasTotem, totemName, _, _, totemIcon, _, totemSpellID = GetTotemInfo(slot)
         local nameSecret = issecretvalue and issecretvalue(totemName) or false
         local hasTotemSecret = issecretvalue and issecretvalue(hasTotem) or false
@@ -4138,7 +4164,7 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
     end
 
     if event == "PLAYER_TOTEM_UPDATE" then
-        HandlePlayerTotemUpdate()
+        HandlePlayerTotemUpdate(arg1)
         return
     end
 
@@ -4147,16 +4173,6 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
             _walkPendingOnRegen = false
             Walk()
         end
-        -- Re-stamp on combat exit: OOC aura APIs can walk the full state
-        -- without restricted-scope query limits, so this is the safest
-        -- backstop after encounter/M+/PvP boundary refreshes and UNIT_AURA
-        -- surgical eviction.
-        RefreshAuraViewerChildActiveStates()
-        RefreshCooldownViewerRelatedAuraStates()
-        CaptureAurasFromUnit("player")
-        CaptureAurasFromUnit("pet")
-        CaptureAurasFromUnit("target")
-        RefreshCooldownViewerRelatedAuraStates()
         CDMBlizzMirror.SyncSuppressionToMaster()
         return
     end
@@ -4173,13 +4189,6 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
     end
 
     Walk()
-    -- Bootstrap aura instance IDs after the catalog walk so any auras
-    -- already on the player/pet/target at /reload or zone-in get tracked
-    -- without waiting for them to re-apply.
-    CaptureAurasFromUnit("player")
-    CaptureAurasFromUnit("pet")
-    CaptureAurasFromUnit("target")
-    RefreshCooldownViewerRelatedAuraStates()
     -- Bootstrap totem-backed mirror state too: a /reload mid-AMZ would
     -- otherwise wait for the next totem state change before flipping
     -- isActive=true on the matching cdID.
@@ -4212,13 +4221,9 @@ if ns.CDMIndex and ns.CDMIndex.Subscribe then
             RefreshSpellOverridePair(baseSpellID, overrideSpellID)
         else
             -- data_loaded / hotfix / refresh_layout: full catalog rebuild
-            -- and bootstrap of aura/totem state, matching the previous
+            -- and bootstrap of totem state, matching the previous
             -- COOLDOWN_VIEWER_DATA_LOADED / TABLE_HOTFIXED handler exactly.
             Walk()
-            CaptureAurasFromUnit("player")
-            CaptureAurasFromUnit("pet")
-            CaptureAurasFromUnit("target")
-            RefreshCooldownViewerRelatedAuraStates()
             HandlePlayerTotemUpdate()
             CDMBlizzMirror.SyncSuppressionToMaster()
         end

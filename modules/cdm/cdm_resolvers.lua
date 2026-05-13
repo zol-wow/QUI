@@ -1685,16 +1685,16 @@ function CDMResolvers.ResolveIconDurationObject(icon)
         end
     end
 
-    -- Swipe priority for icon cooldown entries: aura → charge/recharge → cd
-    -- → gcd. Two paths enforce this single rule:
+    -- Swipe priority:
+    --   aura entries:     aura -> charge/recharge -> cd -> gcd
+    --   cooldown entries: charge/recharge -> cd -> gcd
+    -- Two paths enforce this single rule:
     --   * Mirror-backed icons:  the mirror's SelectDurationForState
-    --     (cdm_blizz_mirror.lua:277) picks lanes in this order, and
-    --     BuildMirrorRenderPayload carries the resolved mode out via this
-    --     short-circuit. When an aura is up the payload arrives with
-    --     mode == "aura" and the aura swipe wins automatically.
+    --     picks lanes in this order, and BuildMirrorRenderPayload carries
+    --     the resolved mode out via this short-circuit.
     --   * Non-mirror icons:     the explicit ResolveAuraDurationObjectForIcon
-    --     check below enforces the same rule for entries with no Blizzard
-    --     CDM mirror.
+    --     check below enforces the same rule for aura entries with no
+    --     Blizzard CDM mirror.
     -- Future change: if you reorder one path, reorder the other in lockstep.
     local mirrorPayload = CDMResolvers.ResolveMirrorRenderPayloadForEntry(
         entry,
@@ -1712,10 +1712,11 @@ function CDMResolvers.ResolveIconDurationObject(icon)
             mirrorPayload
     end
 
-    -- 1. Aura up on player → aura DurObj. Use the same ResolveAuraState path
-    -- as UpdateIconCooldown so the event-driven CooldownFrame binding and the
-    -- per-icon active-state update cannot disagree in combat. Non-mirror
-    -- branch of the priority rule — see comment above the mirror short-circuit.
+    -- 1. Aura-kind entries: aura up on player -> aura DurObj. Use the same
+    -- ResolveAuraState path as UpdateIconCooldown so the event-driven
+    -- CooldownFrame binding and the per-icon active-state update cannot
+    -- disagree in combat. Cooldown-kind entries skip this through
+    -- ShouldUseBuffSwipeForIcon.
     local auraDur, auraActive, auraSourceID = CDMResolvers.ResolveAuraDurationObjectForIcon(icon, entry, sid)
     if auraActive then
         return auraDur, "aura", auraSourceID

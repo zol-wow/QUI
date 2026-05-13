@@ -1187,9 +1187,9 @@ local okI = true; local aIcon = r.auraData.icon
                 end
             end
         else
-            -- Unified non-item path: aura detection via the resolver, then
-            -- cooldown/recharge resolution via C_Spell-backed APIs. No
-            -- Blizzard CDM viewer child reads.
+            -- Unified non-item path: aura-kind entries detect aura state via
+            -- the resolver; cooldown-kind entries go straight to cooldown /
+            -- recharge resolution. No Blizzard CDM viewer child reads.
             local _chargedAuraActive = false
             local _chargedTotemTexture = nil
             local useBuffSwipe = CDMIcons.ShouldUseBuffSwipeForIcon(icon, entry)
@@ -1339,7 +1339,7 @@ local okI = true; local aIcon = r.auraData.icon
 
         if icon.Cooldown then
             -- Decide what to draw from the actual rendered state first:
-            -- aura swipe wins, then real cooldown/recharge, then GCD.
+            -- aura-kind state, then real cooldown/recharge, then GCD.
             -- isOnGCD is only used when this batch came from
             -- SPELL_UPDATE_COOLDOWN; outside that event it can be stale.
             local auraSwipeActive = icon._auraActive or IsAuraEntry(entry)

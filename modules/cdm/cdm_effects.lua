@@ -1304,7 +1304,7 @@ end
 ---------------------------------------------------------------------------
 -- APPLY SWIPE TO A SINGLE ICON
 -- Classification prefers the icon's active rendered swipe state:
--- aura wins, then explicit GCD render flag, then cooldown.
+-- aura-kind state, then explicit GCD render flag, then cooldown.
 ---------------------------------------------------------------------------
 local function ApplySwipeToIcon(icon, settings)
     if not icon or not icon.Cooldown or not icon._spellEntry then return end

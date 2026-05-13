@@ -2,8 +2,9 @@
 -- Run: lua tests/cdm_spelldata_aura_boundary_test.lua
 
 local function noop() end
+local inCombat = false
 
-function InCombatLockdown() return false end
+function InCombatLockdown() return inCombat end
 function GetTime() return 1 end
 function wipe(tbl)
     for key in pairs(tbl) do
@@ -43,7 +44,7 @@ end
 C_Timer = { After = function(_, callback) callback() end }
 AuraUtil = {
     ForEachAura = function()
-        error("PLAYER_REGEN_DISABLED should not force an aura rescan")
+        error("boundary events should not force an auraInstanceID rescan")
     end,
 }
 
@@ -80,16 +81,36 @@ for _, frame in ipairs(frames) do
 end
 
 assert(auraFrame, "aura capture frame should register UNIT_AURA")
-assert(auraFrame.events.ENCOUNTER_START == true, "aura capture should refresh on encounter start")
-assert(auraFrame.events.CHALLENGE_MODE_START == true, "aura capture should refresh on challenge start")
-assert(auraFrame.events.PVP_MATCH_ACTIVE == true, "aura capture should refresh on active PvP match")
+assert(auraFrame.events.PLAYER_ENTERING_WORLD ~= true, "zone/login bootstrap should not force an auraInstanceID rescan")
+assert(auraFrame.events.PLAYER_REGEN_ENABLED ~= true, "combat exit should not force an auraInstanceID rescan")
+assert(auraFrame.events.ENCOUNTER_START ~= true, "encounter start should not force an auraInstanceID rescan")
+assert(auraFrame.events.CHALLENGE_MODE_START ~= true, "challenge start should not force an auraInstanceID rescan")
+assert(auraFrame.events.PVP_MATCH_ACTIVE ~= true, "active PvP match should not force an auraInstanceID rescan")
 assert(auraFrame.events.PLAYER_REGEN_DISABLED ~= true, "combat start should not be treated as an aura-instance rerandomization boundary")
 
-local ok, err = pcall(function()
-    auraFrame.script(auraFrame, "PLAYER_REGEN_DISABLED")
-end)
+local boundaryEvents = {
+    "PLAYER_REGEN_DISABLED",
+    "PLAYER_REGEN_ENABLED",
+    "ENCOUNTER_START",
+    "CHALLENGE_MODE_START",
+    "PVP_MATCH_ACTIVE",
+    "PLAYER_ENTERING_WORLD",
+}
 
-assert(ok, "PLAYER_REGEN_DISABLED should not rescan captured auras: " .. tostring(err))
+for _, event in ipairs(boundaryEvents) do
+    local ok, err = pcall(function()
+        auraFrame.script(auraFrame, event)
+    end)
+    assert(ok, event .. " should not rescan captured auraInstanceIDs: " .. tostring(err))
+end
+
 assert(auraRefreshes == 0, "PLAYER_REGEN_DISABLED should not notify aura consumers by itself")
+
+inCombat = true
+local ok, err = pcall(function()
+    ns.CDMSpellData:Initialize()
+end)
+inCombat = false
+assert(ok, "CDMSpellData initialization should not bootstrap auraInstanceID cache: " .. tostring(err))
 
 print("OK: cdm_spelldata_aura_boundary_test")

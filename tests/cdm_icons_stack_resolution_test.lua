@@ -100,6 +100,22 @@ assert(loadfile("modules/cdm/cdm_icons.lua"))("QUI", ns)
 
 local icons = ns.CDMIcons
 
+assert(icons.ShouldUseBuffSwipeForIcon({}, {
+    type = "spell",
+    id = 55090,
+    spellID = 55090,
+    kind = "cooldown",
+    viewerType = "essential",
+}) == false, "cooldown icons should skip buff/debuff swipe aura detection")
+
+assert(icons.ShouldUseBuffSwipeForIcon({}, {
+    type = "spell",
+    id = 194310,
+    spellID = 194310,
+    kind = "aura",
+    viewerType = "buff",
+}) == true, "aura icons should still use buff/debuff swipe aura detection")
+
 local text, textSource, mirrorBacked = icons.ResolveIconStackText({
     _spellEntry = {
         type = "spell",

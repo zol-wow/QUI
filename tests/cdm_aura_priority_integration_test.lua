@@ -4,22 +4,24 @@
 -- Locks the swipe-priority contract end-to-end across mirror lane selection
 -- and resolver payload classification:
 --
---     aura > charge/recharge > cd > gcd
+--     aura entries:     aura > charge/recharge > cd > gcd
+--     cooldown entries: charge/recharge > cd > gcd
 --
--- Regression coverage for the bug where cooldown entries with a player aura
--- up rendered the cooldown swipe instead of the aura swipe.  The fix lives
+-- Regression coverage for cooldown entries that also have a player aura up.
+-- The aura lane is still mirrored for stack/active state, but cooldown-kind
+-- icons must not render the aura DurationObject as their swipe. The fix lives
 -- at two layers:
 --
---   1. cdm_blizz_mirror.lua's SelectDurationForState picks lanes in priority
---      order and SetDurationLane(gcd) no longer wipes the cooldown lane.
+--   1. cdm_blizz_mirror.lua's SelectDurationForState skips aura lanes for
+--      cooldown viewers and SetDurationLane(gcd) no longer wipes the
+--      cooldown lane.
 --      Verified end-to-end in cdm_blizz_mirror_duration_test.lua.
 --   2. cdm_resolvers.lua's ResolveMirrorRenderPayloadForEntry passes the
 --      mirror's selected mode through to the icon factory.  Verified here.
 --
--- Failure mode this test catches: the mirror selects the aura lane (driven
--- by a real player aura) but the resolver classifies the payload as
--- "cooldown" anyway, causing the icon to render the cooldown swipe instead
--- of the aura swipe.
+-- Failure mode this test catches: a cooldown entry selects the aura lane
+-- ahead of recharge/cooldown, causing the icon to render the buff/debuff
+-- duration swipe instead of the actual charge or cooldown swipe.
 
 local function noop() end
 
@@ -66,15 +68,15 @@ local function makeState(cooldownID, category, lanes, selected)
 end
 
 -- Scenario A: aura up + cooldown running on a non-aura cooldown entry.
--- Mirror's SelectDurationForState picks aura ahead of cooldown.
+-- Mirror's SelectDurationForState skips aura and picks cooldown.
 makeState(50001, "essential",
     { aura = auraDur, cooldown = cooldownDur },
-    { durObj = auraDur, durObjSource = "aura-duration", resolvedMode = "aura" })
+    { durObj = cooldownDur, durObjSource = "cooldown-frame", resolvedMode = "cooldown" })
 
--- Scenario B: aura up + recharge + cooldown.  Aura still wins.
+-- Scenario B: aura up + recharge + cooldown.  Recharge wins.
 makeState(50002, "essential",
     { aura = auraDur, resource = chargeDur, cooldown = cooldownDur },
-    { durObj = auraDur, durObjSource = "aura-duration", resolvedMode = "aura" })
+    { durObj = chargeDur, durObjSource = "spell-charge", resolvedMode = "charge" })
 
 -- Scenario C: recharge + cooldown, no aura.  Recharge wins over cooldown.
 makeState(50003, "essential",
@@ -135,22 +137,22 @@ local function entry(spellID)
     }
 end
 
--- Scenario A: aura > cooldown
+-- Scenario A: cooldown > aura for cooldown entries
 local payload = resolveMirror(entry(50001), 50001, "essential", 50001)
 assert(payload, "scenario A: aura+cooldown state should produce a mirror payload")
-assert(payload.mode == "aura",
-    "scenario A: cooldown entry with aura up should resolve to aura mode (got " .. tostring(payload.mode) .. ")")
-assert(payload.durObj == auraDur,
-    "scenario A: cooldown entry with aura up should carry the aura DurationObject")
+assert(payload.mode == "cooldown",
+    "scenario A: cooldown entry with aura up should resolve to cooldown mode (got " .. tostring(payload.mode) .. ")")
+assert(payload.durObj == cooldownDur,
+    "scenario A: cooldown entry with aura up should carry the cooldown DurationObject")
 assert(payload.active == true, "scenario A: payload should be active")
 
--- Scenario B: aura > charge > cooldown
+-- Scenario B: charge > cooldown > aura for cooldown entries
 payload = resolveMirror(entry(50002), 50002, "essential", 50002)
 assert(payload, "scenario B: aura+charge+cooldown state should produce a mirror payload")
-assert(payload.mode == "aura",
-    "scenario B: cooldown entry with aura up + recharge should resolve to aura mode (got " .. tostring(payload.mode) .. ")")
-assert(payload.durObj == auraDur,
-    "scenario B: cooldown entry with aura up + recharge should carry the aura DurationObject")
+assert(payload.mode == "charge",
+    "scenario B: cooldown entry with aura up + recharge should resolve to charge mode (got " .. tostring(payload.mode) .. ")")
+assert(payload.durObj == chargeDur,
+    "scenario B: cooldown entry with aura up + recharge should carry the charge DurationObject")
 
 -- Scenario C: charge > cooldown
 payload = resolveMirror(entry(50003), 50003, "essential", 50003)
@@ -191,16 +193,15 @@ assert(payload.mode == "aura",
 assert(payload.durObj == auraDur,
     "scenario F: aura-viewer entry should carry the aura DurationObject")
 
--- Negative: reorder regression detector.  If a future change reverses lane
--- priority in either layer (mirror selection or resolver classification),
--- scenario A flips to mode == "cooldown".  This explicit assertion makes
--- the failure unambiguous in the test output.
+-- Negative: reorder regression detector.  If a future change restores aura
+-- as the selected lane for cooldown entries, scenario A flips to mode ==
+-- "aura". This explicit assertion makes the failure unambiguous.
 local regressionPayload = resolveMirror(entry(50001), 50001, "essential", 50001)
-assert(regressionPayload.mode ~= "cooldown",
-    "REGRESSION: cooldown entry with aura up resolved to cooldown mode — "
-    .. "swipe priority is broken (aura must outrank cooldown).  "
+assert(regressionPayload.mode ~= "aura",
+    "REGRESSION: cooldown entry with aura up resolved to aura mode - "
+    .. "cooldown icons must skip the aura swipe lane.  "
     .. "Check (a) cdm_blizz_mirror.lua SelectDurationForState lane order, "
-    .. "(b) BindChildHooks no longer clears the aura lane on cooldown writes, "
-    .. "(c) cdm_resolvers.lua ClassifyMirrorDurationMode maps aura-duration to aura.")
+    .. "(b) cdm_icons.lua ShouldUseBuffSwipeForIcon, "
+    .. "(c) cdm_resolvers.lua mirror payload classification.")
 
 print("OK: cdm_aura_priority_integration_test")

@@ -152,16 +152,10 @@ local AURA_CAPTURE_LOOKUP_UNITS = SELF_AURA_CAPTURE_LOOKUP_UNITS
 -- of truth for duration resolution while restricted-scope lookups are
 -- active.
 --
--- The auraInstanceID is stable inside the active encounter/combat context,
--- but can re-randomize on ENCOUNTER_START / CHALLENGE_MODE_START /
--- PVP_MATCH_ACTIVE. It is documented NeverSecret even though the surrounding
--- AuraData payload is ConditionalSecretContents.
--- Two implications:
---   1. The cache is rebuilt on encounter/M+/PvP start and isFullUpdate,
---      not on ordinary combat start.
---   2. The captured instID can be stored, keyed, and compared safely. It is
---      also forwarded to C-side sinks (C_UnitAuras.GetAuraDuration,
---      C_UnitAuras.GetAuraDataByAuraInstanceID).
+-- The auraInstanceID is documented NeverSecret even though the surrounding
+-- AuraData payload is ConditionalSecretContents. It can be stored, keyed, and
+-- compared safely, and it is forwarded to C-side sinks
+-- (C_UnitAuras.GetAuraDuration, C_UnitAuras.GetAuraDataByAuraInstanceID).
 --
 -- Eviction strategy is event-driven. The `removedAuraInstanceIDs` payload
 -- field is documented `NeverSecretContents = true`, and auraInstanceID itself
@@ -169,8 +163,8 @@ local AURA_CAPTURE_LOOKUP_UNITS = SELF_AURA_CAPTURE_LOOKUP_UNITS
 -- `removedAuraInstanceIDs` for a unit is treated as a "something on this unit
 -- just died" trigger: walk the unit's cache and validate each entry by
 -- forwarding its stored instID to GetAuraDataByAuraInstanceID — nil response
--- → evict by Lua identity. Periodic full rescans (encounter/M+/PvP start,
--- isFullUpdate, login/zone-in, and combat exit) remain as a backstop.
+-- → evict by Lua identity. Full UNIT_AURA updates may rescan that unit, but
+-- combat/zone/instance/PvP boundaries do not clear or rebuild this cache.
 ---------------------------------------------------------------------------
 local _capturedAuraBySpellID = {}    -- [spellID]      -> {auraInstanceID, unit, spellID, name, filter}
 local _capturedAuraByName    = {}    -- [name:lower()] -> same entry
@@ -425,13 +419,6 @@ local function FindCorrelatedCast(now)
     return nil
 end
 
-local function ClearCapturedAuras()
-    wipe(_capturedAuraBySpellID)
-    wipe(_capturedAuraByName)
-    wipe(_capturedAuraByUnitSpellID)
-    wipe(_capturedAuraByUnitName)
-end
-
 local function StoreCapturedSpellKey(unit, spellID, entry)
     if not IsUsableSpellIDKey(spellID) then return end
     local unitMap = GetCapturedUnitMap(_capturedAuraByUnitSpellID, unit)
@@ -594,10 +581,8 @@ local function EvictDeadCacheEntriesForUnit(unit)
     probe(_capturedAuraByUnitName[unit])
 end
 
--- Full rescan via AuraUtil.ForEachAura. Used on isFullUpdate (which carries
--- no addedAuras list — it's a "rescan everything" signal), encounter/M+/PvP
--- boundaries, combat exit, and initial bootstrap so auras already on the
--- player at /reload time are captured without waiting for them to re-apply.
+-- Full rescan via AuraUtil.ForEachAura. Used only on UNIT_AURA isFullUpdate
+-- (which carries no addedAuras list — it's a "rescan everything" signal).
 --
 -- In combat, some packed payload fields can be secret; auraInstanceID is
 -- NeverSecret and is captured directly.
@@ -625,11 +610,6 @@ local function RescanCapturedAurasForUnit(unit)
     end, true)
 end
 
-local function RefreshCapturedAuras()
-    RescanCapturedAurasForUnit("player")
-    RescanCapturedAurasForUnit("pet")
-end
-
 local function NotifyAuraConsumers(unit, updateInfo)
     local mirror = ns.CDMBlizzMirror
     if mirror and mirror.HandleUnitAuraChanged then
@@ -651,19 +631,6 @@ local function AuraCaptureFrameOnEvent(self, event, ...)
         return
     end
 
-    if event == "PLAYER_ENTERING_WORLD" then
-        -- Bootstrap capture for auras already applied at login / zone-in.
-        -- Without this, only auras applied AFTER load fire addedAuras —
-        -- pre-existing ones (e.g. Mana Tea stacks already on the player)
-        -- never enter the active-aura index.
-        --
-        -- Data-pipeline boundary: refresh the capture cache here; do not
-        -- push to consumers. Downstream (mirror, icons, glows) observes
-        -- through its own channels — its own event registrations, the
-        -- next UNIT_AURA, or the next scheduled tick.
-        RefreshCapturedAuras()
-        return
-    end
     if event == "UNIT_SPELLCAST_SUCCEEDED" then
         -- Args: (unit, castGUID, spellID, castBarID). Filtered to player
         -- via RegisterUnitEvent; explicit unit check is belt-and-suspenders.
@@ -677,26 +644,6 @@ local function AuraCaptureFrameOnEvent(self, event, ...)
         -- Target aura state lives in the Blizzard CDM mirror, not our
         -- local capture cache, so just notify consumers to re-resolve.
         NotifyAuraConsumers("target", nil)
-        return
-    end
-    if event == "PLAYER_REGEN_ENABLED"
-        or event == "ENCOUNTER_START"
-        or event == "CHALLENGE_MODE_START"
-        or event == "PVP_MATCH_ACTIVE" then
-        -- Data-pipeline boundary: refresh the capture cache and stop.
-        -- Downstream consumers observe through their own channels rather
-        -- than being force-pushed from this layer:
-        --   * The mirror has its own PLAYER_REGEN_ENABLED handler and
-        --     self-heals stale auraInstanceID references when its lazy
-        --     Sources.QueryAuraDuration lookups return nil.
-        --   * Icons re-resolve via the mirror plus their scheduled tick.
-        --   * UNIT_AURA fires at encounter / M+ / PvP start as Blizzard
-        --     re-applies auras under the new instance IDs.
-        -- Pushing NotifyAuraConsumers(nil, nil) here would route through
-        -- HandleCDMAuraRefresh's `not updateInfo` branch and trigger
-        -- CDM_UPDATE_FULL + ApplyResolvedCooldownForAuraScope — a visible
-        -- full CDM reset on every combat exit.
-        RefreshCapturedAuras()
         return
     end
     if event ~= "UNIT_AURA" then return end
@@ -739,12 +686,7 @@ local function RegisterAuraCaptureFrame()
     auraCaptureFrame:SetScript("OnEvent", AuraCaptureFrameOnEvent)
     auraCaptureFrame:RegisterUnitEvent("UNIT_AURA", "player", "pet", "target")
     auraCaptureFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-    auraCaptureFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     auraCaptureFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
-    auraCaptureFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    auraCaptureFrame:RegisterEvent("ENCOUNTER_START")
-    auraCaptureFrame:RegisterEvent("CHALLENGE_MODE_START")
-    auraCaptureFrame:RegisterEvent("PVP_MATCH_ACTIVE")
 end
 
 RegisterAuraCaptureFrame()
@@ -4479,7 +4421,6 @@ function CDMSpellData:Initialize()
 
     RegisterAuraCaptureFrame()
     SyncCooldownViewerCVarToMasterToggle()
-    RefreshCapturedAuras()
 
     ForceLoadCDM()
     -- Deferred init: edit-mode callbacks + reconciliation. The legacy scan
@@ -4490,7 +4431,6 @@ function CDMSpellData:Initialize()
         UpdateCooldownViewerCVar()
         RegisterEditModeCallbacks()
         initialized = true
-        RefreshCapturedAuras()
         if not InCombatLockdown() then
             CDMSpellData:ReconcileAllContainers()
         end
@@ -4509,11 +4449,6 @@ function CDMSpellData:Initialize()
     eventFrame:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED")
     eventFrame:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED")
     eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    -- 12.0.5: auraInstanceID values re-randomize on encounter/M+/PvP start.
-    -- Rescan active auras so captured IDs stay aligned with the new instance IDs.
-    eventFrame:RegisterEvent("ENCOUNTER_START")
-    eventFrame:RegisterEvent("CHALLENGE_MODE_START")
-    eventFrame:RegisterEvent("PVP_MATCH_ACTIVE")
     eventFrame:SetScript("OnEvent", function(self, event, arg)
         if not IsCDMRuntimeEnabled() then
             self:UnregisterAllEvents()
@@ -4542,9 +4477,8 @@ function CDMSpellData:Initialize()
             -- (IsSpellKnown, IsPlayerSpell, CDM viewer) are temporarily
             -- stale after PLAYER_ENTERING_WORLD, causing override spells
             -- (e.g. Ice Cold 414658 replacing Ice Block 45438) to be
-            -- incorrectly marked dormant. Dedicated handlers for
-            -- CHALLENGE_MODE_START and PLAYER_ENTERING_WORLD already run
-            -- dormant checks with better timing once APIs stabilise.
+            -- incorrectly marked dormant. PLAYER_ENTERING_WORLD already
+            -- holds these checks until APIs stabilise.
             if _inZoneTransition then
                 return
             end
@@ -4580,28 +4514,13 @@ function CDMSpellData:Initialize()
             end
             RebuildSpellToCooldownID()
             FireChangeCallback()
-        elseif event == "ENCOUNTER_START" or event == "CHALLENGE_MODE_START" or event == "PVP_MATCH_ACTIVE" then
-            -- Blizzard re-randomizes auraInstanceID values on these events
-            -- (12.0.5+). Wipe the captured-aura index and rescan with the
-            -- post-randomization IDs.
-            ClearCapturedAuras()
-            -- Without this, auras already applied at encounter start (e.g.
-            -- pre-pull buffs) keep stale IDs in the active-aura index or stay
-            -- absent entirely.
-            RefreshCapturedAuras()
         elseif event == "PLAYER_REGEN_ENABLED" then
-            -- OOC rescan: ForEachAura can walk the full aura state without
-            -- combat restricted-scope query limits, so this is the most
-            -- reliable moment to refresh the active-aura index.
-            RefreshCapturedAuras()
             if _cooldownViewerRebuildPending then
                 _cooldownViewerRebuildPending = false
                 RebuildSpellToCooldownID()
                 FireChangeCallback()
             end
         elseif event == "PLAYER_ENTERING_WORLD" then
-            ClearCapturedAuras()
-            RefreshCapturedAuras()
             -- Suppress SPELLS_CHANGED dormant checks during zone transitions.
             -- APIs are stale for ~1-2s after entering a new zone/instance.
             _inZoneTransition = true
@@ -4616,10 +4535,8 @@ function CDMSpellData:Initialize()
                         UpdateCooldownViewerCVar()
                         RegisterEditModeCallbacks()
                         initialized = true
-                        RefreshCapturedAuras()
                     end)
                 end
-                RefreshCapturedAuras()
             end)
         end
     end)
