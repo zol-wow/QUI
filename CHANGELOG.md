@@ -10,6 +10,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha30 - 2026-05-12
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing alpha29 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Added
+- **New option: "Show Buff/Debuff Phase on Cooldown Icons"** (Effects → Swipe, default **on**). When enabled, cooldown icons show their linked buff/debuff phase before switching to recharge or cooldown — restoring the pre-alpha29 behavior. Disable it to keep alpha29's strict cooldown-only swipe on cooldown viewers.
+
+### Changed
+- **Damage-meter skinning dropped its secret-safe entry-display overrides** (the replacement `UpdateName`/`UpdateValue`/`UpdateIcon`/`UpdateStatusBar` shims plus pcall wrappers around `GetThumb`/`GetScrollBar`/`GetLocalPlayerEntry`). They weren't catching real faults in practice; the per-instance UpdateBackground / UpdateStyle skin hooks are unchanged. Smaller surface, less per-frame work.
+
+
+
 ## v3.6.0-alpha29 - 2026-05-12
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing alpha28 profiles carry over unchanged.
