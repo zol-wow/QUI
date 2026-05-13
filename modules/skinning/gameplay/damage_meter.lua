@@ -329,21 +329,21 @@ end
 -- raw seconds because splitting into minutes/seconds requires arithmetic on
 -- the secret, which no documented API permits.
 local function SecretSafeSetSessionDuration(self, durationSeconds)
-    local fsOK, fontString = SafeGetMethodResult(self, "GetSessionTimerFontString")
-    if not fsOK or not fontString then return end
+    local fontString = self:GetSessionTimerFontString()
+    if not fontString then return end
 
     if Helpers.IsSecretValue(durationSeconds) then
         if C_StringUtil and C_StringUtil.TruncateWhenZero and C_StringUtil.WrapString then
             local seconds = C_StringUtil.TruncateWhenZero(durationSeconds)
-            SecureCallMethod(fontString, "SetText", C_StringUtil.WrapString(seconds, "[", "s] "))
+            fontString:SetText(C_StringUtil.WrapString(seconds, "[", "s] "))
         end
         return
     end
 
     if durationSeconds and durationSeconds ~= 0 then
-        SecureCallMethod(fontString, "SetText", ("[%s] "):format(SecondsToClock(durationSeconds)))
+        fontString:SetText(("[%s] "):format(SecondsToClock(durationSeconds)))
     else
-        SecureCallMethod(fontString, "SetText", "")
+        fontString:SetText("")
     end
 end
 
@@ -803,8 +803,8 @@ local function ForceLockWindow(window)
         -- "lock" entry in the dropdown menu so it reflects locked state.
         SecureCallMethod(window, "SetLocked", true)
     end
-    if window.SetMovable    then SecureCallMethod(window, "SetMovable", false) end
-    if window.SetResizable  then SecureCallMethod(window, "SetResizable", false) end
+    if window.SetMovable    then window:SetMovable(false) end
+    if window.SetResizable  then window:SetResizable(false) end
 end
 
 ---------------------------------------------------------------------------
@@ -1210,7 +1210,7 @@ RegisterWithLayoutMode = function(window, key, label)
             -- Always toggle the session WINDOW (not the manager) so the
             -- manager keeps its anchor-target footprint stable for other
             -- frames that may anchor to it via QUI_Anchoring.
-            if hide then SecureCallMethod(window, "Hide") else SecureCallMethod(window, "Show") end
+            if hide then window:Hide() else window:Show() end
         end,
         onOpen = function()
             -- Layout Mode calls onOpen before creating the handle on first
@@ -1345,7 +1345,7 @@ local function ApplySavedSizeToWindow(window)
     if not w or not h then return end
     local target = ResolveResizeTargetForWindow(window)
     if not target then return end
-    SecureCallMethod(target, "SetSize", w, h)
+    target:SetSize(w, h)
 end
 
 ApplyAllSavedMeterSizes = function()
@@ -1394,7 +1394,7 @@ local function MeterSliderSetSize(key, w, h)
         handle:SetSize(cw, ch)
     end
     if target then
-        SecureCallMethod(target, "SetSize", cw, ch)
+        target:SetSize(cw, ch)
         if handle then
             local targetParent = target.GetParent and target:GetParent() or nil
             if handle._savedTargetParent or targetParent == handle then
@@ -1453,7 +1453,7 @@ local function ApplyResizeRect(handle, target, left, bottom, width, height)
     handle:SetSize(w, h)
 
     if not target then return end
-    SecureCallMethod(target, "SetSize", w, h)
+    target:SetSize(w, h)
 
     -- Layout Mode normally reparents proxy targets into the handle. When
     -- resize runs before that deferred step, keep the target aligned manually.
@@ -1688,7 +1688,7 @@ local function InstallEditModeSuppression()
     local function HideDamageMeterCheckbox()
         local panel = EditModeManagerFrame and EditModeManagerFrame.AccountSettings
         local cb = panel and panel.settingsCheckButtons and panel.settingsCheckButtons.DamageMeter
-        if cb and cb.Hide then SecureCallMethod(cb, "Hide") end
+        if cb and cb.Hide then cb:Hide() end
     end
     HideDamageMeterCheckbox()
     if EditModeManagerFrame.AccountSettings and EditModeManagerFrame.AccountSettings.LayoutSettings then
@@ -1728,7 +1728,7 @@ local function InstallEditModeSuppression()
                 SecureCallMethod(mgr, "ClearHighlight")
             end
             if mgr.Selection and mgr.Selection.Hide then
-                SecureCallMethod(mgr.Selection, "Hide")
+                mgr.Selection:Hide()
             end
             if EditModeMagnetismManager and EditModeMagnetismManager.UnregisterFrame then
                 SecureCallMethod(EditModeMagnetismManager, "UnregisterFrame", mgr)
@@ -1763,7 +1763,7 @@ local function InstallEditModeSuppression()
             hooksecurefunc(_G.DamageMeter, "UpdateSystemSettingFrameWidth", function(self)
                 local w, _ = LoadMeterSize("damageMeter_primary")
                 if w and not InCombatLockdown() then
-                    SecureCallMethod(self, "SetWidth", w)
+                    self:SetWidth(w)
                 end
             end)
         end
@@ -1771,7 +1771,7 @@ local function InstallEditModeSuppression()
             hooksecurefunc(_G.DamageMeter, "UpdateSystemSettingFrameHeight", function(self)
                 local _, h = LoadMeterSize("damageMeter_primary")
                 if h and not InCombatLockdown() then
-                    SecureCallMethod(self, "SetHeight", h)
+                    self:SetHeight(h)
                 end
             end)
         end
