@@ -10,6 +10,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha31 - 2026-05-13
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing alpha30 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **Damage-meter source breakdown popup no longer trips taint in combat or on combat-restricted source IDs.** Clicking a source row that resolves to a secret `sourceGUID` / `sourceCreatureID` — or trying to open the popup while in combat lockdown — used to drop into `C_DamageMeter.GetCombatSessionSourceFromType` / `…FromID` with tainted arguments and throw. QUI now bails out of the popup-open path under those conditions and closes any already-open popup if combat starts with it visible.
+- **Session list no longer faults on the `totalAmount` compare in `BuildDataProvider`.** The stock data-provider build read `combatSource.totalAmount` in Lua to short-circuit a redundant popup refresh; that field is secret in restricted contexts. The replacement build skips the compare and just marks the popup stale when there's a focused source.
+- **Totem-summoning buffs that don't enumerate by slot pick up their duration via a frame-side fallback.** When the conventional totem-slot walk misses a cooldown (some buff-only summons), the mirror now reads `preferredTotemUpdateSlot` / `totemData.slot` off the matched child and forwards `GetTotemDuration(slot)` so the swipe still tracks the buff.
+- **CDM mirror text refreshes are now targeted per-icon instead of a global sweep.** Stack / aura state changes refresh only the affected icon's cooldown text rather than running `UpdateAllCooldowns` on every pulse.
+- **Mirror no longer registers its own UNIT_AURA handler** — it consumes the pipeline from `cdm_spelldata`, so aura events scan once per pulse instead of twice.
+
+### Added
+- **Per-event icon profiler in `/qui cdm_cache`.** When tracking is enabled, the slash command prints the top icon events by cost (ms/sec, calls/sec) for the recent window, so combat hot spots show up in-game without an external profiler.
+
+### Internal
+- Damage-meter source-window focus state moved off Blizzard frames onto a `Helpers.CreateStateTable()` side-table. Taint-safer; cleanup is automatic via weak keys.
+- `QUI_Debug` performance monitor renamed its primary target field and pinned its metric thresholds against a regression test.
+
+
+
 ## v3.6.0-alpha30 - 2026-05-12
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; existing alpha29 profiles carry over unchanged.
