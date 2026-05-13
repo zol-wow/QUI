@@ -23,13 +23,14 @@ local FALLBACK_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 
 -- Forward declarations. Defined later in the file but referenced by earlier
 -- functions:
---   * DeferSkinRow / DeferStripRowBackground (defined ~line 980) are called
---     from EnsureWindowSkinned (line 831) and InstallEntrySkinHooks.
+--   * DeferSkinRow / DeferStripRowBackground (defined later) are called
+--     from EnsureWindowSkinned and InstallEntrySkinHooks.
 --   * InstallEntrySkinHooks (defined after DeferStripRowBackground) is called
---     from PatchEntryFrameDisplayMethods (line 295) to wire per-instance
---     UpdateBackground / UpdateStyle hooks. Needed for frames whose mixin
---     methods were Mixin()-copied at creation (LocalPlayerEntry XML children
---     created in DamageMeter:OnLoad before our ADDON_LOADED hook fires).
+--     directly from session-window event handlers and ForEachEntryFrame
+--     callbacks to wire per-instance UpdateBackground / UpdateStyle hooks.
+--     Needed for frames whose mixin methods were Mixin()-copied at creation
+--     (LocalPlayerEntry XML children created in DamageMeter:OnLoad before
+--     our ADDON_LOADED hook fires).
 local DeferSkinRow
 local DeferStripRowBackground
 local InstallEntrySkinHooks
@@ -63,244 +64,6 @@ local function DeferDamageMeterWork(fn, ...)
     C_Timer.After(0, function()
         fn(unpack(args, 1, argc))
     end)
-end
-
-local entryDisplayOverridesInstalled = false
-
-local function SafeGetMethodResult(obj, method, ...)
-    if not obj then return false end
-    local fn = obj[method]
-    if type(fn) ~= "function" then return false end
-
-    if securecallfunction then
-        return pcall(securecallfunction, fn, obj, ...)
-    end
-    return pcall(fn, obj, ...)
-end
-
-local function SetEntryTextFromMethod(self, textMethod, fontStringMethod)
-    local textOK, text = SafeGetMethodResult(self, textMethod)
-    if not textOK then return end
-
-    local fontStringOK, fontString = SafeGetMethodResult(self, fontStringMethod)
-    if not fontStringOK then return end
-
-    SecureCallMethod(fontString, "SetText", text)
-end
-
-local function SecretSafeUpdateName(self)
-    SetEntryTextFromMethod(self, "GetNameText", "GetName")
-end
-
-local function GetEntryValueFontString(self)
-    if not self then return nil end
-    if type(self.GetValue) == "function" then
-        local ok, fontString = pcall(self.GetValue, self)
-        if ok and fontString then return fontString end
-    end
-    local statusBar = self.StatusBar
-    return statusBar and statusBar.Value or nil
-end
-
-local function GetEntryNumberDisplayType(self)
-    local numbers = Enum and Enum.DamageMeterNumbers
-    return (self and self.numberDisplayType) or (numbers and numbers.Minimal) or 0
-end
-
-local function EntryShowsValuePerSecondAsPrimary(self)
-    return self and self.showsValuePerSecondAsPrimary == true
-end
-
-local function EntrySuppressesValuePerSecond(self)
-    return self and self.suppressValuePerSecond == true
-end
-
-local function GetEntryMainValue(self)
-    if EntryShowsValuePerSecondAsPrimary(self) then
-        local valuePerSecond = self and self.valuePerSecond
-        if valuePerSecond then return valuePerSecond end
-    end
-
-    local value = self and self.value
-    if value then return value end
-    return 0
-end
-
-local function GetEntryParentheticalValue(self)
-    if EntryShowsValuePerSecondAsPrimary(self) then
-        local value = self and self.value
-        if value then return value, true end
-        return nil, false
-    end
-
-    if EntrySuppressesValuePerSecond(self) then
-        return nil, false
-    end
-
-    local valuePerSecond = self and self.valuePerSecond
-    if valuePerSecond then return valuePerSecond, true end
-
-    return 0, true
-end
-
-local function FormatEntryNumber(value, fallbackText)
-    if value then
-        if C_StringUtil and C_StringUtil.RoundToNearestString then
-            local ok, text = pcall(C_StringUtil.RoundToNearestString, value)
-            if ok then return text, true end
-        end
-    end
-
-    return fallbackText, fallbackText and true or false
-end
-
-local function WrapEntryParentheticalText(text, hasText)
-    if not hasText then return "", false end
-    if C_StringUtil and C_StringUtil.WrapString then
-        local ok, wrapped = pcall(C_StringUtil.WrapString, text, " (", ")")
-        if ok then return wrapped, true end
-    end
-    return "", false
-end
-
-local function SetEntryValueText(fontString, mainText, hasMainText, parentheticalText, hasParentheticalText)
-    if not fontString then return end
-
-    if not hasMainText then
-        mainText = ""
-    end
-
-    if not hasParentheticalText then
-        SecureCallMethod(fontString, "SetText", mainText)
-        return
-    end
-
-    if type(fontString.SetFormattedText) == "function" then
-        SecureCallMethod(fontString, "SetFormattedText", "%s%s", mainText, parentheticalText)
-    else
-        SecureCallMethod(fontString, "SetText", mainText)
-    end
-end
-
-local function SecretSafeUpdateDeathRecapValue(self, fontString)
-    local deathTimeSeconds = self and self.deathTimeSeconds
-    local text, hasText = FormatEntryNumber(deathTimeSeconds, nil)
-
-    if not hasText then
-        SecureCallMethod(fontString, "SetText", "")
-        return true
-    end
-
-    if type(fontString.SetFormattedText) == "function" then
-        SecureCallMethod(fontString, "SetFormattedText", "%ss", text)
-    else
-        SecureCallMethod(fontString, "SetText", text)
-    end
-    return true
-end
-
--- The stock value formatter computes percentages in Lua
--- (`value / sessionTotalValue`) and faults when either side is secret under
--- addon taint. Treat damage-meter payload values as secret every time: keep
--- the visible main/parenthetical numbers with C-side helpers and omit the
--- percentage, which cannot be computed safely in Lua.
-local function SecretSafeSetValueText(self)
-    local fontString = GetEntryValueFontString(self)
-    if not fontString then return false end
-
-    local deathRecapID = self and self.deathRecapID
-    if deathRecapID and deathRecapID ~= 0 then
-        return SecretSafeUpdateDeathRecapValue(self, fontString)
-    end
-
-    local mainText, hasMainText = FormatEntryNumber(GetEntryMainValue(self), "0")
-    local parentheticalText = nil
-    local hasParentheticalText = false
-    local numbers = Enum and Enum.DamageMeterNumbers
-    local compact = numbers and numbers.Compact or 1
-    local complete = numbers and numbers.Complete or 2
-    local numberDisplayType = GetEntryNumberDisplayType(self)
-
-    if numberDisplayType == compact or numberDisplayType == complete then
-        local parentheticalValue, hasParentheticalValue = GetEntryParentheticalValue(self)
-        local formattedParenthetical, hasFormattedParenthetical =
-            FormatEntryNumber(parentheticalValue, hasParentheticalValue and "0" or nil)
-        parentheticalText, hasParentheticalText =
-            WrapEntryParentheticalText(formattedParenthetical, hasFormattedParenthetical)
-    end
-
-    SetEntryValueText(fontString, mainText, hasMainText, parentheticalText, hasParentheticalText)
-    return true
-end
-
-local function SecretSafeUpdateValue(self)
-    SecretSafeSetValueText(self)
-end
-
-local function SecretSafeUpdateIcon(self)
-    local iconOK, icon = SafeGetMethodResult(self, "GetIcon")
-    if not iconOK or not icon then return end
-
-    local atlasOK, atlas = SafeGetMethodResult(self, "GetIconAtlasElement")
-    if atlasOK and not Helpers.IsSecretValue(atlas) and atlas then
-        SecureCallMethod(icon, "SetAtlas", atlas)
-        return
-    end
-
-    local textureOK, texture = SafeGetMethodResult(self, "GetIconTexture")
-    if textureOK then
-        SecureCallMethod(icon, "SetTexture", texture)
-    end
-end
-
-local function SecretSafeUpdateStatusBar(self)
-    local statusBarOK, statusBar = SafeGetMethodResult(self, "GetStatusBar")
-    if not statusBarOK or not statusBar then return end
-
-    local maxValue = self.maxValue or 0
-    local value = self.value or 0
-
-    SafeGetMethodResult(statusBar, "SetMinMaxValues", 0, maxValue)
-    SafeGetMethodResult(statusBar, "SetValue", value)
-end
-
-local function PatchEntryDisplayMethods(target)
-    if not target then return false end
-
-    local patched = false
-    if type(target.GetNameText) == "function" and type(target.GetName) == "function" then
-        target.UpdateName = SecretSafeUpdateName
-        patched = true
-    end
-    if type(target.GetValueText) == "function" and type(target.GetValue) == "function" then
-        target.UpdateValue = SecretSafeUpdateValue
-        patched = true
-    end
-    if type(target.GetIcon) == "function" and type(target.GetIconTexture) == "function" then
-        target.UpdateIcon = SecretSafeUpdateIcon
-        patched = true
-    end
-    if type(target.GetStatusBar) == "function" then
-        target.UpdateStatusBar = SecretSafeUpdateStatusBar
-        patched = true
-    end
-
-    return patched
-end
-
--- Frame-instance patcher. Setting a Lua field on a frame is not a protected
--- operation, so this is safe in combat — and combat is exactly when the
--- stock-method failure mode trips, so a combat guard would defeat the fix.
---
--- Also wires per-instance UpdateBackground / UpdateStyle hooks. The mixin-
--- level hooks at InstallMixinHooks don't fire on frames whose methods were
--- Mixin()-copied at frame creation (LocalPlayerEntry XML children created
--- during DamageMeter:OnLoad, before our ADDON_LOADED handler installs the
--- mixin hook). Without per-instance hooks, combat-driven UpdateBackground /
--- UpdateStyle on those rows re-asserts stock chrome and our skin disappears.
-local function PatchEntryFrameDisplayMethods(frame)
-    PatchEntryDisplayMethods(frame)
-    if InstallEntrySkinHooks then InstallEntrySkinHooks(frame) end
 end
 
 -- SetSessionDuration replacement. Stock body is:
@@ -356,31 +119,21 @@ end
 
 -- LocalPlayerEntry isn't a direct child of the session window — it lives
 -- under MinimizeContainer (per docs/blizzard/damage-meter-frames.md and
--- DamageMeterSessionWindow.xml). Earlier passes that wrote `window.LocalPlayerEntry`
--- silently no-op'd against nil and the stock UpdateName/UpdateValue/etc.
--- never got swapped on the instance. Use Blizzard's documented convenience
--- accessor when present, fall back to the explicit child path.
+-- DamageMeterSessionWindow.xml). Use Blizzard's documented convenience
+-- accessor when present, fall back to the explicit child path. Resolving
+-- the correct instance matters because InstallEntrySkinHooks installs its
+-- per-instance UpdateBackground/UpdateStyle hooksecurefunc callbacks on
+-- this specific frame — `window.LocalPlayerEntry` is nil and would silently
+-- skip the row.
 local function ResolveLocalPlayerEntry(window)
     if not window then return nil end
     if type(window.GetLocalPlayerEntry) == "function" then
-        local ok, entry = pcall(window.GetLocalPlayerEntry, window)
-        if ok and entry then return entry end
+        local entry = window:GetLocalPlayerEntry()
+        if entry then return entry end
     end
     local mc = window.MinimizeContainer
     if mc and mc.LocalPlayerEntry then return mc.LocalPlayerEntry end
     return window.LocalPlayerEntry
-end
-
-local function InstallSecretSafeEntryOverrides()
-    if entryDisplayOverridesInstalled then return end
-
-    local patched = false
-    patched = PatchEntryDisplayMethods(DamageMeterEntryMixin) or patched
-    patched = PatchEntryDisplayMethods(DamageMeterSourceEntryMixin) or patched
-    patched = PatchEntryDisplayMethods(DamageMeterSpellEntryMixin) or patched
-    patched = PatchSessionWindowDisplayMethods(DamageMeterSessionWindowMixin) or patched
-
-    entryDisplayOverridesInstalled = patched
 end
 
 -- Module-private state. Weak-keyed so frame destruction is automatic.
@@ -578,8 +331,8 @@ local function ResolveScrollBarThumb(scrollBar)
     if not scrollBar then return nil end
 
     if scrollBar.GetThumb then
-        local ok, thumb = pcall(scrollBar.GetThumb, scrollBar)
-        if ok and thumb then return thumb end
+        local thumb = scrollBar:GetThumb()
+        if thumb then return thumb end
     end
 
     if scrollBar.Track and scrollBar.Track.Thumb then
@@ -593,8 +346,8 @@ local function ResolveScrollBarThumbTexture(scrollBar)
     if not scrollBar then return nil end
     if scrollBar.ThumbTexture then return scrollBar.ThumbTexture end
     if scrollBar.GetThumbTexture then
-        local ok, thumb = pcall(scrollBar.GetThumbTexture, scrollBar)
-        if ok and thumb then return thumb end
+        local thumb = scrollBar:GetThumbTexture()
+        if thumb then return thumb end
     end
     return nil
 end
@@ -773,8 +526,8 @@ end
 local function ResolveWindowScrollBar(window)
     if not window then return nil end
     if type(window.GetScrollBar) == "function" then
-        local ok, scrollBar = pcall(window.GetScrollBar, window)
-        if ok and scrollBar then return scrollBar end
+        local scrollBar = window:GetScrollBar()
+        if scrollBar then return scrollBar end
     end
     local mc = window.MinimizeContainer
     return (mc and mc.ScrollBar) or window.ScrollBar
@@ -783,8 +536,8 @@ end
 local function ResolvePopupScrollBar(popup)
     if not popup then return nil end
     if type(popup.GetScrollBar) == "function" then
-        local ok, scrollBar = pcall(popup.GetScrollBar, popup)
-        if ok and scrollBar then return scrollBar end
+        local scrollBar = popup:GetScrollBar()
+        if scrollBar then return scrollBar end
     end
     return popup.ScrollBar
 end
@@ -895,23 +648,19 @@ end
 local function EnsureWindowSkinned(window)
     if not window then return end
 
-    -- Pre-patch entry-frame method copies on every call, BEFORE the IsSkinned
-    -- early exit. LocalPlayerEntry is an XML child of the session window, so
-    -- its UpdateName/UpdateValue/UpdateIcon are copied from
-    -- DamageMeterSourceEntryMixin at frame-creation time. On /reload, the
-    -- session window (and its LocalPlayerEntry child) are constructed during
-    -- DamageMeter:OnLoad → RestoreWindowData → SetupSessionWindow, which runs
-    -- BEFORE our ADDON_LOADED+0.1s mixin patch — so the instance ends up with
-    -- stock UpdateName whose `text ~= self.nameText` compare blows up under
-    -- taint as soon as the secret-string source name lands. Patching the
-    -- instance directly swaps in our SecretSafe* before the next Init runs.
-    -- Same race for SetSessionDuration on the window itself
-    -- (`durationSeconds ~= 0` compare on a secret number from C_DamageMeter).
-    -- Idempotent: re-assigning the same function is a no-op.
+    -- Per-instance taint-safety + skin hooks, BEFORE the IsSkinned early exit.
+    -- PatchSessionWindowDisplayMethods installs SecretSafeSetSessionDuration on
+    -- THIS window instance (in addition to the mixin-level install from
+    -- InstallMixinHooks) so a SetSessionDuration call that fires on the very
+    -- next data tick after we return finds the override already on the frame.
+    -- InstallEntrySkinHooks then installs per-instance UpdateBackground /
+    -- UpdateStyle hooksecurefunc callbacks on each entry frame so QUI chrome
+    -- re-skins on every Blizzard background-style re-assertion. Both calls
+    -- are idempotent.
     PatchSessionWindowDisplayMethods(window)
     local localEntry = ResolveLocalPlayerEntry(window)
     if localEntry then
-        PatchEntryFrameDisplayMethods(localEntry)
+        InstallEntrySkinHooks(localEntry)
         -- Initial visual skin within the addon-load window. LocalPlayerEntry
         -- never reaches SetupEntry/InitEntry (it's an XML child, not pool-
         -- acquired), so without this call its first skin would only happen
@@ -922,7 +671,7 @@ local function EnsureWindowSkinned(window)
     end
     if window.ForEachEntryFrame then
         window:ForEachEntryFrame(function(frame)
-            PatchEntryFrameDisplayMethods(frame)
+            InstallEntrySkinHooks(frame)
             DeferSkinRow(frame)
         end)
     end
@@ -965,7 +714,7 @@ end
 ---------------------------------------------------------------------------
 local function SkinRow(row)
     if not row then return end
-    PatchEntryFrameDisplayMethods(row)
+    InstallEntrySkinHooks(row)
     if SkinBase.GetFrameData(row, "qdmRowSkinned") then return end
 
     local statusBar = row.StatusBar
@@ -1398,8 +1147,8 @@ local function MeterSliderSetSize(key, w, h)
         if handle then
             local targetParent = target.GetParent and target:GetParent() or nil
             if handle._savedTargetParent or targetParent == handle then
-                pcall(target.ClearAllPoints, target)
-                pcall(target.SetAllPoints, target, handle)
+                target:ClearAllPoints()
+                target:SetAllPoints(handle)
             end
         end
     end
@@ -1459,12 +1208,12 @@ local function ApplyResizeRect(handle, target, left, bottom, width, height)
     -- resize runs before that deferred step, keep the target aligned manually.
     local targetParent = target.GetParent and target:GetParent() or nil
     if handle._savedTargetParent or targetParent == handle then
-        pcall(target.ClearAllPoints, target)
-        pcall(target.SetAllPoints, target, handle)
+        target:ClearAllPoints()
+        target:SetAllPoints(handle)
     else
         local pw, ph = UIParent:GetWidth() or 0, UIParent:GetHeight() or 0
-        pcall(target.ClearAllPoints, target)
-        pcall(target.SetPoint, target, "CENTER", UIParent, "CENTER",
+        target:ClearAllPoints()
+        target:SetPoint("CENTER", UIParent, "CENTER",
             left + (w / 2) - (pw / 2),
             bottom + (h / 2) - (ph / 2))
     end
@@ -2001,7 +1750,7 @@ end)
 -- picks up the QUI skin and survives Blizzard's re-anchor / re-alpha cycles.
 ---------------------------------------------------------------------------
 local function InstallMixinHooks()
-    InstallSecretSafeEntryOverrides()
+    PatchSessionWindowDisplayMethods(DamageMeterSessionWindowMixin)
 
     if mixinsHooked then return end
     mixinsHooked = true
@@ -2010,14 +1759,13 @@ local function InstallMixinHooks()
     -- every row when it's acquired from the WowScrollBoxList pool.
     if DamageMeterSessionWindowMixin and DamageMeterSessionWindowMixin.SetupEntry then
         hooksecurefunc(DamageMeterSessionWindowMixin, "SetupEntry", function(_, frame)
-            -- Patch before any Blizzard Init reads the entry's display methods.
-            -- SetupEntry fires once per pool acquisition, before InitEntry/Init,
-            -- so synchronously swapping UpdateName/UpdateValue/UpdateIcon to our
-            -- SecretSafe* version here keeps the stock comparison off the path
-            -- when secret source names land. Done unconditionally — even with
-            -- the visual skin disabled, our hooks taint the meter pipeline and
-            -- the stock comparison still trips.
-            PatchEntryFrameDisplayMethods(frame)
+            -- SetupEntry fires once per pool acquisition, before InitEntry/Init.
+            -- Install per-instance UpdateBackground/UpdateStyle hooksecurefunc
+            -- callbacks now (synchronously, not deferred) — the very next Init
+            -- cycle on the same frame can re-assert background/style, and a
+            -- deferred install would miss it. Done unconditionally so QUI chrome
+            -- re-skins fire even with the visual skin disabled mid-session.
+            InstallEntrySkinHooks(frame)
             if not IsModuleEnabled() then return end
             DeferSkinRow(frame)
         end)
@@ -2026,10 +1774,11 @@ local function InstallMixinHooks()
     -- Per-row data refresh: cheap re-skin point in case our skin sentinel got cleared.
     if DamageMeterSessionWindowMixin and DamageMeterSessionWindowMixin.InitEntry then
         hooksecurefunc(DamageMeterSessionWindowMixin, "InitEntry", function(_, frame)
-            -- Defensive re-patch: if a pool entry somehow slipped through with
-            -- stock methods (acquired before our SetupEntry hook installed),
-            -- the next Init cycle will at least run our SecretSafe* version.
-            PatchEntryFrameDisplayMethods(frame)
+            -- Defensive: if a pool entry was acquired before our SetupEntry
+            -- hook installed, it'll be missing our UpdateBackground/UpdateStyle
+            -- hooks — install them now. InstallEntrySkinHooks is idempotent
+            -- via a weak-keyed sentinel, so an already-hooked entry is a no-op.
+            InstallEntrySkinHooks(frame)
             if not IsModuleEnabled() then return end
             DeferSkinRow(frame)
         end)
@@ -2081,19 +1830,19 @@ InstallMeterHooks = function()
     local function PatchSessionWindow(sessionWindow)
         if not sessionWindow then return end
 
-        -- Synchronous taint-safety patches. Blizzard can fire Refresh →
-        -- ShowLocalPlayerEntry → InitEntry → Init → (stock) UpdateName in the
-        -- same frame as window setup, so deferring these patches would be too
-        -- late for the first payload refresh.
+        -- Synchronous taint-safety + skin-hook install. Blizzard can fire
+        -- Refresh → SessionTimer text-update in the same frame as window
+        -- setup, so deferring SecretSafeSetSessionDuration installation would
+        -- be too late for the first session-data tick.
         PatchSessionWindowDisplayMethods(sessionWindow)
         InstallWindowSkinHooks(sessionWindow)
 
         local localEntry = ResolveLocalPlayerEntry(sessionWindow)
         if localEntry then
-            PatchEntryFrameDisplayMethods(localEntry)
+            InstallEntrySkinHooks(localEntry)
         end
         if sessionWindow.ForEachEntryFrame then
-            sessionWindow:ForEachEntryFrame(PatchEntryFrameDisplayMethods)
+            sessionWindow:ForEachEntryFrame(InstallEntrySkinHooks)
         end
     end
 
@@ -2264,17 +2013,19 @@ end
 
 ---------------------------------------------------------------------------
 -- PatchAllExistingEntryFrames
--- Synchronous, taint-safety-only pass over every existing session window:
--- patches each window's SetSessionDuration plus every entry-frame instance
--- (LocalPlayerEntry + visible pool entries) so subsequent stock Refresh /
--- ShowLocalPlayerEntry / InitEntry / Init calls find our SecretSafe*
--- methods on the instance instead of the stock compare-then-cache bodies.
+-- Cold-load sweep over every existing session window. When QUI loads after
+-- Blizzard_DamageMeter has already created its manager + saved windows, we
+-- walk every window and entry frame to install:
+--   per window:       SecretSafeSetSessionDuration override + per-instance
+--                     UpdateBackground/UpdateStyle hooksecurefunc callbacks
+--   per entry frame:  per-instance UpdateBackground/UpdateStyle hooksecurefunc
+--                     callbacks (LocalPlayerEntry + visible pool entries)
 --
 -- Distinct from EnsureWindowSkinned: that function does this AND visual
 -- skin work (backdrops, dropdowns, layout-mode registration), which depends
 -- on settings being loaded and isn't time-critical for taint. This one is
 -- minimal so it can run immediately at ADDON_LOADED, before the 0.1s
--- positioning timer that gates EnsureWindowSkinned.
+-- positioning timer that gates EnsureWindowSkinned. Idempotent.
 ---------------------------------------------------------------------------
 local function PatchAllExistingEntryFrames()
     local mgr = ResolveManager()
@@ -2285,10 +2036,10 @@ local function PatchAllExistingEntryFrames()
             PatchSessionWindowDisplayMethods(window)
             local localEntry = ResolveLocalPlayerEntry(window)
             if localEntry then
-                PatchEntryFrameDisplayMethods(localEntry)
+                InstallEntrySkinHooks(localEntry)
             end
             if window.ForEachEntryFrame then
-                window:ForEachEntryFrame(PatchEntryFrameDisplayMethods)
+                window:ForEachEntryFrame(InstallEntrySkinHooks)
             end
         end
     end
@@ -2429,20 +2180,22 @@ initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 initFrame:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" and arg1 == "Blizzard_DamageMeter" then
-        -- Taint-safety hooks + existing-instance patch run IMMEDIATELY, NOT
-        -- behind the 0.1s positioning timer below. Race we hit otherwise:
-        -- DamageMeter:OnLoad already ran during this same addon-load tick
-        -- (it's how the manager + saved session windows + their
-        -- LocalPlayerEntry XML children come into existence — Mixin() copies
-        -- the stock UpdateName onto each entry instance at frame creation).
-        -- A damage event landing inside our 0.1s delay would call stock
-        -- UpdateName on those un-patched instances; the very first call
-        -- writes its `text` (potentially secret) into `self.nameText`, and
-        -- from that point on every subsequent compare faults on the cached
-        -- secret. By installing the secret-safety patches synchronously
-        -- here we close that window. Visual / position work (which needs
-        -- the AceDB profile and Blizzard's anchor reset to settle) can
-        -- still wait on the timer.
+        -- Taint-safety + skin hooks run IMMEDIATELY, NOT behind the 0.1s
+        -- positioning timer below. Two reasons the synchronous portion
+        -- can't wait:
+        --   1. SecretSafeSetSessionDuration must be on the SessionWindow
+        --      mixin AND on every existing window instance before the next
+        --      SetSessionDuration call — otherwise stock's SecondsToClock
+        --      runs Lua-side arithmetic on a possibly-secret duration under
+        --      our tainted caller chain and faults.
+        --   2. Per-instance UpdateBackground/UpdateStyle hooksecurefunc
+        --      callbacks must be on every existing entry frame so the first
+        --      incoming data tick (which can land in the same frame as
+        --      ADDON_LOADED finishing) finds QUI chrome already wired.
+        -- The deferred 0.1s sweep catches pool entries that haven't been
+        -- acquired yet at ADDON_LOADED time, plus visual / position work
+        -- that needs the AceDB profile and Blizzard's anchor reset to
+        -- settle.
         if not hooksInstalled then
             InstallMixinHooks()
             InstallMeterHooks()
