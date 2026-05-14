@@ -94,6 +94,41 @@ assert(cooldownGCD.calls.drawEdge == false, "GCD swipe should not draw recharge 
 assert(cooldownGCD.calls.color[1] == 0.1, "cooldown-kind GCD should use cooldown swipe color")
 assert(cooldownGCD.calls.color[4] == 0.4, "cooldown-kind GCD should preserve cooldown swipe alpha")
 
+local originalIsAuraCurrentlyActive = ns.CDMIcons.IsAuraCurrentlyActive
+local authoritativeGCDSettings = {
+    showBuffSwipe = true,
+    showBuffIconSwipe = true,
+    showGCDSwipe = true,
+    showCooldownSwipe = true,
+    overlayColorMode = "custom",
+    overlayColor = { 0.9, 0.8, 0.7, 0.6 },
+    swipeColorMode = "custom",
+    swipeColor = { 0.1, 0.2, 0.3, 0.4 },
+}
+
+ns.CDMIcons.IsAuraCurrentlyActive = function(entry)
+    return entry and entry.spellID == 67890
+end
+
+local resolvedGCDWithLiveAura = NewCooldownSpy()
+ns._OwnedSwipe.ApplyToIcon({
+    Cooldown = resolvedGCDWithLiveAura,
+    _showingGCDSwipe = true,
+    _resolvedCooldownMode = "gcd-only",
+    _spellEntry = {
+        kind = "cooldown",
+        viewerType = "essential",
+        spellID = 67890,
+    },
+}, authoritativeGCDSettings)
+
+ns.CDMIcons.IsAuraCurrentlyActive = originalIsAuraCurrentlyActive
+
+assert(resolvedGCDWithLiveAura.calls.drawSwipe == true, "resolved GCD should keep drawing the GCD swipe")
+assert(resolvedGCDWithLiveAura.calls.drawEdge == false, "resolved GCD should not be reclassified as aura edge")
+assert(resolvedGCDWithLiveAura.calls.color[1] == 0.1, "resolved GCD should use cooldown swipe color even if a live aura lookup matches")
+assert(resolvedGCDWithLiveAura.calls.color[4] == 0.4, "resolved GCD should preserve cooldown swipe alpha even if a live aura lookup matches")
+
 local inactiveAuraCooldown = NewCooldownSpy()
 ns._OwnedSwipe.ApplyToIcon({
     Cooldown = inactiveAuraCooldown,

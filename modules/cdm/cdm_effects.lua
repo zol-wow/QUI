@@ -1327,15 +1327,24 @@ local function ApplySwipeToIcon(icon, settings)
             or entry.viewerType == "trackedBar"
     end
 
-    -- Classify: aura, gcd, or cooldown.
-    -- Buff viewer children are always auras. Aura-kind entries always
-    -- visualize as aura mode. icon._auraActive is the event-driven flag
-    -- maintained by the dispatcher. For all other entries (cooldown-kind,
-    -- non-buff), delegate runtime aura-active detection to the shared
-    -- helper used by the resolver (CDMIcons.ResolveIconDurationObject) so
-    -- visual mode and source-DurationObject selection cannot diverge.
+    -- Classify: aura, gcd, or cooldown. The resolver's active render mode is
+    -- authoritative for cooldown-kind icons; fallback aura probing is only for
+    -- early/unresolved styling. Otherwise a live aura lookup can recolor a
+    -- CooldownFrame that is currently bound to a GCD DurationObject.
     local mode
-    if isAuraEntry or icon._auraActive then
+    local resolvedMode = icon._resolvedCooldownMode
+    if isAuraEntry or isBuffIcon then
+        mode = "aura"
+    elseif resolvedMode == "aura" then
+        mode = "aura"
+    elseif resolvedMode == "gcd-only" or icon._showingGCDSwipe then
+        mode = "gcd"
+    elseif resolvedMode == "cooldown"
+        or resolvedMode == "charge"
+        or resolvedMode == "item-cooldown"
+        or resolvedMode == "inactive" then
+        mode = "cooldown"
+    elseif icon._auraActive then
         mode = "aura"
     elseif not isBuffIcon then
         local CDMIcons = ns.CDMIcons
@@ -1364,11 +1373,7 @@ local function ApplySwipeToIcon(icon, settings)
         end
     end
     if not mode then
-        if icon._showingGCDSwipe then
-            mode = "gcd"
-        else
-            mode = "cooldown"
-        end
+        mode = "cooldown"
     end
 
     -- Swipe visibility
