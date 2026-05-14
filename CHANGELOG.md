@@ -10,6 +10,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha33 - 2026-05-13
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha32 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **Cooldown icons no longer flash Blizzard's ready-glow.** The native CooldownFrame "bling" is now disabled at icon creation and on every native-widget reshow; QUI's own glow / highlight systems remain the single source of cooldown-ready feedback. The native flash was especially visible after short GCD bindings and HUD visibility transitions.
+- **Skyriding speed text shows current movement speed when not actively gliding.** Previously it displayed the glide-physics number even on foot. While gliding, the glide speed is still used. If the engine returns a secret or nil value, the text hides itself instead of printing garbage.
+- **Vigor-charge protection no longer blanks an active glide.** The "treat `canGlide` as false when Vigor's `maxCharges` is secret" safety check now only fires when the player isn't already gliding. Fixes passenger / ride-along edge cases where the in-flight HUD could vanish mid-glide.
+- **Player and target absorb-bar sizing no longer treats active shields as part of max health during the clamp.** The absorb calculator captures its attached/overflow split with `MaximumHealthMode.Default` first; the switch to `WithAbsorbs` happens after, scoped to the group's visibility curve. Visible absorb portion now reflects real missing HP, while the bars still appear when there are absorbs at full HP.
+
+### Added
+- **Breakpoint indicators on Primary and Secondary Power bars.** New "Breakpoint Indicators" collapsible under each power bar's settings panel: enable toggle, line thickness slider, color picker, and three per-spec value entries. Stored values are normalized, deduped, and sorted on save; non-numeric or non-positive entries are dropped.
+
+### Internal
+- Skyriding speed helpers (`ResolveDisplaySpeed`, `FormatSpeedText`) lifted onto `QUI.Skyriding` for headless testing. `BASE_MOVEMENT_SPEED` falls back to a literal `7` when the global is absent.
+- Power-bar indicator settings use a transient string-keyed proxy for the form edit boxes so the persisted shape stays a sorted number array, with the current spec resolved at save time.
+- New regression tests: `cdm_icon_factory_bling_test`, `resourcebars_breakpoint_settings_test`, `skyriding_speed_test`, `unitframes_absorb_clamp_order_test`.
+
+
+
 ## v3.6.0-alpha32 - 2026-05-13
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No new schema migrations; the legacy `cdmLearnedCastToAura` global is cleared on first load (see below).
