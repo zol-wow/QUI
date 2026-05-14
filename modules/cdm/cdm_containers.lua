@@ -135,6 +135,40 @@ local RefreshAll  -- forward declaration; finalized in REFRESH ALL section
 local SPEC_TRACKING_RETRY_DELAY = 0.5
 local SPEC_TRACKING_MAX_RETRIES = 6
 
+-- Loadout tracking upvalues (parallel to spec tracking block above; D-11).
+-- These are file-scoped so the OnEvent dispatcher and debounce closures
+-- in this same file can close over them without forward-reference issues.
+local _previousLoadoutID = nil       -- outgoing loadout ID; used by save-on-switch (mirrors _previousSpecID)
+local _lastKnownSavedConfigID = nil  -- before/after compare filter: distinguishes loadout swap vs in-place talent edit
+local loadoutListReady = false       -- flipped true by TRAIT_CONFIG_LIST_UPDATED
+local pendingLoadoutRefresh = false  -- combat-deferred save/load flag; drained by PLAYER_REGEN_ENABLED
+local loadoutTrackingToken = 0       -- abort-on-supersede token (parallels specTrackingRetryToken at line 130)
+local loadoutDebounceTimer = nil     -- C_Timer.NewTimer handle; :Cancel() on new event; NOT C_Timer.After
+local NO_SAVED_LOADOUT_ID = -2       -- Constants.TraitConsts.STARTER_BUILD_TRAIT_CONFIG_ID; nil and -2 both resolve to slot 0
+
+-- Phase 2 / D-06: Live-refresh subscribers (settings label hook).
+-- Subscribers register via ns.CDMContainers.RegisterLoadoutChangeCallback
+-- and fire after every confirmed loadout-swap drain:
+--   1. Out-of-combat debounce callback completes (line ~3178)
+--   2. TRAIT_CONFIG_LIST_UPDATED drains a pending refresh (line ~3222)
+--   3. PLAYER_REGEN_ENABLED drains a combat-deferred swap (line ~3266)
+--   4. SyncCurrentProfileSpecState re-initialises on profile switch (line ~882)
+-- Each dispatch wraps subscribers in pcall so a throwing subscriber
+-- cannot break the event loop.
+local _loadoutChangeCallbacks = {}
+
+local function RegisterLoadoutChangeCallback(fn)
+    if type(fn) == "function" then
+        _loadoutChangeCallbacks[#_loadoutChangeCallbacks + 1] = fn
+    end
+end
+
+local function FireLoadoutChangeCallbacks()
+    for i = 1, #_loadoutChangeCallbacks do
+        pcall(_loadoutChangeCallbacks[i])
+    end
+end
+
 local function GetCurrentSpecID()
     if not GetSpecialization then return nil end
     local specIndex = GetSpecialization()
@@ -205,6 +239,179 @@ local function GetSpecProfileStore(create)
         charNcdm._specProfilesByProfile[profileName] = {}
     end
     return charNcdm._specProfilesByProfile[profileName]
+end
+
+-- Pre-loadout container keys. Used by GetSpecLoadoutProfileStore's
+-- in-place migration probe to detect the legacy 3-dim shape
+-- (container keys directly under store[specID]) versus the new 4-dim
+-- shape (integer loadoutID subkeys under store[specID]).
+-- Custom user container keys (user-generated strings) cannot collide
+-- with these four built-in container key names.
+local LEGACY_CONTAINER_KEYS = {
+    essential  = true,
+    utility    = true,
+    buff       = true,
+    trackedBar = true,
+}
+
+-- Resolve the current effective loadout ID for storage keying (D-06).
+-- Returns 0 (sentinel) when:
+--   * perLoadoutSpec toggle is OFF
+--   * GetLastSelectedSavedConfigID returns nil (e.g., login before TRAIT_CONFIG_LIST_UPDATED fires)
+--   * Result is NO_SAVED_LOADOUT_ID (-2 = STARTER_BUILD_TRAIT_CONFIG_ID)
+-- Returns the saved configID otherwise.
+-- NEVER calls GetActiveConfigID itself — that is forbidden by LDST-04 (creates
+-- orphaned keys from ephemeral staging configs that change each session).
+local function GetEffectiveLoadoutID()
+    local profileDB = GetDB()
+    if not profileDB or not profileDB.perLoadoutSpec then return 0 end
+    local specID = GetCurrentSpecID()
+    if not specID or specID == 0 then return 0 end
+
+    local savedID
+    if C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
+        savedID = C_ClassTalents.GetLastSelectedSavedConfigID(specID)
+    end
+
+    -- Combat-reload fast path (LDEV-04): when the live API is unavailable
+    -- or returns nil (e.g. during ADDON_LOADED before TRAIT_CONFIG_LIST_UPDATED
+    -- fires), fall back to the char-DB cached configID for this spec.
+    -- STARTER_BUILD_TRAIT_CONFIG_ID (-2) is a legitimate "no saved loadout"
+    -- state, not a missing-API state, so it bypasses the cache and routes
+    -- to slot 0 directly.
+    if not savedID then
+        local charNcdm = GetCharNcdmDB(false)
+        local cache = charNcdm and charNcdm._lastLoadoutConfigID
+        local cachedID = cache and cache[specID]
+        if type(cachedID) == "number" and cachedID > 0 then
+            return cachedID
+        end
+        return 0
+    end
+
+    if savedID == NO_SAVED_LOADOUT_ID then return 0 end
+    return savedID
+end
+
+-- Access the 4-dim loadout-scoped store slot for a (specID, loadoutID) pair.
+-- Performs in-place read-time migration of the legacy 3-dim shape on
+-- first access: when container keys (essential/utility/buff/trackedBar)
+-- appear directly under store[specID], they are re-wrapped under
+-- store[specID] = { [0] = <legacySpecSlot> } so the toggle-off sentinel
+-- slot 0 receives the data (LDST-03).
+--
+-- Per D-05: does NOT auto-fallback to slot 0 when store[specID][loadoutID]
+-- is empty, does NOT lazy-copy slot 0 contents. The toggle's first-enable
+-- seed action is Phase 2's responsibility.
+--
+-- Returns nil when create=false and the slot doesn't exist; returns the
+-- (possibly newly-created) slot table when create=true.
+local function GetSpecLoadoutProfileStore(specID, loadoutID, create)
+    if not specID or specID == 0 then return nil end
+    local store = GetSpecProfileStore(create)
+    if not store then return nil end
+
+    -- In-place read-time migration probe: detect pre-loadout shape
+    -- (LEGACY_CONTAINER_KEYS directly under store[specID]) and re-wrap
+    -- the existing table under sentinel slot 0. The same table is
+    -- reused by reference — no deep-copy, no AceDB-default mangling.
+    local specSlot = store[specID]
+    if type(specSlot) == "table" then
+        local isLegacyShape = false
+        for k in pairs(specSlot) do
+            if LEGACY_CONTAINER_KEYS[k] then
+                isLegacyShape = true
+                break
+            end
+        end
+        if isLegacyShape then
+            store[specID] = { [0] = specSlot }
+        end
+    end
+
+    if loadoutID == nil then return nil end
+
+    if type(store[specID]) ~= "table" then
+        if not create then return nil end
+        store[specID] = {}
+    end
+    if type(store[specID][loadoutID]) ~= "table" then
+        if not create then return nil end
+        store[specID][loadoutID] = {}
+    end
+    return store[specID][loadoutID]
+end
+
+-- Phase 2 / D-05: One-shot first-enable seed.
+-- Called by ns.CDMContainers.SeedActiveLoadoutFromSharedSlot from the
+-- settings toggle when perLoadoutSpec transitions false → true. Copies
+-- store[specID][0] container data into store[specID][activeLoadoutID]
+-- via CopyTable, but ONLY when BOTH:
+--   (a) the active loadout slot is absent or empty (no user data to overwrite)
+--   (b) slot 0 has at least one container with data to copy
+--
+-- D-05b (true→false) is routing-only and never reaches this function —
+-- the toggle handler in containers_page_surface.lua only fires this on
+-- the false→true edge.
+--
+-- D-05a (combat-reload edge case where GetLastSelectedSavedConfigID
+-- returns nil): no special-case handling needed — GetEffectiveLoadoutID
+-- already falls back to db.char.ncdm._lastLoadoutConfigID[specID] when
+-- the live API is unavailable, so the seed targets the correct slot.
+local function SeedActiveLoadoutFromSharedSlot()
+    if not specTrackingReady then return end
+
+    local specID = GetCurrentSpecID()
+    if not specID or specID == 0 then return end
+
+    -- GetEffectiveLoadoutID returns 0 when perLoadoutSpec is off OR when
+    -- no saved loadout is resolvable. The toggle handler sets
+    -- perLoadoutSpec=true BEFORE calling this fn, so 0 here means
+    -- "no saved loadout" — there's nothing to seed.
+    local loadoutID = GetEffectiveLoadoutID()
+    if loadoutID == 0 then return end
+
+    -- (a) Active slot must be absent OR empty. GetSpecLoadoutProfileStore
+    -- returns nil when the slot doesn't exist; an empty table also counts
+    -- as "no user data" so seeding is safe.
+    local targetSlot = GetSpecLoadoutProfileStore(specID, loadoutID, false)
+    if targetSlot then
+        for _ in pairs(targetSlot) do return end -- non-empty → don't overwrite
+    end
+
+    -- (b) Slot 0 must have at least one container with real spell data.
+    local sourceSlot = GetSpecLoadoutProfileStore(specID, 0, false)
+    if not sourceSlot then return end
+
+    local containerKeys = CDMContainers_API:GetAllContainerKeys()
+    local hasData = false
+    for _, key in ipairs(containerKeys) do
+        local containerData = sourceSlot[key]
+        if type(containerData) == "table"
+            and (containerData.ownedSpells or containerData.removedSpells or containerData.dormantSpells)
+        then
+            hasData = true
+            break
+        end
+    end
+    if not hasData then return end
+
+    -- Both gates passed — materialise the target slot and per-container copy.
+    -- Matches the existing CDM save/load CopyTable-per-container style
+    -- at lines 537-539 (LoadLoadoutProfile read path).
+    local destSlot = GetSpecLoadoutProfileStore(specID, loadoutID, true)
+    if not destSlot then return end
+
+    for _, key in ipairs(containerKeys) do
+        local containerData = sourceSlot[key]
+        if type(containerData) == "table" then
+            destSlot[key] = {
+                ownedSpells   = CopyTable(containerData.ownedSpells   or {}),
+                removedSpells = CopyTable(containerData.removedSpells or {}),
+                dormantSpells = CopyTable(containerData.dormantSpells or {}),
+            }
+        end
+    end
 end
 
 local function StampActiveProfileSpecOwner(specID)
@@ -289,7 +496,8 @@ local function SaveSpecProfile(specID)
         return
     end
 
-    local store = GetSpecProfileStore(true)
+    local loadoutID = GetEffectiveLoadoutID()
+    local store = GetSpecLoadoutProfileStore(specID, loadoutID, true)
     if not store then
         return
     end
@@ -318,7 +526,15 @@ local function SaveSpecProfile(specID)
     -- profile untouched — it may contain good data from a previous session
     -- that we'll need when the user swaps back to this spec.
     if hasAnySpells then
-        store[specID] = specData
+        -- store IS store[specID][loadoutID] (the loadout slot). Write the
+        -- per-container map directly INTO this leaf table. Wholesale slot
+        -- replacement is fine because GetSpecLoadoutProfileStore returned a
+        -- fresh table when create=true and the slot was empty; when it
+        -- returned an existing slot, replacing its containers wholesale
+        -- preserves sibling loadouts under store[specID][otherLoadoutID].
+        for k, v in pairs(specData) do
+            store[k] = v
+        end
         StampActiveProfileSpecOwner(specID)
     end
 end
@@ -329,6 +545,109 @@ local function SaveCurrentSpecProfile()
     -- the NEW spec — saving under GetCurrentSpecID() would store the
     -- outgoing spec's data under the incoming spec's key.
     SaveSpecProfile(_previousSpecID)
+end
+
+-- Save the current live container state into the (specID, loadoutID) slot.
+-- Used during a loadout swap to persist the OUTGOING loadout's containers
+-- BEFORE loading the incoming loadout. Mirror of SaveSpecProfile (line ~381)
+-- but indexed by an explicit loadoutID instead of GetEffectiveLoadoutID()
+-- — because at swap time _previousLoadoutID is the outgoing slot, NOT the
+-- value GetEffectiveLoadoutID() returns (which already reflects the new
+-- saved-loadout the user just switched to).
+local function SaveLoadoutProfile(loadoutID, specID)
+    if not specTrackingReady then return end  -- LDEV-05
+    if not specID or specID == 0 then return end
+    if loadoutID == nil then return end
+
+    local store = GetSpecLoadoutProfileStore(specID, loadoutID, true)
+    if not store then return end
+
+    local specData = {}
+    local containerKeys = CDMContainers_API:GetAllContainerKeys()
+    local hasAnySpells = false
+
+    for _, key in ipairs(containerKeys) do
+        local containerDB = GetTrackerSettings(key)
+        if containerDB and containerDB.ownedSpells ~= nil then
+            specData[key] = {
+                ownedSpells = CopyTable(containerDB.ownedSpells),
+                removedSpells = CopyTable(containerDB.removedSpells or {}),
+                dormantSpells = CopyTable(containerDB.dormantSpells or {}),
+                dormantSequence = containerDB._dormantSequence or 0,
+            }
+            if type(containerDB.ownedSpells) == "table" and #containerDB.ownedSpells > 0 then
+                hasAnySpells = true
+            end
+        end
+    end
+
+    if hasAnySpells then
+        -- store IS store[specID][loadoutID]. Write per-container map directly.
+        for k, v in pairs(specData) do
+            store[k] = v
+        end
+        StampActiveProfileSpecOwner(specID)
+    end
+end
+
+-- Load saved containers from the (specID, loadoutID) slot into live state.
+-- Used during a loadout swap to restore the INCOMING loadout's containers
+-- AFTER saving the outgoing loadout. Mirror of the savedProfile branch of
+-- LoadOrSnapshotSpecProfile (line ~516 post-Plan-01).
+--
+-- myToken: caller passes the token snapshot taken before scheduling; the
+-- helper aborts if a newer event has bumped loadoutTrackingToken in the
+-- meantime (D-11 / LDEV-05).
+--
+-- Returns true if a profile was loaded; false if the slot was empty (no
+-- destructive clear in that case — leaves current containers intact per
+-- D-05's "no auto-fallback to slot 0").
+local function LoadLoadoutProfile(loadoutID, specID, myToken)
+    if not specTrackingReady then return false end  -- LDEV-05
+    if myToken and myToken ~= loadoutTrackingToken then return false end  -- LDEV-05 abort
+    if not specID or specID == 0 then return false end
+    if loadoutID == nil then return false end
+
+    local store = GetSpecLoadoutProfileStore(specID, loadoutID, false)
+    if not store then return false end  -- empty slot: per D-05, leave containers as-is
+
+    -- Validate the saved slot actually contains spell data.
+    local containerKeys = CDMContainers_API:GetAllContainerKeys()
+    local profileHasSpells = false
+    for _, key in ipairs(containerKeys) do
+        local sc = store[key]
+        if sc and type(sc.ownedSpells) == "table" and #sc.ownedSpells > 0 then
+            profileHasSpells = true
+            break
+        end
+    end
+    if not profileHasSpells then return false end  -- D-05: don't clear, just bail
+
+    -- Restore each container's spell lists from the saved slot.
+    for _, key in ipairs(containerKeys) do
+        local containerDB = GetTrackerSettings(key)
+        if containerDB then
+            local savedContainer = store[key]
+            if savedContainer then
+                containerDB.ownedSpells   = CopyTable(savedContainer.ownedSpells)
+                containerDB.removedSpells = CopyTable(savedContainer.removedSpells)
+                containerDB.dormantSpells = CopyTable(savedContainer.dormantSpells or {})
+                containerDB._dormantSequence = savedContainer.dormantSequence or 0
+            else
+                -- Container exists now but wasn't in this loadout slot.
+                -- Mirror LoadOrSnapshotSpecProfile (line ~527-532): clear
+                -- so stale spells from the previous loadout don't leak.
+                ClearContainerSpecState(containerDB)
+            end
+        end
+    end
+
+    if ns.CDMSpellData then
+        ns.CDMSpellData:CheckAllDormantSpells()
+        ns.CDMSpellData:ReconcileAllContainers()
+    end
+    if RefreshAll then RefreshAll() end  -- Q10: containers must re-render for the new loadout slot
+    return true
 end
 
 local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
@@ -344,8 +663,9 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
     end
 
     local containerKeys = CDMContainers_API:GetAllContainerKeys()
-    local store = GetSpecProfileStore(false)
-    local savedProfile = store and store[specID]
+    local loadoutID = GetEffectiveLoadoutID()
+    local store = GetSpecLoadoutProfileStore(specID, loadoutID, false)
+    local savedProfile = store  -- store IS the loadout leaf; no extra [specID] index needed
 
     -- Validate the saved profile actually contains spell data. An empty
     -- profile (all containers nil/empty) was likely persisted from a failed
@@ -360,8 +680,11 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
             end
         end
         if not profileHasSpells then
-            if store then
-                store[specID] = nil
+            -- Discard the empty loadout slot via the parent store. `store` is
+            -- the loadout leaf, so wiping store[specID] would do nothing useful.
+            local parentStore = GetSpecProfileStore(false)
+            if parentStore and parentStore[specID] then
+                parentStore[specID][loadoutID] = nil
             end
             savedProfile = nil
         end
@@ -393,9 +716,13 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
                 end
             end
             if hasAnySpells then
-                store = GetSpecProfileStore(true)
+                store = GetSpecLoadoutProfileStore(specID, loadoutID, true)
                 if store then
-                    store[specID] = specData
+                    -- Same shape as SaveSpecProfile: write per-container into
+                    -- the loadout slot leaf.
+                    for k, v in pairs(specData) do
+                        store[k] = v
+                    end
                     savedProfile = specData
                 end
             end
@@ -630,10 +957,30 @@ local function SyncCurrentProfileSpecState(event, _, profileKey)
     -- Cancel any stale async spec-load retries before hydrating the new profile.
     specTrackingRetryToken = specTrackingRetryToken + 1
 
+    -- Cancel any stale loadout debounce/drain from the previous profile.
+    -- The new profile may have perLoadoutSpec set differently; reset all
+    -- loadout state so the first event after switch re-primes from scratch.
+    if loadoutDebounceTimer then
+        loadoutDebounceTimer:Cancel()
+        loadoutDebounceTimer = nil
+    end
+    loadoutTrackingToken = loadoutTrackingToken + 1
+    _previousLoadoutID = nil
+    _lastKnownSavedConfigID = nil
+    pendingLoadoutRefresh = false
+    -- NOTE: loadoutListReady is intentionally NOT reset — the talent list is
+    -- a Blizzard-side session global, not profile-scoped. Resetting it would
+    -- block all subsequent loadout drains until TRAIT_CONFIG_LIST_UPDATED fires.
+    -- NOTE: db.char.ncdm._lastLoadoutConfigID is intentionally NOT cleared —
+    -- it is the persistent fast-path cache for combat-reload recovery.
+
     local specReadyNow = InitSpecTracking()
     if not specReadyNow then
         specTrackingPendingRefresh = true
     end
+
+    -- Phase 2 / D-06: profile switch may change perLoadoutSpec; refresh subscribers.
+    FireLoadoutChangeCallbacks()
 end
 
 local function RegisterProfileCallbacks()
@@ -2774,6 +3121,9 @@ function ownedEngine:Initialize()
     runtimeEventFrame = eventFrame
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    eventFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
+    eventFrame:RegisterEvent("ACTIVE_COMBAT_CONFIG_CHANGED")
+    eventFrame:RegisterEvent("TRAIT_CONFIG_LIST_UPDATED")
     eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     eventFrame:RegisterEvent("CHALLENGE_MODE_START")
     eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
@@ -2869,6 +3219,109 @@ function ownedEngine:Initialize()
                     RefreshAll()
                 end
             end
+        elseif event == "TRAIT_CONFIG_UPDATED" or event == "ACTIVE_COMBAT_CONFIG_CHANGED" then
+            -- Both events route through one debounce timer. Cancel any prior
+            -- fire so a rapid sequence (e.g. talent edit immediately followed
+            -- by save) collapses to a single save/load pair.
+            if loadoutDebounceTimer then loadoutDebounceTimer:Cancel() end
+
+            loadoutTrackingToken = loadoutTrackingToken + 1
+            local myToken = loadoutTrackingToken
+
+            loadoutDebounceTimer = C_Timer.NewTimer(0.5, function()
+                loadoutDebounceTimer = nil
+                if myToken ~= loadoutTrackingToken then return end  -- newer event superseded us
+                if not specTrackingReady then
+                    pendingLoadoutRefresh = true
+                    return
+                end
+
+                local specID = GetCurrentSpecID()
+                if not specID then return end
+
+                -- Re-resolve the saved-loadout ID fresh inside the callback.
+                -- NEVER use the event payload's configID for the storage key
+                -- (it's the active staging config, not the persistent saved one).
+                local newConfigID = nil
+                if C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
+                    newConfigID = C_ClassTalents.GetLastSelectedSavedConfigID(specID)
+                end
+
+                -- Filter: in-place talent edit (saved ID unchanged) — ignore.
+                -- Only proceed when the saved-loadout selection actually changed.
+                if newConfigID == _lastKnownSavedConfigID then return end
+
+                -- Real loadout swap detected.
+                if InCombatLockdown() then
+                    -- Defer save/load; PLAYER_REGEN_ENABLED drains as an atomic pair.
+                    pendingLoadoutRefresh = true
+                    return
+                end
+
+                -- Save outgoing, load incoming as a unit (D-10 / LDEV-03).
+                SaveLoadoutProfile(_previousLoadoutID, specID)
+
+                _previousLoadoutID = newConfigID
+                _lastKnownSavedConfigID = newConfigID
+
+                -- Prime the db.char fast-path cache for combat-reload (LDEV-04).
+                local charNcdm = GetCharNcdmDB(true)
+                if charNcdm then
+                    if type(charNcdm._lastLoadoutConfigID) ~= "table" then
+                        charNcdm._lastLoadoutConfigID = {}
+                    end
+                    charNcdm._lastLoadoutConfigID[specID] = newConfigID
+                end
+
+                LoadLoadoutProfile(newConfigID, specID, myToken)
+                FireLoadoutChangeCallbacks()  -- Phase 2 / D-06
+            end)
+        elseif event == "TRAIT_CONFIG_LIST_UPDATED" then
+            loadoutListReady = true
+
+            -- Prime the db.char fast-path cache for the current spec
+            -- as soon as the live API becomes available (LDEV-04).
+            local specID = GetCurrentSpecID()
+            if specID and C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
+                local configID = C_ClassTalents.GetLastSelectedSavedConfigID(specID)
+                if configID and configID ~= NO_SAVED_LOADOUT_ID then
+                    local charNcdm = GetCharNcdmDB(true)
+                    if charNcdm then
+                        if type(charNcdm._lastLoadoutConfigID) ~= "table" then
+                            charNcdm._lastLoadoutConfigID = {}
+                        end
+                        charNcdm._lastLoadoutConfigID[specID] = configID
+                    end
+                    if _lastKnownSavedConfigID == nil then
+                        _lastKnownSavedConfigID = configID
+                        _previousLoadoutID = configID
+                    end
+                end
+            end
+
+            -- If a swap-or-init was deferred at login (before the list was
+            -- ready), drain it now — but only when out of combat. The combat
+            -- branch is handled by PLAYER_REGEN_ENABLED.
+            if pendingLoadoutRefresh
+                and specTrackingReady
+                and not InCombatLockdown()
+            then
+                pendingLoadoutRefresh = false
+                loadoutTrackingToken = loadoutTrackingToken + 1
+                local hydrationToken = loadoutTrackingToken
+                local hydrateSpecID = GetCurrentSpecID()
+                if hydrateSpecID then
+                    SaveLoadoutProfile(_previousLoadoutID, hydrateSpecID)
+                    local newConfigID = nil
+                    if C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
+                        newConfigID = C_ClassTalents.GetLastSelectedSavedConfigID(hydrateSpecID)
+                    end
+                    _previousLoadoutID = newConfigID
+                    _lastKnownSavedConfigID = newConfigID
+                    LoadLoadoutProfile(newConfigID, hydrateSpecID, hydrationToken)
+                    FireLoadoutChangeCallbacks()  -- Phase 2 / D-06a
+                end
+            end
         elseif event == "PLAYER_REGEN_ENABLED" then
             local readyNow = specTrackingReady
             if not specTrackingReady then
@@ -2883,6 +3336,36 @@ function ownedEngine:Initialize()
 
             if specTrackingPendingRefresh then
                 FinalizeSpecTracking()
+            end
+
+            -- Drain deferred loadout save/load (D-10 / LDEV-03).
+            -- Save AND load happen as a unit: never load without saving outgoing first.
+            if pendingLoadoutRefresh and loadoutListReady and specTrackingReady then
+                pendingLoadoutRefresh = false
+                loadoutTrackingToken = loadoutTrackingToken + 1
+                local drainToken = loadoutTrackingToken
+
+                local drainSpecID = GetCurrentSpecID()
+                if drainSpecID then
+                    SaveLoadoutProfile(_previousLoadoutID, drainSpecID)
+                    local newConfigID = nil
+                    if C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
+                        newConfigID = C_ClassTalents.GetLastSelectedSavedConfigID(drainSpecID)
+                    end
+                    _previousLoadoutID = newConfigID
+                    _lastKnownSavedConfigID = newConfigID
+
+                    local charNcdm = GetCharNcdmDB(true)
+                    if charNcdm and newConfigID and newConfigID ~= NO_SAVED_LOADOUT_ID then
+                        if type(charNcdm._lastLoadoutConfigID) ~= "table" then
+                            charNcdm._lastLoadoutConfigID = {}
+                        end
+                        charNcdm._lastLoadoutConfigID[drainSpecID] = newConfigID
+                    end
+
+                    LoadLoadoutProfile(newConfigID, drainSpecID, drainToken)
+                    FireLoadoutChangeCallbacks()  -- Phase 2 / D-06
+                end
             end
 
             if _containerMouseSyncPending and not InCombatLockdown() then
@@ -2933,6 +3416,16 @@ function ownedEngine:DisableRuntime()
     specTrackingRetryToken = specTrackingRetryToken + 1
     inInitSafeWindow = false
     CancelRefreshTimers()
+
+    -- Loadout state teardown (parallels the spec-tracking lines above).
+    -- A live debounce timer would fire into a nil runtimeEventFrame after
+    -- DisableRuntime returns; bump the token and cancel the timer here.
+    if loadoutDebounceTimer then
+        loadoutDebounceTimer:Cancel()
+        loadoutDebounceTimer = nil
+    end
+    pendingLoadoutRefresh = false
+    loadoutTrackingToken = loadoutTrackingToken + 1
 
     if runtimeEventFrame then
         runtimeEventFrame:UnregisterAllEvents()
@@ -3108,4 +3601,14 @@ ns.CDMContainers = {
             ns.CDMSpellData:SnapshotBlizzardCDM(key)
         end
     end,
+
+    -- Phase 2 / D-05: First-enable seed. Called from the perLoadoutSpec
+    -- toggle handler in modules/cdm/settings/containers_page_surface.lua
+    -- ONLY on the false→true transition. No-op if guards fail.
+    SeedActiveLoadoutFromSharedSlot = SeedActiveLoadoutFromSharedSlot,
+
+    -- Phase 2 / D-06: Live-refresh subscription. The settings active-context
+    -- label registers here so it updates after every confirmed loadout swap
+    -- without polling. Subscribers fire with no arguments.
+    RegisterLoadoutChangeCallback = RegisterLoadoutChangeCallback,
 }

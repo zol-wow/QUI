@@ -24,9 +24,18 @@
 local ADDON_NAME, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
+local C = GUI.Colors
 local Settings = ns.Settings
 local FullSurface = Settings and Settings.FullSurface
 local ClearFrame = FullSurface and FullSurface.ClearFrame
+
+-- File-scoped snapshot of db.profile.ncdm.perLoadoutSpec used to detect
+-- the false→true transition in the toggle onChange handler. The framework
+-- writes dbTable[dbKey] = newValue BEFORE calling onChange, so reading the
+-- DB inside onChange gives the NEW value. This upvalue captures the OLD
+-- value by being set at BuildPreviewBlock entry and updated at the end of
+-- every onChange call.
+local _lastPerLoadoutSpecValue = false
 
 local function ResolveModel(feature)
     local model = feature and feature.model or nil
@@ -187,14 +196,193 @@ local function SetSimpleBackdrop(frame, r, g, b, a, er, eg, eb, ea)
 end
 
 ---------------------------------------------------------------------------
--- PREVIEW BLOCK — header row (dropdown + buttons) + visual preview.
+-- PREVIEW BLOCK — top row (per-loadout toggle + context label) +
+-- preview area (dropdown + buttons + visual preview).
 -- Called by framework_v2 via tile.config.preview.build. The preview
 -- frame is anchored above the sub-page tabs so dropdown + preview
 -- persist across sub-tab switches.
+--
+-- Layout:
+--   [☐ Per-Loadout Entries                                         ]
+--   [Editing entries for: Spec — Loadout                           ]
+--   [Container ▼]                                  [+ New] [Delete]
+--   ────────────────────────────────────────────────────────────────
+--                          LIVE PREVIEW
 ---------------------------------------------------------------------------
+
+-- Fixed-size box at TOP-LEFT of the preview area holding the per-loadout
+-- toggle (above) and the active-context label (below). NOT full-height —
+-- the preview frame reclaims the full pv width BELOW this column via
+-- post-build re-anchoring of the framework's previewHost.
+--
+-- WIDTH NOTE: GUI:CreateFormToggle hard-codes the switch widget at
+-- container.LEFT + 180 (label width 170 + 10px gap), and the switch
+-- itself is 26px wide. So the toggle's content extends to LEFT+206.
+-- LEFT_COL_WIDTH must be at least 206 + 2*LEFT_COL_PAD = 222 or the
+-- switch widget paints past leftCol's right edge into the dropdown row.
+-- 240 leaves a comfortable margin and reads cleanly in-game.
+local LEFT_COL_WIDTH = 240
+local LEFT_COL_HEIGHT = 50
+local LEFT_COL_PAD = 8
+
 local function BuildPreviewBlock(pv)
     State.activeContainer = NormalizeContainerKey(State.activeContainer)
-    FullSurface.BuildDropdownPreviewBlock(pv, {
+
+    -- Seed _lastPerLoadoutSpecValue from the current DB state so the
+    -- onChange handler can detect the false→true transition correctly.
+    local ncdm = QUI and QUI.db and QUI.db.profile and QUI.db.profile.ncdm
+    _lastPerLoadoutSpecValue = ncdm and ncdm.perLoadoutSpec or false
+
+    ---------------------------------------------------------------------------
+    -- Left column — fixed-size 200x50 box at top-left holding the toggle
+    -- (above) and the active-context label (below). Doesn't span pv's full
+    -- height, so the preview frame can reclaim full width below it.
+    ---------------------------------------------------------------------------
+    local leftCol = CreateFrame("Frame", nil, pv)
+    leftCol:SetPoint("TOPLEFT", pv, "TOPLEFT", 0, 0)
+    leftCol:SetSize(LEFT_COL_WIDTH, LEFT_COL_HEIGHT)
+
+    -- Active-context label (accent-color; visible only when perLoadoutSpec=true).
+    -- Declared before UpdateLoadoutLabel so the closure can reference it.
+    -- Final SetPoint anchors are applied AFTER the toggle widget is created
+    -- so the label can sit immediately below it.
+    local loadoutLabel = GUI:CreateLabel(leftCol, "", 11, C.accent)
+    loadoutLabel:SetJustifyH("LEFT")
+    loadoutLabel:Hide()
+
+    -- UpdateLoadoutLabel — resolves the current spec + loadout name and
+    -- updates the accent-color label below the toggle.
+    -- Mirrors click_cast_content.lua:660-702 (D-04). Uses only
+    -- GetLastSelectedSavedConfigID (never GetActiveConfigID) per LDST-04.
+    local function UpdateLoadoutLabel()
+        local db = QUI and QUI.db and QUI.db.profile and QUI.db.profile.ncdm
+        if db and db.perLoadoutSpec then
+            local specIndex = GetSpecialization and GetSpecialization()
+            if specIndex then
+                local _, specName = GetSpecializationInfo and GetSpecializationInfo(specIndex)
+                    or nil, nil
+                if specName then
+                    local labelText = "Editing entries for: " .. specName
+                    if C_ClassTalents then
+                        local specID = GetSpecializationInfo(specIndex)
+                        local savedID = specID and C_ClassTalents.GetLastSelectedSavedConfigID
+                            and C_ClassTalents.GetLastSelectedSavedConfigID(specID)
+                        local builds = specID and C_ClassTalents.GetConfigIDsBySpecID
+                            and C_ClassTalents.GetConfigIDsBySpecID(specID)
+                        local ordinal
+                        local lookupID = savedID
+                        if lookupID and builds then
+                            for idx, cid in ipairs(builds) do
+                                if cid == lookupID then
+                                    ordinal = idx
+                                    break
+                                end
+                            end
+                        end
+                        local configInfo = lookupID and C_Traits and C_Traits.GetConfigInfo
+                            and C_Traits.GetConfigInfo(lookupID)
+                        local customName = configInfo and configInfo.name
+                        -- Use custom name only when it differs from the spec name
+                        -- (Blizzard defaults to spec name for unnamed loadouts).
+                        if customName and customName ~= specName then
+                            labelText = labelText .. " \226\128\148 " .. customName
+                        elseif ordinal then
+                            labelText = labelText .. " \226\128\148 Loadout " .. ordinal
+                        end
+                    end
+                    loadoutLabel:SetText(labelText)
+                    loadoutLabel:Show()
+                    return
+                end
+            end
+        end
+        loadoutLabel:Hide()
+    end
+
+    -- Trigger a full CDM repaint after the toggle changes routing.
+    -- Toggle clicks cannot happen in combat (Blizzard UI is inaccessible
+    -- then), so no InCombatLockdown guard is needed here.
+    local function refreshCDM()
+        if ns.CDMContainers and ns.CDMContainers.RefreshAll then
+            ns.CDMContainers.RefreshAll()
+        end
+    end
+
+    -- Toggle onChange handler. The framework has already written
+    -- dbTable[dbKey] = newValue before calling us, so reading ncdm.perLoadoutSpec
+    -- inside this callback gives the NEW value. The old value is captured in
+    -- _lastPerLoadoutSpecValue which was set at BuildPreviewBlock entry and is
+    -- updated at the end of every onChange call (D-07 / RESEARCH Q2).
+    local function onPerLoadoutToggle(newValue)
+        local oldValue = _lastPerLoadoutSpecValue
+
+        -- false→true transition: seed the active loadout slot from slot 0
+        -- once, if the active slot is empty and slot 0 has data (D-05).
+        -- SeedActiveLoadoutFromSharedSlot is internally gated on both
+        -- conditions; we just need to provide the current spec and loadout IDs
+        -- via the public helper which resolves them internally.
+        if oldValue == false and newValue == true then
+            if ns.CDMContainers and ns.CDMContainers.SeedActiveLoadoutFromSharedSlot then
+                ns.CDMContainers.SeedActiveLoadoutFromSharedSlot()
+            end
+        end
+        -- true→false: routing-only change (GetEffectiveLoadoutID returns 0).
+        -- No SavedVariables data is destroyed (D-05b / LDUX-05).
+
+        -- Keep the snapshot current for the next onChange call.
+        _lastPerLoadoutSpecValue = newValue
+
+        UpdateLoadoutLabel()
+        refreshCDM()
+    end
+
+    -- Always visible in v1 — the LDUX-02 per-spec-disable gate is vestigial
+    -- for CDM (all built-in containers are always spec-scoped). Future
+    -- per-spec-disable work would replace the constant below (D-03).
+    local _isSpecScoped = true  -- luacheck: ignore (reserved for future use)
+
+    local perLoadoutToggle = GUI:CreateFormCheckbox(
+        leftCol,
+        "Per-Loadout Entries",
+        "perLoadoutSpec",
+        ncdm,
+        onPerLoadoutToggle,
+        {
+            description = "Maintain a separate spell list per saved talent loadout within each spec. Entries swap automatically when you change loadout. Toggle off preserves your per-loadout data.",
+        }
+    )
+    perLoadoutToggle:SetPoint("TOPLEFT", leftCol, "TOPLEFT", LEFT_COL_PAD, -2)
+    perLoadoutToggle:SetPoint("RIGHT", leftCol, "RIGHT", -LEFT_COL_PAD, 0)
+
+    -- Position the accent label immediately below the toggle, inside leftCol.
+    loadoutLabel:SetPoint("TOPLEFT", perLoadoutToggle, "BOTTOMLEFT", 0, -2)
+    loadoutLabel:SetPoint("TOPRIGHT", perLoadoutToggle, "BOTTOMRIGHT", 0, -2)
+
+    -- Perform the initial label render now that both the toggle and label exist.
+    UpdateLoadoutLabel()
+
+    -- Subscribe to loadout-change events so the label refreshes live when
+    -- the player switches loadout in-game or a profile switch changes the
+    -- perLoadoutSpec value (D-06).
+    if ns.CDMContainers and ns.CDMContainers.RegisterLoadoutChangeCallback then
+        ns.CDMContainers.RegisterLoadoutChangeCallback(function()
+            -- Re-sync _lastPerLoadoutSpecValue on every confirmed loadout swap
+            -- so the next toggle click detects the transition correctly,
+            -- including after a profile switch that changed perLoadoutSpec.
+            local db2 = QUI and QUI.db and QUI.db.profile and QUI.db.profile.ncdm
+            _lastPerLoadoutSpecValue = db2 and db2.perLoadoutSpec or false
+            UpdateLoadoutLabel()
+        end)
+    end
+
+    ---------------------------------------------------------------------------
+    -- Dropdown row + live preview. Pass `pv` directly so the preview frame
+    -- (returned by the framework as `block.previewHost`) can reclaim the
+    -- full pv width via post-build re-anchoring below leftCol. The dropdown
+    -- header row is then nudged past leftCol's right edge so it doesn't
+    -- overlap the toggle widget.
+    ---------------------------------------------------------------------------
+    local block = FullSurface.BuildDropdownPreviewBlock(pv, {
         gui = GUI,
         state = State,
         selectedValue = State.activeContainer,
@@ -261,6 +449,50 @@ local function BuildPreviewBlock(pv)
             end
         end,
     })
+
+    -- Re-anchor the framework-built widgets so the toggle doesn't overlap
+    -- the dropdown AND the preview reclaims full width below leftCol.
+    -- Calling SetPoint with the same anchor name ("TOPLEFT") REPLACES the
+    -- framework's existing TOPLEFT anchor while leaving TOPRIGHT / BOTTOMRIGHT
+    -- intact, so the widgets still stretch to pv's right edge as before.
+    if block and block.headerRow then
+        -- 8px gap between leftCol and the dropdown row. The "Container"
+        -- label inside the dropdown widget is also re-anchored below so
+        -- it sits next to the actual dropdown selection (not at the row's
+        -- left edge), which gives the toggle and label plenty of visual
+        -- separation regardless of this gap value.
+        block.headerRow:SetPoint("TOPLEFT", leftCol, "TOPRIGHT", LEFT_COL_PAD, 0)
+    end
+    if block and block.previewHost then
+        block.previewHost:SetPoint("TOPLEFT", leftCol, "BOTTOMLEFT", 0, -4)
+    end
+
+    -- Re-anchor the framework's internal "Container" FontString from the
+    -- container's LEFT edge to RIGHT-of-dropdown-button so the label sits
+    -- adjacent to the dropdown selection instead of floating at the row's
+    -- left edge. The framework exposes the outer container as block.dropdown
+    -- but doesn't surface the label or button directly — walk the container's
+    -- regions/children to find them.
+    if block and block.dropdown then
+        local container = block.dropdown
+        local labelText, dropdownButton
+        for _, region in ipairs({ container:GetRegions() }) do
+            if region.GetObjectType and region:GetObjectType() == "FontString" then
+                labelText = region
+                break
+            end
+        end
+        for _, child in ipairs({ container:GetChildren() }) do
+            if child.GetObjectType and child:GetObjectType() == "Button" then
+                dropdownButton = child
+                break
+            end
+        end
+        if labelText and dropdownButton then
+            labelText:ClearAllPoints()
+            labelText:SetPoint("RIGHT", dropdownButton, "LEFT", -8, 0)
+        end
+    end
 end
 
 ---------------------------------------------------------------------------

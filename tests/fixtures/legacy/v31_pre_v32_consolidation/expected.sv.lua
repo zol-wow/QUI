@@ -3206,6 +3206,7 @@ return {
               spellOverrides = {},
               usabilityIndicator = true
             },
+            perLoadoutSpec = false,
             trackedBar = {
               anchorOffsetX = 0,
               anchorOffsetY = 0,

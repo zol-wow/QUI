@@ -393,6 +393,7 @@ local defaults = {
             enabled = true,         -- Master CDM enable/disable
             _snapshotVersion = 0,   -- Incremented each time ownedSpells are snapshotted
             _specProfiles = nil,    -- Legacy shared spec profiles; runtime storage is character-scoped
+            perLoadoutSpec = false,     -- Enable per-loadout CDM entries (Phase 1 storage; Phase 2 UI surface)
             essential = {
                 enabled = true,
                 pos = nil,  -- { ox = number, oy = number } saved container position (nil = first-time, seed from Blizzard)
