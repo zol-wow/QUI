@@ -143,7 +143,8 @@ local function CreateIcon(parent, spellEntry)
     icon.Cooldown:SetHideCountdownNumbers(false)
     icon.Cooldown:SetSwipeTexture("Interface\\Buttons\\WHITE8X8")
     icon.Cooldown:SetSwipeColor(0, 0, 0, 0.8)
-    icon.Cooldown:SetDrawBling(true)
+    icon.Cooldown:SetDrawBling(false)
+    icon._drawBlingEnabled = false
     icon.Cooldown:EnableMouse(false)
 
     -- .TextOverlay (sits above the CooldownFrame so text is never behind the swipe)
@@ -479,15 +480,14 @@ end
 
 -- BLIZZ MIRROR
 
--- Keep CooldownFrame ready-flash ("bling") hidden when icon is effectively invisible.
--- This prevents GCD-ready glow from leaking through when row/container alpha is 0.
+-- Keep CooldownFrame ready-flash ("bling") disabled on owned cooldowns.
+-- The Blizzard ready-flash is especially visible after short GCD bindings and
+-- HUD visibility transitions; QUI uses its own glow/highlight systems instead.
 local function SyncCooldownBling(icon)
     if not icon or not icon.Cooldown or not icon.Cooldown.SetDrawBling then return end
-    local effectiveAlpha = (icon.GetEffectiveAlpha and icon:GetEffectiveAlpha()) or icon:GetAlpha() or 1
-    local shouldDrawBling = (effectiveAlpha > 0.001) and icon:IsShown()
-    if icon._drawBlingEnabled ~= shouldDrawBling then
-        icon._drawBlingEnabled = shouldDrawBling
-        icon.Cooldown:SetDrawBling(shouldDrawBling)
+    if icon._drawBlingEnabled ~= false then
+        icon._drawBlingEnabled = false
+        icon.Cooldown:SetDrawBling(false)
     end
 end
 
@@ -510,7 +510,8 @@ local function ShowNativeIconWidgets(icon)
         -- factory defaults (mirrors CreateIcon's setup). The swipe color is
         -- intentionally black at 0.8 alpha — that's the QUI swipe style.
         icon.Cooldown.SetDrawSwipe(icon.Cooldown, true)
-        icon.Cooldown.SetDrawBling(icon.Cooldown, true)
+        icon.Cooldown.SetDrawBling(icon.Cooldown, false)
+        icon._drawBlingEnabled = false
         icon.Cooldown.SetSwipeTexture(icon.Cooldown, "Interface\\Buttons\\WHITE8X8")
         icon.Cooldown.SetSwipeColor(icon.Cooldown, 0, 0, 0, 0.8)
         icon.Cooldown.SetHideCountdownNumbers(icon.Cooldown, false)

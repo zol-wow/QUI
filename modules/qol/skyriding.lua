@@ -18,7 +18,8 @@ local VIGOR_SPELL_ID = 372608
 local SECOND_WIND_SPELL_ID = 425782
 local WHIRLING_SURGE_SPELL_ID = 361584
 local THRILL_OF_THE_SKIES_BUFF_ID = 377234
-local BASE_MOVEMENT_SPEED = BASE_MOVEMENT_SPEED
+local DEFAULT_BASE_MOVEMENT_SPEED = 7
+local BASE_MOVEMENT_SPEED = BASE_MOVEMENT_SPEED or DEFAULT_BASE_MOVEMENT_SPEED
 
 -- Frame references
 local skyridingFrame
@@ -81,6 +82,61 @@ local GetSettings = Helpers.CreateDBGetter("skyriding")
 
 local function RoundToNearestInt(value)
     return math.floor((value or 0) + 0.5)
+end
+
+local function IsSafeNumber(value)
+    if value == nil then return false end
+    if IsSecretValue and IsSecretValue(value) then return false end
+    return type(value) == "number"
+end
+
+local function GetBaseMovementSpeed()
+    if IsSafeNumber(BASE_MOVEMENT_SPEED) and BASE_MOVEMENT_SPEED > 0 then
+        return BASE_MOVEMENT_SPEED
+    end
+    return DEFAULT_BASE_MOVEMENT_SPEED
+end
+
+local function QueryCurrentUnitSpeed()
+    if not GetUnitSpeed then return nil end
+    local ok, currentSpeed = pcall(GetUnitSpeed, "player")
+    if ok then
+        return currentSpeed
+    end
+    return nil
+end
+
+local function ResolveDisplaySpeed(gliding, glideSpeed, unitSpeedProvider)
+    if gliding and IsSafeNumber(glideSpeed) then
+        return glideSpeed
+    end
+
+    if unitSpeedProvider then
+        local currentSpeed = unitSpeedProvider()
+        if IsSafeNumber(currentSpeed) then
+            return currentSpeed
+        end
+    end
+
+    if IsSafeNumber(glideSpeed) and glideSpeed > 0 then
+        return glideSpeed
+    end
+
+    return nil
+end
+
+local function FormatSpeedText(speed, format, baseMovementSpeed)
+    if not IsSafeNumber(speed) then return nil end
+
+    if format == "PERCENT" then
+        local base = baseMovementSpeed
+        if not (IsSafeNumber(base) and base > 0) then
+            base = GetBaseMovementSpeed()
+        end
+        return string.format("%d%%", RoundToNearestInt(speed / base * 100))
+    end
+
+    return string.format("%.1f", speed)
 end
 
 local function GetFramePixelMetrics(frame)
@@ -158,7 +214,7 @@ local function GetGlidingInfo()
     -- Extra safety: treat "can glide" as false when Vigor charges are protected.
     -- This catches passenger/ride-along edge cases where glide state can be true
     -- but the player cannot actually use skyriding abilities.
-    if canGlideNow and C_Spell and C_Spell.GetSpellCharges then
+    if canGlideNow and not gliding and C_Spell and C_Spell.GetSpellCharges then
         local charges = C_Spell.GetSpellCharges(VIGOR_SPELL_ID)
         if not charges or IsSecretValue(charges.maxCharges) then
             return false, false, 0
@@ -861,15 +917,17 @@ local function UpdateSpeed()
         return
     end
 
-    local _, _, speed = GetGlidingInfo()
-    forwardSpeed = speed
+    local gliding, _, speed = GetGlidingInfo()
+    local displaySpeed = ResolveDisplaySpeed(gliding, speed, QueryCurrentUnitSpeed)
+    forwardSpeed = displaySpeed or 0
 
     local format = settings.speedFormat or "PERCENT"
-    if format == "PERCENT" then
-        speedText:SetText(string.format("%d%%", math.floor(speed / BASE_MOVEMENT_SPEED * 100)))
-    else
-        speedText:SetText(string.format("%.1f", speed))
+    local speedString = FormatSpeedText(displaySpeed, format)
+    if not speedString then
+        speedText:Hide()
+        return
     end
+    speedText:SetText(speedString)
     speedText:Show()
 end
 
@@ -1491,4 +1549,6 @@ QUI.Skyriding = {
     Create = CreateSkyridingFrame,
     UpdateVisibility = UpdateVisibility,
     TogglePreview = ToggleSkyridingPreview,
+    ResolveDisplaySpeed = ResolveDisplaySpeed,
+    FormatSpeedText = FormatSpeedText,
 }

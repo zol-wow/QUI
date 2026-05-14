@@ -74,6 +74,111 @@ local function GetCurrentSpecID()
     return GetSpecializationInfo(spec) or 0
 end
 
+local function NormalizeIndicatorValues(values)
+    if type(values) ~= "table" then
+        return {}
+    end
+
+    local normalized = {}
+    local seen = {}
+    for _, rawValue in pairs(values) do
+        local value = tonumber(rawValue)
+        if value and value > 0 then
+            value = math.floor((value * 1000) + 0.5) / 1000
+            local key = string.format("%.3f", value)
+            if not seen[key] then
+                seen[key] = true
+                normalized[#normalized + 1] = value
+            end
+        end
+    end
+
+    table.sort(normalized)
+    while #normalized > 3 do
+        table.remove(normalized)
+    end
+
+    return normalized
+end
+
+local function EnsureIndicatorConfig(cfg)
+    if type(cfg.indicators) ~= "table" then
+        cfg.indicators = {}
+    end
+
+    local indicators = cfg.indicators
+    if indicators.enabled == nil then
+        indicators.enabled = false
+    end
+    if indicators.thickness == nil then
+        indicators.thickness = 2
+    end
+    if type(indicators.color) ~= "table" then
+        indicators.color = { 1, 1, 1, 0.9 }
+    end
+    if type(indicators.perSpec) ~= "table" then
+        indicators.perSpec = {}
+    end
+
+    return indicators
+end
+
+local function EnsureSpecIndicatorValues(indicatorCfg)
+    indicatorCfg.perSpec = indicatorCfg.perSpec or {}
+
+    local specID = GetCurrentSpecID()
+    local values = indicatorCfg.perSpec[specID]
+    local stringKey = tostring(specID)
+    if type(values) ~= "table" then
+        values = indicatorCfg.perSpec[stringKey]
+    end
+    if type(values) ~= "table" then
+        values = {}
+    end
+
+    values = NormalizeIndicatorValues(values)
+    indicatorCfg.perSpec[specID] = values
+    indicatorCfg.perSpec[stringKey] = nil
+
+    return specID, values
+end
+
+local function CreateIndicatorValueProxy(indicatorCfg)
+    return setmetatable({}, {
+        __index = function(_, dbKey)
+            local index = tonumber(tostring(dbKey):match("^value([123])$"))
+            if not index then
+                return nil
+            end
+
+            local _, values = EnsureSpecIndicatorValues(indicatorCfg)
+            local value = values[index]
+            return value and tostring(value) or ""
+        end,
+        __newindex = function(_, dbKey, rawValue)
+            local index = tonumber(tostring(dbKey):match("^value([123])$"))
+            if not index then
+                return
+            end
+
+            local specID, values = EnsureSpecIndicatorValues(indicatorCfg)
+            local nextValues = {}
+            for i = 1, 3 do
+                nextValues[i] = values[i]
+            end
+
+            local value = tonumber(rawValue)
+            if value and value > 0 then
+                nextValues[index] = value
+            else
+                nextValues[index] = nil
+            end
+
+            indicatorCfg.perSpec[specID] = NormalizeIndicatorValues(nextValues)
+        end,
+    })
+end
+
 local function EnsureTextSpecOverrides(cfg, specID)
     if type(cfg.textSpecOverrides) ~= "table" then
         cfg.textSpecOverrides = {}
@@ -94,6 +199,36 @@ local function EnsureTextSpecOverrides(cfg, specID)
         cfg.textSpecOverrides[specID] = base
     end
     return cfg.textSpecOverrides[specID]
+end
+
+local function BuildIndicatorSettings(content, GUI, U, FORM_ROW, sections, relayout, cfg)
+    local indicatorCfg = EnsureIndicatorConfig(cfg)
+    local valueProxy = CreateIndicatorValueProxy(indicatorCfg)
+
+    U.CreateCollapsible(content, "Breakpoint Indicators", 6 * FORM_ROW + 8, function(body)
+        local sy = -4
+        local enabledCheck = GUI:CreateFormCheckbox(body, "Enable Breakpoint Indicators", "enabled", indicatorCfg, RefreshPowerBars,
+            { description = "Draw custom marker lines on this bar at the current specialization's breakpoint values." })
+        sy = U.PlaceRow(enabledCheck, body, sy)
+
+        local thicknessSlider = GUI:CreateFormSlider(body, "Indicator Thickness", 1, 6, 1, "thickness", indicatorCfg, RefreshPowerBars, nil,
+            { description = "Pixel thickness of each custom breakpoint marker line." })
+        sy = U.PlaceRow(thicknessSlider, body, sy)
+
+        local colorPicker = GUI:CreateFormColorPicker(body, "Indicator Color", "color", indicatorCfg, RefreshPowerBars, nil,
+            { description = "Color used for custom breakpoint marker lines." })
+        sy = U.PlaceRow(colorPicker, body, sy)
+
+        for i = 1, 3 do
+            local field = GUI:CreateFormEditBox(body, "Breakpoint " .. i, "value" .. i, valueProxy, RefreshPowerBars, {
+                maxLetters = 8,
+                width = 90,
+            }, {
+                description = "Resource value where this specialization draws a custom breakpoint marker line.",
+            })
+            sy = U.PlaceRow(field, body, sy)
+        end
+    end, sections, relayout)
 end
 
 local function BuildPrimaryPowerSettings(content, key)
@@ -172,6 +307,8 @@ local function BuildPrimaryPowerSettings(content, key)
             { description = "Border thickness in pixels. Set to 0 to hide the border." })
         U.PlaceRow(borderSlider, body, sy)
     end, sections, relayout)
+
+    BuildIndicatorSettings(content, GUI, U, FORM_ROW, sections, relayout, primary)
 
     U.CreateCollapsible(content, "Text", 7 * FORM_ROW + 8, function(body)
         local sy = -4
@@ -325,6 +462,8 @@ local function BuildSecondaryPowerSettings(content, key)
             { description = "Border thickness in pixels. Set to 0 to hide the border." })
         U.PlaceRow(borderSlider, body, sy)
     end, sections, relayout)
+
+    BuildIndicatorSettings(content, GUI, U, FORM_ROW, sections, relayout, secondary)
 
     local textProxy = setmetatable({}, {
         __index = function(_, dbKey)

@@ -919,15 +919,12 @@ local function UpdateAbsorbs(frame)
             end
             local calc = frame.absorbCalculator
 
-            -- Clamp mode 1 = Missing Health (clamp to space between current HP and 0)
+            -- Clamp mode 1 = missing health without subtracting incoming heals.
             pcall(function() calc:SetDamageAbsorbClampMode(1) end)
 
-            -- WithAbsorbs makes the calc's currentHealthPercent reflect both
-            -- missing HP and active shields, so the visibility curve below
-            -- evaluates to "hide" only when the unit is at full HP with no
-            -- absorbs — the only state where this bar group should disappear.
-            if Enum and Enum.UnitMaximumHealthMode and Enum.UnitMaximumHealthMode.WithAbsorbs then
-                pcall(function() calc:SetMaximumHealthMode(Enum.UnitMaximumHealthMode.WithAbsorbs) end)
+            local maximumHealthMode = Enum and Enum.UnitMaximumHealthMode
+            if maximumHealthMode and calc.SetMaximumHealthMode then
+                pcall(function() calc:SetMaximumHealthMode(maximumHealthMode.Default or 0) end)
             end
 
             -- Populate calculator with unit data
@@ -942,6 +939,13 @@ local function UpdateAbsorbs(frame)
             if success then
                 -- Store clampedValue directly - it goes straight to StatusBar which handles secrets
                 clampedAbsorbs = results[2]
+
+                -- Keep the attached/overflow split clamped to real missing
+                -- health. Only after that split is captured do we include
+                -- active shields in max health for group visibility.
+                if maximumHealthMode and maximumHealthMode.WithAbsorbs and calc.SetMaximumHealthMode then
+                    pcall(function() calc:SetMaximumHealthMode(maximumHealthMode.WithAbsorbs) end)
+                end
 
                 -- Group visibility via curve — calc evaluates the Step curve
                 -- C-side against its (secret) currentHealthPercent. Result is
