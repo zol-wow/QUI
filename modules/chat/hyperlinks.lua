@@ -164,6 +164,105 @@ hooksecurefunc("SetItemRef", function(link, text, button, ...)
 end)
 
 -- ---------------------------------------------------------------------------
+-- Hover tooltips for normal game hyperlinks
+-- ---------------------------------------------------------------------------
+-- The chat frame emits EventRegistry notifications for hyperlink hover. QUI's
+-- addon links are handled separately on click, so only pass known game links
+-- through GameTooltip:SetHyperlink.
+
+local TOOLTIP_LINK_TYPES = {
+    achievement = true,
+    battlepet = true,
+    conduit = true,
+    currency = true,
+    enchant = true,
+    instancelock = true,
+    item = true,
+    keystone = true,
+    mount = true,
+    profession = true,
+    pvptalent = true,
+    quest = true,
+    recipe = true,
+    runeforgepower = true,
+    spell = true,
+    talent = true,
+    toy = true,
+    transmogappearance = true,
+    transmogillusion = true,
+}
+
+local tooltipShownByQUI = false
+local tooltipCallbacksRegistered = false
+
+local function getLinkType(link)
+    if IsSecret(link) then return nil end
+    if type(link) ~= "string" or link == "" then return nil end
+    local linkType = link:match("^([^:]+):")
+    return linkType and linkType:lower() or nil
+end
+
+local function shouldShowHyperlinkTooltip(link)
+    local linkType = getLinkType(link)
+    return linkType and TOOLTIP_LINK_TYPES[linkType] == true
+end
+
+local function showHyperlinkTooltip(chatFrame, link)
+    if not shouldShowHyperlinkTooltip(link) then return end
+
+    local settings = I.GetSettings and I.GetSettings()
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
+
+    local tooltip = GameTooltip
+    if not tooltip or not tooltip.SetHyperlink then return end
+
+    local owner = chatFrame or UIParent
+    if owner and owner.IsForbidden and owner:IsForbidden() then
+        owner = UIParent
+    end
+
+    if tooltip.SetOwner then
+        tooltip:SetOwner(owner or UIParent, "ANCHOR_CURSOR")
+    end
+
+    local ok = pcall(tooltip.SetHyperlink, tooltip, link)
+    if ok then
+        tooltipShownByQUI = true
+        if tooltip.Show then
+            tooltip:Show()
+        end
+    else
+        tooltipShownByQUI = false
+        if tooltip.Hide then
+            tooltip:Hide()
+        end
+    end
+end
+
+local function hideHyperlinkTooltip()
+    if tooltipShownByQUI and GameTooltip and GameTooltip.Hide then
+        GameTooltip:Hide()
+    end
+    tooltipShownByQUI = false
+end
+
+local function setupHyperlinkTooltips()
+    if tooltipCallbacksRegistered then return end
+    if not (EventRegistry and EventRegistry.RegisterCallback) then return end
+
+    EventRegistry:RegisterCallback("ChatFrame.OnHyperlinkEnter", function(_, chatFrame, link)
+        showHyperlinkTooltip(chatFrame, link)
+    end, HL)
+    EventRegistry:RegisterCallback("ChatFrame.OnHyperlinkLeave", function()
+        hideHyperlinkTooltip()
+    end, HL)
+    tooltipCallbacksRegistered = true
+end
+
+setupHyperlinkTooltips()
+HL.SetupHyperlinkTooltips = setupHyperlinkTooltips
+
+-- ---------------------------------------------------------------------------
 -- Player quick-action dropdown
 -- ---------------------------------------------------------------------------
 -- Created lazily on first use. Single shared frame; reinitialized per show.

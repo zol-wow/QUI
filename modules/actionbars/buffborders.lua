@@ -193,10 +193,17 @@ local initialized = false
 -- Blizzard frame banish state
 local blizzBuffBanished = false
 local blizzDebuffBanished = false
-local blizzBuffShowHooked = false
-local blizzDebuffShowHooked = false
-local blizzBuffAlphaHooked = false
-local blizzDebuffAlphaHooked = false
+local blizzardBanishState = Helpers.CreateStateTable()
+local blizzardBanishParent
+
+local function GetBlizzardBanishState(frame)
+    local state = blizzardBanishState[frame]
+    if not state then
+        state = {}
+        blizzardBanishState[frame] = state
+    end
+    return state
+end
 
 -- Layout mode preview state
 local previewActive = false
@@ -680,56 +687,76 @@ local function SetDescendantMouse(frame, enable)
     end
 end
 
-local function BanishBlizzardFrame(frame, showHookedFlag, alphaHookedFlag)
-    if not frame then return false, false end
+local function EnsureBlizzardBanishParent()
+    if not blizzardBanishParent then
+        blizzardBanishParent = CreateFrame("Frame", "QUI_BuffBordersHiddenParent", UIParent)
+        blizzardBanishParent:Hide()
+    end
+    return blizzardBanishParent
+end
 
-    frame:SetAlpha(0)
-    frame:EnableMouse(false)
+local function RemoveFromManagedContainer(frame)
+    if not frame then return nil end
+    local currentParent = frame.GetParent and frame:GetParent() or nil
+    if currentParent and currentParent.RemoveManagedFrame then
+        pcall(currentParent.RemoveManagedFrame, currentParent, frame)
+    end
+    frame.ignoreFramePositionManager = true
+    return currentParent
+end
+
+local function BanishBlizzardFrame(frame)
+    if not frame then return false end
+    if InCombatLockdown() and not ns._inInitSafeWindow then return false end
+
+    local state = GetBlizzardBanishState(frame)
+    if not state.banished then
+        state.originalParent = frame.GetParent and frame:GetParent() or UIParent
+        state.originalAlpha = frame.GetAlpha and frame:GetAlpha() or 1
+        state.originalMouse = frame.IsMouseEnabled and frame:IsMouseEnabled()
+        state.originalIgnoreFramePositionManager = frame.ignoreFramePositionManager
+    end
+
+    RemoveFromManagedContainer(frame)
+
+    local hiddenParent = EnsureBlizzardBanishParent()
+    if frame.SetParent and frame:GetParent() ~= hiddenParent then
+        pcall(frame.SetParent, frame, hiddenParent)
+    end
+    if frame.SetAlpha then pcall(frame.SetAlpha, frame, 0) end
+    if frame.EnableMouse then pcall(frame.EnableMouse, frame, false) end
     SetDescendantMouse(frame, false)
 
-    -- Hook Show to re-enforce hiding
-    if not showHookedFlag then
-        showHookedFlag = true
-        hooksecurefunc(frame, "Show", function(self)
-            C_Timer.After(0, function()
-                if self._quiBanished then
-                    self:SetAlpha(0)
-                    self:EnableMouse(false)
-                    SetDescendantMouse(self, false)
-                end
-            end)
-        end)
-    end
-
-    -- Hook SetAlpha to prevent Blizzard from restoring visibility
-    if not alphaHookedFlag then
-        alphaHookedFlag = true
-        hooksecurefunc(frame, "SetAlpha", function(self, alpha)
-            if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(alpha) then
-                return
-            end
-            if self._quiBanished and alpha > 0 then
-                C_Timer.After(0, function()
-                    if self._quiBanished and self:GetAlpha() > 0 then
-                        self:SetAlpha(0)
-                        SetDescendantMouse(self, false)
-                    end
-                end)
-            end
-        end)
-    end
-
-    frame._quiBanished = true
-    return showHookedFlag, alphaHookedFlag
+    state.banished = true
+    return true
 end
 
 local function RestoreBlizzardFrame(frame)
-    if not frame then return end
+    if not frame then return false end
+    if InCombatLockdown() and not ns._inInitSafeWindow then return false end
 
-    frame._quiBanished = nil
-    frame:SetAlpha(1)
-    frame:EnableMouse(true)
-    SetDescendantMouse(frame, true)
+    local state = blizzardBanishState[frame]
+    if state and state.originalIgnoreFramePositionManager ~= nil then
+        frame.ignoreFramePositionManager = state.originalIgnoreFramePositionManager
+    else
+        frame.ignoreFramePositionManager = nil
+    end
+
+    local parent = state and state.originalParent or UIParent
+    if frame.SetParent and parent then
+        pcall(frame.SetParent, frame, parent)
+    end
+
+    local alpha = (state and state.originalAlpha ~= nil) and state.originalAlpha or 1
+    if frame.SetAlpha then pcall(frame.SetAlpha, frame, alpha) end
+
+    local mouse = not (state and state.originalMouse == false)
+    if frame.EnableMouse then pcall(frame.EnableMouse, frame, mouse) end
+    SetDescendantMouse(frame, mouse)
+
+    if frame.Show then pcall(frame.Show, frame) end
+    if state then state.banished = false end
+    return true
 end
 
 ---------------------------------------------------------------------------
@@ -1029,29 +1056,27 @@ local function ManageBlizzardFrames()
 
     -- Buff frame: banish when enabled, restore when disabled
     if settings.enableBuffs then
-        if not blizzBuffBanished then
-            blizzBuffShowHooked, blizzBuffAlphaHooked = BanishBlizzardFrame(
-                BuffFrame, blizzBuffShowHooked, blizzBuffAlphaHooked)
+        if BanishBlizzardFrame(BuffFrame) then
             blizzBuffBanished = true
         end
     else
         if blizzBuffBanished then
-            RestoreBlizzardFrame(BuffFrame)
-            blizzBuffBanished = false
+            if RestoreBlizzardFrame(BuffFrame) then
+                blizzBuffBanished = false
+            end
         end
     end
 
     -- Debuff frame: banish when enabled, restore when disabled
     if settings.enableDebuffs then
-        if not blizzDebuffBanished then
-            blizzDebuffShowHooked, blizzDebuffAlphaHooked = BanishBlizzardFrame(
-                DebuffFrame, blizzDebuffShowHooked, blizzDebuffAlphaHooked)
+        if BanishBlizzardFrame(DebuffFrame) then
             blizzDebuffBanished = true
         end
     else
         if blizzDebuffBanished then
-            RestoreBlizzardFrame(DebuffFrame)
-            blizzDebuffBanished = false
+            if RestoreBlizzardFrame(DebuffFrame) then
+                blizzDebuffBanished = false
+            end
         end
     end
 end

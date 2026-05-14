@@ -92,6 +92,12 @@ local function AnchorEditBoxToBackdrop(chatFrame, editBox, backdrop)
     end
 end
 
+local function SetEditBoxVisualShown(editBox, shown)
+    if editBox and editBox.SetAlpha then
+        editBox:SetAlpha(shown and 1 or 0)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Style edit box (chat input area)
 ---------------------------------------------------------------------------
@@ -190,33 +196,43 @@ local function StyleEditBox(chatFrame)
             editBox:HookScript("OnEditFocusGained", function(self)
                 local s = I.GetSettings()
                 local state = I.editBoxState[self]
+                if state then
+                    state.hasFocus = true
+                end
                 if I.IsChatEnabled and I.IsChatEnabled(s)
                     and s.editBox and s.editBox.positionTop and state and state.backdropRef then
                     self:EnableMouse(true)
+                    SetEditBoxVisualShown(self, true)
                     state.backdropRef:Show()
                 end
             end)
             editBox:HookScript("OnEditFocusLost", function(self)
                 local s = I.GetSettings()
+                local state = I.editBoxState[self]
+                if state then
+                    state.hasFocus = false
+                end
                 if not (I.IsChatEnabled and I.IsChatEnabled(s)
                     and s.editBox and s.editBox.positionTop) then
                     return
                 end
-                local state = I.editBoxState[self]
                 if state and state.backdropRef then
                     state.backdropRef:Hide()
                 end
+                SetEditBoxVisualShown(self, false)
                 self:EnableMouse(false)
             end)
         end
 
         -- Start hidden - will show when user focuses editbox (presses Enter)
         backdrop:Hide()
-        if editBox:HasFocus() then
+        if ebState.hasFocus then
             backdrop:Show()
             editBox:EnableMouse(true)
+            SetEditBoxVisualShown(editBox, true)
         else
             editBox:EnableMouse(false)
+            SetEditBoxVisualShown(editBox, false)
         end
     else
         -- Default: Position at BOTTOM
@@ -239,6 +255,7 @@ local function StyleEditBox(chatFrame)
         backdrop:Show()
         -- Restore mouse on the editBox in case top mode previously disabled it.
         editBox:EnableMouse(true)
+        SetEditBoxVisualShown(editBox, true)
     end
 end
 
@@ -257,6 +274,7 @@ local function RemoveEditBoxStyle(chatFrame)
     local editBox = chatFrame.editBox or (frameName and _G[frameName .. "EditBox"])
     if editBox and editBox.EnableMouse then
         editBox:EnableMouse(true)
+        SetEditBoxVisualShown(editBox, true)
     end
 end
 

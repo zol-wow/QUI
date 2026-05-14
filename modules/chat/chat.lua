@@ -98,12 +98,46 @@ local tabBackdrops    = I.tabBackdrops
 local GetSurfaceState = I.GetSurfaceState
 local GetScrollbackState = I.GetScrollbackState
 
--- URL detection patterns (standard protocol and www formats)
+-- URL detection patterns (standard protocol, www formats, and known invite
+-- domains that are commonly posted without a scheme).
 local URL_PATTERNS = {
-    "%f[%S](%a[%w+.-]+://%S+)",             -- protocol://path
-    "%f[%S](www%.[-%w_%%]+%.%a%a+/%S+)",    -- www.domain.tld/path
-    "%f[%S](www%.[-%w_%%]+%.%a%a+)",        -- www.domain.tld
+    "%a[%w+.-]+://%S+",              -- protocol://path
+    "www%.[-%w_%%]+%.%a%a+/%S+",     -- www.domain.tld/path
+    "www%.[-%w_%%]+%.%a%a+",         -- www.domain.tld
+    "discord%.gg/%S+",               -- discord.gg/invite
+    "discord%.com/invite/%S+",       -- discord.com/invite/code
+    "discordapp%.com/invite/%S+",    -- legacy invite host
 }
+
+local TRAILING_URL_PUNCTUATION = {
+    ["."] = true,
+    [","] = true,
+    [";"] = true,
+    [":"] = true,
+    ["!"] = true,
+    ["?"] = true,
+    [")"] = true,
+    ["]"] = true,
+    ["}"] = true,
+    [">"] = true,
+}
+
+local function IsURLStartBoundary(text, startIndex)
+    if startIndex <= 1 then return true end
+    local previous = text:sub(startIndex - 1, startIndex - 1)
+    return previous:match("[%s%(\"'<]") ~= nil
+end
+
+local function SplitTrailingURLPunctuation(url)
+    local suffix = ""
+    while #url > 0 do
+        local last = url:sub(-1)
+        if not TRAILING_URL_PUNCTUATION[last] then break end
+        suffix = last .. suffix
+        url = url:sub(1, -2)
+    end
+    return url, suffix
+end
 
 ---------------------------------------------------------------------------
 -- Get settings from database
@@ -468,7 +502,17 @@ local function MakeURLsClickable(text)
 
         local processed = text
         for _, pattern in ipairs(URL_PATTERNS) do
-            processed = processed:gsub(pattern, wrap)
+            local source = processed
+            processed = source:gsub("()(" .. pattern .. ")", function(startIndex, url)
+                if not IsURLStartBoundary(source, startIndex) then
+                    return url
+                end
+                local cleanURL, suffix = SplitTrailingURLPunctuation(url)
+                if cleanURL == "" then
+                    return url
+                end
+                return wrap(cleanURL) .. suffix
+            end)
         end
         return processed
     end)
@@ -480,6 +524,8 @@ local function MakeURLsClickable(text)
         return text, false
     end
 end
+
+I.MakeURLsClickable = MakeURLsClickable
 
 ---------------------------------------------------------------------------
 -- Chat Message Filters (safe alternative to AddMessage replacement)
@@ -678,7 +724,7 @@ local function HookNewChatWindows()
                     end
 
                     -- If editbox has focus, show the backdrop
-                    if ChatFrame1EditBox:HasFocus() then
+                    if ebState and ebState.hasFocus then
                         sharedBackdrop:Show()
                     end
                 end

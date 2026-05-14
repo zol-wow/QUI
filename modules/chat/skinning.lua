@@ -8,6 +8,7 @@
 ---------------------------------------------------------------------------
 
 local ADDON_NAME, ns = ...
+local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 
 -- Defensive: assert _internals exists before reading state through it.
@@ -696,17 +697,23 @@ local TAB_CHROME_HEIGHT = 22
 local TAB_TEXT_PAD_X = 8
 local UNREAD_PULSE_HEIGHT = 3
 
-local function GetTabChromeWidth(tab)
-    local chatFrame = I.GetTabChatFrame and I.GetTabChatFrame(tab)
-    if not I.IsTemporaryChatFrame(chatFrame) or not tab.GetWidth then return nil end
+local function IsSecretValue(value)
+    return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
+end
 
-    local tabWidth = tonumber(tab:GetWidth())
-    local extraPadding = tonumber(tab.sizePadding) or 0
-    if not tabWidth or extraPadding <= 0 then return nil end
+local function GetTemporaryTabHiddenPadding(tab)
+    local chatFrame = I.GetTabChatFrame and I.GetTabChatFrame(tab)
+    if not I.IsTemporaryChatFrame(chatFrame) then return nil end
+
+    local rawPadding = tab.sizePadding
+    if IsSecretValue(rawPadding) then return nil end
+
+    local extraPadding = tonumber(rawPadding) or 0
+    if extraPadding <= 0 then return nil end
 
     -- Blizzard adds sizePadding to temporary tabs for the whisper/conversation
     -- icon. QUI hides that icon, so omit the icon reserve from our visible skin.
-    return math.max(1, tabWidth - extraPadding)
+    return extraPadding
 end
 
 local function GetTabForChatFrame(chatFrame)
@@ -832,9 +839,9 @@ local function LayoutTabChrome(tab)
     -- same height while leaving Blizzard's own tab hitboxes/layout intact.
     backdrop:ClearAllPoints()
     backdrop:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 0, 0)
-    local chromeWidth = GetTabChromeWidth(tab)
-    if chromeWidth then
-        backdrop:SetWidth(chromeWidth)
+    local hiddenPadding = GetTemporaryTabHiddenPadding(tab)
+    if hiddenPadding then
+        backdrop:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -hiddenPadding, 0)
     else
         backdrop:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, 0)
     end
