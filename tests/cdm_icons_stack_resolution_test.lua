@@ -61,14 +61,39 @@ local ns = {
             return entry and entry.kind == "aura"
         end,
         QueryOverrideSpell = function() return nil end,
-        QueryDisplayCount = function() return nil end,
+        QueryDisplayCount = function(spellID)
+            if spellID == 1227280 then
+                return 2
+            end
+            return nil
+        end,
         QuerySpellCount = function(spellID)
             if spellID == 473662 then
                 return 5
             end
             return nil
         end,
-        GetChargeMetadataDB = function() return nil end,
+        GetChargeMetadataDB = function()
+            return {
+                [1227280] = 2,
+            }
+        end,
+        ResolveBlizzardMirrorIdentity = function(entry)
+            if entry and entry.spellID == 1227280 then
+                return 8203, "essential", {
+                    cooldownID = 8203,
+                    spellID = 1227280,
+                    overrideSpellID = 1227280,
+                    viewerCategory = "essential",
+                    stackText = nil,
+                    stackTextSource = nil,
+                    stackTextShown = nil,
+                    cooldownChargesShown = false,
+                    chargeCountFrameShown = false,
+                }
+            end
+            return nil
+        end,
     },
     CDMIconFactory = {
         _iconPools = {},
@@ -231,6 +256,22 @@ text, textSource, mirrorBacked = icons.ResolveIconStackText({
 assert(text == nil, "mirror-backed non-charge cooldown icons should not synthesize spell cast count as stack text")
 assert(textSource == nil, "spell cast count should not set a stack source")
 assert(mirrorBacked == true, "mirror-backed cooldown icons without mirror text should stay mirror-authoritative")
+
+text, textSource, mirrorBacked = icons.ResolveIconStackText({
+    _spellEntry = {
+        type = "spell",
+        id = 1227280,
+        spellID = 1227280,
+        overrideSpellID = 1227280,
+        kind = "cooldown",
+        viewerType = "essential",
+    },
+    _runtimeSpellID = 1227280,
+})
+
+assert(text == nil, "unbound mirror-backed cooldown icons should not synthesize spell display count")
+assert(textSource == nil, "unbound mirror-backed cooldown icons should not set an API stack source")
+assert(mirrorBacked == true, "unbound mirror-backed cooldown icons should still mark the mirror authoritative")
 
 icons:EnsurePool("essential")
 local pool = icons:GetIconPool("essential")

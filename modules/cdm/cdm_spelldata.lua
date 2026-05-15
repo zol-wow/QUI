@@ -3740,6 +3740,8 @@ function CDMSpellData:AddEntry(containerKey, entry)
     if entry.kind == nil then
         entry.kind = ResolveEntryKind(entry, containerKey)
     end
+    local pickerKnown = entry.isKnown
+    entry.isKnown = nil
 
     -- Within-container dedup — prevent adding duplicates. customBar
     -- entries are already typed as {type,id}; ownedSpells may have the
@@ -3748,6 +3750,35 @@ function CDMSpellData:AddEntry(containerKey, entry)
         local norm = NormalizeOwnedEntry(existing)
         if norm and norm.type == entry.type and norm.id == entry.id then
             return false  -- already exists
+        end
+    end
+
+    if entry.type == "spell" and type(entry.id) == "number"
+        and type(db.dormantSpells) == "table" and db.dormantSpells[entry.id] then
+        return false
+    end
+
+    if entry.type == "spell" and type(entry.id) == "number"
+        and db.containerType ~= "customBar"
+        and not IsAuraEntry(entry, containerKey) then
+        local isKnown
+        if pickerKnown ~= nil then
+            isKnown = (pickerKnown == true)
+        else
+            isKnown = IsSpellKnownByPlayer(entry.id)
+        end
+        if not isKnown then
+            if type(db.dormantSpells) ~= "table" then
+                db.dormantSpells = {}
+            end
+            db._dormantSequence = (db._dormantSequence or 0) + 1
+            db.dormantSpells[entry.id] = {
+                slot = #list + 1,
+                row = entry.row,
+                seq = db._dormantSequence,
+            }
+            FireChangeCallback()
+            return true
         end
     end
 
@@ -3913,16 +3944,16 @@ end
 -- Convenience wrappers. Optional `kind` arg overrides the runtime
 -- classifier — pass it from the Composer when the picker tab dictates
 -- (Passives/Buffs → aura; all_cooldowns/items → cooldown).
-function CDMSpellData:AddSpell(containerKey, spellID, kind)
-    return self:AddEntry(containerKey, { type = "spell", id = spellID, kind = kind })
+function CDMSpellData:AddSpell(containerKey, spellID, kind, row, isKnown)
+    return self:AddEntry(containerKey, { type = "spell", id = spellID, kind = kind, row = row, isKnown = isKnown })
 end
 
-function CDMSpellData:AddItem(containerKey, itemID)
-    return self:AddEntry(containerKey, { type = "item", id = itemID, kind = "cooldown" })
+function CDMSpellData:AddItem(containerKey, itemID, row)
+    return self:AddEntry(containerKey, { type = "item", id = itemID, kind = "cooldown", row = row })
 end
 
-function CDMSpellData:AddTrinketSlot(containerKey, slotID)
-    return self:AddEntry(containerKey, { type = "slot", id = slotID, kind = "cooldown" })
+function CDMSpellData:AddTrinketSlot(containerKey, slotID, row)
+    return self:AddEntry(containerKey, { type = "slot", id = slotID, kind = "cooldown", row = row })
 end
 
 
@@ -4007,6 +4038,13 @@ function CDMSpellData:GetAvailableSpells(containerKey)
                 if oid and oid ~= normalized.id then
                     ownedSet[oid] = true
                 end
+            end
+        end
+    end
+    if db and type(db.dormantSpells) == "table" then
+        for sid in pairs(db.dormantSpells) do
+            if type(sid) == "number" then
+                ownedSet[sid] = true
             end
         end
     end

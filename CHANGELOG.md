@@ -10,6 +10,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha46 - 2026-05-15
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha45 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **CDM mirror cooldowns now treat charge lanes as authoritative only when Blizzard exposes visible charge count state.** This prevents one-charge or uncounted charge-flagged cooldowns from being downgraded into resource timers while preserving real recharge timers.
+- **Mirror-backed CDM icons now clear stale stack text on bind and keep active charge mirrors in charge mode.** Empty mirror stack state no longer leaves old count text behind, and active recharge swipes no longer fall back through inactive spell cooldown state.
+
+### Internal
+- Added regression coverage for uncounted charge-flagged mirror cooldowns, stale mirror stack clearing, unbound mirror stack authority, and active charge mirror mode.
+
+
+
 ## v3.6.0-alpha45 - 2026-05-15
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha44 profiles carry over unchanged.

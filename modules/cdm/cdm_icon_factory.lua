@@ -538,9 +538,22 @@ local function SetIconBlizzMirrorBinding(icon, cooldownID, viewerCategory)
         CDMIcons.RegisterBlizzMirrorIcon(icon, cooldownID, viewerCategory)
     end
     ShowNativeIconWidgets(icon)
-    local icons = ns.CDMIcons
+    local icons = ns.CDMIcons or CDMIcons
     if icons and icons.ConfigureIcon and icon._rowConfig then
         icons.ConfigureIcon(icon, icon._rowConfig)
+    end
+    if icons and icons.ResolveIconStackText and not IsAuraEntry(icon._spellEntry) then
+        local stackText, stackSource, mirrorBacked = icons.ResolveIconStackText(icon)
+        if mirrorBacked then
+            if icons.ValueIsPresent and icons.ValueIsPresent(stackText) and icons.ShowIconStackText then
+                local settings = icons.GetTrackerSettings
+                    and icons.GetTrackerSettings(icon._spellEntry and icon._spellEntry.viewerType)
+                    or nil
+                icons.ShowIconStackText(icon, stackText, settings, stackSource or "mirror-bind-stack")
+            elseif icons.ClearIconStackText then
+                icons.ClearIconStackText(icon, "mirror-bind-empty")
+            end
+        end
     end
 end
 

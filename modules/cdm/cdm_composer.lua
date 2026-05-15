@@ -2731,8 +2731,18 @@ RefreshAddList = function()
         for _, entry in ipairs(ownedEntries) do
             if type(entry) == "table" and entry.id then
                 ownedSet[(entry.type or "spell") .. ":" .. entry.id] = true
+                ownedSet[entry.id] = true
             elseif type(entry) == "number" then
                 ownedSet["spell:" .. entry] = true
+                ownedSet[entry] = true
+            end
+        end
+    end
+    if activeDB and type(activeDB.dormantSpells) == "table" then
+        for sid in pairs(activeDB.dormantSpells) do
+            if type(sid) == "number" then
+                ownedSet["spell:" .. sid] = true
+                ownedSet[sid] = true
             end
         end
     end
@@ -3088,19 +3098,11 @@ RefreshAddList = function()
                             if containerDB.removedSpells then
                                 containerDB.removedSpells[entryRef._slotID] = nil
                             end
-                            addResult = spellData:AddTrinketSlot(activeContainer, entryRef._slotID)
+                            addResult = spellData:AddTrinketSlot(activeContainer, entryRef._slotID, targetRow)
                         elseif addType == "item" then
-                            addResult = spellData:AddItem(activeContainer, addID)
+                            addResult = spellData:AddItem(activeContainer, addID, targetRow)
                         else
-                            addResult = spellData:AddSpell(activeContainer, addID, kindFromTab)
-                        end
-
-                        -- Assign the new entry to the target row (first with capacity)
-                        if addResult and targetRow then
-                            local spells = containerDB.ownedSpells
-                            if spells and #spells > 0 then
-                                spells[#spells].row = targetRow
-                            end
+                            addResult = spellData:AddSpell(activeContainer, addID, kindFromTab, targetRow, entryRef.isKnown)
                         end
 
                         C_Timer.After(0.02, function()

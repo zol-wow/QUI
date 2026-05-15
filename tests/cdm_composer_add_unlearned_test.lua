@@ -29,5 +29,9 @@ assert(source:find("cell._icon:SetDesaturated(isOwned or cell._isUnlearned)", re
     "unlearned add entries should render desaturated like dormant entries")
 assert(source:find("cell._isUnlearned and 0.6", refreshStart, true),
     "unlearned add entries should use the same soft alpha treatment as dormant entries")
+assert(source:find("spellData:AddSpell(activeContainer, addID, kindFromTab, targetRow, entryRef.isKnown)", refreshStart, true),
+    "right-click add should pass the picker known-state and target row to AddSpell")
+assert(not source:find("spells%[#spells%]%.row = targetRow", refreshStart),
+    "right-click add should not assign targetRow by mutating the last active entry after AddSpell")
 
 print("OK: cdm_composer_add_unlearned_test")

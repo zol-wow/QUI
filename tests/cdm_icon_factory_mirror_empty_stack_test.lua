@@ -83,6 +83,43 @@ ns.CDMIconFactory._FinalizeImports({
     GetRecentCastAliasForEntry = function() return nil end,
 })
 
+local function MakeCooldown()
+    return {
+        SetDrawSwipe = function() end,
+        SetDrawBling = function() end,
+        SetSwipeTexture = function() end,
+        SetSwipeColor = function() end,
+        SetHideCountdownNumbers = function() end,
+        Show = function() end,
+    }
+end
+
+local staleIcon = {
+    _spellEntry = {
+        id = 49998,
+        spellID = 49998,
+        type = "spell",
+        kind = "cooldown",
+        viewerType = "essential",
+        name = "Death Strike",
+    },
+    Icon = {
+        Show = function() end,
+    },
+    Cooldown = MakeCooldown(),
+    TextOverlay = {
+        Show = function() end,
+    },
+    _rowConfig = {},
+}
+
+ns.CDMIconFactory.SetIconBlizzMirrorBinding(staleIcon, 12345, "essential")
+
+assert(#stackWrites == 1, "binding an empty mirror-backed cooldown should clear stale stack text")
+assert(stackWrites[1].op == "clear", "binding should clear stale stack text")
+
+stackWrites = {}
+
 local icon = {
     _spellEntry = {
         id = 49998,
@@ -97,7 +134,7 @@ local icon = {
     Icon = {
         SetTexture = function() end,
     },
-    Cooldown = {},
+    Cooldown = MakeCooldown(),
 }
 
 ns.CDMIconFactory.UpdateIconCooldown(icon)

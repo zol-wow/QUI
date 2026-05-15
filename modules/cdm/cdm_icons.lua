@@ -1167,14 +1167,23 @@ end
 local function ResolveMirrorStackText(icon)
     local mirror = ns.CDMBlizzMirror
     local cooldownID = icon and icon._blizzMirrorCooldownID
+    local category = icon and icon._blizzMirrorCategory
+    local resolvedState
     if cooldownID == nil then
-        return nil, nil, false
+        local resolver = Resolvers and Resolvers.ResolveBlizzardMirrorIdentity
+        local entry = icon and icon._spellEntry
+        if resolver and entry then
+            cooldownID, category, resolvedState = resolver(entry)
+        end
+        if cooldownID == nil then
+            return nil, nil, false
+        end
     end
     if not (mirror and mirror.GetStateByCooldownID) then
         return nil, nil, true
     end
 
-    local m = mirror.GetStateByCooldownID(cooldownID, icon._blizzMirrorCategory)
+    local m = resolvedState or mirror.GetStateByCooldownID(cooldownID, category)
     if not m then
         return nil, nil, true
     end
@@ -1563,14 +1572,6 @@ ApplyResolvedCooldown = function(icon)
     local cdActive = false
     local resolvedCdInfo = nil
     local _dbgIsActive, _dbgIsOnGCD = nil, nil
-    local _dbgChargeActive, _dbgChargeMax = nil, nil
-    if entry and sid then
-        local ci = QueryCharges(sid)
-        if ci then
-            _dbgChargeActive = tostring(ci.isActive)
-            _dbgChargeMax = tostring(ci.maxCharges)
-        end
-    end
     local numericCooldownActive = IsSafeNumeric(resolvedStart)
         and IsSafeNumeric(resolvedDuration)
         and resolvedStart > 0
@@ -1591,6 +1592,7 @@ ApplyResolvedCooldown = function(icon)
         and (mode == "cooldown"
             or mode == "charge"
             or mode == "item-cooldown")
+    local mirrorChargeMode = mirrorBackedDuration == true and mode == "charge"
     -- cdInfo.isActive is authoritative (feedback_blizz_cd_state_signals).
     -- The Blizzard mirror reports a cooldownID as active when a proc fires
     -- (mirror cooldownID 27927 for Festering Strike showed isActive on the
@@ -1604,7 +1606,8 @@ ApplyResolvedCooldown = function(icon)
     if mirrorBackedRealMode
        and not numericCooldownActive
        and sid
-       and not entryIsAura then
+       and not entryIsAura
+       and not mirrorChargeMode then
         local cdInfo = QueryCooldown(sid)
         if cdInfo then
             resolvedCdInfo = cdInfo
@@ -1689,10 +1692,9 @@ ApplyResolvedCooldown = function(icon)
         if prevActive ~= cdActive then
             icon._desatTracePrev = cdActive
             print(string.format(
-                "|cffff8800[desat]|r %s sid=%s cd.isActive=%s cd.isOnGCD=%s charges.isActive=%s maxCharges=%s -> cdActive=%s",
+                "|cffff8800[desat]|r %s sid=%s cd.isActive=%s cd.isOnGCD=%s -> cdActive=%s",
                 tostring(entry.name), tostring(sid),
                 tostring(_dbgIsActive), tostring(_dbgIsOnGCD),
-                tostring(_dbgChargeActive), tostring(_dbgChargeMax),
                 tostring(cdActive)))
         end
     end
