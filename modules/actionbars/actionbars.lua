@@ -5444,11 +5444,14 @@ local extraBtnState = {
     hookingSetPoint = false,
     extraActionSetPointHooked = false,
     zoneAbilitySetPointHooked = false,
+    extraAbilityContainerSetPointHooked = false,
     hookingSetParent = false,
     extraActionSetParentHooked = false,
     zoneAbilitySetParentHooked = false,
+    extraAbilityContainerSetParentHooked = false,
     extraActionShowHooked = false,
     zoneAbilityShowHooked = false,
+    extraAbilityContainerShowHooked = false,
     pageArrowShowHooked = {},
     pageArrowRetryTimer = nil,
     pageArrowRetryAttempts = 0,
@@ -5818,6 +5821,21 @@ local function QueueExtraButtonReanchor(buttonType)
     end)
 end
 
+local function QueueManagedExtraButtonReanchor(buttonType)
+    local holder = buttonType == "extraActionButton"
+        and extraBtnState.extraActionHolder
+        or extraBtnState.zoneAbilityHolder
+    local settings = GetExtraButtonDB(buttonType)
+    if holder and settings and settings.enabled then
+        QueueExtraButtonReanchor(buttonType)
+    end
+end
+
+local function QueueAllExtraButtonReanchors()
+    QueueManagedExtraButtonReanchor("extraActionButton")
+    QueueManagedExtraButtonReanchor("zoneAbility")
+end
+
 -- Hook Blizzard frames to prevent them from repositioning.
 -- After reparenting, the managed container won't reposition these frames,
 -- but other Blizzard code (e.g. ability grant, zone transition) may call
@@ -5828,11 +5846,8 @@ local function HookExtraButtonPositioning()
         hooksecurefunc(ExtraActionBarFrame, "SetPoint", function(self)
             if extraBtnState.hookingSetPoint then return end
             C_Timer.After(0, function()
-                if extraBtnState.hookingSetPoint or InCombatLockdown() then return end
-                local settings = GetExtraButtonDB("extraActionButton")
-                if extraBtnState.extraActionHolder and settings and settings.enabled then
-                    QueueExtraButtonReanchor("extraActionButton")
-                end
+                if extraBtnState.hookingSetPoint then return end
+                QueueManagedExtraButtonReanchor("extraActionButton")
             end)
         end)
     end
@@ -5842,11 +5857,19 @@ local function HookExtraButtonPositioning()
         hooksecurefunc(ZoneAbilityFrame, "SetPoint", function(self)
             if extraBtnState.hookingSetPoint then return end
             C_Timer.After(0, function()
-                if extraBtnState.hookingSetPoint or InCombatLockdown() then return end
-                local settings = GetExtraButtonDB("zoneAbility")
-                if extraBtnState.zoneAbilityHolder and settings and settings.enabled then
-                    QueueExtraButtonReanchor("zoneAbility")
-                end
+                if extraBtnState.hookingSetPoint then return end
+                QueueManagedExtraButtonReanchor("zoneAbility")
+            end)
+        end)
+    end
+
+    if ExtraAbilityContainer and not extraBtnState.extraAbilityContainerSetPointHooked then
+        extraBtnState.extraAbilityContainerSetPointHooked = true
+        hooksecurefunc(ExtraAbilityContainer, "SetPoint", function()
+            if extraBtnState.hookingSetPoint then return end
+            C_Timer.After(0, function()
+                if extraBtnState.hookingSetPoint then return end
+                QueueAllExtraButtonReanchors()
             end)
         end)
     end
@@ -5859,9 +5882,13 @@ local function HookExtraButtonPositioning()
             if extraBtnState.hookingSetParent then return end
             if newParent == holder then return end
             C_Timer.After(0, function()
-                if extraBtnState.hookingSetParent or InCombatLockdown() then return end
+                if extraBtnState.hookingSetParent then return end
                 local settings = GetExtraButtonDB(buttonType)
                 if holder and settings and settings.enabled then
+                    if InCombatLockdown() then
+                        ActionBarsOwned.pendingExtraButtonRefresh = true
+                        return
+                    end
                     extraBtnState.hookingSetParent = true
                     blizzFrame:SetParent(holder)
                     extraBtnState.hookingSetParent = false
@@ -5878,6 +5905,16 @@ local function HookExtraButtonPositioning()
         extraBtnState.zoneAbilitySetParentHooked = true
         HookSetParentForType(ZoneAbilityFrame, "zoneAbility", extraBtnState.zoneAbilityHolder)
     end
+    if ExtraAbilityContainer and not extraBtnState.extraAbilityContainerSetParentHooked then
+        extraBtnState.extraAbilityContainerSetParentHooked = true
+        hooksecurefunc(ExtraAbilityContainer, "SetParent", function()
+            if extraBtnState.hookingSetParent then return end
+            C_Timer.After(0, function()
+                if extraBtnState.hookingSetParent then return end
+                QueueAllExtraButtonReanchors()
+            end)
+        end)
+    end
 
     -- Hook Show to recapture frames when Blizzard makes them visible
     -- (e.g., zone ability appearing upon entering a new zone).
@@ -5891,6 +5928,12 @@ local function HookExtraButtonPositioning()
         extraBtnState.zoneAbilityShowHooked = true
         hooksecurefunc(ZoneAbilityFrame, "Show", function()
             QueueExtraButtonReanchor("zoneAbility")
+        end)
+    end
+    if ExtraAbilityContainer and not extraBtnState.extraAbilityContainerShowHooked then
+        extraBtnState.extraAbilityContainerShowHooked = true
+        hooksecurefunc(ExtraAbilityContainer, "Show", function()
+            QueueAllExtraButtonReanchors()
         end)
     end
 end

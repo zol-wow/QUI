@@ -10,6 +10,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha44 - 2026-05-15
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha43 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **Extra Action Button and Zone Ability anchoring now recovers after Blizzard moves the shared Extra Abilities container.** QUI watches the shared container as well as the individual special-button frames, then reapplies both saved holder anchors instead of leaving Blizzard's position in control.
+
+### Internal
+- Added regression coverage to require shared Extra Abilities container hooks for both special buttons.
+
+
+
 ## v3.6.0-alpha43 - 2026-05-15
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha42 profiles carry over unchanged.

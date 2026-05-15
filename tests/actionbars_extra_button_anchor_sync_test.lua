@@ -41,4 +41,11 @@ assert(
         and reanchorBlock:find("ApplyExtraButtonFrameAnchor%(buttonType%)"),
     "extra/zone reanchor refresh must reapply the saved frame anchor after updating holder size")
 
+local hookBlock = blockBetween("local function HookExtraButtonPositioning", "local function ShowExtraButtonMovers")
+assert(
+    hookBlock:find("ExtraAbilityContainer", 1, true)
+        and hookBlock:find('QueueExtraButtonReanchor("extraActionButton")', 1, true)
+        and hookBlock:find('QueueExtraButtonReanchor("zoneAbility")', 1, true),
+    "extra/zone reanchor hooks must observe Blizzard's shared ExtraAbilityContainer")
+
 print("OK: actionbars_extra_button_anchor_sync_test")
