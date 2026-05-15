@@ -197,7 +197,7 @@ if Registry and Schema
         id = "blizzardMoverPage",
         moverKey = "blizzardMover",
         category = "appearance",
-        nav = { tileId = "appearance", subPageIndex = 8 },
+        nav = { tileId = "appearance", subPageIndex = 9 },
         sections = {
             Schema.Section({
                 id = "settings",

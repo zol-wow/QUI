@@ -12,7 +12,7 @@ ProviderFeatures:Register({
     category = "trackers",
     nav = {
         tileId = "gameplay",
-        subPageIndex = 7,
+        subPageIndex = 6,
     },
     getDB = function(profile)
         return profile and profile.atonementCounter

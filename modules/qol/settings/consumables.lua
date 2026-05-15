@@ -12,7 +12,7 @@ ProviderFeatures:Register({
     category = "qol",
     nav = {
         tileId = "gameplay",
-        subPageIndex = 6,
+        subPageIndex = 5,
     },
     getDB = function(profile)
         return profile and profile.general

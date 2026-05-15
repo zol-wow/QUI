@@ -30,7 +30,7 @@ function V2.Register(frame)
         renderOptions = { surface = "full" },
         relatedSettings = {
             { label = "Buff/Debuff",   tileId = "action_bars", subPageIndex = 2 },
-            { label = "Raid Buffs",    tileId = "gameplay", subPageIndex = 6 },
+            { label = "Raid Buffs",    tileId = "gameplay", subPageIndex = 5 },
             { label = "Resource Bars", tileId = "resource_bars", subPageIndex = 1 },
         },
     })

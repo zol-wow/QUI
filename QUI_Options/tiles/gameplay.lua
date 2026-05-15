@@ -44,12 +44,6 @@ function V2.Register(frame)
                 navRoutes = { { tabIndex = 2, subTabIndex = 3 } },
             },
             {
-                id = "character",
-                name = "Character",
-                featureId = "characterPane",
-                navRoutes = { { tabIndex = 2, subTabIndex = 7 } },
-            },
-            {
                 id = "raidBuffs",
                 name = "Raid Buffs",
                 sectionNav = true,

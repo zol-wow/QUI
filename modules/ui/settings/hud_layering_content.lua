@@ -163,7 +163,7 @@ if Registry and Schema
         id = "frameLevelsPage",
         moverKey = "hudLayering",
         category = "appearance",
-        nav = { tileId = "appearance", subPageIndex = 7 },
+        nav = { tileId = "appearance", subPageIndex = 8 },
         sections = {
             Schema.Section({
                 id = "settings",

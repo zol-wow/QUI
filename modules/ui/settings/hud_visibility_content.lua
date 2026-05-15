@@ -225,7 +225,7 @@ if Registry and Schema
         id = "hudVisibilityPage",
         moverKey = "hudVisibility",
         category = "appearance",
-        nav = { tileId = "appearance", subPageIndex = 6 },
+        nav = { tileId = "appearance", subPageIndex = 7 },
         sections = {
             Schema.Section({
                 id = "settings",

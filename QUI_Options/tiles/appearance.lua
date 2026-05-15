@@ -49,6 +49,17 @@ function V2.Register(frame)
                 },
             },
             {
+                id = "character",
+                name = "Character",
+                featureId = "characterPane",
+                searchContext = {
+                    tileId = "appearance",
+                    tabName = SEARCH_TAB_NAME,
+                    subPageIndex = 3,
+                    subTabName = "Character",
+                },
+            },
+            {
                 id = "skinning",
                 name = "Skinning",
                 sectionNav = true,
@@ -120,7 +131,7 @@ function V2.Register(frame)
                 searchContext = {
                     tileId = "appearance",
                     tabName = SEARCH_TAB_NAME,
-                    subPageIndex = 9,
+                    subPageIndex = 10,
                     subTabName = "Theme & Colors",
                 },
             },
@@ -132,7 +143,7 @@ function V2.Register(frame)
                 searchContext = {
                     tileId = "appearance",
                     tabName = SEARCH_TAB_NAME,
-                    subPageIndex = 10,
+                    subPageIndex = 11,
                     subTabName = "Damage Meter",
                 },
             },

@@ -1,5 +1,5 @@
 --[[
-    QUI Options - Character Pane Tab (Gameplay tile sub-page)
+    QUI Options - Character Pane Tab (Appearance tile sub-page)
 ]]
 
 local ADDON_NAME, ns = ...
@@ -113,8 +113,8 @@ if Registry and Schema
     Registry:RegisterFeature(Schema.Feature({
         id = "characterPane",
         moverKey = "characterPane",
-        category = "gameplay",
-        nav = { tileId = "gameplay", subPageIndex = 5 },
+        category = "appearance",
+        nav = { tileId = "appearance", subPageIndex = 3 },
         sections = {
             Schema.Section({
                 id = "settings",

@@ -139,6 +139,16 @@ local function GetSettings()
     }
 end
 
+local function IsCharacterModuleEnabled(settings)
+    settings = settings or GetSettings()
+    return not (settings and settings.enabled == false)
+end
+
+local function IsFullInspectEnabled(settings)
+    settings = settings or GetSettings()
+    return IsCharacterModuleEnabled(settings) and settings.inspectEnabled ~= false
+end
+
 ---------------------------------------------------------------------------
 -- Get colors (from shared module)
 ---------------------------------------------------------------------------
@@ -258,6 +268,7 @@ local function ResolveInspectUnitByGUID(guid)
 end
 
 RefreshInspectUnitAfterRosterUpdate = function()
+    if not IsCharacterModuleEnabled(GetSettings()) then return false end
     if not InspectFrame or not InspectFrame:IsShown() then return false end
 
     local guid = inspectSessionGUID or currentInspectGUID or pendingInspectReadyGUID
@@ -1184,7 +1195,7 @@ local function UpdateInspectILvlDisplay()
     if not InspectFrame or not inspS.ilvlDisplay then return end
 
     local settings = GetSettings()
-    if settings.inspectEnabled == false then return end
+    if not IsFullInspectEnabled(settings) then return end
 
     local displayFrame = inspS.ilvlDisplay
     if not displayFrame.text then return end
@@ -1737,7 +1748,7 @@ end
 ---------------------------------------------------------------------------
 ApplyInspectPaneLayout = function(force)
     local settings = GetSettings()
-    if settings.inspectEnabled == false then return end
+    if not IsFullInspectEnabled(settings) then return end
     if not InspectFrame then return end
 
     local scaleMultiplier = settings.inspectPanelScale or 1.0
@@ -1821,6 +1832,12 @@ local function UpdateInspectFrame()
     local settings = GetSettings()
     local shared = GetShared()
 
+    if not IsCharacterModuleEnabled(settings) then
+        HideLiteDisplays()
+        HideDetailedOverlays()
+        return
+    end
+
     -- Use the actual inspected unit, not "target". Right-click-inspect from
     -- a raid frame sets InspectFrame.unit to e.g. "raid7" without changing
     -- the player's target. Reading "target" here would paint overlays from
@@ -1829,7 +1846,7 @@ local function UpdateInspectFrame()
     local unit = InspectFrame.unit or "target"
     local dataReady = IsCurrentInspectUnit(unit)
 
-    if settings.inspectEnabled then
+    if IsFullInspectEnabled(settings) then
         -- Full overlay mode: always use detailed overlays, never lite mode
         HideLiteDisplays()
         if dataReady and shared.UpdateAllSlotOverlays then
@@ -1872,11 +1889,13 @@ local function HookInspectFrame()
     local generalDB = core and core.db and core.db.profile and core.db.profile.general
     if generalDB and generalDB.skinInspectFrame == false then return end
 
+    local settings = GetSettings()
+    if not IsCharacterModuleEnabled(settings) then return end
+
     if InspectFrame.UnregisterEvent then
         InspectFrame:UnregisterEvent("GROUP_ROSTER_UPDATE")
     end
 
-    local settings = GetSettings()
     -- Skip if full overlays are disabled AND no lite features are enabled
     local hasLiteFeature = settings.inspectLiteShowPerSlot or settings.inspectLiteShowOverall
     if settings.inspectEnabled == false and not hasLiteFeature then return end
@@ -1890,7 +1909,7 @@ local function HookInspectFrame()
         RefreshCurrentInspectGUID(unit)
 
         -- Only apply full layout/overlays when full overlay mode is enabled
-        if currentSettings.inspectEnabled then
+        if IsFullInspectEnabled(currentSettings) then
             ApplyInspectPaneLayout()
             InitializeInspectOverlays()
         end
@@ -1915,7 +1934,7 @@ local function HookInspectFrame()
         currentInspectTab = 1
         RefreshCurrentInspectGUID(unit)
         local currentSettings = GetSettings()
-        if currentSettings.inspectEnabled then
+        if IsFullInspectEnabled(currentSettings) then
             ApplyInspectPaneLayout()
             InitializeInspectOverlays()
         end

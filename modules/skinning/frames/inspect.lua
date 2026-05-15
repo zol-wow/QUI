@@ -50,6 +50,9 @@ end
 local function IsInspectOverlaysEnabled()
     local core = GetCore()
     local settings = core and core.db and core.db.profile and core.db.profile.character
+    if settings and settings.enabled == false then
+        return false
+    end
     -- Default to true if not explicitly set
     if settings and settings.inspectEnabled == nil then
         return true

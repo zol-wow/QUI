@@ -12,7 +12,7 @@ ProviderFeatures:Register({
     category = "qol",
     nav = {
         tileId = "gameplay",
-        subPageIndex = 7,
+        subPageIndex = 6,
     },
     apply = function()
         if _G.QUI_RefreshActionTracker then

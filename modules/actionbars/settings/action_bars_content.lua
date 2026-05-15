@@ -1109,7 +1109,7 @@ if Registry and Schema
         id = "barHidingPage",
         moverKey = "barHiding",
         category = "appearance",
-        nav = { tileId = "appearance", subPageIndex = 5 },
+        nav = { tileId = "appearance", subPageIndex = 6 },
         sections = {
             Schema.Section({
                 id = "settings",

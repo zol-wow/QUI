@@ -12,7 +12,7 @@ ProviderFeatures:Register({
     category = "frames",
     nav = {
         tileId = "gameplay",
-        subPageIndex = 6,
+        subPageIndex = 5,
     },
     apply = function()
         if _G.QUI_RefreshRaidBuffs then

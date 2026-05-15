@@ -17,7 +17,7 @@ local Schema = Settings and Settings.Schema
 
 local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
 
-local DAMAGE_METER_SUBPAGE_INDEX = 10  -- assigned in options/tiles/appearance.lua
+local DAMAGE_METER_SUBPAGE_INDEX = 11  -- assigned in options/tiles/appearance.lua
 
 -- Build a (value, text) options table from LSM, sorted alphabetically.
 local function BuildLSMOptions(lsmType)

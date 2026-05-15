@@ -28,7 +28,7 @@ function V2.Register(frame)
         renderOptions = { surface = "full" },
         relatedSettings = {
             { label = "Group Frames", tileId = "group_frames" },
-            { label = "Raid Buffs",   tileId = "gameplay", subPageIndex = 6 },
+            { label = "Raid Buffs",   tileId = "gameplay", subPageIndex = 5 },
         },
     })
 end

@@ -10,6 +10,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha38 - 2026-05-15
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha37 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Changed
+- **Character pane settings moved from Gameplay to Appearance.** The Character page now sits next to Skinning in Appearance, and related navigation/search routes were updated for the shifted Appearance and Gameplay sub-page indices.
+
+### Fixed
+- **Disabling the Character module restores Blizzard-native character and inspect surfaces.** Character frame skinning now leaves the native stats pane readable when QUI's replacement pane is off, and inspect skinning/overlay paths honor the master Character module toggle instead of leaving QUI-owned inspect overlays active.
+
+### Internal
+- Regenerated the options search cache for the updated Character page routes.
+- Added regression tests for Appearance > Character navigation and native character/inspect fallback behavior when the Character module is disabled.
+
+
+
 ## v3.6.0-alpha37 - 2026-05-15
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha36 profiles carry over unchanged.

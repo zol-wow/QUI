@@ -154,7 +154,7 @@ if Registry and Schema
         id = "autohidePage",
         moverKey = "autohide",
         category = "appearance",
-        nav = { tileId = "appearance", subPageIndex = 4 },
+        nav = { tileId = "appearance", subPageIndex = 5 },
         sections = {
             Schema.Section({
                 id = "settings",

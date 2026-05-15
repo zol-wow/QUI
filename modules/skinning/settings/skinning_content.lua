@@ -17,7 +17,7 @@ local Registry = Settings and Settings.Registry
 local Schema = Settings and Settings.Schema
 local RenderAdapters = Settings and Settings.RenderAdapters
 
-local THEME_COLORS_SUBPAGE_INDEX = 9
+local THEME_COLORS_SUBPAGE_INDEX = 10
 
 local function RefreshSkinSurfaces()
     if ns.Registry then
@@ -664,7 +664,7 @@ if Registry and Schema and RenderAdapters
         moverKey = "skinning",
         lookupKeys = { "objectiveTracker" },
         category = "appearance",
-        nav = { tileId = "appearance", subPageIndex = 3 },
+        nav = { tileId = "appearance", subPageIndex = 4 },
         sections = {
             Schema.Section({
                 id = "settings",

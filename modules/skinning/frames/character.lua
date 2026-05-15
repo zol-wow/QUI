@@ -71,6 +71,35 @@ local function IsSkinningEnabled()
     return settings and settings.skinCharacterFrame
 end
 
+local function IsCharacterPaneEnabled()
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.character
+    return not (settings and settings.enabled == false)
+end
+
+local function MaskNativeStatsPane()
+    if not CharacterStatsPane then return end
+    pcall(CharacterStatsPane.Show, CharacterStatsPane)
+    pcall(CharacterStatsPane.SetAlpha, CharacterStatsPane, 0)
+    if CharacterStatsPane.EnableMouse then
+        pcall(CharacterStatsPane.EnableMouse, CharacterStatsPane, false)
+    end
+    if CharacterStatsPane.ClassBackground then
+        pcall(CharacterStatsPane.ClassBackground.SetAlpha, CharacterStatsPane.ClassBackground, 0)
+    end
+end
+
+local function RestoreNativeStatsPane()
+    if not CharacterStatsPane then return end
+    pcall(CharacterStatsPane.SetAlpha, CharacterStatsPane, 1)
+    if CharacterStatsPane.EnableMouse then
+        pcall(CharacterStatsPane.EnableMouse, CharacterStatsPane, true)
+    end
+    if CharacterStatsPane.ClassBackground then
+        pcall(CharacterStatsPane.ClassBackground.SetAlpha, CharacterStatsPane.ClassBackground, 1)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Create/update the custom background frame
 ---------------------------------------------------------------------------
@@ -122,18 +151,13 @@ local function HideBlizzardDecorations()
     HideNineSlice(CharacterFrameInset and CharacterFrameInset.NineSlice)
     HideNineSlice(CharacterFrameInsetRight and CharacterFrameInsetRight.NineSlice)
     if CharacterFrameBg then CharacterFrameBg:Hide() end
-    -- Mask Blizzard's stats pane (alpha 0 + mouse off) instead of Hide() —
-    -- the modules/skinning/character_pane mirror needs Blizzard's update path to keep
-    -- writing fresh values into its FontStrings during combat / encounters.
-    if CharacterStatsPane then
-        pcall(CharacterStatsPane.Show, CharacterStatsPane)
-        pcall(CharacterStatsPane.SetAlpha, CharacterStatsPane, 0)
-        if CharacterStatsPane.EnableMouse then
-            pcall(CharacterStatsPane.EnableMouse, CharacterStatsPane, false)
-        end
-        if CharacterStatsPane.ClassBackground then
-            pcall(CharacterStatsPane.ClassBackground.SetAlpha, CharacterStatsPane.ClassBackground, 0)
-        end
+    -- Mask the native stats pane only while the replacement stats panel is
+    -- enabled. With the replacement off, Blizzard's own stats must remain
+    -- readable even if the surrounding frame skin is still enabled.
+    if IsCharacterPaneEnabled() then
+        MaskNativeStatsPane()
+    else
+        RestoreNativeStatsPane()
     end
 end
 

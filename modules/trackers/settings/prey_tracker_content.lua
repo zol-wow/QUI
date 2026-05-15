@@ -325,7 +325,7 @@ if Registry and Schema and RenderAdapters
         moverKey = "preyTracker",
         lookupKeys = { "preyTracker" },
         category = "gameplay",
-        nav = { tileId = "gameplay", subPageIndex = 8 },
+        nav = { tileId = "gameplay", subPageIndex = 7 },
         sections = {
             Schema.Section({
                 id = "settings",
