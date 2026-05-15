@@ -10,6 +10,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha47 - 2026-05-15
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha46 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **CDM mirror cooldowns now prefer live charge DurationObjects for active multi-charge spell recharges.** Active recharge swipes stay in the charge/resource lane even when the mirrored cooldown payload is stale, GCD-only, or cooldown-backed.
+- **Cooldown-backed multi-charge CDM mirrors now resolve as charge timers without requiring visible charge-count proof.** The mirror keeps the secret-safe charge DurationObject and avoids falling back to ordinary cooldown timing.
+
+### Internal
+- Added regression coverage for live charge DurationObjects overriding mirror GCD payloads and cooldown-backed multi-charge mirror resolution.
+
+
+
 ## v3.6.0-alpha46 - 2026-05-15
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha45 profiles carry over unchanged.

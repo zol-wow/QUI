@@ -61,6 +61,7 @@ local cooldownDuration = { token = "cooldown-duration-object" }
 local gcdDuration = { token = "gcd-duration-object" }
 local chargeDuration = { token = "charge-duration-object" }
 local uncountedChargeFlagDuration = { token = "uncounted-charge-flag-duration-object" }
+local uncountedChargeCooldownDuration = { token = "uncounted-charge-cooldown-duration-object" }
 local mindBlastCooldownDuration = { token = "mind-blast-cooldown-duration-object" }
 local mindBlastChargeDuration = { token = "mind-blast-charge-duration-object" }
 local prayerCooldownDuration = { token = "prayer-cooldown-duration-object" }
@@ -134,6 +135,9 @@ C_Spell = {
         if spellID == 1233448 and ignoreGCD == true then
             return cooldownDuration
         end
+        if spellID == 1227280 and ignoreGCD == true then
+            return uncountedChargeCooldownDuration
+        end
         if spellID == 1242998 and ignoreGCD == true then
             return auraSpellCooldownDuration
         end
@@ -157,7 +161,11 @@ C_Spell = {
     end,
     GetSpellCharges = function(spellID)
         if spellID == 1227280 then
-            error("mirror must not query spell charges to classify this cooldown")
+            return {
+                currentCharges = 1,
+                maxCharges = 2,
+                isActive = true,
+            }
         end
         if spellID == 8092 then
             return {
@@ -239,7 +247,6 @@ local uncountedChargeFlagChild = {
     cooldownID = 1227280,
     isActive = true,
     wasSetFromCharges = true,
-    cooldownChargesShown = false,
     Cooldown = {
         SetCooldown = noop,
         SetCooldownFromDurationObject = noop,
@@ -692,7 +699,7 @@ assert(loadfile("modules/cdm/cdm_blizz_mirror.lua"))("QUI", ns)
 
 local originalQuerySpellCharges = ns.CDMSources.QuerySpellCharges
 ns.CDMSources.QuerySpellCharges = function(spellID)
-    if spellID == 1227280 or spellID == 8092 or spellID == 33076 or spellID == 444347 then
+    if spellID == 444347 then
         error("mirror must not query spell charges to classify this cooldown")
     end
     return originalQuerySpellCharges(spellID)
@@ -890,17 +897,35 @@ assert(state.cooldownDurObj == cooldownDuration, "charge priority test should ke
 assert(state.durObj == chargeDuration, "charge/recharge duration should be selected ahead of cooldown")
 assert(state.durObjSource == "spell-charge", "selected duration source should identify the charge lane")
 
-uncountedChargeFlagChild.Cooldown:SetCooldownFromDurationObject(uncountedChargeFlagDuration)
+uncountedChargeFlagChild.wasSetFromCharges = false
+uncountedChargeFlagChild.wasSetFromCooldown = true
+uncountedChargeFlagChild.Cooldown:SetCooldown()
 local uncountedChargeState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(1227280, "essential"),
-    "uncounted charge-flagged cooldown mirror state missing")
-assert(uncountedChargeState.resourceDurObj == nil,
-    "charge-flagged cooldowns without count display proof should not populate the charge lane")
-assert(uncountedChargeState.cooldownDurObj == uncountedChargeFlagDuration,
-    "charge-flagged cooldowns without count display proof should keep the frame DurationObject as cooldown")
-assert(uncountedChargeState.durObjSource == "cooldown-frame",
-    "charge-flagged cooldowns without count display proof should not retain spell-charge source")
-assert(uncountedChargeState.resolvedMode == "cooldown",
-    "charge-flagged cooldowns without count display proof should resolve as cooldown mode")
+    "cooldown-backed multi-charge mirror state missing")
+assert(uncountedChargeState.resourceDurObj == uncountedChargeFlagDuration,
+    "cooldown-backed multi-charge cooldowns should choose the charge lane")
+assert(uncountedChargeState.cooldownDurObj == nil,
+    "cooldown-backed multi-charge cooldowns should not populate the cooldown lane with spell cooldown duration")
+assert(uncountedChargeState.durObj == uncountedChargeFlagDuration,
+    "cooldown-backed multi-charge cooldowns should select the charge DurationObject")
+assert(uncountedChargeState.durObjSource == "spell-charge",
+    "cooldown-backed multi-charge cooldowns should retain spell-charge source")
+assert(uncountedChargeState.resolvedMode == "charge",
+    "cooldown-backed multi-charge cooldowns should resolve as charge mode")
+
+uncountedChargeFlagChild.wasSetFromCharges = true
+uncountedChargeFlagChild.wasSetFromCooldown = false
+uncountedChargeFlagChild.Cooldown:SetCooldownFromDurationObject(uncountedChargeFlagDuration)
+uncountedChargeState = assert(ns.CDMBlizzMirror.GetStateByCooldownID(1227280, "essential"),
+    "readable multi-charge cooldown mirror state missing")
+assert(uncountedChargeState.resourceDurObj == uncountedChargeFlagDuration,
+    "readable multi-charge cooldowns should populate the charge lane even without count display proof")
+assert(uncountedChargeState.durObj == uncountedChargeFlagDuration,
+    "readable multi-charge cooldowns should select the charge DurationObject")
+assert(uncountedChargeState.durObjSource == "spell-charge",
+    "readable multi-charge cooldowns should retain spell-charge source")
+assert(uncountedChargeState.resolvedMode == "charge",
+    "readable multi-charge cooldowns should resolve as charge mode")
 
 child.cooldownIsActive = false
 child.Cooldown:Clear()

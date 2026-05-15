@@ -1528,7 +1528,46 @@ local function ShouldUseSpellGCDDuration(spellID)
     return CooldownInfoRealState(info, spellID) ~= true
 end
 
+function CDMBlizzMirror.ResolveChargeDurationObjectForCooldownID(cdID, child, state)
+    if IsAuraViewerCategory(cdID, state or GetFrameCategoryName(child)) then
+        return nil, nil
+    end
+    if SafeFrameBooleanField(child, "cooldownChargesShown") == true then
+        return nil, nil
+    end
+    if not (Sources and Sources.QuerySpellCharges and Sources.QuerySpellChargeDuration) then
+        return nil, nil
+    end
+
+    local info = cdID and GetInstanceInfo(cdID, state and state.viewerCategory or GetFrameCategoryName(child))
+    if CleanBool(info and info.charges) ~= true then
+        return nil, nil
+    end
+
+    local candidates = BuildSpellDurationCandidates(info)
+    for _, spellID in ipairs(candidates) do
+        local chargeInfo = Sources.QuerySpellCharges(spellID)
+        if chargeInfo
+            and (not Helpers or not Helpers.CanAccessTable or Helpers.CanAccessTable(chargeInfo))
+            and CleanBool(chargeInfo.isActive) == true then
+            local maxCharges = CleanScalar(chargeInfo.maxCharges)
+            if type(maxCharges) == "number" and maxCharges > 1 then
+                local durObj = Sources.QuerySpellChargeDuration(spellID)
+                if durObj then
+                    return durObj, "spell-charge"
+                end
+            end
+        end
+    end
+
+    return nil, nil
+end
+
 function CDMBlizzMirror.ShouldSuppressChargeDurationForCooldownID(cdID, child, state)
+    if CDMBlizzMirror.ResolveChargeDurationObjectForCooldownID(cdID, child, state) then
+        return false
+    end
+
     local chargesShown = SafeFrameBooleanField(child, "cooldownChargesShown")
     if chargesShown == true then
         return false
@@ -1578,6 +1617,11 @@ local function ResolveSpellDurationObjectForCooldownID(cdID, child, state)
 
     local info = cdID and GetInstanceInfo(cdID, state and state.viewerCategory or GetFrameCategoryName(child))
     local candidates = BuildSpellDurationCandidates(info)
+
+    local chargeDurObj, chargeSource = CDMBlizzMirror.ResolveChargeDurationObjectForCooldownID(cdID, child, state)
+    if chargeDurObj then
+        return chargeDurObj, chargeSource
+    end
 
     for _, spellID in ipairs(candidates) do
         local useGCDDuration = ShouldUseSpellGCDDuration(spellID)
@@ -3159,12 +3203,20 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
 
             local fromAura = SafeFrameBooleanField(owner, "wasSetFromAura") == true
             local fromCharges = SafeFrameBooleanField(owner, "wasSetFromCharges") == true
-            local suppressChargeDuration = fromCharges
+            local chargeDurObj, chargeSource
+            if not fromAura then
+                chargeDurObj, chargeSource = CDMBlizzMirror.ResolveChargeDurationObjectForCooldownID(cdID, owner, s)
+            end
+            local suppressChargeDuration = not chargeDurObj
+                and fromCharges
                 and CDMBlizzMirror.ShouldSuppressChargeDurationForCooldownID(cdID, owner, s)
             local lane = fromAura and "aura"
+                or (chargeDurObj and "resource")
                 or (fromCharges and not suppressChargeDuration and "resource" or "cooldown")
             local source = fromAura and "aura-duration"
+                or chargeSource
                 or (fromCharges and not suppressChargeDuration and "spell-charge" or "cooldown-frame")
+            durObj = chargeDurObj or durObj
             if suppressChargeDuration then
                 s.resourceDurObj = nil
                 s.resourceDurObjSource = nil

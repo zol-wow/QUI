@@ -6,7 +6,7 @@
 ## AddonCompartmentFuncOnLeave: QUI_CompartmentOnLeave
 ## Notes: Comprehensive UI customization addon
 ## Author: Zol
-## Version: 3.6.0-alpha46
+## Version: 3.6.0-alpha47
 ## Category: User Interface
 ## SavedVariables: QUI_DB, QUIDB
 ## SavedVariablesPerCharacter: QUI_ChatHistory

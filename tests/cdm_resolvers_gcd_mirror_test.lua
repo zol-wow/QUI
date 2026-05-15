@@ -15,6 +15,7 @@ end
 
 local mirrorDuration = { token = "stale-mirror-duration" }
 local gcdDuration = { token = "gcd-duration" }
+local liveChargeDuration = { token = "live-charge-duration" }
 local misleadingCooldownDuration = { token = "misleading-cooldown-duration" }
 local realCooldownDuration = { token = "real-cooldown-duration" }
 local auraChildFrameDuration = { token = "aura-child-frame-duration" }
@@ -48,6 +49,17 @@ local ns = {
                     durObjSource = "gcd-duration",
                     resolvedMode = "gcd-only",
                     mirrorEpoch = 5,
+                    spellID = spellID,
+                }
+            end
+            if spellID == 1227280 and viewerType == "essential" then
+                return {
+                    cooldownID = 8203,
+                    isActive = true,
+                    durObj = mirrorDuration,
+                    durObjSource = "gcd-duration",
+                    resolvedMode = "gcd-only",
+                    mirrorEpoch = 19,
                     spellID = spellID,
                 }
             end
@@ -130,6 +142,15 @@ local ns = {
             end
             if spellID == 88888 then
                 return { currentCharges = 2, maxCharges = 2, isActive = false }
+            end
+            if spellID == 1227280 then
+                return { currentCharges = 1, maxCharges = 2, isActive = true }
+            end
+            return nil
+        end,
+        QuerySpellChargeDuration = function(spellID)
+            if spellID == 1227280 then
+                return liveChargeDuration
             end
             return nil
         end,
@@ -575,6 +596,22 @@ durObj, mode, sourceID = ns.CDMResolvers.ResolveIconDurationObject(activeChargeM
 
 assert(durObj == mirrorDuration, "active charge mirror should remain selected")
 assert(mode == "charge", "active charge mirror should remain charge mode even during GCD")
+
+local activeLiveChargeOverGCDMirrorIcon = {
+    _spellEntry = {
+        id = 1227280,
+        spellID = 1227280,
+        viewerType = "essential",
+        type = "spell",
+        hasCharges = true,
+    },
+}
+
+durObj, mode, sourceID = ns.CDMResolvers.ResolveIconDurationObject(activeLiveChargeOverGCDMirrorIcon)
+
+assert(durObj == liveChargeDuration, "active live recharge should override a mirror GCD duration")
+assert(mode == "charge", "active live recharge should resolve as charge over mirror GCD, got " .. tostring(mode))
+assert(sourceID == "1227280:0", "active live recharge source should use the charge duration key")
 
 local misleadingLiveCooldownIcon = {
     _spellEntry = {

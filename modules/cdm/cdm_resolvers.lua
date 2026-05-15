@@ -694,6 +694,33 @@ local function IsChargeSpellNotRecharging(spellID, entry)
         or (IsSafeNumeric(maxCharges) and maxCharges > 1)
 end
 
+local function ResolveLiveChargeDurationObject(spellID, entry)
+    if not spellID then
+        return nil, nil, nil
+    end
+
+    local ci = QueryCharges(spellID)
+    if not ci then
+        return nil, nil, nil
+    end
+
+    local maxCharges = ci.maxCharges
+    local isChargeSpell = (entry and entry.hasCharges == true)
+        or (entry and entry.charges == true)
+        or (IsSafeNumeric(maxCharges) and maxCharges > 1)
+    if not isChargeSpell or SafeBoolean(ci.isActive) ~= true then
+        return nil, nil, nil
+    end
+
+    local chargeDur = QueryChargeDuration(spellID)
+    if chargeDur then
+        local serial = CDMIcons and CDMIcons._chargeDurationObjectSerial or 0
+        return chargeDur, "charge", tostring(spellID) .. ":" .. tostring(serial)
+    end
+
+    return nil, nil, nil
+end
+
 local function IconHasRealCooldownProof(icon)
     if not icon then
         return false
@@ -1864,6 +1891,12 @@ function CDMResolvers.ResolveIconDurationObject(icon)
            and CDMIcons.ShouldSkipAuraPhaseForCooldownIcon(icon, entry) then
             mirrorPayload = BuildMirrorCooldownPhasePayload(mirrorPayload) or mirrorPayload
         end
+        if mirrorPayload.mode ~= "aura" and mirrorPayload.mode ~= "charge" then
+            local chargeDur, chargeMode, chargeSourceID = ResolveLiveChargeDurationObject(sid, entry)
+            if chargeDur then
+                return chargeDur, chargeMode, chargeSourceID
+            end
+        end
         return mirrorPayload.durObj,
             mirrorPayload.mode,
             mirrorPayload.sourceID,
@@ -1921,16 +1954,9 @@ function CDMResolvers.ResolveIconDurationObject(icon)
 
     -- 2. Charge spell mid-recharge → recharge DurObj.
     do
-        local ci = QueryCharges(sid)
-        local maxCharges = ci and ci.maxCharges
-        local chargeActive = ci and SafeBoolean(ci.isActive)
-        local isChargeSpell = entry.hasCharges or (maxCharges and maxCharges > 1)
-        if isChargeSpell and chargeActive == true then
-            local chargeDur = QueryChargeDuration(sid)
-            if chargeDur then
-                local serial = CDMIcons._chargeDurationObjectSerial or 0
-                return chargeDur, "charge", tostring(sid) .. ":" .. tostring(serial)
-            end
+        local chargeDur, chargeMode, chargeSourceID = ResolveLiveChargeDurationObject(sid, entry)
+        if chargeDur then
+            return chargeDur, chargeMode, chargeSourceID
         end
     end
 
