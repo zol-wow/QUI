@@ -697,6 +697,66 @@ local STRIPPED_PARENTKEYS = {
 local TAB_CHROME_HEIGHT = 22
 local TAB_TEXT_PAD_X = 8
 local UNREAD_PULSE_HEIGHT = 3
+local tabSurfaceState = setmetatable({}, { __mode = "k" })
+
+local function SetPointPx(frame, point, relativeTo, relativePoint, xPixels, yPixels)
+    if UIKit and UIKit.SetPointPx then
+        UIKit.SetPointPx(frame, point, relativeTo, relativePoint, xPixels or 0, yPixels or 0)
+    elseif frame and frame.SetPoint then
+        frame:SetPoint(point, relativeTo, relativePoint, xPixels or 0, yPixels or 0)
+    end
+end
+
+local function SetHeightPx(frame, heightPixels)
+    if UIKit and UIKit.SetHeightPx then
+        UIKit.SetHeightPx(frame, heightPixels or 0)
+    elseif frame and frame.SetHeight then
+        frame:SetHeight(heightPixels or 0)
+    end
+end
+
+local function ApplyTabSurfaceStyle(frame, bgColor, borderColor, borderSizePixels)
+    if not frame then return end
+
+    if UIKit and UIKit.CreateBorderLines and UIKit.UpdateBorderLines then
+        local state = tabSurfaceState[frame]
+        if not state then
+            state = {}
+            tabSurfaceState[frame] = state
+        end
+
+        if not state.bg then
+            if UIKit.CreateBackground then
+                state.bg = UIKit.CreateBackground(frame, bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] or 1)
+            else
+                state.bg = frame:CreateTexture(nil, "BACKGROUND")
+                state.bg:SetAllPoints()
+                state.bg:SetTexture("Interface\\Buttons\\WHITE8x8")
+                if UIKit.DisablePixelSnap then
+                    UIKit.DisablePixelSnap(state.bg)
+                end
+            end
+        end
+
+        if state.bg and state.bg.SetVertexColor then
+            state.bg:SetVertexColor(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgColor[4] or 1)
+        end
+
+        UIKit.CreateBorderLines(frame)
+        UIKit.UpdateBorderLines(
+            frame,
+            borderSizePixels or 1,
+            borderColor[1] or 0,
+            borderColor[2] or 0,
+            borderColor[3] or 0,
+            borderColor[4] or 1,
+            false
+        )
+        return
+    end
+
+    I.ApplySurfaceStyle(frame, bgColor, borderColor, borderSizePixels)
+end
 
 local function IsSecretValue(value)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
@@ -839,14 +899,14 @@ local function LayoutTabChrome(tab)
     -- heights. Keep QUI's visible tab chrome fixed so every tab paints at the
     -- same height while leaving Blizzard's own tab hitboxes/layout intact.
     backdrop:ClearAllPoints()
-    backdrop:SetPoint("BOTTOMLEFT", tab, "BOTTOMLEFT", 0, 0)
+    SetPointPx(backdrop, "BOTTOMLEFT", tab, "BOTTOMLEFT", 0, 0)
     local hiddenPadding = GetTemporaryTabHiddenPadding(tab)
     if hiddenPadding then
-        backdrop:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", -hiddenPadding, 0)
+        SetPointPx(backdrop, "BOTTOMRIGHT", tab, "BOTTOMRIGHT", -hiddenPadding, 0)
     else
-        backdrop:SetPoint("BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, 0)
+        SetPointPx(backdrop, "BOTTOMRIGHT", tab, "BOTTOMRIGHT", 0, 0)
     end
-    backdrop:SetHeight(TAB_CHROME_HEIGHT)
+    SetHeightPx(backdrop, TAB_CHROME_HEIGHT)
 
     local fontString = tab:GetFontString()
     if fontString then
@@ -854,8 +914,8 @@ local function LayoutTabChrome(tab)
             fontString:SetIgnoreParentAlpha(true)
         end
         fontString:ClearAllPoints()
-        fontString:SetPoint("LEFT", backdrop, "LEFT", TAB_TEXT_PAD_X, 0)
-        fontString:SetPoint("RIGHT", backdrop, "RIGHT", -TAB_TEXT_PAD_X, 0)
+        SetPointPx(fontString, "LEFT", backdrop, "LEFT", TAB_TEXT_PAD_X, 0)
+        SetPointPx(fontString, "RIGHT", backdrop, "RIGHT", -TAB_TEXT_PAD_X, 0)
         if fontString.SetJustifyH then
             fontString:SetJustifyH("CENTER")
         end
@@ -895,9 +955,9 @@ local function LayoutUnreadPulse(tab)
 
     local anchor = I.tabBackdrops[tab] or tab
     glow:ClearAllPoints()
-    glow:SetPoint("TOPLEFT", anchor, "TOPLEFT", 1, -1)
-    glow:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", -1, -1)
-    glow:SetHeight(UNREAD_PULSE_HEIGHT)
+    SetPointPx(glow, "TOPLEFT", anchor, "TOPLEFT", 1, -1)
+    SetPointPx(glow, "TOPRIGHT", anchor, "TOPRIGHT", -1, -1)
+    SetHeightPx(glow, UNREAD_PULSE_HEIGHT)
     glow:SetTexture("Interface\\Buttons\\WHITE8x8")
     if glow.SetBlendMode then
         glow:SetBlendMode("ADD")
@@ -1022,12 +1082,12 @@ local function UpdateTabColors(tab)
     end
 
     if isSelected then
-        I.ApplySurfaceStyle(I.tabBackdrops[tab], {selR, selG, selB, alpha + 0.2}, accent, 1)
+        ApplyTabSurfaceStyle(I.tabBackdrops[tab], {selR, selG, selB, alpha + 0.2}, accent, 1)
         if fontString then
             fontString:SetTextColor(accent[1], accent[2], accent[3], 1)
         end
     else
-        I.ApplySurfaceStyle(I.tabBackdrops[tab], {inactR, inactG, inactB, alpha}, {0, 0, 0, alpha}, 1)
+        ApplyTabSurfaceStyle(I.tabBackdrops[tab], {inactR, inactG, inactB, alpha}, {0, 0, 0, alpha}, 1)
         if fontString then
             local c = I.QUI_COLORS.textDim or {0.72, 0.72, 0.76, 1}
             fontString:SetTextColor(c[1], c[2], c[3], 1)
@@ -1057,7 +1117,7 @@ local function StyleTab(tab)
     -- keeps the backdrop visually independent of the tab's own alpha — Blizzard
     -- sets tab:SetAlpha(0.4) on unselected tabs (FCFTab_UpdateAlpha), which
     -- would otherwise cascade onto our backdrop and make inactive tabs look
-    -- fainter than selected ones. We control dimming through ApplySurfaceStyle.
+    -- fainter than selected ones. We control dimming through tab surface color updates.
     if not I.tabBackdrops[tab] then
         local backdrop = CreateFrame("Frame", nil, tab)
         backdrop:SetFrameLevel(math.max(1, tab:GetFrameLevel() - 1))
@@ -1065,6 +1125,13 @@ local function StyleTab(tab)
             backdrop:SetIgnoreParentAlpha(true)
         end
         I.tabBackdrops[tab] = backdrop
+    end
+    if UIKit and UIKit.RegisterScaleRefresh then
+        local backdrop = I.tabBackdrops[tab]
+        UIKit.RegisterScaleRefresh(backdrop, "chatTabChrome", function()
+            LayoutTabChrome(tab)
+            LayoutUnreadPulse(tab)
+        end)
     end
     LayoutTabChrome(tab)
 
