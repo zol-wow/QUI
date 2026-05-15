@@ -59,6 +59,39 @@ local function StyleEditBox(editBox, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     SkinBase.MarkStyled(editBox)
 end
 
+-- Style filter dropdowns without stripping child textures; those child
+-- textures include the clear-filter X on active profession filters.
+local function StyleFilterDropdown(dropdown, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    if not dropdown then return end
+
+    SkinBase.CreateBackdrop(dropdown, sr, sg, sb, sa, math.min(bgr + 0.07, 1), math.min(bgg + 0.07, 1), math.min(bgb + 0.07, 1), 1)
+    local bd = SkinBase.GetBackdrop(dropdown)
+    if bd then
+        bd:SetFrameLevel(math.max(0, dropdown:GetFrameLevel() - 1))
+    end
+
+    SkinBase.SetFrameData(dropdown, "skinColor", { sr, sg, sb, sa })
+    SkinBase.SetFrameData(dropdown, "bgColor", { bgr, bgg, bgb })
+
+    if SkinBase.GetFrameData(dropdown, "filterHoverHooked") then return end
+    dropdown:HookScript("OnEnter", function(self)
+        local backdrop = SkinBase.GetBackdrop(self)
+        local sc = SkinBase.GetFrameData(self, "skinColor")
+        if backdrop and sc then
+            local r, g, b, a = unpack(sc)
+            backdrop:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a)
+        end
+    end)
+    dropdown:HookScript("OnLeave", function(self)
+        local backdrop = SkinBase.GetBackdrop(self)
+        local sc = SkinBase.GetFrameData(self, "skinColor")
+        if backdrop and sc then
+            backdrop:SetBackdropBorderColor(unpack(sc))
+        end
+    end)
+    SkinBase.SetFrameData(dropdown, "filterHoverHooked", true)
+end
+
 -- Style close button
 local function StyleCloseButton(closeButton)
     if not closeButton then return end
@@ -173,32 +206,63 @@ end
 -- ProfessionsFrame uses TabSystemTemplate (not PanelTemplates_SetTab)
 ---------------------------------------------------------------------------
 
+local function IsTabSelected(tab, owner)
+    if not tab then return false end
+    if tab.IsSelected and tab:IsSelected() then return true end
+
+    local tabSystem = owner and owner.TabSystem
+    if tabSystem and tabSystem.GetSelectedTab and tab.tabID then
+        return tab.tabID == tabSystem:GetSelectedTab()
+    end
+
+    return tab.SelectedTexture and tab.SelectedTexture:IsShown()
+end
+
+local function RestoreTabVisual(tab, owner)
+    local bd = SkinBase.GetBackdrop(tab)
+    local sc = SkinBase.GetFrameData(tab, "skinColor")
+    local bg = SkinBase.GetFrameData(tab, "bgColor")
+    if not bd or not sc or not bg then return end
+
+    if IsTabSelected(tab, owner) then
+        bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], sc[4])
+        bd:SetBackdropColor(math.min(bg[1] + 0.10, 1), math.min(bg[2] + 0.10, 1), math.min(bg[3] + 0.10, 1), 1)
+    else
+        bd:SetBackdropBorderColor(sc[1] * 0.5, sc[2] * 0.5, sc[3] * 0.5, sc[4] * 0.6)
+        bd:SetBackdropColor(bg[1], bg[2], bg[3], 0.7)
+    end
+end
+
+local function HookTabHover(tab, owner, sr, sg, sb, sa)
+    if not tab or SkinBase.GetFrameData(tab, "tabHoverHooked") then return end
+
+    tab:HookScript("OnEnter", function(self)
+        local bd = SkinBase.GetBackdrop(self)
+        local sc = SkinBase.GetFrameData(self, "skinColor") or { sr, sg, sb, sa }
+        if bd and sc then
+            bd:SetBackdropBorderColor(math.min(sc[1] * 1.3, 1), math.min(sc[2] * 1.3, 1), math.min(sc[3] * 1.3, 1), sc[4])
+        end
+    end)
+    tab:HookScript("OnLeave", function(self)
+        RestoreTabVisual(self, owner)
+    end)
+
+    SkinBase.SetFrameData(tab, "tabHoverHooked", true)
+end
+
 local function UpdateTabSelectedState(frame)
     if not frame or not frame.TabSystem then return end
     local tabSystem = frame.TabSystem
     -- TabSystemTemplate stores tabs in tabSystem.tabs
     local tabs = tabSystem.tabs
     if not tabs then return end
-    local selectedTabID = tabSystem.GetSelectedTab and tabSystem:GetSelectedTab() or nil
     for _, tab in ipairs(tabs) do
-        local bd = SkinBase.GetBackdrop(tab)
-        local sc = SkinBase.GetFrameData(tab, "skinColor")
-        local bg = SkinBase.GetFrameData(tab, "bgColor")
-        if bd and sc and bg then
-            local isSelected = (tab.tabID == selectedTabID) or (tab.IsSelected and tab:IsSelected())
-            if isSelected then
-                bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], sc[4])
-                bd:SetBackdropColor(math.min(bg[1] + 0.10, 1), math.min(bg[2] + 0.10, 1), math.min(bg[3] + 0.10, 1), 1)
-            else
-                bd:SetBackdropBorderColor(sc[1] * 0.5, sc[2] * 0.5, sc[3] * 0.5, sc[4] * 0.6)
-                bd:SetBackdropColor(bg[1], bg[2], bg[3], 0.7)
-            end
-        end
+        RestoreTabVisual(tab, frame)
     end
 end
 
 -- Style a TabSystem tab button
-local function StyleTabSystemTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+local function StyleTabSystemTab(tab, frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not tab or SkinBase.IsStyled(tab) then return end
 
     SkinBase.StripTextures(tab)
@@ -215,6 +279,7 @@ local function StyleTabSystemTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(tab, "bgColor", { bgr, bgg, bgb })
+    HookTabHover(tab, frame, sr, sg, sb, sa)
 
     SkinBase.MarkStyled(tab)
 end
@@ -250,7 +315,8 @@ local function SkinTabs(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not tabs then return end
 
     for _, tab in ipairs(tabs) do
-        StyleTabSystemTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        StyleTabSystemTab(tab, frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        HookTabHover(tab, frame, sr, sg, sb, sa)
     end
 
     -- Hook tab selection to update visuals
@@ -283,9 +349,7 @@ local function SkinRecipeList(recipeList, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     -- Filter dropdown (don't strip textures — preserves clear-filter X button)
     if recipeList.FilterDropdown then
-        SkinBase.CreateBackdrop(recipeList.FilterDropdown, sr, sg, sb, sa, math.min(bgr + 0.07, 1), math.min(bgg + 0.07, 1), math.min(bgb + 0.07, 1), 1)
-        local bd = SkinBase.GetBackdrop(recipeList.FilterDropdown)
-        if bd then bd:SetFrameLevel(math.max(0, bd:GetFrameLevel() - 1)) end
+        StyleFilterDropdown(recipeList.FilterDropdown, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     end
 
     -- ScrollBox
@@ -441,6 +505,8 @@ local function StyleSpecPoolTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(tab, "bgColor", { bgr, bgg, bgb })
+    HookTabHover(tab, specPage, sr, sg, sb, sa)
+    RestoreTabVisual(tab, specPage)
 
     SkinBase.MarkStyled(tab)
 end
@@ -573,6 +639,8 @@ local function UpdateDropdownColors(dropdown, sr, sg, sb, sa, bgr, bgg, bgb, bga
     if not bd then return end
     bd:SetBackdropColor(math.min(bgr + 0.07, 1), math.min(bgg + 0.07, 1), math.min(bgb + 0.07, 1), 1)
     bd:SetBackdropBorderColor(sr, sg, sb, sa)
+    SkinBase.SetFrameData(dropdown, "skinColor", { sr, sg, sb, sa })
+    SkinBase.SetFrameData(dropdown, "bgColor", { bgr, bgg, bgb })
 end
 
 local function UpdatePanelColors(panel, sr, sg, sb, sa, bgr, bgg, bgb, bga)
@@ -608,6 +676,8 @@ local function RefreshProfessionsColors()
             if bd then
                 bd:SetBackdropColor(bgr, bgg, bgb, 0.9)
                 bd:SetBackdropBorderColor(sr, sg, sb, sa)
+                SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
+                SkinBase.SetFrameData(tab, "bgColor", { bgr, bgg, bgb })
             end
         end
         UpdateTabSelectedState(frame)
@@ -666,6 +736,7 @@ local function RefreshProfessionsColors()
                     bd:SetBackdropBorderColor(sr, sg, sb, sa)
                     SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
                     SkinBase.SetFrameData(tab, "bgColor", { bgr, bgg, bgb })
+                    RestoreTabVisual(tab, specPage)
                 end
             end
         end

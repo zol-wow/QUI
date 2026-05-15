@@ -10,57 +10,39 @@ local QUICore = ns.Addon
 
 local GetCore = ns.Helpers.GetCore
 
+-- COMBAT FOLLOW-UP — character panel geometry is applied immediately. Only
+-- decoration/stat refresh work that still needs a regen follow-up is queued.
 ---------------------------------------------------------------------------
--- COMBAT DEFERRAL — CharacterFrame is a managed panel; SetScale,
--- ClearAllPoints, SetPoint on it or its children are protected during
--- combat.  Track desired state and apply on PLAYER_REGEN_ENABLED.
----------------------------------------------------------------------------
-local pendingCharScale = nil     -- deferred SetScale value
-local pendingTabMode   = nil     -- "character" or "other"
 local pendingDecorMode = nil     -- "character" or "other"
 local pendingStatsPanelRefresh = false
 local ScheduleUpdate
+local ApplyCharacterPaneLayout
+
+local function AnchorCharacterFrameBottomTabs(firstTabYOffset)
+    if not CharacterFrame then return end
+
+    if CharacterFrameTab1 then
+        CharacterFrameTab1:ClearAllPoints()
+        CharacterFrameTab1:SetPoint("TOPLEFT", CharacterFrame, "BOTTOMLEFT", 11, firstTabYOffset)
+    end
+    if CharacterFrameTab2 and CharacterFrameTab1 then
+        CharacterFrameTab2:ClearAllPoints()
+        CharacterFrameTab2:SetPoint("TOPLEFT", CharacterFrameTab1, "TOPRIGHT", -5, 0)
+    end
+    if CharacterFrameTab3 and CharacterFrameTab2 then
+        CharacterFrameTab3:ClearAllPoints()
+        CharacterFrameTab3:SetPoint("TOPLEFT", CharacterFrameTab2, "TOPRIGHT", -5, 0)
+    end
+end
 
 local charCombatFrame = CreateFrame("Frame")
 charCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 charCombatFrame:SetScript("OnEvent", function()
     -- If CharacterFrame closed during combat, nothing to apply
     if not CharacterFrame or not CharacterFrame:IsShown() then
-        pendingCharScale = nil
-        pendingTabMode   = nil
         pendingDecorMode = nil
         pendingStatsPanelRefresh = false
         return
-    end
-
-    if pendingCharScale then
-        CharacterFrame:SetScale(pendingCharScale)
-        pendingCharScale = nil
-    end
-
-    if pendingTabMode then
-        -- These functions are defined inside HookCharacterFrame; use the
-        -- deferred wrappers below instead of direct calls.
-        if pendingTabMode == "other" then
-            if CharacterFrameTab1 then
-                CharacterFrameTab1:ClearAllPoints()
-                CharacterFrameTab1:SetPoint("TOPLEFT", CharacterFrame, "BOTTOMLEFT", 11, 2)
-            end
-            if CharacterFrame.CloseButton then
-                CharacterFrame.CloseButton:ClearAllPoints()
-                CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", -3, -5)
-            end
-        elseif pendingTabMode == "character" then
-            if CharacterFrameTab1 then
-                CharacterFrameTab1:ClearAllPoints()
-                CharacterFrameTab1:SetPoint("TOPLEFT", CharacterFrame, "BOTTOMLEFT", 11, -48)
-            end
-            if CharacterFrame.CloseButton then
-                CharacterFrame.CloseButton:ClearAllPoints()
-                CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 52, -5)
-            end
-        end
-        pendingTabMode = nil
     end
 
     if pendingDecorMode then
@@ -91,11 +73,8 @@ charCombatFrame:SetScript("OnEvent", function()
     end
 end)
 
---- Safe wrapper: set CharacterFrame scale, deferring during combat.
-local function SafeSetCharScale(scale)
-    if InCombatLockdown() then
-        pendingCharScale = scale
-    else
+local function SetCharacterFrameScale(scale)
+    if CharacterFrame then
         CharacterFrame:SetScale(scale)
     end
 end
@@ -376,11 +355,30 @@ local function GetSidebarTabIcon(tab, index)
     return namedIcon or tab.icon or (tab.GetNormalTexture and tab:GetNormalTexture())
 end
 
+local function GetSidebarTabIndex(tab)
+    if not (tab and tab.GetID) then return nil end
+
+    local ok, id = pcall(tab.GetID, tab)
+    if not ok or Helpers.IsSecretValue(id) then return nil end
+    id = tonumber(id)
+    return id and id > 0 and id or nil
+end
+
+local function IsSidebarFrameShown(tab)
+    local index = GetSidebarTabIndex(tab)
+    if not index or type(_G.GetPaperDollSideBarFrame) ~= "function" then return false end
+
+    local ok, frame = pcall(_G.GetPaperDollSideBarFrame, index)
+    return ok and frame and frame.IsShown and frame:IsShown()
+end
+
 local function IsSidebarTabActive(tab)
     if not tab then return false end
     if tab.GetChecked and tab:GetChecked() then return true end
     if tab.IsSelected and tab:IsSelected() then return true end
     if tab.SelectedTexture and tab.SelectedTexture.IsShown and tab.SelectedTexture:IsShown() then return true end
+    if IsSidebarFrameShown(tab) then return true end
+    if tab.Hider and tab.Hider.IsShown and not tab.Hider:IsShown() then return true end
     return false
 end
 
@@ -406,7 +404,7 @@ end
 local function StyleSidebarTab(tab, index, uniformWidth, uniformHeight)
     if not tab then return end
 
-    -- Keep tab sizing consistent with tab 1 (ElvUI-style).
+    -- Keep tab sizing consistent with the first tab.
     if uniformWidth and uniformHeight and uniformWidth > 0 and uniformHeight > 0 then
         QUICore:SetPixelPerfectSize(tab, uniformWidth, uniformHeight)
     end
@@ -452,7 +450,7 @@ local function StyleSidebarTab(tab, index, uniformWidth, uniformHeight)
     ApplyOnePixelBorder(border, false)
     UpdateSidebarTabBorder(tab)
 
-    -- Match ElvUI behavior: first tab's native regions keep fixed texcoords.
+    -- Keep the first tab's native regions on fixed texcoords.
     if index == 1 and not (frameState[tab] or EMPTY).sidebarTexCoordHooked then
         for _, region in next, { tab:GetRegions() } do
             if region and region.SetTexCoord then
@@ -541,7 +539,7 @@ local function FormatNumber(num)
         return "--"
     end
 
-    num = Helpers.SafeToNumber(num, 0)
+    num = tonumber(num) or 0
     if num == 0 then return "0" end
 
     if num >= 1000000 then
@@ -563,60 +561,244 @@ local function FormatPercent(value, decimals)
         return "--"
     end
 
-    return string.format("%." .. decimals .. "f%%", Helpers.SafeToNumber(value, 0))
+    value = tonumber(value) or 0
+    return string.format("%." .. decimals .. "f%%", value)
 end
 
 ---------------------------------------------------------------------------
--- Get item level for a slot (tooltip-first approach for accuracy)
+-- Structured item-data helpers
+---------------------------------------------------------------------------
+local TOOLTIP_LINE_TYPE_GEM_SOCKET = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.GemSocket or 3
+local TOOLTIP_LINE_TYPE_ENCHANT = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.ItemEnchantmentPermanent or 15
+local TOOLTIP_LINE_TYPE_ITEM_LEVEL = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.ItemLevel or 31
+local TOOLTIP_LINE_TYPE_UPGRADE = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.ItemUpgradeLevel or 32
+
+local PERMANENT_ENCHANT_EQUIP_LOCS = {
+    INVTYPE_HEAD = true,
+    INVTYPE_SHOULDER = true,
+    INVTYPE_CHEST = true,
+    INVTYPE_ROBE = true,
+    INVTYPE_FEET = true,
+    INVTYPE_FINGER = true,
+    INVTYPE_WEAPON = true,
+    INVTYPE_2HWEAPON = true,
+    INVTYPE_WEAPONMAINHAND = true,
+    INVTYPE_WEAPONOFFHAND = true,
+    INVTYPE_RANGED = true,
+    INVTYPE_RANGEDRIGHT = true,
+}
+
+local function IsInspectUnit(unit)
+    return unit and unit ~= "player"
+end
+
+local function CleanTooltipText(text)
+    if text == nil or Helpers.IsSecretValue(text) then return "" end
+    if type(text) ~= "string" then text = tostring(text) end
+
+    text = text:gsub("|c%x%x%x%x%x%x%x%x", "")
+    text = text:gsub("|r", "")
+    text = text:gsub("|A.-|a", "")
+    text = text:gsub("|T.-|t", "")
+    return text:match("^%s*(.-)%s*$") or ""
+end
+
+local function ReadableNumber(value)
+    if value == nil or Helpers.IsSecretValue(value) then return nil end
+    return tonumber(value)
+end
+
+local function GetReadableInventoryItemLink(unit, slotId)
+    if not unit or not slotId or not GetInventoryItemLink then return nil end
+
+    local ok, itemLink = pcall(GetInventoryItemLink, unit, slotId)
+    if not ok or Helpers.IsSecretValue(itemLink) then
+        return nil
+    end
+
+    return itemLink
+end
+
+local function GetItemIDFromLink(itemLink)
+    if not itemLink or Helpers.IsSecretValue(itemLink) then return nil end
+
+    if GetItemInfoInstant then
+        local ok, itemID = pcall(GetItemInfoInstant, itemLink)
+        itemID = ok and ReadableNumber(itemID) or nil
+        if itemID and itemID > 0 then return itemID end
+    end
+
+    if type(itemLink) == "string" then
+        return tonumber(itemLink:match("item:(%d+)"))
+    end
+
+    return nil
+end
+
+local function GetInventoryTooltipData(unit, slotId)
+    if not (C_TooltipInfo and C_TooltipInfo.GetInventoryItem) then return nil end
+
+    local ok, tooltipData = pcall(C_TooltipInfo.GetInventoryItem, unit, slotId)
+    if not ok or Helpers.IsSecretValue(tooltipData) then return nil end
+    if type(tooltipData) ~= "table" or not Helpers.CanAccessTable(tooltipData) then return nil end
+    if type(tooltipData.lines) ~= "table" or not Helpers.CanAccessTable(tooltipData.lines) then return nil end
+
+    return tooltipData
+end
+
+local function MatchItemLevelText(text)
+    text = CleanTooltipText(text)
+    if text == "" then return nil end
+
+    local pattern = ITEM_LEVEL and ITEM_LEVEL:gsub("%%d", "(%%d+)") or "Item Level (%d+)"
+    local ilvl = text:match(pattern)
+    ilvl = ReadableNumber(ilvl)
+    return ilvl and ilvl > 0 and ilvl or nil
+end
+
+local function MatchUpgradeText(text)
+    text = CleanTooltipText(text)
+    if text == "" then return nil, nil, nil end
+
+    if ITEM_UPGRADE_FRAME_CURRENT_UPGRADE_FORMAT_STRING then
+        local pattern = ITEM_UPGRADE_FRAME_CURRENT_UPGRADE_FORMAT_STRING:gsub("%%s", "(.+)"):gsub("%%d", "(%%d+)")
+        local track, current, max = text:match(pattern)
+        if track and current and max then
+            return track:match("^%s*(.-)%s*$"), current, max
+        end
+    end
+
+    local track, current, max = text:match("Upgrade Level:%s*(.+)%s+(%d+)%s*/%s*(%d+)")
+    if track and current and max then
+        return track:match("^%s*(.-)%s*$"), current, max
+    end
+
+    track, current, max = text:match(": (.+)%s+(%d+)%s*/%s*(%d+)")
+    if track and current and max then
+        return track:match("^%s*(.-)%s*$"), current, max
+    end
+
+    return nil, nil, nil
+end
+
+local function MatchEnchantText(text)
+    text = CleanTooltipText(text)
+    if text == "" then return nil end
+
+    local enchant
+    if ENCHANTED_TOOLTIP_LINE then
+        local prefix, suffix = ENCHANTED_TOOLTIP_LINE:match("^(.-)%%s(.-)$")
+        if prefix then
+            prefix = prefix:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+            suffix = suffix:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+            enchant = text:match("^%s*" .. prefix .. "(.+)" .. suffix .. "%s*$")
+        end
+    end
+    enchant = enchant or text:match("Enchanted:%s*(.+)")
+    enchant = enchant or text
+
+    enchant = CleanTooltipText(enchant)
+    enchant = enchant:gsub("^Enchant%s+.-%s*%-%s*", "")
+    enchant = enchant:match("^%s*(.-)%s*$")
+
+    return enchant ~= "" and enchant or nil
+end
+
+local function GetItemEquipLoc(itemLink)
+    if not itemLink or Helpers.IsSecretValue(itemLink) then return nil end
+
+    if C_Item and C_Item.GetItemInfo then
+        local ok, equipLoc = pcall(function()
+            return select(9, C_Item.GetItemInfo(itemLink))
+        end)
+        if ok and not Helpers.IsSecretValue(equipLoc) and equipLoc then
+            return equipLoc
+        end
+    end
+
+    if GetItemInfo then
+        local ok, equipLoc = pcall(function()
+            return select(9, GetItemInfo(itemLink))
+        end)
+        if ok and not Helpers.IsSecretValue(equipLoc) then
+            return equipLoc
+        end
+    end
+
+    return nil
+end
+
+local function CanItemUsePermanentEnchant(itemLink, slotId)
+    local equipLoc = GetItemEquipLoc(itemLink)
+    if equipLoc then
+        return PERMANENT_ENCHANT_EQUIP_LOCS[equipLoc] == true
+    end
+
+    return false
+end
+
+---------------------------------------------------------------------------
+-- Get item level for a slot
 ---------------------------------------------------------------------------
 local function GetSlotItemLevel(unit, slotId)
-    local itemLink = GetInventoryItemLink(unit, slotId)
+    local itemLink = GetReadableInventoryItemLink(unit, slotId)
     if not itemLink then return nil end
 
-    local itemLevel = nil
-
     -- Ensure item data is cached
-    local itemID = tonumber(itemLink:match("item:(%d+)"))
+    local itemID = GetItemIDFromLink(itemLink)
     if itemID and C_Item and C_Item.RequestLoadItemDataByID then
-        if not C_Item.IsItemDataCachedByID(itemID) then
+        local cached = true
+        if C_Item.IsItemDataCachedByID then
+            local ok, isCached = pcall(C_Item.IsItemDataCachedByID, itemID)
+            cached = ok and isCached
+        end
+        if not cached then
             C_Item.RequestLoadItemDataByID(itemID)
         end
     end
 
-    -- Try C_Item.GetItemInfo first (position 4 is ilvl)
+    if C_Item and C_Item.GetDetailedItemLevelInfo then
+        local ok, actualItemLevel, _, sparseItemLevel = pcall(C_Item.GetDetailedItemLevelInfo, itemLink)
+        if ok then
+            actualItemLevel = ReadableNumber(actualItemLevel)
+            if actualItemLevel and actualItemLevel > 0 then
+                return actualItemLevel
+            end
+            sparseItemLevel = ReadableNumber(sparseItemLevel)
+            if sparseItemLevel and sparseItemLevel > 0 then
+                return sparseItemLevel
+            end
+        end
+    end
+
     if C_Item and C_Item.GetItemInfo then
-        local _, _, _, ilvl = C_Item.GetItemInfo(itemLink)
-        if ilvl then
-            itemLevel = ilvl
+        local ok, ilvl = pcall(function()
+            return select(4, C_Item.GetItemInfo(itemLink))
+        end)
+        ilvl = ok and ReadableNumber(ilvl) or nil
+        if ilvl and ilvl > 0 then
+            return ilvl
         end
     end
 
-    -- Parse tooltip for actual displayed ilvl (this is the authoritative source)
-    if C_TooltipInfo and C_TooltipInfo.GetInventoryItem then
-        local tooltipData = C_TooltipInfo.GetInventoryItem(unit, slotId)
-        if tooltipData and tooltipData.lines then
-            -- Use localized ITEM_LEVEL global or fallback pattern
-            local pattern
-            if ITEM_LEVEL then
-                pattern = ITEM_LEVEL:gsub("%%d", "(%%d+)")
-            else
-                pattern = "Item Level (%d+)"  -- Fallback for English
+    local tooltipData = GetInventoryTooltipData(unit, slotId)
+    if tooltipData then
+        for _, line in ipairs(tooltipData.lines) do
+            local lineType = ReadableNumber(line.type)
+            if lineType == TOOLTIP_LINE_TYPE_ITEM_LEVEL then
+                local ilvl = MatchItemLevelText(line.leftText)
+                if ilvl then return ilvl end
             end
-            for _, line in ipairs(tooltipData.lines) do
-                local text = line.leftText or ""
-                local tooltipIlvl = text:match(pattern)
-                if tooltipIlvl then
-                    local parsed = tonumber(tooltipIlvl)
-                    if parsed then
-                        itemLevel = parsed  -- Tooltip is authoritative, always use it
-                    end
-                    break
-                end
+        end
+        for _, line in ipairs(tooltipData.lines) do
+            local ilvl = MatchItemLevelText(line.leftText)
+            if ilvl then
+                return ilvl
             end
         end
     end
 
-    return itemLevel
+    return nil
 end
 
 ---------------------------------------------------------------------------
@@ -626,7 +808,7 @@ local function GetSlotItemQuality(unit, slotId)
     local ok, quality = pcall(function()
         return GetInventoryItemQuality(unit, slotId)
     end)
-    if ok then
+    if ok and not Helpers.IsSecretValue(quality) then
         return quality
     end
     return nil
@@ -636,101 +818,72 @@ end
 -- Get enchant text for a slot (returns actual enchant name)
 ---------------------------------------------------------------------------
 local function GetEnchantText(unit, slotId)
-    local itemLink = GetInventoryItemLink(unit, slotId)
+    local itemLink = GetReadableInventoryItemLink(unit, slotId)
     if not itemLink then return nil, nil end  -- No item
 
-    -- Not all slots can be enchanted - only check enchantable slots
-    local enchantableSlots = {
-        [INVSLOT_HEAD] = true,
-        [INVSLOT_SHOULDER] = true,
-        [INVSLOT_CHEST] = true,
-        [INVSLOT_LEGS] = true,
-        [INVSLOT_FEET] = true,
-        [INVSLOT_FINGER1] = true,
-        [INVSLOT_FINGER2] = true,
-        [INVSLOT_MAINHAND] = true,
-        [INVSLOT_OFFHAND] = true,
-    }
+    local isEnchantable = CanItemUsePermanentEnchant(itemLink, slotId)
 
-    if not enchantableSlots[slotId] then
-        return nil, false  -- Not enchantable
-    end
-
-    -- Use tooltip info API if available (Midnight+)
-    if C_TooltipInfo and C_TooltipInfo.GetInventoryItem then
-        local tooltipData = C_TooltipInfo.GetInventoryItem(unit, slotId)
-        if tooltipData and tooltipData.lines then
-            for _, line in ipairs(tooltipData.lines) do
-                local text = line.leftText or ""
-                -- Try to match "Enchanted: X" pattern using WoW's localized constant
-                local enchant
-                if ENCHANTED_TOOLTIP_LINE then
-                    -- Use localized pattern: "Enchanted: %s"
-                    local pattern = ENCHANTED_TOOLTIP_LINE:gsub("%%s", "(.+)")
-                    enchant = text:match(pattern)
-                end
-                -- Fallback pattern matching
-                if not enchant then
-                    enchant = text:match("Enchanted:%s*(.+)")
-                end
+    local tooltipData = GetInventoryTooltipData(unit, slotId)
+    if tooltipData then
+        for _, line in ipairs(tooltipData.lines) do
+            local lineType = ReadableNumber(line.type)
+            if lineType == TOOLTIP_LINE_TYPE_ENCHANT then
+                local enchant = MatchEnchantText(line.leftText)
                 if enchant then
-                    -- Strip "Enchant X - " prefix to get clean name
-                    enchant = enchant:gsub("Enchant%s+%w+%s*%-%s*", "")
-                    -- Strip any remaining formatting codes
-                    enchant = enchant:gsub("|c%x%x%x%x%x%x%x%x", "")
-                    enchant = enchant:gsub("|r", "")
-                    enchant = enchant:gsub("|A.-|a", "")
-                    enchant = enchant:gsub("|T.-|t", "")
-                    -- Trim whitespace
-                    enchant = enchant:match("^%s*(.-)%s*$")
-                    if enchant and enchant ~= "" then
-                        return enchant, true  -- Return enchant text, slot is enchantable
-                    end
+                    return enchant, true
                 end
             end
         end
-        return nil, true  -- Missing enchant, slot is enchantable
+
+        for _, line in ipairs(tooltipData.lines) do
+            local leftText = CleanTooltipText(line.leftText)
+            local enchant = MatchEnchantText(leftText)
+            if enchant and leftText:find("Enchanted", 1, true) then
+                return enchant, true
+            end
+        end
     end
 
-    -- Fallback: assume no enchant detection available
-    return nil, true
+    return nil, isEnchantable
 end
 
 ---------------------------------------------------------------------------
 -- Get upgrade track info for a slot (e.g., "Myth 6/6", "Hero 4/6")
--- Uses localized global string ITEM_UPGRADE_FRAME_CURRENT_UPGRADE_FORMAT_STRING
 ---------------------------------------------------------------------------
 local function GetUpgradeTrack(unit, slotId)
-    if not C_TooltipInfo or not C_TooltipInfo.GetInventoryItem then
-        return nil, nil, nil
+    local itemLink = GetReadableInventoryItemLink(unit, slotId)
+    if not itemLink then return nil, nil, nil end
+
+    if C_Item and C_Item.GetItemUpgradeInfo then
+        local ok, upgradeInfo = pcall(C_Item.GetItemUpgradeInfo, itemLink)
+        if ok and type(upgradeInfo) == "table" and Helpers.CanAccessTable(upgradeInfo) then
+            local track = upgradeInfo.trackString
+            if Helpers.IsSecretValue(track) then track = nil end
+            local current = ReadableNumber(upgradeInfo.currentLevel)
+            local max = ReadableNumber(upgradeInfo.maxLevel)
+            if track and track ~= "" and current and max and max > 0 then
+                return track, tostring(current), tostring(max)
+            end
+        end
     end
 
-    local tooltipData = C_TooltipInfo.GetInventoryItem(unit, slotId)
-    if not tooltipData or not tooltipData.lines then
+    local tooltipData = GetInventoryTooltipData(unit, slotId)
+    if not tooltipData then
         return nil, nil, nil
     end
 
     for _, line in ipairs(tooltipData.lines) do
-        local text = line.leftText or ""
-
-        -- Use the localized global format string for upgrade level
-        -- ITEM_UPGRADE_FRAME_CURRENT_UPGRADE_FORMAT_STRING = "Upgrade Level: %s %d/%d"
-        if ITEM_UPGRADE_FRAME_CURRENT_UPGRADE_FORMAT_STRING then
-            local pattern = ITEM_UPGRADE_FRAME_CURRENT_UPGRADE_FORMAT_STRING:gsub("%%s", "(.+)"):gsub("%%d", "(%%d+)")
-            local track, current, max = text:match(pattern)
+        local lineType = ReadableNumber(line.type)
+        if lineType == TOOLTIP_LINE_TYPE_UPGRADE then
+            local track, current, max = MatchUpgradeText(line.leftText)
             if track and current and max then
                 return track, current, max
             end
         end
+    end
 
-        -- Fallback: try English "Upgrade Level: Track X/Y" pattern
-        local track, current, max = text:match("Upgrade Level:%s*(.+)%s+(%d+)%s*/%s*(%d+)")
-        if track and current and max then
-            return track, current, max
-        end
-
-        -- Fallback: colon-prefixed pattern for other locales
-        track, current, max = text:match(": (.+)%s+(%d+)%s*/%s*(%d+)")
+    for _, line in ipairs(tooltipData.lines) do
+        local track, current, max = MatchUpgradeText(line.leftText)
         if track and current and max then
             return track, current, max
         end
@@ -743,48 +896,80 @@ end
 -- Get gem info for a slot (returns gems and total socket count)
 ---------------------------------------------------------------------------
 local function GetGemInfo(unit, slotId)
-    local itemLink = GetInventoryItemLink(unit, slotId)
+    local itemLink = GetReadableInventoryItemLink(unit, slotId)
     if not itemLink then return {}, 0 end
 
     local gems = {}
     local totalSockets = 0
 
-    -- First, detect total socket count by parsing tooltip
-    if C_TooltipInfo and C_TooltipInfo.GetInventoryItem then
-        local tooltipData = C_TooltipInfo.GetInventoryItem(unit, slotId)
-        if tooltipData and tooltipData.lines then
-            for _, line in ipairs(tooltipData.lines) do
-                -- Socket lines have type 3 in tooltip data
-                if line.type == 3 then
-                    totalSockets = totalSockets + 1
-                end
+    if C_Item and C_Item.GetItemNumSockets then
+        local ok, socketCount = pcall(C_Item.GetItemNumSockets, itemLink)
+        if ok then
+            socketCount = ReadableNumber(socketCount)
+            if socketCount then
+                totalSockets = math.max(totalSockets, socketCount)
             end
         end
     end
 
-    -- Get filled gems (up to 4 slots)
+    local tooltipData = GetInventoryTooltipData(unit, slotId)
+    if tooltipData then
+        local tooltipSockets = 0
+        for _, line in ipairs(tooltipData.lines) do
+            local lineType = ReadableNumber(line.type)
+            if lineType == TOOLTIP_LINE_TYPE_GEM_SOCKET then
+                tooltipSockets = tooltipSockets + 1
+            end
+        end
+        totalSockets = math.max(totalSockets, tooltipSockets)
+    end
+
     local filledCount = 0
-    for i = 1, 4 do
-        -- GetItemGem returns TWO values: gemName, gemLink (we need the link for icon lookup)
-        local gemName, gemLink = GetItemGem(itemLink, i)
+    local maxGemSlots = math.max(totalSockets, 4)
+    for i = 1, maxGemSlots do
+        local gemName, gemLink
+        if C_Item and C_Item.GetItemGem then
+            local ok, name, link = pcall(C_Item.GetItemGem, itemLink, i)
+            if ok then
+                if not Helpers.IsSecretValue(name) then gemName = name end
+                if not Helpers.IsSecretValue(link) then gemLink = link end
+            end
+        elseif GetItemGem then
+            local ok, name, link = pcall(GetItemGem, itemLink, i)
+            if ok then
+                if not Helpers.IsSecretValue(name) then gemName = name end
+                if not Helpers.IsSecretValue(link) then gemLink = link end
+            end
+        end
 
-        if gemLink then
+        if gemLink and not Helpers.IsSecretValue(gemLink) then
             filledCount = filledCount + 1
-            -- Get gem icon texture from item info (icon is the 10th return value)
-            local _, _, _, _, _, _, gemSubType, _, _, gemIcon = GetItemInfo(gemLink)
 
-            -- If GetItemInfo didn't return icon yet (item not cached), try C_Item API
+            local gemSubType, gemIcon
+            if GetItemInfo then
+                local ok, subType, icon = pcall(function()
+                    return select(7, GetItemInfo(gemLink)), select(10, GetItemInfo(gemLink))
+                end)
+                if ok then
+                    if not Helpers.IsSecretValue(subType) then gemSubType = subType end
+                    if not Helpers.IsSecretValue(icon) then gemIcon = icon end
+                end
+            end
+
             if not gemIcon and C_Item and C_Item.GetItemIconByID then
-                local itemID = GetItemInfoInstant(gemLink)
-                if itemID then
-                    gemIcon = C_Item.GetItemIconByID(itemID)
+                local gemID = GetItemIDFromLink(gemLink)
+                if gemID then
+                    local ok, icon = pcall(C_Item.GetItemIconByID, gemID)
+                    if ok then
+                        if not Helpers.IsSecretValue(icon) then gemIcon = icon end
+                    end
                 end
             end
 
             table.insert(gems, {
                 link = gemLink,
                 icon = gemIcon,
-                type = gemSubType or "Prismatic",
+                type = gemSubType or gemName or "Prismatic",
                 filled = true,
             })
         end
@@ -828,6 +1013,7 @@ end
 ---------------------------------------------------------------------------
 local function CreateSlotOverlay(slotFrame, slotInfo, unit)
     if not slotFrame then return nil end
+    local overlayUnit = unit or "player"
 
     -- Get scale setting
     local settings = GetSettings()
@@ -845,7 +1031,7 @@ local function CreateSlotOverlay(slotFrame, slotInfo, unit)
     overlay:SetAllPoints(slotFrame)
     overlay:SetFrameLevel(slotFrame:GetFrameLevel() + 10)
     overlay:SetClipsChildren(false)
-    overlay.unit = unit or "player"  -- Store unit for font refresh
+    overlay.unit = overlayUnit  -- Store unit for font refresh
 
     -- === 3-LINE TEXT LAYOUT ===
     -- Line 1: Item Name
@@ -855,10 +1041,10 @@ local function CreateSlotOverlay(slotFrame, slotInfo, unit)
     -- Weapons: Name BELOW icon, Enchant ABOVE icon
 
     -- Unified font and size for all 3 lines (controlled by single slider)
-    -- Use inspect-specific setting for target unit
+    -- Use inspect-specific settings for any non-player inspected unit.
     local slotFont = GetGlobalFont()
     local slotTextSize
-    if unit == "target" then
+    if IsInspectUnit(overlayUnit) then
         slotTextSize = settings.inspectSlotTextSize or 12
     else
         slotTextSize = settings.slotTextSize or ENCHANT_FONT
@@ -873,7 +1059,7 @@ local function CreateSlotOverlay(slotFrame, slotInfo, unit)
     overlay.itemName:SetWordWrap(false)
     overlay.itemName:SetWidth(TEXT_WIDTH)
     -- Only track character panel fonts (not inspect) for font refresh
-    if unit ~= "target" then
+    if not IsInspectUnit(overlayUnit) then
         table.insert(trackedItemNameFonts, overlay.itemName)
     end
 
@@ -882,18 +1068,17 @@ local function CreateSlotOverlay(slotFrame, slotInfo, unit)
     overlay.itemLevel:SetFont(slotFont, slotTextSize, FONT_FLAGS)
     overlay.itemLevel:SetTextColor(1, 1, 1, 1)
     overlay.itemLevel:SetWordWrap(false)
-    if unit ~= "target" then
+    if not IsInspectUnit(overlayUnit) then
         table.insert(trackedILvlFonts, overlay.itemLevel)
     end
 
     -- Line 3: Enchant text (single line, truncated)
     -- Compute enchant color respecting class color toggle
-    -- Use inspect-specific settings when unit is target
     local enchantColor
-    local useClassColor = unit == "target" and settings.inspectEnchantClassColor or settings.enchantClassColor
-    local customEnchantColor = unit == "target" and settings.inspectEnchantTextColor or settings.enchantTextColor
+    local useClassColor = IsInspectUnit(overlayUnit) and settings.inspectEnchantClassColor or settings.enchantClassColor
+    local customEnchantColor = IsInspectUnit(overlayUnit) and settings.inspectEnchantTextColor or settings.enchantTextColor
     if useClassColor then
-        local _, class = UnitClass(unit or "player")
+        local _, class = UnitClass(overlayUnit)
         local classColor = RAID_CLASS_COLORS[class]
         if classColor then
             enchantColor = {classColor.r, classColor.g, classColor.b}
@@ -908,7 +1093,7 @@ local function CreateSlotOverlay(slotFrame, slotInfo, unit)
     overlay.enchant:SetTextColor(enchantColor[1], enchantColor[2], enchantColor[3], 1)
     overlay.enchant:SetWordWrap(false)
     overlay.enchant:SetWidth(TEXT_WIDTH)
-    if unit ~= "target" then
+    if not IsInspectUnit(overlayUnit) then
         table.insert(trackedEnchantFonts, overlay.enchant)
     end
 
@@ -1004,6 +1189,7 @@ end
 ---------------------------------------------------------------------------
 local function UpdateSlotOverlay(overlay, unit)
     if not overlay or not overlay.slotInfo then return end
+    unit = unit or overlay.unit or "player"
 
     local settings = GetSettings()
     if not settings.enabled then
@@ -1013,7 +1199,7 @@ local function UpdateSlotOverlay(overlay, unit)
 
     -- Use inspect-specific settings when not player
     -- Use ~= false pattern so nil (missing from saved vars) defaults to true (show)
-    local isInspect = unit ~= "player"
+    local isInspect = IsInspectUnit(unit)
     local showItemName, showItemLevel, showEnchants, showGems
     if isInspect then
         showItemName = settings.showInspectItemName ~= false
@@ -1028,7 +1214,7 @@ local function UpdateSlotOverlay(overlay, unit)
     end
 
     local slotId = overlay.slotInfo.id
-    local itemLink = GetInventoryItemLink(unit, slotId)
+    local itemLink = GetReadableInventoryItemLink(unit, slotId)
 
     if not itemLink then
         overlay:Hide()
@@ -1038,7 +1224,19 @@ local function UpdateSlotOverlay(overlay, unit)
     overlay:Show()
 
     -- Get item info for name and quality
-    local itemName = GetItemInfo(itemLink)
+    local itemName
+    if C_Item and C_Item.GetItemInfo then
+        local ok, name = pcall(C_Item.GetItemInfo, itemLink)
+        if ok and not Helpers.IsSecretValue(name) then
+            itemName = name
+        end
+    end
+    if not itemName and GetItemInfo then
+        local ok, name = pcall(GetItemInfo, itemLink)
+        if ok and not Helpers.IsSecretValue(name) then
+            itemName = name
+        end
+    end
     local quality = GetSlotItemQuality(unit, slotId)
     local r, g, b = GetItemQualityColorRGB(quality)
 
@@ -1065,8 +1263,7 @@ local function UpdateSlotOverlay(overlay, unit)
             local ilvlText
             if track and current and max then
                 -- Get track color from settings or default to orange
-                -- Use inspect-specific color when unit is target
-                local trackColor = unit == "target" and settings.inspectUpgradeTrackColor or settings.upgradeTrackColor
+                local trackColor = isInspect and settings.inspectUpgradeTrackColor or settings.upgradeTrackColor
                 trackColor = trackColor or {0.98, 0.60, 0.35, 1}
                 local trackHex = string.format("%02x%02x%02x",
                     math.floor(trackColor[1] * 255),
@@ -1101,11 +1298,10 @@ local function UpdateSlotOverlay(overlay, unit)
     if showEnchants then
         local enchantText, isEnchantable = GetEnchantText(unit, slotId)
         -- Compute enchant color respecting class color toggle
-        -- Use inspect-specific settings when unit is target
         local enchantColor
-        local useClassColor = unit == "target" and settings.inspectEnchantClassColor or settings.enchantClassColor
-        local customEnchantColor = unit == "target" and settings.inspectEnchantTextColor or settings.enchantTextColor
-        local noEnchantColor = unit == "target" and settings.inspectNoEnchantTextColor or settings.noEnchantTextColor
+        local useClassColor = isInspect and settings.inspectEnchantClassColor or settings.enchantClassColor
+        local customEnchantColor = isInspect and settings.inspectEnchantTextColor or settings.enchantTextColor
+        local noEnchantColor = isInspect and settings.inspectNoEnchantTextColor or settings.noEnchantTextColor
         noEnchantColor = noEnchantColor or {0.5, 0.5, 0.5}
         if useClassColor then
             local _, class = UnitClass(unit)
@@ -1252,10 +1448,7 @@ local function HideBlizzardDecorations()
     end
 
     -- Move bottom tabs (Character/Reputation/Currency) down 50px
-    if CharacterFrameTab1 then
-        CharacterFrameTab1:ClearAllPoints()
-        CharacterFrameTab1:SetPoint("TOPLEFT", CharacterFrame, "BOTTOMLEFT", 11, -48)
-    end
+    AnchorCharacterFrameBottomTabs(-48)
 
     -- Character frame inset decorations
     if CharacterFrameInset then
@@ -1397,8 +1590,11 @@ local function HideBlizzardDecorations()
 
         local slotID = slot:GetID()
 
-        -- Use GetInventoryItemQuality (more reliable than C_Item.GetItemInfo which can return nil)
-        local quality = GetInventoryItemQuality("player", slotID)
+        -- Use inventory quality because item-info caching can lag behind slot updates.
+        local ok, quality = pcall(GetInventoryItemQuality, "player", slotID)
+        if not ok or Helpers.IsSecretValue(quality) then
+            quality = nil
+        end
 
         if quality and quality >= 1 then
             local r, g, b = C_Item.GetItemQualityColor(quality)
@@ -1526,7 +1722,7 @@ local function CreateCustomBackground()
     -- Apply panel scale from settings (base scale 1.30, slider is multiplier)
     local BASE_SCALE = 1.30
     local scaleMultiplier = settings.panelScale or 1.0
-    SafeSetCharScale(BASE_SCALE * scaleMultiplier)
+    SetCharacterFrameScale(BASE_SCALE * scaleMultiplier)
 end
 
 ---------------------------------------------------------------------------
@@ -1777,12 +1973,12 @@ end
 ---------------------------------------------------------------------------
 -- Master function: Apply portrait layout
 ---------------------------------------------------------------------------
-local function ApplyCharacterPaneLayout()
+ApplyCharacterPaneLayout = function(force)
     local settings = GetSettings()
     if not settings.enabled then return end
 
     -- Only apply once per session (unless forced)
-    if layoutApplied then return end
+    if layoutApplied and not force then return end
 
     HideBlizzardDecorations()
     CreateCustomBackground()
@@ -2226,7 +2422,8 @@ local function FinalizeStatsPanelLayout(panel, scrollChild, yOffset)
         C_Timer.After(0.01, function()
             local okScroll, maxScroll = pcall(scrollFrame.GetVerticalScrollRange, scrollFrame)
             if okScroll and not Helpers.IsSecretValue(maxScroll) then
-                if Helpers.SafeToNumber(maxScroll, 0) <= 1 then
+                maxScroll = tonumber(maxScroll) or 0
+                if maxScroll <= 1 then
                     scrollFrame:SetVerticalScroll(0)
                 end
             end
@@ -2331,7 +2528,7 @@ local function UpdateStatsPanel(panel, unit)
         local SECTION_GAP = 8
         local BAR_HEIGHT = 16
 
-        -- Helper to safely get stats (pcall for Midnight protection)
+        -- Helper to read stats without collapsing secret values through Safe* wrappers.
         local function SafeGetStat(func, ...)
             if type(func) ~= "function" then
                 return 0
@@ -2340,7 +2537,7 @@ local function UpdateStatsPanel(panel, unit)
             if not ok then
                 return 0
             end
-            return Helpers.SafeToNumber(result, 0)
+            return ReadableNumber(result) or 0
         end
 
         local function SafeGetStatValues(func, ...)
@@ -2353,10 +2550,10 @@ local function UpdateStatsPanel(panel, unit)
                 return 0, 0, 0, 0
             end
 
-            return Helpers.SafeToNumber(a, 0),
-                   Helpers.SafeToNumber(b, 0),
-                   Helpers.SafeToNumber(c, 0),
-                   Helpers.SafeToNumber(d, 0)
+            return ReadableNumber(a) or 0,
+                   ReadableNumber(b) or 0,
+                   ReadableNumber(c) or 0,
+                   ReadableNumber(d) or 0
         end
 
         -- Returns the raw value (secret-checked) or nil if unavailable. Used
@@ -3252,6 +3449,108 @@ local function CreateTitlesPopup()
     return titlesPopup
 end
 
+local function RestoreCharacterPanePopoutPane(pane)
+    if not pane then return end
+
+    pane:Hide()
+
+    local state = frameState[pane] or EMPTY
+    if state.originalParent then
+        pane:SetParent(state.originalParent)
+    end
+end
+
+local function RestoreCharacterPanePopouts()
+    if equipMgrPopup then
+        equipMgrPopup:Hide()
+    end
+
+    if titlesPopup then
+        titlesPopup:Hide()
+    end
+
+    RestoreCharacterPanePopoutPane(PaperDollFrame and PaperDollFrame.EquipmentManagerPane)
+    RestoreCharacterPanePopoutPane(PaperDollFrame and PaperDollFrame.TitleManagerPane)
+end
+
+local SIDEBAR_TAB_ACTIVE_TEXCOORDS = {0.01562500, 0.79687500, 0.78906250, 0.95703125}
+local SIDEBAR_TAB_INACTIVE_TEXCOORDS = {0.01562500, 0.79687500, 0.61328125, 0.78125000}
+
+local function SetRegionShown(region, shown)
+    if not region then return end
+
+    if region.SetShown then
+        region:SetShown(shown)
+    elseif shown then
+        region:Show()
+    else
+        region:Hide()
+    end
+end
+
+local function SetSidebarTabSelected(tab, selected)
+    if not tab then return end
+
+    if tab.SetChecked then
+        tab:SetChecked(selected)
+    end
+    if tab.SetSelected then
+        pcall(tab.SetSelected, tab, selected)
+    end
+
+    SetRegionShown(tab.Hider, not selected)
+    SetRegionShown(tab.Highlight, not selected)
+
+    if tab.TabBg and tab.TabBg.SetTexCoord then
+        local coords = selected and SIDEBAR_TAB_ACTIVE_TEXCOORDS or SIDEBAR_TAB_INACTIVE_TEXCOORDS
+        tab.TabBg:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+    end
+
+    local selectedTexture = tab.SelectedTexture
+    if selectedTexture then
+        if selectedTexture.SetShown then
+            selectedTexture:SetShown(selected)
+        elseif selected then
+            selectedTexture:Show()
+        else
+            selectedTexture:Hide()
+        end
+    end
+
+    local selectedBar = tab.SelectedBar
+    if selectedBar then
+        if selectedBar.SetShown then
+            selectedBar:SetShown(selected)
+        elseif selected then
+            selectedBar:Show()
+        else
+            selectedBar:Hide()
+        end
+    end
+end
+
+local function SelectCharacterStatsSidebarTab()
+    if not PaperDollSidebarTab1 then return end
+
+    if type(_G.PaperDollFrame_SetSidebar) == "function" then
+        pcall(_G.PaperDollFrame_SetSidebar, PaperDollSidebarTab1, 1)
+    elseif CharacterStatsPane and CharacterStatsPane.Show then
+        CharacterStatsPane:Show()
+    end
+
+    if type(_G.PaperDollFrame_UpdateSidebarTabs) == "function" then
+        pcall(_G.PaperDollFrame_UpdateSidebarTabs)
+    end
+
+    SetSidebarTabSelected(PaperDollSidebarTab1, true)
+    SetSidebarTabSelected(PaperDollSidebarTab2, false)
+    SetSidebarTabSelected(PaperDollSidebarTab3, false)
+
+    for i = 1, 3 do
+        UpdateSidebarTabBorder(_G["PaperDollSidebarTab" .. i])
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Hook character frame
 ---------------------------------------------------------------------------
@@ -3284,10 +3583,10 @@ local function HookCharacterFrame()
                 for _, overlay in pairs(slotOverlays) do
                     if overlay then overlay:Hide() end
                 end
-                if equipMgrPopup then equipMgrPopup:Hide() end
+                RestoreCharacterPanePopouts()
                 if (frameState[CharacterFrame] or EMPTY).ilvlDisplay then (frameState[CharacterFrame] or EMPTY).ilvlDisplay:Hide() end
                 if (frameState[CharacterFrame] or EMPTY).centerILvl then (frameState[CharacterFrame] or EMPTY).centerILvl:Hide() end
-                SafeSetCharScale(1.0)
+                SetCharacterFrameScale(1.0)
             end
         end)
     end)
@@ -3299,25 +3598,7 @@ local function HookCharacterFrame()
         -- Cleanup tooltips
         GameTooltip:Hide()
 
-        -- Hide floating Equipment Manager popup and restore pane to original parent
-        if equipMgrPopup then
-            equipMgrPopup:Hide()
-        end
-
-        local equipPane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
-        if equipPane and (frameState[equipPane] or EMPTY).originalParent then
-            equipPane:SetParent((frameState[equipPane] or EMPTY).originalParent)
-        end
-
-        -- Hide floating Titles popup and restore pane to original parent
-        if titlesPopup then
-            titlesPopup:Hide()
-        end
-
-        local titlesPane = PaperDollFrame and PaperDollFrame.TitleManagerPane
-        if titlesPane and (frameState[titlesPane] or EMPTY).originalParent then
-            titlesPane:SetParent((frameState[titlesPane] or EMPTY).originalParent)
-        end
+        RestoreCharacterPanePopouts()
     end)
 
     -- Re-mask Blizzard's stats pane every time Blizzard re-Shows it (e.g. when
@@ -3353,14 +3634,7 @@ local function HookCharacterFrame()
             local settings = GetSettings()
             if not settings.enabled then return end
 
-            -- Hide Titles popup first (they share same position)
-            if titlesPopup then
-                titlesPopup:Hide()
-            end
-            local titlesPane = PaperDollFrame and PaperDollFrame.TitleManagerPane
-            if titlesPane and (frameState[titlesPane] or EMPTY).originalParent then
-                titlesPane:SetParent((frameState[titlesPane] or EMPTY).originalParent)
-            end
+            RestoreCharacterPanePopouts()
 
             -- Create floating container if needed
             local popup = CreateEquipMgrPopup()
@@ -3407,14 +3681,7 @@ local function HookCharacterFrame()
             local settings = GetSettings()
             if not settings.enabled then return end
 
-            -- Hide Equipment Manager popup first (they share same position)
-            if equipMgrPopup then
-                equipMgrPopup:Hide()
-            end
-            local equipPane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
-            if equipPane and (frameState[equipPane] or EMPTY).originalParent then
-                equipPane:SetParent((frameState[equipPane] or EMPTY).originalParent)
-            end
+            RestoreCharacterPanePopouts()
 
             -- Create floating container if needed
             local popup = CreateTitlesPopup()
@@ -3476,25 +3743,8 @@ local function HookCharacterFrame()
         PaperDollSidebarTab1:HookScript("OnClick", function()
             local settings = GetSettings()
 
-            -- Hide Equipment Manager popup and restore pane to original parent
-            if equipMgrPopup then
-                equipMgrPopup:Hide()
-            end
-
-            local equipPane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
-            if equipPane and (frameState[equipPane] or EMPTY).originalParent then
-                equipPane:SetParent((frameState[equipPane] or EMPTY).originalParent)
-            end
-
-            -- Hide Titles popup and restore pane to original parent
-            if titlesPopup then
-                titlesPopup:Hide()
-            end
-
-            local titlesPane = PaperDollFrame and PaperDollFrame.TitleManagerPane
-            if titlesPane and (frameState[titlesPane] or EMPTY).originalParent then
-                titlesPane:SetParent((frameState[titlesPane] or EMPTY).originalParent)
-            end
+            RestoreCharacterPanePopouts()
+            SelectCharacterStatsSidebarTab()
 
             -- Show stats panel
             if settings.enabled and statsPanel then
@@ -3509,10 +3759,7 @@ local function HookCharacterFrame()
     -- Helper to adjust tab and close button positions for Reputation/Currency tabs
     local function AdjustForNonCharacterTab()
         -- Move tabs up 50 pixels: -48 → +2
-        if CharacterFrameTab1 then
-            CharacterFrameTab1:ClearAllPoints()
-            CharacterFrameTab1:SetPoint("TOPLEFT", CharacterFrame, "BOTTOMLEFT", 11, 2)
-        end
+        AnchorCharacterFrameBottomTabs(2)
         -- Move close button left 55 pixels: 52 → -3
         if CharacterFrame.CloseButton then
             CharacterFrame.CloseButton:ClearAllPoints()
@@ -3522,10 +3769,7 @@ local function HookCharacterFrame()
 
     local function RestoreCharacterTabPositions()
         -- Restore original tab position
-        if CharacterFrameTab1 then
-            CharacterFrameTab1:ClearAllPoints()
-            CharacterFrameTab1:SetPoint("TOPLEFT", CharacterFrame, "BOTTOMLEFT", 11, -48)
-        end
+        AnchorCharacterFrameBottomTabs(-48)
         -- Restore original close button position
         if CharacterFrame.CloseButton then
             CharacterFrame.CloseButton:ClearAllPoints()
@@ -3540,7 +3784,7 @@ local function HookCharacterFrame()
         for _, overlay in pairs(slotOverlays) do
             if overlay then overlay:Hide() end
         end
-        if equipMgrPopup then equipMgrPopup:Hide() end
+        RestoreCharacterPanePopouts()
         if (frameState[CharacterFrame] or EMPTY).ilvlDisplay then (frameState[CharacterFrame] or EMPTY).ilvlDisplay:Hide() end
         if (frameState[CharacterFrame] or EMPTY).centerILvl then (frameState[CharacterFrame] or EMPTY).centerILvl:Hide() end
         if (frameState[CharacterFrame] or EMPTY).gearBtn then (frameState[CharacterFrame] or EMPTY).gearBtn:Hide() end
@@ -3565,13 +3809,9 @@ local function HookCharacterFrame()
             end
         end
 
-        -- Protected: SetScale + tab/button repositioning
-        SafeSetCharScale(1.0)
-        if InCombatLockdown() then
-            pendingTabMode = "other"
-        else
-            AdjustForNonCharacterTab()
-        end
+        -- Apply scale and tab/button repositioning immediately.
+        SetCharacterFrameScale(1.0)
+        AdjustForNonCharacterTab()
     end
 
     -- Hide when Reputation tab opens
@@ -3589,15 +3829,13 @@ local function HookCharacterFrame()
         PaperDollFrame:HookScript("OnShow", function()
             local settings = GetSettings()
             if settings.enabled then
-                -- Protected: restore tab positions and scale
-                if InCombatLockdown() then
-                    pendingTabMode = "character"
-                else
-                    RestoreCharacterTabPositions()
-                end
+                RestoreCharacterPanePopouts()
+                SelectCharacterStatsSidebarTab()
+
+                RestoreCharacterTabPositions()
                 local BASE_SCALE = 1.30
                 local scaleMultiplier = settings.panelScale or 1.0
-                SafeSetCharScale(BASE_SCALE * scaleMultiplier)
+                SetCharacterFrameScale(BASE_SCALE * scaleMultiplier)
 
                 -- Ensure layout is applied (creates statsPanel if needed)
                 if not layoutApplied then
@@ -3652,6 +3890,14 @@ local function HookCharacterFrame()
                 end)
             end
         end)
+    end
+
+    if CharacterFrameTab1 and not (frameState[CharacterFrameTab1] or EMPTY).popoutRestoreHooked then
+        CharacterFrameTab1:HookScript("OnClick", function()
+            RestoreCharacterPanePopouts()
+            SelectCharacterStatsSidebarTab()
+        end)
+        GetState(CharacterFrameTab1).popoutRestoreHooked = true
     end
 
     ---------------------------------------------------------------------------
@@ -3811,7 +4057,7 @@ local function HookCharacterFrame()
         local BASE_SCALE = 1.30
         local scaleSlider = GUI:CreateFormSlider(scrollChild, "Panel Scale", 0.75, 1.5, 0.05, "panelScale", charDB, function()
             local multiplier = charDB.panelScale or 1.0
-            SafeSetCharScale(BASE_SCALE * multiplier)
+            SetCharacterFrameScale(BASE_SCALE * multiplier)
         end, { deferOnDrag = true },
             { description = "Zoom factor applied to the character panel on top of the base scale. 1.0 leaves the panel at the default QUI size." })
         scaleSlider:SetPoint("TOPLEFT", PAD, y)
@@ -4050,7 +4296,7 @@ local function HookCharacterFrame()
             charDB.upgradeTrackColor = {0.98, 0.60, 0.35, 1}
 
             -- Apply scale (base 1.30 * multiplier 1.0)
-            SafeSetCharScale(1.30)
+            SetCharacterFrameScale(1.30)
 
             -- Refresh and reload the settings panel to reflect reset values
             RefreshAll()

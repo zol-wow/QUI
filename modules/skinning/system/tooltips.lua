@@ -1329,10 +1329,13 @@ local function MeasureRightOfDoubleLine(rightFS, rightmost, lineIndex)
     local okShown, shown = pcall(rightFS.IsShown, rightFS)
     if not okShown or not shown then return rightmost end
     local okT, text = pcall(rightFS.GetText, rightFS)
-    if not okT or not text or text == "" then return rightmost end
+    if not okT then return rightmost end
+    if Helpers.IsSecretValue and Helpers.IsSecretValue(text) then return rightmost end
+    if not text or text == "" then return rightmost end
     local okR, rx = pcall(rightFS.GetRight, rightFS)
-    if not (okR and rx) then return rightmost end
+    if not okR then return rightmost end
     if Helpers.IsSecretValue and Helpers.IsSecretValue(rx) then return rightmost end
+    if not rx then return rightmost end
     if rx > rightmost then
         rightmost = rx
         if lineIndex then

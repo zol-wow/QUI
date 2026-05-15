@@ -2057,6 +2057,7 @@ end
 -- Boss Range Alpha
 ---------------------------------------------------------------------------
 local BOSS_RANGE_CHECK_INTERVAL = 0.2
+local BOSS_RANGE_CHANGE_CONFIRMATIONS = 2
 
 local BOSS_RANGE_SPELLS = {
     specHostile = {
@@ -2096,23 +2097,44 @@ local bossRange = {
     hostileSpell = nil,
     ticker = nil,
     eventFrame = nil,
+    cache = {},
+    pending = {},
+    pendingCount = {},
 }
 
+local function ClearBossRangeState(unit)
+    if unit then
+        bossRange.cache[unit] = nil
+        bossRange.pending[unit] = nil
+        bossRange.pendingCount[unit] = nil
+        return
+    end
+
+    for key in pairs(bossRange.cache) do bossRange.cache[key] = nil end
+    for key in pairs(bossRange.pending) do bossRange.pending[key] = nil end
+    for key in pairs(bossRange.pendingCount) do bossRange.pendingCount[key] = nil end
+end
+
 local function ResolveBossRangeSpell()
+    local previousSpell = bossRange.hostileSpell
     bossRange.playerClass = select(2, UnitClass("player"))
-    bossRange.hostileSpell = nil
+    local resolvedSpell = nil
 
     local specIndex = GetSpecialization and GetSpecialization()
     local specID = specIndex and GetSpecializationInfo and GetSpecializationInfo(specIndex)
     local specSpell = specID and BOSS_RANGE_SPELLS.specHostile[specID]
     if specSpell and IsPlayerSpell and IsPlayerSpell(specSpell) then
-        bossRange.hostileSpell = specSpell
-        return
+        resolvedSpell = specSpell
+    else
+        local classSpell = bossRange.playerClass and BOSS_RANGE_SPELLS.classHostile[bossRange.playerClass]
+        if classSpell and IsPlayerSpell and IsPlayerSpell(classSpell) then
+            resolvedSpell = classSpell
+        end
     end
 
-    local classSpell = bossRange.playerClass and BOSS_RANGE_SPELLS.classHostile[bossRange.playerClass]
-    if classSpell and IsPlayerSpell and IsPlayerSpell(classSpell) then
-        bossRange.hostileSpell = classSpell
+    bossRange.hostileSpell = resolvedSpell
+    if previousSpell ~= bossRange.hostileSpell then
+        ClearBossRangeState()
     end
 end
 
@@ -2149,6 +2171,7 @@ local function ApplyBossRangeAlpha(frame, inRange, outAlpha)
 end
 
 local function ResetBossRangeAlpha()
+    ClearBossRangeState()
     if not ShouldApplyBossRangeAlpha() then return end
 
     for i = 1, 5 do
@@ -2168,6 +2191,9 @@ local function CheckBossUnitRange(unit)
     if UnitCanAttack("player", unit) then
         if bossRange.hostileSpell and C_Spell and C_Spell.IsSpellInRange then
             local inRange = C_Spell.IsSpellInRange(bossRange.hostileSpell, unit)
+            if IsSecretValue(inRange) then
+                return inRange
+            end
             if inRange ~= nil then
                 return inRange
             end
@@ -2180,16 +2206,64 @@ local function CheckBossUnitRange(unit)
             end
         end
 
-        return true
+        return nil
     end
 
     if UnitInRange then
-        local inRange = UnitInRange(unit)
+        local inRange, checkedRange = UnitInRange(unit)
         if IsSecretValue(inRange) then return inRange end
+        if IsSecretValue(checkedRange) then return nil end
+        if checkedRange == false then return nil end
         if inRange ~= nil then return inRange end
     end
 
-    return true
+    return nil
+end
+
+local function ApplyStableBossRangeAlpha(frame, unit, inRange, outAlpha)
+    if not frame or not unit then return end
+
+    if IsSecretValue(inRange) then
+        ClearBossRangeState(unit)
+        ApplyBossRangeAlpha(frame, inRange, outAlpha)
+        return
+    end
+
+    if inRange == nil then
+        bossRange.pending[unit] = nil
+        bossRange.pendingCount[unit] = nil
+        return
+    end
+
+    local cached = bossRange.cache[unit]
+    if cached == nil then
+        bossRange.cache[unit] = inRange
+        bossRange.pending[unit] = nil
+        bossRange.pendingCount[unit] = nil
+        ApplyBossRangeAlpha(frame, inRange, outAlpha)
+        return
+    end
+
+    if cached == inRange then
+        bossRange.pending[unit] = nil
+        bossRange.pendingCount[unit] = nil
+        return
+    end
+
+    if bossRange.pending[unit] == inRange then
+        local count = (bossRange.pendingCount[unit] or 1) + 1
+        bossRange.pendingCount[unit] = count
+        if count >= BOSS_RANGE_CHANGE_CONFIRMATIONS then
+            bossRange.cache[unit] = inRange
+            bossRange.pending[unit] = nil
+            bossRange.pendingCount[unit] = nil
+            ApplyBossRangeAlpha(frame, inRange, outAlpha)
+        end
+        return
+    end
+
+    bossRange.pending[unit] = inRange
+    bossRange.pendingCount[unit] = 1
 end
 
 UpdateBossRangeAlpha = function()
@@ -2207,12 +2281,18 @@ UpdateBossRangeAlpha = function()
         return
     end
 
+    if not bossRange.hostileSpell then
+        ResetBossRangeAlpha()
+        return
+    end
+
     local outAlpha = range.outOfRangeAlpha or 0.4
     for i = 1, 5 do
         local frame = QUI_UF.frames and QUI_UF.frames["boss" .. i]
         if frame and frame.unit and UnitExists(frame.unit) then
-            ApplyBossRangeAlpha(frame, CheckBossUnitRange(frame.unit), outAlpha)
+            ApplyStableBossRangeAlpha(frame, frame.unit, CheckBossUnitRange(frame.unit), outAlpha)
         elseif frame then
+            if frame.unit then ClearBossRangeState(frame.unit) end
             frame:SetAlpha(1)
         end
     end
@@ -2231,6 +2311,10 @@ local function EnsureBossRangeEventFrame()
     eventFrame:SetScript("OnEvent", function(_, event, unit)
         if event == "PLAYER_SPECIALIZATION_CHANGED" or event == "SPELLS_CHANGED" then
             ResolveBossRangeSpell()
+        elseif event == "PLAYER_ENTERING_WORLD"
+            or event == "PLAYER_REGEN_DISABLED"
+            or event == "PLAYER_REGEN_ENABLED" then
+            ClearBossRangeState()
         elseif event == "UNIT_IN_RANGE_UPDATE" and (type(unit) ~= "string" or not unit:match("^boss%d+$")) then
             return
         end

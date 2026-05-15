@@ -3757,6 +3757,8 @@ local function AppendEntrySignature(parts, prefix, entry, idx)
     AppendSignaturePart(parts, entry.isAura and 1 or 0)
     AppendSignaturePart(parts, entry.enabled == false and 0 or 1)
     AppendSignaturePart(parts, entry.position)
+    AppendSignaturePart(parts, entry.row)
+    AppendSignaturePart(parts, entry._assignedRow)
     AppendSignaturePart(parts, entry._instanceKey)
     AppendSignaturePart(parts, entry._sourceSpecID)
 end

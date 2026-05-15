@@ -122,7 +122,7 @@ function ns.CDMComposer.SeedFromBlizzard(containerKind)
     if catalog and catalog.SeedFromBlizzard then
         return catalog.SeedFromBlizzard(containerKind)
     end
-    return {}
+    return {}, false
 end
 
 function ns.CDMComposer.RebuildBlizzardCatalogMaps(spellToCDID, inCooldowns, inAuras, abilityToAura, auraIDsForSpell)
@@ -2531,6 +2531,9 @@ local function GetOrCreateAddCell(index)
         if sid ~= "" then
             GameTooltip:AddLine("ID: " .. tostring(sid), 0.5, 0.5, 0.5)
         end
+        if self._isUnlearned then
+            GameTooltip:AddLine("Not Learned", 0.9, 0.6, 0.2)
+        end
         if self._isOwned then
             GameTooltip:AddLine("Already added", 0.6, 0.6, 0.6)
         else
@@ -2830,15 +2833,11 @@ RefreshAddList = function()
             cell:SetParent(addListContent)
             cell._sourceEntry = entry
             cell._isOwned = isOwned
+            cell._isUnlearned = entry.isKnown == false
 
             cell._icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-            if isOwned then
-                cell._icon:SetDesaturated(true)
-                cell:SetAlpha(0.4)
-            else
-                cell._icon:SetDesaturated(false)
-                cell:SetAlpha(1)
-            end
+            cell:SetAlpha(isOwned and 0.4 or (cell._isUnlearned and 0.6 or 1))
+            cell._icon:SetDesaturated(isOwned or cell._isUnlearned)
 
             -- Right-click to add directly
             if isOwned then
@@ -3560,8 +3559,8 @@ local function BuildFooter(parent)
         if spellData and activeContainer then
             -- Confirm with a second click (toggle state)
             if resetBtn._confirmPending then
-                local seeded = ns.CDMComposer.SeedFromBlizzard(activeContainer)
-                if seeded and #seeded > 0 then
+                local seeded, seedReady = ns.CDMComposer.SeedFromBlizzard(activeContainer)
+                if seeded and seedReady then
                     local db = GetContainerDB(activeContainer)
                     if db then
                         db.ownedSpells = seeded

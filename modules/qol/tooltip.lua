@@ -1038,6 +1038,49 @@ local function GetPlayerItemLevelLabel(playerData)
     return "Player"
 end
 
+local function TooltipColorByte(value)
+    if Helpers.IsSecretValue and Helpers.IsSecretValue(value) then
+        return 255
+    end
+    local n = tonumber(value) or 1
+    if n < 0 then n = 0 end
+    if n > 1 then n = 1 end
+    return math.floor((n * 255) + 0.5)
+end
+
+local function TooltipColorText(text, r, g, b)
+    if Helpers.IsSecretValue and Helpers.IsSecretValue(text) then
+        return nil
+    end
+    return string.format(
+        "|cff%02x%02x%02x%s|r",
+        TooltipColorByte(r),
+        TooltipColorByte(g),
+        TooltipColorByte(b),
+        tostring(text or ""))
+end
+
+local function AddTooltipInfoLine(tooltip, label, value, labelR, labelG, labelB, valueR, valueG, valueB)
+    if not tooltip then return false end
+    if Helpers.IsSecretValue and (Helpers.IsSecretValue(label) or Helpers.IsSecretValue(value)) then
+        return false
+    end
+    if value == nil then return false end
+
+    local labelText = tostring(label or "")
+    if labelText == "" then return false end
+    if labelText:sub(-1) ~= ":" then
+        labelText = labelText .. ":"
+    end
+
+    local coloredLabel = TooltipColorText(labelText, labelR, labelG, labelB)
+    local coloredValue = TooltipColorText(value, valueR, valueG, valueB)
+    if not coloredLabel or not coloredValue then return false end
+
+    tooltip:AddLine(coloredLabel .. " " .. coloredValue, 1, 1, 1, true)
+    return true
+end
+
 local function AddPlayerItemLevelToTooltip(tooltip, unit, skipShow)
     TooltipDebugCount("qol.itemLevelAttempt")
     if not TooltipInspect or not unit or not tooltip then return false end
@@ -1073,7 +1116,7 @@ local function AddPlayerItemLevelToTooltip(tooltip, unit, skipShow)
     local valueR, valueG, valueB = GetPlayerItemLevelColor(itemLevel)
 
     tooltip:AddLine(" ")
-    tooltip:AddDoubleLine(label, string.format("%.1f", itemLevel), labelR, labelG, labelB, valueR, valueG, valueB)
+    AddTooltipInfoLine(tooltip, label, string.format("%.1f", itemLevel), labelR, labelG, labelB, valueR, valueG, valueB)
     tooltipPlayerItemLevelGUID[tooltip] = guid
     TooltipDebugCount("qol.itemLevelAdded")
 
@@ -1176,7 +1219,7 @@ local function AddTooltipTargetInfo(tooltip, unit, state)
     if not targetInfo then return false end
 
     EnsureTooltipInfoSpacer(tooltip, state)
-    tooltip:AddDoubleLine("Target:", targetInfo.name, 0.7, 0.82, 1, targetInfo.valueR, targetInfo.valueG, targetInfo.valueB)
+    AddTooltipInfoLine(tooltip, "Target", targetInfo.name, 0.7, 0.82, 1, targetInfo.valueR, targetInfo.valueG, targetInfo.valueB)
     state.targetAdded = true
     TooltipDebugCount("qol.targetAdded")
     return true
@@ -1388,7 +1431,7 @@ local function AddTooltipMountInfo(tooltip, unit, state)
     if state.lastMountName == mountName then return false end
 
     EnsureTooltipInfoSpacer(tooltip, state)
-    tooltip:AddDoubleLine("Mount:", mountName, 0.65, 1, 0.65, 1, 1, 1)
+    AddTooltipInfoLine(tooltip, "Mount", mountName, 0.65, 1, 0.65, 1, 1, 1)
     state.lastMountName = mountName
     TooltipDebugCount("qol.mountAdded")
     return true
@@ -1456,7 +1499,7 @@ local function AddUnitTooltipInfoToTooltip(tooltip, unit, settings)
         state.ratingResolved = true
         if rating then
             EnsureTooltipInfoSpacer(tooltip, state)
-            tooltip:AddDoubleLine("M+ Rating:", string.format("%.1f", rating), 0.7, 0.82, 1, r or 1, g or 1, b or 1)
+            AddTooltipInfoLine(tooltip, "M+ Rating", string.format("%.1f", rating), 0.7, 0.82, 1, r or 1, g or 1, b or 1)
             state.ratingAdded = true
             TooltipDebugCount("qol.ratingAdded")
         end
@@ -1559,7 +1602,7 @@ local function DeferredUnitInfoOnUpdate(self, elapsed)
         state.ratingResolved = true
         if rating then
             EnsureTooltipInfoSpacer(tooltip, state)
-            tooltip:AddDoubleLine("M+ Rating:", string.format("%.1f", rating), 0.7, 0.82, 1, r or 1, g or 1, b or 1)
+            AddTooltipInfoLine(tooltip, "M+ Rating", string.format("%.1f", rating), 0.7, 0.82, 1, r or 1, g or 1, b or 1)
             state.ratingAdded = true
             TooltipDebugCount("qol.ratingAdded")
             changed = true
@@ -2106,9 +2149,9 @@ local function SetupTooltipHook()
         end
 
         tooltip:AddLine(" ")
-        tooltip:AddDoubleLine("Spell ID:", tostring(spellID), 0.5, 0.8, 1, 1, 1, 1)
+        AddTooltipInfoLine(tooltip, "Spell ID", tostring(spellID), 0.5, 0.8, 1, 1, 1, 1)
         if iconID then
-            tooltip:AddDoubleLine("Icon ID:", tostring(iconID), 0.5, 0.8, 1, 1, 1, 1)
+            AddTooltipInfoLine(tooltip, "Icon ID", tostring(iconID), 0.5, 0.8, 1, 1, 1, 1)
         end
 
         if not skipShow then
@@ -2127,7 +2170,7 @@ local function SetupTooltipHook()
         tooltipSpellIDAdded[tooltip] = dedupeKey
 
         tooltip:AddLine(" ")
-        tooltip:AddDoubleLine("Item ID:", tostring(itemID), 0.5, 0.8, 1, 1, 1, 1)
+        AddTooltipInfoLine(tooltip, "Item ID", tostring(itemID), 0.5, 0.8, 1, 1, 1, 1)
 
         if not skipShow then
             RefreshTooltipLayout(tooltip)

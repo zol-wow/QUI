@@ -32,6 +32,7 @@ local iconBorders = Helpers.CreateStateTable()       -- CurrencyIcon/entry.icon 
 local skinnedEntries = Helpers.CreateStateTable()    -- entry → true
 local hookedScrollBoxes = Helpers.CreateStateTable() -- ScrollBox → true (hooked for Update)
 local titleHighlights = Helpers.CreateStateTable()   -- button → highlight texture
+local characterTabsHooked = false
 
 ---------------------------------------------------------------------------
 -- Helper: Get skin colors from QUI system
@@ -157,6 +158,99 @@ local function SetCharacterFrameBgExtended(extended)
 
     customBg:Show()
     HideBlizzardDecorations()
+end
+
+---------------------------------------------------------------------------
+-- Skin bottom tabs: Character, Reputation, Currency
+---------------------------------------------------------------------------
+local function StyleCharacterFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    if not tab then return end
+
+    if not SkinBase.IsStyled(tab) then
+        SkinBase.StripTextures(tab)
+
+        if tab.Left then tab.Left:SetAlpha(0) end
+        if tab.Middle then tab.Middle:SetAlpha(0) end
+        if tab.Right then tab.Right:SetAlpha(0) end
+        if tab.LeftDisabled then tab.LeftDisabled:SetAlpha(0) end
+        if tab.MiddleDisabled then tab.MiddleDisabled:SetAlpha(0) end
+        if tab.RightDisabled then tab.RightDisabled:SetAlpha(0) end
+        if tab.LeftActive then tab.LeftActive:SetAlpha(0) end
+        if tab.MiddleActive then tab.MiddleActive:SetAlpha(0) end
+        if tab.RightActive then tab.RightActive:SetAlpha(0) end
+        if tab.LeftHighlight then tab.LeftHighlight:SetAlpha(0) end
+        if tab.MiddleHighlight then tab.MiddleHighlight:SetAlpha(0) end
+        if tab.RightHighlight then tab.RightHighlight:SetAlpha(0) end
+
+        local highlight = tab.GetHighlightTexture and tab:GetHighlightTexture()
+        if highlight then highlight:SetAlpha(0) end
+
+        SkinBase.CreateBackdrop(tab, sr, sg, sb, sa, bgr, bgg, bgb, 0.9)
+        local tabBackdrop = SkinBase.GetBackdrop(tab)
+        if tabBackdrop then
+            tabBackdrop:ClearAllPoints()
+            tabBackdrop:SetPoint("TOPLEFT", 3, -3)
+            tabBackdrop:SetPoint("BOTTOMRIGHT", -3, 0)
+        end
+
+        SkinBase.MarkStyled(tab)
+    end
+
+    SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
+    SkinBase.SetFrameData(tab, "bgColor", { bgr, bgg, bgb })
+end
+
+local function GetCharacterFrameSelectedTab()
+    if not CharacterFrame then return nil end
+    if PanelTemplates_GetSelectedTab then
+        local selected = PanelTemplates_GetSelectedTab(CharacterFrame)
+        if selected then return selected end
+    end
+    return CharacterFrame.selectedTab
+end
+
+local function UpdateCharacterFrameTabSelectedState()
+    local selectedTab = GetCharacterFrameSelectedTab()
+
+    for i = 1, 3 do
+        local tab = _G["CharacterFrameTab" .. i]
+        local bd = tab and SkinBase.GetBackdrop(tab)
+        local sc = tab and SkinBase.GetFrameData(tab, "skinColor")
+        local bg = tab and SkinBase.GetFrameData(tab, "bgColor")
+        if bd and sc and bg then
+            local tabID = tab.GetID and tab:GetID()
+            local isSelected = selectedTab == i or selectedTab == tabID
+            if isSelected then
+                bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], sc[4])
+                bd:SetBackdropColor(math.min(bg[1] + 0.10, 1), math.min(bg[2] + 0.10, 1), math.min(bg[3] + 0.10, 1), 1)
+            else
+                bd:SetBackdropBorderColor(sc[1] * 0.5, sc[2] * 0.5, sc[3] * 0.5, sc[4] * 0.6)
+                bd:SetBackdropColor(bg[1], bg[2], bg[3], 0.7)
+            end
+        end
+    end
+end
+
+local function SkinCharacterFrameTabs()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
+
+    for i = 1, 3 do
+        local tab = _G["CharacterFrameTab" .. i]
+        if tab then
+            StyleCharacterFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        end
+    end
+
+    if not characterTabsHooked and PanelTemplates_SetTab then
+        hooksecurefunc("PanelTemplates_SetTab", function(frame)
+            if frame == CharacterFrame then
+                C_Timer.After(0, SkinCharacterFrameTabs)
+            end
+        end)
+        characterTabsHooked = true
+    end
+
+    UpdateCharacterFrameTabSelectedState()
 end
 
 ---------------------------------------------------------------------------
@@ -344,6 +438,7 @@ local function SetupCharacterFrameSkinning()
 
     -- Immediately hide Blizzard decorations and hook NineSlice Show
     HideBlizzardDecorations()
+    SkinCharacterFrameTabs()
 
     -- Hook ScrollBox updates for reputation (debounced to avoid timer spam during rapid scrolling)
     local _repUpdatePending = false
@@ -437,8 +532,11 @@ local function SetupCharacterFrameSkinning()
     -- Handle CharacterFrame open when PaperDoll not shown (hotkey to Rep/Currency)
     CharacterFrame:HookScript("OnShow", function()
         C_Timer.After(0.01, function()
-            if IsSkinningEnabled() and not (PaperDollFrame and PaperDollFrame:IsShown()) then
-                SetCharacterFrameBgExtended(false)
+            if IsSkinningEnabled() then
+                SkinCharacterFrameTabs()
+                if not (PaperDollFrame and PaperDollFrame:IsShown()) then
+                    SetCharacterFrameBgExtended(false)
+                end
             end
         end)
     end)
@@ -461,6 +559,8 @@ local function RefreshCharacterFrameColors()
         customBg:SetBackdropColor(bgr, bgg, bgb, bga)
         customBg:SetBackdropBorderColor(sr, sg, sb, sa)
     end
+
+    SkinCharacterFrameTabs()
 
     -- Update reputation entries
     if ReputationFrame and ReputationFrame.ScrollBox then
@@ -885,14 +985,28 @@ end
 ---------------------------------------------------------------------------
 -- INITIALIZATION
 ---------------------------------------------------------------------------
+local function InitializeCharacterFrameSkinning(self)
+    C_Timer.After(0.1, function()
+        SetupCharacterFrameSkinning()
+        SetupTitlePaneHook()
+    end)
+    if self then
+        self:UnregisterEvent("ADDON_LOADED")
+        self:UnregisterEvent("PLAYER_LOGIN")
+    end
+end
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
+frame:RegisterEvent("PLAYER_LOGIN")
 frame:SetScript("OnEvent", function(self, event, addon)
-    if addon == "Blizzard_CharacterFrame" then
-        C_Timer.After(0.1, function()
-            SetupCharacterFrameSkinning()
-            SetupTitlePaneHook()
-        end)
-        self:UnregisterEvent("ADDON_LOADED")
+    if (event == "ADDON_LOADED" and (addon == "Blizzard_CharacterFrame" or addon == "Blizzard_UIPanels_Game"))
+        or (event == "PLAYER_LOGIN" and CharacterFrame and CharacterFrameTab1)
+    then
+        InitializeCharacterFrameSkinning(self)
     end
 end)
+
+if CharacterFrame and CharacterFrameTab1 then
+    InitializeCharacterFrameSkinning(frame)
+end

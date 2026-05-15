@@ -26,26 +26,68 @@ local currentInspectTab = 1  -- 1=Character, 2=PvP, 3=Guild
 ---------------------------------------------------------------------------
 local pendingInspectMode = nil  -- "extended" (tab 1/2) or "normal" (tab 3)
 local pendingInspectTab  = nil  -- tab number for extended mode
+local pendingInspectScale = nil
+local pendingInspectLayout = false
+local pendingInspectRosterRefresh = false
+local ApplyInspectPaneLayout
+local RefreshInspectUnitAfterRosterUpdate
 -- Filled after SetInspectExtendedMode / SetInspectNormalMode are defined:
 local InspectModeHandlers = {}
 
 local inspectCombatFrame = CreateFrame("Frame")
 inspectCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 inspectCombatFrame:SetScript("OnEvent", function()
-    if not pendingInspectMode then return end
+    if not pendingInspectMode and not pendingInspectScale and not pendingInspectLayout and not pendingInspectRosterRefresh then return end
     if not InspectFrame or not InspectFrame:IsShown() then
         pendingInspectMode = nil
         pendingInspectTab  = nil
+        pendingInspectScale = nil
+        pendingInspectLayout = false
+        pendingInspectRosterRefresh = false
         return
     end
 
-    local handler = InspectModeHandlers[pendingInspectMode]
-    if handler then handler() end
-    pendingInspectMode = nil
-    pendingInspectTab  = nil
+    if pendingInspectMode then
+        local handler = InspectModeHandlers[pendingInspectMode]
+        if handler then handler() end
+        pendingInspectMode = nil
+        pendingInspectTab  = nil
+    end
+
+    if pendingInspectScale then
+        InspectFrame:SetScale(pendingInspectScale)
+        pendingInspectScale = nil
+    end
+
+    if pendingInspectLayout then
+        pendingInspectLayout = false
+        if ApplyInspectPaneLayout then
+            ApplyInspectPaneLayout(true)
+        end
+    end
+
+    if pendingInspectRosterRefresh then
+        pendingInspectRosterRefresh = false
+        if RefreshInspectUnitAfterRosterUpdate then
+            RefreshInspectUnitAfterRosterUpdate()
+        end
+    end
 end)
 local inspectSettingsPanel = nil
 local currentInspectGUID = nil  -- Tracks inspected unit's GUID for validation
+local pendingInspectReadyGUID = nil
+local inspectSessionGUID = nil
+local inspectSessionUnit = nil
+local RefreshCurrentInspectGUID
+
+local function SetInspectScaleDeferred(scale)
+    if not InspectFrame then return end
+    if InCombatLockdown() then
+        pendingInspectScale = scale
+    else
+        InspectFrame:SetScale(scale)
+    end
+end
 
 -- Lite mode state
 local liteOverlays = {}           -- FontStrings for per-slot ilvl
@@ -54,6 +96,7 @@ local liteOverallDisplay = nil    -- Overall ilvl frame
 -- TAINT SAFETY: Store per-frame state in weak-keyed table instead of writing properties
 -- to Blizzard frames, which taints them in Midnight (12.0)
 local frameState, GetState = Helpers.CreateStateTable()
+local inspectGuildNilGuard = Helpers.CreateStateTable()
 local EMPTY = {}
 
 ---------------------------------------------------------------------------
@@ -132,29 +175,225 @@ local COUNTED_SLOTS = {
 }
 
 ---------------------------------------------------------------------------
--- Get slot item level using C_TooltipInfo (like LuheyUI)
--- Works reliably for inspected units
+-- Structured inspect item-data helpers
 ---------------------------------------------------------------------------
+local TOOLTIP_LINE_TYPE_ITEM_LEVEL = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.ItemLevel or 31
+
+local function CleanTooltipText(text)
+    if text == nil or Helpers.IsSecretValue(text) then return "" end
+    if type(text) ~= "string" then text = tostring(text) end
+
+    text = text:gsub("|c%x%x%x%x%x%x%x%x", "")
+    text = text:gsub("|r", "")
+    text = text:gsub("|A.-|a", "")
+    text = text:gsub("|T.-|t", "")
+    return text:match("^%s*(.-)%s*$") or ""
+end
+
+local function ReadableNumber(value)
+    if value == nil or Helpers.IsSecretValue(value) then return nil end
+    return tonumber(value)
+end
+
+local function GetReadableUnitGUID(unit)
+    if not unit or not UnitGUID then return nil end
+    local ok, guid = pcall(UnitGUID, unit)
+    if not ok or Helpers.IsSecretValue(guid) then
+        return nil
+    end
+    return guid
+end
+
+local function TrackInspectSessionUnit(unit)
+    local guid = GetReadableUnitGUID(unit)
+    if guid then
+        inspectSessionGUID = guid
+        inspectSessionUnit = unit
+    end
+    return guid
+end
+
+local function IsInspectGUIDMatch(unit, guid)
+    if not unit or not guid then return false end
+    local unitGUID = GetReadableUnitGUID(unit)
+    return unitGUID == guid
+end
+
+local function ResolveInspectUnitByGUID(guid)
+    if not guid then return nil end
+
+    local function match(unit)
+        return IsInspectGUIDMatch(unit, guid) and unit or nil
+    end
+
+    local unit = InspectFrame and InspectFrame.unit
+    unit = match(unit)
+    if unit then return unit end
+
+    unit = match(inspectSessionUnit)
+    if unit then return unit end
+
+    unit = match("target")
+    if unit then return unit end
+
+    unit = match("focus")
+    if unit then return unit end
+
+    unit = match("mouseover")
+    if unit then return unit end
+
+    if IsInRaid and IsInRaid() then
+        for i = 1, 40 do
+            unit = "raid" .. i
+            if match(unit) then return unit end
+        end
+    elseif IsInGroup and IsInGroup() then
+        for i = 1, 4 do
+            unit = "party" .. i
+            if match(unit) then return unit end
+        end
+    end
+
+    return nil
+end
+
+RefreshInspectUnitAfterRosterUpdate = function()
+    if not InspectFrame or not InspectFrame:IsShown() then return false end
+
+    local guid = inspectSessionGUID or currentInspectGUID or pendingInspectReadyGUID
+    if not guid then
+        guid = TrackInspectSessionUnit(InspectFrame.unit or inspectSessionUnit or "target")
+    end
+    if not guid then return false end
+
+    local resolvedUnit = ResolveInspectUnitByGUID(guid)
+    if not resolvedUnit then return false end
+
+    inspectSessionUnit = resolvedUnit
+
+    if InspectFrame.unit ~= resolvedUnit then
+        if InCombatLockdown() then
+            pendingInspectRosterRefresh = true
+            return false
+        end
+
+        InspectFrame.unit = resolvedUnit
+        _G.INSPECTED_UNIT = resolvedUnit
+    end
+
+    RefreshCurrentInspectGUID(resolvedUnit)
+
+    if not InCombatLockdown() then
+        if InspectFrame.SetPortraitToUnit then
+            pcall(InspectFrame.SetPortraitToUnit, InspectFrame, resolvedUnit)
+        end
+        if InspectFrame.SetTitle and GetUnitName then
+            local ok, name = pcall(GetUnitName, resolvedUnit, true)
+            if ok and name and not Helpers.IsSecretValue(name) then
+                pcall(InspectFrame.SetTitle, InspectFrame, name)
+            end
+        end
+        if type(_G.InspectFrame_UpdateTabs) == "function" then
+            pcall(_G.InspectFrame_UpdateTabs)
+        end
+    end
+
+    local shared = GetShared()
+    if shared.ScheduleUpdate then
+        C_Timer.After(0, shared.ScheduleUpdate)
+    end
+
+    return true
+end
+
+RefreshCurrentInspectGUID = function(unit)
+    local guid = TrackInspectSessionUnit(unit)
+    if not guid then
+        currentInspectGUID = nil
+        return false
+    end
+
+    if currentInspectGUID == guid then
+        return true
+    end
+
+    if pendingInspectReadyGUID == guid then
+        currentInspectGUID = guid
+        pendingInspectReadyGUID = nil
+        return true
+    end
+
+    currentInspectGUID = nil
+    return false
+end
+
+local function IsCurrentInspectUnit(unit)
+    return RefreshCurrentInspectGUID(unit)
+end
+
+local function GetReadableInventoryItemLink(unit, slotId)
+    if not unit or not slotId or not GetInventoryItemLink then return nil end
+
+    local ok, itemLink = pcall(GetInventoryItemLink, unit, slotId)
+    if not ok or Helpers.IsSecretValue(itemLink) then
+        return nil
+    end
+
+    return itemLink
+end
+
+local function GetInventoryTooltipData(unit, slotId)
+    if not (C_TooltipInfo and C_TooltipInfo.GetInventoryItem) then return nil end
+
+    local ok, tooltipData = pcall(C_TooltipInfo.GetInventoryItem, unit, slotId)
+    if not ok or Helpers.IsSecretValue(tooltipData) then return nil end
+    if type(tooltipData) ~= "table" or not Helpers.CanAccessTable(tooltipData) then return nil end
+    if type(tooltipData.lines) ~= "table" or not Helpers.CanAccessTable(tooltipData.lines) then return nil end
+
+    return tooltipData
+end
+
+local function MatchItemLevelText(text)
+    text = CleanTooltipText(text)
+    if text == "" then return nil end
+
+    local pattern = ITEM_LEVEL and ITEM_LEVEL:gsub("%%d", "(%%d+)") or "Item Level (%d+)"
+    local ilvl = text:match(pattern)
+    ilvl = ReadableNumber(ilvl)
+    return ilvl and ilvl > 0 and ilvl or nil
+end
+
 local function GetSlotItemLevel(unit, slotId)
     if not unit or not slotId then return nil end
 
-    -- Use C_TooltipInfo for reliable ilvl extraction (works for inspect)
-    if C_TooltipInfo and C_TooltipInfo.GetInventoryItem then
-        local info = C_TooltipInfo.GetInventoryItem(unit, slotId)
-        if info and info.lines then
-            for _, line in ipairs(info.lines) do
-                local text = line.leftText
-                if text then
-                    -- Strip color codes and textures
-                    text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-                    text = text:gsub("|T.-|t", "")  -- Strip texture escapes
-                    -- Match "Item Level X" pattern using the localized ITEM_LEVEL global
-                    local pattern = ITEM_LEVEL:gsub("%%d", "(%%d+)")
-                    local ilvl = text:match(pattern)
-                    if ilvl then
-                        return tonumber(ilvl)
-                    end
-                end
+    local itemLink = GetReadableInventoryItemLink(unit, slotId)
+    if itemLink and C_Item and C_Item.GetDetailedItemLevelInfo then
+        local ok, actualItemLevel, _, sparseItemLevel = pcall(C_Item.GetDetailedItemLevelInfo, itemLink)
+        if ok then
+            actualItemLevel = ReadableNumber(actualItemLevel)
+            if actualItemLevel and actualItemLevel > 0 then
+                return actualItemLevel
+            end
+            sparseItemLevel = ReadableNumber(sparseItemLevel)
+            if sparseItemLevel and sparseItemLevel > 0 then
+                return sparseItemLevel
+            end
+        end
+    end
+
+    local tooltipData = GetInventoryTooltipData(unit, slotId)
+    if tooltipData then
+        for _, line in ipairs(tooltipData.lines) do
+            local lineType = ReadableNumber(line.type)
+            if lineType == TOOLTIP_LINE_TYPE_ITEM_LEVEL then
+                local ilvl = MatchItemLevelText(line.leftText)
+                if ilvl then return ilvl end
+            end
+        end
+        for _, line in ipairs(tooltipData.lines) do
+            local ilvl = MatchItemLevelText(line.leftText)
+            if ilvl then
+                return ilvl
             end
         end
     end
@@ -168,32 +407,46 @@ end
 local function GetSlotItemQuality(unit, slotId)
     if not unit or not slotId then return nil end
 
-    local itemLink = GetInventoryItemLink(unit, slotId)
+    local itemLink = GetReadableInventoryItemLink(unit, slotId)
     if not itemLink then return nil end
 
     local ok, quality = pcall(C_Item.GetItemQualityByID, itemLink)
-    if ok then return quality end
+    if ok and not Helpers.IsSecretValue(quality) then return quality end
 
     return nil
 end
 
 ---------------------------------------------------------------------------
--- Check if mainhand is a 2H weapon (like LuheyUI)
+-- Check if mainhand is a two-handed weapon.
 ---------------------------------------------------------------------------
 local function IsMainHand2H(unit)
-    local itemLink = GetInventoryItemLink(unit, INVSLOT_MAINHAND)
+    local itemLink = GetReadableInventoryItemLink(unit, INVSLOT_MAINHAND)
     if not itemLink then return false end
 
-    local ok, _, _, _, _, _, _, _, _, equipSlot = pcall(C_Item.GetItemInfo, itemLink)
-    if not ok then return false end
+    if not (C_Item and C_Item.GetItemInfo) then return false end
+
+    local ok, equipSlot = pcall(function()
+        return select(9, C_Item.GetItemInfo(itemLink))
+    end)
+    if not ok or Helpers.IsSecretValue(equipSlot) then return false end
     return equipSlot == "INVTYPE_2HWEAPON"
 end
 
 ---------------------------------------------------------------------------
--- Calculate average item level (like LuheyUI)
+-- Calculate average item level.
 -- Handles 2H weapons by counting mainhand twice
 ---------------------------------------------------------------------------
 local function CalculateAverageILvl(unit)
+    if unit and unit ~= "player" and IsCurrentInspectUnit(unit)
+        and C_PaperDollInfo and C_PaperDollInfo.GetInspectItemLevel
+    then
+        local ok, equippedItemLevel = pcall(C_PaperDollInfo.GetInspectItemLevel, unit)
+        equippedItemLevel = ok and ReadableNumber(equippedItemLevel) or nil
+        if equippedItemLevel and equippedItemLevel > 0 then
+            return equippedItemLevel
+        end
+    end
+
     local totalIlvl = 0
     local slotCount = 0
     local is2H = IsMainHand2H(unit)
@@ -224,7 +477,7 @@ local function CalculateAverageILvl(unit)
 end
 
 ---------------------------------------------------------------------------
--- Calculate average equipped quality (like LuheyUI)
+-- Calculate average equipped quality.
 -- Used for coloring the overall ilvl display
 ---------------------------------------------------------------------------
 local function CalculateAverageEquippedQuality(unit)
@@ -257,7 +510,7 @@ local function CalculateAverageEquippedQuality(unit)
 end
 
 ---------------------------------------------------------------------------
--- Get overall ilvl color based on average equipped quality (like LuheyUI)
+-- Get overall ilvl color based on average equipped quality.
 ---------------------------------------------------------------------------
 local function GetOverallILvlColor(unit)
     local avgQuality = CalculateAverageEquippedQuality(unit)
@@ -541,11 +794,11 @@ local function UpdateInspectSlotBorder(slot, unit)
     unit = unit or "target"
 
     -- Get item quality for inspected target (pcall for edge cases where item data isn't cached)
-    local itemLink = GetInventoryItemLink(unit, slotID)
+    local itemLink = GetReadableInventoryItemLink(unit, slotID)
     local quality = nil
     if itemLink then
         local ok, q = pcall(C_Item.GetItemQualityByID, itemLink)
-        if ok then quality = q end
+        if ok and not Helpers.IsSecretValue(q) then quality = q end
     end
 
     if quality and quality >= 1 then
@@ -726,13 +979,13 @@ local function UpdateLiteSlotText(slotName, unit, settings, cachedFont)
     end
 
     -- Get item link
-    local itemLink = GetInventoryItemLink(unit, slotId)
+    local itemLink = GetReadableInventoryItemLink(unit, slotId)
     if not itemLink then
         text:Hide()
         return
     end
 
-    -- Get ilvl using new C_TooltipInfo-based function
+    -- Get ilvl using the structured item-level helper.
     local ilvl = GetSlotItemLevel(unit, slotId)
     if not ilvl or ilvl <= 0 then
         text:Hide()
@@ -796,7 +1049,7 @@ local function UpdateLiteOverallDisplay(unit, settings, cachedFont)
         return
     end
 
-    -- Get color based on average equipped quality (like LuheyUI)
+    -- Get color based on average equipped quality.
     local r, g, b = GetOverallILvlColor(unit)
 
     -- Set value text
@@ -939,29 +1192,59 @@ local function UpdateInspectILvlDisplay()
     local shared = GetShared()
     local unit = InspectFrame.unit or "target"
 
-    -- Validate that unit matches our stored GUID (handles target changes mid-inspect)
-    if currentInspectGUID and UnitGUID(unit) ~= currentInspectGUID then
-        return  -- Unit changed, skip stale update
+    if not IsCurrentInspectUnit(unit) then
+        displayFrame.text:SetText("")
+        if displayFrame.specText then
+            displayFrame.specText:SetText("")
+        end
+        local centerFrame = inspS.centerILvl
+        if centerFrame and centerFrame.text then
+            centerFrame.text:SetText("")
+        end
+        return
     end
 
     -- Get target info
-    local name = UnitName(unit) or "Unknown"
-    local level = UnitLevel(unit) or 0
+    local ok, name = pcall(UnitName, unit)
+    if not ok or Helpers.IsSecretValue(name) then
+        name = nil
+    end
+    name = name or "Unknown"
+
+    local level
+    ok, level = pcall(UnitLevel, unit)
+    level = ok and ReadableNumber(level) or nil
+    level = level or 0
 
     -- Get class info
     local className = ""
-    local _, classToken = UnitClass(unit)
-    if classToken then
-        local classInfo = C_CreatureInfo.GetClassInfo(select(3, UnitClass(unit)))
+    local classNameLocalized, classToken, classIndex
+    ok, classNameLocalized, classToken, classIndex = pcall(UnitClass, unit)
+    if not ok or Helpers.IsSecretValue(classToken) then
+        classToken = nil
+    end
+    classIndex = ok and ReadableNumber(classIndex) or nil
+    classIndex = classIndex or 0
+    if classToken and classIndex > 0 and C_CreatureInfo and C_CreatureInfo.GetClassInfo then
+        local classInfo = C_CreatureInfo.GetClassInfo(classIndex)
         className = classInfo and classInfo.className or classToken
+    elseif classToken then
+        className = classToken
     end
 
     -- Get spec info (requires inspect data)
     local specName = ""
-    local specID = GetInspectSpecialization(unit)
+    local specID
+    ok, specID = pcall(GetInspectSpecialization, unit)
+    specID = ok and ReadableNumber(specID) or nil
+    specID = specID or 0
     if specID and specID > 0 then
-        local _, specNameLocal = GetSpecializationInfoByID(specID)
-        specName = specNameLocal or ""
+        local specOk, specNameLocal = pcall(function()
+            return select(2, GetSpecializationInfoByID(specID))
+        end)
+        if specOk and not Helpers.IsSecretValue(specNameLocal) then
+            specName = specNameLocal or ""
+        end
     end
 
     -- Get class color
@@ -1271,9 +1554,7 @@ local function CreateInspectSettingsButton()
     -- Scale slider (multiplier on base 1.30 scale, range 0.75-1.5)
     local scaleSlider = GUI:CreateFormSlider(scrollChild, "Panel Scale", 0.75, 1.5, 0.05, "inspectPanelScale", charDB, function()
         local multiplier = charDB.inspectPanelScale or 1.0
-        if InspectFrame then
-            InspectFrame:SetScale(INSPECT_CONFIG.BASE_SCALE * multiplier)
-        end
+        SetInspectScaleDeferred(INSPECT_CONFIG.BASE_SCALE * multiplier)
     end, { deferOnDrag = true },
         { description = "Zoom factor applied to the inspect panel on top of the base scale. 1.0 leaves the panel at the default QUI size." })
     scaleSlider:SetPoint("TOPLEFT", PAD, y)
@@ -1421,9 +1702,7 @@ local function CreateInspectSettingsButton()
         charDB.inspectUpgradeTrackColor = {0.98, 0.60, 0.35, 1}
 
         -- Apply scale (base 1.30 * multiplier 1.0)
-        if InspectFrame then
-            InspectFrame:SetScale(INSPECT_CONFIG.BASE_SCALE)
-        end
+        SetInspectScaleDeferred(INSPECT_CONFIG.BASE_SCALE)
 
         -- Refresh and reload the settings panel
         RefreshInspectFonts()
@@ -1456,21 +1735,35 @@ end
 ---------------------------------------------------------------------------
 -- Master function: Apply inspect portrait layout
 ---------------------------------------------------------------------------
-local function ApplyInspectPaneLayout()
+ApplyInspectPaneLayout = function(force)
     local settings = GetSettings()
     if settings.inspectEnabled == false then return end
     if not InspectFrame then return end
 
-    if inspectLayoutApplied then return end
+    local scaleMultiplier = settings.inspectPanelScale or 1.0
+    local targetScale = INSPECT_CONFIG.BASE_SCALE * scaleMultiplier
+
+    if InCombatLockdown() then
+        pendingInspectLayout = true
+        pendingInspectMode = "extended"
+        pendingInspectTab = currentInspectTab or 1
+        pendingInspectScale = targetScale
+        return
+    end
+
+    if inspectLayoutApplied and not force then return end
 
     InspectFrame:SetWidth(INSPECT_CONFIG.FRAME_TARGET_WIDTH)
     RepositionInspectCloseButton(true)
 
     -- Apply panel scale from settings (base scale 1.30, slider is multiplier)
-    local scaleMultiplier = settings.inspectPanelScale or 1.0
-    InspectFrame:SetScale(INSPECT_CONFIG.BASE_SCALE * scaleMultiplier)
+    SetInspectScaleDeferred(targetScale)
 
     C_Timer.After(0.1, function()
+        if InCombatLockdown() then
+            pendingInspectLayout = true
+            return
+        end
         RepositionInspectSlots()
         PositionInspectModelScene()
         SetupInspectTitleArea()
@@ -1483,9 +1776,16 @@ local function ApplyInspectPaneLayout()
 
         -- Second pass to ensure positions stick after Blizzard code
         C_Timer.After(0.05, function()
+            if InCombatLockdown() then
+                pendingInspectLayout = true
+                return
+            end
             RepositionInspectSlots()
             PositionInspectModelScene()
-            UpdateAllInspectSlotBorders(InspectFrame and InspectFrame.unit or "target")
+            local unit = InspectFrame and InspectFrame.unit or "target"
+            if IsCurrentInspectUnit(unit) then
+                UpdateAllInspectSlotBorders(unit)
+            end
         end)
     end)
 
@@ -1527,17 +1827,24 @@ local function UpdateInspectFrame()
     -- the wrong unit (or nil) and wipe Blizzard's correct data, producing
     -- the "text flashes then disappears" symptom.
     local unit = InspectFrame.unit or "target"
+    local dataReady = IsCurrentInspectUnit(unit)
 
     if settings.inspectEnabled then
         -- Full overlay mode: always use detailed overlays, never lite mode
         HideLiteDisplays()
-        if shared.UpdateAllSlotOverlays then
+        if dataReady and shared.UpdateAllSlotOverlays then
             shared.UpdateAllSlotOverlays(unit, inspectOverlays)
+        else
+            HideDetailedOverlays()
         end
     elseif settings.inspectLiteShowPerSlot or settings.inspectLiteShowOverall then
         -- Lite mode (only when full overlays disabled): show enabled lite displays
         HideDetailedOverlays()
-        UpdateAllLiteDisplays(unit)
+        if dataReady then
+            UpdateAllLiteDisplays(unit)
+        else
+            HideLiteDisplays()
+        end
     else
         -- All disabled: hide everything
         HideLiteDisplays()
@@ -1548,7 +1855,9 @@ local function UpdateInspectFrame()
     UpdateInspectILvlDisplay()
 
     -- Update slot borders based on item quality
-    UpdateAllInspectSlotBorders(unit)
+    if dataReady then
+        UpdateAllInspectSlotBorders(unit)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1563,6 +1872,10 @@ local function HookInspectFrame()
     local generalDB = core and core.db and core.db.profile and core.db.profile.general
     if generalDB and generalDB.skinInspectFrame == false then return end
 
+    if InspectFrame.UnregisterEvent then
+        InspectFrame:UnregisterEvent("GROUP_ROSTER_UPDATE")
+    end
+
     local settings = GetSettings()
     -- Skip if full overlays are disabled AND no lite features are enabled
     local hasLiteFeature = settings.inspectLiteShowPerSlot or settings.inspectLiteShowOverall
@@ -1572,7 +1885,9 @@ local function HookInspectFrame()
 
     InspectFrame:HookScript("OnShow", function()
         local currentSettings = GetSettings()
+        local unit = InspectFrame.unit or "target"
         currentInspectTab = 1
+        RefreshCurrentInspectGUID(unit)
 
         -- Only apply full layout/overlays when full overlay mode is enabled
         if currentSettings.inspectEnabled then
@@ -1596,7 +1911,9 @@ local function HookInspectFrame()
     -- manually. Blizzard already called NotifyInspect as part of showing
     -- the frame; do not call it again here.
     if InspectFrame:IsShown() then
+        local unit = InspectFrame.unit or "target"
         currentInspectTab = 1
+        RefreshCurrentInspectGUID(unit)
         local currentSettings = GetSettings()
         if currentSettings.inspectEnabled then
             ApplyInspectPaneLayout()
@@ -1614,6 +1931,13 @@ local function HookInspectFrame()
         end
         pendingInspectMode = nil
         pendingInspectTab  = nil
+        pendingInspectScale = nil
+        pendingInspectLayout = false
+        pendingInspectRosterRefresh = false
+        currentInspectGUID = nil
+        pendingInspectReadyGUID = nil
+        inspectSessionGUID = nil
+        inspectSessionUnit = nil
         GameTooltip:Hide()
     end)
 
@@ -1646,15 +1970,18 @@ end
 ---------------------------------------------------------------------------
 local function PatchInspectGuildNilGuard()
     local orig = _G.InspectGuildFrame_Update
-    if not orig or not InspectGuildFrame or InspectGuildFrame.__qui_guild_nil_guard then
+    if not orig or not InspectGuildFrame or inspectGuildNilGuard[InspectGuildFrame] then
         return
     end
-    InspectGuildFrame.__qui_guild_nil_guard = true
+    inspectGuildNilGuard[InspectGuildFrame] = true
 
     _G.InspectGuildFrame_Update = function(...)
         local unit = InspectFrame and InspectFrame.unit
         if unit and C_PaperDollInfo and C_PaperDollInfo.GetInspectGuildInfo then
-            local _, _, guildName = C_PaperDollInfo.GetInspectGuildInfo(unit)
+            local ok, achievementPoints, numMembers, guildName = pcall(C_PaperDollInfo.GetInspectGuildInfo, unit)
+            if not ok or Helpers.IsSecretValue(guildName) then
+                guildName = nil
+            end
             if not guildName then
                 if InspectGuildFrame.guildName then InspectGuildFrame.guildName:SetText("") end
                 if InspectGuildFrame.guildRealmName then InspectGuildFrame.guildRealmName:SetText("") end
@@ -1674,6 +2001,7 @@ end
 ---------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("INSPECT_READY")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
@@ -1684,12 +2012,30 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             HookInspectFrame()
             PatchInspectGuildNilGuard()
         end
+    elseif event == "GROUP_ROSTER_UPDATE" then
+        if not InspectFrame or not InspectFrame:IsShown() then return end
+        if InCombatLockdown() then
+            pendingInspectRosterRefresh = true
+            return
+        end
+
+        RefreshInspectUnitAfterRosterUpdate()
+        C_Timer.After(0, RefreshInspectUnitAfterRosterUpdate)
+        C_Timer.After(0.2, RefreshInspectUnitAfterRosterUpdate)
     elseif event == "INSPECT_READY" then
-        -- arg1 is the GUID of the inspected unit
-        currentInspectGUID = arg1
-        local shared = GetShared()
-        if shared.ScheduleUpdate then
-            shared.ScheduleUpdate()
+        -- arg1 is the GUID of the inspected unit.
+        if Helpers.IsSecretValue(arg1) then
+            arg1 = nil
+        end
+        if not arg1 then return end
+
+        pendingInspectReadyGUID = arg1
+        local unit = InspectFrame and InspectFrame.unit or "target"
+        if RefreshCurrentInspectGUID(unit) then
+            local shared = GetShared()
+            if shared.ScheduleUpdate then
+                shared.ScheduleUpdate()
+            end
         end
     end
 end)

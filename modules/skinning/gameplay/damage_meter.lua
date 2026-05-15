@@ -362,6 +362,9 @@ end
 -- Module-private state. Weak-keyed so frame destruction is automatic.
 local trackedWindows  = Helpers.CreateStateTable()
 local trackedPopups   = Helpers.CreateStateTable()
+local meterSizeRestoreHooks = Helpers.CreateStateTable()
+local meterSizeRestorePending = Helpers.CreateStateTable()
+local applyingSavedMeterSize = false
 local syncInProgress      = false   -- guard against re-entry during write-through
 local pendingCombatWrites = {}      -- queue for in-combat setter calls
 local hooksInstalled  = false
@@ -1335,7 +1338,53 @@ local function ApplySavedSizeToWindow(window)
     if not w or not h then return end
     local target = ResolveResizeTargetForWindow(window)
     if not target then return end
+    applyingSavedMeterSize = true
     target:SetSize(w, h)
+    applyingSavedMeterSize = false
+end
+
+local function ScheduleSavedSizeRestore(window)
+    if not window or applyingSavedMeterSize then return end
+    if Helpers.IsLayoutModeActive and Helpers.IsLayoutModeActive() then return end
+    if InCombatLockdown() then return end
+
+    local key = LayoutModeKeyForWindow(window)
+    local w, h = LoadMeterSize(key)
+    if not w or not h then return end
+
+    local target = ResolveResizeTargetForWindow(window)
+    if not target or meterSizeRestorePending[target] then return end
+    meterSizeRestorePending[target] = true
+
+    DeferDamageMeterWork(function()
+        meterSizeRestorePending[target] = nil
+        if applyingSavedMeterSize then return end
+        if Helpers.IsLayoutModeActive and Helpers.IsLayoutModeActive() then return end
+        ApplySavedSizeToWindow(window)
+    end)
+end
+
+local function InstallMeterSizeRestoreHook(window)
+    if not window then return end
+    local target = ResolveResizeTargetForWindow(window)
+    if not target or meterSizeRestoreHooks[target] then return end
+    meterSizeRestoreHooks[target] = true
+
+    if target.SetSize then
+        hooksecurefunc(target, "SetSize", function()
+            ScheduleSavedSizeRestore(window)
+        end)
+    end
+    if target.SetWidth then
+        hooksecurefunc(target, "SetWidth", function()
+            ScheduleSavedSizeRestore(window)
+        end)
+    end
+    if target.SetHeight then
+        hooksecurefunc(target, "SetHeight", function()
+            ScheduleSavedSizeRestore(window)
+        end)
+    end
 end
 
 ApplyAllSavedMeterSizes = function()
@@ -2086,6 +2135,7 @@ InstallMeterHooks = function()
         -- setup, so deferring SecretSafeSetSessionDuration installation would
         -- be too late for the first session-data tick.
         PatchSessionWindowDisplayMethods(sessionWindow)
+        InstallMeterSizeRestoreHook(sessionWindow)
 
         -- Per-instance SourceWindow patch. The MinimizeContainer.SourceWindow
         -- child exists at session-window creation, before our addon loaded,
@@ -2127,6 +2177,7 @@ InstallMeterHooks = function()
                 local key = LayoutModeKeyForWindow(window)
                 _G.QUI_ApplyFrameAnchor(key)
             end
+            ApplySavedSizeToWindow(window)
         end, sessionWindow, idx, reapplyAnchor and true or false)
     end
 
@@ -2297,6 +2348,7 @@ local function PatchAllExistingEntryFrames()
         local window = data and data.sessionWindow
         if window then
             PatchSessionWindowDisplayMethods(window)
+            InstallMeterSizeRestoreHook(window)
 
             -- Per-instance SourceWindow patch on cold-load sweep. These
             -- session windows pre-existed our addon load; their child

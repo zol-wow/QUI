@@ -92,14 +92,36 @@ local function HasCooldownViewerAPI()
         and api.GetCooldownViewerCooldownInfo
 end
 
-function CDMCatalog.GetCategorySet(category, includeHidden)
+function CDMCatalog.GetCategorySet(category, allowUnlearned)
     if not HasCooldownViewerAPI() then return nil end
     local api = GetCooldownViewerAPI()
-    local ok, ids = pcall(api.GetCooldownViewerCategorySet, category, includeHidden and true or false)
+    local ok, ids = pcall(api.GetCooldownViewerCategorySet, category, allowUnlearned and true or false)
     if ok and type(ids) == "table" then
         return ids
     end
     return nil
+end
+
+function CDMCatalog.GetTrackedCategorySet(category, allowUnlearned)
+    local settings = _G.CooldownViewerSettings
+    if settings and settings.GetDataProvider then
+        local okProvider, provider = pcall(settings.GetDataProvider, settings)
+        if okProvider
+            and provider
+            and provider.GetOrderedCooldownIDsForCategory then
+            local ok, ids = pcall(
+                provider.GetOrderedCooldownIDsForCategory,
+                provider,
+                category,
+                allowUnlearned and true or false)
+            if ok and type(ids) == "table" then
+                return ids, true
+            end
+        end
+    end
+
+    local ids = CDMCatalog.GetCategorySet(category, allowUnlearned)
+    return ids, ids ~= nil and #ids > 0
 end
 
 function CDMCatalog.GetCooldownInfo(cooldownID)
@@ -147,10 +169,10 @@ end
 
 function CDMCatalog.SeedFromBlizzard(containerKind)
     local category = CATEGORY_FOR_KIND[containerKind]
-    if not category then return {} end
+    if not category then return {}, false end
 
-    local cooldownIDs = CDMCatalog.GetCategorySet(category, false)
-    if not cooldownIDs then return {} end
+    local cooldownIDs, ready = CDMCatalog.GetTrackedCategorySet(category, true)
+    if not cooldownIDs then return {}, false end
 
     local entries = {}
     local seen = {}
@@ -163,7 +185,7 @@ function CDMCatalog.SeedFromBlizzard(containerKind)
             entries[#entries + 1] = { type = "spell", id = sid }
         end
     end
-    return entries
+    return entries, ready == true
 end
 
 local function AppendAuraIDs(map, key, auraIDs)
@@ -294,7 +316,7 @@ function CDMCatalog.GetAvailableSpellsForContainer(containerKey, containerType, 
     local seen = {}
 
     for _, category in ipairs(categories) do
-        local cooldownIDs = CDMCatalog.GetCategorySet(category, false)
+        local cooldownIDs = CDMCatalog.GetCategorySet(category, true)
         if cooldownIDs then
             for _, cdID in ipairs(cooldownIDs) do
                 local cdInfo = CDMCatalog.GetCooldownInfo(cdID)

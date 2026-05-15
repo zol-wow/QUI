@@ -18,5 +18,7 @@ assert(src:find("_lastBuildSignature", 1, true),
     "BuildIcons should store the last icon list signature on the container")
 assert(src:find("_lastBuildPool", 1, true),
     "BuildIcons should keep the last unchanged pool for signature hits")
+assert(src:find("_assignedRow", src:find("local function AppendEntrySignature", 1, true), true),
+    "BuildIcons signature must include assigned rows so spec/loadout restores rebind icons when only row placement changes")
 
 print("OK: cdm_icons_pool_static_test")

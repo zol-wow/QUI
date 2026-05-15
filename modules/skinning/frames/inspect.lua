@@ -1,6 +1,7 @@
 local addonName, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
+local SkinBase = ns.SkinBase
 
 local GetCore = ns.Helpers.GetCore
 
@@ -19,6 +20,7 @@ local CONFIG = {
 
 -- Module state
 local customBg = nil
+local inspectTabsHooked = false
 
 ---------------------------------------------------------------------------
 -- Helper: Get skin colors from QUI system
@@ -172,6 +174,103 @@ local function SetInspectFrameBgExtended(extended)
 end
 
 ---------------------------------------------------------------------------
+-- Skin bottom tabs: Character, PvP, Guild
+---------------------------------------------------------------------------
+local function StyleInspectFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    if not SkinBase or not tab then return end
+
+    if not SkinBase.IsStyled(tab) then
+        SkinBase.StripTextures(tab)
+
+        if tab.Left then tab.Left:SetAlpha(0) end
+        if tab.Middle then tab.Middle:SetAlpha(0) end
+        if tab.Right then tab.Right:SetAlpha(0) end
+        if tab.LeftDisabled then tab.LeftDisabled:SetAlpha(0) end
+        if tab.MiddleDisabled then tab.MiddleDisabled:SetAlpha(0) end
+        if tab.RightDisabled then tab.RightDisabled:SetAlpha(0) end
+        if tab.LeftActive then tab.LeftActive:SetAlpha(0) end
+        if tab.MiddleActive then tab.MiddleActive:SetAlpha(0) end
+        if tab.RightActive then tab.RightActive:SetAlpha(0) end
+        if tab.LeftHighlight then tab.LeftHighlight:SetAlpha(0) end
+        if tab.MiddleHighlight then tab.MiddleHighlight:SetAlpha(0) end
+        if tab.RightHighlight then tab.RightHighlight:SetAlpha(0) end
+
+        local highlight = tab.GetHighlightTexture and tab:GetHighlightTexture()
+        if highlight then highlight:SetAlpha(0) end
+
+        SkinBase.CreateBackdrop(tab, sr, sg, sb, sa, bgr, bgg, bgb, 0.9)
+        local tabBackdrop = SkinBase.GetBackdrop(tab)
+        if tabBackdrop then
+            tabBackdrop:ClearAllPoints()
+            tabBackdrop:SetPoint("TOPLEFT", 3, -3)
+            tabBackdrop:SetPoint("BOTTOMRIGHT", -3, 0)
+        end
+
+        SkinBase.MarkStyled(tab)
+    end
+
+    SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
+    SkinBase.SetFrameData(tab, "bgColor", { bgr, bgg, bgb })
+end
+
+local function GetInspectFrameSelectedTab()
+    if not InspectFrame then return nil end
+    if PanelTemplates_GetSelectedTab then
+        local selected = PanelTemplates_GetSelectedTab(InspectFrame)
+        if selected then return selected end
+    end
+    return InspectFrame.selectedTab
+end
+
+local function UpdateInspectFrameTabSelectedState()
+    if not SkinBase then return end
+
+    local selectedTab = GetInspectFrameSelectedTab()
+
+    for i = 1, 3 do
+        local tab = _G["InspectFrameTab" .. i]
+        local bd = tab and SkinBase.GetBackdrop(tab)
+        local sc = tab and SkinBase.GetFrameData(tab, "skinColor")
+        local bg = tab and SkinBase.GetFrameData(tab, "bgColor")
+        if bd and sc and bg then
+            local tabID = tab.GetID and tab:GetID()
+            local isSelected = selectedTab == i or selectedTab == tabID
+            if isSelected then
+                bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], sc[4])
+                bd:SetBackdropColor(math.min(bg[1] + 0.10, 1), math.min(bg[2] + 0.10, 1), math.min(bg[3] + 0.10, 1), 1)
+            else
+                bd:SetBackdropBorderColor(sc[1] * 0.5, sc[2] * 0.5, sc[3] * 0.5, sc[4] * 0.6)
+                bd:SetBackdropColor(bg[1], bg[2], bg[3], 0.7)
+            end
+        end
+    end
+end
+
+local function SkinInspectFrameTabs()
+    if not SkinBase then return end
+
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
+
+    for i = 1, 3 do
+        local tab = _G["InspectFrameTab" .. i]
+        if tab then
+            StyleInspectFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        end
+    end
+
+    if not inspectTabsHooked and PanelTemplates_SetTab then
+        hooksecurefunc("PanelTemplates_SetTab", function(frame)
+            if frame == InspectFrame then
+                C_Timer.After(0, SkinInspectFrameTabs)
+            end
+        end)
+        inspectTabsHooked = true
+    end
+
+    UpdateInspectFrameTabSelectedState()
+end
+
+---------------------------------------------------------------------------
 -- Main skinning setup
 -- Note: OnShow hook is handled by qui_character.lua which calls SetExtended()
 -- This avoids duplicate hooks and ensures proper coordination with layout code
@@ -181,6 +280,7 @@ local function SetupInspectFrameSkinning()
     if not InspectFrame then return end
 
     CreateOrUpdateBackground()
+    SkinInspectFrameTabs()
 
     -- Position backdrop on every show, independent of the overlay module.
     -- Previously only SetInspectExtendedMode / SetInspectNormalMode (in the
@@ -189,12 +289,14 @@ local function SetupInspectFrameSkinning()
     -- rendered without a skin behind them.
     InspectFrame:HookScript("OnShow", function()
         SetInspectFrameBgExtended(IsInspectOverlaysEnabled())
+        SkinInspectFrameTabs()
     end)
 
     -- First-show race: if InspectFrame is already shown when this runs, the
     -- OnShow hook won't fire for the current open. Apply once directly.
     if InspectFrame:IsShown() then
         SetInspectFrameBgExtended(IsInspectOverlaysEnabled())
+        SkinInspectFrameTabs()
     end
 end
 
@@ -211,6 +313,8 @@ local function RefreshInspectFrameColors()
         customBg:SetBackdropColor(bgr, bgg, bgb, bga)
         customBg:SetBackdropBorderColor(sr, sg, sb, sa)
     end
+
+    SkinInspectFrameTabs()
 end
 
 ---------------------------------------------------------------------------
@@ -251,3 +355,7 @@ frame:SetScript("OnEvent", function(self, event, addon)
         self:UnregisterEvent("ADDON_LOADED")
     end
 end)
+
+if InspectFrame and InspectFrameTab1 then
+    SetupInspectFrameSkinning()
+end

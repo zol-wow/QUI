@@ -447,14 +447,14 @@ local function TrySnapshotBuiltInContainers(containerKeys)
             local containerDB = GetTrackerSettings(key)
             if containerDB and containerDB.ownedSpells == nil then
                 -- Prefer the composer-owned seed path. Falls back to the
-                -- legacy viewer-driven snapshot when the seed comes back
-                -- empty (e.g., C_CooldownViewer not yet populated at very
-                -- early ADDON_LOADED).
-                local seeded
+                -- legacy viewer-driven snapshot only when the seed source
+                -- is not ready; an empty ready seed means Blizzard has no
+                -- tracked rows for that category.
+                local seeded, seedReady
                 if ns.CDMComposer and ns.CDMComposer.SeedFromBlizzard then
-                    seeded = ns.CDMComposer.SeedFromBlizzard(key)
+                    seeded, seedReady = ns.CDMComposer.SeedFromBlizzard(key)
                 end
-                if seeded and #seeded > 0 then
+                if seeded and seedReady then
                     containerDB.ownedSpells = seeded
                     containerDB.removedSpells = {}
                 else

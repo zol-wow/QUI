@@ -3003,8 +3003,8 @@ function CDMSpellData:SnapshotBlizzardCDM(containerKey)
     local composer = ns.CDMComposer
     if not (composer and composer.SeedFromBlizzard) then return false end
 
-    local seeded = composer.SeedFromBlizzard(containerKey)
-    if not seeded or #seeded == 0 then return false end
+    local seeded, seedReady = composer.SeedFromBlizzard(containerKey)
+    if not seeded or not seedReady then return false end
 
     db.ownedSpells = seeded
     local ncdm = GetNcdmDB()
