@@ -10,6 +10,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha45 - 2026-05-15
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha44 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **Extra Action Button and Zone Ability hide-artwork toggles now keep saved anchoring aligned.** When artwork is hidden, QUI sizes the holder from the visible button footprint before reapplying the frame anchor, preventing edge and corner anchors from appearing offset.
+
+### Internal
+- Added regression coverage for hide-artwork holder sizing on special buttons.
+
+
+
 ## v3.6.0-alpha44 - 2026-05-15
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha43 profiles carry over unchanged.

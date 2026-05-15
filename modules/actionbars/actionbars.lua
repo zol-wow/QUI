@@ -5716,6 +5716,47 @@ end
 
 local extraButtonOriginalParents = {}
 
+local function GetExtraButtonVisualFrame(buttonType, blizzFrame)
+    if not blizzFrame then return nil end
+
+    if buttonType == "extraActionButton" then
+        return blizzFrame.button or _G["ExtraActionButton1"]
+    end
+
+    local container = blizzFrame.SpellButtonContainer
+    if container then
+        if container.EnumerateActive then
+            for button in container:EnumerateActive() do
+                if button then
+                    return button
+                end
+            end
+        end
+        return container
+    end
+
+    return blizzFrame.SpellButton
+end
+
+local function GetExtraButtonHolderSize(buttonType, blizzFrame, settings, scale)
+    local width = Helpers.SafeToNumber(blizzFrame:GetWidth(), 64)
+    local height = Helpers.SafeToNumber(blizzFrame:GetHeight(), 64)
+
+    if settings.hideArtwork then
+        local visualFrame = GetExtraButtonVisualFrame(buttonType, blizzFrame)
+        if visualFrame then
+            local visualWidth = visualFrame.GetWidth and Helpers.SafeToNumber(visualFrame:GetWidth(), width) or width
+            local visualHeight = visualFrame.GetHeight and Helpers.SafeToNumber(visualFrame:GetHeight(), height) or height
+            if visualWidth > 0 then width = visualWidth end
+            if visualHeight > 0 then height = visualHeight end
+        end
+    end
+
+    scale = Helpers.SafeToNumber(scale, 1)
+    if scale <= 0 then scale = 1 end
+
+    return math.max(width * scale, 64), math.max(height * scale, 64)
+end
 
 local function ApplyExtraButtonSettings(buttonType)
     if InCombatLockdown() and not inInitSafeWindow then
@@ -5774,9 +5815,8 @@ local function ApplyExtraButtonSettings(buttonType)
     blizzFrame:SetPoint("CENTER", holder, "CENTER", offsetX, offsetY)
     extraBtnState.hookingSetPoint = false
 
-    local width = Helpers.SafeToNumber(blizzFrame:GetWidth(), 64) * scale
-    local height = Helpers.SafeToNumber(blizzFrame:GetHeight(), 64) * scale
-    holder:SetSize(math.max(width, 64), math.max(height, 64))
+    local holderWidth, holderHeight = GetExtraButtonHolderSize(buttonType, blizzFrame, settings, scale)
+    holder:SetSize(holderWidth, holderHeight)
 
     if settings.hideArtwork then
         if buttonType == "extraActionButton" and blizzFrame.button and blizzFrame.button.style then

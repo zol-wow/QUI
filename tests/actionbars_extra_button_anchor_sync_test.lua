@@ -41,6 +41,13 @@ assert(
         and reanchorBlock:find("ApplyExtraButtonFrameAnchor%(buttonType%)"),
     "extra/zone reanchor refresh must reapply the saved frame anchor after updating holder size")
 
+local holderSizeBlock = blockBetween("local function GetExtraButtonHolderSize", "local pendingExtraButtonReanchor")
+assert(
+    holderSizeBlock:find("settings.hideArtwork", 1, true)
+        and holderSizeBlock:find("GetExtraButtonVisualFrame", 1, true)
+        and holderSizeBlock:find("holder:SetSize(holderWidth, holderHeight)", 1, true),
+    "extra/zone holder sizing must use the visible button footprint when artwork is hidden before anchors reapply")
+
 local hookBlock = blockBetween("local function HookExtraButtonPositioning", "local function ShowExtraButtonMovers")
 assert(
     hookBlock:find("ExtraAbilityContainer", 1, true)
