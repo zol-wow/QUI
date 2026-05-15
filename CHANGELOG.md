@@ -10,6 +10,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha36 - 2026-05-15
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha35 profiles carry over unchanged. Per-loadout CDM entries are additive and disabled by default.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Added
+- **Per-loadout CDM entries.** CDM can now maintain separate spell lists for each saved talent loadout within a spec. The new "Per-Loadout Entries" toggle preserves shared data when disabled, seeds the active saved loadout on first enable, and swaps entries on loadout changes without using ephemeral active-config IDs.
+
+### Fixed
+- **CDM reset/import seeding now distinguishes "ready but empty" from "not ready yet."** Blizzard-tracked category data is read through the settings data provider when available, unlearned tracked spells can appear in the add list, and empty tracked categories no longer fall back to stale snapshot data.
+- **Character and inspect pane skinning is more resilient.** Bottom tabs are styled consistently, selected-state visuals refresh after tab changes, inspect tabs initialize even when the frame already exists, and character-pane geometry is applied immediately while only decoration/stat refresh work is deferred after combat.
+- **Character and inspect item overlays use structured tooltip data with secret-value guards.** Item level, upgrade, socket, and enchant reads avoid unsafe string/number handling and are more tolerant of missing or delayed item data.
+- **Profession tab and filter styling preserves functional child controls.** Filter dropdown clear buttons are no longer stripped, tab hover/selected visuals are restored cleanly, and color refresh updates the stored skin data.
+- **Tooltip extra info lines no longer depend on right-side double-line measurement.** QUI-added target, mount, rating, spell ID, icon ID, item ID, and player item-level rows now render as colored single lines, avoiding layout refit issues and secret-value right-edge reads.
+- **Damage meter windows reapply saved sizes after reload or external size resets.** Saved dimensions are restored after session-window setup and after safe size changes outside layout mode.
+- **Boss-frame range alpha is less jumpy.** Range changes now require confirmation before alpha flips, nil/unchecked range results leave the current alpha alone, and cached range state clears on world/combat/spec transitions.
+
+### Internal
+- Profile fixtures cover the new CDM loadout storage shape and legacy upgrade path.
+- New regression tests cover per-loadout CDM persistence, unlearned CDM add-list entries, frame tab skinning, character/inspect pane hardening, tooltip refit/layout safety, damage meter reload sizing, and boss range alpha stability.
+- Added a SavedVariables inspection helper for diagnosing profile snapshots.
+
+
+
 ## v3.6.0-alpha35 - 2026-05-14
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha34 profiles carry over unchanged.
