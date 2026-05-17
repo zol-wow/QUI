@@ -10,6 +10,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha48 - 2026-05-17
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha47 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **CDM charged aura cooldowns now keep aura overlays and active recharge swipes in the correct lane.** Utility cooldown entries with captured auras prefer the aura DurationObject when aura display is enabled, fall back to charge timers when disabled, and clear stale pandemic/aura state when resolving back to recharge.
+- **CDM multi-charge availability now decodes secret current-charge counts through a C-side curve path.** Recharge swipes can remain visible without treating spells with charges remaining as unavailable, while zero-charge states still desaturate correctly.
+- **Chat rendered text transforms now avoid taint-sensitive in-place mutation.** Keyword alerts and redundant-text cleanup run through safe rendered-line transforms without touching protected chat internals during combat.
+
+### Changed
+- **CDM cooldown runtime internals were split into resolver, policy, runtime-query, and runtime-store modules.** Custom bars, stack text, range, visibility, and mirror identity now route through shared runtime state instead of scattered icon-factory logic.
+
+### Internal
+- Added regression coverage for CDM resolver/runtime policies, charged aura recharge handling, stale aura/pandemic clearing, secret charge-count decoding, debug event-trace fallback paths, and chat rendered-transform taint safety.
+
+
+
 ## v3.6.0-alpha47 - 2026-05-15
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha46 profiles carry over unchanged.
