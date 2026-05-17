@@ -400,10 +400,6 @@ local function IsSecret(value)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
 end
 
-local function HasSecretValue(...)
-    return Helpers and Helpers.HasSecretValue and Helpers.HasSecretValue(...)
-end
-
 local function WrapChatText(text, prefix, suffix)
     if C_StringUtil and C_StringUtil.WrapString then
         local ok, wrapped = pcall(C_StringUtil.WrapString, text, prefix, suffix)
@@ -527,108 +523,274 @@ end
 
 I.MakeURLsClickable = MakeURLsClickable
 
+-- Rendered Message Transforms
+-- Normal conversational chat events eventually call Blizzard's
+-- ChatHistory_GetAccessID, which lowercases chat-type tokens while building
+-- history keys. Running addon string modifiers in the pre-dispatch message
+-- filter can taint that path when any chat payload is secret. Apply display
+-- transforms only after Blizzard has added the rendered line.
 ---------------------------------------------------------------------------
--- Chat Message Filters (safe alternative to AddMessage replacement)
--- Prefer ChatFrameUtil's secure registry on current clients; it wraps addon
--- callbacks so inaccessible secret chat args skip the filter without tainting
--- the rest of Blizzard's chat handler.
----------------------------------------------------------------------------
-local messageFiltersInstalled = false
+local renderedTransformsInstalled = false
+local renderedTransformFrames = setmetatable({}, { __mode = "k" })
+local renderedTransformState = setmetatable({}, { __mode = "k" })
 
-local function AddMessageEventFilter(event, filter)
-    if ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter then
-        ChatFrameUtil.AddMessageEventFilter(event, filter)
-    elseif ChatFrame_AddMessageEventFilter then
-        ChatFrame_AddMessageEventFilter(event, filter)
+local RENDERED_DECORATION_EVENTS = {
+    CHAT_MSG_SAY = true,
+    CHAT_MSG_YELL = true,
+    CHAT_MSG_GUILD = true,
+    CHAT_MSG_OFFICER = true,
+    CHAT_MSG_PARTY = true,
+    CHAT_MSG_PARTY_LEADER = true,
+    CHAT_MSG_RAID = true,
+    CHAT_MSG_RAID_LEADER = true,
+    CHAT_MSG_RAID_WARNING = true,
+    CHAT_MSG_INSTANCE_CHAT = true,
+    CHAT_MSG_INSTANCE_CHAT_LEADER = true,
+    CHAT_MSG_BN_INLINE_TOAST_ALERT = true,
+    CHAT_MSG_CHANNEL = true,
+    CHAT_MSG_EMOTE = true,
+    CHAT_MSG_TEXT_EMOTE = true,
+    CHAT_MSG_SYSTEM = true,
+    CHAT_MSG_MONSTER_SAY = true,
+    CHAT_MSG_MONSTER_YELL = true,
+    CHAT_MSG_MONSTER_EMOTE = true,
+    CHAT_MSG_MONSTER_WHISPER = true,
+    CHAT_MSG_MONSTER_PARTY = true,
+    CHAT_MSG_LOOT = true,
+    CHAT_MSG_MONEY = true,
+    CHAT_MSG_COMBAT_XP_GAIN = true,
+    CHAT_MSG_COMBAT_HONOR_GAIN = true,
+    CHAT_MSG_COMBAT_FACTION_CHANGE = true,
+    CHAT_MSG_SKILL = true,
+    CHAT_MSG_TRADESKILLS = true,
+    CHAT_MSG_OPENING = true,
+    CHAT_MSG_ACHIEVEMENT = true,
+    CHAT_MSG_GUILD_ACHIEVEMENT = true,
+    CHAT_MSG_COMMUNITIES_CHANNEL = true,
+}
+
+local function GetRenderedState(frame)
+    local state = renderedTransformState[frame]
+    if not state then
+        state = { lineKeys = {} }
+        renderedTransformState[frame] = state
+    end
+    return state
+end
+
+local function ReadPackedArg(eventArgs, index)
+    if IsSecret(eventArgs) or type(eventArgs) ~= "table" then return nil end
+    local value = eventArgs[index]
+    if IsSecret(value) then return nil end
+    return value
+end
+
+local function NormalizeRenderedEvent(event)
+    if IsSecret(event) or type(event) ~= "string" or event == "" then return nil end
+    return event
+end
+
+local function GetRenderedLineKey(event, eventArgs)
+    event = NormalizeRenderedEvent(event)
+    if not event then return nil end
+    local lineID = ReadPackedArg(eventArgs, 11)
+    if lineID == nil then return nil end
+    local valueType = type(lineID)
+    if valueType ~= "number" and valueType ~= "string" then return nil end
+    return event .. ":" .. tostring(lineID)
+end
+
+local function HasQUITimestampPrefix(message)
+    if IsSecret(message) or type(message) ~= "string" then return false end
+    return message:match("^|cff%x%x%x%x%x%x%[%d%d?:%d%d%s?[AP]?[M]?%]|r%s") ~= nil
+        or message:match("^%[%d%d?:%d%d%s?[AP]?[M]?%]%s") ~= nil
+end
+
+local function ShouldTryURLLinkify(message)
+    if IsSecret(message) or type(message) ~= "string" then return false end
+    if message:find("addon:quaziiuichat:url:", 1, true) then return false end
+    return message:find("://", 1, true) ~= nil
+        or message:find("www.", 1, true) ~= nil
+        or message:find("discord.", 1, true) ~= nil
+end
+
+local function BuildRenderedInfo(event, eventArgs)
+    local info = {
+        event = NormalizeRenderedEvent(event),
+        rendered = true,
+        author = ReadPackedArg(eventArgs, 2),
+        language = ReadPackedArg(eventArgs, 3),
+        flags = ReadPackedArg(eventArgs, 6),
+        channelNumber = ReadPackedArg(eventArgs, 7),
+        channelName = ReadPackedArg(eventArgs, 9),
+        lineID = ReadPackedArg(eventArgs, 11),
+        guid = ReadPackedArg(eventArgs, 12),
+    }
+    return info
+end
+
+local function ShouldRunRenderedPipeline(event)
+    event = NormalizeRenderedEvent(event)
+    if not event then return false end
+    local Pipeline = ns.QUI.Chat and ns.QUI.Chat.Pipeline
+    return Pipeline
+        and Pipeline.ShouldRunForEvent
+        and Pipeline.ShouldRunForEvent(event)
+        and Pipeline._modifiers
+        and #Pipeline._modifiers > 0
+end
+
+local function ShouldTransformRenderedMessage(frame, message, r, g, b, infoID, accessID, typeID, event, eventArgs)
+    if not frame then return false end
+    if IsSecret(message) then return false end
+    if type(message) ~= "string" or message == "" then return false end
+
+    local state = GetRenderedState(frame)
+    local lineKey = GetRenderedLineKey(event, eventArgs)
+    if lineKey and state.lineKeys[lineKey] then
+        return false
+    end
+
+    local function markSeenAndSkip()
+        if lineKey then
+            state.lineKeys[lineKey] = true
+        end
+        return false
+    end
+
+    local settings = GetSettings()
+    if not IsChatEnabled(settings) then return markSeenAndSkip() end
+
+    if I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown() then
+        return markSeenAndSkip()
+    end
+
+    local cleanEvent = NormalizeRenderedEvent(event)
+    if not cleanEvent then return markSeenAndSkip() end
+
+    local canDecorate = RENDERED_DECORATION_EVENTS[cleanEvent] == true
+    if canDecorate then
+        if settings.timestamps and settings.timestamps.enabled and not HasQUITimestampPrefix(message) then
+            return true
+        end
+        if settings.urls and settings.urls.enabled and ShouldTryURLLinkify(message) then
+            return true
+        end
+    end
+
+    if ShouldRunRenderedPipeline(cleanEvent) then
+        return true
+    end
+
+    return markSeenAndSkip()
+end
+
+local function TransformRenderedMessage(frame, message, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...)
+    local state = GetRenderedState(frame)
+    local lineKey = GetRenderedLineKey(event, eventArgs)
+    if lineKey and state.lineKeys[lineKey] then
+        return message, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...
+    end
+
+    local settings = GetSettings()
+    local modified = message
+    local cleanEvent = NormalizeRenderedEvent(event)
+    local canDecorate = cleanEvent and RENDERED_DECORATION_EVENTS[cleanEvent] == true
+
+    if canDecorate and settings and settings.timestamps and settings.timestamps.enabled and not HasQUITimestampPrefix(modified) then
+        local nextMessage, didChange = AddTimestamp(modified)
+        if didChange and not IsSecret(nextMessage) then
+            modified = nextMessage
+        end
+    end
+
+    if canDecorate and settings and settings.urls and settings.urls.enabled and ShouldTryURLLinkify(modified) then
+        local nextMessage, didChange = MakeURLsClickable(modified)
+        if didChange and not IsSecret(nextMessage) then
+            modified = nextMessage
+        end
+    end
+
+    local Pipeline = ns.QUI.Chat and ns.QUI.Chat.Pipeline
+    if cleanEvent and ShouldRunRenderedPipeline(cleanEvent) and Pipeline and Pipeline.Run then
+        local newMessage = Pipeline.Run(modified, BuildRenderedInfo(cleanEvent, eventArgs), cleanEvent)
+        if newMessage ~= nil and not IsSecret(newMessage) and type(newMessage) == "string" then
+            modified = newMessage
+        end
+    end
+
+    if lineKey then
+        state.lineKeys[lineKey] = true
+    end
+
+    return modified, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...
+end
+
+local function MarkExistingRenderedLines(frame)
+    if not frame or not frame.GetNumMessages or not frame.GetMessageInfo then return end
+    local okCount, count = pcall(frame.GetNumMessages, frame)
+    if not okCount or type(count) ~= "number" then return end
+
+    local state = GetRenderedState(frame)
+    for i = 1, count do
+        local ok, _, _, _, _, _, _, _, event, eventArgs = pcall(frame.GetMessageInfo, frame, i)
+        if ok then
+            local lineKey = GetRenderedLineKey(event, eventArgs)
+            if lineKey then
+                state.lineKeys[lineKey] = true
+            end
+        end
     end
 end
 
-local function InstallMessageFilters()
-    if messageFiltersInstalled then return end
-    messageFiltersInstalled = true
+local function HookRenderedMessageFrame(frame)
+    if not frame or renderedTransformFrames[frame] then return end
+    if not frame.TransformMessages then return end
+    if not hooksecurefunc then return end
 
-    local whisperEvents = {
-        CHAT_MSG_WHISPER = true,
-        CHAT_MSG_WHISPER_INFORM = true,
-        CHAT_MSG_BN_WHISPER = true,
-        CHAT_MSG_BN_WHISPER_INFORM = true,
-    }
+    renderedTransformFrames[frame] = true
+    MarkExistingRenderedLines(frame)
 
-    -- Build a filter function that processes timestamps and URLs
-    local function MessageFilter(self, event, msg, ...)
-        -- IsSecret first: type(msg) on a secret string taints the
-        -- dispatch chain and propagates into Blizzard's downstream
-        -- string conversion of secret senders (HistoryKeeper:35,
-        -- ChatFrameOverrides:542). Returning nil on secret lets Blizzard's
-        -- formatter handle the opaque payload; C-side text wrapping is only
-        -- used after the filter callback has safe arguments to return.
-        if IsSecret(msg) then
-            return nil
-        end
-        if not msg or type(msg) ~= "string" then
-            return nil
-        end
+    hooksecurefunc(frame, "AddMessage", function(chatFrame)
+        if not chatFrame or not chatFrame.TransformMessages then return end
+        chatFrame:TransformMessages(
+            function(...) return ShouldTransformRenderedMessage(chatFrame, ...) end,
+            function(...) return TransformRenderedMessage(chatFrame, ...) end
+        )
+    end)
+end
 
-        -- If any passthrough chat arg is secret, do not run addon-side
-        -- formatting. Even when returning nil later, doing normal string work
-        -- in this dispatch can taint Blizzard's chat-history token path.
-        if HasSecretValue(...) then
-            return nil
-        end
+local function HookAllRenderedMessageFrames()
+    local nWindows = _G.NUM_CHAT_WINDOWS or 10
+    for i = 1, nWindows do
+        HookRenderedMessageFrame(_G["ChatFrame" .. i])
+    end
+end
 
-        -- Whisper history is now protected more aggressively in 12.x and
-        -- rewriting those payloads can taint Blizzard's chat bookkeeping.
-        if whisperEvents[event] then
-            return nil
-        end
+local function InstallRenderedMessageTransforms()
+    if renderedTransformsInstalled then return end
+    renderedTransformsInstalled = true
 
-        local settings = GetSettings()
-        if not IsChatEnabled(settings) then return nil end
+    HookAllRenderedMessageFrames()
 
-        local modified = msg
-        local changed = false
-        local success = pcall(function()
-            -- Apply timestamps
-            if settings.timestamps and settings.timestamps.enabled then
-                local nextMessage, didChange = AddTimestamp(modified)
-                modified = nextMessage
-                changed = changed or didChange
-            end
-
-            -- Apply URL detection. msg is non-secret by construction
-            -- (gated above), so no per-call IsSecret check needed here.
-            if settings.urls and settings.urls.enabled then
-                local nextMessage, didChange = MakeURLsClickable(modified)
-                modified = nextMessage
-                changed = changed or didChange
+    if hooksecurefunc and _G.FCF_OpenNewWindow then
+        hooksecurefunc("FCF_OpenNewWindow", function()
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0.1, HookAllRenderedMessageFrames)
+            else
+                HookAllRenderedMessageFrames()
             end
         end)
-
-        if not success or not changed or IsSecret(modified) then
-            return nil
-        end
-
-        return false, modified, ...
     end
 
-    -- Register filter for all standard chat events
-    local chatEvents = {
-        "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER",
-        "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER", "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER",
-        "CHAT_MSG_RAID_WARNING", "CHAT_MSG_INSTANCE_CHAT", "CHAT_MSG_INSTANCE_CHAT_LEADER",
-        "CHAT_MSG_BN_INLINE_TOAST_ALERT",
-        "CHAT_MSG_CHANNEL", "CHAT_MSG_EMOTE", "CHAT_MSG_TEXT_EMOTE",
-        "CHAT_MSG_SYSTEM", "CHAT_MSG_MONSTER_SAY", "CHAT_MSG_MONSTER_YELL",
-        "CHAT_MSG_MONSTER_EMOTE", "CHAT_MSG_MONSTER_WHISPER", "CHAT_MSG_MONSTER_PARTY",
-        "CHAT_MSG_LOOT", "CHAT_MSG_MONEY", "CHAT_MSG_COMBAT_XP_GAIN",
-        "CHAT_MSG_COMBAT_HONOR_GAIN", "CHAT_MSG_COMBAT_FACTION_CHANGE",
-        "CHAT_MSG_SKILL", "CHAT_MSG_TRADESKILLS", "CHAT_MSG_OPENING",
-        "CHAT_MSG_ACHIEVEMENT", "CHAT_MSG_GUILD_ACHIEVEMENT",
-        "CHAT_MSG_COMMUNITIES_CHANNEL",
-    }
-
-    for _, event in ipairs(chatEvents) do
-        AddMessageEventFilter(event, MessageFilter)
+    if hooksecurefunc and _G.FCF_OpenTemporaryWindow then
+        hooksecurefunc("FCF_OpenTemporaryWindow", function()
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0.1, HookAllRenderedMessageFrames)
+            else
+                HookAllRenderedMessageFrames()
+            end
+        end)
     end
 end
 
@@ -848,12 +1010,12 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         -- Setup new message sound (works independently of chat skinning)
         ns.QUI.Chat.Sounds.Setup()
 
-        -- Always install hooks/filters so the GUI master toggle (chat.enabled)
+        -- Always install hooks so the GUI master toggle (chat.enabled)
         -- can flip without requiring a /reload. Each install is idempotent and
         -- the runtime branches that do real work re-check the master toggle, so
         -- registering when the module is currently disabled is inert.
         ns.QUI.Chat.Copy.SetupURLClick()
-        InstallMessageFilters()
+        InstallRenderedMessageTransforms()
 
         -- Hook chat frame opening to ensure edit box gets history initialization
         hooksecurefunc("ChatFrame_OpenChat", function(text, chatFrame)

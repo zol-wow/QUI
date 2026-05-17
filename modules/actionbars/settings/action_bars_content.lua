@@ -203,17 +203,17 @@ local function FormatPreviewKeybind(keybind)
     return upper
 end
 
-local function IsPreviewSecretValue(value)
+local function IsSecretValue(value)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value) or false
 end
 
+local IsPreviewSecretValue = IsSecretValue
+
 local function HasPreviewTextValue(value)
-    if value == nil then
-        return false
-    end
-    if IsPreviewSecretValue(value) then
+    if IsSecretValue(value) then
         return true
     end
+    if value == nil then return false end
     return value ~= ""
 end
 
@@ -361,27 +361,29 @@ local function GetPreviewCountText(slot, sourceButton)
     local ok, count = pcall(C_ActionBar.GetActionDisplayCount, actionSlot)
     if not ok then return nil end
 
-    if IsPreviewSecretValue(count) then
+    if IsSecretValue(count) then
         return count
-    end
-    if count == nil or count == "" or count == 0 or count == "0" then
-        return nil
-    end
+    else
+        if count == nil or count == "" or count == 0 or count == "0" then
+            return nil
+        end
 
-    return tostring(count)
+        return tostring(count)
+    end
 end
 
 local function SetPreviewTextStyle(fontString, button, text, fontPath, outline, fontSize, color, anchor, offsetX, offsetY)
     if not fontString then return end
-    local isSecretText = IsPreviewSecretValue(text)
-    if text == nil or (not isSecretText and text == "") then
+    local isSecretText = IsSecretValue(text)
+    if isSecretText then
+        -- Secret text can be passed directly to SetText below, but must not be
+        -- inspected in Lua.
+    elseif text == nil or text == "" then
         fontString:SetText("")
         fontString:SetAlpha(0)
         fontString:Hide()
         return
-    end
-
-    if not isSecretText and type(text) ~= "string" then
+    elseif type(text) ~= "string" then
         text = tostring(text)
     end
 

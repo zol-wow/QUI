@@ -9,6 +9,8 @@ return {
         -- or annotated with `-- @secret-safe: <reason>` to keep CI green.
         "modules/cdm/",
         "modules/chat/",
+        "modules/groupframes/",
+        "modules/actionbars/",
     },
     ignore_paths = {
         "libs/",

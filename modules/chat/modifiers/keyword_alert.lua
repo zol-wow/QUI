@@ -14,9 +14,9 @@
 --
 -- Highlight: the matched substring is wrapped with |c<colorhex>...|r.
 -- Sound: PlaySoundFile with LSM:Fetch result if available, else literal path.
--- Flash: optional FCF_StartAlertFlash on the default chat frame (the master
--- pipeline filter does not carry the receiving frame on its info table, so
--- flashing falls back to DEFAULT_CHAT_FRAME).
+-- Flash: optional FCF_StartAlertFlash on the default chat frame; this modifier
+-- does not carry the receiving frame on its info table, so flashing falls back
+-- to DEFAULT_CHAT_FRAME.
 ---------------------------------------------------------------------------
 
 local ADDON_NAME, ns = ...

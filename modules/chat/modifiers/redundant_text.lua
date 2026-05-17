@@ -4,11 +4,9 @@
 -- short forms. Uses Blizzard's GLOBALSTRINGS templates as the basis for
 -- locale-safe pattern construction.
 --
--- Registers its own secure message-event filter for LOOT, CURRENCY,
--- COMBAT_XP_GAIN, COMBAT_HONOR_GAIN, COMBAT_FACTION_CHANGE — these events
--- are deliberately NOT in the main pipeline's event list (the main
--- pipeline focuses on chat-message events; these are system messages
--- with different signatures).
+-- Applies after Blizzard has rendered the line, rather than through a
+-- pre-dispatch chat filter, so addon string work cannot taint Blizzard's
+-- chat-history bookkeeping.
 ---------------------------------------------------------------------------
 
 local ADDON_NAME, ns = ...
@@ -41,7 +39,8 @@ local function templateToLuaPattern(template)
     end)
     -- Replace format specifiers (%s, %d, %1$s, %2$d, etc.) with captures.
     -- Use a non-greedy capture so multi-format templates work correctly.
-    escaped = escaped:gsub("%%%%[%d]?$?[sd]", "(.-)")
+    escaped = escaped:gsub("%%%d+%%%$[sd]", "(.-)")
+    escaped = escaped:gsub("%%[sd]", "(.-)")
     -- Anchor start and end for stricter matching.
     return "^" .. escaped .. "$"
 end
@@ -129,16 +128,8 @@ local function buildPatterns()
 end
 
 -- ---------------------------------------------------------------------------
--- Filter function
+-- Collapse function
 -- ---------------------------------------------------------------------------
-
-local EVENTS = {
-    "CHAT_MSG_LOOT",
-    "CHAT_MSG_CURRENCY",
-    "CHAT_MSG_COMBAT_XP_GAIN",
-    "CHAT_MSG_COMBAT_HONOR_GAIN",
-    "CHAT_MSG_COMBAT_FACTION_CHANGE",
-}
 
 -- Map event name to pattern key
 local EVENT_TO_KEY = {
@@ -155,33 +146,50 @@ local function IsSecret(value)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
 end
 
-local function HasSecretValue(...)
-    return Helpers and Helpers.HasSecretValue and Helpers.HasSecretValue(...)
-end
-
 local function IsChatMessagingLockedDown()
     return I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown()
 end
 
-local function AddMessageEventFilter(event, filter)
-    if ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter then
-        ChatFrameUtil.AddMessageEventFilter(event, filter)
-    elseif ChatFrame_AddMessageEventFilter then
-        ChatFrame_AddMessageEventFilter(event, filter)
-    end
+local function NormalizeEvent(event)
+    if IsSecret(event) or type(event) ~= "string" or event == "" then return nil end
+    return event
 end
 
-local function RemoveMessageEventFilter(event, filter)
-    if ChatFrameUtil and ChatFrameUtil.RemoveMessageEventFilter then
-        ChatFrameUtil.RemoveMessageEventFilter(event, filter)
-    elseif ChatFrame_RemoveMessageEventFilter then
-        ChatFrame_RemoveMessageEventFilter(event, filter)
-    end
+local function ReadPackedArg(eventArgs, index)
+    if IsSecret(eventArgs) or type(eventArgs) ~= "table" then return nil end
+    local value = eventArgs[index]
+    if IsSecret(value) then return nil end
+    return value
+end
+
+local function GetRenderedLineKey(event, eventArgs)
+    event = NormalizeEvent(event)
+    if not event then return nil end
+    local lineID = ReadPackedArg(eventArgs, 11)
+    if lineID == nil then return nil end
+    local valueType = type(lineID)
+    if valueType ~= "number" and valueType ~= "string" then return nil end
+    return event .. ":" .. tostring(lineID)
+end
+
+local function SplitRenderedPrefix(message)
+    if IsSecret(message) or type(message) ~= "string" then return "", message end
+
+    local prefix, body = message:match("^(|cff%x%x%x%x%x%x%[%d%d?:%d%d%s?[AP]?[M]?%]|r%s)(.*)$")
+    if prefix then return prefix, body end
+
+    prefix, body = message:match("^(%[%d%d?:%d%d%s?[AP]?[M]?%]%s)(.*)$")
+    if prefix then return prefix, body end
+
+    return "", message
 end
 
 local function tryCollapse(msg, event)
     if IsSecret(msg) or IsChatMessagingLockedDown() then return msg end
     if not msg or type(msg) ~= "string" or msg == "" then return msg end
+
+    event = NormalizeEvent(event)
+    if not event then return msg end
 
     local key = EVENT_TO_KEY[event]
     if not key then return msg end
@@ -195,14 +203,15 @@ local function tryCollapse(msg, event)
     local patterns = BUILT_PATTERNS[key]
     if not patterns then return msg end
 
+    local prefix, body = SplitRenderedPrefix(msg)
     for i = 1, #patterns do
         local entry = patterns[i]
         local luaPattern, builder = entry[1], entry[2]
-        local captures = { msg:match(luaPattern) }
+        local captures = { body:match(luaPattern) }
         if #captures > 0 then
             local replacement = builder(captures)
             if replacement then
-                return replacement
+                return prefix .. replacement
             end
         end
     end
@@ -210,46 +219,152 @@ local function tryCollapse(msg, event)
     return msg
 end
 
-local function filter(self, event, msg, ...)
-    if IsSecret(msg) or IsChatMessagingLockedDown() then
-        return nil
-    end
-    if not msg or type(msg) ~= "string" then
-        return nil
-    end
-
-    if HasSecretValue(...) then
-        return nil
-    end
-
-    local newMsg = tryCollapse(msg, event)
-    if newMsg and not IsSecret(newMsg) and newMsg ~= msg then
-        return false, newMsg, ...
-    end
-    return nil
-end
-
 -- ---------------------------------------------------------------------------
--- Filter installation / removal
+-- Rendered-line hook installation
 -- ---------------------------------------------------------------------------
 
-local INSTALLED = false
+local HOOKS_INSTALLED = false
+local hookedFrames = setmetatable({}, { __mode = "k" })
+local renderedState = setmetatable({}, { __mode = "k" })
 
-local function installFilter()
-    if INSTALLED then return end
-    buildPatterns()  -- ensure templates resolved (GLOBALSTRINGS available at file-load? probably yes; defensive)
-    for i = 1, #EVENTS do
-        AddMessageEventFilter(EVENTS[i], filter)
+local function GetRenderedState(frame)
+    local state = renderedState[frame]
+    if not state then
+        state = { lineKeys = {} }
+        renderedState[frame] = state
     end
-    INSTALLED = true
+    return state
 end
 
-local function removeFilter()
-    if not INSTALLED then return end
-    for i = 1, #EVENTS do
-        RemoveMessageEventFilter(EVENTS[i], filter)
+local function ShouldTryCollapse(event)
+    event = NormalizeEvent(event)
+    if not event then return false end
+
+    local key = EVENT_TO_KEY[event]
+    if not key then return false end
+
+    local settings = I.GetSettings and I.GetSettings()
+    local s = (I.IsChatEnabled and I.IsChatEnabled(settings))
+        and settings.modifiers and settings.modifiers.redundantText
+    if not s or not s.enabled then return false end
+    if not s.patterns or s.patterns[key] == false then return false end
+    if not BUILT_PATTERNS[key] then return false end
+
+    return true
+end
+
+local function shouldTransformMessage(frame, message, r, g, b, infoID, accessID, typeID, event, eventArgs)
+    if not frame then return false end
+    if IsSecret(message) then return false end
+    if type(message) ~= "string" or message == "" then return false end
+
+    local state = GetRenderedState(frame)
+    local lineKey = GetRenderedLineKey(event, eventArgs)
+    if lineKey and state.lineKeys[lineKey] then
+        return false
     end
-    INSTALLED = false
+
+    local function markSeenAndSkip()
+        if lineKey then
+            state.lineKeys[lineKey] = true
+        end
+        return false
+    end
+
+    if IsChatMessagingLockedDown() then return markSeenAndSkip() end
+    if not ShouldTryCollapse(event) then return markSeenAndSkip() end
+
+    return true
+end
+
+local function transformMessage(frame, message, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...)
+    local state = GetRenderedState(frame)
+    local lineKey = GetRenderedLineKey(event, eventArgs)
+    if lineKey and state.lineKeys[lineKey] then
+        return message, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...
+    end
+
+    local newMessage = tryCollapse(message, event)
+    if lineKey then
+        state.lineKeys[lineKey] = true
+    end
+
+    if newMessage and not IsSecret(newMessage) and type(newMessage) == "string" then
+        message = newMessage
+    end
+    return message, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...
+end
+
+local function onAddMessage(frame)
+    if not frame or not frame.TransformMessages then return end
+    frame:TransformMessages(
+        function(...) return shouldTransformMessage(frame, ...) end,
+        function(...) return transformMessage(frame, ...) end
+    )
+end
+
+local function markExistingRenderedLines(frame)
+    if not frame or not frame.GetNumMessages or not frame.GetMessageInfo then return end
+    local okCount, count = pcall(frame.GetNumMessages, frame)
+    if not okCount or type(count) ~= "number" then return end
+
+    local state = GetRenderedState(frame)
+    for i = 1, count do
+        local ok, _, _, _, _, _, _, _, event, eventArgs = pcall(frame.GetMessageInfo, frame, i)
+        if ok then
+            local lineKey = GetRenderedLineKey(event, eventArgs)
+            if lineKey then
+                state.lineKeys[lineKey] = true
+            end
+        end
+    end
+end
+
+local function hookFrame(frame)
+    if not frame or hookedFrames[frame] then return end
+    if not frame.TransformMessages then return end
+    if not hooksecurefunc then return end
+
+    hookedFrames[frame] = true
+    markExistingRenderedLines(frame)
+    hooksecurefunc(frame, "AddMessage", onAddMessage)
+end
+
+local function hookAllFrames()
+    local n = _G.NUM_CHAT_WINDOWS or 10
+    for i = 1, n do
+        hookFrame(_G["ChatFrame" .. i])
+    end
+end
+
+local function installRenderedHooks()
+    if HOOKS_INSTALLED then
+        hookAllFrames()
+        return
+    end
+
+    HOOKS_INSTALLED = true
+    hookAllFrames()
+
+    if hooksecurefunc and _G.FCF_OpenNewWindow then
+        hooksecurefunc("FCF_OpenNewWindow", function()
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0.1, hookAllFrames)
+            else
+                hookAllFrames()
+            end
+        end)
+    end
+
+    if hooksecurefunc and _G.FCF_OpenTemporaryWindow then
+        hooksecurefunc("FCF_OpenTemporaryWindow", function()
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0.1, hookAllFrames)
+            else
+                hookAllFrames()
+            end
+        end)
+    end
 end
 
 -- ---------------------------------------------------------------------------
@@ -263,9 +378,8 @@ function ApplyEnabled()
         and settings.modifiers.redundantText.enabled
 
     if enabled then
-        installFilter()
-    else
-        removeFilter()
+        buildPatterns()
+        installRenderedHooks()
     end
 end
 

@@ -1,12 +1,12 @@
 ---------------------------------------------------------------------------
 -- QUI Chat Module — Modifier Pipeline
--- Manages an ordered list of message modifiers and wires a single master
--- ChatFrameUtil message-event filter that runs the chain for in-scope events.
+-- Manages an ordered list of message modifiers. The chain is consumed from
+-- chat.lua's rendered-line transform hook, after Blizzard has finished its
+-- chat-history bookkeeping.
 --
--- Whisper events are intentionally NOT registered — Blizzard HistoryKeeper
--- on Midnight is taint-protected; touching whispers in this filter chain
--- risks taint. Loot / XP / Honor / Faction events are also out of scope
--- here (Phase A.2 will register a separate filter for those).
+-- Whisper events are intentionally out of scope — Blizzard HistoryKeeper on
+-- Midnight is taint-protected. Loot / XP / Honor / Faction events are also
+-- out of scope here; redundant_text.lua owns their separate rendered transform.
 --
 -- Modifier signature: fn(msg, info, event) -> msg, info  (both required;
 -- nil for either return means "no change for that value")
@@ -25,23 +25,6 @@ local Helpers = ns.Helpers
 
 local function IsSecret(value)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
-end
-
-local function HasSecretValue(...)
-    return Helpers and Helpers.HasSecretValue and Helpers.HasSecretValue(...)
-end
-
-local function SafeFilterValue(value)
-    if IsSecret(value) then return nil end
-    return value
-end
-
-local function AddMessageEventFilter(event, filter)
-    if ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter then
-        ChatFrameUtil.AddMessageEventFilter(event, filter)
-    elseif ChatFrame_AddMessageEventFilter then
-        ChatFrame_AddMessageEventFilter(event, filter)
-    end
 end
 
 -- Ordered list of { name, priority, fn } entries. Sorted ascending by priority.
@@ -96,7 +79,9 @@ end
 function Pipeline.Run(msg, info, event)
     for i = 1, #modifiers do
         local entry = modifiers[i]
-        local ok, newMsg, newInfo = xpcall(entry.fn, geterrorhandler(), msg, info, event)
+        local ok, newMsg, newInfo = xpcall(function()
+            return entry.fn(msg, info, event)
+        end, geterrorhandler())
         if ok then
             -- Modifiers may return nil for either to mean "no change"
             if newMsg ~= nil then msg = newMsg end
@@ -107,10 +92,6 @@ function Pipeline.Run(msg, info, event)
     end
     return msg, info
 end
-
--- ---------------------------------------------------------------------------
--- Master filter wiring
--- ---------------------------------------------------------------------------
 
 -- Events the pipeline transforms. Whispers, loot/xp/honor/faction, and
 -- system events are intentionally excluded.
@@ -129,81 +110,18 @@ local PIPELINE_EVENTS = {
     "CHAT_MSG_CHANNEL",
 }
 
-local masterFilter = function(self, event, msg, ...)
-    -- IsSecret first: type(msg) on a secret string taints the dispatch
-    -- chain, which then propagates into MessageEventHandler and breaks
-    -- Blizzard's per-chatType formatter when it string-converts secret
-    -- sender names (e.g. LookingForGroup channel). Same defensive
-    -- ordering as copy.lua:135 and history.lua's captureToHistory.
-    if IsSecret(msg) then
-        return nil
-    end
-    if not msg or type(msg) ~= "string" then
-        return nil
-    end
-
-    -- The pipeline cannot safely return modified messages unless all original
-    -- args can be forwarded unchanged. Bail before modifiers do addon-side
-    -- string work that could taint Blizzard's downstream HistoryKeeper path.
-    if HasSecretValue(...) then
-        return nil
-    end
-
-    local settings = I.GetSettings and I.GetSettings()
-    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then
-        return nil
-    end
-
-    if #modifiers == 0 then
-        return nil
-    end
-
-    -- Build minimal info table for modifier consumption. Raw varargs are only
-    -- exposed after every passthrough value has been checked above.
-    -- CHAT_MSG_* args (after msg): author, _, language, channelString, target,
-    -- flags, channelNumber, channelName, _, lineID, guid, bnSenderID, ...
-    local info = {
-        event         = event,
-        author        = SafeFilterValue(select(1, ...)),
-        language      = SafeFilterValue(select(3, ...)),
-        flags         = SafeFilterValue(select(6, ...)),
-        channelNumber = SafeFilterValue(select(7, ...)),
-        channelName   = SafeFilterValue(select(8, ...)),
-        lineID        = SafeFilterValue(select(10, ...)),
-        guid          = SafeFilterValue(select(11, ...)),
-    }
-    info._raw = { ... }
-
-    local newMsg, _ = Pipeline.Run(msg, info, event)
-
-    if not newMsg
-        or IsSecret(newMsg)
-        or newMsg == msg then
-        return nil
-    end
-
-    -- Blizzard's filter chain expects the filter to return either:
-    --   nil (no change)
-    --   true (suppress message)
-    --   false, msg, ... (don't suppress, pass modified msg + varargs)
-    -- Only return the replacement tuple when a non-secret message changed.
-    return false, newMsg, ...
+local PIPELINE_EVENT_SET = {}
+for i = 1, #PIPELINE_EVENTS do
+    PIPELINE_EVENT_SET[PIPELINE_EVENTS[i]] = true
 end
 
-local installed = false
-local function InstallMasterFilter()
-    if installed then return end
-    installed = true
-    for i = 1, #PIPELINE_EVENTS do
-        AddMessageEventFilter(PIPELINE_EVENTS[i], masterFilter)
-    end
+function Pipeline.ShouldRunForEvent(event)
+    if IsSecret(event) or type(event) ~= "string" then return false end
+    return PIPELINE_EVENT_SET[event] == true
 end
-
--- Install at file-load time. The current ChatFrameUtil registry stores filters
--- in secure containers; older clients fall back to the legacy global.
-InstallMasterFilter()
 
 -- Expose for testability / introspection. NOT part of the documented API.
 Pipeline._modifiers = modifiers
 Pipeline._byName = byName
 Pipeline._events = PIPELINE_EVENTS
+Pipeline._eventSet = PIPELINE_EVENT_SET
