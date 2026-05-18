@@ -198,9 +198,9 @@ assertContains(
     "icons delay function should be mode-aware"
 )
 assertContains(
-    icons,
-    "local function RefreshCooldownVisualsForSpellID(eventSpellID, eventBaseSpellID)",
-    "icons should keep targeted per-spell visual refresh private to the runtime refresh pipeline"
+    iconRuntimeRefresh,
+    "function controller:RefreshCooldownVisualsForSpellID(eventSpellID, eventBaseSpellID)",
+    "targeted per-spell visual refresh should live in the private runtime refresh controller"
 )
 
 local delayBlock = extractBlock(
@@ -275,9 +275,9 @@ assertContains(
     "icons should listen for event-driven spell range updates"
 )
 assertContains(
-    icons,
+    iconRuntimeRefresh,
     'if event == "SPELL_RANGE_CHECK_UPDATE" then',
-    "icons should handle event-driven spell range updates"
+    "runtime refresh controller should handle event-driven spell range updates"
 )
 assertContains(
     icons,
@@ -388,18 +388,23 @@ assertContainsOrdered(
 )
 
 local chargesChangedBlock = extractBlock(
-    icons,
-    "local function OnCDMChargesChanged(_, spellID)",
-    "ns.CDMResolvers.Subscribe(\"CDM:COOLDOWN_CHANGED\", OnCDMCooldownChanged)",
+    iconRuntimeRefresh,
+    "function controller:HandleChargesChanged(_, spellID)",
+    "return controller",
     "charges changed block"
 )
 assertContainsOrdered(
     chargesChangedBlock,
     {
-        "_resolverRuntimePolicy.pendingStackTextUpdate = true",
-        "ScheduleCDMUpdate(nil, CDM_UPDATE_COOLDOWN, false)",
+        "callbacks.requestStackTextUpdate()",
+        "callbacks.scheduleUpdate(nil, UPDATE_COOLDOWN, false)",
     },
     "charge events should explicitly opt into stack text writes"
+)
+assertContains(
+    icons,
+    "_resolverRuntimePolicy.pendingStackTextUpdate = true",
+    "CDMIcons should keep stack-text write state private behind the runtime-refresh callback"
 )
 assertNotContains(
     icons,
@@ -463,7 +468,7 @@ assertNotContains(
 )
 
 local spellUpdateUsableBlock = extractBlock(
-    icons,
+    iconRuntimeRefresh,
     'if event == "SPELL_UPDATE_USABLE" then',
     'if event == "SPELLS_CHANGED" then',
     "SPELL_UPDATE_USABLE branch"
@@ -471,16 +476,16 @@ local spellUpdateUsableBlock = extractBlock(
 assertContainsOrdered(
     spellUpdateUsableBlock,
     {
-        "_resolverRuntimePolicy.QueueUsabilityRefresh()",
+        "controller:QueueUsabilityRefresh()",
     },
     "SPELL_UPDATE_USABLE should route through the combat coalescer"
 )
 assertContainsOrdered(
-    icons,
+    iconRuntimeRefresh,
     {
-        "function _resolverRuntimePolicy.RunUsabilityRefresh()",
-        "_resolverRuntimePolicy.ApplyResolvedCooldownForUsabilityEvent()",
-        "_resolverRuntimePolicy.UpdateIconRangesForUsabilityEvent()",
+        "function controller:RunUsabilityRefresh()",
+        "controller:ApplyUsabilityRefresh()",
+        "callbacks.updateIconRangesForUsabilityEvent()",
     },
     "coalesced usability refresh should still reconcile stale cooldown candidates and usability visuals together"
 )
@@ -553,6 +558,36 @@ assertNotContains(
     icons,
     "CDMIcons.CountPendingMirrorRefreshKeys",
     "mirror refresh queue counting should stay private behind cache stats"
+)
+assertNotContains(
+    icons,
+    "function _resolverRuntimePolicy.QueueResolvedCooldownForSpellID",
+    "per-spell refresh queues should live in the private runtime refresh controller"
+)
+assertNotContains(
+    icons,
+    "function _resolverRuntimePolicy.QueueUsabilityRefresh",
+    "usability refresh queues should live in the private runtime refresh controller"
+)
+assertNotContains(
+    icons,
+    "function _resolverRuntimePolicy.QueueItemScopeRefresh",
+    "item refresh queues should live in the private runtime refresh controller"
+)
+assertNotContains(
+    icons,
+    "local function ApplyResolvedCooldownForSpellScope",
+    "spell-scope refresh walking should live in the private runtime refresh controller"
+)
+assertNotContains(
+    icons,
+    "local function ApplyResolvedCooldownForItemScope",
+    "item-scope refresh walking should live in the private runtime refresh controller"
+)
+assertNotContains(
+    icons,
+    "local function ApplyResolvedCooldownForAuraInstances",
+    "aura-delta refresh walking should live in the private runtime refresh controller"
 )
 
 assertContainsOrdered(
@@ -746,7 +781,7 @@ assertContains(
 )
 assertContains(
     icons,
-    "local runtimeRefresh = ns.CDMIconRuntimeRefresh and ns.CDMIconRuntimeRefresh.Create",
+    "runtimeRefresh = ns.CDMIconRuntimeRefresh and ns.CDMIconRuntimeRefresh.Create",
     "CDMIcons should wire runtime refresh through the private controller"
 )
 assertContains(
@@ -1596,30 +1631,30 @@ assertContainsOrdered(
 )
 
 local targetedRefreshBlock = extractBlock(
-    icons,
-    "if comparableSpellID and not spellIDIsGCD and not gcdChanged then",
+    iconRuntimeRefresh,
+    "if comparableSpellID and not spellIDIsGCDSpell and not gcdChanged then",
     "else",
     "targeted cooldown branch"
 )
 assertContainsOrdered(
     targetedRefreshBlock,
     {
-        "_resolverRuntimePolicy.QueueResolvedCooldownForSpellID(spellID, baseSpellID)",
+        "controller:QueueResolvedCooldownForSpellID(spellID, baseSpellID)",
     },
     "targeted cooldown refresh should route through the per-spell coalescer"
 )
 
 local broadRefreshBlock = extractBlock(
-    icons,
-    "Payloadless broad refreshes can repeat during the same GCD.",
-    "ApplyResolvedCooldownForSpellScope()",
+    iconRuntimeRefresh,
+    "if gcdChanged or spellIDIsGCDSpell then",
+    "controller:ApplySpellScope()",
     "broad cooldown refresh branch"
 )
 assertContainsOrdered(
     broadRefreshBlock,
     {
-        "if gcdChanged or spellIDIsGCD then",
-        "InvalidateGCDOnlyBindings()",
+        "if gcdChanged or spellIDIsGCDSpell then",
+        "controller:InvalidateGCDOnlyBindings()",
     },
     "broad cooldown refresh should only invalidate GCD bindings on real GCD edges"
 )
