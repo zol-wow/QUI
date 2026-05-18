@@ -511,6 +511,38 @@ end
 
 local textureWrites = {}
 local overlayState = {}
+local textOverlay
+local function CreateQualityTexture(parent)
+    return {
+        SetPoint = noop,
+        GetParent = function()
+            return parent
+        end,
+        SetDrawLayer = function(_, layerName, layerSublevel)
+            overlayState.drawLayer = layerName
+            overlayState.drawSublevel = layerSublevel
+        end,
+        SetAtlas = function(_, atlas)
+            overlayState.atlas = atlas
+        end,
+        Show = function()
+            overlayState.shown = true
+        end,
+        Hide = function()
+            overlayState.shown = false
+        end,
+    }
+end
+textOverlay = {
+    CreateTexture = function(_, name, layer, template, sublevel)
+        overlayState.createParent = "TextOverlay"
+        overlayState.createName = name
+        overlayState.createLayer = layer
+        overlayState.createTemplate = template
+        overlayState.createSublevel = sublevel
+        return CreateQualityTexture(textOverlay)
+    end,
+}
 local itemIcon = {
     _spellEntry = {
         type = "item",
@@ -535,6 +567,7 @@ local itemIcon = {
         SetSwipeColor = noop,
         Show = noop,
     },
+    TextOverlay = textOverlay,
     StackText = {
         SetText = noop,
         SetTextColor = noop,
@@ -542,26 +575,12 @@ local itemIcon = {
         Show = noop,
     },
     CreateTexture = function(_, name, layer, template, sublevel)
+        overlayState.createParent = "Icon"
         overlayState.createName = name
         overlayState.createLayer = layer
         overlayState.createTemplate = template
         overlayState.createSublevel = sublevel
-        return {
-            SetPoint = noop,
-            SetDrawLayer = function(_, layerName, layerSublevel)
-                overlayState.drawLayer = layerName
-                overlayState.drawSublevel = layerSublevel
-            end,
-            SetAtlas = function(_, atlas)
-                overlayState.atlas = atlas
-            end,
-            Show = function()
-                overlayState.shown = true
-            end,
-            Hide = function()
-                overlayState.shown = false
-            end,
-        }
+        return CreateQualityTexture(itemIcon)
     end,
     IsShown = function()
         return true
@@ -576,10 +595,12 @@ itemIcon._lastTexture = "rank-1-texture"
 icons.OnFactoryIconCreated(itemIcon, itemIcon._spellEntry)
 assert(overlayState.atlas == "rank-1-atlas",
     "initial item icon should show the currently-owned lower-rank quality atlas")
+assert(overlayState.createParent == "TextOverlay",
+    "profession quality overlay should be parented to the CDM text overlay")
 assert(overlayState.createLayer == "ARTWORK" and overlayState.createSublevel == 1,
-    "profession quality overlay should sit just above the base icon texture")
+    "profession quality overlay should use a lower text-overlay draw layer")
 assert(overlayState.drawLayer == "ARTWORK" and overlayState.drawSublevel == 1,
-    "profession quality overlay should stay below keybind/text overlay layers")
+    "profession quality overlay should stay below OVERLAY text layers")
 
 itemCounts[1001] = 0
 itemCounts[1002] = 3

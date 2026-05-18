@@ -485,15 +485,87 @@ local function GetKeybindFromActionButton(button, actionSlot)
     return nil
 end
 
--- Parse macro body text to extract spell names/IDs
--- Returns two tables: spellIDs (id -> true) and spellNames (name -> true)
+local function TrimMacroToken(value)
+    if not value then return nil end
+    return value:match("^%s*(.-)%s*$")
+end
+
+local function CleanMacroCommandPayload(value)
+    value = TrimMacroToken(value)
+    if not value or value == "" then return nil end
+    value = value:gsub("%[.-%]", "")
+    value = value:match("^([^;/]+)") or value
+    return TrimMacroToken(value)
+end
+
+local function StoreLowerName(tbl, value)
+    if not value or value == "" or value == "?" then return end
+    local ok, lower = pcall(function() return value:lower() end)
+    if ok and lower and lower ~= "" then
+        tbl[lower] = true
+    end
+end
+
+local function StoreMacroItemID(itemIDs, itemNames, itemID)
+    if not itemID then return end
+    if type(issecretvalue) == "function" and issecretvalue(itemID) then return end
+    itemIDs[itemID] = true
+    if C_Item and C_Item.GetItemInfo then
+        local ok, itemName = pcall(C_Item.GetItemInfo, itemID)
+        if ok then
+            StoreLowerName(itemNames, itemName)
+        end
+    end
+end
+
+local function StoreMacroItemToken(itemIDs, itemNames, value)
+    value = CleanMacroCommandPayload(value)
+    if not value or value == "" or value == "?" then return end
+
+    local itemID = value:match("item:(%d+)")
+    if itemID then
+        StoreMacroItemID(itemIDs, itemNames, tonumber(itemID))
+    end
+
+    local linkedName = value:match("%[(.-)%]")
+    if linkedName then
+        StoreLowerName(itemNames, linkedName)
+    end
+
+    local numeric = tonumber(value)
+    if numeric then
+        StoreMacroItemID(itemIDs, itemNames, numeric)
+        if numeric >= 1 and numeric <= 19 and GetInventoryItemID then
+            local ok, equippedItemID = pcall(GetInventoryItemID, "player", numeric)
+            if ok then
+                StoreMacroItemID(itemIDs, itemNames, equippedItemID)
+            end
+        end
+        return
+    end
+
+    if not itemID and not linkedName then
+        StoreLowerName(itemNames, value)
+        if C_Item and C_Item.GetItemInfo then
+            local ok, itemName = pcall(C_Item.GetItemInfo, value)
+            if ok then
+                StoreLowerName(itemNames, itemName)
+            end
+        end
+    end
+end
+
+-- Parse macro body text to extract spell/item names/IDs
+-- Returns spellIDs, spellNames, itemIDs, and itemNames lookup tables.
 local function ParseMacroForSpells(macroIndex)
     local spellIDs = {}
     local spellNames = {}
+    local itemIDs = {}
+    local itemNames = {}
     
     -- Get macro body
     local macroName, iconTexture, body = GetMacroInfo(macroIndex)
-    if not body then return spellIDs, spellNames end
+    if not body then return spellIDs, spellNames, itemIDs, itemNames end
     
     -- First, try the simple GetMacroSpell which handles basic cases
     local simpleSpell = GetMacroSpell(macroIndex)
@@ -513,6 +585,7 @@ local function ParseMacroForSpells(macroIndex)
         -- Skip comments
         if not lineLower:match("^%s*%-%-") then
             local spellName = nil
+            local itemName = nil
             
             -- Try to extract spell name from various patterns
             -- Pattern 1: /cast [conditions] SpellName or /cast SpellName
@@ -520,10 +593,7 @@ local function ParseMacroForSpells(macroIndex)
                 -- Remove the /cast part and any conditions in brackets
                 local afterCast = line:match("/[cC][aA][sS][tT]%s*(.*)")
                 if afterCast then
-                    -- Remove condition brackets like [@mouseover,exists][]
-                    afterCast = afterCast:gsub("%[.-%]", "")
-                    -- Clean up and get the spell name
-                    spellName = afterCast:match("^%s*(.-)%s*$")
+                    spellName = CleanMacroCommandPayload(afterCast)
                 end
             end
             
@@ -532,8 +602,8 @@ local function ParseMacroForSpells(macroIndex)
                 if lineLower:match("/use") then
                     local afterUse = line:match("/[uU][sS][eE]%s*(.*)")
                     if afterUse then
-                        afterUse = afterUse:gsub("%[.-%]", "")
-                        spellName = afterUse:match("^%s*(.-)%s*$")
+                        spellName = CleanMacroCommandPayload(afterUse)
+                        itemName = spellName
                     end
                 end
             end
@@ -543,7 +613,8 @@ local function ParseMacroForSpells(macroIndex)
                 if lineLower:match("#showtooltip") then
                     spellName = line:match("#[sS][hH][oO][wW][tT][oO][oO][lL][tT][iI][pP]%s+(.+)")
                     if spellName then
-                        spellName = spellName:match("^%s*(.-)%s*$")
+                        spellName = CleanMacroCommandPayload(spellName)
+                        itemName = spellName
                     end
                 end
             end
@@ -567,10 +638,14 @@ local function ParseMacroForSpells(macroIndex)
                     end
                 end
             end
+
+            if itemName and itemName ~= "" then
+                StoreMacroItemToken(itemIDs, itemNames, itemName)
+            end
         end
     end
     
-    return spellIDs, spellNames
+    return spellIDs, spellNames, itemIDs, itemNames
 end
 
 -- Helper to process an action button and add to cache
@@ -643,7 +718,7 @@ local function ProcessActionButton(button)
         
         if macroName then
             -- Valid macro index - parse the macro for spells
-            local macroSpells, macroSpellNames = ParseMacroForSpells(id)
+            local macroSpells, macroSpellNames, macroItems, macroItemNames = ParseMacroForSpells(id)
             
             -- Cache by spell ID
             for spellID in pairs(macroSpells) do
@@ -655,6 +730,18 @@ local function ProcessActionButton(button)
             for spellName in pairs(macroSpellNames) do
                 if not spellNameToKeybind[spellName] then
                     spellNameToKeybind[spellName] = keybind
+                end
+            end
+            -- Cache by item ID
+            for itemID in pairs(macroItems) do
+                if not itemToKeybind[itemID] then
+                    itemToKeybind[itemID] = keybind
+                end
+            end
+            -- Cache by item name
+            for itemName in pairs(macroItemNames) do
+                if not itemNameToKeybind[itemName] then
+                    itemNameToKeybind[itemName] = keybind
                 end
             end
         else
@@ -681,7 +768,7 @@ local function ProcessActionButton(button)
             if actionText and actionText ~= "" then
                 local macroIndex = macroNameToIndex[actionText:lower()]
                 if macroIndex then
-                    local macroSpells, macroSpellNames = ParseMacroForSpells(macroIndex)
+                    local macroSpells, macroSpellNames, macroItems, macroItemNames = ParseMacroForSpells(macroIndex)
                     for spellID in pairs(macroSpells) do
                         if not spellToKeybind[spellID] then
                             spellToKeybind[spellID] = keybind
@@ -690,6 +777,16 @@ local function ProcessActionButton(button)
                     for spellName in pairs(macroSpellNames) do
                         if not spellNameToKeybind[spellName] then
                             spellNameToKeybind[spellName] = keybind
+                        end
+                    end
+                    for itemID in pairs(macroItems) do
+                        if not itemToKeybind[itemID] then
+                            itemToKeybind[itemID] = keybind
+                        end
+                    end
+                    for itemName in pairs(macroItemNames) do
+                        if not itemNameToKeybind[itemName] then
+                            itemNameToKeybind[itemName] = keybind
                         end
                     end
                 end
@@ -1272,10 +1369,26 @@ local function ApplyKeybindToIcon(icon, viewerName)
         iconKeybindState[icon] = iks
     end
 
+    local textLayerParent = (icon.TextOverlay and icon.TextOverlay.CreateFontString and icon.TextOverlay) or icon
+
     -- Ensure keybind text sits above cooldown swipe/darkening overlays.
+    if iks.textLayer and iks.textLayer.GetParent and iks.textLayer:GetParent() ~= textLayerParent then
+        if iks.text then
+            iks.text:Hide()
+        end
+        if iks.textLayer.Hide then
+            iks.textLayer:Hide()
+        end
+        iks.textLayer = nil
+        iks.text = nil
+        iks.shownText = nil
+        iks.anchor, iks.offsetX, iks.offsetY = nil, nil, nil
+        iks.font, iks.fontSize, iks.fontOutline = nil, nil, nil
+        iks.r, iks.g, iks.b, iks.a = nil, nil, nil, nil
+    end
     if not iks.textLayer then
-        local layer = CreateFrame("Frame", nil, icon)
-        layer:SetAllPoints(icon)
+        local layer = CreateFrame("Frame", nil, textLayerParent)
+        layer:SetAllPoints(textLayerParent)
         iks.textLayer = layer
     end
     if iks.textLayer then
@@ -1284,8 +1397,9 @@ local function ApplyKeybindToIcon(icon, viewerName)
         if iks.textLayer:GetFrameLevel() ~= desiredLevel then
             iks.textLayer:SetFrameLevel(desiredLevel)
         end
-        if icon.GetFrameStrata and iks.textLayer.GetFrameStrata and iks.textLayer:GetFrameStrata() ~= icon:GetFrameStrata() then
-            iks.textLayer:SetFrameStrata(icon:GetFrameStrata())
+        local strataSource = (textLayerParent.GetFrameStrata and textLayerParent) or icon
+        if strataSource.GetFrameStrata and iks.textLayer.GetFrameStrata and iks.textLayer:GetFrameStrata() ~= strataSource:GetFrameStrata() then
+            iks.textLayer:SetFrameStrata(strataSource:GetFrameStrata())
         end
     end
 

@@ -414,6 +414,13 @@ end
 local PROFESSION_QUALITY_DRAW_LAYER = "ARTWORK"
 local PROFESSION_QUALITY_DRAW_SUBLEVEL = 1
 
+local function GetIconProfessionQualityParent(icon)
+    if icon and icon.TextOverlay and icon.TextOverlay.CreateTexture then
+        return icon.TextOverlay
+    end
+    return icon
+end
+
 local function UpdateIconProfessionQuality(icon)
     if not icon or not icon._spellEntry then
         ClearIconProfessionQuality(icon)
@@ -453,9 +460,20 @@ local function UpdateIconProfessionQuality(icon)
         return
     end
 
+    local overlayParent = GetIconProfessionQualityParent(icon)
+    if not (overlayParent and overlayParent.CreateTexture) then
+        ClearIconProfessionQuality(icon)
+        return
+    end
+
     local overlay = icon._professionQualityOverlay
+    if overlay and overlay.GetParent and overlay:GetParent() ~= overlayParent then
+        overlay:Hide()
+        overlay = nil
+        icon._professionQualityOverlay = nil
+    end
     if not overlay then
-        overlay = icon:CreateTexture(nil, PROFESSION_QUALITY_DRAW_LAYER, nil, PROFESSION_QUALITY_DRAW_SUBLEVEL)
+        overlay = overlayParent:CreateTexture(nil, PROFESSION_QUALITY_DRAW_LAYER, nil, PROFESSION_QUALITY_DRAW_SUBLEVEL)
         overlay:SetPoint("TOPLEFT", icon, "TOPLEFT", -3, 2)
         icon._professionQualityOverlay = overlay
     end
