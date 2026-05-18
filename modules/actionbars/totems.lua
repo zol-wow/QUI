@@ -123,6 +123,24 @@ local function GetSlotPriorities()
     return {1, 2, 3, 4}
 end
 
+local function SetTotemDismissSlot(btn, slot)
+    if not btn or not slot then return end
+    if InCombatLockdown() then
+        if btn._secureTotemSlot ~= slot then
+            pendingReconcile = true
+        end
+        return
+    end
+
+    if btn._secureTotemSlot == slot then return end
+    btn:SetAttribute("type2", "destroytotem")
+    btn:SetAttribute("*type2", "destroytotem")
+    btn:SetAttribute("totem-slot", slot)
+    btn:SetAttribute("totem-slot2", slot)
+    btn:SetAttribute("*totem-slot2", slot)
+    btn._secureTotemSlot = slot
+end
+
 ---------------------------------------------------------------------------
 -- CONTAINER + BUTTON CREATION
 ---------------------------------------------------------------------------
@@ -143,10 +161,12 @@ TotemBar.enabled = false
 
 -- Create one button per totem slot
 for i = 1, MAX_SLOTS do
-    local btn = CreateFrame("Button", "QUI_TotemBarButton" .. i, container)
+    local btn = CreateFrame("Button", "QUI_TotemBarButton" .. i, container, "SecureActionButtonTemplate")
     btn:SetSize(36, 36)
     btn:SetAlpha(0)
     btn.active = false
+    btn:RegisterForClicks("RightButtonUp")
+    SetTotemDismissSlot(btn, i)
 
     -- Icon texture
     btn.icon = btn:CreateTexture(nil, "ARTWORK")
@@ -330,9 +350,7 @@ local function UpdateTotems()
         local slot = priorities[displayIndex] or displayIndex
         local btn = TotemBar.buttons[displayIndex]
         btn.slot = slot
-
-        -- DestroyTotem() is fully protected — no addon can call it.
-        -- Blizzard's own totem UI no longer supports click-to-dismiss.
+        SetTotemDismissSlot(btn, slot)
 
         local haveTotem, name, startTime, duration, icon = GetTotemInfo(slot)
         -- Detect active totem: OOC values are readable, combat values are secret.
