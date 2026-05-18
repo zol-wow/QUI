@@ -11,6 +11,7 @@
     <Script file="gameplay/powerbaralt.lua"/>
     <Script file="notifications/readycheck.lua"/>
     <Script file="system/gamemenu.lua"/>
+    <Script file="system/popups.lua"/>
     <Script file="frames/overrideactionbar.lua"/>
     <Script file="gameplay/objectivetracker.lua"/>
     <Script file="frames/instanceframes.lua"/>

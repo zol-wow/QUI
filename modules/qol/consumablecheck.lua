@@ -533,6 +533,8 @@ local function ConfigureButtonClickAction(button, buttonType, data, showGlow)
     button.click.selectedItemID = data.itemID
 
     button.click:SetAttribute("type1", "macro")
+    button.click:SetAttribute("type2", nil)
+    button.click:SetAttribute("macrotext2", nil)
     if data.isSpell then
         button.click:SetAttribute("macrotext1", "/cast " .. data.name)
     else
@@ -756,12 +758,14 @@ local function CreateConsumableButton(parent, index, buttonType, iconID, isClick
         button.click:SetAttribute("type1", "macro")
         button.click:SetScript("OnEnter", function() button:SetAlpha(0.7) end)
         button.click:SetScript("OnLeave", function() button:SetAlpha(1) end)
+        button.click:SetScript("OnMouseUp", function(self, mouseButton)
+            if mouseButton == "RightButton" and not InCombatLockdown() and ToggleConsumablePicker then
+                ToggleConsumablePicker(button)
+            end
+        end)
         button.click:SetScript("PostClick", function(self, mouseButton, down)
             if down then return end
             if mouseButton == "RightButton" then
-                if not InCombatLockdown() and ToggleConsumablePicker then
-                    ToggleConsumablePicker(button)
-                end
                 return
             end
             if mouseButton == "LeftButton" and self.selectedItemID then
@@ -1455,7 +1459,7 @@ local function PositionConsumablesFrame()
 end
 
 ---------------------------------------------------------------------------
--- INSTANCE & BUFF CHECK HELPERS
+-- INSTANCE HELPERS
 ---------------------------------------------------------------------------
 
 local function IsInDungeonInstance()
@@ -1466,40 +1470,6 @@ end
 local function IsInRaidInstance()
     local _, instanceType = IsInInstance()
     return instanceType == "raid"
-end
-
-local function HasMissingBuffs()
-    local settings = GetSettings()
-    if not settings then return false end
-    local buffs = ScanPlayerBuffs()
-    if settings.consumableFood ~= false and not buffs.hasFood then return true end
-    if settings.consumableFlask ~= false and not buffs.hasFlask then return true end
-    if settings.consumableRune ~= false and not buffs.hasRune then return true end
-
-    -- Weapon enhancement check (class-aware)
-    local hasMainHandEnchant, _, _, _, hasOffHandEnchant = GetWeaponEnchantInfo()
-    if settings.consumableOilMH ~= false then
-        local mhConfig = GetEnhancementConfig("MH")
-        if mhConfig and mhConfig.checkType == "playerAura" then
-            if not buffs.hasWeaponMH then return true end
-        else
-            if not hasMainHandEnchant then return true end
-        end
-    end
-    if ShouldShowOHButton(settings) then
-        local ohConfig = GetEnhancementConfig("OH")
-        if ohConfig and ohConfig.checkType == "playerAura" then
-            if not buffs.hasWeaponOH then return true end
-        else
-            if not hasOffHandEnchant then return true end
-        end
-    end
-
-    if settings.consumableHealthstone ~= false and HasWarlockInGroup() then
-        local hsCount = (C_Item.GetItemCount(5512, false, true) or 0) + (C_Item.GetItemCount(224464, false, true) or 0)
-        if hsCount == 0 then return true end
-    end
-    return false
 end
 
 ---------------------------------------------------------------------------
@@ -1545,11 +1515,11 @@ local function OnInstanceEnter()
     if InCombatLockdown() then return end
 
     if settings.consumableOnDungeon and IsInDungeonInstance() then
-        if HasMissingBuffs() then ShowConsumablesStandalone() end
+        ShowConsumablesStandalone()
         return
     end
     if settings.consumableOnRaid and IsInRaidInstance() then
-        if HasMissingBuffs() then ShowConsumablesStandalone() end
+        ShowConsumablesStandalone()
         return
     end
 end
@@ -1560,7 +1530,7 @@ local function OnResurrect()
     if not settings.consumableOnResurrect then return end
     if InCombatLockdown() then return end
     if not ns.Utils.IsInInstancedContent() then return end
-    if HasMissingBuffs() then ShowConsumablesStandalone() end
+    ShowConsumablesStandalone()
 end
 
 ---------------------------------------------------------------------------

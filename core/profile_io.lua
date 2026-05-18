@@ -538,6 +538,9 @@ local PROFILE_QOL_GENERAL_KEYS = {
 local PROFILE_SKINNING_GENERAL_KEYS = {
     "skinKeystoneFrame",
     "skinGameMenu",
+    "skinContextMenus",
+    "skinReadyCheck",
+    "skinStaticPopups",
     "addQUIButton",
     "addEditModeButton",
     "objectiveTrackerClickThrough",

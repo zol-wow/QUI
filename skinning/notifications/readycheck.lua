@@ -165,7 +165,7 @@ end
 local function SkinReadyCheckFrame()
     local core = GetCore()
     local settings = core and core.db and core.db.profile and core.db.profile.general
-    if not settings or not settings.skinReadyCheck then return end
+    if not settings or settings.skinReadyCheck == false then return end
 
     local frame = _G.ReadyCheckFrame
     local listenerFrame = _G.ReadyCheckListenerFrame
@@ -310,11 +310,16 @@ end
 
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("READY_CHECK")
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
+    if event == "ADDON_LOADED" and arg1 ~= ADDON_NAME then
+        return
+    end
+    if event == "ADDON_LOADED" then
         self:UnregisterEvent("ADDON_LOADED")
-        if _G.ReadyCheckFrame then
-            SkinReadyCheckFrame()
-        end
+    end
+    if _G.ReadyCheckFrame then
+        SkinReadyCheckFrame()
     end
 end)

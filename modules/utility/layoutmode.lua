@@ -3245,6 +3245,8 @@ do
             local sections = {}
             local function relayout() U.StandardRelayout(content, sections) end
 
+            if general.skinReadyCheck == nil then general.skinReadyCheck = true end
+
             -- Skinning
             U.CreateCollapsible(content, "Skinning", 1 * FORM_ROW + 8, function(body)
                 local sy = -4
