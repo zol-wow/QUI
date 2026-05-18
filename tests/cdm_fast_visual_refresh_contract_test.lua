@@ -112,6 +112,7 @@ local iconMirrorIndex = readAll("modules/cdm/cdm_icon_mirror_index.lua")
 local iconRuntimeRefresh = readAll("modules/cdm/cdm_icon_runtime_refresh.lua")
 local iconUpdateScheduler = readAll("modules/cdm/cdm_icon_update_scheduler.lua")
 local iconRefreshBatch = readAll("modules/cdm/cdm_icon_refresh_batch.lua")
+local iconRefreshWalker = readAll("modules/cdm/cdm_icon_refresh_walker.lua")
 local iconVisibilityPolicy = readAll("modules/cdm/cdm_icon_visibility_policy.lua")
 local iconRangePolicy = readAll("modules/cdm/cdm_icon_range_policy.lua")
 local iconCooldownPolicy = readAll("modules/cdm/cdm_icon_cooldown_policy.lua")
@@ -255,6 +256,26 @@ assertContains(
     "refreshBatch = CreateIconRefreshBatch()",
     "CDMIcons should wire batch state through the private refresh batch controller"
 )
+assertContains(
+    iconRefreshWalker,
+    "function controller:RefreshAll(context)",
+    "icon refresh walker should own broad full-refresh traversal"
+)
+assertContains(
+    iconRefreshWalker,
+    "function controller:RefreshCooldownOnly(context)",
+    "icon refresh walker should own broad cooldown-only traversal"
+)
+assertContains(
+    iconRefreshWalker,
+    "function controller:RefreshType(viewerType, context)",
+    "icon refresh walker should own type-scoped traversal"
+)
+assertContains(
+    icons,
+    "local function GetIconRefreshWalker()",
+    "CDMIcons should wire broad refresh walking through the private refresh walker"
+)
 
 assertNotContains(
     icons,
@@ -389,6 +410,23 @@ assertContainsOrdered(
         "SetRefreshBatchStackTextWrites(false)",
     },
     "cooldown-only refresh should preserve stack text unless a stack event requested writes"
+)
+assertContains(
+    cooldownOnlyBlock,
+    "walker:RefreshCooldownOnly(context)",
+    "cooldown-only broad walk should route through the private refresh walker"
+)
+
+local updateAllBlock = extractBlock(
+    icons,
+    "function CDMIcons:UpdateAllCooldowns()",
+    "function CDMIcons:UpdateCooldownOnly()",
+    "update-all block"
+)
+assertContains(
+    updateAllBlock,
+    "walker:RefreshAll(context)",
+    "full broad walk should route through the private refresh walker"
 )
 
 local cooldownOnlyIconBlock = extractBlock(

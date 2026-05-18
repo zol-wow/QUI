@@ -217,6 +217,7 @@ local stackPolicy
 local GetAuraApplicationsForSpell
 local customBarPolicy
 local refreshBatch
+local refreshWalker
 
 local cooldownPolicy = ns.CDMIconCooldownPolicy and ns.CDMIconCooldownPolicy.Create({
     getMirror = function()
@@ -3978,6 +3979,266 @@ local function UpdateCooldownContainerVisibility(icon, entry, containerDB, editM
     SyncCooldownBling(icon)
 end
 
+local function RefreshAllIcon(icon, context)
+    context = context or {}
+    local entry = icon and icon._spellEntry
+    local wasAuraActive = icon and icon._auraActive == true
+
+    -- Update cooldown/aura state before visibility so resolved runtime facts
+    -- are fresh for Show/Hide decisions.
+    UpdateIconCooldown(icon)
+
+    if entry and entry.viewerType == "buff"
+       and wasAuraActive ~= (icon._auraActive == true) then
+        _resolverRuntimePolicy.RequestBuffIconLayoutRefresh()
+    end
+
+    local editMode = context.editMode
+    local ncdm = context.ncdm
+    local ncdmContainers = context.ncdmContainers
+    local inCombat = context.inCombat
+
+    -- Per-spell hidden override: always hide regardless of display mode.
+    local spellOvr = (not editMode) and GetIconSpellOverride(icon) or nil
+    local isHiddenOverride = spellOvr and spellOvr.hidden
+
+    if entry then
+        -- Visibility branches per entry kind (aura vs cooldown). Container
+        -- shape (icon vs bar) is decoupled — a cooldown entry on a bar-shaped
+        -- container takes the cooldown branch, aura entries on an icon-shaped
+        -- container take the aura branch.
+        local containerDB = ncdm
+            and (ncdm[entry.viewerType] or (ncdmContainers and ncdmContainers[entry.viewerType]))
+        local displayMode = containerDB and containerDB.iconDisplayMode or "always"
+        local entryIsAura = IsAuraEntry(entry)
+
+        if isHiddenOverride then
+            if icon:IsShown() then icon:Hide() end
+        elseif editMode then
+            icon:SetAlpha(1)
+            icon:Show()
+        elseif entryIsAura then
+            local isActive = icon._auraActive
+            local effectiveMode = displayMode
+            if effectiveMode == "combat" then
+                effectiveMode = inCombat and "always" or "active"
+            end
+
+            if IsCustomBarContainer(containerDB) then
+                local visibility = _resolverRuntimePolicy.ComputeCustomBarVisibility(
+                    icon, entry, containerDB, GetRefreshBatchTime())
+                local shouldShow = visibility.renderVisible
+                if effectiveMode == "active" and not isActive then
+                    local keepForGlow = false
+                    if ns._OwnedGlows and ns._OwnedGlows.ShouldIconGlow then
+                        keepForGlow = ns._OwnedGlows.ShouldIconGlow(icon)
+                    end
+                    shouldShow = shouldShow and keepForGlow
+                elseif effectiveMode ~= "always" and effectiveMode ~= "active" then
+                    shouldShow = false
+                end
+
+                local filterHidesNow = not visibility.layoutVisible
+                MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
+                ApplyIconVisibility(icon, shouldShow, containerDB.dynamicLayout == true)
+                if _G.QUI_CDM_ICON_DEBUG and CDMIcons.DebugIconEvent then
+                    CDMIcons.DebugIconEvent(icon, "show",
+                        "shouldShow=", tostring(shouldShow),
+                        "shown=", tostring(icon:IsShown()),
+                        "alpha=", tostring(icon.GetAlpha and icon:GetAlpha() or nil),
+                        "effectiveMode=", tostring(effectiveMode),
+                        "filterHidden=", tostring(filterHidesNow),
+                        "auraActive=", tostring(isActive),
+                        "dynamic=", tostring(containerDB and containerDB.dynamicLayout))
+                end
+                _resolverRuntimePolicy.ApplyCustomBarActiveGlow(icon, containerDB, visibility)
+                SyncCooldownBling(icon)
+            else
+                if effectiveMode == "always" then
+                    local rowOpacity = icon._rowOpacity or 1
+                    icon:SetAlpha(rowOpacity)
+                    if not icon:IsShown() then icon:Show() end
+                elseif effectiveMode == "active" then
+                    if isActive then
+                        local rowOpacity = icon._rowOpacity or 1
+                        icon:SetAlpha(rowOpacity)
+                        if not icon:IsShown() then icon:Show() end
+                    else
+                        if icon:IsShown() then icon:Hide() end
+                    end
+                end
+            end
+        else
+            local cooldownState = _resolverRuntimePolicy.ResolveIconCooldownActivityState(
+                icon, entry, containerDB, GetRefreshBatchTime())
+            local isOnCD = cooldownState.isOnCooldown or cooldownState.rechargeActive
+
+            local effectiveMode = displayMode
+            if effectiveMode == "combat" then
+                effectiveMode = (UnitAffectingCombat and UnitAffectingCombat("player")) and "always" or "active"
+            end
+
+            if IsCustomBarContainer(containerDB) then
+                local visibility = _resolverRuntimePolicy.ComputeCustomBarVisibility(
+                    icon, entry, containerDB, GetRefreshBatchTime())
+                local shouldShow = visibility.renderVisible
+                if effectiveMode == "active" and not visibility.isOnCooldown and not visibility.rechargeActive then
+                    local keepForGlow = false
+                    if ns._OwnedGlows and ns._OwnedGlows.ShouldIconGlow then
+                        keepForGlow = ns._OwnedGlows.ShouldIconGlow(icon)
+                    end
+                    shouldShow = shouldShow and keepForGlow
+                elseif effectiveMode ~= "always" and effectiveMode ~= "active" then
+                    shouldShow = false
+                end
+
+                local filterHidesNow = not visibility.layoutVisible
+                MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
+                ApplyIconVisibility(icon, shouldShow, containerDB.dynamicLayout == true)
+                if _G.QUI_CDM_ICON_DEBUG and CDMIcons.DebugIconEvent then
+                    CDMIcons.DebugIconEvent(icon, "show",
+                        "shouldShow=", tostring(shouldShow),
+                        "shown=", tostring(icon:IsShown()),
+                        "alpha=", tostring(icon.GetAlpha and icon:GetAlpha() or nil),
+                        "effectiveMode=", tostring(effectiveMode),
+                        "filterHidden=", tostring(filterHidesNow),
+                        "dynamic=", tostring(containerDB and containerDB.dynamicLayout))
+                end
+                _resolverRuntimePolicy.ApplyCustomBarActiveGlow(icon, containerDB, visibility)
+                SyncCooldownBling(icon)
+            else
+                local shouldShow
+                if effectiveMode == "always" then
+                    shouldShow = true
+                elseif effectiveMode == "active" then
+                    if isOnCD then
+                        shouldShow = true
+                    else
+                        local keepForGlow = false
+                        if ns._OwnedGlows and ns._OwnedGlows.ShouldIconGlow then
+                            keepForGlow = ns._OwnedGlows.ShouldIconGlow(icon)
+                        end
+                        shouldShow = keepForGlow
+                    end
+                else
+                    shouldShow = false
+                end
+
+                local filterHidesNow = ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
+                if filterHidesNow then shouldShow = false end
+                MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
+                ApplyIconVisibility(icon, shouldShow, containerDB and containerDB.dynamicLayout)
+            end
+
+            local greyOutDebuffs = containerDB and containerDB.greyOutInactive
+            local greyOutBuffs = containerDB and containerDB.greyOutInactiveBuffs
+            local shouldGreyOut = false
+            if (greyOutDebuffs or greyOutBuffs) and icon.Icon and icon.Icon.SetDesaturated then
+                local hasAbilityAuraMapping = false
+                local AuraRuntime = ns.CDMAuraRuntime
+                if AuraRuntime and AuraRuntime.HasAbilityAuraMapping then
+                    hasAbilityAuraMapping = AuraRuntime.HasAbilityAuraMapping(entry.id)
+                end
+                local hasAuraLink = entry.linkedSpellIDs
+                    or (icon._spellEntry and icon._spellEntry.linkedSpellIDs)
+                    or hasAbilityAuraMapping
+                    or icon._auraActive ~= nil
+                if hasAuraLink then
+                    local spellName = entry.name
+                    if not spellName then
+                        local sid = icon._runtimeSpellID or entry.spellID or entry.overrideSpellID or entry.id
+                        if sid then
+                            local info = Sources and Sources.QuerySpellInfo and Sources.QuerySpellInfo(sid)
+                            spellName = info and info.name
+                        end
+                    end
+
+                    if not icon._greyType and spellName then
+                        local isHarm = Sources and Sources.QuerySpellHarmful and Sources.QuerySpellHarmful(spellName)
+                        local isHelp = Sources and Sources.QuerySpellHelpful and Sources.QuerySpellHelpful(spellName)
+                        if isHarm then
+                            icon._greyType = "debuff"
+                        elseif isHelp then
+                            icon._greyType = "buff"
+                        end
+                    end
+
+                    if greyOutDebuffs and icon._greyType == "debuff" then
+                        local hasTarget = UnitExists("target")
+                            and not UnitIsDead("target")
+                            and UnitCanAttack("player", "target")
+                        if hasTarget and not icon._auraActive then
+                            shouldGreyOut = true
+                        end
+                    end
+                    if not shouldGreyOut and greyOutBuffs and icon._greyType == "buff" then
+                        if not icon._auraActive then
+                            shouldGreyOut = true
+                        end
+                    end
+                end
+            end
+            if shouldGreyOut then
+                if not icon._greyedOut then
+                    if icon.Icon then icon.Icon:SetAlpha(0.4) end
+                    if icon.Cooldown then icon.Cooldown:SetAlpha(0.4) end
+                    if icon.Border then icon.Border:SetAlpha(0.4) end
+                    if icon.DurationText then icon.DurationText:SetAlpha(0.4) end
+                    if icon.StackText then icon.StackText:SetAlpha(0.4) end
+                    if not icon._cdDesaturated then
+                        icon.Icon:SetDesaturated(true)
+                    end
+                    icon._greyedOut = true
+                end
+            elseif icon._greyedOut then
+                if icon.Icon then icon.Icon:SetAlpha(1) end
+                if icon.Cooldown then icon.Cooldown:SetAlpha(1) end
+                if icon.Border then icon.Border:SetAlpha(1) end
+                if icon.DurationText then icon.DurationText:SetAlpha(1) end
+                if icon.StackText then icon.StackText:SetAlpha(1) end
+                if icon.Icon and icon.Icon.SetDesaturated and not icon._cdDesaturated then
+                    icon.Icon:SetDesaturated(false)
+                end
+                icon._greyedOut = nil
+            end
+        end
+        SyncCooldownBling(icon)
+    end
+end
+
+local function UpdateCooldownOnlyIcon(icon, entry)
+    if icon._blizzMirrorCooldownID and not IsAuraEntry(entry) then
+        ApplyResolvedCooldown(icon)
+        SyncCooldownBling(icon)
+        return
+    end
+    UpdateIconCooldown(icon)
+end
+
+local function CreateIconRefreshWalker()
+    local module = ns.CDMIconRefreshWalker
+    if not (module and module.Create) then return nil end
+    return module.Create({
+        getIconPools = function()
+            return iconPools
+        end,
+        refreshAllIcon = RefreshAllIcon,
+        resolveContainerDBAndType = ResolveContainerDBAndType,
+        refreshCooldownOnlyIcon = UpdateCooldownOnlyIcon,
+        updateIconVisibility = UpdateCooldownContainerVisibility,
+        refreshTypeIcon = function(icon)
+            UpdateIconCooldown(icon)
+        end,
+    })
+end
+
+local function GetIconRefreshWalker()
+    if not refreshWalker then
+        refreshWalker = CreateIconRefreshWalker()
+    end
+    return refreshWalker
+end
+
 ---------------------------------------------------------------------------
 -- UPDATE ALL COOLDOWNS
 ---------------------------------------------------------------------------
@@ -3986,278 +4247,19 @@ function CDMIcons:UpdateAllCooldowns()
     SetRefreshBatchStackTextWrites(true)
     BeginIconRefreshBatch("updateAll")
 
-    for _, pool in pairs(iconPools) do
-        for _, icon in ipairs(pool) do
-            local entry = icon._spellEntry
-            local wasAuraActive = icon._auraActive == true
-            -- Update cooldown/aura state BEFORE visibility so resolved
-            -- runtime facts are fresh for Show/Hide decisions.
-            -- pcall only needed during combat (secret values from Blizzard
-            -- frames) — skip overhead during OOC for ~50% less pcall cost.
-            if inCombat then
-                UpdateIconCooldown(icon)
-            else
-                UpdateIconCooldown(icon)
-            end
-            if entry and entry.viewerType == "buff"
-               and wasAuraActive ~= (icon._auraActive == true) then
-                _resolverRuntimePolicy.RequestBuffIconLayoutRefresh()
-            end
-
-            -- Per-spell hidden override: always hide regardless of display mode
-            local spellOvr = (not editMode) and GetIconSpellOverride(icon) or nil
-            local isHiddenOverride = spellOvr and spellOvr.hidden
-
-            if entry then
-                -- Visibility branches per entry kind (aura vs cooldown). Container
-                -- shape (icon vs bar) is decoupled — a cooldown entry on a bar-
-                -- shaped container takes the cooldown branch, aura entries on an
-                -- icon-shaped container take the aura branch.
-                local containerDB = _ncdm and (_ncdm[entry.viewerType] or (_ncdmContainers and _ncdmContainers[entry.viewerType]))
-                local displayMode = containerDB and containerDB.iconDisplayMode or "always"
-                local entryIsAura = IsAuraEntry(entry)
-
-                if isHiddenOverride then
-                    -- Per-spell hidden override: always hide owned entries
-                    if icon:IsShown() then icon:Hide() end
-                elseif editMode then
-                    icon:SetAlpha(1)
-                    icon:Show()
-                elseif entryIsAura then
-                    -- Aura entries: visibility depends on display mode + aura state.
-                    -- Custom-bar containers route through the same layout
-                    -- machinery as cooldown entries (ComputeCustomBarVisibility,
-                    -- ApplyIconVisibility, dynamicLayout, MarkLayoutDirtyOnFilterFlip)
-                    -- because their layout/positioning pipeline lives there.
-                    -- ComputeCustomBarVisibility already factors icon._auraActive
-                    -- into its isActive/layoutVisible decision (see line ~2994).
-                    -- Built-in TrackedBuff/trackedBar containers use the simpler
-                    -- alpha+Show/Hide path below.
-                    local isActive = icon._auraActive
-                    local effectiveMode = displayMode
-                    if effectiveMode == "combat" then
-                        effectiveMode = inCombat and "always" or "active"
-                    end
-
-                    if IsCustomBarContainer(containerDB) then
-                        local visibility = _resolverRuntimePolicy.ComputeCustomBarVisibility(icon, entry, containerDB, GetRefreshBatchTime())
-                        local shouldShow = visibility.renderVisible
-                        if effectiveMode == "active" and not isActive then
-                            local keepForGlow = false
-                            if ns._OwnedGlows and ns._OwnedGlows.ShouldIconGlow then
-                                keepForGlow = ns._OwnedGlows.ShouldIconGlow(icon)
-                            end
-                            shouldShow = shouldShow and keepForGlow
-                        elseif effectiveMode ~= "always" and effectiveMode ~= "active" then
-                            shouldShow = false
-                        end
-
-                        local filterHidesNow = not visibility.layoutVisible
-                        MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
-                        ApplyIconVisibility(icon, shouldShow, containerDB.dynamicLayout == true)
-                        if _G.QUI_CDM_ICON_DEBUG and CDMIcons.DebugIconEvent then
-                            CDMIcons.DebugIconEvent(icon, "show",
-                                "shouldShow=", tostring(shouldShow),
-                                "shown=", tostring(icon:IsShown()),
-                                "alpha=", tostring(icon.GetAlpha and icon:GetAlpha() or nil),
-                                "effectiveMode=", tostring(effectiveMode),
-                                "filterHidden=", tostring(filterHidesNow),
-                                "auraActive=", tostring(isActive),
-                                "dynamic=", tostring(containerDB and containerDB.dynamicLayout))
-                        end
-                        _resolverRuntimePolicy.ApplyCustomBarActiveGlow(icon, containerDB, visibility)
-
-                        -- Desaturation is owned by the resolver; aura entries
-                        -- have no cooldown/usability concept so this branch
-                        -- never needs to drive SetDesaturated.
-
-                        SyncCooldownBling(icon)
-                    else
-                        if effectiveMode == "always" then
-                            local rowOpacity = icon._rowOpacity or 1
-                            icon:SetAlpha(rowOpacity)
-                            if not icon:IsShown() then icon:Show() end
-                        elseif effectiveMode == "active" then
-                            if isActive then
-                                local rowOpacity = icon._rowOpacity or 1
-                                icon:SetAlpha(rowOpacity)
-                                if not icon:IsShown() then icon:Show() end
-                            else
-                                if icon:IsShown() then icon:Hide() end
-                            end
-                        end
-                    end
-                else
-                    -- Cooldown containers: visibility depends on display mode.
-                    -- _hasCooldownActive is set when a DurationObject was applied
-                    -- (works even when numeric start/dur are secret in combat).
-                    local cooldownState = _resolverRuntimePolicy.ResolveIconCooldownActivityState(
-                        icon, entry, containerDB, GetRefreshBatchTime())
-                    local isOnCD = cooldownState.isOnCooldown or cooldownState.rechargeActive
-
-                    local effectiveMode = displayMode
-                    if effectiveMode == "combat" then
-                        effectiveMode = (UnitAffectingCombat and UnitAffectingCombat("player")) and "always" or "active"
-                    end
-
-                    if IsCustomBarContainer(containerDB) then
-                        local visibility = _resolverRuntimePolicy.ComputeCustomBarVisibility(icon, entry, containerDB, GetRefreshBatchTime())
-                        local shouldShow = visibility.renderVisible
-                        if effectiveMode == "active" and not visibility.isOnCooldown and not visibility.rechargeActive then
-                            local keepForGlow = false
-                            if ns._OwnedGlows and ns._OwnedGlows.ShouldIconGlow then
-                                keepForGlow = ns._OwnedGlows.ShouldIconGlow(icon)
-                            end
-                            shouldShow = shouldShow and keepForGlow
-                        elseif effectiveMode ~= "always" and effectiveMode ~= "active" then
-                            shouldShow = false
-                        end
-
-                        local filterHidesNow = not visibility.layoutVisible
-                        MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
-                        ApplyIconVisibility(icon, shouldShow, containerDB.dynamicLayout == true)
-                        if _G.QUI_CDM_ICON_DEBUG and CDMIcons.DebugIconEvent then
-                            CDMIcons.DebugIconEvent(icon, "show",
-                                "shouldShow=", tostring(shouldShow),
-                                "shown=", tostring(icon:IsShown()),
-                                "alpha=", tostring(icon.GetAlpha and icon:GetAlpha() or nil),
-                                "effectiveMode=", tostring(effectiveMode),
-                                "filterHidden=", tostring(filterHidesNow),
-                                "dynamic=", tostring(containerDB and containerDB.dynamicLayout))
-                        end
-                        _resolverRuntimePolicy.ApplyCustomBarActiveGlow(icon, containerDB, visibility)
-
-                        -- Desaturation owned by the resolver
-                        -- (ApplyResolvedCooldown). Custom-bar active state
-                        -- already feeds the resolver's auraBlocks check via
-                        -- icon._customBarActive, so this branch must not
-                        -- write SetDesaturated.
-
-                        SyncCooldownBling(icon)
-                    else
-
-                    -- Compute desired visibility from display mode
-                    local shouldShow
-                    if effectiveMode == "always" then
-                        shouldShow = true
-                    elseif effectiveMode == "active" then
-                        if isOnCD then
-                            shouldShow = true
-                        else
-                            local keepForGlow = false
-                            if ns._OwnedGlows and ns._OwnedGlows.ShouldIconGlow then
-                                keepForGlow = ns._OwnedGlows.ShouldIconGlow(icon)
-                            end
-                            shouldShow = keepForGlow
-                        end
-                    else
-                        shouldShow = false
-                    end
-
-                    -- Phase B.3: overlay container-level visibility filters.
-                    -- Filter computed unconditionally so the dirty-tracker sees
-                    -- the verdict even when display mode already hides the icon.
-                    local filterHidesNow = ComputeFilterHides(icon, entry, containerDB, inCombat, isOnCD)
-                    if filterHidesNow then shouldShow = false end
-                    MarkLayoutDirtyOnFilterFlip(icon, entry, containerDB, filterHidesNow)
-
-                    ApplyIconVisibility(icon, shouldShow, containerDB and containerDB.dynamicLayout)
-                    end
-
-                    -- Grey out when linked debuff/buff not active
-                    -- greyOutInactive = my debuffs on target, greyOutInactiveBuffs = buffs on player
-                    local greyOutDebuffs = containerDB and containerDB.greyOutInactive
-                    local greyOutBuffs = containerDB and containerDB.greyOutInactiveBuffs
-                    local shouldGreyOut = false
-                    if (greyOutDebuffs or greyOutBuffs) and icon.Icon and icon.Icon.SetDesaturated then
-                        -- Only apply to spells that have aura tracking (linked auras,
-                        -- global ability-to-aura mapping, or detected via runtime aura resolution).
-                        local hasAbilityAuraMapping = false
-                        local AuraRuntime = ns.CDMAuraRuntime
-                        if AuraRuntime and AuraRuntime.HasAbilityAuraMapping then
-                            hasAbilityAuraMapping = AuraRuntime.HasAbilityAuraMapping(entry.id)
-                        end
-                        local hasAuraLink = entry.linkedSpellIDs
-                            or (icon._spellEntry and icon._spellEntry.linkedSpellIDs)
-                            or hasAbilityAuraMapping
-                            or icon._auraActive ~= nil
-                        if hasAuraLink then
-                            -- Resolve spell name for aura lookups
-                            local spellName = entry.name
-                            if not spellName then
-                                local sid = icon._runtimeSpellID or entry.spellID or entry.overrideSpellID or entry.id
-                                if sid then
-                                    local info = Sources and Sources.QuerySpellInfo and Sources.QuerySpellInfo(sid)
-                                    spellName = info and info.name
-                                end
-                            end
-
-                            -- Debuff grey-out: requires valid attackable target.
-                            -- Uses HARMFUL filter to find debuff on target, then
-                            -- checks isFromPlayerOrPlayerPet for ownership.
-                            -- Classify spell as debuff/buff once via WoW API.
-                            -- IsHarmfulSpell → targets enemies (debuff spell)
-                            -- IsHelpfulSpell → targets self/allies (buff spell)
-                            if not icon._greyType and spellName then
-                                local isHarm = Sources and Sources.QuerySpellHarmful and Sources.QuerySpellHarmful(spellName)
-                                local isHelp = Sources and Sources.QuerySpellHelpful and Sources.QuerySpellHelpful(spellName)
-                                if isHarm then
-                                    icon._greyType = "debuff"
-                                elseif isHelp then
-                                    icon._greyType = "buff"
-                                end
-                            end
-
-                            -- Debuff grey-out: requires valid attackable target.
-                            -- Uses _auraActive (combat-safe, driven by hook
-                            -- cache from CDM viewer children which only track
-                            -- the player's own spells).
-                            if greyOutDebuffs and icon._greyType == "debuff" then
-                                local hasTarget = UnitExists("target")
-                                    and not UnitIsDead("target")
-                                    and UnitCanAttack("player", "target")
-                                if hasTarget and not icon._auraActive then
-                                    shouldGreyOut = true
-                                end
-                            end
-                            -- Buff grey-out: same _auraActive approach.
-                            if not shouldGreyOut and greyOutBuffs
-                               and icon._greyType == "buff" then
-                                if not icon._auraActive then
-                                    shouldGreyOut = true
-                                end
-                            end
-                        end
-                    end
-                    if shouldGreyOut then
-                        if not icon._greyedOut then
-                            -- Dim children instead of the frame itself so
-                            -- GameTooltip:SetOwner still works (WoW hides
-                            -- tooltips when the owner's effective alpha is
-                            -- below ~0.5).
-                            if icon.Icon then icon.Icon:SetAlpha(0.4) end
-                            if icon.Cooldown then icon.Cooldown:SetAlpha(0.4) end
-                            if icon.Border then icon.Border:SetAlpha(0.4) end
-                            if icon.DurationText then icon.DurationText:SetAlpha(0.4) end
-                            if icon.StackText then icon.StackText:SetAlpha(0.4) end
-                            if not icon._cdDesaturated then
-                                icon.Icon:SetDesaturated(true)
-                            end
-                            icon._greyedOut = true
-                        end
-                    elseif icon._greyedOut then
-                        if icon.Icon then icon.Icon:SetAlpha(1) end
-                        if icon.Cooldown then icon.Cooldown:SetAlpha(1) end
-                        if icon.Border then icon.Border:SetAlpha(1) end
-                        if icon.DurationText then icon.DurationText:SetAlpha(1) end
-                        if icon.StackText then icon.StackText:SetAlpha(1) end
-                        if icon.Icon and icon.Icon.SetDesaturated and not icon._cdDesaturated then
-                            icon.Icon:SetDesaturated(false)
-                        end
-                        icon._greyedOut = nil
-                    end
-                end
-                SyncCooldownBling(icon)
+    local context = {
+        editMode = editMode,
+        ncdm = _ncdm,
+        ncdmContainers = _ncdmContainers,
+        inCombat = inCombat,
+    }
+    local walker = GetIconRefreshWalker()
+    if walker then
+        walker:RefreshAll(context)
+    else
+        for _, pool in pairs(iconPools) do
+            for _, icon in ipairs(pool) do
+                RefreshAllIcon(icon, context)
             end
         end
     end
@@ -4270,29 +4272,31 @@ function CDMIcons:UpdateAllCooldowns()
     DrainLayoutDirty()
 end
 
-local function UpdateCooldownOnlyIcon(icon, entry)
-    if icon._blizzMirrorCooldownID and not IsAuraEntry(entry) then
-        ApplyResolvedCooldown(icon)
-        SyncCooldownBling(icon)
-        return
-    end
-    UpdateIconCooldown(icon)
-end
-
 function CDMIcons:UpdateCooldownOnly()
     local editMode, ncdm, ncdmContainers, inCombat = PrepareCooldownUpdateBatch()
     local allowStackTextWrites = ConsumeStackTextWriteRequest()
     SetRefreshBatchStackTextWrites(allowStackTextWrites)
     BeginIconRefreshBatch("cooldownOnly")
 
-    for _, pool in pairs(iconPools) do
-        for _, icon in ipairs(pool) do
-            local entry = icon._spellEntry
-            if entry then
-                local containerDB, cType = ResolveContainerDBAndType(entry, ncdm, ncdmContainers)
-                if cType ~= "aura" and cType ~= "auraBar" then
-                    UpdateCooldownOnlyIcon(icon, entry)
-                    UpdateCooldownContainerVisibility(icon, entry, containerDB, editMode, inCombat)
+    local context = {
+        editMode = editMode,
+        ncdm = ncdm,
+        ncdmContainers = ncdmContainers,
+        inCombat = inCombat,
+    }
+    local walker = GetIconRefreshWalker()
+    if walker then
+        walker:RefreshCooldownOnly(context)
+    else
+        for _, pool in pairs(iconPools) do
+            for _, icon in ipairs(pool) do
+                local entry = icon._spellEntry
+                if entry then
+                    local containerDB, cType = ResolveContainerDBAndType(entry, ncdm, ncdmContainers)
+                    if cType ~= "aura" and cType ~= "auraBar" then
+                        UpdateCooldownOnlyIcon(icon, entry)
+                        UpdateCooldownContainerVisibility(icon, entry, containerDB, editMode, inCombat)
+                    end
                 end
             end
         end
@@ -4311,8 +4315,13 @@ function CDMIcons:UpdateCooldownsForType(viewerType)
         PrepareCooldownUpdateBatch()
         SetRefreshBatchStackTextWrites(true)
         BeginIconRefreshBatch("type")
-        for _, icon in ipairs(pool) do
-            UpdateIconCooldown(icon)
+        local walker = GetIconRefreshWalker()
+        if walker then
+            walker:RefreshType(viewerType)
+        else
+            for _, icon in ipairs(pool) do
+                UpdateIconCooldown(icon)
+            end
         end
         SetRefreshBatchStackTextWrites(false)
         SyncSpellRangeChecks()
