@@ -16,6 +16,7 @@ local STATUS_ICON_SIZE = 18
 local INVSLOT_MAINHAND = 16
 local INVSLOT_OFFHAND = 17
 local FOOD_ICON_FALLBACK = 136000
+local RUNE_ICON_FALLBACK = "Interface\\Icons\\inv_10_enchanting_crystal_color2"
 local PICKER_ROW_HEIGHT = 24
 local PICKER_MIN_WIDTH = 200
 
@@ -41,10 +42,10 @@ local RUNE_BUFFS = {
 
 local FLASK_ITEMS = {
     -- Midnight Flasks (all current item variants)
-    241320, 241321, -- Flask of Thalassian Resistance
-    241322, 241323, -- Flask of the Magisters
-    241324, 241325, -- Flask of the Blood Knights
-    241326, 241327, -- Flask of the Shattered Sun
+    245926, 245927, 241320, 241321, -- Flask of Thalassian Resistance
+    245932, 245933, 241322, 241323, -- Flask of the Magisters
+    245930, 245931, 241324, 241325, -- Flask of the Blood Knights
+    245928, 245929, 241326, 241327, -- Flask of the Shattered Sun
 }
 local FLASK_ITEM_SET = {}
 for _, itemID in ipairs(FLASK_ITEMS) do
@@ -389,6 +390,117 @@ local function SetPreferredItemID(buttonType, itemID)
     end
 end
 
+local function GetMacroVariantOrder(itemID)
+    if Helpers.IsSecretValue and Helpers.IsSecretValue(itemID) then return nil end
+    itemID = tonumber(itemID)
+    if not itemID then return nil end
+
+    local consumables = ns.ConsumableMacros
+    local getVariantOrder = consumables and consumables.GetVariantOrderForItem
+    return getVariantOrder and getVariantOrder(itemID) or nil
+end
+
+local function GetMacroVariantRank(itemID)
+    if Helpers.IsSecretValue and Helpers.IsSecretValue(itemID) then return nil end
+    itemID = tonumber(itemID)
+    if not itemID then return nil end
+
+    local variants = GetMacroVariantOrder(itemID)
+    if type(variants) ~= "table" then return nil end
+    for rank, variantID in ipairs(variants) do
+        if type(variantID) == "number" and variantID == itemID then
+            return rank
+        end
+    end
+    return nil
+end
+
+local function CompareOwnedItemsByPriority(a, b)
+    local aRank = a and GetMacroVariantRank(a.itemID)
+    local bRank = b and GetMacroVariantRank(b.itemID)
+    if aRank and bRank and aRank ~= bRank then
+        return aRank < bRank
+    elseif aRank and not bRank then
+        return true
+    elseif bRank and not aRank then
+        return false
+    end
+
+    local aListOrder = a and a._listOrder
+    local bListOrder = b and b._listOrder
+    if aListOrder and bListOrder and aListOrder ~= bListOrder then
+        return aListOrder < bListOrder
+    elseif aListOrder and not bListOrder then
+        return true
+    elseif bListOrder and not aListOrder then
+        return false
+    end
+
+    local aName = (a and a.name) or ""
+    local bName = (b and b.name) or ""
+    if aName ~= bName then
+        return aName < bName
+    end
+
+    local aItemID = 0
+    local bItemID = 0
+    local aRawItemID = a and a.itemID
+    local bRawItemID = b and b.itemID
+    if not (Helpers.IsSecretValue and Helpers.IsSecretValue(aRawItemID)) then
+        aItemID = tonumber(aRawItemID) or 0
+    end
+    if not (Helpers.IsSecretValue and Helpers.IsSecretValue(bRawItemID)) then
+        bItemID = tonumber(bRawItemID) or 0
+    end
+    return aItemID < bItemID
+end
+
+local function BuildOwnedItemLookup(ownedItems)
+    local lookup = {}
+    for _, itemData in ipairs(ownedItems or {}) do
+        local rawItemID = itemData and itemData.itemID
+        local itemID
+        if not (Helpers.IsSecretValue and Helpers.IsSecretValue(rawItemID)) then
+            itemID = tonumber(rawItemID)
+        end
+        if itemID then
+            lookup[itemID] = itemData
+        end
+    end
+    return lookup
+end
+
+local function ResolveBestOwnedVariantItemData(itemID, ownedItems)
+    if Helpers.IsSecretValue and Helpers.IsSecretValue(itemID) then return nil end
+    itemID = tonumber(itemID)
+    if not itemID then return nil end
+
+    local ownedByID = BuildOwnedItemLookup(ownedItems)
+    local variants = GetMacroVariantOrder(itemID)
+    if type(variants) == "table" then
+        for _, variantID in ipairs(variants) do
+            if type(variantID) == "number" then
+                local itemData = ownedByID[variantID]
+                if itemData then
+                    return itemData
+                end
+            end
+        end
+    end
+
+    return ownedByID[itemID]
+end
+
+local function BuildItemOrderLookup(itemIDs)
+    local order = {}
+    for index, itemID in ipairs(itemIDs or {}) do
+        if type(itemID) == "number" and order[itemID] == nil then
+            order[itemID] = index
+        end
+    end
+    return order
+end
+
 local function CollectItemTotalsFromList(itemIDs, totals)
     for _, itemID in ipairs(itemIDs) do
         local count = C_Item.GetItemCount(itemID, false, false)
@@ -413,7 +525,7 @@ local function CollectItemTotalsFromBags(totals, predicate)
     end
 end
 
-local function BuildOwnedItemsFromTotals(totals, fallbackIcon)
+local function BuildOwnedItemsFromTotals(totals, fallbackIcon, itemOrder)
     local items = {}
     for itemID, count in pairs(totals) do
         local itemName = C_Item.GetItemInfo(itemID)
@@ -423,18 +535,17 @@ local function BuildOwnedItemsFromTotals(totals, fallbackIcon)
             name = itemName or ("item:" .. itemID),
             count = count,
             icon = icon or fallbackIcon,
+            _listOrder = itemOrder and itemOrder[itemID] or nil,
         })
     end
-    table.sort(items, function(a, b)
-        return (a.name or "") < (b.name or "")
-    end)
+    table.sort(items, CompareOwnedItemsByPriority)
     return items
 end
 
 BuildOwnedItemsFromList = function(itemIDs, fallbackIcon)
     local totals = {}
     CollectItemTotalsFromList(itemIDs, totals)
-    return BuildOwnedItemsFromTotals(totals, fallbackIcon)
+    return BuildOwnedItemsFromTotals(totals, fallbackIcon, BuildItemOrderLookup(itemIDs))
 end
 
 local function IsFoodItem(itemID)
@@ -517,10 +628,12 @@ end
 local function ResolveSelectedOwnedItem(buttonType, ownedItems)
     local preferredItemID = GetPreferredItemID(buttonType)
     if preferredItemID then
-        for _, itemData in ipairs(ownedItems) do
-            if itemData.itemID == preferredItemID then
-                return itemData
+        local preferredVariant = ResolveBestOwnedVariantItemData(preferredItemID, ownedItems)
+        if preferredVariant then
+            if buttonType == "rune" and ownedItems[1] and ownedItems[1]._listOrder then
+                return ownedItems[1]
             end
+            return preferredVariant
         end
         SetPreferredItemID(buttonType, nil)
     end
@@ -1034,7 +1147,7 @@ local function InitializeButtons()
         buttons[k] = nil
     end
 
-    local runeIcon = C_Item.GetItemIconByID and C_Item.GetItemIconByID(259085) or 4549102
+    local runeIcon = (C_Item.GetItemIconByID and C_Item.GetItemIconByID(259085)) or RUNE_ICON_FALLBACK
     local buttonDefs = {
         { "food", FOOD_ICON_FALLBACK, true },
         { "flask", 3566840, true },
@@ -1783,4 +1896,13 @@ if ns.Registry then
         group = "qol",
         importCategories = { "qol" },
     })
+end
+
+if ns.__test then
+    ns.ConsumableCheckTest = {
+        RuneIconFallback = RUNE_ICON_FALLBACK,
+        GetOwnedItemsForButton = GetOwnedItemsForButton,
+        ResolveSelectedOwnedItem = ResolveSelectedOwnedItem,
+        BuildOwnedItemsFromTotals = BuildOwnedItemsFromTotals,
+    }
 end
