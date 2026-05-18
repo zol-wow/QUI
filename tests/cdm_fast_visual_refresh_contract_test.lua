@@ -111,6 +111,7 @@ local icons = readAll("modules/cdm/cdm_icons.lua")
 local iconMirrorIndex = readAll("modules/cdm/cdm_icon_mirror_index.lua")
 local iconRuntimeRefresh = readAll("modules/cdm/cdm_icon_runtime_refresh.lua")
 local iconUpdateScheduler = readAll("modules/cdm/cdm_icon_update_scheduler.lua")
+local iconRefreshBatch = readAll("modules/cdm/cdm_icon_refresh_batch.lua")
 local iconVisibilityPolicy = readAll("modules/cdm/cdm_icon_visibility_policy.lua")
 local iconRangePolicy = readAll("modules/cdm/cdm_icon_range_policy.lua")
 local iconCooldownPolicy = readAll("modules/cdm/cdm_icon_cooldown_policy.lua")
@@ -238,6 +239,21 @@ assertContains(
     icons,
     "updateScheduler = CreateIconUpdateScheduler()",
     "CDMIcons should wire runtime update scheduling through the private controller"
+)
+assertContains(
+    iconRefreshBatch,
+    "function controller:Prepare()",
+    "icon refresh batch should own refresh preparation and DB/time hoists"
+)
+assertContains(
+    iconRefreshBatch,
+    "function controller:ConsumeStackTextWriteRequest()",
+    "icon refresh batch should own stack-text write requests"
+)
+assertContains(
+    icons,
+    "refreshBatch = CreateIconRefreshBatch()",
+    "CDMIcons should wire batch state through the private refresh batch controller"
 )
 
 assertNotContains(
@@ -368,9 +384,9 @@ local cooldownOnlyBlock = extractBlock(
 assertContainsOrdered(
     cooldownOnlyBlock,
     {
-        "local allowStackTextWrites = _resolverRuntimePolicy.pendingStackTextUpdate == true",
-        "SetStackTextWritesForBatch(allowStackTextWrites)",
-        "SetStackTextWritesForBatch(false)",
+        "local allowStackTextWrites = ConsumeStackTextWriteRequest()",
+        "SetRefreshBatchStackTextWrites(allowStackTextWrites)",
+        "SetRefreshBatchStackTextWrites(false)",
     },
     "cooldown-only refresh should preserve stack text unless a stack event requested writes"
 )
@@ -409,8 +425,13 @@ assertContainsOrdered(
 )
 assertContains(
     icons,
-    "_resolverRuntimePolicy.pendingStackTextUpdate = true",
-    "CDMIcons should keep stack-text write state private behind the runtime-refresh callback"
+    "RequestStackTextUpdate()",
+    "CDMIcons should route stack-text write requests through the private refresh batch controller"
+)
+assertNotContains(
+    icons,
+    "pendingStackTextUpdate",
+    "stack-text write request state should live in the private refresh batch controller"
 )
 assertNotContains(
     icons,
@@ -449,13 +470,18 @@ assertNotContains(
 )
 assertNotContains(
     icons,
-    "CDMIcons._hoistedNcdm",
-    "batch DB hoists should stay private to CDMIcons implementation"
+    "_hoistedNcdm",
+    "batch DB hoists should live in the private refresh batch controller"
 )
 assertNotContains(
     icons,
-    "CDMIcons._batchTime",
-    "batch time hoists should stay private to CDMIcons implementation"
+    "_batchTime",
+    "batch time hoists should live in the private refresh batch controller"
+)
+assertNotContains(
+    icons,
+    "resolverQueryBatchStats",
+    "batch query stats should live in the private refresh batch controller"
 )
 assertNotContains(
     icons,

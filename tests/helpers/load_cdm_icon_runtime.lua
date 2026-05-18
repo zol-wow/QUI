@@ -47,6 +47,9 @@ return function(ns)
     if not ns.CDMIconUpdateScheduler then
         assert(loadfile("modules/cdm/cdm_icon_update_scheduler.lua"))("QUI", ns)
     end
+    if not ns.CDMIconRefreshBatch then
+        assert(loadfile("modules/cdm/cdm_icon_refresh_batch.lua"))("QUI", ns)
+    end
     if not ns.CDMIconVisibilityPolicy then
         assert(loadfile("modules/cdm/cdm_icon_visibility_policy.lua"))("QUI", ns)
     end

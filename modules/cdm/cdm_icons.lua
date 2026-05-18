@@ -48,39 +48,11 @@ local GetEntryTexture = Resolvers.GetEntryTexture
 local IsAuraEntry = Resolvers.IsAuraEntry
 local ResolveAuraActiveState = Resolvers.ResolveAuraActiveState
 local GetChargeMetadataDB = RuntimeQueries.GetChargeMetadataDB
-local BeginRuntimeQueryBatch = RuntimeQueries.BeginRuntimeQueryBatch
-local EndRuntimeQueryBatch = RuntimeQueries.EndRuntimeQueryBatch
 
-local resolverQueryBatchStats = {
-    updateAll = 0,
-    cooldownOnly = 0,
-    type = 0,
-    placed = 0,
-    auraScope = 0,
-    itemScope = 0,
-    spellScope = 0,
-    spellID = 0,
-    auraDelta = 0,
-    usability = 0,
-    mirror = 0,
-    other = 0,
-}
 local durationBindingStats = { keyBuilds = 0, keyCacheHits = 0 }
 
 do
     local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "CDM_iconBatch_updateAll", counter = true, fn = function() return resolverQueryBatchStats.updateAll end }
-    mp[#mp + 1] = { name = "CDM_iconBatch_cooldownOnly", counter = true, fn = function() return resolverQueryBatchStats.cooldownOnly end }
-    mp[#mp + 1] = { name = "CDM_iconBatch_type", counter = true, fn = function() return resolverQueryBatchStats.type end }
-    mp[#mp + 1] = { name = "CDM_iconBatch_placed", counter = true, fn = function() return resolverQueryBatchStats.placed end }
-    mp[#mp + 1] = { name = "CDM_iconBatch_auraScope", counter = true, fn = function() return resolverQueryBatchStats.auraScope end }
-    mp[#mp + 1] = { name = "CDM_iconBatch_itemScope", counter = true, fn = function() return resolverQueryBatchStats.itemScope end }
-    mp[#mp + 1] = { name = "CDM_iconBatch_spellScope", counter = true, fn = function() return resolverQueryBatchStats.spellScope end }
-    mp[#mp + 1] = { name = "CDM_iconBatch_spellID", counter = true, fn = function() return resolverQueryBatchStats.spellID end }
-    mp[#mp + 1] = { name = "CDM_iconBatch_auraDelta", counter = true, fn = function() return resolverQueryBatchStats.auraDelta end }
-    mp[#mp + 1] = { name = "CDM_iconBatch_usability", counter = true, fn = function() return resolverQueryBatchStats.usability end }
-    mp[#mp + 1] = { name = "CDM_iconBatch_mirror", counter = true, fn = function() return resolverQueryBatchStats.mirror end }
-    mp[#mp + 1] = { name = "CDM_iconBatch_other", counter = true, fn = function() return resolverQueryBatchStats.other end }
     mp[#mp + 1] = { name = "CDM_durationBindingKeys", counter = true, fn = function() return durationBindingStats.keyBuilds end }
     mp[#mp + 1] = { name = "CDM_durationBindingKeyCacheHits", counter = true, fn = function() return durationBindingStats.keyCacheHits end }
 end
@@ -91,23 +63,6 @@ local function ResolveBestOwnedItemVariant(itemID)
         return Sources.QueryBestOwnedItemVariant(itemID) or itemID
     end
     return itemID
-end
-
-local function BeginResolverQueryBatch(reason)
-    if reason and resolverQueryBatchStats[reason] ~= nil then
-        resolverQueryBatchStats[reason] = resolverQueryBatchStats[reason] + 1
-    else
-        resolverQueryBatchStats.other = resolverQueryBatchStats.other + 1
-    end
-    if BeginRuntimeQueryBatch then
-        BeginRuntimeQueryBatch()
-    end
-end
-
-local function EndResolverQueryBatch()
-    if EndRuntimeQueryBatch then
-        EndRuntimeQueryBatch()
-    end
 end
 
 local function GetBuiltinContainerType(containerKey)
@@ -261,6 +216,7 @@ local GetTrackerSettings
 local stackPolicy
 local GetAuraApplicationsForSpell
 local customBarPolicy
+local refreshBatch
 
 local cooldownPolicy = ns.CDMIconCooldownPolicy and ns.CDMIconCooldownPolicy.Create({
     getMirror = function()
@@ -273,6 +229,56 @@ local cooldownPolicy = ns.CDMIconCooldownPolicy and ns.CDMIconCooldownPolicy.Cre
         return QueryOverrideSpell and QueryOverrideSpell(spellID) or nil
     end,
 })
+
+local function CreateIconRefreshBatch()
+    local module = ns.CDMIconRefreshBatch
+    if not (module and module.Create) then return nil end
+    return module.Create({
+        getMemProbes = function()
+            local mp = ns._memprobes or {}
+            ns._memprobes = mp
+            return mp
+        end,
+        isEditModeActive = function()
+            return Helpers.IsEditModeActive()
+        end,
+        isLayoutModeActive = function()
+            return Helpers.IsLayoutModeActive()
+        end,
+        isGlobalEditModeActive = function()
+            return _G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive()
+        end,
+        getNCDM = function()
+            return ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
+        end,
+        getTime = function()
+            return GetTime()
+        end,
+        isInCombat = function()
+            return InCombatLockdown()
+        end,
+        refreshSwipeBatchSettings = function()
+            return _resolverRuntimePolicy.RefreshSwipeBatchSettings()
+        end,
+        beginRuntimeQueryBatch = function()
+            if RuntimeQueries and RuntimeQueries.BeginRuntimeQueryBatch then
+                RuntimeQueries.BeginRuntimeQueryBatch()
+            end
+        end,
+        endRuntimeQueryBatch = function()
+            if RuntimeQueries and RuntimeQueries.EndRuntimeQueryBatch then
+                RuntimeQueries.EndRuntimeQueryBatch()
+            end
+        end,
+        setStackTextWrites = function(enabled)
+            if SetStackTextWritesForBatch then
+                SetStackTextWritesForBatch(enabled)
+            end
+        end,
+    })
+end
+
+refreshBatch = CreateIconRefreshBatch()
 
 _resolverRuntimePolicy.eventProfileStats = {}
 _resolverRuntimePolicy.eventProfileLast = {
@@ -2518,12 +2524,13 @@ function _resolverRuntimePolicy.HideIconStackText(icon, reason)
     end
 end
 
--- _hoistedNcdm is set once per UpdateAllCooldowns batch (avoids 4 table
--- hops per icon).  Local to file scope so UpdateIconCooldown can read it.
-local _hoistedNcdm = nil
--- _batchTime is set once per UpdateAllCooldowns batch so per-icon code
--- can read GetTime() without crossing the C boundary for every icon.
-local _batchTime = 0
+local function GetRefreshBatchTime()
+    if refreshBatch then
+        return refreshBatch:GetTime()
+    end
+    return GetTime and GetTime() or 0
+end
+
 -- _showGCDSwipe is hoisted once per batch from swipe module settings.
 -- When true, GCD-only cooldowns are allowed through to the CooldownFrame
 -- instead of being cleared, so the GCD swipe animation can render.
@@ -3337,7 +3344,7 @@ UpdateIconCooldown = function(icon)
 
     if icon._lastVisualState == "unusable"
        and not icon._usabilityTinted
-       and not _resolverRuntimePolicy.CooldownHasVisualPriority(icon, entry, GetTrackerSettings(entry.viewerType), _batchTime) then
+       and not _resolverRuntimePolicy.CooldownHasVisualPriority(icon, entry, GetTrackerSettings(entry.viewerType), GetRefreshBatchTime()) then
         icon.Icon:SetVertexColor(0.4, 0.4, 0.4, 1)
         icon._usabilityTinted = true
     end
@@ -3800,17 +3807,50 @@ local function ResolveContainerDBAndType(entry, ncdm, ncdmContainers)
 end
 
 local function PrepareCooldownUpdateBatch()
+    if refreshBatch then
+        return refreshBatch:Prepare()
+    end
+
     local editMode = Helpers.IsEditModeActive()
         or Helpers.IsLayoutModeActive()
         or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
-
     local ncdm = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
-    _hoistedNcdm = ncdm
-    _batchTime = GetTime()
-
     _resolverRuntimePolicy.RefreshSwipeBatchSettings()
-
     return editMode, ncdm, ncdm and ncdm.containers, InCombatLockdown()
+end
+
+local function BeginIconRefreshBatch(reason)
+    if refreshBatch then
+        refreshBatch:Begin(reason)
+    elseif RuntimeQueries and RuntimeQueries.BeginRuntimeQueryBatch then
+        RuntimeQueries.BeginRuntimeQueryBatch()
+    end
+end
+
+local function EndIconRefreshBatch()
+    if refreshBatch then
+        refreshBatch:End()
+    elseif RuntimeQueries and RuntimeQueries.EndRuntimeQueryBatch then
+        RuntimeQueries.EndRuntimeQueryBatch()
+    end
+end
+
+local function SetRefreshBatchStackTextWrites(enabled)
+    if refreshBatch then
+        refreshBatch:SetStackTextWrites(enabled)
+    elseif SetStackTextWritesForBatch then
+        SetStackTextWritesForBatch(enabled)
+    end
+end
+
+local function ConsumeStackTextWriteRequest()
+    return refreshBatch and refreshBatch:ConsumeStackTextWriteRequest() or false
+end
+
+local function RequestStackTextUpdate()
+    if refreshBatch then
+        refreshBatch:RequestStackTextUpdate()
+    end
 end
 
 local function UpdateCooldownContainerVisibility(icon, entry, containerDB, editMode, inCombat)
@@ -3837,7 +3877,7 @@ local function UpdateCooldownContainerVisibility(icon, entry, containerDB, editM
 
     local entryIsAura = IsAuraEntry(entry)
     if IsCustomBarContainer(containerDB) then
-        local visibility = _resolverRuntimePolicy.ComputeCustomBarVisibility(icon, entry, containerDB, _batchTime)
+        local visibility = _resolverRuntimePolicy.ComputeCustomBarVisibility(icon, entry, containerDB, GetRefreshBatchTime())
         local effectiveMode = containerDB and containerDB.iconDisplayMode or "always"
         if effectiveMode == "combat" then
             effectiveMode = (UnitAffectingCombat and UnitAffectingCombat("player")) and "always" or "active"
@@ -3902,7 +3942,7 @@ local function UpdateCooldownContainerVisibility(icon, entry, containerDB, editM
     end
 
     local cooldownState = _resolverRuntimePolicy.ResolveIconCooldownActivityState(
-        icon, entry, containerDB, _batchTime)
+        icon, entry, containerDB, GetRefreshBatchTime())
     local isOnCD = cooldownState.isOnCooldown or cooldownState.rechargeActive
 
     local effectiveMode = containerDB and containerDB.iconDisplayMode or "always"
@@ -3942,22 +3982,9 @@ end
 -- UPDATE ALL COOLDOWNS
 ---------------------------------------------------------------------------
 function CDMIcons:UpdateAllCooldowns()
-    local editMode = Helpers.IsEditModeActive()
-        or Helpers.IsLayoutModeActive()
-        or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
-
-    -- Hoist DB lookups above the loop (avoids 4 table hops per icon).
-    -- Also set file-scoped _hoistedNcdm so UpdateIconCooldown can read it
-    -- without re-walking the chain for every icon.
-    local _ncdm = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
-    _hoistedNcdm = _ncdm  -- consumed by UpdateIconCooldown
-    _batchTime = GetTime()  -- consumed by UpdateIconCooldown + visibility loop
-    -- Hoist GCD swipe setting so per-icon code can check it without DB lookups.
-    _resolverRuntimePolicy.RefreshSwipeBatchSettings()
-    local _ncdmContainers = _ncdm and _ncdm.containers
-    local inCombat = InCombatLockdown()
-    SetStackTextWritesForBatch(true)
-    BeginResolverQueryBatch("updateAll")
+    local editMode, _ncdm, _ncdmContainers, inCombat = PrepareCooldownUpdateBatch()
+    SetRefreshBatchStackTextWrites(true)
+    BeginIconRefreshBatch("updateAll")
 
     for _, pool in pairs(iconPools) do
         for _, icon in ipairs(pool) do
@@ -4013,7 +4040,7 @@ function CDMIcons:UpdateAllCooldowns()
                     end
 
                     if IsCustomBarContainer(containerDB) then
-                        local visibility = _resolverRuntimePolicy.ComputeCustomBarVisibility(icon, entry, containerDB, _batchTime)
+                        local visibility = _resolverRuntimePolicy.ComputeCustomBarVisibility(icon, entry, containerDB, GetRefreshBatchTime())
                         local shouldShow = visibility.renderVisible
                         if effectiveMode == "active" and not isActive then
                             local keepForGlow = false
@@ -4065,7 +4092,7 @@ function CDMIcons:UpdateAllCooldowns()
                     -- _hasCooldownActive is set when a DurationObject was applied
                     -- (works even when numeric start/dur are secret in combat).
                     local cooldownState = _resolverRuntimePolicy.ResolveIconCooldownActivityState(
-                        icon, entry, containerDB, _batchTime)
+                        icon, entry, containerDB, GetRefreshBatchTime())
                     local isOnCD = cooldownState.isOnCooldown or cooldownState.rechargeActive
 
                     local effectiveMode = displayMode
@@ -4074,7 +4101,7 @@ function CDMIcons:UpdateAllCooldowns()
                     end
 
                     if IsCustomBarContainer(containerDB) then
-                        local visibility = _resolverRuntimePolicy.ComputeCustomBarVisibility(icon, entry, containerDB, _batchTime)
+                        local visibility = _resolverRuntimePolicy.ComputeCustomBarVisibility(icon, entry, containerDB, GetRefreshBatchTime())
                         local shouldShow = visibility.renderVisible
                         if effectiveMode == "active" and not visibility.isOnCooldown and not visibility.rechargeActive then
                             local keepForGlow = false
@@ -4237,9 +4264,9 @@ function CDMIcons:UpdateAllCooldowns()
 
     -- After the per-icon visibility loop, relayout any container whose
     -- filter verdict flipped since the last layout pass.
-    SetStackTextWritesForBatch(false)
+    SetRefreshBatchStackTextWrites(false)
     SyncSpellRangeChecks()
-    EndResolverQueryBatch()
+    EndIconRefreshBatch()
     DrainLayoutDirty()
 end
 
@@ -4254,10 +4281,9 @@ end
 
 function CDMIcons:UpdateCooldownOnly()
     local editMode, ncdm, ncdmContainers, inCombat = PrepareCooldownUpdateBatch()
-    local allowStackTextWrites = _resolverRuntimePolicy.pendingStackTextUpdate == true
-    _resolverRuntimePolicy.pendingStackTextUpdate = nil
-    SetStackTextWritesForBatch(allowStackTextWrites)
-    BeginResolverQueryBatch("cooldownOnly")
+    local allowStackTextWrites = ConsumeStackTextWriteRequest()
+    SetRefreshBatchStackTextWrites(allowStackTextWrites)
+    BeginIconRefreshBatch("cooldownOnly")
 
     for _, pool in pairs(iconPools) do
         for _, icon in ipairs(pool) do
@@ -4274,35 +4300,32 @@ function CDMIcons:UpdateCooldownOnly()
 
     -- After the per-icon visibility loop, relayout any container whose
     -- filter verdict flipped since the last layout pass.
-    SetStackTextWritesForBatch(false)
-    EndResolverQueryBatch()
+    SetRefreshBatchStackTextWrites(false)
+    EndIconRefreshBatch()
     DrainLayoutDirty()
 end
 
 function CDMIcons:UpdateCooldownsForType(viewerType)
     local pool = iconPools[viewerType]
     if pool then
-        local _ncdm = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
-        _hoistedNcdm = _ncdm
-        _batchTime = GetTime()
-        _resolverRuntimePolicy.RefreshSwipeBatchSettings()
-        SetStackTextWritesForBatch(true)
-        BeginResolverQueryBatch("type")
+        PrepareCooldownUpdateBatch()
+        SetRefreshBatchStackTextWrites(true)
+        BeginIconRefreshBatch("type")
         for _, icon in ipairs(pool) do
             UpdateIconCooldown(icon)
         end
-        SetStackTextWritesForBatch(false)
+        SetRefreshBatchStackTextWrites(false)
         SyncSpellRangeChecks()
-        EndResolverQueryBatch()
+        EndIconRefreshBatch()
     end
 end
 
 function CDMIcons.OnContainerIconPlaced(icon, rowConfig)
     if not icon then return end
     ConfigureIcon(icon, rowConfig)
-    BeginResolverQueryBatch("placed")
+    BeginIconRefreshBatch("placed")
     UpdateIconCooldown(icon)
-    EndResolverQueryBatch()
+    EndIconRefreshBatch()
 end
 
 function CDMIcons.OnIconRowConfigApplied(icon, rowConfig)
@@ -4824,11 +4847,11 @@ do
             ScheduleCDMUpdate(true, CDM_UPDATE_FULL)
         end,
         prepareBatch = PrepareCooldownUpdateBatch,
-        setStackTextWrites = SetStackTextWritesForBatch,
+        setStackTextWrites = SetRefreshBatchStackTextWrites,
         beginBatch = function()
-            BeginResolverQueryBatch("mirror")
+            BeginIconRefreshBatch("mirror")
         end,
-        endBatch = EndResolverQueryBatch,
+        endBatch = EndIconRefreshBatch,
         drainLayoutDirty = DrainLayoutDirty,
         refreshIcon = function(icon, editMode, ncdm, ncdmContainers, inCombat)
             return _resolverRuntimePolicy.RefreshIndexedMirrorIcon(
@@ -4960,9 +4983,9 @@ do
         end,
         prepareBatch = PrepareCooldownUpdateBatch,
         beginBatch = function(reason)
-            BeginResolverQueryBatch(reason)
+            BeginIconRefreshBatch(reason)
         end,
-        endBatch = EndResolverQueryBatch,
+        endBatch = EndIconRefreshBatch,
         applyResolvedCooldown = ApplyResolvedCooldown,
         updateIconCooldown = UpdateIconCooldown,
         applyAuraScopedResolvedCooldown = function(icon, entry, editMode, ncdm, ncdmContainers, inCombat)
@@ -5015,7 +5038,7 @@ do
             return ResolverRuntime.SetTrustIsOnGCDForBatch(value)
         end,
         requestStackTextUpdate = function()
-            _resolverRuntimePolicy.pendingStackTextUpdate = true
+            RequestStackTextUpdate()
         end,
         noteChargeDurationObjectsUpdated = function()
             if RuntimeQueries and RuntimeQueries.NoteChargeDurationObjectsUpdated then
