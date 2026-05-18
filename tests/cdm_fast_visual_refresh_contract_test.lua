@@ -113,6 +113,7 @@ local iconRuntimeRefresh = readAll("modules/cdm/cdm_icon_runtime_refresh.lua")
 local iconUpdateScheduler = readAll("modules/cdm/cdm_icon_update_scheduler.lua")
 local iconRefreshBatch = readAll("modules/cdm/cdm_icon_refresh_batch.lua")
 local iconRefreshWalker = readAll("modules/cdm/cdm_icon_refresh_walker.lua")
+local iconItemVisualPolicy = readAll("modules/cdm/cdm_icon_item_visual_policy.lua")
 local iconVisibilityPolicy = readAll("modules/cdm/cdm_icon_visibility_policy.lua")
 local iconRangePolicy = readAll("modules/cdm/cdm_icon_range_policy.lua")
 local iconCooldownPolicy = readAll("modules/cdm/cdm_icon_cooldown_policy.lua")
@@ -275,6 +276,41 @@ assertContains(
     icons,
     "local function GetIconRefreshWalker()",
     "CDMIcons should wire broad refresh walking through the private refresh walker"
+)
+assertContains(
+    iconItemVisualPolicy,
+    "function controller:UpdateProfessionQuality(icon)",
+    "item visual policy should own profession-quality overlay setup"
+)
+assertContains(
+    iconItemVisualPolicy,
+    "function controller:RefreshItemVisuals(icon, entry, itemID)",
+    "item visual policy should own item variant texture refresh"
+)
+assertContains(
+    iconItemVisualPolicy,
+    "function controller:RefreshInventoryItemVisuals(icon, entry, itemID)",
+    "item visual policy should own slot/trinket item texture refresh"
+)
+assertContains(
+    icons,
+    "itemVisualPolicy = CreateIconItemVisualPolicy()",
+    "CDMIcons should wire item visuals through the private item visual policy"
+)
+assertNotContains(
+    icons,
+    "PROFESSION_QUALITY_DRAW_LAYER",
+    "profession-quality draw-layer policy should live in CDMIconItemVisualPolicy"
+)
+assertNotContains(
+    icons,
+    "GetProfessionQualityInfoForItem",
+    "profession-quality lookup should live in CDMIconItemVisualPolicy"
+)
+assertNotContains(
+    icons,
+    "C_TradeSkillUI",
+    "profession-quality Blizzard lookup should live in CDMIconItemVisualPolicy"
 )
 
 assertNotContains(

@@ -209,6 +209,7 @@ local recyclePool = ns.CDMIconFactory._recyclePool
 local Factory = ns.CDMIconFactory
 local SyncCooldownBling  = Factory.SyncCooldownBling
 local UpdateIconCooldown
+local UpdateIconSecureAttributes
 local SetStackTextWritesForBatch
 local SyncSpellRangeChecks
 local DisableSpellRangeChecks
@@ -218,6 +219,7 @@ local GetAuraApplicationsForSpell
 local customBarPolicy
 local refreshBatch
 local refreshWalker
+local itemVisualPolicy
 
 local cooldownPolicy = ns.CDMIconCooldownPolicy and ns.CDMIconCooldownPolicy.Create({
     getMirror = function()
@@ -393,95 +395,63 @@ end
 -- Renders a crafted/reagent quality badge atop item/trinket/slot icons when
 -- the container opts in via showProfessionQuality.
 ---------------------------------------------------------------------------
-local function GetProfessionQualityInfoForItem(itemIDOrLink)
-    if not itemIDOrLink or not C_TradeSkillUI then return nil end
-    if C_TradeSkillUI.GetItemReagentQualityInfo then
-        local info = C_TradeSkillUI.GetItemReagentQualityInfo(itemIDOrLink)
-        if info then return info end
-    end
-    if C_TradeSkillUI.GetItemCraftedQualityInfo then
-        return C_TradeSkillUI.GetItemCraftedQualityInfo(itemIDOrLink)
-    end
-    return nil
+local function CreateIconItemVisualPolicy()
+    local module = ns.CDMIconItemVisualPolicy
+    if not (module and module.Create) then return nil end
+    return module.Create({
+        getNCDM = function()
+            return ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
+        end,
+        resolveBestOwnedItemVariant = ResolveBestOwnedItemVariant,
+        queryInventoryItemLink = function(unit, slotID)
+            return Sources and Sources.QueryInventoryItemLink and Sources.QueryInventoryItemLink(unit, slotID)
+        end,
+        queryInventoryItemID = function(unit, slotID)
+            return Sources and Sources.QueryInventoryItemID and Sources.QueryInventoryItemID(unit, slotID)
+        end,
+        queryItemIconByID = function(itemID)
+            return Sources and Sources.QueryItemIconByID and Sources.QueryItemIconByID(itemID)
+        end,
+        queryItemInfoInstant = function(itemID)
+            if Sources and Sources.QueryItemInfoInstant then
+                return Sources.QueryItemInfoInstant(itemID)
+            end
+        end,
+        updateSecureAttributes = function(icon, entry, viewerType)
+            if UpdateIconSecureAttributes then
+                UpdateIconSecureAttributes(icon, entry, viewerType)
+            end
+        end,
+    })
 end
+
+itemVisualPolicy = CreateIconItemVisualPolicy()
 
 local function ClearIconProfessionQuality(icon)
-    if icon and icon._professionQualityOverlay then
-        icon._professionQualityOverlay:Hide()
+    if itemVisualPolicy then
+        itemVisualPolicy:ClearProfessionQuality(icon)
     end
-end
-
-local PROFESSION_QUALITY_DRAW_LAYER = "ARTWORK"
-local PROFESSION_QUALITY_DRAW_SUBLEVEL = 1
-
-local function GetIconProfessionQualityParent(icon)
-    if icon and icon.TextOverlay and icon.TextOverlay.CreateTexture then
-        return icon.TextOverlay
-    end
-    return icon
 end
 
 local function UpdateIconProfessionQuality(icon)
-    if not icon or not icon._spellEntry then
-        ClearIconProfessionQuality(icon)
-        return
+    if itemVisualPolicy then
+        itemVisualPolicy:UpdateProfessionQuality(icon)
     end
-    local entry = icon._spellEntry
-    local etype = entry.type
-    if etype ~= "item" and etype ~= "trinket" and etype ~= "slot" then
-        ClearIconProfessionQuality(icon)
-        return
-    end
+end
 
-    local ncdm = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
-    local vt = entry.viewerType
-    local containerDB = ncdm and vt and (ncdm[vt] or (ncdm.containers and ncdm.containers[vt]))
-    if containerDB and containerDB.showProfessionQuality == false then
-        ClearIconProfessionQuality(icon)
-        return
+local function QueryItemVisualTexture(itemID)
+    if itemVisualPolicy then
+        return itemVisualPolicy:GetItemTexture(itemID)
     end
-
-    local lookupID
-    if etype == "item" then
-        lookupID = ResolveBestOwnedItemVariant(entry.id)
-    else
-        if Sources and Sources.QueryInventoryItemLink then
-            lookupID = Sources.QueryInventoryItemLink("player", entry.id)
-        end
-        if not lookupID and Sources and Sources.QueryInventoryItemID then
-            lookupID = Sources.QueryInventoryItemID("player", entry.id)
-        end
+    if Sources and Sources.QueryItemIconByID then
+        local texture = Sources.QueryItemIconByID(itemID)
+        if texture then return texture end
     end
-
-    local qualityInfo = lookupID and GetProfessionQualityInfoForItem(lookupID)
-    local atlas = qualityInfo and qualityInfo.iconInventory
-    if not atlas then
-        ClearIconProfessionQuality(icon)
-        return
+    if Sources and Sources.QueryItemInfoInstant then
+        local _, _, _, _, texture = Sources.QueryItemInfoInstant(itemID)
+        return texture
     end
-
-    local overlayParent = GetIconProfessionQualityParent(icon)
-    if not (overlayParent and overlayParent.CreateTexture) then
-        ClearIconProfessionQuality(icon)
-        return
-    end
-
-    local overlay = icon._professionQualityOverlay
-    if overlay and overlay.GetParent and overlay:GetParent() ~= overlayParent then
-        overlay:Hide()
-        overlay = nil
-        icon._professionQualityOverlay = nil
-    end
-    if not overlay then
-        overlay = overlayParent:CreateTexture(nil, PROFESSION_QUALITY_DRAW_LAYER, nil, PROFESSION_QUALITY_DRAW_SUBLEVEL)
-        overlay:SetPoint("TOPLEFT", icon, "TOPLEFT", -3, 2)
-        icon._professionQualityOverlay = overlay
-    end
-    if overlay.SetDrawLayer then
-        overlay:SetDrawLayer(PROFESSION_QUALITY_DRAW_LAYER, PROFESSION_QUALITY_DRAW_SUBLEVEL)
-    end
-    overlay:SetAtlas(atlas, (TextureKitConstants and TextureKitConstants.UseAtlasSize) or true)
-    overlay:Show()
+    return nil
 end
 ---------------------------------------------------------------------------
 -- ITEM COOLDOWN RESOLUTION
@@ -1951,7 +1921,7 @@ end
 -- SECURE ATTRIBUTE MANAGEMENT
 -- Sets or clears the click-to-cast secure button attributes on a CDM icon.
 ---------------------------------------------------------------------------
-local function UpdateIconSecureAttributes(icon, entry, viewerType)
+UpdateIconSecureAttributes = function(icon, entry, viewerType)
     if not icon then return end
 
     -- Can't modify secure attributes during combat
@@ -2057,35 +2027,11 @@ local function UpdateIconSecureAttributes(icon, entry, viewerType)
 end
 
 local function RefreshItemIconVisuals(icon, entry, itemID)
-    if not (icon and entry and itemID) then return false end
+    return itemVisualPolicy and itemVisualPolicy:RefreshItemVisuals(icon, entry, itemID) or false
+end
 
-    local changed = false
-    if icon._lastItemVisualItemID ~= itemID then
-        icon._lastItemVisualItemID = itemID
-        changed = true
-    end
-
-    if icon.Icon then
-        local tex = Sources and Sources.QueryItemIconByID
-            and Sources.QueryItemIconByID(itemID)
-        if not tex and Sources and Sources.QueryItemInfoInstant then
-            local _, _, _, _, instantTex = Sources.QueryItemInfoInstant(itemID)
-            tex = instantTex
-        end
-        if tex and tex ~= icon._lastTexture then
-            icon.Icon:SetTexture(tex)
-            icon._lastTexture = tex
-            changed = true
-        end
-    end
-
-    if changed then
-        entry.itemID = itemID
-        UpdateIconProfessionQuality(icon)
-        UpdateIconSecureAttributes(icon, entry, entry.viewerType)
-    end
-
-    return changed
+local function RefreshInventoryItemVisuals(icon, entry, itemID)
+    return itemVisualPolicy and itemVisualPolicy:RefreshInventoryItemVisuals(icon, entry, itemID) or false
 end
 
 ---------------------------------------------------------------------------
@@ -3043,11 +2989,7 @@ UpdateIconCooldown = function(icon)
         local newTex
         if macroResolvedID then
             if macroResolvedType == "item" then
-                local _, _, _, _, tex
-                if Sources and Sources.QueryItemInfoInstant then
-                    _, _, _, _, tex = Sources.QueryItemInfoInstant(macroResolvedID)
-                end
-                newTex = tex
+                newTex = QueryItemVisualTexture(macroResolvedID)
             else
                 newTex = GetSpellTexture(macroResolvedID)
             end
@@ -3066,15 +3008,7 @@ UpdateIconCooldown = function(icon)
             itemID = Sources.QueryInventoryItemID("player", slotID)
         end
         if itemID and icon.Icon then
-            local tex
-            if Sources and Sources.QueryItemIconByID then
-                tex = Sources.QueryItemIconByID(itemID)
-            end
-            if tex and tex ~= icon._lastTexture then
-                icon.Icon:SetTexture(tex)
-                icon._lastTexture = tex
-                UpdateIconProfessionQuality(icon)
-            end
+            RefreshInventoryItemVisuals(icon, entry, itemID)
         end
         if stackTextWritesAllowed then
             _resolverRuntimePolicy.HideIconStackText(icon, "slot-clear")

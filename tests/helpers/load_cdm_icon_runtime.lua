@@ -53,6 +53,9 @@ return function(ns)
     if not ns.CDMIconRefreshWalker then
         assert(loadfile("modules/cdm/cdm_icon_refresh_walker.lua"))("QUI", ns)
     end
+    if not ns.CDMIconItemVisualPolicy then
+        assert(loadfile("modules/cdm/cdm_icon_item_visual_policy.lua"))("QUI", ns)
+    end
     if not ns.CDMIconVisibilityPolicy then
         assert(loadfile("modules/cdm/cdm_icon_visibility_policy.lua"))("QUI", ns)
     end

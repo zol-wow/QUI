@@ -23,6 +23,7 @@
     <Script file="cdm_icon_update_scheduler.lua"/>
     <Script file="cdm_icon_refresh_batch.lua"/>
     <Script file="cdm_icon_refresh_walker.lua"/>
+    <Script file="cdm_icon_item_visual_policy.lua"/>
     <Script file="cdm_icon_visibility_policy.lua"/>
     <Script file="cdm_icon_range_policy.lua"/>
     <Script file="cdm_icon_cooldown_policy.lua"/>
