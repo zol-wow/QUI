@@ -10,6 +10,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha49 - 2026-05-18
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha48 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **CDM aura and charge cooldown resolution now keeps timer lanes stable across aura, recharge, and GCD states.** Aura-backed cooldowns prefer secret-safe DurationObjects, recharge swipes stay in their charge/resource lane, and stale aura or pandemic state is cleared before falling back to normal cooldowns.
+- **CDM item sources now preserve scanned item aura entries and quality variants.** Usable item candidates are ordered consistently, scanned item registrations survive refreshes, and dormant unlearned entries stay available for composer rows.
+- **Chat channel shortening and temporary chat-tab filtering now avoid combat-sensitive mutations.** Rendered channel text can still be shortened while protected chat frames and temporary tabs avoid taint-prone state changes.
+- **Aura-related frame paths now avoid unsafe secret-value decisions.** Buff borders, unit frames, and group-frame aura indicators use guarded state handling for combat-safe updates.
+
+### Changed
+- **CDM debug and renderer paths now expose more precise GCD and cooldown state diagnostics.** Debug traces include richer cooldown resolution details, and bar labels/statusbar timers follow the same resolved runtime state as icons.
+
+### Internal
+- Added regression coverage for aura cooldown application, item-quality source ordering, scanned item aura registration, spellscanner item registration, channel shortening, temporary chat-tab filtering, GCD styling, statusbar timers, and cooldown resolver state transitions.
+
+
+
 ## v3.6.0-alpha48 - 2026-05-17
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha47 profiles carry over unchanged.
