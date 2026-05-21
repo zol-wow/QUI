@@ -88,119 +88,125 @@ assert(type(runtime.BeginRuntimeQueryBatch) == "function",
 assert(type(runtime.EndRuntimeQueryBatch) == "function",
     "runtime query batching should expose EndRuntimeQueryBatch")
 
+-- Outside a batch: queries always go to source. No caching active.
 runtime.QueryCooldown(101)
 runtime.QueryCooldown(101)
 assert(cooldownCalls == 2,
     "outside a batch cooldown queries should remain live reads")
 
+-- Inside a batch: queries are de-duplicated by spellID, regardless of owner.
+-- This is the central contract — multiple icons hitting the same spell
+-- within a batch share a single source read + return value, avoiding the
+-- per-call Blizzard table allocation that dominated combat memaudit traces.
 runtime.BeginRuntimeQueryBatch()
 assert(runtime.QueryCooldown(101) == cooldownInfo,
-    "ownerless batched cooldown query should return source payload")
+    "first batched cooldown query should hit source and cache the payload")
 assert(runtime.QueryCooldown(101) == cooldownInfo,
-    "ownerless duplicate cooldown query should remain a live source read")
+    "duplicate batched cooldown query should be served from the batch cache")
 assert(runtime.QueryCharges(101) == chargeInfo,
-    "ownerless batched charge query should return source payload")
+    "first batched charge query should hit source and cache the payload")
 assert(runtime.QueryCharges(101) == chargeInfo,
-    "ownerless duplicate charge query should remain a live source read")
+    "duplicate batched charge query should be served from the batch cache")
 assert(runtime.QueryDuration(101) == durationObject,
-    "ownerless cooldown DurationObject query should return source payload")
+    "first batched DurationObject query should hit source")
 assert(runtime.QueryDuration(101) == durationObject,
-    "ownerless duplicate DurationObject query should remain a live source read")
+    "duplicate batched DurationObject query should be served from the batch cache")
 assert(runtime.QueryChargeDuration(101) == chargeDurationObject,
-    "ownerless charge DurationObject query should return source payload")
+    "first batched charge DurationObject query should hit source")
 assert(runtime.QueryChargeDuration(101) == chargeDurationObject,
-    "ownerless duplicate charge DurationObject query should remain a live source read")
+    "duplicate batched charge DurationObject query should be served from the batch cache")
 assert(runtime.QueryOverrideSpell(101) == 202,
     "batched override query should return source payload")
 assert(runtime.QueryOverrideSpell(101) == 202,
-    "duplicate batched override query should return cached payload")
+    "duplicate batched override query should return the stable-cached payload")
 assert(rawequal(runtime.QueryDisplayCount(101), secretDisplayCount),
     "batched display-count query should forward secret source payload")
 assert(rawequal(runtime.QueryDisplayCount(101), secretDisplayCount),
-    "ownerless duplicate secret display-count query should forward source payload")
+    "duplicate batched display-count query should be served from the batch cache")
 assert(rawequal(runtime.QuerySpellCount(101), secretSpellCount),
     "batched spell-count query should forward secret source payload")
 assert(rawequal(runtime.QuerySpellCount(101), secretSpellCount),
-    "ownerless duplicate secret spell-count query should forward source payload")
+    "duplicate batched spell-count query should be served from the batch cache")
 
 assert(runtime.QueryCooldown(404) == nil,
-    "batched nil cooldown result should pass through")
+    "batched nil cooldown result should pass through and cache the nil")
 assert(runtime.QueryCooldown(404) == nil,
-    "ownerless duplicate nil cooldown result should remain a live source read")
+    "duplicate batched nil cooldown result should be served from the batch cache")
 assert(runtime.QueryCharges(404) == nil,
-    "batched nil charge result should pass through")
+    "batched nil charge result should pass through and cache the nil")
 assert(runtime.QueryCharges(404) == nil,
-    "ownerless duplicate nil charge result should remain a live source read")
+    "duplicate batched nil charge result should be served from the batch cache")
 runtime.EndRuntimeQueryBatch()
 
-assert(cooldownCalls == 6,
-    "ownerless cooldown activity should not use a central batch cache")
-assert(chargeCalls == 4,
-    "ownerless charge activity should not use a central batch cache")
-assert(durationCalls == 2,
-    "ownerless cooldown DurationObject activity should not use a central batch cache")
-assert(chargeDurationCalls == 2,
-    "ownerless charge DurationObject activity should not use a central batch cache")
+-- After the batch: one source call per distinct spellID-arg combination.
+assert(cooldownCalls == 4,
+    "batch cache should collapse duplicate cooldown reads (2 outside + 1 for 101 + 1 for 404)")
+assert(chargeCalls == 2,
+    "batch cache should collapse duplicate charge reads (1 for 101 + 1 for 404)")
+assert(durationCalls == 1,
+    "batch cache should collapse duplicate DurationObject reads")
+assert(chargeDurationCalls == 1,
+    "batch cache should collapse duplicate charge DurationObject reads")
 assert(overrideCalls == 1,
     "override queries should use the stable identity cache")
-assert(displayCountCalls == 2,
-    "ownerless display-count payloads should not use a central batch cache")
-assert(spellCountCalls == 2,
-    "ownerless spell-count payloads should not use a central batch cache")
+assert(displayCountCalls == 1,
+    "batch cache should collapse duplicate display-count reads even for secret payloads")
+assert(spellCountCalls == 1,
+    "batch cache should collapse duplicate spell-count reads even for secret payloads")
 
+-- Owners are accepted for API compatibility but are not part of the cache
+-- key — owner A and owner B querying the same spellID share one source
+-- read in the same batch.
 local owner = { _spellEntry = { viewerType = "essential", type = "spell", id = 101 } }
+local otherOwner = { _spellEntry = { viewerType = "utility", type = "spell", id = 101 } }
 runtime.BeginRuntimeQueryBatch()
 assert(runtime.QueryCooldown(101, owner) == cooldownInfo,
     "owner cooldown query should return source payload")
 assert(runtime.QueryCooldown(101, owner) == cooldownInfo,
-    "duplicate owner cooldown query should use the owner fact cache")
+    "duplicate owner cooldown query should be served from the batch cache")
+assert(runtime.QueryCooldown(101, otherOwner) == cooldownInfo,
+    "different owner querying same spell should share the batch cache entry")
 assert(runtime.QueryCharges(101, owner) == chargeInfo,
     "owner charge query should return source payload")
-assert(runtime.QueryCharges(101, owner) == chargeInfo,
-    "duplicate owner charge query should use the owner fact cache")
+assert(runtime.QueryCharges(101, otherOwner) == chargeInfo,
+    "different owner charge query should share the batch cache entry")
 assert(runtime.QueryDuration(101, owner) == durationObject,
-    "owner cooldown DurationObject query should return source payload")
-assert(runtime.QueryDuration(101, owner) == durationObject,
-    "duplicate owner cooldown DurationObject query should use the owner fact cache")
+    "owner DurationObject query should return source payload")
+assert(runtime.QueryDuration(101, otherOwner) == durationObject,
+    "different owner DurationObject query should share the batch cache entry")
 assert(runtime.QueryChargeDuration(101, owner) == chargeDurationObject,
     "owner charge DurationObject query should return source payload")
-assert(runtime.QueryChargeDuration(101, owner) == chargeDurationObject,
-    "duplicate owner charge DurationObject query should use the owner fact cache")
+assert(runtime.QueryChargeDuration(101, otherOwner) == chargeDurationObject,
+    "different owner charge DurationObject query should share the batch cache entry")
 assert(rawequal(runtime.QueryDisplayCount(101, owner), secretDisplayCount),
     "owner display-count query should forward secret source payload")
-assert(rawequal(runtime.QueryDisplayCount(101, owner), secretDisplayCount),
-    "duplicate owner secret display-count query should use the owner fact cache")
+assert(rawequal(runtime.QueryDisplayCount(101, otherOwner), secretDisplayCount),
+    "different owner display-count query should share the batch cache entry")
 assert(rawequal(runtime.QuerySpellCount(101, owner), secretSpellCount),
     "owner spell-count query should forward secret source payload")
-assert(rawequal(runtime.QuerySpellCount(101, owner), secretSpellCount),
-    "duplicate owner secret spell-count query should use the owner fact cache")
+assert(rawequal(runtime.QuerySpellCount(101, otherOwner), secretSpellCount),
+    "different owner spell-count query should share the batch cache entry")
 assert(runtime.QueryCooldown(404, owner) == nil,
     "owner nil cooldown result should pass through")
-assert(runtime.QueryCooldown(404, owner) == nil,
-    "duplicate owner nil cooldown result should use the owner fact cache")
-assert(runtime.QueryCharges(404, owner) == nil,
-    "owner nil charge result should pass through")
-assert(runtime.QueryCharges(404, owner) == nil,
-    "duplicate owner nil charge result should use the owner fact cache")
+assert(runtime.QueryCooldown(404, otherOwner) == nil,
+    "different owner nil cooldown result should share the batch cache entry")
 runtime.EndRuntimeQueryBatch()
 
-assert(owner._cdmRuntimeState and owner._cdmRuntimeState.queryCache,
-    "owner runtime query facts should live on the owner runtime state table")
-assert(cooldownCalls == 8,
-    "owner cooldown facts should share one source read per spell in the batch")
-assert(chargeCalls == 6,
-    "owner charge facts should share one source read per spell in the batch")
-assert(durationCalls == 3,
-    "owner cooldown DurationObject facts should share one source read in the batch")
-assert(chargeDurationCalls == 3,
-    "owner charge DurationObject facts should share one source read in the batch")
-assert(displayCountCalls == 3,
-    "owner display-count facts should cache even secret payloads without comparing them")
-assert(spellCountCalls == 3,
-    "owner spell-count facts should cache even secret payloads without comparing them")
+assert(cooldownCalls == 6,
+    "owner cooldown facts should share one source read across all owners (4 prior + 1 for 101 + 1 for 404)")
+assert(chargeCalls == 3,
+    "owner charge facts should share one source read across all owners (2 prior + 1 for 101)")
+assert(durationCalls == 2,
+    "owner DurationObject facts should share one source read across all owners (1 prior + 1)")
+assert(chargeDurationCalls == 2,
+    "owner charge DurationObject facts should share one source read across all owners (1 prior + 1)")
+assert(displayCountCalls == 2,
+    "owner display-count facts should share one source read across all owners")
+assert(spellCountCalls == 2,
+    "owner spell-count facts should share one source read across all owners")
 
 runtime.QueryCooldown(101)
-assert(cooldownCalls == 9,
+assert(cooldownCalls == 7,
     "ending a batch should restore live cooldown reads")
 
 runtime.BeginRuntimeQueryBatch()
@@ -220,6 +226,9 @@ runtime.EndRuntimeQueryBatch()
 assert(overrideCalls == 2,
     "stable override invalidation should allow the next batch to refresh source data")
 
+-- Nested batches share the epoch — entries cached in the outer batch
+-- remain visible to the inner batch and vice versa, until the outermost
+-- EndRuntimeQueryBatch closes the run.
 local nestedOwner = { _spellEntry = { viewerType = "essential", type = "spell", id = 101 } }
 local cooldownCallsBeforeNested = cooldownCalls
 runtime.BeginRuntimeQueryBatch()
@@ -230,7 +239,7 @@ runtime.EndRuntimeQueryBatch()
 runtime.QueryCooldown(101, nestedOwner)
 runtime.EndRuntimeQueryBatch()
 assert(cooldownCalls == cooldownCallsBeforeNested + 1,
-    "nested owner batches should share the owner fact cache until the final EndRuntimeQueryBatch")
+    "nested batches should share the batch cache until the outermost EndRuntimeQueryBatch")
 
 runtime.ResetRuntimeQueryBatch()
 local cooldownCallsBeforeNextBatches = cooldownCalls

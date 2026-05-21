@@ -21,7 +21,6 @@ local LSM = ns.LSM
 ---------------------------------------------------------------------------
 local CDMBars = {}
 ns.CDMBars = CDMBars
-local CDMCooldown = ns.CDMCooldown
 local Sources = ns.CDMSources
 local Renderers = ns.CDMRenderers
 
@@ -36,8 +35,6 @@ local InCombatLockdown = InCombatLockdown
 -- Upvalue hot-path globals
 local type = type
 local ipairs = ipairs
-local string_format = string.format
-local math_floor = math.floor
 local CreateFrame = CreateFrame
 local issecretvalue = issecretvalue
 
@@ -481,7 +478,7 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     -- Inactive visual settings
     local inactiveMode = settings.inactiveMode or "hide"
     if inactiveMode ~= "always" and inactiveMode ~= "fade" and inactiveMode ~= "hide" then
-        inactiveMode = "always"
+        inactiveMode = "hide"
     end
     local inactiveAlpha = settings.inactiveAlpha or 0.3
     if inactiveAlpha < 0 then inactiveAlpha = 0 end

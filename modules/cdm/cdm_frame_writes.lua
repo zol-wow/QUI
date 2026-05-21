@@ -186,18 +186,75 @@ local overlayedSpells = {}  -- [spellID] = true
 local overlayedSpellCounts = {}  -- [spellID] = refcount
 local overlayedSourceMap = {}  -- [sourceSpellID] = { [candidateID] = true }
 
-local function ForEachSpellCandidate(spellID, callback)
-    if not spellID or not callback then return end
-    spellID = spellID
-    if not spellID then return end
+-- Glow-spell-candidate gathering rewritten without per-call closures.
+-- Previously `ForEachSpellCandidate` + `ForEachIconSpellID` took callbacks
+-- and `EvaluateGlowForIcon` allocated 3 fresh closures per icon glow eval
+-- (one outer, one VisitRaw, one inner candidate). With 100+ icons walked
+-- many times per second during combat that dominated FR_CDM_Glows churn.
+-- The new helpers fill module-level scratch tables; callers iterate them
+-- directly with for-loops. No allocations in the hot path.
 
-    callback(spellID)
+local _iconRawSeen = {}
+local _iconCandidateSeen = {}
+local _iconSpellIDScratch = {}
+local _iconSpellIDScratchN = 0
 
-    local overrideID = Sources and Sources.QueryOverrideSpell
-        and Sources.QueryOverrideSpell(spellID)
-    if overrideID and overrideID ~= spellID then
-        callback(overrideID)
+-- Visit one raw spellID candidate. Resolves Blizzard's override spell once
+-- and emits up to two deduplicated candidates into _iconSpellIDScratch.
+-- Operates on module-level scratch; safe to call repeatedly until the next
+-- GatherIconSpellIDs() reset.
+local function VisitRawSpellID(id)
+    if not id or _iconRawSeen[id] then return end
+    _iconRawSeen[id] = true
+    if not _iconCandidateSeen[id] then
+        _iconCandidateSeen[id] = true
+        local n = _iconSpellIDScratchN + 1
+        _iconSpellIDScratchN = n
+        _iconSpellIDScratch[n] = id
     end
+    local overrideID = Sources and Sources.QueryOverrideSpell
+        and Sources.QueryOverrideSpell(id)
+    if overrideID and overrideID ~= id and not _iconCandidateSeen[overrideID] then
+        _iconCandidateSeen[overrideID] = true
+        local n = _iconSpellIDScratchN + 1
+        _iconSpellIDScratchN = n
+        _iconSpellIDScratch[n] = overrideID
+    end
+end
+
+-- Fills _iconSpellIDScratch[1..N] with deduplicated candidate spellIDs for
+-- the icon (seed IDs and their Blizzard overrides). Returns N. Callers
+-- must consume the result before the next GatherIconSpellIDs() call.
+local function GatherIconSpellIDs(icon)
+    _iconSpellIDScratchN = 0
+    if not icon or not icon._spellEntry then return 0 end
+    wipe(_iconRawSeen)
+    wipe(_iconCandidateSeen)
+
+    local entry = icon._spellEntry
+    -- entry.* come from our spell registration and are always non-secret.
+    VisitRawSpellID(entry.spellID)
+    VisitRawSpellID(entry.overrideSpellID)
+    VisitRawSpellID(entry.id)
+
+    -- Runtime override may be a secret value in combat; sanitize at the
+    -- boundary. Combat misses here are covered by
+    -- SPELL_ACTIVATION_OVERLAY_GLOW events, which deliver non-secret
+    -- spellIDs directly to ScanGlowsForSpell.
+    VisitRawSpellID(icon._runtimeSpellID)
+
+    local CDMSpellData = ns.CDMSpellData
+    if CDMSpellData and CDMSpellData.ResolveDisplaySpellID then
+        VisitRawSpellID(CDMSpellData:ResolveDisplaySpellID(entry))
+    end
+
+    if entry.linkedSpellIDs then
+        for _, linkedSpellID in ipairs(entry.linkedSpellIDs) do
+            VisitRawSpellID(linkedSpellID)
+        end
+    end
+
+    return _iconSpellIDScratchN
 end
 
 local function ClearOverlaySource(sourceSpellID)
@@ -219,64 +276,20 @@ end
 local function MarkOverlaySource(sourceSpellID)
     if not sourceSpellID then return end
     ClearOverlaySource(sourceSpellID)
+    -- mapped is stored persistently in overlayedSourceMap, so this
+    -- allocation is intentional (one per MarkOverlaySource call).
     local mapped = {}
-    ForEachSpellCandidate(sourceSpellID, function(candidateID)
-        if candidateID then
-            mapped[candidateID] = true
-            overlayedSpellCounts[candidateID] = (overlayedSpellCounts[candidateID] or 0) + 1
-            overlayedSpells[candidateID] = true
-        end
-    end)
+    mapped[sourceSpellID] = true
+    overlayedSpellCounts[sourceSpellID] = (overlayedSpellCounts[sourceSpellID] or 0) + 1
+    overlayedSpells[sourceSpellID] = true
+    local overrideID = Sources and Sources.QueryOverrideSpell
+        and Sources.QueryOverrideSpell(sourceSpellID)
+    if overrideID and overrideID ~= sourceSpellID then
+        mapped[overrideID] = true
+        overlayedSpellCounts[overrideID] = (overlayedSpellCounts[overrideID] or 0) + 1
+        overlayedSpells[overrideID] = true
+    end
     overlayedSourceMap[sourceSpellID] = mapped
-end
-
-local _iconRawSeen = {}
-local _iconCandidateSeen = {}
-
-local function ForEachIconSpellID(icon, callback)
-    if not icon or not icon._spellEntry or not callback then return end
-
-    local entry = icon._spellEntry
-    local rawSeen = _iconRawSeen
-    local candidateSeen = _iconCandidateSeen
-    wipe(rawSeen)
-    wipe(candidateSeen)
-
-    local function VisitRaw(id)
-        if not id or rawSeen[id] then return end
-        rawSeen[id] = true
-        ForEachSpellCandidate(id, function(candidateID)
-            if candidateID and not candidateSeen[candidateID] then
-                candidateSeen[candidateID] = true
-                callback(candidateID)
-            end
-        end)
-    end
-
-    -- entry.* come from our spell registration and are always non-secret.
-    VisitRaw(entry.spellID)
-    VisitRaw(entry.overrideSpellID)
-    VisitRaw(entry.id)
-
-    -- Runtime override may be a secret value in combat; sanitize at the
-    -- boundary. Combat misses here are covered by
-    -- SPELL_ACTIVATION_OVERLAY_GLOW events, which deliver non-secret
-    -- spellIDs directly to ScanGlowsForSpell.
-    VisitRaw(icon._runtimeSpellID)
-
-    local CDMSpellData = ns.CDMSpellData
-    if CDMSpellData and CDMSpellData.ResolveDisplaySpellID then
-        VisitRaw(CDMSpellData:ResolveDisplaySpellID(entry))
-    end
-
-    if entry.linkedSpellIDs then
-        for _, linkedSpellID in ipairs(entry.linkedSpellIDs) do
-            VisitRaw(linkedSpellID)
-        end
-    end
-
-    wipe(rawSeen)
-    wipe(candidateSeen)
 end
 
 local function QueryReadableSpellUsable(spellID)
@@ -797,11 +810,13 @@ local function EvaluateGlowForIcon(icon)
     elseif spellOvr and spellOvr.glowEnabled == true then
         shouldGlow = true
     else
-        ForEachIconSpellID(icon, function(spellID)
-            if not shouldGlow and IsOverlayed(spellID) then
+        local n = GatherIconSpellIDs(icon)
+        for i = 1, n do
+            if IsOverlayed(_iconSpellIDScratch[i]) then
                 shouldGlow = true
+                break
             end
-        end)
+        end
     end
 
     if not shouldGlow and spellOvr and spellOvr.procOnUsable == true then
@@ -866,29 +881,28 @@ end
 ---------------------------------------------------------------------------
 -- SCAN ALL ICONS AND SYNC GLOW STATE
 ---------------------------------------------------------------------------
+-- Hoisted out of ScanAllGlows so IconFactory:ForEachIcon does not allocate
+-- a fresh closure per call.
+local function _SyncGlowIfVisible(icon)
+    if not icon:IsShown() then return end -- skip hidden icons (glow re-applied on layout refresh)
+    if icon._spellEntry then
+        SyncGlowForIcon(icon)
+    end
+end
+
 local function ScanAllGlows()
     local IconFactory = ns.CDMIconFactory
     if not IconFactory then return end
 
     if IconFactory.ForEachIcon then
-        IconFactory:ForEachIcon(function(icon)
-            if not icon:IsShown() then -- skip hidden icons (glow re-applied on layout refresh)
-                -- noop: skip
-            elseif icon._spellEntry then
-                SyncGlowForIcon(icon)
-            end
-        end)
+        IconFactory:ForEachIcon(_SyncGlowIfVisible)
         return
     end
 
     for _, viewerType in ipairs(GetBuiltinCooldownContainerKeys()) do
         local pool = IconFactory:GetIconPool(viewerType)
         for _, icon in ipairs(pool) do
-            if not icon:IsShown() then
-                -- noop: skip
-            elseif icon._spellEntry then
-                SyncGlowForIcon(icon)
-            end
+            _SyncGlowIfVisible(icon)
         end
     end
 end
@@ -898,6 +912,24 @@ end
 -- O(1) lookup via reverse map instead of scanning all icons.
 ---------------------------------------------------------------------------
 local _scanGlowVisited = {}
+
+-- Hoisted to avoid a per-call closure: previous ForEachSpellCandidate
+-- callback captured `visited`, `matched`, and `spellIdToGlowIcons`. State
+-- now lives on module locals; matched is signaled via the return value.
+local function _ProcessGlowIconsForCandidate(spellID, visited)
+    local icons = spellIdToGlowIcons[spellID]
+    if not icons then return false end
+    for i = 1, #icons do
+        local icon = icons[i]
+        if not visited[icon] then
+            visited[icon] = true
+            if icon:IsShown() and icon._spellEntry then
+                SyncGlowForIcon(icon)
+            end
+        end
+    end
+    return true
+end
 
 local function ScanGlowsForSpell(spellID)
     if not spellID then ScanAllGlows(); return end
@@ -909,22 +941,15 @@ local function ScanGlowsForSpell(spellID)
     -- overlay events can fire in bursts during combat.
     local visited = _scanGlowVisited
     wipe(visited)
-    local matched = false
-    ForEachSpellCandidate(spellID, function(id)
-        local icons = spellIdToGlowIcons[id]
-        if icons then
+
+    local matched = _ProcessGlowIconsForCandidate(spellID, visited)
+    local overrideID = Sources and Sources.QueryOverrideSpell
+        and Sources.QueryOverrideSpell(spellID)
+    if overrideID and overrideID ~= spellID then
+        if _ProcessGlowIconsForCandidate(overrideID, visited) then
             matched = true
-            for i = 1, #icons do
-                local icon = icons[i]
-                if not visited[icon] then
-                    visited[icon] = true
-                    if icon:IsShown() and icon._spellEntry then
-                        SyncGlowForIcon(icon)
-                    end
-                end
-            end
         end
-    end)
+    end
 
     if not matched then
         -- Proc events are infrequent; if the fast reverse map misses because

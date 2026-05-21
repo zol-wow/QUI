@@ -642,7 +642,7 @@ function CDMIndex.GetOrderedSpellMap()
     }
     for _, cat in ipairs(visibleCats) do
         if cat ~= nil then
-ids = provider.GetOrderedCooldownIDsForCategory(provider, cat, true)
+            local ids = provider.GetOrderedCooldownIDsForCategory(provider, cat, true)
             if ids then
                 for _, cdID in ipairs(ids) do
                     local info = api.GetCooldownViewerCooldownInfo(cdID)

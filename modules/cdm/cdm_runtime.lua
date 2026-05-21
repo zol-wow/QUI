@@ -25,13 +25,39 @@ local table_remove = table.remove
 
 local _subscribers = {}
 
+-- Reusable snapshot pool. Publish must snapshot the subscriber list before
+-- iterating so handlers that subscribe/unsubscribe during dispatch don't
+-- mutate the in-flight iteration (see tests/unit/cdm_bus_test.lua). Pooled
+-- to avoid per-publish table allocation in hot combat paths; depth-safe
+-- because nested publishes acquire their own scratch.
+local _snapshotPool = {}
+local _snapshotPoolN = 0
+
+local function acquireSnapshot()
+    local n = _snapshotPoolN
+    if n > 0 then
+        local t = _snapshotPool[n]
+        _snapshotPool[n] = nil
+        _snapshotPoolN = n - 1
+        return t
+    end
+    return {}
+end
+
+local function releaseSnapshot(t)
+    wipe(t)
+    local n = _snapshotPoolN + 1
+    _snapshotPoolN = n
+    _snapshotPool[n] = t
+end
+
 function CDMScheduler.Publish(eventName, ...)
     local list = _subscribers[eventName]
     if not list then return end
     local n = #list
     if n == 0 then return end
 
-    local snapshot = {}
+    local snapshot = acquireSnapshot()
     for i = 1, n do
         snapshot[i] = list[i]
     end
@@ -39,6 +65,8 @@ function CDMScheduler.Publish(eventName, ...)
     for i = 1, n do
         xpcall(snapshot[i], geterrorhandler(), eventName, ...)
     end
+
+    releaseSnapshot(snapshot)
 end
 
 function CDMScheduler.Subscribe(eventName, handler)
@@ -219,109 +247,101 @@ local function IsCooldownMirrorCategory(category)
     return category == "essential" or category == "utility"
 end
 
+-- Direct API references hoisted at load. Wrappers below call these without
+-- pcall because the Blizzard C bindings return nil for invalid input rather
+-- than throwing under normal play. Removing pcall in the hot path saves a
+-- per-call vararg frame and tuple allocation — significant at 5–17k calls/5s
+-- during combat (see memaudit traces). Guards still screen out nil/missing
+-- APIs so the wrapper itself doesn't fault.
+local _C_GetSpellCharges = C_Spell and C_Spell.GetSpellCharges
+local _C_GetSpellCooldown = C_Spell and C_Spell.GetSpellCooldown
+local _C_GetSpellCooldownDuration = C_Spell and C_Spell.GetSpellCooldownDuration
+local _C_GetBaseSpell = C_Spell and C_Spell.GetBaseSpell
+local _C_GetSpellBaseCooldown = C_Spell and C_Spell.GetSpellBaseCooldown
+local _C_GetSpellChargeDuration = C_Spell and C_Spell.GetSpellChargeDuration
+local _C_GetOverrideSpell = C_Spell and C_Spell.GetOverrideSpell
+local _C_GetSpellDisplayCount = C_Spell and C_Spell.GetSpellDisplayCount
+local _C_GetSpellCastCount = C_Spell and C_Spell.GetSpellCastCount
+local _C_GetSpellInfo = C_Spell and C_Spell.GetSpellInfo
+local _C_GetSpellName = C_Spell and C_Spell.GetSpellName
+local _C_GetSpellTexture = C_Spell and C_Spell.GetSpellTexture
+local _C_IsSpellUsable = C_Spell and C_Spell.IsSpellUsable
+local _C_IsSpellInRange = C_Spell and C_Spell.IsSpellInRange
+local _C_SpellHasRange = C_Spell and C_Spell.SpellHasRange
+
 function CDMSources.QuerySpellCharges(spellID)
-    if not spellID or not (C_Spell and C_Spell.GetSpellCharges) then return nil, false end
-    local ok, result = pcall(C_Spell.GetSpellCharges, spellID)
-    if ok then return result, true end
-    return nil, false
+    if not spellID or not _C_GetSpellCharges then return nil, false end
+    return _C_GetSpellCharges(spellID), true
 end
 
 function CDMSources.QuerySpellCooldown(spellID)
-    if not spellID or not (C_Spell and C_Spell.GetSpellCooldown) then return nil end
-    local ok, result = pcall(C_Spell.GetSpellCooldown, spellID)
-    if ok then return result end
-    return nil
+    if not spellID or not _C_GetSpellCooldown then return nil end
+    return _C_GetSpellCooldown(spellID)
 end
 
 function CDMSources.QuerySpellCooldownDuration(spellID, ignoreGCD)
-    if not spellID or not (C_Spell and C_Spell.GetSpellCooldownDuration) then return nil end
-    local ok, result = pcall(C_Spell.GetSpellCooldownDuration, spellID, ignoreGCD and true or false)
-    if ok then return result end
-    return nil
+    if not spellID or not _C_GetSpellCooldownDuration then return nil end
+    return _C_GetSpellCooldownDuration(spellID, ignoreGCD and true or false)
 end
 
 function CDMSources.QueryBaseSpell(spellID)
-    if not spellID or not (C_Spell and C_Spell.GetBaseSpell) then return nil end
-    local ok, result = pcall(C_Spell.GetBaseSpell, spellID)
-    if ok then return result end
-    return nil
+    if not spellID or not _C_GetBaseSpell then return nil end
+    return _C_GetBaseSpell(spellID)
 end
 
 function CDMSources.QuerySpellBaseCooldown(spellID)
-    if not spellID or not (C_Spell and C_Spell.GetSpellBaseCooldown) then return nil end
-    local ok, result = pcall(C_Spell.GetSpellBaseCooldown, spellID)
-    if ok then return result end
-    return nil
+    if not spellID or not _C_GetSpellBaseCooldown then return nil end
+    return _C_GetSpellBaseCooldown(spellID)
 end
 
 function CDMSources.QuerySpellChargeDuration(spellID)
-    if not spellID or not (C_Spell and C_Spell.GetSpellChargeDuration) then return nil end
-    local ok, result = pcall(C_Spell.GetSpellChargeDuration, spellID)
-    if ok then return result end
-    return nil
+    if not spellID or not _C_GetSpellChargeDuration then return nil end
+    return _C_GetSpellChargeDuration(spellID)
 end
 
 function CDMSources.QueryOverrideSpell(spellID)
-    if not spellID or not (C_Spell and C_Spell.GetOverrideSpell) then return nil end
-    local ok, result = pcall(C_Spell.GetOverrideSpell, spellID)
-    if ok then return result end
-    return nil
+    if not spellID or not _C_GetOverrideSpell then return nil end
+    return _C_GetOverrideSpell(spellID)
 end
 
 function CDMSources.QuerySpellDisplayCount(spellID)
-    if not spellID or not (C_Spell and C_Spell.GetSpellDisplayCount) then return nil end
-    local ok, result = pcall(C_Spell.GetSpellDisplayCount, spellID)
-    if ok then return result end
-    return nil
+    if not spellID or not _C_GetSpellDisplayCount then return nil end
+    return _C_GetSpellDisplayCount(spellID)
 end
 
 function CDMSources.QuerySpellCount(spellID)
-    if not spellID or not (C_Spell and C_Spell.GetSpellCastCount) then return nil end
-    local ok, result = pcall(C_Spell.GetSpellCastCount, spellID)
-    if ok then return result end
-    return nil
+    if not spellID or not _C_GetSpellCastCount then return nil end
+    return _C_GetSpellCastCount(spellID)
 end
 
 function CDMSources.QuerySpellInfo(spellID)
-    if not spellID or not (C_Spell and C_Spell.GetSpellInfo) then return nil end
-    local ok, result = pcall(C_Spell.GetSpellInfo, spellID)
-    if ok then return result end
-    return nil
+    if not spellID or not _C_GetSpellInfo then return nil end
+    return _C_GetSpellInfo(spellID)
 end
 
 function CDMSources.QuerySpellName(spellID)
-    if not spellID or not (C_Spell and C_Spell.GetSpellName) then return nil end
-    local ok, result = pcall(C_Spell.GetSpellName, spellID)
-    if ok then return result end
-    return nil
+    if not spellID or not _C_GetSpellName then return nil end
+    return _C_GetSpellName(spellID)
 end
 
 function CDMSources.QuerySpellTexture(spellID)
-    if not spellID or not (C_Spell and C_Spell.GetSpellTexture) then return nil end
-    local ok, result = pcall(C_Spell.GetSpellTexture, spellID)
-    if ok then return result end
-    return nil
+    if not spellID or not _C_GetSpellTexture then return nil end
+    return _C_GetSpellTexture(spellID)
 end
 
 function CDMSources.QuerySpellUsable(spellID)
-    if not spellID or not (C_Spell and C_Spell.IsSpellUsable) then return nil, nil end
-    local ok, usable, noMana = pcall(C_Spell.IsSpellUsable, spellID)
-    if ok then return usable, noMana end
-    return nil, nil
+    if not spellID or not _C_IsSpellUsable then return nil, nil end
+    return _C_IsSpellUsable(spellID)
 end
 
 function CDMSources.QuerySpellInRange(spellID, unit)
-    if not spellID or not unit or not (C_Spell and C_Spell.IsSpellInRange) then return nil end
-    local ok, result = pcall(C_Spell.IsSpellInRange, spellID, unit)
-    if ok then return result end
-    return nil
+    if not spellID or not unit or not _C_IsSpellInRange then return nil end
+    return _C_IsSpellInRange(spellID, unit)
 end
 
 function CDMSources.QuerySpellHasRange(spellID)
-    if not spellID or not (C_Spell and C_Spell.SpellHasRange) then return nil end
-    local ok, result = pcall(C_Spell.SpellHasRange, spellID)
-    if ok then return result end
-    return nil
+    if not spellID or not _C_SpellHasRange then return nil end
+    return _C_SpellHasRange(spellID)
 end
 
 function CDMSources.EnableSpellRangeCheck(spellID, enable)
@@ -356,39 +376,35 @@ function CDMSources.QuerySpellHelpful(spellNameOrID)
     return nil
 end
 
+local _C_GetItemInfoInstant = C_Item and C_Item.GetItemInfoInstant
+local _C_GetItemIconByID = C_Item and C_Item.GetItemIconByID
+local _C_GetItemNameByID = C_Item and C_Item.GetItemNameByID
+local _C_GetItemSpell = C_Item and C_Item.GetItemSpell
+local _C_GetItemQualityByID = C_Item and C_Item.GetItemQualityByID
+
 function CDMSources.QueryItemInfoInstant(itemID)
-    if not itemID or not (C_Item and C_Item.GetItemInfoInstant) then return nil end
-    local ok, a, b, c, d, e, f, g = pcall(C_Item.GetItemInfoInstant, itemID)
-    if ok then return a, b, c, d, e, f, g end
-    return nil
+    if not itemID or not _C_GetItemInfoInstant then return nil end
+    return _C_GetItemInfoInstant(itemID)
 end
 
 function CDMSources.QueryItemIconByID(itemID)
-    if not itemID or not (C_Item and C_Item.GetItemIconByID) then return nil end
-    local ok, result = pcall(C_Item.GetItemIconByID, itemID)
-    if ok then return result end
-    return nil
+    if not itemID or not _C_GetItemIconByID then return nil end
+    return _C_GetItemIconByID(itemID)
 end
 
 function CDMSources.QueryItemNameByID(itemID)
-    if not itemID or not (C_Item and C_Item.GetItemNameByID) then return nil end
-    local ok, result = pcall(C_Item.GetItemNameByID, itemID)
-    if ok then return result end
-    return nil
+    if not itemID or not _C_GetItemNameByID then return nil end
+    return _C_GetItemNameByID(itemID)
 end
 
 function CDMSources.QueryItemSpell(itemID)
-    if not itemID or not (C_Item and C_Item.GetItemSpell) then return nil, nil end
-    local ok, name, spellID = pcall(C_Item.GetItemSpell, itemID)
-    if ok then return name, spellID end
-    return nil, nil
+    if not itemID or not _C_GetItemSpell then return nil, nil end
+    return _C_GetItemSpell(itemID)
 end
 
 function CDMSources.QueryItemQualityByID(itemID)
-    if not itemID or not (C_Item and C_Item.GetItemQualityByID) then return nil end
-    local ok, result = pcall(C_Item.GetItemQualityByID, itemID)
-    if ok then return result end
-    return nil
+    if not itemID or not _C_GetItemQualityByID then return nil end
+    return _C_GetItemQualityByID(itemID)
 end
 
 function CDMSources.QueryItemProfessionQualityInfo(itemInfo)
@@ -405,51 +421,45 @@ function CDMSources.QueryItemProfessionQualityInfo(itemInfo)
     return nil
 end
 
+local _C_GetFirstTriggeredSpellForItem = C_Item and C_Item.GetFirstTriggeredSpellForItem
+
 function CDMSources.QueryFirstTriggeredSpellForItem(itemID, itemQuality)
-    if not itemID or not (C_Item and C_Item.GetFirstTriggeredSpellForItem) then return nil end
-    local ok, spellID
+    if not itemID or not _C_GetFirstTriggeredSpellForItem then return nil end
     if itemQuality ~= nil then
-        ok, spellID = pcall(C_Item.GetFirstTriggeredSpellForItem, itemID, itemQuality)
-    else
-        ok, spellID = pcall(C_Item.GetFirstTriggeredSpellForItem, itemID)
+        return _C_GetFirstTriggeredSpellForItem(itemID, itemQuality)
     end
-    if ok then return spellID end
-    return nil
+    return _C_GetFirstTriggeredSpellForItem(itemID)
 end
 
+local _C_IsEquippedItem = C_Item and C_Item.IsEquippedItem
+local _GetInventoryItemID = GetInventoryItemID
+local _GetInventoryItemLink = GetInventoryItemLink
+local _GetInventoryItemTexture = GetInventoryItemTexture
+local _C_GetItemCount = C_Item and C_Item.GetItemCount
+
 function CDMSources.QueryIsEquippedItem(itemID)
-    if not itemID or not (C_Item and C_Item.IsEquippedItem) then return nil end
-    local ok, result = pcall(C_Item.IsEquippedItem, itemID)
-    if ok then return result end
-    return nil
+    if not itemID or not _C_IsEquippedItem then return nil end
+    return _C_IsEquippedItem(itemID)
 end
 
 function CDMSources.QueryInventoryItemID(unit, slotID)
-    if not unit or not slotID or not GetInventoryItemID then return nil end
-    local ok, result = pcall(GetInventoryItemID, unit, slotID)
-    if ok then return result end
-    return nil
+    if not unit or not slotID or not _GetInventoryItemID then return nil end
+    return _GetInventoryItemID(unit, slotID)
 end
 
 function CDMSources.QueryInventoryItemLink(unit, slotID)
-    if not unit or not slotID or not GetInventoryItemLink then return nil end
-    local ok, result = pcall(GetInventoryItemLink, unit, slotID)
-    if ok then return result end
-    return nil
+    if not unit or not slotID or not _GetInventoryItemLink then return nil end
+    return _GetInventoryItemLink(unit, slotID)
 end
 
 function CDMSources.QueryInventoryItemTexture(unit, slotID)
-    if not unit or not slotID or not GetInventoryItemTexture then return nil end
-    local ok, result = pcall(GetInventoryItemTexture, unit, slotID)
-    if ok then return result end
-    return nil
+    if not unit or not slotID or not _GetInventoryItemTexture then return nil end
+    return _GetInventoryItemTexture(unit, slotID)
 end
 
 function CDMSources.QueryItemCount(itemID, includeBank, includeUses, forceUpdate)
-    if not itemID or not (C_Item and C_Item.GetItemCount) then return nil end
-    local ok, result = pcall(C_Item.GetItemCount, itemID, includeBank, includeUses, forceUpdate)
-    if ok then return result end
-    return nil
+    if not itemID or not _C_GetItemCount then return nil end
+    return _C_GetItemCount(itemID, includeBank, includeUses, forceUpdate)
 end
 
 function CDMSources.QueryBestOwnedItemVariant(itemID)
@@ -478,11 +488,11 @@ function CDMSources.QueryBestOwnedItemVariant(itemID)
     return itemID
 end
 
+local _C_GetItemCooldown = C_Item and C_Item.GetItemCooldown
+
 function CDMSources.QueryItemCooldown(itemID)
-    if not itemID or not (C_Item and C_Item.GetItemCooldown) then return nil end
-    local ok, startTime, duration, enabled = pcall(C_Item.GetItemCooldown, itemID)
-    if ok then return startTime, duration, enabled end
-    return nil
+    if not itemID or not _C_GetItemCooldown then return nil end
+    return _C_GetItemCooldown(itemID)
 end
 
 local function QueryScannerActive(scanner, spellID, itemID)
@@ -598,81 +608,71 @@ function CDMSources.QueryScannedItemAuraInfo(itemID, itemSpellID)
         itemID, resolvedItemSpellID, auraInstanceID, auraUnit)
 end
 
+local _C_GetAuraDuration = C_UnitAuras and C_UnitAuras.GetAuraDuration
+local _C_GetAuraDataByAuraInstanceID = C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID
+local _C_DoesAuraHaveExpirationTime = C_UnitAuras and C_UnitAuras.DoesAuraHaveExpirationTime
+local _C_IsAuraFilteredOutByInstanceID = C_UnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID
+local _C_GetAuraApplicationDisplayCount = C_UnitAuras and C_UnitAuras.GetAuraApplicationDisplayCount
+local _C_GetUnitAuraBySpellID = C_UnitAuras and C_UnitAuras.GetUnitAuraBySpellID
+local _C_GetPlayerAuraBySpellID = C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID
+local _C_GetAuraDataBySpellID = C_UnitAuras and C_UnitAuras.GetAuraDataBySpellID
+local _C_GetCooldownAuraBySpellID = C_UnitAuras and C_UnitAuras.GetCooldownAuraBySpellID
+local _C_GetAuraDataBySpellName = C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName
+local _C_GetUnitAuras = C_UnitAuras and C_UnitAuras.GetUnitAuras
+
 function CDMSources.QueryAuraDuration(unit, auraInstanceID)
-    if not unit or not HasOpaqueValue(auraInstanceID) or not (C_UnitAuras and C_UnitAuras.GetAuraDuration) then return nil end
-    local ok, result = pcall(C_UnitAuras.GetAuraDuration, unit, auraInstanceID)
-    if ok then return result end
-    return nil
+    if not unit or not HasOpaqueValue(auraInstanceID) or not _C_GetAuraDuration then return nil end
+    return _C_GetAuraDuration(unit, auraInstanceID)
 end
 
 function CDMSources.QueryAuraDataByAuraInstanceID(unit, auraInstanceID)
-    if not unit or not HasOpaqueValue(auraInstanceID) or not (C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID) then return nil end
-    local ok, result = pcall(C_UnitAuras.GetAuraDataByAuraInstanceID, unit, auraInstanceID)
-    if ok then return result end
-    return nil
+    if not unit or not HasOpaqueValue(auraInstanceID) or not _C_GetAuraDataByAuraInstanceID then return nil end
+    return _C_GetAuraDataByAuraInstanceID(unit, auraInstanceID)
 end
 
 function CDMSources.QueryAuraHasExpirationTime(unit, auraInstanceID)
-    if not unit or not HasOpaqueValue(auraInstanceID) or not (C_UnitAuras and C_UnitAuras.DoesAuraHaveExpirationTime) then return nil end
-    local ok, result = pcall(C_UnitAuras.DoesAuraHaveExpirationTime, unit, auraInstanceID)
-    if ok then return result end
-    return nil
+    if not unit or not HasOpaqueValue(auraInstanceID) or not _C_DoesAuraHaveExpirationTime then return nil end
+    return _C_DoesAuraHaveExpirationTime(unit, auraInstanceID)
 end
 
 function CDMSources.QueryAuraFilteredOutByInstanceID(unit, auraInstanceID, filter)
-    if not unit or not HasOpaqueValue(auraInstanceID) or not (C_UnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID) then return nil end
-    local ok, result = pcall(C_UnitAuras.IsAuraFilteredOutByInstanceID, unit, auraInstanceID, filter)
-    if ok then return result end
-    return nil
+    if not unit or not HasOpaqueValue(auraInstanceID) or not _C_IsAuraFilteredOutByInstanceID then return nil end
+    return _C_IsAuraFilteredOutByInstanceID(unit, auraInstanceID, filter)
 end
 
 function CDMSources.QueryAuraApplicationDisplayCount(unit, auraInstanceID, minValue, maxValue)
-    if not unit or not HasOpaqueValue(auraInstanceID) or not (C_UnitAuras and C_UnitAuras.GetAuraApplicationDisplayCount) then return nil end
-    local ok, result = pcall(C_UnitAuras.GetAuraApplicationDisplayCount, unit, auraInstanceID, minValue, maxValue)
-    if ok then return result end
-    return nil
+    if not unit or not HasOpaqueValue(auraInstanceID) or not _C_GetAuraApplicationDisplayCount then return nil end
+    return _C_GetAuraApplicationDisplayCount(unit, auraInstanceID, minValue, maxValue)
 end
 
 function CDMSources.QueryUnitAuraBySpellID(unit, spellID, filter)
-    if not unit or not spellID or not (C_UnitAuras and C_UnitAuras.GetUnitAuraBySpellID) then return nil end
-    local ok, result = pcall(C_UnitAuras.GetUnitAuraBySpellID, unit, spellID, filter)
-    if ok then return result end
-    return nil
+    if not unit or not spellID or not _C_GetUnitAuraBySpellID then return nil end
+    return _C_GetUnitAuraBySpellID(unit, spellID, filter)
 end
 
 function CDMSources.QueryPlayerAuraBySpellID(spellID)
-    if not spellID or not (C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID) then return nil end
-    local ok, result = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
-    if ok then return result end
-    return nil
+    if not spellID or not _C_GetPlayerAuraBySpellID then return nil end
+    return _C_GetPlayerAuraBySpellID(spellID)
 end
 
 function CDMSources.QueryAuraDataBySpellID(unit, spellID, filter)
-    if not unit or not spellID or not (C_UnitAuras and C_UnitAuras.GetAuraDataBySpellID) then return nil end
-    local ok, result = pcall(C_UnitAuras.GetAuraDataBySpellID, unit, spellID, filter)
-    if ok then return result end
-    return nil
+    if not unit or not spellID or not _C_GetAuraDataBySpellID then return nil end
+    return _C_GetAuraDataBySpellID(unit, spellID, filter)
 end
 
 function CDMSources.QueryCooldownAuraBySpellID(spellID)
-    if not spellID or not (C_UnitAuras and C_UnitAuras.GetCooldownAuraBySpellID) then return nil end
-    local ok, result = pcall(C_UnitAuras.GetCooldownAuraBySpellID, spellID)
-    if ok then return result end
-    return nil
+    if not spellID or not _C_GetCooldownAuraBySpellID then return nil end
+    return _C_GetCooldownAuraBySpellID(spellID)
 end
 
 function CDMSources.QueryAuraDataBySpellName(unit, name, filter)
-    if not unit or not name or not (C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName) then return nil end
-    local ok, result = pcall(C_UnitAuras.GetAuraDataBySpellName, unit, name, filter)
-    if ok then return result end
-    return nil
+    if not unit or not name or not _C_GetAuraDataBySpellName then return nil end
+    return _C_GetAuraDataBySpellName(unit, name, filter)
 end
 
 function CDMSources.QueryUnitAuras(unit, filter, maxCount)
-    if not unit or not (C_UnitAuras and C_UnitAuras.GetUnitAuras) then return nil end
-    local ok, result = pcall(C_UnitAuras.GetUnitAuras, unit, filter, maxCount)
-    if ok then return result end
-    return nil
+    if not unit or not _C_GetUnitAuras then return nil end
+    return _C_GetUnitAuras(unit, filter, maxCount)
 end
 
 function CDMSources.QueryMirroredCooldownState(spellID, viewerType)
@@ -1058,60 +1058,33 @@ function CDMRuntimeQueries.ResetRuntimeQueryBatch()
     AdvanceRuntimeQueryEpoch()
 end
 
-local function GetOwnerState(owner)
-    if not owner then return nil end
-    local store = ns.CDMRuntimeStore
-    if store and store.EnsureFrameState then
-        return store.EnsureFrameState(owner)
-    end
-    local state = owner._cdmRuntimeState
-    if not state then
-        state = {}
-        owner._cdmRuntimeState = state
-    end
-    return state
-end
+-- Batch-shared query cache. Previously this layer kept a per-owner cache on
+-- each icon's runtime state, which forced duplicate Blizzard API calls when
+-- multiple icons (mirrors, item variants, GCD targets) all queried the same
+-- spell within one batch — each fresh `C_Spell.GetSpellCooldown` return is
+-- its own allocated table, and combat memaudit showed those returns
+-- dominating the per-window "unattributed" allocation gap (see
+-- docs/dev/perf-memaudit-2026-05-21.md notes).
+--
+-- The cache is keyed by (cacheName, key) only; owner parameters are still
+-- accepted for source compatibility but ignored. Slots stay alive across
+-- batches and are reused via epoch tagging — reads check `slot.epoch ==
+-- runtimeQueryEpoch`, so stale data is invisible after the next batch
+-- begin without paying for a per-batch wipe.
+local batchSharedCache = {
+    cooldown = {},
+    charge = {},
+    duration = {},
+    gcdDuration = {},
+    chargeDuration = {},
+    displayCount = {},
+    spellCount = {},
+}
 
-local function ClearOwnerQueryCacheForEntry(cache)
-    if cache.cooldown then wipe(cache.cooldown) end
-    if cache.charge then wipe(cache.charge) end
-    if cache.duration then wipe(cache.duration) end
-    if cache.gcdDuration then wipe(cache.gcdDuration) end
-    if cache.chargeDuration then wipe(cache.chargeDuration) end
-    if cache.displayCount then wipe(cache.displayCount) end
-    if cache.spellCount then wipe(cache.spellCount) end
-end
-
-local function GetOwnerQueryCache(owner, cacheName)
+local function ReadRuntimeCache(cacheName, _owner, key, hitStat)
     if runtimeQueryBatchDepth <= 0 then return nil, false end
-    if IsSecretValue(owner) then return nil, false end
-    owner = owner or runtimeQueryOwner
-    if not owner then return nil, false end
-    local state = GetOwnerState(owner)
-    if not state then return nil, false end
-    local cache = state.queryCache
-    if not cache then
-        cache = {}
-        state.queryCache = cache
-    end
-
-    local ownerEntry = owner._spellEntry
-    if cache.ownerEntry ~= ownerEntry then
-        ClearOwnerQueryCacheForEntry(cache)
-        cache.ownerEntry = ownerEntry
-    end
-
-    local typedCache = cache[cacheName]
-    if not typedCache then
-        typedCache = {}
-        cache[cacheName] = typedCache
-    end
-    return typedCache, true
-end
-
-local function ReadRuntimeCache(cacheName, owner, key, hitStat)
     if IsSecretValue(key) then return nil, false end
-    local cache = GetOwnerQueryCache(owner, cacheName)
+    local cache = batchSharedCache[cacheName]
     if not cache then return nil, false end
     local slot = cache[key]
     if slot and slot.epoch == runtimeQueryEpoch then
@@ -1121,11 +1094,11 @@ local function ReadRuntimeCache(cacheName, owner, key, hitStat)
     return nil, false
 end
 
-local function StoreRuntimeCache(cacheName, owner, key, value, sourceStat)
+local function StoreRuntimeCache(cacheName, _owner, key, value, sourceStat)
     if runtimeQueryBatchDepth <= 0 then return value end
     runtimeQueryStats[sourceStat] = runtimeQueryStats[sourceStat] + 1
     if IsSecretValue(key) then return value end
-    local cache = GetOwnerQueryCache(owner, cacheName)
+    local cache = batchSharedCache[cacheName]
     if not cache then return value end
     local slot = cache[key]
     if not slot then
@@ -1148,16 +1121,17 @@ function CDMRuntimeQueries.QueryCharges(spellID, owner)
     end
     if not InCombatLockdown() then
         if chargeInfo then
+            -- Treat secret charge counts as opaque; metadata cache only
+            -- records clean, out-of-combat numeric charge counts.
             local maxC = chargeInfo.maxCharges
-            if IsSecretValue(maxC) then
-                -- Treat secret charge counts as opaque; metadata cache only
-                -- records clean, out-of-combat numeric charge counts.
-            elseif type(maxC) == "number" and maxC > 1 then
-                local svDB = GetChargeMetadataDB()
-                if svDB then svDB[spellID] = maxC end
-            elseif type(maxC) == "number" then
-                local svDB = GetChargeMetadataDB()
-                if svDB and svDB[spellID] then svDB[spellID] = nil end
+            if not IsSecretValue(maxC) and type(maxC) == "number" then
+                if maxC > 1 then
+                    local svDB = GetChargeMetadataDB()
+                    if svDB then svDB[spellID] = maxC end
+                else
+                    local svDB = GetChargeMetadataDB()
+                    if svDB and svDB[spellID] then svDB[spellID] = nil end
+                end
             end
         else
             local svDB = GetChargeMetadataDB()
@@ -1314,6 +1288,9 @@ end
 ---------------------------------------------------------------------------
 local _subscribers = {} -- [eventName] = { handler1, handler2, ... }
 
+local _fallbackSnapshotPool = {}
+local _fallbackSnapshotPoolN = 0
+
 local function publish(eventName, ...)
     if Scheduler and Scheduler.Publish then
         Scheduler.Publish(eventName, ...)
@@ -1324,11 +1301,26 @@ local function publish(eventName, ...)
     if not list then return end
     local n = #list
     if n == 0 then return end
-    local snapshot = {}
+
+    local poolN = _fallbackSnapshotPoolN
+    local snapshot
+    if poolN > 0 then
+        snapshot = _fallbackSnapshotPool[poolN]
+        _fallbackSnapshotPool[poolN] = nil
+        _fallbackSnapshotPoolN = poolN - 1
+    else
+        snapshot = {}
+    end
+
     for i = 1, n do snapshot[i] = list[i] end
     for i = 1, n do
         xpcall(snapshot[i], geterrorhandler(), eventName, ...)
     end
+
+    wipe(snapshot)
+    poolN = _fallbackSnapshotPoolN + 1
+    _fallbackSnapshotPoolN = poolN
+    _fallbackSnapshotPool[poolN] = snapshot
 end
 
 function CDMResolvers.Subscribe(eventName, handler)
@@ -2466,12 +2458,7 @@ local function MirrorStateMatchesEntryIdentity(state, entry)
     AddEntryMirrorIdentityID(entryIDs, SafeEntryField(entry, "spellID"))
     AddEntryMirrorIdentityID(entryIDs, SafeEntryField(entry, "id"))
 
-    local hasEntryIdentity = false
-    for _ in pairs(entryIDs) do
-        hasEntryIdentity = true
-        break
-    end
-    if not hasEntryIdentity then return true end
+    if next(entryIDs) == nil then return true end
 
     local sawStateIdentity = false
 
@@ -3451,15 +3438,13 @@ QueryItemCooldown = function(itemID)
     return startTime, duration, enabled
 end
 
+local _GetInventoryItemCooldown = GetInventoryItemCooldown
+
 QuerySlotCooldown = function(slotID)
-    if not slotID or not GetInventoryItemCooldown then
+    if not slotID or not _GetInventoryItemCooldown then
         return nil, nil, nil
     end
-    local ok, startTime, duration, enabled = pcall(GetInventoryItemCooldown, "player", slotID)
-    if ok then
-        return startTime, duration, enabled
-    end
-    return nil, nil, nil
+    return _GetInventoryItemCooldown("player", slotID)
 end
 
 local _cooldownStateCountScratch = {
@@ -4097,6 +4082,7 @@ local function ResolveCooldownStateCore(context)
     local itemBackedEntry = IsItemLikeEntry(entry)
         or (entry.type == "macro" and macroResolvedType == "item")
     if itemBackedEntry then
+        local _
         itemID, _, itemSpellID = ResolveItemCooldownIdentity(entry)
         if itemSpellID then
             sid = itemSpellID

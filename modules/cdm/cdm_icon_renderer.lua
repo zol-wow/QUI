@@ -2143,6 +2143,16 @@ function CDMIconRuntimeRefresh.Create(callbacks)
     local controller = {
         auraDeltaInstanceIDs = {},
         auraDeltaSpellIDs = {},
+        applySpellIDScratch = {},
+        -- Scratch option tables reused across drain calls so the queue-drain
+        -- hot path doesn't allocate `{ refreshRuntime = ... }` /
+        -- `{ includeItems = ... }` literals every fire. ApplyItemScope and
+        -- friends do `options = options or {}` so they must receive a
+        -- non-nil table; these are mutated just before each Apply* call.
+        itemScopeOptionsScratch = { refreshRuntime = false },
+        catalogScopeOptionsScratch = { includeItems = false },
+        spellScopeRefreshOptionsScratch = { refreshRuntime = true },
+        itemScopeRefreshOptionsScratch = { refreshRuntime = true },
         spellQueue = {
             ids = {},
             frame = nil,
@@ -2347,9 +2357,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
     function controller:ApplyCatalogScope(options)
         options = options or {}
         runtimeRefreshStats.catalogScopeRefreshes = runtimeRefreshStats.catalogScopeRefreshes + 1
-        local refreshed = controller:ApplySpellScope({ refreshRuntime = true }) == true
+        local refreshed = controller:ApplySpellScope(controller.spellScopeRefreshOptionsScratch) == true
         if options.includeItems then
-            refreshed = controller:ApplyItemScope({ refreshRuntime = true }) == true or refreshed
+            refreshed = controller:ApplyItemScope(controller.itemScopeRefreshOptionsScratch) == true or refreshed
         end
         return refreshed
     end
@@ -2409,7 +2419,8 @@ function CDMIconRuntimeRefresh.Create(callbacks)
     end
 
     function controller:ApplySpellID(eventSpellID, eventBaseSpellID)
-        local spellIDs = {}
+        local spellIDs = controller.applySpellIDScratch
+        wipe(spellIDs)
         local hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, eventSpellID)
         hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, eventBaseSpellID) or hasSpellIDs
         if not hasSpellIDs then return false end
@@ -2774,7 +2785,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         local refreshRuntime = state.refreshRuntime == true
         state.refreshRuntime = false
         disarmQueue(state)
-        controller:ApplyItemScope({ refreshRuntime = refreshRuntime })
+        local opts = controller.itemScopeOptionsScratch
+        opts.refreshRuntime = refreshRuntime
+        controller:ApplyItemScope(opts)
     end
 
     local _drainItemQueueImpl = drainItemQueue
@@ -2811,7 +2824,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         local includeItems = state.includeItems == true
         state.includeItems = false
         disarmQueue(state)
-        controller:ApplyCatalogScope({ includeItems = includeItems })
+        local opts = controller.catalogScopeOptionsScratch
+        opts.includeItems = includeItems
+        controller:ApplyCatalogScope(opts)
     end
 
     local _drainCatalogQueueImpl = drainCatalogQueue
@@ -7401,9 +7416,8 @@ local function FindMacroForSpell(spellID, overrideSpellID)
             local body = GetMacroBody(i)
             if body then
                 local tooltipSpell = GetMacroTooltipSpell(body)
-                if tooltipSpell and not names[tooltipSpell] then
-                    -- Tooltip declares a different spell — skip
-                else
+                -- Skip if the macro's tooltip names a spell that's not in `names`.
+                if (not tooltipSpell) or names[tooltipSpell] then
                     local lowerBody = body:lower()
                     for name in pairs(names) do
                         if lowerBody:find(name, 1, true) then
@@ -8796,10 +8810,8 @@ local function UpdateIconCooldownOwned(icon)
     if _G.QUI_CDM_CHARGE_DEBUG and _chargeCountForwarded then
         ChargeDebug(entry.name, "SKIP API path: chargeCountForwarded=", _chargeCountForwarded)
     end
-    if not _chargeCountForwarded and stackTextWritesAllowed then
-        if entry.type == "item" then
-            -- Item stack text was already set above.
-        elseif entry.type == "spell" then
+    -- Item stack text was already set above; only spell entries need work here.
+    if not _chargeCountForwarded and stackTextWritesAllowed and entry.type == "spell" then
             local spellID = _runtimeSid
             local stackVal = _stackVal
             local stackSource = _stackSource
@@ -8904,7 +8916,6 @@ local function UpdateIconCooldownOwned(icon)
             elseif not InCombatLockdown() then
                 _resolverRuntimePolicy.HideIconStackText(icon, "harvested-stack-nil")
             end
-        end
     end
 
     if icon._lastVisualState == "unusable"

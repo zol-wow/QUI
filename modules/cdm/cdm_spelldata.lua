@@ -2877,28 +2877,6 @@ local function IsSpellKnownByPlayer(spellID)
     return false
 end
 
--- Map container key → array of CooldownViewerCategory enum values to scan.
--- Cooldown bars scan both Essential (0) + Utility (1).
--- Buff bars scan both TrackedBuff (2) + TrackedBar (3).
--- Used by Composer (available spells) and runtime lookups where a wider
--- scan is desirable so users can cross-add spells between containers.
-local CDM_BAR_CATEGORIES = {
-    essential  = { 0, 1 },
-    utility    = { 0, 1 },
-    buff       = { 2, 3 },
-    trackedBar = { 2, 3 },
-}
-
--- 1:1 mapping used ONLY during first-time snapshot so spells land in the
--- container that matches their Blizzard CDM category.
--- Essential (0) → essential, Utility (1) → utility,
--- TrackedBuff (2) → buff, TrackedBar (3) → trackedBar.
-local CDM_SNAPSHOT_CATEGORIES = {
-    essential  = { 0 },
-    utility    = { 1 },
-    buff       = { 2 },
-    trackedBar = { 3 },
-}
 
 -- SpellID correction maps (populated by reconciliation, used by ResolveOwnedEntry).
 -- Must be declared here before ResolveOwnedEntry which references them.
@@ -3503,8 +3481,6 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
         end
         return a.id < b.id
     end)
-    if #returning > 0 then
-    end
     for _, info in ipairs(returning) do
         db.dormantSpells[info.id] = nil  -- remove from dormant
         local insertAt = math.min(info.slot, #db.ownedSpells + 1)
@@ -3601,13 +3577,6 @@ local RACE_RACIALS = {
     Dracthyr           = { 357214, { 368970, class = "EVOKER" } },
     EarthenDwarf       = { 436344 },
     Haranir            = { 1287685 },
-}
-
-local HEALTH_ITEMS = {
-    { itemID = 241304, spellID = 1234768, altItemID = 241305 },
-    { itemID = 241308, spellID = 1236616, altItemID = 241309 },
-    { itemID = 5512,   spellID = 6262 },
-    { itemID = 224464, spellID = 452930, class = "WARLOCK" },
 }
 
 -- Spell→cooldownID lookup across all four CDM categories. The
@@ -4854,7 +4823,6 @@ function CDMSpellData:Initialize()
                     -- Notify containers to refresh display after dormant cleanup
                     -- removed stale spells from ownedSpells.
                     FireChangeCallback()
-                else
                 end
             end)
         elseif event == "PLAYER_EQUIPMENT_CHANGED" then

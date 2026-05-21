@@ -259,7 +259,6 @@ function CDMLayout.BuildIconLayout(settings, icons, opts)
     local maxRowWidth = 0
     local maxColHeight = 0
     local rowWidths = {}
-    local colHeights = {}
     local tempIndex = 1
 
     for rowNum, rowConfig in ipairs(rows) do
@@ -272,7 +271,6 @@ function CDMLayout.BuildIconLayout(settings, icons, opts)
 
             if isVertical then
                 local colHeight = (iconsInRow * iconHeight) + ((iconsInRow - 1) * rowConfig.padding)
-                colHeights[rowNum] = colHeight
                 rowWidths[rowNum] = iconWidth
                 if colHeight > maxColHeight then maxColHeight = colHeight end
             else
@@ -286,7 +284,6 @@ function CDMLayout.BuildIconLayout(settings, icons, opts)
 
     local totalHeight = 0
     local totalWidth = 0
-    local rowHeights = {}
     local numRowsUsed = 0
     local tempIdx = 1
 
@@ -297,7 +294,6 @@ function CDMLayout.BuildIconLayout(settings, icons, opts)
             local aspectRatio = rowConfig.aspectRatioCrop or 1.0
             local iconHeight = rowConfig.size / aspectRatio
             local iconWidth = rowConfig.size
-            rowHeights[rowNum] = iconHeight
             numRowsUsed = numRowsUsed + 1
 
             if isVertical then
@@ -717,24 +713,20 @@ local function ApplyTrackedBarAnchor(settings)
     local offsetX = settings.anchorOffsetX or 0
     local offsetY = settings.anchorOffsetY or 0
 
+    -- sourcePoint is set by the orientation/growth override below; the
+    -- placement branches only configure targetPoint and spacing.
     if useTopResourceBars or placement == "onTop" then
-        sourcePoint = "BOTTOM"
         targetPoint = "TOP"
         spacingY = spacing
     elseif placement == "below" then
-        sourcePoint = "TOP"
         targetPoint = "BOTTOM"
         spacingY = -spacing
     elseif placement == "left" then
-        sourcePoint = "RIGHT"
         targetPoint = "LEFT"
         spacingX = -spacing
     elseif placement == "right" then
-        sourcePoint = "LEFT"
         targetPoint = "RIGHT"
         spacingX = spacing
-    else -- center (or advanced manual points)
-        -- Keep configured source/target points for backward compatibility.
     end
 
     -- The owned tracked-bar container uses explicit SetSize(), so the source
@@ -839,9 +831,8 @@ local function ApplyBuffIconAnchor(settings)
         sourcePoint = "LEFT"
         targetPoint = "RIGHT"
         spacingX = spacing
-    else
-        -- center/manual points
     end
+    -- center/manual: keep configured source/target points
 
     offsetX = QUICore:PixelRound(offsetX + spacingX, viewer)
     offsetY = QUICore:PixelRound(offsetY + spacingY, viewer)
@@ -1317,11 +1308,6 @@ end
 -- ICON CENTER MANAGER (PARENT-SYNCHRONIZED & STABILIZED)
 ---------------------------------------------------------------------------
 
-local iconState = {
-    isInitialized = false,
-    lastCount     = 0,
-}
-
 LayoutBuffIcons = function()
     local viewer = GetBuffIconViewer()
     if not viewer then return end
@@ -1378,15 +1364,11 @@ LayoutBuffIcons = function()
         if _G.QUI_SetCDMViewerBounds then
             _G.QUI_SetCDMViewerBounds(viewer, iconWidth, iconHeight)
         end
-        iconState.lastCount = 0
-        iconState.isInitialized = false
         isIconLayoutRunning = false
         return
     end
 
     local targetCount = currentCount
-    iconState.lastCount = currentCount
-    iconState.isInitialized = true
 
     -- Determine if vertical or horizontal layout
     local isVertical = (growthDirection == "UP" or growthDirection == "DOWN")
@@ -1506,10 +1488,6 @@ end
 ---------------------------------------------------------------------------
 -- BAR ALIGNMENT MANAGER
 ---------------------------------------------------------------------------
-
-local barState = {
-    lastCount      = 0,
-}
 
 LayoutBuffBars = function()
     local viewer = GetBuffBarViewer()
@@ -1928,7 +1906,6 @@ end
 function CDMBuffLayout.OnLayoutReady()
     -- Icons were (re)built in the owned container; position + style them
     lastIconHash = ""
-    iconState.isInitialized = false
     LayoutBuffIcons()
 end
 
@@ -1949,8 +1926,6 @@ do
         core:RegisterEditModeExit(function()
             -- Reset hash so the next CheckIconChanges() triggers a full re-layout
             lastIconHash = ""
-            iconState.isInitialized = false
-            barState.lastCount = 0
 
             -- Invalidate the anchor cache so ApplyBuffIconAnchor re-applies
             -- the saved anchor settings.  Edit Mode may have moved the
@@ -1982,9 +1957,6 @@ CDMBuffLayout.GetTrackedBarRuntimeEntries = GetTrackedBarRuntimeEntries
 -- Force refresh function (can be called from GUI)
 function CDMBuffLayout.Refresh()
     -- Reset states to force recalculation
-    iconState.isInitialized = false
-    iconState.lastCount = 0
-    barState.lastCount = 0
     lastIconHash = ""  -- Force hash recalculation for icons
 
     -- Update layout direction when settings change (e.g., orientation toggle)
@@ -2415,9 +2387,7 @@ local function SeedActiveLoadoutFromSharedSlot()
     -- returns nil when the slot doesn't exist; an empty table also counts
     -- as "no user data" so seeding is safe.
     local targetSlot = GetSpecLoadoutProfileStore(specID, loadoutID, false)
-    if targetSlot then
-        for _ in pairs(targetSlot) do return end -- non-empty → don't overwrite
-    end
+    if targetSlot and next(targetSlot) ~= nil then return end -- non-empty → don't overwrite
 
     -- (b) Slot 0 must have at least one container with real spell data.
     local sourceSlot = GetSpecLoadoutProfileStore(specID, 0, false)
@@ -3189,7 +3159,6 @@ local function GetDefaultsByContainerType(containerType)
                 durationTextColor = {1, 1, 1, 1}, durationAnchor = "CENTER",
                 stackTextColor = {1, 1, 1, 1}, stackAnchor = "BOTTOMRIGHT",
             },
-            rangeColor = {0.8, 0.1, 0.1},
             ownedSpells = {},
             removedSpells = {},
             dormantSpells = {},

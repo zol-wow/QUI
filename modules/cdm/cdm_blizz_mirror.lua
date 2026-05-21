@@ -53,7 +53,6 @@ local _childByCooldownFrame = setmetatable({}, { __mode = "k" }) -- [child.Coold
 local _forceShowingChild    = setmetatable({}, { __mode = "k" }) -- [child] = true for mirror-internal Show()
 local _textOwnerHooked      = setmetatable({}, { __mode = "k" }) -- [Applications/ChargeCount owner] = true
 CDMBlizzMirror._knownShownByFrame = setmetatable({}, { __mode = "k" }) -- [frame/text owner] = last clean Show/Hide/SetShown state
-local SetHostPandemicState
 -- CooldownViewerCooldown info captured from C_CooldownViewer.GetCooldownViewerCooldownInfo:
 --   cooldownID, spellID, overrideSpellID, overrideTooltipSpellID,
 --   linkedSpellIDs (numberArray), selfAura (bool), hasAura (bool),
@@ -448,9 +447,6 @@ local function ClearMirrorAuraState(cdID, s, reason)
     s.pandemicStateKnown = nil
     s.mirrorEpoch = (s.mirrorEpoch or 0) + 1
     s.lastTouch = GetTime()
-    if SetHostPandemicState then
-        SetHostPandemicState(cdID, nil, false)
-    end
     RequestMirrorTextRefreshForState(cdID, s, "aura-clear")
     if _G.QUI_CDM_TAINT_DEBUG and CDMBlizzMirror.TaintLog then
         CDMBlizzMirror.TaintLog("ClearAuraState",
@@ -2723,9 +2719,6 @@ local function RefreshChildSemanticState(child, cdID, fallbackActive)
         s.auraData = nil
         s.pandemicActive = false
         s.pandemicStateKnown = nil
-        if SetHostPandemicState then
-            SetHostPandemicState(cdID, nil, false)
-        end
     end
     SyncChildChargeCountFields(child, cdID, s, "charge-field-active")
     s.lastTouch = GetTime()
@@ -2771,9 +2764,6 @@ local function RefreshCooldownViewerRelatedAuraStates()
     return changed
 end
 
-SetHostPandemicState = function(cdID, active, known)
-end
-
 local function SetChildPandemicState(child, active)
     local cdID = child and child.cooldownID
     if not cdID then return end
@@ -2786,8 +2776,6 @@ local function SetChildPandemicState(child, active)
     s.pandemicActive = active == true
     s.pandemicStateKnown = true
     s.lastTouch = GetTime()
-
-    SetHostPandemicState(cdID, s.pandemicActive, true)
 end
 
 ---------------------------------------------------------------------------
@@ -3008,25 +2996,21 @@ end
 local function RemoveCooldownIDFromMaps(cdID, onlyCatName)
     if not cdID then return end
     for catName, catMap in pairs(_cdIDByCatSpell) do
-        if onlyCatName and catName ~= onlyCatName then
-            -- continue
-        else
-        for spellID, mappedCDID in pairs(catMap) do
-            if mappedCDID == cdID then
-                catMap[spellID] = nil
+        if (not onlyCatName) or catName == onlyCatName then
+            for spellID, mappedCDID in pairs(catMap) do
+                if mappedCDID == cdID then
+                    catMap[spellID] = nil
+                end
             end
-        end
         end
     end
     for catName, directMap in pairs(_directCDIDByCatSpell) do
-        if onlyCatName and catName ~= onlyCatName then
-            -- continue
-        else
-        for spellID, mappedCDID in pairs(directMap) do
-            if mappedCDID == cdID then
-                directMap[spellID] = nil
+        if (not onlyCatName) or catName == onlyCatName then
+            for spellID, mappedCDID in pairs(directMap) do
+                if mappedCDID == cdID then
+                    directMap[spellID] = nil
+                end
             end
-        end
         end
     end
 end
@@ -3118,10 +3102,11 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
                     if durObj then
                         SetDurationLane(cdID, s, "aura", durObj, AURA_CHILD_DURATION_SOURCE)
                     elseif not s.auraDurObj then
-                        capturedAura = capturedAura
-                            or CaptureAuraInstanceFromChildFrame(cdID, s.viewerCategory, owner)
-                            or CaptureAuraInstanceFromRelatedCooldownChildren(cdID, s.viewerCategory)
-                            or CaptureAuraForCooldownIDFromExpectedUnits(cdID, s.viewerCategory)
+                        if not capturedAura then
+                            local _ = CaptureAuraInstanceFromChildFrame(cdID, s.viewerCategory, owner)
+                                or CaptureAuraInstanceFromRelatedCooldownChildren(cdID, s.viewerCategory)
+                                or CaptureAuraForCooldownIDFromExpectedUnits(cdID, s.viewerCategory)
+                        end
                         if not s.auraInstanceID and not s.auraDurObj then
                             MarkDurationLaneUnknown(cdID, s, "aura")
                         end
@@ -3190,9 +3175,8 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
                 trusted = capturedAura
             end
             if trusted then
-                if not s.auraDurObj then
-                    capturedAura = capturedAura
-                        or CaptureAuraInstanceFromChildFrame(cdID, s.viewerCategory, owner)
+                if not s.auraDurObj and not capturedAura then
+                    local _ = CaptureAuraInstanceFromChildFrame(cdID, s.viewerCategory, owner)
                         or CaptureAuraInstanceFromRelatedCooldownChildren(cdID, s.viewerCategory)
                         or CaptureAuraForCooldownIDFromExpectedUnits(cdID, s.viewerCategory)
                 end
@@ -3304,9 +3288,6 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
             s.cooldownLaneActiveByHook = nil
             s.pandemicActive = false
             s.pandemicStateKnown = nil
-            if SetHostPandemicState then
-                SetHostPandemicState(cdID, nil, false)
-            end
             s.mirrorEpoch = (s.mirrorEpoch or 0) + 1
             s.lastTouch = GetTime()
             SyncChildChargeCountFields(owner, cdID, s, "charge-field-clear")
