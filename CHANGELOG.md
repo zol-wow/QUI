@@ -10,6 +10,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha53 - 2026-05-21
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha52 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Added
+- **Frame skinning phase 3 — 11 new Blizzard frames covered.**
+  - Inventory: **Bank**, **Merchant**, **Mail**, **GuildBank**.
+  - Social: **Friends**, **Guild**, **Communities**, plus the **Journal** (Encounter / Mounts / Pets / Toys).
+  - World content: **Achievement**, **WorldMap**, **WeeklyRewards**.
+  - Tabs on the four phase-3 frames pick up the new SkinBase tab pattern (selected-state highlight, hover restore, theme-color refresh).
+- **Bonus Roll mover gets a proper Position panel.** Layout-mode right-click on the bonus-roll anchor now shows the standard Position section (anchor target, from/to point, X/Y offsets) instead of an empty panel.
+
+### Fixed
+- **Profession specialization tabs now render their selected state.** `StyleSpecPoolTab` was passing nil as the owner to `HookTabHover` / `RestoreTabVisual` (it referenced `specPage` as an undefined upvalue), so spec tabs always looked inactive even when selected.
+- **Inspect frame skinning no longer no-ops on a casing typo** (`controlFrame` vs `ControlFrame`). Silent since the file was first written.
+- **Keystone affix iteration walked the wrong table** and produced no styling. Also silent since the file was first written.
+- **Professions close button** hides the Blizzard X chrome and uses the QUI accent + label.
+- **10 alert subsystem hooks wired up** (achievement / loot / level-up alerts that had registration sites but no actual `hooksecurefunc` on the relevant `Setup*` callbacks).
+- **WorldMap backdrop now covers the map canvas** and fills from the border on the LOW frame strata (so it sits behind the map without occluding pins).
+- **FriendsFrame tabs and four other phase-3 frames** had Blizzard tab textures bleeding through; the SkinBase tab helpers now strip those textures and override the tab text color.
+- **TopTileStreaks** regression from the `HidePortraitFrameChrome` extraction is restored.
+- **CDM charge-cycle frame**: corrected the charge-cycle resolver state when an item's max-charges drops mid-cycle.
+- **Chat clear-all is now deferred** until the next frame, so it doesn't race with in-flight message inserts.
+
+### Internal
+- **Vendored FrameXML snapshot** under `tests/framexml/` to back the skinning gap audit and template lookups. Ships in tests-only paths — not included in the release zip.
+- **New SkinBase composers**: `SkinBase.SkinCloseButton`, `SkinBase.SkinButtonFrameTemplate`, and SkinBase tab helpers. `HidePortraitFrameChrome` was extracted into `SkinBase` and extended to cover `BasicFrameTemplate`.
+- **12 ScrollBox callsites migrated** to `ScrollUtil.AddAcquiredFrameCallback`, replacing ad-hoc `hooksecurefunc(scrollBox, "ForEachFrame", …)` patterns.
+- **Settings theming pass** across the QUI_Options surfaces to align with the new skinning helpers.
+
+
+
 ## v3.6.0-alpha52 - 2026-05-21
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha51 profiles carry over unchanged.
