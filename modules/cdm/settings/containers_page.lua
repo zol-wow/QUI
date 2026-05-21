@@ -4,7 +4,6 @@ do
 -- Inlined from containers_page_model.lua
 local ADDON_NAME, ns = ...
 if not (QUI and QUI._optionsAddonName == ADDON_NAME) then
-local ADDON_NAME, ns = ...
 
 local function GetCore()
     return (ns.Helpers and ns.Helpers.GetCore and ns.Helpers.GetCore()) or ns.Addon or QUI
@@ -168,11 +167,7 @@ local Schema = Settings and Settings.Schema
 if not (QUI and QUI._optionsAddonName == ADDON_NAME)
     and Renderer and type(Renderer.RenderFeature) == "function"
     and Schema and type(Schema.Feature) == "function" then
-local ADDON_NAME, ns = ...
 
-local Settings = ns.Settings
-local Renderer = Settings and Settings.Renderer
-local Schema = Settings and Settings.Schema
 local FullSurface = Settings and Settings.FullSurface
 if not Renderer or type(Renderer.RenderFeature) ~= "function"
     or not Schema or type(Schema.Feature) ~= "function" then
@@ -846,44 +841,6 @@ local function AppendTrackerRowSection(builder, gui, optionsAPI, rowNum, rowData
     card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Icon Shape", iconShapeSlider))
 
     builder.CloseCard(card)
-end
-
-local function AppendLayoutRouteControls(sectionHost, builder, containerKey)
-    local CDMC = ns.CDMContainers
-    local U = ns.QUI_LayoutMode_Utils
-    if not sectionHost or not builder
-        or type(containerKey) ~= "string" or containerKey == ""
-        or not CDMC or type(CDMC.ResolveLayoutElementKey) ~= "function"
-        or not U or type(U.BuildPositionCollapsible) ~= "function"
-        or type(U.BuildOpenFullSettingsLink) ~= "function"
-        or type(U.StandardRelayout) ~= "function" then
-        return
-    end
-
-    local elementKey = CDMC.ResolveLayoutElementKey(containerKey)
-    if type(elementKey) ~= "string" or elementKey == "" then
-        return
-    end
-
-    local topOffset = builder.Height(0)
-    local routeHost = CreateFrame("Frame", nil, sectionHost)
-    routeHost:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, -topOffset)
-    routeHost:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, -topOffset)
-
-    local sections = {}
-    local function relayout()
-        U.StandardRelayout(routeHost, sections)
-    end
-
-    U.BuildPositionCollapsible(routeHost, elementKey, nil, sections, relayout)
-    U.BuildOpenFullSettingsLink(routeHost, elementKey, sections, relayout)
-    relayout()
-
-    local routeHeight = routeHost.GetHeight and routeHost:GetHeight() or 0
-    if type(routeHeight) == "number" and routeHeight > 0 then
-        routeHost:SetHeight(routeHeight)
-        builder.Spacer(routeHeight)
-    end
 end
 
 local function ResolveEffectsContext(containerKey)
@@ -2534,11 +2491,9 @@ if QUI and QUI._optionsAddonName == ADDON_NAME and QUI.GUI and Settings and Sett
     get a trimmed Entries / Layout / Effects / Position strip.
 ]]
 
-local ADDON_NAME, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
 local C = GUI.Colors
-local Settings = ns.Settings
 local FullSurface = Settings and Settings.FullSurface
 local ClearFrame = FullSurface and FullSurface.ClearFrame
 
@@ -2595,12 +2550,6 @@ local function IsBuiltIn(containerKey)
     local model = ResolveModel()
     local isBuiltIn = model and model.IsBuiltIn
     return type(isBuiltIn) == "function" and isBuiltIn(containerKey) == true
-end
-
-local function HasContainer(containerKey)
-    local model = ResolveModel()
-    local hasContainer = model and model.HasContainer
-    return type(hasContainer) == "function" and hasContainer(containerKey) == true
 end
 
 local function NormalizeContainerKey(containerKey)
@@ -3071,11 +3020,7 @@ if not (QUI and QUI._optionsAddonName == ADDON_NAME)
     and SurfaceFeatures and type(SurfaceFeatures.Register) == "function"
     and not ns._CDMContainersPageRegistered then
 ns._CDMContainersPageRegistered = true
-local ADDON_NAME, ns = ...
 
-local Settings = ns.Settings
-local SurfaceFeatures = Settings and Settings.SurfaceFeatures
-local Renderer = Settings and Settings.Renderer
 if not SurfaceFeatures or type(SurfaceFeatures.Register) ~= "function" then
     return
 end

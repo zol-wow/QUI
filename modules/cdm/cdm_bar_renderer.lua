@@ -11,7 +11,7 @@
     Pattern mirrors cdm_icon_renderer.lua pool management.
 ]]
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local Helpers = ns.Helpers
 local QUICore = ns.Addon
 local LSM = ns.LSM

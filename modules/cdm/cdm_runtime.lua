@@ -3,7 +3,7 @@
 
 do
 -- Inlined from cdm_scheduler.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Scheduler
@@ -214,7 +214,7 @@ end
 
 do
 -- Inlined from cdm_sources.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Sources
@@ -691,7 +691,7 @@ end
 
 do
 -- Inlined from cdm_runtime_store.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 ---------------------------------------------------------------------------
 -- CDM Runtime Store
 --
@@ -850,7 +850,7 @@ end
 
 do
 -- Inlined from cdm_runtime_queries.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Runtime Queries
@@ -1246,7 +1246,7 @@ do
 -- Runtime query wrappers live here because both resolvers and the icon factory's
 -- UpdateIconCooldown driver depend on the same source facade calls.
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local Helpers = ns.Helpers
 local Shared = ns.CDMShared
 
@@ -1474,9 +1474,7 @@ end
 
 local function GetAuraDataInstanceID(auraData)
     if not auraData then return nil end
-local ok = true; local instID = auraData.auraInstanceID
-    if not ok then return nil end
-    return instID
+    return auraData.auraInstanceID
 end
 
 local GCD_MAX_DURATION = 1.75

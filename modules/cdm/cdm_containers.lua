@@ -3,7 +3,7 @@
 
 do
 -- Inlined from cdm_layout.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Layout
@@ -1009,7 +1009,10 @@ local function GetTrackedBarSettings()
 end
 
 local function GetTrackedBarSourceViewer()
-    return _G["BuffBarCooldownViewer"] or GetBuffBarViewer()
+    -- Prefer the QUI-owned viewer (BuildBarsFromOwned in cdm_bar_renderer.lua)
+    -- as the canonical source. Fall back to Blizzard's BuffBarCooldownViewer
+    -- only if the owned viewer hasn't been created yet (early load).
+    return GetBuffBarViewer() or _G["BuffBarCooldownViewer"]
 end
 
 local function GetTrackedBarName(frame)
@@ -5187,7 +5190,7 @@ function ownedEngine:Initialize()
                 -- the initial ADDON_LOADED scan. PEW fires inside the
                 -- safe window: protected calls are allowed even though
                 -- InCombatLockdown() returns true on combat /reload.
-                local previousInitSafeWindow = ns._inInitSafeWindow
+                local pewPreviousInitSafeWindow = ns._inInitSafeWindow
                 inInitSafeWindow = true
                 ns._inInitSafeWindow = true
                 if ns.CDMBlizzMirror and ns.CDMBlizzMirror.ForceRescan then
@@ -5198,7 +5201,7 @@ function ownedEngine:Initialize()
                     _G.QUI_ApplyAllFrameAnchors()
                 end
                 inInitSafeWindow = false
-                ns._inInitSafeWindow = previousInitSafeWindow
+                ns._inInitSafeWindow = pewPreviousInitSafeWindow
             elseif isLogin then
                 -- Fresh login (or character switch): run dormant spell cleanup
                 -- so cross-class/spec spells are removed before the first
@@ -5820,7 +5823,7 @@ end
 
 do
 -- Inlined from cdm_layout_mode.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Layout Mode Registration

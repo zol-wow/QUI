@@ -3,7 +3,7 @@
 
 do
 -- Inlined from cdm_frame_writes.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Renderers
@@ -397,17 +397,27 @@ local function AddIconToGlowMaps(icon)
     end
 end
 
+local _rebuildGlowSpellMapInFlight = false
 local function RebuildGlowSpellMap()
+    -- Reentry guard: a future change inside AddIconToGlowMaps that triggers
+    -- Rebuild again would otherwise wipe the maps mid-population. AddIcon
+    -- is currently a leaf, but the guard keeps the invariant cheap.
+    if _rebuildGlowSpellMapInFlight then return end
+    _rebuildGlowSpellMapInFlight = true
     wipe(spellIdToGlowIcons)
     wipe(procOnUsableGlowIcons)
     procOnUsableGlowMapReady = false
     local IconFactory = ns.CDMIconFactory
-    if not IconFactory then return end
+    if not IconFactory then
+        _rebuildGlowSpellMapInFlight = false
+        return
+    end
     if IconFactory.ForEachIcon then
         IconFactory:ForEachIcon(function(icon)
             AddIconToGlowMaps(icon)
         end)
         procOnUsableGlowMapReady = true
+        _rebuildGlowSpellMapInFlight = false
         return
     end
     for _, viewerType in ipairs(GetBuiltinCooldownContainerKeys()) do
@@ -417,6 +427,7 @@ local function RebuildGlowSpellMap()
         end
     end
     procOnUsableGlowMapReady = true
+    _rebuildGlowSpellMapInFlight = false
 end
 
 -- SETTINGS ACCESS
@@ -515,6 +526,10 @@ local function EnsureGlowAboveCooldown(icon, glowFrame)
         CDMIcons:EnsureTextOverlayLevel(icon, glowLevel + 1)
     end
 end
+-- Expose to subsequent file chunks so the highlighter and other consumers
+-- share the same layer-coordination behavior (was previously a thinner
+-- per-chunk duplicate that skipped the text-overlay anchoring).
+ns._CDM_EnsureGlowAboveCooldown = EnsureGlowAboveCooldown
 
 -- Shared helper: create or reuse a pulsing texture overlay on an icon.
 -- key: unique frame key on icon (e.g. "_QUIFlashGlow")
@@ -777,8 +792,7 @@ end
 ---------------------------------------------------------------------------
 local function IsOverlayQueryActive(spellID)
     if not spellID or not IsSpellOverlayed then return false end
-local ok = true; local result = IsSpellOverlayed(spellID)
-    return ok and result and true or false
+    return IsSpellOverlayed(spellID) and true or false
 end
 
 local function IsOverlayed(spellID)
@@ -1232,14 +1246,12 @@ local function RemoveHighlight(icon)
     activeHighlights[icon] = nil
 end
 
--- Ensure glow frame renders above the cooldown swipe
-local function EnsureGlowAboveCooldown(icon, glowFrame)
-    if not glowFrame or not icon or not icon.Cooldown then return end
-    local cdLevel = icon.Cooldown:GetFrameLevel()
-    if glowFrame:GetFrameLevel() <= cdLevel then
-        glowFrame:SetFrameLevel(cdLevel + 1)
-    end
-end
+-- Use the canonical EnsureGlowAboveCooldown defined in the effects chunk
+-- (exposed via ns._CDM_EnsureGlowAboveCooldown). This was a thinner local
+-- duplicate that skipped the text-overlay re-anchoring; unifying ensures
+-- the highlighter raises text above glow whenever it raises glow above
+-- cooldown.
+local EnsureGlowAboveCooldown = ns._CDM_EnsureGlowAboveCooldown
 
 local function ApplyHighlight(icon)
     if not icon or not LCG then return end

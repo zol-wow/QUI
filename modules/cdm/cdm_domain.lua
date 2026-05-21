@@ -2,7 +2,7 @@
 -- Consolidated CDM domain facts. Former file chunks remain scoped to preserve Lua 5.1 local limits.
 do
 -- Inlined from cdm_shared.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Shared Helpers
@@ -290,7 +290,7 @@ end
 
 do
 -- Inlined from cdm_index.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Index — single source of truth for CDM spell-ID alias walking,
@@ -679,7 +679,7 @@ end
 
 do
 -- Inlined from cdm_catalog.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Catalog

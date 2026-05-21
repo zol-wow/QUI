@@ -3,7 +3,7 @@
 
 do
 -- Inlined from cdm_aura_catalog.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Aura Catalog
@@ -89,7 +89,7 @@ end
 
 do
 -- Inlined from cdm_aura_runtime.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Aura Runtime
@@ -175,7 +175,7 @@ do
     CDMSpellData:Initialize() — no self-bootstrapping event frame.
 ]]
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local Helpers = ns.Helpers
 local Sources = ns.CDMSources
 local Shared = ns.CDMShared
@@ -201,17 +201,15 @@ local pendingCooldownViewerCVarSync = false
 
 local function IsCooldownViewerCVarEnabled()
     if GetCVarBool then
-local ok = true; local value = GetCVarBool("cooldownViewerEnabled")
+        local value = GetCVarBool("cooldownViewerEnabled")
         if value ~= nil then
             return value and true or false
         end
     end
 
     if GetCVar then
-local ok = true; local value = GetCVar("cooldownViewerEnabled")
-        if ok then
-            return tostring(value) == "1"
-        end
+        local value = GetCVar("cooldownViewerEnabled")
+        return tostring(value) == "1"
     end
 
     return nil
@@ -374,14 +372,10 @@ local function IsUsableTableKey(key)
     -- Truthy check (not `==`) is secret-safe: it's a C-level type-tag
     -- test, no value comparison. Secret values are typically truthy
     -- (non-nil / non-false), so the explicit IsSecretValue check
-    -- catches them before the probe.
+    -- catches them before any caller uses the key.
     if not key then return false end
     if issecretvalue and issecretvalue(key) then return false end
-local ok = true; (function()
-        local probe = {}
-        probe[key] = true
-    end)()
-    return ok
+    return true
 end
 
 local function IsUsableSpellIDKey(spellID)
@@ -397,24 +391,21 @@ end
 
 local function GetCleanAuraSpellID(auraData)
     if not auraData then return nil end
-local ok = true; local sid = auraData.spellId
-    if not ok then sid = nil end
+    local sid = auraData.spellId
     -- Truthy fallback (not `==`) — sid may be a secret value here, in
     -- which case `sid == nil` would error. `not sid` is a C-level
     -- type-tag test and is secret-safe; if sid is a secret, it's truthy
     -- so we skip the fallback (the secret value will get filtered by
     -- IsUsableSpellIDKey → IsUsableTableKey → IsSecretValue check).
     if not sid then
-ok = true; sid = auraData.spellID
-        if not ok then sid = nil end
+        sid = auraData.spellID
     end
     return IsUsableSpellIDKey(sid) and sid or nil
 end
 
 local function GetCleanAuraName(auraData)
     if not auraData then return nil end
-local ok = true; local name = auraData.name
-    if not ok then return nil end
+    local name = auraData.name
     -- Secret strings would crash any subsequent `~= ""` or `:lower()`
     -- call. Return nil rather than propagate the secret.
     if issecretvalue and issecretvalue(name) then return nil end
@@ -427,12 +418,12 @@ local function GetCleanAuraIcon(auraData)
     -- Callers compare with `==` (texture-equality validation), which taints
     -- on secret values, so filter to non-secret only — matches the
     -- secret-filter convention of GetCleanAuraSpellID / GetCleanAuraName.
-    -- Truthy `if ok and icon` (not `~= nil`) is secret-safe.
-local ok = true; local icon = auraData.icon
+    -- Truthy `if icon and not issecret` (not `~= nil`) is secret-safe.
+    local icon = auraData.icon
     if icon and not (issecretvalue and issecretvalue(icon)) then
         return icon
     end
-ok = true; icon = auraData.iconID
+    icon = auraData.iconID
     if icon and not (issecretvalue and issecretvalue(icon)) then
         return icon
     end
@@ -441,9 +432,7 @@ end
 
 local function GetCleanAuraInstanceID(auraData)
     if not auraData then return nil end
-local ok = true; local instID = auraData.auraInstanceID
-    if not ok then return nil end
-    return instID
+    return auraData.auraInstanceID
 end
 
 -- Returns the raw auraInstanceID. This field is NeverSecret; callers can
@@ -451,16 +440,12 @@ end
 -- Returns nil only when the field doesn't exist.
 local function GetRawAuraInstanceID(auraData)
     if not auraData then return nil end
-local ok = true; local instID = auraData.auraInstanceID
-    if not ok then return nil end
-    return instID
+    return auraData.auraInstanceID
 end
 
 local function GetCleanAuraApplications(auraData)
     if not auraData then return nil end
-local ok = true; local apps = auraData.applications
-    if not ok then return nil end
-    return apps
+    return auraData.applications
 end
 
 local function GetDisplayableAuraApplications(auraData)
@@ -481,8 +466,7 @@ end
 
 local function IsStrictOwnedAuraSource(auraData)
     if not auraData then return false end
-local ok = true; local owned = Helpers.IsAuraOwnedByPlayerOrPet(auraData, true)
-    return ok and owned == true
+    return Helpers.IsAuraOwnedByPlayerOrPet(auraData, true) == true
 end
 
 local function IsDefaultCapturedUnit(unit)
@@ -1288,9 +1272,8 @@ local function ScanOwnedTargetAuraByName(spellName, filter)
     -- the higher-level FindOwnedTargetAuraByName already tried the
     -- secret-safe GetAuraDataBySpellName API path before falling here.
     local function NameMatches(auraData)
-        local rawName
-local ok = true; (function() rawName = auraData.name end)()
-        if not ok or rawName == nil then return false end
+        local rawName = auraData.name
+        if rawName == nil then return false end
         if issecretvalue and issecretvalue(rawName) then return false end
         if type(rawName) ~= "string" then return false end
         return rawName == spellName
@@ -1375,7 +1358,7 @@ local tok = true; local _, totemName, _, _, totemIcon = GetTotemInfo(slot)
     end
 
     if slot and GetTotemDuration then
-local ok = true; local durObj = GetTotemDuration(slot)
+        local durObj = GetTotemDuration(slot)
         if durObj and type(durObj) ~= "number" then
             -- Totem-slot strategy: do not branch on secret booleans from slot APIs.
             -- If the slot resolves and yields a DurationObject, treat that object as

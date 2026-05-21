@@ -7,7 +7,7 @@ do
 -- Icon pool lifecycle and mirror binding adapters for the QUI CDM owned
 -- engine. CDMIcons owns the public runtime update interface.
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local Helpers = ns.Helpers
 local Resolvers = ns.CDMResolvers
 local Sources = ns.CDMSources
@@ -719,7 +719,7 @@ end
 
 do
 -- Inlined from cdm_icon_stack_text.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Icon Stack Text
@@ -819,7 +819,7 @@ end
 
 do
 -- Inlined from cdm_icon_stack_policy.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Icon Stack Policy
@@ -962,10 +962,10 @@ function CDMIconStackPolicy.Create(callbacks)
         if cooldownChargeAuthority then
             if chargeCountShown == true then
                 if countTextPresent then
-                    return countText, "ChargeCount", nil, true, mirrorIsCharge
+                        return countText, "ChargeCount", nil, true
                 end
                 if stackChargeTextPresent then
-                    return stackText, "ChargeCount", nil, true, mirrorIsCharge
+                    return stackText, "ChargeCount", nil, true
                 end
             end
 
@@ -974,29 +974,29 @@ function CDMIconStackPolicy.Create(callbacks)
                 or BooleanOrSecretIsPresent(cooldownChargesShown, cooldownChargesShownSecret)
                 or BooleanOrSecretIsPresent(chargeTextOwnerShown, chargeTextOwnerShownSecret)
                 or BooleanOrSecretIsPresent(chargeCountFrameShown, chargeCountFrameShownSecret) then
-                return nil, "ChargeCount", true, true, mirrorIsCharge
+                return nil, "ChargeCount", true, true
             end
-            return nil, nil, true, true, mirrorIsCharge
+            return nil, nil, true, true
         end
 
         if m.stackTextSource == "ChargeCount" and chargeCountShown ~= true then
-            return nil, m.stackTextSource, true, true, mirrorIsCharge
+            return nil, m.stackTextSource, true, true
         end
 
         if stackIsVisible and controller:ValueIsPresent(stackText) then
-            return stackText, m.stackTextSource or "Applications", nil, true, mirrorIsCharge
+            return stackText, m.stackTextSource or "Applications", nil, true
         end
 
         if countTextPresent
             and chargeCountShown == true then
-            return countText, "ChargeCount", nil, true, mirrorIsCharge
+            return countText, "ChargeCount", nil, true
         end
 
         if SafeBoolean(m.stackTextShown) == false then
-            return nil, m.stackTextSource, true, true, mirrorIsCharge
+            return nil, m.stackTextSource, true, true
         end
 
-        return nil, m.stackTextSource, nil, true, mirrorIsCharge
+        return nil, m.stackTextSource, nil, true
     end
 
     local function StampIconMirrorCountFields(icon, m)
@@ -1408,14 +1408,14 @@ function CDMIconStackPolicy.Create(callbacks)
         end
         if not m then
             StampIconMirrorCountFields(icon, nil)
-            return nil, nil, true, nil, false, false
+            return nil, nil, true, nil, false
         end
         StampIconMirrorCountFields(icon, m)
         local entry = icon and icon._spellEntry
         local cooldownChargeAuthority = not (entry and IsAuraEntry(entry))
-        local stackText, stackSource, stackHidden, hasState, mirrorIsCharge =
+        local stackText, stackSource, stackHidden, hasState =
             ResolveMirrorStackTextFromState(m, cooldownChargeAuthority)
-        return stackText, stackSource, true, stackHidden, hasState, mirrorIsCharge
+        return stackText, stackSource, true, stackHidden, hasState
     end
 
     function controller:ResolveIconStackText(icon)
@@ -1449,7 +1449,7 @@ function CDMIconStackPolicy.Create(callbacks)
             if overrideID then sid = overrideID end
         end
 
-        local mirrorText, mirrorSource, mirrorBacked, mirrorStackHidden, mirrorHasState, mirrorIsCharge =
+        local mirrorText, mirrorSource, mirrorBacked, mirrorStackHidden =
             controller:ResolveMirrorStackText(icon)
         if controller:ValueIsPresent(mirrorText) then
             return mirrorText, mirrorSource, true, mirrorStackHidden
@@ -1626,7 +1626,7 @@ end
 
 do
 -- Inlined from cdm_icon_mirror_index.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Icon Mirror Index
@@ -1930,7 +1930,7 @@ end
 
 do
 -- Inlined from cdm_icon_runtime_refresh.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Icon Runtime Refresh
@@ -3143,7 +3143,7 @@ end
 
 do
 -- Inlined from cdm_icon_update_scheduler.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Icon Update Scheduler
@@ -3378,7 +3378,7 @@ end
 
 do
 -- Inlined from cdm_icon_refresh_batch.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Icon Refresh Batch
@@ -3529,7 +3529,7 @@ end
 
 do
 -- Inlined from cdm_icon_refresh_walker.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Icon Refresh Walker
@@ -3653,7 +3653,7 @@ end
 
 do
 -- Inlined from cdm_icon_item_visual_policy.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Icon Item Visual Policy
@@ -3852,7 +3852,7 @@ end
 
 do
 -- Inlined from cdm_icon_visibility_policy.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Icon Visibility Policy
@@ -4057,7 +4057,7 @@ end
 
 do
 -- Inlined from cdm_icon_range_policy.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Icon Range Policy
@@ -4434,7 +4434,7 @@ end
 
 do
 -- Inlined from cdm_icon_cooldown_policy.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Icon Cooldown Policy
@@ -4705,7 +4705,7 @@ end
 
 do
 -- Inlined from cdm_icon_custom_bar_policy.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 ---------------------------------------------------------------------------
 -- CDM Icon Custom-Bar Policy
@@ -5171,7 +5171,7 @@ do
     icon pool as harvested entries.
 ]]
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local Helpers = ns.Helpers
 local QUICore = ns.Addon
 local LSM = ns.LSM
@@ -7562,8 +7562,8 @@ local BLIZZ_ICON_CHROME_ATLASES = {
 
 local function IsIconChromeTexture(region)
     if not (region and region.GetAtlas) then return false end
-local ok = true; local atlas = region.GetAtlas(region)
-    return ok and atlas and BLIZZ_ICON_CHROME_ATLASES[atlas] or false
+    local atlas = region:GetAtlas()
+    return atlas and BLIZZ_ICON_CHROME_ATLASES[atlas] or false
 end
 
 local function BuildTexCoord(zoom, aspectRatioCrop)
@@ -7601,8 +7601,7 @@ local function ApplyTexCoordToTarget(target, left, right, top, bottom, visited)
 
     local objType
     if target.GetObjectType then
-local ok = true; local kind = target.GetObjectType(target)
-        if ok then objType = kind end
+        objType = target:GetObjectType()
     end
     if objType == "Texture" then
         ApplyTexCoordToTexture(target, left, right, top, bottom)
@@ -7620,28 +7619,23 @@ local ok = true; local kind = target.GetObjectType(target)
     end
 
     if target.GetRegions then
-local ok = true; local regions = { target:GetRegions() }
-        if regions then
-            for _, region in ipairs(regions) do
-                if region and region.GetObjectType and region:GetObjectType() == "Texture" then
-                    ApplyTexCoordToTexture(region, left, right, top, bottom)
-                end
+        local regions = { target:GetRegions() }
+        for _, region in ipairs(regions) do
+            if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+                ApplyTexCoordToTexture(region, left, right, top, bottom)
             end
         end
     end
 
     if target.GetChildren then
-local ok = true; local children = { target:GetChildren() }
-        if children then
-            for _, child in ipairs(children) do
-                local childType
-                if child and child.GetObjectType then
-local okType = true; local kind = child.GetObjectType(child)
-                    if okType then childType = kind end
-                end
-                if childType ~= "Cooldown" then
-                    ApplyTexCoordToTarget(child, left, right, top, bottom, visited)
-                end
+        local children = { target:GetChildren() }
+        for _, child in ipairs(children) do
+            local childType
+            if child and child.GetObjectType then
+                childType = child:GetObjectType()
+            end
+            if childType ~= "Cooldown" then
+                ApplyTexCoordToTarget(child, left, right, top, bottom, visited)
             end
         end
     end
@@ -7751,11 +7745,9 @@ local function ConfigureIcon(icon, rowConfig)
             if cd.SetHideCountdownNumbers then
                 cd.SetHideCountdownNumbers(cd, false)
             end
-local ok = true; local regions = { cd:GetRegions() }
-            if regions then
-                for _, region in ipairs(regions) do
-                    styleDurationFontString(region)
-                end
+            local regions = { cd:GetRegions() }
+            for _, region in ipairs(regions) do
+                styleDurationFontString(region)
             end
         end
 
@@ -7783,11 +7775,9 @@ local ok = true; local regions = { cd:GetRegions() }
             if cd.SetHideCountdownNumbers then
                 cd.SetHideCountdownNumbers(cd, true)
             end
-local ok = true; local regions = { cd:GetRegions() }
-            if regions then
-                for _, region in ipairs(regions) do
-                    hideDurationFontString(region)
-                end
+            local regions = { cd:GetRegions() }
+            for _, region in ipairs(regions) do
+                hideDurationFontString(region)
             end
         end
         hideCDFontStrings(icon.Cooldown)
@@ -7851,12 +7841,10 @@ local ok = true; local regions = { cd:GetRegions() }
                 if cd.SetHideCountdownNumbers then
                     cd.SetHideCountdownNumbers(cd, true)
                 end
-local ok = true; local regions = { cd:GetRegions() }
-                if regions then
-                    for _, region in ipairs(regions) do
-                        if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-                            region:Hide()
-                        end
+                local regions = { cd:GetRegions() }
+                for _, region in ipairs(regions) do
+                    if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+                        region:Hide()
                     end
                 end
             end

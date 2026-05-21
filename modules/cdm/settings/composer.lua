@@ -8,7 +8,7 @@
     Singleton frame: only one instance, reused across container switches.
 ]]
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local Helpers = ns.Helpers
 local Shared = ns.CDMShared
 
