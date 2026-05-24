@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha57 - 2026-05-24
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha56 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **CDM: talent-overridden cooldowns no longer freeze on "inactive" after the buff expires.** `C_Spell.GetSpellCooldown` only reports `isActive=true` on the spellID a cooldown was directly initiated on; for talent-replaced slots (Guardian Druid Berserk → Incarnation: Guardian of Ursoc is the reference case) that's the override, not the registered base. Probing only `m.spellID` made the icon fall through to `mode="inactive"` once the aura phase ended, leaving the rest of the 3-minute cooldown invisible. `DeriveMirrorPayloadMode` now falls back to `m.overrideSpellID` and returns the detected spellID so `BuildMirrorRenderPayload` binds the matching `DurationObject` — the base's `DurObj` reflects an inactive cooldown lane and renders no swipe.
+- **Damage meter (native): number format no longer flips mid-combat.** `FormatNumber` previously branched on secret state and routed tainted values through `C_StringUtil.TruncateWhenZero`, which emits raw integers — so the same row would render `1.5K` out of combat and `1500` in combat, silently dropping the user's chosen format. Switched to `AbbreviateNumbers` / `BreakUpLargeNumbers` (both `AllowedWhenTainted`), so the same call site works in and out of combat. `BuildValueText` now suppresses `0` at the string layer (`AbbreviateNumbers` returns `"0"`, never `""`) and passes the user's `numberFormat` through to the secondary cell as well — fixing mismatched pairs like `2,400,000 (450)` in complete mode.
+
+
+
 ## v3.6.0-alpha56 - 2026-05-24
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** **Schema migration to v38** — the legacy `maxVisibleRows` key on saved damage-meter windows is dropped on first load (rows are now scrollable; the window's height alone decides what's visible without scrolling). No user-facing settings move.
