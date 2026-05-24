@@ -12,7 +12,7 @@
     Phase 1 plan: docs/superpowers/plans/2026-05-22-damage-meter-phase-1.md
 ]]
 
--- luacheck: globals CreateFrame C_DamageMeter UIParent RAID_CLASS_COLORS CLASS_ICON_TCOORDS _G SetCVar InCombatLockdown C_StringUtil GetTime Enum MenuUtil GameTooltip SlashCmdList GetTimePreciseSec C_Spell C_Timer
+-- luacheck: globals CreateFrame C_DamageMeter UIParent RAID_CLASS_COLORS CLASS_ICON_TCOORDS _G SetCVar InCombatLockdown C_StringUtil GetTime Enum MenuUtil GameTooltip SlashCmdList GetTimePreciseSec C_Spell C_Timer AbbreviateNumbers BreakUpLargeNumbers CreateAbbreviateConfig
 local _, ns = ...
 
 -- ns.Helpers is provided by core/utils.lua (loaded before this module via core.xml).
@@ -568,63 +568,62 @@ local function FormatDuration(seconds)
 end
 
 -- FormatNumber(amount, format) → string per format style.
---   "minimal"  → "" / "999" / "1K"     / "2M"            (no fractional digit)
---   "compact"  → "" / "999" / "1.5K"   / "2.4M"          (one fractional digit; default/fallback)
---   "complete" → "" / "999" / "1,500"  / "2,400,000"     (thousands separator)
--- Handles ConditionalSecret values: routes through C_StringUtil when tainted.
+--   "minimal"  → "1K"    / "2M"        (no fractional digit)
+--   "compact"  → "1.5K"  / "2.4M"      (one fractional digit; default)
+--   "complete" → "1,500" / "2,400,000" (thousands separator)
+--
+-- Both AbbreviateNumbers and BreakUpLargeNumbers are flagged
+-- SecretArguments=AllowedWhenTainted, so the same call site is safe before
+-- and during combat — no taint-branch needed and the user's chosen format
+-- survives into combat.
+local _formatOpts = {
+    -- Pair pattern per Blizzard docs: lower entry uses fractionDivisor=10 to
+    -- emit "1.5K", higher entry one order up uses fractionDivisor=1 to emit
+    -- "12K" instead of "12.3K". CreateAbbreviateConfig caches the parsed
+    -- breakpoint table for repeat calls. abbreviationIsGlobal=false uses the
+    -- literal "K"/"M"/"B" instead of resolving via GlobalStrings.
+    compact = { config = CreateAbbreviateConfig({
+        { breakpoint = 1e9, abbreviation = "B", significandDivisor = 1e7, fractionDivisor = 100, abbreviationIsGlobal = false },
+        { breakpoint = 1e6, abbreviation = "M", significandDivisor = 1e4, fractionDivisor = 100, abbreviationIsGlobal = false },
+        { breakpoint = 1e3, abbreviation = "K", significandDivisor = 100, fractionDivisor = 10,  abbreviationIsGlobal = false },
+        { breakpoint = 1,   abbreviation = "",  significandDivisor = 1,   fractionDivisor = 1,   abbreviationIsGlobal = false },
+    }) },
+    -- minimal: fractionDivisor=1 across the board strips fractional digits.
+    minimal = { config = CreateAbbreviateConfig({
+        { breakpoint = 1e9, abbreviation = "B", significandDivisor = 1e9, fractionDivisor = 1, abbreviationIsGlobal = false },
+        { breakpoint = 1e6, abbreviation = "M", significandDivisor = 1e6, fractionDivisor = 1, abbreviationIsGlobal = false },
+        { breakpoint = 1e3, abbreviation = "K", significandDivisor = 1e3, fractionDivisor = 1, abbreviationIsGlobal = false },
+        { breakpoint = 1,   abbreviation = "",  significandDivisor = 1,   fractionDivisor = 1, abbreviationIsGlobal = false },
+    }) },
+}
+
 local function FormatNumber(amount, format)
-    if not amount then return "" end
-    -- Secret-value path: route through C_StringUtil.TruncateWhenZero which
-    -- accepts secret arguments. Returns raw number as string (or "" when 0).
-    -- Pretty-formatting resumes when taint clears.
-    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(amount) then
-        if C_StringUtil and C_StringUtil.TruncateWhenZero then
-            return C_StringUtil.TruncateWhenZero(amount)
-        end
-        return ""
-    end
-    if amount == 0 then return "" end
-
-    if format == "minimal" then
-        if amount >= 1e6 then return string.format("%dM", math.floor(amount / 1e6)) end
-        if amount >= 1e3 then return string.format("%dK", math.floor(amount / 1e3)) end
-        return tostring(math.floor(amount))
-    end
-
+    if amount == nil then return "" end
     if format == "complete" then
-        local n = math.floor(amount)
-        local s = tostring(n)
-        -- Insert thousands separators right-to-left: every 3 digits from the
-        -- right gets a trailing comma, then strip the leading comma if the
-        -- length was an exact multiple of 3.
-        local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
-        if out:sub(1, 1) == "," then out = out:sub(2) end
-        return out
+        return BreakUpLargeNumbers(amount)
     end
-
-    -- "compact" (default and fallback for unknown format strings)
-    if amount >= 1e6 then return string.format("%.1fM", amount / 1e6) end
-    if amount >= 1e3 then return string.format("%.1fK", amount / 1e3) end
-    return tostring(math.floor(amount))
+    return AbbreviateNumbers(amount, _formatOpts[format] or _formatOpts.compact)
 end
 -- BuildValueText: render the per-row value cell from a (primary, secondary)
--- pair, applying the "(0)" suppression on the non-secret path. Pure helper —
--- isSecret/formatNumber are passed in so it can be unit-tested with stub deps.
+-- pair, applying the "0" → "" suppression on the non-secret path. Pure
+-- helper — isSecret/formatNumber are passed in so it can be unit-tested with
+-- stub deps.
 --
--- Secret-tagged values bypass the equality-based suppression because comparing
--- a secret string against "" or "0" taints execution under Patch 12.0+ combat
--- restrictions (FormatNumber routes secret amounts through C_StringUtil.
--- TruncateWhenZero, whose return is itself secret-tagged). Secret strings are
--- displayed as-is — Blizzard's safe formatter already chose the user-visible text.
+-- Why string-level suppression: AbbreviateNumbers/BreakUpLargeNumbers always
+-- return a printable digit string (never "" for 0), so suppression has to
+-- happen here. Secret-tagged strings skip the comparison because `== "0"`
+-- against a secret-tagged value taints execution under Patch 12.0+ combat
+-- restrictions — they're rendered as-is.
 local function BuildValueText(primaryVal, secondaryVal, numberFormat, isSecret, formatNumber)
     local primarySecret   = isSecret and isSecret(primaryVal)   or false
     local secondarySecret = isSecret and isSecret(secondaryVal) or false
     local primaryStr   = formatNumber(primaryVal,   numberFormat)
-    local secondaryStr = formatNumber(secondaryVal, "compact")
+    local secondaryStr = formatNumber(secondaryVal, numberFormat)
     local primaryHas, secondaryHas
     if primarySecret then
         primaryHas = true
     else
+        if primaryStr == "0" then primaryStr = "" end
         primaryHas = (primaryStr ~= "")
     end
     if secondarySecret then
@@ -930,9 +929,9 @@ function Window:_AttachRowVisuals(row)
 
         local totalLabel, rateLabel = TooltipLabelsForType(rowSelf._damageMeterType or 0)
         -- Capture secret state BEFORE any equality comparison: comparing a
-        -- secret-tagged string against "" or 0 taints execution. FormatNumber
-        -- propagates the secret tag through C_StringUtil.TruncateWhenZero, so
-        -- secret amounts must be rendered as-is without the "is it empty?" gate.
+        -- secret-tagged string against "" taints execution. AbbreviateNumbers
+        -- propagates the secret tag, so secret amounts must be rendered as-is
+        -- without the "is it empty?" gate.
         local IsSecret = Helpers and Helpers.IsSecretValue
         local totalSecret = src.totalAmount and IsSecret and IsSecret(src.totalAmount)
         local amt = FormatNumber(src.totalAmount, "complete")
