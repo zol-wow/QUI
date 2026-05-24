@@ -9367,14 +9367,25 @@ function CDMIcons:BuildIcons(viewerType, container)
     end
 
     -- Update click-to-cast secure attributes for cooldown icons.
-    -- AcquireIcon sets attrs per-icon, but this catches any pending updates
-    -- (e.g., from combat-deferred rebuilds via PLAYER_REGEN_ENABLED).
-    -- Applies to both built-in cooldown containers and custom bars.
-    for _, icon in ipairs(pool) do
-        if icon._pendingSecureUpdate then
+    -- AcquireIcon sets attrs per-icon for fresh acquisitions; when the pool
+    -- is reused (signature match), AcquireIcon is skipped — so a
+    -- clickableIcons toggle on essential/utility would otherwise not take
+    -- effect until /reload. Run a full pass on reuse, and a pending-only
+    -- pass otherwise to catch combat-deferred rebuilds via PLAYER_REGEN_ENABLED.
+    if reusePool then
+        for _, icon in ipairs(pool) do
             local entry = icon._spellEntry
             if entry and entry.viewerType ~= "buff" then
                 UpdateIconSecureAttributes(icon, entry, entry.viewerType or viewerType)
+            end
+        end
+    else
+        for _, icon in ipairs(pool) do
+            if icon._pendingSecureUpdate then
+                local entry = icon._spellEntry
+                if entry and entry.viewerType ~= "buff" then
+                    UpdateIconSecureAttributes(icon, entry, entry.viewerType or viewerType)
+                end
             end
         end
     end
