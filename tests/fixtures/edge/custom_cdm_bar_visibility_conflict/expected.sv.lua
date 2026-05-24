@@ -22,7 +22,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 37,
+        _schemaVersion = 38,
         _shippedDefaults = {
           abilityTimeline = {
             bigIcon = {
@@ -1145,7 +1145,6 @@ return {
                 [1] = {
                   damageMeterType = 0,
                   hidden = false,
-                  maxVisibleRows = 10,
                   name = "",
                   sessionType = 1,
                   size = {

@@ -708,6 +708,19 @@ local function SetDamageMeterEnabled(val)
         ns.QUI_Modules:NotifyChanged("damageMeterNativePage")
     end
     if enabled ~= old then
+        if not enabled then
+            -- Apply the disable immediately so the user sees windows vanish
+            -- without a reload. The reload prompt is still shown because
+            -- Blizzard's stock meter can only re-appear at addon-load time:
+            -- restore the damageMeterEnabled CVar so it loads next reload.
+            local mod = GetMod()
+            if mod and mod.WindowManager and mod.WindowManager.DespawnAll then
+                mod.WindowManager:DespawnAll()
+            end
+            if mod and mod.ApplyBlizzardSuppression then
+                mod.ApplyBlizzardSuppression(false)
+            end
+        end
         ShowDamageMeterReloadPrompt()
     end
 end

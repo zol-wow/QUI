@@ -846,21 +846,13 @@ local function FindLocalPlayerInSources(sources)
     return nil
 end
 
-function Window:_BuildRow(index)
+-- Attach the icon, bar, name/value text, click handler, and hover tooltip
+-- to a row that has already been created and anchored. Shared between the
+-- pooled rows in _BuildRow (chain-anchored in the scroll viewport) and the
+-- standalone sticky row in _BuildStickyRow (anchored to the window bottom).
+function Window:_AttachRowVisuals(row)
     local windowID = self.windowID
-    local barH    = ResolveAppearance(windowID, "barHeight")    or 18
-    local barGap  = ResolveAppearance(windowID, "barSpacing")   or 2
-    local headerH = ResolveAppearance(windowID, "headerHeight") or 22
-
-    local row = CreateFrame("Button", nil, self.frame)
-    row:SetHeight(barH)
-    row:SetPoint("LEFT",  self.frame, "LEFT",  0, 0)
-    row:SetPoint("RIGHT", self.frame, "RIGHT", 0, 0)
-    if index == 1 then
-        row:SetPoint("TOP", self.frame, "TOP", 0, -headerH)
-    else
-        row:SetPoint("TOP", self.rows[index - 1], "BOTTOM", 0, -barGap)
-    end
+    local barH = ResolveAppearance(windowID, "barHeight") or 18
 
     -- Icon (left)
     local iconSize = barH
@@ -903,6 +895,13 @@ function Window:_BuildRow(index)
     row:RegisterForClicks("AnyUp")
     row:SetScript("OnClick", function(rowSelf)
         if not rowSelf._source then return end
+        -- Per-source combatSpells are secret-tagged during active combat, so
+        -- C_DamageMeter.GetCombatSessionSourceFromType returns no iterable
+        -- spell rows and the popup would render as an empty header. Block the
+        -- click instead; OnEnter shows a hint line explaining why. The
+        -- PLAYER_REGEN_ENABLED handler in the Data layer re-dirties views
+        -- 0.5s after combat ends, so the next click populates normally.
+        if InCombatLockdown and InCombatLockdown() then return end
         self:OpenBreakdown(rowSelf._source, rowSelf)
     end)
     row:SetScript("OnEnter", function(rowSelf)
@@ -960,13 +959,60 @@ function Window:_BuildRow(index)
             GameTooltip:AddDoubleLine("% of Top:", string.format("%.1f%%", pct), 1, 1, 1, 1, 1, 1)
         end
 
+        -- Combat hint: pairs with the OnClick guard above. Spell breakdown
+        -- data is unavailable mid-combat, so the click does nothing — tell
+        -- the user why instead of leaving them to guess.
+        if InCombatLockdown and InCombatLockdown() then
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("Spell breakdown is hidden during combat", 0.7, 0.7, 0.7)
+        end
+
         GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function()
         if GameTooltip:IsForbidden() then return end
         GameTooltip:Hide()
     end)
+end
 
+function Window:_BuildRow(index)
+    local windowID = self.windowID
+    local barH    = ResolveAppearance(windowID, "barHeight")    or 18
+    local barGap  = ResolveAppearance(windowID, "barSpacing")   or 2
+
+    local parent = self.scrollContent
+    local row = CreateFrame("Button", nil, parent)
+    row:SetHeight(barH)
+    row:SetPoint("LEFT",  parent, "LEFT",  0, 0)
+    row:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
+    if index == 1 then
+        row:SetPoint("TOP", parent, "TOP", 0, 0)
+    else
+        row:SetPoint("TOP", self.rows[index - 1], "BOTTOM", 0, -barGap)
+    end
+
+    self:_AttachRowVisuals(row)
+    row:Hide()
+    return row
+end
+
+-- Standalone "sticky" row anchored to the window's bottom edge, outside the
+-- scrolling viewport. Used by the showPinnedSelf feature so the local player
+-- remains visible when scrolled out of the viewport. Constructed once in
+-- Window:New; populated via _SetRowSource and shown/hidden by Refresh.
+function Window:_BuildStickyRow()
+    local windowID = self.windowID
+    local barH = ResolveAppearance(windowID, "barHeight") or 18
+
+    local row = CreateFrame("Button", nil, self.frame)
+    row:SetHeight(barH)
+    row:SetPoint("LEFT",   self.frame, "LEFT",   0, 0)
+    row:SetPoint("RIGHT",  self.frame, "RIGHT",  0, 0)
+    row:SetPoint("BOTTOM", self.frame, "BOTTOM", 0, 0)
+    -- Sit above the scrollFrame so its texture isn't clipped by the viewport.
+    row:SetFrameLevel(self.scrollFrame:GetFrameLevel() + 5)
+
+    self:_AttachRowVisuals(row)
     row:Hide()
     return row
 end
@@ -1146,6 +1192,12 @@ function Window:_ApplyColors()
             if row.Value then row.Value:SetTextColor(rv[1] or 1, rv[2] or 1, rv[3] or 1, rv[4] or 1) end
         end
     end
+    -- Also style the sticky self-row when present.
+    if self.stickyRow then
+        local r = self.stickyRow
+        if r.Name  then r.Name:SetTextColor(rn[1] or 1, rn[2] or 1, rn[3] or 1, rn[4] or 1)  end
+        if r.Value then r.Value:SetTextColor(rv[1] or 1, rv[2] or 1, rv[3] or 1, rv[4] or 1) end
+    end
 end
 
 function Window:_ApplyFonts()
@@ -1171,6 +1223,12 @@ function Window:_ApplyFonts()
             if row.Name  then row.Name:SetFont(nPath, nSize, nOutline)  end
             if row.Value then row.Value:SetFont(vPath, vSize, vOutline) end
         end
+    end
+    -- Also style the sticky self-row when present.
+    if self.stickyRow then
+        local r = self.stickyRow
+        if r.Name  then r.Name:SetFont(nPath, nSize, nOutline)  end
+        if r.Value then r.Value:SetFont(vPath, vSize, vOutline) end
     end
 end
 
@@ -1281,6 +1339,110 @@ function Window:_OpenConfigMenu()
     end)
 end
 
+-- Resize and position the thumb based on current scroll state. Hides the
+-- scrollbar entirely when content fits inside the viewport. Mirrors
+-- CreateDropdownScrollBody:UpdateThumb in QUI_Options/framework.lua.
+function Window:_UpdateScrollThumb()
+    local scrollBar     = self.scrollBar
+    local scrollFrame   = self.scrollFrame
+    local scrollContent = self.scrollContent
+    if not (scrollBar and scrollFrame and scrollContent) then return end
+
+    local contentH = scrollContent:GetHeight()
+    local viewH    = scrollFrame:GetHeight()
+    if contentH <= viewH or viewH <= 0 then
+        scrollBar:Hide()
+        return
+    end
+    scrollBar:Show()
+
+    local trackH = scrollBar:GetHeight()
+    if trackH <= 0 then return end
+
+    local thumbH = math.max(20, (viewH / contentH) * trackH)
+    scrollBar.thumb:SetHeight(thumbH)
+
+    local maxScroll = contentH - viewH
+    local cur = scrollFrame:GetVerticalScroll() or 0
+    -- Clamp in case the viewport just grew past the previous scroll position.
+    if cur > maxScroll then
+        cur = maxScroll
+        scrollFrame:SetVerticalScroll(cur)
+    end
+    local ratio = (maxScroll > 0) and (cur / maxScroll) or 0
+    local yOff = -ratio * (trackH - thumbH)
+    scrollBar.thumb:ClearAllPoints()
+    scrollBar.thumb:SetPoint("TOP", scrollBar, "TOP", 0, yOff)
+end
+
+-- Show / hide the sticky self-row based on whether the local player's row is
+-- inside the currently visible scroll range. The predicate is recomputed on
+-- every Refresh and every OnMouseWheel tick. Re-anchors scrollFrame's bottom
+-- to make room for the sticky row when shown.
+function Window:_UpdateStickyVisibility()
+    local sources = self._stickySources
+    local sticky  = self.stickyRow
+    local sep     = self.stickySeparator
+    local sf      = self.scrollFrame
+    if not (sticky and sep and sf) then return end
+
+    -- Re-anchor only on transitions; tracked via self._stickyShown.
+    local function setHidden()
+        if sticky:IsShown() then sticky:Hide() end
+        if sep:IsShown()    then sep:Hide()    end
+        if self._stickyShown then
+            local headerH = ResolveAppearance(self.windowID, "headerHeight") or 22
+            sf:ClearAllPoints()
+            sf:SetPoint("TOPLEFT",     self.frame, "TOPLEFT",     0, -headerH)
+            sf:SetPoint("BOTTOMRIGHT", self.frame, "BOTTOMRIGHT", 0,  0)
+            self._stickyShown = false
+            self:_UpdateScrollThumb()
+        end
+    end
+
+    -- Cheap guards first — bail out before any settings/geometry lookups.
+    local s = GetSettings()
+    local pinnedSelf = s and s.showPinnedSelf
+    if not (pinnedSelf and sources and #sources > 0) then setHidden(); return end
+
+    local localIdx = FindLocalPlayerInSources(sources)
+    if not localIdx then setHidden(); return end
+
+    -- Compute the visible row range from current scroll offset + viewport.
+    local barH    = ResolveAppearance(self.windowID, "barHeight")  or 18
+    local barGap  = ResolveAppearance(self.windowID, "barSpacing") or 2
+    local rowPitch = barH + barGap
+    local scrollY = sf:GetVerticalScroll() or 0
+    local viewH   = sf:GetHeight()
+    local firstVisible = math.floor(scrollY / rowPitch) + 1
+    -- When viewH < rowPitch, lastVisible < firstVisible and the predicate
+    -- below is always false → sticky always shows. The window is unusable
+    -- at that size anyway; degrading to "sticky-only" is acceptable.
+    local lastVisible  = firstVisible + math.floor(viewH / rowPitch) - 1
+    if localIdx >= firstVisible and localIdx <= lastVisible then
+        setHidden(); return
+    end
+
+    -- Player is outside the visible range — populate + show sticky.
+    self:_SetRowSource(sticky, sources[localIdx], self._stickyMaxValue)
+    sticky:Show()
+    sep:Show()
+    if not self._stickyShown then
+        local headerH = ResolveAppearance(self.windowID, "headerHeight") or 22
+        sf:ClearAllPoints()
+        sf:SetPoint("TOPLEFT",     self.frame, "TOPLEFT",  0, -headerH)
+        sf:SetPoint("BOTTOMRIGHT", sep,        "TOPRIGHT", 0,  0)
+        self._stickyShown = true
+
+        -- Viewport shrank; clamp scroll position so we don't display past content.
+        local contentH = self.scrollContent and self.scrollContent:GetHeight() or 0
+        local newViewH = sf:GetHeight()
+        local maxScroll = math.max(0, contentH - newViewH)
+        if scrollY > maxScroll then sf:SetVerticalScroll(maxScroll) end
+        self:_UpdateScrollThumb()
+    end
+end
+
 function Window:Refresh()
     if not self.frame then return end
 
@@ -1327,33 +1489,39 @@ function Window:Refresh()
     end
 
     self:_EnsureRowPool()
-    -- For per-second meter types, sources gets a copied + re-sorted array and
-    -- maxValue is max amountPerSecond. For everything else, this is a
-    -- passthrough on view.sources / view.maxAmount.
     local sources, maxValue = PrepareSourcesForRender(view, self.damageMeterType)
-    local visibleCount = math.min(#sources, self.maxVisibleRows or 10)
+    local renderCount = math.min(#sources, BAR_POOL_SIZE)
 
-    local s = GetSettings()
-    local pinnedSelf = s and s.showPinnedSelf
-
-    for i = 1, visibleCount do
+    for i = 1, renderCount do
         self:_SetRowSource(self.rows[i], sources[i], maxValue)
         self.rows[i]:Show()
     end
-    for i = visibleCount + 1, #self.rows do
+    for i = renderCount + 1, #self.rows do
         self.rows[i]:Hide()
     end
 
-    -- Pinned-self: if the local player exists in the data AND is below the cut,
-    -- swap the bottom visible row for a synthetic local-player row showing
-    -- the player's REAL rank/amount.
-    if pinnedSelf and visibleCount > 0 then
-        local localIdx = FindLocalPlayerInSources(sources)
-        if localIdx and localIdx > visibleCount then
-            self:_SetRowSource(self.rows[visibleCount], sources[localIdx], maxValue)
-            self.rows[visibleCount]:Show()
-        end
+    -- Size the scroll content to match what's rendered so the scrollbar and
+    -- mouse wheel know how far to scroll. Row pitch = barHeight + barSpacing.
+    local barH   = ResolveAppearance(self.windowID, "barHeight")  or 18
+    local barGap = ResolveAppearance(self.windowID, "barSpacing") or 2
+    local rowPitch = barH + barGap
+    if self.scrollContent then
+        -- Last row has no trailing gap, so subtract one barGap.
+        local contentH = renderCount > 0 and (renderCount * rowPitch - barGap) or 0
+        self.scrollContent:SetHeight(math.max(1, contentH))
     end
+    self:_UpdateScrollThumb()
+
+    -- Sticky self-row: shown when the local player is outside the currently
+    -- visible scroll range. _UpdateStickyVisibility computes the predicate
+    -- against the current viewport + scroll offset and toggles sticky/sep,
+    -- re-anchoring scrollFrame's bottom to shrink/grow the viewport.
+    -- pinnedSelf, sources, and maxValue are read directly by the method via
+    -- self._stickySources / self._stickyMaxValue so the OnMouseWheel handler
+    -- (Task 5) can re-evaluate without re-running the full Refresh.
+    self._stickySources = sources
+    self._stickyMaxValue = maxValue
+    self:_UpdateStickyVisibility()
 
     -- Phase 4: refresh an open breakdown popup on every parent-window tick.
     self:RefreshBreakdown()
@@ -1562,7 +1730,7 @@ function Window:New(windowID)
         windowState = {
             damageMeterType = 0, sessionType = 1,
             size     = { w = 240, h = 180 },
-            hidden = false, maxVisibleRows = 10,
+            hidden = false,
         }
     end
 
@@ -1570,7 +1738,6 @@ function Window:New(windowID)
         windowID        = windowID,
         damageMeterType = windowState.damageMeterType,
         sessionType     = windowState.sessionType,
-        maxVisibleRows  = windowState.maxVisibleRows or 10,
         rows            = {},      -- pool, filled in T10
         _lastGeneration = 0,
     }, Window)
@@ -1655,6 +1822,81 @@ function Window:New(windowID)
         if GameTooltip:IsForbidden() then return end
         GameTooltip:Hide()
     end)
+
+    -- Scrollable row viewport: rows live inside scrollContent (the ScrollFrame's
+    -- scroll child) rather than directly on self.frame. This lets the row pool
+    -- exceed the window's visible height and be reached via mouse wheel.
+    -- The scrollFrame's bottom anchor flips between frame:BOTTOM (sticky hidden)
+    -- and stickySeparator:TOP (sticky shown); Refresh re-anchors as needed.
+    local scrollFrame = CreateFrame("ScrollFrame", nil, frame)
+    scrollFrame:SetPoint("TOPLEFT",     frame, "TOPLEFT",     0, -headerH)
+    scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0,  0)
+    scrollFrame:EnableMouseWheel(true)  -- wheel handler wired in Task 5
+
+    local scrollContent = CreateFrame("Frame", nil, scrollFrame)
+    scrollContent:SetSize(1, 1)  -- real size assigned by Refresh (Task 7)
+    scrollFrame:SetScrollChild(scrollContent)
+
+    -- Keep scrollContent's width synced to the viewport width as the window
+    -- resizes. Task 6 extends this handler to also call _UpdateScrollThumb.
+    scrollFrame:SetScript("OnSizeChanged", function(_, w)
+        if w and w > 0 then scrollContent:SetWidth(w) end
+        if self._UpdateScrollThumb then self:_UpdateScrollThumb() end
+    end)
+
+    -- Mouse wheel: two rows per tick, clamped to [0, contentH - viewportH].
+    -- Re-evaluates sticky-self visibility (Task 9) since the predicate depends
+    -- on scroll offset, and updates the thumb (Task 6). Both guarded with
+    -- `if self._X then` so this handler works even before those methods exist.
+    scrollFrame:SetScript("OnMouseWheel", function(sf, delta)
+        local barH   = ResolveAppearance(windowID, "barHeight")  or 18
+        local barGap = ResolveAppearance(windowID, "barSpacing") or 2
+        local step   = (barH + barGap) * 2
+        local cur    = sf:GetVerticalScroll() or 0
+        local contentH = scrollContent:GetHeight()
+        local viewH    = sf:GetHeight()
+        local maxScroll = math.max(0, contentH - viewH)
+        local newVal = math.max(0, math.min(maxScroll, cur - delta * step))
+        sf:SetVerticalScroll(newVal)
+        if self._UpdateStickyVisibility then self:_UpdateStickyVisibility() end
+        if self._UpdateScrollThumb     then self:_UpdateScrollThumb()     end
+    end)
+
+    -- Thumb scrollbar: thin accent-colored bar at the right edge, auto-hides
+    -- when content fits. Convention matches QUI_Options/framework.lua
+    -- CreateDropdownScrollBody (uses the same SCROLLBAR_WIDTH = 6 and
+    -- accent color with 0.5 alpha).
+    local SCROLLBAR_WIDTH = 6
+    local scrollBar = CreateFrame("Frame", nil, frame)
+    scrollBar:SetWidth(SCROLLBAR_WIDTH)
+    scrollBar:SetPoint("TOPRIGHT",    scrollFrame, "TOPRIGHT",    -1, -2)
+    scrollBar:SetPoint("BOTTOMRIGHT", scrollFrame, "BOTTOMRIGHT", -1,  2)
+    scrollBar:SetFrameLevel(scrollFrame:GetFrameLevel() + 5)
+    scrollBar:Hide()
+
+    local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
+    thumb:SetWidth(SCROLLBAR_WIDTH)
+    local ar, ag, ab = GetAccentColor()
+    thumb:SetColorTexture(ar, ag, ab, 0.5)
+    scrollBar.thumb = thumb
+
+    self.scrollBar = scrollBar
+
+    self.scrollFrame   = scrollFrame
+    self.scrollContent = scrollContent
+
+    -- Sticky self-row + 1px separator above it. Both hidden until Refresh
+    -- (via Task 9's _UpdateStickyVisibility) decides the local player is
+    -- outside the visible scroll range.
+    self.stickyRow = self:_BuildStickyRow()
+
+    local separator = self.frame:CreateTexture(nil, "OVERLAY")
+    separator:SetHeight(1)
+    separator:SetPoint("LEFT",   self.stickyRow, "TOPLEFT",  0, 0)
+    separator:SetPoint("RIGHT",  self.stickyRow, "TOPRIGHT", 0, 0)
+    separator:SetColorTexture(0, 0, 0, 1)
+    separator:Hide()
+    self.stickySeparator = separator
 
     self:_EnsureRowPool()
 
@@ -1974,6 +2216,21 @@ function WindowManager:Despawn(windowID)
     end
 end
 
+-- Despawn every live window. Used when the feature toggle flips off mid-session
+-- so windows disappear immediately instead of lingering until the next reload.
+-- Savedvars entries in s.windows are untouched, so a re-enable + reload respawns
+-- the same windows at their saved positions.
+function WindowManager:DespawnAll()
+    -- Snapshot keys first; Despawn mutates self.windows.
+    local ids = {}
+    for windowID in pairs(self.windows) do
+        ids[#ids + 1] = windowID
+    end
+    for _, windowID in ipairs(ids) do
+        self:Despawn(windowID)
+    end
+end
+
 -- Phase 3: hard cap matches spec's "5 windows" budget. Settings UI's
 -- "+ Add Window" button is disabled when at cap.
 local MAX_WINDOWS = 5
@@ -2000,7 +2257,6 @@ function WindowManager:SpawnNew()
         sessionType     = 1,
         size            = { w = 240, h = 180 },
         hidden          = false,
-        maxVisibleRows  = 10,
         name            = "",
     }
     s.windowCount = (s.windowCount or 0) + 1

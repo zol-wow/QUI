@@ -29,7 +29,7 @@ return {
     {
         name = "schema migrated to current version",
         assert = function(sv, ctx)
-            return sv.QUI_DB.profiles.Default._schemaVersion == 37
+            return sv.QUI_DB.profiles.Default._schemaVersion == 38
         end,
     },
 }

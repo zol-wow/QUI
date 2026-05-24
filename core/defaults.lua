@@ -283,7 +283,6 @@ local defaults = {
                         sessionType     = 1,            -- Enum.DamageMeterSessionType.Current
                         size            = { w = 240, h = 180 },
                         hidden          = false,
-                        maxVisibleRows  = 10,
                         name            = "",            -- user-editable display name; empty = use auto-generated label
                     },
                 },

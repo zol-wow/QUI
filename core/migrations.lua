@@ -208,11 +208,17 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --        This migration deletes the skinner's saved keys so they can't
 --        actively fight the native module's CVar suppression on future
 --        loads. Native module keys at damageMeter.native.* are preserved.)
+-- v38 = DropDamageMeterMaxVisibleRows
+--       (3.7+: the damage meter row-cap setting was removed in favor of
+--        scrollable rows. The window height alone decides what renders
+--        without scrolling; everything below the fold is reachable via
+--        mouse-wheel scroll. This migration drops the dead key from every
+--        saved window entry so it doesn't sit in savedvars forever.)
 --
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 37
+local CURRENT_SCHEMA_VERSION = 38
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -836,6 +842,25 @@ local function RetireSkinDamageMeter(profile)
         dm.backgroundAlpha = nil
         dm._initialized    = nil
         dm.appearance      = nil   -- top-level skinner appearance; native uses dm.native.appearance
+    end
+end
+
+---------------------------------------------------------------------------
+-- DropDamageMeterMaxVisibleRows
+-- v38: maxVisibleRows is no longer consulted by the damage meter (rows are
+-- now scrollable, and the window's height alone decides what's visible
+-- without scrolling). Drop the dead key from every saved window entry to
+-- keep savedvars tidy.
+---------------------------------------------------------------------------
+local function DropDamageMeterMaxVisibleRows(profile)
+    if type(profile) ~= "table" then return end
+    local native = profile.damageMeter and profile.damageMeter.native
+    if type(native) ~= "table" then return end
+    if type(native.windows) ~= "table" then return end
+    for _, windowState in pairs(native.windows) do
+        if type(windowState) == "table" then
+            windowState.maxVisibleRows = nil
+        end
     end
 end
 
@@ -3884,6 +3909,10 @@ function Migrations.RunOnProfile(profile)
     -- being pushed to the damageMeterEnabled CVar, re-showing Blizzard's
     -- meter despite the native module's suppression.
     if stored < 37 then RetireSkinDamageMeter(profile) end
+
+    -- v38: Damage meter rows are now scrollable; the hard cap setting was
+    -- removed. Drop the legacy key from saved window entries.
+    if stored < 38 then DropDamageMeterMaxVisibleRows(profile) end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame
