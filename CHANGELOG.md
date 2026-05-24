@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha58 - 2026-05-24
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha57 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **CDM: toggling "Clickable Icons" now takes effect without `/reload`.** When `BuildIcons` reused the existing icon pool (signature match), `AcquireIcon` — which installs the secure click-to-cast attributes — was skipped, so flipping `clickableIcons` on essential or utility containers had no visible effect until the next full rebuild. The reuse path now runs a full secure-attribute pass over every cooldown icon in the pool; the non-reuse path still does a pending-only pass so combat-deferred `PLAYER_REGEN_ENABLED` rebuilds remain cheap.
+
+
+
 ## v3.6.0-alpha57 - 2026-05-24
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha56 profiles carry over unchanged.
