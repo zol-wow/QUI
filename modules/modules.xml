@@ -12,6 +12,7 @@
     <Include file="utility\utility.xml"/>
     <Include file="integrations\integrations.xml"/>
     <Include file="combat\combat.xml"/>
+    <Include file="damage_meter\damage_meter.xml"/>
     <Include file="skinning\character_pane\character.xml"/>
     <Include file="trackers\trackers.xml"/>
     <Include file="qol\qol.xml"/>

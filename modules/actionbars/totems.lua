@@ -26,22 +26,22 @@ local BASE_CROP = 0.08
 
 ---------------------------------------------------------------------------
 -- COMBAT-SAFE SHOW / HIDE
--- Use SetAlpha as a visual stand-in, then reconcile on combat end.
--- EnableMouse must follow alpha so an invisible bar/button doesn't eat
--- world clicks (left-click ground / right-click camera). pcall guards
--- secure buttons during combat transitions.
+-- Buttons are configured once at creation (EnableMouse(true) +
+-- SetPassThroughButtons("LeftButton","MiddleButton")) so left/middle world
+-- clicks pass through always, while right-click is intercepted for the
+-- destroytotem secure action. Per-slot visibility is alpha-only — no
+-- protected calls per refresh, so combat refreshes are silent. The
+-- container-level mouse toggle (for drag-to-move) is still gated below.
 ---------------------------------------------------------------------------
 local pendingReconcile = false
 
 local function SafeShowButton(btn)
     btn:SetAlpha(1)
-    pcall(btn.EnableMouse, btn, true)
     btn.active = true
 end
 
 local function SafeHideButton(btn)
     btn:SetAlpha(0)
-    pcall(btn.EnableMouse, btn, false)
     btn.active = false
 end
 
@@ -161,16 +161,27 @@ container:SetClampedToScreen(true)
 container:SetAlpha(0)
 container.visible = false
 
+-- Container is a protected frame (it parents SecureActionButtonTemplate
+-- children), so EnableMouse is protected in combat. Toggle is deferred via
+-- pendingReconcile when locked down; alpha + visible flag remain combat-safe.
 local function ShowContainer()
     container:SetAlpha(1)
-    container:EnableMouse(true)
     container.visible = true
+    if InCombatLockdown() then
+        pendingReconcile = true
+        return
+    end
+    container:EnableMouse(true)
 end
 
 local function HideContainer()
     container:SetAlpha(0)
-    container:EnableMouse(false)
     container.visible = false
+    if InCombatLockdown() then
+        pendingReconcile = true
+        return
+    end
+    container:EnableMouse(false)
 end
 
 TotemBar.container = container
@@ -183,9 +194,19 @@ for i = 1, MAX_SLOTS do
     local btn = CreateFrame("Button", "QUI_TotemBarButton" .. i, container, "SecureActionButtonTemplate")
     btn:SetSize(36, 36)
     btn:SetAlpha(0)
-    btn:EnableMouse(false)
+    -- Mouse is enabled permanently OOC; left/middle clicks fall through to
+    -- the world frame, while right-click is intercepted for destroytotem.
+    -- Avoids touching protected mouse-state in combat (was the
+    -- ADDON_ACTION_BLOCKED source).
+    btn:EnableMouse(true)
+    btn:SetPassThroughButtons("LeftButton", "MiddleButton")
     btn.active = false
-    btn:RegisterForClicks("RightButtonUp")
+    -- Register both directions so SecureActionButton_OnClick fires for
+    -- whichever matches the ActionButtonUseKeyDown CVar (default 1 = key-down
+    -- on modern clients). Registering only "RightButtonUp" silently no-ops
+    -- the secure action for users with the default CVar — same bug as
+    -- Blizzard's stock TotemFrame.
+    btn:RegisterForClicks("RightButtonDown", "RightButtonUp")
     SetTotemDismissSlot(btn, i)
 
     -- Icon texture
@@ -527,8 +548,14 @@ local function StealEvents()
         end
     end
     -- Alpha 0 hides TotemFrame visually while keeping it "shown" so its
-    -- event handler runs.  Disable mouse to prevent invisible click targets.
+    -- event handler runs. Mouse disable is OOC-only (Blizzard's totemButtons
+    -- are SecureActionButtonTemplate — EnableMouse is protected in combat);
+    -- if we entered combat before reaching this, reconcile on PLAYER_REGEN_ENABLED.
     tf:SetAlpha(0)
+    if InCombatLockdown() then
+        pendingReconcile = true
+        return
+    end
     tf:EnableMouse(false)
     if tf.totemButtons then
         for _, tbtn in ipairs(tf.totemButtons) do
@@ -544,17 +571,20 @@ local function RestoreEvents()
         pcall(tf.RegisterEvent, tf, event)
     end
     tf:SetAlpha(1)
-    tf:EnableMouse(true)
-    if tf.totemButtons then
-        for _, tbtn in ipairs(tf.totemButtons) do
-            pcall(tbtn.EnableMouse, tbtn, true)
+    if not InCombatLockdown() then
+        tf:EnableMouse(true)
+        if tf.totemButtons then
+            for _, tbtn in ipairs(tf.totemButtons) do
+                pcall(tbtn.EnableMouse, tbtn, true)
+            end
         end
+        if tf.Update then
+            pcall(tf.Update, tf)
+        end
+    else
+        pendingReconcile = true
     end
     tf:Show()
-    -- Trigger Blizzard's own update so it catches up
-    if tf.Update then
-        pcall(tf.Update, tf)
-    end
 end
 
 local function Enable()

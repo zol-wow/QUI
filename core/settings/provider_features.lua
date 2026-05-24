@@ -113,6 +113,7 @@ function ProviderFeatures:Register(spec)
         preview = spec.preview,
         providerKey = spec.providerKey,
         render = spec.render,
+        keywords = spec.keywords,
         sections = sections,
         surfaces = BuildSurfaces(spec, sections),
     }

@@ -3,4 +3,5 @@
     <Script file="resourcebars.lua"/>
     <Script file="settings/resource_bars.lua"/>
     <Script file="settings/resource_bars_builders.lua"/>
+    <Script file="settings/resource_bars_preview_driver.lua"/>
 </Ui>

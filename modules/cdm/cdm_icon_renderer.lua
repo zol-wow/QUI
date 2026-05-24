@@ -120,11 +120,13 @@ CDMIconFactory._iconPools   = iconPools
 CDMIconFactory._recyclePool = recyclePool
 
 ---------------------------------------------------------------------------
--- ICON CREATION
--- Frame structure: Frame parent with .Icon, .Cooldown, .Border,
--- .DurationText, .StackText children.
+-- ICON CREATION — BARE
+-- Pure frame construction: tree + textures + default fonts + initial
+-- spell texture. No runtime hooks (mirror binding, tooltip, mouseover,
+-- factory callbacks). Used by both the runtime CreateIcon path and the
+-- preview AcquireForPreview path.
 ---------------------------------------------------------------------------
-local function CreateIcon(parent, spellEntry)
+local function CreateIconBare(parent, spellEntry)
     iconCounter = iconCounter + 1
     local frameName = "QUICDMIcon" .. iconCounter
 
@@ -174,11 +176,12 @@ local function CreateIcon(parent, spellEntry)
     -- Metadata
     icon._spellEntry = spellEntry
     icon._isQUICDMIcon = true
-    if ns.HookFrameForMouseover then
-        ns.HookFrameForMouseover(icon)
-    end
 
-    -- Set texture
+    -- Set initial texture.
+    -- Aura entries: dynamic buff icon (e.g., Roll the Bones → Broadside)
+    -- arrives via the per-tick UpdateIconCooldown path, which reads the
+    -- live aura's icon from r.auraData.icon. Initial icon is the
+    -- composer-resolved entry texture.
     if spellEntry then
         local texID
         if spellEntry.type then
@@ -186,10 +189,6 @@ local function CreateIcon(parent, spellEntry)
         else
             texID = GetSpellTexture(spellEntry.overrideSpellID or spellEntry.spellID)
         end
-        -- Aura entries: dynamic buff icon (e.g., Roll the Bones → Broadside)
-        -- arrives via the per-tick UpdateIconCooldown path, which reads the
-        -- live aura's icon from r.auraData.icon. Initial icon is the
-        -- composer-resolved entry texture.
         if texID then
             icon.Icon:SetTexture(texID)
             -- Only lock texture for cooldown entries — aura icons rely on
@@ -198,6 +197,29 @@ local function CreateIcon(parent, spellEntry)
                 icon._desiredTexture = texID
             end
         end
+    end
+
+    -- Note: frame is NOT hidden here. Runtime callers go through
+    -- CreateIcon, which calls icon:Hide() at the end. Preview callers
+    -- (CDMIconFactory.AcquireForPreview) manage visibility themselves.
+    return icon
+end
+
+---------------------------------------------------------------------------
+-- ICON CREATION — RUNTIME
+-- Adds runtime-only hooks on top of CreateIconBare: mouseover, factory
+-- callback, tooltip OnEnter/OnLeave. Preview path skips this layer.
+---------------------------------------------------------------------------
+local function CreateIcon(parent, spellEntry)
+    local icon = CreateIconBare(parent, spellEntry)
+
+    -- Mouseover hover wiring (reads live runtime state)
+    if ns.HookFrameForMouseover then
+        ns.HookFrameForMouseover(icon)
+    end
+
+    -- Notify icons module that a new factory icon was created.
+    if spellEntry then
         local icons = GetIcons()
         if icons and icons.OnFactoryIconCreated then
             icons.OnFactoryIconCreated(icon, spellEntry)
@@ -627,6 +649,38 @@ local function TryBindIconToBlizz(icon, spellEntry)
 end
 
 CDMIconFactory.TryBindIconToBlizz = TryBindIconToBlizz
+
+---------------------------------------------------------------------------
+-- PREVIEW ENTRY POINTS
+-- Used by modules/cdm/settings/composer_preview_driver.lua to construct
+-- icon frames inside the settings preview pane. Bypasses every runtime
+-- coupling hook (mirror binding, rotation, tooltip, mouseover, factory
+-- callbacks) so the preview can never contaminate the live CDM render.
+---------------------------------------------------------------------------
+function CDMIconFactory.AcquireForPreview(parent, spellEntry)
+    local icon = CreateIconBare(parent, spellEntry)
+    icon._isPreview = true
+    icon:EnableMouse(false)  -- no tooltip; preview is non-interactive
+    return icon
+end
+
+function CDMIconFactory.ReleaseForPreview(icon)
+    if not icon or not icon._isPreview then return end
+    icon:Hide()
+    if icon.Cooldown then icon.Cooldown:Clear() end
+    if icon.StackText then
+        icon.StackText:SetText("")
+        icon.StackText:Hide()
+    end
+    if icon.DurationText then
+        icon.DurationText:SetText("")
+        icon.DurationText:Hide()
+    end
+    if icon.Border then icon.Border:Hide() end
+    icon:SetParent(nil)
+    -- Preview icons are NOT returned to recyclePool: keeping the runtime
+    -- pool free of preview-state contamination is a hard invariant.
+end
 
 -- Retry binding for icons that lost their initial bind because Blizzard's
 -- viewer hadn't created a child for the cdID yet. The mirror invokes this
@@ -8329,6 +8383,24 @@ function _resolverRuntimePolicy.SyncBlizzMirrorIconState(icon)
     return priorActive ~= active or priorEpoch ~= epoch or durationSourceChanged
 end
 
+-- Set an item-type icon to the inactive state without consulting the
+-- use-cooldown resolver. Symmetric to ClearItemBarInactive in
+-- cdm_bar_renderer.lua. Called when kind="aura" (built-in buff/trackedBar
+-- containers) or displayMode="auraOnly" (custom containers) and the item's
+-- buff is not currently active.
+local function ClearItemIconInactive(icon, entry, itemID)
+    ClearAuraStateForIcon(icon, entry)
+    icon._resolvedCooldownMode = "inactive"
+    icon._hasCooldownActive = false
+    icon._hasRealCooldownActive = false
+    ApplyCooldownDesaturation(icon, entry, nil, "inactive")
+    _resolverRuntimePolicy.StoreIconRuntimeState(
+        icon, "inactive", nil,
+        itemID or (entry and (entry.id or entry.spellID)),
+        nil, nil, nil, false, false, false, false, false,
+        false, nil, nil)
+end
+
 local function UpdateIconCooldownOwned(icon)
     if not icon or not icon._spellEntry then return end
     -- Blizzard-mirrored aura icons render with QUI-native widgets from the
@@ -8378,6 +8450,23 @@ local function UpdateIconCooldownOwned(icon)
 
             local r = _resolverRuntimePolicy.ResolveAuraFactsForIcon(icon, entry, auraSpellID, true)
             if not r then
+                -- For item-type entries with kind="aura" (items placed in
+                -- built-in buff/trackedBar containers), the aura-facts
+                -- resolver returns nil when the item's buff is not active.
+                -- Explicitly store the inactive state so the icon correctly
+                -- reflects that the buff is absent rather than silently
+                -- keeping whatever state it last had.
+                if entry.type == "item" or entry.type == "trinket" or entry.type == "slot" then
+                    local _auraNilItemID
+                    if entry.type == "slot" or entry.type == "trinket" then
+                        _auraNilItemID = Sources and Sources.QueryInventoryItemID
+                            and Sources.QueryInventoryItemID("player", entry.id)
+                    else
+                        _auraNilItemID = (Sources and Sources.QueryBestOwnedItemVariant
+                            and Sources.QueryBestOwnedItemVariant(entry.id)) or entry.id
+                    end
+                    ClearItemIconInactive(icon, entry, _auraNilItemID)
+                end
                 return
             end
             icon._totemSlot = entry._totemSlot or nil
@@ -8564,6 +8653,50 @@ local function UpdateIconCooldownOwned(icon)
             end
         elseif icon.Icon then
             icon._desiredTexture = nil
+        end
+    end
+
+    -- For aura-kind entries (items in built-in buff/trackedBar containers)
+    -- and for entries with displayMode="auraOnly" (custom containers, item
+    -- types only), do NOT fall through to the cooldown resolver when the
+    -- item's buff is inactive — go inactive instead.
+    -- Mirrors UpdateItemBarCooldown's ClearItemBarInactive gate in
+    -- cdm_bar_renderer.lua.
+    if entry.type == "item" or entry.type == "trinket" or entry.type == "slot" then
+        local _coerceItemID
+        if entry.type == "slot" or entry.type == "trinket" then
+            _coerceItemID = Sources and Sources.QueryInventoryItemID
+                and Sources.QueryInventoryItemID("player", entry.id)
+        else
+            _coerceItemID = (Sources and Sources.QueryBestOwnedItemVariant
+                and Sources.QueryBestOwnedItemVariant(entry.id)) or entry.id
+        end
+        local _isAuraKind = entry.kind == "aura"
+        local _coerceContainerDB = GetTrackerSettings(entry.viewerType)
+        local _isCustom = IsCustomBarContainer(_coerceContainerDB)
+        local _isAuraOnlyOverride = _isCustom
+            and entry.displayMode == "auraOnly"
+        if _isAuraKind or _isAuraOnlyOverride then
+            -- Check whether the item's buff is currently active.
+            local _auraIsActive = false
+            if Sources and Sources.QueryScannedItemAuraInfo and _coerceItemID then
+                local scanned = Sources.QueryScannedItemAuraInfo(_coerceItemID)
+                if scanned and scanned.active == true then
+                    local readableDuration = type(scanned.duration) == "number"
+                        and scanned.duration or nil
+                    local readableExpiration = type(scanned.expiration) == "number"
+                        and scanned.expiration or nil
+                    if readableDuration and readableDuration > 0
+                       and readableExpiration
+                       and (readableExpiration - GetTime()) > 0 then
+                        _auraIsActive = true
+                    end
+                end
+            end
+            if not _auraIsActive then
+                ClearItemIconInactive(icon, entry, _coerceItemID)
+                return
+            end
         end
     end
 
@@ -8881,6 +9014,33 @@ UpdateIconCooldown = function(icon)
 end
 
 ---------------------------------------------------------------------------
+-- IsCustomBarEntryUsableOnCurrentClass: cross-class filter for the
+-- customBar build-time render path.  A QUI profile is often shared across
+-- multiple classes; entries added on one class persist in db.entries and
+-- would otherwise spawn runtime icons for spells the current character
+-- cannot cast.
+--
+-- Mirrors the composer's IsEntryUsableOnCurrentPlayer predicate so the
+-- two views agree on which entries are "for this character":
+--   * non-spell types (item/macro/slot)     → always pass (not class-bound)
+--   * aura-kind spell entries               → always pass (buff IDs aren't
+--                                              in the spellbook; runtime
+--                                              aura resolution decides)
+--   * cooldown-kind spell entries           → IsSpellKnown gate
+---------------------------------------------------------------------------
+local function IsCustomBarEntryUsableOnCurrentClass(entry)
+    if type(entry) ~= "table" then return true end
+    if entry.type ~= "spell" then return true end
+    if type(entry.id) ~= "number" then return true end
+    if entry.kind == "aura" then return true end
+    local spellData = ns.CDMSpellData
+    if not spellData or type(spellData.IsSpellKnown) ~= "function" then
+        return true
+    end
+    return spellData:IsSpellKnown(entry.id) == true
+end
+
+---------------------------------------------------------------------------
 -- Build a spellEntry record from a user-curated custom entry.
 -- Used by both legacy essential/utility custom merges (Phase G) and
 -- Phase B.3 custom-container rendering (customBar / user-created cooldown).
@@ -9016,6 +9176,14 @@ local function BuildIconListSignature(viewerType, container, spellData)
             entryList = cDB.entries
         end
         AppendEntryListSignature(parts, "containerEntries", entryList)
+        -- IsCustomBarEntryUsableOnCurrentClass verdicts can flip across
+        -- a respec (talent-gated spells appear/disappear from the
+        -- spellbook). Class doesn't change in-session, but specID does;
+        -- stamp it so the pool rebuilds when SPELLS_CHANGED fires after
+        -- a spec swap and known-spell state shifts.
+        local specID = GetSpecialization and GetSpecialization()
+        AppendSignaturePart(parts, "spec")
+        AppendSignaturePart(parts, specID or "")
     end
 
     if IsBuiltinCooldownContainerKey(viewerType) then
@@ -9084,7 +9252,8 @@ function CDMIcons:BuildIcons(viewerType, container)
                 end
                 if type(entryList) == "table" then
                     for idx, entry in ipairs(entryList) do
-                        if entry and entry.enabled ~= false then
+                        if entry and entry.enabled ~= false
+                            and IsCustomBarEntryUsableOnCurrentClass(entry) then
                             local spellEntry = BuildSpellEntryFromCustom(entry, idx, viewerType)
                             if spellEntry then
                                 local icon = Factory:AcquireIcon(container, spellEntry)

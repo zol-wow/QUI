@@ -189,6 +189,16 @@ local function is_stub_method_key(key)
     return key:match("^On[A-Z]") ~= nil
 end
 
+local function is_icon_only_button_label(text)
+    if type(text) ~= "string" or text == "" then
+        return true
+    end
+    if #text <= 2 and not text:match("[%w]") then
+        return true
+    end
+    return false
+end
+
 local function remove_child(parent, bucket, child)
     if type(parent) ~= "table" or type(parent[bucket]) ~= "table" then
         return
@@ -905,41 +915,9 @@ frame._tiles = {}
 frame._topTiles = {}
 frame._bottomTiles = {}
 
-if type(GUI.AddFeatureTile) == "function" then
-    GUI:AddFeatureTile(frame, {
-        id = "welcome",
-        icon = "*",
-        name = "Welcome",
-    })
-end
-
-local tile_order = {
-    "QUI_GlobalTile",
-    "QUI_UnitFramesTile",
-    "QUI_GroupFramesTile",
-    "QUI_ActionBarsTile",
-    "QUI_CooldownManagerTile",
-    "QUI_ResourceBarsTile",
-    "QUI_MinimapTile",
-    "QUI_AppearanceTile",
-    "QUI_ChatTooltipsTile",
-    "QUI_GameplayTile",
-    "QUI_QoLTile",
-    "QUI_HelpTile",
-}
-
-for _, key in ipairs(tile_order) do
-    local tile = ns[key]
-    if tile and type(tile.Register) == "function" then
-        local ok, err = xpcall(function()
-            tile.Register(frame)
-        end, debug.traceback)
-        if not ok then
-            io.stderr:write(("tile registration failed for %s\n%s\n"):format(key, tostring(err)))
-            os.exit(1)
-        end
-    end
-end
+-- Tile registration deferred until after install_search_capture_overrides()
+-- (see end of file) so the alias-emit wrapper actually intercepts the
+-- RegisterFeatureTile / AddFeatureTile calls those tiles make.
 
 local capture_errors = {}
 
@@ -1011,6 +989,41 @@ local function build_capture_navigation_keywords(info)
     return keywords
 end
 
+local function emit_alias_entries(aliases, tile_id, sub_page_index, feature_id)
+    if type(aliases) ~= "table" then
+        return
+    end
+    for _, alias in ipairs(aliases) do
+        if type(alias) == "string" and alias ~= "" then
+            GUI:RegisterStaticNavigationEntry({
+                navType = "alias",
+                label = alias,
+                tileId = tile_id,
+                subPageIndex = sub_page_index,
+                featureId = feature_id,
+                keywords = { alias },
+            })
+        end
+    end
+end
+
+local function emit_tile_search_aliases(tile_config)
+    if type(tile_config) ~= "table" then
+        return
+    end
+
+    -- Top-level aliases (for single-page tiles like welcome that have no subPages array).
+    emit_alias_entries(tile_config.searchAliases, tile_config.id, nil, tile_config.featureId)
+
+    if type(tile_config.subPages) == "table" then
+        for sub_page_index, sub_page in ipairs(tile_config.subPages) do
+            if type(sub_page) == "table" then
+                emit_alias_entries(sub_page.searchAliases, tile_config.id, sub_page_index, sub_page.featureId)
+            end
+        end
+    end
+end
+
 local function register_capture_setting_entry(entry)
     local context = GUI._searchContext or {}
     if type(entry) ~= "table" or type(entry.label) ~= "string" or entry.label == "" then
@@ -1042,7 +1055,7 @@ end
 local function create_captured_widget_stub(kind)
     local stub = create_stub_node(kind or "Frame", nil, false)
 
-    if kind == "toggle" or kind == "toggle_inverted" then
+    if kind == "toggle" or kind == "toggle_inverted" or kind == "checkbox" or kind == "checkbox_inverted" then
         stub.track = create_stub_node("Frame", stub, false)
         stub.knob = create_stub_node("Texture", stub, true)
     elseif kind == "dropdown" then
@@ -1233,12 +1246,141 @@ local function install_search_capture_overrides()
         }, registryInfo)
     end
 
+    GUI.CreateFormCheckbox = function(self, parent, label, dbKey, dbTable, _onChange, registryInfo)
+        if parent and parent._hasContent ~= nil then parent._hasContent = true end
+        return create_captured_search_widget("checkbox", label, dbKey, dbTable, nil, registryInfo)
+    end
+
+    GUI.CreateFormCheckboxInverted = function(self, parent, label, dbKey, dbTable, _onChange, registryInfo)
+        if parent and parent._hasContent ~= nil then parent._hasContent = true end
+        return create_captured_search_widget("checkbox_inverted", label, dbKey, dbTable, nil, registryInfo)
+    end
+
+    GUI.CreateCheckbox = function(self, parent, label, dbKey, dbTable, _onChange, description)
+        if parent and parent._hasContent ~= nil then parent._hasContent = true end
+        return create_captured_search_widget("checkbox", label, dbKey, dbTable, nil, { description = description })
+    end
+
+    GUI.CreateCheckboxCentered = function(self, parent, label, dbKey, dbTable, _onChange, description)
+        if parent and parent._hasContent ~= nil then parent._hasContent = true end
+        return create_captured_search_widget("checkbox", label, dbKey, dbTable, nil, { description = description })
+    end
+
+    GUI.CreateCheckboxInverted = function(self, parent, label, dbKey, dbTable, _onChange, description)
+        if parent and parent._hasContent ~= nil then parent._hasContent = true end
+        return create_captured_search_widget("checkbox_inverted", label, dbKey, dbTable, nil, { description = description })
+    end
+
+    GUI.CreateAccentCheckbox = function(self, parent, options)
+        if parent and parent._hasContent ~= nil then parent._hasContent = true end
+        local opts = type(options) == "table" and options or {}
+        return create_captured_search_widget("checkbox", opts.label, opts.dbKey, opts.dbTable, nil, { description = opts.description })
+    end
+
+    GUI.CreateSlider = function(self, parent, label, min, max, step, dbKey, dbTable, _onChange, options)
+        if parent and parent._hasContent ~= nil then parent._hasContent = true end
+        local opts = type(options) == "table" and options or {}
+        return create_captured_search_widget("slider", label, dbKey, dbTable, {
+            min = min, max = max, step = step, options = opts,
+        }, { description = opts.description })
+    end
+
+    GUI.CreateDropdown = function(self, parent, label, options, dbKey, dbTable, _onChange, description)
+        if parent and parent._hasContent ~= nil then parent._hasContent = true end
+        return create_captured_search_widget("dropdown", label, dbKey, dbTable, {
+            options = options,
+        }, { description = description })
+    end
+
+    GUI.CreateDropdownFullWidth = function(self, parent, label, options, dbKey, dbTable, _onChange, description)
+        if parent and parent._hasContent ~= nil then parent._hasContent = true end
+        return create_captured_search_widget("dropdown", label, dbKey, dbTable, {
+            options = options,
+        }, { description = description })
+    end
+
+    GUI.CreateColorPicker = function(self, parent, label, dbKey, dbTable, _onChange, description)
+        if parent and parent._hasContent ~= nil then parent._hasContent = true end
+        return create_captured_search_widget("colorpicker", label, dbKey, dbTable, nil, { description = description })
+    end
+
+    GUI.CreateColorPickerCentered = function(self, parent, label, dbKey, dbTable, _onChange, description)
+        if parent and parent._hasContent ~= nil then parent._hasContent = true end
+        return create_captured_search_widget("colorpicker", label, dbKey, dbTable, nil, { description = description })
+    end
+
+    GUI.CreateButton = function(self, parent, text, _width, _height, _onClick, variant)
+        if is_icon_only_button_label(text) then
+            return create_stub_node("Button", parent, false)
+        end
+        if parent and parent._hasContent ~= nil then parent._hasContent = true end
+        local entry = {
+            label = text,
+            widgetType = "action_button",
+            widgetDescriptor = { kind = "action_button", variant = variant },
+        }
+        register_capture_setting_entry(entry)
+        local stub = create_stub_node("Button", parent, false)
+        stub._quiSearchCaptureEntry = entry
+        stub._widgetLabel = text
+        return stub
+    end
+
     local options_api = ns.QUI_Options
     if options_api and type(options_api.BuildSettingRow) == "function" then
         local original_build_setting_row = options_api.BuildSettingRow
         options_api.BuildSettingRow = function(parent, labelText, widget, desc)
             register_widget_row_capture(widget, labelText)
             return original_build_setting_row(parent, labelText, widget, desc)
+        end
+    end
+
+    if options_api and type(options_api.RegisterFeatureTile) == "function" then
+        local original_register_feature_tile = options_api.RegisterFeatureTile
+        options_api.RegisterFeatureTile = function(tile_frame, tile_config)
+            emit_tile_search_aliases(tile_config)
+            return original_register_feature_tile(tile_frame, tile_config)
+        end
+    end
+
+    -- Welcome tile (and any future top-level tile registered directly via
+    -- AddFeatureTile rather than through Opts.RegisterFeatureTile) needs its
+    -- own hook because the RegisterFeatureTile wrapper above never sees it.
+    if type(GUI.AddFeatureTile) == "function" then
+        local original_add_feature_tile = GUI.AddFeatureTile
+        GUI.AddFeatureTile = function(self, tile_frame, tile_config)
+            emit_tile_search_aliases(tile_config)
+            return original_add_feature_tile(self, tile_frame, tile_config)
+        end
+    end
+
+    local original_set_search_context = GUI.SetSearchContext
+    if type(original_set_search_context) == "function" then
+        GUI.SetSearchContext = function(self, context)
+            -- Preserve featureId, providerKey, and category across partial context
+            -- updates from imperative pages — these are the identity fields most
+            -- often dropped by mid-build SetSearchContext calls. Other context
+            -- fields (tab/section labels) are intentionally allowed to change.
+            local preserved_featureId = self._searchContext and self._searchContext.featureId
+            local preserved_providerKey = self._searchContext and self._searchContext.providerKey
+            local preserved_category = self._searchContext and self._searchContext.category
+
+            -- Call original to set the new context
+            local result = original_set_search_context(self, context)
+
+            -- Restore preserved fields if they weren't explicitly set in the new context
+            if type(self._searchContext) == "table" then
+                if preserved_featureId and not context.featureId then
+                    self._searchContext.featureId = preserved_featureId
+                end
+                if preserved_providerKey and not context.providerKey then
+                    self._searchContext.providerKey = preserved_providerKey
+                end
+                if preserved_category and not context.category then
+                    self._searchContext.category = preserved_category
+                end
+            end
+            return result
         end
     end
 end
@@ -1261,6 +1403,22 @@ local function build_search_capture_queue()
     end
 
     return queue
+end
+
+local feature_keywords_by_id = {}
+
+local function collect_feature_keywords()
+    local settings = ns.Settings
+    local registry = settings and settings.Registry
+    if not registry or type(registry.IterateFeatures) ~= "function" then
+        return
+    end
+
+    for featureId, feature in registry:IterateFeatures() do
+        if type(feature) == "table" and type(feature.keywords) == "table" then
+            feature_keywords_by_id[featureId] = feature.keywords
+        end
+    end
 end
 
 local function build_feature_search_context(feature)
@@ -1943,6 +2101,66 @@ capture_unit_frames_settings_tabs()
 capture_action_bar_per_bar_settings()
 capture_minimap_datatext_settings()
 
+-- Tile registration runs AFTER install_search_capture_overrides() so the
+-- alias-emit wrappers actually intercept the RegisterFeatureTile /
+-- AddFeatureTile calls, and AFTER capture_all_search_features() because
+-- that function resets the navigation registry on entry — any alias
+-- entries emitted before then would be wiped.
+
+-- Welcome tile registration lives in QUI_Options/init.lua, which
+-- should_load_script() excludes from the headless generator load. The
+-- stub below mirrors init.lua's RegisterFeatureTile call and carries
+-- the searchAliases this file owns for welcome. If you change init.lua's
+-- welcome tile shape, update this stub too — and welcome aliases are
+-- declared here, not in init.lua, since the runtime drops the field.
+if ns.QUI_Options and type(ns.QUI_Options.RegisterFeatureTile) == "function" then
+    ns.QUI_Options.RegisterFeatureTile(frame, {
+        id = "welcome",
+        icon = "*",
+        name = "Welcome",
+        subtitle = "Getting started · Tips · What's new",
+        featureId = "welcomePage",
+        noScroll = false,
+        searchAliases = {
+            "welcome",
+            "getting started",
+            "first time setup",
+            "intro",
+            "home",
+        },
+    })
+end
+
+local tile_order = {
+    "QUI_GlobalTile",
+    "QUI_UnitFramesTile",
+    "QUI_GroupFramesTile",
+    "QUI_ActionBarsTile",
+    "QUI_CooldownManagerTile",
+    "QUI_ResourceBarsTile",
+    "QUI_MinimapTile",
+    "QUI_AppearanceTile",
+    "QUI_ChatTooltipsTile",
+    "QUI_GameplayTile",
+    "QUI_QoLTile",
+    "QUI_HelpTile",
+}
+
+for _, key in ipairs(tile_order) do
+    local tile = ns[key]
+    if tile and type(tile.Register) == "function" then
+        local ok, err = xpcall(function()
+            tile.Register(frame)
+        end, debug.traceback)
+        if not ok then
+            io.stderr:write(("tile registration failed for %s\n%s\n"):format(key, tostring(err)))
+            os.exit(1)
+        end
+    end
+end
+
+collect_feature_keywords()
+
 if type(GUI.SeedStaticSearchRoutesFromTiles) == "function" then
     GUI:SeedStaticSearchRoutesFromTiles(frame)
 end
@@ -2010,6 +2228,38 @@ local function entry_sort_key(entry)
     }, "\31")
 end
 
+local function merge_unique(target, source)
+    if type(source) ~= "table" then
+        return target
+    end
+    target = target or {}
+    local present = {}
+    for _, value in ipairs(target) do
+        if type(value) == "string" then
+            present[value:lower()] = true
+        end
+    end
+    for _, value in ipairs(source) do
+        if type(value) == "string" and value ~= "" and not present[value:lower()] then
+            target[#target + 1] = value
+            present[value:lower()] = true
+        end
+    end
+    return target
+end
+
+local function apply_feature_keywords(entries)
+    if not entries then
+        return
+    end
+    for _, entry in ipairs(entries) do
+        local extra = feature_keywords_by_id[entry.featureId]
+        if extra then
+            entry.keywords = merge_unique(entry.keywords, extra)
+        end
+    end
+end
+
 local settings_entries = {}
 for index, entry in ipairs(GUI.StaticSettingsRegistry or {}) do
     settings_entries[index] = copy_table(entry)
@@ -2017,6 +2267,7 @@ end
 table.sort(settings_entries, function(a, b)
     return entry_sort_key(a) < entry_sort_key(b)
 end)
+apply_feature_keywords(settings_entries)
 
 local navigation_entries = {}
 for index, entry in ipairs(GUI.StaticNavigationRegistry or {}) do
@@ -2025,6 +2276,7 @@ end
 table.sort(navigation_entries, function(a, b)
     return entry_sort_key(a) < entry_sort_key(b)
 end)
+apply_feature_keywords(navigation_entries)
 
 local function is_array(value)
     if type(value) ~= "table" then

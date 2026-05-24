@@ -38,12 +38,28 @@ function V2.Register(frame)
                 id = "pinnedGlobals",
                 name = "Pinned Globals",
                 featureId = "pinnedGlobalsPage",
+                searchAliases = {
+                    "pinned",
+                    "pinned settings",
+                    "favorites",
+                    "shortcuts",
+                    "quick access",
+                },
             },
             {
                 id = "modules",
                 name = "Feature Toggles",
                 sectionNav = true,
                 featureId = "modulesPage",
+                searchAliases = {
+                    "modules",
+                    "module list",
+                    "disable feature",
+                    "enable feature",
+                    "feature toggle",
+                    "turn off",
+                    "turn on",
+                },
             },
             {
                 id = "importExport",
@@ -56,6 +72,14 @@ function V2.Register(frame)
                     tabName = "Import / Export",
                     subTabIndex = 0,
                     subTabName = "Import / Export",
+                },
+                searchAliases = {
+                    "import profile",
+                    "export profile",
+                    "backup profile",
+                    "share settings",
+                    "profile string",
+                    "profile import",
                 },
             },
             {

@@ -9761,6 +9761,9 @@ _G.QUI_RefreshActionBars = function()
         return
     end
     ActionBarsOwned:Refresh()
+    if ns.QUI_ActionBarsPreviewDriver and ns.QUI_ActionBarsPreviewDriver.Refresh then
+        ns.QUI_ActionBarsPreviewDriver.Refresh()
+    end
 end
 
 -- Apply the `useOnKeyDown` profile setting to all QUI action bar

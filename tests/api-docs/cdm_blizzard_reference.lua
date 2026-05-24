@@ -73,6 +73,16 @@ return {
             allowedCallSites = {
                 ["modules/cdm/cdm_frame_writes.lua"] = true,
             },
+            -- Out-of-combat preview-only exceptions. These sites drive
+            -- the settings preview pane with cycle-script timing built
+            -- from GetTime() + constants. Values are never secret-derived
+            -- and never reach the runtime CDM render path, so they can
+            -- safely call SetCooldown directly without going through the
+            -- ApplyNumericCooldown facade. The facade count (== 1)
+            -- assertion is intentionally not affected by these.
+            previewExceptionSites = {
+                ["modules/cdm/settings/composer_preview_driver.lua"] = true,
+            },
             policy = "clean item timing only; never secret-derived cooldown timing",
         },
         -- Why no secret-passthrough facade exists. We tried a second

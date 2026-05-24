@@ -1,6 +1,7 @@
 --[[
     QUI QoL Shared Settings Providers
     Owns provider-backed settings content for QoL and gameplay movers/pages routed through the shared settings layer.
+    Migrated to V3 body pattern (CreateAccentDotLabel + CreateSettingsCardGroup + BuildSettingRow).
 ]]
 
 local ADDON_NAME, ns = ...
@@ -11,268 +12,474 @@ if not ProviderPanels or type(ProviderPanels.RegisterAfterLoad) ~= "function" th
     return
 end
 
+-- NOTE: do NOT capture `ns.QUI_Options` as a local in this outer closure.
+-- This file is loaded by the QUI addon before the on-demand QUI_Options
+-- addon is loaded; at that point ns.QUI_Options is the minimal stub
+-- installed by core/gui_shell.lua. Once QUI_Options/shared.lua runs it
+-- REPLACES the table, so any captured local would be stale. Re-resolve
+-- ns.QUI_Options at call time inside MakeLayout / row / build bodies.
 ProviderPanels:RegisterAfterLoad(function(ctx)
     local GUI = ctx.GUI
     local U = ctx.U
-    local P = ctx.P
-    local FORM_ROW = ctx.FORM_ROW
     local NotifyProviderFor = ctx.NotifyProviderFor
-    local CreateTileCollapsible = ctx.CreateTileCollapsible or U.CreateCollapsible
     local anchorOptions = ctx.anchorOptions
+    local PAD = (ns.QUI_Options and ns.QUI_Options.PADDING) or 15
+    local HEADER_GAP = 26
+    local SECTION_GAP = 14
+    local FORM_ROW = ctx.FORM_ROW
+
     local function RegisterSharedOnly(key, provider)
         ctx.RegisterShared(key, provider)
     end
-    local function CreateProviderSections(content)
+
+    local function MakeLayout(content)
+        local Opts = ns.QUI_Options
+        local y = -10
+        local L = {}
         local sections = {}
-        local function relayout()
-            U.StandardRelayout(content, sections)
+
+        function L.headerAt(text)
+            local h = Opts.CreateAccentDotLabel(content, text, y)
+            h:ClearAllPoints()
+            h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+            h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+            y = y - HEADER_GAP
         end
-        return sections, relayout
+        function L.sectionAt()
+            local c = Opts.CreateSettingsCardGroup(content, y)
+            c.frame:ClearAllPoints()
+            c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+            c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+            return c
+        end
+        function L.closeSection(c)
+            c.Finalize()
+            y = y - c.frame:GetHeight() - SECTION_GAP
+        end
+        function L.placeCustom(frame, height)
+            frame:ClearAllPoints()
+            frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+            frame:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+            frame:SetHeight(height)
+            y = y - height - SECTION_GAP
+        end
+
+        -- Tail relayout for legacy V2 collapsibles (Position, OpenFullSettings,
+        -- BuildBackdropBorderSection). They get laid out starting from the
+        -- bottom of the V3 cards above, not from -8.
+        local function relayoutSections()
+            local cy = y
+            for _, s in ipairs(sections) do
+                s:ClearAllPoints()
+                s:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, cy)
+                s:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+                cy = cy - s:GetHeight() - 4
+            end
+            content:SetHeight(math.abs(cy) + 16)
+        end
+        L.sections = sections
+        L.relayoutSections = relayoutSections
+
+        return L
     end
-    local function FinishProviderPage(content, key, positionKey, sections, relayout)
-        U.BuildPositionCollapsible(content, positionKey, nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout()
+
+    local function row(parent, label, widget, desc)
+        return ns.QUI_Options.BuildSettingRow(parent, label, widget, desc)
+    end
+
+    local function FinishProviderPage(L, content, key, positionKey)
+        U.BuildPositionCollapsible(content, positionKey, nil, L.sections, L.relayoutSections)
+        U.BuildOpenFullSettingsLink(content, key, L.sections, L.relayoutSections)
+        L.relayoutSections()
         return content:GetHeight()
     end
 
     ---------------------------------------------------------------------------
     -- XP TRACKER
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("xpTracker", { build = function(content, key, width)
+    RegisterSharedOnly("xpTracker", { build = function(content, key, _width)
         local db = U.GetProfileDB()
         if not db or not db.xpTracker then return 80 end
         local xp = db.xpTracker
-        local sections, relayout = CreateProviderSections(content)
+        local L = MakeLayout(content)
         local function Refresh() if _G.QUI_RefreshXPTracker then _G.QUI_RefreshXPTracker() end end
 
-        U.CreateCollapsible(content, "Size & Text", 9 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormSlider(body, "Bar Width", 200, 1000, 1, "width", xp, Refresh, nil, { description = "Overall pixel width of the XP tracker frame." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Height", 60, 200, 1, "height", xp, Refresh, nil, { description = "Overall pixel height of the XP tracker frame, including the header area and the bar." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Bar Height", 8, 40, 1, "barHeight", xp, Refresh, nil, { description = "Pixel height of just the XP fill bar inside the frame." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Header Font Size", 8, 22, 1, "headerFontSize", xp, Refresh, nil, { description = "Font size for the header row that shows your level and total XP gained." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Header Line Height", 12, 30, 1, "headerLineHeight", xp, Refresh, nil, { description = "Vertical spacing reserved for the header row. Increase if the header text is getting clipped." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Font Size", 8, 18, 1, "fontSize", xp, Refresh, nil, { description = "Font size for the detail rows below the header (session XP, time to level, etc.)." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Line Height", 10, 24, 1, "lineHeight", xp, Refresh, nil, { description = "Vertical spacing between detail rows." }), body, sy)
-            sy = P(GUI:CreateFormDropdown(body, "Bar Texture", U.GetTextureList(), "barTexture", xp, Refresh, { description = "Statusbar texture used for the XP fill. Supports any extra media packages you have available." }), body, sy)
-            P(GUI:CreateFormDropdown(body, "Details Grow Direction", {{value="auto",text="Auto"},{value="up",text="Up"},{value="down",text="Down"}}, "detailsGrowDirection", xp, Refresh, { description = "Whether the detail rows stack above or below the bar. Auto picks based on where the frame is anchored on screen." }), body, sy)
-        end, sections, relayout)
+        -- SIZE & TEXT
+        L.headerAt("Size & Text")
+        local s1 = L.sectionAt()
+        local widthW = GUI:CreateFormSlider(s1.frame, nil, 200, 1000, 1, "width", xp, Refresh,
+            { description = "Overall pixel width of the XP tracker frame." })
+        local heightW = GUI:CreateFormSlider(s1.frame, nil, 60, 200, 1, "height", xp, Refresh,
+            { description = "Overall pixel height of the XP tracker frame, including the header area and the bar." })
+        s1.AddRow(row(s1.frame, "Bar Width", widthW), row(s1.frame, "Height", heightW))
 
-        U.CreateCollapsible(content, "Colors", 4 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormColorPicker(body, "XP Bar Color", "barColor", xp, Refresh, nil, { description = "Fill color of the XP bar." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Rested XP Color", "restedColor", xp, Refresh, nil, { description = "Color of the rested-XP overlay drawn on top of the regular fill." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Backdrop Color", "backdropColor", xp, Refresh, nil, { description = "Background color behind the XP bar." }), body, sy)
-            P(GUI:CreateFormColorPicker(body, "Border Color", "borderColor", xp, Refresh, nil, { description = "Border color around the XP bar frame." }), body, sy)
-        end, sections, relayout)
+        local barHeightW = GUI:CreateFormSlider(s1.frame, nil, 8, 40, 1, "barHeight", xp, Refresh,
+            { description = "Pixel height of just the XP fill bar inside the frame." })
+        local headerFontW = GUI:CreateFormSlider(s1.frame, nil, 8, 22, 1, "headerFontSize", xp, Refresh,
+            { description = "Font size for the header row that shows your level and total XP gained." })
+        s1.AddRow(row(s1.frame, "Bar Height", barHeightW), row(s1.frame, "Header Font Size", headerFontW))
 
-        U.CreateCollapsible(content, "Display", 4 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Show Bar Text", "showBarText", xp, Refresh, { description = "Show the current/next XP values and percent as text on top of the bar." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Show Rested XP Overlay", "showRested", xp, Refresh, { description = "Overlay a rested-XP indicator showing how much bonus XP you have banked." }), body, sy)
-            P(GUI:CreateFormCheckbox(body, "Hide Text Until Hover", "hideTextUntilHover", xp, Refresh, { description = "Hide the bar text until you mouse over the frame. Keeps the tracker visually clean between pulls." }), body, sy)
-        end, sections, relayout)
+        local headerLineW = GUI:CreateFormSlider(s1.frame, nil, 12, 30, 1, "headerLineHeight", xp, Refresh,
+            { description = "Vertical spacing reserved for the header row. Increase if the header text is getting clipped." })
+        local fontSizeW = GUI:CreateFormSlider(s1.frame, nil, 8, 18, 1, "fontSize", xp, Refresh,
+            { description = "Font size for the detail rows below the header (session XP, time to level, etc.)." })
+        s1.AddRow(row(s1.frame, "Header Line Height", headerLineW), row(s1.frame, "Font Size", fontSizeW))
 
-        return FinishProviderPage(content, key, "xpTracker", sections, relayout)
+        local lineHeightW = GUI:CreateFormSlider(s1.frame, nil, 10, 24, 1, "lineHeight", xp, Refresh,
+            { description = "Vertical spacing between detail rows." })
+        local barTexW = GUI:CreateFormDropdown(s1.frame, nil, U.GetTextureList(), "barTexture", xp, Refresh,
+            { description = "Statusbar texture used for the XP fill. Supports any extra media packages you have available." })
+        s1.AddRow(row(s1.frame, "Line Height", lineHeightW), row(s1.frame, "Bar Texture", barTexW))
+
+        local growW = GUI:CreateFormDropdown(s1.frame, nil,
+            {{value="auto",text="Auto"},{value="up",text="Up"},{value="down",text="Down"}},
+            "detailsGrowDirection", xp, Refresh,
+            { description = "Whether the detail rows stack above or below the bar. Auto picks based on where the frame is anchored on screen." })
+        s1.AddRow(row(s1.frame, "Details Grow Direction", growW))
+        L.closeSection(s1)
+
+        -- COLORS
+        L.headerAt("Colors")
+        local s2 = L.sectionAt()
+        local barColorW = GUI:CreateFormColorPicker(s2.frame, nil, "barColor", xp, Refresh, nil,
+            { description = "Fill color of the XP bar." })
+        local restedColorW = GUI:CreateFormColorPicker(s2.frame, nil, "restedColor", xp, Refresh, nil,
+            { description = "Color of the rested-XP overlay drawn on top of the regular fill." })
+        s2.AddRow(row(s2.frame, "XP Bar Color", barColorW), row(s2.frame, "Rested XP Color", restedColorW))
+
+        local backdropColorW = GUI:CreateFormColorPicker(s2.frame, nil, "backdropColor", xp, Refresh, nil,
+            { description = "Background color behind the XP bar." })
+        local borderColorW = GUI:CreateFormColorPicker(s2.frame, nil, "borderColor", xp, Refresh, nil,
+            { description = "Border color around the XP bar frame." })
+        s2.AddRow(row(s2.frame, "Backdrop Color", backdropColorW), row(s2.frame, "Border Color", borderColorW))
+        L.closeSection(s2)
+
+        -- DISPLAY
+        L.headerAt("Display")
+        local s3 = L.sectionAt()
+        local showBarTextW = GUI:CreateFormCheckbox(s3.frame, nil, "showBarText", xp, Refresh,
+            { description = "Show the current/next XP values and percent as text on top of the bar." })
+        local showRestedW = GUI:CreateFormCheckbox(s3.frame, nil, "showRested", xp, Refresh,
+            { description = "Overlay a rested-XP indicator showing how much bonus XP you have banked." })
+        s3.AddRow(row(s3.frame, "Show Bar Text", showBarTextW), row(s3.frame, "Show Rested XP Overlay", showRestedW))
+
+        local hideHoverW = GUI:CreateFormCheckbox(s3.frame, nil, "hideTextUntilHover", xp, Refresh,
+            { description = "Hide the bar text until you mouse over the frame. Keeps the tracker visually clean between pulls." })
+        s3.AddRow(row(s3.frame, "Hide Text Until Hover", hideHoverW))
+        L.closeSection(s3)
+
+        return FinishProviderPage(L, content, key, "xpTracker")
     end })
 
     ---------------------------------------------------------------------------
     -- COMBAT TIMER
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("combatTimer", { build = function(content, key, width)
+    RegisterSharedOnly("combatTimer", { build = function(content, key, _width)
         local db = U.GetProfileDB()
         if not db or not db.combatTimer then return 80 end
         local ct = db.combatTimer
-        local sections, relayout = CreateProviderSections(content)
+        local L = MakeLayout(content)
         local function Refresh() if _G.QUI_RefreshCombatTimer then _G.QUI_RefreshCombatTimer() end end
 
-        U.CreateCollapsible(content, "General", 4 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Only Show In Encounters", "onlyShowInEncounters", ct, Refresh, { description = "Hide the combat timer outside of boss encounters, M+ dungeons, and PvP matches. Off shows the timer on every pull." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Width", 40, 200, 1, "width", ct, Refresh, nil, { description = "Pixel width of the combat timer frame." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Height", 20, 100, 1, "height", ct, Refresh, nil, { description = "Pixel height of the combat timer frame." }), body, sy)
-            P(GUI:CreateFormSlider(body, "Font Size", 12, 32, 1, "fontSize", ct, Refresh, nil, { description = "Font size of the elapsed-time text." }), body, sy)
-        end, sections, relayout)
+        -- GENERAL
+        L.headerAt("General")
+        local s1 = L.sectionAt()
+        local onlyEncW = GUI:CreateFormCheckbox(s1.frame, nil, "onlyShowInEncounters", ct, Refresh,
+            { description = "Hide the combat timer outside of boss encounters, M+ dungeons, and PvP matches. Off shows the timer on every pull." })
+        local widthW = GUI:CreateFormSlider(s1.frame, nil, 40, 200, 1, "width", ct, Refresh,
+            { description = "Pixel width of the combat timer frame." })
+        s1.AddRow(row(s1.frame, "Only Show In Encounters", onlyEncW), row(s1.frame, "Width", widthW))
 
-        U.CreateCollapsible(content, "Text", 4 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Use Class Color", "useClassColorText", ct, Refresh, { description = "Color the timer text by your class instead of the Text Color swatch below." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Text Color", "textColor", ct, Refresh, nil, { description = "Color used for the timer text when Use Class Color is off." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Use Custom Font", "useCustomFont", ct, Refresh, { description = "Override the global font for this element with the font selected below." }), body, sy)
-            local fonts = U.GetFontList(); if #fonts > 0 then P(GUI:CreateFormDropdown(body, "Font", fonts, "font", ct, Refresh, { description = "Custom font for the timer text. Requires Use Custom Font to be enabled." }), body, sy) end
-        end, sections, relayout)
+        local heightW = GUI:CreateFormSlider(s1.frame, nil, 20, 100, 1, "height", ct, Refresh,
+            { description = "Pixel height of the combat timer frame." })
+        local fontSizeW = GUI:CreateFormSlider(s1.frame, nil, 12, 32, 1, "fontSize", ct, Refresh,
+            { description = "Font size of the elapsed-time text." })
+        s1.AddRow(row(s1.frame, "Height", heightW), row(s1.frame, "Font Size", fontSizeW))
+        L.closeSection(s1)
 
-        U.BuildBackdropBorderSection(content, ct, sections, relayout, Refresh)
+        -- TEXT
+        L.headerAt("Text")
+        local s2 = L.sectionAt()
+        local useClassW = GUI:CreateFormCheckbox(s2.frame, nil, "useClassColorText", ct, Refresh,
+            { description = "Color the timer text by your class instead of the Text Color swatch below." })
+        local textColorW = GUI:CreateFormColorPicker(s2.frame, nil, "textColor", ct, Refresh, nil,
+            { description = "Color used for the timer text when Use Class Color is off." })
+        s2.AddRow(row(s2.frame, "Use Class Color", useClassW), row(s2.frame, "Text Color", textColorW))
 
-        return FinishProviderPage(content, key, "combatTimer", sections, relayout)
+        local useCustomFontW = GUI:CreateFormCheckbox(s2.frame, nil, "useCustomFont", ct, Refresh,
+            { description = "Override the global font for this element with the font selected below." })
+        local fonts = U.GetFontList()
+        if #fonts > 0 then
+            local fontW = GUI:CreateFormDropdown(s2.frame, nil, fonts, "font", ct, Refresh,
+                { description = "Custom font for the timer text. Requires Use Custom Font to be enabled." })
+            s2.AddRow(row(s2.frame, "Use Custom Font", useCustomFontW), row(s2.frame, "Font", fontW))
+        else
+            s2.AddRow(row(s2.frame, "Use Custom Font", useCustomFontW))
+        end
+        L.closeSection(s2)
+
+        -- Backdrop & Border (V2 collapsible, appears below V3 cards via L.relayoutSections)
+        U.BuildBackdropBorderSection(content, ct, L.sections, L.relayoutSections, Refresh)
+
+        return FinishProviderPage(L, content, key, "combatTimer")
     end })
 
     ---------------------------------------------------------------------------
     -- BREZ COUNTER
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("brezCounter", { build = function(content, key, width)
+    RegisterSharedOnly("brezCounter", { build = function(content, key, _width)
         local db = U.GetProfileDB()
         if not db or not db.brzCounter then return 80 end
         local bz = db.brzCounter
-        local sections, relayout = CreateProviderSections(content)
+        local L = MakeLayout(content)
         local function Refresh() if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end end
 
-        U.CreateCollapsible(content, "General", 5 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Lock Frame", "locked", bz, Refresh, { description = "Lock the battle-rez counter so it can't be accidentally dragged from its current position." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Width", 30, 100, 1, "width", bz, Refresh, nil, { description = "Pixel width of the counter frame." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Height", 30, 100, 1, "height", bz, Refresh, nil, { description = "Pixel height of the counter frame." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Charges Font Size", 10, 28, 1, "fontSize", bz, Refresh, nil, { description = "Font size of the big number showing remaining battle-rez charges." }), body, sy)
-            P(GUI:CreateFormSlider(body, "Timer Font Size", 8, 24, 1, "timerFontSize", bz, Refresh, nil, { description = "Font size of the recharge timer shown below the charge count." }), body, sy)
-        end, sections, relayout)
+        -- GENERAL
+        L.headerAt("General")
+        local s1 = L.sectionAt()
+        local lockedW = GUI:CreateFormCheckbox(s1.frame, nil, "locked", bz, Refresh,
+            { description = "Lock the battle-rez counter so it can't be accidentally dragged from its current position." })
+        local widthW = GUI:CreateFormSlider(s1.frame, nil, 30, 100, 1, "width", bz, Refresh,
+            { description = "Pixel width of the counter frame." })
+        s1.AddRow(row(s1.frame, "Lock Frame", lockedW), row(s1.frame, "Width", widthW))
 
-        U.CreateCollapsible(content, "Colors", 6 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormColorPicker(body, "Charges Available", "hasChargesColor", bz, Refresh, nil, { description = "Color of the charge count when at least one battle-rez is available." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "No Charges", "noChargesColor", bz, Refresh, nil, { description = "Color of the charge count when all battle-rezzes have been used." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Class Color Timer Text", "useClassColorText", bz, Refresh, { description = "Color the recharge timer by your class instead of the Timer Text Color swatch below." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Timer Text Color", "timerColor", bz, Refresh, nil, { description = "Color used for the recharge timer when Class Color is off." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Use Custom Font", "useCustomFont", bz, Refresh, { description = "Override the global font for this element with the font selected below." }), body, sy)
-            local fonts = U.GetFontList(); if #fonts > 0 then P(GUI:CreateFormDropdown(body, "Font", fonts, "font", bz, Refresh, { description = "Custom font for the counter text. Requires Use Custom Font to be enabled." }), body, sy) end
-        end, sections, relayout)
+        local heightW = GUI:CreateFormSlider(s1.frame, nil, 30, 100, 1, "height", bz, Refresh,
+            { description = "Pixel height of the counter frame." })
+        local chargeFontW = GUI:CreateFormSlider(s1.frame, nil, 10, 28, 1, "fontSize", bz, Refresh,
+            { description = "Font size of the big number showing remaining battle-rez charges." })
+        s1.AddRow(row(s1.frame, "Height", heightW), row(s1.frame, "Charges Font Size", chargeFontW))
 
-        U.BuildBackdropBorderSection(content, bz, sections, relayout, Refresh)
+        local timerFontW = GUI:CreateFormSlider(s1.frame, nil, 8, 24, 1, "timerFontSize", bz, Refresh,
+            { description = "Font size of the recharge timer shown below the charge count." })
+        s1.AddRow(row(s1.frame, "Timer Font Size", timerFontW))
+        L.closeSection(s1)
 
-        return FinishProviderPage(content, key, "brezCounter", sections, relayout)
+        -- COLORS
+        L.headerAt("Colors")
+        local s2 = L.sectionAt()
+        local hasChargesW = GUI:CreateFormColorPicker(s2.frame, nil, "hasChargesColor", bz, Refresh, nil,
+            { description = "Color of the charge count when at least one battle-rez is available." })
+        local noChargesW = GUI:CreateFormColorPicker(s2.frame, nil, "noChargesColor", bz, Refresh, nil,
+            { description = "Color of the charge count when all battle-rezzes have been used." })
+        s2.AddRow(row(s2.frame, "Charges Available", hasChargesW), row(s2.frame, "No Charges", noChargesW))
+
+        local useClassTimerW = GUI:CreateFormCheckbox(s2.frame, nil, "useClassColorText", bz, Refresh,
+            { description = "Color the recharge timer by your class instead of the Timer Text Color swatch below." })
+        local timerColorW = GUI:CreateFormColorPicker(s2.frame, nil, "timerColor", bz, Refresh, nil,
+            { description = "Color used for the recharge timer when Class Color is off." })
+        s2.AddRow(row(s2.frame, "Class Color Timer Text", useClassTimerW), row(s2.frame, "Timer Text Color", timerColorW))
+
+        local useCustomFontW = GUI:CreateFormCheckbox(s2.frame, nil, "useCustomFont", bz, Refresh,
+            { description = "Override the global font for this element with the font selected below." })
+        local fonts = U.GetFontList()
+        if #fonts > 0 then
+            local fontW = GUI:CreateFormDropdown(s2.frame, nil, fonts, "font", bz, Refresh,
+                { description = "Custom font for the counter text. Requires Use Custom Font to be enabled." })
+            s2.AddRow(row(s2.frame, "Use Custom Font", useCustomFontW), row(s2.frame, "Font", fontW))
+        else
+            s2.AddRow(row(s2.frame, "Use Custom Font", useCustomFontW))
+        end
+        L.closeSection(s2)
+
+        U.BuildBackdropBorderSection(content, bz, L.sections, L.relayoutSections, Refresh)
+
+        return FinishProviderPage(L, content, key, "brezCounter")
     end })
 
     ---------------------------------------------------------------------------
     -- ATONEMENT COUNTER
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("atonementCounter", { build = function(content, key, width)
+    RegisterSharedOnly("atonementCounter", { build = function(content, key, _width)
         local db = U.GetProfileDB()
         if not db or not db.atonementCounter then return 80 end
         local ac = db.atonementCounter
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
+        local L = MakeLayout(content)
         local function Refresh() if _G.QUI_RefreshAtonementCounter then _G.QUI_RefreshAtonementCounter() end end
 
-        U.CreateCollapsible(content, "General", 7 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Lock Frame", "locked", ac, Refresh, { description = "Lock the Atonement counter so it can't be accidentally dragged from its current position." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Show Only In Dungeons/Raids", "showOnlyInInstance", ac, Refresh, { description = "Hide the counter while in the open world. Useful if you only need it for instanced content." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Hide Spell Icon", "hideIcon", ac, Refresh, { description = "Hide the Atonement spell icon and show only the count number." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Width", 30, 100, 1, "width", ac, Refresh, nil, { description = "Pixel width of the counter frame." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Height", 30, 100, 1, "height", ac, Refresh, nil, { description = "Pixel height of the counter frame." }), body, sy)
-            P(GUI:CreateFormSlider(body, "Count Font Size", 10, 36, 1, "fontSize", ac, Refresh, nil, { description = "Font size of the Atonement count number." }), body, sy)
-        end, sections, relayout)
+        -- GENERAL
+        L.headerAt("General")
+        local s1 = L.sectionAt()
+        local lockedW = GUI:CreateFormCheckbox(s1.frame, nil, "locked", ac, Refresh,
+            { description = "Lock the Atonement counter so it can't be accidentally dragged from its current position." })
+        local instOnlyW = GUI:CreateFormCheckbox(s1.frame, nil, "showOnlyInInstance", ac, Refresh,
+            { description = "Hide the counter while in the open world. Useful if you only need it for instanced content." })
+        s1.AddRow(row(s1.frame, "Lock Frame", lockedW), row(s1.frame, "Show Only In Dungeons/Raids", instOnlyW))
 
-        U.CreateCollapsible(content, "Colors", 6 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Use Class Color Text", "useClassColorText", ac, Refresh, { description = "Color the count number by your class instead of the Active/Zero color swatches." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Active Count Color", "activeCountColor", ac, Refresh, nil, { description = "Color of the number when one or more Atonements are active." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Zero Count Color", "zeroCountColor", ac, Refresh, nil, { description = "Color of the number when no Atonements are active. Useful for spotting gaps at a glance." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Use Custom Font", "useCustomFont", ac, Refresh, { description = "Override the global font for this element with the font selected below." }), body, sy)
-            local fonts = U.GetFontList(); if #fonts > 0 then P(GUI:CreateFormDropdown(body, "Font", fonts, "font", ac, Refresh, { description = "Custom font for the count number. Requires Use Custom Font to be enabled." }), body, sy) end
-        end, sections, relayout)
+        local hideIconW = GUI:CreateFormCheckbox(s1.frame, nil, "hideIcon", ac, Refresh,
+            { description = "Hide the Atonement spell icon and show only the count number." })
+        local widthW = GUI:CreateFormSlider(s1.frame, nil, 30, 100, 1, "width", ac, Refresh,
+            { description = "Pixel width of the counter frame." })
+        s1.AddRow(row(s1.frame, "Hide Spell Icon", hideIconW), row(s1.frame, "Width", widthW))
 
-        U.BuildBackdropBorderSection(content, ac, sections, relayout, Refresh)
+        local heightW = GUI:CreateFormSlider(s1.frame, nil, 30, 100, 1, "height", ac, Refresh,
+            { description = "Pixel height of the counter frame." })
+        local fontSizeW = GUI:CreateFormSlider(s1.frame, nil, 10, 36, 1, "fontSize", ac, Refresh,
+            { description = "Font size of the Atonement count number." })
+        s1.AddRow(row(s1.frame, "Height", heightW), row(s1.frame, "Count Font Size", fontSizeW))
+        L.closeSection(s1)
 
-        U.BuildPositionCollapsible(content, "atonementCounter", nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout() return content:GetHeight()
+        -- COLORS
+        L.headerAt("Colors")
+        local s2 = L.sectionAt()
+        local useClassW = GUI:CreateFormCheckbox(s2.frame, nil, "useClassColorText", ac, Refresh,
+            { description = "Color the count number by your class instead of the Active/Zero color swatches." })
+        local activeColorW = GUI:CreateFormColorPicker(s2.frame, nil, "activeCountColor", ac, Refresh, nil,
+            { description = "Color of the number when one or more Atonements are active." })
+        s2.AddRow(row(s2.frame, "Use Class Color Text", useClassW), row(s2.frame, "Active Count Color", activeColorW))
+
+        local zeroColorW = GUI:CreateFormColorPicker(s2.frame, nil, "zeroCountColor", ac, Refresh, nil,
+            { description = "Color of the number when no Atonements are active. Useful for spotting gaps at a glance." })
+        local useCustomFontW = GUI:CreateFormCheckbox(s2.frame, nil, "useCustomFont", ac, Refresh,
+            { description = "Override the global font for this element with the font selected below." })
+        s2.AddRow(row(s2.frame, "Zero Count Color", zeroColorW), row(s2.frame, "Use Custom Font", useCustomFontW))
+
+        local fonts = U.GetFontList()
+        if #fonts > 0 then
+            local fontW = GUI:CreateFormDropdown(s2.frame, nil, fonts, "font", ac, Refresh,
+                { description = "Custom font for the count number. Requires Use Custom Font to be enabled." })
+            s2.AddRow(row(s2.frame, "Font", fontW))
+        end
+        L.closeSection(s2)
+
+        U.BuildBackdropBorderSection(content, ac, L.sections, L.relayoutSections, Refresh)
+
+        return FinishProviderPage(L, content, key, "atonementCounter")
     end })
 
     ---------------------------------------------------------------------------
     -- ROTATION ASSIST ICON
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("rotationAssistIcon", { build = function(content, key, width)
+    RegisterSharedOnly("rotationAssistIcon", { build = function(content, key, _width)
         local db = U.GetProfileDB()
         if not db or not db.rotationAssistIcon then return 80 end
         local ra = db.rotationAssistIcon
         if ra.frameStrata ~= "LOW" and ra.frameStrata ~= "MEDIUM" then
             ra.frameStrata = "MEDIUM"
         end
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
+        local L = MakeLayout(content)
         local function Refresh() if _G.QUI_RefreshRotationAssistIcon then _G.QUI_RefreshRotationAssistIcon() end end
 
-        U.CreateCollapsible(content, "General", 6 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Lock Position", "isLocked", ra, Refresh, { description = "Lock the rotation assist icon so it can't be accidentally dragged from its current position." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "GCD Swipe", "cooldownSwipeEnabled", ra, Refresh, { description = "Show the global cooldown sweep (~1.5s) over the recommended spell icon." }), body, sy)
-            sy = P(GUI:CreateFormDropdown(body, "Visibility", {{value="always",text="Always"},{value="combat",text="In Combat"},{value="hostile",text="Hostile Target"}}, "visibility", ra, Refresh, { description = "When to show the icon: always visible, only in combat, or only when you have a hostile target." }), body, sy)
-            sy = P(GUI:CreateFormDropdown(body, "Frame Strata", {{value="LOW",text="Low"},{value="MEDIUM",text="Medium"}}, "frameStrata", ra, Refresh, { description = "Draw layer for the icon. Medium sits above most UI; Low sits underneath nameplates and other mid-layer elements." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Icon Size", 16, 400, 1, "iconSize", ra, Refresh, nil, { description = "Pixel size of the spell icon." }), body, sy)
-            P(GUI:CreateFormSlider(body, "Border Size", 0, 15, 1, "borderThickness", ra, Refresh, nil, { description = "Thickness of the border drawn around the icon. Set to 0 to hide the border." }), body, sy)
-        end, sections, relayout)
+        -- GENERAL
+        L.headerAt("General")
+        local s1 = L.sectionAt()
+        local lockW = GUI:CreateFormCheckbox(s1.frame, nil, "isLocked", ra, Refresh,
+            { description = "Lock the rotation assist icon so it can't be accidentally dragged from its current position." })
+        local gcdW = GUI:CreateFormCheckbox(s1.frame, nil, "cooldownSwipeEnabled", ra, Refresh,
+            { description = "Show the global cooldown sweep (~1.5s) over the recommended spell icon." })
+        s1.AddRow(row(s1.frame, "Lock Position", lockW), row(s1.frame, "GCD Swipe", gcdW))
 
-        U.CreateCollapsible(content, "Border & Keybind", 7 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormColorPicker(body, "Border Color", "borderColor", ra, Refresh, nil, { description = "Color of the border drawn around the icon." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Show Keybind", "showKeybind", ra, Refresh, { description = "Overlay the keybind text of the bound spell on the icon." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Keybind Color", "keybindColor", ra, Refresh, nil, { description = "Color of the keybind text." }), body, sy)
-            sy = P(GUI:CreateFormDropdown(body, "Keybind Anchor", anchorOptions, "keybindAnchor", ra, Refresh, { description = "Which corner of the icon the keybind text is anchored to." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Keybind Size", 6, 48, 1, "keybindSize", ra, Refresh, nil, { description = "Font size of the keybind text." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Keybind X Offset", -50, 50, 1, "keybindOffsetX", ra, Refresh, nil, { description = "Horizontal pixel offset for the keybind text from its anchor. Positive moves right, negative moves left." }), body, sy)
-            P(GUI:CreateFormSlider(body, "Keybind Y Offset", -50, 50, 1, "keybindOffsetY", ra, Refresh, nil, { description = "Vertical pixel offset for the keybind text from its anchor. Positive moves up, negative moves down." }), body, sy)
-        end, sections, relayout)
+        local visibilityW = GUI:CreateFormDropdown(s1.frame, nil,
+            {{value="always",text="Always"},{value="combat",text="In Combat"},{value="hostile",text="Hostile Target"}},
+            "visibility", ra, Refresh,
+            { description = "When to show the icon: always visible, only in combat, or only when you have a hostile target." })
+        local strataW = GUI:CreateFormDropdown(s1.frame, nil,
+            {{value="LOW",text="Low"},{value="MEDIUM",text="Medium"}},
+            "frameStrata", ra, Refresh,
+            { description = "Draw layer for the icon. Medium sits above most UI; Low sits underneath nameplates and other mid-layer elements." })
+        s1.AddRow(row(s1.frame, "Visibility", visibilityW), row(s1.frame, "Frame Strata", strataW))
 
-        U.BuildPositionCollapsible(content, "rotationAssistIcon", nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout() return content:GetHeight()
+        local iconSizeW = GUI:CreateFormSlider(s1.frame, nil, 16, 400, 1, "iconSize", ra, Refresh,
+            { description = "Pixel size of the spell icon." })
+        local borderSizeW = GUI:CreateFormSlider(s1.frame, nil, 0, 15, 1, "borderThickness", ra, Refresh,
+            { description = "Thickness of the border drawn around the icon. Set to 0 to hide the border." })
+        s1.AddRow(row(s1.frame, "Icon Size", iconSizeW), row(s1.frame, "Border Size", borderSizeW))
+        L.closeSection(s1)
+
+        -- BORDER & KEYBIND
+        L.headerAt("Border & Keybind")
+        local s2 = L.sectionAt()
+        local borderColorW = GUI:CreateFormColorPicker(s2.frame, nil, "borderColor", ra, Refresh, nil,
+            { description = "Color of the border drawn around the icon." })
+        local showKbW = GUI:CreateFormCheckbox(s2.frame, nil, "showKeybind", ra, Refresh,
+            { description = "Overlay the keybind text of the bound spell on the icon." })
+        s2.AddRow(row(s2.frame, "Border Color", borderColorW), row(s2.frame, "Show Keybind", showKbW))
+
+        local kbColorW = GUI:CreateFormColorPicker(s2.frame, nil, "keybindColor", ra, Refresh, nil,
+            { description = "Color of the keybind text." })
+        local kbAnchorW = GUI:CreateFormDropdown(s2.frame, nil, anchorOptions, "keybindAnchor", ra, Refresh,
+            { description = "Which corner of the icon the keybind text is anchored to." })
+        s2.AddRow(row(s2.frame, "Keybind Color", kbColorW), row(s2.frame, "Keybind Anchor", kbAnchorW))
+
+        local kbSizeW = GUI:CreateFormSlider(s2.frame, nil, 6, 48, 1, "keybindSize", ra, Refresh,
+            { description = "Font size of the keybind text." })
+        local kbXW = GUI:CreateFormSlider(s2.frame, nil, -50, 50, 1, "keybindOffsetX", ra, Refresh,
+            { description = "Horizontal pixel offset for the keybind text from its anchor. Positive moves right, negative moves left." })
+        s2.AddRow(row(s2.frame, "Keybind Size", kbSizeW), row(s2.frame, "Keybind X Offset", kbXW))
+
+        local kbYW = GUI:CreateFormSlider(s2.frame, nil, -50, 50, 1, "keybindOffsetY", ra, Refresh,
+            { description = "Vertical pixel offset for the keybind text from its anchor. Positive moves up, negative moves down." })
+        s2.AddRow(row(s2.frame, "Keybind Y Offset", kbYW))
+        L.closeSection(s2)
+
+        return FinishProviderPage(L, content, key, "rotationAssistIcon")
     end })
 
     ---------------------------------------------------------------------------
     -- FOCUS CAST ALERT
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("focusCastAlert", { build = function(content, key, width)
+    RegisterSharedOnly("focusCastAlert", { build = function(content, key, _width)
         local db = U.GetProfileDB()
         local general = db and db.general
         if not general or not general.focusCastAlert then return 80 end
         local fca = general.focusCastAlert
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
+        local L = MakeLayout(content)
         local function Refresh() if _G.QUI_RefreshFocusCastAlert then _G.QUI_RefreshFocusCastAlert() end end
 
-        U.CreateCollapsible(content, "Text & Font", 6 * FORM_ROW + 8, function(body)
-            local sy = -4
-            local fonts = U.GetFontList(); table.insert(fonts, 1, {value = "", text = "(Global Font)"})
-            sy = P(GUI:CreateFormDropdown(body, "Font", fonts, "font", fca, Refresh, { description = "Font used for the focus cast alert text. Pick Global Font to inherit the UI font." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Font Size", 8, 72, 1, "fontSize", fca, Refresh, nil, { description = "Font size of the alert text." }), body, sy)
-            sy = P(GUI:CreateFormDropdown(body, "Font Outline", {{value="",text="None"},{value="OUTLINE",text="Outline"},{value="THICKOUTLINE",text="Thick Outline"}}, "fontOutline", fca, Refresh, { description = "Outline applied to the alert text for readability against busy backgrounds." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Use Class Color", "useClassColor", fca, Refresh, { description = "Color the alert text by your class instead of the Text Color swatch below." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Text Color", "textColor", fca, Refresh, nil, { description = "Color used for the alert text when Use Class Color is off." }), body, sy)
-            P(GUI:CreateFormDropdown(body, "Anchor To", {{value="screen",text="Screen"},{value="essential",text="CDM Essential"},{value="focus",text="Focus Frame"}}, "anchorTo", fca, Refresh, { description = "What the alert is anchored to: the screen, the CDM Essential bar, or your focus unit frame." }), body, sy)
-        end, sections, relayout)
+        L.headerAt("Text & Font")
+        local s1 = L.sectionAt()
+        local fonts = U.GetFontList(); table.insert(fonts, 1, { value = "", text = "(Global Font)" })
+        local fontW = GUI:CreateFormDropdown(s1.frame, nil, fonts, "font", fca, Refresh,
+            { description = "Font used for the focus cast alert text. Pick Global Font to inherit the UI font." })
+        local sizeW = GUI:CreateFormSlider(s1.frame, nil, 8, 72, 1, "fontSize", fca, Refresh,
+            { description = "Font size of the alert text." })
+        s1.AddRow(row(s1.frame, "Font", fontW), row(s1.frame, "Font Size", sizeW))
 
-        U.BuildPositionCollapsible(content, "focusCastAlert", nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout() return content:GetHeight()
+        local outlineW = GUI:CreateFormDropdown(s1.frame, nil,
+            {{value="",text="None"},{value="OUTLINE",text="Outline"},{value="THICKOUTLINE",text="Thick Outline"}},
+            "fontOutline", fca, Refresh,
+            { description = "Outline applied to the alert text for readability against busy backgrounds." })
+        local classColorW = GUI:CreateFormCheckbox(s1.frame, nil, "useClassColor", fca, Refresh,
+            { description = "Color the alert text by your class instead of the Text Color swatch below." })
+        s1.AddRow(row(s1.frame, "Font Outline", outlineW), row(s1.frame, "Use Class Color", classColorW))
+
+        local textColorW = GUI:CreateFormColorPicker(s1.frame, nil, "textColor", fca, Refresh, nil,
+            { description = "Color used for the alert text when Use Class Color is off." })
+        local anchorToW = GUI:CreateFormDropdown(s1.frame, nil,
+            {{value="screen",text="Screen"},{value="essential",text="CDM Essential"},{value="focus",text="Focus Frame"}},
+            "anchorTo", fca, Refresh,
+            { description = "What the alert is anchored to: the screen, the CDM Essential bar, or your focus unit frame." })
+        s1.AddRow(row(s1.frame, "Text Color", textColorW), row(s1.frame, "Anchor To", anchorToW))
+        L.closeSection(s1)
+
+        return FinishProviderPage(L, content, key, "focusCastAlert")
     end })
 
     ---------------------------------------------------------------------------
     -- PET WARNING
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("petWarning", { build = function(content, key, width)
+    RegisterSharedOnly("petWarning", { build = function(content, key, _width)
         local db = U.GetProfileDB()
         local general = db and db.general
         if not general then return 80 end
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
+        local L = MakeLayout(content)
         local function Refresh() if _G.QUI_RepositionPetWarning then _G.QUI_RepositionPetWarning() end end
 
-        U.CreateCollapsible(content, "Offsets", 2 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormSlider(body, "Horizontal Offset", -500, 500, 10, "petWarningOffsetX", general, Refresh, nil, { description = "Horizontal pixel offset for the pet warning from its anchor. Positive moves right, negative moves left." }), body, sy)
-            P(GUI:CreateFormSlider(body, "Vertical Offset", -500, 500, 10, "petWarningOffsetY", general, Refresh, nil, { description = "Vertical pixel offset for the pet warning from its anchor. Positive moves up, negative moves down." }), body, sy)
-        end, sections, relayout)
+        L.headerAt("Offsets")
+        local s1 = L.sectionAt()
+        local xW = GUI:CreateFormSlider(s1.frame, nil, -500, 500, 10, "petWarningOffsetX", general, Refresh,
+            { description = "Horizontal pixel offset for the pet warning from its anchor. Positive moves right, negative moves left." })
+        local yW = GUI:CreateFormSlider(s1.frame, nil, -500, 500, 10, "petWarningOffsetY", general, Refresh,
+            { description = "Vertical pixel offset for the pet warning from its anchor. Positive moves up, negative moves down." })
+        s1.AddRow(row(s1.frame, "Horizontal Offset", xW), row(s1.frame, "Vertical Offset", yW))
+        L.closeSection(s1)
 
-        U.BuildPositionCollapsible(content, "petWarning", nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout() return content:GetHeight()
+        return FinishProviderPage(L, content, key, "petWarning")
     end })
 
     ---------------------------------------------------------------------------
     -- ACTION TRACKER
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("actionTracker", { build = function(content, key, width)
+    RegisterSharedOnly("actionTracker", { build = function(content, key, _width)
         local db = U.GetProfileDB()
         if not db or not db.general then return 80 end
         if type(db.general.actionTracker) ~= "table" then db.general.actionTracker = {} end
@@ -286,60 +493,99 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             showBackdrop = true, hideBorder = false, borderSize = 1,
             backdropColor = {0,0,0,0.6}, borderColor = {0,0,0,1}, blocklistText = "",
         })
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
+        local L = MakeLayout(content)
         local function Refresh() if _G.QUI_RefreshActionTracker then _G.QUI_RefreshActionTracker() end end
 
-        -- Behavior
-        U.CreateCollapsible(content, "Behavior", 6 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Only Show In Combat", "onlyInCombat", at, Refresh, { description = "Hide the action tracker while you are out of combat. Useful if you only want it active during pulls." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Clear History On Combat End", "clearOnCombatEnd", at, Refresh, { description = "Empty the tracker when combat ends instead of leaving the last pull's spells on screen." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Enable Inactivity Fade-Out", "inactivityFadeEnabled", at, Refresh, { description = "Fade the tracker out after a period of no casts. The fade delay is configured below." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Inactivity Timeout (sec)", 10, 60, 1, "inactivityFadeSeconds", at, Refresh, nil, { description = "Seconds of inactivity before the tracker fades out. Only applies when Inactivity Fade-Out is on." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Clear History After Inactivity", "clearOnInactivity", at, Refresh, { description = "Additionally wipe the tracked history once the inactivity timeout fires." }), body, sy)
-            P(GUI:CreateFormCheckbox(body, "Show Failed/Interrupted Casts", "showFailedCasts", at, Refresh, { description = "Include failed or interrupted casts in the tracker. Useful for reviewing what cancelled your rotation." }), body, sy)
-        end, sections, relayout)
+        -- BEHAVIOR
+        L.headerAt("Behavior")
+        local s1 = L.sectionAt()
+        local onlyCombatW = GUI:CreateFormCheckbox(s1.frame, nil, "onlyInCombat", at, Refresh,
+            { description = "Hide the action tracker while you are out of combat. Useful if you only want it active during pulls." })
+        local clearCombatW = GUI:CreateFormCheckbox(s1.frame, nil, "clearOnCombatEnd", at, Refresh,
+            { description = "Empty the tracker when combat ends instead of leaving the last pull's spells on screen." })
+        s1.AddRow(row(s1.frame, "Only Show In Combat", onlyCombatW), row(s1.frame, "Clear History On Combat End", clearCombatW))
 
-        -- Layout
+        local fadeEnableW = GUI:CreateFormCheckbox(s1.frame, nil, "inactivityFadeEnabled", at, Refresh,
+            { description = "Fade the tracker out after a period of no casts. The fade delay is configured below." })
+        local fadeSecsW = GUI:CreateFormSlider(s1.frame, nil, 10, 60, 1, "inactivityFadeSeconds", at, Refresh,
+            { description = "Seconds of inactivity before the tracker fades out. Only applies when Inactivity Fade-Out is on." })
+        s1.AddRow(row(s1.frame, "Enable Inactivity Fade-Out", fadeEnableW), row(s1.frame, "Inactivity Timeout (sec)", fadeSecsW))
+
+        local clearInactW = GUI:CreateFormCheckbox(s1.frame, nil, "clearOnInactivity", at, Refresh,
+            { description = "Additionally wipe the tracked history once the inactivity timeout fires." })
+        local showFailedW = GUI:CreateFormCheckbox(s1.frame, nil, "showFailedCasts", at, Refresh,
+            { description = "Include failed or interrupted casts in the tracker. Useful for reviewing what cancelled your rotation." })
+        s1.AddRow(row(s1.frame, "Clear History After Inactivity", clearInactW), row(s1.frame, "Show Failed/Interrupted Casts", showFailedW))
+        L.closeSection(s1)
+
+        -- LAYOUT
+        L.headerAt("Layout")
+        local s2 = L.sectionAt()
         local orientationOpts = {{value="VERTICAL",text="Vertical"},{value="HORIZONTAL",text="Horizontal"}}
-        U.CreateCollapsible(content, "Layout", 5 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormDropdown(body, "Bar Orientation", orientationOpts, "orientation", at, Refresh, { description = "Whether tracked spells stack vertically or extend horizontally." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Invert Scroll Direction", "invertScrollDirection", at, Refresh, { description = "Flip the direction new entries enter from. Put newest spells at the top/left instead of bottom/right (or vice versa)." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Max Entries", 3, 10, 1, "maxEntries", at, Refresh, nil, { description = "How many spell entries the tracker keeps on screen at once." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Icon Size", 16, 64, 1, "iconSize", at, Refresh, nil, { description = "Pixel size of each spell icon in the tracker." }), body, sy)
-            P(GUI:CreateFormSlider(body, "Icon Spacing", 0, 24, 1, "iconSpacing", at, Refresh, nil, { description = "Pixel gap between adjacent icons." }), body, sy)
-        end, sections, relayout)
+        local orientW = GUI:CreateFormDropdown(s2.frame, nil, orientationOpts, "orientation", at, Refresh,
+            { description = "Whether tracked spells stack vertically or extend horizontally." })
+        local invertW = GUI:CreateFormCheckbox(s2.frame, nil, "invertScrollDirection", at, Refresh,
+            { description = "Flip the direction new entries enter from. Put newest spells at the top/left instead of bottom/right (or vice versa)." })
+        s2.AddRow(row(s2.frame, "Bar Orientation", orientW), row(s2.frame, "Invert Scroll Direction", invertW))
 
-        -- Icon Border
-        U.CreateCollapsible(content, "Icon Border", 3 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Hide Icon Borders", "iconHideBorder", at, Refresh, { description = "Hide the border drawn around each spell icon." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Use Class Color for Icon Borders", "iconBorderUseClassColor", at, Refresh, { description = "Color the icon borders by your class instead of the Icon Border Color swatch below." }), body, sy)
-            P(GUI:CreateFormColorPicker(body, "Icon Border Color", "iconBorderColor", at, Refresh, nil, { description = "Color used for the icon borders when Use Class Color is off." }), body, sy)
-        end, sections, relayout)
+        local maxEntW = GUI:CreateFormSlider(s2.frame, nil, 3, 10, 1, "maxEntries", at, Refresh,
+            { description = "How many spell entries the tracker keeps on screen at once." })
+        local iconSizeW = GUI:CreateFormSlider(s2.frame, nil, 16, 64, 1, "iconSize", at, Refresh,
+            { description = "Pixel size of each spell icon in the tracker." })
+        s2.AddRow(row(s2.frame, "Max Entries", maxEntW), row(s2.frame, "Icon Size", iconSizeW))
 
-        -- Container Backdrop & Border
-        U.CreateCollapsible(content, "Backdrop & Border", 5 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Show Container Background", "showBackdrop", at, Refresh, { description = "Draw a background behind the tracker to help it stand out." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Container Background Color", "backdropColor", at, Refresh, nil, { description = "Color used for the tracker background." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Hide Container Border", "hideBorder", at, Refresh, { description = "Hide the border drawn around the tracker container." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Border Size", 0, 5, 0.5, "borderSize", at, Refresh, nil, { description = "Thickness of the tracker container border. Set to 0 to hide the border." }), body, sy)
-            P(GUI:CreateFormColorPicker(body, "Container Border Color", "borderColor", at, Refresh, nil, { description = "Color of the tracker container border." }), body, sy)
-        end, sections, relayout)
+        local iconSpaceW = GUI:CreateFormSlider(s2.frame, nil, 0, 24, 1, "iconSpacing", at, Refresh,
+            { description = "Pixel gap between adjacent icons." })
+        s2.AddRow(row(s2.frame, "Icon Spacing", iconSpaceW))
+        L.closeSection(s2)
 
-        -- Spell Blocklist
-        U.CreateCollapsible(content, "Spell Blocklist", FORM_ROW + 22 + 8, function(body)
-            local sy = -4
-            local blocklistField = GUI:CreateFormEditBox(body, "Spell Blocklist IDs", "blocklistText", at, Refresh, {
-                maxLetters = 300, live = true,
-                onEditFocusGained = function(self) self:HighlightText() end,
-            }, { description = "Comma-separated list of spell IDs to ignore in the tracker. Useful for muting passive procs or low-value abilities." })
-            blocklistField:SetPoint("TOPLEFT", 0, sy)
-            blocklistField:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+        -- ICON BORDER
+        L.headerAt("Icon Border")
+        local s3 = L.sectionAt()
+        local hideIconBdrW = GUI:CreateFormCheckbox(s3.frame, nil, "iconHideBorder", at, Refresh,
+            { description = "Hide the border drawn around each spell icon." })
+        local iconClassClrW = GUI:CreateFormCheckbox(s3.frame, nil, "iconBorderUseClassColor", at, Refresh,
+            { description = "Color the icon borders by your class instead of the Icon Border Color swatch below." })
+        s3.AddRow(row(s3.frame, "Hide Icon Borders", hideIconBdrW), row(s3.frame, "Use Class Color for Icon Borders", iconClassClrW))
 
+        local iconBdrClrW = GUI:CreateFormColorPicker(s3.frame, nil, "iconBorderColor", at, Refresh, nil,
+            { description = "Color used for the icon borders when Use Class Color is off." })
+        s3.AddRow(row(s3.frame, "Icon Border Color", iconBdrClrW))
+        L.closeSection(s3)
+
+        -- CONTAINER BACKDROP & BORDER
+        L.headerAt("Backdrop & Border")
+        local s4 = L.sectionAt()
+        local showBgW = GUI:CreateFormCheckbox(s4.frame, nil, "showBackdrop", at, Refresh,
+            { description = "Draw a background behind the tracker to help it stand out." })
+        local bgColorW = GUI:CreateFormColorPicker(s4.frame, nil, "backdropColor", at, Refresh, nil,
+            { description = "Color used for the tracker background." })
+        s4.AddRow(row(s4.frame, "Show Container Background", showBgW), row(s4.frame, "Container Background Color", bgColorW))
+
+        local hideBdrW = GUI:CreateFormCheckbox(s4.frame, nil, "hideBorder", at, Refresh,
+            { description = "Hide the border drawn around the tracker container." })
+        local bdrSizeW = GUI:CreateFormSlider(s4.frame, nil, 0, 5, 0.5, "borderSize", at, Refresh,
+            { description = "Thickness of the tracker container border. Set to 0 to hide the border." })
+        s4.AddRow(row(s4.frame, "Hide Container Border", hideBdrW), row(s4.frame, "Border Size", bdrSizeW))
+
+        local bdrColorW = GUI:CreateFormColorPicker(s4.frame, nil, "borderColor", at, Refresh, nil,
+            { description = "Color of the tracker container border." })
+        s4.AddRow(row(s4.frame, "Container Border Color", bdrColorW))
+        L.closeSection(s4)
+
+        -- SPELL BLOCKLIST (custom block — edit box + placeholder + help label)
+        L.headerAt("Spell Blocklist")
+        local blocklistBlock = CreateFrame("Frame", nil, content)
+        local BLOCKLIST_HEIGHT = (FORM_ROW or 28) + 22
+        local blocklistField = GUI:CreateFormEditBox(blocklistBlock, nil, "blocklistText", at, Refresh, {
+            maxLetters = 300, live = true,
+            onEditFocusGained = function(self) self:HighlightText() end,
+        }, { description = "Comma-separated list of spell IDs to ignore in the tracker. Useful for muting passive procs or low-value abilities." })
+        blocklistField:ClearAllPoints()
+        blocklistField:SetPoint("TOPLEFT", blocklistBlock, "TOPLEFT", 0, -4)
+        blocklistField:SetPoint("RIGHT", blocklistBlock, "RIGHT", 0, 0)
+
+        if blocklistField.editBox then
             local blocklistPlaceholder = blocklistField:CreateFontString(nil, "OVERLAY")
             blocklistPlaceholder:SetFont(GUI.FONT_PATH, 11, "")
             blocklistPlaceholder:SetPoint("LEFT", blocklistField.editBox, "LEFT", 0, 0)
@@ -351,85 +597,111 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             end
             blocklistField.editBox:HookScript("OnTextChanged", UpdatePlaceholder)
             UpdatePlaceholder()
-            sy = sy - FORM_ROW
+        end
 
-            local helpLabel = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            helpLabel:SetPoint("TOPLEFT", 0, sy + 4)
-            helpLabel:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            helpLabel:SetTextColor(0.6, 0.6, 0.6, 0.8)
-            helpLabel:SetText("Comma-separated spell IDs to ignore in the tracker.")
-            helpLabel:SetJustifyH("LEFT")
-        end, sections, relayout)
+        local helpLabel = blocklistBlock:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        helpLabel:SetPoint("TOPLEFT", blocklistField, "BOTTOMLEFT", 0, -2)
+        helpLabel:SetPoint("RIGHT", blocklistBlock, "RIGHT", 0, 0)
+        helpLabel:SetTextColor(0.6, 0.6, 0.6, 0.8)
+        helpLabel:SetText("Comma-separated spell IDs to ignore in the tracker.")
+        helpLabel:SetJustifyH("LEFT")
 
-        U.BuildPositionCollapsible(content, "actionTracker", nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout() return content:GetHeight()
+        L.placeCustom(blocklistBlock, BLOCKLIST_HEIGHT)
+
+        return FinishProviderPage(L, content, key, "actionTracker")
     end })
 
     ---------------------------------------------------------------------------
     -- CONSUMABLES PROVIDER
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("consumables", { build = function(content, key, width)
+    RegisterSharedOnly("consumables", { build = function(content, key, _width)
         local db = U.GetProfileDB()
         if not db or not db.general then return 80 end
         local settings = db.general
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
+        local L = MakeLayout(content)
         local function Refresh()
             if _G.QUI_RefreshConsumables then _G.QUI_RefreshConsumables() end
         end
 
-        U.CreateCollapsible(content, "Triggers", 4 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Ready Check", "consumableOnReadyCheck", settings, nil, { description = "Show the consumables reminder whenever a ready check is triggered." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Dungeon Entrance", "consumableOnDungeon", settings, nil, { description = "Show the consumables reminder when you zone into a dungeon." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Raid Entrance", "consumableOnRaid", settings, nil, { description = "Show the consumables reminder when you zone into a raid." }), body, sy)
-            P(GUI:CreateFormCheckbox(body, "Instanced Resurrect", "consumableOnResurrect", settings, nil, { description = "Show the consumables reminder when you resurrect inside an instance, to catch dropped flasks/food." }), body, sy)
-        end, sections, relayout)
+        -- TRIGGERS
+        L.headerAt("Triggers")
+        local s1 = L.sectionAt()
+        local readyW = GUI:CreateFormCheckbox(s1.frame, nil, "consumableOnReadyCheck", settings, nil,
+            { description = "Show the consumables reminder whenever a ready check is triggered." })
+        local dungW = GUI:CreateFormCheckbox(s1.frame, nil, "consumableOnDungeon", settings, nil,
+            { description = "Show the consumables reminder when you zone into a dungeon." })
+        s1.AddRow(row(s1.frame, "Ready Check", readyW), row(s1.frame, "Dungeon Entrance", dungW))
 
+        local raidW = GUI:CreateFormCheckbox(s1.frame, nil, "consumableOnRaid", settings, nil,
+            { description = "Show the consumables reminder when you zone into a raid." })
+        local resW = GUI:CreateFormCheckbox(s1.frame, nil, "consumableOnResurrect", settings, nil,
+            { description = "Show the consumables reminder when you resurrect inside an instance, to catch dropped flasks/food." })
+        s1.AddRow(row(s1.frame, "Raid Entrance", raidW), row(s1.frame, "Instanced Resurrect", resW))
+        L.closeSection(s1)
+
+        -- BUFF CHECKS
         local mhLabel = (ns.ConsumableCheckLabels and ns.ConsumableCheckLabels.GetMHLabel() or "Weapon Oil") .. " (MH)"
         local ohLabel = (ns.ConsumableCheckLabels and ns.ConsumableCheckLabels.GetOHLabel() or "Weapon Oil") .. " (OH)"
-        U.CreateCollapsible(content, "Buff Checks", 6 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Food Buff", "consumableFood", settings, Refresh, { description = "Check for an active food buff." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Flask Buff", "consumableFlask", settings, Refresh, { description = "Check for an active flask/phial buff." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, mhLabel, "consumableOilMH", settings, Refresh, { description = "Check that your main-hand has an active weapon consumable (oil/sharpening stone/etc.)." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, ohLabel, "consumableOilOH", settings, Refresh, { description = "Check that your off-hand has an active weapon consumable (oil/sharpening stone/etc.)." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Augment Rune", "consumableRune", settings, Refresh, { description = "Check for an active augment rune buff." }), body, sy)
-            P(GUI:CreateFormCheckbox(body, "Healthstones", "consumableHealthstone", settings, Refresh, { description = "Check that you have a healthstone in your bags." }), body, sy)
-        end, sections, relayout)
+        L.headerAt("Buff Checks")
+        local s2 = L.sectionAt()
+        local foodW = GUI:CreateFormCheckbox(s2.frame, nil, "consumableFood", settings, Refresh,
+            { description = "Check for an active food buff." })
+        local flaskW = GUI:CreateFormCheckbox(s2.frame, nil, "consumableFlask", settings, Refresh,
+            { description = "Check for an active flask/phial buff." })
+        s2.AddRow(row(s2.frame, "Food Buff", foodW), row(s2.frame, "Flask Buff", flaskW))
 
-        U.CreateCollapsible(content, "Expiration Warning", 2 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Warn When Buffs Expiring", "consumableExpirationWarning", settings, nil, { description = "Flash the reminder when a tracked buff is within the threshold of expiring." }), body, sy)
-            P(GUI:CreateFormSlider(body, "Warning Threshold (seconds)", 60, 600, 30, "consumableExpirationThreshold", settings, nil, nil, { description = "Seconds remaining at which the expiration warning triggers." }), body, sy)
-        end, sections, relayout)
+        local oilMHW = GUI:CreateFormCheckbox(s2.frame, nil, "consumableOilMH", settings, Refresh,
+            { description = "Check that your main-hand has an active weapon consumable (oil/sharpening stone/etc.)." })
+        local oilOHW = GUI:CreateFormCheckbox(s2.frame, nil, "consumableOilOH", settings, Refresh,
+            { description = "Check that your off-hand has an active weapon consumable (oil/sharpening stone/etc.)." })
+        s2.AddRow(row(s2.frame, mhLabel, oilMHW), row(s2.frame, ohLabel, oilOHW))
 
-        U.CreateCollapsible(content, "Display", 5 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Always Show (Persistent)", "consumablePersistent", settings, function()
-                if settings.consumablePersistent then
-                    if _G.QUI_ShowConsumables then _G.QUI_ShowConsumables() end
-                else
-                    if _G.QUI_HideConsumables then _G.QUI_HideConsumables() end
-                end
-            end, { description = "Keep the reminder on screen all the time instead of showing it only when triggered." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Anchor to Ready Check", "consumableAnchorMode", settings, Refresh, { description = "Snap the reminder to the ready check frame's position instead of using its own anchor." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Icon Size", 24, 64, 2, "consumableIconSize", settings, Refresh, nil, { description = "Pixel size of each consumable icon in the reminder." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Icon Offset", 0, 20, 1, "consumableIconOffset", settings, Refresh, nil, { description = "Pixel gap between adjacent icons in the reminder." }), body, sy)
-            P(GUI:CreateFormSlider(body, "Scale", 0.5, 3, 0.05, "consumableScale", settings, Refresh, nil, { description = "Overall scale multiplier applied to the reminder frame." }), body, sy)
-        end, sections, relayout)
+        local runeW = GUI:CreateFormCheckbox(s2.frame, nil, "consumableRune", settings, Refresh,
+            { description = "Check for an active augment rune buff." })
+        local hsW = GUI:CreateFormCheckbox(s2.frame, nil, "consumableHealthstone", settings, Refresh,
+            { description = "Check that you have a healthstone in your bags." })
+        s2.AddRow(row(s2.frame, "Augment Rune", runeW), row(s2.frame, "Healthstones", hsW))
+        L.closeSection(s2)
 
-        -- Macros: per-character auto-generated consumable macros. Lets the
-        -- user pick which specific Flask / Potion / Health Potion /
-        -- Healthstone / Augment Rune / Vantus Rune / Weapon Consumable the
-        -- QUI_* macros should resolve to. Each dropdown is sourced from
-        -- ConsumableMacros.XXX_OPTIONS so new items can be added in one place.
-        --
-        -- The "Character-specific" toggle (always per-character) decides
-        -- whether the rest of the macros section reads/writes db.profile or
-        -- db.char. cmDB below is a metatable proxy that routes each access to
-        -- the active table, so widget bindings remain stable across toggles.
+        -- EXPIRATION WARNING
+        L.headerAt("Expiration Warning")
+        local s3 = L.sectionAt()
+        local warnW = GUI:CreateFormCheckbox(s3.frame, nil, "consumableExpirationWarning", settings, nil,
+            { description = "Flash the reminder when a tracked buff is within the threshold of expiring." })
+        local threshW = GUI:CreateFormSlider(s3.frame, nil, 60, 600, 30, "consumableExpirationThreshold", settings, nil,
+            { description = "Seconds remaining at which the expiration warning triggers." })
+        s3.AddRow(row(s3.frame, "Warn When Buffs Expiring", warnW), row(s3.frame, "Warning Threshold (seconds)", threshW))
+        L.closeSection(s3)
+
+        -- DISPLAY
+        L.headerAt("Display")
+        local s4 = L.sectionAt()
+        local persistW = GUI:CreateFormCheckbox(s4.frame, nil, "consumablePersistent", settings, function()
+            if settings.consumablePersistent then
+                if _G.QUI_ShowConsumables then _G.QUI_ShowConsumables() end
+            else
+                if _G.QUI_HideConsumables then _G.QUI_HideConsumables() end
+            end
+        end, { description = "Keep the reminder on screen all the time instead of showing it only when triggered." })
+        local anchorW = GUI:CreateFormCheckbox(s4.frame, nil, "consumableAnchorMode", settings, Refresh,
+            { description = "Snap the reminder to the ready check frame's position instead of using its own anchor." })
+        s4.AddRow(row(s4.frame, "Always Show (Persistent)", persistW), row(s4.frame, "Anchor to Ready Check", anchorW))
+
+        local iconSizeW = GUI:CreateFormSlider(s4.frame, nil, 24, 64, 2, "consumableIconSize", settings, Refresh,
+            { description = "Pixel size of each consumable icon in the reminder." })
+        local iconOffW = GUI:CreateFormSlider(s4.frame, nil, 0, 20, 1, "consumableIconOffset", settings, Refresh,
+            { description = "Pixel gap between adjacent icons in the reminder." })
+        s4.AddRow(row(s4.frame, "Icon Size", iconSizeW), row(s4.frame, "Icon Offset", iconOffW))
+
+        local scaleW = GUI:CreateFormSlider(s4.frame, nil, 0.5, 3, 0.05, "consumableScale", settings, Refresh,
+            { precision = 2, description = "Overall scale multiplier applied to the reminder frame." })
+        s4.AddRow(row(s4.frame, "Scale", scaleW))
+        L.closeSection(s4)
+
+        -- MACROS: per-character auto-generated consumable macros. The cmDB
+        -- proxy routes reads/writes to either profile or char DB depending on
+        -- the "Character-specific" toggle. Widget refs remain stable across
+        -- toggles because they bind to the proxy, not the underlying table.
         local cmProfileDB = settings and settings.consumableMacros
         local cmCharDB = ns.Helpers and ns.Helpers.GetCharConsumableMacrosDB
             and ns.Helpers.GetCharConsumableMacrosDB() or nil
@@ -457,11 +729,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                         if not cmCharDB then return end
                         local was = cmCharDB.characterSpecific and true or false
                         cmCharDB.characterSpecific = v and true or false
-                        -- Seed char from profile on the OFF→ON edge so the
-                        -- user's existing selections survive the flip.
                         if cmCharDB.characterSpecific and not was and cmProfileDB then
-                            for _, key in ipairs(SEED_KEYS) do
-                                cmCharDB[key] = cmProfileDB[key]
+                            for _, kk in ipairs(SEED_KEYS) do
+                                cmCharDB[kk] = cmProfileDB[kk]
                             end
                         end
                         return
@@ -475,130 +745,173 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             end
             local fallback = { { value = "none", text = "None" } }
 
-            U.CreateCollapsible(content, "Macros", 11 * FORM_ROW + 8, function(body)
-                local sy = -4
-                sy = P(GUI:CreateFormCheckbox(body, "Character-specific", "characterSpecific", cmDB, function()
-                    -- Macros need to re-derive from whichever scope is now
-                    -- active (or be deleted if the new active scope is
-                    -- disabled). DeleteMacros covers the "switched scope and
-                    -- the new one has enabled = false" case; ForceRefresh
-                    -- otherwise rebuilds bodies from current bag inventory.
-                    if CM then
-                        if cmDB.enabled then CM:ForceRefresh() else CM:DeleteMacros() end
-                    end
-                    if DEFAULT_CHAT_FRAME then
-                        DEFAULT_CHAT_FRAME:AddMessage(
-                            "|cff60A5FA[QUI]|r Consumable macro selections are now "
-                            .. (cmDB.characterSpecific
-                                and "|cffffffffper-character|r for this character."
-                                or "|cffffffffshared|r across this profile.")
-                            .. " Reopen this page to refresh the displayed values."
-                        )
-                    end
-                end, { description = "When enabled, the macro selections below are stored per-character instead of being shared by every character on this AceDB profile. The toggle itself is always per-character. Turning it on copies your current profile selections as a starting point." }), body, sy)
-                sy = P(GUI:CreateFormCheckbox(body, "Enable Consumable Macros", "enabled", cmDB, function()
-                    if CM then
-                        if cmDB.enabled then CM:ForceRefresh() else CM:DeleteMacros() end
-                    end
-                end, { description = "Auto-generate per-character QUI_* macros for the consumables selected below. Disabling deletes the macros." }), body, sy)
-                sy = P(GUI:CreateFormDropdown(body, "Flask Type",
-                    (CM and CM.FLASK_OPTIONS) or fallback, "selectedFlask", cmDB, MacroRefresh, { description = "Which flask/phial the QUI flask macro resolves to on this character." }), body, sy)
-                sy = P(GUI:CreateFormDropdown(body, "Potion Type",
-                    (CM and CM.POTION_OPTIONS) or fallback, "selectedPotion", cmDB, MacroRefresh, { description = "Which combat potion the QUI potion macro resolves to on this character." }), body, sy)
-                sy = P(GUI:CreateFormDropdown(body, "Health Potion",
-                    (CM and CM.HEALTH_OPTIONS) or fallback, "selectedHealth", cmDB, MacroRefresh, { description = "Which health potion the QUI health macro resolves to on this character." }), body, sy)
-                sy = P(GUI:CreateFormDropdown(body, "Healthstone",
-                    (CM and CM.HEALTHSTONE_OPTIONS) or fallback, "selectedHealthstone", cmDB, MacroRefresh, { description = "Which healthstone variant the QUI healthstone macro resolves to on this character." }), body, sy)
-                sy = P(GUI:CreateFormDropdown(body, "Augment Rune",
-                    (CM and CM.AUGMENT_OPTIONS) or fallback, "selectedAugment", cmDB, MacroRefresh, { description = "Which augment rune the QUI augment macro resolves to on this character." }), body, sy)
-                sy = P(GUI:CreateFormDropdown(body, "Vantus Rune",
-                    (CM and CM.VANTUS_OPTIONS) or fallback, "selectedVantus", cmDB, MacroRefresh, { description = "Which vantus rune the QUI vantus macro resolves to on this character." }), body, sy)
-                sy = P(GUI:CreateFormDropdown(body, "Weapon Consumable",
-                    (CM and CM.WEAPON_OPTIONS) or fallback, "selectedWeapon", cmDB, MacroRefresh, { description = "Which weapon consumable (oil, sharpening stone, etc.) the QUI weapon macro resolves to on this character." }), body, sy)
-                P(GUI:CreateFormCheckbox(body, "Chat Notifications", "chatNotifications", cmDB, nil, { description = "Print a chat message when consumable macros are regenerated." }), body, sy)
-            end, sections, relayout)
+            L.headerAt("Macros")
+            local s5 = L.sectionAt()
+            local charSpecW = GUI:CreateFormCheckbox(s5.frame, nil, "characterSpecific", cmDB, function()
+                if CM then
+                    if cmDB.enabled then CM:ForceRefresh() else CM:DeleteMacros() end
+                end
+                if DEFAULT_CHAT_FRAME then
+                    DEFAULT_CHAT_FRAME:AddMessage(
+                        "|cff60A5FA[QUI]|r Consumable macro selections are now "
+                        .. (cmDB.characterSpecific
+                            and "|cffffffffper-character|r for this character."
+                            or "|cffffffffshared|r across this profile.")
+                        .. " Reopen this page to refresh the displayed values."
+                    )
+                end
+            end, { description = "When enabled, the macro selections below are stored per-character instead of being shared by every character on this AceDB profile. The toggle itself is always per-character. Turning it on copies your current profile selections as a starting point." })
+            local enableMacrosW = GUI:CreateFormCheckbox(s5.frame, nil, "enabled", cmDB, function()
+                if CM then
+                    if cmDB.enabled then CM:ForceRefresh() else CM:DeleteMacros() end
+                end
+            end, { description = "Auto-generate per-character QUI_* macros for the consumables selected below. Disabling deletes the macros." })
+            s5.AddRow(row(s5.frame, "Character-specific", charSpecW), row(s5.frame, "Enable Consumable Macros", enableMacrosW))
+
+            local mFlaskW = GUI:CreateFormDropdown(s5.frame, nil,
+                (CM and CM.FLASK_OPTIONS) or fallback, "selectedFlask", cmDB, MacroRefresh,
+                { description = "Which flask/phial the QUI flask macro resolves to on this character." })
+            local mPotionW = GUI:CreateFormDropdown(s5.frame, nil,
+                (CM and CM.POTION_OPTIONS) or fallback, "selectedPotion", cmDB, MacroRefresh,
+                { description = "Which combat potion the QUI potion macro resolves to on this character." })
+            s5.AddRow(row(s5.frame, "Flask Type", mFlaskW), row(s5.frame, "Potion Type", mPotionW))
+
+            local healthW = GUI:CreateFormDropdown(s5.frame, nil,
+                (CM and CM.HEALTH_OPTIONS) or fallback, "selectedHealth", cmDB, MacroRefresh,
+                { description = "Which health potion the QUI health macro resolves to on this character." })
+            local healthstoneW = GUI:CreateFormDropdown(s5.frame, nil,
+                (CM and CM.HEALTHSTONE_OPTIONS) or fallback, "selectedHealthstone", cmDB, MacroRefresh,
+                { description = "Which healthstone variant the QUI healthstone macro resolves to on this character." })
+            s5.AddRow(row(s5.frame, "Health Potion", healthW), row(s5.frame, "Healthstone", healthstoneW))
+
+            local augmentW = GUI:CreateFormDropdown(s5.frame, nil,
+                (CM and CM.AUGMENT_OPTIONS) or fallback, "selectedAugment", cmDB, MacroRefresh,
+                { description = "Which augment rune the QUI augment macro resolves to on this character." })
+            local vantusW = GUI:CreateFormDropdown(s5.frame, nil,
+                (CM and CM.VANTUS_OPTIONS) or fallback, "selectedVantus", cmDB, MacroRefresh,
+                { description = "Which vantus rune the QUI vantus macro resolves to on this character." })
+            s5.AddRow(row(s5.frame, "Augment Rune", augmentW), row(s5.frame, "Vantus Rune", vantusW))
+
+            local weaponW = GUI:CreateFormDropdown(s5.frame, nil,
+                (CM and CM.WEAPON_OPTIONS) or fallback, "selectedWeapon", cmDB, MacroRefresh,
+                { description = "Which weapon consumable (oil, sharpening stone, etc.) the QUI weapon macro resolves to on this character." })
+            local chatNotifyW = GUI:CreateFormCheckbox(s5.frame, nil, "chatNotifications", cmDB, nil,
+                { description = "Print a chat message when consumable macros are regenerated." })
+            s5.AddRow(row(s5.frame, "Weapon Consumable", weaponW), row(s5.frame, "Chat Notifications", chatNotifyW))
+            L.closeSection(s5)
         end
 
-        U.BuildPositionCollapsible(content, "consumables", nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout() return content:GetHeight()
+        return FinishProviderPage(L, content, key, "consumables")
     end })
 
     ---------------------------------------------------------------------------
     -- MISSING RAID BUFFS
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("missingRaidBuffs", { build = function(content, key, width)
+    RegisterSharedOnly("missingRaidBuffs", { build = function(content, key, _width)
         local db = U.GetProfileDB()
         if not db or not db.raidBuffs then return 80 end
         local settings = db.raidBuffs
-
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
+        local L = MakeLayout(content)
         local function Refresh()
             if ns.RaidBuffs and ns.RaidBuffs.Refresh then ns.RaidBuffs:Refresh() end
         end
 
-        -- General
-        U.CreateCollapsible(content, "General", 6 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Show Only When In Group", "showOnlyInGroup", settings, Refresh, { description = "Hide the missing raid buffs display when you aren't in a party or raid." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Show Only In Dungeons/Raids", "showOnlyInInstance", settings, Refresh, { description = "Hide the display while in the open world. Useful if you only care about raid buffs inside instances." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Show Class Self-Buffs (poisons, enchants, shields)", "showSelfBuffs", settings, Refresh, { description = "Also track self-only class buffs like rogue poisons, shaman weapon imbues, and mage armor." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Provider Mode (only buffs you can cast)", "providerMode", settings, Refresh, { description = "Restrict tracking to buffs your current spec can actually provide, so you only see what you need to cast." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Hide Label Bar", "hideLabelBar", settings, Refresh, { description = "Hide the label text under/beside the icon row for a more compact display." }), body, sy)
+        -- GENERAL
+        L.headerAt("General")
+        local s1 = L.sectionAt()
+        local onlyGroupW = GUI:CreateFormCheckbox(s1.frame, nil, "showOnlyInGroup", settings, Refresh,
+            { description = "Hide the missing raid buffs display when you aren't in a party or raid." })
+        local onlyInstW = GUI:CreateFormCheckbox(s1.frame, nil, "showOnlyInInstance", settings, Refresh,
+            { description = "Hide the display while in the open world. Useful if you only care about raid buffs inside instances." })
+        s1.AddRow(row(s1.frame, "Show Only When In Group", onlyGroupW), row(s1.frame, "Show Only In Dungeons/Raids", onlyInstW))
 
-            local growOptions = {
-                {value = "RIGHT", text = "Right"}, {value = "LEFT", text = "Left"},
-                {value = "CENTER_H", text = "Center (H)"}, {value = "UP", text = "Up"},
-                {value = "DOWN", text = "Down"}, {value = "CENTER_V", text = "Center (V)"},
-            }
-            P(GUI:CreateFormDropdown(body, "Grow Direction", growOptions, "growDirection", settings, Refresh, { description = "Direction missing-buff icons extend from the anchor. Center options grow symmetrically in both directions." }), body, sy)
-        end, sections, relayout)
+        local selfBuffsW = GUI:CreateFormCheckbox(s1.frame, nil, "showSelfBuffs", settings, Refresh,
+            { description = "Also track self-only class buffs like rogue poisons, shaman weapon imbues, and mage armor." })
+        local providerW = GUI:CreateFormCheckbox(s1.frame, nil, "providerMode", settings, Refresh,
+            { description = "Restrict tracking to buffs your current spec can actually provide, so you only see what you need to cast." })
+        s1.AddRow(row(s1.frame, "Show Class Self-Buffs (poisons, enchants, shields)", selfBuffsW), row(s1.frame, "Provider Mode (only buffs you can cast)", providerW))
 
-        -- Appearance
-        U.CreateCollapsible(content, "Appearance", 3 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormSlider(body, "Icon Size", 16, 64, 1, "iconSize", settings, Refresh, nil, { description = "Pixel size of each missing-buff icon." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Icon Spacing", 0, 20, 1, "iconSpacing", settings, Refresh, nil, { description = "Pixel gap between adjacent icons." }), body, sy)
-            P(GUI:CreateFormSlider(body, "Label Font Size", 8, 24, 1, "labelFontSize", settings, Refresh, nil, { description = "Font size of the label text displayed on the label bar." }), body, sy)
-        end, sections, relayout)
+        local hideLabelW = GUI:CreateFormCheckbox(s1.frame, nil, "hideLabelBar", settings, Refresh,
+            { description = "Hide the label text under/beside the icon row for a more compact display." })
+        local growOptions = {
+            {value = "RIGHT", text = "Right"}, {value = "LEFT", text = "Left"},
+            {value = "CENTER_H", text = "Center (H)"}, {value = "UP", text = "Up"},
+            {value = "DOWN", text = "Down"}, {value = "CENTER_V", text = "Center (V)"},
+        }
+        local growW = GUI:CreateFormDropdown(s1.frame, nil, growOptions, "growDirection", settings, Refresh,
+            { description = "Direction missing-buff icons extend from the anchor. Center options grow symmetrically in both directions." })
+        s1.AddRow(row(s1.frame, "Hide Label Bar", hideLabelW), row(s1.frame, "Grow Direction", growW))
+        L.closeSection(s1)
 
-        -- Icon Border
+        -- APPEARANCE
+        L.headerAt("Appearance")
+        local s2 = L.sectionAt()
+        local iconSizeW = GUI:CreateFormSlider(s2.frame, nil, 16, 64, 1, "iconSize", settings, Refresh,
+            { description = "Pixel size of each missing-buff icon." })
+        local iconSpaceW = GUI:CreateFormSlider(s2.frame, nil, 0, 20, 1, "iconSpacing", settings, Refresh,
+            { description = "Pixel gap between adjacent icons." })
+        s2.AddRow(row(s2.frame, "Icon Size", iconSizeW), row(s2.frame, "Icon Spacing", iconSpaceW))
+
+        local labelSizeW = GUI:CreateFormSlider(s2.frame, nil, 8, 24, 1, "labelFontSize", settings, Refresh,
+            { description = "Font size of the label text displayed on the label bar." })
+        s2.AddRow(row(s2.frame, "Label Font Size", labelSizeW))
+        L.closeSection(s2)
+
+        -- ICON BORDER
         if not settings.iconBorder then
             settings.iconBorder = { show = true, width = 1, useClassColor = false, useAccentColor = false, color = {0.376, 0.647, 0.980, 1} }
         end
         local borderSettings = settings.iconBorder
-        U.CreateCollapsible(content, "Icon Border", 5 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Show Icon Border", "show", borderSettings, Refresh, { description = "Draw a border around each missing-buff icon." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Use Class Color", "useClassColor", borderSettings, Refresh, { description = "Color the icon borders by your class instead of the Border Color swatch below." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Use Accent Color", "useAccentColor", borderSettings, Refresh, { description = "Color the icon borders using the UI accent color instead of the Border Color swatch below." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Border Color", "color", borderSettings, Refresh, nil, { description = "Color used for icon borders when Class Color and Accent Color are both off." }), body, sy)
-            P(GUI:CreateFormSlider(body, "Border Width", 1, 4, 1, "width", borderSettings, Refresh, nil, { description = "Thickness of the icon border in pixels." }), body, sy)
-        end, sections, relayout)
+        L.headerAt("Icon Border")
+        local s3 = L.sectionAt()
+        local showBdrW = GUI:CreateFormCheckbox(s3.frame, nil, "show", borderSettings, Refresh,
+            { description = "Draw a border around each missing-buff icon." })
+        local useClassBdrW = GUI:CreateFormCheckbox(s3.frame, nil, "useClassColor", borderSettings, Refresh,
+            { description = "Color the icon borders by your class instead of the Border Color swatch below." })
+        s3.AddRow(row(s3.frame, "Show Icon Border", showBdrW), row(s3.frame, "Use Class Color", useClassBdrW))
 
-        -- Buff Count
+        local useAccentBdrW = GUI:CreateFormCheckbox(s3.frame, nil, "useAccentColor", borderSettings, Refresh,
+            { description = "Color the icon borders using the UI accent color instead of the Border Color swatch below." })
+        local bdrColorW = GUI:CreateFormColorPicker(s3.frame, nil, "color", borderSettings, Refresh, nil,
+            { description = "Color used for icon borders when Class Color and Accent Color are both off." })
+        s3.AddRow(row(s3.frame, "Use Accent Color", useAccentBdrW), row(s3.frame, "Border Color", bdrColorW))
+
+        local bdrWidthW = GUI:CreateFormSlider(s3.frame, nil, 1, 4, 1, "width", borderSettings, Refresh,
+            { description = "Thickness of the icon border in pixels." })
+        s3.AddRow(row(s3.frame, "Border Width", bdrWidthW))
+        L.closeSection(s3)
+
+        -- BUFF COUNT
         if not settings.buffCount then
             settings.buffCount = { show = true, position = "BOTTOM", fontSize = 10, color = {1, 1, 1, 1} }
         end
         local countSettings = settings.buffCount
-        U.CreateCollapsible(content, "Buff Count", 6 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Show Buff Count", "show", countSettings, Refresh, { description = "Show a count next to each missing buff indicating how many group members are missing it." }), body, sy)
-            local countPosOptions = {
-                {value = "TOP", text = "Top"}, {value = "BOTTOM", text = "Bottom"},
-                {value = "LEFT", text = "Left"}, {value = "RIGHT", text = "Right"},
-            }
-            sy = P(GUI:CreateFormDropdown(body, "Count Position", countPosOptions, "position", countSettings, Refresh, { description = "Which side of the icon the count text is placed on." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Count Font Size", 8, 18, 1, "fontSize", countSettings, Refresh, nil, { description = "Font size of the count text." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Count Color", "color", countSettings, Refresh, nil, { description = "Color of the count text." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Count X Offset", -50, 50, 1, "offsetX", countSettings, Refresh, nil, { description = "Horizontal pixel offset for the count text from its anchor. Positive moves right, negative moves left." }), body, sy)
-            P(GUI:CreateFormSlider(body, "Count Y Offset", -50, 50, 1, "offsetY", countSettings, Refresh, nil, { description = "Vertical pixel offset for the count text from its anchor. Positive moves up, negative moves down." }), body, sy)
-        end, sections, relayout)
+        L.headerAt("Buff Count")
+        local s4 = L.sectionAt()
+        local showCountW = GUI:CreateFormCheckbox(s4.frame, nil, "show", countSettings, Refresh,
+            { description = "Show a count next to each missing buff indicating how many group members are missing it." })
+        local countPosOptions = {
+            {value = "TOP", text = "Top"}, {value = "BOTTOM", text = "Bottom"},
+            {value = "LEFT", text = "Left"}, {value = "RIGHT", text = "Right"},
+        }
+        local countPosW = GUI:CreateFormDropdown(s4.frame, nil, countPosOptions, "position", countSettings, Refresh,
+            { description = "Which side of the icon the count text is placed on." })
+        s4.AddRow(row(s4.frame, "Show Buff Count", showCountW), row(s4.frame, "Count Position", countPosW))
 
-        U.BuildPositionCollapsible(content, "missingRaidBuffs", nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout() return content:GetHeight()
+        local countSizeW = GUI:CreateFormSlider(s4.frame, nil, 8, 18, 1, "fontSize", countSettings, Refresh,
+            { description = "Font size of the count text." })
+        local countColorW = GUI:CreateFormColorPicker(s4.frame, nil, "color", countSettings, Refresh, nil,
+            { description = "Color of the count text." })
+        s4.AddRow(row(s4.frame, "Count Font Size", countSizeW), row(s4.frame, "Count Color", countColorW))
+
+        local countXW = GUI:CreateFormSlider(s4.frame, nil, -50, 50, 1, "offsetX", countSettings, Refresh,
+            { description = "Horizontal pixel offset for the count text from its anchor. Positive moves right, negative moves left." })
+        local countYW = GUI:CreateFormSlider(s4.frame, nil, -50, 50, 1, "offsetY", countSettings, Refresh,
+            { description = "Vertical pixel offset for the count text from its anchor. Positive moves up, negative moves down." })
+        s4.AddRow(row(s4.frame, "Count X Offset", countXW), row(s4.frame, "Count Y Offset", countYW))
+        L.closeSection(s4)
+
+        return FinishProviderPage(L, content, key, "missingRaidBuffs")
     end })
 
     ---------------------------------------------------------------------------
@@ -615,7 +928,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         {key = "orange", label = "Orange", color = {1, 0.5, 0, 1}},
     }
 
-    RegisterSharedOnly("tooltipAnchor", { build = function(content, key, width)
+    RegisterSharedOnly("tooltipAnchor", { build = function(content, key, _width)
         local db = U.GetProfileDB()
         if not db or not db.tooltip then return 80 end
         local tooltip = db.tooltip
@@ -632,8 +945,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         if tooltip.cursorOffsetY == nil then tooltip.cursorOffsetY = -16 end
         if tooltip.hideDelay == nil then tooltip.hideDelay = 0 end
 
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
+        local L = MakeLayout(content)
         local function RefreshTooltips() if ns.QUI_RefreshTooltips then ns.QUI_RefreshTooltips() end end
         local function RefreshTooltipFontSize()
             if ns.QUI_RefreshTooltipFontSize then ns.QUI_RefreshTooltipFontSize()
@@ -641,269 +953,227 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
         local function RefreshTooltipSkin() if ns.QUI_RefreshTooltipSkinColors then ns.QUI_RefreshTooltipSkinColors() end end
 
-        -- Skinning
-        CreateTileCollapsible(content, "Tooltip Skinning", 1, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Skin Tooltips", "skinTooltips", tooltip, function()
-                GUI:ShowConfirmation({
-                    title = "Reload UI?",
-                    message = "Skinning changes require a reload to take effect.",
-                    acceptText = "Reload",
-                    cancelText = "Later",
-                    onAccept = function() QUI:SafeReload() end,
-                })
-            end, { description = "Apply the QUI theme (colors, border) to all game tooltips. Requires a UI reload to take effect." }), body, sy)
+        -- TOOLTIP SKINNING
+        L.headerAt("Tooltip Skinning")
+        local s1 = L.sectionAt()
+        local skinW = GUI:CreateFormCheckbox(s1.frame, nil, "skinTooltips", tooltip, function()
+            GUI:ShowConfirmation({
+                title = "Reload UI?",
+                message = "Skinning changes require a reload to take effect.",
+                acceptText = "Reload",
+                cancelText = "Later",
+                onAccept = function() QUI:SafeReload() end,
+            })
+        end, { description = "Apply the QUI theme (colors, border) to all game tooltips. Requires a UI reload to take effect." })
+        local bgColorW = GUI:CreateFormColorPicker(s1.frame, nil, "bgColor", tooltip, RefreshTooltipSkin, nil,
+            { description = "Background color applied to skinned tooltips." })
+        s1.AddRow(row(s1.frame, "Skin Tooltips", skinW), row(s1.frame, "Background Color", bgColorW))
 
-            local skinInfo = GUI:CreateLabel(body, "Apply QUI theme (colors, border) to all game tooltips.", 10, GUI.Colors.textMuted)
-            skinInfo:SetPoint("TOPLEFT", 0, sy)
-            skinInfo:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            skinInfo:SetJustifyH("LEFT")
-            sy = sy - FORM_ROW
+        local bgOpacityW = GUI:CreateFormSlider(s1.frame, nil, 0, 1, 0.05, "bgOpacity", tooltip, RefreshTooltipSkin,
+            { precision = 2, description = "Opacity of the tooltip background (0 is invisible, 1 is fully opaque)." })
+        local showBdrW = GUI:CreateFormCheckbox(s1.frame, nil, "showBorder", tooltip, RefreshTooltipSkin,
+            { description = "Draw a border around skinned tooltips." })
+        s1.AddRow(row(s1.frame, "Background Opacity", bgOpacityW), row(s1.frame, "Show Border", showBdrW))
 
-            sy = P(GUI:CreateFormColorPicker(body, "Background Color", "bgColor", tooltip, RefreshTooltipSkin, nil, { description = "Background color applied to skinned tooltips." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Background Opacity", 0, 1, 0.05, "bgOpacity", tooltip, RefreshTooltipSkin, {precision = 2}, { description = "Opacity of the tooltip background (0 is invisible, 1 is fully opaque)." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Show Border", "showBorder", tooltip, RefreshTooltipSkin, { description = "Draw a border around skinned tooltips." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Border Thickness", 1, 10, 1, "borderThickness", tooltip, RefreshTooltipSkin, nil, { description = "Thickness of the tooltip border in pixels." }), body, sy)
+        local bdrThickW = GUI:CreateFormSlider(s1.frame, nil, 1, 10, 1, "borderThickness", tooltip, RefreshTooltipSkin,
+            { description = "Thickness of the tooltip border in pixels." })
+        local borderColorPicker = GUI:CreateFormColorPicker(s1.frame, nil, "borderColor", tooltip, RefreshTooltipSkin, nil,
+            { description = "Color of the tooltip border. Overridden by Class Color or Accent Color below if either is enabled." })
+        s1.AddRow(row(s1.frame, "Border Thickness", bdrThickW), row(s1.frame, "Border Color", borderColorPicker))
 
-            local borderColorPicker = GUI:CreateFormColorPicker(body, "Border Color", "borderColor", tooltip, RefreshTooltipSkin, nil, { description = "Color of the tooltip border. Overridden by Class Color or Accent Color below if either is enabled." })
-            sy = P(borderColorPicker, body, sy)
+        if tooltip.borderUseClassColor and tooltip.borderUseAccentColor then
+            tooltip.borderUseAccentColor = false
+        end
 
-            if tooltip.borderUseClassColor and tooltip.borderUseAccentColor then
+        -- Cross-widget enable/disable: class-color + accent-color are mutually
+        -- exclusive, and whichever is on disables the border color swatch.
+        local accentColorBorderCheck
+        local classColorBorderCheck = GUI:CreateFormCheckbox(s1.frame, nil, "borderUseClassColor", tooltip, function(val)
+            if val then
                 tooltip.borderUseAccentColor = false
+                if accentColorBorderCheck and accentColorBorderCheck.SetChecked then accentColorBorderCheck:SetChecked(false) end
             end
-
-            local accentColorBorderCheck
-            local classColorBorderCheck = GUI:CreateFormCheckbox(body, "Use Class Color for Border", "borderUseClassColor", tooltip, function(val)
-                if val then
-                    tooltip.borderUseAccentColor = false
-                    if accentColorBorderCheck and accentColorBorderCheck.SetChecked then accentColorBorderCheck:SetChecked(false) end
-                end
-                if borderColorPicker and borderColorPicker.SetEnabled then
-                    borderColorPicker:SetEnabled(not val and not tooltip.borderUseAccentColor)
-                end
-                RefreshTooltipSkin()
-            end, { description = "Color the tooltip border by the inspected unit's class (falls back to your class for non-unit tooltips)." })
-            sy = P(classColorBorderCheck, body, sy)
-
-            accentColorBorderCheck = GUI:CreateFormCheckbox(body, "Use Accent Color for Border", "borderUseAccentColor", tooltip, function(val)
-                if val then
-                    tooltip.borderUseClassColor = false
-                    if classColorBorderCheck and classColorBorderCheck.SetChecked then classColorBorderCheck:SetChecked(false) end
-                end
-                if borderColorPicker and borderColorPicker.SetEnabled then
-                    borderColorPicker:SetEnabled(not val and not tooltip.borderUseClassColor)
-                end
-                RefreshTooltipSkin()
-            end, { description = "Color the tooltip border using the UI accent color." })
-            sy = P(accentColorBorderCheck, body, sy)
-
             if borderColorPicker and borderColorPicker.SetEnabled then
-                borderColorPicker:SetEnabled(not tooltip.borderUseClassColor and not tooltip.borderUseAccentColor)
+                borderColorPicker:SetEnabled(not val and not tooltip.borderUseAccentColor)
             end
-
-            sy = P(GUI:CreateFormCheckbox(body, "Hide Health Bar", "hideHealthBar", tooltip, RefreshTooltips, { description = "Hide the health bar shown on player, NPC, and enemy tooltips." }), body, sy)
-
-            local healthInfo = GUI:CreateLabel(body, "Hide the health bar shown on player, NPC, and enemy tooltips.", 10, GUI.Colors.textMuted)
-            healthInfo:SetPoint("TOPLEFT", 0, sy)
-            healthInfo:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            healthInfo:SetJustifyH("LEFT")
-
-            local totalHeight = 12 * FORM_ROW + 8
-            local section = body:GetParent()
-            section._contentHeight = totalHeight
-        end, sections, relayout)
-
-        -- Font & Content
-        CreateTileCollapsible(content, "Font & Content", 1, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormSlider(body, "Tooltip Font Size", 8, 24, 1, "fontSize", tooltip, RefreshTooltipFontSize, nil, { description = "Font size of tooltip text." }), body, sy)
-
-            local fontInfo = GUI:CreateLabel(body, "Adjust tooltip text size (8-24).", 10, GUI.Colors.textMuted)
-            fontInfo:SetPoint("TOPLEFT", 0, sy)
-            fontInfo:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            fontInfo:SetJustifyH("LEFT")
-            sy = sy - FORM_ROW
-
-            sy = P(GUI:CreateFormCheckbox(body, "Show Spell/Icon IDs", "showSpellIDs", tooltip, RefreshTooltips, { description = "Display spell ID and icon ID on buff, debuff, and spell tooltips. May not populate in combat." }), body, sy)
-
-            local spellInfo = GUI:CreateLabel(body, "Display spell ID and icon ID on buff, debuff, and spell tooltips. May not work in combat.", 10, GUI.Colors.textMuted)
-            spellInfo:SetPoint("TOPLEFT", 0, sy)
-            spellInfo:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            spellInfo:SetJustifyH("LEFT")
-            sy = sy - FORM_ROW
-
-            sy = P(GUI:CreateFormCheckbox(body, "Class Color Player Names", "classColorName", tooltip, RefreshTooltips, { description = "Color player names in tooltips by their class." }), body, sy)
-
-            local classInfo = GUI:CreateLabel(body, "Color player names in tooltips by their class.", 10, GUI.Colors.textMuted)
-            classInfo:SetPoint("TOPLEFT", 0, sy)
-            classInfo:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            classInfo:SetJustifyH("LEFT")
-            sy = sy - FORM_ROW
-
-            sy = P(GUI:CreateFormSlider(body, "Hide Delay", 0, 2, 0.1, "hideDelay", tooltip, RefreshTooltips, {precision = 1}, { description = "Seconds before the tooltip fades after your mouse leaves. 0 means instant hide." }), body, sy)
-
-            local delayInfo = GUI:CreateLabel(body, "Seconds before tooltip fades out after mouse leaves (0 = instant hide).", 10, GUI.Colors.textMuted)
-            delayInfo:SetPoint("TOPLEFT", 0, sy)
-            delayInfo:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            delayInfo:SetJustifyH("LEFT")
-            sy = sy - FORM_ROW
-
-            sy = P(GUI:CreateFormCheckbox(body, "Hide Server Name", "hideServerName", tooltip, RefreshTooltips, { description = "Strip the realm name from cross-realm player tooltips for a cleaner display." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Hide Player Titles", "hidePlayerTitle", tooltip, RefreshTooltips, { description = "Hide character titles on player tooltips." }), body, sy)
-
-            local totalHeight = 4 * FORM_ROW + 4 * FORM_ROW + 2 * FORM_ROW + 8
-            local section = body:GetParent()
-            section._contentHeight = totalHeight
-        end, sections, relayout)
-
-        -- Player Item Level
-        CreateTileCollapsible(content, "Player Item Level", 1, function(body)
-            local sy = -4
-
-            local itemLevelColorFields = {}
-            local itemLevelColorLabels = {}
-            local itemLevelBracketHeader
-            local itemLevelBracketInfo
-
-            local function RefreshPlayerItemLevelBracketInputs()
-                local enabled = tooltip.showPlayerItemLevel and tooltip.colorPlayerItemLevel
-                if itemLevelBracketHeader then
-                    itemLevelBracketHeader:SetTextColor(enabled and GUI.Colors.text[1] or GUI.Colors.textMuted[1], enabled and GUI.Colors.text[2] or GUI.Colors.textMuted[2], enabled and GUI.Colors.text[3] or GUI.Colors.textMuted[3], 1)
-                end
-                if itemLevelBracketInfo then
-                    itemLevelBracketInfo:SetTextColor(GUI.Colors.textMuted[1], GUI.Colors.textMuted[2], GUI.Colors.textMuted[3], enabled and 1 or 0.6)
-                end
-                for _, label in ipairs(itemLevelColorLabels) do
-                    label:SetAlpha(enabled and 1 or 0.6)
-                end
-                for _, fieldInfo in ipairs(itemLevelColorFields) do
-                    fieldInfo.input:SetEnabled(enabled)
-                    fieldInfo.input:EnableMouse(enabled)
-                    fieldInfo.frame:SetAlpha(enabled and 1 or 0.6)
-                end
+            RefreshTooltipSkin()
+        end, { description = "Color the tooltip border by the inspected unit's class (falls back to your class for non-unit tooltips)." })
+        accentColorBorderCheck = GUI:CreateFormCheckbox(s1.frame, nil, "borderUseAccentColor", tooltip, function(val)
+            if val then
+                tooltip.borderUseClassColor = false
+                if classColorBorderCheck and classColorBorderCheck.SetChecked then classColorBorderCheck:SetChecked(false) end
             end
-
-            sy = P(GUI:CreateFormCheckbox(body, "Show Player Item Level", "showPlayerItemLevel", tooltip, function()
-                RefreshPlayerItemLevelBracketInputs()
-                RefreshTooltips()
-            end, { description = "Show average equipped item level on player tooltips. Remote players may populate after a short inspect delay." }), body, sy)
-
-            local ilvlInfo = GUI:CreateLabel(body, "Show average equipped item level on player tooltips. Remote players may populate after a short inspect delay.", 10, GUI.Colors.textMuted)
-            ilvlInfo:SetPoint("TOPLEFT", 0, sy)
-            ilvlInfo:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            ilvlInfo:SetJustifyH("LEFT")
-            sy = sy - FORM_ROW
-
-            sy = P(GUI:CreateFormCheckbox(body, "Color Player Item Level by Bracket", "colorPlayerItemLevel", tooltip, function()
-                RefreshPlayerItemLevelBracketInputs()
-                RefreshTooltips()
-            end, { description = "Color the item level number using the bracket thresholds defined below (grey/white/green/blue/purple/orange)." }), body, sy)
-
-            local colorInfo = GUI:CreateLabel(body, "Color by grey/white/green/blue/purple/orange brackets.", 10, GUI.Colors.textMuted)
-            colorInfo:SetPoint("TOPLEFT", 0, sy)
-            colorInfo:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            colorInfo:SetJustifyH("LEFT")
-            sy = sy - 20
-
-            itemLevelBracketHeader = body:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            itemLevelBracketHeader:SetPoint("TOPLEFT", 0, sy)
-            itemLevelBracketHeader:SetText("Bracket Breakpoints")
-            itemLevelBracketHeader:SetTextColor(GUI.Colors.text[1], GUI.Colors.text[2], GUI.Colors.text[3], 1)
-            sy = sy - 16
-
-            local bracketRow = CreateFrame("Frame", nil, body)
-            bracketRow:SetHeight(44)
-            bracketRow:SetPoint("TOPLEFT", 0, sy)
-            bracketRow:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            bracketRow._quiDualColumnFullWidth = true
-            bracketRow._quiDualColumnRowHeight = 48
-
-            local fieldWidth = 48
-            local fieldSpacing = 6
-            local previousGroup = nil
-
-            local function CommitBracketValue(fieldKey, editBox)
-                local currentValue = tonumber(tooltip.itemLevelBrackets[fieldKey]) or DEFAULT_PLAYER_ILVL_BRACKETS[fieldKey]
-                local parsedValue = tonumber(editBox:GetText())
-                if parsedValue then
-                    parsedValue = math.max(0, math.floor(parsedValue))
-                    tooltip.itemLevelBrackets[fieldKey] = parsedValue
-                    editBox:SetText(tostring(parsedValue))
-                    RefreshTooltips()
-                else
-                    editBox:SetText(tostring(currentValue))
-                end
-                editBox:SetCursorPosition(0)
+            if borderColorPicker and borderColorPicker.SetEnabled then
+                borderColorPicker:SetEnabled(not val and not tooltip.borderUseClassColor)
             end
+            RefreshTooltipSkin()
+        end, { description = "Color the tooltip border using the UI accent color." })
+        s1.AddRow(row(s1.frame, "Use Class Color for Border", classColorBorderCheck), row(s1.frame, "Use Accent Color for Border", accentColorBorderCheck))
 
-            for _, field in ipairs(PLAYER_ILVL_BRACKET_FIELDS) do
-                local group = CreateFrame("Frame", nil, bracketRow)
-                group:SetSize(fieldWidth, 40)
-                group:SetPoint("TOPLEFT", previousGroup or bracketRow, previousGroup and "TOPRIGHT" or "TOPLEFT", previousGroup and fieldSpacing or 0, 0)
+        if borderColorPicker and borderColorPicker.SetEnabled then
+            borderColorPicker:SetEnabled(not tooltip.borderUseClassColor and not tooltip.borderUseAccentColor)
+        end
 
-                local label = bracketRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                label:SetText(field.label)
-                label:SetTextColor(field.color[1], field.color[2], field.color[3], 1)
-                label:SetPoint("TOP", group, "TOP", 0, 0)
-                table.insert(itemLevelColorLabels, label)
+        local hideHealthW = GUI:CreateFormCheckbox(s1.frame, nil, "hideHealthBar", tooltip, RefreshTooltips,
+            { description = "Hide the health bar shown on player, NPC, and enemy tooltips." })
+        s1.AddRow(row(s1.frame, "Hide Health Bar", hideHealthW))
+        L.closeSection(s1)
 
-                local fieldBg, input = GUI:CreateInlineEditBox(group, {
-                    width = fieldWidth,
-                    height = 22,
-                    textInset = 6,
-                    text = tostring(tooltip.itemLevelBrackets[field.key]),
-                    justifyH = "CENTER",
-                    maxLetters = 3,
-                    bgColor = {0.05, 0.05, 0.05, 0.5},
-                    borderColor = field.color,
-                    activeBorderColor = field.color,
-                    onEnterPressed = function(self) CommitBracketValue(field.key, self) end,
-                    onEscapePressed = function(self)
-                        self:SetText(tostring(tooltip.itemLevelBrackets[field.key]))
-                        self:SetCursorPosition(0)
-                    end,
-                    onEditFocusGained = function(self) self:HighlightText() end,
-                })
-                fieldBg:SetPoint("TOP", label, "BOTTOM", 0, -2)
+        -- FONT & CONTENT
+        L.headerAt("Font & Content")
+        local s2 = L.sectionAt()
+        local fontSizeW = GUI:CreateFormSlider(s2.frame, nil, 8, 24, 1, "fontSize", tooltip, RefreshTooltipFontSize,
+            { description = "Font size of tooltip text." })
+        local spellIDsW = GUI:CreateFormCheckbox(s2.frame, nil, "showSpellIDs", tooltip, RefreshTooltips,
+            { description = "Display spell ID and icon ID on buff, debuff, and spell tooltips. May not populate in combat." })
+        s2.AddRow(row(s2.frame, "Tooltip Font Size", fontSizeW), row(s2.frame, "Show Spell/Icon IDs", spellIDsW))
 
-                input:HookScript("OnEditFocusLost", function(self)
-                    CommitBracketValue(field.key, self)
-                end)
+        local classColorNameW = GUI:CreateFormCheckbox(s2.frame, nil, "classColorName", tooltip, RefreshTooltips,
+            { description = "Color player names in tooltips by their class." })
+        local hideDelayW = GUI:CreateFormSlider(s2.frame, nil, 0, 2, 0.1, "hideDelay", tooltip, RefreshTooltips,
+            { precision = 1, description = "Seconds before the tooltip fades after your mouse leaves. 0 means instant hide." })
+        s2.AddRow(row(s2.frame, "Class Color Player Names", classColorNameW), row(s2.frame, "Hide Delay", hideDelayW))
 
-                table.insert(itemLevelColorFields, { frame = fieldBg, input = input })
-                previousGroup = group
+        local hideServerW = GUI:CreateFormCheckbox(s2.frame, nil, "hideServerName", tooltip, RefreshTooltips,
+            { description = "Strip the realm name from cross-realm player tooltips for a cleaner display." })
+        local hideTitleW = GUI:CreateFormCheckbox(s2.frame, nil, "hidePlayerTitle", tooltip, RefreshTooltips,
+            { description = "Hide character titles on player tooltips." })
+        s2.AddRow(row(s2.frame, "Hide Server Name", hideServerW), row(s2.frame, "Hide Player Titles", hideTitleW))
+        L.closeSection(s2)
+
+        -- PLAYER ITEM LEVEL
+        L.headerAt("Player Item Level")
+        local s3 = L.sectionAt()
+
+        local itemLevelColorFields = {}
+        local itemLevelColorLabels = {}
+        local itemLevelBracketHeader
+        local itemLevelBracketInfo
+
+        local function RefreshPlayerItemLevelBracketInputs()
+            local enabled = tooltip.showPlayerItemLevel and tooltip.colorPlayerItemLevel
+            if itemLevelBracketHeader then
+                itemLevelBracketHeader:SetTextColor(enabled and GUI.Colors.text[1] or GUI.Colors.textMuted[1], enabled and GUI.Colors.text[2] or GUI.Colors.textMuted[2], enabled and GUI.Colors.text[3] or GUI.Colors.textMuted[3], 1)
             end
+            if itemLevelBracketInfo then
+                itemLevelBracketInfo:SetTextColor(GUI.Colors.textMuted[1], GUI.Colors.textMuted[2], GUI.Colors.textMuted[3], enabled and 1 or 0.6)
+            end
+            for _, label in ipairs(itemLevelColorLabels) do
+                label:SetAlpha(enabled and 1 or 0.6)
+            end
+            for _, fieldInfo in ipairs(itemLevelColorFields) do
+                fieldInfo.input:SetEnabled(enabled)
+                fieldInfo.input:EnableMouse(enabled)
+                fieldInfo.frame:SetAlpha(enabled and 1 or 0.6)
+            end
+        end
 
-            sy = sy - 48
-
-            itemLevelBracketInfo = GUI:CreateLabel(body, "Inclusive starts for each color bracket. Values below White use the grey bracket.", 10, GUI.Colors.textMuted)
-            itemLevelBracketInfo:SetPoint("TOPLEFT", 0, sy)
-            itemLevelBracketInfo:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            itemLevelBracketInfo:SetJustifyH("LEFT")
-
+        local showILvlW = GUI:CreateFormCheckbox(s3.frame, nil, "showPlayerItemLevel", tooltip, function()
             RefreshPlayerItemLevelBracketInputs()
+            RefreshTooltips()
+        end, { description = "Show average equipped item level on player tooltips. Remote players may populate after a short inspect delay." })
+        local colorILvlW = GUI:CreateFormCheckbox(s3.frame, nil, "colorPlayerItemLevel", tooltip, function()
+            RefreshPlayerItemLevelBracketInputs()
+            RefreshTooltips()
+        end, { description = "Color the item level number using the bracket thresholds defined below (grey/white/green/blue/purple/orange)." })
+        s3.AddRow(row(s3.frame, "Show Player Item Level", showILvlW), row(s3.frame, "Color Player Item Level by Bracket", colorILvlW))
+        L.closeSection(s3)
 
-            -- 2 checkboxes + 2 info labels + header + bracket row + info
-            local totalHeight = 2 * FORM_ROW + 20 + FORM_ROW + 16 + 48 + FORM_ROW + 8
-            local section = body:GetParent()
-            section._contentHeight = totalHeight
-        end, sections, relayout)
+        -- Bracket breakpoint inputs — custom block below the Player Item Level card
+        local bracketBlock = CreateFrame("Frame", nil, content)
+        local BRACKET_BLOCK_HEIGHT = 16 + 48 + 24
 
-        -- Cursor Anchor
-        CreateTileCollapsible(content, "Cursor Anchor", 5 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Anchor Tooltip to Cursor", "anchorToCursor", tooltip, RefreshTooltips, { description = "Make tooltips follow your mouse cursor instead of using their default anchor point." }), body, sy)
-            sy = P(GUI:CreateFormDropdown(body, "Cursor Anchor Point", anchorOptions, "cursorAnchor", tooltip, RefreshTooltips, { description = "Which corner of the tooltip is pinned to the cursor position." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Cursor X Offset", -200, 200, 1, "cursorOffsetX", tooltip, RefreshTooltips, nil, { description = "Horizontal pixel offset between the cursor and the tooltip anchor. Positive moves right, negative moves left." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Cursor Y Offset", -200, 200, 1, "cursorOffsetY", tooltip, RefreshTooltips, nil, { description = "Vertical pixel offset between the cursor and the tooltip anchor. Positive moves up, negative moves down." }), body, sy)
+        itemLevelBracketHeader = bracketBlock:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        itemLevelBracketHeader:SetPoint("TOPLEFT", bracketBlock, "TOPLEFT", 0, 0)
+        itemLevelBracketHeader:SetText("Bracket Breakpoints")
+        itemLevelBracketHeader:SetTextColor(GUI.Colors.text[1], GUI.Colors.text[2], GUI.Colors.text[3], 1)
 
-            local info = GUI:CreateLabel(body, "Tooltip follows your mouse cursor with configurable anchor point and offsets.", 10, GUI.Colors.textMuted)
-            info:SetPoint("TOPLEFT", 0, sy)
-            info:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            info:SetJustifyH("LEFT")
-        end, sections, relayout)
+        local bracketRow = CreateFrame("Frame", nil, bracketBlock)
+        bracketRow:SetHeight(44)
+        bracketRow:SetPoint("TOPLEFT", itemLevelBracketHeader, "BOTTOMLEFT", 0, -4)
+        bracketRow:SetPoint("RIGHT", bracketBlock, "RIGHT", 0, 0)
 
-        -- Visibility
+        local fieldWidth = 48
+        local fieldSpacing = 6
+        local previousGroup = nil
+
+        local function CommitBracketValue(fieldKey, editBox)
+            local currentValue = tonumber(tooltip.itemLevelBrackets[fieldKey]) or DEFAULT_PLAYER_ILVL_BRACKETS[fieldKey]
+            local parsedValue = tonumber(editBox:GetText())
+            if parsedValue then
+                parsedValue = math.max(0, math.floor(parsedValue))
+                tooltip.itemLevelBrackets[fieldKey] = parsedValue
+                editBox:SetText(tostring(parsedValue))
+                RefreshTooltips()
+            else
+                editBox:SetText(tostring(currentValue))
+            end
+            editBox:SetCursorPosition(0)
+        end
+
+        for _, field in ipairs(PLAYER_ILVL_BRACKET_FIELDS) do
+            local group = CreateFrame("Frame", nil, bracketRow)
+            group:SetSize(fieldWidth, 40)
+            group:SetPoint("TOPLEFT", previousGroup or bracketRow, previousGroup and "TOPRIGHT" or "TOPLEFT", previousGroup and fieldSpacing or 0, 0)
+
+            local label = bracketRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            label:SetText(field.label)
+            label:SetTextColor(field.color[1], field.color[2], field.color[3], 1)
+            label:SetPoint("TOP", group, "TOP", 0, 0)
+            table.insert(itemLevelColorLabels, label)
+
+            local fieldBg, input = GUI:CreateInlineEditBox(group, {
+                width = fieldWidth,
+                height = 22,
+                textInset = 6,
+                text = tostring(tooltip.itemLevelBrackets[field.key]),
+                justifyH = "CENTER",
+                maxLetters = 3,
+                bgColor = {0.05, 0.05, 0.05, 0.5},
+                borderColor = field.color,
+                activeBorderColor = field.color,
+                onEnterPressed = function(self) CommitBracketValue(field.key, self) end,
+                onEscapePressed = function(self)
+                    self:SetText(tostring(tooltip.itemLevelBrackets[field.key]))
+                    self:SetCursorPosition(0)
+                end,
+                onEditFocusGained = function(self) self:HighlightText() end,
+            })
+            fieldBg:SetPoint("TOP", label, "BOTTOM", 0, -2)
+
+            input:HookScript("OnEditFocusLost", function(self)
+                CommitBracketValue(field.key, self)
+            end)
+
+            table.insert(itemLevelColorFields, { frame = fieldBg, input = input })
+            previousGroup = group
+        end
+
+        itemLevelBracketInfo = GUI:CreateLabel(bracketBlock, "Inclusive starts for each color bracket. Values below White use the grey bracket.", 10, GUI.Colors.textMuted)
+        itemLevelBracketInfo:SetPoint("TOPLEFT", bracketRow, "BOTTOMLEFT", 0, -4)
+        itemLevelBracketInfo:SetPoint("RIGHT", bracketBlock, "RIGHT", 0, 0)
+        itemLevelBracketInfo:SetJustifyH("LEFT")
+
+        RefreshPlayerItemLevelBracketInputs()
+        L.placeCustom(bracketBlock, BRACKET_BLOCK_HEIGHT)
+
+        -- CURSOR ANCHOR
+        L.headerAt("Cursor Anchor")
+        local s4 = L.sectionAt()
+        local anchorCursorW = GUI:CreateFormCheckbox(s4.frame, nil, "anchorToCursor", tooltip, RefreshTooltips,
+            { description = "Make tooltips follow your mouse cursor instead of using their default anchor point." })
+        local cursorAnchorW = GUI:CreateFormDropdown(s4.frame, nil, anchorOptions, "cursorAnchor", tooltip, RefreshTooltips,
+            { description = "Which corner of the tooltip is pinned to the cursor position." })
+        s4.AddRow(row(s4.frame, "Anchor Tooltip to Cursor", anchorCursorW), row(s4.frame, "Cursor Anchor Point", cursorAnchorW))
+
+        local cursorXW = GUI:CreateFormSlider(s4.frame, nil, -200, 200, 1, "cursorOffsetX", tooltip, RefreshTooltips,
+            { description = "Horizontal pixel offset between the cursor and the tooltip anchor. Positive moves right, negative moves left." })
+        local cursorYW = GUI:CreateFormSlider(s4.frame, nil, -200, 200, 1, "cursorOffsetY", tooltip, RefreshTooltips,
+            { description = "Vertical pixel offset between the cursor and the tooltip anchor. Positive moves up, negative moves down." })
+        s4.AddRow(row(s4.frame, "Cursor X Offset", cursorXW), row(s4.frame, "Cursor Y Offset", cursorYW))
+        L.closeSection(s4)
+
+        -- TOOLTIP VISIBILITY
         if tooltip.visibility then
             local visibilityOptions = {
                 {value = "SHOW", text = "Always Show"},
@@ -913,52 +1183,51 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 {value = "ALT", text = "Alt to Show"},
             }
 
-            CreateTileCollapsible(content, "Tooltip Visibility", 7 * FORM_ROW + 8, function(body)
-                local sy = -4
-                local info = GUI:CreateLabel(body, "Control tooltip visibility per element type. Choose a modifier key to only show tooltips while holding that key.", 10, GUI.Colors.textMuted)
-                info:SetPoint("TOPLEFT", 0, sy)
-                info:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-                info:SetJustifyH("LEFT")
-                sy = sy - 24
+            L.headerAt("Tooltip Visibility")
+            local s5 = L.sectionAt()
+            local npcsW = GUI:CreateFormDropdown(s5.frame, nil, visibilityOptions, "npcs", tooltip.visibility, RefreshTooltips,
+                { description = "When to show tooltips for units (NPCs and players). Modifier options only show the tooltip while the key is held." })
+            local abilitiesW = GUI:CreateFormDropdown(s5.frame, nil, visibilityOptions, "abilities", tooltip.visibility, RefreshTooltips,
+                { description = "When to show tooltips for spells and abilities. Modifier options only show the tooltip while the key is held." })
+            s5.AddRow(row(s5.frame, "NPCs & Players", npcsW), row(s5.frame, "Abilities", abilitiesW))
 
-                sy = P(GUI:CreateFormDropdown(body, "NPCs & Players", visibilityOptions, "npcs", tooltip.visibility, RefreshTooltips, { description = "When to show tooltips for units (NPCs and players). Modifier options only show the tooltip while the key is held." }), body, sy)
-                sy = P(GUI:CreateFormDropdown(body, "Abilities", visibilityOptions, "abilities", tooltip.visibility, RefreshTooltips, { description = "When to show tooltips for spells and abilities. Modifier options only show the tooltip while the key is held." }), body, sy)
-                sy = P(GUI:CreateFormDropdown(body, "Inventory", visibilityOptions, "items", tooltip.visibility, RefreshTooltips, { description = "When to show tooltips for items in your bags and equipment. Modifier options only show the tooltip while the key is held." }), body, sy)
-                sy = P(GUI:CreateFormDropdown(body, "Frames", visibilityOptions, "frames", tooltip.visibility, RefreshTooltips, { description = "When to show tooltips on UI frames (action bars, unit frames, etc.)." }), body, sy)
-                sy = P(GUI:CreateFormDropdown(body, "Cooldown Manager", visibilityOptions, "cdm", tooltip.visibility, RefreshTooltips, { description = "When to show tooltips on QUI Cooldown Manager icons." }), body, sy)
-                P(GUI:CreateFormDropdown(body, "Custom Items/Spells", visibilityOptions, "customTrackers", tooltip.visibility, RefreshTooltips, { description = "When to show tooltips on QUI custom item/spell trackers." }), body, sy)
-            end, sections, relayout)
+            local itemsW = GUI:CreateFormDropdown(s5.frame, nil, visibilityOptions, "items", tooltip.visibility, RefreshTooltips,
+                { description = "When to show tooltips for items in your bags and equipment. Modifier options only show the tooltip while the key is held." })
+            local framesW = GUI:CreateFormDropdown(s5.frame, nil, visibilityOptions, "frames", tooltip.visibility, RefreshTooltips,
+                { description = "When to show tooltips on UI frames (action bars, unit frames, etc.)." })
+            s5.AddRow(row(s5.frame, "Inventory", itemsW), row(s5.frame, "Frames", framesW))
+
+            local cdmW = GUI:CreateFormDropdown(s5.frame, nil, visibilityOptions, "cdm", tooltip.visibility, RefreshTooltips,
+                { description = "When to show tooltips on QUI Cooldown Manager icons." })
+            local customTrackersW = GUI:CreateFormDropdown(s5.frame, nil, visibilityOptions, "customTrackers", tooltip.visibility, RefreshTooltips,
+                { description = "When to show tooltips on QUI custom item/spell trackers." })
+            s5.AddRow(row(s5.frame, "Cooldown Manager", cdmW), row(s5.frame, "Custom Items/Spells", customTrackersW))
+            L.closeSection(s5)
         end
 
-        -- Combat
-        CreateTileCollapsible(content, "Combat", 3 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Hide Tooltips in Combat", "hideInCombat", tooltip, RefreshTooltips, { description = "Suppress all tooltips while you're in combat. Use the modifier key below to force-show them when needed." }), body, sy)
+        -- COMBAT
+        L.headerAt("Combat")
+        local s6 = L.sectionAt()
+        local hideCombatW = GUI:CreateFormCheckbox(s6.frame, nil, "hideInCombat", tooltip, RefreshTooltips,
+            { description = "Suppress all tooltips while you're in combat. Use the modifier key below to force-show them when needed." })
+        local combatOverrideOptions = {
+            {value = "NONE", text = "None"},
+            {value = "SHIFT", text = "Shift"},
+            {value = "CTRL", text = "Ctrl"},
+            {value = "ALT", text = "Alt"},
+        }
+        local combatKeyW = GUI:CreateFormDropdown(s6.frame, nil, combatOverrideOptions, "combatKey", tooltip, RefreshTooltips,
+            { description = "Modifier key that force-shows tooltips even while Hide Tooltips in Combat is active." })
+        s6.AddRow(row(s6.frame, "Hide Tooltips in Combat", hideCombatW), row(s6.frame, "Combat Modifier Key", combatKeyW))
+        L.closeSection(s6)
 
-            local info = GUI:CreateLabel(body, "Suppresses tooltips during combat. Use the modifier key below to force-show tooltips when needed.", 10, GUI.Colors.textMuted)
-            info:SetPoint("TOPLEFT", 0, sy)
-            info:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            info:SetJustifyH("LEFT")
-            sy = sy - 24
-
-            local combatOverrideOptions = {
-                {value = "NONE", text = "None"},
-                {value = "SHIFT", text = "Shift"},
-                {value = "CTRL", text = "Ctrl"},
-                {value = "ALT", text = "Alt"},
-            }
-            P(GUI:CreateFormDropdown(body, "Combat Modifier Key", combatOverrideOptions, "combatKey", tooltip, RefreshTooltips, { description = "Modifier key that force-shows tooltips even while Hide Tooltips in Combat is active." }), body, sy)
-        end, sections, relayout)
-
-        U.BuildPositionCollapsible(content, "tooltipAnchor", nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout() return content:GetHeight()
+        return FinishProviderPage(L, content, key, "tooltipAnchor")
     end })
 
     ---------------------------------------------------------------------------
     -- SKYRIDING
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("skyriding", { build = function(content, key, width)
+    RegisterSharedOnly("skyriding", { build = function(content, key, _width)
         local db = U.GetProfileDB()
         if not db then return 80 end
         if not db.skyriding then db.skyriding = {} end
@@ -981,97 +1250,139 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         if sr.useClassColorSecondWind == nil then sr.useClassColorSecondWind = false end
         if sr.useThrillOfTheSkiesColor == nil then sr.useThrillOfTheSkiesColor = true end
 
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
+        local L = MakeLayout(content)
         local function Refresh() if _G.QUI_RefreshSkyriding then _G.QUI_RefreshSkyriding() end end
 
-        -- Visibility
-        U.CreateCollapsible(content, "Visibility", 4 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormDropdown(body, "Visibility Mode", {
-                {value = "ALWAYS", text = "Always Visible"},
-                {value = "FLYING_ONLY", text = "Only When Flying"},
-                {value = "AUTO", text = "Auto (fade when grounded)"},
-            }, "visibility", sr, Refresh, { description = "When the skyriding bar is shown: always on, only while flying, or auto-fade out shortly after you land." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Fade Delay (sec)", 0, 10, 0.5, "fadeDelay", sr, Refresh, nil, { description = "Seconds to wait after landing before the bar fades out in Auto mode." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Fade Speed (sec)", 0.1, 1.0, 0.1, "fadeDuration", sr, Refresh, nil, { description = "How long the fade-in / fade-out animation takes, in seconds." }), body, sy)
-            P(GUI:CreateFormCheckbox(body, "Hide When FarmHud Is Active", "hideWhenFarmHudShown", sr, Refresh, { description = "Automatically hide the skyriding bar while FarmHud is on screen, to avoid the two overlapping." }), body, sy)
-        end, sections, relayout)
+        -- VISIBILITY
+        L.headerAt("Visibility")
+        local s1 = L.sectionAt()
+        local visW = GUI:CreateFormDropdown(s1.frame, nil, {
+            {value = "ALWAYS", text = "Always Visible"},
+            {value = "FLYING_ONLY", text = "Only When Flying"},
+            {value = "AUTO", text = "Auto (fade when grounded)"},
+        }, "visibility", sr, Refresh,
+            { description = "When the skyriding bar is shown: always on, only while flying, or auto-fade out shortly after you land." })
+        local fadeDelayW = GUI:CreateFormSlider(s1.frame, nil, 0, 10, 0.5, "fadeDelay", sr, Refresh,
+            { description = "Seconds to wait after landing before the bar fades out in Auto mode." })
+        s1.AddRow(row(s1.frame, "Visibility Mode", visW), row(s1.frame, "Fade Delay (sec)", fadeDelayW))
 
-        -- Bar Size
-        U.CreateCollapsible(content, "Bar Size", 4 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormSlider(body, "Width", 100, 500, 1, "width", sr, Refresh, nil, { description = "Pixel width of the skyriding bar." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Vigor Height", 4, 30, 1, "vigorHeight", sr, Refresh, nil, { description = "Pixel height of the main vigor bar." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Second Wind Height", 2, 20, 1, "secondWindHeight", sr, Refresh, nil, { description = "Pixel height of the Second Wind bar shown below the main vigor bar." }), body, sy)
-            P(GUI:CreateFormDropdown(body, "Bar Texture", U.GetTextureList(), "barTexture", sr, Refresh, { description = "Statusbar texture used for both skyriding bars. Supports any extra media packages you have available." }), body, sy)
-        end, sections, relayout)
+        local fadeDurW = GUI:CreateFormSlider(s1.frame, nil, 0.1, 1.0, 0.1, "fadeDuration", sr, Refresh,
+            { description = "How long the fade-in / fade-out animation takes, in seconds." })
+        local hideFarmW = GUI:CreateFormCheckbox(s1.frame, nil, "hideWhenFarmHudShown", sr, Refresh,
+            { description = "Automatically hide the skyriding bar while FarmHud is on screen, to avoid the two overlapping." })
+        s1.AddRow(row(s1.frame, "Fade Speed (sec)", fadeDurW), row(s1.frame, "Hide When FarmHud Is Active", hideFarmW))
+        L.closeSection(s1)
 
-        -- Fill Colors
-        U.CreateCollapsible(content, "Fill Colors", 6 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Use Class Color for Vigor", "useClassColorVigor", sr, Refresh, { description = "Color the vigor bar by your class instead of the Vigor Fill Color swatch below." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Vigor Fill Color", "barColor", sr, Refresh, nil, { description = "Fill color of the vigor bar when Use Class Color is off." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Use Class Color for Second Wind", "useClassColorSecondWind", sr, Refresh, { description = "Color the Second Wind bar by your class instead of the Second Wind Color swatch below." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Second Wind Color", "secondWindColor", sr, Refresh, nil, { description = "Fill color of the Second Wind bar when Use Class Color is off." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Change Color with Thrill of the Skies", "useThrillOfTheSkiesColor", sr, Refresh, { description = "Swap the vigor bar color while Thrill of the Skies is active so the buff state is obvious." }), body, sy)
-            P(GUI:CreateFormColorPicker(body, "Thrill of the Skies Color", "thrillOfTheSkiesColor", sr, Refresh, nil, { description = "Fill color used for the vigor bar while Thrill of the Skies is active." }), body, sy)
-        end, sections, relayout)
+        -- BAR SIZE
+        L.headerAt("Bar Size")
+        local s2 = L.sectionAt()
+        local widthW = GUI:CreateFormSlider(s2.frame, nil, 100, 500, 1, "width", sr, Refresh,
+            { description = "Pixel width of the skyriding bar." })
+        local vigorHW = GUI:CreateFormSlider(s2.frame, nil, 4, 30, 1, "vigorHeight", sr, Refresh,
+            { description = "Pixel height of the main vigor bar." })
+        s2.AddRow(row(s2.frame, "Width", widthW), row(s2.frame, "Vigor Height", vigorHW))
 
-        -- Background & Effects
-        U.CreateCollapsible(content, "Background & Effects", 4 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormColorPicker(body, "Background Color", "backgroundColor", sr, Refresh, nil, { description = "Background color behind the vigor bar." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Second Wind Background", "secondWindBackgroundColor", sr, Refresh, nil, { description = "Background color behind the Second Wind bar." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Segment Marker Color", "segmentColor", sr, Refresh, nil, { description = "Color of the vertical segment markers between vigor charges." }), body, sy)
-            P(GUI:CreateFormColorPicker(body, "Recharge Animation Color", "rechargeColor", sr, Refresh, nil, { description = "Color of the charging-segment highlight as a vigor charge recovers." }), body, sy)
-        end, sections, relayout)
+        local swHW = GUI:CreateFormSlider(s2.frame, nil, 2, 20, 1, "secondWindHeight", sr, Refresh,
+            { description = "Pixel height of the Second Wind bar shown below the main vigor bar." })
+        local barTexW = GUI:CreateFormDropdown(s2.frame, nil, U.GetTextureList(), "barTexture", sr, Refresh,
+            { description = "Statusbar texture used for both skyriding bars. Supports any extra media packages you have available." })
+        s2.AddRow(row(s2.frame, "Second Wind Height", swHW), row(s2.frame, "Bar Texture", barTexW))
+        L.closeSection(s2)
 
-        -- Text Display
-        U.CreateCollapsible(content, "Text Display", 6 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Show Vigor Count", "showVigorText", sr, Refresh, { description = "Show numeric vigor count on the bar." }), body, sy)
-            sy = P(GUI:CreateFormDropdown(body, "Vigor Format", {
-                {value = "FRACTION", text = "Fraction (4/6)"}, {value = "CURRENT", text = "Current Only (4)"},
-            }, "vigorTextFormat", sr, Refresh, { description = "How vigor is displayed: as a fraction (current/max) or just the current value." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Show Speed", "showSpeed", sr, Refresh, { description = "Show your current flight speed next to the vigor bar." }), body, sy)
-            sy = P(GUI:CreateFormDropdown(body, "Speed Format", {
-                {value = "PERCENT", text = "Percentage (312%)"}, {value = "RAW", text = "Raw Speed (9.5)"},
-            }, "speedFormat", sr, Refresh, { description = "Format the speed readout as a percentage of base run speed or as the raw yards-per-second value." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Show Whirling Surge Icon", "showAbilityIcon", sr, Refresh, { description = "Show a Whirling Surge cooldown icon on the skyriding bar." }), body, sy)
-            P(GUI:CreateFormSlider(body, "Text Font Size", 8, 24, 1, "vigorFontSize", sr, function()
-                sr.speedFontSize = sr.vigorFontSize; Refresh()
-            end, nil, { description = "Font size of the vigor and speed text overlays on the bar." }), body, sy)
-        end, sections, relayout)
+        -- FILL COLORS
+        L.headerAt("Fill Colors")
+        local s3 = L.sectionAt()
+        local classVigorW = GUI:CreateFormCheckbox(s3.frame, nil, "useClassColorVigor", sr, Refresh,
+            { description = "Color the vigor bar by your class instead of the Vigor Fill Color swatch below." })
+        local vigorFillW = GUI:CreateFormColorPicker(s3.frame, nil, "barColor", sr, Refresh, nil,
+            { description = "Fill color of the vigor bar when Use Class Color is off." })
+        s3.AddRow(row(s3.frame, "Use Class Color for Vigor", classVigorW), row(s3.frame, "Vigor Fill Color", vigorFillW))
 
-        U.BuildPositionCollapsible(content, "skyriding", nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout() return content:GetHeight()
+        local classSWW = GUI:CreateFormCheckbox(s3.frame, nil, "useClassColorSecondWind", sr, Refresh,
+            { description = "Color the Second Wind bar by your class instead of the Second Wind Color swatch below." })
+        local swColorW = GUI:CreateFormColorPicker(s3.frame, nil, "secondWindColor", sr, Refresh, nil,
+            { description = "Fill color of the Second Wind bar when Use Class Color is off." })
+        s3.AddRow(row(s3.frame, "Use Class Color for Second Wind", classSWW), row(s3.frame, "Second Wind Color", swColorW))
+
+        local thrillToggleW = GUI:CreateFormCheckbox(s3.frame, nil, "useThrillOfTheSkiesColor", sr, Refresh,
+            { description = "Swap the vigor bar color while Thrill of the Skies is active so the buff state is obvious." })
+        local thrillColorW = GUI:CreateFormColorPicker(s3.frame, nil, "thrillOfTheSkiesColor", sr, Refresh, nil,
+            { description = "Fill color used for the vigor bar while Thrill of the Skies is active." })
+        s3.AddRow(row(s3.frame, "Change Color with Thrill of the Skies", thrillToggleW), row(s3.frame, "Thrill of the Skies Color", thrillColorW))
+        L.closeSection(s3)
+
+        -- BACKGROUND & EFFECTS
+        L.headerAt("Background & Effects")
+        local s4 = L.sectionAt()
+        local bgColorW = GUI:CreateFormColorPicker(s4.frame, nil, "backgroundColor", sr, Refresh, nil,
+            { description = "Background color behind the vigor bar." })
+        local swBgColorW = GUI:CreateFormColorPicker(s4.frame, nil, "secondWindBackgroundColor", sr, Refresh, nil,
+            { description = "Background color behind the Second Wind bar." })
+        s4.AddRow(row(s4.frame, "Background Color", bgColorW), row(s4.frame, "Second Wind Background", swBgColorW))
+
+        local segColorW = GUI:CreateFormColorPicker(s4.frame, nil, "segmentColor", sr, Refresh, nil,
+            { description = "Color of the vertical segment markers between vigor charges." })
+        local rechargeColorW = GUI:CreateFormColorPicker(s4.frame, nil, "rechargeColor", sr, Refresh, nil,
+            { description = "Color of the charging-segment highlight as a vigor charge recovers." })
+        s4.AddRow(row(s4.frame, "Segment Marker Color", segColorW), row(s4.frame, "Recharge Animation Color", rechargeColorW))
+        L.closeSection(s4)
+
+        -- TEXT DISPLAY
+        L.headerAt("Text Display")
+        local s5 = L.sectionAt()
+        local showVigorW = GUI:CreateFormCheckbox(s5.frame, nil, "showVigorText", sr, Refresh,
+            { description = "Show numeric vigor count on the bar." })
+        local vigorFmtW = GUI:CreateFormDropdown(s5.frame, nil, {
+            {value = "FRACTION", text = "Fraction (4/6)"}, {value = "CURRENT", text = "Current Only (4)"},
+        }, "vigorTextFormat", sr, Refresh,
+            { description = "How vigor is displayed: as a fraction (current/max) or just the current value." })
+        s5.AddRow(row(s5.frame, "Show Vigor Count", showVigorW), row(s5.frame, "Vigor Format", vigorFmtW))
+
+        local showSpeedW = GUI:CreateFormCheckbox(s5.frame, nil, "showSpeed", sr, Refresh,
+            { description = "Show your current flight speed next to the vigor bar." })
+        local speedFmtW = GUI:CreateFormDropdown(s5.frame, nil, {
+            {value = "PERCENT", text = "Percentage (312%)"}, {value = "RAW", text = "Raw Speed (9.5)"},
+        }, "speedFormat", sr, Refresh,
+            { description = "Format the speed readout as a percentage of base run speed or as the raw yards-per-second value." })
+        s5.AddRow(row(s5.frame, "Show Speed", showSpeedW), row(s5.frame, "Speed Format", speedFmtW))
+
+        local showAbilityW = GUI:CreateFormCheckbox(s5.frame, nil, "showAbilityIcon", sr, Refresh,
+            { description = "Show a Whirling Surge cooldown icon on the skyriding bar." })
+        local textSizeW = GUI:CreateFormSlider(s5.frame, nil, 8, 24, 1, "vigorFontSize", sr, function()
+            sr.speedFontSize = sr.vigorFontSize; Refresh()
+        end, { description = "Font size of the vigor and speed text overlays on the bar." })
+        s5.AddRow(row(s5.frame, "Show Whirling Surge Icon", showAbilityW), row(s5.frame, "Text Font Size", textSizeW))
+        L.closeSection(s5)
+
+        return FinishProviderPage(L, content, key, "skyriding")
     end })
 
     ---------------------------------------------------------------------------
     -- PARTY KEYSTONES
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("partyKeystones", { build = function(content, key, width)
+    RegisterSharedOnly("partyKeystones", { build = function(content, key, _width)
         local db = U.GetProfileDB()
         if not db or not db.general then return 80 end
         local general = db.general
-
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
+        local L = MakeLayout(content)
         local function Refresh() if _G.QUI_RefreshKeyTracker then _G.QUI_RefreshKeyTracker() end end
 
-        -- Appearance
-        U.CreateCollapsible(content, "Appearance", 4 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormDropdown(body, "Font", U.GetFontList(), "keyTrackerFont", general, Refresh, { description = "Font used for the party keystone tracker text." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Font Size", 7, 12, 1, "keyTrackerFontSize", general, Refresh, nil, { description = "Font size of the party keystone tracker entries." }), body, sy)
-            sy = P(GUI:CreateFormColorPicker(body, "Text Color", "keyTrackerTextColor", general, Refresh, nil, { description = "Color of the tracker text." }), body, sy)
-            P(GUI:CreateFormSlider(body, "Frame Width", 120, 250, 1, "keyTrackerWidth", general, Refresh, nil, { description = "Pixel width of the party keystone tracker frame." }), body, sy)
-        end, sections, relayout)
+        -- APPEARANCE
+        L.headerAt("Appearance")
+        local s1 = L.sectionAt()
+        local fontW = GUI:CreateFormDropdown(s1.frame, nil, U.GetFontList(), "keyTrackerFont", general, Refresh,
+            { description = "Font used for the party keystone tracker text." })
+        local fontSizeW = GUI:CreateFormSlider(s1.frame, nil, 7, 12, 1, "keyTrackerFontSize", general, Refresh,
+            { description = "Font size of the party keystone tracker entries." })
+        s1.AddRow(row(s1.frame, "Font", fontW), row(s1.frame, "Font Size", fontSizeW))
 
-        U.BuildPositionCollapsible(content, "partyKeystones", nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout() return content:GetHeight()
+        local textColorW = GUI:CreateFormColorPicker(s1.frame, nil, "keyTrackerTextColor", general, Refresh, nil,
+            { description = "Color of the tracker text." })
+        local widthW = GUI:CreateFormSlider(s1.frame, nil, 120, 250, 1, "keyTrackerWidth", general, Refresh,
+            { description = "Pixel width of the party keystone tracker frame." })
+        s1.AddRow(row(s1.frame, "Text Color", textColorW), row(s1.frame, "Frame Width", widthW))
+        L.closeSection(s1)
+
+        return FinishProviderPage(L, content, key, "partyKeystones")
     end })
 end)

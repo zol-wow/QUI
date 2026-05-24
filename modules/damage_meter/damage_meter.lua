@@ -1,0 +1,2196 @@
+--[[
+    QUI Damage Meter — native module (Phases 1–8).
+
+    Phase 1 establishes the core: data subscription, throttled ticker,
+    a single hard-coded window (DamageDone / Current), Layout Mode
+    integration, and Blizzard meter suppression. Subsequent phases add
+    appearance settings + meter types (Phase 2), multi-window (Phase 3),
+    breakdown popup (Phase 4), then retire the skinner (Phase 5) and
+    add spell history / standalone timer / animations (Phases 6–8).
+
+    Design: docs/superpowers/specs/2026-05-22-damage-meter-design.md
+    Phase 1 plan: docs/superpowers/plans/2026-05-22-damage-meter-phase-1.md
+]]
+
+-- luacheck: globals CreateFrame C_DamageMeter UIParent RAID_CLASS_COLORS CLASS_ICON_TCOORDS _G SetCVar InCombatLockdown C_StringUtil GetTime Enum MenuUtil GameTooltip SlashCmdList GetTimePreciseSec C_Spell C_Timer
+local _, ns = ...
+
+-- ns.Helpers is provided by core/utils.lua (loaded before this module via core.xml).
+local Helpers = ns.Helpers
+
+local QUI_DamageMeter = {}
+ns.QUI_DamageMeter = QUI_DamageMeter
+
+-- ==== Perf instrumentation (Follow-up D) ====
+-- Disabled by default — wrapping every Refresh in GetTimePreciseSec calls is
+-- cheap but not free. Toggle via /quidmperf on (and /quidmperf for the
+-- summary). Samples land in a fixed-size ring buffer per kind.
+local Perf = {
+    enabled  = false,
+    _samples = { data = {}, window = {}, breakdown = {} },
+}
+QUI_DamageMeter.Perf = Perf
+
+local PERF_BUFFER_SIZE = 200
+
+function Perf:Record(kind, dt)
+    local buf = self._samples[kind]
+    if not buf then return end
+    buf[#buf + 1] = dt
+    if #buf > PERF_BUFFER_SIZE then table.remove(buf, 1) end
+end
+
+-- Returns avg, p95, max (all in seconds; caller converts to ms for display).
+local function PerfStat(samples)
+    if #samples == 0 then return 0, 0, 0 end
+    local sum, mx = 0, 0
+    local sorted = {}
+    for i, v in ipairs(samples) do
+        sorted[i] = v
+        sum = sum + v
+        if v > mx then mx = v end
+    end
+    table.sort(sorted)
+    local p95Idx = math.max(1, math.ceil(#sorted * 0.95))
+    return sum / #samples, sorted[p95Idx], mx
+end
+
+function Perf:Summary()
+    local lines = {}
+    for _, kind in ipairs({ "data", "window", "breakdown" }) do
+        local samples = self._samples[kind] or {}
+        local avg, p95, mx = PerfStat(samples)
+        table.insert(lines, string.format("  %-9s n=%-3d avg=%.3fms p95=%.3fms max=%.3fms",
+            kind, #samples, avg * 1000, p95 * 1000, mx * 1000))
+    end
+    return lines
+end
+
+function Perf:Reset()
+    for k in pairs(self._samples) do self._samples[k] = {} end
+end
+
+-- Cheap "is timing available?" probe. GetTimePreciseSec is the high-res
+-- timer; falls back to debugprofilestop on older clients.
+local function PerfNow()
+    if GetTimePreciseSec then return GetTimePreciseSec() end
+    return 0
+end
+
+-- ==== Settings ====
+-- Phase 1 read accessors only. Defaults live in core/defaults.lua (T3).
+local function GetSettings()
+    local QUI = _G.QUI
+    if not (QUI and QUI.db and QUI.db.profile and QUI.db.profile.damageMeter) then
+        return nil
+    end
+    return QUI.db.profile.damageMeter.native
+end
+
+-- ==== Data ====
+local Data = {}
+QUI_DamageMeter.Data = Data
+
+-- Dirty flags: Data._dirty[sessionType][damageMeterType] = true means the
+-- cached view for that (session, type) is stale and the next ticker pass
+-- should re-fetch via C_DamageMeter (T6). Event handlers only set flags;
+-- they never call C_DamageMeter inline.
+Data._dirty = {}
+Data._allDirty = false   -- set by DAMAGE_METER_RESET; ticker treats as "everything"
+Data._inCombat = false   -- toggled by PLAYER_REGEN_*; ticker uses for cadence
+
+local function MarkDirty(sessionType, damageMeterType)
+    local bySess = Data._dirty[sessionType]
+    if not bySess then
+        bySess = {}
+        Data._dirty[sessionType] = bySess
+    end
+    bySess[damageMeterType] = true
+end
+
+local function MarkAllDirty()
+    Data._allDirty = true
+end
+
+local function MarkCurrentDirty()
+    -- Enum.DamageMeterSessionType.Current = 1
+    local bySess = Data._dirty[1]
+    if not bySess then
+        bySess = {}
+        Data._dirty[1] = bySess
+    end
+    -- Mark every meter type dirty. Iterating Enum.DamageMeterType picks up
+    -- whatever Blizzard exposes today (verified to include integers up to at
+    -- least 9 = Deaths) so we don't miss dirty marks on types beyond a
+    -- hardcoded range.
+    if Enum and Enum.DamageMeterType then
+        for _, v in pairs(Enum.DamageMeterType) do bySess[v] = true end
+    else
+        for t = 0, 10 do bySess[t] = true end
+    end
+end
+
+-- Combat-elapsed timer. We track our own GetTime delta from PLAYER_REGEN_DISABLED
+-- to PLAYER_REGEN_ENABLED rather than rely on C_DamageMeter session.durationSeconds,
+-- which is secret-tagged during combat and faults on Lua-side comparison. The
+-- API duration is only safe for HISTORICAL (past) sessions; for the live
+-- session we use this timer.
+Data._combatStartTime = nil   -- GetTime() at last PLAYER_REGEN_DISABLED
+Data._combatEndTime   = nil   -- GetTime() at last PLAYER_REGEN_ENABLED
+Data._combatFrozen    = 0     -- elapsed seconds frozen at end-of-combat for post-combat display
+
+local function GetCombatElapsed()
+    if Data._combatStartTime then
+        if Data._combatEndTime and Data._combatEndTime > Data._combatStartTime then
+            -- Combat just ended; show the final elapsed frozen value
+            return Data._combatFrozen
+        end
+        return GetTime() - Data._combatStartTime
+    end
+    return 0
+end
+Data.GetCombatElapsed = GetCombatElapsed
+
+Data._eventFrame = CreateFrame("Frame")
+Data._eventFrame:RegisterEvent("DAMAGE_METER_COMBAT_SESSION_UPDATED")
+Data._eventFrame:RegisterEvent("DAMAGE_METER_CURRENT_SESSION_UPDATED")
+Data._eventFrame:RegisterEvent("DAMAGE_METER_RESET")
+Data._eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
+Data._eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+Data._eventFrame:SetScript("OnEvent", function(_, event, arg1, _arg2)
+    if event == "DAMAGE_METER_COMBAT_SESSION_UPDATED" then
+        -- arg1 = damageMeterType, arg2 = sessionID; we key by sessionType, not
+        -- sessionID, in Phase 1. Mark every sessionType dirty for that type;
+        -- ticker is cheap so the over-fetch is fine. Phase 4 (breakdown) will
+        -- key by sessionID to address pinned historical sessions.
+        for sessionType = 0, 2 do
+            MarkDirty(sessionType, arg1)
+        end
+    elseif event == "DAMAGE_METER_CURRENT_SESSION_UPDATED" then
+        MarkCurrentDirty()
+    elseif event == "DAMAGE_METER_RESET" then
+        MarkAllDirty()
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        Data._inCombat = true
+        Data._combatStartTime = GetTime()
+        Data._combatEndTime   = nil
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        Data._inCombat = false
+        Data._combatEndTime   = GetTime()
+        Data._combatFrozen    = (Data._combatStartTime and (Data._combatEndTime - Data._combatStartTime)) or 0
+        -- The API briefly returns secret-tagged source GUIDs after combat
+        -- ends, which makes GetCombatSessionSourceFromType return an empty
+        -- combatSpells. Re-mark dirty after a short delay so the next tick
+        -- re-fetches once GUIDs have been declassified.
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0.5, MarkAllDirty)
+        end
+    end
+end)
+
+-- Throttled ticker. Reads cadence from settings each tick so live slider
+-- adjustments take effect immediately. Cadence is per-mode: combat vs
+-- idle. T6 will fill the body of Data:Refresh; T5 only establishes the
+-- ticker contract.
+Data._tickAccum = 0
+Data._ticker = CreateFrame("Frame")
+Data._ticker:SetScript("OnUpdate", function(_, elapsed)
+    Data._tickAccum = Data._tickAccum + elapsed
+    local s = GetSettings()
+    local cadence = 0.5
+    if s then
+        cadence = Data._inCombat
+            and (s.refreshRateCombat or 0.5)
+            or  (s.refreshRateIdle   or 2.0)
+    end
+    if Data._tickAccum < cadence then return end
+    Data._tickAccum = 0
+    Data:Refresh()
+end)
+
+-- Pure helper: takes a raw C_DamageMeter combatSources array and returns a
+-- normalized view. Fields use Blizzard's actual API names (totalAmount,
+-- amountPerSecond). No sort is performed — Blizzard returns combatSources
+-- already sorted by amount desc, which the stock meter relies on too.
+-- Duration handling moved to FetchView; this function is duration-agnostic.
+local function NormalizeSources(rawSources)
+    local view = {}
+    for i, src in ipairs(rawSources) do
+        -- totalAmount may be secret-tagged during combat. Keep as-is; the
+        -- renderer is responsible for IsSecretValue-guarding any arithmetic
+        -- it does on these values. Sort is NOT performed here — Blizzard
+        -- returns combatSources already sorted by amount desc, which the
+        -- stock meter (DamageMeterSessionWindow.lua) relies on too.
+        view[i] = {
+            rank             = i,
+            name             = src.name,
+            classFilename    = src.classFilename,
+            specIconID       = src.specIconID,
+            totalAmount      = src.totalAmount,        -- may be secret; do not compare in Lua
+            amountPerSecond  = src.amountPerSecond,    -- may be secret; do not compare in Lua
+            isLocalPlayer    = src.isLocalPlayer or false,
+            sourceGUID       = src.sourceGUID,
+            sourceCreatureID = src.sourceCreatureID,
+            deathRecapID     = src.deathRecapID,        -- Phase 6 future-use
+        }
+    end
+    return view
+end
+Data._NormalizeSources = NormalizeSources  -- for T6/T7
+
+Data._cache = {}        -- _cache[sessionType][damageMeterType] = view
+Data._generation = 0
+
+local function NewView(sources, duration, maxAmount, totalAmount)
+    Data._generation = Data._generation + 1
+    return {
+        duration    = duration or 0,
+        maxAmount   = maxAmount or 0,
+        totalAmount = totalAmount or 0,
+        sources     = sources or {},
+        generation  = Data._generation,
+    }
+end
+
+local function CacheView(sessionType, damageMeterType, view)
+    local bySess = Data._cache[sessionType]
+    if not bySess then
+        bySess = {}
+        Data._cache[sessionType] = bySess
+    end
+    bySess[damageMeterType] = view
+end
+
+local function FetchView(sessionType, damageMeterType)
+    if not (C_DamageMeter and C_DamageMeter.GetCombatSessionFromType) then
+        return NewView({}, 0, 0, 0)
+    end
+
+    -- pcall: defends against the API itself faulting under taint, which
+    -- can happen in restricted callsites. The session table fields may
+    -- still be secret-tagged; downstream code handles that.
+    local ok, session = pcall(C_DamageMeter.GetCombatSessionFromType, sessionType, damageMeterType)
+    if not ok or type(session) ~= "table" then
+        return NewView({}, 0, 0, 0)
+    end
+
+    local sources = NormalizeSources(session.combatSources or {})
+
+    -- Duration: prefer our own elapsed timer for live sessions to sidestep
+    -- the secret-tagged session.durationSeconds. For historical sessions
+    -- (Expired session type = 2 per Enum.DamageMeterSessionType.Expired),
+    -- the API duration is safe.
+    local duration
+    if sessionType == (Enum and Enum.DamageMeterSessionType and Enum.DamageMeterSessionType.Expired or 2) then
+        duration = session.durationSeconds  -- historical: API value is safe
+    else
+        duration = GetCombatElapsed()
+    end
+
+    return NewView(sources, duration, session.maxAmount, session.totalAmount)
+end
+
+function Data:Refresh()
+    local _t0 = Perf.enabled and PerfNow() or 0
+    -- Walk dirty flags; refetch each. _allDirty short-circuits to "refetch
+    -- every cached (sessionType, damageMeterType)".
+    if self._allDirty then
+        self._allDirty = false
+        for sessionType, byType in pairs(self._cache) do
+            for damageMeterType in pairs(byType) do
+                CacheView(sessionType, damageMeterType, FetchView(sessionType, damageMeterType))
+            end
+        end
+        if self._onChange then self:_onChange() end
+        self._dirty = {}
+        if Perf.enabled then Perf:Record("data", PerfNow() - _t0) end
+        return
+    end
+    local anyChanged = false
+    for sessionType, byType in pairs(self._dirty) do
+        for damageMeterType in pairs(byType) do
+            CacheView(sessionType, damageMeterType, FetchView(sessionType, damageMeterType))
+            anyChanged = true
+        end
+    end
+    self._dirty = {}
+    if anyChanged and self._onChange then self:_onChange() end
+    if Perf.enabled then Perf:Record("data", PerfNow() - _t0) end
+end
+
+function Data:GetView(sessionType, damageMeterType)
+    local bySess = self._cache[sessionType]
+    local view = bySess and bySess[damageMeterType]
+    if view then return view end
+    view = FetchView(sessionType, damageMeterType)
+    CacheView(sessionType, damageMeterType, view)
+    return view
+end
+
+-- ===== Breakdown (Phase 4) =====
+-- Per-source spell breakdown. Lazy: only fetched when an open Breakdown popup
+-- asks for it; not cached aggressively (lives only on the Breakdown frame).
+--
+-- Pure helper: normalize a combatSpells array (from Blizzard's
+-- combatSessionSource) into a render-ready spell view. No sort — Blizzard
+-- returns combatSpells already sorted by amount desc, same as combatSources.
+--
+-- The combatSpells entries only carry spellID + amount/hit fields; name and
+-- icon must be resolved via C_Spell. Cached per spellID (spell metadata is
+-- immutable for the session, so a process-lifetime cache is safe).
+local _spellInfoCache = {}
+local function ResolveSpellInfo(spellID)
+    if not spellID then return nil end
+    local cached = _spellInfoCache[spellID]
+    if cached then return cached end
+    if not (C_Spell and C_Spell.GetSpellInfo) then return nil end
+    local info = C_Spell.GetSpellInfo(spellID)
+    if info then _spellInfoCache[spellID] = info end
+    return info
+end
+
+local function NormalizeSpells(rawSpells)
+    local out = {}
+    for i, spell in ipairs(rawSpells) do
+        local info = ResolveSpellInfo(spell.spellID)
+        out[i] = {
+            rank             = i,
+            spellID          = spell.spellID,
+            name             = (info and info.name) or spell.creatureName,
+            iconID           = info and info.iconID,
+            totalAmount      = spell.totalAmount,
+            amountPerSecond  = spell.amountPerSecond,
+            hitCount         = spell.hitCount,
+            critCount        = spell.critCount,
+            criticalAmount   = spell.criticalAmount,
+        }
+    end
+    return out
+end
+Data._NormalizeSpells = NormalizeSpells
+
+-- Returns a one-tick view of a source's spell breakdown. Caller is responsible
+-- for re-calling on the next tick to get live updates while the popup is open.
+function Data:GetBreakdownView(sessionType, damageMeterType, sourceGUID, sourceCreatureID)
+    if not (C_DamageMeter and C_DamageMeter.GetCombatSessionSourceFromType) then
+        return { spells = {}, maxAmount = 0, totalAmount = 0 }
+    end
+    local ok, src = pcall(C_DamageMeter.GetCombatSessionSourceFromType,
+        sessionType, damageMeterType, sourceGUID, sourceCreatureID)
+    if not ok or type(src) ~= "table" then
+        return { spells = {}, maxAmount = 0, totalAmount = 0 }
+    end
+    return {
+        spells      = NormalizeSpells(src.combatSpells or {}),
+        maxAmount   = src.maxAmount or 0,
+        totalAmount = src.totalAmount or 0,
+    }
+end
+
+-- ==== Combined healing (Healing Done + Absorbs) ====
+-- Blizzard's C_DamageMeter exposes HealingDone and Absorbs as separate meter
+-- types, but most healers think of their contribution as heals+shields
+-- combined. When settings.combineAbsorbsIntoHealing is true (default), the
+-- HealingDone / HPS views and their breakdown popups use the merged data
+-- below. Toggle off for pure C_DamageMeter HealingDone.
+
+function Data:GetCombinedHealingView(sessionType)
+    local T = Enum and Enum.DamageMeterType
+    local hType = T and T.HealingDone
+    local aType = T and T.Absorbs
+    if not (hType and aType) then
+        return self:GetView(sessionType, hType or 2)
+    end
+    local hView = self:GetView(sessionType, hType)
+    local aView = self:GetView(sessionType, aType)
+    if not (aView and aView.sources and #aView.sources > 0) then
+        return hView
+    end
+
+    local IsSecret = Helpers and Helpers.IsSecretValue
+    local merged, byGuid = {}, {}
+    -- Lua tables in 12.0+ reject secret-tagged values as keys. During combat
+    -- the local player's sourceGUID is secret until declassification, so a
+    -- guarded write to byGuid is required. Secret-GUID sources still go into
+    -- `merged` (they need to render); they just can't participate in the
+    -- HealingDone+Absorbs merge this tick. The 0.5s post-combat re-dirty
+    -- (see PLAYER_REGEN_ENABLED handler) re-runs this merge after GUIDs
+    -- become indexable, so the duplicate-row state is transient.
+    local function isIndexableKey(v)
+        return v and not (IsSecret and IsSecret(v))
+    end
+    for i, s in ipairs(hView.sources or {}) do
+        local copy = {}
+        for k, v in pairs(s) do copy[k] = v end
+        merged[i] = copy
+        if isIndexableKey(s.sourceGUID) then byGuid[s.sourceGUID] = copy end
+    end
+    for _, a in ipairs(aView.sources) do
+        local existing = isIndexableKey(a.sourceGUID) and byGuid[a.sourceGUID]
+        if existing then
+            if existing.totalAmount and a.totalAmount
+                and not (IsSecret and (IsSecret(existing.totalAmount) or IsSecret(a.totalAmount))) then
+                existing.totalAmount = existing.totalAmount + a.totalAmount
+            end
+            if existing.amountPerSecond and a.amountPerSecond
+                and not (IsSecret and (IsSecret(existing.amountPerSecond) or IsSecret(a.amountPerSecond))) then
+                existing.amountPerSecond = existing.amountPerSecond + a.amountPerSecond
+            end
+        else
+            local copy = {}
+            for k, v in pairs(a) do copy[k] = v end
+            table.insert(merged, copy)
+            if isIndexableKey(a.sourceGUID) then byGuid[a.sourceGUID] = copy end
+        end
+    end
+    table.sort(merged, function(x, y)
+        local xv = x.totalAmount or 0
+        local yv = y.totalAmount or 0
+        if IsSecret and (IsSecret(xv) or IsSecret(yv)) then return false end
+        return xv > yv
+    end)
+    local maxAmount = 0
+    for i, s in ipairs(merged) do
+        s.rank = i
+        local v = s.totalAmount
+        if v and not (IsSecret and IsSecret(v)) and v > maxAmount then maxAmount = v end
+    end
+    -- `or 0` only short-circuits on nil; a secret-tagged number is truthy
+    -- and would taint the `+`. Substitute 0 when the value is secret so the
+    -- returned total stays a plain number (the per-source bars in `merged`
+    -- carry the secret values through individually for display).
+    local function safeNum(v)
+        if v == nil then return 0 end
+        if IsSecret and IsSecret(v) then return 0 end
+        return v
+    end
+    return {
+        duration    = hView.duration,
+        maxAmount   = maxAmount,
+        totalAmount = safeNum(hView.totalAmount) + safeNum(aView.totalAmount),
+        sources     = merged,
+        generation  = math.max(hView.generation or 0, aView.generation or 0),
+    }
+end
+
+function Data:GetCombinedHealingBreakdown(sessionType, sourceGUID, sourceCreatureID)
+    local T = Enum and Enum.DamageMeterType
+    local hType = T and T.HealingDone
+    local aType = T and T.Absorbs
+    if not (hType and aType) then
+        return self:GetBreakdownView(sessionType, hType or 2, sourceGUID, sourceCreatureID)
+    end
+    local hView = self:GetBreakdownView(sessionType, hType, sourceGUID, sourceCreatureID)
+    local aView = self:GetBreakdownView(sessionType, aType, sourceGUID, sourceCreatureID)
+    if not (aView and aView.spells and #aView.spells > 0) then
+        return hView
+    end
+    local IsSecret = Helpers and Helpers.IsSecretValue
+    local merged, bySpell = {}, {}
+    for i, sp in ipairs(hView.spells or {}) do
+        local copy = {}
+        for k, v in pairs(sp) do copy[k] = v end
+        merged[i] = copy
+        if sp.spellID then bySpell[sp.spellID] = copy end
+    end
+    for _, sp in ipairs(aView.spells) do
+        local existing = sp.spellID and bySpell[sp.spellID]
+        if existing then
+            if existing.totalAmount and sp.totalAmount
+                and not (IsSecret and (IsSecret(existing.totalAmount) or IsSecret(sp.totalAmount))) then
+                existing.totalAmount = existing.totalAmount + sp.totalAmount
+            end
+        else
+            local copy = {}
+            for k, v in pairs(sp) do copy[k] = v end
+            table.insert(merged, copy)
+            if sp.spellID then bySpell[sp.spellID] = copy end
+        end
+    end
+    table.sort(merged, function(x, y)
+        local xv = x.totalAmount or 0
+        local yv = y.totalAmount or 0
+        if IsSecret and (IsSecret(xv) or IsSecret(yv)) then return false end
+        return xv > yv
+    end)
+    local maxAmount = 0
+    for i, sp in ipairs(merged) do
+        sp.rank = i
+        local v = sp.totalAmount
+        if v and not (IsSecret and IsSecret(v)) and v > maxAmount then maxAmount = v end
+    end
+    -- Same secret-arithmetic guard as GetCombinedHealingView: `or 0` doesn't
+    -- short-circuit secret-tagged numbers, so the `+` would taint execution.
+    local function safeNum(v)
+        if v == nil then return 0 end
+        if IsSecret and IsSecret(v) then return 0 end
+        return v
+    end
+    return {
+        spells      = merged,
+        maxAmount   = maxAmount,
+        totalAmount = safeNum(hView.totalAmount) + safeNum(aView.totalAmount),
+    }
+end
+
+-- Helper: is this meter type one that should auto-include absorbs?
+local function IsHealingType(meterType)
+    local T = Enum and Enum.DamageMeterType
+    if not T then return false end
+    return meterType == T.HealingDone or meterType == T.Hps
+end
+
+-- T12 will set Data._onChange to a function that fans out to Window:Refresh
+-- on every live window. Phase 3 will scope this per-window instead of fan-out.
+
+-- ==== Formatters ====
+-- FormatDuration(seconds) → "M:SS" string, "" when nil/0.
+-- Handles ConditionalSecret values: routes through C_StringUtil when tainted.
+local function FormatDuration(seconds)
+    if not seconds then return "" end
+    -- Secret-value path: arithmetic on secret numbers under taint faults.
+    -- Route through C_StringUtil helpers which Blizzard tags
+    -- SecretArguments=AllowedWhenTainted. Worst case we render raw seconds
+    -- as "Ns" instead of M:SS; that's the documented trade-off.
+    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(seconds) then
+        if C_StringUtil and C_StringUtil.TruncateWhenZero and C_StringUtil.WrapString then
+            local s = C_StringUtil.TruncateWhenZero(seconds)
+            return C_StringUtil.WrapString(s, "", "s")
+        end
+        return ""
+    end
+    -- Non-secret pure-Lua path:
+    if seconds == 0 then return "" end
+    local s = math.floor(seconds)
+    local m = math.floor(s / 60)
+    local r = s % 60
+    return string.format("%d:%02d", m, r)
+end
+
+-- FormatNumber(amount, format) → string per format style.
+--   "minimal"  → "" / "999" / "1K"     / "2M"            (no fractional digit)
+--   "compact"  → "" / "999" / "1.5K"   / "2.4M"          (one fractional digit; default/fallback)
+--   "complete" → "" / "999" / "1,500"  / "2,400,000"     (thousands separator)
+-- Handles ConditionalSecret values: routes through C_StringUtil when tainted.
+local function FormatNumber(amount, format)
+    if not amount then return "" end
+    -- Secret-value path: route through C_StringUtil.TruncateWhenZero which
+    -- accepts secret arguments. Returns raw number as string (or "" when 0).
+    -- Pretty-formatting resumes when taint clears.
+    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(amount) then
+        if C_StringUtil and C_StringUtil.TruncateWhenZero then
+            return C_StringUtil.TruncateWhenZero(amount)
+        end
+        return ""
+    end
+    if amount == 0 then return "" end
+
+    if format == "minimal" then
+        if amount >= 1e6 then return string.format("%dM", math.floor(amount / 1e6)) end
+        if amount >= 1e3 then return string.format("%dK", math.floor(amount / 1e3)) end
+        return tostring(math.floor(amount))
+    end
+
+    if format == "complete" then
+        local n = math.floor(amount)
+        local s = tostring(n)
+        -- Insert thousands separators right-to-left: every 3 digits from the
+        -- right gets a trailing comma, then strip the leading comma if the
+        -- length was an exact multiple of 3.
+        local out = s:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+        if out:sub(1, 1) == "," then out = out:sub(2) end
+        return out
+    end
+
+    -- "compact" (default and fallback for unknown format strings)
+    if amount >= 1e6 then return string.format("%.1fM", amount / 1e6) end
+    if amount >= 1e3 then return string.format("%.1fK", amount / 1e3) end
+    return tostring(math.floor(amount))
+end
+-- BuildValueText: render the per-row value cell from a (primary, secondary)
+-- pair, applying the "(0)" suppression on the non-secret path. Pure helper —
+-- isSecret/formatNumber are passed in so it can be unit-tested with stub deps.
+--
+-- Secret-tagged values bypass the equality-based suppression because comparing
+-- a secret string against "" or "0" taints execution under Patch 12.0+ combat
+-- restrictions (FormatNumber routes secret amounts through C_StringUtil.
+-- TruncateWhenZero, whose return is itself secret-tagged). Secret strings are
+-- displayed as-is — Blizzard's safe formatter already chose the user-visible text.
+local function BuildValueText(primaryVal, secondaryVal, numberFormat, isSecret, formatNumber)
+    local primarySecret   = isSecret and isSecret(primaryVal)   or false
+    local secondarySecret = isSecret and isSecret(secondaryVal) or false
+    local primaryStr   = formatNumber(primaryVal,   numberFormat)
+    local secondaryStr = formatNumber(secondaryVal, "compact")
+    local primaryHas, secondaryHas
+    if primarySecret then
+        primaryHas = true
+    else
+        primaryHas = (primaryStr ~= "")
+    end
+    if secondarySecret then
+        secondaryHas = true
+    else
+        if secondaryStr == "0" then secondaryStr = "" end
+        secondaryHas = (secondaryStr ~= "")
+    end
+    if primaryHas and secondaryHas then
+        return primaryStr .. " (" .. secondaryStr .. ")"
+    elseif primaryHas then
+        return primaryStr
+    elseif secondaryHas then
+        return secondaryStr
+    end
+    return ""
+end
+QUI_DamageMeter.FormatDuration = FormatDuration
+QUI_DamageMeter.FormatNumber   = FormatNumber
+QUI_DamageMeter.BuildValueText = BuildValueText
+
+-- ==== Window ====
+local Window = {}
+Window.__index = Window
+
+-- Forward declaration: Breakdown is defined later in the file (after Window)
+-- but Window:OpenBreakdown captures it as an upvalue. Without this declaration,
+-- the reference would parse-time-bind to a global named "Breakdown" (= nil).
+local Breakdown
+
+-- Display labels for each Enum.DamageMeterType value. We key by NAME first then
+-- resolve to integer via Enum.DamageMeterType[name] at module load — this avoids
+-- the bug where Phase-1-era hardcoded integers (0=DamageDone, 1=HealingDone, ...)
+-- did NOT match Blizzard's actual enum order (verified: HealingDone=2, Dps=1,
+-- Deaths=9). Future reorderings of the enum stay safe too.
+--
+-- If Enum.DamageMeterType isn't populated at load (defensive — it should be), the
+-- table is empty and LabelForType falls back to "Type <N>".
+local TYPE_LABEL_NAMES = {
+    DamageDone           = "Damage Done",
+    Dps                  = "DPS",
+    HealingDone          = "Healing Done",
+    Hps                  = "HPS",
+    DamageTaken          = "Damage Taken",
+    AvoidableDamageTaken = "Avoidable Damage Taken",
+    EnemyDamageTaken     = "Enemy Damage Taken",
+    Absorbs              = "Absorbs",
+    Interrupts           = "Interrupts",
+    Dispels              = "Dispels",
+    Deaths               = "Deaths",
+}
+
+local TYPE_LABELS = {}
+do
+    local T = Enum and Enum.DamageMeterType
+    if T then
+        for name, label in pairs(TYPE_LABEL_NAMES) do
+            if T[name] ~= nil then
+                TYPE_LABELS[T[name]] = label
+            end
+        end
+    end
+end
+
+local function LabelForType(damageMeterType)
+    return TYPE_LABELS[damageMeterType] or ("Type " .. tostring(damageMeterType))
+end
+
+-- Tooltip labels for the per-row hover popup. Total/rate are domain-specific
+-- ("Total Damage" / "DPS" reads better than "Damage Done" / "Per Second").
+-- Returns (totalLabel, rateLabel); rateLabel may be nil when per-second isn't
+-- meaningful (e.g. Interrupts, Dispels, Deaths) — caller falls back.
+local function TooltipLabelsForType(meterType)
+    local T = Enum and Enum.DamageMeterType
+    if T then
+        if meterType == T.DamageDone or meterType == T.Dps then
+            return "Total Damage", "DPS"
+        elseif meterType == T.HealingDone or meterType == T.Hps then
+            return "Total Healing", "HPS"
+        elseif meterType == T.Absorbs then
+            return "Total Absorbs", nil
+        elseif meterType == T.DamageTaken
+            or meterType == T.AvoidableDamageTaken
+            or meterType == T.EnemyDamageTaken then
+            return "Total Damage Taken", "DPS"
+        end
+    end
+    return LabelForType(meterType), nil
+end
+
+-- Enum.DamageMeterSessionType: 0 = Overall, 1 = Current, 2 = Expired. Used in
+-- the window header so users see which session their numbers come from.
+local function LabelForSession(sessionType)
+    local S = Enum and Enum.DamageMeterSessionType
+    if S then
+        if sessionType == S.Current then return "Current" end
+        if sessionType == S.Overall then return "Overall" end
+        if sessionType == S.Expired then return "Expired" end
+    end
+    if sessionType == 0 then return "Overall" end
+    if sessionType == 1 then return "Current" end
+    if sessionType == 2 then return "Expired" end
+    return "Session " .. tostring(sessionType)
+end
+
+-- Per-second meter types (Dps, Hps) display amountPerSecond as the primary
+-- row value and rank sources by amountPerSecond. All other types use
+-- totalAmount as primary and trust Blizzard's source order (sorted by total).
+-- Both modes show the OTHER metric in parens as secondary, so users always
+-- see both numbers at a glance.
+--
+-- Matches Blizzard's stock meter: DamageMeterSessionWindow.lua keeps a
+-- DAMAGE_METER_TYPE_VALUE_PER_SECOND_AS_PRIMARY table with these two types.
+--
+-- Hoisted above Window:_SetRowSource (which calls IsPerSecondType): if this
+-- block sits later in the file, the call site captures IsPerSecondType as a
+-- global (nil) instead of the upvalue, and the meter throws "attempt to call
+-- a nil value" on every row render.
+local PER_SECOND_TYPES = {}
+do
+    local T = Enum and Enum.DamageMeterType
+    if T then
+        if T.Dps ~= nil then PER_SECOND_TYPES[T.Dps] = true end
+        if T.Hps ~= nil then PER_SECOND_TYPES[T.Hps] = true end
+    end
+end
+
+local function IsPerSecondType(meterType)
+    return PER_SECOND_TYPES[meterType] == true
+end
+
+local BAR_POOL_SIZE = 40
+local BAR_TEXTURE   = "Interface\\Buttons\\WHITE8X8"
+
+-- LibSharedMedia handle. Phase 2+ resolves textures and fonts via
+-- ns.LSM:Fetch(mediaType, name); nil-name falls back to the Phase 1
+-- hardcoded default (WHITE8X8 for bars). Defends against ns.LSM being
+-- nil — a minimal QUI install may not include LibSharedMedia.
+local LSM = ns.LSM
+
+local function ResolveBarTexture(name)
+    if name and LSM and LSM.Fetch then
+        local path = LSM:Fetch("statusbar", name)
+        if path and path ~= "" then return path end
+    end
+    return BAR_TEXTURE
+end
+
+-- Resolve a font slot ({ name, size, outline }) into (path, size, outlineFlags).
+-- name=nil falls back to Friz Quadrata (Blizzard's default UI font); size=0
+-- falls back to 11pt (matches GameFontHighlightSmall, the Phase 1 default).
+-- outline="" means no outline.
+local DEFAULT_FONT_PATH = "Fonts\\FRIZQT__.TTF"
+
+local function ResolveFontSlot(slot)
+    slot = slot or {}
+    local path
+    if slot.name and LSM and LSM.Fetch then
+        path = LSM:Fetch("font", slot.name)
+    end
+    if not path or path == "" then path = DEFAULT_FONT_PATH end
+    local size = (slot.size and slot.size > 0) and slot.size or 11
+    local outline = slot.outline or ""
+    return path, size, outline
+end
+
+-- QUI accent color lookup. core/main.lua publishes QUI:GetAddonAccentColor()
+-- which already handles theme presets + the sky-blue fallback. We thin-wrap
+-- so callers can pcall against missing-QUI at module-load.
+local function GetAccentColor()
+    local QUI = _G.QUI
+    if QUI and QUI.GetAddonAccentColor then
+        return QUI:GetAddonAccentColor()
+    end
+    return 0.376, 0.647, 0.980, 1   -- sky blue fallback
+end
+
+-- Resolve a deep path through the appearance schema with per-window override
+-- precedence. Walks db.profile.damageMeter.native.appearance.perWindow[windowID]
+-- first; if the leaf is nil (or any intermediate node), falls back to the
+-- corresponding path in appearance.global. Returns nil only when BOTH paths
+-- are missing.
+--
+-- Usage:
+--   ResolveAppearance(self.windowID, "barHeight")
+--   ResolveAppearance(self.windowID, "fonts", "rowName", "size")
+--   ResolveAppearance(self.windowID, "colors", "bg")
+local function WalkPath(root, ...)
+    local n = select("#", ...)
+    local node = root
+    for i = 1, n do
+        if type(node) ~= "table" then return nil end
+        node = node[select(i, ...)]
+    end
+    return node
+end
+
+local function ResolveAppearance(windowID, ...)
+    local s = GetSettings()
+    if not (s and s.appearance) then return nil end
+    if windowID and s.appearance.perWindow then
+        local override = s.appearance.perWindow[windowID]
+        if override then
+            local v = WalkPath(override, ...)
+            if v ~= nil then return v end
+        end
+    end
+    return WalkPath(s.appearance.global, ...)
+end
+QUI_DamageMeter.ResolveAppearance = ResolveAppearance
+
+-- Pure helper: returns the index of the local-player source in `sources`,
+-- or nil if not present. Used by pinned-self logic in Window:Refresh.
+local function FindLocalPlayerInSources(sources)
+    if not sources then return nil end
+    for i, src in ipairs(sources) do
+        if src.isLocalPlayer then return i end
+    end
+    return nil
+end
+
+function Window:_BuildRow(index)
+    local windowID = self.windowID
+    local barH    = ResolveAppearance(windowID, "barHeight")    or 18
+    local barGap  = ResolveAppearance(windowID, "barSpacing")   or 2
+    local headerH = ResolveAppearance(windowID, "headerHeight") or 22
+
+    local row = CreateFrame("Button", nil, self.frame)
+    row:SetHeight(barH)
+    row:SetPoint("LEFT",  self.frame, "LEFT",  0, 0)
+    row:SetPoint("RIGHT", self.frame, "RIGHT", 0, 0)
+    if index == 1 then
+        row:SetPoint("TOP", self.frame, "TOP", 0, -headerH)
+    else
+        row:SetPoint("TOP", self.rows[index - 1], "BOTTOM", 0, -barGap)
+    end
+
+    -- Icon (left)
+    local iconSize = barH
+    row.Icon = row:CreateTexture(nil, "ARTWORK")
+    row.Icon:SetSize(iconSize, iconSize)
+    row.Icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)  -- trim Blizzard icon border
+
+    -- Bar (fills remaining width)
+    row.Bar = CreateFrame("StatusBar", nil, row)
+    row.Bar:SetPoint("LEFT",  row.Icon, "RIGHT", 2, 0)
+    row.Bar:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    row.Bar:SetPoint("TOP", row, "TOP", 0, 0)
+    row.Bar:SetPoint("BOTTOM", row, "BOTTOM", 0, 0)
+    row.Bar:SetStatusBarTexture(BAR_TEXTURE)
+    row.Bar:SetMinMaxValues(0, 1)
+    row.Bar:SetValue(0)
+
+    -- Bar bg (dark behind the fill)
+    row.BarBg = row.Bar:CreateTexture(nil, "BACKGROUND")
+    row.BarBg:SetAllPoints(row.Bar)
+    row.BarBg:SetColorTexture(0.05, 0.05, 0.05, 0.55)
+
+    -- Name (left-justified, over the bar)
+    row.Name = row.Bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.Name:SetPoint("LEFT",  row.Bar, "LEFT",  4, 0)
+    row.Name:SetJustifyH("LEFT")
+    row.Name:SetText("")
+
+    -- Value (right-justified, over the bar)
+    row.Value = row.Bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.Value:SetPoint("RIGHT", row.Bar, "RIGHT", -4, 0)
+    row.Value:SetJustifyH("RIGHT")
+    row.Value:SetText("")
+
+    -- Hover tooltip (Phase 2) + breakdown popup (Phase 4). _SetRowSource stashes
+    -- source / maxAmount / type onto the row each tick; OnEnter reads from the
+    -- closure-captured row.
+    row:EnableMouse(true)
+    row:RegisterForClicks("AnyUp")
+    row:SetScript("OnClick", function(rowSelf)
+        if not rowSelf._source then return end
+        self:OpenBreakdown(rowSelf._source, rowSelf)
+    end)
+    row:SetScript("OnEnter", function(rowSelf)
+        local s2 = GetSettings()
+        if not (s2 and s2.showHoverTooltip) then return end
+        if not rowSelf._source then return end
+        if GameTooltip:IsForbidden() then return end
+
+        local src = rowSelf._source
+
+        -- Spec: "Anchored TOP to row's BOTTOM" → tooltip appears BELOW the row.
+        GameTooltip:SetOwner(rowSelf, "ANCHOR_BOTTOM")
+        GameTooltip:ClearLines()
+
+        -- Header colored by class
+        local cr, cg, cb = 1, 1, 1
+        if src.classFilename and RAID_CLASS_COLORS and RAID_CLASS_COLORS[src.classFilename] then
+            local cc = RAID_CLASS_COLORS[src.classFilename]
+            cr, cg, cb = cc.r, cc.g, cc.b
+        end
+        GameTooltip:AddLine(src.name or "?", cr, cg, cb)
+
+        if src.classFilename then
+            GameTooltip:AddLine(src.classFilename, 0.7, 0.7, 0.7)
+        end
+
+        local totalLabel, rateLabel = TooltipLabelsForType(rowSelf._damageMeterType or 0)
+        -- Capture secret state BEFORE any equality comparison: comparing a
+        -- secret-tagged string against "" or 0 taints execution. FormatNumber
+        -- propagates the secret tag through C_StringUtil.TruncateWhenZero, so
+        -- secret amounts must be rendered as-is without the "is it empty?" gate.
+        local IsSecret = Helpers and Helpers.IsSecretValue
+        local totalSecret = src.totalAmount and IsSecret and IsSecret(src.totalAmount)
+        local amt = FormatNumber(src.totalAmount, "complete")
+        if totalSecret or (amt ~= "") then
+            GameTooltip:AddDoubleLine(totalLabel .. ":", amt, 1, 1, 1, 1, 1, 1)
+        end
+
+        local ps = src.amountPerSecond
+        local psSecret = ps and IsSecret and IsSecret(ps)
+        if ps and (psSecret or ps ~= 0) then
+            GameTooltip:AddDoubleLine((rateLabel or "Per Second") .. ":", FormatNumber(ps, "compact"), 1, 1, 1, 1, 1, 1)
+        end
+
+        -- % of top: divide by the same metric that ranks the view, otherwise
+        -- Dps/Hps views compare totalAmount against max amountPerSecond and
+        -- the percentage explodes. _maxAmount is the primary-metric max from
+        -- PrepareSourcesForRender; pair it with the primary value here.
+        local perSec = IsPerSecondType(rowSelf._damageMeterType or 0)
+        local primary = perSec and src.amountPerSecond or src.totalAmount
+        local primarySecret = primary and IsSecret and IsSecret(primary)
+        local maxSec = rowSelf._maxAmount and IsSecret and IsSecret(rowSelf._maxAmount)
+        if not (maxSec or primarySecret) and rowSelf._maxAmount and rowSelf._maxAmount > 0 and primary then
+            local pct = (primary / rowSelf._maxAmount) * 100
+            GameTooltip:AddDoubleLine("% of Top:", string.format("%.1f%%", pct), 1, 1, 1, 1, 1, 1)
+        end
+
+        GameTooltip:Show()
+    end)
+    row:SetScript("OnLeave", function()
+        if GameTooltip:IsForbidden() then return end
+        GameTooltip:Hide()
+    end)
+
+    row:Hide()
+    return row
+end
+
+function Window:_EnsureRowPool()
+    if #self.rows >= BAR_POOL_SIZE then return end
+    for i = #self.rows + 1, BAR_POOL_SIZE do
+        self.rows[i] = self:_BuildRow(i)
+    end
+end
+
+local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
+
+function Window:_SetRowSource(row, source, maxAmount)
+    local windowID = self.windowID
+
+    -- Bar texture: pick LSM media if user set one, else stick with the
+    -- Phase 1 WHITE8X8 default. Applied here (per-source) rather than at
+    -- pool build time so a settings change is picked up on the next
+    -- RefreshAll() without a /reload.
+    local barTexName = ResolveAppearance(windowID, "textures", "bar")
+    row.Bar:SetStatusBarTexture(ResolveBarTexture(barTexName))
+
+    -- Icon: dispatch on iconStyle setting ("spec" | "class" | "none").
+    local iconStyle = ResolveAppearance(windowID, "iconStyle") or "spec"
+    if iconStyle == "none" then
+        row.Icon:SetTexture(nil)
+    elseif iconStyle == "class" and source.classFilename and CLASS_ICON_TCOORDS then
+        row.Icon:SetTexture("Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes")
+        local coords = CLASS_ICON_TCOORDS[source.classFilename]
+        if coords then
+            row.Icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+        else
+            row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        end
+    else
+        -- "spec" (default) or fallback when class data is missing
+        if source.specIconID and source.specIconID ~= 0 then
+            row.Icon:SetTexture(source.specIconID)
+            row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        elseif source.classFilename and CLASS_ICON_TCOORDS then
+            row.Icon:SetTexture("Interface\\Glues\\CharacterCreate\\UI-CharacterCreate-Classes")
+            local coords = CLASS_ICON_TCOORDS[source.classFilename]
+            if coords then
+                row.Icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+            else
+                row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            end
+        else
+            row.Icon:SetTexture(FALLBACK_ICON)
+            row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        end
+    end
+
+    row.Name:SetText((source.rank or 0) .. ". " .. (source.name or "?"))
+
+    -- Value: primary metric per the meter type, with the OTHER metric in
+    -- parens as secondary. For Dps/Hps types, primary = amountPerSecond and
+    -- secondary = totalAmount; for everything else, primary = totalAmount
+    -- and secondary = amountPerSecond. numberFormat is per-window-overridable
+    -- and applies to the primary; secondary always uses "compact" for brevity.
+    local numberFormat = ResolveAppearance(windowID, "numberFormat") or "compact"
+    local perSecondMode = IsPerSecondType(self.damageMeterType)
+    local primaryVal   = perSecondMode and source.amountPerSecond or source.totalAmount
+    local secondaryVal = perSecondMode and source.totalAmount     or source.amountPerSecond
+    local IsSecret = Helpers and Helpers.IsSecretValue
+    row.Value:SetText(BuildValueText(primaryVal, secondaryVal, numberFormat, IsSecret, FormatNumber))
+
+    -- Bar fill: ratio uses primaryVal / maxAmount where maxAmount is matched
+    -- to the metric (see PrepareSourcesForRender — for per-second types,
+    -- caller passes max amountPerSecond; otherwise max totalAmount from API).
+    -- Keep the secret-value guard because both fields can be ConditionalSecret.
+    -- IsSecret was bound above for the value-text taint guard; reuse it here.
+    local maxSecret = maxAmount ~= nil and IsSecret and IsSecret(maxAmount)
+    local amtSecret = primaryVal ~= nil and IsSecret and IsSecret(primaryVal)
+    if not (maxSecret or amtSecret) and maxAmount and maxAmount > 0 then
+        local ratio = (primaryVal or 0) / maxAmount
+        if ratio < 0 then ratio = 0 end
+        if ratio > 1 then ratio = 1 end
+        -- Phase 7: optional bar-fill animation. Off by default. animateBars
+        -- toggles per-window-overridable; animateDuration caps lerp time.
+        if ResolveAppearance(windowID, "animateBars") then
+            local duration = ResolveAppearance(windowID, "animateDuration") or 0.2
+            row._lerpFrom  = row._lerpCurrent or row.Bar:GetValue() or 0
+            row._lerpTo    = ratio
+            row._lerpStart = GetTime and GetTime() or 0
+            row._lerpDur   = duration
+            row._lerpCurrent = row._lerpFrom
+            -- Drive the lerp via OnUpdate; lazy-attach handler the first time
+            -- this row sees animation.
+            if not row._lerpDriven then
+                row._lerpDriven = true
+                row:SetScript("OnUpdate", function(rowSelf)
+                    if not rowSelf._lerpTo then return end
+                    local now = GetTime and GetTime() or 0
+                    local t = math.min(1, (now - (rowSelf._lerpStart or 0)) / (rowSelf._lerpDur or 0.2))
+                    local v = (rowSelf._lerpFrom or 0) + ((rowSelf._lerpTo or 0) - (rowSelf._lerpFrom or 0)) * t
+                    rowSelf._lerpCurrent = v
+                    rowSelf.Bar:SetValue(v)
+                    if t >= 1 then
+                        rowSelf._lerpFrom    = rowSelf._lerpTo
+                        rowSelf._lerpTo      = nil
+                        rowSelf:SetScript("OnUpdate", nil)
+                        rowSelf._lerpDriven  = false
+                    end
+                end)
+            end
+        else
+            row.Bar:SetValue(ratio)
+            row._lerpCurrent = ratio
+        end
+    end
+    -- If secret: leave bar at last-known fill width.
+
+    -- Bar color: priority is useClassColor → barColorAccent → custom barColor.
+    local alpha = ResolveAppearance(windowID, "barFillAlpha") or 1
+    if ResolveAppearance(windowID, "useClassColor") and source.classFilename and RAID_CLASS_COLORS then
+        local c = RAID_CLASS_COLORS[source.classFilename]
+        if c then
+            row.Bar:SetStatusBarColor(c.r, c.g, c.b, alpha)
+        else
+            row.Bar:SetStatusBarColor(0.5, 0.5, 0.5, alpha)
+        end
+    elseif ResolveAppearance(windowID, "barColorAccent") then
+        local ar, ag, ab = GetAccentColor()
+        row.Bar:SetStatusBarColor(ar, ag, ab, alpha)
+    else
+        local bc = ResolveAppearance(windowID, "barColor")
+        if bc then
+            row.Bar:SetStatusBarColor(bc[1] or 0.35, bc[2] or 0.55, bc[3] or 0.8, alpha)
+        else
+            row.Bar:SetStatusBarColor(0.35, 0.55, 0.8, alpha)
+        end
+    end
+
+    -- Stash source + maxAmount + type on the row so OnEnter can build the
+    -- tooltip without closure-capturing the bind-time locals.
+    row._source = source
+    row._maxAmount = maxAmount
+    row._damageMeterType = self.damageMeterType
+end
+
+function Window:_ApplyHeader()
+    if not self.frame or not self.TypeLabel then return end
+    self.TypeLabel:SetText(LabelForType(self.damageMeterType)
+        .. " | " .. LabelForSession(self.sessionType))
+end
+
+function Window:_ApplyColors()
+    local windowID = self.windowID
+
+    -- Window bg
+    if self.backdropTex then
+        local bg = ResolveAppearance(windowID, "colors", "bg") or { 0, 0, 0, 0.85 }
+        self.backdropTex:SetColorTexture(bg[1] or 0, bg[2] or 0, bg[3] or 0, bg[4] or 0.85)
+    end
+
+    -- Header text color (TypeLabel + SessionTimer). nil = accent.
+    local headerText = ResolveAppearance(windowID, "colors", "headerText")
+    local hr, hg, hb, ha
+    if headerText then
+        hr, hg, hb, ha = headerText[1] or 1, headerText[2] or 1, headerText[3] or 1, headerText[4] or 1
+    else
+        hr, hg, hb, ha = GetAccentColor()
+    end
+    if self.TypeLabel    then self.TypeLabel:SetTextColor(hr, hg, hb, ha)    end
+    if self.SessionTimer then self.SessionTimer:SetTextColor(hr, hg, hb, ha) end
+
+    -- Row text colors (rowName + rowValue)
+    if not self.rows then return end
+    local rn = ResolveAppearance(windowID, "colors", "rowName")  or { 1, 1, 1, 1 }
+    local rv = ResolveAppearance(windowID, "colors", "rowValue") or { 1, 1, 1, 1 }
+    for i = 1, #self.rows do
+        local row = self.rows[i]
+        if row then
+            if row.Name  then row.Name:SetTextColor(rn[1] or 1, rn[2] or 1, rn[3] or 1, rn[4] or 1)  end
+            if row.Value then row.Value:SetTextColor(rv[1] or 1, rv[2] or 1, rv[3] or 1, rv[4] or 1) end
+        end
+    end
+end
+
+function Window:_ApplyFonts()
+    local windowID = self.windowID
+
+    -- Header font (TypeLabel + SessionTimer share)
+    do
+        local slot = ResolveAppearance(windowID, "fonts", "header")
+        local path, size, outline = ResolveFontSlot(slot)
+        if self.TypeLabel    then self.TypeLabel:SetFont(path, size, outline)    end
+        if self.SessionTimer then self.SessionTimer:SetFont(path, size, outline) end
+    end
+
+    -- Row fonts (rowName + rowValue)
+    if not self.rows then return end
+    local nSlot = ResolveAppearance(windowID, "fonts", "rowName")
+    local vSlot = ResolveAppearance(windowID, "fonts", "rowValue")
+    local nPath, nSize, nOutline = ResolveFontSlot(nSlot)
+    local vPath, vSize, vOutline = ResolveFontSlot(vSlot)
+    for i = 1, #self.rows do
+        local row = self.rows[i]
+        if row then
+            if row.Name  then row.Name:SetFont(nPath, nSize, nOutline)  end
+            if row.Value then row.Value:SetFont(vPath, vSize, vOutline) end
+        end
+    end
+end
+
+-- Damage meter types exposed in the gear-menu radio list, in display order.
+-- Built from Enum.DamageMeterType names at module load — see TYPE_LABEL_NAMES
+-- comment above for why we resolve from names not hardcoded integers.
+-- Covers all 11 enum entries (every type Blizzard's API surfaces). Grouped
+-- by metric family: damage, healing, taken/avoidable/enemy, absorbs, actions.
+-- Per-second views (Dps, Hps) sort BY per-second rather than total, which is
+-- a meaningfully different ranking from DamageDone / HealingDone on uneven
+-- combats (a late-joining DPS ranks low by total but high by per-second).
+local METER_TYPES = {}
+do
+    local T = Enum and Enum.DamageMeterType
+    if T then
+        local order = {
+            "DamageDone", "Dps",
+            "HealingDone", "Hps", "Absorbs",
+            "DamageTaken", "AvoidableDamageTaken", "EnemyDamageTaken",
+            "Interrupts", "Dispels", "Deaths",
+        }
+        for _, name in ipairs(order) do
+            if T[name] ~= nil then table.insert(METER_TYPES, T[name]) end
+        end
+    end
+end
+
+-- Re-sort + recompute max for per-second meter types. Returns the source
+-- array to render against + the matching max value for bar fill ratios.
+-- For non-per-second types this is a passthrough (trust Blizzard's order +
+-- the API's maxAmount field). For Dps/Hps we make a shallow-copied + sorted
+-- array (so we don't mutate the cached view) and walk it for max
+-- amountPerSecond. Secret-tagged values are skipped during sort/max.
+local function PrepareSourcesForRender(view, meterType)
+    if not IsPerSecondType(meterType) then
+        return view.sources, view.maxAmount
+    end
+    local IsSecret = Helpers and Helpers.IsSecretValue
+    local out = {}
+    for i, s in ipairs(view.sources) do
+        out[i] = {
+            name             = s.name,
+            classFilename    = s.classFilename,
+            specIconID       = s.specIconID,
+            totalAmount      = s.totalAmount,
+            amountPerSecond  = s.amountPerSecond,
+            isLocalPlayer    = s.isLocalPlayer,
+            sourceGUID       = s.sourceGUID,
+            sourceCreatureID = s.sourceCreatureID,
+            deathRecapID     = s.deathRecapID,
+            rank             = i,
+        }
+    end
+    table.sort(out, function(a, b)
+        local av, bv = a.amountPerSecond, b.amountPerSecond
+        if IsSecret and (IsSecret(av) or IsSecret(bv)) then return false end
+        return (av or 0) > (bv or 0)
+    end)
+    local maxValue = 0
+    for i, s in ipairs(out) do
+        s.rank = i
+        local v = s.amountPerSecond
+        if v and not (IsSecret and IsSecret(v)) and v > maxValue then
+            maxValue = v
+        end
+    end
+    return out, maxValue
+end
+
+function Window:_OpenConfigMenu()
+    if not MenuUtil or not MenuUtil.CreateContextMenu then return end
+    local s = GetSettings()
+    local windowState = s and s.windows and s.windows[self.windowID]
+    if not windowState then return end
+
+    local owner = self.header or self.frame
+    MenuUtil.CreateContextMenu(owner, function(_, root)
+        root:CreateTitle("Meter Type")
+        for _, t in ipairs(METER_TYPES) do
+            local typeVal = t
+            root:CreateRadio(LabelForType(typeVal),
+                function() return self.damageMeterType == typeVal end,
+                function()
+                    self.damageMeterType = typeVal
+                    windowState.damageMeterType = typeVal
+                    QUI_DamageMeter.WindowManager:RefreshAll()
+                end)
+        end
+        root:CreateDivider()
+        root:CreateTitle("Session")
+        -- Enum.DamageMeterSessionType: 0 = Overall, 1 = Current, 2 = Expired (history only).
+        -- Phase 2 exposes Current + Overall. Expired sessions surface only via the
+        -- Phase 4 breakdown popup, not the live window.
+        local sessions = {
+            { value = 1, label = "Current" },
+            { value = 0, label = "Overall" },
+        }
+        for _, entry in ipairs(sessions) do
+            local sessionVal = entry.value
+            root:CreateRadio(entry.label,
+                function() return self.sessionType == sessionVal end,
+                function()
+                    self.sessionType = sessionVal
+                    windowState.sessionType = sessionVal
+                    QUI_DamageMeter.WindowManager:RefreshAll()
+                end)
+        end
+    end)
+end
+
+function Window:Refresh()
+    if not self.frame then return end
+
+    -- Phase 9: per-window hidden flag. Set via Windows section UI; lets users
+    -- temporarily stash a window without deleting it (which would lose
+    -- type/session/position state and unregister the Layout Mode handle).
+    local s = GetSettings()
+    local ws = s and s.windows and s.windows[self.windowID]
+    if ws and ws.hidden then
+        self.frame:Hide()
+        return
+    elseif not self.frame:IsShown() then
+        self.frame:Show()
+    end
+
+    local _t0 = Perf.enabled and PerfNow() or 0
+    self:_ApplyHeader()
+    self:_ApplyFonts()
+    self:_ApplyColors()
+
+    -- Healing views optionally include absorbs (settings.combineAbsorbsIntoHealing).
+    local view
+    local s_combo = GetSettings()
+    if IsHealingType(self.damageMeterType)
+        and s_combo and s_combo.combineAbsorbsIntoHealing then
+        view = Data:GetCombinedHealingView(self.sessionType)
+    else
+        view = Data:GetView(self.sessionType, self.damageMeterType)
+    end
+    if view.generation == self._lastGeneration then return end
+    self._lastGeneration = view.generation
+
+    -- Session timer text. FormatDuration provides M:SS formatting.
+    -- Duration is now GetCombatElapsed() for live sessions (always a plain
+    -- number, never secret) and API durationSeconds only for Expired/historical
+    -- sessions (also safe). FormatDuration still guards the secret path as
+    -- defense-in-depth for any edge case where a historical session returns
+    -- a secret-tagged duration.
+    local d = view.duration
+    if d and d > 0 then
+        self.SessionTimer:SetText("[" .. FormatDuration(d) .. "]")
+    else
+        self.SessionTimer:SetText("")
+    end
+
+    self:_EnsureRowPool()
+    -- For per-second meter types, sources gets a copied + re-sorted array and
+    -- maxValue is max amountPerSecond. For everything else, this is a
+    -- passthrough on view.sources / view.maxAmount.
+    local sources, maxValue = PrepareSourcesForRender(view, self.damageMeterType)
+    local visibleCount = math.min(#sources, self.maxVisibleRows or 10)
+
+    local s = GetSettings()
+    local pinnedSelf = s and s.showPinnedSelf
+
+    for i = 1, visibleCount do
+        self:_SetRowSource(self.rows[i], sources[i], maxValue)
+        self.rows[i]:Show()
+    end
+    for i = visibleCount + 1, #self.rows do
+        self.rows[i]:Hide()
+    end
+
+    -- Pinned-self: if the local player exists in the data AND is below the cut,
+    -- swap the bottom visible row for a synthetic local-player row showing
+    -- the player's REAL rank/amount.
+    if pinnedSelf and visibleCount > 0 then
+        local localIdx = FindLocalPlayerInSources(sources)
+        if localIdx and localIdx > visibleCount then
+            self:_SetRowSource(self.rows[visibleCount], sources[localIdx], maxValue)
+            self.rows[visibleCount]:Show()
+        end
+    end
+
+    -- Phase 4: refresh an open breakdown popup on every parent-window tick.
+    self:RefreshBreakdown()
+    if Perf.enabled then Perf:Record("window", PerfNow() - _t0) end
+end
+
+local function LayoutKey(windowID) return "damageMeter_window_" .. windowID end
+
+local WINDOW_LAYOUT_FEATURE_ID = "damageMeterWindowLayout"
+
+local RESIZE_CORNERS = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" }
+
+-- Read accent color with sky-blue fallback (matches layoutmode.lua default).
+local function GetAccentRGB()
+    local QUI = _G.QUI
+    local GUI = QUI and QUI.GUI
+    local accent = GUI and GUI.Colors and GUI.Colors.accent
+    if accent then
+        return accent[1], accent[2], accent[3]
+    end
+    return 0.376, 0.647, 0.980
+end
+
+-- Attach four corner resize grips to a layout-mode child overlay. Each grip
+-- drives `frame:StartSizing(corner)`; on release we persist w/h to per-window
+-- savedvars and call `window:Refresh()` so rows re-layout. Idempotent —
+-- skips work if grips have already been built on this overlay.
+local function AttachWindowResizeOverlay(overlay, frame, window, windowID)
+    overlay:ClearAllPoints()
+    overlay:SetAllPoints(frame)
+
+    if overlay._dmResizeGrips then return end
+    overlay._dmResizeGrips = {}
+
+    local r, g, b = GetAccentRGB()
+
+    for _, corner in ipairs(RESIZE_CORNERS) do
+        local grip = CreateFrame("Button", nil, overlay)
+        grip:SetSize(20, 20)
+        grip:SetFrameLevel(overlay:GetFrameLevel() + 10)
+        grip:EnableMouse(true)
+
+        local insetX = (corner == "TOPLEFT" or corner == "BOTTOMLEFT") and 2 or -2
+        local insetY = (corner == "TOPLEFT" or corner == "TOPRIGHT") and -2 or 2
+        grip:ClearAllPoints()
+        grip:SetPoint(corner, overlay, corner, insetX, insetY)
+
+        -- L-bracket: horizontal + vertical bar pinned to the corner.
+        local barH = grip:CreateTexture(nil, "OVERLAY")
+        barH:SetColorTexture(r, g, b, 0.9)
+        barH:SetSize(18, 3)
+        barH:SetPoint(corner, 0, 0)
+
+        local barV = grip:CreateTexture(nil, "OVERLAY")
+        barV:SetColorTexture(r, g, b, 0.9)
+        barV:SetSize(3, 18)
+        barV:SetPoint(corner, 0, 0)
+
+        local hl = grip:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetColorTexture(1, 1, 1, 0.35)
+        hl:SetAllPoints()
+        hl:SetBlendMode("ADD")
+
+        local tooltipAnchor = (corner == "TOPLEFT" or corner == "BOTTOMLEFT")
+            and "ANCHOR_BOTTOMLEFT" or "ANCHOR_BOTTOMRIGHT"
+
+        grip:SetScript("OnEnter", function(self)
+            if GameTooltip then
+                GameTooltip:SetOwner(self, tooltipAnchor)
+                GameTooltip:SetText("Drag to resize meter window")
+                GameTooltip:Show()
+            end
+        end)
+        grip:SetScript("OnLeave", function()
+            if GameTooltip then GameTooltip:Hide() end
+        end)
+        grip:SetScript("OnMouseDown", function(_, button)
+            if button ~= "LeftButton" then return end
+            if InCombatLockdown and InCombatLockdown() then return end
+            if frame.SetResizable then frame:SetResizable(true) end
+            frame:StartSizing(corner)
+        end)
+        grip:SetScript("OnMouseUp", function(_, button)
+            if button ~= "LeftButton" then return end
+            frame:StopMovingOrSizing()
+
+            local s = GetSettings()
+            local ws = s and s.windows and s.windows[windowID]
+            if ws then
+                ws.size = ws.size or {}
+                ws.size.w = math.floor((frame:GetWidth()  or 0) + 0.5)
+                ws.size.h = math.floor((frame:GetHeight() or 0) + 0.5)
+            end
+
+            if window.Refresh then
+                pcall(window.Refresh, window)
+            end
+        end)
+
+        overlay._dmResizeGrips[corner] = grip
+    end
+end
+
+-- Note: RegisterWithLayoutMode references WindowManager (defined later in the file).
+-- Lua resolves bare locals at PARSE time, so a direct `WindowManager:Get(...)` here
+-- would capture `_G.WindowManager` (nil). We go through `QUI_DamageMeter.WindowManager`
+-- so field access happens at runtime against the populated table.
+local function RegisterWithLayoutMode(window)
+    local windowID = window.windowID
+    local key      = LayoutKey(windowID)
+    local label    = "Damage Meter " .. windowID
+
+    -- Layout Mode handle (idempotent: skinner's pattern). Position persistence
+    -- flows through the shared frameAnchoring DB — same path as every other
+    -- QUI mover. The frame resolver below maps `key` back to window.frame so
+    -- QUI_ApplyFrameAnchor can position it on apply.
+    if ns.QUI_LayoutMode and type(ns.QUI_LayoutMode.RegisterElement) == "function" then
+        ns.QUI_LayoutMode:RegisterElement({
+            key      = key,
+            label    = label,
+            group    = "Display",
+            order    = 60,
+            isOwned  = true,
+            getFrame = function() return window.frame end,
+            getSize = function()
+                if not window.frame then return nil end
+                return window.frame:GetWidth(), window.frame:GetHeight()
+            end,
+            isEnabled = function()
+                local s = GetSettings()
+                return s and s.enabled and (QUI_DamageMeter.WindowManager:Get(windowID) ~= nil)
+            end,
+            setGameplayHidden = function(hide)
+                if hide then window:Hide() else window:Show() end
+            end,
+            -- Corner resize grips — mirrors the ChatFrame1 pattern in
+            -- layoutmode.lua. Drag any corner to reshape the window; on
+            -- release we persist w/h to savedvars and trigger a Refresh so
+            -- rows re-layout in the new bounds.
+            setupOverlay = function(overlay, frame)
+                AttachWindowResizeOverlay(overlay, frame, window, windowID)
+            end,
+        })
+    end
+
+    -- Anchor target registry so other QUI elements can anchor TO this window
+    -- AND so _G.QUI_ApplyFrameAnchor recognizes the key on reload.
+    if _G.QUI_RegisterFrameResolver then
+        _G.QUI_RegisterFrameResolver(key, {
+            resolver    = function() return window.frame end,
+            displayName = label,
+            category    = "Display",
+            order       = 60,
+        })
+    end
+
+    -- Surface the per-window mover in the Layout Mode settings drawer.
+    -- One shared Feature dispatches by providerKey (see registration below);
+    -- here we just point the dynamic key at it. Mirrors the CDM-custom-bar
+    -- pattern in modules/cdm/cdm_containers.lua.
+    local Registry = ns.Settings and ns.Settings.Registry
+    if Registry and type(Registry.RegisterLookupKey) == "function" then
+        Registry:RegisterLookupKey(WINDOW_LAYOUT_FEATURE_ID, key)
+    end
+
+    -- Position the frame from saved frameAnchoring (no-op if no saved entry,
+    -- leaving the default CENTER anchor set in Window:New).
+    if _G.QUI_ApplyFrameAnchor then
+        _G.QUI_ApplyFrameAnchor(key)
+    end
+end
+
+-- Shared Feature for all damage meter window movers. Registered once at file
+-- load; each window calls Registry:RegisterLookupKey(...) in its RegisterWith-
+-- LayoutMode to point its dynamic key at this feature. The render function
+-- dispatches by options.providerKey so one feature serves all windows.
+do
+    local Settings       = ns.Settings
+    local Registry       = Settings and Settings.Registry
+    local Schema         = Settings and Settings.Schema
+    local RenderAdapters = Settings and Settings.RenderAdapters
+    if Registry and Schema and RenderAdapters
+        and type(Registry.RegisterFeature) == "function"
+        and type(Schema.Feature) == "function"
+        and type(RenderAdapters.RenderPositionOnly) == "function" then
+        Registry:RegisterFeature(Schema.Feature({
+            id     = WINDOW_LAYOUT_FEATURE_ID,
+            render = {
+                layout = function(host, options)
+                    local providerKey = options and options.providerKey
+                    if type(providerKey) ~= "string" or providerKey == "" then
+                        return 80
+                    end
+                    return RenderAdapters.RenderPositionOnly(host, providerKey)
+                end,
+            },
+        }))
+    end
+end
+
+function Window:New(windowID)
+    local s = GetSettings()
+    local windowState = s and s.windows and s.windows[windowID]
+    if not windowState then
+        -- Defensive: settings missing → use baseline defaults matching T3.
+        windowState = {
+            damageMeterType = 0, sessionType = 1,
+            size     = { w = 240, h = 180 },
+            hidden = false, maxVisibleRows = 10,
+        }
+    end
+
+    local self = setmetatable({
+        windowID        = windowID,
+        damageMeterType = windowState.damageMeterType,
+        sessionType     = windowState.sessionType,
+        maxVisibleRows  = windowState.maxVisibleRows or 10,
+        rows            = {},      -- pool, filled in T10
+        _lastGeneration = 0,
+    }, Window)
+
+    -- Top-level frame; parented to UIParent so each window is independently
+    -- positionable and Layout Mode-discoverable. Position is set here as a
+    -- safe default; RegisterWithLayoutMode (called at the end of :New) applies
+    -- the saved frameAnchoring entry afterward if one exists.
+    local frame = CreateFrame("Frame", "QUI_DamageMeterWindow" .. windowID, UIParent)
+    frame:SetSize(windowState.size.w, windowState.size.h)
+    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    frame:SetFrameStrata("MEDIUM")
+    -- Resizable so Layout Mode corner-grip drags can reshape the window.
+    -- Movable so frame:StartSizing works (Blizzard couples the two).
+    frame:SetMovable(true)
+    frame:SetResizable(true)
+    if frame.SetResizeBounds then
+        frame:SetResizeBounds(120, 60, 1200, 1000)
+    end
+    self.frame = frame
+
+    -- Backdrop child: dark fill behind the window. Border treatment is the
+    -- per-row 1px accent (T10) rather than a window-level border; this keeps
+    -- the visual lighter and matches the Faithful style in the spec.
+    local backdrop = CreateFrame("Frame", nil, frame)
+    backdrop:SetAllPoints(frame)
+    backdrop:SetFrameLevel(frame:GetFrameLevel())
+    local bgTex = backdrop:CreateTexture(nil, "BACKGROUND")
+    bgTex:SetAllPoints(backdrop)
+    -- colors.bg is { r, g, b, a } array form (Phase 2 schema); per-window
+    -- override resolution lands here so window-specific bg colors paint at spawn.
+    local appBg = ResolveAppearance(windowID, "colors", "bg") or { 0, 0, 0, 0.85 }
+    bgTex:SetColorTexture(appBg[1], appBg[2], appBg[3], appBg[4])
+    self.backdrop = backdrop
+    self.backdropTex = bgTex
+
+    -- Header bar (Button so RegisterForClicks/OnClick work for the right-click
+    -- config menu below; anchored TOP-LEFT/TOP-RIGHT, height from settings).
+    local headerH = ResolveAppearance(windowID, "headerHeight") or 22
+    local header = CreateFrame("Button", nil, frame)
+    header:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    header:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    header:SetHeight(headerH)
+    self.header = header
+
+    -- TypeLabel (left side of header): e.g. "Damage Done"
+    local typeLabel = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    typeLabel:SetPoint("LEFT", header, "LEFT", 6, 0)
+    typeLabel:SetText("Damage Done")  -- T13/T17 wire this to the actual type
+    self.TypeLabel = typeLabel
+
+    -- SessionTimer (right side of header): e.g. "[1:24]"
+    local sessionTimer = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    sessionTimer:SetPoint("RIGHT", header, "RIGHT", -6, 0)
+    sessionTimer:SetText("")
+    self.SessionTimer = sessionTimer
+
+    -- CloseButton — Phase 1 stub. Hidden by default so Phase 1 ships without
+    -- a way to lose the window accidentally; Phase 2/3 enable it once per-
+    -- window hidden-state UI is built.
+    local closeBtn = CreateFrame("Button", nil, header)
+    closeBtn:SetSize(headerH - 6, headerH - 6)
+    closeBtn:SetPoint("RIGHT", header, "RIGHT", -2, 0)
+    closeBtn:Hide()
+    self.CloseButton = closeBtn
+
+    -- Right-click on the header opens the meter-type / session menu.
+    -- Hover shows a hint so the affordance is discoverable without a gear.
+    header:EnableMouse(true)
+    header:RegisterForClicks("RightButtonUp")
+    header:SetScript("OnClick", function(_, button)
+        if button == "RightButton" then self:_OpenConfigMenu() end
+    end)
+    header:SetScript("OnEnter", function(hdr)
+        if GameTooltip:IsForbidden() then return end
+        GameTooltip:SetOwner(hdr, "ANCHOR_BOTTOM")
+        GameTooltip:ClearLines()
+        GameTooltip:AddLine("Right-click for options", 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    header:SetScript("OnLeave", function()
+        if GameTooltip:IsForbidden() then return end
+        GameTooltip:Hide()
+    end)
+
+    self:_EnsureRowPool()
+
+    RegisterWithLayoutMode(self)
+
+    return self
+end
+
+function Window:Hide() if self.frame then self.frame:Hide() end end
+function Window:Show() if self.frame then self.frame:Show() end end
+function Window:Destroy()
+    if self.frame then self.frame:Hide(); self.frame:SetParent(nil) end
+    if self._breakdown and self._breakdown.Close then self._breakdown:Close() end
+    self.frame, self.backdrop, self.header, self.rows = nil, nil, nil, {}
+end
+
+-- Phase 4: open a breakdown popup for the given source row. Lazy-creates
+-- the Breakdown frame on first call; subsequent calls reuse the same instance.
+function Window:OpenBreakdown(source, anchorRow)
+    if not self._breakdown then
+        self._breakdown = Breakdown:New(self)
+    end
+    self._breakdown:Open(source, anchorRow)
+end
+
+-- Called from Window:Refresh fan-out: keep an open breakdown popup in sync
+-- with new Data ticks.
+function Window:RefreshBreakdown()
+    if self._breakdown and self._breakdown:IsOpen() then
+        self._breakdown:Refresh()
+    end
+end
+
+-- ==== Breakdown (Phase 4) ====
+-- Per-source spell breakdown popup. One Breakdown instance per parent Window;
+-- the Window holds a reference so closing the window auto-closes the popup.
+-- `Breakdown` is forward-declared in the Window section above.
+Breakdown = {}
+Breakdown.__index = Breakdown
+QUI_DamageMeter.Breakdown = Breakdown
+local BREAKDOWN_POOL_SIZE = 25
+
+-- Position helper. If anchor=="row" we anchor TOPLEFT of popup to TOPRIGHT of
+-- the row. We mirror to TOPRIGHT→TOPLEFT when the popup would overflow the
+-- screen on the right. "center" pins to UIParent center.
+local function AnchorBreakdownTo(popup, row, anchorMode)
+    popup.frame:ClearAllPoints()
+    if anchorMode == "center" or not row then
+        popup.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        return
+    end
+    -- "row" mode. Compute right-edge of popup; flip if it overflows.
+    local rowR, _ = row:GetRight(), row:GetTop()
+    local uiW = UIParent:GetWidth() or 1280
+    local popupW = popup.frame:GetWidth()
+    if rowR and (rowR + popupW + 6) > uiW then
+        popup.frame:SetPoint("TOPRIGHT", row, "TOPLEFT", -4, 0)
+    else
+        popup.frame:SetPoint("TOPLEFT", row, "TOPRIGHT", 4, 0)
+    end
+end
+
+function Breakdown:_BuildRow(index)
+    local barH = ResolveAppearance(self.parentWindowID, "barHeight") or 18
+    local barGap = ResolveAppearance(self.parentWindowID, "barSpacing") or 2
+    local headerH = ResolveAppearance(self.parentWindowID, "headerHeight") or 22
+
+    local row = CreateFrame("Frame", nil, self.frame)
+    row:SetHeight(barH)
+    row:SetPoint("LEFT",  self.frame, "LEFT",  0, 0)
+    row:SetPoint("RIGHT", self.frame, "RIGHT", 0, 0)
+    if index == 1 then
+        row:SetPoint("TOP", self.frame, "TOP", 0, -headerH)
+    else
+        row:SetPoint("TOP", self.rows[index - 1], "BOTTOM", 0, -barGap)
+    end
+
+    row.Icon = row:CreateTexture(nil, "ARTWORK")
+    row.Icon:SetSize(barH, barH)
+    row.Icon:SetPoint("LEFT", row, "LEFT", 0, 0)
+    row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+    row.Bar = CreateFrame("StatusBar", nil, row)
+    row.Bar:SetPoint("LEFT",  row.Icon, "RIGHT", 2, 0)
+    row.Bar:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    row.Bar:SetPoint("TOP", row, "TOP", 0, 0)
+    row.Bar:SetPoint("BOTTOM", row, "BOTTOM", 0, 0)
+    row.Bar:SetStatusBarTexture(BAR_TEXTURE)
+    row.Bar:SetMinMaxValues(0, 1)
+    row.Bar:SetValue(0)
+
+    row.BarBg = row.Bar:CreateTexture(nil, "BACKGROUND")
+    row.BarBg:SetAllPoints(row.Bar)
+    row.BarBg:SetColorTexture(0.05, 0.05, 0.05, 0.55)
+
+    row.Name = row.Bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.Name:SetPoint("LEFT", row.Bar, "LEFT", 4, 0)
+    row.Name:SetJustifyH("LEFT")
+
+    row.Value = row.Bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.Value:SetPoint("RIGHT", row.Bar, "RIGHT", -4, 0)
+    row.Value:SetJustifyH("RIGHT")
+
+    row:Hide()
+    return row
+end
+
+function Breakdown:New(parentWindow)
+    local self = setmetatable({
+        parentWindow    = parentWindow,
+        parentWindowID  = parentWindow.windowID,
+        source          = nil,    -- set by :Open(source)
+        rows            = {},
+        _lastGeneration = -1,
+    }, Breakdown)
+
+    local frame = CreateFrame("Frame", "QUI_DamageMeterBreakdown" .. parentWindow.windowID, UIParent)
+    frame:SetSize(240, 180)   -- height is recomputed each Refresh based on visible row count
+    frame:SetFrameStrata("HIGH")   -- spec: popup over the meter window
+    frame:SetClampedToScreen(true)
+    frame:Hide()
+    self.frame = frame
+
+    -- Backdrop
+    local bgTex = frame:CreateTexture(nil, "BACKGROUND")
+    bgTex:SetAllPoints(frame)
+    local bg = ResolveAppearance(self.parentWindowID, "colors", "bg") or { 0, 0, 0, 0.85 }
+    bgTex:SetColorTexture(bg[1], bg[2], bg[3], bg[4])
+    self.backdropTex = bgTex
+
+    -- Header
+    local headerH = ResolveAppearance(self.parentWindowID, "headerHeight") or 22
+    local header = CreateFrame("Frame", nil, frame)
+    header:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    header:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    header:SetHeight(headerH)
+    self.header = header
+
+    self.TitleLabel = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    self.TitleLabel:SetPoint("LEFT", header, "LEFT", 6, 0)
+    self.TitleLabel:SetText("")
+
+    local closeBtn = CreateFrame("Button", nil, header)
+    closeBtn:SetSize(headerH - 6, headerH - 6)
+    closeBtn:SetPoint("RIGHT", header, "RIGHT", -2, 0)
+    local closeTex = closeBtn:CreateTexture(nil, "ARTWORK")
+    closeTex:SetAllPoints(closeBtn)
+    closeTex:SetTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
+    closeBtn:SetScript("OnClick", function() self:Close() end)
+    self.CloseButton = closeBtn
+
+    -- Row pool
+    for i = 1, BREAKDOWN_POOL_SIZE do
+        self.rows[i] = self:_BuildRow(i)
+    end
+
+    -- Outside-click dismissal (via GLOBAL_MOUSE_DOWN). Only registered while open.
+    self._dismissFrame = CreateFrame("Frame")
+    self._dismissFrame:SetScript("OnEvent", function(_, _event, button)
+        if button ~= "LeftButton" and button ~= "RightButton" then return end
+        if not self.frame:IsShown() then return end
+        if frame:IsMouseOver() then return end
+        self:Close()
+    end)
+
+    return self
+end
+
+function Breakdown:_SetSpellRow(row, spell, maxAmount)
+    -- Icon: spell iconID if available; else fallback question mark.
+    if spell.iconID and spell.iconID ~= 0 then
+        row.Icon:SetTexture(spell.iconID)
+    else
+        row.Icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+    end
+
+    row.Name:SetText((spell.rank or 0) .. ". " .. (spell.name or "?"))
+    local numberFormat = ResolveAppearance(self.parentWindowID, "numberFormat") or "compact"
+    row.Value:SetText(FormatNumber(spell.totalAmount, numberFormat))
+
+    -- Bar fill (with secret-value guard)
+    local IsSecret = Helpers and Helpers.IsSecretValue
+    local maxSec = maxAmount and IsSecret and IsSecret(maxAmount)
+    local amtSec = spell.totalAmount and IsSecret and IsSecret(spell.totalAmount)
+    if not (maxSec or amtSec) and maxAmount and maxAmount > 0 and spell.totalAmount then
+        local ratio = spell.totalAmount / maxAmount
+        if ratio < 0 then ratio = 0 end
+        if ratio > 1 then ratio = 1 end
+        row.Bar:SetValue(ratio)
+    end
+
+    -- Bar color: inherit parent window's accent or custom color (class color
+    -- doesn't apply to spells).
+    local alpha = ResolveAppearance(self.parentWindowID, "barFillAlpha") or 1
+    if ResolveAppearance(self.parentWindowID, "barColorAccent") then
+        local ar, ag, ab = GetAccentColor()
+        row.Bar:SetStatusBarColor(ar, ag, ab, alpha)
+    else
+        local bc = ResolveAppearance(self.parentWindowID, "barColor") or { 0.35, 0.55, 0.8, 1 }
+        row.Bar:SetStatusBarColor(bc[1] or 0.35, bc[2] or 0.55, bc[3] or 0.8, alpha)
+    end
+end
+
+function Breakdown:Refresh()
+    if not self.source or not self.frame:IsShown() then return end
+    local _t0 = Perf.enabled and PerfNow() or 0
+    local sessionType   = self.parentWindow.sessionType
+    local damageMeterType = self.parentWindow.damageMeterType
+    -- Healing breakdown optionally merges absorbs (settings.combineAbsorbsIntoHealing).
+    local view
+    local s_combo = GetSettings()
+    if IsHealingType(damageMeterType)
+        and s_combo and s_combo.combineAbsorbsIntoHealing then
+        view = Data:GetCombinedHealingBreakdown(sessionType,
+            self.source.sourceGUID, self.source.sourceCreatureID)
+    else
+        view = Data:GetBreakdownView(sessionType, damageMeterType,
+            self.source.sourceGUID, self.source.sourceCreatureID)
+    end
+
+    -- Title: "Damage Done by <Name>"
+    local label = LabelForType(damageMeterType)
+    self.TitleLabel:SetText(label .. " by " .. (self.source.name or "?"))
+
+    local visibleCount = math.min(#view.spells, BREAKDOWN_POOL_SIZE)
+    for i = 1, visibleCount do
+        self:_SetSpellRow(self.rows[i], view.spells[i], view.maxAmount)
+        self.rows[i]:Show()
+    end
+    for i = visibleCount + 1, #self.rows do
+        self.rows[i]:Hide()
+    end
+
+    -- Resize frame to fit visible rows. Row layout: header, then row 1 flush
+    -- to header, then (barH + barGap) per additional row, plus a trailing
+    -- barGap for visual padding.
+    local barH    = ResolveAppearance(self.parentWindowID, "barHeight") or 18
+    local barGap  = ResolveAppearance(self.parentWindowID, "barSpacing") or 2
+    local headerH = ResolveAppearance(self.parentWindowID, "headerHeight") or 22
+    local totalH  = headerH
+    if visibleCount > 0 then
+        totalH = headerH + visibleCount * barH + (visibleCount - 1) * barGap + barGap
+    end
+    self.frame:SetHeight(totalH)
+
+    if Perf.enabled then Perf:Record("breakdown", PerfNow() - _t0) end
+end
+
+function Breakdown:Open(source, anchorRow)
+    self.source = source
+    local anchorMode = (GetSettings() and GetSettings().breakdownAnchor) or "row"
+    AnchorBreakdownTo(self, anchorRow, anchorMode)
+    self.frame:Show()
+    self:Refresh()
+    -- Register outside-click dismissal AFTER showing (so the show event itself
+    -- doesn't trip GLOBAL_MOUSE_DOWN).
+    self._dismissFrame:RegisterEvent("GLOBAL_MOUSE_DOWN")
+end
+
+function Breakdown:Close()
+    self.frame:Hide()
+    self.source = nil
+    self._dismissFrame:UnregisterAllEvents()
+end
+
+function Breakdown:IsOpen()
+    return self.frame and self.frame:IsShown() or false
+end
+
+-- ==== WindowManager ====
+local WindowManager = {
+    windows = {},   -- [windowID] = Window instance (table)
+    nextID  = 1,
+}
+QUI_DamageMeter.WindowManager = WindowManager
+
+function WindowManager:Get(windowID)
+    return self.windows[windowID]
+end
+
+function WindowManager:Enumerate(fn)
+    for windowID, w in pairs(self.windows) do
+        fn(windowID, w)
+    end
+end
+
+function WindowManager:Spawn(windowID)
+    if self.windows[windowID] then return self.windows[windowID] end
+    -- Window:New is wired in T9. Until then, Spawn is harmless to call
+    -- (returns nil) and tests just assert the surface exists.
+    if not Window.New then return nil end
+    local instance = Window:New(windowID)
+    self.windows[windowID] = instance
+    if windowID >= self.nextID then self.nextID = windowID + 1 end
+    return instance
+end
+
+function WindowManager:Despawn(windowID)
+    local instance = self.windows[windowID]
+    if not instance then return end
+    if instance.Hide then instance:Hide() end
+    if instance.Destroy then instance:Destroy() end
+    self.windows[windowID] = nil
+
+    -- Phase 3: also unregister from Layout Mode + the frame resolver registry
+    -- so the dead window doesn't continue to claim a slot in the layout list.
+    local key = LayoutKey(windowID)
+    if ns.QUI_LayoutMode and ns.QUI_LayoutMode.UnregisterElement then
+        pcall(ns.QUI_LayoutMode.UnregisterElement, ns.QUI_LayoutMode, key)
+    end
+    if _G.QUI_UnregisterFrameResolver then
+        pcall(_G.QUI_UnregisterFrameResolver, key)
+    end
+    local Registry = ns.Settings and ns.Settings.Registry
+    if Registry and type(Registry.UnregisterLookupKey) == "function" then
+        Registry:UnregisterLookupKey(WINDOW_LAYOUT_FEATURE_ID, key)
+    end
+end
+
+-- Phase 3: hard cap matches spec's "5 windows" budget. Settings UI's
+-- "+ Add Window" button is disabled when at cap.
+local MAX_WINDOWS = 5
+
+function WindowManager:Count()
+    local n = 0
+    for _ in pairs(self.windows) do n = n + 1 end
+    return n
+end
+
+-- Allocate the lowest unused windowID >= 2 (ID 1 is reserved for the
+-- seeded default window). IDs are recycled when slots free up so users see
+-- stable, low numbers (2, 3, 4...) instead of an ever-growing counter that
+-- climbs after each add/delete cycle.
+function WindowManager:SpawnNew()
+    if self:Count() >= MAX_WINDOWS then return nil end
+    local s = GetSettings()
+    if not s then return nil end
+    s.windows = s.windows or {}
+    local newID = 2
+    while s.windows[newID] do newID = newID + 1 end
+    s.windows[newID] = {
+        damageMeterType = 0,
+        sessionType     = 1,
+        size            = { w = 240, h = 180 },
+        hidden          = false,
+        maxVisibleRows  = 10,
+        name            = "",
+    }
+    s.windowCount = (s.windowCount or 0) + 1
+
+    -- Seed a cascade-offset position so new windows don't all stack at
+    -- CENTER. Position lives in shared frameAnchoring (same DB as every other
+    -- mover); RegisterWithLayoutMode → QUI_ApplyFrameAnchor reads it on spawn.
+    local core = ns.Helpers and ns.Helpers.GetCore and ns.Helpers.GetCore()
+    local profile = core and core.db and core.db.profile
+    if profile then
+        if type(profile.frameAnchoring) ~= "table" then
+            profile.frameAnchoring = {}
+        end
+        local key = LayoutKey(newID)
+        if not profile.frameAnchoring[key] then
+            profile.frameAnchoring[key] = {
+                parent   = "screen",
+                point    = "CENTER",
+                relative = "CENTER",
+                offsetX  = 20 * newID,
+                offsetY  = -20 * newID,
+            }
+        end
+    end
+
+    local w = self:Spawn(newID)
+    if w and w.Refresh then w:Refresh() end
+    return newID
+end
+
+-- Despawn + delete from savedvars. Distinct from Despawn (which keeps the
+-- savedvars entry so a reload respawns the same window).
+function WindowManager:DeleteWindow(windowID)
+    self:Despawn(windowID)
+    local s = GetSettings()
+    if s and s.windows then
+        s.windows[windowID] = nil
+        s.windowCount = math.max(0, (s.windowCount or 1) - 1)
+    end
+    local app = s and s.appearance
+    if app and app.perWindow then
+        app.perWindow[windowID] = nil
+    end
+end
+
+-- Phase 3: spawn every window in saved state. Called from PLAYER_LOGIN.
+-- Returns count of spawned windows.
+function WindowManager:LoadSavedWindows()
+    local s = GetSettings()
+    if not (s and s.windows) then return 0 end
+    local spawned = 0
+    for windowID in pairs(s.windows) do
+        if type(windowID) == "number" then
+            local w = self:Spawn(windowID)
+            if w then
+                if w.Refresh then w:Refresh() end
+                spawned = spawned + 1
+            end
+        end
+    end
+    return spawned
+end
+
+function WindowManager:RefreshAll()
+    -- Force every live window to re-render NOW. Used by:
+    --   - settings widget callbacks (texture, font, color changes)
+    --   - ConfigButton menu actions (type / session switch)
+    -- We bypass the _lastGeneration short-circuit by clearing it; the next
+    -- Refresh() call walks all the source binding logic and re-applies
+    -- appearance from current settings.
+    for _, w in pairs(self.windows) do
+        if w then
+            w._lastGeneration = -1
+            if w.Refresh then w:Refresh() end
+        end
+    end
+end
+
+-- T12: Data._onChange fan-out to every live window
+-- Note: Data:_onChange is declared here (not in the Data section above) because
+-- it references WindowManager, which is defined later. Lua captures WindowManager
+-- as an upvalue at call time, so the late definition is fine.
+Data._onChange = function(self)
+    -- Fan out to every live window. Phase 3 will scope this per-(sessionType,
+    -- damageMeterType) so a refresh only touches windows that care.
+    WindowManager:Enumerate(function(_id, w)
+        if w.Refresh then w:Refresh() end
+    end)
+end
+
+-- ==== Init ====
+-- Lockdown queue. Phase 1 only needs this for the spawn-on-login path that
+-- happens when PLAYER_LOGIN fires during combat (rare but possible on
+-- reload-mid-pull). Pattern mirrors the skinner's pendingCombatWrites.
+local pendingCombatWrites = {}
+
+local function QueueOrRun(fn)
+    if InCombatLockdown and InCombatLockdown() then
+        pendingCombatWrites[#pendingCombatWrites + 1] = fn
+    else
+        fn()
+    end
+end
+
+local lockdownFrame = CreateFrame("Frame")
+lockdownFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+lockdownFrame:SetScript("OnEvent", function()
+    if #pendingCombatWrites == 0 then return end
+    local q = pendingCombatWrites
+    pendingCombatWrites = {}
+    for _, fn in ipairs(q) do fn() end
+end)
+QUI_DamageMeter._QueueOrRun = QueueOrRun  -- for T16
+
+local function ApplyBlizzardSuppression(enabled)
+    -- Flip the canonical CVar Blizzard uses to gate the stock meter.
+    if SetCVar then
+        SetCVar("damageMeterEnabled", enabled and "0" or "1")
+    end
+    -- Defensive: if the Blizzard meter is already loaded, hide it now. The
+    -- CVar flip will hide it on next addon load anyway, but this covers the
+    -- in-session case (settings change without reload).
+    if enabled and _G.DamageMeter and _G.DamageMeter.Hide then
+        _G.DamageMeter:Hide()
+    end
+end
+QUI_DamageMeter.ApplyBlizzardSuppression = ApplyBlizzardSuppression
+
+local initFrame = CreateFrame("Frame")
+initFrame:RegisterEvent("PLAYER_LOGIN")
+initFrame:SetScript("OnEvent", function(_, event)
+    if event ~= "PLAYER_LOGIN" then return end
+    local s = GetSettings()
+    if not s or not s.enabled then return end
+    ApplyBlizzardSuppression(true)
+    QueueOrRun(function()
+        -- Phase 3: spawn every window in saved state, not just windowID 1.
+        WindowManager:LoadSavedWindows()
+    end)
+end)
+
+-- ==== Reset Keybind (Follow-up C) ====
+-- Expose "Reset All Sessions" via Blizzard's Keybindings UI under a "QUI Damage
+-- Meter" header. Users assign a key in Esc → Keybindings → QUI Damage Meter.
+-- Implementation pattern: SecureActionButton with a macrotext that calls the
+-- (non-protected) C_DamageMeter reset; binding name uses the CLICK <button>:LeftButton
+-- convention so it shows up in the standard bindings panel.
+_G.BINDING_HEADER_QUI_DAMAGEMETER = "QUI Damage Meter"
+_G["BINDING_NAME_CLICK QUI_DM_ResetBindingTarget:LeftButton"] = "Reset All Sessions"
+
+local resetBindBtn = CreateFrame("Button", "QUI_DM_ResetBindingTarget", UIParent, "SecureActionButtonTemplate")
+resetBindBtn:Hide()
+resetBindBtn:SetAttribute("type", "macro")
+resetBindBtn:SetAttribute("macrotext",
+    "/run if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then C_DamageMeter.ResetAllCombatSessions() end")
+QUI_DamageMeter._ResetBindButton = resetBindBtn
+
+-- Also expose a slash command for users who prefer macro-based binds.
+_G.SLASH_QUI_DM_RESET1 = "/quidmreset"
+_G.SlashCmdList = _G.SlashCmdList or {}
+_G.SlashCmdList["QUI_DM_RESET"] = function()
+    if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
+        C_DamageMeter.ResetAllCombatSessions()
+        print("|cff30D1FF[QUI]|r Damage meter sessions reset.")
+    end
+end
+
+-- ==== Perf slash command (Follow-up D) ====
+-- /quidmperf            — print current summary
+-- /quidmperf on / off   — toggle instrumentation
+-- /quidmperf reset      — clear the ring buffers
+_G.SLASH_QUI_DM_PERF1 = "/quidmperf"
+_G.SlashCmdList["QUI_DM_PERF"] = function(msg)
+    msg = (msg or ""):lower():gsub("%s+", "")
+    if msg == "on" then
+        Perf.enabled = true
+        Perf:Reset()
+        print("|cff30D1FF[QUI]|r Damage meter perf instrumentation: |cff00ff00ON|r")
+    elseif msg == "off" then
+        Perf.enabled = false
+        print("|cff30D1FF[QUI]|r Damage meter perf instrumentation: |cffff6060OFF|r")
+    elseif msg == "reset" then
+        Perf:Reset()
+        print("|cff30D1FF[QUI]|r Damage meter perf buffers reset.")
+    else
+        if not Perf.enabled then
+            print("|cff30D1FF[QUI]|r Perf is OFF. Run |cffffffff/quidmperf on|r to enable, then re-run to see the summary.")
+            return
+        end
+        print("|cff30D1FF[QUI]|r Damage meter perf summary:")
+        for _, line in ipairs(Perf:Summary()) do print(line) end
+    end
+end

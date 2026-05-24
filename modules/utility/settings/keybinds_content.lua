@@ -227,6 +227,7 @@ local function BuildKeybindOverridesSection(tabContent, startY)
             if SaveEntryOverride(entry, nil) then RefreshOverrideList() end
         end)
         row.removeBtn:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        GUI:AttachTooltip(row.removeBtn, "Remove this keybind override. The action reverts to its default binding.", "Remove Override")
 
         row.saveBtn = GUI:CreateButton(row, "Save", 50, 22, function()
             local entry = row.entryData

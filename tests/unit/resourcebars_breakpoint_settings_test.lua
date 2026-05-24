@@ -14,6 +14,12 @@ local function newFrame()
         SetWidth = noop,
         SetSize = noop,
         SetPoint = noop,
+        ClearAllPoints = noop,
+        SetParent = noop,
+        Hide = noop,
+        Show = noop,
+        EnableMouse = noop,
+        SetAlpha = noop,
         GetHeight = function()
             return 400
         end,
@@ -32,31 +38,34 @@ function GetSpecializationInfo()
     return 102, "Balance"
 end
 
-local function recordWidget(kind, label, dbKey, dbTable)
-    calls.widgets[#calls.widgets + 1] = {
-        kind = kind,
-        label = label,
-        dbKey = dbKey,
-        dbTable = dbTable,
-    }
-    return newFrame()
+-- V3 widget creation passes nil for label (BuildSettingRow provides label
+-- externally). Record the widget; BuildSettingRow's mock sets `.label`
+-- after creation.
+local function recordWidget(kind, dbKey, dbTable)
+    local w = newFrame()
+    w.kind = kind
+    w.dbKey = dbKey
+    w.dbTable = dbTable
+    w.label = nil
+    calls.widgets[#calls.widgets + 1] = w
+    return w
 end
 
 local GUI = {
-    CreateFormCheckbox = function(_, _, label, dbKey, dbTable)
-        return recordWidget("checkbox", label, dbKey, dbTable)
+    CreateFormCheckbox = function(_, _, _label, dbKey, dbTable)
+        return recordWidget("checkbox", dbKey, dbTable)
     end,
-    CreateFormDropdown = function(_, _, label, _, dbKey, dbTable)
-        return recordWidget("dropdown", label, dbKey, dbTable)
+    CreateFormDropdown = function(_, _, _label, _, dbKey, dbTable)
+        return recordWidget("dropdown", dbKey, dbTable)
     end,
-    CreateFormSlider = function(_, _, label, _, _, _, dbKey, dbTable)
-        return recordWidget("slider", label, dbKey, dbTable)
+    CreateFormSlider = function(_, _, _label, _, _, _, dbKey, dbTable)
+        return recordWidget("slider", dbKey, dbTable)
     end,
-    CreateFormColorPicker = function(_, _, label, dbKey, dbTable)
-        return recordWidget("color", label, dbKey, dbTable)
+    CreateFormColorPicker = function(_, _, _label, dbKey, dbTable)
+        return recordWidget("color", dbKey, dbTable)
     end,
-    CreateFormEditBox = function(_, _, label, dbKey, dbTable)
-        return recordWidget("editbox", label, dbKey, dbTable)
+    CreateFormEditBox = function(_, _, _label, dbKey, dbTable)
+        return recordWidget("editbox", dbKey, dbTable)
     end,
 }
 
@@ -82,6 +91,30 @@ local ns = {
         GetCore = function()
             return { db = { profile = profile } }
         end,
+    },
+    -- V3 body pattern: accent-dot section label + card group + setting row.
+    QUI_Options = {
+        PADDING = 15,
+        CreateAccentDotLabel = function(_, text)
+            calls.collapsibles[#calls.collapsibles + 1] = text
+            return newFrame()
+        end,
+        CreateSettingsCardGroup = function()
+            local card = {
+                frame = newFrame(),
+                AddRow = noop,
+                Finalize = noop,
+                GetRowCount = function() return 0 end,
+            }
+            return card
+        end,
+        BuildSettingRow = function(_, labelText, widget)
+            if widget and type(widget) == "table" then
+                widget.label = labelText
+            end
+            return newFrame()
+        end,
+        GetTextureList = function() return {} end,
     },
     QUI_LayoutMode_Utils = {
         FORM_ROW = 32,

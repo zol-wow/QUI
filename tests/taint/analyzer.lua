@@ -281,6 +281,9 @@ walkExpr = function(expr, taintSet, fieldTaintSet, findings, registry, filePath)
             -- Safe sink: tainted args are acceptable; still recurse into
             -- argument expressions to catch any nested unsafe sub-expressions
             -- (e.g. frame:SetText(tonumber(x)) — SetText is safe but tonumber is not).
+            -- If the function is ALSO secret-returning (e.g. C_StringUtil
+            -- formatters), the return value carries taint to the LHS — caller
+            -- decides what to do with that based on context.
             if (kind == "method" and registry:isSafeSinkMethod(getMethodNameFromQualified(name))) or
                (kind == "function" and registry:isSafeSinkFunction(name)) then
                 if expr.Arguments then
@@ -288,7 +291,7 @@ walkExpr = function(expr, taintSet, fieldTaintSet, findings, registry, filePath)
                         walkExpr(a, taintSet, fieldTaintSet, findings, registry, filePath)
                     end
                 end
-                return false
+                return registry:isSecretReturning(name)
             end
             -- Unwrap: emit review finding, but do NOT propagate taint forward
             if registry:isUnwrap(name) then
@@ -321,6 +324,17 @@ walkExpr = function(expr, taintSet, fieldTaintSet, findings, registry, filePath)
                     end
                 end
                 return false
+            end
+            -- Secret-returning function that is NOT also a safe sink (e.g. a
+            -- user-defined wrapper). Recurse args, then propagate taint via
+            -- return so downstream sinks get caught.
+            if registry:isSecretReturning(name) then
+                if expr.Arguments then
+                    for _, a in ipairs(expr.Arguments) do
+                        walkExpr(a, taintSet, fieldTaintSet, findings, registry, filePath)
+                    end
+                end
+                return true
             end
         end
         -- Non-source, non-builtin call: still recurse into arguments

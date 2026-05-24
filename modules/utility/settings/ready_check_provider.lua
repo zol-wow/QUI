@@ -1,7 +1,7 @@
 ---------------------------------------------------------------------------
--- READY CHECK SETTINGS PROVIDER
+-- READY CHECK SETTINGS PROVIDER (V3)
 ---------------------------------------------------------------------------
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 do
     local function RegisterReadyCheckProvider()
@@ -13,8 +13,10 @@ do
 
         local Helpers = ns.Helpers
         local U = ns.QUI_LayoutMode_Utils
-        local P = U.PlaceRow
-        local FORM_ROW = U and U.FORM_ROW or 32
+        local Opts = ns.QUI_Options
+        local PAD = (Opts and Opts.PADDING) or 15
+        local HEADER_GAP = 26
+        local SECTION_GAP = 14
 
         local function GetGeneralDB()
             local core = Helpers.GetCore()
@@ -25,32 +27,62 @@ do
             if _G.QUI_RefreshReadyCheckColors then _G.QUI_RefreshReadyCheckColors() end
         end
 
-        local function BuildReadyCheckSettings(content, key, width)
+        local function MakeLayout(content)
+            local y = -10
+            local L = {}
+            local sections = {}
+
+            function L.headerAt(text)
+                local h = Opts.CreateAccentDotLabel(content, text, y)
+                h:ClearAllPoints()
+                h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+                h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+                y = y - HEADER_GAP
+            end
+            function L.sectionAt()
+                local c = Opts.CreateSettingsCardGroup(content, y)
+                c.frame:ClearAllPoints()
+                c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+                c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+                return c
+            end
+            function L.closeSection(c)
+                c.Finalize()
+                y = y - c.frame:GetHeight() - SECTION_GAP
+            end
+
+            local function relayoutSections()
+                local cy = y
+                for _, s in ipairs(sections) do
+                    s:ClearAllPoints()
+                    s:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, cy)
+                    s:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+                    cy = cy - s:GetHeight() - 4
+                end
+                content:SetHeight(math.abs(cy) + 16)
+            end
+            L.sections = sections
+            L.relayoutSections = relayoutSections
+
+            return L
+        end
+
+        local function row(parent, label, widget, desc)
+            return Opts.BuildSettingRow(parent, label, widget, desc)
+        end
+
+        local function BuildReadyCheckSettings(content, key, _width)
+            -- Headless cache-gen loads this file before ns.QUI_Options exists,
+            -- so the upvalues captured at the top of RegisterReadyCheckProvider
+            -- can be nil. Refresh on each build invocation; live runtime is
+            -- unaffected (RegisterAfterLoad guarantees QUI_Options is ready).
+            Opts = Opts or ns.QUI_Options
+            PAD = (Opts and Opts.PADDING) or PAD
+
             local general = GetGeneralDB()
             if not general then return 80 end
 
-            local sections = {}
-            local function relayout() U.StandardRelayout(content, sections) end
-
             if general.skinReadyCheck == nil then general.skinReadyCheck = true end
-
-            -- Skinning
-            U.CreateCollapsible(content, "Skinning", 1 * FORM_ROW + 8, function(body)
-                local sy = -4
-
-                local skinCheck = GUI:CreateFormCheckbox(body, "Skin Ready Check Frame", "skinReadyCheck", general, function()
-                    GUI:ShowConfirmation({
-                        title = "Reload UI?",
-                        message = "Skinning changes require a reload to take effect.",
-                        acceptText = "Reload",
-                        cancelText = "Later",
-                        onAccept = function() QUI:SafeReload() end,
-                    })
-                end, { description = "Apply QUI styling to the Blizzard ready-check popup. Requires a UI reload to take effect." })
-                P(skinCheck, body, sy)
-            end, sections, relayout)
-
-            -- Border Override
             Helpers.EnsureDefaults(general, {
                 readyCheckBorderOverride = false,
                 readyCheckHideBorder = false,
@@ -61,47 +93,70 @@ do
                 general.readyCheckBorderColor = { fallback[1], fallback[2], fallback[3], fallback[4] or 1 }
             end
 
-            U.CreateCollapsible(content, "Border", 4 * FORM_ROW + 8, function(body)
-                local sy = -4
-                local colorPicker, hideCheck, classCheck
+            local L = MakeLayout(content)
 
-                local function UpdateBorderState()
-                    local enabled = general.readyCheckBorderOverride
-                    if hideCheck then hideCheck:SetEnabled(enabled) end
-                    if classCheck then classCheck:SetEnabled(enabled) end
-                    if colorPicker then
-                        colorPicker:SetEnabled(enabled and not general.readyCheckBorderUseClassColor)
-                    end
+            -- Skinning
+            L.headerAt("Skinning")
+            local sSk = L.sectionAt()
+            local skinW = GUI:CreateFormCheckbox(sSk.frame, nil, "skinReadyCheck", general, function()
+                GUI:ShowConfirmation({
+                    title = "Reload UI?",
+                    message = "Skinning changes require a reload to take effect.",
+                    acceptText = "Reload",
+                    cancelText = "Later",
+                    onAccept = function() QUI:SafeReload() end,
+                })
+            end, { description = "Apply QUI styling to the Blizzard ready-check popup. Requires a UI reload to take effect." })
+            sSk.AddRow(row(sSk.frame, "Skin Ready Check Frame", skinW))
+            L.closeSection(sSk)
+
+            -- Border
+            L.headerAt("Border")
+            local sBd = L.sectionAt()
+            local colorPicker, hideCheck, classCheck
+
+            local function UpdateBorderState()
+                local enabled = general.readyCheckBorderOverride
+                if hideCheck and hideCheck.SetEnabled then hideCheck:SetEnabled(enabled) end
+                if classCheck and classCheck.SetEnabled then classCheck:SetEnabled(enabled) end
+                if colorPicker and colorPicker.SetEnabled then
+                    colorPicker:SetEnabled(enabled and not general.readyCheckBorderUseClassColor)
                 end
+            end
 
-                local overrideCheck = GUI:CreateFormCheckbox(body, "Override Global Border", "readyCheckBorderOverride", general, function()
-                    UpdateBorderState()
-                    RefreshColors()
-                end, { description = "Use ready-check-specific border settings instead of the shared skinning border. Enables the controls below." })
-                sy = P(overrideCheck, body, sy)
-
-                hideCheck = GUI:CreateFormCheckbox(body, "Hide Border", "readyCheckHideBorder", general, RefreshColors,
-                    { description = "Hide the border around the ready-check frame entirely." })
-                sy = P(hideCheck, body, sy)
-
-                classCheck = GUI:CreateFormCheckbox(body, "Use Class Color", "readyCheckBorderUseClassColor", general, function()
-                    UpdateBorderState()
-                    RefreshColors()
-                end, { description = "Tint the ready-check border with your class color instead of the custom Border Color below." })
-                sy = P(classCheck, body, sy)
-
-                colorPicker = GUI:CreateFormColorPicker(body, "Border Color", "readyCheckBorderColor", general, RefreshColors, { noAlpha = true },
-                    { description = "Custom border color applied when Override Global Border is on and Use Class Color is off." })
-                P(colorPicker, body, sy)
-
+            local overrideCheck = GUI:CreateFormCheckbox(sBd.frame, nil, "readyCheckBorderOverride", general, function()
                 UpdateBorderState()
-            end, sections, relayout)
+                RefreshColors()
+            end, { description = "Use ready-check-specific border settings instead of the shared skinning border. Enables the controls below." })
 
-            -- Position
-            U.BuildPositionCollapsible(content, "readyCheck", nil, sections, relayout)
-            U.BuildOpenFullSettingsLink(content, key, sections, relayout)
+            hideCheck = GUI:CreateFormCheckbox(sBd.frame, nil, "readyCheckHideBorder", general, RefreshColors,
+                { description = "Hide the border around the ready-check frame entirely." })
 
-            relayout()
+            sBd.AddRow(
+                row(sBd.frame, "Override Global Border", overrideCheck),
+                row(sBd.frame, "Hide Border", hideCheck)
+            )
+
+            classCheck = GUI:CreateFormCheckbox(sBd.frame, nil, "readyCheckBorderUseClassColor", general, function()
+                UpdateBorderState()
+                RefreshColors()
+            end, { description = "Tint the ready-check border with your class color instead of the custom Border Color below." })
+
+            colorPicker = GUI:CreateFormColorPicker(sBd.frame, nil, "readyCheckBorderColor", general, RefreshColors, { noAlpha = true },
+                { description = "Custom border color applied when Override Global Border is on and Use Class Color is off." })
+
+            sBd.AddRow(
+                row(sBd.frame, "Use Class Color", classCheck),
+                row(sBd.frame, "Border Color", colorPicker)
+            )
+
+            UpdateBorderState()
+            L.closeSection(sBd)
+
+            -- Layout-mode chrome (V3-styled collapsibles)
+            U.BuildPositionCollapsible(content, "readyCheck", nil, L.sections, L.relayoutSections)
+            U.BuildOpenFullSettingsLink(content, key, L.sections, L.relayoutSections)
+            L.relayoutSections()
             return content:GetHeight()
         end
 

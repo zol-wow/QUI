@@ -28,12 +28,73 @@ end
 ProviderPanels:RegisterAfterLoad(function(ctx)
     local GUI = ctx.GUI
     local U = ctx.U
+    -- V2 row-placement helper retained for legacy custom-block bodies
+    -- (Tab Filters, Button Bar, Channel Colors, Persistent History, New
+    -- Message Sound) where row-by-row anchoring is still simpler than
+    -- adapting the V3 paired-row card pattern.
     local P = ctx.P
     local FORM_ROW = ctx.FORM_ROW
     local NotifyProviderFor = ctx.NotifyProviderFor
-    local CreateTileCollapsible = ctx.CreateTileCollapsible or U.CreateCollapsible
-    local function RegisterSharedOnly(key, provider)
-        ctx.RegisterShared(key, provider)
+    local PAD = (ns.QUI_Options and ns.QUI_Options.PADDING) or 15
+    local HEADER_GAP = 26
+    local SECTION_GAP = 14
+    local function RegisterSharedOnly(providerKey, provider)
+        ctx.RegisterShared(providerKey, provider)
+    end
+
+    -- V3 layout helper. Mirrors the minimap_providers.lua / qol_content.lua
+    -- shape: headerAt / sectionAt / closeSection / placeCustom drive a single
+    -- y cursor while sections{}/relayoutSections support legacy V2 collapsibles
+    -- (Position, OpenFullSettings) at the bottom of the panel.
+    local function MakeLayout(content)
+        local Opts = ns.QUI_Options
+        local y = -10
+        local L = {}
+        local sections = {}
+        function L.headerAt(text)
+            local h = Opts.CreateAccentDotLabel(content, text, y)
+            h:ClearAllPoints()
+            h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+            h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+            y = y - HEADER_GAP
+        end
+        function L.sectionAt()
+            local c = Opts.CreateSettingsCardGroup(content, y)
+            c.frame:ClearAllPoints()
+            c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+            c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+            return c
+        end
+        function L.closeSection(c)
+            c.Finalize()
+            y = y - c.frame:GetHeight() - SECTION_GAP
+        end
+        function L.placeCustom(frame, height)
+            frame:ClearAllPoints()
+            frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+            frame:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+            frame:SetHeight(height)
+            y = y - height - SECTION_GAP
+        end
+        local function relayoutSections()
+            local cy = y
+            for _, s in ipairs(sections) do
+                s:ClearAllPoints()
+                s:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, cy)
+                s:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+                cy = cy - s:GetHeight() - 4
+            end
+            content:SetHeight(math.abs(cy) + 16)
+        end
+        L.sections = sections
+        L.relayoutSections = relayoutSections
+        function L.getY() return y end
+        function L.setY(newY) y = newY end
+        return L
+    end
+
+    local function row(parent, label, widget, desc)
+        return ns.QUI_Options.BuildSettingRow(parent, label, widget, desc)
     end
 
     ---------------------------------------------------------------------------
@@ -75,8 +136,25 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
     -- combat log frames — neither tab filters nor a custom button bar make
     -- sense on a frame whose purpose is the system-driven combat-log feed.
     -- WoW preallocates all NUM_CHAT_WINDOWS frames, so _G["ChatFrame3"]
-    -- survives FCF_Close; the saved name from GetChatWindowInfo is the
-    -- canonical "is this slot active?" signal — FCF_Close clears it to "".
+    -- survives FCF_Close. The NAME from GetChatWindowInfo also persists
+    -- across FCF_Close (the saved variable is never cleared), so the
+    -- canonical "is this slot active?" check is FCF_IsChatWindowIndexActive
+    -- — Blizzard's own active-window iterator (see Shared/FloatingChatFrame.lua)
+    -- consults the `shown` flag (7th return of GetChatWindowInfo) and the
+    -- frame's `isDocked` state.
+    local function IsChatWindowSlotActive(i, f)
+        if type(_G.FCF_IsChatWindowIndexActive) == "function" then
+            local ok, active = pcall(_G.FCF_IsChatWindowIndexActive, i)
+            if ok then return active and true or false end
+        end
+        -- Fallback for older clients: read `shown` directly, then dock state.
+        if type(GetChatWindowInfo) == "function" then
+            local shown = select(7, GetChatWindowInfo(i))
+            if shown then return true end
+        end
+        return f and f.isDocked and true or false
+    end
+
     local function buildFrameOptions()
         local opts = {}
         local I = ns.QUI and ns.QUI.Chat and ns.QUI.Chat._internals
@@ -90,6 +168,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 or (I and I.IsTemporaryChatFrame and I.IsTemporaryChatFrame(f))
             )
             if f and not f.isCombatLog and not isTemporary and not f.privateMessageList
+                and IsChatWindowSlotActive(i, f)
                 and type(name) == "string" and name ~= "" then
                 opts[#opts + 1] = { value = i, text = "ChatFrame" .. i .. " (" .. name .. ")" }
             end
@@ -103,12 +182,11 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
     ---------------------------------------------------------------------------
     -- CHAT
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("chatFrame1", { build = function(content, key, width, options)
+    RegisterSharedOnly("chatFrame1", { build = function(content, key, _width, options)
         local db = U.GetProfileDB()
-        if not db or not db.chat then return 80 end
+        if not db or not db.chat or not ns.QUI_Options then return 80 end
         local chat = db.chat
-        local sections = {}
-        local function relayout() U.StandardRelayout(content, sections) end
+        local L = MakeLayout(content)
         local function Refresh() if _G.QUI_RefreshChat then _G.QUI_RefreshChat() end end
 
         local sectionPresets = {
@@ -126,7 +204,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 "redundantTextCleanup", "newMessageSound",
             },
             history = {
-                "commandHistory", "persistentMessageHistory", "messageHistory",
+                "messageHistory", "commandHistory", "persistentMessageHistory",
             },
         }
 
@@ -151,18 +229,41 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             return not sectionFilter or sectionFilter[sectionId] == true
         end
 
-        local function CreateChatSection(sectionId, title, contentHeight, buildFunc, sectionList, relayoutFn)
+        -- V3 section emitter: an accent-dot header + card group replaces the
+        -- V2 collapsible chrome. buildFunc(card) receives the
+        -- CreateSettingsCardGroup return value; widgets attach to card.frame
+        -- and rows are added via card.AddRow.
+        local function CreateChatSection(sectionId, title, _contentHeight, buildFunc)
             if not ShouldRenderSection(sectionId) then
                 return nil
             end
-            return CreateTileCollapsible(
-                content,
-                title,
-                contentHeight,
-                buildFunc,
-                sectionList or sections,
-                relayoutFn or relayout
-            )
+            L.headerAt(title)
+            local card = L.sectionAt()
+            buildFunc(card)
+            L.closeSection(card)
+            return card
+        end
+
+        -- Custom-block variant for sections whose content cannot fit the V3
+        -- paired-row card pattern (dynamic editors, multi-column distributors,
+        -- per-row inline buttons). Renders an accent-dot header followed by a
+        -- bare container placed with L.placeCustom — no card chrome.
+        local function CreateChatCustomSection(sectionId, title, buildFunc, defaultHeight)
+            if not ShouldRenderSection(sectionId) then
+                return nil
+            end
+            L.headerAt(title)
+            local container = CreateFrame("Frame", nil, content)
+            -- Anchor at current y so children can use the container's body.
+            -- L.placeCustom is invoked after buildFunc computes the final
+            -- height; we provide a temporary anchor in the meantime so that
+            -- relative TOPLEFT children render correctly during build.
+            container:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, L.getY())
+            container:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+            container:SetHeight(defaultHeight or 1)
+            local measuredHeight = buildFunc(container) or defaultHeight or 1
+            L.placeCustom(container, math.max(8, measuredHeight))
+            return container
         end
 
         -- Frame Size drives ChatFrame1 directly via FCF_SetWindowSize, so
@@ -202,19 +303,17 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         -- Master enable toggle. Disabling tears down all chat customization
         -- (glass, tabs, edit box, copy buttons, fade, message filters); the
         -- per-feature toggles below remain visible but no-op until re-enabled.
-        CreateChatSection("chatModule", "Chat Module", FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Enable Chat Module", "enabled", chat, Refresh, { description = "Master switch for QUI's chat customization. When off, all chat frames revert to Blizzard defaults and the per-feature toggles below have no effect." }), body, sy)
-        end, sections, relayout)
+        CreateChatSection("chatModule", "Chat Module", FORM_ROW + 8, function(card)
+            local w = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat, Refresh, { description = "Master switch for QUI's chat customization. When off, all chat frames revert to Blizzard defaults and the per-feature toggles below have no effect." })
+            card.AddRow(row(card.frame, "Enable Chat Module", w))
+        end)
 
         local widthSlider, heightSlider
-        CreateChatSection("frameSize", "Frame Size", 2 * FORM_ROW + 8, function(body)
-            local sy = -4
-            widthSlider = GUI:CreateFormSlider(body, "Width", 296, 1400, 1, "width", sizeProxy, nil, nil, { description = "Pixel width of ChatFrame1. Blizzard persists this across logout." })
-            sy = P(widthSlider, body, sy)
-            heightSlider = GUI:CreateFormSlider(body, "Height", 120, 900, 1, "height", sizeProxy, nil, nil, { description = "Pixel height of ChatFrame1. Blizzard persists this across logout." })
-            P(heightSlider, body, sy)
-        end, sections, relayout)
+        CreateChatSection("frameSize", "Frame Size", 2 * FORM_ROW + 8, function(card)
+            widthSlider = GUI:CreateFormSlider(card.frame, nil, 296, 1400, 1, "width", sizeProxy, nil, { description = "Pixel width of ChatFrame1. Blizzard persists this across logout." })
+            heightSlider = GUI:CreateFormSlider(card.frame, nil, 120, 900, 1, "height", sizeProxy, nil, { description = "Pixel height of ChatFrame1. Blizzard persists this across logout." })
+            card.AddRow(row(card.frame, "Width", widthSlider), row(card.frame, "Height", heightSlider))
+        end)
 
         -- Expose a refresh hook so the corner-grip drag can sync slider positions.
         _G.QUI_RefreshChatSizeSliders = function()
@@ -227,22 +326,25 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
 
         -- Intro Message
-        CreateChatSection("introMessage", "Intro Message", 2 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Show Login Message", "showIntroMessage", chat, nil, { description = "Display the QUI reminder/intro tips in chat when you log in." }), body, sy)
-            local info = GUI:CreateLabel(body, "Display the QUI reminder tips when you log in.", 10, {0.5, 0.5, 0.5, 1})
-            info:SetPoint("TOPLEFT", 0, sy)
-            info:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            info:SetJustifyH("LEFT")
-        end, sections, relayout)
+        CreateChatSection("introMessage", "Intro Message", 2 * FORM_ROW + 8, function(card)
+            local w = GUI:CreateFormCheckbox(card.frame, nil, "showIntroMessage", chat, nil, { description = "Display the QUI reminder/intro tips in chat when you log in." })
+            card.AddRow(row(card.frame, "Show Login Message", w))
+        end)
 
         -- Default Tab
-        CreateChatSection("defaultTab", "Default Tab", 3 * FORM_ROW + 8, function(body)
-            -- Build tab options dynamically from current chat windows
+        -- Rendered as a custom block (placeCustom) because RebuildDefaultTab
+        -- emits a dynamic, equal-width column distributor for per-spec mode
+        -- that does not fit the V3 paired-row pattern. The block lives just
+        -- below an accent-dot header but outside any card chrome.
+        CreateChatCustomSection("defaultTab", "Default Tab", function(body)
+            -- Build tab options dynamically from currently-active chat windows.
+            -- See IsChatWindowSlotActive above — name persistence across
+            -- FCF_Close means we can't use `name ~= ""` as the active filter.
             local tabOptions = {}
             for i = 1, NUM_CHAT_WINDOWS do
+                local f = _G["ChatFrame" .. i]
                 local name = GetChatWindowInfo(i)
-                if name and name ~= "" then
+                if IsChatWindowSlotActive(i, f) and type(name) == "string" and name ~= "" then
                     tabOptions[#tabOptions + 1] = {
                         value = i,
                         text = i .. ". " .. name,
@@ -256,6 +358,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             if not chat.defaultTabBySpec then chat.defaultTabBySpec = {} end
 
             local container = nil
+            local finalHeight = FORM_ROW
 
             local function RebuildDefaultTab()
                 -- Destroy previous container (clears children AND regions)
@@ -269,7 +372,6 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 container:SetPoint("TOPLEFT", 0, 0)
                 container:SetPoint("RIGHT", body, "RIGHT", 0, 0)
                 container:SetHeight(1)
-                container._quiDualColumnFullWidth = true
 
                 local sy = -4
 
@@ -291,19 +393,19 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     if count > 0 then
                         local GAP = 16
                         local LABEL_WIDTH = 80
-                        local row = CreateFrame("Frame", nil, container)
-                        row:SetPoint("TOPLEFT", 0, sy)
-                        row:SetPoint("RIGHT", container, "RIGHT", 0, 0)
-                        row:SetHeight(FORM_ROW)
+                        local rowFrame = CreateFrame("Frame", nil, container)
+                        rowFrame:SetPoint("TOPLEFT", 0, sy)
+                        rowFrame:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+                        rowFrame:SetHeight(FORM_ROW)
 
                         -- Create equal-width column frames by chaining anchors
                         local columns = {}
                         for idx = 1, count do
-                            local col = CreateFrame("Frame", nil, row)
+                            local col = CreateFrame("Frame", nil, rowFrame)
                             col:SetPoint("TOP", 0, 0)
                             col:SetPoint("BOTTOM", 0, 0)
                             if idx == 1 then
-                                col:SetPoint("LEFT", row, "LEFT", 0, 0)
+                                col:SetPoint("LEFT", rowFrame, "LEFT", 0, 0)
                             else
                                 col:SetPoint("LEFT", columns[idx - 1], "RIGHT", GAP, 0)
                             end
@@ -316,9 +418,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                                 columns[idx]:SetWidth(math.max(colW, 1))
                             end
                         end
-                        row:SetScript("OnSizeChanged", function(self, w) DistributeColumns(w) end)
+                        rowFrame:SetScript("OnSizeChanged", function(self, w) DistributeColumns(w) end)
                         C_Timer.After(0, function()
-                            local w = row:GetWidth()
+                            local w = rowFrame:GetWidth()
                             if w and w > 0 then DistributeColumns(w) end
                         end)
 
@@ -345,7 +447,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     info:SetJustifyH("LEFT")
                     sy = sy - 20
                 else
-                    sy = P(GUI:CreateFormDropdown(container, "Default Tab", tabOptions, "defaultTab", chat, Refresh, { description = "Chat tab to make active on login and reload." }), container, sy)
+                    local dd = GUI:CreateFormDropdown(container, "Default Tab", tabOptions, "defaultTab", chat, Refresh, { description = "Chat tab to make active on login and reload." })
+                    dd:SetPoint("TOPLEFT", 0, sy)
+                    dd:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+                    sy = sy - FORM_ROW
                     local info = GUI:CreateLabel(container, "Select which chat tab is active when you log in or reload.", 10, {0.5, 0.5, 0.5, 1})
                     info:SetPoint("TOPLEFT", 0, sy)
                     info:SetPoint("RIGHT", container, "RIGHT", 0, 0)
@@ -359,43 +464,44 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     NotifyProviderFor(perSpecCheck, { structural = true })
                     RebuildDefaultTab()
                 end, { description = "Switch to per-spec default chat tabs instead of a single default. Each spec gets its own dropdown above." })
-                sy = P(perSpecCheck, container, sy)
+                perSpecCheck:SetPoint("TOPLEFT", 0, sy)
+                perSpecCheck:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+                sy = sy - FORM_ROW
 
                 local containerHeight = math.max(FORM_ROW, math.abs(sy) + 4)
                 container:SetHeight(containerHeight)
-                container._quiDualColumnRowHeight = containerHeight
+                finalHeight = containerHeight
+                body:SetHeight(containerHeight)
             end
 
             RebuildDefaultTab()
-        end, sections, relayout)
+            return finalHeight
+        end, 3 * FORM_ROW + 8)
 
         -- Chat Background
         if chat.glass then
-            CreateChatSection("chatBackground", "Chat Background", 3 * FORM_ROW + 8, function(body)
-                local sy = -4
+            CreateChatSection("chatBackground", "Chat Background", 3 * FORM_ROW + 8, function(card)
                 local bgAlphaSlider, bgColorPicker
                 local function UpdateChatBackgroundStates()
                     local enabled = chat.glass.enabled == true
                     SetControlEnabled(bgAlphaSlider, enabled)
                     SetControlEnabled(bgColorPicker, enabled)
                 end
-                local bgEnableCheckbox = GUI:CreateFormCheckbox(body, "Chat Background Texture", "enabled", chat.glass, function()
+                local bgEnableCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat.glass, function()
                     Refresh()
                     UpdateChatBackgroundStates()
                 end, { description = "Draw an opaque background behind the chat frame so text stays readable over busy scenery." })
-                sy = P(bgEnableCheckbox, body, sy)
-                bgAlphaSlider = GUI:CreateFormSlider(body, "Background Opacity", 0, 1.0, 0.05, "bgAlpha", chat.glass, Refresh, nil, { description = "Opacity of the chat background (0 is invisible, 1 is fully opaque)." })
-                sy = P(bgAlphaSlider, body, sy)
-                bgColorPicker = GUI:CreateFormColorPicker(body, "Background Color", "bgColor", chat.glass, Refresh, nil, { description = "Color of the chat background." })
-                P(bgColorPicker, body, sy)
+                bgAlphaSlider = GUI:CreateFormSlider(card.frame, nil, 0, 1.0, 0.05, "bgAlpha", chat.glass, Refresh, { description = "Opacity of the chat background (0 is invisible, 1 is fully opaque)." })
+                card.AddRow(row(card.frame, "Chat Background Texture", bgEnableCheckbox), row(card.frame, "Background Opacity", bgAlphaSlider))
+                bgColorPicker = GUI:CreateFormColorPicker(card.frame, nil, "bgColor", chat.glass, Refresh, nil, { description = "Color of the chat background." })
+                card.AddRow(row(card.frame, "Background Color", bgColorPicker))
                 UpdateChatBackgroundStates()
-            end, sections, relayout)
+            end)
         end
 
         -- Input Box Background
         if chat.editBox then
-            CreateChatSection("inputBoxBackground", "Input Box Background", 5 * FORM_ROW + 8, function(body)
-                local sy = -4
+            CreateChatSection("inputBoxBackground", "Input Box Background", 5 * FORM_ROW + 8, function(card)
                 local inputAlphaSlider, inputColorPicker, inputPositionCheckbox
                 local function UpdateInputBackgroundStates()
                     local enabled = chat.editBox.enabled == true
@@ -403,32 +509,37 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     SetControlEnabled(inputColorPicker, enabled)
                     SetControlEnabled(inputPositionCheckbox, enabled)
                 end
-                local inputEnableCheckbox = GUI:CreateFormCheckbox(body, "Input Box Background Texture", "enabled", chat.editBox, function()
+                local inputEnableCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat.editBox, function()
                     Refresh()
                     UpdateInputBackgroundStates()
                 end, { description = "Draw an opaque background behind the chat input box for better contrast while typing." })
-                sy = P(inputEnableCheckbox, body, sy)
-                inputAlphaSlider = GUI:CreateFormSlider(body, "Background Opacity", 0, 1.0, 0.05, "bgAlpha", chat.editBox, Refresh, nil, { description = "Opacity of the input box background (0 is invisible, 1 is fully opaque)." })
-                sy = P(inputAlphaSlider, body, sy)
-                inputColorPicker = GUI:CreateFormColorPicker(body, "Background Color", "bgColor", chat.editBox, Refresh, nil, { description = "Color of the input box background." })
-                sy = P(inputColorPicker, body, sy)
-                inputPositionCheckbox = GUI:CreateFormCheckbox(body, "Position Input Box at Top", "positionTop", chat.editBox, Refresh, { description = "Move the input box above the chat tabs instead of below the chat frame." })
-                sy = P(inputPositionCheckbox, body, sy)
-                local info = GUI:CreateLabel(body, "Moves input box above chat tabs with opaque background.", 10, {0.5, 0.5, 0.5, 1})
-                info:SetPoint("TOPLEFT", 0, sy)
-                info:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-                info:SetJustifyH("LEFT")
+                inputAlphaSlider = GUI:CreateFormSlider(card.frame, nil, 0, 1.0, 0.05, "bgAlpha", chat.editBox, Refresh, { description = "Opacity of the input box background (0 is invisible, 1 is fully opaque)." })
+                card.AddRow(row(card.frame, "Input Box Background Texture", inputEnableCheckbox), row(card.frame, "Background Opacity", inputAlphaSlider))
+                inputColorPicker = GUI:CreateFormColorPicker(card.frame, nil, "bgColor", chat.editBox, Refresh, nil, { description = "Color of the input box background." })
+                inputPositionCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "positionTop", chat.editBox, Refresh, { description = "Move the input box above the chat tabs instead of below the chat frame." })
+                card.AddRow(row(card.frame, "Background Color", inputColorPicker), row(card.frame, "Position Input Box at Top", inputPositionCheckbox))
                 UpdateInputBackgroundStates()
-            end, sections, relayout)
+            end)
         end
+
+        -- Message History
+        -- In-memory Up/Down arrow recall during a session. Renders first on
+        -- the History tab so the simpler arrow-recall toggle leads, with the
+        -- persistent-across-/reload variant (Command History) following.
+        CreateChatSection("messageHistory", "Message History", 2 * FORM_ROW + 8, function(card)
+            if not chat.messageHistory then
+                chat.messageHistory = { enabled = true, maxHistory = 50 }
+            end
+            local w = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat.messageHistory, Refresh, { description = "Let the Up/Down arrow keys navigate through your recently sent messages while the chat input is focused." })
+            card.AddRow(row(card.frame, "Enable Message History", w))
+        end)
 
         -- Command History (Phase C)
         -- Persistent Up/Down arrow recall. Settings live on the profile;
         -- the captured entries are per-character at
         -- db.char.chat.editboxHistory.entries (initialized lazily by
         -- editbox_history.lua's getStore on first capture or recall).
-        CreateChatSection("commandHistory", "Command History", 4 * FORM_ROW + 8, function(body)
-            local sy = -4
+        CreateChatSection("commandHistory", "Command History", 4 * FORM_ROW + 8, function(card)
             if not chat.editboxHistory then
                 chat.editboxHistory = {
                     enabled = true,
@@ -450,61 +561,57 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     SetControlEnabled(historyControls[i], enabled)
                 end
             end
-            local historyCheckbox = GUI:CreateFormCheckbox(body, "Persistent command history", "enabled", ebh, function()
+            local historyCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "enabled", ebh, function()
                 Refresh()
                 UpdateCommandHistoryStates()
             end, { description = "Save messages you send so the Up/Down arrows recall them after a /reload. Stored per-character. Disabling stops new captures and recall but does not delete prior entries." })
-            sy = P(historyCheckbox, body, sy)
-            sy = P(TrackHistoryControl(GUI:CreateFormSlider(body, "Max command history", 50, 500, 1, "maxEntries", ebh, Refresh, nil, { description = "Maximum number of recalled messages to keep per character. Oldest entries are dropped first when the cap is reached." })), body, sy)
-            sy = P(TrackHistoryControl(GUI:CreateFormCheckbox(body, "Filter sensitive commands", "filterSensitive", ebh, Refresh, { description = "Skip storing commands that frequently contain secrets or raw Lua. Filtered prefixes: /password, /logout, /quit, /exit, /dnd, /afk, /camp, /script, /run, /console." })), body, sy)
-            P(TrackHistoryControl(GUI:CreateFormCheckbox(body, "Restore chat type on recall", "restoreChatType", ebh, Refresh, { description = "When recalling a message with Up/Down, also restore its original chat type (Say, Yell, Whisper target, channel) so pressing Enter sends to the same destination." })), body, sy)
+            local maxEntriesSlider = TrackHistoryControl(GUI:CreateFormSlider(card.frame, nil, 50, 500, 1, "maxEntries", ebh, Refresh, { description = "Maximum number of recalled messages to keep per character. Oldest entries are dropped first when the cap is reached." }))
+            card.AddRow(row(card.frame, "Persistent command history", historyCheckbox), row(card.frame, "Max command history", maxEntriesSlider))
+            local filterSensitiveCb = TrackHistoryControl(GUI:CreateFormCheckbox(card.frame, nil, "filterSensitive", ebh, Refresh, { description = "Skip storing commands that frequently contain secrets or raw Lua. Filtered prefixes: /password, /logout, /quit, /exit, /dnd, /afk, /camp, /script, /run, /console." }))
+            local restoreTypeCb = TrackHistoryControl(GUI:CreateFormCheckbox(card.frame, nil, "restoreChatType", ebh, Refresh, { description = "When recalling a message with Up/Down, also restore its original chat type (Say, Yell, Whisper target, channel) so pressing Enter sends to the same destination." }))
+            card.AddRow(row(card.frame, "Filter sensitive commands", filterSensitiveCb), row(card.frame, "Restore chat type on recall", restoreTypeCb))
             UpdateCommandHistoryStates()
-        end, sections, relayout)
+        end)
 
         -- Message Fade
         if chat.fade then
-            CreateChatSection("messageFade", "Message Fade", 2 * FORM_ROW + 8, function(body)
-                local sy = -4
+            CreateChatSection("messageFade", "Message Fade", 2 * FORM_ROW + 8, function(card)
                 local fadeDelaySlider
                 local function UpdateFadeStates()
                     SetControlEnabled(fadeDelaySlider, chat.fade.enabled == true)
                 end
-                local fadeCheckbox = GUI:CreateFormCheckbox(body, "Fade Messages After Inactivity", "enabled", chat.fade, function()
+                local fadeCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat.fade, function()
                     Refresh()
                     UpdateFadeStates()
                 end, { description = "Fade old chat messages out after no new messages have arrived for the delay below." })
-                sy = P(fadeCheckbox, body, sy)
-                fadeDelaySlider = GUI:CreateFormSlider(body, "Fade Delay (seconds)", 1, 120, 1, "delay", chat.fade, Refresh, nil, { description = "Seconds of inactivity before chat messages start fading." })
-                P(fadeDelaySlider, body, sy)
+                fadeDelaySlider = GUI:CreateFormSlider(card.frame, nil, 1, 120, 1, "delay", chat.fade, Refresh, { description = "Seconds of inactivity before chat messages start fading." })
+                card.AddRow(row(card.frame, "Fade Messages After Inactivity", fadeCheckbox), row(card.frame, "Fade Delay (seconds)", fadeDelaySlider))
                 UpdateFadeStates()
-            end, sections, relayout)
+            end)
         end
 
         -- URL Detection
         if chat.urls then
-            CreateChatSection("urlDetection", "URL Detection", 2 * FORM_ROW + 8, function(body)
-                local sy = -4
-                sy = P(GUI:CreateFormCheckbox(body, "Make URLs Clickable", "enabled", chat.urls, Refresh, { description = "Detect URLs in chat and click them to open a copy dialog." }), body, sy)
-                local info = GUI:CreateLabel(body, "Click any URL in chat to open a copy dialog.", 10, {0.5, 0.5, 0.5, 1})
-                info:SetPoint("TOPLEFT", 0, sy)
-                info:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-                info:SetJustifyH("LEFT")
-            end, sections, relayout)
+            CreateChatSection("urlDetection", "URL Detection", 2 * FORM_ROW + 8, function(card)
+                local w = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat.urls, Refresh, { description = "Detect URLs in chat and click them to open a copy dialog." })
+                card.AddRow(row(card.frame, "Make URLs Clickable", w))
+            end)
         end
 
         -- Chat Hyperlinks (Phase D)
         if not chat.hyperlinks then
             chat.hyperlinks = { coordinates = true, friendlyURLs = false, interactiveNames = true }
         end
-        CreateChatSection("chatHyperlinks", "Chat Hyperlinks", 3 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Coordinate links", "coordinates", chat.hyperlinks, Refresh,
-                { description = "Detects (x, y) coordinate patterns in chat and makes them clickable waypoints." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Friendly URL labels", "friendlyURLs", chat.hyperlinks, Refresh,
-                { description = "Replace common WoW-community URLs with readable labels — e.g., wowhead.com -> [Wowhead]." }), body, sy)
-            sy = P(GUI:CreateFormCheckbox(body, "Interactive player names", "interactiveNames", chat.hyperlinks, Refresh,
-                { description = "Click a class-colored player name in chat to open quick-action menu (Whisper, Invite, Add Friend, Ignore)." }), body, sy)
-        end, sections, relayout)
+        CreateChatSection("chatHyperlinks", "Chat Hyperlinks", 3 * FORM_ROW + 8, function(card)
+            local coordW = GUI:CreateFormCheckbox(card.frame, nil, "coordinates", chat.hyperlinks, Refresh,
+                { description = "Detects (x, y) coordinate patterns in chat and makes them clickable waypoints." })
+            local urlW = GUI:CreateFormCheckbox(card.frame, nil, "friendlyURLs", chat.hyperlinks, Refresh,
+                { description = "Replace common WoW-community URLs with readable labels — e.g., wowhead.com -> [Wowhead]." })
+            card.AddRow(row(card.frame, "Coordinate links", coordW), row(card.frame, "Friendly URL labels", urlW))
+            local namesW = GUI:CreateFormCheckbox(card.frame, nil, "interactiveNames", chat.hyperlinks, Refresh,
+                { description = "Click a class-colored player name in chat to open quick-action menu (Whisper, Invite, Add Friend, Ignore)." })
+            card.AddRow(row(card.frame, "Interactive player names", namesW))
+        end)
 
         if ShouldRenderSection("tabFilters") then
         -- Tab Filters (Phase E)
@@ -566,24 +673,24 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         -- read the current chat.tabs[frameID].groups / .channels arrays.
         local function makeArraySetProxy(getList, setList)
             return MarkTransientOptionsBinding(setmetatable({}, {
-                __index = function(_, key)
+                __index = function(_, entryKey)
                     local list = getList()
                     if not list then return false end
                     for i = 1, #list do
-                        if list[i] == key then return true end
+                        if list[i] == entryKey then return true end
                     end
                     return false
                 end,
-                __newindex = function(_, key, value)
+                __newindex = function(_, entryKey, value)
                     local list = getList() or {}
                     if value then
                         for i = 1, #list do
-                            if list[i] == key then return end
+                            if list[i] == entryKey then return end
                         end
-                        list[#list + 1] = key
+                        list[#list + 1] = entryKey
                     else
                         for i = 1, #list do
-                            if list[i] == key then
+                            if list[i] == entryKey then
                                 table.remove(list, i)
                                 break
                             end
@@ -613,21 +720,27 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             return out
         end
 
-        -- Build the tab filter sub-tile body for the currently-selected frame.
-        -- All data lookups (proxies, onChange handlers) read
-        -- chat.tabs[selectedTabFilterFrame] dynamically, so frame-selector
-        -- changes can soft-refresh existing widgets via :Refresh() instead
-        -- of triggering a structural rebuild — WoW frames can't be GC'd, and
-        -- every structural rebuild leaks ~25MB of orphaned widgets.
-        --
-        -- refreshList is appended to as widgets are built; the wrapper tile
-        -- callback walks it on frame-selector change to update visuals.
-        -- frameID/frameLabel are just initial cosmetic values (passed in by
-        -- the caller); the actual frame is whichever selectedTabFilterFrame
-        -- currently points to.
-        local function buildTabFilterBody(body, frameID, frameLabel, startSy, refreshList, markLayoutItem)
-            local sy = startSy or -4
-            refreshList = refreshList or {}
+        -- Build the per-frame tab-filter UI as a stack of CreateSettingsCardGroup
+        -- cards (one per logical group of settings). Each card pairs its rows
+        -- into the standard QUI dual-column layout (left/right cell + center
+        -- divider + alternating row bg). Soft-refresh on frame-selector change
+        -- re-binds proxies via each widget's :Refresh() rather than recreating
+        -- widgets — WoW frames can't be GC'd, and structural rebuilds leak
+        -- ~25MB of orphan widgets per change.
+        CreateChatCustomSection("tabFilters", "Tab Filters", function(body)
+            local frameOptions = buildFrameOptions()
+            -- Validate selection still exists (e.g. frame deleted between sessions).
+            local validSelection = false
+            for _, opt in ipairs(frameOptions) do
+                if opt.value == selectedTabFilterFrame then validSelection = true; break end
+            end
+            if not validSelection then selectedTabFilterFrame = frameOptions[1].value end
+
+            local selectorTable = MarkTransientOptionsBinding({ _selected = selectedTabFilterFrame })
+
+            local refreshList = {}
+            local sy = -4
+            local GAP = 8
 
             -- Dynamic entry lookup. Reading a fresh reference every access
             -- means proxies/handlers see the current frame's data even after
@@ -664,10 +777,27 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end
             end
 
-            -- Customized toggle. Triggers reconcile + indicator update via
-            -- the chat module's _afterRefresh chain (Refresh -> tab_filters
-            -- ApplyEnabled). When toggled OFF the stored entry is preserved
-            -- so re-enabling restores the user's selection.
+            -- Selector card (Editing tab dropdown).
+            local selectorCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+            local frameSelector
+            frameSelector = GUI:CreateFormDropdown(selectorCard.frame, nil, frameOptions, "_selected", selectorTable, function()
+                local newValue = selectorTable._selected or 1
+                -- Idempotency guard: CreateFormDropdown's SetValue fires onChange
+                -- on every click without checking value-changed.
+                if newValue == selectedTabFilterFrame then return end
+                selectedTabFilterFrame = newValue
+                for i = 1, #refreshList do
+                    pcall(refreshList[i])
+                end
+            end, { description = "Pick which chat frame's tab filters to edit. Each frame stores its own filter set in db.profile.chat.tabs[<frameID>]; this dropdown only changes which one the controls below are bound to." })
+            selectorCard.AddRow(row(selectorCard.frame, "Editing tab", frameSelector))
+            selectorCard.Finalize()
+            sy = sy - selectorCard.frame:GetHeight() - GAP
+
+            -- Customized toggle card. The proxy triggers reconcile + indicator
+            -- update via the chat module's _afterRefresh chain (Refresh ->
+            -- tab_filters ApplyEnabled). When toggled OFF the stored entry is
+            -- preserved so re-enabling restores the user's selection.
             local customizedProxy = MarkTransientOptionsBinding(setmetatable({}, {
                 __index = function() return getCurEntry().customized and true or false end,
                 __newindex = function(_, _, v)
@@ -683,217 +813,110 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end,
             }))
 
-            local headerLabel = GUI:CreateLabel(body, frameLabel, 11, {0.7, 0.85, 0.7, 1})
-            if markLayoutItem then markLayoutItem(headerLabel, true) end
-            headerLabel:SetPoint("TOPLEFT", 0, sy)
-            headerLabel:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            headerLabel:SetJustifyH("LEFT")
-            -- Header label refresh: re-derive the label from frame options.
-            refreshList[#refreshList + 1] = function()
-                local opts = buildFrameOptions()
-                for _, opt in ipairs(opts) do
-                    if opt.value == selectedTabFilterFrame then
-                        headerLabel:SetText(opt.text)
-                        return
-                    end
-                end
-                headerLabel:SetText("ChatFrame" .. selectedTabFilterFrame)
-            end
-            sy = sy - 18
-
-            local customizedCheckbox = GUI:CreateFormCheckbox(body, "Customize this tab's filters", "_customized", customizedProxy, function()
+            local toggleCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+            local customizedCheckbox = GUI:CreateFormCheckbox(toggleCard.frame, nil, "_customized", customizedProxy, function()
                 Refresh()
                 UpdateTabFilterDependentStates()
-            end,
-                { description = "When on, this tab shows ONLY the message groups and channels selected below. Inclusion-only — to silence a group, deselect it. When off, Blizzard's defaults apply unchanged." })
-            if markLayoutItem then markLayoutItem(customizedCheckbox) end
-            sy = P(customizedCheckbox, body, sy)
+            end, { description = "When on, this tab shows ONLY the message groups and channels selected below. Inclusion-only — to silence a group, deselect it. When off, Blizzard's defaults apply unchanged." })
+            toggleCard.AddRow(row(toggleCard.frame, "Customize this tab's filters", customizedCheckbox))
+            toggleCard.Finalize()
+            sy = sy - toggleCard.frame:GetHeight() - GAP
             refreshList[#refreshList + 1] = function() if customizedCheckbox.Refresh then customizedCheckbox:Refresh() end end
 
-            -- Build the filter rows synchronously so the section appears in
-            -- its final shape on the first render. Explicit layout sequence
-            -- markers preserve header/group/channel ordering when the shared
-            -- dual-column pass later sorts children and font-string regions.
-            local groupsHeader = TrackFilterRegion(GUI:CreateLabel(body, "    Message groups", 10, {0.5, 0.5, 0.5, 1}))
-            if markLayoutItem then markLayoutItem(groupsHeader, true) end
-            groupsHeader:SetPoint("TOPLEFT", 0, sy)
-            groupsHeader:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            groupsHeader:SetJustifyH("LEFT")
-            sy = sy - 16
+            -- Message groups subheader + paired card.
+            TrackFilterRegion(ns.QUI_Options.CreateAccentDotLabel(body, "Message groups", sy))
+            sy = sy - 30
 
             local groupsProxy = makeArraySetProxy(
                 function() return getCurEntry().groups end,
                 function(list) getCurEntry().groups = list end
             )
-            for _, key in ipairs(CHAT_GROUPS) do
-                local cb = TrackFilterControl(GUI:CreateFormCheckbox(body, "    " .. key, key, groupsProxy, function()
+            local groupsCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+            local function makeGroupCheckbox(groupKey)
+                local cb = TrackFilterControl(GUI:CreateFormCheckbox(groupsCard.frame, nil, groupKey, groupsProxy, function()
                     local e = getCurEntry()
                     if e.customized and ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabFilters then
                         ns.QUI.Chat.TabFilters.SaveTabConfig(selectedTabFilterFrame, e.groups, e.channels)
                     end
                     Refresh()
-                end, { description = "Show " .. key .. " messages on this tab. Only takes effect while 'Customize this tab's filters' is on." }))
-                if markLayoutItem then markLayoutItem(cb) end
-                cb:SetPoint("TOPLEFT", 0, sy)
-                cb:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+                end, { description = "Show " .. groupKey .. " messages on this tab. Only takes effect while 'Customize this tab's filters' is on." }))
                 refreshList[#refreshList + 1] = function() if cb.Refresh then cb:Refresh() end end
-                sy = sy - FORM_ROW
+                return cb
             end
+            for i = 1, #CHAT_GROUPS, 2 do
+                local k1, k2 = CHAT_GROUPS[i], CHAT_GROUPS[i + 1]
+                local cellL = row(groupsCard.frame, k1, makeGroupCheckbox(k1))
+                local cellR
+                if k2 then
+                    cellR = row(groupsCard.frame, k2, makeGroupCheckbox(k2))
+                end
+                groupsCard.AddRow(cellL, cellR)
+            end
+            groupsCard.Finalize()
+            sy = sy - groupsCard.frame:GetHeight() - GAP
 
-            local channelsHeader = TrackFilterRegion(GUI:CreateLabel(body, "    Channels (current join list)", 10, {0.5, 0.5, 0.5, 1}))
-            if markLayoutItem then markLayoutItem(channelsHeader, true) end
-            channelsHeader:SetPoint("TOPLEFT", 0, sy - 4)
-            channelsHeader:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            channelsHeader:SetJustifyH("LEFT")
-            sy = sy - 18
+            -- Channels subheader + paired card (or "no channels" note).
+            TrackFilterRegion(ns.QUI_Options.CreateAccentDotLabel(body, "Channels (current join list)", sy))
+            sy = sy - 30
 
-            local channelsProxy = makeArraySetProxy(
-                function() return getCurEntry().channels end,
-                function(list) getCurEntry().channels = list end
-            )
             local channels = getChannelNamesNow()
             if #channels == 0 then
-                local noChan = TrackFilterRegion(GUI:CreateLabel(body, "        (Not currently in any custom channels.)", 10, {0.5, 0.5, 0.5, 1}))
-                if markLayoutItem then markLayoutItem(noChan, true) end
-                noChan:SetPoint("TOPLEFT", 0, sy)
+                local noChan = TrackFilterRegion(GUI:CreateLabel(body, "    (Not currently in any custom channels.)", 10, {0.5, 0.5, 0.5, 1}))
+                noChan:SetPoint("TOPLEFT", 8, sy)
                 noChan:SetPoint("RIGHT", body, "RIGHT", 0, 0)
                 noChan:SetJustifyH("LEFT")
-                sy = sy - 16
+                sy = sy - 18
             else
-                for _, channelName in ipairs(channels) do
-                    local cb = TrackFilterControl(GUI:CreateFormCheckbox(body, "    " .. channelName, channelName, channelsProxy, function()
+                local channelsProxy = makeArraySetProxy(
+                    function() return getCurEntry().channels end,
+                    function(list) getCurEntry().channels = list end
+                )
+                local channelsCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+                local function makeChannelCheckbox(channelName)
+                    local cb = TrackFilterControl(GUI:CreateFormCheckbox(channelsCard.frame, nil, channelName, channelsProxy, function()
                         local e = getCurEntry()
                         if e.customized and ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabFilters then
                             ns.QUI.Chat.TabFilters.SaveTabConfig(selectedTabFilterFrame, e.groups, e.channels)
                         end
                         Refresh()
                     end, { description = "Show messages from channel '" .. channelName .. "' on this tab." }))
-                    if markLayoutItem then markLayoutItem(cb) end
-                    cb:SetPoint("TOPLEFT", 0, sy)
-                    cb:SetPoint("RIGHT", body, "RIGHT", 0, 0)
                     refreshList[#refreshList + 1] = function() if cb.Refresh then cb:Refresh() end end
-                    sy = sy - FORM_ROW
+                    return cb
                 end
+                for i = 1, #channels, 2 do
+                    local n1, n2 = channels[i], channels[i + 1]
+                    local cellL = row(channelsCard.frame, n1, makeChannelCheckbox(n1))
+                    local cellR
+                    if n2 then
+                        cellR = row(channelsCard.frame, n2, makeChannelCheckbox(n2))
+                    end
+                    channelsCard.AddRow(cellL, cellR)
+                end
+                channelsCard.Finalize()
+                sy = sy - channelsCard.frame:GetHeight() - GAP
             end
 
-            local resetRow = CreateFrame("Frame", nil, body)
-            if markLayoutItem then markLayoutItem(resetRow, true) end
-            resetRow:SetPoint("TOPLEFT", 0, sy - 4)
-            resetRow:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            resetRow:SetHeight(FORM_ROW)
-
+            -- Reset card.
+            local resetCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
             local resetBtn
-            resetBtn = TrackFilterControl(GUI:CreateButton(resetRow, "Reset to Blizzard defaults", 200, 24, function()
+            resetBtn = TrackFilterControl(GUI:CreateButton(resetCard.frame, "Reset to Blizzard defaults", 200, 24, function()
                 if ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabFilters then
                     ns.QUI.Chat.TabFilters.ResetTab(selectedTabFilterFrame)
                 end
                 NotifyProviderFor(resetBtn, { structural = true })
             end))
-            resetBtn:SetPoint("TOPLEFT", 0, 0)
-
-            local resetHelp = TrackFilterRegion(GUI:CreateLabel(resetRow, "Clears stored config. /reload to fully restore Blizzard's original groups.", 10, {0.5, 0.5, 0.5, 1}))
-            resetHelp:SetPoint("LEFT", resetBtn, "RIGHT", 12, 0)
-            resetHelp:SetPoint("RIGHT", resetRow, "RIGHT", 0, 0)
-            resetHelp:SetJustifyH("LEFT")
-            sy = sy - FORM_ROW - 4
+            GUI:AttachTooltip(resetBtn,
+                "Reset this tab's message-type filters to Blizzard's defaults. Per-channel overrides on other tabs are not touched.",
+                "Reset filters")
+            resetCard.AddRow(row(resetCard.frame, "Reset filters", resetBtn))
+            resetCard.Finalize()
+            sy = sy - resetCard.frame:GetHeight() - GAP
 
             refreshList[#refreshList + 1] = UpdateTabFilterDependentStates
             UpdateTabFilterDependentStates()
 
-            if body then
-                body._contentHeight = math.abs(sy) + 4
-            end
-        end
-
-        -- Multi-frame tab-filter editor. The frame-selector dropdown writes
-        -- to selectedTabFilterFrame (module-level upvalue) and triggers a
-        -- structural rebuild of the panel so buildTabFilterBody re-runs with
-        -- the newly selected frameID. tab_filters.lua reconciles whichever
-        -- frameIDs appear in db.profile.chat.tabs, so changes saved here
-        -- apply immediately to the chosen frame.
-        --
-        -- Tile height is pre-computed from the known row count so the section
-        -- has a stable first layout before the shared dual-column compaction
-        -- pass runs.
-        local tabFilterChannelCount = 0
-        if type(GetChannelList) == "function" then
-            local data = { GetChannelList() }
-            local i = 1
-            while i + 1 <= #data do
-                local name = data[i + 1]
-                local isHeader = data[i + 2]
-                if type(name) == "string" and name ~= "" and not isHeader then
-                    tabFilterChannelCount = tabFilterChannelCount + 1
-                end
-                i = i + 3
-            end
-        end
-        -- Layout vertical budget:
-        --   FORM_ROW   frame-selector dropdown
-        --   18         chat-frame label
-        --   FORM_ROW   "Customize this tab" toggle
-        --   16         "Message groups" subheader
-        --   36*FORM_ROW  group checkboxes
-        --   22         "Channels" subheader (incl. 4px gap)
-        --   N*FORM_ROW or 16   channel checkboxes / "no channels" label
-        --   FORM_ROW + 4   reset button row (+ gap)
-        --   16         vertical padding
-        local tabFilterChannelsBlock = (tabFilterChannelCount > 0) and (tabFilterChannelCount * FORM_ROW) or 16
-        local tabFilterTileHeight = (FORM_ROW + 18 + FORM_ROW + 16 + 36 * FORM_ROW + 22 + tabFilterChannelsBlock + FORM_ROW + 4) + 16
-
-        CreateChatSection("tabFilters", "Tab Filters", tabFilterTileHeight, function(body)
-            local layoutSequence = 0
-            local function markLayoutItem(item, fullWidth)
-                if not item then return item end
-                layoutSequence = layoutSequence + 1
-                item._quiDualColumnSequence = layoutSequence
-                if fullWidth then
-                    item._quiDualColumnFullWidth = true
-                end
-                return item
-            end
-
-            local frameOptions = buildFrameOptions()
-            -- Validate selection still exists (e.g. frame deleted between sessions).
-            local validSelection = false
-            for _, opt in ipairs(frameOptions) do
-                if opt.value == selectedTabFilterFrame then validSelection = true; break end
-            end
-            if not validSelection then selectedTabFilterFrame = frameOptions[1].value end
-
-            local selectorTable = MarkTransientOptionsBinding({ _selected = selectedTabFilterFrame })
-            local frameLabel = "ChatFrame" .. selectedTabFilterFrame
-            for _, opt in ipairs(frameOptions) do
-                if opt.value == selectedTabFilterFrame then frameLabel = opt.text; break end
-            end
-
-            -- Soft-refresh registry. buildTabFilterBody appends a closure per
-            -- widget; on frame-selector change we walk this list and call
-            -- each widget's :Refresh() instead of triggering a structural
-            -- rebuild — the latter leaks ~25MB of orphan widgets per change
-            -- because WoW frames can't be GC'd.
-            local refreshList = {}
-
-            local sy = -4
-            local frameSelector
-            frameSelector = GUI:CreateFormDropdown(body, "Editing tab", frameOptions, "_selected", selectorTable, function()
-                local newValue = selectorTable._selected or 1
-                -- Idempotency guard: CreateFormDropdown's SetValue fires onChange
-                -- on every click without checking value-changed, so re-clicking
-                -- the same option used to no-op rebuild.
-                if newValue == selectedTabFilterFrame then return end
-                selectedTabFilterFrame = newValue
-                -- Soft-refresh: re-bind existing widgets to the new frame's
-                -- data via :Refresh(). Zero new widget allocation.
-                for i = 1, #refreshList do
-                    pcall(refreshList[i])
-                end
-            end, { description = "Pick which chat frame's tab filters to edit. Each frame stores its own filter set in db.profile.chat.tabs[<frameID>]; this dropdown only changes which one the controls below are bound to." })
-            markLayoutItem(frameSelector)
-            sy = P(frameSelector, body, sy)
-
-            buildTabFilterBody(body, selectedTabFilterFrame, frameLabel, sy, refreshList, markLayoutItem)
-        end, sections, relayout)
+            return math.abs(sy) + 4
+        end, 800)
         end
 
         if ShouldRenderSection("buttonBar") then
@@ -909,28 +932,49 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         --
         if not chat.buttonBars then chat.buttonBars = {} end
 
-        local function buildButtonBarBody(body, frameID, frameLabel, startSy)
-            local sy = startSy or -4
+        -- Multi-frame button bar editor. Frame-selector dropdown writes to
+        -- selectedButtonBarFrame and triggers structural rebuild so add/remove
+        -- and per-frame switch always re-enter this builder. Rendered as a
+        -- stack of CreateSettingsCardGroup cards so the dual-column layout
+        -- matches the rest of QUI's chat settings.
+        CreateChatCustomSection("buttonBar", "Button Bar", function(body)
+            local frameOptions = buildFrameOptions()
+            local validSelection = false
+            for _, opt in ipairs(frameOptions) do
+                if opt.value == selectedButtonBarFrame then validSelection = true; break end
+            end
+            if not validSelection then selectedButtonBarFrame = frameOptions[1].value end
+
+            local selectorTable = MarkTransientOptionsBinding({ _selected = selectedButtonBarFrame })
+            local sy = -4
+            local GAP = 8
+
+            -- Selector card (Editing frame dropdown).
+            local selectorCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+            local frameSelector
+            frameSelector = GUI:CreateFormDropdown(selectorCard.frame, nil, frameOptions, "_selected", selectorTable, function()
+                local newValue = selectorTable._selected or 1
+                if newValue == selectedButtonBarFrame then return end
+                selectedButtonBarFrame = newValue
+                NotifyProviderFor(frameSelector, { structural = true })
+            end, { description = "Pick which chat frame's button bar to edit. Each frame stores its own bar config in db.profile.chat.buttonBars[<frameID>]." })
+            selectorCard.AddRow(row(selectorCard.frame, "Editing frame", frameSelector))
+            selectorCard.Finalize()
+            sy = sy - selectorCard.frame:GetHeight() - GAP
 
             local BB = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.ButtonBar
             if not BB then
                 local errLabel = GUI:CreateLabel(body, "Button Bar module not loaded.", 10, {1, 0.5, 0.5, 1})
-                errLabel:SetPoint("TOPLEFT", 0, sy)
+                errLabel:SetPoint("TOPLEFT", 4, sy)
                 errLabel:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-                return
+                return math.abs(sy) + 24
             end
 
             -- Lazily initialise the entry with built-in defaults so toggles
             -- below have something to bind to. The bar stays disabled until
             -- the user flips the master toggle.
-            local entry = BB.InitFrameDefaults(frameID)
-            if not entry then return end
-
-            local headerLabel = GUI:CreateLabel(body, frameLabel, 11, {0.7, 0.85, 0.7, 1})
-            headerLabel:SetPoint("TOPLEFT", 0, sy)
-            headerLabel:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            headerLabel:SetJustifyH("LEFT")
-            sy = sy - 18
+            local entry = BB.InitFrameDefaults(selectedButtonBarFrame)
+            if not entry then return math.abs(sy) + 4 end
 
             local dependentControls = {}
             local dependentRegions = {}
@@ -955,14 +999,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end
             end
 
-            local enabledCheckbox = GUI:CreateFormCheckbox(body, "Show button bar for this frame", "enabled", entry, function()
-                Refresh()
-                UpdateButtonBarDependentStates()
-            end, { description = "Master toggle for the custom button bar on this chat frame. When off, no bar is shown for this frame; the per-button selections below are preserved." })
-            sy = P(enabledCheckbox, body, sy)
-            sy = P(TrackBarControl(GUI:CreateFormCheckbox(body, "Hide in combat", "hideInCombat", entry, Refresh,
-                { description = "Hide this chat frame's button bar while you are in combat, then restore it after combat ends." })), body, sy)
-
+            -- Basics card: master/combat toggles + position + offsets + spacing.
             local positionOptions = {
                 { value = "outside_left",  text = "Outside left (vertical strip)" },
                 { value = "outside_right", text = "Outside right (vertical strip)" },
@@ -971,25 +1008,34 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 { value = "inside_tabs",   text = "Inside tab row (horizontal)" },
                 { value = "hidden",        text = "Hidden (configured but not shown)" },
             }
-            sy = P(TrackBarControl(GUI:CreateFormDropdown(body, "Position", positionOptions, "position", entry, Refresh,
-                { description = "Where the button bar attaches relative to the chat frame. outside_left/outside_right anchor outside the chat frame's edge; inside_left/inside_right anchor inside above the scrollback; inside_tabs lays buttons horizontally next to this chat frame's tab." })), body, sy)
+            local basicsCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+            local enabledCheckbox = GUI:CreateFormCheckbox(basicsCard.frame, nil, "enabled", entry, function()
+                Refresh()
+                UpdateButtonBarDependentStates()
+            end, { description = "Master toggle for the custom button bar on this chat frame. When off, no bar is shown for this frame; the per-button selections below are preserved." })
+            local hideInCombatCheckbox = TrackBarControl(GUI:CreateFormCheckbox(basicsCard.frame, nil, "hideInCombat", entry, Refresh,
+                { description = "Hide this chat frame's button bar while you are in combat, then restore it after combat ends." }))
+            basicsCard.AddRow(row(basicsCard.frame, "Show button bar for this frame", enabledCheckbox), row(basicsCard.frame, "Hide in combat", hideInCombatCheckbox))
 
-            sy = P(TrackBarControl(GUI:CreateFormSlider(body, "X offset", -200, 200, 1, "offsetX", entry, Refresh, nil,
-                { description = "Fine-tune the bar's horizontal position relative to the selected anchor. Positive values move right. In Inside tab row mode the anchor follows this chat frame's tab." })), body, sy)
-            sy = P(TrackBarControl(GUI:CreateFormSlider(body, "Y offset", -200, 200, 1, "offsetY", entry, Refresh, nil,
-                { description = "Fine-tune the bar's vertical position relative to the selected anchor. Positive values move up. In Inside tab row mode the anchor follows this chat frame's tab." })), body, sy)
-            sy = P(TrackBarControl(GUI:CreateFormSlider(body, "Button spacing", 0, 24, 1, "buttonSpacing", entry, Refresh, nil,
-                { description = "Pixels between buttons in this chat frame's button bar." })), body, sy)
+            local positionDropdown = TrackBarControl(GUI:CreateFormDropdown(basicsCard.frame, nil, positionOptions, "position", entry, Refresh,
+                { description = "Where the button bar attaches relative to the chat frame. outside_left/outside_right anchor outside the chat frame's edge; inside_left/inside_right anchor inside above the scrollback; inside_tabs lays buttons horizontally next to this chat frame's tab." }))
+            local spacingSlider = TrackBarControl(GUI:CreateFormSlider(basicsCard.frame, nil, 0, 24, 1, "buttonSpacing", entry, Refresh, nil,
+                { description = "Pixels between buttons in this chat frame's button bar." }))
+            basicsCard.AddRow(row(basicsCard.frame, "Position", positionDropdown), row(basicsCard.frame, "Button spacing", spacingSlider))
 
-            -- Built-in buttons checklist. Each entry in entry.buttons is
-            -- { id = "<builtinKey>", visible = bool }. The proxy maps each
-            -- builtin key to the visible flag of its matching array entry,
-            -- creating one if missing on first toggle.
-            local builtinHeader = TrackBarRegion(GUI:CreateLabel(body, "    Built-in buttons", 10, {0.5, 0.5, 0.5, 1}))
-            builtinHeader:SetPoint("TOPLEFT", 0, sy)
-            builtinHeader:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            builtinHeader:SetJustifyH("LEFT")
-            sy = sy - 16
+            local xOffsetSlider = TrackBarControl(GUI:CreateFormSlider(basicsCard.frame, nil, -200, 200, 1, "offsetX", entry, Refresh, nil,
+                { description = "Fine-tune the bar's horizontal position relative to the selected anchor. Positive values move right. In Inside tab row mode the anchor follows this chat frame's tab." }))
+            local yOffsetSlider = TrackBarControl(GUI:CreateFormSlider(basicsCard.frame, nil, -200, 200, 1, "offsetY", entry, Refresh, nil,
+                { description = "Fine-tune the bar's vertical position relative to the selected anchor. Positive values move up. In Inside tab row mode the anchor follows this chat frame's tab." }))
+            basicsCard.AddRow(row(basicsCard.frame, "X offset", xOffsetSlider), row(basicsCard.frame, "Y offset", yOffsetSlider))
+            basicsCard.Finalize()
+            sy = sy - basicsCard.frame:GetHeight() - GAP
+
+            -- Built-in buttons subheader + paired card. Each entry in
+            -- entry.buttons is { id, visible }; the proxy maps each builtin
+            -- key to the visible flag, creating a record on first toggle.
+            TrackBarRegion(ns.QUI_Options.CreateAccentDotLabel(body, "Built-in buttons", sy))
+            sy = sy - 30
 
             local function findOrCreate(id)
                 for i = 1, #entry.buttons do
@@ -1022,22 +1068,29 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 guild       = "Guild frame",
                 reload      = "Reload UI",
             }
-            for _, id in ipairs(BB.GetBuiltinOrder()) do
-                sy = P(TrackBarControl(GUI:CreateFormCheckbox(body, "    " .. (labels[id] or id), id, builtinProxy, Refresh,
-                    { description = "Show the '" .. (labels[id] or id) .. "' button on this chat frame's button bar." })), body, sy)
+            local builtinOrder = BB.GetBuiltinOrder()
+            local builtinCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+            local function makeBuiltinCheckbox(id)
+                return TrackBarControl(GUI:CreateFormCheckbox(builtinCard.frame, nil, id, builtinProxy, Refresh,
+                    { description = "Show the '" .. (labels[id] or id) .. "' button on this chat frame's button bar." }))
             end
+            for i = 1, #builtinOrder, 2 do
+                local id1, id2 = builtinOrder[i], builtinOrder[i + 1]
+                local cellL = row(builtinCard.frame, labels[id1] or id1, makeBuiltinCheckbox(id1))
+                local cellR
+                if id2 then
+                    cellR = row(builtinCard.frame, labels[id2] or id2, makeBuiltinCheckbox(id2))
+                end
+                builtinCard.AddRow(cellL, cellR)
+            end
+            builtinCard.Finalize()
+            sy = sy - builtinCard.frame:GetHeight() - GAP
 
-            -- Custom slash-command buttons editor. Each row binds three form
-            -- edit boxes to one customButton record { label, slashCommand,
-            -- icon }. The runtime in button_bar.lua iterates customButtons
-            -- in order, creating an icon-textured button when `icon` is set
-            -- and a text button otherwise. Add/Remove trigger structural
-            -- rebuilds so the row count stays in sync with the data.
-            local customHeader = TrackBarRegion(GUI:CreateLabel(body, "    Custom slash-command buttons", 10, {0.5, 0.5, 0.5, 1}))
-            customHeader:SetPoint("TOPLEFT", 0, sy - 4)
-            customHeader:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            customHeader:SetJustifyH("LEFT")
-            sy = sy - 18
+            -- Custom slash-command buttons subheader. Each custom button gets
+            -- its own card with [Label | Slash command] + [Icon path | Remove].
+            -- Add/Remove trigger structural rebuilds so this loop re-runs.
+            TrackBarRegion(ns.QUI_Options.CreateAccentDotLabel(body, "Custom slash-command buttons", sy))
+            sy = sy - 30
 
             for idx = 1, #entry.customButtons do
                 local cb = entry.customButtons[idx]
@@ -1047,91 +1100,55 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end
                 if cb.icon == nil then cb.icon = "" end
 
-                local rowLabel = TrackBarRegion(GUI:CreateLabel(body, "    Button " .. idx, 10, {0.7, 0.85, 0.7, 1}))
-                rowLabel:SetPoint("TOPLEFT", 0, sy)
-                rowLabel:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-                rowLabel:SetJustifyH("LEFT")
-                sy = sy - 16
+                TrackBarRegion(ns.QUI_Options.CreateAccentDotLabel(body, "Button " .. idx, sy))
+                sy = sy - 30
 
-                sy = P(TrackBarControl(GUI:CreateFormEditBox(body, "Label", "label", cb, Refresh,
-                    { description = "Text shown on the button when no icon is set." })), body, sy)
-                sy = P(TrackBarControl(GUI:CreateFormEditBox(body, "Slash command", "slashCommand", cb, Refresh,
-                    { description = "Slash command to run on click — e.g. /target Boss, /readycheck. Must include the leading slash." })), body, sy)
-                sy = P(TrackBarControl(GUI:CreateFormEditBox(body, "Icon path (optional)", "icon", cb, Refresh,
-                    { description = "Texture path for an icon-style button — e.g. Interface/Icons/Spell_Holy_HolyBolt or any registered AddOn texture path. Leave blank to render as a text button." })), body, sy)
+                local btnCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+                local labelEdit = TrackBarControl(GUI:CreateFormEditBox(btnCard.frame, nil, "label", cb, Refresh,
+                    { description = "Text shown on the button when no icon is set." }))
+                local slashEdit = TrackBarControl(GUI:CreateFormEditBox(btnCard.frame, nil, "slashCommand", cb, Refresh,
+                    { description = "Slash command to run on click — e.g. /target Boss, /readycheck. Must include the leading slash." }))
+                btnCard.AddRow(row(btnCard.frame, "Label", labelEdit), row(btnCard.frame, "Slash command", slashEdit))
 
-                local removeRow = CreateFrame("Frame", nil, body)
-                removeRow:SetPoint("TOPLEFT", 0, sy - 2)
-                removeRow:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-                removeRow:SetHeight(FORM_ROW)
+                local iconEdit = TrackBarControl(GUI:CreateFormEditBox(btnCard.frame, nil, "icon", cb, Refresh,
+                    { description = "Texture path for an icon-style button — e.g. Interface/Icons/Spell_Holy_HolyBolt or any registered AddOn texture path. Leave blank to render as a text button." }))
                 local removeBtn
-                removeBtn = TrackBarControl(GUI:CreateButton(removeRow, "Remove", 100, 22, function()
+                removeBtn = TrackBarControl(GUI:CreateButton(btnCard.frame, "Remove button " .. idx, 160, 22, function()
                     table.remove(entry.customButtons, idx)
                     Refresh()
                     NotifyProviderFor(removeBtn, { structural = true })
                 end))
-                removeBtn:SetPoint("TOPLEFT", 16, 0)
-                sy = sy - (FORM_ROW + 4)
+                GUI:AttachTooltip(removeBtn,
+                    "Remove this custom button from the chat button bar. Its label, slash command, and icon are discarded.",
+                    "Remove Button")
+                btnCard.AddRow(row(btnCard.frame, "Icon path (optional)", iconEdit), row(btnCard.frame, "Remove", removeBtn))
+                btnCard.Finalize()
+                sy = sy - btnCard.frame:GetHeight() - GAP
             end
 
-            -- Add button row.
-            local addRow = CreateFrame("Frame", nil, body)
-            addRow:SetPoint("TOPLEFT", 0, sy - 4)
-            addRow:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            addRow:SetHeight(FORM_ROW)
+            -- Add button card.
+            local addCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
             local addBtn
-            addBtn = TrackBarControl(GUI:CreateButton(addRow, "Add custom button", 200, 24, function()
+            addBtn = TrackBarControl(GUI:CreateButton(addCard.frame, "Add custom button", 200, 24, function()
                 entry.customButtons[#entry.customButtons + 1] = { label = "", slashCommand = "", icon = "" }
                 Refresh()
                 NotifyProviderFor(addBtn, { structural = true })
             end))
-            addBtn:SetPoint("TOPLEFT", 0, 0)
+            GUI:AttachTooltip(addBtn,
+                "Add a new button to the chat button bar. Configure its label, slash command, and optional icon in the card that appears.",
+                "Add Custom Button")
+            addCard.AddRow(row(addCard.frame, "Add a new custom button", addBtn))
+            addCard.Finalize()
+            sy = sy - addCard.frame:GetHeight() - GAP
+
             UpdateButtonBarDependentStates()
-        end
 
-        -- Multi-frame button bar editor. Frame-selector dropdown writes to
-        -- selectedButtonBarFrame and triggers structural rebuild — same
-        -- pattern as the Tab Filters tile. Tile height is computed upfront
-        -- from the current custom-button count so dynamic content fits;
-        -- structural rebuilds (add/remove buttons, frame switch) re-enter
-        -- this block and recompute.
-        do
-            local frameOptions = buildFrameOptions()
-            local validSelection = false
-            for _, opt in ipairs(frameOptions) do
-                if opt.value == selectedButtonBarFrame then validSelection = true; break end
-            end
-            if not validSelection then selectedButtonBarFrame = frameOptions[1].value end
-
-            local existingEntry = chat.buttonBars and chat.buttonBars[selectedButtonBarFrame]
-            local customCount = (existingEntry and type(existingEntry.customButtons) == "table") and #existingEntry.customButtons or 0
-            local btnTileHeight = (16 + 5 * customCount) * FORM_ROW + 24
-
-            CreateChatSection("buttonBar", "Button Bar", btnTileHeight, function(body)
-                local selectorTable = { _selected = selectedButtonBarFrame }
-                local frameLabel = "ChatFrame" .. selectedButtonBarFrame
-                for _, opt in ipairs(frameOptions) do
-                    if opt.value == selectedButtonBarFrame then frameLabel = opt.text; break end
-                end
-
-                local sy = -4
-                local frameSelector
-                frameSelector = GUI:CreateFormDropdown(body, "Editing frame", frameOptions, "_selected", selectorTable, function()
-                    local newValue = selectorTable._selected or 1
-                    if newValue == selectedButtonBarFrame then return end
-                    selectedButtonBarFrame = newValue
-                    NotifyProviderFor(frameSelector, { structural = true })
-                end, { description = "Pick which chat frame's button bar to edit. Each frame stores its own bar config in db.profile.chat.buttonBars[<frameID>]." })
-                sy = P(frameSelector, body, sy)
-
-                buildButtonBarBody(body, selectedButtonBarFrame, frameLabel, sy)
-            end, sections, relayout)
-        end
+            return math.abs(sy) + 4
+        end, 500)
         end
 
         -- Timestamps
-        CreateChatSection("timestamps", "Timestamps", 4 * FORM_ROW + 8, function(body)
-            local sy = -4
+        CreateChatSection("timestamps", "Timestamps", 4 * FORM_ROW + 8, function(card)
             if not chat.timestamps then chat.timestamps = {enabled = false, format = "24h", color = {0.6, 0.6, 0.6}} end
             local formatDropdown, timestampColorPicker
             local function UpdateTimestampStates()
@@ -1139,30 +1156,23 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 SetControlEnabled(formatDropdown, enabled)
                 SetControlEnabled(timestampColorPicker, enabled)
             end
-            local timestampsCheckbox = GUI:CreateFormCheckbox(body, "Show Timestamps", "enabled", chat.timestamps, function()
+            local timestampsCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat.timestamps, function()
                 Refresh()
                 UpdateTimestampStates()
             end, { description = "Use QUI's colored timestamp prefix on new chat messages. While enabled, Blizzard's native chat timestamp is suppressed so the two do not stack." })
-            sy = P(timestampsCheckbox, body, sy)
-            local info = GUI:CreateLabel(body, "Only new messages are stamped. QUI replaces Blizzard timestamps while enabled.", 10, {0.5, 0.5, 0.5, 1})
-            info:SetPoint("TOPLEFT", 0, sy)
-            info:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            info:SetJustifyH("LEFT")
-            sy = sy - 20
             local formatOptions = {
                 {value = "24h", text = "24-Hour (15:27)"},
                 {value = "12h", text = "12-Hour (3:27 PM)"},
             }
-            formatDropdown = GUI:CreateFormDropdown(body, "Format", formatOptions, "format", chat.timestamps, Refresh, { description = "Timestamp format: 24-hour (15:27) or 12-hour with AM/PM (3:27 PM)." })
-            sy = P(formatDropdown, body, sy)
-            timestampColorPicker = GUI:CreateFormColorPicker(body, "Timestamp Color", "color", chat.timestamps, Refresh, nil, { description = "Color of the timestamp prefix on chat messages." })
-            P(timestampColorPicker, body, sy)
+            formatDropdown = GUI:CreateFormDropdown(card.frame, nil, formatOptions, "format", chat.timestamps, Refresh, { description = "Timestamp format: 24-hour (15:27) or 12-hour with AM/PM (3:27 PM)." })
+            card.AddRow(row(card.frame, "Show Timestamps", timestampsCheckbox), row(card.frame, "Format", formatDropdown))
+            timestampColorPicker = GUI:CreateFormColorPicker(card.frame, nil, "color", chat.timestamps, Refresh, nil, { description = "Color of the timestamp prefix on chat messages." })
+            card.AddRow(row(card.frame, "Timestamp Color", timestampColorPicker))
             UpdateTimestampStates()
-        end, sections, relayout)
+        end)
 
         -- Message Modifiers (Phase A)
-        CreateChatSection("messageModifiers", "Message Modifiers", 4 * FORM_ROW + 8, function(body)
-            local sy = -4
+        CreateChatSection("messageModifiers", "Message Modifiers", 4 * FORM_ROW + 8, function(card)
             if not chat.modifiers then chat.modifiers = {} end
             if not chat.modifiers.classColors then
                 chat.modifiers.classColors = { enabled = true, recolorBodyText = false }
@@ -1179,31 +1189,28 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 SetControlEnabled(channelPresetDropdown, channelShorten.enabled == true)
             end
 
-            local classColorsCheckbox = GUI:CreateFormCheckbox(body, "Class colors on player names", "enabled", classColors, function()
+            local classColorsCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "enabled", classColors, function()
                 Refresh()
                 UpdateMessageModifierStates()
             end, { description = "Color player names in chat by their class color (e.g. Mage names appear in light blue, Druid names in orange)." })
-            sy = P(classColorsCheckbox, body, sy)
-            recolorBodyCheckbox = GUI:CreateFormCheckbox(body, "    Recolor names mentioned in body text", "recolorBodyText", classColors, Refresh, { description = "Performs an extra regex pass on every chat message to recolor known player names anywhere in the body. Slightly more expensive than the default name-only coloring." })
-            sy = P(recolorBodyCheckbox, body, sy)
+            recolorBodyCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "recolorBodyText", classColors, Refresh, { description = "Performs an extra regex pass on every chat message to recolor known player names anywhere in the body. Slightly more expensive than the default name-only coloring." })
+            card.AddRow(row(card.frame, "Class colors on player names", classColorsCheckbox), row(card.frame, "Recolor names mentioned in body text", recolorBodyCheckbox))
 
-            local channelShortenCheckbox = GUI:CreateFormCheckbox(body, "Shorten channel labels", "enabled", channelShorten, function()
+            local channelShortenCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "enabled", channelShorten, function()
                 Refresh()
                 UpdateMessageModifierStates()
             end, { description = "Replace verbose channel tags like [Guild] with compact labels like [G] in chat output." })
-            sy = P(channelShortenCheckbox, body, sy)
             local presetOptions = {
                 {value = "letter", text = "Letter \226\128\148 [G], [O], [P] + [Gen], [T], [LFG]"},
                 {value = "number", text = "Number \226\128\148 [G], [O], [P] + [1], [2], [3]"},
             }
-            channelPresetDropdown = GUI:CreateFormDropdown(body, "Preset", presetOptions, "preset", channelShorten, Refresh, { description = "Channel label preset. Both presets shorten chat types ([G]/[O]/[P]/[R]/[I] etc.). For numbered chat channels: Letter abbreviates the channel name ([1. General] \226\134\146 [Gen], [2. Trade] \226\134\146 [T], [4. Trade (Services)] \226\134\146 [S]; unknown / custom channels get the first 3 letters), Number keeps just the channel number ([1. General] \226\134\146 [1])." })
-            P(channelPresetDropdown, body, sy)
+            channelPresetDropdown = GUI:CreateFormDropdown(card.frame, nil, presetOptions, "preset", channelShorten, Refresh, { description = "Channel label preset. Both presets shorten chat types ([G]/[O]/[P]/[R]/[I] etc.). For numbered chat channels: Letter abbreviates the channel name ([1. General] \226\134\146 [Gen], [2. Trade] \226\134\146 [T], [4. Trade (Services)] \226\134\146 [S]; unknown / custom channels get the first 3 letters), Number keeps just the channel number ([1. General] \226\134\146 [1])." })
+            card.AddRow(row(card.frame, "Shorten channel labels", channelShortenCheckbox), row(card.frame, "Preset", channelPresetDropdown))
             UpdateMessageModifierStates()
-        end, sections, relayout)
+        end)
 
         -- Keyword Alert (Phase A.1)
-        CreateChatSection("keywordAlert", "Keyword Alert", 9 * FORM_ROW + 8, function(body)
-            local sy = -4
+        CreateChatSection("keywordAlert", "Keyword Alert", 9 * FORM_ROW + 8, function(card)
             if not chat.modifiers then chat.modifiers = {} end
             if not chat.modifiers.keywordAlert then
                 chat.modifiers.keywordAlert = {
@@ -1230,34 +1237,40 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end
             end
 
-            local keywordEnableCheckbox = GUI:CreateFormCheckbox(body, "Enable keyword alerts", "enabled", ka, function()
+            local keywordEnableCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "enabled", ka, function()
                 Refresh()
                 UpdateKeywordAlertStates()
             end, { description = "Highlight chat messages containing your configured keywords or character/guild name. Optionally play a sound and flash the chat tab when a match is found." })
-            sy = P(keywordEnableCheckbox, body, sy)
-            sy = P(TrackKeywordControl(GUI:CreateFormCheckbox(body, "    Trigger on my character name", "includeOwnName", ka, Refresh, { description = "Always treat your own character name as a keyword. Recommended on so you're alerted when someone @-mentions you." })), body, sy)
-            sy = P(TrackKeywordControl(GUI:CreateFormCheckbox(body, "    Trigger on my first name", "includeFirstName", ka, Refresh, { description = "When your character name contains a space (e.g., 'Foo Bar'), trigger on the first part. Most player names don't have spaces." })), body, sy)
-            sy = P(TrackKeywordControl(GUI:CreateFormCheckbox(body, "    Trigger on my guild name", "includeGuildName", ka, Refresh, { description = "Trigger an alert when your guild name appears in chat. Only fires when you are in a guild." })), body, sy)
-            sy = P(TrackKeywordControl(GUI:CreateFormCheckbox(body, "    Skip my own messages", "skipSelf", ka, Refresh, { description = "Don't trigger alerts for messages you send yourself. Recommended on." })), body, sy)
-            sy = P(TrackKeywordControl(GUI:CreateFormCheckbox(body, "    Flash chat tab on alert", "flashTab", ka, Refresh, { description = "Briefly flash the chat tab in addition to highlighting the matched text." })), body, sy)
+            local ownNameCb = TrackKeywordControl(GUI:CreateFormCheckbox(card.frame, nil, "includeOwnName", ka, Refresh, { description = "Always treat your own character name as a keyword. Recommended on so you're alerted when someone @-mentions you." }))
+            card.AddRow(row(card.frame, "Enable keyword alerts", keywordEnableCheckbox), row(card.frame, "Trigger on my character name", ownNameCb))
 
-            sy = P(TrackKeywordControl(GUI:CreateFormColorPicker(body, "Highlight Color", "highlightColor", ka, Refresh, nil, { description = "Color used to wrap matched keywords in chat output." })), body, sy)
+            local firstNameCb = TrackKeywordControl(GUI:CreateFormCheckbox(card.frame, nil, "includeFirstName", ka, Refresh, { description = "When your character name contains a space (e.g., 'Foo Bar'), trigger on the first part. Most player names don't have spaces." }))
+            local guildNameCb = TrackKeywordControl(GUI:CreateFormCheckbox(card.frame, nil, "includeGuildName", ka, Refresh, { description = "Trigger an alert when your guild name appears in chat. Only fires when you are in a guild." }))
+            card.AddRow(row(card.frame, "Trigger on my first name", firstNameCb), row(card.frame, "Trigger on my guild name", guildNameCb))
+
+            local skipSelfCb = TrackKeywordControl(GUI:CreateFormCheckbox(card.frame, nil, "skipSelf", ka, Refresh, { description = "Don't trigger alerts for messages you send yourself. Recommended on." }))
+            local flashTabCb = TrackKeywordControl(GUI:CreateFormCheckbox(card.frame, nil, "flashTab", ka, Refresh, { description = "Briefly flash the chat tab in addition to highlighting the matched text." }))
+            card.AddRow(row(card.frame, "Skip my own messages", skipSelfCb), row(card.frame, "Flash chat tab on alert", flashTabCb))
+
+            local highlightColorPicker = TrackKeywordControl(GUI:CreateFormColorPicker(card.frame, nil, "highlightColor", ka, Refresh, nil, { description = "Color used to wrap matched keywords in chat output." }))
 
             -- Sound dropdown via LSM if available, else a text input fallback.
             -- Architectural note: when LSM is loaded the sound list is the same
             -- one used by Timestamps / New Message Sound (U.GetSoundList());
             -- when not loaded we surface a text input so users can still paste
             -- a literal "Sound\\Interface\\Foo.ogg" path.
+            local soundWidget
             local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
             if LSM and U.GetSoundList then
                 local soundList = U.GetSoundList()
-                sy = P(TrackKeywordControl(GUI:CreateFormDropdown(body, "Alert Sound", soundList, "soundFile", ka, Refresh, { description = "Sound played when a keyword match is detected. List sourced from LibSharedMedia." })), body, sy)
+                soundWidget = TrackKeywordControl(GUI:CreateFormDropdown(card.frame, nil, soundList, "soundFile", ka, Refresh, { description = "Sound played when a keyword match is detected. List sourced from LibSharedMedia." }))
             else
-                sy = P(TrackKeywordControl(GUI:CreateFormEditBox(body, "Alert Sound", "soundFile", ka, Refresh, {
+                soundWidget = TrackKeywordControl(GUI:CreateFormEditBox(card.frame, nil, "soundFile", ka, Refresh, {
                     maxLetters = 260, live = false,
                     onEditFocusGained = function(self) self:HighlightText() end,
-                }, { description = "Path to the sound file to play on alert. Example: Sound\\Interface\\RaidWarning.ogg" })), body, sy)
+                }, { description = "Path to the sound file to play on alert. Example: Sound\\Interface\\RaidWarning.ogg" }))
             end
+            card.AddRow(row(card.frame, "Highlight Color", highlightColorPicker), row(card.frame, "Alert Sound", soundWidget))
 
             -- Custom keywords list. The settings framework does not currently
             -- expose a native list-editor widget here, so the chosen trade-off
@@ -1300,24 +1313,16 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end,
             }))
 
-            local keywordsField = TrackKeywordControl(GUI:CreateFormEditBox(body, "Custom Keywords", "keywordsText", keywordsProxy, Refresh, {
+            local keywordsField = TrackKeywordControl(GUI:CreateFormEditBox(card.frame, nil, "keywordsText", keywordsProxy, Refresh, {
                 maxLetters = 500, live = false,
                 onEditFocusGained = function(self) self:HighlightText() end,
             }, { description = "Comma-separated list of additional keywords to highlight. Example: 'flask, food, summon'. Case-insensitive. Keywords containing commas are not supported by this input." }))
-            keywordsField:SetPoint("TOPLEFT", 0, sy)
-            keywordsField:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            sy = sy - FORM_ROW
-
-            local helpLabel = GUI:CreateLabel(body, "Comma-separated. Case-insensitive substring match. Always-on triggers above are added on top of this list.", 10, {0.5, 0.5, 0.5, 1})
-            helpLabel:SetPoint("TOPLEFT", 0, sy + 4)
-            helpLabel:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            helpLabel:SetJustifyH("LEFT")
+            card.AddRow(row(card.frame, "Custom Keywords", keywordsField))
             UpdateKeywordAlertStates()
-        end, sections, relayout)
+        end)
 
         -- Redundant Text Cleanup (Phase A.2)
-        CreateChatSection("redundantTextCleanup", "Redundant Text Cleanup", 7 * FORM_ROW + 8, function(body)
-            local sy = -4
+        CreateChatSection("redundantTextCleanup", "Redundant Text Cleanup", 7 * FORM_ROW + 8, function(card)
             if not chat.modifiers then chat.modifiers = {} end
             if not chat.modifiers.redundantText then
                 chat.modifiers.redundantText = {
@@ -1345,18 +1350,22 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end
             end
 
-            local cleanupCheckbox = GUI:CreateFormCheckbox(body, "Enable cleanup", "enabled", rt, function()
+            local cleanupCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "enabled", rt, function()
                 Refresh()
                 UpdateCleanupPatternStates()
             end, { description = "Compresses verbose loot/XP/honor/reputation/currency messages into short forms." })
-            sy = P(cleanupCheckbox, body, sy)
-            sy = P(TrackCleanupControl(GUI:CreateFormCheckbox(body, "    Loot collapse", "loot", rtp, Refresh, { description = "'You receive item: X' \226\134\146 '\226\156\147 X'" })), body, sy)
-            sy = P(TrackCleanupControl(GUI:CreateFormCheckbox(body, "    Currency collapse", "currency", rtp, Refresh, { description = "Collapses currency-receive messages into a compact arrow form." })), body, sy)
-            sy = P(TrackCleanupControl(GUI:CreateFormCheckbox(body, "    XP collapse", "xp", rtp, Refresh, { description = "Collapses experience-gain messages to '+N XP'." })), body, sy)
-            sy = P(TrackCleanupControl(GUI:CreateFormCheckbox(body, "    Honor collapse", "honor", rtp, Refresh, { description = "Collapses honor-gain messages to '+N Honor'." })), body, sy)
-            P(TrackCleanupControl(GUI:CreateFormCheckbox(body, "    Reputation collapse", "reputation", rtp, Refresh, { description = "Collapses reputation-change messages to a compact up/down arrow form." })), body, sy)
+            local lootCb = TrackCleanupControl(GUI:CreateFormCheckbox(card.frame, nil, "loot", rtp, Refresh, { description = "'You receive item: X' \226\134\146 '\226\156\147 X'" }))
+            card.AddRow(row(card.frame, "Enable cleanup", cleanupCheckbox), row(card.frame, "Loot collapse", lootCb))
+
+            local currencyCb = TrackCleanupControl(GUI:CreateFormCheckbox(card.frame, nil, "currency", rtp, Refresh, { description = "Collapses currency-receive messages into a compact arrow form." }))
+            local xpCb = TrackCleanupControl(GUI:CreateFormCheckbox(card.frame, nil, "xp", rtp, Refresh, { description = "Collapses experience-gain messages to '+N XP'." }))
+            card.AddRow(row(card.frame, "Currency collapse", currencyCb), row(card.frame, "XP collapse", xpCb))
+
+            local honorCb = TrackCleanupControl(GUI:CreateFormCheckbox(card.frame, nil, "honor", rtp, Refresh, { description = "Collapses honor-gain messages to '+N Honor'." }))
+            local repCb = TrackCleanupControl(GUI:CreateFormCheckbox(card.frame, nil, "reputation", rtp, Refresh, { description = "Collapses reputation-change messages to a compact up/down arrow form." }))
+            card.AddRow(row(card.frame, "Honor collapse", honorCb), row(card.frame, "Reputation collapse", repCb))
             UpdateCleanupPatternStates()
-        end, sections, relayout)
+        end)
 
         -- Persistent Message History (Phase B)
         -- The "Advanced: per-channel retention" disclosure described in the plan
@@ -1417,8 +1426,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         -- a small list never shrinks the section below its prior visual footprint.
         local persistentHistorySectionHeight = (22 + math.max(0, persistentHistoryListRows - 2)) * FORM_ROW + 12
 
-        CreateChatSection("persistentMessageHistory", "Persistent Message History", persistentHistorySectionHeight, function(body)
+        CreateChatCustomSection("persistentMessageHistory", "Persistent Message History", function(body)
             local sy = -4
+            local GAP = 8
             if not chat.history then
                 chat.history = {
                     enabled = true,
@@ -1465,29 +1475,32 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end
             end
 
-            local historyEnabledCheckbox = GUI:CreateFormCheckbox(body, "Persist chat history across /reload", "enabled", hist, function()
-                Refresh()
-                UpdatePersistentHistoryStates()
-            end, { description = "Save displayed chat messages to your character's saved variables and replay them on next login or reload. Captured per character; cleared by 'Clear history now'." })
-            sy = P(historyEnabledCheckbox, body, sy)
-            sy = P(TrackPersistentHistoryControl(GUI:CreateFormSlider(body, "Retention (days)", 1, 30, 1, "retentionDays", hist, Refresh, nil, { description = "Default age limit for stored messages. Older entries are pruned at login. Per-channel overrides below take precedence when set." })), body, sy)
-            sy = P(TrackPersistentHistoryControl(GUI:CreateFormSlider(body, "Max stored messages", 500, 50000, 500, "maxEntries", hist, Refresh, nil, { description = "Hard cap on stored chat lines per character. Oldest entries beyond this are dropped at flush." })), body, sy)
-            sy = P(TrackPersistentHistoryControl(GUI:CreateFormCheckbox(body, "Store whispers", "storeWhispers", hist, Refresh, { description = "Include whispers in the persistent history. Default OFF: Blizzard's built-in HistoryKeeper already restores recent whispers, so enabling this can produce duplicate restored whispers." })), body, sy)
-            sy = P(TrackPersistentHistoryControl(GUI:CreateFormCheckbox(body, "Show session separators", "showSeparators", hist, Refresh, { description = "Insert '──── Previous session ────' and '──── Resumed ────' markers around the restored block on login." })), body, sy)
-
+            -- Main settings card: paired rows of master toggle + sliders/toggles.
             local copySourceOptions = {
                 { value = "live",      text = "Live (current scrollback)" },
                 { value = "persisted", text = "Persisted (full saved history)" },
             }
-            sy = P(TrackPersistentHistoryControl(GUI:CreateFormDropdown(body, "Copy popup source", copySourceOptions, "copyHistorySource", chat, Refresh, { description = "Which message set the chat-frame copy popup pulls from. 'Live' shows what's currently in the chat tab's visible scrollback. 'Persisted' shows the full saved history including entries scrolled out of view or restored from a previous session." })), body, sy)
+            local mainCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+            local historyEnabledCheckbox = GUI:CreateFormCheckbox(mainCard.frame, nil, "enabled", hist, function()
+                Refresh()
+                UpdatePersistentHistoryStates()
+            end, { description = "Save displayed chat messages to your character's saved variables and replay them on next login or reload. Captured per character; cleared by 'Clear history now'." })
+            local retentionSlider = TrackPersistentHistoryControl(GUI:CreateFormSlider(mainCard.frame, nil, 1, 30, 1, "retentionDays", hist, Refresh, nil, { description = "Default age limit for stored messages. Older entries are pruned at login. Per-channel overrides below take precedence when set." }))
+            mainCard.AddRow(row(mainCard.frame, "Persist chat history across /reload", historyEnabledCheckbox), row(mainCard.frame, "Retention (days)", retentionSlider))
 
-            -- Clear-now button with confirmation popup.
-            local clearRow = CreateFrame("Frame", nil, body)
-            clearRow:SetPoint("TOPLEFT", 0, sy)
-            clearRow:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            clearRow:SetHeight(FORM_ROW)
+            local maxEntriesSlider = TrackPersistentHistoryControl(GUI:CreateFormSlider(mainCard.frame, nil, 500, 50000, 500, "maxEntries", hist, Refresh, nil, { description = "Hard cap on stored chat lines per character. Oldest entries beyond this are dropped at flush." }))
+            local storeWhispersCheckbox = TrackPersistentHistoryControl(GUI:CreateFormCheckbox(mainCard.frame, nil, "storeWhispers", hist, Refresh, { description = "Include whispers in the persistent history. Default OFF: Blizzard's built-in HistoryKeeper already restores recent whispers, so enabling this can produce duplicate restored whispers." }))
+            mainCard.AddRow(row(mainCard.frame, "Max stored messages", maxEntriesSlider), row(mainCard.frame, "Store whispers", storeWhispersCheckbox))
 
-            local clearBtn = GUI:CreateButton(clearRow, "Clear history now", 180, 24, function()
+            local separatorsCheckbox = TrackPersistentHistoryControl(GUI:CreateFormCheckbox(mainCard.frame, nil, "showSeparators", hist, Refresh, { description = "Insert '──── Previous session ────' and '──── Resumed ────' markers around the restored block on login." }))
+            local copySourceDropdown = TrackPersistentHistoryControl(GUI:CreateFormDropdown(mainCard.frame, nil, copySourceOptions, "copyHistorySource", chat, Refresh, { description = "Which message set the chat-frame copy popup pulls from. 'Live' shows what's currently in the chat tab's visible scrollback. 'Persisted' shows the full saved history including entries scrolled out of view or restored from a previous session." }))
+            mainCard.AddRow(row(mainCard.frame, "Show session separators", separatorsCheckbox), row(mainCard.frame, "Copy popup source", copySourceDropdown))
+            mainCard.Finalize()
+            sy = sy - mainCard.frame:GetHeight() - GAP
+
+            -- Clear actions card. Each action as its own row with help in desc.
+            local clearCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+            local clearBtn = GUI:CreateButton(clearCard.frame, "Clear history now", 180, 24, function()
                 GUI:ShowConfirmation({
                     title = "Clear Chat History?",
                     message = "Clear persisted chat history for this character?",
@@ -1505,20 +1518,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     end,
                 })
             end)
-            clearBtn:SetPoint("TOPLEFT", 0, 0)
+            GUI:AttachTooltip(clearBtn,
+                "Erase this character's persisted chat history. The live chat window keeps its current scrollback until logout, but the saved file is wiped immediately. Other characters are not affected.",
+                "Clear History")
+            clearCard.AddRow(row(clearCard.frame, "Clear history for this character", clearBtn))
 
-            local clearHelp = GUI:CreateLabel(clearRow, "Erases this character's persisted entries. Does not change settings.", 10, {0.5, 0.5, 0.5, 1})
-            clearHelp:SetPoint("LEFT", clearBtn, "RIGHT", 12, 0)
-            clearHelp:SetPoint("RIGHT", clearRow, "RIGHT", 0, 0)
-            clearHelp:SetJustifyH("LEFT")
-            sy = sy - FORM_ROW - 4
-
-            local clearAllRow = CreateFrame("Frame", nil, body)
-            clearAllRow:SetPoint("TOPLEFT", 0, sy)
-            clearAllRow:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            clearAllRow:SetHeight(FORM_ROW)
-
-            local clearAllBtn = GUI:CreateButton(clearAllRow, "Clear all characters", 180, 24, function()
+            local clearAllBtn = GUI:CreateButton(clearCard.frame, "Clear all characters", 180, 24, function()
                 GUI:ShowConfirmation({
                     title = "Clear All Chat History?",
                     message = "Clear this character's persisted chat history now, and clear every other character on their next login?",
@@ -1542,31 +1547,26 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     end,
                 })
             end)
-            clearAllBtn:SetPoint("TOPLEFT", 0, 0)
-
-            local clearAllHelp = GUI:CreateLabel(clearAllRow, "Clears this character now; every other character clears on its next login. Does not change settings.", 10, {0.5, 0.5, 0.5, 1})
-            clearAllHelp:SetPoint("LEFT", clearAllBtn, "RIGHT", 12, 0)
-            clearAllHelp:SetPoint("RIGHT", clearAllRow, "RIGHT", 0, 0)
-            clearAllHelp:SetJustifyH("LEFT")
-            sy = sy - FORM_ROW - 4
+            GUI:AttachTooltip(clearAllBtn,
+                "Erase this character's history now and queue every other character on this account to clear on their next login (WoW only loads each character's saved file when that character logs in).",
+                "Clear All Characters")
+            clearCard.AddRow(row(clearCard.frame, "Clear history for all characters", clearAllBtn))
+            clearCard.Finalize()
+            sy = sy - clearCard.frame:GetHeight() - GAP
 
             -- Advanced: per-channel retention overrides.
-            -- Each chat-type group below gets its own toggle + slider row. When
-            -- the toggle is on, the override-days value is written into
-            -- hist.perChannelRetention[<key>]; when off, the entry is removed
-            -- (nil = use default). The days slider is disabled unless its
-            -- override toggle is on.
-            local advancedHeader = TrackPersistentHistoryRegion(GUI:CreateLabel(body, "Advanced: per-channel retention overrides", 11, {0.7, 0.85, 0.7, 1}))
-            advancedHeader:SetPoint("TOPLEFT", 0, sy - 4)
-            advancedHeader:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            advancedHeader:SetJustifyH("LEFT")
-            sy = sy - 18
+            -- Each chat-type group below gets its own paired row of [override
+            -- toggle | days slider]. When the toggle is on, the override-days
+            -- value is written into hist.perChannelRetention[<key>]; when off,
+            -- the entry is removed (nil = use default).
+            TrackPersistentHistoryRegion(ns.QUI_Options.CreateAccentDotLabel(body, "Advanced: per-channel retention overrides", sy))
+            sy = sy - 30
 
             local advancedHelp = TrackPersistentHistoryRegion(GUI:CreateLabel(body, "Override the default retention for individual chat types. Off = use default.", 10, {0.5, 0.5, 0.5, 1}))
-            advancedHelp:SetPoint("TOPLEFT", 0, sy)
+            advancedHelp:SetPoint("TOPLEFT", 4, sy)
             advancedHelp:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             advancedHelp:SetJustifyH("LEFT")
-            sy = sy - 16
+            sy = sy - 20
 
             -- Channel-type groups exposed for override. Keys map to the chat
             -- types described in the design spec; storage uses the same key
@@ -1589,87 +1589,81 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             -- __newindex toggles or sets accordingly. This lets the standard
             -- CreateFormCheckbox / CreateFormSlider widgets read/write a map
             -- entry transparently.
-            local function makeGroupProxy(key)
+            local function makeGroupProxy(groupKey)
                 return MarkTransientOptionsBinding(setmetatable({}, {
                     __index = function(_, k)
                         if k == "enabled" then
-                            return hist.perChannelRetention[key] ~= nil
+                            return hist.perChannelRetention[groupKey] ~= nil
                         elseif k == "days" then
-                            return hist.perChannelRetention[key] or hist.retentionDays or 7
+                            return hist.perChannelRetention[groupKey] or hist.retentionDays or 7
                         end
                         return nil
                     end,
                     __newindex = function(_, k, v)
                         if k == "enabled" then
                             if v then
-                                if hist.perChannelRetention[key] == nil then
-                                    hist.perChannelRetention[key] = hist.retentionDays or 7
+                                if hist.perChannelRetention[groupKey] == nil then
+                                    hist.perChannelRetention[groupKey] = hist.retentionDays or 7
                                 end
                             else
-                                hist.perChannelRetention[key] = nil
+                                hist.perChannelRetention[groupKey] = nil
                             end
                         elseif k == "days" then
-                            if type(v) == "number" and hist.perChannelRetention[key] ~= nil then
-                                hist.perChannelRetention[key] = v
+                            if type(v) == "number" and hist.perChannelRetention[groupKey] ~= nil then
+                                hist.perChannelRetention[groupKey] = v
                             end
                         end
                     end,
                 }))
             end
 
+            local overrideCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
             for _, group in ipairs(CHANNEL_GROUPS) do
                 local proxy = makeGroupProxy(group.key)
-                local overrideCheckbox = TrackPersistentHistoryControl(GUI:CreateFormCheckbox(body, "    Override " .. group.label, "enabled", proxy, function()
+                local overrideCheckbox = TrackPersistentHistoryControl(GUI:CreateFormCheckbox(overrideCard.frame, nil, "enabled", proxy, function()
                     Refresh()
                     UpdatePersistentHistoryStates()
                 end, { description = "When on, " .. group.label .. " messages use the days slider on the right instead of the default retention. When off, the default applies." }))
-                local daysSlider = GUI:CreateFormSlider(body, "        " .. group.label .. " days", 1, 30, 1, "days", proxy, Refresh, nil, { description = "Retention in days for " .. group.label .. " messages when the override toggle above is on. Ignored otherwise." })
+                local daysSlider = GUI:CreateFormSlider(overrideCard.frame, nil, 1, 30, 1, "days", proxy, Refresh, nil, { description = "Retention in days for " .. group.label .. " messages when the override toggle on the left is on. Ignored otherwise." })
                 historyOverrideControls[#historyOverrideControls + 1] = { proxy = proxy, days = daysSlider }
-                sy = P(overrideCheckbox, body, sy)
-                sy = P(daysSlider, body, sy)
+                overrideCard.AddRow(row(overrideCard.frame, "Override " .. group.label, overrideCheckbox), row(overrideCard.frame, group.label .. " days", daysSlider))
             end
+            overrideCard.Finalize()
+            sy = sy - overrideCard.frame:GetHeight() - GAP
 
-            -- Reset all overrides button.
-            local resetRow = CreateFrame("Frame", nil, body)
-            resetRow:SetPoint("TOPLEFT", 0, sy - 4)
-            resetRow:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            resetRow:SetHeight(FORM_ROW)
-
-            local resetBtn = TrackPersistentHistoryControl(GUI:CreateButton(resetRow, "Reset all overrides", 180, 24, function()
+            -- Reset overrides card.
+            local resetCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+            local resetBtn
+            resetBtn = TrackPersistentHistoryControl(GUI:CreateButton(resetCard.frame, "Reset all overrides", 180, 24, function()
                 wipe(hist.perChannelRetention)
                 NotifyProviderFor(resetBtn, { structural = true })
                 Refresh()
             end))
-            resetBtn:SetPoint("TOPLEFT", 0, 0)
-
-            local resetHelp = TrackPersistentHistoryRegion(GUI:CreateLabel(resetRow, "Clears every per-channel override above. Default retention applies to all channels.", 10, {0.5, 0.5, 0.5, 1}))
-            resetHelp:SetPoint("LEFT", resetBtn, "RIGHT", 12, 0)
-            resetHelp:SetPoint("RIGHT", resetRow, "RIGHT", 0, 0)
-            resetHelp:SetJustifyH("LEFT")
-            sy = sy - FORM_ROW - 4
+            GUI:AttachTooltip(resetBtn,
+                "Clear every per-channel retention override. Channels fall back to the global retention setting above.",
+                "Reset Overrides")
+            resetCard.AddRow(row(resetCard.frame, "Reset all overrides", resetBtn))
+            resetCard.Finalize()
+            sy = sy - resetCard.frame:GetHeight() - GAP
 
             -- Excluded channels.
-            -- Renders one toggle per channel name. The "Currently joined"
-            -- group comes from a GetChannelList() snapshot taken when the
-            -- section was built (see excludedJoinedSnapshot above); names
-            -- previously excluded but no longer in the join list (left,
-            -- renamed, or relogged) appear under "Stored but not joined"
-            -- so they remain manageable. Storage is unchanged from the old
-            -- design: hist.excludedChannels stays a set keyed by channel
-            -- name, with nil for not-excluded — the proxy below mirrors
-            -- toggle state to set membership and never writes a literal
-            -- false (keeps the SV clean).
-            local excludedHeader = TrackPersistentHistoryRegion(GUI:CreateLabel(body, "Excluded channels", 11, {0.7, 0.85, 0.7, 1}))
-            excludedHeader:SetPoint("TOPLEFT", 0, sy - 4)
-            excludedHeader:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            excludedHeader:SetJustifyH("LEFT")
-            sy = sy - 18
+            -- Renders one toggle per channel name, paired 2-up. The "Currently
+            -- joined" group comes from a GetChannelList() snapshot taken when
+            -- the section was built (see excludedJoinedSnapshot above); names
+            -- previously excluded but no longer in the join list appear under
+            -- "Stored but not joined" so they remain manageable. Storage:
+            -- hist.excludedChannels is a set keyed by channel name, with nil
+            -- for not-excluded — the proxy below mirrors toggle state to set
+            -- membership and never writes a literal false.
+            TrackPersistentHistoryRegion(ns.QUI_Options.CreateAccentDotLabel(body, "Excluded channels", sy))
+            sy = sy - 30
 
             local excludedHelp = TrackPersistentHistoryRegion(GUI:CreateLabel(body, "Captures from enabled channels are dropped before storage. Re-open settings after joining or leaving a channel to refresh the list.", 10, {0.5, 0.5, 0.5, 1}))
-            excludedHelp:SetPoint("TOPLEFT", 0, sy)
+            excludedHelp:SetPoint("TOPLEFT", 4, sy)
             excludedHelp:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             excludedHelp:SetJustifyH("LEFT")
-            sy = sy - 26
+            excludedHelp:SetWordWrap(true)
+            sy = sy - 30
 
             local excludedProxy = MarkTransientOptionsBinding(setmetatable({}, {
                 __index = function(_, k)
@@ -1686,43 +1680,62 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
             if #excludedJoinedSnapshot == 0 and #excludedStaleSnapshot == 0 then
                 local emptyLabel = TrackPersistentHistoryRegion(GUI:CreateLabel(body, "    (Not currently joined to any channels.)", 10, {0.5, 0.5, 0.5, 1}))
-                emptyLabel:SetPoint("TOPLEFT", 0, sy)
+                emptyLabel:SetPoint("TOPLEFT", 8, sy)
                 emptyLabel:SetPoint("RIGHT", body, "RIGHT", 0, 0)
                 emptyLabel:SetJustifyH("LEFT")
                 sy = sy - FORM_ROW
             else
-                for _, channelName in ipairs(excludedJoinedSnapshot) do
-                    local cb = TrackPersistentHistoryControl(GUI:CreateFormToggle(body, "    " .. channelName, channelName, excludedProxy, nil,
-                        { description = "Drop captures from '" .. channelName .. "' before they reach persistent history." }))
-                    cb:SetPoint("TOPLEFT", 0, sy)
-                    cb:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-                    sy = sy - FORM_ROW
+                if #excludedJoinedSnapshot > 0 then
+                    local joinedCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+                    local function makeExcludedToggle(channelName, desc)
+                        return TrackPersistentHistoryControl(GUI:CreateFormToggle(joinedCard.frame, nil, channelName, excludedProxy, nil, { description = desc }))
+                    end
+                    for i = 1, #excludedJoinedSnapshot, 2 do
+                        local n1, n2 = excludedJoinedSnapshot[i], excludedJoinedSnapshot[i + 1]
+                        local cellL = row(joinedCard.frame, n1, makeExcludedToggle(n1, "Drop captures from '" .. n1 .. "' before they reach persistent history."))
+                        local cellR
+                        if n2 then
+                            cellR = row(joinedCard.frame, n2, makeExcludedToggle(n2, "Drop captures from '" .. n2 .. "' before they reach persistent history."))
+                        end
+                        joinedCard.AddRow(cellL, cellR)
+                    end
+                    joinedCard.Finalize()
+                    sy = sy - joinedCard.frame:GetHeight() - GAP
                 end
 
                 if #excludedStaleSnapshot > 0 then
-                    local staleHeader = TrackPersistentHistoryRegion(GUI:CreateLabel(body, "Stored but not joined", 11, {0.85, 0.78, 0.55, 1}))
-                    staleHeader:SetPoint("TOPLEFT", 0, sy - 4)
-                    staleHeader:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-                    staleHeader:SetJustifyH("LEFT")
-                    sy = sy - 18
+                    TrackPersistentHistoryRegion(ns.QUI_Options.CreateAccentDotLabel(body, "Stored but not joined", sy))
+                    sy = sy - 30
 
-                    for _, channelName in ipairs(excludedStaleSnapshot) do
-                        local cb = TrackPersistentHistoryControl(GUI:CreateFormToggle(body, "    " .. channelName, channelName, excludedProxy, nil,
+                    local staleCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+                    local function makeStaleToggle(channelName)
+                        return TrackPersistentHistoryControl(GUI:CreateFormToggle(staleCard.frame, nil, channelName, excludedProxy, nil,
                             { description = "Stored exclusion for '" .. channelName .. "'. Disable to remove from the persistent exclusion set." }))
-                        cb:SetPoint("TOPLEFT", 0, sy)
-                        cb:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-                        sy = sy - FORM_ROW
                     end
+                    for i = 1, #excludedStaleSnapshot, 2 do
+                        local n1, n2 = excludedStaleSnapshot[i], excludedStaleSnapshot[i + 1]
+                        local cellL = row(staleCard.frame, n1, makeStaleToggle(n1))
+                        local cellR
+                        if n2 then
+                            cellR = row(staleCard.frame, n2, makeStaleToggle(n2))
+                        end
+                        staleCard.AddRow(cellL, cellR)
+                    end
+                    staleCard.Finalize()
+                    sy = sy - staleCard.frame:GetHeight() - GAP
                 end
             end
             UpdatePersistentHistoryStates()
-        end, sections, relayout)
+            local computedHeight = math.abs(sy) + 8
+            body:SetHeight(computedHeight)
+            return computedHeight
+        end, persistentHistorySectionHeight)
 
         -- Channel Colors
         -- Per-channel color overrides via ns.QUI.Chat.ChannelColors. The
         -- dropdown lists every editable built-in chat type and every joined
         -- custom channel; the swatch + reset row act on the current selection.
-        CreateChatSection("channelColors", "Channel Colors", 4 * FORM_ROW + 8, function(body)
+        CreateChatCustomSection("channelColors", "Channel Colors", function(body)
             local sy = -4
             local CC = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.ChannelColors
 
@@ -1737,10 +1750,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 local out = {}
                 if CC and CC.BUILTIN_KEYS and CC.BUILTIN_LABELS then
                     for i = 1, #CC.BUILTIN_KEYS do
-                        local key = CC.BUILTIN_KEYS[i]
+                        local builtinKey = CC.BUILTIN_KEYS[i]
                         out[#out + 1] = {
-                            value = key,
-                            text = "Built-in: " .. (CC.BUILTIN_LABELS[key] or key),
+                            value = builtinKey,
+                            text = "Built-in: " .. (CC.BUILTIN_LABELS[builtinKey] or builtinKey),
                         }
                     end
                 end
@@ -1756,11 +1769,11 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 return out
             end
 
-            local options = buildOptions()
+            local channelOptions = buildOptions()
             local dropdown = GUI:CreateFormDropdown(
                 body,
                 "Channel",
-                options,
+                channelOptions,
                 "current",
                 selected,
                 function(v)
@@ -1775,18 +1788,23 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             -- Swatch + reset row (custom horizontal layout — CreateColorPicker
             -- is hard-bound to a single dbKey/dbTable, but our key changes
             -- with the dropdown selection, so we wire the swatch by hand).
-            local row = CreateFrame("Frame", nil, body)
-            row:SetHeight(FORM_ROW)
-            row:SetPoint("TOPLEFT", 0, sy)
-            row:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+            local swatchRow = CreateFrame("Frame", nil, body)
+            swatchRow:SetHeight(FORM_ROW)
+            swatchRow:SetPoint("TOPLEFT", 0, sy)
+            swatchRow:SetPoint("RIGHT", body, "RIGHT", 0, 0)
 
-            local rowLabel = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            local rowLabel = swatchRow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            local rowLabelFont = ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(QUI.GUI:GetFontPath())
+            local rowLabelColors = (QUI.GUI and QUI.GUI.Colors) or {}
+            local rowLabelText = rowLabelColors.text or {1, 1, 1, 1}
+            rowLabel:SetFont(rowLabelFont or select(1, rowLabel:GetFont()), 11, "")
+            rowLabel:SetTextColor(rowLabelText[1], rowLabelText[2], rowLabelText[3], 1)
             rowLabel:SetPoint("LEFT", 0, 0)
             rowLabel:SetText("Color")
 
-            local swatch = CreateFrame("Button", nil, row, "BackdropTemplate")
+            local swatch = CreateFrame("Button", nil, swatchRow, "BackdropTemplate")
             swatch:SetSize(16, 16)
-            swatch:SetPoint("LEFT", row, "LEFT", 180, 0)
+            swatch:SetPoint("LEFT", swatchRow, "LEFT", 180, 0)
             swatch:SetBackdrop({
                 bgFile = "Interface\\Buttons\\WHITE8x8",
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -1800,12 +1818,15 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 pcall(self.SetBackdropBorderColor, self, 0.4, 0.4, 0.4, 1)
             end)
 
-            local resetBtn = GUI:CreateButton(row, "Reset", 80, 22, function()
+            local resetBtn = GUI:CreateButton(swatchRow, "Reset", 80, 22, function()
                 if not CC then return end
                 CC.Clear(selected.current)
                 if UpdateRow then UpdateRow() end
             end)
             resetBtn:SetPoint("LEFT", swatch, "RIGHT", 12, 0)
+            GUI:AttachTooltip(resetBtn,
+                "Reset just this channel's color back to Blizzard's default. Other channel overrides are unaffected.",
+                "Reset Color")
 
             UpdateRow = function()
                 if not CC then return end
@@ -1842,7 +1863,21 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                         if UpdateRow then UpdateRow() end
                     end,
                 }
-                ColorPickerFrame:SetupColorPickerAndShow(info)
+                -- Bump the picker above the QUI settings window strata (it
+                -- otherwise opens behind), and use the hide-then-reopen
+                -- dance if it's already shown so ShowUIPanel's toggle logic
+                -- doesn't turn our second Setup call into a close.
+                local function OpenPicker()
+                    ColorPickerFrame:SetupColorPickerAndShow(info)
+                    ColorPickerFrame:SetFrameStrata("TOOLTIP")
+                    ColorPickerFrame:Raise()
+                end
+                if ColorPickerFrame:IsShown() then
+                    HideUIPanel(ColorPickerFrame)
+                    C_Timer.After(0, OpenPicker)
+                else
+                    OpenPicker()
+                end
             end)
 
             sy = sy - (FORM_ROW or 24)
@@ -1853,24 +1888,25 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 if UpdateRow then UpdateRow() end
             end)
             resetAllBtn:SetPoint("TOPLEFT", 0, sy)
+            GUI:AttachTooltip(resetAllBtn,
+                "Reset every channel color override back to Blizzard's defaults. This affects all channels at once.",
+                "Reset All Colors")
             sy = sy - (FORM_ROW or 24)
 
             UpdateRow()
-        end, sections, relayout)
+            local computedHeight = math.abs(sy) + 8
+            body:SetHeight(computedHeight)
+            return computedHeight
+        end, 4 * FORM_ROW + 8)
 
         -- UI Cleanup
-        CreateChatSection("uiCleanup", "UI Cleanup", 2 * FORM_ROW + 8, function(body)
-            local sy = -4
-            sy = P(GUI:CreateFormCheckbox(body, "Hide Chat Buttons", "hideButtons", chat, Refresh, { description = "Hide the social and channel buttons on each chat frame. The scrollbar stays visible." }), body, sy)
-            local info = GUI:CreateLabel(body, "Hides social and channel buttons. The scrollbar stays visible.", 10, {0.5, 0.5, 0.5, 1})
-            info:SetPoint("TOPLEFT", 0, sy)
-            info:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            info:SetJustifyH("LEFT")
-        end, sections, relayout)
+        CreateChatSection("uiCleanup", "UI Cleanup", 2 * FORM_ROW + 8, function(card)
+            local w = GUI:CreateFormCheckbox(card.frame, nil, "hideButtons", chat, Refresh, { description = "Hide the social and channel buttons on each chat frame. The scrollbar stays visible." })
+            card.AddRow(row(card.frame, "Hide Chat Buttons", w))
+        end)
 
         -- Copy Button
-        CreateChatSection("copyButton", "Copy Button", 4 * FORM_ROW + 8, function(body)
-            local sy = -4
+        CreateChatSection("copyButton", "Copy Button", 4 * FORM_ROW + 8, function(card)
             local copyButtonOptions = {
                 {value = "always", text = "Fade When Idle"},
                 {value = "hover", text = "Hide When Idle"},
@@ -1891,36 +1927,19 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local function UpdateCopyButtonStates()
                 SetControlEnabled(copySourceDropdown, chat.copyButtonMode ~= "disabled")
             end
-            local copyButtonDropdown = GUI:CreateFormDropdown(body, "Copy Button", copyButtonOptions, "copyButtonMode", chat, function()
+            local copyButtonDropdown = GUI:CreateFormDropdown(card.frame, nil, copyButtonOptions, "copyButtonMode", chat, function()
                 Refresh()
                 UpdateCopyButtonStates()
             end, { description = "Controls whether the copy glyph stays faintly visible, hides when idle, or is disabled." })
-            sy = P(copyButtonDropdown, body, sy)
-            copySourceDropdown = GUI:CreateFormDropdown(body, "Copy Source", copySourceOptions, "copyHistorySource", chat, Refresh, { description = "Choose whether the copy popup reads the current live scrollback or the persisted history buffer. Persisted history must be enabled above." })
-            sy = P(copySourceDropdown, body, sy)
-            sy = P(GUI:CreateFormDropdown(body, "Scrollback Lines", scrollbackOptions, "scrollbackLines", chat, Refresh, { description = "Sets the live chat frame scrollback cap. Changing this can clear the current visible buffer once per frame." }), body, sy)
-            local info = GUI:CreateLabel(body, "The copy popup uses live scrollback by default. Persisted source is useful when you need older saved lines.", 10, {0.5, 0.5, 0.5, 1})
-            info:SetPoint("TOPLEFT", 0, sy)
-            info:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            info:SetJustifyH("LEFT")
+            copySourceDropdown = GUI:CreateFormDropdown(card.frame, nil, copySourceOptions, "copyHistorySource", chat, Refresh, { description = "Choose whether the copy popup reads the current live scrollback or the persisted history buffer. Persisted history must be enabled above." })
+            card.AddRow(row(card.frame, "Copy Button", copyButtonDropdown), row(card.frame, "Copy Source", copySourceDropdown))
+            local scrollbackDropdown = GUI:CreateFormDropdown(card.frame, nil, scrollbackOptions, "scrollbackLines", chat, Refresh, { description = "Sets the live chat frame scrollback cap. Changing this can clear the current visible buffer once per frame." })
+            card.AddRow(row(card.frame, "Scrollback Lines", scrollbackDropdown))
             UpdateCopyButtonStates()
-        end, sections, relayout)
-
-        -- Message History
-        CreateChatSection("messageHistory", "Message History", 2 * FORM_ROW + 8, function(body)
-            local sy = -4
-            if not chat.messageHistory then
-                chat.messageHistory = { enabled = true, maxHistory = 50 }
-            end
-            sy = P(GUI:CreateFormCheckbox(body, "Enable Message History", "enabled", chat.messageHistory, Refresh, { description = "Let the Up/Down arrow keys navigate through your recently sent messages while the chat input is focused." }), body, sy)
-            local info = GUI:CreateLabel(body, "Use arrow keys (Up/Down) to navigate through your sent message history while typing.", 10, {0.5, 0.5, 0.5, 1})
-            info:SetPoint("TOPLEFT", 0, sy)
-            info:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            info:SetJustifyH("LEFT")
-        end, sections, relayout)
+        end)
 
         -- New Message Sound
-        CreateChatSection("newMessageSound", "New Message Sound", 1, function(body)
+        CreateChatCustomSection("newMessageSound", "New Message Sound", function(body)
             local sy = -4
             if not chat.newMessageSound then
                 chat.newMessageSound = { enabled = false, entries = {{ channel = "guild_officer", sound = "None" }} }
@@ -1979,7 +1998,11 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 return opts
             end
 
-            local section = body:GetParent()
+            -- In V3 there's no collapsible "section" wrapper around body; the
+            -- body IS the custom-block container. Dynamic add/remove already
+            -- triggers a structural NotifyProviderFor, which recreates the
+            -- panel — so initial height is the only quantity we need here.
+            local lastTotalHeight = 0
 
             local function RebuildSoundEntries()
                 soundEntriesContainer:SetHeight(0)
@@ -1996,10 +2019,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
                 local rowY = 0
                 for i, entry in ipairs(entries) do
-                    local row = CreateFrame("Frame", nil, soundEntriesContainer)
-                    row:SetPoint("TOPLEFT", 0, -rowY)
-                    row:SetPoint("RIGHT", soundEntriesContainer, "RIGHT", 0, 0)
-                    row:SetHeight(FORM_ROW)
+                    local entryRow = CreateFrame("Frame", nil, soundEntriesContainer)
+                    entryRow:SetPoint("TOPLEFT", 0, -rowY)
+                    entryRow:SetPoint("RIGHT", soundEntriesContainer, "RIGHT", 0, 0)
+                    entryRow:SetHeight(FORM_ROW)
 
                     local channelOpts = GetChannelOptionsForEntry(entries, i)
                     if #channelOpts == 0 then
@@ -2010,28 +2033,31 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                         Refresh()
                         RebuildSoundEntries()
                     end
-                    local channelDropdown = TrackSoundControl(GUI:CreateFormDropdown(row, "Channel", channelOpts, "channel", entry, OnChannelChange, { description = "Chat channel this sound entry listens for. Each channel can only be assigned to one entry." }))
+                    local channelDropdown = TrackSoundControl(GUI:CreateFormDropdown(entryRow, "Channel", channelOpts, "channel", entry, OnChannelChange, { description = "Chat channel this sound entry listens for. Each channel can only be assigned to one entry." }))
                     if GUI.SetWidgetProviderSyncOptions then
                         GUI:SetWidgetProviderSyncOptions(channelDropdown, { auto = true, structural = true })
                     end
                     channelDropdown:SetPoint("TOPLEFT", 0, 0)
-                    channelDropdown:SetPoint("RIGHT", row, "RIGHT", -80, 0)
+                    channelDropdown:SetPoint("RIGHT", entryRow, "RIGHT", -80, 0)
 
                     local soundList = U.GetSoundList()
-                    local soundDropdown = TrackSoundControl(GUI:CreateFormDropdown(row, "Sound", soundList, "sound", entry, Refresh, { description = "Sound to play when a message arrives on this channel." }))
+                    local soundDropdown = TrackSoundControl(GUI:CreateFormDropdown(entryRow, "Sound", soundList, "sound", entry, Refresh, { description = "Sound to play when a message arrives on this channel." }))
                     soundDropdown:SetPoint("TOPLEFT", 0, -FORM_ROW)
-                    soundDropdown:SetPoint("RIGHT", row, "RIGHT", -80, 0)
+                    soundDropdown:SetPoint("RIGHT", entryRow, "RIGHT", -80, 0)
 
-                    local removeBtn = GUI:CreateButton(row, "X", 24, 22, function()
+                    local removeBtn = GUI:CreateButton(entryRow, "X", 24, 22, function()
                         table.remove(entries, i)
                         RebuildSoundEntries()
                         Refresh()
                         NotifyProviderFor(removeBtn, { structural = true })
                     end)
+                    GUI:AttachTooltip(removeBtn,
+                        "Remove this channel/sound pairing. New messages on this channel will stop playing a sound.",
+                        "Remove Entry")
                     TrackSoundControl(removeBtn)
-                    removeBtn:SetPoint("RIGHT", row, "RIGHT", 0, -FORM_ROW/2)
+                    removeBtn:SetPoint("RIGHT", entryRow, "RIGHT", 0, -FORM_ROW/2)
 
-                    row:SetHeight(FORM_ROW * 2)
+                    entryRow:SetHeight(FORM_ROW * 2)
                     rowY = rowY + FORM_ROW * 2 + 4
                 end
 
@@ -2058,6 +2084,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                         Refresh()
                         NotifyProviderFor(addBtn, { structural = true })
                     end))
+                    GUI:AttachTooltip(addBtn,
+                        "Add another channel-to-sound pairing. Pick the channel and the sound to play when a new message arrives there.",
+                        "Add Channel + Sound")
                     addBtn:SetPoint("TOPLEFT", 0, -rowY - 4)
                     rowY = rowY + 28
                 end
@@ -2065,11 +2094,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 soundEntriesContainer._quiDualColumnRowHeight = math.max(FORM_ROW, rowY)
 
                 local totalHeight = FORM_ROW + 8 + rowY + 30
-                section._contentHeight = totalHeight
-                if section._expanded then
-                    section:SetHeight(24 + totalHeight)
-                    relayout()
-                end
+                lastTotalHeight = totalHeight
+                body:SetHeight(totalHeight)
                 UpdateNewMessageSoundStates()
             end
 
@@ -2079,10 +2105,14 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             info:SetPoint("TOPLEFT", soundEntriesContainer, "BOTTOMLEFT", 0, -8)
             info:SetPoint("RIGHT", body, "RIGHT", 0, 0)
             info:SetJustifyH("LEFT")
-        end, sections, relayout)
+            local finalHeight = lastTotalHeight + 24
+            body:SetHeight(finalHeight)
+            return finalHeight
+        end, FORM_ROW * 4)
 
-        U.BuildPositionCollapsible(content, "chatFrame1", nil, sections, relayout)
-        U.BuildOpenFullSettingsLink(content, key, sections, relayout)
-        relayout() return content:GetHeight()
+        U.BuildPositionCollapsible(content, "chatFrame1", nil, L.sections, L.relayoutSections)
+        U.BuildOpenFullSettingsLink(content, key, L.sections, L.relayoutSections)
+        L.relayoutSections()
+        return content:GetHeight()
     end })
 end)

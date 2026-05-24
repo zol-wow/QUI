@@ -1,32 +1,35 @@
 return {
     {
-        name = "damageMeter shelf present in shipped defaults with all 11 keys",
+        name = "damageMeter.native shelf present in shipped defaults with stable top-level keys",
         assert = function(sv, ctx)
             local p = sv.QUI_DB.profiles.Default
-            local sd = p and p._shippedDefaults and p._shippedDefaults.damageMeter
-            if not sd then return false end
-            for _, key in ipairs({"enabled","visibility","style","numberDisplay",
-                                  "useClassColor","showBarIcons","barHeight",
-                                  "barSpacing","textSize","windowAlpha","backgroundAlpha"}) do
-                if sd[key] == nil then return false end
+            local n = p and p._shippedDefaults and p._shippedDefaults.damageMeter and p._shippedDefaults.damageMeter.native
+            if not n then return false end
+            for _, key in ipairs({"enabled","visibility","refreshRateCombat","refreshRateIdle",
+                                  "showPinnedSelf","showHoverTooltip","breakdownAnchor",
+                                  "appearance","windows"}) do
+                if n[key] == nil then return false end
             end
             return true
         end,
     },
     {
-        name = "damageMeter defaults match spec",
+        name = "damageMeter.native defaults match spec",
         assert = function(sv, ctx)
-            local sd = sv.QUI_DB.profiles.Default._shippedDefaults.damageMeter
-            return sd.enabled == false
-               and sd.useClassColor == true and sd.showBarIcons == true
-               and sd.barHeight == 25 and sd.barSpacing == 4
-               and sd.textSize == 100 and sd.windowAlpha == 100 and sd.backgroundAlpha == 100
+            local n = sv.QUI_DB.profiles.Default._shippedDefaults.damageMeter.native
+            local g = n.appearance and n.appearance.global
+            return n.enabled == true
+               and n.visibility == "always"
+               and n.refreshRateCombat == 0.5
+               and n.refreshRateIdle == 2.0
+               and g and g.barHeight == 18 and g.barSpacing == 2
+               and g.useClassColor == true and g.numberFormat == "compact"
         end,
     },
     {
-        name = "no migration triggered for additive damageMeter shelf",
+        name = "schema migrated to current version",
         assert = function(sv, ctx)
-            return sv.QUI_DB.profiles.Default._schemaVersion == 36
+            return sv.QUI_DB.profiles.Default._schemaVersion == 37
         end,
     },
 }

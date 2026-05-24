@@ -13,7 +13,6 @@ local LEAVE_BUTTON_SIZE = 28  -- Visible leave button
 local RESOURCE_BAR_WIDTH = 12  -- Slim vertical bar
 local RESOURCE_BAR_HEIGHT = 40  -- Match button height
 local pendingOverrideSkin = false
-local pendingOverrideHide = false
 
 -- Style action button with QUI theme
 local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb, bga)
@@ -339,111 +338,60 @@ end
 
 ---------------------------------------------------------------------------
 -- INITIALIZATION
+--
+-- TAINT SAFETY: We deliberately do NOT install HookScript("OnShow") or
+-- HookScript on animation groups on OverrideActionBar — those taint the
+-- protected bar and cause ADDON_ACTION_BLOCKED inside Blizzard's
+-- BeginActionBarTransition → Show() during combat. Same pattern as the
+-- Send/Open Mail mover fix: a separate watcher frame listens for state
+-- events and triggers skinning, so the bar itself stays untainted.
 ---------------------------------------------------------------------------
 
-local function SetupOverrideBarHooks()
+local function HandleBarStateChange()
     local bar = _G.OverrideActionBar
-    if not bar or SkinBase.GetFrameData(bar, "hooked") then return end
+    if not bar then return end
 
-    -- Only install hooks when skinning is enabled. These hooks taint the
-    -- protected OverrideActionBar frame (addon code runs on its scripts),
-    -- which causes ADDON_ACTION_BLOCKED when Blizzard tries Show()/Hide()
-    -- during combat. Without skinning there is nothing to recover from,
-    -- so skip the hooks entirely to keep the frame untainted.
     local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
     if not settings or not settings.skinOverrideActionBar then return end
 
-    -- Hook OnShow with delay to let Blizzard finish setup
-    bar:HookScript("OnShow", function(self)
-        self:SetAlpha(1) -- Reset visual hide from taint workaround
-        pendingOverrideHide = false
-        C_Timer.After(0.15, SkinOverrideActionBar)
+    if not bar:IsShown() then return end
+
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+        pendingOverrideSkin = true
+        return
+    end
+
+    -- Defer 0.15s so Blizzard's own OnShow/UpdateSkin run first
+    C_Timer.After(0.15, function()
+        SkinOverrideActionBar()
+        -- BUG-005: Blizzard's UpdateMicroButtons (called from OnShow/UpdateSkin)
+        -- re-positions MicroMenu using hardcoded offsets that no longer match
+        -- our compact bar size. Reset position here on every bar-state event.
+        if MicroMenu and MicroMenu.ResetMicroMenuPosition and not InCombatLockdown() then
+            MicroMenu:ResetMicroMenuPosition()
+        end
     end)
-
-    -- TAINT FIX: Hook animation OnFinished to handle blocked Hide().
-    -- QUI's skinning taints the protected OverrideActionBar frame. When Blizzard's
-    -- slide-out animation finishes during combat, its OnFinished calls Hide() which
-    -- gets blocked (ADDON_ACTION_BLOCKED). The bar stays visible and the animation
-    -- loops. This hook detects the blocked hide and applies a visual workaround.
-    for _, group in pairs({ bar:GetAnimationGroups() }) do
-        group:HookScript("OnFinished", function()
-            C_Timer.After(0, function()
-                if not bar:IsShown() then return end
-                -- Bar is still shown after animation finished = Hide() was likely blocked
-                if not HasVehicleActionBar() and not HasOverrideActionBar() then
-                    if InCombatLockdown() then
-                        bar:SetAlpha(0) -- Visual hide until combat ends
-                        pendingOverrideHide = true
-                    else
-                        bar:Hide()
-                    end
-                end
-            end)
-        end)
-    end
-
-    -- If already visible, skin now
-    if bar:IsShown() then
-        C_Timer.After(0.15, SkinOverrideActionBar)
-    end
-
-    -- BUG-005: Hook UpdateMicroButtons to reset MicroMenu position persistently
-    -- Blizzard calls this in OnShow and UpdateSkin, which can re-position MicroMenu
-    -- after QUI's initial skinning. This hook ensures MicroMenu stays in normal position.
-    -- Use C_Timer.After(0) to break taint chain from secure Blizzard code
-    -- TAINT SAFETY: Defer ALL addon logic to break taint chain from secure context.
-    if bar.UpdateMicroButtons then
-        hooksecurefunc(bar, "UpdateMicroButtons", function()
-            C_Timer.After(0, function()
-                if SkinBase.IsSkinned(bar) and MicroMenu and MicroMenu.ResetMicroMenuPosition then
-                    if not InCombatLockdown() then
-                        MicroMenu:ResetMicroMenuPosition()
-                    end
-                end
-            end)
-        end)
-    end
-
-    SkinBase.SetFrameData(bar, "hooked", true)
 end
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+frame:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR")
+frame:RegisterEvent("UPDATE_OVERRIDE_ACTIONBAR")
 frame:SetScript("OnEvent", function(self, event, addon)
-    if event == "ADDON_LOADED" and addon == "Blizzard_OverrideActionBar" then
-        SetupOverrideBarHooks()
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        -- Fallback: addon may already be loaded
-        if _G.OverrideActionBar then
-            SetupOverrideBarHooks()
+    if event == "ADDON_LOADED" then
+        if addon == "Blizzard_OverrideActionBar" then
+            HandleBarStateChange()
         end
-        self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+    elseif event == "PLAYER_ENTERING_WORLD"
+        or event == "UPDATE_VEHICLE_ACTIONBAR"
+        or event == "UPDATE_OVERRIDE_ACTIONBAR" then
+        HandleBarStateChange()
     elseif event == "PLAYER_REGEN_ENABLED" then
         if pendingOverrideSkin then
             pendingOverrideSkin = false
-            C_Timer.After(0, SkinOverrideActionBar)
+            HandleBarStateChange()
         end
-        if pendingOverrideHide then
-            pendingOverrideHide = false
-            C_Timer.After(0, function()
-                local b = _G.OverrideActionBar
-                if b and b:IsShown() and not HasVehicleActionBar() and not HasOverrideActionBar() then
-                    b:SetAlpha(1)
-                    b:Hide()
-                end
-            end)
-        end
-        -- TAINT FIX: Recover from blocked Show(). QUI's skinning taints the protected
-        -- OverrideActionBar frame, so Blizzard's BeginActionBarTransition → Show() gets
-        -- ADDON_ACTION_BLOCKED during combat. After combat, show the bar if it should be visible.
-        C_Timer.After(0, function()
-            local b = _G.OverrideActionBar
-            if b and not b:IsShown() and (HasVehicleActionBar() or HasOverrideActionBar()) then
-                b:Show()
-                C_Timer.After(0.15, SkinOverrideActionBar)
-            end
-        end)
     end
 end)

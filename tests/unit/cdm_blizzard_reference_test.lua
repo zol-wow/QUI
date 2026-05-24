@@ -112,12 +112,17 @@ end
 
 local allowedNumeric = reference.cooldownFrame.numericFallback
 local allowedSites = allowedNumeric.allowedCallSites or {}
+-- Preview-only exception sites may call SetCooldown directly any number
+-- of times (out-of-combat, never secret-derived, never reaches runtime).
+local previewExceptionSites = allowedNumeric.previewExceptionSites or {}
 local allowedDirectCount = 0
 for _, call in ipairs(directCalls) do
-    local allowed = call.method == allowedNumeric.method and allowedSites[call.path] == true
-    if allowed then
+    if call.method ~= allowedNumeric.method then
+        error(string.format("unsafe cooldown setter call outside numeric facade: %s:%d %s",
+            call.path, call.line, call.method), 2)
+    elseif allowedSites[call.path] then
         allowedDirectCount = allowedDirectCount + 1
-    else
+    elseif not previewExceptionSites[call.path] then
         error(string.format("unsafe cooldown setter call outside numeric facade: %s:%d %s",
             call.path, call.line, call.method), 2)
     end

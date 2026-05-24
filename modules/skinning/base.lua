@@ -44,28 +44,6 @@ function SkinBase.GetSkinBarColor(moduleSettings, prefix)
     return Helpers.GetSkinBarColor(moduleSettings, prefix)
 end
 
----------------------------------------------------------------------------
--- Per-frame OnBackdropSizeChanged fix
--- BackdropTemplateMixin.SetupPieceVisuals re-creates backdrop texture pieces
--- with default white vertex color but does NOT re-apply stored colors.
--- Instead of hooking the global mixin (which fires for EVERY BackdropTemplate
--- resize in the entire UI — hundreds/sec in raids), we hook individual
--- QUI-skinned BackdropTemplate frames in ApplyFullBackdrop.
----------------------------------------------------------------------------
-local function HookBackdropSizeChanged(frame)
-    if not frame or frame._quiSizeHooked then return end
-    frame._quiSizeHooked = true
-    if not frame.OnBackdropSizeChanged then return end
-    hooksecurefunc(frame, "OnBackdropSizeChanged", function(self)
-        if self._quiBgR then
-            pcall(self.SetBackdropColor, self, self._quiBgR, self._quiBgG, self._quiBgB, self._quiBgA or 1)
-        end
-        if self._quiBorderR then
-            pcall(self.SetBackdropBorderColor, self, self._quiBorderR, self._quiBorderG, self._quiBorderB, self._quiBorderA or 1)
-        end
-    end)
-end
-
 local function SetTextureColor(texture, r, g, b, a)
     if texture then
         texture:SetVertexColor(r or 1, g or 1, b or 1, a == nil and 1 or a)
@@ -269,7 +247,6 @@ function SkinBase.ApplyFullBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     }, {
         frame._quiBgR, frame._quiBgG, frame._quiBgB, frame._quiBgA,
     })
-    HookBackdropSizeChanged(frame)
 end
 
 ---------------------------------------------------------------------------

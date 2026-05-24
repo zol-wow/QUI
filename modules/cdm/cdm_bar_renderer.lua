@@ -711,6 +711,18 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
 end
 
 ---------------------------------------------------------------------------
+-- PREVIEW ENTRY POINT
+-- Used by modules/cdm/settings/composer_preview_driver.lua to construct
+-- a bar frame inside the settings preview pane. CreateBar is pure
+-- construction (no runtime hooks at the bar level), so the wrapper is
+-- trivial; ConfigureBar(bar, settings, width) is the styling path the
+-- driver also uses.
+---------------------------------------------------------------------------
+function CDMBars.CreateForPreview(parent)
+    return CreateBar(parent)
+end
+
+---------------------------------------------------------------------------
 -- POOL MANAGEMENT
 ---------------------------------------------------------------------------
 local function AcquireBar(parent)
@@ -984,6 +996,22 @@ local function ApplyResolvedItemBarDurationObject(bar, itemID, r)
     return true
 end
 
+local function ClearItemBarInactive(bar, itemID)
+    bar._active = false
+    bar._hideDurationText = nil
+    bar._hasAuraExpirationTime = nil
+    bar._durObj = nil
+    bar._cSideFill = nil
+    bar._preferDurObjFill = nil
+    bar._totalDuration = nil
+    bar._expirationTime = nil
+    ClearStatusBar(bar.StatusBar)
+    if bar.DurationText then
+        bar.DurationText:SetText("")
+    end
+    StoreBarRuntimeState(bar, "inactive", false, { itemID = itemID })
+end
+
 local function UpdateItemBarCooldown(bar, entry)
     local itemID
     if entry.type == "slot" or entry.type == "trinket" then
@@ -1061,6 +1089,26 @@ local function UpdateItemBarCooldown(bar, entry)
         return
     end
 
+    -- For aura-kind entries (items in built-in buff/trackedBar containers)
+    -- and for entries with displayMode="auraOnly" (custom containers, item
+    -- types only), do NOT fall through to cooldown rendering when the aura
+    -- is inactive — the bar should go inactive instead.
+    local isAuraKind = entry and entry.kind == "aura"
+    local containerDB
+    if ns.CDMShared and ns.CDMShared.GetContainerDB then
+        containerDB = ns.CDMShared.GetContainerDB(entry and entry.viewerType)
+    end
+    local isCustom = ns.CDMShared and ns.CDMShared.IsCustomBarContainer
+        and ns.CDMShared.IsCustomBarContainer(containerDB) or false
+    local isAuraOnlyOverride = isCustom
+        and entry and entry.displayMode == "auraOnly"
+        and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot")
+
+    if isAuraKind or isAuraOnlyOverride then
+        ClearItemBarInactive(bar, itemID)
+        return
+    end
+
     local resolver = ns.CDMResolvers and ns.CDMResolvers.ResolveCooldownState
     local context = resolver and BuildBarCooldownStateContext(bar, entry, bar._spellID)
     local r = context and resolver(context)
@@ -1104,21 +1152,7 @@ local function UpdateItemBarCooldown(bar, entry)
     end
 
     -- Not active, not on cooldown
-    bar._active = false
-    bar._hideDurationText = nil
-    bar._hasAuraExpirationTime = nil
-    bar._durObj = nil
-    bar._cSideFill = nil
-    bar._totalDuration = nil
-    bar._expirationTime = nil
-    bar._preferDurObjFill = nil
-    ClearStatusBar(bar.StatusBar)
-    if bar.DurationText then
-        bar.DurationText:SetText("")
-    end
-    StoreBarRuntimeState(bar, "inactive", false, {
-        itemID = itemID,
-    })
+    ClearItemBarInactive(bar, itemID)
 end
 
 local IsSpellCooldownEntry

@@ -3132,7 +3132,14 @@ local function ResolveOwnedEntry(entry, containerKey, index)
                     local maxC = ci.maxCharges
                     if maxC then
                         apiReadable = true
-                        if maxC > 1 then
+                        -- Any spell the charge API reports for (maxCharges >= 1)
+                        -- is a charge-system spell. The single-charge case
+                        -- includes the shared brez pool in raids/M+
+                        -- (Rebirth/Raise Ally/Intercession) — the cooldown
+                        -- shown is the recharge timer, so the icon must stay
+                        -- saturated while a charge is available. Downstream
+                        -- cdInfo.isActive gates actual usability.
+                        if maxC >= 1 then
                             resolved.hasCharges = true
                         end
                     end
@@ -4103,6 +4110,24 @@ function CDMSpellData:MoveEntryBetweenContainers(fromKey, toKey, index)
 
     local entry = table.remove(fromDB.ownedSpells, index)
 
+    -- Cross-family kind rewrite for item-type entries. Spells/macros are
+    -- restricted to same-family moves by SIBLING_TYPES; this branch only
+    -- fires for item/trinket/slot.
+    if entry and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot")
+        and Shared and Shared.GetBuiltinContainerEntryKind then
+        local destKind = Shared.GetBuiltinContainerEntryKind(toKey)
+        if destKind == "aura" then
+            entry.kind = "aura"
+            -- displayMode is inert on built-in aura containers; clear it
+            -- so the field doesn't linger if the user later moves back.
+            entry.displayMode = nil
+        elseif destKind == "cooldown" then
+            entry.kind = "cooldown"
+        end
+        -- destKind == nil means custom container; leave entry.kind alone
+        -- (custom items default to cooldown via AddItem; preserve current).
+    end
+
     if toDB.ownedSpells == nil then
         toDB.ownedSpells = {}
     end
@@ -4203,14 +4228,61 @@ function CDMSpellData:AddSpell(containerKey, spellID, kind, row, isKnown)
     return self:AddEntry(containerKey, { type = "spell", id = spellID, kind = kind, row = row, isKnown = isKnown })
 end
 
-function CDMSpellData:AddItem(containerKey, itemID, row)
-    return self:AddEntry(containerKey, { type = "item", id = itemID, kind = "cooldown", row = row })
+function CDMSpellData:AddItem(containerKey, itemID, row, kind)
+    return self:AddEntry(containerKey, {
+        type = "item",
+        id = itemID,
+        kind = kind or "cooldown",
+        row = row,
+    })
 end
 
-function CDMSpellData:AddTrinketSlot(containerKey, slotID, row)
-    return self:AddEntry(containerKey, { type = "slot", id = slotID, kind = "cooldown", row = row })
+function CDMSpellData:AddTrinketSlot(containerKey, slotID, row, kind)
+    return self:AddEntry(containerKey, {
+        type = "slot",
+        id = slotID,
+        kind = kind or "cooldown",
+        row = row,
+    })
 end
 
+
+-- Returns the aura spellID for an item if Blizzard's cooldown viewer or the
+-- runtime scanner already knows about it; nil if the aura would only be
+-- discovered at first-use. Used by composer UI to surface "no known aura
+-- yet" hints without gating UX on resolvability.
+function CDMSpellData:HasResolvableAuraForItem(itemID)
+    if type(itemID) ~= "number" or itemID <= 0 then return nil end
+    if not Sources then return nil end
+
+    -- Some items (e.g., Engineering trinkets) map item -> use-spell -> aura.
+    -- Walk the same path the runtime uses in ResolveAuraActiveState.
+    -- QueryItemSpell returns (spellName, spellID), so capture the second value.
+    local useSpellID
+    if Sources.QueryItemSpell then
+        local _, sid = Sources.QueryItemSpell(itemID)
+        useSpellID = sid
+    end
+
+    if useSpellID and Sources.QueryCooldownAuraBySpellID then
+        local auraID = Sources.QueryCooldownAuraBySpellID(useSpellID)
+        if type(auraID) == "number" and auraID > 0 then
+            return auraID
+        end
+    end
+
+    -- Runtime scanner may have cached an aura mapping for this item.
+    -- GetScannedItemInfo returns a table with buffSpellID when known.
+    local scanner = _G.QUI and _G.QUI.SpellScanner
+    if scanner and scanner.GetScannedItemInfo then
+        local info = scanner.GetScannedItemInfo(itemID)
+        if info and type(info.buffSpellID) == "number" and info.buffSpellID > 0 then
+            return info.buffSpellID
+        end
+    end
+
+    return nil
+end
 
 function CDMSpellData:SetEntryRow(containerKey, index, rowNum)
     if CombatGuard() then return false end
@@ -4633,6 +4705,14 @@ end
 -- GetSpellList: Routing function — owned path if snapshotted, scan fallback
 function CDMSpellData:GetSpellList(viewerType)
     local db = GetContainerDB(viewerType)
+    -- customBar containers source entries exclusively from db.entries via the
+    -- icon renderer's custom-bar branch. A stale db.ownedSpells (left behind
+    -- by a legacy migration or a stray MoveEntryBetweenContainers write)
+    -- would otherwise feed BuildSpellListFromOwned here AND db.entries would
+    -- feed the customBar loop in BuildIcons — runtime renders the sum.
+    if db and db.containerType == "customBar" then
+        return {}
+    end
     local hasOwned = db and db.ownedSpells ~= nil
     if hasOwned then
         -- Owned path: build from DB

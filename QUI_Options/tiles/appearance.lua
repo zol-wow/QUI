@@ -35,6 +35,13 @@ function V2.Register(frame)
                     subTabIndex = 3,
                     subTabName = "UI Scale",
                 },
+                searchAliases = {
+                    "ui scale",
+                    "scale",
+                    "interface size",
+                    "zoom",
+                    "resolution scale",
+                },
             },
             {
                 id = "fonts",
@@ -46,6 +53,13 @@ function V2.Register(frame)
                     tabName = SEARCH_TAB_NAME,
                     subTabIndex = 4,
                     subTabName = "Fonts",
+                },
+                searchAliases = {
+                    "fonts",
+                    "default font",
+                    "typography",
+                    "font family",
+                    "font face",
                 },
             },
             {
@@ -133,18 +147,6 @@ function V2.Register(frame)
                     tabName = SEARCH_TAB_NAME,
                     subPageIndex = 10,
                     subTabName = "Theme & Colors",
-                },
-            },
-            {
-                id = "damageMeter",
-                name = "Damage Meter",
-                sectionNav = true,
-                featureId = "damageMeterPage",
-                searchContext = {
-                    tileId = "appearance",
-                    tabName = SEARCH_TAB_NAME,
-                    subPageIndex = 11,
-                    subTabName = "Damage Meter",
                 },
             },
         },

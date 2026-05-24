@@ -1,4 +1,4 @@
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
 local C = GUI.Colors
@@ -8,22 +8,49 @@ local Settings = ns.Settings
 local Registry = Settings and Settings.Registry
 local Schema = Settings and Settings.Schema
 
--- Local references for shared infrastructure
-local PADDING = Shared.PADDING
+local PAD = (Shared and Shared.PADDING) or 15
+local HEADER_GAP = 26
+local SECTION_GAP = 14
 local CreateScrollableContent = Shared.CreateScrollableContent
 
 local GetCore = Helpers.GetCore
 
+local function MakeLayout(content, startY)
+    local y = startY or -10
+    local L = {}
+    function L.headerAt(text)
+        local h = Shared.CreateAccentDotLabel(content, text, y)
+        h:ClearAllPoints()
+        h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+        h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+        y = y - HEADER_GAP
+    end
+    function L.sectionAt()
+        local c = Shared.CreateSettingsCardGroup(content, y)
+        c.frame:ClearAllPoints()
+        c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+        c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+        return c
+    end
+    function L.closeSection(c)
+        c.Finalize()
+        y = y - c.frame:GetHeight() - SECTION_GAP
+    end
+    function L.finish()
+        content:SetHeight(math.abs(y) + 10)
+        return content:GetHeight()
+    end
+    return L
+end
+
+local function row(parent, label, widget, desc)
+    return Shared.BuildSettingRow(parent, label, widget, desc)
+end
+
 --------------------------------------------------------------------------------
 -- HUD LAYERING PAGE
 --------------------------------------------------------------------------------
-local CreateCollapsiblePage = Shared.CreateTilePage
-
 local function BuildHUDLayeringContent(content)
-    local PAD = PADDING
-    local FORM_ROW = 32
-    local P = Helpers.PlaceRow
-
     GUI:SetSearchContext({tabIndex = 12, tabName = "Frame Levels"})
 
     local core = GetCore()
@@ -50,7 +77,7 @@ local function BuildHUDLayeringContent(content)
         if _G.QUI_RefreshCDMBuffLayout then _G.QUI_RefreshCDMBuffLayout() end
     end
     local function RefreshPowerBars()
-        local c = GetCore(); local d = c and c.db and c.db.profile
+        local c = GetCore()
         if c and c.UpdatePowerBar then c:UpdatePowerBar() end
         if c and c.UpdateSecondaryPowerBar then c:UpdateSecondaryPowerBar() end
     end
@@ -67,79 +94,127 @@ local function BuildHUDLayeringContent(content)
         return
     end
 
-    -- Description
+    -- Description (intro paragraph reserves 28px below the top before the first
+    -- accent-dot header).
     local info = GUI:CreateLabel(content, "Control which HUD elements appear above others. Higher values render on top.", 11, C.textMuted)
     info:SetJustifyH("LEFT")
     info:SetPoint("TOPLEFT", PAD, -10)
     info:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
 
-    local sections, relayout, CreateCollapsible = CreateCollapsiblePage(content, PAD, -38)
+    local L = MakeLayout(content, -38)
 
-    -- CDM
-    CreateCollapsible("Cooldown Display Manager", 4 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormSlider(body, "Essential Viewer", 0, 10, 1, "essential", layeringDB, RefreshCDM, nil,
-            { description = "Render layer for the Essential cooldowns viewer. Higher values draw over lower-layered HUD elements." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Utility Viewer", 0, 10, 1, "utility", layeringDB, RefreshCDM, nil,
-            { description = "Render layer for the Utility cooldowns viewer. Higher values draw over lower-layered HUD elements." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Buff Icon Viewer", 0, 10, 1, "buffIcon", layeringDB, RefreshCDM, nil,
-            { description = "Render layer for the Buff Icon viewer. Raise this if buff icons are being hidden by other HUD pieces." }), body, sy)
-        P(GUI:CreateFormSlider(body, "Buff Bar Viewer", 0, 10, 1, "buffBar", layeringDB, RefreshCDM, nil,
-            { description = "Render layer for the Buff Bar viewer. Raise this if buff bars are being hidden by other HUD pieces." }), body, sy)
-    end)
+    ---------------------------------------------------------------------------
+    -- COOLDOWN DISPLAY MANAGER
+    ---------------------------------------------------------------------------
+    L.headerAt("Cooldown Display Manager")
+    local sCDM = L.sectionAt()
+    local cdmEssW = GUI:CreateFormSlider(sCDM.frame, nil, 0, 10, 1, "essential", layeringDB, RefreshCDM,
+        { description = "Render layer for the Essential cooldowns viewer. Higher values draw over lower-layered HUD elements." })
+    local cdmUtilW = GUI:CreateFormSlider(sCDM.frame, nil, 0, 10, 1, "utility", layeringDB, RefreshCDM,
+        { description = "Render layer for the Utility cooldowns viewer. Higher values draw over lower-layered HUD elements." })
+    sCDM.AddRow(
+        row(sCDM.frame, "Essential Viewer", cdmEssW),
+        row(sCDM.frame, "Utility Viewer", cdmUtilW)
+    )
 
-    -- Power Bars
-    CreateCollapsible("Power Bars", 2 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormSlider(body, "Primary Power Bar", 0, 10, 1, "primaryPowerBar", layeringDB, RefreshPowerBars, nil,
-            { description = "Render layer for the primary resource bar (mana, rage, energy, etc.). Higher values draw over lower-layered HUD elements." }), body, sy)
-        P(GUI:CreateFormSlider(body, "Secondary Power Bar", 0, 10, 1, "secondaryPowerBar", layeringDB, RefreshPowerBars, nil,
-            { description = "Render layer for the secondary resource bar (combo points, holy power, soul shards, etc.)." }), body, sy)
-    end)
+    local cdmBuffIconW = GUI:CreateFormSlider(sCDM.frame, nil, 0, 10, 1, "buffIcon", layeringDB, RefreshCDM,
+        { description = "Render layer for the Buff Icon viewer. Raise this if buff icons are being hidden by other HUD pieces." })
+    local cdmBuffBarW = GUI:CreateFormSlider(sCDM.frame, nil, 0, 10, 1, "buffBar", layeringDB, RefreshCDM,
+        { description = "Render layer for the Buff Bar viewer. Raise this if buff bars are being hidden by other HUD pieces." })
+    sCDM.AddRow(
+        row(sCDM.frame, "Buff Icon Viewer", cdmBuffIconW),
+        row(sCDM.frame, "Buff Bar Viewer", cdmBuffBarW)
+    )
+    L.closeSection(sCDM)
 
-    -- Unit Frames
-    CreateCollapsible("Unit Frames", 7 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormSlider(body, "Player Frame", 0, 10, 1, "playerFrame", layeringDB, RefreshUnitFrames, nil,
-            { description = "Render layer for the player unit frame. Higher values draw over lower-layered HUD elements." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Player Status Indicators", 0, 10, 1, "playerIndicators", layeringDB, RefreshUnitFrames, nil,
-            { description = "Render layer for player status icons such as leader, PvP, combat, and resting indicators." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Target Frame", 0, 10, 1, "targetFrame", layeringDB, RefreshUnitFrames, nil,
-            { description = "Render layer for the target unit frame. Higher values draw over lower-layered HUD elements." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Target of Target", 0, 10, 1, "totFrame", layeringDB, RefreshUnitFrames, nil,
-            { description = "Render layer for the target of target frame." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Pet Frame", 0, 10, 1, "petFrame", layeringDB, RefreshUnitFrames, nil,
-            { description = "Render layer for the pet unit frame." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Focus Frame", 0, 10, 1, "focusFrame", layeringDB, RefreshUnitFrames, nil,
-            { description = "Render layer for the focus unit frame." }), body, sy)
-        P(GUI:CreateFormSlider(body, "Boss Frames", 0, 10, 1, "bossFrames", layeringDB, RefreshUnitFrames, nil,
-            { description = "Render layer for boss unit frames shown during encounters." }), body, sy)
-    end)
+    ---------------------------------------------------------------------------
+    -- POWER BARS
+    ---------------------------------------------------------------------------
+    L.headerAt("Power Bars")
+    local sPB = L.sectionAt()
+    local pbPrimaryW = GUI:CreateFormSlider(sPB.frame, nil, 0, 10, 1, "primaryPowerBar", layeringDB, RefreshPowerBars,
+        { description = "Render layer for the primary resource bar (mana, rage, energy, etc.). Higher values draw over lower-layered HUD elements." })
+    local pbSecondaryW = GUI:CreateFormSlider(sPB.frame, nil, 0, 10, 1, "secondaryPowerBar", layeringDB, RefreshPowerBars,
+        { description = "Render layer for the secondary resource bar (combo points, holy power, soul shards, etc.)." })
+    sPB.AddRow(
+        row(sPB.frame, "Primary Power Bar", pbPrimaryW),
+        row(sPB.frame, "Secondary Power Bar", pbSecondaryW)
+    )
+    L.closeSection(sPB)
 
-    -- Castbars
-    CreateCollapsible("Castbars", 2 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormSlider(body, "Player Castbar", 0, 10, 1, "playerCastbar", layeringDB, RefreshCastbars, nil,
-            { description = "Render layer for the player castbar. Raise this if your castbar is being hidden behind other HUD elements." }), body, sy)
-        P(GUI:CreateFormSlider(body, "Target Castbar", 0, 10, 1, "targetCastbar", layeringDB, RefreshCastbars, nil,
-            { description = "Render layer for the target castbar. Raise this to keep enemy casts visible above other HUD elements." }), body, sy)
-    end)
+    ---------------------------------------------------------------------------
+    -- UNIT FRAMES
+    ---------------------------------------------------------------------------
+    L.headerAt("Unit Frames")
+    local sUF = L.sectionAt()
+    local ufPlayerW = GUI:CreateFormSlider(sUF.frame, nil, 0, 10, 1, "playerFrame", layeringDB, RefreshUnitFrames,
+        { description = "Render layer for the player unit frame. Higher values draw over lower-layered HUD elements." })
+    local ufPlayerIndW = GUI:CreateFormSlider(sUF.frame, nil, 0, 10, 1, "playerIndicators", layeringDB, RefreshUnitFrames,
+        { description = "Render layer for player status icons such as leader, PvP, combat, and resting indicators." })
+    sUF.AddRow(
+        row(sUF.frame, "Player Frame", ufPlayerW),
+        row(sUF.frame, "Player Status Indicators", ufPlayerIndW)
+    )
 
-    -- Custom CDM Bars
-    CreateCollapsible("Custom CDM Bars", 1 * FORM_ROW + 8, function(body)
-        local sy = -4
-        P(GUI:CreateFormSlider(body, "Custom Item/Spell Bars", 0, 10, 1, "customBars", layeringDB, RefreshCustomTrackers, nil,
-            { description = "Render layer for custom item and spell tracker bars you've configured in the Cooldown Manager." }), body, sy)
-    end)
+    local ufTargetW = GUI:CreateFormSlider(sUF.frame, nil, 0, 10, 1, "targetFrame", layeringDB, RefreshUnitFrames,
+        { description = "Render layer for the target unit frame. Higher values draw over lower-layered HUD elements." })
+    local ufTotW = GUI:CreateFormSlider(sUF.frame, nil, 0, 10, 1, "totFrame", layeringDB, RefreshUnitFrames,
+        { description = "Render layer for the target of target frame." })
+    sUF.AddRow(
+        row(sUF.frame, "Target Frame", ufTargetW),
+        row(sUF.frame, "Target of Target", ufTotW)
+    )
 
-    -- Skyriding
-    CreateCollapsible("Skyriding", 1 * FORM_ROW + 8, function(body)
-        local sy = -4
-        P(GUI:CreateFormSlider(body, "Skyriding HUD", 0, 10, 1, "skyridingHUD", layeringDB, RefreshSkyriding, nil,
-            { description = "Render layer for the skyriding vigor and dynamic flight HUD shown while mounted." }), body, sy)
-    end)
+    local ufPetW = GUI:CreateFormSlider(sUF.frame, nil, 0, 10, 1, "petFrame", layeringDB, RefreshUnitFrames,
+        { description = "Render layer for the pet unit frame." })
+    local ufFocusW = GUI:CreateFormSlider(sUF.frame, nil, 0, 10, 1, "focusFrame", layeringDB, RefreshUnitFrames,
+        { description = "Render layer for the focus unit frame." })
+    sUF.AddRow(
+        row(sUF.frame, "Pet Frame", ufPetW),
+        row(sUF.frame, "Focus Frame", ufFocusW)
+    )
 
-    relayout()
+    local ufBossW = GUI:CreateFormSlider(sUF.frame, nil, 0, 10, 1, "bossFrames", layeringDB, RefreshUnitFrames,
+        { description = "Render layer for boss unit frames shown during encounters." })
+    sUF.AddRow(row(sUF.frame, "Boss Frames", ufBossW))
+    L.closeSection(sUF)
+
+    ---------------------------------------------------------------------------
+    -- CASTBARS
+    ---------------------------------------------------------------------------
+    L.headerAt("Castbars")
+    local sCB = L.sectionAt()
+    local cbPlayerW = GUI:CreateFormSlider(sCB.frame, nil, 0, 10, 1, "playerCastbar", layeringDB, RefreshCastbars,
+        { description = "Render layer for the player castbar. Raise this if your castbar is being hidden behind other HUD elements." })
+    local cbTargetW = GUI:CreateFormSlider(sCB.frame, nil, 0, 10, 1, "targetCastbar", layeringDB, RefreshCastbars,
+        { description = "Render layer for the target castbar. Raise this to keep enemy casts visible above other HUD elements." })
+    sCB.AddRow(
+        row(sCB.frame, "Player Castbar", cbPlayerW),
+        row(sCB.frame, "Target Castbar", cbTargetW)
+    )
+    L.closeSection(sCB)
+
+    ---------------------------------------------------------------------------
+    -- CUSTOM CDM BARS
+    ---------------------------------------------------------------------------
+    L.headerAt("Custom CDM Bars")
+    local sCC = L.sectionAt()
+    local ccW = GUI:CreateFormSlider(sCC.frame, nil, 0, 10, 1, "customBars", layeringDB, RefreshCustomTrackers,
+        { description = "Render layer for custom item and spell tracker bars you've configured in the Cooldown Manager." })
+    sCC.AddRow(row(sCC.frame, "Custom Item/Spell Bars", ccW))
+    L.closeSection(sCC)
+
+    ---------------------------------------------------------------------------
+    -- SKYRIDING
+    ---------------------------------------------------------------------------
+    L.headerAt("Skyriding")
+    local sSK = L.sectionAt()
+    local skW = GUI:CreateFormSlider(sSK.frame, nil, 0, 10, 1, "skyridingHUD", layeringDB, RefreshSkyriding,
+        { description = "Render layer for the skyriding vigor and dynamic flight HUD shown while mounted." })
+    sSK.AddRow(row(sSK.frame, "Skyriding HUD", skW))
+    L.closeSection(sSK)
+
+    L.finish()
 end
 
 local function CreateHUDLayeringPage(parent)

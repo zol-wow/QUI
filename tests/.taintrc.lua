@@ -11,6 +11,7 @@ return {
         "modules/chat/",
         "modules/groupframes/",
         "modules/actionbars/",
+		"modules/damage_meter/",
     },
     strict_unwrap_paths = {
         -- Safe* unwrap helpers are stricter in CDM: cooldown-secret values

@@ -47,10 +47,33 @@ assert_true(r:isSafeSinkFunction("MyHelpers.DoThing"), "extension registered")
 r:addUnwrap("MyHelpers.SafeAccess")
 assert_true(r:isUnwrap("MyHelpers.SafeAccess"), "extension unwrap")
 
+-- Secret-returning functions: produce a secret-tagged return value when given
+-- a secret-tagged argument. The C_StringUtil formatters are safe sinks (you
+-- may pass secret args) AND secret-returning (the result is itself tainted).
+-- LHS assignment from one of these calls must mark the LHS as tainted so
+-- downstream comparisons get caught — this is the analyzer gap that allowed
+-- the damage_meter.lua:906 taint crash to slip past static analysis.
+assert_true(r:isSecretReturning("C_StringUtil.TruncateWhenZero"),
+    "TruncateWhenZero is secret-returning")
+assert_true(r:isSecretReturning("C_StringUtil.RoundToNearestString"),
+    "RoundToNearestString is secret-returning")
+assert_true(r:isSecretReturning("C_StringUtil.FloorToNearestString"),
+    "FloorToNearestString is secret-returning")
+assert_true(r:isSecretReturning("C_StringUtil.WrapString"),
+    "WrapString is secret-returning")
+assert_false(r:isSecretReturning("tonumber"), "tonumber is not secret-returning")
+assert_false(r:isSecretReturning("Helpers.IsSecretValue"),
+    "guards are not secret-returning")
+
+r:addSecretReturning("MyHelpers.WrapSecret")
+assert_true(r:isSecretReturning("MyHelpers.WrapSecret"), "extension registered")
+
 -- Verify two instances don't share mutation
 local r2 = Registry.new()
 assert_false(r2:isSource("C_Spell.GetSpellCharges"), "second instance has clean sources")
 assert_false(r2:isSafeSinkFunction("MyHelpers.DoThing"), "second instance has clean sinks")
 assert_false(r2:isUnwrap("MyHelpers.SafeAccess"), "second instance has clean unwraps")
+assert_false(r2:isSecretReturning("MyHelpers.WrapSecret"),
+    "second instance has clean secretReturning")
 
 print("registry test passed")

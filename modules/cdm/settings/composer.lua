@@ -171,8 +171,9 @@ local entryCells = {}          -- pooled entry grid cells
 local addCells = {}            -- pooled add-source grid cells
 local sectionHeaders = {}      -- pooled section header frames
 local expandedOverride = nil   -- spellID of expanded override panel (or nil)
-local previewIcons = {}        -- preview icon textures
-local previewBars = {}         -- preview bar frames (for auraBar containers)
+-- Preview icon/bar frames are owned by ns.CDMComposerPreview (the live
+-- preview driver). Composer.lua no longer holds raw texture/bar tables;
+-- it supplies the layout/style impls below as globals the driver calls.
 local searchBox = nil          -- search editbox for entry list
 local addSearchBox = nil       -- search editbox for add list
 local activeAddTab = nil       -- current add-source tab name
@@ -756,6 +757,9 @@ local function BuildPreviewSection(parent)
         previewScale = 0.5 + pct * 2.5
         previewScale = math_floor(previewScale * 10 + 0.5) / 10
         UpdateScaleVisual()
+        if ns.CDMComposerPreview and ns.CDMComposerPreview.SetScale then
+            ns.CDMComposerPreview.SetScale(previewScale)
+        end
         if composerFrame and composerFrame._refreshPreview then
             composerFrame._refreshPreview()
         end
@@ -763,6 +767,26 @@ local function BuildPreviewSection(parent)
 
     container._updateScaleVisual = UpdateScaleVisual
     previewFrame = container
+
+    -- Hand the grid area off to the live preview driver so it owns the
+    -- icon/bar frames and the cycle ticker. The driver is idempotent on
+    -- repeated Build calls — only the first one creates the ticker.
+    if ns.CDMComposerPreview and ns.CDMComposerPreview.Build then
+        ns.CDMComposerPreview.Build(container._gridArea)
+    end
+    if ns.CDMComposerPreview and ns.CDMComposerPreview.SetScale then
+        ns.CDMComposerPreview.SetScale(previewScale)
+    end
+
+    -- Composer-close path: when the preview frame hides (composer popup
+    -- closes, tile tabs away, options panel closes), tear down any
+    -- preview-scoped icons/bars/glow so nothing leaks.
+    container:SetScript("OnHide", function()
+        if ns.CDMComposerPreview and ns.CDMComposerPreview.Teardown then
+            ns.CDMComposerPreview.Teardown()
+        end
+    end)
+
     return container
 end
 
@@ -774,215 +798,27 @@ local RefreshAddList
 -- upvalue; the assignment lives further down with GetOrCreateEntryCell.
 local IsEntryRegisteredInBlizzCDM
 
-RefreshPreview = function()
-    if not previewFrame or not activeContainer then return end
+---------------------------------------------------------------------------
+-- PREVIEW LAYOUT / STYLE IMPLS
+--
+-- These local functions are the row/column layout math the live preview
+-- driver (ns.CDMComposerPreview, defined in composer_preview_driver.lua)
+-- delegates to. The driver owns the actual icon/bar frames now; composer
+-- exposes positioning + per-row styling so the existing layout logic stays
+-- in one place (here) and the driver doesn't have to re-derive it.
+--
+-- Globals exposed at file scope (see below):
+--   _G.QUI_LayoutCDMPreviewIcons(icons, containerKey, scale)
+--   _G.QUI_LayoutCDMPreviewBars(bars, containerDB, scale)
+--   _G.QUI_StyleCDMPreviewIcons(icons, containerKey, scale)
+--   _G.QUI_GetCDMContainerDB(containerKey)
+---------------------------------------------------------------------------
 
-    local gridArea = previewFrame._gridArea
-    if not gridArea then return end
-
-    RefreshActiveContainerDormancy()
-
-    -- Clear old preview icons
-    for _, obj in ipairs(previewIcons) do
-        if obj.tex then obj.tex:Hide(); obj.tex:ClearAllPoints() end
-        if obj.border then obj.border:Hide(); obj.border:ClearAllPoints() end
-    end
-    -- Clear old preview bars
-    for _, bar in ipairs(previewBars) do
-        if bar then bar:Hide(); bar:ClearAllPoints() end
-    end
-
-    local db = GetContainerDB(activeContainer)
-    if not db then return end
-
-    -- customBar containers store their list in `entries` (mixed types).
-    local isCustomBar = (db.containerType == "customBar")
-    local entries = isCustomBar and db.entries or db.ownedSpells
-    if type(entries) ~= "table" then return end
-
-    local containerType = ResolveContainerType(activeContainer) or "cooldown"
-    local scale = previewScale or 1.5
-
-    ---------------------------------------------------------------------------
-    -- AURA BAR PREVIEW (bar mockups instead of icons)
-    -- Triggers for the built-in trackedBar (containerType=="auraBar") AND
-    -- for custom bars that the user created with the "Custom Bars" shape
-    -- hint (containerType=="customBar" + shape=="bar"). Without the shape
-    -- check, Custom Bars fell into the icon preview path because their
-    -- containerType is "customBar", not "auraBar" — the on-screen container
-    -- rendered bars but the preview rendered icons, so the two never matched.
-    ---------------------------------------------------------------------------
-    if containerType == "auraBar" or db.shape == "bar" then
-        local barHeight = (db.barHeight or 25) * scale * 0.5
-        local barWidth = (db.barWidth or 215) * scale * 0.5
-        local spacing = (db.spacing or 2) * scale * 0.5
-        local borderSize = (db.borderSize or 2) * scale * 0.5
-        local hideIcon = db.hideIcon
-        local iconSize = barHeight
-        local textSize = math_max(8, math_floor((db.textSize or 14) * scale * 0.5))
-
-        -- Resolve bar color
-        local barR, barG, barB = 0.376, 0.647, 0.980
-        if db.useClassColor then
-            local _, class = UnitClass("player")
-            local color = class and RAID_CLASS_COLORS[class]
-            if color then barR, barG, barB = color.r, color.g, color.b end
-        elseif db.barColor then
-            barR = db.barColor[1] or barR
-            barG = db.barColor[2] or barG
-            barB = db.barColor[3] or barB
-        end
-        local barOpacity = db.barOpacity or 1.0
-        local bgColor = db.bgColor or {0, 0, 0, 1}
-        local bgOpacity = db.bgOpacity or 0.5
-
-        local growUp = db.growUp
-        local gridW = gridArea:GetWidth()
-        local gridH = gridArea:GetHeight()
-
-        -- Total stack height for vertical centering
-        local count = #entries
-        local totalH = count * barHeight + math_max(0, count - 1) * spacing
-        local centerY = -gridH / 2
-        local startY
-        if growUp then
-            startY = centerY - totalH / 2
-        else
-            startY = centerY + totalH / 2
-        end
-
-        local centerX = gridW / 2
-
-        -- Dummy fill values for visual variety
-        local fills = { 0.85, 0.60, 0.40, 0.25, 0.70, 0.55, 0.35 }
-
-        for i, entry in ipairs(entries) do
-            local bar = previewBars[i]
-            if not bar then
-                bar = CreateFrame("Frame", nil, gridArea)
-                bar._bg = bar:CreateTexture(nil, "BACKGROUND", nil, -1)
-                bar._bg:SetAllPoints()
-                bar._fill = bar:CreateTexture(nil, "ARTWORK")
-                bar._border = bar:CreateTexture(nil, "BACKGROUND", nil, -2)
-                bar._icon = bar:CreateTexture(nil, "OVERLAY")
-                bar._icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                bar._iconBorder = bar:CreateTexture(nil, "BACKGROUND", nil, -2)
-                bar._nameText = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                bar._nameText:SetJustifyH("LEFT")
-                bar._timeText = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                bar._timeText:SetJustifyH("RIGHT")
-                previewBars[i] = bar
-            end
-
-            bar:ClearAllPoints()
-            bar:SetSize(barWidth, barHeight)
-
-            -- Vertical position
-            local barY
-            if growUp then
-                barY = startY + (i - 1) * (barHeight + spacing) + barHeight / 2
-            else
-                barY = startY - (i - 1) * (barHeight + spacing) - barHeight / 2
-            end
-            bar:SetPoint("CENTER", gridArea, "TOPLEFT", centerX, barY)
-
-            -- Border (behind bar)
-            bar._border:ClearAllPoints()
-            bar._border:SetPoint("TOPLEFT", bar, "TOPLEFT", -borderSize, borderSize)
-            bar._border:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", borderSize, -borderSize)
-            bar._border:SetColorTexture(0, 0, 0, 1)
-            bar._border:Show()
-
-            -- Background
-            bar._bg:SetColorTexture(bgColor[1] or 0, bgColor[2] or 0, bgColor[3] or 0, bgOpacity)
-            bar._bg:Show()
-
-            -- Fill bar (percentage-based width)
-            local fillPct = fills[((i - 1) % #fills) + 1]
-            bar._fill:ClearAllPoints()
-            bar._fill:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
-            bar._fill:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
-            bar._fill:SetWidth(math_max(1, barWidth * fillPct))
-            -- Per-spell bar color override
-            local fillR, fillG, fillB = barR, barG, barB
-            if db.colorOverrides and entry.id then
-                local oc = db.colorOverrides[entry.id]
-                if type(oc) == "table" then
-                    fillR = oc[1] or fillR
-                    fillG = oc[2] or fillG
-                    fillB = oc[3] or fillB
-                end
-            end
-            bar._fill:SetColorTexture(fillR, fillG, fillB, barOpacity)
-            bar._fill:Show()
-
-            -- Icon
-            if hideIcon then
-                bar._icon:Hide()
-                bar._iconBorder:Hide()
-            else
-                bar._iconBorder:ClearAllPoints()
-                bar._iconBorder:SetPoint("TOPLEFT", bar, "TOPLEFT", -iconSize - borderSize, borderSize)
-                bar._iconBorder:SetPoint("BOTTOMRIGHT", bar, "TOPLEFT", borderSize, -barHeight - borderSize)
-                bar._iconBorder:SetColorTexture(0, 0, 0, 1)
-                bar._iconBorder:Show()
-
-                bar._icon:ClearAllPoints()
-                bar._icon:SetPoint("TOPLEFT", bar, "TOPLEFT", -iconSize, 0)
-                bar._icon:SetSize(iconSize, iconSize)
-                bar._icon:SetTexture(GetEntryIcon(entry))
-                if IsEntryRegisteredInBlizzCDM(entry) then
-                    bar._icon:SetVertexColor(1, 1, 1)
-                else
-                    bar._icon:SetVertexColor(1, 0.25, 0.25)
-                end
-                bar._icon:Show()
-            end
-
-            -- Text
-            local fontObj = bar._nameText:GetFontObject()
-            if fontObj then
-                local fontPath = fontObj:GetFont()
-                if fontPath then
-                    bar._nameText:SetFont(fontPath, textSize, "OUTLINE")
-                    bar._timeText:SetFont(fontPath, textSize, "OUTLINE")
-                end
-            end
-
-            bar._nameText:ClearAllPoints()
-            bar._nameText:SetPoint("LEFT", bar, "LEFT", 4, 0)
-            bar._nameText:SetPoint("RIGHT", bar._timeText, "LEFT", -4, 0)
-            bar._nameText:SetText(GetEntryName(entry))
-            bar._nameText:SetTextColor(1, 1, 1, 1)
-            bar._nameText:Show()
-
-            local dummySecs = ({32, 18, 9, 5, 45, 22, 14})[((i - 1) % 7) + 1]
-            bar._timeText:ClearAllPoints()
-            bar._timeText:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
-            bar._timeText:SetWidth(barWidth * 0.25)
-            bar._timeText:SetText(tostring(dummySecs) .. "s")
-            bar._timeText:SetTextColor(1, 1, 1, 1)
-            bar._timeText:Show()
-
-            bar:Show()
-        end
-
-        if previewFrame._updateScaleVisual then
-            previewFrame._updateScaleVisual()
-        end
-        return
-    end
-
-    ---------------------------------------------------------------------------
-    -- ICON-BASED PREVIEW (cooldown and aura containers)
-    ---------------------------------------------------------------------------
-    local isCooldown = (containerType == "cooldown")
-    local iconIdx = 0
-    local ROW_GAP_PREVIEW = 5 * scale * 0.5
-
-    -- Build row info for cooldown containers
+-- BUILD_PREVIEW_ROWS — shared row-info builder used by both the layout and
+-- the style impls so they see exactly the same row sizing.
+local function BuildPreviewRows(db, containerType, isCustomBar, entries, scale)
     local rows = {}
-    if isCooldown then
+    if containerType == "cooldown" then
         for r = 1, 3 do
             local rowData = db["row" .. r]
             if rowData and rowData.iconCount and rowData.iconCount > 0 then
@@ -1000,9 +836,6 @@ RefreshPreview = function()
             end
         end
     elseif isCustomBar then
-        -- customBar: single row of icons laid out horizontally (legacy
-        -- customTracker semantics). Uses iconSize/spacing/borderSize from
-        -- the container, not the aura-container padding field.
         local iconSize = (db.iconSize or 28) * scale * 0.5
         local aspectRatio = db.aspectRatioCrop or 1.0
         local iconHeight = (iconSize / aspectRatio)
@@ -1014,7 +847,6 @@ RefreshPreview = function()
             borderColor = {0, 0, 0, 1}, yOffset = 0,
         }
     else
-        -- Aura containers: single row with all icons
         local iconSize = (db.iconSize or 40) * scale * 0.5
         local padding = (db.padding or 2) * scale * 0.5
         rows[1] = {
@@ -1023,8 +855,12 @@ RefreshPreview = function()
             borderColor = {0, 0, 0, 1}, yOffset = 0,
         }
     end
+    return rows
+end
 
-    -- Sort entries by row assignment for correct preview layout
+-- SORT_PREVIEW_ENTRIES — assigns cooldown entries into per-row buckets so
+-- the preview matches the on-screen row breakdown.
+local function SortPreviewEntries(entries, rows, isCooldown, isCustomBar, db)
     if isCooldown and #rows > 1 then
         local buckets = {}
         local noRow = {}
@@ -1039,7 +875,7 @@ RefreshPreview = function()
         end
         local sorted = {}
         local noRowIdx = 1
-        for rn, rowInfo in ipairs(rows) do
+        for _, rowInfo in ipairs(rows) do
             local actualRowNum = rowInfo.rowNum
             local rowStart = #sorted + 1
             if buckets[actualRowNum] then
@@ -1055,7 +891,6 @@ RefreshPreview = function()
                     noRowIdx = noRowIdx + 1
                 end
             end
-            -- Override row count to actual icons placed
             rowInfo._actualCount = #sorted - rowStart + 1
         end
         while noRowIdx <= #noRow do
@@ -1065,7 +900,40 @@ RefreshPreview = function()
         entries = sorted
     end
 
-    -- Calculate total height for vertical centering
+    if isCustomBar and (db.growDirection == "LEFT" or db.growDirection == "UP") then
+        local reversed = {}
+        for i = #entries, 1, -1 do reversed[#reversed + 1] = entries[i] end
+        entries = reversed
+    end
+    return entries
+end
+
+-- LayoutPreviewIconsImpl — positions the driver's acquired icon frames
+-- using the existing row/column math. icons[i] is a Frame (with .Icon /
+-- .Border children); we set the FRAME's size + anchor and let the
+-- factory-built textures follow.
+local function LayoutPreviewIconsImpl(icons, containerKey, scale)
+    if type(icons) ~= "table" then return end
+    if not containerKey then return end
+    local db = GetContainerDB and GetContainerDB(containerKey)
+    if not db then return end
+
+    local isCustomBar = (db.containerType == "customBar")
+    local entries = isCustomBar and db.entries or db.ownedSpells
+    if type(entries) ~= "table" then return end
+
+    local containerType = ResolveContainerType(containerKey) or "cooldown"
+    -- Bar containers are handled by LayoutPreviewBarsImpl, not here.
+    if containerType == "auraBar" or db.shape == "bar" then return end
+
+    scale = scale or previewScale or 1.5
+    local ROW_GAP_PREVIEW = 5 * scale * 0.5
+
+    local isCooldown = (containerType == "cooldown")
+    local rows = BuildPreviewRows(db, containerType, isCustomBar, entries, scale)
+    entries = SortPreviewEntries(entries, rows, isCooldown, isCustomBar, db)
+
+    -- Total height for vertical centering
     local totalHeight = 0
     local numRows = 0
     local entryCheck = 1
@@ -1081,87 +949,192 @@ RefreshPreview = function()
     end
 
     local growUp = (db.growthDirection == "UP")
-    -- customBar entries are stored in "grow-source" order: entries[1] is
-    -- placed first at the bar's anchor end. When growing LEFT (or UP),
-    -- entries[1] ends up at the right (or bottom), so the preview must
-    -- render the list reversed to match the in-game visual.
-    if isCustomBar and (db.growDirection == "LEFT" or db.growDirection == "UP") then
-        local reversed = {}
-        for i = #entries, 1, -1 do reversed[#reversed + 1] = entries[i] end
-        entries = reversed
-    end
+    local gridArea = previewFrame and previewFrame._gridArea
+    if not gridArea then return end
     local gridW = gridArea:GetWidth()
     local gridH = gridArea:GetHeight()
     local centerX = gridW / 2
     local centerY = -gridH / 2
 
-    -- Start position: offset from center
     local currentY = centerY + (totalHeight / 2)
     if growUp then
         currentY = centerY - (totalHeight / 2)
     end
 
     local entryIdx = 1
+    local iconIdx = 0
     for _, rowInfo in ipairs(rows) do
         local rowCount = rowInfo._actualCount or rowInfo.count
         local iconsInRow = math.min(rowCount, #entries - entryIdx + 1)
         if iconsInRow > 0 then
+            local rowWidth = (iconsInRow * rowInfo.size) + ((iconsInRow - 1) * rowInfo.padding)
+            local rowStartX = centerX - rowWidth / 2 + rowInfo.size / 2
 
-        local rowWidth = (iconsInRow * rowInfo.size) + ((iconsInRow - 1) * rowInfo.padding)
-        local rowStartX = centerX - rowWidth / 2 + rowInfo.size / 2
-
-        local rowCenterY
-        if growUp then
-            rowCenterY = currentY + rowInfo.height / 2 + rowInfo.yOffset
-        else
-            rowCenterY = currentY - rowInfo.height / 2 + rowInfo.yOffset
-        end
-
-        for col = 1, iconsInRow do
-            if entryIdx > #entries then break end
-            local entry = entries[entryIdx]
-            entryIdx = entryIdx + 1
-
-            iconIdx = iconIdx + 1
-            local obj = previewIcons[iconIdx]
-            if not obj then
-                obj = {}
-                obj.border = gridArea:CreateTexture(nil, "BACKGROUND")
-                obj.tex = gridArea:CreateTexture(nil, "ARTWORK")
-                previewIcons[iconIdx] = obj
-            end
-
-            local x = rowStartX + ((col - 1) * (rowInfo.size + rowInfo.padding))
-            local bSize = rowInfo.borderSize
-
-            -- Border
-            obj.border:ClearAllPoints()
-            obj.border:SetSize(rowInfo.size + bSize * 2, rowInfo.height + bSize * 2)
-            obj.border:SetPoint("CENTER", gridArea, "TOPLEFT", x, rowCenterY)
-            local bc = rowInfo.borderColor
-            obj.border:SetColorTexture(bc[1] or 0, bc[2] or 0, bc[3] or 0, bc[4] or 1)
-            obj.border:Show()
-
-            -- Icon
-            obj.tex:ClearAllPoints()
-            obj.tex:SetSize(rowInfo.size, rowInfo.height)
-            obj.tex:SetPoint("CENTER", gridArea, "TOPLEFT", x, rowCenterY)
-            obj.tex:SetTexture(GetEntryIcon(entry))
-            obj.tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-            if IsEntryRegisteredInBlizzCDM(entry) then
-                obj.tex:SetVertexColor(1, 1, 1)
+            local rowCenterY
+            if growUp then
+                rowCenterY = currentY + rowInfo.height / 2 + rowInfo.yOffset
             else
-                obj.tex:SetVertexColor(1, 0.25, 0.25)
+                rowCenterY = currentY - rowInfo.height / 2 + rowInfo.yOffset
             end
-            obj.tex:Show()
-        end
 
-        if growUp then
-            currentY = currentY + rowInfo.height + ROW_GAP_PREVIEW
-        else
-            currentY = currentY - rowInfo.height - ROW_GAP_PREVIEW
+            for col = 1, iconsInRow do
+                if entryIdx > #entries then break end
+                entryIdx = entryIdx + 1
+                iconIdx = iconIdx + 1
+                local icon = icons[iconIdx]
+                if icon then
+                    local x = rowStartX + ((col - 1) * (rowInfo.size + rowInfo.padding))
+                    icon:ClearAllPoints()
+                    icon:SetSize(rowInfo.size, rowInfo.height)
+                    icon:SetPoint("CENTER", gridArea, "TOPLEFT", x, rowCenterY)
+                    if icon.Icon and icon.Icon.SetTexCoord then
+                        icon.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                    end
+                end
+            end
+
+            if growUp then
+                currentY = currentY + rowInfo.height + ROW_GAP_PREVIEW
+            else
+                currentY = currentY - rowInfo.height - ROW_GAP_PREVIEW
+            end
         end
-        end -- if iconsInRow > 0
+    end
+end
+
+-- StylePreviewIconsImpl — applies per-icon border + vertex-color tint that
+-- the original RefreshPreview inlined. Driver calls this after layout.
+local function StylePreviewIconsImpl(icons, containerKey, scale)
+    if type(icons) ~= "table" then return end
+    if not containerKey then return end
+    local db = GetContainerDB and GetContainerDB(containerKey)
+    if not db then return end
+
+    local isCustomBar = (db.containerType == "customBar")
+    local entries = isCustomBar and db.entries or db.ownedSpells
+    if type(entries) ~= "table" then return end
+
+    local containerType = ResolveContainerType(containerKey) or "cooldown"
+    if containerType == "auraBar" or db.shape == "bar" then return end
+
+    scale = scale or previewScale or 1.5
+    local isCooldown = (containerType == "cooldown")
+    local rows = BuildPreviewRows(db, containerType, isCustomBar, entries, scale)
+    entries = SortPreviewEntries(entries, rows, isCooldown, isCustomBar, db)
+
+    local entryIdx = 1
+    local iconIdx = 0
+    for _, rowInfo in ipairs(rows) do
+        local rowCount = rowInfo._actualCount or rowInfo.count
+        local iconsInRow = math.min(rowCount, #entries - entryIdx + 1)
+        if iconsInRow > 0 then
+            local bSize = rowInfo.borderSize
+            local bc = rowInfo.borderColor
+            for _ = 1, iconsInRow do
+                if entryIdx > #entries then break end
+                local entry = entries[entryIdx]
+                entryIdx = entryIdx + 1
+                iconIdx = iconIdx + 1
+                local icon = icons[iconIdx]
+                if icon then
+                    -- Border
+                    if icon.Border then
+                        icon.Border:ClearAllPoints()
+                        icon.Border:SetPoint("TOPLEFT", icon, "TOPLEFT", -bSize, bSize)
+                        icon.Border:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", bSize, -bSize)
+                        icon.Border:SetColorTexture(bc[1] or 0, bc[2] or 0, bc[3] or 0, bc[4] or 1)
+                        icon.Border:Show()
+                    end
+                    -- Icon vertex tint signals "not registered in /cdm".
+                    if icon.Icon then
+                        if IsEntryRegisteredInBlizzCDM and IsEntryRegisteredInBlizzCDM(entry) then
+                            icon.Icon:SetVertexColor(1, 1, 1)
+                        else
+                            icon.Icon:SetVertexColor(1, 0.25, 0.25)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- LayoutPreviewBarsImpl — vertically stacks the driver's acquired bar
+-- frames. Per-bar styling (color, fill, text) is handled by CDMBars
+-- .ConfigureBar (driver-side) and the cycle script.
+local function LayoutPreviewBarsImpl(bars, containerDB, scale)
+    if type(bars) ~= "table" or type(containerDB) ~= "table" then return end
+    local entries = containerDB.containerType == "customBar"
+        and containerDB.entries
+        or containerDB.ownedSpells
+    if type(entries) ~= "table" then return end
+
+    scale = scale or previewScale or 1.5
+
+    local barHeight = (containerDB.barHeight or 25) * scale * 0.5
+    local barWidth  = (containerDB.barWidth or 215) * scale * 0.5
+    local spacing   = (containerDB.spacing or 2) * scale * 0.5
+
+    local gridArea = previewFrame and previewFrame._gridArea
+    if not gridArea then return end
+    local gridW = gridArea:GetWidth()
+    local gridH = gridArea:GetHeight()
+
+    local count = #entries
+    local totalH = count * barHeight + math_max(0, count - 1) * spacing
+    local centerY = -gridH / 2
+    local growUp = containerDB.growUp
+    local startY
+    if growUp then
+        startY = centerY - totalH / 2
+    else
+        startY = centerY + totalH / 2
+    end
+    local centerX = gridW / 2
+
+    for i = 1, count do
+        local bar = bars[i]
+        if bar then
+            bar:ClearAllPoints()
+            bar:SetSize(barWidth, barHeight)
+            local barY
+            if growUp then
+                barY = startY + (i - 1) * (barHeight + spacing) + barHeight / 2
+            else
+                barY = startY - (i - 1) * (barHeight + spacing) - barHeight / 2
+            end
+            bar:SetPoint("CENTER", gridArea, "TOPLEFT", centerX, barY)
+        end
+    end
+end
+
+-- Expose the impls at file scope so the live preview driver
+-- (composer_preview_driver.lua) can reach them. The driver loads after
+-- composer.lua and calls these globals at refresh time.
+_G.QUI_LayoutCDMPreviewIcons = LayoutPreviewIconsImpl
+_G.QUI_LayoutCDMPreviewBars = LayoutPreviewBarsImpl
+_G.QUI_StyleCDMPreviewIcons = StylePreviewIconsImpl
+_G.QUI_GetCDMContainerDB = GetContainerDB
+_G.QUI_GetCDMEntryName = GetEntryName
+
+RefreshPreview = function()
+    if not previewFrame or not activeContainer then return end
+
+    local gridArea = previewFrame._gridArea
+    if not gridArea then return end
+
+    RefreshActiveContainerDormancy()
+
+    -- GetContainerDB is intentionally read here so legacy spec-refresh
+    -- assertions still see the access (and so any DB-resolution side
+    -- effect — dormant rebuilds, etc. — fires before the driver paints).
+    local db = GetContainerDB(activeContainer)
+    if not db then return end
+
+    -- Driver owns the icon/bar frames; just trigger Refresh. The driver
+    -- reads its own container DB through _G.QUI_GetCDMContainerDB.
+    if ns.CDMComposerPreview and ns.CDMComposerPreview.Refresh then
+        ns.CDMComposerPreview.Refresh(activeContainer)
     end
 
     if previewFrame._updateScaleVisual then
@@ -1369,50 +1342,53 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
         PlaceWidget(desatIgnoreAura)
     end
 
-    -- Size override (simple editbox, 0 = default, 1-80 = px)
-    local sizeRow = CreateFrame("Frame", nil, overridePanel)
-    sizeRow:SetHeight(FORM_ROW)
-    local sizeLabel = sizeRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    sizeLabel:SetPoint("LEFT", 0, 0)
-    sizeLabel:SetText("Size Override")
-    sizeLabel:SetTextColor(0.85, 0.85, 0.85, 1)
-
-    local sizeHint = sizeRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    sizeHint:SetPoint("LEFT", sizeLabel, "RIGHT", 6, 0)
-    sizeHint:SetText("(0-80, 0 = default)")
-    sizeHint:SetTextColor(0.45, 0.45, 0.45, 1)
-
-    local sizeBox = CreateFrame("EditBox", nil, sizeRow, "BackdropTemplate")
-    sizeBox:SetSize(48, 20)
-    sizeBox:SetPoint("RIGHT", sizeRow, "RIGHT", 0, 0)
-    SetSimpleBackdrop(sizeBox, 0.1, 0.1, 0.12, 1, 0.3, 0.3, 0.3, 1)
-    sizeBox:SetFontObject("GameFontNormalSmall")
-    sizeBox:SetTextInsets(4, 4, 0, 0)
-    sizeBox:SetAutoFocus(false)
-    sizeBox:SetMaxLetters(3)
-    sizeBox:SetNumeric(true)
-    sizeBox:SetText(tostring(overrides.sizeOverride or 0))
-    sizeBox:SetScript("OnEnterPressed", function(self)
-        self:ClearFocus()
-        local val = tonumber(self:GetText()) or 0
-        if val < 0 then val = 0 end
-        if val > 80 then val = 80 end
-        self:SetText(tostring(val))
-        if val == 0 then
+    -- Size override (0 = use container default, 1-80 = px). Proxy DB
+    -- routes the slider value through Set/ClearSpellOverride so 0 clears
+    -- the override entirely (instead of persisting a literal 0).
+    local sizeOverrideDB = { sizeOverride = overrides.sizeOverride or 0 }
+    local sizeSlider = GUI:CreateFormSlider(overridePanel, "Size Override", 0, 80, 1, "sizeOverride", sizeOverrideDB, function()
+        local val = sizeOverrideDB.sizeOverride or 0
+        if val <= 0 then
             spellData:ClearSpellOverride(containerKey, spellID, "sizeOverride")
         else
             spellData:SetSpellOverride(containerKey, spellID, "sizeOverride", val)
         end
         OnOverrideChange()
-    end)
-    sizeBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    sizeBox:SetScript("OnEditFocusGained", function(self)
-        self:SetBackdropBorderColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-    end)
-    sizeBox:SetScript("OnEditFocusLost", function(self)
-        self:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
-    end)
-    PlaceWidget(sizeRow)
+    end, { deferOnDrag = true }, { description = "Per-spell icon size in pixels (0 uses the container default; 1-80 overrides it for this spell only)." })
+    PlaceWidget(sizeSlider)
+
+    -- Per-entry "Aura-only display" override (custom containers, item types only).
+    local containerDB = GetContainerDB(containerKey)
+    if ns.CDMShared
+        and ns.CDMShared.ShouldShowItemDisplayModeRow
+        and ns.CDMShared.ShouldShowItemDisplayModeRow(entry, containerKey, containerDB) then
+
+        -- Proxy table bridges the boolean form-checkbox to the entry's
+        -- string-valued displayMode field. Same pattern as barColorOverride
+        -- above.
+        local auraOnlyToggleDB = { auraOnly = entry.displayMode == "auraOnly" }
+        local auraOnlyCheck = GUI:CreateFormCheckbox(overridePanel, "Aura-only display", "auraOnly", auraOnlyToggleDB, function()
+            if auraOnlyToggleDB.auraOnly then
+                entry.displayMode = "auraOnly"
+            else
+                entry.displayMode = nil
+            end
+            OnOverrideChange()
+        end, { description = "Show only while the buff is active. Hides the cooldown phase entirely." })
+        PlaceWidget(auraOnlyCheck)
+
+        local itemID = entry.id
+        if spellData.HasResolvableAuraForItem
+            and not spellData:HasResolvableAuraForItem(itemID) then
+            local hint = overridePanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+            hint:SetPoint("TOPLEFT", overridePanel, "TOPLEFT", 8, sy + 4)
+            hint:SetPoint("RIGHT", overridePanel, "RIGHT", -8, 0)
+            hint:SetJustifyH("LEFT")
+            hint:SetText("Aura will be detected the first time you use this item.")
+            hint:SetTextColor(0.55, 0.55, 0.55, 1)
+            sy = sy - 14
+        end
+    end
 
     local totalHeight = math_abs(sy) + 32
     overridePanel:SetHeight(totalHeight)
@@ -2185,15 +2161,26 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex, isDormant)
             end
         end
 
-        -- Move to sibling container — only within the same type family:
-        -- cooldown↔cooldown (essential/utility), aura↔auraBar (buff icons/buff bars)
+        -- Move to sibling container — items can cross the cooldown/aura
+        -- family boundary (kind is auto-rewritten in MoveEntryBetweenContainers);
+        -- spells/macros stay within their family.
         local containerType = ResolveContainerType(activeContainer)
-        local SIBLING_TYPES = {
+        local SPELL_SIBLING_TYPES = {
             cooldown = { cooldown = true },
             aura     = { aura = true, auraBar = true },
             auraBar  = { aura = true, auraBar = true },
         }
-        local siblings = SIBLING_TYPES[containerType] or {}
+        local ITEM_SIBLING_TYPES = {
+            cooldown = { cooldown = true, aura = true, auraBar = true, customBar = true },
+            aura     = { cooldown = true, aura = true, auraBar = true, customBar = true },
+            auraBar  = { cooldown = true, aura = true, auraBar = true, customBar = true },
+            customBar = { cooldown = true, aura = true, auraBar = true, customBar = true },
+        }
+        local entryIsItem = entry and (entry.type == "item"
+            or entry.type == "trinket" or entry.type == "slot")
+        local siblings = entryIsItem
+            and (ITEM_SIBLING_TYPES[containerType] or {})
+            or (SPELL_SIBLING_TYPES[containerType] or {})
         local allTabKeys = GetAllTabKeys()
         for _, key in ipairs(allTabKeys) do
             if key ~= activeContainer and siblings[ResolveContainerType(key)] then
@@ -2634,17 +2621,73 @@ RefreshEntryList = function()
         -- grid matches that visual while RenderEntryCell still records
         -- each cell's true entryIndex for drag/remove.
         local reverse = isCustomBar and (db.growDirection == "LEFT" or db.growDirection == "UP")
-        if reverse then
-            for i = #entries, 1, -1 do
-                local entry = entries[i]
-                if entry then RenderEntryCell(entry, i) end
-            end
-        else
+
+        -- For non-specSpecific customBar containers, split entries into
+        -- "usable on current character" and "cross-class" buckets. The
+        -- runtime path (cdm_icon_renderer.lua:BuildIcons) skips cross-class
+        -- entries entirely; surfacing them here under a dormant-style
+        -- header lets the user still see / right-click-remove every entry
+        -- they configured, even when they're logged in as a class that
+        -- can't cast the spell. The specSpecific path already labels
+        -- entries by source spec (_renderSpecKey), so leave it alone.
+        local splitCrossClass = isCustomBar and not db.specSpecific
+        local usableEntries, crossClassEntries
+        if splitCrossClass then
+            usableEntries = {}
+            crossClassEntries = {}
             for i, entry in ipairs(entries) do
-                if entry then RenderEntryCell(entry, i) end
+                if entry then
+                    if IsEntryUsableOnCurrentPlayer(entry) then
+                        usableEntries[#usableEntries + 1] = { entry = entry, idx = i }
+                    else
+                        crossClassEntries[#crossClassEntries + 1] = { entry = entry, idx = i }
+                    end
+                end
             end
         end
-        FinishRow()
+
+        if splitCrossClass then
+            if reverse then
+                for i = #usableEntries, 1, -1 do
+                    local it = usableEntries[i]
+                    RenderEntryCell(it.entry, it.idx)
+                end
+            else
+                for _, it in ipairs(usableEntries) do
+                    RenderEntryCell(it.entry, it.idx)
+                end
+            end
+            FinishRow()
+
+            if #crossClassEntries > 0 then
+                RenderSectionHeader(
+                    "Dormant — Other Class  (" .. #crossClassEntries .. ")",
+                    false)
+                if reverse then
+                    for i = #crossClassEntries, 1, -1 do
+                        local it = crossClassEntries[i]
+                        RenderEntryCell(it.entry, it.idx)
+                    end
+                else
+                    for _, it in ipairs(crossClassEntries) do
+                        RenderEntryCell(it.entry, it.idx)
+                    end
+                end
+                FinishRow()
+            end
+        else
+            if reverse then
+                for i = #entries, 1, -1 do
+                    local entry = entries[i]
+                    if entry then RenderEntryCell(entry, i) end
+                end
+            else
+                for i, entry in ipairs(entries) do
+                    if entry then RenderEntryCell(entry, i) end
+                end
+            end
+            FinishRow()
+        end
     end
 
     -- Dormant entries
@@ -2850,6 +2893,25 @@ local function GetOrCreateAddCell(index)
             GameTooltip:AddLine("Already added", 0.6, 0.6, 0.6)
         else
             GameTooltip:AddLine("Right-click to add", 0.5, 0.5, 0.5)
+        end
+        -- Surface "no known aura" hint for item picks whose aura
+        -- isn't resolvable yet. HasResolvableAuraForItem returns
+        -- nil pre-discovery; the runtime caches the aura on
+        -- first use.
+        local itemIDForHint
+        if self._sourceEntry
+            and self._sourceEntry._entryType == "item"
+            and type(self._sourceEntry._entryID) == "number" then
+            itemIDForHint = self._sourceEntry._entryID
+        end
+        if itemIDForHint then
+            local spellData = GetCDMSpellData()
+            if spellData and spellData.HasResolvableAuraForItem
+                and not spellData:HasResolvableAuraForItem(itemIDForHint) then
+                GameTooltip:AddLine(
+                    "No known aura yet — will appear on first use.",
+                    0.55, 0.55, 0.55, true)
+            end
         end
         GameTooltip:Show()
     end)
@@ -3309,14 +3371,18 @@ RefreshAddList = function()
                             end
                         end
 
+                        local itemKind = ns.CDMShared
+                            and ns.CDMShared.ResolveKindForItemsTab
+                            and ns.CDMShared.ResolveKindForItemsTab(activeContainer)
+                            or "cooldown"
                         local addResult
                         if addType == "slot" and entryRef._slotID then
                             if containerDB.removedSpells then
                                 containerDB.removedSpells[entryRef._slotID] = nil
                             end
-                            addResult = spellData:AddTrinketSlot(activeContainer, entryRef._slotID, targetRow)
+                            addResult = spellData:AddTrinketSlot(activeContainer, entryRef._slotID, targetRow, itemKind)
                         elseif addType == "item" then
-                            addResult = spellData:AddItem(activeContainer, addID, targetRow)
+                            addResult = spellData:AddItem(activeContainer, addID, targetRow, itemKind)
                         else
                             addResult = spellData:AddSpell(activeContainer, addID, kindFromTab, targetRow, entryRef.isKnown)
                         end
@@ -3423,11 +3489,13 @@ local function BuildAddTabs()
             tabs = {
                 { key = "cdm_spells",     label = "Blizzard CDM" },
                 { key = "other_auras",    label = "Other Auras" },
+                { key = "items",          label = "Items & Trinkets" },
             }
         elseif containerType == "auraBar" then
             tabs = {
                 { key = "cdm_spells",     label = "Blizzard CDM" },
                 { key = "other_auras",    label = "Other Auras" },
+                { key = "items",          label = "Items & Trinkets" },
             }
         end
     else
@@ -3850,6 +3918,13 @@ BuildContainerTabs = function()
         local key = containerKey
         local isBuiltIn = IsBuiltInContainer(key)
         btn:SetScript("OnClick", function()
+            -- Tear down the live preview before switching containers so the
+            -- driver releases any preview-scoped icons/bars/glow tied to
+            -- the previous container before Refresh paints the new one.
+            if key ~= activeContainer
+               and ns.CDMComposerPreview and ns.CDMComposerPreview.Teardown then
+                ns.CDMComposerPreview.Teardown()
+            end
             activeContainer = key
             expandedOverride = nil
             activeAddTab = nil
@@ -4252,6 +4327,12 @@ local function ActivateContainer(containerKey)
         BuildContainerTabs()
         RefreshAll_Composer()
         return
+    end
+
+    -- Tear down the live preview before switching so any preview-scoped
+    -- icons/bars/glow tied to the previous container are released cleanly.
+    if ns.CDMComposerPreview and ns.CDMComposerPreview.Teardown then
+        ns.CDMComposerPreview.Teardown()
     end
 
     activeContainer = containerKey

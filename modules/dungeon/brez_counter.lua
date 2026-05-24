@@ -148,8 +148,8 @@ local function CreateBrezFrame()
     UIKit.CreateBorderLines(frame)
     UIKit.UpdateBorderLines(frame, 1, 0, 0, 0, 1)
 
-    -- Spell icon texture
-    local icon = frame:CreateTexture(nil, "BACKGROUND")
+    -- Spell icon texture (ARTWORK so backdrop bg redraws can't land on top of it)
+    local icon = frame:CreateTexture(nil, "ARTWORK")
     icon:SetAllPoints(frame)
     icon:SetTexture(REBIRTH_ICON_ID)
     icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)  -- Crop icon borders

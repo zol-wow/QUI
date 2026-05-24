@@ -32,6 +32,20 @@ local BUILTIN_SAFE_SINK_FUNCTIONS = {
     ["C_StringUtil.WrapString"]           = true,
 }
 
+-- Functions that PRODUCE a secret-tagged return value when handed a secret arg.
+-- A safe sink says "you can pass a secret here without erroring"; a secret-
+-- returning entry says "the result itself is secret". The C_StringUtil
+-- formatters are both — pass them through SetText and you're fine, but assign
+-- the result to a local and `== "0"` on it and you'll taint execution. Adding
+-- the function here makes the analyzer taint the LHS of such assignments so
+-- downstream comparisons are flagged.
+local BUILTIN_SECRET_RETURNING = {
+    ["C_StringUtil.RoundToNearestString"] = true,
+    ["C_StringUtil.FloorToNearestString"] = true,
+    ["C_StringUtil.TruncateWhenZero"]     = true,
+    ["C_StringUtil.WrapString"]           = true,
+}
+
 -- Guard predicates: when used as `if [not] G(x) then`, prove x non-secret in
 -- the appropriate branch. Both bare and Helpers.-qualified forms accepted.
 local BUILTIN_GUARDS = {
@@ -69,12 +83,14 @@ function M.new()
     self.guards            = {}
     self.unwraps           = {}
     self.cleanFields       = {}
+    self.secretReturning   = {}
     -- Seed built-ins (copy so two Registry.new() instances don't share mutation)
     for k, v in pairs(BUILTIN_SAFE_SINK_METHODS)    do self.safeSinkMethods[k]   = v end
     for k, v in pairs(BUILTIN_SAFE_SINK_FUNCTIONS)  do self.safeSinkFunctions[k] = v end
     for k, v in pairs(BUILTIN_GUARDS)               do self.guards[k]            = v end
     for k, v in pairs(BUILTIN_UNWRAPS)              do self.unwraps[k]           = v end
     for k, v in pairs(BUILTIN_CLEAN_FIELDS)         do self.cleanFields[k]       = v end
+    for k, v in pairs(BUILTIN_SECRET_RETURNING)     do self.secretReturning[k]   = v end
     return self
 end
 
@@ -95,5 +111,8 @@ function Registry:isUnwrap(name)            return self.unwraps[name]           
 
 function Registry:addCleanField(name)       self.cleanFields[name]       = true end
 function Registry:isCleanField(name)        return self.cleanFields[name]       == true end
+
+function Registry:addSecretReturning(name)  self.secretReturning[name]   = true end
+function Registry:isSecretReturning(name)   return self.secretReturning[name]   == true end
 
 return M

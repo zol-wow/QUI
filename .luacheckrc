@@ -58,6 +58,7 @@ read_globals = {
     "STANDARD_TEXT_FONT", "UIErrorsFrame", "UISpecialFrames",
     "MouseIsOver", "StaticPopup_Show", "StopDrag",
     "GENERAL", "MAX_TOTEMS", "NUM_CHAT_WINDOWS", "RAID_CLASS_COLORS",
+    "CUSTOM_CLASS_COLORS", "SetPortraitTexture",
 
     -- Time, combat, addon lifecycle
     "GetTime", "InCombatLockdown", "UpdateAddOnMemoryUsage", "GetAddOnMemoryUsage",
@@ -76,6 +77,7 @@ read_globals = {
     "UnitExists", "UnitCanAttack", "GetBindingKey",
     "UnitAffectingCombat", "UnitCastingInfo", "UnitChannelInfo",
     "UnitClass", "UnitHealthPercent", "UnitIsDead", "UnitName", "UnitRace",
+    "UnitPowerMax",
     "IsMouseButtonDown",
 
     -- Spells, actions, macros

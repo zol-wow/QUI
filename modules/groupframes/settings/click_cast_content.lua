@@ -418,6 +418,7 @@ local function BuildClickCastPings(content, startY, state)
             if refreshAllPingRows then refreshAllPingRows() else UpdateKeyText() end
         end)
         clearBtn:SetPoint("LEFT", captureBtn, "RIGHT", 6, 0)
+        GUI:AttachTooltip(clearBtn, "Remove the current keybind for this ping action. The action stays defined but is no longer bound to a key.", "Clear Binding")
 
         captureBtn.isCapturing = false
         captureBtn:EnableKeyboard(false)

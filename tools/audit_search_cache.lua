@@ -1,14 +1,13 @@
 local ROOT = "."
 local CACHE_PATH = "QUI_Options/search_cache.lua"
 
+-- Manual override for features that legitimately emit zero declarative
+-- settings but can't be detected structurally — i.e., ProviderFeatures:Register
+-- registrations whose UI is rendered by a separately-registered provider.
+-- Features registered via Registry:RegisterFeature(Schema.Feature(...)) are
+-- classified automatically by inspecting section kinds; see find_imperative.
 local KNOWN_ZERO_SETTING_FEATURES = {
-    autohidePage = true,
-    barHidingPage = true,
     bonusRollFrame = true,
-    clickCastPage = true,
-    frameLevelsPage = true,
-    skinningPage = true,
-    thirdPartyAnchoring = true,
 }
 
 local function normalize_path(path)
@@ -71,9 +70,57 @@ local function add_ref(refs, id, path, kind)
     ref.kinds[kind] = true
 end
 
+-- Walks `text` from `start_pos` (which must be a position of an opening
+-- `{`) and returns the position of the matching `}`. Returns nil if the
+-- braces don't balance (malformed source).
+local function find_balanced_brace(text, start_pos)
+    local depth = 0
+    local len = #text
+    for i = start_pos, len do
+        local c = text:sub(i, i)
+        if c == "{" then
+            depth = depth + 1
+        elseif c == "}" then
+            depth = depth - 1
+            if depth == 0 then
+                return i
+            end
+        end
+    end
+    return nil
+end
+
+-- Inspects a `Schema.Feature({...})` body and returns true if every
+-- `Schema.Section({...})` inside it has kind = "page" or "custom" — i.e.,
+-- the feature renders imperatively (via `build`/`render` functions) and
+-- has no declarative settings the generator could harvest.
+local function feature_is_imperative_only(feature_block)
+    local section_count = 0
+    local imperative_count = 0
+    local search_pos = 1
+    while true do
+        local sstart, _, sbrace = feature_block:find("Schema%.Section%s*%(%s*()%{", search_pos)
+        if not sstart then break end
+        local send = find_balanced_brace(feature_block, sbrace)
+        if not send then
+            -- Malformed source; bail out conservatively (not imperative).
+            return false
+        end
+        local section_text = feature_block:sub(sbrace, send)
+        local kind = section_text:match("kind%s*=%s*\"([^\"]+)\"")
+        section_count = section_count + 1
+        if kind == "page" or kind == "custom" then
+            imperative_count = imperative_count + 1
+        end
+        search_pos = send + 1
+    end
+    return section_count > 0 and section_count == imperative_count
+end
+
 local function scan_source_features(files)
     local registered = {}
     local tile_refs = {}
+    local imperative_features = {}
     local scan_errors = {}
 
     for _, path in ipairs(files) do
@@ -87,9 +134,30 @@ local function scan_source_features(files)
             for id in text:gmatch("SurfaceFeatures:Register%s*%(%s*%{.-id%s*=%s*\"([^\"]+)\"") do
                 add_ref(registered, id, path, "SurfaceFeatures")
             end
-            for block in text:gmatch("Registry:RegisterFeature%s*%(%s*Schema%.Feature%s*%(%s*%{(.-)sections%s*=") do
-                local id = block:match("id%s*=%s*\"([^\"]+)\"")
-                add_ref(registered, id, path, "Registry")
+
+            local search_pos = 1
+            while true do
+                local mstart, _, brace_pos = text:find("Registry:RegisterFeature%s*%(%s*Schema%.Feature%s*%(%s*()%{", search_pos)
+                if not mstart then break end
+                local end_pos = find_balanced_brace(text, brace_pos)
+                if not end_pos then
+                    search_pos = brace_pos + 1
+                else
+                    local feature_block = text:sub(brace_pos, end_pos)
+                    -- Extract the feature id from the prefix before `sections =`
+                    -- so we don't accidentally grab a nested Schema.Section's id
+                    -- when the feature's own id is a dynamic expression
+                    -- (e.g. `id = featureSpec.id`).
+                    local prefix = feature_block:match("^(.-)sections%s*=") or feature_block
+                    local id = prefix:match("id%s*=%s*\"([^\"]+)\"")
+                    if id then
+                        add_ref(registered, id, path, "Registry")
+                        if feature_is_imperative_only(feature_block) then
+                            imperative_features[id] = true
+                        end
+                    end
+                    search_pos = end_pos + 1
+                end
             end
 
             if path:match("/QUI_Options/tiles/") or path:match("^QUI_Options/tiles/") or path:match("/QUI_Options/init%.lua$") or path == "QUI_Options/init.lua" then
@@ -100,7 +168,7 @@ local function scan_source_features(files)
         end
     end
 
-    return registered, tile_refs, scan_errors
+    return registered, tile_refs, imperative_features, scan_errors
 end
 
 local function load_cache()
@@ -252,7 +320,7 @@ if not files then
     os.exit(2)
 end
 
-local registered, tile_refs, scan_errors = scan_source_features(files)
+local registered, tile_refs, imperative_features, scan_errors = scan_source_features(files)
 if #scan_errors > 0 then
     io.stderr:write("source scan reported " .. tostring(#scan_errors) .. " error(s):\n")
     for _, err in ipairs(scan_errors) do
@@ -268,11 +336,13 @@ local warnings = {}
 
 for _, id in ipairs(sorted_ids(registered)) do
     if (setting_counts[id] or 0) == 0 then
-        local message = "registered feature has zero settings: " .. id .. format_ref(registered[id])
-        if KNOWN_ZERO_SETTING_FEATURES[id] then
-            warnings[#warnings + 1] = message .. " [known]"
+        local ref_suffix = format_ref(registered[id])
+        if imperative_features[id] then
+            warnings[#warnings + 1] = "registered feature is imperative-only (all sections kind=page/custom): " .. id .. ref_suffix
+        elseif KNOWN_ZERO_SETTING_FEATURES[id] then
+            warnings[#warnings + 1] = "registered feature has zero settings: " .. id .. ref_suffix .. " [known]"
         else
-            errors[#errors + 1] = message
+            errors[#errors + 1] = "registered feature has zero settings: " .. id .. ref_suffix
         end
     elseif (setting_counts[id] or 0) <= 5 then
         warnings[#warnings + 1] = "registered feature has low settings count: " .. id .. "=" .. tostring(setting_counts[id]) .. format_ref(registered[id])

@@ -1,147 +1,216 @@
 --[[
     QUI Options - Autohide Tab
-    BuildAutohideTab for Autohide & Skinning page
+    BuildAutohideTab for Autohide & Skinning page. Migrated to V3 body
+    pattern (CreateAccentDotLabel + CreateSettingsCardGroup + BuildSettingRow).
 ]]
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
-local C = GUI.Colors
 
--- Import shared utilities
 local Shared = ns.QUI_Options
 local Settings = ns.Settings
 local Registry = Settings and Settings.Registry
 local Schema = Settings and Settings.Schema
 
+local PAD = (Shared and Shared.PADDING) or 15
+local HEADER_GAP = 26
+local SECTION_GAP = 14
+
+local function MakeLayout(content)
+    local y = -10
+    local L = {}
+    function L.headerAt(text)
+        local h = Shared.CreateAccentDotLabel(content, text, y)
+        h:ClearAllPoints()
+        h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+        h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+        y = y - HEADER_GAP
+    end
+    function L.sectionAt()
+        local c = Shared.CreateSettingsCardGroup(content, y)
+        c.frame:ClearAllPoints()
+        c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+        c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+        return c
+    end
+    function L.closeSection(c)
+        c.Finalize()
+        y = y - c.frame:GetHeight() - SECTION_GAP
+    end
+    function L.finish()
+        content:SetHeight(math.abs(y) + 10)
+        return content:GetHeight()
+    end
+    return L
+end
+
+local function row(parent, label, widget, desc)
+    return Shared.BuildSettingRow(parent, label, widget, desc)
+end
+
+-- Pair an entry list 2-per-row into card `s`, optionally trailing unpaired.
+local function pairEntries(s, entries, dbTable, refresh)
+    local pending = nil
+    for _, it in ipairs(entries) do
+        local w = GUI:CreateFormCheckbox(s.frame, nil, it.key, dbTable, refresh,
+            { description = it.desc })
+        local cell = row(s.frame, it.label, w)
+        if pending then
+            s.AddRow(pending, cell)
+            pending = nil
+        else
+            pending = cell
+        end
+    end
+    if pending then s.AddRow(pending) end
+end
+
 local function BuildAutohideTab(tabContent)
-    local PAD = 10
-    local FORM_ROW = 32
-    local Helpers = ns.Helpers
-    local P = Helpers.PlaceRow
     local db = Shared.GetDB()
+    if not db then return end
+    if not db.uiHider then db.uiHider = {} end
+    if not db.buffBorders then db.buffBorders = {} end
 
     GUI:SetSearchContext({tabIndex = 10, tabName = "Skinning & Autohide", subTabIndex = 1, subTabName = "Autohide"})
 
     local function RefreshUIHider()
         if _G.QUI_RefreshUIHider then _G.QUI_RefreshUIHider() end
     end
+    local function RefreshBuffBorders()
+        if _G.QUI_RefreshBuffBorders then _G.QUI_RefreshBuffBorders() end
+    end
 
-    if not db then return end
-    if not db.uiHider then db.uiHider = {} end
-
-    local sections, relayout, CreateCollapsible = Shared.CreateTilePage(tabContent, PAD)
-
-    -- Objective Tracker
     if not db.uiHider.hideObjectiveTrackerInstanceTypes then
         db.uiHider.hideObjectiveTrackerInstanceTypes = {
             mythicPlus = false, mythicDungeon = false, normalDungeon = false,
             heroicDungeon = false, followerDungeon = false, raid = false, pvp = false, arena = false,
         }
     end
-    CreateCollapsible("Objective Tracker", 9 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Always", "hideObjectiveTrackerAlways", db.uiHider, RefreshUIHider,
-            { description = "Hide the quest and objective tracker everywhere, ignoring the per-instance toggles below." }), body, sy)
-        local instanceDescriptions = {
-            mythicPlus      = "Hide the objective tracker while you are running a Mythic+ keystone.",
-            mythicDungeon   = "Hide the objective tracker while you are in a Mythic difficulty dungeon.",
-            heroicDungeon   = "Hide the objective tracker while you are in a Heroic difficulty dungeon.",
-            normalDungeon   = "Hide the objective tracker while you are in a Normal difficulty dungeon.",
-            followerDungeon = "Hide the objective tracker while you are in a Follower dungeon.",
-            raid            = "Hide the objective tracker while you are inside a raid instance.",
-            pvp             = "Hide the objective tracker while you are in a Battleground.",
-            arena           = "Hide the objective tracker while you are in an Arena match.",
-        }
-        for _, it in ipairs({
-            {key = "mythicPlus", label = "Hide in Mythic+"}, {key = "mythicDungeon", label = "Hide in Mythic Dungeons"},
-            {key = "heroicDungeon", label = "Hide in Heroic Dungeons"}, {key = "normalDungeon", label = "Hide in Normal Dungeons"},
-            {key = "followerDungeon", label = "Hide in Follower Dungeons"}, {key = "raid", label = "Hide in Raids"},
-            {key = "pvp", label = "Hide in Battlegrounds"}, {key = "arena", label = "Hide in Arenas"},
-        }) do
-            sy = P(GUI:CreateFormCheckbox(body, it.label, it.key, db.uiHider.hideObjectiveTrackerInstanceTypes, RefreshUIHider,
-                { description = instanceDescriptions[it.key] }), body, sy)
-        end
-    end)
 
-    -- Frames & Buttons
-    local frameDescriptions = {
-        hideRaidFrameManager   = "Hide the compact raid frame manager widget that lets you pick built-in raid profiles.",
-        hideBuffCollapseButton = "Hide the small arrow button above the buff frame that collapses your buffs into a dropdown.",
-        hideTalkingHead        = "Hide the talking head frame used by cinematic NPC dialogue.",
-        muteTalkingHead        = "Silence the voice audio that plays with talking head events, without hiding the frame itself.",
-        hideWorldMapBlackout   = "Remove the dark overlay drawn behind the world map so the game world stays visible while it's open.",
-        hidePlayerFrameInParty = "Hide the standalone player unit frame whenever you are in a group, since the raid frames already show you.",
-    }
-    CreateCollapsible("Frames & Buttons", 6 * FORM_ROW + 8, function(body)
-        local sy = -4
-        for _, opt in ipairs({
-            {key = "hideRaidFrameManager", label = "Hide Compact Raid Frame Manager"},
-            {key = "hideBuffCollapseButton", label = "Hide Buff Frame Collapse Button"},
-            {key = "hideTalkingHead", label = "Hide Talking Head Frame"},
-            {key = "muteTalkingHead", label = "Mute Talking Head Voice"},
-            {key = "hideWorldMapBlackout", label = "Hide World Map Blackout"},
-            {key = "hidePlayerFrameInParty", label = "Hide Player Frame in Party/Raid"},
-        }) do
-            sy = P(GUI:CreateFormCheckbox(body, opt.label, opt.key, db.uiHider, RefreshUIHider,
-                { description = frameDescriptions[opt.key] }), body, sy)
-        end
-    end)
+    local L = MakeLayout(tabContent)
 
-    -- Nameplates
-    CreateCollapsible("Nameplates", 2 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Friendly Player Nameplates", "hideFriendlyPlayerNameplates", db.uiHider, RefreshUIHider,
-            { description = "Hide nameplates above friendly player characters to reduce visual clutter." }), body, sy)
-        P(GUI:CreateFormCheckbox(body, "Hide Friendly NPC Nameplates", "hideFriendlyNPCNameplates", db.uiHider, RefreshUIHider,
-            { description = "Hide nameplates above friendly NPCs such as quest givers and town residents." }), body, sy)
-    end)
+    ---------------------------------------------------------------------------
+    -- OBJECTIVE TRACKER
+    ---------------------------------------------------------------------------
+    L.headerAt("Objective Tracker")
+    local sOT = L.sectionAt()
+    local hideAlwaysW = GUI:CreateFormCheckbox(sOT.frame, nil, "hideObjectiveTrackerAlways", db.uiHider, RefreshUIHider,
+        { description = "Hide the quest and objective tracker everywhere, ignoring the per-instance toggles below." })
+    sOT.AddRow(row(sOT.frame, "Hide Always", hideAlwaysW))
 
-    -- Status Bars
-    CreateCollapsible("Status Bars", 4 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Experience Bar (XP)", "hideExperienceBar", db.uiHider, RefreshUIHider,
-            { description = "Hide the experience bar shown along the bottom of the screen while leveling." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Reputation Bar", "hideReputationBar", db.uiHider, RefreshUIHider,
-            { description = "Hide the reputation tracking bar shown above the main action bar." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Data Bars in Vehicle", "hideDataBarsInVehicle", db.uiHider, RefreshUIHider,
-            { description = "Hide the experience and reputation bars while you are riding a vehicle." }), body, sy)
-        P(GUI:CreateFormCheckbox(body, "Hide Data Bars in Pet Battle", "hideDataBarsInPetBattle", db.uiHider, RefreshUIHider,
-            { description = "Hide the experience and reputation bars while you are in a pet battle." }), body, sy)
-    end)
+    pairEntries(sOT, {
+        {key = "mythicPlus",      label = "Hide in Mythic+",            desc = "Hide the objective tracker while you are running a Mythic+ keystone."},
+        {key = "mythicDungeon",   label = "Hide in Mythic Dungeons",    desc = "Hide the objective tracker while you are in a Mythic difficulty dungeon."},
+        {key = "heroicDungeon",   label = "Hide in Heroic Dungeons",    desc = "Hide the objective tracker while you are in a Heroic difficulty dungeon."},
+        {key = "normalDungeon",   label = "Hide in Normal Dungeons",    desc = "Hide the objective tracker while you are in a Normal difficulty dungeon."},
+        {key = "followerDungeon", label = "Hide in Follower Dungeons",  desc = "Hide the objective tracker while you are in a Follower dungeon."},
+        {key = "raid",            label = "Hide in Raids",              desc = "Hide the objective tracker while you are inside a raid instance."},
+        {key = "pvp",             label = "Hide in Battlegrounds",      desc = "Hide the objective tracker while you are in a Battleground."},
+        {key = "arena",           label = "Hide in Arenas",             desc = "Hide the objective tracker while you are in an Arena match."},
+    }, db.uiHider.hideObjectiveTrackerInstanceTypes, RefreshUIHider)
+    L.closeSection(sOT)
 
-    -- Buff / Debuff Frames
-    if not db.buffBorders then db.buffBorders = {} end
-    local function RefreshBuffBorders()
-        if _G.QUI_RefreshBuffBorders then _G.QUI_RefreshBuffBorders() end
-    end
-    CreateCollapsible("Buff / Debuff Frames", 5 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Buff Frame", "hideBuffFrame", db.buffBorders, RefreshBuffBorders,
-            { description = "Hide the player buff frame entirely, including while mousing over its anchor area." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Debuff Frame", "hideDebuffFrame", db.buffBorders, RefreshBuffBorders,
-            { description = "Hide the player debuff frame entirely, including while mousing over its anchor area." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Fade Buffs (Show on Mouseover)", "fadeBuffFrame", db.buffBorders, RefreshBuffBorders,
-            { description = "Fade the buff frame out when you're not hovering over it. Hover to reveal." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Fade Debuffs (Show on Mouseover)", "fadeDebuffFrame", db.buffBorders, RefreshBuffBorders,
-            { description = "Fade the debuff frame out when you're not hovering over it. Hover to reveal." }), body, sy)
-        P(GUI:CreateFormSlider(body, "Fade Out Opacity", 0, 1, 0.05, "fadeOutAlpha", db.buffBorders, RefreshBuffBorders, nil,
-            { description = "Opacity used when the buff or debuff frame is faded out. 0 is fully invisible, 1 is fully opaque." }), body, sy)
-    end)
+    ---------------------------------------------------------------------------
+    -- FRAMES & BUTTONS
+    ---------------------------------------------------------------------------
+    L.headerAt("Frames & Buttons")
+    local sFB = L.sectionAt()
+    pairEntries(sFB, {
+        {key = "hideRaidFrameManager",   label = "Hide Compact Raid Frame Manager", desc = "Hide the compact raid frame manager widget that lets you pick built-in raid profiles."},
+        {key = "hideBuffCollapseButton", label = "Hide Buff Frame Collapse Button", desc = "Hide the small arrow button above the buff frame that collapses your buffs into a dropdown."},
+        {key = "hideTalkingHead",        label = "Hide Talking Head Frame",          desc = "Hide the talking head frame used by cinematic NPC dialogue."},
+        {key = "muteTalkingHead",        label = "Mute Talking Head Voice",          desc = "Silence the voice audio that plays with talking head events, without hiding the frame itself."},
+        {key = "hideWorldMapBlackout",   label = "Hide World Map Blackout",          desc = "Remove the dark overlay drawn behind the world map so the game world stays visible while it's open."},
+        {key = "hidePlayerFrameInParty", label = "Hide Player Frame in Party/Raid",  desc = "Hide the standalone player unit frame whenever you are in a group, since the raid frames already show you."},
+    }, db.uiHider, RefreshUIHider)
+    L.closeSection(sFB)
 
-    -- Combat & Messages
-    CreateCollapsible("Combat & Messages", 2 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Error Messages (Red Text)", "hideErrorMessages", db.uiHider, RefreshUIHider,
-            { description = "Suppress the red error messages printed above the action bar, such as Not Enough Mana or Spell Not Ready." }), body, sy)
-        P(GUI:CreateFormCheckbox(body, "Hide Info Messages (i.e. Quest Prog)", "hideInfoMessages", db.uiHider, RefreshUIHider,
-            { description = "Suppress the yellow info messages printed above the action bar, such as quest objective progress updates." }), body, sy)
-    end)
+    ---------------------------------------------------------------------------
+    -- NAMEPLATES
+    ---------------------------------------------------------------------------
+    L.headerAt("Nameplates")
+    local sNP = L.sectionAt()
+    local npFriendlyW = GUI:CreateFormCheckbox(sNP.frame, nil, "hideFriendlyPlayerNameplates", db.uiHider, RefreshUIHider,
+        { description = "Hide nameplates above friendly player characters to reduce visual clutter." })
+    local npNPCW = GUI:CreateFormCheckbox(sNP.frame, nil, "hideFriendlyNPCNameplates", db.uiHider, RefreshUIHider,
+        { description = "Hide nameplates above friendly NPCs such as quest givers and town residents." })
+    sNP.AddRow(
+        row(sNP.frame, "Hide Friendly Player Nameplates", npFriendlyW),
+        row(sNP.frame, "Hide Friendly NPC Nameplates", npNPCW)
+    )
+    L.closeSection(sNP)
 
-    relayout()
+    ---------------------------------------------------------------------------
+    -- STATUS BARS
+    ---------------------------------------------------------------------------
+    L.headerAt("Status Bars")
+    local sSB = L.sectionAt()
+    local sbXP = GUI:CreateFormCheckbox(sSB.frame, nil, "hideExperienceBar", db.uiHider, RefreshUIHider,
+        { description = "Hide the experience bar shown along the bottom of the screen while leveling." })
+    local sbRep = GUI:CreateFormCheckbox(sSB.frame, nil, "hideReputationBar", db.uiHider, RefreshUIHider,
+        { description = "Hide the reputation tracking bar shown above the main action bar." })
+    sSB.AddRow(
+        row(sSB.frame, "Hide Experience Bar (XP)", sbXP),
+        row(sSB.frame, "Hide Reputation Bar", sbRep)
+    )
+
+    local sbVeh = GUI:CreateFormCheckbox(sSB.frame, nil, "hideDataBarsInVehicle", db.uiHider, RefreshUIHider,
+        { description = "Hide the experience and reputation bars while you are riding a vehicle." })
+    local sbPet = GUI:CreateFormCheckbox(sSB.frame, nil, "hideDataBarsInPetBattle", db.uiHider, RefreshUIHider,
+        { description = "Hide the experience and reputation bars while you are in a pet battle." })
+    sSB.AddRow(
+        row(sSB.frame, "Hide Data Bars in Vehicle", sbVeh),
+        row(sSB.frame, "Hide Data Bars in Pet Battle", sbPet)
+    )
+    L.closeSection(sSB)
+
+    ---------------------------------------------------------------------------
+    -- BUFF / DEBUFF FRAMES
+    ---------------------------------------------------------------------------
+    L.headerAt("Buff / Debuff Frames")
+    local sBD = L.sectionAt()
+    local bdHideBuff = GUI:CreateFormCheckbox(sBD.frame, nil, "hideBuffFrame", db.buffBorders, RefreshBuffBorders,
+        { description = "Hide the player buff frame entirely, including while mousing over its anchor area." })
+    local bdHideDebuff = GUI:CreateFormCheckbox(sBD.frame, nil, "hideDebuffFrame", db.buffBorders, RefreshBuffBorders,
+        { description = "Hide the player debuff frame entirely, including while mousing over its anchor area." })
+    sBD.AddRow(
+        row(sBD.frame, "Hide Buff Frame", bdHideBuff),
+        row(sBD.frame, "Hide Debuff Frame", bdHideDebuff)
+    )
+
+    local bdFadeBuff = GUI:CreateFormCheckbox(sBD.frame, nil, "fadeBuffFrame", db.buffBorders, RefreshBuffBorders,
+        { description = "Fade the buff frame out when you're not hovering over it. Hover to reveal." })
+    local bdFadeDebuff = GUI:CreateFormCheckbox(sBD.frame, nil, "fadeDebuffFrame", db.buffBorders, RefreshBuffBorders,
+        { description = "Fade the debuff frame out when you're not hovering over it. Hover to reveal." })
+    sBD.AddRow(
+        row(sBD.frame, "Fade Buffs (Show on Mouseover)", bdFadeBuff),
+        row(sBD.frame, "Fade Debuffs (Show on Mouseover)", bdFadeDebuff)
+    )
+
+    local bdAlphaW = GUI:CreateFormSlider(sBD.frame, nil, 0, 1, 0.05, "fadeOutAlpha", db.buffBorders, RefreshBuffBorders,
+        { precision = 2, description = "Opacity used when the buff or debuff frame is faded out. 0 is fully invisible, 1 is fully opaque." })
+    sBD.AddRow(row(sBD.frame, "Fade Out Opacity", bdAlphaW))
+    L.closeSection(sBD)
+
+    ---------------------------------------------------------------------------
+    -- COMBAT & MESSAGES
+    ---------------------------------------------------------------------------
+    L.headerAt("Combat & Messages")
+    local sCM = L.sectionAt()
+    local cmErr = GUI:CreateFormCheckbox(sCM.frame, nil, "hideErrorMessages", db.uiHider, RefreshUIHider,
+        { description = "Suppress the red error messages printed above the action bar, such as Not Enough Mana or Spell Not Ready." })
+    local cmInfo = GUI:CreateFormCheckbox(sCM.frame, nil, "hideInfoMessages", db.uiHider, RefreshUIHider,
+        { description = "Suppress the yellow info messages printed above the action bar, such as quest objective progress updates." })
+    sCM.AddRow(
+        row(sCM.frame, "Hide Error Messages (Red Text)", cmErr),
+        row(sCM.frame, "Hide Info Messages (i.e. Quest Prog)", cmInfo)
+    )
+    L.closeSection(sCM)
+
+    L.finish()
 end
 
--- Export
 ns.QUI_AutohideOptions = {
     BuildAutohideTab = BuildAutohideTab
 }

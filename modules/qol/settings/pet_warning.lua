@@ -20,4 +20,12 @@ ProviderFeatures:Register({
         end
     end,
     providerKey = "petWarning",
+    keywords = {
+        "pet",
+        "hunter pet",
+        "warlock pet",
+        "summon reminder",
+        "missing pet",
+        "no pet",
+    },
 })

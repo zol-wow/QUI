@@ -1,7 +1,7 @@
 ---------------------------------------------------------------------------
--- M+ PROGRESS SETTINGS PROVIDER
+-- M+ PROGRESS SETTINGS PROVIDER (V3)
 ---------------------------------------------------------------------------
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 do
     local function RegisterMPlusProgressProvider()
@@ -13,8 +13,10 @@ do
 
         local Helpers = ns.Helpers
         local U = ns.QUI_LayoutMode_Utils
-        local P = U.PlaceRow
-        local FORM_ROW = U and U.FORM_ROW or 32
+        local Opts = ns.QUI_Options
+        local PAD = (Opts and Opts.PADDING) or 15
+        local HEADER_GAP = 26
+        local SECTION_GAP = 14
 
         local function GetProgressDB()
             local core = Helpers.GetCore()
@@ -28,12 +30,53 @@ do
             end
         end
 
-        local function BuildMPlusProgressSettings(content, key, width)
+        local function MakeLayout(content)
+            local y = -10
+            local L = {}
+            local sections = {}
+
+            function L.headerAt(text)
+                local h = Opts.CreateAccentDotLabel(content, text, y)
+                h:ClearAllPoints()
+                h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+                h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+                y = y - HEADER_GAP
+            end
+            function L.sectionAt()
+                local c = Opts.CreateSettingsCardGroup(content, y)
+                c.frame:ClearAllPoints()
+                c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+                c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+                return c
+            end
+            function L.closeSection(c)
+                c.Finalize()
+                y = y - c.frame:GetHeight() - SECTION_GAP
+            end
+
+            local function relayoutSections()
+                local cy = y
+                for _, s in ipairs(sections) do
+                    s:ClearAllPoints()
+                    s:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, cy)
+                    s:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+                    cy = cy - s:GetHeight() - 4
+                end
+                content:SetHeight(math.abs(cy) + 16)
+            end
+            L.sections = sections
+            L.relayoutSections = relayoutSections
+
+            return L
+        end
+
+        local function row(parent, label, widget, desc)
+            return Opts.BuildSettingRow(parent, label, widget, desc)
+        end
+
+        local function BuildMPlusProgressSettings(content, key, _width)
             local db = GetProgressDB()
             if not db then return 80 end
-
-            local sections = {}
-            local function relayout() U.StandardRelayout(content, sections) end
 
             Helpers.EnsureDefaults(db, {
                 enabled = true,
@@ -48,44 +91,67 @@ do
                 nameplateOffsetY = 0,
             })
 
-            U.CreateCollapsible(content, "General", 3 * FORM_ROW + 8, function(body)
-                local sy = -4
+            local L = MakeLayout(content)
 
-                sy = P(GUI:CreateFormCheckbox(body, "Enable M+ Mob Progress", "enabled", db, Refresh,
-                    { description = "Show per-enemy forces contribution on M+ tooltips and nameplates." }), body, sy)
-                sy = P(GUI:CreateFormCheckbox(body, "Show Tooltip Progress", "tooltipEnabled", db, Refresh,
-                    { description = "Add the enemy forces contribution to unit tooltips in active Mythic+ runs." }), body, sy)
-                P(GUI:CreateFormCheckbox(body, "Show Nameplate Progress", "nameplateEnabled", db, Refresh,
-                    { description = "Show each visible enemy's forces contribution next to its nameplate." }), body, sy)
-            end, sections, relayout)
+            -- General
+            L.headerAt("General")
+            local sGen = L.sectionAt()
+            local genEnableW = GUI:CreateFormCheckbox(sGen.frame, nil, "enabled", db, Refresh,
+                { description = "Show per-enemy forces contribution on M+ tooltips and nameplates." })
+            local genTooltipW = GUI:CreateFormCheckbox(sGen.frame, nil, "tooltipEnabled", db, Refresh,
+                { description = "Add the enemy forces contribution to unit tooltips in active Mythic+ runs." })
+            sGen.AddRow(
+                row(sGen.frame, "Enable M+ Mob Progress", genEnableW),
+                row(sGen.frame, "Show Tooltip Progress", genTooltipW)
+            )
 
-            U.CreateCollapsible(content, "Tooltips", 2 * FORM_ROW + 8, function(body)
-                local sy = -4
-                sy = P(GUI:CreateFormCheckbox(body, "Include Count", "tooltipIncludeCount", db, Refresh,
-                    { description = "Show the enemy's count contribution when the value is available for Lua to inspect." }), body, sy)
-                P(GUI:CreateFormCheckbox(body, "Show No Progress Line", "tooltipShowNoProgress", db, Refresh,
-                    { description = "Show a tooltip line for attackable enemies that do not contribute forces." }), body, sy)
-            end, sections, relayout)
+            local genNameplateW = GUI:CreateFormCheckbox(sGen.frame, nil, "nameplateEnabled", db, Refresh,
+                { description = "Show each visible enemy's forces contribution next to its nameplate." })
+            sGen.AddRow(row(sGen.frame, "Show Nameplate Progress", genNameplateW))
+            L.closeSection(sGen)
 
-            U.CreateCollapsible(content, "Nameplates", 5 * FORM_ROW + 8, function(body)
-                local sy = -4
+            -- Tooltips
+            L.headerAt("Tooltips")
+            local sTT = L.sectionAt()
+            local ttCountW = GUI:CreateFormCheckbox(sTT.frame, nil, "tooltipIncludeCount", db, Refresh,
+                { description = "Show the enemy's count contribution when the value is available for Lua to inspect." })
+            local ttNoProgW = GUI:CreateFormCheckbox(sTT.frame, nil, "tooltipShowNoProgress", db, Refresh,
+                { description = "Show a tooltip line for attackable enemies that do not contribute forces." })
+            sTT.AddRow(
+                row(sTT.frame, "Include Count", ttCountW),
+                row(sTT.frame, "Show No Progress Line", ttNoProgW)
+            )
+            L.closeSection(sTT)
 
-                sy = P(GUI:CreateFormEditBox(body, "Text Format", "nameplateTextFormat", db, Refresh,
-                    { maxLetters = 32 },
-                    { description = "Nameplate text format. Use $percent$ for the enemy's forces contribution." }), body, sy)
-                sy = P(GUI:CreateFormSlider(body, "Text Scale", 0.5, 2.0, 0.05, "nameplateTextScale", db, Refresh, { deferOnDrag = true },
-                    { description = "Scale of the M+ progress text attached to nameplates." }), body, sy)
-                sy = P(GUI:CreateFormSlider(body, "Offset X", -100, 100, 1, "nameplateOffsetX", db, Refresh, nil,
-                    { description = "Horizontal offset from the right side of the nameplate." }), body, sy)
-                sy = P(GUI:CreateFormSlider(body, "Offset Y", -100, 100, 1, "nameplateOffsetY", db, Refresh, nil,
-                    { description = "Vertical offset from the nameplate anchor." }), body, sy)
-                P(GUI:CreateFormColorPicker(body, "Text Color", "nameplateTextColor", db, Refresh, nil,
-                    { description = "Color used for M+ progress text on nameplates." }), body, sy)
-            end, sections, relayout)
+            -- Nameplates
+            L.headerAt("Nameplates")
+            local sNP = L.sectionAt()
+            local npFmtW = GUI:CreateFormEditBox(sNP.frame, nil, "nameplateTextFormat", db, Refresh,
+                { maxLetters = 32, description = "Nameplate text format. Use $percent$ for the enemy's forces contribution." })
+            local npScaleW = GUI:CreateFormSlider(sNP.frame, nil, 0.5, 2.0, 0.05, "nameplateTextScale", db, Refresh,
+                { deferOnDrag = true, precision = 2, description = "Scale of the M+ progress text attached to nameplates." })
+            sNP.AddRow(
+                row(sNP.frame, "Text Format", npFmtW),
+                row(sNP.frame, "Text Scale", npScaleW)
+            )
 
-            U.BuildOpenFullSettingsLink(content, key, sections, relayout)
+            local npXW = GUI:CreateFormSlider(sNP.frame, nil, -100, 100, 1, "nameplateOffsetX", db, Refresh,
+                { description = "Horizontal offset from the right side of the nameplate." })
+            local npYW = GUI:CreateFormSlider(sNP.frame, nil, -100, 100, 1, "nameplateOffsetY", db, Refresh,
+                { description = "Vertical offset from the nameplate anchor." })
+            sNP.AddRow(
+                row(sNP.frame, "Offset X", npXW),
+                row(sNP.frame, "Offset Y", npYW)
+            )
 
-            relayout()
+            local npColorW = GUI:CreateFormColorPicker(sNP.frame, nil, "nameplateTextColor", db, Refresh, nil,
+                { description = "Color used for M+ progress text on nameplates." })
+            sNP.AddRow(row(sNP.frame, "Text Color", npColorW))
+            L.closeSection(sNP)
+
+            -- Layout-mode chrome (no Position collapsible for this provider)
+            U.BuildOpenFullSettingsLink(content, key, L.sections, L.relayoutSections)
+            L.relayoutSections()
             return content:GetHeight()
         end
 

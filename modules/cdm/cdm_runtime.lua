@@ -2048,7 +2048,13 @@ local function ApplyChargeRuntimeFallback(state, entry, spellID, isItemLike)
     local ci = QueryCharges(spellID)
     if ci then
         local maxC = ci.maxCharges
-        if IsSafeNumeric(maxC) and maxC > 1 then
+        -- Any spell that the charge API reports for (maxCharges >= 1) is a
+        -- charge-system spell. Single-charge cases include the shared brez
+        -- pool in raids/M+ (Rebirth/Raise Ally/Intercession), where the
+        -- displayed cooldown is the recharge timer, not a "spell blocked"
+        -- cooldown — so the icon must stay saturated while a charge is
+        -- available. Downstream `cdInfo.isActive` still gates actual usability.
+        if IsSafeNumeric(maxC) and maxC >= 1 then
             state.hasCharges = true
         end
     end

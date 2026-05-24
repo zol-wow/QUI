@@ -203,11 +203,16 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --        active aura" behavior; the old key is then nilled. Covers built-in
 --        viewers (essential / utility / buff) and custom containers via
 --        any *PandemicEnabled key under customGlow.)
+-- v37 = RetireSkinDamageMeter
+--       (3.7: skinner module deleted in favor of native QUI damage meter.
+--        This migration deletes the skinner's saved keys so they can't
+--        actively fight the native module's CVar suppression on future
+--        loads. Native module keys at damageMeter.native.* are preserved.)
 --
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 36
+local CURRENT_SCHEMA_VERSION = 37
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -788,6 +793,49 @@ local function SplitPandemicByAuraType(profile)
         if glowDB[debuffKey] == nil then glowDB[debuffKey] = entry.value end
         if glowDB[buffKey]   == nil then glowDB[buffKey]   = entry.value end
         glowDB[entry.key] = nil
+    end
+end
+
+---------------------------------------------------------------------------
+-- RetireSkinDamageMeter
+-- v37: The damage meter skinner (modules/skinning/gameplay/damage_meter.lua)
+-- was deleted in commit a4ec6f24 in favor of the native QUI damage meter at
+-- modules/damage_meter/. The skinner's saved keys are defunct AND actively
+-- harmful: the skinner's `enabled` key was being pushed back to the
+-- damageMeterEnabled CVar on every login, re-showing Blizzard's stock meter
+-- despite the native module's CVar suppression. This migration deletes the
+-- skinner's saved keys so they can't fight the native module on future loads.
+--
+-- The native module's keys live under `damageMeter.native.*` and are
+-- preserved unchanged. Future cleanup may flatten `native.*` back to the
+-- top-level damageMeter table; this migration intentionally does NOT do
+-- that yet.
+---------------------------------------------------------------------------
+local function RetireSkinDamageMeter(profile)
+    if not profile then return end
+
+    -- Master toggle under general.
+    if type(profile.general) == "table" then
+        profile.general.skinDamageMeter = nil
+    end
+
+    -- Skinner-owned keys at top level of damageMeter. The native module's
+    -- damageMeter.native.* subtree must be preserved.
+    local dm = profile.damageMeter
+    if type(dm) == "table" then
+        dm.enabled         = nil
+        dm.visibility      = nil
+        dm.style           = nil
+        dm.numberDisplay   = nil
+        dm.useClassColor   = nil
+        dm.showBarIcons    = nil
+        dm.barHeight       = nil
+        dm.barSpacing      = nil
+        dm.textSize        = nil
+        dm.windowAlpha     = nil
+        dm.backgroundAlpha = nil
+        dm._initialized    = nil
+        dm.appearance      = nil   -- top-level skinner appearance; native uses dm.native.appearance
     end
 end
 
@@ -3829,6 +3877,13 @@ function Migrations.RunOnProfile(profile)
     -- v36: split single PandemicEnabled toggle per viewer into separate
     -- Debuff/Buff toggles, copying old value to both to preserve behavior.
     if stored < 36 then SplitPandemicByAuraType(profile) end
+
+    -- v37: Retire the damage meter skinner module's saved keys. The skinner
+    -- was deleted in favor of the native QUI damage meter (modules/damage_meter/).
+    -- Defunct keys must be removed because the skinner's `enabled` key was
+    -- being pushed to the damageMeterEnabled CVar, re-showing Blizzard's
+    -- meter despite the native module's suppression.
+    if stored < 37 then RetireSkinDamageMeter(profile) end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame

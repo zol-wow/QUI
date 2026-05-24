@@ -4039,6 +4039,12 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
     end
     container.isEnabled = true
 
+    -- Description text may live on registryInfo (canonical) or in the options
+    -- table; accept either so a misplaced field still produces a tooltip.
+    local effectiveDescription = (registryInfo and registryInfo.description)
+        or (options and options.description)
+        or nil
+
     RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
         label = label,
         widgetType = "editbox",
@@ -4049,12 +4055,11 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
             options = options,
         }),
         keywords = registryInfo and registryInfo.keywords or nil,
-        description = registryInfo and registryInfo.description or nil,
+        description = effectiveDescription,
         relatedTo = registryInfo and registryInfo.relatedTo or nil,
     })
 
-    local tooltipDescription = registryInfo and registryInfo.description or nil
-    AttachFormWidgetTooltip(container, editBox, tooltipDescription, label)
+    AttachFormWidgetTooltip(container, editBox, effectiveDescription, label)
     return container
 end
 
@@ -4438,6 +4443,12 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     -- Initialize enabled state
     container.isEnabled = true
 
+    -- Description text may live on registryInfo (canonical) or in the options
+    -- table; accept either so a misplaced field still produces a tooltip.
+    local effectiveDescription = (registryInfo and registryInfo.description)
+        or (options and options.description)
+        or nil
+
     RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
         label = label,
         widgetType = "slider",
@@ -4451,12 +4462,11 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
             options = options,
         }),
         keywords = registryInfo and registryInfo.keywords or nil,
-        description = registryInfo and registryInfo.description or nil,
+        description = effectiveDescription,
         relatedTo = registryInfo and registryInfo.relatedTo or nil,
     })
 
-    local tooltipDescription = registryInfo and registryInfo.description or nil
-    AttachFormWidgetTooltip(container, slider, tooltipDescription, label)
+    AttachFormWidgetTooltip(container, slider, effectiveDescription, label)
     return container
 end
 
@@ -5218,6 +5228,12 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
         container:SetAlpha(enabled and 1 or 0.4)
     end
 
+    -- Description text may live on registryInfo (canonical) or in the options
+    -- table; accept either so a misplaced field still produces a tooltip.
+    local effectiveDescription = (registryInfo and registryInfo.description)
+        or (options and options.description)
+        or nil
+
     RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
         label = label,
         widgetType = "colorpicker",
@@ -5228,12 +5244,11 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
             options = options,
         }),
         keywords = registryInfo and registryInfo.keywords or nil,
-        description = registryInfo and registryInfo.description or nil,
+        description = effectiveDescription,
         relatedTo = registryInfo and registryInfo.relatedTo or nil,
     })
 
-    local tooltipDescription = registryInfo and registryInfo.description or nil
-    AttachFormWidgetTooltip(container, swatch, tooltipDescription, label)
+    AttachFormWidgetTooltip(container, swatch, effectiveDescription, label)
     return container
 end
 
@@ -7960,7 +7975,10 @@ function GUI:SeedStaticSearchRoutesFromTiles(frame)
             entry.subTabName = subPageName
         end
 
-        if entry.navType then
+        -- Alias entries carry their author-supplied label and keywords
+        -- verbatim; the breadcrumb derivation below is for tab/subtab/section
+        -- entries whose label is mechanically derived from route info.
+        if entry.navType and entry.navType ~= "alias" then
             local label = BuildSearchNavigationLabel(entry.navType, entry)
             if type(label) == "string" and label ~= "" then
                 entry.label = label

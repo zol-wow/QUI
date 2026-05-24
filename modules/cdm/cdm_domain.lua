@@ -83,6 +83,23 @@ function CDMShared.GetBuiltinContainerEntryKind(containerKey)
         CDMShared.GetBuiltinContainerType(containerKey))
 end
 
+function CDMShared.ResolveKindForItemsTab(containerKey)
+    local builtinKind = CDMShared.GetBuiltinContainerEntryKind(containerKey)
+    if builtinKind == "aura" then return "aura" end
+    return "cooldown"
+end
+
+function CDMShared.ShouldShowItemDisplayModeRow(entry, containerKey, containerDB)
+    if type(entry) ~= "table" then return false end
+    local etype = entry.type
+    if etype ~= "item" and etype ~= "trinket" and etype ~= "slot" then
+        return false
+    end
+    if CDMShared.IsBuiltinContainerKey(containerKey) then return false end
+    if not CDMShared.IsCustomBarContainer(containerDB) then return false end
+    return true
+end
+
 function CDMShared.GetBuiltinContainerKeysByEntryKind(entryKind)
     if entryKind == "cooldown" then
         return CDMShared.BUILTIN_COOLDOWN_CONTAINER_KEYS

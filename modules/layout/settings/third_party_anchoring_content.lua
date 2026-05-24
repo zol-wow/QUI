@@ -5,7 +5,7 @@
     renders as an accent-dot section + card group with paired rows.
 ]]
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
 local C = GUI.Colors
@@ -123,15 +123,12 @@ local function BuildThirdPartyContainerLayoutSettings(host, lookupKey)
     local profile = core and core.db and core.db.profile
     local db = profile and profile.dandersFrames
     local cfg = db and db[entry.containerKey]
-    local GUI = QUI and QUI.GUI
     if not cfg or not GUI then
         return 80
     end
 
-    local sections = {}
-    local function relayout()
-        U.StandardRelayout(host, sections)
-    end
+    local PAD = PADDING
+    local HEADER_GAP = 26
 
     local function Refresh()
         DF:ApplyPosition(entry.containerKey)
@@ -140,57 +137,82 @@ local function BuildThirdPartyContainerLayoutSettings(host, lookupKey)
         end
     end
 
-    local P = U.PlaceRow
-    local FORM_ROW = U.FORM_ROW
+    local y = -10
+    local sections = {}
 
-    U.CreateCollapsible(host, "Position", 6 * FORM_ROW + 8, function(body)
-        -- Forward decls so the anchor-target handler can reach the sliders.
-        local xW, yW
+    -- Position section: V3 accent-dot header + card group.
+    Shared.CreateAccentDotLabel(host, "Position", y); y = y - HEADER_GAP
+    local card = Shared.CreateSettingsCardGroup(host, y)
+    card.frame:ClearAllPoints()
+    card.frame:SetPoint("TOPLEFT", host, "TOPLEFT", PAD, y)
+    card.frame:SetPoint("TOPRIGHT", host, "TOPRIGHT", -PAD, y)
 
-        -- Changing Anchor To leaves prior offsets calibrated for a different
-        -- target — they teleport the frame when re-applied. Reset offsets to 0
-        -- so the user's first sight of the new target is at its anchor point.
-        local function OnAnchorTargetChange()
-            cfg.offsetX = 0
-            cfg.offsetY = 0
-            if xW and xW.SetValue then xW:SetValue(0, true) end
-            if yW and yW.SetValue then yW:SetValue(0, true) end
-            Refresh()
+    -- Forward decls so the anchor-target handler can reach the sliders.
+    local xW, yW
+
+    -- Changing Anchor To leaves prior offsets calibrated for a different
+    -- target — they teleport the frame when re-applied. Reset to 0 so the
+    -- user's first sight of the new target is at its anchor point.
+    local function OnAnchorTargetChange()
+        cfg.offsetX = 0
+        cfg.offsetY = 0
+        if xW and xW.SetValue then xW:SetValue(0, true) end
+        if yW and yW.SetValue then yW:SetValue(0, true) end
+        Refresh()
+    end
+
+    local enableW = GUI:CreateFormCheckbox(card.frame, nil, "enabled", cfg, Refresh,
+        { description = "Enable QUI-managed anchoring for this container. While off, the container keeps its existing position." })
+    card.AddRow(Shared.BuildSettingRow(card.frame, "Enable", enableW))
+
+    local AnchorOpts = ns.QUI_Anchoring_Options
+    local anchorW
+    if AnchorOpts and AnchorOpts.CreateAnchorDropdown then
+        anchorW = AnchorOpts:CreateAnchorDropdown(
+            card.frame, nil, cfg, "anchorTo",
+            nil, nil, nil, OnAnchorTargetChange
+        )
+    else
+        anchorW = GUI:CreateFormDropdown(card.frame, nil, {}, "anchorTo", cfg, OnAnchorTargetChange)
+    end
+    card.AddRow(Shared.BuildSettingRow(card.frame, "Anchor To", anchorW))
+
+    local srcW = GUI:CreateFormDropdown(card.frame, nil, ANCHOR_POINTS, "sourcePoint", cfg, Refresh,
+        { description = "Which point on this container is used as the attach point." })
+    local dstW = GUI:CreateFormDropdown(card.frame, nil, ANCHOR_POINTS, "targetPoint", cfg, Refresh,
+        { description = "Which point on the target frame this container attaches to." })
+    card.AddRow(
+        Shared.BuildSettingRow(card.frame, "Container Point", srcW),
+        Shared.BuildSettingRow(card.frame, "Target Point", dstW)
+    )
+
+    xW = GUI:CreateFormSlider(card.frame, nil, -400, 400, 1, "offsetX", cfg, Refresh,
+        { description = "Horizontal pixel offset between container point and target point." })
+    yW = GUI:CreateFormSlider(card.frame, nil, -400, 400, 1, "offsetY", cfg, Refresh,
+        { description = "Vertical pixel offset between container point and target point." })
+    card.AddRow(
+        Shared.BuildSettingRow(card.frame, "X Offset", xW),
+        Shared.BuildSettingRow(card.frame, "Y Offset", yW)
+    )
+
+    card.Finalize()
+    y = y - card.frame:GetHeight() - SECTION_GAP
+
+    -- Tail relayout for V2 layout-mode chrome (OpenFullSettingsLink) starting
+    -- from the bottom of the V3 card above.
+    local function relayoutSections()
+        local cy = y
+        for _, s in ipairs(sections) do
+            s:ClearAllPoints()
+            s:SetPoint("TOPLEFT", host, "TOPLEFT", PAD, cy)
+            s:SetPoint("RIGHT", host, "RIGHT", -PAD, 0)
+            cy = cy - s:GetHeight() - 4
         end
+        host:SetHeight(math.abs(cy) + 16)
+    end
 
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Enable", "enabled", cfg, Refresh,
-            { description = "Enable QUI-managed anchoring for this container. While off, the container keeps its existing position." }), body, sy)
-
-        -- Anchor To — same registry-driven, categorized + searchable dropdown
-        -- the rest of QUI's movers use. Falls back to a plain dropdown if the
-        -- helper hasn't loaded yet (defensive; load order makes this unlikely).
-        local AnchorOpts = ns.QUI_Anchoring_Options
-        local anchorW
-        if AnchorOpts and AnchorOpts.CreateAnchorDropdown then
-            anchorW = AnchorOpts:CreateAnchorDropdown(
-                body, "Anchor To", cfg, "anchorTo",
-                nil, nil, nil, OnAnchorTargetChange
-            )
-        else
-            anchorW = GUI:CreateFormDropdown(body, "Anchor To", {}, "anchorTo", cfg, OnAnchorTargetChange)
-        end
-        sy = P(anchorW, body, sy)
-
-        sy = P(GUI:CreateFormDropdown(body, "Container Point", ANCHOR_POINTS, "sourcePoint", cfg, Refresh,
-            { description = "Which point on this container is used as the attach point." }), body, sy)
-        sy = P(GUI:CreateFormDropdown(body, "Target Point", ANCHOR_POINTS, "targetPoint", cfg, Refresh,
-            { description = "Which point on the target frame this container attaches to." }), body, sy)
-        xW = GUI:CreateFormSlider(body, "X Offset", -400, 400, 1, "offsetX", cfg, Refresh, nil,
-            { description = "Horizontal pixel offset between container point and target point." })
-        sy = P(xW, body, sy)
-        yW = GUI:CreateFormSlider(body, "Y Offset", -400, 400, 1, "offsetY", cfg, Refresh, nil,
-            { description = "Vertical pixel offset between container point and target point." })
-        P(yW, body, sy)
-    end, sections, relayout)
-
-    U.BuildOpenFullSettingsLink(host, lookupKey, sections, relayout)
-    relayout()
+    U.BuildOpenFullSettingsLink(host, lookupKey, sections, relayoutSections)
+    relayoutSections()
     return host:GetHeight()
 end
 

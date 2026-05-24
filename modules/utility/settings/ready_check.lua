@@ -23,4 +23,11 @@ ProviderFeatures:Register({
         end
     end,
     providerKey = "readyCheck",
+    keywords = {
+        "ready check",
+        "raid ready",
+        "afk check",
+        "are you ready",
+        "ready status",
+    },
 })

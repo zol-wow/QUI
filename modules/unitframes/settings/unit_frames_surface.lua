@@ -7,7 +7,7 @@
       - the General tab is cross-unit; all other tabs follow the selected unit
 ]]
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
 local Settings = ns.Settings
@@ -57,6 +57,14 @@ local UnitSelection = FullSurface and FullSurface.CreateSelectionController
         stateKey = "selectedUnit",
         normalize = NormalizeUnitKey,
         afterSet = function()
+            -- Reset the body preview cycle BEFORE refreshing the mock so
+            -- the first frame after the unit change shows segment-1 of
+            -- the new cycle, not the prior unit's mid-cycle state.
+            if ns.QUI_UnitFramesBodyPreview
+                and ns.QUI_UnitFramesBodyPreview.SetSelectedUnit then
+                ns.QUI_UnitFramesBodyPreview.SetSelectedUnit(State.selectedUnit)
+            end
+
             if _G.QUI_RefreshUnitFramePreview then
                 _G.QUI_RefreshUnitFramePreview()
             end
@@ -136,14 +144,12 @@ end
 -- PREVIEW BLOCK — dropdown + preview area. Called via tile.config.preview.
 ---------------------------------------------------------------------------
 ---------------------------------------------------------------------------
--- Live mock unit frame — inspired by EllesmereUI's preview (scaled mock
--- with health bar, power bar, text). Driven entirely from the selected
+-- Live mock unit frame — scaled preview with health bar, power bar, and
+-- text. Driven entirely from the selected
 -- unit's DB settings; updates on SetSelectedUnit and on every settings
 -- widget callback (RefreshNewUF_Module in unitframes.lua chains into
 -- QUI_RefreshUnitFramePreview).
 ---------------------------------------------------------------------------
-local MOCK_HEALTH_PCT = 0.72
-local MOCK_POWER_PCT  = 0.85
 local MOCK_NAMES = {
     player       = "Player",
     target       = "Boss Target",
@@ -248,32 +254,6 @@ local function ApplyTextAnchor(fs, target, anchorKey, offsetX, offsetY, pad)
     if anchor:find("RIGHT") then fs:SetJustifyH("RIGHT")
     elseif anchor:find("LEFT") then fs:SetJustifyH("LEFT")
     else fs:SetJustifyH("CENTER") end
-end
-
--- Format mock health text per the display-style setting.
-local function FormatHealthText(style, hideSymbol, divider)
-    local pct = math.floor(MOCK_HEALTH_PCT * 100)
-    local mockCur = "42.5k"
-    local pctStr = hideSymbol and tostring(pct) or (pct .. "%")
-    local sep = divider or " | "
-    if style == "absolute" then return mockCur
-    elseif style == "both" then return mockCur .. sep .. pctStr
-    elseif style == "both_reverse" then return pctStr .. sep .. mockCur
-    elseif style == "missing_percent" then
-        local missing = 100 - pct
-        return hideSymbol and ("-" .. missing) or ("-" .. missing .. "%")
-    elseif style == "missing_value" then return "-12.5k"
-    else return pctStr end
-end
-
--- Format mock power text per the powerTextFormat setting.
-local function FormatPowerText(format, hideSymbol)
-    local pct = math.floor(MOCK_POWER_PCT * 100)
-    local mockCur = "12.5k"
-    local pctStr = hideSymbol and tostring(pct) or (pct .. "%")
-    if format == "current" then return mockCur
-    elseif format == "both" then return mockCur .. " | " .. pctStr
-    else return pctStr end
 end
 
 local function BuildMockFrame(host)
@@ -414,12 +394,18 @@ local function BuildMockFrame(host)
         mock._castbarMock = ns.QUI_UnitFramesCastbarPreview.Build(host)
     end
 
+    -- Body preview driver — owns the cycle ticker + pct-dependent writes
+    -- (health/power bar widths, health/power text, heal-pred width,
+    -- absorb width, aura stack + duration text).
+    if ns.QUI_UnitFramesBodyPreview and ns.QUI_UnitFramesBodyPreview.Build then
+        ns.QUI_UnitFramesBodyPreview.Build(mock)
+    end
+
     return mock
 end
 
 local function ApplyBorder(mock, size)
     local b = mock._border
-    local w, h = mock:GetWidth(), mock:GetHeight()
     size = math.max(0, size or 0)
     if size == 0 then
         for i = 1, 4 do b[i]:Hide() end
@@ -492,46 +478,34 @@ local function RefreshMock()
     local healthH = h - (inner * 2) - (powerShown and (powerH + 1) or 0)
     if healthH < 4 then healthH = 4 end
     local healthTop = -inner
-    local healthW = (w - (inner * 2)) * MOCK_HEALTH_PCT
-    if healthW < 1 then healthW = 1 end
-
     mock._healthBar:ClearAllPoints()
     mock._healthBar:SetPoint("TOPLEFT", mock, "TOPLEFT", inner, healthTop)
     mock._healthBar:SetHeight(healthH)
-    mock._healthBar:SetWidth(healthW)
+    -- Width is set per-tick by the body preview driver (ApplyDynamics).
     local texPath = ResolveStatusBarTexture(unitDB.texture)
     mock._healthBar:SetTexture(texPath)
     local hR, hG, hB, hA = ResolveHealthColor(State.selectedUnit, unitDB, general)
     mock._healthBar:SetVertexColor(hR, hG, hB, 1)
     mock._healthBar:SetAlpha(hA or 1)
 
-    -- Heal prediction (green forecast extending beyond the current health).
+    -- Heal prediction: settings-driven color/texture/opacity + anchor setup.
+    -- Width / Show / Hide are driven per-tick by the body preview driver.
     if unitDB.healPrediction and unitDB.healPrediction.enabled then
-        mock._healPred:Show()
-        local predFrac = 0.15  -- mock incoming heal fraction
-        local barAreaW = w - (inner * 2)
-        local predW = math.min(barAreaW - healthW, barAreaW * predFrac)
-        if predW > 0 then
-            local c = unitDB.healPrediction.color or { 0.2, 1, 0.2 }
-            mock._healPred:SetTexture(texPath)
-            mock._healPred:SetVertexColor(c[1], c[2], c[3], 1)
-            mock._healPred:SetAlpha(unitDB.healPrediction.opacity or 0.5)
-            mock._healPred:ClearAllPoints()
-            mock._healPred:SetPoint("TOPLEFT", mock._healthBar, "TOPRIGHT", 0, 0)
-            mock._healPred:SetPoint("BOTTOMLEFT", mock._healthBar, "BOTTOMRIGHT", 0, 0)
-            mock._healPred:SetWidth(predW)
-        else
-            mock._healPred:Hide()
-        end
+        local c = unitDB.healPrediction.color or { 0.2, 1, 0.2 }
+        mock._healPred:SetTexture(texPath)
+        mock._healPred:SetVertexColor(c[1], c[2], c[3], 1)
+        mock._healPred:SetAlpha(unitDB.healPrediction.opacity or 0.5)
+        mock._healPred:ClearAllPoints()
+        mock._healPred:SetPoint("TOPLEFT", mock._healthBar, "TOPRIGHT", 0, 0)
+        mock._healPred:SetPoint("BOTTOMLEFT", mock._healthBar, "BOTTOMRIGHT", 0, 0)
+        -- Width and Show/Hide are set per-tick by the driver.
     else
         mock._healPred:Hide()
     end
 
-    -- Absorb shield (teal stripe on top of the health bar).
+    -- Absorb: settings-driven color/texture/opacity + anchor setup.
+    -- Width / Show / Hide are driven per-tick by the body preview driver.
     if unitDB.absorbs and unitDB.absorbs.enabled then
-        mock._absorb:Show()
-        local absFrac = 0.20  -- mock absorb-as-fraction-of-max
-        local absW = (w - inner * 2) * absFrac
         local absTex = ResolveStatusBarTexture(unitDB.absorbs.texture or unitDB.texture)
         local c = unitDB.absorbs.color or { 0.2, 0.8, 0.8 }
         mock._absorb:SetTexture(absTex)
@@ -540,7 +514,7 @@ local function RefreshMock()
         mock._absorb:ClearAllPoints()
         mock._absorb:SetPoint("TOPRIGHT", mock._healthBar, "TOPRIGHT", 0, 0)
         mock._absorb:SetPoint("BOTTOMRIGHT", mock._healthBar, "BOTTOMRIGHT", 0, 0)
-        mock._absorb:SetWidth(math.min(absW, healthW))
+        -- Width and Show/Hide are set per-tick by the driver.
     else
         mock._absorb:Hide()
     end
@@ -574,7 +548,7 @@ local function RefreshMock()
         mock._powerBar:ClearAllPoints()
         mock._powerBar:SetPoint("BOTTOMLEFT", mock, "BOTTOMLEFT", inner, inner)
         mock._powerBar:SetHeight(powerH)
-        mock._powerBar:SetWidth((w - inner * 2) * MOCK_POWER_PCT)
+        -- Width is set per-tick by the body preview driver (ApplyDynamics).
         mock._powerBar:SetTexture(ptex)
         mock._powerBar:SetVertexColor(pColor[1], pColor[2], pColor[3], 1)
     else
@@ -640,12 +614,7 @@ local function RefreshMock()
         mock._healthText:Show()
         local hFont = math.max(8, math.min(24, math.floor((unitDB.healthFontSize or 11) * scale + 0.5)))
         mock._healthText:SetFont(fontPath, hFont, fontOutline)
-
-        mock._healthText:SetText(FormatHealthText(
-            unitDB.healthDisplayStyle or "percent",
-            unitDB.hideHealthPercentSymbol,
-            unitDB.healthDivider
-        ))
+        -- Health text content is set per-tick by the body preview driver.
 
         local masterOn = general and general.masterColorHealthText
         local hr, hg, hb, ha = ResolveTextColor(State.selectedUnit, masterOn, unitDB.healthTextColor)
@@ -763,7 +732,7 @@ local function RefreshMock()
                 if showStack then
                     icon._stack:Show()
                     icon._stack:SetFont(fontPath, math.max(8, math.floor((stackSize or 10) * scale + 0.5)), fontOutline)
-                    icon._stack:SetText(tostring(i + 1))  -- mock stack value
+                    -- Stack text content is set per-tick by the body preview driver.
                     local sc = stackColor or { 1, 1, 1, 1 }
                     icon._stack:SetTextColor(sc[1], sc[2], sc[3], sc[4] or 1)
                     icon._stack:ClearAllPoints()
@@ -776,7 +745,7 @@ local function RefreshMock()
                 if showDur then
                     icon._dur:Show()
                     icon._dur:SetFont(fontPath, math.max(8, math.floor((durSize or 12) * scale + 0.5)), fontOutline)
-                    icon._dur:SetText("12s")
+                    -- Duration text content is set per-tick by the body preview driver.
                     local dc = durColor or { 1, 1, 1, 1 }
                     icon._dur:SetTextColor(dc[1], dc[2], dc[3], dc[4] or 1)
                     icon._dur:ClearAllPoints()
@@ -821,10 +790,7 @@ local function RefreshMock()
         mock._powerText:Show()
         local ptFont = math.max(8, math.min(24, math.floor((unitDB.powerTextFontSize or 10) * scale + 0.5)))
         mock._powerText:SetFont(fontPath, ptFont, fontOutline)
-        mock._powerText:SetText(FormatPowerText(
-            unitDB.powerTextFormat or "percent",
-            unitDB.hidePowerPercentSymbol
-        ))
+        -- Power text content is set per-tick by the body preview driver.
 
         local usePowerColor = unitDB.powerTextUsePowerColor
         local masterOn = general and general.masterColorPowerText
@@ -850,16 +816,16 @@ local function RefreshMock()
     end
 
     -- Indicator-shaped icon helper: enabled/size/anchor/offset.
-    local function ApplyIndicator(tex, db, defaultAnchor, xKey, yKey)
-        if not (db and db.enabled) then tex:Hide(); return end
+    local function ApplyIndicator(tex, indicatorDB, defaultAnchor, xKey, yKey)
+        if not (indicatorDB and indicatorDB.enabled) then tex:Hide(); return end
         tex:Show()
-        local sz = math.max(6, math.floor((db.size or 16) * scale + 0.5))
+        local sz = math.max(6, math.floor((indicatorDB.size or 16) * scale + 0.5))
         tex:SetSize(sz, sz)
-        local anchor = ANCHOR_MAP[db.anchor or defaultAnchor] or defaultAnchor
+        local anchor = ANCHOR_MAP[indicatorDB.anchor or defaultAnchor] or defaultAnchor
         tex:ClearAllPoints()
         tex:SetPoint(anchor, mock, anchor,
-            (db[xKey] or 0) * scale,
-            (db[yKey] or 0) * scale)
+            (indicatorDB[xKey] or 0) * scale,
+            (indicatorDB[yKey] or 0) * scale)
     end
 
     -- Stance / Form text (player only) — both text and optional icon.
@@ -922,6 +888,24 @@ local function RefreshMock()
     -- Castbar mock — re-applies all castbar settings to the bottom-region mock.
     if mock._castbarMock and ns.QUI_UnitFramesCastbarPreview and ns.QUI_UnitFramesCastbarPreview.Refresh then
         ns.QUI_UnitFramesCastbarPreview.Refresh(mock._castbarMock, State.selectedUnit, unitDB, general)
+
+        -- Anchor the castbar mock below the body mock at the same width, so
+        -- the preview shows the in-game spatial relationship. Overrides
+        -- the castbar driver's host-bottom anchor and host-derived width.
+        if unitDB.castbar and unitDB.castbar.enabled then
+            mock._castbarMock:ClearAllPoints()
+            mock._castbarMock:SetPoint("TOP", mock, "BOTTOM", 0, -8 * scale)
+            mock._castbarMock:SetWidth(w)
+            mock._castbarMock._barInnerW = w
+        end
+    end
+
+    -- Body preview driver — caches unitDB / general, syncs per-aura
+    -- state for the now-visible icon set, and paints the first frame
+    -- with the current cycle pcts so the bars don't snap to a stale
+    -- value between RefreshMock and the next OnUpdate tick.
+    if ns.QUI_UnitFramesBodyPreview and ns.QUI_UnitFramesBodyPreview.Refresh then
+        ns.QUI_UnitFramesBodyPreview.Refresh(unitDB, general)
     end
 end
 

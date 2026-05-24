@@ -1742,6 +1742,7 @@ local function CreateHealthTintAnimationPreview(parent, indicator)
         preview._elapsed = 0
     end)
     replay:SetPoint("TOPRIGHT", -PAD, -6)
+    GUI:AttachTooltip(replay, "Restart the animation preview from the beginning.", "Replay Preview")
 
     local bar = CreateFrame("StatusBar", nil, preview)
     bar:SetPoint("LEFT", PAD, 0)

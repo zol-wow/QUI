@@ -58,33 +58,12 @@ end
 -- selector dropdown that picks which of bar 1-8 to mirror. Stays in sync
 -- with live slot changes. Since it's built at the tile level (not the
 -- sub-tab level), it persists across every sub-tab of Action Bars.
-local BAR_OFFSETS = {
-    bar1 = 0,    bar2 = 60,   bar3 = 48,   bar4 = 24,
-    bar5 = 36,   bar6 = 144,  bar7 = 156,  bar8 = 168,
-}
 local BAR_OPTIONS = {
     { value = "bar1", text = "Bar 1" }, { value = "bar2", text = "Bar 2" },
     { value = "bar3", text = "Bar 3" }, { value = "bar4", text = "Bar 4" },
     { value = "bar5", text = "Bar 5" }, { value = "bar6", text = "Bar 6" },
     { value = "bar7", text = "Bar 7" }, { value = "bar8", text = "Bar 8" },
 }
-local BAR_BINDING_PREFIXES = {
-    bar1 = "ACTIONBUTTON",
-    bar2 = "MULTIACTIONBAR1BUTTON",
-    bar3 = "MULTIACTIONBAR2BUTTON",
-    bar4 = "MULTIACTIONBAR3BUTTON",
-    bar5 = "MULTIACTIONBAR4BUTTON",
-    bar6 = "MULTIACTIONBAR5BUTTON",
-    bar7 = "MULTIACTIONBAR6BUTTON",
-    bar8 = "MULTIACTIONBAR7BUTTON",
-}
-local PREVIEW_TEXTURE_PATH = [[Interface\AddOns\QUI\assets\iconskin\]]
-local PREVIEW_TEXTURES = {
-    normal = PREVIEW_TEXTURE_PATH .. "Normal",
-    gloss = PREVIEW_TEXTURE_PATH .. "Gloss",
-}
-local MAX_PREVIEW_BUTTONS = 12
-local SAMPLE_PREVIEW_KEYBINDS = { "1", "2", "3", "4", "R", "F", "C", "V", "Q", "E", "T", "G" }
 local PreviewState = {
     bar = "bar1",
     refresh = nil,
@@ -118,11 +97,13 @@ end
 local function SetSelectedBar(barKey, origin)
     if type(barKey) ~= "string" or barKey == "" then return end
 
+    local isPreviewable = ns.QUI_ActionBarsPreviewDriver
+        and ns.QUI_ActionBarsPreviewDriver.IsPreviewable(barKey)
     local changedSelection = SelectedBarState.key ~= barKey
-    local changedPreview = BAR_OFFSETS[barKey] and PreviewState.bar ~= barKey
+    local changedPreview = isPreviewable and PreviewState.bar ~= barKey
 
     SelectedBarState.key = barKey
-    if BAR_OFFSETS[barKey] then
+    if isPreviewable then
         PreviewState.bar = barKey
     end
 
@@ -131,301 +112,15 @@ local function SetSelectedBar(barKey, origin)
     end
 end
 
-local function FormatPreviewKeybind(keybind)
-    if QUI and QUI.FormatKeybind then
-        return QUI.FormatKeybind(keybind)
-    end
-    if ns and ns.FormatKeybind then
-        return ns.FormatKeybind(keybind)
-    end
-    if not keybind then return nil end
-
-    local upper = keybind:upper()
-    upper = upper:gsub(" ", "")
-
-    upper = upper:gsub("MOUSEWHEELUP", "WU")
-    upper = upper:gsub("MOUSEWHEELDOWN", "WD")
-    upper = upper:gsub("MIDDLEMOUSE", "B3")
-    upper = upper:gsub("MIDDLEBUTTON", "B3")
-    upper = upper:gsub("BUTTON(%d+)", "B%1")
-
-    upper = upper:gsub("SHIFT%-", "S")
-    upper = upper:gsub("CTRL%-", "C")
-    upper = upper:gsub("ALT%-", "A")
-    upper = upper:gsub("^S%-(.+)", "S%1")
-    upper = upper:gsub("^C%-(.+)", "C%1")
-    upper = upper:gsub("^A%-(.+)", "A%1")
-
-    upper = upper:gsub("NUMPADPLUS", "N+")
-    upper = upper:gsub("NUMPADMINUS", "N-")
-    upper = upper:gsub("NUMPADMULTIPLY", "N*")
-    upper = upper:gsub("NUMPADDIVIDE", "N/")
-    upper = upper:gsub("NUMPADPERIOD", "N.")
-    upper = upper:gsub("NUMPADENTER", "NE")
-
-    upper = upper:gsub("NUMPAD", "N")
-    upper = upper:gsub("CAPSLOCK", "CAP")
-    upper = upper:gsub("DELETE", "DEL")
-    upper = upper:gsub("ESCAPE", "ESC")
-    upper = upper:gsub("BACKSPACE", "BS")
-    upper = upper:gsub("SPACE", "SP")
-    upper = upper:gsub("INSERT", "INS")
-    upper = upper:gsub("PAGEUP", "PU")
-    upper = upper:gsub("PAGEDOWN", "PD")
-    upper = upper:gsub("HOME", "HM")
-    upper = upper:gsub("END", "ED")
-    upper = upper:gsub("PRINTSCREEN", "PS")
-    upper = upper:gsub("SCROLLLOCK", "SL")
-    upper = upper:gsub("PAUSE", "PA")
-    upper = upper:gsub("TILDE", "`")
-    upper = upper:gsub("GRAVE", "`")
-
-    upper = upper:gsub("UPARROW", "UP")
-    upper = upper:gsub("DOWNARROW", "DN")
-    upper = upper:gsub("LEFTARROW", "LF")
-    upper = upper:gsub("RIGHTARROW", "RT")
-
-    upper = upper:gsub("SEMICOLON", ";")
-    upper = upper:gsub("APOSTROPHE", "'")
-    upper = upper:gsub("LEFTBRACKET", "[")
-    upper = upper:gsub("RIGHTBRACKET", "]")
-    upper = upper:gsub("BACKSLASH", "\\")
-    upper = upper:gsub("MINUS", "-")
-    upper = upper:gsub("EQUALS", "=")
-    upper = upper:gsub("COMMA", ",")
-    upper = upper:gsub("^PERIOD$", ".")
-    upper = upper:gsub("SLASH", "/")
-
-    if #upper > 4 then
-        upper = upper:sub(1, 4)
-    end
-
-    return upper
-end
-
-local function IsSecretValue(value)
-    return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value) or false
-end
-
-local IsPreviewSecretValue = IsSecretValue
-
-local function HasPreviewTextValue(value)
-    if IsSecretValue(value) then
-        return true
-    end
-    if value == nil then return false end
-    return value ~= ""
-end
-
-local function GetPreviewEffectiveSettings(barKey)
-    local ctx = ResolveContext()
-    if not ctx then return nil, nil end
-
-    local effective = {}
-    if ctx.global then
-        for key, value in pairs(ctx.global) do
-            effective[key] = value
-        end
-    end
-
-    local barDB = ctx.bars and ctx.bars[barKey]
-    if barDB then
-        for key, value in pairs(barDB) do
-            effective[key] = value
-        end
-    end
-
-    return effective, barDB
-end
-
-local function GetPreviewSlot(barKey, index)
-    local buttons = ns.ActionBarsOwned
-        and ns.ActionBarsOwned.nativeButtons
-        and ns.ActionBarsOwned.nativeButtons[barKey]
-    local button = buttons and buttons[index]
-    local liveAction = button and button.action
-    if Helpers.SafeValue then
-        liveAction = Helpers.SafeValue(liveAction, nil)
-    end
-    local numericAction = liveAction and tonumber(liveAction)
-    if numericAction and numericAction > 0 then
-        return numericAction
-    end
-
-    local offset = BAR_OFFSETS[barKey] or 0
-    return offset + index
-end
-
-local function GetPreviewSourceButton(barKey, index)
-    local buttons = ns.ActionBarsOwned
-        and ns.ActionBarsOwned.nativeButtons
-        and ns.ActionBarsOwned.nativeButtons[barKey]
-    return buttons and buttons[index] or nil
-end
-
-local function GetPreviewActionSlot(slot, sourceButton)
-    local liveAction = sourceButton and sourceButton.action
-    if Helpers.SafeValue then
-        liveAction = Helpers.SafeValue(liveAction, nil)
-    end
-
-    local numericAction = liveAction and tonumber(liveAction)
-    if numericAction and numericAction > 0 then
-        return numericAction
-    end
-
-    return slot
-end
-
-local function GetPreviewDisplayedTexture(slot, sourceButton)
-    local icon = sourceButton and (sourceButton.icon or sourceButton.Icon)
-    if icon and icon.IsShown and icon:GetObjectType() == "Texture" and icon:IsShown() and icon.GetTexture then
-        local displayed = icon:GetTexture()
-        if displayed then
-            return displayed
-        end
-    end
-
-    return slot and GetActionTexture and GetActionTexture(slot) or nil
-end
-
-local function GetPreviewFontSettings()
-    local fontPath = "Fonts\\FRIZQT__.TTF"
-    local outline = "OUTLINE"
-    local core = GetCore()
-    local general = core and core.db and core.db.profile and core.db.profile.general
-    if general then
-        if general.font and ns.LSM then
-            fontPath = ns.LSM:Fetch("font", general.font) or fontPath
-        end
-        outline = general.fontOutline or outline
-    end
-    return fontPath, outline
-end
-
-local function GetPreviewBindingText(barKey, index, sourceButton)
-    local hotkey = sourceButton and (sourceButton.HotKey or sourceButton.hotKey)
-    local displayed = hotkey and hotkey.GetText and hotkey:GetText() or nil
-    if IsPreviewSecretValue(displayed) then
-        return displayed
-    end
-    if type(displayed) == "string" and displayed ~= "" then
-        return displayed
-    end
-
-    local prefix = BAR_BINDING_PREFIXES[barKey]
-    if not prefix or not GetBindingKey then return nil end
-
-    local binding = GetBindingKey(prefix .. index)
-    return FormatPreviewKeybind(binding)
-end
-
-local function GetPreviewMacroText(slot, sourceButton)
-    local actionSlot = GetPreviewActionSlot(slot, sourceButton)
-    local displayed = sourceButton and sourceButton.Name and sourceButton.Name.GetText and sourceButton.Name:GetText() or nil
-    if IsPreviewSecretValue(displayed) then
-        return displayed
-    end
-    if type(displayed) == "string" and displayed ~= "" then
-        return displayed
-    end
-
-    if not actionSlot or not GetActionText then return nil end
-
-    local ok, text = pcall(GetActionText, actionSlot)
-    if not ok then return nil end
-
-    if IsPreviewSecretValue(text) then
-        return text
-    end
-    if type(text) == "string" and text ~= "" then
-        return text
-    end
-    return nil
-end
-
-local function GetPreviewCountText(slot, sourceButton)
-    local actionSlot = GetPreviewActionSlot(slot, sourceButton)
-    local displayed = sourceButton and sourceButton.Count and sourceButton.Count.GetText and sourceButton.Count:GetText() or nil
-    if IsPreviewSecretValue(displayed) then
-        return displayed
-    end
-    if type(displayed) == "string" and displayed ~= "" then
-        return displayed
-    end
-
-    if not actionSlot or not (C_ActionBar and C_ActionBar.GetActionDisplayCount) then
-        return nil
-    end
-
-    local ok, count = pcall(C_ActionBar.GetActionDisplayCount, actionSlot)
-    if not ok then return nil end
-
-    if IsSecretValue(count) then
-        return count
-    else
-        if count == nil or count == "" or count == 0 or count == "0" then
-            return nil
-        end
-
-        return tostring(count)
-    end
-end
-
-local function SetPreviewTextStyle(fontString, button, text, fontPath, outline, fontSize, color, anchor, offsetX, offsetY)
-    if not fontString then return end
-    local isSecretText = IsSecretValue(text)
-    if isSecretText then
-        -- Secret text can be passed directly to SetText below, but must not be
-        -- inspected in Lua.
-    elseif text == nil or text == "" then
-        fontString:SetText("")
-        fontString:SetAlpha(0)
-        fontString:Hide()
-        return
-    elseif type(text) ~= "string" then
-        text = tostring(text)
-    end
-
-    local width = math.max((button:GetWidth() or 0) - 4, 1)
-    local height = math.max((fontSize or 10) + 4, 1)
-    local point = anchor or "CENTER"
-
-    fontString:SetFont(fontPath, fontSize or 10, outline or "OUTLINE")
-    fontString:SetText(text)
-    fontString:SetWidth(width)
-    fontString:SetHeight(height)
-    fontString:ClearAllPoints()
-    fontString:SetPoint(point, button, point, offsetX or 0, offsetY or 0)
-
-    if point:find("LEFT") then
-        fontString:SetJustifyH("LEFT")
-    elseif point:find("RIGHT") then
-        fontString:SetJustifyH("RIGHT")
-    else
-        fontString:SetJustifyH("CENTER")
-    end
-
-    if point:find("TOP") then
-        fontString:SetJustifyV("TOP")
-    elseif point:find("BOTTOM") then
-        fontString:SetJustifyV("BOTTOM")
-    else
-        fontString:SetJustifyV("MIDDLE")
-    end
-
-    local r = color and color[1] or 1
-    local g = color and color[2] or 1
-    local b = color and color[3] or 1
-    local a = color and color[4] or 1
-    fontString:SetTextColor(r, g, b, a)
-    fontString:SetAlpha(1)
-    fontString:Show()
-end
-
 local function SetActionBarsPreviewBar(barKey)
-    if not BAR_OFFSETS[barKey] then return end
+    if not (ns.QUI_ActionBarsPreviewDriver
+        and ns.QUI_ActionBarsPreviewDriver.IsPreviewable(barKey)) then
+        return
+    end
     SetSelectedBar(barKey, "preview")
+    if ns.QUI_ActionBarsPreviewDriver.SetSelectedBar then
+        ns.QUI_ActionBarsPreviewDriver.SetSelectedBar(barKey)
+    end
     if PreviewState.refresh then PreviewState.refresh() end
 end
 
@@ -434,7 +129,8 @@ local function BuildActionBarsPreview(pv)
     local border = (GUI.Colors and GUI.Colors.border) or { 1, 1, 1, 0.06 }
 
     local selectedBar = GetSelectedBar()
-    if BAR_OFFSETS[selectedBar] then
+    if ns.QUI_ActionBarsPreviewDriver
+        and ns.QUI_ActionBarsPreviewDriver.IsPreviewable(selectedBar) then
         PreviewState.bar = selectedBar
     end
 
@@ -455,279 +151,15 @@ local function BuildActionBarsPreview(pv)
     local spaced = ("PREVIEW"):gsub(".", "%0 "):sub(1, -2)
     lbl:SetText(spaced)
 
-    local previewButtons = {}
-    local previewHost = CreateFrame("Frame", nil, pv)
-    previewHost:SetPoint("TOPLEFT", pv, "TOPLEFT", 12, -30)
-    previewHost:SetPoint("TOPRIGHT", pv, "TOPRIGHT", -12, -30)
-    previewHost:SetPoint("BOTTOM", pv, "BOTTOM", 0, 12)
-
-    -- Each preview button bundles all the visual pieces that QUI's real
-    -- SkinButton applies, so the tile preview reflects the real bar skin.
-    for i = 1, MAX_PREVIEW_BUTTONS do
-        local b = CreateFrame("Frame", nil, previewHost)
-
-        local backdrop = b:CreateTexture(nil, "BACKGROUND", nil, -8)
-        backdrop:SetAllPoints(b)
-        backdrop:SetColorTexture(0, 0, 0, 1)
-
-        local icon = b:CreateTexture(nil, "ARTWORK")
-        icon:SetAllPoints(b)
-
-        local normal = b:CreateTexture(nil, "OVERLAY", nil, 1)
-        normal:SetAllPoints(b)
-        normal:SetTexture(PREVIEW_TEXTURES.normal)
-        normal:SetVertexColor(0, 0, 0, 1)
-
-        local gloss = b:CreateTexture(nil, "OVERLAY", nil, 2)
-        gloss:SetAllPoints(b)
-        gloss:SetTexture(PREVIEW_TEXTURES.gloss)
-        gloss:SetBlendMode("ADD")
-        gloss:Hide()
-
-        local hotkey = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        hotkey:SetWordWrap(false)
-        hotkey:SetShadowOffset(1, -1)
-        if hotkey.SetMaxLines then hotkey:SetMaxLines(1) end
-
-        local name = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        name:SetWordWrap(false)
-        name:SetShadowOffset(1, -1)
-        if name.SetMaxLines then name:SetMaxLines(1) end
-
-        local count = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        count:SetWordWrap(false)
-        count:SetShadowOffset(1, -1)
-        if count.SetMaxLines then count:SetMaxLines(1) end
-
-        previewButtons[i] = {
-            frame    = b,
-            icon     = icon,
-            backdrop = backdrop,
-            normal   = normal,
-            gloss    = gloss,
-            hotkey   = hotkey,
-            name     = name,
-            count    = count,
-        }
+    -- Driver owns the preview buttons, Cooldown children, ticker, and cycle.
+    if ns.QUI_ActionBarsPreviewDriver and ns.QUI_ActionBarsPreviewDriver.Build then
+        ns.QUI_ActionBarsPreviewDriver.Build(pv)
     end
 
-    -- RefreshPreview applies every QUI setting we can visually reflect
-    -- without a real ActionButton template: layout, icon zoom, backdrop,
-    -- gloss, borders, and range/usability tint. Runs on every event +
-    -- OnUpdate tick so it stays in sync with live slot changes and with
-    -- the selected bar's current per-bar settings.
-    local function RefreshPreview()
-        local settings, barDB = GetPreviewEffectiveSettings(PreviewState.bar)
-        settings = settings or {}
-
-        local layout = barDB and barDB.ownedLayout or {}
-        local requestedVisible = math.max(1, math.min(layout.iconCount or MAX_PREVIEW_BUTTONS, MAX_PREVIEW_BUTTONS))
-        local previewSlots = {}
-        local hasAnyTexture = false
-
-        for i = 1, requestedVisible do
-            local sourceButton = GetPreviewSourceButton(PreviewState.bar, i)
-            local slot = GetPreviewSlot(PreviewState.bar, i)
-            local tex = GetPreviewDisplayedTexture(slot, sourceButton)
-            if tex then
-                hasAnyTexture = true
-            end
-
-            previewSlots[i] = {
-                index = i,
-                slot = slot,
-                sourceButton = sourceButton,
-                texture = tex,
-                hiddenEmpty = settings.hideEmptySlots and not tex,
-            }
-        end
-
-        -- Keep one placeholder visible on completely empty bars so the tile
-        -- preview does not disappear while tuning layout settings.
-        if not hasAnyTexture and previewSlots[1] then
-            previewSlots[1].hiddenEmpty = false
-        end
-
-        local visibleCount = math.min(requestedVisible, MAX_PREVIEW_BUTTONS)
-        local buttonSize = math.max(20, layout.buttonSize or 30)
-        local buttonSpacing = layout.buttonSpacing or 0
-        local columns = math.max(1, math.min(layout.columns or visibleCount, visibleCount))
-        local isVertical = layout.orientation == "vertical"
-        local growLeft = layout.growLeft == true
-        local growUp = layout.growUp == true
-        local xStep = buttonSize + buttonSpacing
-        local yStep = buttonSize + buttonSpacing
-        local positions = {}
-        local minX, maxX, minY, maxY
-
-        for i = 1, visibleCount do
-            local primary = (i - 1) % columns
-            local secondary = math.floor((i - 1) / columns)
-            local col = isVertical and secondary or primary
-            local row = isVertical and primary or secondary
-            local x = col * xStep
-            local y = row * yStep
-
-            if growLeft then
-                x = -x
-            end
-            if not growUp then
-                y = -y
-            end
-
-            positions[i] = { x = x, y = y }
-            minX = (not minX or x < minX) and x or minX
-            maxX = (not maxX or x > maxX) and x or maxX
-            minY = (not minY or y < minY) and y or minY
-            maxY = (not maxY or y > maxY) and y or maxY
-        end
-
-        local centerX = ((minX or 0) + (maxX or 0)) / 2
-        local centerY = ((minY or 0) + (maxY or 0)) / 2
-        local skinEnabled = settings.skinEnabled ~= false
-        local zoom = skinEnabled and (settings.iconZoom or 0.05) or 0
-        local showBackdrop = skinEnabled and settings.showBackdrop ~= false
-        local backdropAlpha = settings.backdropAlpha or 0.2
-        local showGloss = skinEnabled and settings.showGloss ~= false
-        local glossAlpha = settings.glossAlpha or 0.3
-        local showBorders = skinEnabled and settings.showBorders ~= false
-        local rangeColor = settings.rangeColor or { 0.8, 0.1, 0.1, 1 }
-        local usabColor = settings.usabilityColor or { 0.4, 0.4, 0.4, 1 }
-        local manaColor = settings.manaColor or { 0.5, 0.5, 1.0, 1 }
-        local fontPath, outline = GetPreviewFontSettings()
-        local hasVisibleKeybind = false
-
-        for i = 1, visibleCount do
-            local slotInfo = previewSlots[i]
-            if slotInfo then
-                slotInfo.binding = GetPreviewBindingText(PreviewState.bar, slotInfo.index, slotInfo.sourceButton)
-                slotInfo.macro = GetPreviewMacroText(slotInfo.slot, slotInfo.sourceButton)
-                slotInfo.count = GetPreviewCountText(slotInfo.slot, slotInfo.sourceButton)
-                hasVisibleKeybind = hasVisibleKeybind or (not slotInfo.hiddenEmpty and HasPreviewTextValue(slotInfo.binding))
-            end
-        end
-
-        if settings.showKeybinds and not hasVisibleKeybind then
-            for i = 1, visibleCount do
-                local slotInfo = previewSlots[i]
-                if slotInfo and slotInfo.texture and not HasPreviewTextValue(slotInfo.binding) then
-                    slotInfo.binding = SAMPLE_PREVIEW_KEYBINDS[i] or SAMPLE_PREVIEW_KEYBINDS[((i - 1) % #SAMPLE_PREVIEW_KEYBINDS) + 1]
-                end
-            end
-        end
-
-        for i = 1, #previewButtons do
-            local pb = previewButtons[i]
-            local slotInfo = previewSlots[i]
-
-            if not slotInfo then
-                pb.frame:Hide()
-                pb.hotkey:Hide()
-                pb.name:Hide()
-                pb.count:Hide()
-            else
-                local pos = positions[i]
-                local tex = slotInfo.texture
-                pb.frame:SetSize(buttonSize, buttonSize)
-                pb.frame:ClearAllPoints()
-                pb.frame:SetPoint("CENTER", previewHost, "CENTER", pos.x - centerX, pos.y - centerY)
-
-                if slotInfo.hiddenEmpty then
-                    pb.frame:Hide()
-                    pb.hotkey:Hide()
-                    pb.name:Hide()
-                    pb.count:Hide()
-                else
-                    pb.frame:Show()
-
-                    if tex then
-                        pb.icon:SetTexture(tex)
-                        pb.icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
-                        pb.icon:Show()
-
-                        local isUsable, notEnoughMana, inRange = true, false, true
-                        if IsUsableAction and slotInfo.slot then
-                            isUsable, notEnoughMana = IsUsableAction(slotInfo.slot)
-                        end
-                        if IsActionInRange and slotInfo.slot then
-                            local rangeState = IsActionInRange(slotInfo.slot)
-                            inRange = not (rangeState == false or rangeState == 0)
-                        end
-
-                        if settings.rangeIndicator and not inRange then
-                            pb.icon:SetVertexColor(rangeColor[1], rangeColor[2], rangeColor[3], 1)
-                        elseif settings.usabilityIndicator and notEnoughMana then
-                            pb.icon:SetVertexColor(manaColor[1], manaColor[2], manaColor[3], 1)
-                        elseif settings.usabilityIndicator and not isUsable then
-                            pb.icon:SetVertexColor(usabColor[1], usabColor[2], usabColor[3], 1)
-                        else
-                            pb.icon:SetVertexColor(1, 1, 1, 1)
-                        end
-                        pb.icon:SetAlpha(1)
-                    else
-                        pb.icon:SetTexture(nil)
-                        pb.icon:SetTexCoord(0, 1, 0, 1)
-                        pb.icon:SetVertexColor(1, 1, 1, 1)
-                        pb.icon:SetAlpha(0)
-                        pb.icon:Hide()
-                    end
-
-                    if showBackdrop then
-                        pb.backdrop:SetAlpha(backdropAlpha)
-                        pb.backdrop:Show()
-                    else
-                        pb.backdrop:Hide()
-                    end
-
-                    if showBorders then
-                        pb.normal:Show()
-                    else
-                        pb.normal:Hide()
-                    end
-
-                    if showGloss then
-                        pb.gloss:SetVertexColor(1, 1, 1, glossAlpha)
-                        pb.gloss:Show()
-                    else
-                        pb.gloss:Hide()
-                    end
-
-                    if not skinEnabled then
-                        pb.backdrop:Hide()
-                        pb.normal:Hide()
-                        pb.gloss:Hide()
-                        pb.icon:SetTexCoord(0, 1, 0, 1)
-                    end
-
-                    local bindingText = slotInfo.binding
-                    if settings.hideEmptyKeybinds and not tex then
-                        bindingText = nil
-                    end
-
-                    SetPreviewTextStyle(
-                        pb.hotkey, pb.frame, settings.showKeybinds and bindingText or nil,
-                        fontPath, outline, settings.keybindFontSize or 11, settings.keybindColor,
-                        settings.keybindAnchor or "TOPRIGHT",
-                        settings.keybindOffsetX or 0, settings.keybindOffsetY or 0
-                    )
-                    SetPreviewTextStyle(
-                        pb.name, pb.frame, settings.showMacroNames and slotInfo.macro or nil,
-                        fontPath, outline, settings.macroNameFontSize or 10, settings.macroNameColor,
-                        settings.macroNameAnchor or "BOTTOM",
-                        settings.macroNameOffsetX or 0, settings.macroNameOffsetY or 0
-                    )
-                    SetPreviewTextStyle(
-                        pb.count, pb.frame, settings.showCounts and slotInfo.count or nil,
-                        fontPath, outline, settings.countFontSize or 14, settings.countColor,
-                        settings.countAnchor or "BOTTOMRIGHT",
-                        settings.countOffsetX or 0, settings.countOffsetY or 0
-                    )
-                end
-            end
-        end
-    end
-    PreviewState.refresh = RefreshPreview
-    RefreshPreview()
+    -- PreviewState.refresh now points at the driver. This is the
+    -- callback every option onChange / live-event handler invokes.
+    PreviewState.refresh = ns.QUI_ActionBarsPreviewDriver and ns.QUI_ActionBarsPreviewDriver.Refresh
+    if PreviewState.refresh then PreviewState.refresh() end
 
     local selector = GUI:CreateFormDropdown(pv, nil, BAR_OPTIONS,
         "bar", PreviewState, function(val)
@@ -739,13 +171,19 @@ local function BuildActionBarsPreview(pv)
     selector:SetSize(80, 22)
 
     RegisterSelectedBarListener(pv, function(barKey, origin)
-        if not BAR_OFFSETS[barKey] then return end
+        if not (ns.QUI_ActionBarsPreviewDriver
+            and ns.QUI_ActionBarsPreviewDriver.IsPreviewable(barKey)) then
+            return
+        end
         PreviewState.bar = barKey
         if selector and selector.SetValue then
             selector.SetValue(barKey, true)
         end
-        if origin ~= "preview" then
-            RefreshPreview()
+        if origin ~= "preview" and ns.QUI_ActionBarsPreviewDriver.SetSelectedBar then
+            ns.QUI_ActionBarsPreviewDriver.SetSelectedBar(barKey)
+        end
+        if origin ~= "preview" and PreviewState.refresh then
+            PreviewState.refresh()
         end
     end)
 
@@ -754,20 +192,24 @@ local function BuildActionBarsPreview(pv)
     pv:RegisterEvent("PLAYER_ENTERING_WORLD")
     -- ACTIONBAR_SLOT_CHANGED fires constantly (~10/s) even at idle, so
     -- gate refresh on visibility. OnUpdate already only ticks while shown
-    -- and runs every 0.25s, so a freshly-opened panel catches up quickly.
+    -- and runs every 1.0s, so a freshly-opened panel catches up within a second.
     pv:SetScript("OnEvent", function(self)
-        if self:IsVisible() then RefreshPreview() end
+        if self:IsVisible() and PreviewState.refresh then
+            PreviewState.refresh()
+        end
     end)
 
-    -- Throttled OnUpdate picks up setting changes from the sub-tabs
-    -- below without us having to hook every onChange callback. Every
-    -- 0.25s is imperceptible latency for a visual preview.
+    -- Safety-net poll. Setting changes are reflected explicitly via
+    -- _G.QUI_RefreshActionBars → driver.Refresh; this poll exists only
+    -- to catch live action-slot changes the game made without firing
+    -- ACTIONBAR_SLOT_CHANGED, plus hypothetical setting paths that skip
+    -- the explicit hook chain. 1.0s is imperceptible latency for those.
     local _accum = 0
     pv:SetScript("OnUpdate", function(self, elapsed)
         _accum = _accum + elapsed
-        if _accum < 0.25 then return end
+        if _accum < 1.0 then return end
         _accum = 0
-        RefreshPreview()
+        if PreviewState.refresh then PreviewState.refresh() end
     end)
 end
 
@@ -938,6 +380,9 @@ local function BuildMasterSettingsTab(tabContent)
         if LibKeyBound then LibKeyBound:Toggle()
         elseif QuickKeybindFrame then ShowUIPanel(QuickKeybindFrame) end
     end)
+    GUI:AttachTooltip(keybindBtn,
+        "Enter keybind capture mode — hover any action button and press a key to bind it. Uses LibKeyBound when available, otherwise opens Blizzard's Quick Keybind frame. Disabled in combat.",
+        "Toggle Keybind Mode")
     s3.AddRow(Opts.BuildSettingRow(s3.frame,
         "Keybind Mode", keybindBtn,
         "Show keybind overlays on action buttons"))
@@ -1098,7 +543,9 @@ ns.QUI_ActionBarsOptions = {
         end
     end,
     IsPreviewableBar       = function(barKey)
-        return BAR_OFFSETS[barKey] ~= nil
+        return ns.QUI_ActionBarsPreviewDriver
+            and ns.QUI_ActionBarsPreviewDriver.IsPreviewable(barKey)
+            or false
     end,
     CreateActionBarsPage   = CreateActionBarsPage,  -- legacy shim
 }

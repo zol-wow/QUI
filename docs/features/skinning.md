@@ -81,10 +81,6 @@ The ready check popup is reskinned with QUI's dark theme for a cleaner appearanc
 
 General status bar skinning applies QUI's dark theme to reputation bars, honor bars, and other Blizzard status tracking bars for visual consistency.
 
-### Damage Meter
-
-The Blizzard built-in damage meter (Midnight 12.0+) gets a QUI skin treatment with optional bar texture, background texture, border texture, and font customization. Settings live on a dedicated **Appearance > Damage Meter** sub-page, which also hosts the meter's behavior controls (visibility, bar layout, alpha, etc.).
-
 ## Key Features
 
 - **Global background color** -- A single setting controls the background color across all skinned frames for consistent appearance.

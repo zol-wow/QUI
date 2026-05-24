@@ -165,8 +165,17 @@ for i = 1, MAX_TOTEMS do
     local button = assert(TotemBar.buttons[i], "totem button should exist")
     assert(button.template == "SecureActionButtonTemplate",
         "totem buttons must use SecureActionButtonTemplate")
-    assert(button.registeredClicks[1] == "RightButtonUp",
-        "totem buttons must register right-click release")
+    -- Must register BOTH directions so SecureActionButton fires regardless of
+    -- the ActionButtonUseKeyDown CVar (default 1 = key-down on modern clients).
+    -- Registering only the release direction silently no-ops the secure action.
+    local clicks = button.registeredClicks
+    local hasDown, hasUp = false, false
+    for _, click in ipairs(clicks) do
+        if click == "RightButtonDown" then hasDown = true end
+        if click == "RightButtonUp" then hasUp = true end
+    end
+    assert(hasDown and hasUp,
+        "totem buttons must register right-click in both directions")
     assert(button.attributes.type2 == "destroytotem",
         "right-click should use Blizzard's secure destroytotem action")
     assert(button.attributes["*type2"] == "destroytotem",

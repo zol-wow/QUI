@@ -62,6 +62,18 @@ function V2.Register(frame)
                 navRoutes = { { tabIndex = 2, subTabIndex = 13 } },
             },
             {
+                id = "damageMeterNative",
+                name = "Damage Meter",
+                sectionNav = true,
+                featureId = "damageMeterNativePage",
+                searchContext = {
+                    tileId = "gameplay",
+                    tabName = "Gameplay",
+                    subPageIndex = 7,
+                    subTabName = "Damage Meter",
+                },
+            },
+            {
                 id = "preyTracker",
                 name = "Prey Tracker",
                 sectionNav = true,

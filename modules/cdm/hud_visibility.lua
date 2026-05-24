@@ -51,7 +51,13 @@ end
 -- SHARED HELPERS
 ---------------------------------------------------------------------------
 
+-- type() returns "number" for both ordinary numbers and WoW's "secret"
+-- numbers (e.g. GetAlpha() on a SecureUnitButtonTemplate frame such as
+-- QUI_BossN, or UnitHealthPercent called without a curve). Arithmetic
+-- on a secret value from tainted code throws — short-circuit with
+-- issecretvalue so callers snap-to-target instead of exploding.
 local function ReadNumber(value, fallback)
+    if issecretvalue and issecretvalue(value) then return fallback end
     local valueType = type(value)
     if valueType == "number" then return value end
     if valueType == "string" then return tonumber(value) or fallback end

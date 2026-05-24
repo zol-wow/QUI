@@ -539,3 +539,78 @@ local fFB6 = Analyzer.analyze(sourceFB6, "modules/foo.lua", r15, cfg)
 assert_eq(#fFB6, 0, "function parameter shadows tainted upvalue")
 
 print("tainted-base field read test passed")
+
+-- ===========================================================================
+-- Secret-returning functions (taint propagates from the return value)
+-- ---------------------------------------------------------------------------
+-- C_StringUtil formatters accept secret-tagged arguments without erroring
+-- (they are safe sinks), but they also RETURN secret-tagged values. The local
+-- assigned from such a call must be treated as tainted, so downstream
+-- comparisons like `s == "0"` get flagged. Closes the analyzer gap that hid
+-- the live taint crash at damage_meter.lua:906.
+-- ===========================================================================
+
+local rSR = Registry.new()
+
+-- Assignment from a secret-returning safe sink taints the LHS.
+local srcSR1 = [[
+local s = C_StringUtil.TruncateWhenZero(123)
+return s
+]]
+local _fSR1, _eSR1, dSR1 = Analyzer.analyze(
+    srcSR1, "modules/foo.lua", rSR, cfg, { exposeDebug = true })
+assert(dSR1.taintedAt.s, "s tainted by C_StringUtil.TruncateWhenZero return")
+
+-- Comparison on a secret-returning call's result emits a <comparison> finding.
+local srcSR2 = [[
+local s = C_StringUtil.TruncateWhenZero(123)
+if s == "0" then return end
+return 1
+]]
+local fSR2 = Analyzer.analyze(srcSR2, "modules/foo.lua", rSR, cfg)
+assert_eq(#fSR2, 1, "comparison on secret-returning result emits one finding")
+assert_eq(fSR2[1].sink, "<comparison>", "sink labeled comparison")
+
+-- Existing safe-sink behavior preserved: passing a tainted arg into the same
+-- function does not emit a finding for that argument-passing step.
+local rSR3 = Registry.new()
+rSR3:addSource("C_Spell.GetSpellInfo")
+local srcSR3 = [[
+local info = C_Spell.GetSpellInfo(1)
+local s = C_StringUtil.TruncateWhenZero(info)
+return s
+]]
+local fSR3 = Analyzer.analyze(srcSR3, "modules/foo.lua", rSR3, cfg)
+assert_eq(#fSR3, 0, "passing tainted into safe-sink does not emit at call site")
+
+-- Pipeline: SetText(C_StringUtil.TruncateWhenZero(secret)) is fully safe —
+-- the SetText safe-sink method consumes the secret return inline.
+local srcSR4 = [[
+local info = C_Spell.GetSpellInfo(1)
+frame:SetText(C_StringUtil.TruncateWhenZero(info))
+]]
+local fSR4 = Analyzer.analyze(srcSR4, "modules/foo.lua", rSR3, cfg)
+assert_eq(#fSR4, 0, "SetText consumes secret-returning result safely")
+
+-- Arithmetic on a secret-returning result emits an <arith> finding.
+local srcSR5 = [[
+local s = C_StringUtil.RoundToNearestString(100, 10)
+local n = s + 1
+return n
+]]
+local fSR5 = Analyzer.analyze(srcSR5, "modules/foo.lua", rSR, cfg)
+assert_eq(#fSR5, 1, "arith on secret-returning result emits one finding")
+assert_eq(fSR5[1].sink, "<arith>", "sink labeled arith")
+
+-- Guard on the secret-returning result clears taint in the safe branch.
+local srcSR6 = [[
+local s = C_StringUtil.TruncateWhenZero(1)
+if not Helpers.IsSecretValue(s) then
+    if s == "0" then return end
+end
+return 1
+]]
+local fSR6 = Analyzer.analyze(srcSR6, "modules/foo.lua", rSR, cfg)
+assert_eq(#fSR6, 0, "guard untaints secret-returning result in then-branch")
+
+print("secret-returning test passed")

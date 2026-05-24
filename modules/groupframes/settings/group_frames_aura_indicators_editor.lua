@@ -116,6 +116,7 @@ local function CreateHealthTintAnimationPreview(parent, GUI, C, indicator)
         preview._elapsed = 0
     end)
     replay:SetPoint("TOPRIGHT", -PAD, -6)
+    GUI:AttachTooltip(replay, "Restart the animation preview from the beginning.", "Replay Preview")
 
     local bar = CreateFrame("StatusBar", nil, preview)
     bar:SetPoint("LEFT", PAD, 0)
@@ -482,6 +483,9 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
     addBarButton:SetPoint("LEFT", addIconButton, "RIGHT", 6, 0)
     local addTintButton = GUI:CreateButton(indicatorActionsRow, "Add Tint", 72, 22)
     addTintButton:SetPoint("LEFT", addBarButton, "RIGHT", 6, 0)
+    GUI:AttachTooltip(addTintButton,
+        "Add a tint indicator — recolors the unit's health bar while the selected aura is active. Useful for at-a-glance buff/debuff awareness without adding screen clutter.",
+        "Add Tint Indicator")
 
     local selectedAuraLabel = auraListArea:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     selectedAuraLabel:SetJustifyH("LEFT")

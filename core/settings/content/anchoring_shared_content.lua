@@ -889,6 +889,7 @@ function QUI_Anchoring_Options:CreateMultiAnchorPopover(anchorButton, settingsDB
         popover:Hide()
     end)
     closeBtn:SetPoint("TOPRIGHT", -2, -2)
+    GUI:AttachTooltip(closeBtn, "Close the advanced anchor editor. Your changes are kept.", "Close")
     if closeBtn.text then
         local fontPath = GUI.GetFontPath and GUI:GetFontPath() or "Fonts\\FRIZQT__.TTF"
         closeBtn.text:SetFont(fontPath, 16, "")
@@ -996,6 +997,7 @@ function QUI_Anchoring_Options:CreateMultiAnchorPopover(anchorButton, settingsDB
                     if onChange then onChange() end
                 end)
                 removeButton:SetPoint("RIGHT", -5, 0)
+                GUI:AttachTooltip(removeButton, "Remove this anchor pair from the multi-anchor list.", "Remove Anchor")
                 if removeButton.text then
                     local fontPath = GUI.GetFontPath and GUI:GetFontPath() or "Fonts\\FRIZQT__.TTF"
                     removeButton.text:SetFont(fontPath, 14, "")
@@ -1271,6 +1273,9 @@ function QUI_Anchoring_Options:CreateAnchorPresetControls(parent, settingsDB, x,
         end
     )
     advancedAnchorButton:SetPoint("RIGHT", presetButtonContainer, "RIGHT", 0, 0)
+    GUI:AttachTooltip(advancedAnchorButton,
+        "Open the multi-anchor editor to define up to two custom anchor pairs (source point, target frame, target point, offsets). Use this when the presets aren't precise enough.",
+        "Advanced Anchor Settings")
     
     y = y - FORM_ROW
     

@@ -1,33 +1,97 @@
 --[[
-    QUI Options - HUD Visibility Tab (Appearance tile sub-page)
+    QUI Options - HUD Visibility Tab (Appearance tile sub-page). Migrated to
+    V3 body pattern.
 ]]
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
 local C = GUI.Colors
 local Shared = ns.QUI_Options
-local Helpers = ns.Helpers
-local P = Helpers.PlaceRow
 local Settings = ns.Settings
 local Registry = Settings and Settings.Registry
 local Schema = Settings and Settings.Schema
 
-local function BuildHUDVisibilityTab(tabContent)
-    local FORM_ROW = 32
-    local PAD = Shared.PADDING
-    local db = Shared.GetDB()
+local PAD = (Shared and Shared.PADDING) or 15
+local HEADER_GAP = 26
+local SECTION_GAP = 14
 
+local function MakeLayout(content)
+    local y = -10
+    local L = {}
+    function L.headerAt(text)
+        local h = Shared.CreateAccentDotLabel(content, text, y)
+        h:ClearAllPoints()
+        h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+        h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+        y = y - HEADER_GAP
+    end
+    function L.sectionAt()
+        local c = Shared.CreateSettingsCardGroup(content, y)
+        c.frame:ClearAllPoints()
+        c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+        c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+        return c
+    end
+    function L.closeSection(c)
+        c.Finalize()
+        y = y - c.frame:GetHeight() - SECTION_GAP
+    end
+    function L.placeCustom(frame, height)
+        frame:ClearAllPoints()
+        frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+        frame:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+        frame:SetHeight(height)
+        y = y - height - SECTION_GAP
+    end
+    function L.finish()
+        content:SetHeight(math.abs(y) + 10)
+        return content:GetHeight()
+    end
+    return L
+end
+
+local function row(parent, label, widget, desc)
+    return Shared.BuildSettingRow(parent, label, widget, desc)
+end
+
+-- Add a muted hint paragraph between a header and a card.
+local function placeHint(L, parent, text)
+    local f = CreateFrame("Frame", nil, parent)
+    local lbl = GUI:CreateLabel(f, text, 11, C.textMuted)
+    lbl:SetPoint("TOPLEFT", f, "TOPLEFT", 6, 0)
+    lbl:SetPoint("RIGHT", f, "RIGHT", -6, 0)
+    lbl:SetJustifyH("LEFT")
+    lbl:SetWordWrap(true)
+    L.placeCustom(f, 22)
+end
+
+-- Pair an iterable list of cells 2-per-row, with a trailing unpaired cell.
+local function pairCells(card, cells)
+    local i = 1
+    while i <= #cells do
+        local left = cells[i]
+        local right = cells[i + 1]
+        if right then
+            card.AddRow(left, right)
+            i = i + 2
+        else
+            card.AddRow(left)
+            i = i + 1
+        end
+    end
+end
+
+local function BuildHUDVisibilityTab(tabContent)
+    local db = Shared.GetDB()
     if not db then return end
 
-    local sections, relayout, CreateCollapsible = Shared.CreateTilePage(tabContent, PAD)
+    local L = MakeLayout(tabContent)
 
     ---------------------------------------------------------------------------
-    -- Shared builder for visibility sections (CDM, Unitframes, Custom CDM Bars)
-    -- Each section has the same pattern of condition checks + fade + hide rules.
+    -- Shared builder for visibility sections (CDM, Unitframes, etc.)
     ---------------------------------------------------------------------------
     local function BuildVisibilitySection(title, visTable, refreshFunc, mouseoverRefreshGlobal, extraChecks)
-        -- Ensure defaults
         if visTable.showAlways == nil then visTable.showAlways = true end
         if visTable.showWhenTargetExists == nil then visTable.showWhenTargetExists = false end
         if visTable.showInCombat == nil then visTable.showInCombat = false end
@@ -43,121 +107,102 @@ local function BuildHUDVisibilityTab(tabContent)
         if visTable.hideWhenSkyriding == nil then visTable.hideWhenSkyriding = false end
         if visTable.dontHideInDungeonsRaids == nil then visTable.dontHideInDungeonsRaids = false end
 
-        -- Base content height before the tile wrapper compacts the rows into its
-        -- dual-column layout. Keep this aligned with the actual stacked widgets
-        -- we create here so the initial render does not overshoot.
-        CreateCollapsible(title, 1, function(body)
-            local sy = -4
-            local conditionChecks = {}
+        L.headerAt(title)
+        placeHint(L, tabContent,
+            "Uncheck 'Show Always' to use conditional visibility. Hover a setting for details.")
 
-            local tip = GUI:CreateLabel(body,
-                "Uncheck 'Show Always' to use conditional visibility. Hover a setting for details.",
-                11, C.textMuted)
-            tip:SetPoint("TOPLEFT", 0, sy)
-            tip:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-            tip:SetJustifyH("LEFT")
-            sy = sy - 28
+        local s = L.sectionAt()
+        local conditionCells = {}
 
-            local function UpdateConditionState()
-                local enabled = not visTable.showAlways
-                for _, check in ipairs(conditionChecks) do
-                    if enabled then
-                        check:SetAlpha(1)
-                        if check.track then check.track:EnableMouse(true) end
-                    else
-                        check:SetAlpha(0.4)
-                        if check.track then check.track:EnableMouse(false) end
-                    end
-                end
+        local function UpdateConditionState()
+            local enabled = not visTable.showAlways
+            for _, cell in ipairs(conditionCells) do
+                cell:SetAlpha(enabled and 1 or 0.4)
             end
+        end
 
-            sy = P(GUI:CreateFormCheckbox(body, "Show Always", "showAlways", visTable, function()
-                refreshFunc()
-                UpdateConditionState()
-            end, { description = "Always keep this HUD element visible. Uncheck to switch to the conditional visibility rules below." }), body, sy)
-
-            local targetCheck = GUI:CreateFormCheckbox(body, "Show When Target Exists", "showWhenTargetExists", visTable, refreshFunc,
-                { description = "Show this HUD element while you have a target selected." })
-            table.insert(conditionChecks, targetCheck)
-            sy = P(targetCheck, body, sy)
-
-            local combatCheck = GUI:CreateFormCheckbox(body, "Show In Combat", "showInCombat", visTable, refreshFunc,
-                { description = "Show this HUD element while you are in combat." })
-            table.insert(conditionChecks, combatCheck)
-            sy = P(combatCheck, body, sy)
-
-            local groupCheck = GUI:CreateFormCheckbox(body, "Show In Group", "showInGroup", visTable, refreshFunc,
-                { description = "Show this HUD element while you are in a party or raid group." })
-            table.insert(conditionChecks, groupCheck)
-            sy = P(groupCheck, body, sy)
-
-            local instanceCheck = GUI:CreateFormCheckbox(body, "Show In Instance", "showInInstance", visTable, refreshFunc,
-                { description = "Show this HUD element while you are inside a dungeon, raid, battleground, or scenario." })
-            table.insert(conditionChecks, instanceCheck)
-            sy = P(instanceCheck, body, sy)
-
-            local mouseoverCheck = GUI:CreateFormCheckbox(body, "Show On Mouseover", "showOnMouseover", visTable, function()
-                refreshFunc()
-                if mouseoverRefreshGlobal then mouseoverRefreshGlobal() end
-            end, { description = "Show this HUD element while your cursor is hovering over its anchor area." })
-            table.insert(conditionChecks, mouseoverCheck)
-            sy = P(mouseoverCheck, body, sy)
-
-            local mountedCheck = GUI:CreateFormCheckbox(body, "Show When Mounted", "showWhenMounted", visTable, refreshFunc,
-                { description = "Show this HUD element while you are mounted." })
-            table.insert(conditionChecks, mountedCheck)
-            sy = P(mountedCheck, body, sy)
-
-            -- Extra condition checks (e.g. showWhenHealthBelow100, alwaysShowCastbars)
-            local extraDescriptions = {
-                showWhenHealthBelow100 = "Show these frames whenever your health is not full.",
-                alwaysShowCastbars     = "Keep castbars visible even when the rest of the unit frame is hidden.",
-            }
-            if extraChecks then
-                for _, ec in ipairs(extraChecks) do
-                    if visTable[ec.key] == nil then visTable[ec.key] = ec.default end
-                    local check = GUI:CreateFormCheckbox(body, ec.label, ec.key, visTable, refreshFunc,
-                        { description = extraDescriptions[ec.key] })
-                    table.insert(conditionChecks, check)
-                    sy = P(check, body, sy)
-                end
-            end
-
+        -- Show Always (full-width, sole row)
+        local showAlwaysW = GUI:CreateFormCheckbox(s.frame, nil, "showAlways", visTable, function()
+            refreshFunc()
             UpdateConditionState()
+        end, { description = "Always keep this HUD element visible. Uncheck to switch to the conditional visibility rules below." })
+        s.AddRow(row(s.frame, "Show Always", showAlwaysW))
 
-            sy = P(GUI:CreateFormSlider(body, "Fade Duration (sec)", 0.1, 1.0, 0.05, "fadeDuration", visTable, refreshFunc, nil,
-                { description = "How many seconds the fade animation takes when this HUD element's visibility changes." }), body, sy)
-            sy = P(GUI:CreateFormSlider(body, "Fade Out Opacity", 0, 1.0, 0.05, "fadeOutAlpha", visTable, refreshFunc, nil,
-                { description = "Opacity used while this HUD element is hidden. 0 is fully invisible, 1 is fully opaque." }), body, sy)
+        -- Conditional visibility checkboxes (paired 2-per-row, dim together).
+        local condDefs = {
+            { key = "showWhenTargetExists", label = "Show When Target Exists",
+              desc = "Show this HUD element while you have a target selected." },
+            { key = "showInCombat", label = "Show In Combat",
+              desc = "Show this HUD element while you are in combat." },
+            { key = "showInGroup", label = "Show In Group",
+              desc = "Show this HUD element while you are in a party or raid group." },
+            { key = "showInInstance", label = "Show In Instance",
+              desc = "Show this HUD element while you are inside a dungeon, raid, battleground, or scenario." },
+            { key = "showOnMouseover", label = "Show On Mouseover",
+              desc = "Show this HUD element while your cursor is hovering over its anchor area." },
+            { key = "showWhenMounted", label = "Show When Mounted",
+              desc = "Show this HUD element while you are mounted." },
+        }
+        local extraDescriptions = {
+            showWhenHealthBelow100 = "Show these frames whenever your health is not full.",
+            alwaysShowCastbars     = "Keep castbars visible even when the rest of the unit frame is hidden.",
+        }
+        if extraChecks then
+            for _, ec in ipairs(extraChecks) do
+                if visTable[ec.key] == nil then visTable[ec.key] = ec.default end
+                condDefs[#condDefs + 1] = {
+                    key = ec.key, label = ec.label, desc = extraDescriptions[ec.key],
+                }
+            end
+        end
 
-            -- Hide When Mounted
-            sy = P(GUI:CreateFormCheckbox(body, "Hide When Mounted", "hideWhenMounted", visTable, refreshFunc,
-                { description = "Hide this HUD element while you are mounted, overriding any Show rules above." }), body, sy)
+        for _, def in ipairs(condDefs) do
+            local onChange = refreshFunc
+            if def.key == "showOnMouseover" and mouseoverRefreshGlobal then
+                onChange = function()
+                    refreshFunc()
+                    mouseoverRefreshGlobal()
+                end
+            end
+            local w = GUI:CreateFormCheckbox(s.frame, nil, def.key, visTable, onChange,
+                { description = def.desc })
+            conditionCells[#conditionCells + 1] = row(s.frame, def.label, w)
+        end
+        pairCells(s, conditionCells)
+        UpdateConditionState()
 
-            -- Hide When In Vehicle
-            sy = P(GUI:CreateFormCheckbox(body, "Hide When In Vehicle", "hideWhenInVehicle", visTable, refreshFunc,
-                { description = "Hide this HUD element while you are riding a vehicle, overriding any Show rules above." }), body, sy)
+        -- Fade sliders
+        local fadeDurW = GUI:CreateFormSlider(s.frame, nil, 0.1, 1.0, 0.05, "fadeDuration", visTable, refreshFunc,
+            { precision = 2, description = "How many seconds the fade animation takes when this HUD element's visibility changes." })
+        local fadeOutW = GUI:CreateFormSlider(s.frame, nil, 0, 1.0, 0.05, "fadeOutAlpha", visTable, refreshFunc,
+            { precision = 2, description = "Opacity used while this HUD element is hidden. 0 is fully invisible, 1 is fully opaque." })
+        s.AddRow(
+            row(s.frame, "Fade Duration (sec)", fadeDurW),
+            row(s.frame, "Fade Out Opacity", fadeOutW)
+        )
 
-            -- Hide When Flying
-            sy = P(GUI:CreateFormCheckbox(body, "Hide When Flying", "hideWhenFlying", visTable, refreshFunc,
-                { description = "Hide this HUD element while flying on a traditional (non-dynamic) flying mount." }), body, sy)
+        -- Hide rules
+        local hideCells = {}
+        local hideDefs = {
+            { key = "hideWhenMounted",         label = "Hide When Mounted",
+              desc = "Hide this HUD element while you are mounted, overriding any Show rules above." },
+            { key = "hideWhenInVehicle",       label = "Hide When In Vehicle",
+              desc = "Hide this HUD element while you are riding a vehicle, overriding any Show rules above." },
+            { key = "hideWhenFlying",          label = "Hide When Flying",
+              desc = "Hide this HUD element while flying on a traditional (non-dynamic) flying mount." },
+            { key = "hideWhenSkyriding",       label = "Hide When Skyriding",
+              desc = "Hide this HUD element while actively skyriding on a dynamic flying mount." },
+            { key = "dontHideInDungeonsRaids", label = "Don't Hide in Dungeons/Raids",
+              desc = "Ignore the mounted, vehicle, flying, and skyriding hide rules while you are inside a dungeon or raid instance." },
+        }
+        for _, def in ipairs(hideDefs) do
+            local w = GUI:CreateFormCheckbox(s.frame, nil, def.key, visTable, refreshFunc,
+                { description = def.desc })
+            hideCells[#hideCells + 1] = row(s.frame, def.label, w)
+        end
+        pairCells(s, hideCells)
 
-            -- Hide When Skyriding
-            sy = P(GUI:CreateFormCheckbox(body, "Hide When Skyriding", "hideWhenSkyriding", visTable, refreshFunc,
-                { description = "Hide this HUD element while actively skyriding on a dynamic flying mount." }), body, sy)
-
-            -- Don't Hide in Dungeons/Raids
-            sy = P(GUI:CreateFormCheckbox(body, "Don't Hide in Dungeons/Raids", "dontHideInDungeonsRaids", visTable, refreshFunc,
-                { description = "Ignore the mounted, vehicle, flying, and skyriding hide rules while you are inside a dungeon or raid instance." }), body, sy)
-
-            -- Calculate total content height
-            local numConditions = 7 + (extraChecks and #extraChecks or 0)
-            -- tip(28) + showAlways(FORM_ROW) + conditions(numConditions * FORM_ROW)
-            -- + fadeSliders(2 * FORM_ROW) + 5 hide rules(5 * FORM_ROW)
-            local totalHeight = 28 + FORM_ROW + numConditions * FORM_ROW + 2 * FORM_ROW + 5 * FORM_ROW + 8
-            local section = body:GetParent()
-            section._contentHeight = totalHeight
-        end)
+        L.closeSection(s)
     end
 
     -- ========== CDM Visibility ==========
@@ -209,7 +254,7 @@ local function BuildHUDVisibilityTab(tabContent)
         function() if _G.QUI_RefreshChatMouseover then _G.QUI_RefreshChatMouseover() end end
     )
 
-    relayout()
+    L.finish()
 end
 
 -- Export

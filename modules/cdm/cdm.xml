@@ -10,5 +10,6 @@
     <Script file="cdm_bar_renderer.lua"/>
     <Script file="cdm_containers.lua"/>
     <Script file="settings\containers_page.lua"/>
+    <Script file="settings\composer_preview_driver.lua"/>
     <Script file="settings\composer.lua"/>
 </Ui>

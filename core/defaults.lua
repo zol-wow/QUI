@@ -221,32 +221,73 @@ local defaults = {
         },
 
         damageMeter = {
-            -- Shadow of Blizzard's built-in Damage Meter settings (Midnight 12.0+).
-            -- QUI options page writes here; sync layer pushes through to Blizzard.
-            -- See skinning/gameplay/damage_meter.lua and modules/ui/settings/damage_meter_content.lua.
-            enabled         = false,                                -- match Blizzard's stock (off by default)
-            visibility      = 0,                                    -- Enum.DamageMeterVisibility.Always (verified)
-            style           = 0,                                    -- Enum.DamageMeterStyle.Default (verified)
-            numberDisplay   = 0,                                    -- Enum.DamageMeterNumbers.Minimal (verified)
-            useClassColor   = true,
-            showBarIcons    = true,
-            barHeight       = 25,                                   -- DAMAGE_METER_DEFAULT_BAR_HEIGHT
-            barSpacing      = 4,                                    -- DAMAGE_METER_DEFAULT_BAR_SPACING
-            textSize        = 100,                                  -- 50–150 in Edit Mode, internally 0–1 scale
-            windowAlpha     = 100,                                  -- 50–100% in Edit Mode, internally 0–1 alpha
-            backgroundAlpha = 100,                                  -- 0–100% in Edit Mode, internally 0–1 alpha
-            -- QUI texture/font customization (Appearance > Damage Meter sub-page).
-            -- nil/0/"_inherit" sentinels mean "fall back to current behavior".
-            -- See spec: docs/superpowers/specs/2026-05-05-damage-meter-style-design.md
-            appearance = {
-                global = {
-                    textures = { bar = nil, background = nil, border = nil },
-                    fonts = {
-                        rowName  = { name = nil, size = 0, outline = "_inherit" },
-                        rowValue = { name = nil, size = 0, outline = "_inherit" },
-                        header   = { name = nil, size = 0, outline = "_inherit" },
+            -- Native QUI damage meter. Spec: docs/superpowers/specs/2026-05-22-damage-meter-design.md
+            -- Phase 5 (2026-05-22) deleted the legacy skinner module that previously
+            -- owned this table's top-level keys (enabled, visibility, style, etc.);
+            -- v37 migration nils any leftovers on existing profiles.
+            native = {
+                enabled              = true,
+                visibility           = "always",        -- "always" | "inCombat" | "hidden"
+                refreshRateCombat    = 0.5,
+                refreshRateIdle      = 2.0,
+                showPinnedSelf       = true,
+                showHoverTooltip     = true,
+                breakdownAnchor      = "row",
+                -- When true (default), the Healing Done + HPS views sum each
+                -- source's healing AND absorbs into one number; the breakdown
+                -- popup lists both heal spells and absorb shields. Toggle off
+                -- to see pure C_DamageMeter HealingDone (matching Blizzard's
+                -- stock meter's view of healing).
+                combineAbsorbsIntoHealing = true,
+                appearance = {
+                    global = {
+                        barHeight        = 18,
+                        barSpacing       = 2,
+                        headerHeight     = 22,
+                        headerShowIcons  = true,
+                        numberFormat     = "compact",   -- "minimal" | "compact" | "complete"
+                        iconStyle        = "spec",      -- "spec" | "class" | "none"
+                        useClassColor    = true,
+                        barColorAccent   = true,
+                        barColor         = { 0.35, 0.55, 0.8, 1 },  -- {r,g,b,a} array form (CreateFormColorPicker contract)
+                        barFillAlpha     = 1.0,
+                        animateBars      = false,   -- Phase 7: lerp bar fill over animateDuration
+                        animateDuration  = 0.2,     -- 0.1..0.5 cap is enforced in the settings slider
+                        -- LSM media names. nil = inherit QUI defaults
+                        -- (Phase 1 hardcoded WHITE8x8 for bars; backgrounds + borders
+                        -- still use Phase 1 hardcodes when nil — Phase 3 wires those).
+                        textures = {
+                            bar        = nil,
+                            background = nil,
+                            border     = nil,
+                        },
+                        -- Per-element font config: { name=LSM_font_name|nil, size=N|0(inherit), outline=""|OUTLINE|THICKOUTLINE }
+                        fonts = {
+                            rowName  = { name = nil, size = 0,  outline = "" },
+                            rowValue = { name = nil, size = 0,  outline = "" },
+                            header   = { name = nil, size = 12, outline = "" },
+                        },
+                        colors = {
+                            bg         = { 0, 0, 0, 0.85 },
+                            border     = nil,                -- nil = QUI accent
+                            rowName    = { 1, 1, 1, 1 },
+                            rowValue   = { 1, 1, 1, 1 },
+                            headerText = nil,                -- nil = QUI accent
+                        },
+                    },
+                    perWindow = {},                     -- filled in Phase 3
+                },
+                windows = {
+                    [1] = {
+                        damageMeterType = 0,            -- Enum.DamageMeterType.DamageDone
+                        sessionType     = 1,            -- Enum.DamageMeterSessionType.Current
+                        size            = { w = 240, h = 180 },
+                        hidden          = false,
+                        maxVisibleRows  = 10,
+                        name            = "",            -- user-editable display name; empty = use auto-generated label
                     },
                 },
+                windowCount   = 1,
             },
         },
 

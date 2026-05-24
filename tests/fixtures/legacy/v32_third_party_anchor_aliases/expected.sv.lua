@@ -19,7 +19,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 36,
+        _schemaVersion = 37,
         _shippedDefaults = {
           abilityTimeline = {
             bigIcon = {
@@ -1071,36 +1071,87 @@ return {
             showWhenTargetExists = false
           },
           damageMeter = {
-            appearance = {
-              global = {
-                fonts = {
-                  header = {
-                    outline = "_inherit",
-                    size = 0
+            native = {
+              appearance = {
+                global = {
+                  animateBars = false,
+                  animateDuration = 0.20000000000000001,
+                  barColor = {
+                    [1] = 0.34999999999999998,
+                    [2] = 0.55000000000000004,
+                    [3] = 0.80000000000000004,
+                    [4] = 1
                   },
-                  rowName = {
-                    outline = "_inherit",
-                    size = 0
+                  barColorAccent = true,
+                  barFillAlpha = 1,
+                  barHeight = 18,
+                  barSpacing = 2,
+                  colors = {
+                    bg = {
+                      [1] = 0,
+                      [2] = 0,
+                      [3] = 0,
+                      [4] = 0.84999999999999998
+                    },
+                    rowName = {
+                      [1] = 1,
+                      [2] = 1,
+                      [3] = 1,
+                      [4] = 1
+                    },
+                    rowValue = {
+                      [1] = 1,
+                      [2] = 1,
+                      [3] = 1,
+                      [4] = 1
+                    }
                   },
-                  rowValue = {
-                    outline = "_inherit",
-                    size = 0
-                  }
+                  fonts = {
+                    header = {
+                      outline = "",
+                      size = 12
+                    },
+                    rowName = {
+                      outline = "",
+                      size = 0
+                    },
+                    rowValue = {
+                      outline = "",
+                      size = 0
+                    }
+                  },
+                  headerHeight = 22,
+                  headerShowIcons = true,
+                  iconStyle = "spec",
+                  numberFormat = "compact",
+                  textures = {},
+                  useClassColor = true
                 },
-                textures = {}
+                perWindow = {}
+              },
+              breakdownAnchor = "row",
+              combineAbsorbsIntoHealing = true,
+              enabled = true,
+              refreshRateCombat = 0.5,
+              refreshRateIdle = 2,
+              showHoverTooltip = true,
+              showPinnedSelf = true,
+              visibility = "always",
+              windowCount = 1,
+              windows = {
+                [1] = {
+                  damageMeterType = 0,
+                  hidden = false,
+                  maxVisibleRows = 10,
+                  name = "",
+                  sessionType = 1,
+                  size = {
+                    h = 180,
+                    w = 240
+                  }
+                }
               }
-            },
-            backgroundAlpha = 100,
-            barHeight = 25,
-            barSpacing = 4,
-            enabled = false,
-            numberDisplay = 0,
-            showBarIcons = true,
-            style = 0,
-            textSize = 100,
-            useClassColor = true,
-            visibility = 0,
-            windowAlpha = 100
+            }
           },
           dandersFrames = {
             party = {

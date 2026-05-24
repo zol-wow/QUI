@@ -1,13 +1,12 @@
 --[[
     QUI Options - Skinning Tab
-    BuildSkinningTab for Autohide & Skinning page
+    BuildSkinningTab + BuildThemeColorsTab. Migrated to V3 body pattern.
 ]]
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local QUI = QUI
 local GUI = QUI.GUI
 
--- Import shared utilities
 local Shared = ns.QUI_Options
 local Helpers = ns.Helpers
 
@@ -19,6 +18,13 @@ local RenderAdapters = Settings and Settings.RenderAdapters
 
 local THEME_COLORS_SUBPAGE_INDEX = 10
 
+local PAD = (Shared and Shared.PADDING) or 15
+local HEADER_GAP = 26
+local SECTION_GAP = 14
+
+---------------------------------------------------------------------------
+-- Refresh helpers (unchanged)
+---------------------------------------------------------------------------
 local function RefreshSkinSurfaces()
     if ns.Registry then
         ns.Registry:RefreshAll("skinning")
@@ -133,10 +139,61 @@ local function ReloadConfirm()
     })
 end
 
+---------------------------------------------------------------------------
+-- V3 layout helpers
+---------------------------------------------------------------------------
+local function MakeLayout(content)
+    local y = -10
+    local L = {}
+    function L.headerAt(text)
+        local h = Shared.CreateAccentDotLabel(content, text, y)
+        h:ClearAllPoints()
+        h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+        h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+        y = y - HEADER_GAP
+    end
+    function L.sectionAt()
+        local c = Shared.CreateSettingsCardGroup(content, y)
+        c.frame:ClearAllPoints()
+        c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+        c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+        return c
+    end
+    function L.closeSection(c)
+        c.Finalize()
+        y = y - c.frame:GetHeight() - SECTION_GAP
+    end
+    function L.finish()
+        content:SetHeight(math.abs(y) + 10)
+        return content:GetHeight()
+    end
+    return L
+end
+
+local function row(parent, label, widget, desc)
+    return Shared.BuildSettingRow(parent, label, widget, desc)
+end
+
+-- Pair an iterable list of cells 2-per-row, with a trailing unpaired cell.
+local function pairCells(card, cells)
+    local i = 1
+    while i <= #cells do
+        local left = cells[i]
+        local right = cells[i + 1]
+        if right then
+            card.AddRow(left, right)
+            i = i + 2
+        else
+            card.AddRow(left)
+            i = i + 1
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- THEME & COLORS TAB
+---------------------------------------------------------------------------
 local function BuildThemeColorsTab(tabContent)
-    local PAD = 10
-    local FORM_ROW = 32
-    local P = Helpers.PlaceRow
     local db = Shared.GetDB()
 
     GUI:SetSearchContext({
@@ -190,118 +247,161 @@ local function BuildThemeColorsTab(tabContent)
         tooltip.borderUseAccentColor = false
     end
 
-    local sections, relayout, CreateCollapsible = Shared.CreateTilePage(tabContent, PAD)
+    local L = MakeLayout(tabContent)
 
-    CreateCollapsible("Theme Accent", 2 * FORM_ROW + 8, function(body)
-        local sy = -4
-        local themeDropdown
-        local accentColorPicker
-        themeDropdown = GUI:CreateFormDropdown(body, "Theme Preset", BuildThemePresetOptions(), "themePreset", general, function(presetName)
-            ApplyThemePreset(general, presetName)
-            if accentColorPicker and accentColorPicker.UpdateVisual then
-                accentColorPicker:UpdateVisual(general.addonAccentColor)
-            end
-        end, { description = "Global accent preset used by the options panel and accent-colored UI surfaces." })
-        sy = P(themeDropdown, body, sy)
-        accentColorPicker = GUI:CreateFormColorPicker(body, "Custom Accent Color", "addonAccentColor", general, function(r, g, b)
-            general.themePreset = "Custom"
-            general.skinUseClassColor = false
-            if themeDropdown and themeDropdown.UpdateVisual then
-                themeDropdown:UpdateVisual("Custom")
-            end
-            if GUI.ApplyAccentColor then
-                GUI:ApplyAccentColor(r, g, b)
-            end
-            RefreshSkinSurfaces()
-            RefreshTooltipSkin()
-            WatchAccentPickerClose()
-        end, { noAlpha = true },
-            { description = "Custom accent color used when Theme Preset is set to Custom." })
-        P(accentColorPicker, body, sy)
-    end)
-
-    CreateCollapsible("Global Skin Colors", 4 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormColorPicker(body, "Background Color", "skinBgColor", general, RefreshSkinSurfaces, { hasAlpha = true },
-            { description = "Background fill color applied to globally skinned frames. Alpha controls how opaque the fill is." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Borders", "hideSkinBorders", general, RefreshSkinSurfaces,
-            { description = "Hide the 1px accent border drawn around globally skinned frames." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Use Class Color for Borders", "skinBorderUseClassColor", general, RefreshSkinSurfaces,
-            { description = "Color global skin borders with your class color instead of the custom color below." }), body, sy)
-        P(GUI:CreateFormColorPicker(body, "Border Color", "skinBorderColor", general, RefreshSkinSurfaces, { noAlpha = true },
-            { description = "Custom global skin border color used when class color is off." }), body, sy)
-    end)
-
-    CreateCollapsible("Chat Background", 6 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Chat Background Texture", "enabled", chat.glass, RefreshChatSurfaces,
-            { description = "Draw an opaque background behind the chat frame so text stays readable over busy scenery." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Chat Background Opacity", 0, 1.0, 0.05, "bgAlpha", chat.glass, RefreshChatSurfaces, nil,
-            { description = "Opacity of the chat background (0 is invisible, 1 is fully opaque)." }), body, sy)
-        sy = P(GUI:CreateFormColorPicker(body, "Chat Background Color", "bgColor", chat.glass, RefreshChatSurfaces, nil,
-            { description = "Color of the chat background." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Input Box Background Texture", "enabled", chat.editBox, RefreshChatSurfaces,
-            { description = "Draw an opaque background behind the chat input box for better contrast while typing." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Input Box Background Opacity", 0, 1.0, 0.05, "bgAlpha", chat.editBox, RefreshChatSurfaces, nil,
-            { description = "Opacity of the input box background (0 is invisible, 1 is fully opaque)." }), body, sy)
-        P(GUI:CreateFormColorPicker(body, "Input Box Background Color", "bgColor", chat.editBox, RefreshChatSurfaces, nil,
-            { description = "Color of the input box background." }), body, sy)
-    end)
-
-    CreateCollapsible("Tooltip Skinning", 8 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Skin Tooltips", "skinTooltips", tooltip, ReloadConfirm,
-            { description = "Apply the QUI theme colors and border to all game tooltips. Requires a UI reload to take effect." }), body, sy)
-        sy = P(GUI:CreateFormColorPicker(body, "Background Color", "bgColor", tooltip, RefreshTooltipSkin, nil,
-            { description = "Background color applied to skinned tooltips." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Background Opacity", 0, 1, 0.05, "bgOpacity", tooltip, RefreshTooltipSkin, {precision = 2},
-            { description = "Opacity of the tooltip background (0 is invisible, 1 is fully opaque)." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Show Border", "showBorder", tooltip, RefreshTooltipSkin,
-            { description = "Draw a border around skinned tooltips." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Border Thickness", 1, 10, 1, "borderThickness", tooltip, RefreshTooltipSkin, nil,
-            { description = "Thickness of the tooltip border in pixels." }), body, sy)
-
-        local borderColorPicker = GUI:CreateFormColorPicker(body, "Border Color", "borderColor", tooltip, RefreshTooltipSkin, nil,
-            { description = "Color of the tooltip border. Overridden by Class Color or Accent Color below if either is enabled." })
-        sy = P(borderColorPicker, body, sy)
-
-        local accentColorBorderCheck
-        local classColorBorderCheck = GUI:CreateFormCheckbox(body, "Use Class Color for Border", "borderUseClassColor", tooltip, function(val)
-            if val then
-                tooltip.borderUseAccentColor = false
-                if accentColorBorderCheck and accentColorBorderCheck.SetValue then accentColorBorderCheck:SetValue(false) end
-            end
-            if borderColorPicker and borderColorPicker.SetEnabled then
-                borderColorPicker:SetEnabled(not val and not tooltip.borderUseAccentColor)
-            end
-            RefreshTooltipSkin()
-        end, { description = "Color the tooltip border by the inspected unit's class (falls back to your class for non-unit tooltips)." })
-        sy = P(classColorBorderCheck, body, sy)
-
-        accentColorBorderCheck = GUI:CreateFormCheckbox(body, "Use Accent Color for Border", "borderUseAccentColor", tooltip, function(val)
-            if val then
-                tooltip.borderUseClassColor = false
-                if classColorBorderCheck and classColorBorderCheck.SetValue then classColorBorderCheck:SetValue(false) end
-            end
-            if borderColorPicker and borderColorPicker.SetEnabled then
-                borderColorPicker:SetEnabled(not val and not tooltip.borderUseClassColor)
-            end
-            RefreshTooltipSkin()
-        end, { description = "Color the tooltip border using the UI accent color." })
-        P(accentColorBorderCheck, body, sy)
-
-        if borderColorPicker and borderColorPicker.SetEnabled then
-            borderColorPicker:SetEnabled(not tooltip.borderUseClassColor and not tooltip.borderUseAccentColor)
+    -- Theme Accent
+    L.headerAt("Theme Accent")
+    local sTA = L.sectionAt()
+    local themeDropdown, accentColorPicker
+    themeDropdown = GUI:CreateFormDropdown(sTA.frame, nil, BuildThemePresetOptions(), "themePreset", general, function(presetName)
+        ApplyThemePreset(general, presetName)
+        if accentColorPicker and accentColorPicker.UpdateVisual then
+            accentColorPicker:UpdateVisual(general.addonAccentColor)
         end
-    end)
+    end, { description = "Global accent preset used by the options panel and accent-colored UI surfaces." })
+    accentColorPicker = GUI:CreateFormColorPicker(sTA.frame, nil, "addonAccentColor", general, function(r, g, b)
+        general.themePreset = "Custom"
+        general.skinUseClassColor = false
+        if themeDropdown and themeDropdown.UpdateVisual then
+            themeDropdown:UpdateVisual("Custom")
+        end
+        if GUI.ApplyAccentColor then
+            GUI:ApplyAccentColor(r, g, b)
+        end
+        RefreshSkinSurfaces()
+        RefreshTooltipSkin()
+        WatchAccentPickerClose()
+    end, { noAlpha = true },
+        { description = "Custom accent color used when Theme Preset is set to Custom." })
+    sTA.AddRow(
+        row(sTA.frame, "Theme Preset", themeDropdown),
+        row(sTA.frame, "Custom Accent Color", accentColorPicker)
+    )
+    L.closeSection(sTA)
 
-    relayout()
+    -- Global Skin Colors
+    L.headerAt("Global Skin Colors")
+    local sGS = L.sectionAt()
+    local gsBgColorW = GUI:CreateFormColorPicker(sGS.frame, nil, "skinBgColor", general, RefreshSkinSurfaces, { hasAlpha = true },
+        { description = "Background fill color applied to globally skinned frames. Alpha controls how opaque the fill is." })
+    local gsHideBordersW = GUI:CreateFormCheckbox(sGS.frame, nil, "hideSkinBorders", general, RefreshSkinSurfaces,
+        { description = "Hide the 1px accent border drawn around globally skinned frames." })
+    sGS.AddRow(
+        row(sGS.frame, "Background Color", gsBgColorW),
+        row(sGS.frame, "Hide Borders", gsHideBordersW)
+    )
+
+    local gsClassBorderW = GUI:CreateFormCheckbox(sGS.frame, nil, "skinBorderUseClassColor", general, RefreshSkinSurfaces,
+        { description = "Color global skin borders with your class color instead of the custom color below." })
+    local gsBorderColorW = GUI:CreateFormColorPicker(sGS.frame, nil, "skinBorderColor", general, RefreshSkinSurfaces, { noAlpha = true },
+        { description = "Custom global skin border color used when class color is off." })
+    sGS.AddRow(
+        row(sGS.frame, "Use Class Color for Borders", gsClassBorderW),
+        row(sGS.frame, "Border Color", gsBorderColorW)
+    )
+    L.closeSection(sGS)
+
+    -- Chat Background
+    L.headerAt("Chat Background")
+    local sCB = L.sectionAt()
+    local cbEnableW = GUI:CreateFormCheckbox(sCB.frame, nil, "enabled", chat.glass, RefreshChatSurfaces,
+        { description = "Draw an opaque background behind the chat frame so text stays readable over busy scenery." })
+    local cbAlphaW = GUI:CreateFormSlider(sCB.frame, nil, 0, 1.0, 0.05, "bgAlpha", chat.glass, RefreshChatSurfaces,
+        { precision = 2, description = "Opacity of the chat background (0 is invisible, 1 is fully opaque)." })
+    sCB.AddRow(
+        row(sCB.frame, "Chat Background Texture", cbEnableW),
+        row(sCB.frame, "Chat Background Opacity", cbAlphaW)
+    )
+
+    local cbColorW = GUI:CreateFormColorPicker(sCB.frame, nil, "bgColor", chat.glass, RefreshChatSurfaces, nil,
+        { description = "Color of the chat background." })
+    local cbEditEnW = GUI:CreateFormCheckbox(sCB.frame, nil, "enabled", chat.editBox, RefreshChatSurfaces,
+        { description = "Draw an opaque background behind the chat input box for better contrast while typing." })
+    sCB.AddRow(
+        row(sCB.frame, "Chat Background Color", cbColorW),
+        row(sCB.frame, "Input Box Background Texture", cbEditEnW)
+    )
+
+    local cbEditAlphaW = GUI:CreateFormSlider(sCB.frame, nil, 0, 1.0, 0.05, "bgAlpha", chat.editBox, RefreshChatSurfaces,
+        { precision = 2, description = "Opacity of the input box background (0 is invisible, 1 is fully opaque)." })
+    local cbEditColorW = GUI:CreateFormColorPicker(sCB.frame, nil, "bgColor", chat.editBox, RefreshChatSurfaces, nil,
+        { description = "Color of the input box background." })
+    sCB.AddRow(
+        row(sCB.frame, "Input Box Background Opacity", cbEditAlphaW),
+        row(sCB.frame, "Input Box Background Color", cbEditColorW)
+    )
+    L.closeSection(sCB)
+
+    -- Tooltip Skinning
+    L.headerAt("Tooltip Skinning")
+    local sTS = L.sectionAt()
+    local tsSkinW = GUI:CreateFormCheckbox(sTS.frame, nil, "skinTooltips", tooltip, ReloadConfirm,
+        { description = "Apply the QUI theme colors and border to all game tooltips. Requires a UI reload to take effect." })
+    local tsBgColorW = GUI:CreateFormColorPicker(sTS.frame, nil, "bgColor", tooltip, RefreshTooltipSkin, nil,
+        { description = "Background color applied to skinned tooltips." })
+    sTS.AddRow(
+        row(sTS.frame, "Skin Tooltips", tsSkinW),
+        row(sTS.frame, "Background Color", tsBgColorW)
+    )
+
+    local tsBgOpW = GUI:CreateFormSlider(sTS.frame, nil, 0, 1, 0.05, "bgOpacity", tooltip, RefreshTooltipSkin,
+        { precision = 2, description = "Opacity of the tooltip background (0 is invisible, 1 is fully opaque)." })
+    local tsShowBorderW = GUI:CreateFormCheckbox(sTS.frame, nil, "showBorder", tooltip, RefreshTooltipSkin,
+        { description = "Draw a border around skinned tooltips." })
+    sTS.AddRow(
+        row(sTS.frame, "Background Opacity", tsBgOpW),
+        row(sTS.frame, "Show Border", tsShowBorderW)
+    )
+
+    local tsBorderThickW = GUI:CreateFormSlider(sTS.frame, nil, 1, 10, 1, "borderThickness", tooltip, RefreshTooltipSkin,
+        { description = "Thickness of the tooltip border in pixels." })
+    local tsBorderColorW = GUI:CreateFormColorPicker(sTS.frame, nil, "borderColor", tooltip, RefreshTooltipSkin, nil,
+        { description = "Color of the tooltip border. Overridden by Class Color or Accent Color below if either is enabled." })
+    sTS.AddRow(
+        row(sTS.frame, "Border Thickness", tsBorderThickW),
+        row(sTS.frame, "Border Color", tsBorderColorW)
+    )
+
+    local accentColorBorderCheck
+    local classColorBorderCheck = GUI:CreateFormCheckbox(sTS.frame, nil, "borderUseClassColor", tooltip, function(val)
+        if val then
+            tooltip.borderUseAccentColor = false
+            if accentColorBorderCheck and accentColorBorderCheck.SetValue then accentColorBorderCheck:SetValue(false) end
+        end
+        if tsBorderColorW and tsBorderColorW.SetEnabled then
+            tsBorderColorW:SetEnabled(not val and not tooltip.borderUseAccentColor)
+        end
+        RefreshTooltipSkin()
+    end, { description = "Color the tooltip border by the inspected unit's class (falls back to your class for non-unit tooltips)." })
+
+    accentColorBorderCheck = GUI:CreateFormCheckbox(sTS.frame, nil, "borderUseAccentColor", tooltip, function(val)
+        if val then
+            tooltip.borderUseClassColor = false
+            if classColorBorderCheck and classColorBorderCheck.SetValue then classColorBorderCheck:SetValue(false) end
+        end
+        if tsBorderColorW and tsBorderColorW.SetEnabled then
+            tsBorderColorW:SetEnabled(not val and not tooltip.borderUseClassColor)
+        end
+        RefreshTooltipSkin()
+    end, { description = "Color the tooltip border using the UI accent color." })
+
+    sTS.AddRow(
+        row(sTS.frame, "Use Class Color for Border", classColorBorderCheck),
+        row(sTS.frame, "Use Accent Color for Border", accentColorBorderCheck)
+    )
+
+    if tsBorderColorW and tsBorderColorW.SetEnabled then
+        tsBorderColorW:SetEnabled(not tooltip.borderUseClassColor and not tooltip.borderUseAccentColor)
+    end
+    L.closeSection(sTS)
+
+    L.finish()
 end
 
+---------------------------------------------------------------------------
+-- SKINNING TAB
+---------------------------------------------------------------------------
 local function BuildSkinningTab(tabContent)
-    local PAD = 10
-    local FORM_ROW = 32
-    local P = Helpers.PlaceRow
     local db = Shared.GetDB()
 
     GUI:SetSearchContext({tabIndex = 10, tabName = "Appearance", subTabIndex = 2, subTabName = "Skinning"})
@@ -320,8 +420,8 @@ local function BuildSkinningTab(tabContent)
         general.skinBorderColor = { accent[1], accent[2], accent[3], accent[4] or 1 }
     end
     if general.skinKeystoneFrame == nil then general.skinKeystoneFrame = true end
-    local sections, relayout, CreateCollapsible = Shared.CreateTilePage(tabContent, PAD)
 
+    -- Helper: ensure border-override keys exist on a settings table.
     local function EnsureBorderOverrideDefaults(settings, prefix)
         if type(settings) ~= "table" then return end
         local kp = type(prefix) == "string" and prefix or ""
@@ -338,8 +438,8 @@ local function BuildSkinningTab(tabContent)
         end
     end
 
-    -- Border override controls builder (returns new sy)
-    local function AddBorderOverrides(body, sy, settings, prefix)
+    -- Append the 4 border-override widgets as 2 paired rows in a card.
+    local function AddBorderOverrides(card, settings, prefix)
         EnsureBorderOverrideDefaults(settings, prefix)
         local kp = type(prefix) == "string" and prefix or ""
         local overrideKey = kp ~= "" and (kp .. "BorderOverride") or "borderOverride"
@@ -347,35 +447,50 @@ local function BuildSkinningTab(tabContent)
         local useClassKey = kp ~= "" and (kp .. "BorderUseClassColor") or "borderUseClassColor"
         local colorKey = kp ~= "" and (kp .. "BorderColor") or "borderColor"
 
-        sy = P(GUI:CreateFormCheckbox(body, "Override Global Border", overrideKey, settings, RefreshSkinSurfaces,
-            { description = "Use a border style specific to this skin instead of the global default chosen in Theme & Colors." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Border", hideKey, settings, RefreshSkinSurfaces,
-            { description = "Hide the border on this skin entirely. Only takes effect when the override above is enabled." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Use Class Color Border", useClassKey, settings, RefreshSkinSurfaces,
-            { description = "Color this skin's border with your class color. Only takes effect when the override above is enabled." }), body, sy)
-        sy = P(GUI:CreateFormColorPicker(body, "Border Color", colorKey, settings, RefreshSkinSurfaces, { noAlpha = true },
-            { description = "Custom border color used when override is on and class color is off." }), body, sy)
-        return sy
+        local overrideW = GUI:CreateFormCheckbox(card.frame, nil, overrideKey, settings, RefreshSkinSurfaces,
+            { description = "Use a border style specific to this skin instead of the global default chosen in Theme & Colors." })
+        local hideW = GUI:CreateFormCheckbox(card.frame, nil, hideKey, settings, RefreshSkinSurfaces,
+            { description = "Hide the border on this skin entirely. Only takes effect when the override above is enabled." })
+        card.AddRow(
+            row(card.frame, "Override Global Border", overrideW),
+            row(card.frame, "Hide Border", hideW)
+        )
+
+        local classW = GUI:CreateFormCheckbox(card.frame, nil, useClassKey, settings, RefreshSkinSurfaces,
+            { description = "Color this skin's border with your class color. Only takes effect when the override above is enabled." })
+        local colorW = GUI:CreateFormColorPicker(card.frame, nil, colorKey, settings, RefreshSkinSurfaces, { noAlpha = true },
+            { description = "Custom border color used when override is on and class color is off." })
+        card.AddRow(
+            row(card.frame, "Use Class Color Border", classW),
+            row(card.frame, "Border Color", colorW)
+        )
     end
 
-    -- Background override controls builder (returns new sy)
-    local function AddBgOverrides(body, sy, settings, prefix)
+    -- Append the 3 background-override widgets as paired rows in a card.
+    local function AddBgOverrides(card, settings, prefix)
         local kp = type(prefix) == "string" and prefix or ""
         local overrideKey = kp ~= "" and (kp .. "BgOverride") or "bgOverride"
         local hideKey = kp ~= "" and (kp .. "HideBackground") or "hideBackground"
         local colorKey = kp ~= "" and (kp .. "BackgroundColor") or "backgroundColor"
 
-        sy = P(GUI:CreateFormCheckbox(body, "Override Global Background", overrideKey, settings, RefreshSkinSurfaces,
-            { description = "Use a background color specific to this skin instead of the global default chosen in Theme & Colors." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Background", hideKey, settings, RefreshSkinSurfaces,
-            { description = "Hide the background fill on this skin entirely. Only takes effect when the override above is enabled." }), body, sy)
-        sy = P(GUI:CreateFormColorPicker(body, "Background Color", colorKey, settings, RefreshSkinSurfaces, nil,
-            { description = "Custom background color used when override is enabled." }), body, sy)
-        return sy
+        local overrideW = GUI:CreateFormCheckbox(card.frame, nil, overrideKey, settings, RefreshSkinSurfaces,
+            { description = "Use a background color specific to this skin instead of the global default chosen in Theme & Colors." })
+        local hideW = GUI:CreateFormCheckbox(card.frame, nil, hideKey, settings, RefreshSkinSurfaces,
+            { description = "Hide the background fill on this skin entirely. Only takes effect when the override above is enabled." })
+        card.AddRow(
+            row(card.frame, "Override Global Background", overrideW),
+            row(card.frame, "Hide Background", hideW)
+        )
+
+        local colorW = GUI:CreateFormColorPicker(card.frame, nil, colorKey, settings, RefreshSkinSurfaces, nil,
+            { description = "Custom background color used when override is enabled." })
+        card.AddRow(row(card.frame, "Background Color", colorW))
     end
 
+    local L = MakeLayout(tabContent)
+
     ---------------------------------------------------------------------------
-    -- Game Menu
+    -- GAME MENU
     ---------------------------------------------------------------------------
     if general.skinGameMenu == nil then general.skinGameMenu = false end
     if general.addQUIButton == nil then general.addQUIButton = false end
@@ -383,24 +498,35 @@ local function BuildSkinningTab(tabContent)
     if general.gameMenuFontSize == nil then general.gameMenuFontSize = 12 end
     if general.gameMenuDim == nil then general.gameMenuDim = true end
 
-    CreateCollapsible("Game Menu", 5 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Skin Game Menu (Req. Reload)", "skinGameMenu", general, ReloadConfirm,
-            { description = "Apply the addon skin to the Escape game menu. Requires a reload to take effect." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Add QUI Button (Req. Reload)", "addQUIButton", general, ReloadConfirm,
-            { description = "Add a button to the game menu that opens the QUI options panel. Requires a reload to take effect." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Add Edit Mode Button (Req. Reload)", "addEditModeButton", general, ReloadConfirm,
-            { description = "Add a button to the game menu that toggles QUI Layout Mode. Requires a reload to take effect." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Button Font Size", 8, 18, 1, "gameMenuFontSize", general, function()
-            if _G.QUI_RefreshGameMenuFontSize then _G.QUI_RefreshGameMenuFontSize() end
-        end, nil, { description = "Font size used for the skinned game menu buttons." }), body, sy)
-        P(GUI:CreateFormCheckbox(body, "Dim Background", "gameMenuDim", general, function()
-            if _G.QUI_RefreshGameMenuDim then _G.QUI_RefreshGameMenuDim() end
-        end, { description = "Dim the world behind the game menu while it is open so the panel reads more clearly." }), body, sy)
-    end)
+    L.headerAt("Game Menu")
+    local sGM = L.sectionAt()
+    local gmSkinW = GUI:CreateFormCheckbox(sGM.frame, nil, "skinGameMenu", general, ReloadConfirm,
+        { description = "Apply the addon skin to the Escape game menu. Requires a reload to take effect." })
+    local gmQUIW = GUI:CreateFormCheckbox(sGM.frame, nil, "addQUIButton", general, ReloadConfirm,
+        { description = "Add a button to the game menu that opens the QUI options panel. Requires a reload to take effect." })
+    sGM.AddRow(
+        row(sGM.frame, "Skin Game Menu (Req. Reload)", gmSkinW),
+        row(sGM.frame, "Add QUI Button (Req. Reload)", gmQUIW)
+    )
+
+    local gmEditModeW = GUI:CreateFormCheckbox(sGM.frame, nil, "addEditModeButton", general, ReloadConfirm,
+        { description = "Add a button to the game menu that toggles QUI Layout Mode. Requires a reload to take effect." })
+    local gmFontW = GUI:CreateFormSlider(sGM.frame, nil, 8, 18, 1, "gameMenuFontSize", general, function()
+        if _G.QUI_RefreshGameMenuFontSize then _G.QUI_RefreshGameMenuFontSize() end
+    end, { description = "Font size used for the skinned game menu buttons." })
+    sGM.AddRow(
+        row(sGM.frame, "Add Edit Mode Button (Req. Reload)", gmEditModeW),
+        row(sGM.frame, "Button Font Size", gmFontW)
+    )
+
+    local gmDimW = GUI:CreateFormCheckbox(sGM.frame, nil, "gameMenuDim", general, function()
+        if _G.QUI_RefreshGameMenuDim then _G.QUI_RefreshGameMenuDim() end
+    end, { description = "Dim the world behind the game menu while it is open so the panel reads more clearly." })
+    sGM.AddRow(row(sGM.frame, "Dim Background", gmDimW))
+    L.closeSection(sGM)
 
     ---------------------------------------------------------------------------
-    -- Loot Window
+    -- LOOT WINDOW
     ---------------------------------------------------------------------------
     if not db.loot then db.loot = {} end
     if db.loot.enabled == nil then db.loot.enabled = true end
@@ -410,22 +536,33 @@ local function BuildSkinningTab(tabContent)
     if db.loot.showTransmogMarker == nil then db.loot.showTransmogMarker = true end
     local lootDB = db.loot
 
-    CreateCollapsible("Loot Window", 5 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Skin Loot Window (Req. Reload)", "enabled", lootDB, ReloadConfirm,
-            { description = "Apply the addon skin to the loot window. Requires a reload to take effect." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Loot Under Mouse", "lootUnderMouse", lootDB, nil,
-            { description = "Anchor the loot window to your cursor position instead of the screen's default spot." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Loot Cursor X Offset", -200, 200, 1, "lootUnderMouseOffsetX", lootDB, nil, nil,
-            { description = "Horizontal offset from the cursor when Loot Under Mouse is enabled." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Loot Cursor Y Offset", -200, 200, 1, "lootUnderMouseOffsetY", lootDB, nil, nil,
-            { description = "Vertical offset from the cursor when Loot Under Mouse is enabled." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Show Transmog Markers", "showTransmogMarker", lootDB, nil,
-            { description = "Tag items in the loot window with a marker when they're unlearned appearances for your class." }), body, sy)
-    end)
+    L.headerAt("Loot Window")
+    local sLW = L.sectionAt()
+    local lwSkinW = GUI:CreateFormCheckbox(sLW.frame, nil, "enabled", lootDB, ReloadConfirm,
+        { description = "Apply the addon skin to the loot window. Requires a reload to take effect." })
+    local lwMouseW = GUI:CreateFormCheckbox(sLW.frame, nil, "lootUnderMouse", lootDB, nil,
+        { description = "Anchor the loot window to your cursor position instead of the screen's default spot." })
+    sLW.AddRow(
+        row(sLW.frame, "Skin Loot Window (Req. Reload)", lwSkinW),
+        row(sLW.frame, "Loot Under Mouse", lwMouseW)
+    )
+
+    local lwXW = GUI:CreateFormSlider(sLW.frame, nil, -200, 200, 1, "lootUnderMouseOffsetX", lootDB, nil,
+        { description = "Horizontal offset from the cursor when Loot Under Mouse is enabled." })
+    local lwYW = GUI:CreateFormSlider(sLW.frame, nil, -200, 200, 1, "lootUnderMouseOffsetY", lootDB, nil,
+        { description = "Vertical offset from the cursor when Loot Under Mouse is enabled." })
+    sLW.AddRow(
+        row(sLW.frame, "Loot Cursor X Offset", lwXW),
+        row(sLW.frame, "Loot Cursor Y Offset", lwYW)
+    )
+
+    local lwTransmogW = GUI:CreateFormCheckbox(sLW.frame, nil, "showTransmogMarker", lootDB, nil,
+        { description = "Tag items in the loot window with a marker when they're unlearned appearances for your class." })
+    sLW.AddRow(row(sLW.frame, "Show Transmog Markers", lwTransmogW))
+    L.closeSection(sLW)
 
     ---------------------------------------------------------------------------
-    -- Roll Frames
+    -- ROLL FRAMES
     ---------------------------------------------------------------------------
     if not db.lootRoll then db.lootRoll = {} end
     if db.lootRoll.enabled == nil then db.lootRoll.enabled = false end
@@ -441,22 +578,31 @@ local function BuildSkinningTab(tabContent)
         end
     end
 
-    CreateCollapsible("Roll Frames", 4 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Skin Roll Frames (Req. Reload)", "enabled", lootRollDB, ReloadConfirm,
-            { description = "Apply the addon skin to the Need/Greed/Disenchant roll popups. Requires a reload to take effect." }), body, sy)
-        sy = P(GUI:CreateFormDropdown(body, "Grow Direction", {
-            {value = "DOWN", text = "Down"}, {value = "UP", text = "Up"},
-        }, "growDirection", lootRollDB, RefreshRollPreview,
-            { description = "Direction new roll frames stack from the anchor point — downward or upward." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Max Visible Frames", 1, 8, 1, "maxFrames", lootRollDB, RefreshRollPreview, nil,
-            { description = "Maximum number of roll frames shown at once. Extra rolls queue up behind this limit." }), body, sy)
-        P(GUI:CreateFormSlider(body, "Frame Spacing", 0, 20, 1, "spacing", lootRollDB, RefreshRollPreview, nil,
-            { description = "Pixel gap between stacked roll frames." }), body, sy)
-    end)
+    L.headerAt("Roll Frames")
+    local sRF = L.sectionAt()
+    local rfSkinW = GUI:CreateFormCheckbox(sRF.frame, nil, "enabled", lootRollDB, ReloadConfirm,
+        { description = "Apply the addon skin to the Need/Greed/Disenchant roll popups. Requires a reload to take effect." })
+    local rfGrowW = GUI:CreateFormDropdown(sRF.frame, nil, {
+        {value = "DOWN", text = "Down"}, {value = "UP", text = "Up"},
+    }, "growDirection", lootRollDB, RefreshRollPreview,
+        { description = "Direction new roll frames stack from the anchor point — downward or upward." })
+    sRF.AddRow(
+        row(sRF.frame, "Skin Roll Frames (Req. Reload)", rfSkinW),
+        row(sRF.frame, "Grow Direction", rfGrowW)
+    )
+
+    local rfMaxW = GUI:CreateFormSlider(sRF.frame, nil, 1, 8, 1, "maxFrames", lootRollDB, RefreshRollPreview,
+        { description = "Maximum number of roll frames shown at once. Extra rolls queue up behind this limit." })
+    local rfSpaceW = GUI:CreateFormSlider(sRF.frame, nil, 0, 20, 1, "spacing", lootRollDB, RefreshRollPreview,
+        { description = "Pixel gap between stacked roll frames." })
+    sRF.AddRow(
+        row(sRF.frame, "Max Visible Frames", rfMaxW),
+        row(sRF.frame, "Frame Spacing", rfSpaceW)
+    )
+    L.closeSection(sRF)
 
     ---------------------------------------------------------------------------
-    -- Skin Blizzard Frames (combined toggles)
+    -- SKIN BLIZZARD FRAMES (28 checkboxes paired 2-per-row)
     ---------------------------------------------------------------------------
     if general.skinPowerBarAlt == nil then general.skinPowerBarAlt = true end
     if general.skinAlerts == nil then general.skinAlerts = true end
@@ -473,8 +619,6 @@ local function BuildSkinningTab(tabContent)
     if general.skinCraftingOrders == nil then general.skinCraftingOrders = false end
     if general.skinProfessions == nil then general.skinProfessions = false end
     if general.skinStatusTrackingBars == nil then general.skinStatusTrackingBars = true end
-    if general.skinDamageMeter == nil then general.skinDamageMeter = true end
-    -- Phase-3 frame skinning (off by default per user choice — opt-in)
     if general.skinBank == nil then general.skinBank = false end
     if general.skinMerchant == nil then general.skinMerchant = false end
     if general.skinMail == nil then general.skinMail = false end
@@ -487,66 +631,49 @@ local function BuildSkinningTab(tabContent)
     if general.skinAchievement == nil then general.skinAchievement = false end
     if general.skinWorldMap == nil then general.skinWorldMap = false end
     if general.skinWeeklyRewards == nil then general.skinWeeklyRewards = false end
-    CreateCollapsible("Skin Blizzard Frames", 28 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Alert Frames (Req. Reload)", "skinAlerts", general, ReloadConfirm,
-            { description = "Skin the achievement, loot, and level-up alert popups. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Achievement Frame (Req. Reload)", "skinAchievement", general, ReloadConfirm,
-            { description = "Skin the Achievements window. Bespoke achievement-themed artwork is stripped — categories list parchment and watermark dragon are hidden. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Auction House (Req. Reload)", "skinAuctionHouse", general, ReloadConfirm,
-            { description = "Skin the Auction House window and its tabs. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Bank (Req. Reload)", "skinBank", general, ReloadConfirm,
-            { description = "Skin the player Bank window. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Collections Journal (Req. Reload)", "skinCollections", general, ReloadConfirm,
-            { description = "Skin the Mounts / Pets / Toys / Wardrobe / Heirlooms window. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Communities (Req. Reload)", "skinCommunities", general, ReloadConfirm,
-            { description = "Skin the Guilds and Communities window. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Context Menus (Req. Reload)", "skinContextMenus", general, ReloadConfirm,
-            { description = "Skin right-click context menus and dropdown menu panels. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Crafting Orders (Req. Reload)", "skinCraftingOrders", general, ReloadConfirm,
-            { description = "Skin the Crafting Orders interface used by professions. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Encounter Journal (Req. Reload)", "skinEncounterJournal", general, ReloadConfirm,
-            { description = "Skin the Adventure Guide / Encounter Journal window. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Encounter Power Bar (Req. Reload)", "skinPowerBarAlt", general, ReloadConfirm,
-            { description = "Skin the alternate power bar some encounters use (e.g., boss add health bars). Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Friends List (Req. Reload)", "skinFriends", general, ReloadConfirm,
-            { description = "Skin the Friends / Ignore / Who window. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Guild Bank (Req. Reload)", "skinGuildBank", general, ReloadConfirm,
-            { description = "Skin the Guild Bank window. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Inspect Frame (Req. Reload)", "skinInspectFrame", general, ReloadConfirm,
-            { description = "Skin the Inspect window that opens when you /inspect another player. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Instance Frames (Req. Reload)", "skinInstanceFrames", general, ReloadConfirm,
-            { description = "Skin the Group Finder, PvP, and Mythic+ instance windows. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Keystone Window (Req. Reload)", "skinKeystoneFrame", general, ReloadConfirm,
-            { description = "Skin the Mythic+ Keystone insertion and selection window. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Loot History (Req. Reload)", "enabled", db.lootResults, ReloadConfirm,
-            { description = "Skin the group loot history popup that summarizes recent drops. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Mail (Req. Reload)", "skinMail", general, ReloadConfirm,
-            { description = "Skin the in-game mail window. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Merchant (Req. Reload)", "skinMerchant", general, ReloadConfirm,
-            { description = "Skin the vendor/merchant window. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Override Action Bar (Req. Reload)", "skinOverrideActionBar", general, ReloadConfirm,
-            { description = "Skin the temporary override bar shown during vehicles and special encounters. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Professions (Req. Reload)", "skinProfessions", general, ReloadConfirm,
-            { description = "Skin the profession crafting and recipe window. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Ready Check Dialog (Req. Reload)", "skinReadyCheck", general, ReloadConfirm,
-            { description = "Skin the ready check popup. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Reputation/Currency (Req. Reload)", "skinCharacterFrame", general, ReloadConfirm,
-            { description = "Skin the reputation and currency tabs of the character pane. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Spellbook / Talents (Req. Reload)", "skinSpellBook", general, ReloadConfirm,
-            { description = "Skin the combined Spellbook and Talents window (PlayerSpellsFrame). Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Static Dialogs (Req. Reload)", "skinStaticPopups", general, ReloadConfirm,
-            { description = "Skin StaticPopup confirmation dialogs. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Status Tracking Bars (Req. Reload)", "skinStatusTrackingBars", general, ReloadConfirm,
-            { description = "Skin the experience, reputation, and honor bars above the action bar. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Weekly Rewards / Great Vault (Req. Reload)", "skinWeeklyRewards", general, ReloadConfirm,
-            { description = "Skin the Great Vault window. Bespoke evergreen artwork is stripped. Requires a reload." }), body, sy)
-        P(GUI:CreateFormCheckbox(body, "World Map (Req. Reload)", "skinWorldMap", general, ReloadConfirm,
-            { description = "Skin the World Map's PortraitFrame border (the map canvas itself is unchanged). Requires a reload." }), body, sy)
-    end)
+
+    L.headerAt("Skin Blizzard Frames")
+    local sSBF = L.sectionAt()
+    local blizFrames = {
+        {key="skinAlerts",            label="Alert Frames (Req. Reload)",            dbT=general,         desc="Skin the achievement, loot, and level-up alert popups. Requires a reload."},
+        {key="skinAchievement",       label="Achievement Frame (Req. Reload)",       dbT=general,         desc="Skin the Achievements window. Bespoke achievement-themed artwork is stripped — categories list parchment and watermark dragon are hidden. Requires a reload."},
+        {key="skinAuctionHouse",      label="Auction House (Req. Reload)",           dbT=general,         desc="Skin the Auction House window and its tabs. Requires a reload."},
+        {key="skinBank",              label="Bank (Req. Reload)",                    dbT=general,         desc="Skin the player Bank window. Requires a reload."},
+        {key="skinCollections",       label="Collections Journal (Req. Reload)",     dbT=general,         desc="Skin the Mounts / Pets / Toys / Wardrobe / Heirlooms window. Requires a reload."},
+        {key="skinCommunities",       label="Communities (Req. Reload)",             dbT=general,         desc="Skin the Guilds and Communities window. Requires a reload."},
+        {key="skinContextMenus",      label="Context Menus (Req. Reload)",           dbT=general,         desc="Skin right-click context menus and dropdown menu panels. Requires a reload."},
+        {key="skinCraftingOrders",    label="Crafting Orders (Req. Reload)",         dbT=general,         desc="Skin the Crafting Orders interface used by professions. Requires a reload."},
+        {key="skinEncounterJournal",  label="Encounter Journal (Req. Reload)",       dbT=general,         desc="Skin the Adventure Guide / Encounter Journal window. Requires a reload."},
+        {key="skinPowerBarAlt",       label="Encounter Power Bar (Req. Reload)",     dbT=general,         desc="Skin the alternate power bar some encounters use (e.g., boss add health bars). Requires a reload."},
+        {key="skinFriends",           label="Friends List (Req. Reload)",            dbT=general,         desc="Skin the Friends / Ignore / Who window. Requires a reload."},
+        {key="skinGuildBank",         label="Guild Bank (Req. Reload)",              dbT=general,         desc="Skin the Guild Bank window. Requires a reload."},
+        {key="skinInspectFrame",      label="Inspect Frame (Req. Reload)",           dbT=general,         desc="Skin the Inspect window that opens when you /inspect another player. Requires a reload."},
+        {key="skinInstanceFrames",    label="Instance Frames (Req. Reload)",         dbT=general,         desc="Skin the Group Finder, PvP, and Mythic+ instance windows. Requires a reload."},
+        {key="skinKeystoneFrame",     label="Keystone Window (Req. Reload)",         dbT=general,         desc="Skin the Mythic+ Keystone insertion and selection window. Requires a reload."},
+        {key="enabled",               label="Loot History (Req. Reload)",            dbT=db.lootResults,  desc="Skin the group loot history popup that summarizes recent drops. Requires a reload."},
+        {key="skinMail",              label="Mail (Req. Reload)",                    dbT=general,         desc="Skin the in-game mail window. Requires a reload."},
+        {key="skinMerchant",          label="Merchant (Req. Reload)",                dbT=general,         desc="Skin the vendor/merchant window. Requires a reload."},
+        {key="skinOverrideActionBar", label="Override Action Bar (Req. Reload)",     dbT=general,         desc="Skin the temporary override bar shown during vehicles and special encounters. Requires a reload."},
+        {key="skinProfessions",       label="Professions (Req. Reload)",             dbT=general,         desc="Skin the profession crafting and recipe window. Requires a reload."},
+        {key="skinReadyCheck",        label="Ready Check Dialog (Req. Reload)",      dbT=general,         desc="Skin the ready check popup. Requires a reload."},
+        {key="skinCharacterFrame",    label="Reputation/Currency (Req. Reload)",     dbT=general,         desc="Skin the reputation and currency tabs of the character pane. Requires a reload."},
+        {key="skinSpellBook",         label="Spellbook / Talents (Req. Reload)",     dbT=general,         desc="Skin the combined Spellbook and Talents window (PlayerSpellsFrame). Requires a reload."},
+        {key="skinStaticPopups",      label="Static Dialogs (Req. Reload)",          dbT=general,         desc="Skin StaticPopup confirmation dialogs. Requires a reload."},
+        {key="skinStatusTrackingBars",label="Status Tracking Bars (Req. Reload)",    dbT=general,         desc="Skin the experience, reputation, and honor bars above the action bar. Requires a reload."},
+        {key="skinWeeklyRewards",     label="Weekly Rewards / Great Vault (Req. Reload)", dbT=general,    desc="Skin the Great Vault window. Bespoke evergreen artwork is stripped. Requires a reload."},
+        {key="skinWorldMap",          label="World Map (Req. Reload)",               dbT=general,         desc="Skin the World Map's PortraitFrame border (the map canvas itself is unchanged). Requires a reload."},
+    }
+    local sbfCells = {}
+    for _, def in ipairs(blizFrames) do
+        local w = GUI:CreateFormCheckbox(sSBF.frame, nil, def.key, def.dbT, ReloadConfirm,
+            { description = def.desc })
+        sbfCells[#sbfCells + 1] = row(sSBF.frame, def.label, w)
+    end
+    pairCells(sSBF, sbfCells)
+    L.closeSection(sSBF)
 
     ---------------------------------------------------------------------------
-    -- Status Tracking Bars (detailed settings)
+    -- STATUS TRACKING BARS
     ---------------------------------------------------------------------------
     local function RefreshStatusTrackingBars()
         if _G.QUI_RefreshStatusTrackingBarSkin then
@@ -570,57 +697,92 @@ local function BuildSkinningTab(tabContent)
     if general.statusTrackingBarsBarTextOffsetX == nil then general.statusTrackingBarsBarTextOffsetX = 0 end
     if general.statusTrackingBarsBarTextOffsetY == nil then general.statusTrackingBarsBarTextOffsetY = 0 end
 
-    CreateCollapsible("Status Tracking Bars", 15 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormDropdown(body, "Bar fill color", {
-            { text = "Skin accent", value = "accent" },
-            { text = "Class color", value = "class" },
-            { text = "Custom color", value = "custom" },
-            { text = "Blizzard default", value = "blizzard" },
-        }, "statusTrackingBarsBarColorMode", general, RefreshStatusTrackingBars,
-            { description = "How the experience and reputation bars are filled. Accent uses the skin color, Class uses your class color, Custom uses the picker below, Blizzard keeps the default bar art." }), body, sy)
-        sy = P(GUI:CreateFormColorPicker(body, "Custom bar fill", "statusTrackingBarsBarColor", general, RefreshStatusTrackingBars, {},
-            { description = "Custom fill color used when the bar fill mode is set to Custom color." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Bar height (0 = default)", 0, 24, 1, "statusTrackingBarsBarHeight", general, RefreshStatusTrackingBars, nil,
-            { description = "Pixel height of the tracking bar. Set to 0 to keep the default height." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Bar width %", 25, 100, 1, "statusTrackingBarsBarWidthPercent", general, RefreshStatusTrackingBars, nil,
-            { description = "Width of the tracking bar as a percentage of its default width." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Show bar border", "statusTrackingBarsShowBorder", general, RefreshStatusTrackingBars,
-            { description = "Draw a 1px border around the tracking bars using the global skin border style." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Border thickness (0 = auto)", 0, 8, 1, "statusTrackingBarsBorderThickness", general, RefreshStatusTrackingBars, nil,
-            { description = "Thickness of the tracking bar border in pixels. 0 uses the automatic pixel-perfect value." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Show bar text", "statusTrackingBarsShowBarText", general, RefreshStatusTrackingBars,
-            { description = "Show the XP, reputation, or honor numeric text on top of the bar." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Always show text (ignore game toggle)", "statusTrackingBarsBarTextAlways", general, RefreshStatusTrackingBars,
-            { description = "Keep the bar text visible at all times, ignoring Blizzard's mouseover-only default behavior." }), body, sy)
-        sy = P(GUI:CreateFormDropdown(body, "Text position", {
-            { text = "Left", value = "LEFT" },
-            { text = "Center", value = "CENTER" },
-            { text = "Right", value = "RIGHT" },
-        }, "statusTrackingBarsBarTextAnchor", general, RefreshStatusTrackingBars,
-            { description = "Horizontal alignment of the bar text." }), body, sy)
-        sy = P(GUI:CreateFormColorPicker(body, "Text color", "statusTrackingBarsBarTextColor", general, RefreshStatusTrackingBars, {},
-            { description = "Color of the numeric text drawn on top of the tracking bar." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Text font size", 6, 24, 1, "statusTrackingBarsBarTextFontSize", general, RefreshStatusTrackingBars, nil,
-            { description = "Font size used for the bar text." }), body, sy)
-        sy = P(GUI:CreateFormDropdown(body, "Text outline", {
-            { text = "Inherit (global outline)", value = "_inherit" },
-            { text = "None", value = "_none" },
-            { text = "Thin", value = "OUTLINE" },
-            { text = "Thick", value = "THICKOUTLINE" },
-        }, "statusTrackingBarsBarTextOutline", general, RefreshStatusTrackingBars,
-            { description = "Outline style for the bar text. Inherit follows the global font outline; None removes it; Thin and Thick set explicit widths." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Text X offset", -40, 40, 1, "statusTrackingBarsBarTextOffsetX", general, RefreshStatusTrackingBars, nil,
-            { description = "Horizontal pixel offset of the text from its anchor." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Text Y offset", -40, 40, 1, "statusTrackingBarsBarTextOffsetY", general, RefreshStatusTrackingBars, nil,
-            { description = "Vertical pixel offset of the text from its anchor." }), body, sy)
-        sy = AddBorderOverrides(body, sy, general, "statusTrackingBars")
-        AddBgOverrides(body, sy, general, "statusTrackingBars")
-    end)
+    L.headerAt("Status Tracking Bars")
+    local sSTB = L.sectionAt()
+    local stbColorModeW = GUI:CreateFormDropdown(sSTB.frame, nil, {
+        { text = "Skin accent", value = "accent" },
+        { text = "Class color", value = "class" },
+        { text = "Custom color", value = "custom" },
+        { text = "Blizzard default", value = "blizzard" },
+    }, "statusTrackingBarsBarColorMode", general, RefreshStatusTrackingBars,
+        { description = "How the experience and reputation bars are filled. Accent uses the skin color, Class uses your class color, Custom uses the picker below, Blizzard keeps the default bar art." })
+    local stbCustomW = GUI:CreateFormColorPicker(sSTB.frame, nil, "statusTrackingBarsBarColor", general, RefreshStatusTrackingBars, {},
+        { description = "Custom fill color used when the bar fill mode is set to Custom color." })
+    sSTB.AddRow(
+        row(sSTB.frame, "Bar fill color", stbColorModeW),
+        row(sSTB.frame, "Custom bar fill", stbCustomW)
+    )
 
-    -- Objective Tracker — flattened into Skinning. All
-    -- widgets inline instead of nesting the layout-mode provider. Position
-    -- is handled by Layout Mode and intentionally omitted here.
+    local stbHeightW = GUI:CreateFormSlider(sSTB.frame, nil, 0, 24, 1, "statusTrackingBarsBarHeight", general, RefreshStatusTrackingBars,
+        { description = "Pixel height of the tracking bar. Set to 0 to keep the default height." })
+    local stbWidthW = GUI:CreateFormSlider(sSTB.frame, nil, 25, 100, 1, "statusTrackingBarsBarWidthPercent", general, RefreshStatusTrackingBars,
+        { description = "Width of the tracking bar as a percentage of its default width." })
+    sSTB.AddRow(
+        row(sSTB.frame, "Bar height (0 = default)", stbHeightW),
+        row(sSTB.frame, "Bar width %", stbWidthW)
+    )
+
+    local stbShowBorderW = GUI:CreateFormCheckbox(sSTB.frame, nil, "statusTrackingBarsShowBorder", general, RefreshStatusTrackingBars,
+        { description = "Draw a 1px border around the tracking bars using the global skin border style." })
+    local stbBorderThickW = GUI:CreateFormSlider(sSTB.frame, nil, 0, 8, 1, "statusTrackingBarsBorderThickness", general, RefreshStatusTrackingBars,
+        { description = "Thickness of the tracking bar border in pixels. 0 uses the automatic pixel-perfect value." })
+    sSTB.AddRow(
+        row(sSTB.frame, "Show bar border", stbShowBorderW),
+        row(sSTB.frame, "Border thickness (0 = auto)", stbBorderThickW)
+    )
+
+    local stbShowTextW = GUI:CreateFormCheckbox(sSTB.frame, nil, "statusTrackingBarsShowBarText", general, RefreshStatusTrackingBars,
+        { description = "Show the XP, reputation, or honor numeric text on top of the bar." })
+    local stbAlwaysW = GUI:CreateFormCheckbox(sSTB.frame, nil, "statusTrackingBarsBarTextAlways", general, RefreshStatusTrackingBars,
+        { description = "Keep the bar text visible at all times, ignoring Blizzard's mouseover-only default behavior." })
+    sSTB.AddRow(
+        row(sSTB.frame, "Show bar text", stbShowTextW),
+        row(sSTB.frame, "Always show text (ignore game toggle)", stbAlwaysW)
+    )
+
+    local stbAnchorW = GUI:CreateFormDropdown(sSTB.frame, nil, {
+        { text = "Left", value = "LEFT" },
+        { text = "Center", value = "CENTER" },
+        { text = "Right", value = "RIGHT" },
+    }, "statusTrackingBarsBarTextAnchor", general, RefreshStatusTrackingBars,
+        { description = "Horizontal alignment of the bar text." })
+    local stbTextColorW = GUI:CreateFormColorPicker(sSTB.frame, nil, "statusTrackingBarsBarTextColor", general, RefreshStatusTrackingBars, {},
+        { description = "Color of the numeric text drawn on top of the tracking bar." })
+    sSTB.AddRow(
+        row(sSTB.frame, "Text position", stbAnchorW),
+        row(sSTB.frame, "Text color", stbTextColorW)
+    )
+
+    local stbFontSizeW = GUI:CreateFormSlider(sSTB.frame, nil, 6, 24, 1, "statusTrackingBarsBarTextFontSize", general, RefreshStatusTrackingBars,
+        { description = "Font size used for the bar text." })
+    local stbOutlineW = GUI:CreateFormDropdown(sSTB.frame, nil, {
+        { text = "Inherit (global outline)", value = "_inherit" },
+        { text = "None", value = "_none" },
+        { text = "Thin", value = "OUTLINE" },
+        { text = "Thick", value = "THICKOUTLINE" },
+    }, "statusTrackingBarsBarTextOutline", general, RefreshStatusTrackingBars,
+        { description = "Outline style for the bar text. Inherit follows the global font outline; None removes it; Thin and Thick set explicit widths." })
+    sSTB.AddRow(
+        row(sSTB.frame, "Text font size", stbFontSizeW),
+        row(sSTB.frame, "Text outline", stbOutlineW)
+    )
+
+    local stbOffXW = GUI:CreateFormSlider(sSTB.frame, nil, -40, 40, 1, "statusTrackingBarsBarTextOffsetX", general, RefreshStatusTrackingBars,
+        { description = "Horizontal pixel offset of the text from its anchor." })
+    local stbOffYW = GUI:CreateFormSlider(sSTB.frame, nil, -40, 40, 1, "statusTrackingBarsBarTextOffsetY", general, RefreshStatusTrackingBars,
+        { description = "Vertical pixel offset of the text from its anchor." })
+    sSTB.AddRow(
+        row(sSTB.frame, "Text X offset", stbOffXW),
+        row(sSTB.frame, "Text Y offset", stbOffYW)
+    )
+
+    AddBorderOverrides(sSTB, general, "statusTrackingBars")
+    AddBgOverrides(sSTB, general, "statusTrackingBars")
+    L.closeSection(sSTB)
+
+    ---------------------------------------------------------------------------
+    -- OBJECTIVE TRACKER
+    ---------------------------------------------------------------------------
     if general.skinObjectiveTracker == nil then general.skinObjectiveTracker = false end
     if general.objectiveTrackerClickThrough == nil then general.objectiveTrackerClickThrough = false end
     if general.objectiveTrackerHeight == nil then general.objectiveTrackerHeight = 600 end
@@ -637,40 +799,66 @@ local function BuildSkinningTab(tabContent)
         if _G.QUI_RefreshObjectiveTracker then _G.QUI_RefreshObjectiveTracker() end
     end
 
-    CreateCollapsible("Objective Tracker", 11 * FORM_ROW + 8, function(body)
-        local sy = -4
-        sy = P(GUI:CreateFormCheckbox(body, "Skin Objective Tracker", "skinObjectiveTracker", general, function()
-            GUI:ShowConfirmation({
-                title = "Reload UI?",
-                message = "Skinning changes require a reload to take effect.",
-                acceptText = "Reload",
-                cancelText = "Later",
-                onAccept = function() QUI:SafeReload() end,
-            })
-        end, { description = "Apply the addon skin and font treatment to the quest/objective tracker. Requires a reload." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Click Through", "objectiveTrackerClickThrough", general, RefreshOT,
-            { description = "Let mouse clicks pass through the tracker to the game world behind it. Useful if the tracker overlaps targetable mobs or nodes." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Max Height", 200, 1000, 10, "objectiveTrackerHeight", general, RefreshOT, nil,
-            { description = "Maximum pixel height of the tracker. Content past this height scrolls or collapses." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Max Width", 150, 400, 10, "objectiveTrackerWidth", general, RefreshOT, nil,
-            { description = "Maximum pixel width of the tracker." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Module Header Font", 6, 18, 1, "objectiveTrackerModuleFontSize", general, RefreshOT, nil,
-            { description = "Font size of module headers like Quests, Campaign, and World Quests." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Quest Title Font", 6, 18, 1, "objectiveTrackerTitleFontSize", general, RefreshOT, nil,
-            { description = "Font size of individual quest titles listed under each module." }), body, sy)
-        sy = P(GUI:CreateFormSlider(body, "Objective Text Font", 6, 18, 1, "objectiveTrackerTextFontSize", general, RefreshOT, nil,
-            { description = "Font size of the objective/progress text shown beneath each quest title." }), body, sy)
-        sy = P(GUI:CreateFormCheckbox(body, "Hide Border", "hideObjectiveTrackerBorder", general, RefreshOT,
-            { description = "Hide the border drawn around the skinned objective tracker." }), body, sy)
-        sy = P(GUI:CreateFormColorPicker(body, "Module Header Color", "objectiveTrackerModuleColor", general, RefreshOT, nil,
-            { description = "Color applied to module header text (Quests, Campaign, etc.)." }), body, sy)
-        sy = P(GUI:CreateFormColorPicker(body, "Quest Title Color", "objectiveTrackerTitleColor", general, RefreshOT, nil,
-            { description = "Color applied to individual quest title text." }), body, sy)
-        P(GUI:CreateFormColorPicker(body, "Objective Text Color", "objectiveTrackerTextColor", general, RefreshOT, nil,
-            { description = "Color applied to objective/progress text beneath each quest title." }), body, sy)
-    end)
+    L.headerAt("Objective Tracker")
+    local sOT = L.sectionAt()
+    local otSkinW = GUI:CreateFormCheckbox(sOT.frame, nil, "skinObjectiveTracker", general, function()
+        GUI:ShowConfirmation({
+            title = "Reload UI?",
+            message = "Skinning changes require a reload to take effect.",
+            acceptText = "Reload",
+            cancelText = "Later",
+            onAccept = function() QUI:SafeReload() end,
+        })
+    end, { description = "Apply the addon skin and font treatment to the quest/objective tracker. Requires a reload." })
+    local otClickW = GUI:CreateFormCheckbox(sOT.frame, nil, "objectiveTrackerClickThrough", general, RefreshOT,
+        { description = "Let mouse clicks pass through the tracker to the game world behind it. Useful if the tracker overlaps targetable mobs or nodes." })
+    sOT.AddRow(
+        row(sOT.frame, "Skin Objective Tracker", otSkinW),
+        row(sOT.frame, "Click Through", otClickW)
+    )
 
-    relayout()
+    local otHW = GUI:CreateFormSlider(sOT.frame, nil, 200, 1000, 10, "objectiveTrackerHeight", general, RefreshOT,
+        { description = "Maximum pixel height of the tracker. Content past this height scrolls or collapses." })
+    local otWW = GUI:CreateFormSlider(sOT.frame, nil, 150, 400, 10, "objectiveTrackerWidth", general, RefreshOT,
+        { description = "Maximum pixel width of the tracker." })
+    sOT.AddRow(
+        row(sOT.frame, "Max Height", otHW),
+        row(sOT.frame, "Max Width", otWW)
+    )
+
+    local otModuleFW = GUI:CreateFormSlider(sOT.frame, nil, 6, 18, 1, "objectiveTrackerModuleFontSize", general, RefreshOT,
+        { description = "Font size of module headers like Quests, Campaign, and World Quests." })
+    local otTitleFW = GUI:CreateFormSlider(sOT.frame, nil, 6, 18, 1, "objectiveTrackerTitleFontSize", general, RefreshOT,
+        { description = "Font size of individual quest titles listed under each module." })
+    sOT.AddRow(
+        row(sOT.frame, "Module Header Font", otModuleFW),
+        row(sOT.frame, "Quest Title Font", otTitleFW)
+    )
+
+    local otTextFW = GUI:CreateFormSlider(sOT.frame, nil, 6, 18, 1, "objectiveTrackerTextFontSize", general, RefreshOT,
+        { description = "Font size of the objective/progress text shown beneath each quest title." })
+    local otHideBorderW = GUI:CreateFormCheckbox(sOT.frame, nil, "hideObjectiveTrackerBorder", general, RefreshOT,
+        { description = "Hide the border drawn around the skinned objective tracker." })
+    sOT.AddRow(
+        row(sOT.frame, "Objective Text Font", otTextFW),
+        row(sOT.frame, "Hide Border", otHideBorderW)
+    )
+
+    local otModuleColorW = GUI:CreateFormColorPicker(sOT.frame, nil, "objectiveTrackerModuleColor", general, RefreshOT, nil,
+        { description = "Color applied to module header text (Quests, Campaign, etc.)." })
+    local otTitleColorW = GUI:CreateFormColorPicker(sOT.frame, nil, "objectiveTrackerTitleColor", general, RefreshOT, nil,
+        { description = "Color applied to individual quest title text." })
+    sOT.AddRow(
+        row(sOT.frame, "Module Header Color", otModuleColorW),
+        row(sOT.frame, "Quest Title Color", otTitleColorW)
+    )
+
+    local otTextColorW = GUI:CreateFormColorPicker(sOT.frame, nil, "objectiveTrackerTextColor", general, RefreshOT, nil,
+        { description = "Color applied to objective/progress text beneath each quest title." })
+    sOT.AddRow(row(sOT.frame, "Objective Text Color", otTextColorW))
+    L.closeSection(sOT)
+
+    L.finish()
 end
 
 -- Export

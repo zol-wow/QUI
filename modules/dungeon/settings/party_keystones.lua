@@ -15,4 +15,13 @@ ProviderFeatures:Register({
         subPageIndex = 2,
     },
     providerKey = "partyKeystones",
+    keywords = {
+        "keystone",
+        "mythic plus",
+        "mythic+",
+        "key level",
+        "key list",
+        "dungeon roster",
+        "party keys",
+    },
 })
