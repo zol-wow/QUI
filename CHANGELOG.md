@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha59 - 2026-05-24
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha58 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Added
+- **Options search now finds module on/off toggles and the damage-meter settings.** The search index was regenerated to seed every module-toggle label plus the full damage-meter settings tab, so typing a module name or a damage-meter option in the options search box jumps straight to it. The damage-meter settings tab now resolves the `QUI_Options` namespace at call time, so it still builds when it loads ahead of `shared.lua` on the search-cache load path.
+
+### Fixed
+- **Damage meter: bars no longer collapse to zero-width in combat.** Bar fill and the per-second rate now derive through Blizzard's secret-safe APIs — raw value/max is handed straight to the StatusBar and the rate is computed by Blizzard — instead of ratios computed in Lua, which fault on protected combat values and left "colorless" empty bars.
+- **Chat: protected slash commands no longer taint after using the edit box.** Insecure slash commands are kept out of edit-box history (gated on `IsSecureCmd`) and history mutations are guarded against combat lockdown, so protected commands such as `/tm` and `/cast` keep working instead of faulting `ADDON_ACTION_FORBIDDEN`.
+- **Action bars: picking up an action from a locked bar no longer taints casting.** The "modified-click picks up instead of casts" logic moved out of an insecure `PreClick` (which tainted the click dispatch and could break `AllowedWhenUntainted` calls like a `/tm` macro's `SetRaidTarget`) into the secure click snippet, with the on-key-down cast state cleared in the pre-body and restored in the post-body.
+- **CDM: talent-overridden cooldowns no longer get erased by an incidental global cooldown.** When a talent-replaced slot has no cooldown of its own, casting any other spell put a GCD swipe on the base every global cooldown and wiped the real swipe (Augmentation Breath of Eons is the reference case). A real (non-GCD) cooldown on the base or override now always outranks the GCD — mirroring Blizzard's CooldownViewer `max(realCD, GCD)` behavior — and the GCD-only swipe is used only as a fallback.
+
+
+
 ## v3.6.0-alpha58 - 2026-05-24
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha57 profiles carry over unchanged.
