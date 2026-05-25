@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha60 - 2026-05-25
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha59 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Added
+- **Damage meter: per-target damage breakdown.** The breakdown view now splits a combatant's damage by the target it was dealt to, in addition to the existing per-spell split. Sorting runs through a combat-safe path so the rows stay correctly ordered on protected combat values.
+- **Damage meter: window border applies live.** Each window builds a 1px border ring through the shared UI helper, and the Appearance → Colors → Border picker repaints it immediately — the border color now applies without a `/reload`, with a QUI-accent fallback when no explicit color is set.
+
+### Changed
+- **Damage meter: long cross-realm names are shortened by default.** A new `shortenNames` option (on by default) trims the `-Realm` suffix from combatant names so cross-realm rows no longer blow out the row width.
+- **Layout: corner-drag resize updates the Frame Size sliders live.** Dragging a chat or damage-meter window by a corner grip now re-reads the live dimensions into the Layout Mode Frame Size sliders instead of leaving them on the stale pre-drag value.
+
+### Fixed
+- **Chat: the ChatFrame1 size now survives `/reload`.** QUI owns the chat frame size in its own profile and re-applies it on login (deferred so it wins over Edit Mode's layout restore), instead of writing Blizzard's Edit Mode layout — which preset layouts regenerate on load and silently drop, reverting the size every `/reload`.
+- **CDM: charge spells no longer flicker to a GCD swipe while recharging.** An active multi-charge recharge now outranks the incidental global-cooldown swipe in both the live and mirror render paths (matching Blizzard's CooldownViewer), so a recharging charge spell keeps its recharge swipe instead of resetting it on every global cooldown.
+- **CDM: charge spells no longer desaturate while a charge is still banked.** Charge spells whose recharge reports as continuously active (Putrefy is the reference case) now stay saturated via the secret-safe `wasSetFromCharges` signal, instead of greying out mid-recharge with a charge still available.
+- **QoL: Mythic+ auto combat logging no longer stays on after a run.** The in-M+ signal is now gated on actually being inside an instance; the underlying "is M+ active" check can linger true out in the open world after a run, which previously kept auto-logging enabled indefinitely.
+
+### Performance
+- **CDM: lower combat memory churn.** Removed the per-refresh trusted-GCD snapshot walk and read the on-GCD flag directly off the cooldown info (it is never a protected value, so the snapshot machinery was unnecessary) — this was the dominant source of combat-time allocation churn in the cooldown path. In-game A/B measured roughly 6–10× fewer cooldown-source calls and ~2.5× lower runtime-event volume per 5-second window.
+
+
+
 ## v3.6.0-alpha59 - 2026-05-24
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha58 profiles carry over unchanged.
