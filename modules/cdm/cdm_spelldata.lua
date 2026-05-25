@@ -3354,6 +3354,20 @@ end
 -- Phase 3 (permanent deletion). Only run Phase 2 (restore returning spells).
 -- Used by recovery handlers (PLAYER_REGEN_ENABLED, CHALLENGE_MODE_START) that
 -- should rescue incorrectly-dormanted spells without risking re-dormanting more.
+
+-- The per-character Blizzard CDM catalog (_spellToCooldownID + family
+-- membership maps) is populated. Class-aware aura cleanup gates on this so it
+-- never shelves auras before the catalog has been walked — which would
+-- false-positive every aura as "foreign" during early load.
+local function CDMCatalogReady()
+    if not next(_spellToCooldownID) then
+        if RebuildSpellToCooldownID then
+            RebuildSpellToCooldownID()
+        end
+    end
+    return next(_spellToCooldownID) ~= nil
+end
+
 function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
     local db = GetContainerDB(containerKey)
     if not db or type(db.ownedSpells) ~= "table" then
@@ -3379,49 +3393,63 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
         end
     end
 
-    -- Phase 0 (one-shot recovery): aura-family containers should never
-    -- have dormant entries — a buff aura ID is not a cast ability that
-    -- "comes and goes" with talents, it is a passive presence indicator
-    -- for a buff that may or may not be applied right now. Pre-fix code
-    -- dormanted aura entries because IsSpellKnownByPlayer returned false
-    -- for buff aura IDs (which are not in the spellbook). Restore any
-    -- legacy aura entries stuck in dormantSpells back to ownedSpells.
-    -- Idempotent — after the first run dormantSpells is empty for these
-    -- containers, so subsequent calls are no-ops.
+    -- Phase 0 (aura restore): resurrect dormant aura entries that belong to
+    -- THIS character's CDM aura family. A buff aura ID is a passive presence
+    -- indicator, not a cast ability that "comes and goes" with talents, so a
+    -- same-class aura should never stay dormant. Foreign-class auras (another
+    -- class's tracked buffs left in a shared AceDB profile) are the exception:
+    -- they stay dormant and get pruned by Phase 3. Class is decided via the
+    -- per-character Blizzard CDM catalog. Before the catalog is populated we
+    -- can't tell foreign from own, so fall back to the legacy blanket restore
+    -- to avoid stranding legitimate auras during early load.
     if IsBuiltinAuraContainerKey(containerKey)
         and next(db.dormantSpells) then
+        local catalogReady = CDMCatalogReady()
         for sid, savedData in pairs(db.dormantSpells) do
-            local restoredRow
-            if type(savedData) == "table" then
-                restoredRow = savedData.row
+            if (not catalogReady) or self:IsSpellInCDMCategory(sid, "aura") then
+                local restoredRow
+                if type(savedData) == "table" then
+                    restoredRow = savedData.row
+                end
+                db.ownedSpells[#db.ownedSpells + 1] = {
+                    type = "spell",
+                    id = sid,
+                    row = restoredRow,
+                    kind = "aura",
+                }
+                -- Setting an existing key to nil mid-traversal is permitted.
+                db.dormantSpells[sid] = nil
             end
-            db.ownedSpells[#db.ownedSpells + 1] = {
-                type = "spell",
-                id = sid,
-                row = restoredRow,
-                kind = "aura",
-            }
         end
-        wipe(db.dormantSpells)
     end
 
-    -- Phase 1: Move unlearned spells to dormant.
+    -- Phase 1: Move spells that don't belong to this character to dormant.
     -- Skipped when restoreOnly is true — recovery handlers should only
     -- rescue spells from dormant, not risk marking more spells dormant
     -- while APIs may still be settling after a zone transition.
-    -- Aura-kind entries are also skipped: buff/aura spell IDs are rarely
-    -- in the spellbook (the buff ID and the cast ability ID usually
-    -- differ), so IsSpellKnownByPlayer reliably returns false for them.
-    -- The runtime aura resolver simply finds no active aura when
-    -- the buff isn't applied — that is the correct "not currently shown"
-    -- signal, not a dormant signal.
+    --
+    -- Cooldown entries are judged by the spellbook (IsSpellKnownByPlayer).
+    -- Aura entries can't be: buff/aura spell IDs are rarely in the spellbook
+    -- (the buff ID and the cast ability ID usually differ). They are judged
+    -- by the per-character Blizzard CDM catalog instead — an aura absent from
+    -- THIS character's aura family is foreign (e.g. another class's tracked
+    -- buff left behind in a shared AceDB profile) and is shelved. The catalog
+    -- gate means a legitimate same-class aura that simply isn't applied right
+    -- now is kept (the runtime resolver shows it inactive); only genuinely
+    -- foreign auras are removed, and only once the catalog has been walked.
     if not restoreOnly then
         local toRemove = {}  -- indices to remove (descending order)
+        local catalogReady = CDMCatalogReady()
         for i, entry in ipairs(ownedSpells) do
-            if entry and entry.id and entry.type == "spell"
-                and not IsAuraEntry(entry, containerKey) then
-                local known = IsSpellKnownByPlayer(entry.id)
-                if not known then
+            if entry and entry.id and entry.type == "spell" then
+                local shouldShelve
+                if IsAuraEntry(entry, containerKey) then
+                    shouldShelve = catalogReady
+                        and not self:IsSpellInCDMCategory(entry.id, "aura")
+                else
+                    shouldShelve = not IsSpellKnownByPlayer(entry.id)
+                end
+                if shouldShelve then
                     -- Save slot position AND row assignment so both are restored
                     db._dormantSequence = (db._dormantSequence or 0) + 1
                     db.dormantSpells[entry.id] = {
