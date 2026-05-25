@@ -1075,8 +1075,6 @@ return {
             native = {
               appearance = {
                 global = {
-                  animateBars = false,
-                  animateDuration = 0.20000000000000001,
                   barColor = {
                     [1] = 0.34999999999999998,
                     [2] = 0.55000000000000004,

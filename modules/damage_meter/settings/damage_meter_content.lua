@@ -479,18 +479,7 @@ BuildNativeDamageMeterTab = function(tabContent)
         return GUI:CreateFormColorPicker(p, nil, "barColor", bt, ApplyNative, nil,
             { description = "Custom bar color used when both Use Class Color and Use Accent are off." })
     end)
-    local animW = override(sBars.frame, "animateBars", function(p, bt)
-        return GUI:CreateFormCheckbox(p, nil, "animateBars", bt, ApplyNative,
-            { description = "Animate bar fills as values change." })
-    end)
     pending = placeOverrideRow(sBars, "Custom Bar Color", colorW, pending)
-    pending = placeOverrideRow(sBars, "Animate Bar Fills", animW, pending)
-
-    local durW = override(sBars.frame, "animateDuration", function(p, bt)
-        return GUI:CreateFormSlider(p, nil, 0.1, 0.5, 0.05, "animateDuration", bt, ApplyNative,
-            { description = "How long (seconds) each bar lerp takes (0.1-0.5)." })
-    end)
-    pending = placeOverrideRow(sBars, "Animation Duration", durW, pending)
     if pending then sBars.AddRow(pending) end
     L.closeSection(sBars)
 

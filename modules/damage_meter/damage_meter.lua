@@ -324,6 +324,42 @@ local function DerivePerSecond(totalAmount, duration, isSecret)
 end
 QUI_DamageMeter.DerivePerSecond = DerivePerSecond
 
+-- ResolveRateDuration: pick the divisor DerivePerSecond uses for a session's
+-- rows. GetSessionDurationSeconds is Nilable (DamageMeterDocumentation) and for
+-- the live Current session frequently returns nil; when that happened the rows
+-- kept the API's amountPerSecond, which declassifies to garbage post-combat (a
+-- DPS row read 0.0576, an HPS row 0.0000933 instead of ~5K). So:
+--   * Current (live): prefer our own combat timer (GetCombatElapsed — the same
+--     value the [m:ss] header shows) so the rate stays consistent with the
+--     visible clock; fall back to the API duration. The API Current duration is
+--     unreliable (the reference distrusts it too), hence timer-first.
+--   * Expired (historical): the session's own recorded durationSeconds is
+--     authoritative; fall back to the API duration.
+--   * Overall (cumulative across past combats): only the API knows that span,
+--     so prefer it; fall back to the live timer if it's nil.
+-- A duration is "usable" only if it's a positive, non-secret number — dividing
+-- by a secret or comparing it faults under combat restrictions. Pure helper:
+-- the durations and isSecret are injected so it unit-tests under plain Lua.
+local function ResolveRateDuration(sessionType, apiDuration, combatElapsed, historicalDuration, isSecret, currentType, expiredType)
+    local function usable(d)
+        return type(d) == "number" and not (isSecret and isSecret(d)) and d > 0
+    end
+    if expiredType ~= nil and sessionType == expiredType then
+        if usable(historicalDuration) then return historicalDuration end
+        if usable(apiDuration) then return apiDuration end
+        return nil
+    end
+    if currentType ~= nil and sessionType == currentType then
+        if usable(combatElapsed) then return combatElapsed end
+        if usable(apiDuration) then return apiDuration end
+        return nil
+    end
+    if usable(apiDuration) then return apiDuration end
+    if usable(combatElapsed) then return combatElapsed end
+    return nil
+end
+QUI_DamageMeter.ResolveRateDuration = ResolveRateDuration
+
 local function FetchView(sessionType, damageMeterType)
     if not (C_DamageMeter and C_DamageMeter.GetCombatSessionFromType) then
         return NewView({}, 0, 0, 0)
@@ -354,10 +390,16 @@ local function FetchView(sessionType, damageMeterType)
     -- from the live duration and garbage once it declassifies) with a rate we
     -- compute from the session's own non-secret duration. See DerivePerSecond:
     -- it returns nil while totalAmount is still secret (mid-combat), leaving the
-    -- API value in place for the secret-safe render path.
+    -- API value in place for the secret-safe render path. ResolveRateDuration
+    -- picks the divisor: the API session duration is Nilable and nil for the
+    -- live Current session, so we fall back to our own combat timer there.
     local IsSecret = Helpers and Helpers.IsSecretValue
-    local rateDuration = C_DamageMeter.GetSessionDurationSeconds
+    local S = Enum and Enum.DamageMeterSessionType
+    local apiDuration = C_DamageMeter.GetSessionDurationSeconds
         and C_DamageMeter.GetSessionDurationSeconds(sessionType)
+    local rateDuration = ResolveRateDuration(
+        sessionType, apiDuration, GetCombatElapsed(), session.durationSeconds,
+        IsSecret, (S and S.Current) or 1, (S and S.Expired) or 2)
     for _, s in ipairs(sources) do
         local rate = DerivePerSecond(s.totalAmount, rateDuration, IsSecret)
         if rate ~= nil then s.amountPerSecond = rate end
@@ -1314,47 +1356,11 @@ function Window:_SetRowSource(row, source, maxAmount)
         ComputeBarFill(self.damageMeterType, source, maxAmount, DEATHS_TYPE, IsSecret)
     row.Bar:SetMinMaxValues(fillMin, fillMaxValue)
 
-    -- Phase 7: optional bar-fill animation, off by default. Lua can't lerp a
-    -- secret, so animate only non-secret values (idle / post-combat /
-    -- historical sessions); during combat we snap by pushing the raw value
-    -- straight to the widget.
-    local valueSecret = IsSecret and IsSecret(fillValue)
-    if not valueSecret and ResolveAppearance(windowID, "animateBars") then
-        row._lerpFrom    = row._lerpCurrent or row.Bar:GetValue() or 0
-        row._lerpTo      = fillValue
-        row._lerpStart   = GetTime and GetTime() or 0
-        row._lerpDur     = ResolveAppearance(windowID, "animateDuration") or 0.2
-        row._lerpCurrent = row._lerpFrom
-        -- Drive the lerp via OnUpdate; lazy-attach handler the first time
-        -- this row sees animation.
-        if not row._lerpDriven then
-            row._lerpDriven = true
-            row:SetScript("OnUpdate", function(rowSelf)
-                if rowSelf._lerpTo == nil then return end
-                local now = GetTime and GetTime() or 0
-                local t = math.min(1, (now - (rowSelf._lerpStart or 0)) / (rowSelf._lerpDur or 0.2))
-                local v = (rowSelf._lerpFrom or 0) + ((rowSelf._lerpTo or 0) - (rowSelf._lerpFrom or 0)) * t
-                rowSelf._lerpCurrent = v
-                rowSelf.Bar:SetValue(v)
-                if t >= 1 then
-                    rowSelf._lerpFrom    = rowSelf._lerpTo
-                    rowSelf._lerpTo      = nil
-                    rowSelf:SetScript("OnUpdate", nil)
-                    rowSelf._lerpDriven  = false
-                end
-            end)
-        end
-    else
-        -- Snap. Stop any in-flight lerp so a now-secret value isn't blended,
-        -- then push the raw value (the widget accepts secret values here).
-        if row._lerpDriven then
-            row:SetScript("OnUpdate", nil)
-            row._lerpDriven = false
-        end
-        row._lerpTo = nil
-        row.Bar:SetValue(fillValue or 0)
-        row._lerpCurrent = nil
-    end
+    -- Push the raw value straight to the widget and let the C side compute the
+    -- fill (it reads secret combat values fine). The bar is never blended in
+    -- Lua: interpolating the fill would mean arithmetic on the value, which
+    -- faults on secret combat values.
+    row.Bar:SetValue(fillValue or 0)
 
     -- Bar color: priority is useClassColor → barColorAccent → custom barColor.
     local alpha = ResolveAppearance(windowID, "barFillAlpha") or 1
@@ -1559,6 +1565,18 @@ function Window:_OpenConfigMenu()
                     QUI_DamageMeter.WindowManager:RefreshAll()
                 end)
         end
+        root:CreateDivider()
+        root:CreateTitle("Data")
+        -- ResetAllCombatSessions is Blizzard's only reset entry point and clears
+        -- every session/window globally. It fires DAMAGE_METER_RESET, which the
+        -- data layer turns into a full re-fetch; RefreshAll repaints immediately
+        -- in case the event lags a frame.
+        root:CreateButton("Reset Data", function()
+            if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
+                C_DamageMeter.ResetAllCombatSessions()
+                QUI_DamageMeter.WindowManager:RefreshAll()
+            end
+        end)
     end)
 end
 

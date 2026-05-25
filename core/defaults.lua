@@ -257,8 +257,6 @@ local defaults = {
                         barColorAccent   = true,
                         barColor         = { 0.35, 0.55, 0.8, 1 },  -- {r,g,b,a} array form (CreateFormColorPicker contract)
                         barFillAlpha     = 1.0,
-                        animateBars      = false,   -- Phase 7: lerp bar fill over animateDuration
-                        animateDuration  = 0.2,     -- 0.1..0.5 cap is enforced in the settings slider
                         -- LSM media names. nil = inherit QUI defaults
                         -- (Phase 1 hardcoded WHITE8x8 for bars; backgrounds + borders
                         -- still use Phase 1 hardcodes when nil — Phase 3 wires those).
