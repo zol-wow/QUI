@@ -131,8 +131,8 @@ QUI_DamageMeter.SortByDescSafe = SortByDescSafe
 local Data = {}
 QUI_DamageMeter.Data = Data
 
--- Dirty flags: Data._dirty[sessionType][damageMeterType] = true means the
--- cached view for that (session, type) is stale and the next ticker pass
+-- Dirty flags: Data._dirty[selectorKey][damageMeterType] = true means the
+-- cached view for that selector/type is stale and the next ticker pass
 -- should re-fetch via C_DamageMeter (T6). Event handlers only set flags;
 -- they never call C_DamageMeter inline.
 Data._dirty = {}
@@ -140,13 +140,6 @@ Data._allDirty = false   -- set by DAMAGE_METER_RESET; ticker treats as "everyth
 Data._inCombat = false   -- toggled by PLAYER_REGEN_*; ticker uses for cadence
 
 local HasCachedViewKey
-
-local function BuildSessionKey(sessionType, sessionID)
-    if sessionID ~= nil then
-        return "id:" .. tostring(sessionID)
-    end
-    return "type:" .. tostring(sessionType)
-end
 
 local function MarkDirtyKey(selectorKey, damageMeterType)
     local bySelector = Data._dirty[selectorKey]
@@ -158,7 +151,7 @@ local function MarkDirtyKey(selectorKey, damageMeterType)
 end
 
 local function MarkDirty(sessionType, damageMeterType)
-    MarkDirtyKey(BuildSessionKey(sessionType, nil), damageMeterType)
+    MarkDirtyKey(QUI_DamageMeter.SessionKey(sessionType, nil), damageMeterType)
 end
 
 local function MarkAllDirty()
@@ -212,7 +205,7 @@ Data._eventFrame:SetScript("OnEvent", function(_, event, arg1, _arg2)
         end
         local sessionID = _arg2
         if sessionID ~= nil then
-            local key = BuildSessionKey(nil, sessionID)
+            local key = QUI_DamageMeter.SessionKey(nil, sessionID)
             if HasCachedViewKey(key, arg1) then
                 MarkDirtyKey(key, arg1)
             end
@@ -289,7 +282,7 @@ local function NormalizeSources(rawSources)
 end
 Data._NormalizeSources = NormalizeSources  -- for T6/T7
 
-Data._cache = {}        -- _cache[sessionType][damageMeterType] = view
+Data._cache = {}        -- _cache[selectorKey][damageMeterType] = view
 Data._generation = 0
 
 local function SessionKey(sessionType, sessionID)
@@ -1775,14 +1768,12 @@ function Window:Refresh()
     if view.generation == self._lastGeneration then return end
     self._lastGeneration = view.generation
 
-    -- Session timer text. FormatDuration provides M:SS formatting.
-    -- Duration is now GetCombatElapsed() for live sessions (always a plain
-    -- number, never secret) and API durationSeconds only for Expired/historical
-    -- sessions (also safe). FormatDuration still guards the secret path as
-    -- defense-in-depth for any edge case where a historical session returns
-    -- a secret-tagged duration.
+    -- Session timer text. Secret durations must go straight through
+    -- FormatDuration so its C_StringUtil path can handle them.
     local d = view.duration
-    if d and d > 0 then
+    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(d) then
+        self.SessionTimer:SetText(FormatDuration(d))
+    elseif d and d > 0 then
         self.SessionTimer:SetText("[" .. FormatDuration(d) .. "]")
     else
         self.SessionTimer:SetText("")
