@@ -7753,6 +7753,9 @@ local function ConfigureIcon(icon, rowConfig)
             if cd.SetHideCountdownNumbers then
                 cd.SetHideCountdownNumbers(cd, false)
             end
+            if cd.GetCountdownFontString then
+                styleDurationFontString(cd:GetCountdownFontString())
+            end
             local regions = { cd:GetRegions() }
             for _, region in ipairs(regions) do
                 styleDurationFontString(region)
@@ -7782,6 +7785,9 @@ local function ConfigureIcon(icon, rowConfig)
             if not cd then return end
             if cd.SetHideCountdownNumbers then
                 cd.SetHideCountdownNumbers(cd, true)
+            end
+            if cd.GetCountdownFontString then
+                hideDurationFontString(cd:GetCountdownFontString())
             end
             local regions = { cd:GetRegions() }
             for _, region in ipairs(regions) do

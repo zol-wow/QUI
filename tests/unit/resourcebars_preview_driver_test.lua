@@ -165,4 +165,29 @@ assert(source:find("Module.Refresh()", buildStart, true)
     and source:find("Module.Refresh()", buildStart, true) < buildEnd,
     "Build must call Module.Refresh() to paint the first frame")
 
-print("OK: resourcebars_preview_driver_test (T1-T8)")
+-- T9: preview text must render above the child StatusBar and mirror text styling.
+assert(source:find("section.textFrame", 1, true),
+    "mock bars must use a dedicated section.textFrame above the StatusBar for value text")
+assert(source:find("section.textFrame:CreateFontString", 1, true),
+    "value text must be created on section.textFrame, not directly on the bar container")
+assert(source:find("section.textFrame:SetFrameLevel", 1, true),
+    "section.textFrame must be frame-leveled above the StatusBar")
+assert(source:find("section.val:SetTextColor", refreshStart, true)
+    and source:find("textCustomColor", refreshStart, true),
+    "Refresh must apply textCustomColor/textUseClassColor to preview value text")
+assert(source:find("section.val:SetJustifyH", refreshStart, true),
+    "Refresh must apply textAlign justification to preview value text")
+assert(source:find('section.val:SetPoint("LEFT", section.textFrame, "LEFT", textX, textY)', refreshStart, true),
+    "LEFT preview text placement must use textX/textY against section.textFrame")
+assert(source:find('section.val:SetPoint("RIGHT", section.textFrame, "RIGHT", textX, textY)', refreshStart, true),
+    "RIGHT preview text placement must use textX/textY against section.textFrame")
+
+-- T10: preview value text must use the same runtime font family/outline as live bars.
+assert(source:find("Helpers.GetGeneralFont", refreshStart, true),
+    "Refresh must use Helpers.GetGeneralFont for preview value text")
+assert(source:find("Helpers.GetGeneralFontOutline", refreshStart, true),
+    "Refresh must use Helpers.GetGeneralFontOutline for preview value text")
+assert(source:find("section.val:SetFont(valueFont, fontSize, valueFontOutline)", refreshStart, true),
+    "preview value text must apply the runtime general font path and outline")
+
+print("OK: resourcebars_preview_driver_test (T1-T10)")

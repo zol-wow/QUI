@@ -6915,11 +6915,71 @@ local function UpdateCountText(button, settings)
     count:SetPoint(anchor, button, anchor, (settings.countOffsetX or 0), (settings.countOffsetY or 0))
 end
 
+-- Update native cooldown duration text visibility and styling.
+local function UpdateCooldownText(button, settings)
+    local cooldown = button.cooldown or button.Cooldown
+    if not cooldown then return end
+
+    local showCooldownText = settings.showCooldownText ~= false
+    if cooldown.SetHideCountdownNumbers then
+        cooldown:SetHideCountdownNumbers(not showCooldownText)
+    end
+
+    if not cooldown.GetCountdownFontString then return end
+    local text = cooldown:GetCountdownFontString()
+    if not text then return end
+
+    if not showCooldownText then
+        text:SetAlpha(0)
+        return
+    end
+
+    local fontPath, outline = GetFontSettings()
+    local fontSize = settings.cooldownTextFontSize or 14
+    text:SetFont(fontPath, fontSize, outline)
+
+    local color = settings.cooldownTextColor
+    local r = color and color[1] or 1
+    local g = color and color[2] or 1
+    local b = color and color[3] or 1
+    local a = color and color[4] or 1
+    text:SetTextColor(r, g, b, a)
+    text:SetAlpha(1)
+
+    text:ClearAllPoints()
+    local anchor = settings.cooldownTextAnchor or "CENTER"
+    text:SetPoint(anchor, cooldown, anchor, (settings.cooldownTextOffsetX or 0), (settings.cooldownTextOffsetY or 0))
+
+    if text.SetJustifyH then
+        if anchor:find("LEFT") then
+            text:SetJustifyH("LEFT")
+        elseif anchor:find("RIGHT") then
+            text:SetJustifyH("RIGHT")
+        else
+            text:SetJustifyH("CENTER")
+        end
+    end
+    if text.SetJustifyV then
+        if anchor:find("TOP") then
+            text:SetJustifyV("TOP")
+        elseif anchor:find("BOTTOM") then
+            text:SetJustifyV("BOTTOM")
+        else
+            text:SetJustifyV("MIDDLE")
+        end
+    end
+
+    local width = button.GetWidth and button:GetWidth() or cooldown.GetWidth and cooldown:GetWidth() or 36
+    if text.SetWidth then text:SetWidth(math.max((width or 36) - 4, 1)) end
+    if text.SetHeight then text:SetHeight(math.max(fontSize + 4, 1)) end
+end
+
 -- Update all text elements on a button
 UpdateButtonText = function(button, settings)
     UpdateKeybindText(button, settings)
     UpdateMacroText(button, settings)
     UpdateCountText(button, settings)
+    UpdateCooldownText(button, settings)
 end
 
 ---------------------------------------------------------------------------
@@ -10133,6 +10193,8 @@ do
             "macroNameAnchor", "macroNameOffsetX", "macroNameOffsetY",
             "showCounts", "countFontSize", "countColor",
             "countAnchor", "countOffsetX", "countOffsetY",
+            "showCooldownText", "cooldownTextFontSize", "cooldownTextColor",
+            "cooldownTextAnchor", "cooldownTextOffsetX", "cooldownTextOffsetY",
             "showFlash",
         }
 
@@ -10537,6 +10599,34 @@ do
                 P(GUI:CreateFormColorPicker(body, "Color",
                     "countColor", barDB, RefreshActionBars, nil,
                     { description = "Color used for the stack count text on this bar." }), body, sy)
+            end, sections, relayout)
+
+            -- SECTION: Cooldown Duration Text
+            CreateCollapsible(content, "Cooldown Duration Text", 6 * FORM_ROW + 8, function(body)
+                local sy = -4
+                sy = P(GUI:CreateFormCheckbox(body, "Show Duration Text",
+                    "showCooldownText", barDB, RefreshActionBars,
+                    { description = "Show Blizzard's native cooldown countdown numbers on each button." }), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "Font Size",
+                    8, 24, 1, "cooldownTextFontSize", barDB, RefreshActionBars, DEFER,
+                    { description = "Font size used for cooldown duration text." }), body, sy)
+
+                sy = P(GUI:CreateFormDropdown(body, "Anchor",
+                    anchorOptions, "cooldownTextAnchor", barDB, RefreshActionBars,
+                    { description = "Which point of each button the cooldown duration text is anchored to." }), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "X-Offset",
+                    -20, 20, 1, "cooldownTextOffsetX", barDB, RefreshActionBars, DEFER,
+                    { description = "Horizontal pixel offset for cooldown duration text from its anchor point." }), body, sy)
+
+                sy = P(GUI:CreateFormSlider(body, "Y-Offset",
+                    -20, 20, 1, "cooldownTextOffsetY", barDB, RefreshActionBars, DEFER,
+                    { description = "Vertical pixel offset for cooldown duration text from its anchor point." }), body, sy)
+
+                P(GUI:CreateFormColorPicker(body, "Color",
+                    "cooldownTextColor", barDB, RefreshActionBars, nil,
+                    { description = "Color used for cooldown duration text on this bar." }), body, sy)
             end, sections, relayout)
             end -- SKINNABLE_BAR_KEYS guard
 

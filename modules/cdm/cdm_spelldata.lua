@@ -3499,13 +3499,73 @@ local function CDMCatalogReady()
     return next(_spellToCooldownID) ~= nil
 end
 
+local function GetDormancyActiveEntries(db)
+    if type(db) ~= "table" then return nil end
+    if db.containerType == "customBar" then
+        return db.entries
+    end
+    return db.ownedSpells
+end
+
+local CDM_COOLDOWN_CATEGORIES = { 0, 1 }
+local CDM_AURA_CATEGORIES = { 2, 3 }
+
+local function CooldownInfoMatchesSpellID(info, spellID)
+    if type(info) ~= "table" or type(spellID) ~= "number" then return false end
+    if info.spellID == spellID
+        or info.overrideSpellID == spellID
+        or info.overrideTooltipSpellID == spellID then
+        return true
+    end
+    if type(info.linkedSpellIDs) == "table" then
+        for _, linkedID in ipairs(info.linkedSpellIDs) do
+            if linkedID == spellID then return true end
+        end
+    end
+    return false
+end
+
+local function GetCooldownViewerKnownStateForSpell(spellID, family)
+    local catalog = ns.CDMCatalog
+    if type(spellID) ~= "number"
+        or not (catalog and catalog.GetCategorySet and catalog.GetCooldownInfo) then
+        return nil
+    end
+
+    local categories = (family == "aura" or family == "auraBar")
+        and CDM_AURA_CATEGORIES
+        or CDM_COOLDOWN_CATEGORIES
+    local sawMatch = false
+    for _, category in ipairs(categories) do
+        local cooldownIDs = catalog.GetCategorySet(category, true)
+        if type(cooldownIDs) == "table" then
+            for _, cooldownID in ipairs(cooldownIDs) do
+                local info = catalog.GetCooldownInfo(cooldownID)
+                if CooldownInfoMatchesSpellID(info, spellID) then
+                    sawMatch = true
+                    if info.isKnown == true then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    if sawMatch then return false end
+    return nil
+end
+
 function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
     local db = GetContainerDB(containerKey)
-    if not db or type(db.ownedSpells) ~= "table" then
+    if not db then
         return
     end
 
-    local ownedSpells = NormalizeOwnedSpells(db.ownedSpells)
+    local activeEntries = GetDormancyActiveEntries(db)
+    if type(activeEntries) ~= "table" then
+        return
+    end
+
+    local ownedSpells = NormalizeOwnedSpells(activeEntries)
 
     -- Migrate legacy dormantSpells from array to map format
     if type(db.dormantSpells) ~= "table" then
@@ -3537,12 +3597,21 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
         and next(db.dormantSpells) then
         local catalogReady = CDMCatalogReady()
         for sid, savedData in pairs(db.dormantSpells) do
-            if (not catalogReady) or self:IsSpellInCDMCategory(sid, "aura") then
+            local pickerKnown
+            if type(savedData) == "table" then
+                pickerKnown = savedData.pickerKnown
+            end
+            local shouldRestore = pickerKnown == false
+                and GetCooldownViewerKnownStateForSpell(sid, "aura") == true
+            if pickerKnown ~= false then
+                shouldRestore = (not catalogReady) or self:IsSpellInCDMCategory(sid, "aura")
+            end
+            if shouldRestore then
                 local restoredRow
                 if type(savedData) == "table" then
                     restoredRow = savedData.row
                 end
-                db.ownedSpells[#db.ownedSpells + 1] = {
+                activeEntries[#activeEntries + 1] = {
                     type = "spell",
                     id = sid,
                     row = restoredRow,
@@ -3586,15 +3655,16 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
                     db.dormantSpells[entry.id] = {
                         slot = i,
                         row = entry.row,
+                        kind = entry.kind,
                         seq = db._dormantSequence,
                     }
                     toRemove[#toRemove + 1] = i
                 end
             end
         end
-        -- Remove from ownedSpells in reverse order to preserve indices
+        -- Remove from active entries in reverse order to preserve indices
         for j = #toRemove, 1, -1 do
-            table.remove(db.ownedSpells, toRemove[j])
+            table.remove(activeEntries, toRemove[j])
         end
     end
 
@@ -3603,11 +3673,12 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
     for sid, savedData in pairs(db.dormantSpells) do
         if IsSpellKnownByPlayer(sid) then
             -- Support both legacy (number) and new (table) dormant format
-            local savedSlot, savedRow, savedSeq
+            local savedSlot, savedRow, savedSeq, savedKind
             if type(savedData) == "table" then
                 savedSlot = savedData.slot or 9999
                 savedRow = savedData.row
                 savedSeq = savedData.seq or savedSlot
+                savedKind = savedData.kind
             else
                 savedSlot = savedData or 9999
                 savedSeq = savedSlot
@@ -3617,6 +3688,7 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
                 slot = savedSlot,
                 row = savedRow,
                 seq = savedSeq,
+                kind = savedKind,
             }
         end
     end
@@ -3632,10 +3704,14 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
     end)
     for _, info in ipairs(returning) do
         db.dormantSpells[info.id] = nil  -- remove from dormant
-        local insertAt = math.min(info.slot, #db.ownedSpells + 1)
+        local insertAt = math.min(info.slot, #activeEntries + 1)
         local restored = { type = "spell", id = info.id, row = info.row }
-        restored.kind = ResolveEntryKind(restored, containerKey)
-        table.insert(db.ownedSpells, insertAt, restored)
+        if info.kind == "aura" or info.kind == "cooldown" then
+            restored.kind = info.kind
+        else
+            restored.kind = ResolveEntryKind(restored, containerKey)
+        end
+        table.insert(activeEntries, insertAt, restored)
     end
 
     -- Phase 3: Clean obsolete dormant spells no longer in the CDM system.
@@ -3676,7 +3752,7 @@ local okI = true; local ii = C_SpellBook.GetSpellBookItemInfo(offset + i, Enum.S
     end
 
     -- Summary
-    local finalOwned = type(db.ownedSpells) == "table" and #db.ownedSpells or 0
+    local finalOwned = type(activeEntries) == "table" and #activeEntries or 0
     local finalDormant = 0
     if type(db.dormantSpells) == "table" then
         for _ in pairs(db.dormantSpells) do finalDormant = finalDormant + 1 end
@@ -4179,9 +4255,9 @@ function CDMSpellData:AddEntry(containerKey, entry)
         return false
     end
 
+    local forceDormantFromPicker = pickerKnown == false
     if entry.type == "spell" and type(entry.id) == "number"
-        and db.containerType ~= "customBar"
-        and not IsAuraEntry(entry, containerKey) then
+        and (forceDormantFromPicker or not IsAuraEntry(entry, containerKey)) then
         local isKnown
         if pickerKnown ~= nil then
             isKnown = (pickerKnown == true)
@@ -4196,6 +4272,8 @@ function CDMSpellData:AddEntry(containerKey, entry)
             db.dormantSpells[entry.id] = {
                 slot = #list + 1,
                 row = entry.row,
+                kind = entry.kind,
+                pickerKnown = pickerKnown,
                 seq = db._dormantSequence,
             }
             FireChangeCallback()
@@ -4303,20 +4381,26 @@ function CDMSpellData:RestoreDormantEntry(containerKey, spellID)
     if type(db.dormantSpells) ~= "table" then return false end
     local savedData = db.dormantSpells[spellID]
     if not savedData then return false end
+    local list = GetMutableEntryList(db, containerKey, true)
+    if type(list) ~= "table" then return false end
     db.dormantSpells[spellID] = nil
-    if db.ownedSpells == nil then db.ownedSpells = {} end
     -- Support both legacy (number) and new (table) dormant format
-    local savedSlot, savedRow
+    local savedSlot, savedRow, savedKind
     if type(savedData) == "table" then
         savedSlot = savedData.slot or 9999
         savedRow = savedData.row
+        savedKind = savedData.kind
     else
         savedSlot = savedData or 9999
     end
-    local insertAt = math.min(savedSlot, #db.ownedSpells + 1)
+    local insertAt = math.min(savedSlot, #list + 1)
     local restored = { type = "spell", id = spellID, row = savedRow }
-    restored.kind = ResolveEntryKind(restored, containerKey)
-    table.insert(db.ownedSpells, insertAt, restored)
+    if savedKind == "aura" or savedKind == "cooldown" then
+        restored.kind = savedKind
+    else
+        restored.kind = ResolveEntryKind(restored, containerKey)
+    end
+    table.insert(list, insertAt, restored)
     FireChangeCallback()
     return true
 end

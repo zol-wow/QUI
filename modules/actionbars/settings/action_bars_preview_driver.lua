@@ -368,6 +368,60 @@ local function SetPreviewTextStyle(fontString, button, text, fontPath, outline, 
     fontString:Show()
 end
 
+local function SetPreviewCooldownTextStyle(cooldown, button, settings, fontPath, outline)
+    if not cooldown or not settings then return end
+
+    local showCooldownText = settings.showCooldownText ~= false
+    if cooldown.SetHideCountdownNumbers then
+        cooldown:SetHideCountdownNumbers(not showCooldownText)
+    end
+
+    if not cooldown.GetCountdownFontString then return end
+    local fontString = cooldown:GetCountdownFontString()
+    if not fontString then return end
+
+    if not showCooldownText then
+        fontString:SetAlpha(0)
+        return
+    end
+
+    local fontSize = settings.cooldownTextFontSize or 14
+    local width = math.max((button:GetWidth() or 0) - 4, 1)
+    local height = math.max(fontSize + 4, 1)
+    local point = settings.cooldownTextAnchor or "CENTER"
+    local color = settings.cooldownTextColor
+
+    fontString:SetFont(fontPath, fontSize, outline or "OUTLINE")
+    fontString:SetWidth(width)
+    fontString:SetHeight(height)
+    fontString:ClearAllPoints()
+    fontString:SetPoint(point, button, point, settings.cooldownTextOffsetX or 0, settings.cooldownTextOffsetY or 0)
+
+    if point:find("LEFT") then
+        fontString:SetJustifyH("LEFT")
+    elseif point:find("RIGHT") then
+        fontString:SetJustifyH("RIGHT")
+    else
+        fontString:SetJustifyH("CENTER")
+    end
+
+    if point:find("TOP") then
+        fontString:SetJustifyV("TOP")
+    elseif point:find("BOTTOM") then
+        fontString:SetJustifyV("BOTTOM")
+    else
+        fontString:SetJustifyV("MIDDLE")
+    end
+
+    local r = color and color[1] or 1
+    local g = color and color[2] or 1
+    local b = color and color[3] or 1
+    local a = color and color[4] or 1
+    fontString:SetTextColor(r, g, b, a)
+    fontString:SetAlpha(1)
+    fontString:Show()
+end
+
 ---------------------------------------------------------------------------
 -- Preview-scoped glow helper
 -- Uses LibCustomGlow with a preview-only key so preview glows can never
@@ -899,6 +953,7 @@ function ActionBarsPreviewDriver.Refresh()
                     settings.countAnchor or "BOTTOMRIGHT",
                     settings.countOffsetX or 0, settings.countOffsetY or 0
                 )
+                SetPreviewCooldownTextStyle(pb.cooldown, pb.frame, settings, fontPath, outline)
             end
         end
     end

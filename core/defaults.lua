@@ -1526,6 +1526,12 @@ local defaults = {
                 countAnchor = "BOTTOMRIGHT", -- Stack count text anchor point
                 countOffsetX = 0,          -- Stack count text X offset
                 countOffsetY = 0,           -- Stack count text Y offset
+                showCooldownText = true,    -- Show cooldown duration countdown text
+                cooldownTextFontSize = 14,  -- Cooldown duration text size
+                cooldownTextColor = {1, 1, 1, 1}, -- Cooldown duration text color
+                cooldownTextAnchor = "CENTER", -- Cooldown duration text anchor point
+                cooldownTextOffsetX = 0,    -- Cooldown duration text X offset
+                cooldownTextOffsetY = 0,    -- Cooldown duration text Y offset
                 -- Bar Layout settings
                 barScale = 1.0,             -- Global scale multiplier (0.5 - 2.0)
                 buttonSpacing = 0,        -- Button spacing override (nil = use Blizzard Edit Mode padding)

@@ -335,6 +335,16 @@ return {
               backdropAlpha = 0.20000000000000001,
               barScale = 1,
               buttonSpacing = 0,
+              cooldownTextAnchor = "CENTER",
+              cooldownTextColor = {
+                [1] = 1,
+                [2] = 1,
+                [3] = 1,
+                [4] = 1
+              },
+              cooldownTextFontSize = 14,
+              cooldownTextOffsetX = 0,
+              cooldownTextOffsetY = 0,
               countAnchor = "BOTTOMRIGHT",
               countColor = {
                 [1] = 1,
@@ -387,6 +397,7 @@ return {
               rangeIndicator = true,
               showBackdrop = true,
               showBorders = true,
+              showCooldownText = true,
               showCounts = true,
               showFlash = "qui",
               showGloss = true,

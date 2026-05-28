@@ -230,21 +230,24 @@ local function RefreshActiveContainerDormancy()
     if not activeContainer or InCombatLockdown() then return end
 
     local db = GetContainerDB(activeContainer)
-    if not db or db.containerType == "customBar" or type(db.ownedSpells) ~= "table" then
+    if not db then
         return
     end
+    local activeEntries = db.containerType == "customBar" and db.entries or db.ownedSpells
+    if type(activeEntries) ~= "table" then return end
 
     local spellData = GetCDMSpellData()
     if not spellData or type(spellData.CheckDormantSpells) ~= "function" then
         return
     end
 
-    local ownedBefore = #db.ownedSpells
+    local ownedBefore = #activeEntries
     local dormantBefore = CountDormantSpells(db)
 
     spellData:CheckDormantSpells(activeContainer)
 
-    local ownedAfter = type(db.ownedSpells) == "table" and #db.ownedSpells or 0
+    activeEntries = db.containerType == "customBar" and db.entries or db.ownedSpells
+    local ownedAfter = type(activeEntries) == "table" and #activeEntries or 0
     local dormantAfter = CountDormantSpells(db)
     if (ownedBefore ~= ownedAfter or dormantBefore ~= dormantAfter)
         and ns.CDMContainers and ns.CDMContainers.SaveActiveSpecProfile then
@@ -816,6 +819,40 @@ local IsEntryRegisteredInBlizzCDM
 
 -- BUILD_PREVIEW_ROWS — shared row-info builder used by both the layout and
 -- the style impls so they see exactly the same row sizing.
+local function ReadPreviewConfigValue(primary, secondary, key, fallback)
+    if type(primary) == "table" and primary[key] ~= nil then
+        return primary[key]
+    end
+    if type(secondary) == "table" and secondary[key] ~= nil then
+        return secondary[key]
+    end
+    return fallback
+end
+
+local function ApplyPreviewIconTextConfig(rowInfo, primary, secondary, defaults)
+    defaults = defaults or {}
+
+    rowInfo.borderColorTable = ReadPreviewConfigValue(primary, secondary, "borderColorTable", defaults.borderColorTable or {0, 0, 0, 1})
+    rowInfo.borderColor = rowInfo.borderColorTable
+    rowInfo.aspectRatioCrop = rowInfo.aspectRatioCrop or ReadPreviewConfigValue(primary, secondary, "aspectRatioCrop", defaults.aspectRatioCrop or 1.0)
+    rowInfo.zoom = ReadPreviewConfigValue(primary, secondary, "zoom", defaults.zoom or 0)
+    rowInfo.durationFont = ReadPreviewConfigValue(primary, secondary, "durationFont", nil)
+    rowInfo.durationSize = ReadPreviewConfigValue(primary, secondary, "durationSize", defaults.durationSize or 14)
+    rowInfo.durationOffsetX = ReadPreviewConfigValue(primary, secondary, "durationOffsetX", defaults.durationOffsetX or 0)
+    rowInfo.durationOffsetY = ReadPreviewConfigValue(primary, secondary, "durationOffsetY", defaults.durationOffsetY or 0)
+    rowInfo.durationTextColor = ReadPreviewConfigValue(primary, secondary, "durationTextColor", defaults.durationTextColor or {1, 1, 1, 1})
+    rowInfo.durationAnchor = ReadPreviewConfigValue(primary, secondary, "durationAnchor", defaults.durationAnchor or "CENTER")
+    rowInfo.hideDurationText = ReadPreviewConfigValue(primary, secondary, "hideDurationText", defaults.hideDurationText)
+    rowInfo.stackFont = ReadPreviewConfigValue(primary, secondary, "stackFont", nil)
+    rowInfo.stackSize = ReadPreviewConfigValue(primary, secondary, "stackSize", defaults.stackSize or 14)
+    rowInfo.stackOffsetX = ReadPreviewConfigValue(primary, secondary, "stackOffsetX", defaults.stackOffsetX or 0)
+    rowInfo.stackOffsetY = ReadPreviewConfigValue(primary, secondary, "stackOffsetY", defaults.stackOffsetY or 0)
+    rowInfo.stackTextColor = ReadPreviewConfigValue(primary, secondary, "stackTextColor", defaults.stackTextColor or {1, 1, 1, 1})
+    rowInfo.stackAnchor = ReadPreviewConfigValue(primary, secondary, "stackAnchor", defaults.stackAnchor or "BOTTOMRIGHT")
+    rowInfo.hideStackText = ReadPreviewConfigValue(primary, secondary, "hideStackText", defaults.hideStackText)
+    rowInfo.opacity = ReadPreviewConfigValue(primary, secondary, "opacity", defaults.opacity or 1.0)
+end
+
 local function BuildPreviewRows(db, containerType, isCustomBar, entries, scale)
     local rows = {}
     if containerType == "cooldown" then
@@ -823,37 +860,66 @@ local function BuildPreviewRows(db, containerType, isCustomBar, entries, scale)
             local rowData = db["row" .. r]
             if rowData and rowData.iconCount and rowData.iconCount > 0 then
                 local aspectRatio = rowData.aspectRatioCrop or 1.0
-                rows[#rows + 1] = {
+                local rowInfo = {
                     rowNum = r,
                     count = rowData.iconCount,
                     size = (rowData.iconSize or 40) * scale * 0.5,
                     height = ((rowData.iconSize or 40) / aspectRatio) * scale * 0.5,
                     padding = (rowData.padding or 2) * scale * 0.5,
                     borderSize = math_max(1, (rowData.borderSize or 1) * scale * 0.5),
-                    borderColor = rowData.borderColorTable or {0, 0, 0, 1},
+                    aspectRatioCrop = aspectRatio,
                     yOffset = (rowData.yOffset or 0) * scale * 0.5,
                 }
+                ApplyPreviewIconTextConfig(rowInfo, rowData, nil, {
+                    durationSize = 14,
+                    stackSize = 14,
+                    durationAnchor = "CENTER",
+                    stackAnchor = "BOTTOMRIGHT",
+                })
+                rows[#rows + 1] = rowInfo
             end
         end
     elseif isCustomBar then
-        local iconSize = (db.iconSize or 28) * scale * 0.5
-        local aspectRatio = db.aspectRatioCrop or 1.0
+        local rowData = db.row1 or db
+        local iconSize = (ReadPreviewConfigValue(rowData, db, "iconSize", 28)) * scale * 0.5
+        local aspectRatio = ReadPreviewConfigValue(rowData, db, "aspectRatioCrop", 1.0)
         local iconHeight = (iconSize / aspectRatio)
-        local spacing = (db.spacing or 4) * scale * 0.5
-        local borderSize = math_max(1, (db.borderSize or 2) * scale * 0.5)
-        rows[1] = {
+        local spacing = (ReadPreviewConfigValue(rowData, db, "padding", db.spacing or 4)) * scale * 0.5
+        local borderSize = math_max(1, (ReadPreviewConfigValue(rowData, db, "borderSize", 2)) * scale * 0.5)
+        local rowInfo = {
             count = #entries, size = iconSize, height = iconHeight,
             padding = spacing, borderSize = borderSize,
-            borderColor = {0, 0, 0, 1}, yOffset = 0,
+            aspectRatioCrop = aspectRatio,
+            yOffset = 0,
         }
+        ApplyPreviewIconTextConfig(rowInfo, rowData, db, {
+            durationSize = 13,
+            durationAnchor = "CENTER",
+            stackSize = 9,
+            stackOffsetX = 3,
+            stackOffsetY = -1,
+            stackAnchor = "BOTTOMRIGHT",
+        })
+        rows[1] = rowInfo
     else
         local iconSize = (db.iconSize or 40) * scale * 0.5
+        local aspectRatio = db.aspectRatioCrop or 1.0
         local padding = (db.padding or 2) * scale * 0.5
-        rows[1] = {
-            count = #entries, size = iconSize, height = iconSize,
+        local rowInfo = {
+            count = #entries, size = iconSize, height = iconSize / aspectRatio,
             padding = padding, borderSize = 1,
-            borderColor = {0, 0, 0, 1}, yOffset = 0,
+            aspectRatioCrop = aspectRatio,
+            yOffset = 0,
         }
+        ApplyPreviewIconTextConfig(rowInfo, db, nil, {
+            durationSize = 14,
+            durationOffsetY = 8,
+            durationAnchor = "TOP",
+            stackSize = 14,
+            stackOffsetY = -8,
+            stackAnchor = "BOTTOM",
+        })
+        rows[1] = rowInfo
     end
     return rows
 end
@@ -1002,8 +1068,9 @@ local function LayoutPreviewIconsImpl(icons, containerKey, scale)
     end
 end
 
--- StylePreviewIconsImpl — applies per-icon border + vertex-color tint that
--- the original RefreshPreview inlined. Driver calls this after layout.
+-- StylePreviewIconsImpl — applies the production icon row style plus the
+-- per-icon registration tint that the original RefreshPreview inlined.
+-- Driver calls this after layout.
 local function StylePreviewIconsImpl(icons, containerKey, scale)
     if type(icons) ~= "table" then return end
     if not containerKey then return end
@@ -1037,6 +1104,9 @@ local function StylePreviewIconsImpl(icons, containerKey, scale)
                 iconIdx = iconIdx + 1
                 local icon = icons[iconIdx]
                 if icon then
+                    if ns.CDMIcons and ns.CDMIcons.OnIconRowConfigApplied then
+                        ns.CDMIcons.OnIconRowConfigApplied(icon, rowInfo)
+                    end
                     -- Border
                     if icon.Border then
                         icon.Border:ClearAllPoints()
@@ -2294,10 +2364,9 @@ RefreshEntryList = function()
     -- the composer reconciles the visible container before rendering.
     RefreshActiveContainerDormancy()
 
-    -- customBar containers (migrated from customTrackers) store their
-    -- entry list under `entries` (mixed spell/item/slot/macro types),
-    -- not the CDM-native `ownedSpells`. They also have no concept of
-    -- "dormant" since all entries are user-curated.
+    -- customBar containers store their active entry list under `entries`
+    -- (mixed spell/item/slot/macro types), not the CDM-native `ownedSpells`.
+    -- Dormant cooldown spell adds still live in `dormantSpells`.
     local isCustomBar = (db.containerType == "customBar")
 
     local entries
@@ -2349,7 +2418,7 @@ RefreshEntryList = function()
     if type(entries) ~= "table" then entries = {} end
 
     local dormant = db.dormantSpells
-    if type(dormant) ~= "table" or isCustomBar then dormant = {} end
+    if type(dormant) ~= "table" then dormant = {} end
 
     local filterText = searchBox and searchBox:GetText() or ""
     local lowerFilter = string_lower(filterText)

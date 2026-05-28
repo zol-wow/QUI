@@ -1441,13 +1441,7 @@ local function RenderLayoutSection(sectionHost, ctx)
             local stackDirectionDropdown = gui:CreateFormDropdown(dimensionsCard.frame, nil, STACK_DIRECTION_OPTIONS, "growUp", tracker, refresh, {
                 description = "Direction new bars are added from the anchor: stacking upward/rightward or downward/leftward.",
             })
-            local stackOffsetSlider = gui:CreateFormSlider(dimensionsCard.frame, nil, -20, 20, 1, "stackOffsetX", tracker, refresh, nil, {
-                description = "Horizontal pixel offset between stacked bars.",
-            })
-            dimensionsCard.AddRow(
-                optionsAPI.BuildSettingRow(dimensionsCard.frame, "Stack Direction", stackDirectionDropdown),
-                optionsAPI.BuildSettingRow(dimensionsCard.frame, "Stack X Offset", stackOffsetSlider)
-            )
+            dimensionsCard.AddRow(optionsAPI.BuildSettingRow(dimensionsCard.frame, "Stack Direction", stackDirectionDropdown))
             builder.CloseCard(dimensionsCard)
 
             builder.Spacer(6)

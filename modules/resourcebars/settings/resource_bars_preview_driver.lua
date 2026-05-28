@@ -327,10 +327,17 @@ local function MakeMockBar(parent, fpath)
         UIKit.CreateBorderLines(barFrame)
     end
 
-    local val = barFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    section.textFrame = CreateFrame("Frame", nil, barFrame)
+    section.textFrame:SetAllPoints(barFrame)
+    if section.textFrame.SetFrameLevel then
+        local barLevel = bar.GetFrameLevel and bar:GetFrameLevel() or 0
+        section.textFrame:SetFrameLevel(barLevel + 2)
+    end
+
+    local val = section.textFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if fpath then val:SetFont(fpath, 9, "") end
     val:SetTextColor(1, 1, 1, 0.9)
-    val:SetPoint("CENTER", barFrame, "CENTER", 0, 0)
+    val:SetPoint("CENTER", section.textFrame, "CENTER", 0, 0)
     section.val = val
 
     return section
@@ -345,6 +352,13 @@ local function ApplyPreviewSectionLayout(section, cfg, pv, visibleCount)
     section.barFrame:SetPoint("TOP", section.lbl, "BOTTOM", 0, -PREVIEW_LABEL_GAP)
 
     section.bar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
+    if section.textFrame then
+        section.textFrame:SetAllPoints(section.barFrame)
+        if section.textFrame.SetFrameLevel then
+            local barLevel = section.bar.GetFrameLevel and section.bar:GetFrameLevel() or 0
+            section.textFrame:SetFrameLevel(barLevel + 2)
+        end
+    end
 
     local borderSize = cfg and cfg.borderSize or 0
     local UIKit = ns.UIKit
@@ -473,6 +487,8 @@ function Module.Refresh()
     local showPrimary       = pc and pc.enabled ~= false
     local showSecondary     = sc and sc.enabled ~= false and secondaryResource ~= nil
     local swapBars          = showSecondary and ShouldSwapBars()
+    local valueFont         = Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont()
+    local valueFontOutline  = Helpers and Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline() or ""
 
     if showPrimary and swapBars and ShouldHidePrimaryOnSwap() then
         showPrimary = false
@@ -532,16 +548,41 @@ function Module.Refresh()
         ApplyPreviewTicks(section, cfg, resource)
 
         local fontSize = textCfg and math_max(7, math_min(textCfg.textSize or 9, 13)) or 9
-        if fp then section.val:SetFont(fp, fontSize, "") end
+        if valueFont then
+            section.val:SetFont(valueFont, fontSize, valueFontOutline)
+        elseif fp then
+            section.val:SetFont(fp, fontSize, "")
+        end
+
+        local textR, textG, textB, textA = 1, 1, 1, 0.9
+        if textCfg and textCfg.textUseClassColor then
+            local _, class = UnitClass("player")
+            local classColor = class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class]
+            if classColor then
+                textR, textG, textB, textA = classColor.r, classColor.g, classColor.b, 1
+            end
+        else
+            local c = textCfg and textCfg.textCustomColor
+            if c then
+                textR, textG, textB, textA = (c[1] or c.r or 1), (c[2] or c.g or 1), (c[3] or c.b or 1), (c[4] or c.a or 1)
+            end
+        end
+        section.val:SetTextColor(textR, textG, textB, textA)
 
         local align = textCfg and textCfg.textAlign or "CENTER"
+        if align ~= "LEFT" and align ~= "RIGHT" then
+            align = "CENTER"
+        end
+        local textX = textCfg and textCfg.textX or 0
+        local textY = textCfg and textCfg.textY or 0
         section.val:ClearAllPoints()
+        section.val:SetJustifyH(align)
         if align == "LEFT" then
-            section.val:SetPoint("LEFT", section.barFrame, "LEFT", 4, (textCfg and textCfg.textY or 0))
+            section.val:SetPoint("LEFT", section.textFrame, "LEFT", textX, textY)
         elseif align == "RIGHT" then
-            section.val:SetPoint("RIGHT", section.barFrame, "RIGHT", -4, (textCfg and textCfg.textY or 0))
+            section.val:SetPoint("RIGHT", section.textFrame, "RIGHT", textX, textY)
         else
-            section.val:SetPoint("CENTER", section.barFrame, "CENTER", (textCfg and textCfg.textX or 0), (textCfg and textCfg.textY or 0))
+            section.val:SetPoint("CENTER", section.textFrame, "CENTER", textX, textY)
         end
 
         -- Cache per-section settings on the section frame so ApplyDynamics

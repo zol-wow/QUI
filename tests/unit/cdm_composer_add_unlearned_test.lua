@@ -23,6 +23,8 @@ assert(source:find("self._isUnlearned", addCellStart, true),
 
 local refreshStart = assert(source:find("RefreshAddList = function()", 1, true),
     "RefreshAddList should exist")
+local entryRefreshStart = assert(source:find("RefreshEntryList = function()", 1, true),
+    "RefreshEntryList should exist")
 assert(source:find("cell._isUnlearned = entry.isKnown == false", refreshStart, true),
     "RefreshAddList should mark add cells whose CDM source entry is unlearned")
 assert(source:find("cell._icon:SetDesaturated(isOwned or cell._isUnlearned)", refreshStart, true),
@@ -31,6 +33,8 @@ assert(source:find("cell._isUnlearned and 0.6", refreshStart, true),
     "unlearned add entries should use the same soft alpha treatment as dormant entries")
 assert(source:find("spellData:AddSpell(activeContainer, addID, kindFromTab, targetRow, entryRef.isKnown)", refreshStart, true),
     "right-click add should pass the picker known-state and target row to AddSpell")
+assert(not source:find("or isCustomBar then dormant = {}", entryRefreshStart, true),
+    "custom containers should still render entries stored in dormantSpells")
 assert(not source:find("spells%[#spells%]%.row = targetRow", refreshStart),
     "right-click add should not assign targetRow by mutating the last active entry after AddSpell")
 assert(source:find('activeAddTab == "other_auras"', refreshStart, true)
