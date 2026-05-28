@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha64 - 2026-05-28
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** This alpha supersedes `v3.6.0-alpha63`, which shipped the same runtime changes with fallback release notes. No schema migrations; existing alpha62/alpha63 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Added
+- **Action bars: cooldown duration text controls.** Each action bar now has settings for native cooldown countdown visibility, font size, anchor, offsets, and color, with defaults, copy-bar support, preview coverage, and regression tests.
+- **Pixel-scaling regression coverage.** New unit tests lock down scale-refresh behavior, pixel-border call sites, manual backdrop borders, and border refreshes after UI-scale changes.
+
+### Changed
+- **Pixel borders now re-snap after scale and display changes.** The shared UI kit queues scale refreshes across multiple ticks, refreshes both registered widgets and pixel borders, and listens for display-size changes so one-pixel borders stay crisp after resolution or UI-scale updates.
+- **Skinning uses centralized pixel-aware helpers.** Backdrops, border frames, inset points, tab backdrops, tooltip chrome, character/inspect panes, loot/alert frames, objective tracker, power bars, keystone widgets, and other skinned frames now route through shared pixel-sized border and point helpers instead of raw one-unit offsets.
+- **Options and layout surfaces use pixel-sized chrome.** CDM composer popups/context menus, options strip buttons, layout-mode panels, group-frame editors, chat frame settings, dungeon keystone settings, utility keybinds, and related option UI surfaces now use effective pixel sizes for their borders.
+- **CDM dormant spell handling is more conservative.** Dormant checks now preserve slot/row/kind metadata, avoid destructive cleanup during zone transitions, restore same-character aura entries more reliably, and keep cross-character or unlearned entries visible for explicit removal instead of silently losing configured rows.
+- **Action/resource preview drivers paint more realistic rows.** Action-bar and resource-bar preview paths now reflect the new text controls and avoid empty preview space in embedded composer layouts.
+
+### Fixed
+- **CDM custom bars no longer inherit dead stack offsets or stale dormant state.** Dormant spell adds live in `dormantSpells`, custom-bar active entries stay under `entries`, and per-spell hide-duration/hide-stack overrides are reflected by the preview and render paths.
+- **Tooltip and skinning borders keep their intended thickness.** Tooltip refits, added-line layouts, manual texture backdrops, and character/inspect pane hardening now keep pixel-perfect borders when the effective UI scale changes.
+- **Release notes are back on the changelog-backed path.** The alpha64 tag includes this matching changelog section, so the GitHub release body and release notification use the proper notes instead of the fallback `Release <tag>` text.
+
+
+
 ## v3.6.0-alpha62 - 2026-05-28
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha61 profiles carry over unchanged.
