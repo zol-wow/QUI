@@ -33,25 +33,25 @@ function Datapanels:CreatePanel(panelID, config)
         Warn("Panel '" .. panelID .. "' already exists!")
         return self.activePanels[panelID]
     end
-    
+
     -- Create panel frame
     local panel = CreateFrame("Frame", "QUI_Datapanel_" .. panelID, UIParent)
     panel:SetFrameStrata("LOW")
     panel:SetFrameLevel(100)
     panel:SetSize(config.width or 300, config.height or 22)
-    
+
     -- Position
     if config.position then
         panel:SetPoint(config.position[1], UIParent, config.position[2], config.position[3], config.position[4])
     else
         panel:SetPoint("CENTER", UIParent, "CENTER", 0, 300)
     end
-    
+
     -- Background
     panel.bg = panel:CreateTexture(nil, "BACKGROUND")
     panel.bg:SetAllPoints()
     panel.bg:SetColorTexture(0, 0, 0, (config.bgOpacity or 50) / 100)
-    
+
     -- Borders
     local borderSize = config.borderSize or 2
     local borderColor = config.borderColor or {0, 0, 0, 1}
@@ -64,7 +64,7 @@ function Datapanels:CreatePanel(panelID, config)
     panel.borderRight:SetColorTexture(unpack(borderColor))
     panel.borderTop:SetColorTexture(unpack(borderColor))
     panel.borderBottom:SetColorTexture(unpack(borderColor))
-    
+
     panel.borderLeft:SetWidth(borderSize)
     panel.borderRight:SetWidth(borderSize)
     panel.borderTop:SetHeight(borderSize)
@@ -89,21 +89,21 @@ function Datapanels:CreatePanel(panelID, config)
 
     panel.borderBottom:SetPoint("TOPLEFT", panel, "BOTTOMLEFT", -borderSize, 0)
     panel.borderBottom:SetPoint("TOPRIGHT", panel, "BOTTOMRIGHT", borderSize, 0)
-    
+
     -- Store config
     panel.panelID = panelID
     panel.config = config
     panel.slots = {}
-    
+
     -- Setup dragging
     self:SetupDragging(panel)
-    
+
     -- Create slots
     self:UpdateSlots(panel)
-    
+
     -- Store panel
     self.activePanels[panelID] = panel
-    
+
     -- Show/hide based on config AND whether any datatexts are assigned
     local hasDatatext = false
     if config.slots then
@@ -114,13 +114,13 @@ function Datapanels:CreatePanel(panelID, config)
             end
         end
     end
-    
+
     if config.enabled and hasDatatext then
         panel:Show()
     else
         panel:Hide()
     end
-    
+
     return panel
 end
 
@@ -133,13 +133,13 @@ function Datapanels:SetupDragging(panel)
     panel:EnableMouse(true)
     panel:RegisterForDrag("LeftButton")
     panel:SetClampedToScreen(true)
-    
+
     panel:SetScript("OnDragStart", function(self)
         if not self.config.locked then
             self:StartMoving()
         end
     end)
-    
+
     panel:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
 
@@ -177,11 +177,11 @@ function Datapanels:UpdateSlots(panel)
         slot:SetParent(nil)
     end
     panel.slots = {}
-    
+
     local numSlots = panel.config.numSlots or 3
     local slotWidth = panel:GetWidth() / numSlots
     local slotHeight = panel:GetHeight()
-    
+
     -- Apply font settings
     local generalFont = "Quazii"
     local generalOutline = "OUTLINE"
@@ -192,12 +192,12 @@ function Datapanels:UpdateSlots(panel)
     end
     local fontPath = LSM:Fetch("font", generalFont) or "Fonts\\FRIZQT__.TTF"
     local fontSize = panel.config.fontSize or 12
-    
+
     for i = 1, numSlots do
         local slot = CreateFrame("Button", panel:GetName() .. "_Slot" .. i, panel)
         slot:SetSize(slotWidth, slotHeight)
         slot:SetPoint("LEFT", panel, "LEFT", (i - 1) * slotWidth, 0)
-        
+
         -- Create text for datatext use
         slot.text = slot:CreateFontString(nil, "OVERLAY")
         QUICore:SafeSetFont(slot.text, fontPath, fontSize, generalOutline)
@@ -207,7 +207,7 @@ function Datapanels:UpdateSlots(panel)
         slot.text:SetJustifyH("CENTER")
         slot.text:SetWordWrap(false)
         slot.text:SetTextColor(1, 1, 1, 1)
-        
+
         -- Store slot index
         slot.index = i
 
@@ -244,7 +244,7 @@ function Datapanels:UpdateSlots(panel)
                 end
             end
         end)
-        
+
         -- Attach datatext if configured
         local datatextID = panel.config.slots and panel.config.slots[i]
         if datatextID and QUICore.Datatexts then
@@ -254,7 +254,7 @@ function Datapanels:UpdateSlots(panel)
             slot.text:SetText("|cffFFAA00Slot " .. i .. "|r")
             slot.text:Show()
         end
-        
+
         table.insert(panel.slots, slot)
     end
 end
@@ -267,13 +267,13 @@ end
 function Datapanels:UpdatePanel(panelID)
     local panel = self.activePanels[panelID]
     if not panel then return end
-    
+
     -- Update size
     panel:SetSize(panel.config.width or 300, panel.config.height or 22)
-    
+
     -- Update background opacity
     panel.bg:SetColorTexture(0, 0, 0, (panel.config.bgOpacity or 50) / 100)
-    
+
     -- Update borders
     local borderSize = panel.config.borderSize or 2
     local borderColor = panel.config.borderColor or {0, 0, 0, 1}
@@ -306,10 +306,10 @@ function Datapanels:UpdatePanel(panelID)
         panel:ClearAllPoints()
         panel:SetPoint(panel.config.position[1], UIParent, panel.config.position[2], panel.config.position[3], panel.config.position[4])
     end
-    
+
     -- Update slots
     self:UpdateSlots(panel)
-    
+
     -- Show/hide
     if panel.config.enabled then
         panel:Show()
@@ -322,18 +322,18 @@ end
 function Datapanels:DeletePanel(panelID)
     local panel = self.activePanels[panelID]
     if not panel then return end
-    
+
     -- Detach all datatexts
     for _, slot in ipairs(panel.slots) do
         if QUICore.Datatexts then
             QUICore.Datatexts:DetachFromSlot(slot)
         end
     end
-    
+
     -- Remove frame
     panel:Hide()
     panel:SetParent(nil)
-    
+
     -- Remove from storage
     self.activePanels[panelID] = nil
 end
@@ -599,8 +599,8 @@ SlashCmdList["QUIDATAPANELS"] = function(msg)
         local count = 0
         for id, panel in pairs(Datapanels.activePanels) do
             count = count + 1
-            print(string.format("|cff00ff00Panel %s:|r %s at %s, %dx%d, %s", 
-                id, 
+            print(string.format("|cff00ff00Panel %s:|r %s at %s, %dx%d, %s",
+                id,
                 panel:IsShown() and "VISIBLE" or "HIDDEN",
                 tostring(panel.config.position),
                 panel:GetWidth(),

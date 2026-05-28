@@ -1,5 +1,6 @@
 -- tests/unit/cdm_icon_factory_mirror_empty_stack_test.lua
 -- Run: lua tests/unit/cdm_icon_factory_mirror_empty_stack_test.lua
+-- luacheck: globals InCombatLockdown GetTime CreateFrame wipe C_Timer C_StringUtil issecretvalue
 
 local BuildCooldownStateContext = dofile("tests/helpers/cdm_context_builder_stub.lua")
 
@@ -679,10 +680,10 @@ for _, write in ipairs(stackWrites) do
         scourgeStrikeHideReason = write.reason
     end
 end
-assert(scourgeStrikeText == nil,
-    "cooldown mirror ChargeCount should not show when the parent count frame is hidden")
-assert(scourgeStrikeHideReason == "mirror-stack-hidden",
-    "hidden parent cooldown mirror ChargeCount should hide stack text")
+assert(rawequal(scourgeStrikeText, secretChargeCount),
+    "cooldown mirror ChargeCount should show when the child count text owner is shown")
+assert(scourgeStrikeHideReason ~= "mirror-stack-hidden",
+    "shown child count text owner should not be hidden by the parent count frame state")
 
 stackWrites = {}
 textureWrites = {}

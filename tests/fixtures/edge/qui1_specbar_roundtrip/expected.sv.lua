@@ -1165,6 +1165,7 @@ return {
                   headerShowIcons = true,
                   iconStyle = "spec",
                   numberFormat = "compact",
+                  showRowBackground = true,
                   textures = {},
                   useClassColor = true
                 },

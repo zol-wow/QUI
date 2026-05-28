@@ -254,7 +254,7 @@ local function InitializeDefaultSettings(castSettings, unitKey)
             baseColor[4] or DEFAULT_BAR_COLOR[4],
         }
     end
-    
+
     if not castSettings.borderColor then
         castSettings.borderColor = {0, 0, 0, 1}
     elseif not castSettings.borderColor[4] then
@@ -522,7 +522,7 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
     if anchorFrame.unitKey and _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(anchorFrame.unitKey .. "Castbar") then return end
 
     anchorFrame:ClearAllPoints()
-    
+
     if anchor == "essential" then
         local offsetX = QUICore:PixelRound(castSettings.offsetX or 0, anchorFrame)
         local offsetY = QUICore:PixelRound(castSettings.offsetY or -25, anchorFrame)
@@ -671,7 +671,7 @@ local function UpdateStatusBarPosition(anchorFrame, castSettings, barHeight, ico
         statusBar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", borderSize, -borderSize)
         statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", -borderSize, borderSize)
     end
-    
+
     local r, g, b, a = GetSafeColor(castSettings.borderColor, {0, 0, 0, 1})
     if UIKit and UIKit.CreateBackdropBorder then
         border = UIKit.CreateBackdropBorder(statusBar, castSettings.borderSize or 1, r, g, b, a)
@@ -735,7 +735,7 @@ end
 
 local function UpdateTextPosition(textElement, statusBar, anchor, offsetX, offsetY, show)
     if not textElement then return end
-    
+
     if show then
         local normalizedAnchor = NormalizeTextAnchor(anchor)
         local justifyH, justifyV = GetTextJustificationFromAnchor(anchor)
@@ -1419,16 +1419,16 @@ end
 local function UpdateCastbarElements(anchorFrame, unitKey, castSettings)
     local currentSettings = GetUnitSettings(unitKey)
     local currentCastSettings = currentSettings and currentSettings.castbar or castSettings
-    
+
     local barHeight, iconSize, iconScale = GetSizingValues(currentCastSettings, anchorFrame)
     local borderSize = QUICore:Pixels(currentCastSettings.borderSize or 1, anchorFrame)
     local iconBorderSize = QUICore:Pixels(currentCastSettings.iconBorderSize or 1, anchorFrame)
-    
+
     anchorFrame:SetHeight(barHeight)
-    
+
     UpdateIconPosition(anchorFrame, currentCastSettings, iconSize, iconScale, iconBorderSize)
     UpdateStatusBarPosition(anchorFrame, currentCastSettings, barHeight, iconSize, iconScale, borderSize)
-    
+
     UpdateTextPosition(
         anchorFrame.spellText, anchorFrame.statusBar,
         currentCastSettings.spellTextAnchor or "LEFT",
@@ -1493,17 +1493,17 @@ local function ClearEmpoweredState(bar)
     bar.numStages = 0
     bar.stagePositions = nil
     bar.isInHoldPhase = nil
-    
+
     for _, stage in ipairs(bar.empoweredStages or {}) do
         if stage then stage:Hide() end
     end
-    
+
     if bar.stageOverlays then
         for _, overlay in ipairs(bar.stageOverlays) do
             if overlay then overlay:Hide() end
         end
     end
-    
+
     if bar.bgBar then bar.bgBar:Show() end
 
     if bar.statusBar then
@@ -1521,7 +1521,7 @@ end
 local function SetIconTexture(castbar, texture)
     if not castbar or not castbar.iconTexture then return false end
     if not texture then return false end
-    
+
     castbar.currentIconTexture = texture
     castbar.iconTexture:SetTexture(texture)
     return true
@@ -1535,7 +1535,7 @@ local PREVIEW_ICON_ID = 136048
 local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
     if not castbar then return end
     ClearChannelTickState(castbar)
-    
+
     local castTime = 3.0
     local spellName = (unitKey == "boss" and bossIndex) and ("Boss " .. bossIndex .. " Cast") or "Preview Cast"
     local iconTexture = PREVIEW_ICON_ID
@@ -1546,7 +1546,7 @@ local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
     castbar.previewMaxValue = castTime
     castbar.previewSpellName = spellName
     castbar.previewIconTexture = iconTexture
-    
+
     -- Set initial visual state
     if castbar.statusBar then
         castbar.statusBar:SetStatusBarTexture(GetTexturePath(castSettings.texture))
@@ -1555,7 +1555,7 @@ local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
         castbar.statusBar:SetValue(0)
         castbar.statusBar:SetReverseFill(false)
     end
-    
+
     if SetIconTexture(castbar, iconTexture) then
         castbar.previewIconTexture = iconTexture
         if ShouldShowIcon(castbar, castSettings) then
@@ -1564,7 +1564,7 @@ local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
             castbar.icon:Hide()
         end
     end
-    
+
     if castbar.spellText then
         castbar.spellText:SetText(spellName)
         castbar.spellText:SetTextColor(1, 1, 1, 1)
@@ -1572,7 +1572,7 @@ local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
             castbar.spellText:Show()
         end
     end
-    
+
     if castbar.timeText then
         castbar.timeText:SetFormattedText("%.1f", castTime)
         castbar.timeText:SetTextColor(1, 1, 1, 1)
@@ -1580,24 +1580,24 @@ local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
             castbar.timeText:Show()
         end
     end
-    
+
     if castbar.bgBar then
         castbar.bgBar:Show()
     end
-    
+
     ClearEmpoweredState(castbar)
-    
+
     if castSettings.anchor == "none" then
         castbar:SetMovable(true)
         castbar:EnableMouse(true)
         castbar:RegisterForDrag("LeftButton")
         castbar:SetClampedToScreen(true)
-        
+
         castbar:SetScript("OnDragStart", function(self)
             if self.unitKey and _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(self.unitKey .. "Castbar") then return end
             self:StartMoving()
         end)
-        
+
         castbar:SetScript("OnDragStop", function(self)
             self:StopMovingOrSizing()
             local screenX, screenY = UIParent:GetCenter()
@@ -1621,14 +1621,14 @@ local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
         castbar:SetScript("OnDragStart", nil)
         castbar:SetScript("OnDragStop", nil)
     end
-    
+
     SetCastbarFrameVisible(castbar, true)
 end
 
 -- Clear preview simulation
 local function ClearPreviewSimulation(castbar)
     if not castbar then return end
-    
+
     castbar.isPreviewSimulation = false
     castbar.previewStartTime = nil
     castbar.previewEndTime = nil
@@ -1636,14 +1636,14 @@ local function ClearPreviewSimulation(castbar)
     castbar.previewMaxValue = nil
     castbar.previewSpellName = nil
     castbar.previewIconTexture = nil
-    
+
     castbar:SetMovable(false)
     castbar:EnableMouse(false)
     castbar:SetScript("OnDragStart", nil)
     castbar:SetScript("OnDragStop", nil)
 
     ClearChannelTickState(castbar)
-    
+
     if not UnitCastingInfo(castbar.unit) and not UnitChannelInfo(castbar.unit) then
         SetCastbarFrameVisible(castbar, false)
     end
@@ -1661,18 +1661,18 @@ local function UpdateEmpoweredStages(bar, numStages)
     for _, overlay in ipairs(bar.stageOverlays) do
         if overlay then overlay:Hide() end
     end
-    
+
     if not numStages or numStages <= 0 then
         bar.isEmpowered = false
         bar.numStages = 0
         if bar.bgBar then bar.bgBar:Show() end
         return
     end
-    
+
     bar.isEmpowered = true
     bar.numStages = numStages
     if bar.bgBar then bar.bgBar:Hide() end
-    
+
     C_Timer.After(0, function()
         if not bar.statusBar:IsVisible() then
             C_Timer.After(0.066, function()
@@ -1680,11 +1680,11 @@ local function UpdateEmpoweredStages(bar, numStages)
             end)
             return
         end
-        
+
         local barWidth = bar.statusBar:GetWidth()
         if barWidth <= 0 then barWidth = 150 end
         local barHeight = bar.statusBar:GetHeight()
-        
+
         -- Stage boundary positions
         local stagePositions
         if numStages >= 5 then
@@ -1698,9 +1698,9 @@ local function UpdateEmpoweredStages(bar, numStages)
         else
             stagePositions = {0, 1.0}
         end
-        
+
         bar.stagePositions = stagePositions
-        
+
         -- Create colored overlays for each stage zone
         for i = 1, #stagePositions - 1 do
             local overlay = bar.stageOverlays[i]
@@ -1708,7 +1708,7 @@ local function UpdateEmpoweredStages(bar, numStages)
                 overlay = bar.statusBar:CreateTexture(nil, "BACKGROUND", nil, 1)
                 bar.stageOverlays[i] = overlay
             end
-            
+
             local startPos = stagePositions[i] * barWidth
             local endPos = stagePositions[i + 1] * barWidth
             local width = endPos - startPos
@@ -1728,7 +1728,7 @@ local function UpdateEmpoweredStages(bar, numStages)
             overlay:SetPoint("BOTTOM", bar.statusBar, "BOTTOM", 0, 0)
             overlay:Show()
         end
-        
+
         -- Create white tick markers between stages
         for i = 2, #stagePositions - 1 do
             local tickIndex = i - 1
@@ -1739,7 +1739,7 @@ local function UpdateEmpoweredStages(bar, numStages)
                 stage:SetWidth(2)
                 bar.empoweredStages[tickIndex] = stage
             end
-            
+
             stage:SetHeight(barHeight)
             local position = stagePositions[i] * barWidth
             stage:ClearAllPoints()
@@ -1838,14 +1838,14 @@ end
 ---------------------------------------------------------------------------
 local function UpdateSpellText(castbar, text, spellName, castSettings, unit)
     if not castbar.spellText then return end
-    
+
     local displayName = text or spellName or "Casting..."
     local maxLen = castSettings.maxLength
     if maxLen and maxLen > 0 then
         displayName = TruncateName(displayName, maxLen)
     end
     castbar.spellText:SetText(displayName)
-    
+
     local general = GetGeneralSettings()
     if general and general.masterColorCastbarText then
         local r, g, b = GetUnitClassColor(unit)
@@ -1857,7 +1857,7 @@ end
 
 local function UpdateTimeTextColor(castbar, unit)
     if not castbar.timeText then return end
-    
+
     local general = GetGeneralSettings()
     if general and general.masterColorCastbarText then
         local r, g, b = GetUnitClassColor(unit)
@@ -1876,10 +1876,10 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
     if not settings or not settings.castbar or not settings.castbar.enabled then
         return nil
     end
-    
+
     local castSettings = settings.castbar
     InitializeDefaultSettings(castSettings, unitKey)
-    
+
     local fontSize = castSettings.fontSize or 12
 
     local anchorFrame = CreateAnchorFrame(nil, UIParent)
@@ -1930,10 +1930,10 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
     anchorFrame.UpdateCastbarElements = function(self)
         UpdateCastbarElements(self, unitKey, castSettings)
     end
-    
+
     SetCastbarSize(anchorFrame, castSettings, unitFrame, barHeight)
     PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, barHeight)
-    
+
     local barColor = GetBarColor(unitKey, castSettings)
     anchorFrame.customColor = barColor
     anchorFrame.customNotInterruptibleColor = GetNotInterruptibleColor(castSettings)
@@ -1947,7 +1947,7 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
     anchorFrame._quiCastbar = true
     anchorFrame._quiDesiredVisible = false
     anchorFrame.isChanneled = false
-    
+
     anchorFrame.isEmpowered = false
     anchorFrame.numStages = 0
     anchorFrame.empoweredStages = {}
@@ -1961,9 +1961,9 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
     anchorFrame._quiUseAlphaVisibility = true
     anchorFrame:SetAlpha(0)
     anchorFrame:Show()
-    
+
     self:SetupCastbar(anchorFrame, unit, unitKey, castSettings)
-    
+
     UpdateCastbarElements(anchorFrame, unitKey, castSettings)
     if castSettings.previewMode then
         SimulateCast(anchorFrame, castSettings, unitKey)
@@ -1972,7 +1972,7 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
             anchorFrame:SetScript("OnUpdate", anchorFrame.castbarOnUpdate)
         end
     end
-    
+
     return anchorFrame
 end
 
@@ -2032,15 +2032,15 @@ local function DetectEmpoweredCast(isPlayer, spellID, unitSpellID, isEmpowerEven
     if not isPlayer then
         return false, 0
     end
-    
+
     local isEmpowered = isEmpowerEvent or false
     local numStages = 0
-    
+
     if isChanneled and isEmpowerEvent and channelStages and channelStages > 0 then
         numStages = channelStages
         isEmpowered = true
     end
-    
+
     local checkSpellID = spellID or unitSpellID
     if checkSpellID and C_Spell and C_Spell.GetSpellEmpowerInfo then
         local empowerInfo = C_Spell.GetSpellEmpowerInfo(checkSpellID)
@@ -2049,7 +2049,7 @@ local function DetectEmpoweredCast(isPlayer, spellID, unitSpellID, isEmpowerEven
             numStages = empowerInfo.numStages
         end
     end
-    
+
     return isEmpowered, numStages
 end
 
@@ -2058,7 +2058,7 @@ local function AdjustEmpoweredEndTime(castbar, isPlayer, isEmpowered, endTime)
     if not (isPlayer and isEmpowered and GetUnitEmpowerHoldAtMaxTime) then
         return endTime
     end
-    
+
     local ok, adjustedEndTime = pcall(function()
         local ht = GetUnitEmpowerHoldAtMaxTime(castbar.unit)
         if ht and ht > 0 then
@@ -2066,7 +2066,7 @@ local function AdjustEmpoweredEndTime(castbar, isPlayer, isEmpowered, endTime)
         end
         return endTime
     end)
-    
+
     return ok and adjustedEndTime or endTime
 end
 
@@ -2383,7 +2383,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
 
         return true
     end
-    
+
     -- Unified OnUpdate handler - handles both real casts and preview
     local function CastBar_OnUpdate(self, elapsed)
         local spellName = UnitCastingInfo(self.unit) ~= nil
@@ -2559,7 +2559,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             if not self.previewStartTime or not self.previewEndTime then
                 return
             end
-            
+
             local now = GetTime()
             if now >= self.previewEndTime then
                 -- Loop preview animation
@@ -2567,13 +2567,13 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                 self.previewEndTime = now + self.previewMaxValue
                 self.previewValue = 0
             end
-            
+
             self.previewValue = self.previewValue + elapsed
             local progress = math_min(self.previewValue, self.previewMaxValue)
             local remaining = self.previewMaxValue - progress
-            
+
             self.statusBar:SetValue(progress)
-            
+
             UpdateThrottledText(self, elapsed, self.timeText, remaining)
         else
             -- No cast and no preview - hide
@@ -2585,7 +2585,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
 
     -- Store OnUpdate handler reference
     castbar.castbarOnUpdate = CastBar_OnUpdate
-    
+
     -- Unified Cast function
     function castbar:Cast(spellID, isEmpowerEvent)
         -- Get cast information (now includes durationObj and hasSecretTiming)
@@ -2717,18 +2717,18 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             HandleNoCast(self, castSettings, isPlayer, CastBar_OnUpdate)
         end
     end
-    
+
     -- Event dispatch table (cleaner than if-elseif chain)
     local eventHandlers = {
         -- Target/focus change events
         PLAYER_TARGET_CHANGED = function(self) self:Cast() end,
         PLAYER_FOCUS_CHANGED = function(self) self:Cast() end,
         UNIT_TARGET = function(self) self:Cast() end,
-        
+
         -- Cast start events
         UNIT_SPELLCAST_START = function(self, spellID) self:Cast(spellID, false) end,
         UNIT_SPELLCAST_CHANNEL_START = function(self, spellID) self:Cast(spellID, false) end,
-        
+
         -- Cast end events - hide immediately without re-querying APIs
         UNIT_SPELLCAST_STOP = function(self, spellID)
             if self.isGCD and not UnitCastingInfo(self.unit) and not UnitChannelInfo(self.unit) then
@@ -2782,7 +2782,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             SetCastbarFrameVisible(self, false)
             TryApplyDeferredCastbarRefresh(self)
         end,
-        
+
         -- Interruptible state changes
         UNIT_SPELLCAST_INTERRUPTIBLE = function(self)
             self.notInterruptible = false
@@ -2793,7 +2793,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             ApplyCastColor(self.statusBar, true, self.customColor, self.customNotInterruptibleColor)
         end,
     }
-    
+
     -- Player-only empowered cast handlers
     if isPlayer then
         eventHandlers.PLAYER_REGEN_ENABLED = function(self)
@@ -2865,7 +2865,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             end
         end
     end
-    
+
     -- Register common events
     castbar:RegisterUnitEvent("UNIT_SPELLCAST_START", unit)
     castbar:RegisterUnitEvent("UNIT_SPELLCAST_STOP", unit)
@@ -2875,7 +2875,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
     castbar:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", unit)
     castbar:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTIBLE", unit)
     castbar:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", unit)
-    
+
     -- Player-specific events (empowered casts)
     if isPlayer then
         castbar:RegisterUnitEvent("UNIT_SPELLCAST_EMPOWER_START", unit)
@@ -2886,7 +2886,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
         castbar:RegisterEvent("PLAYER_REGEN_ENABLED")
         castbar:RegisterEvent("PLAYER_ENTERING_WORLD")
     end
-    
+
     -- Target/focus-specific events
     if unit == "target" then
         castbar:RegisterEvent("PLAYER_TARGET_CHANGED")
@@ -2896,7 +2896,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
         castbar:RegisterEvent("PLAYER_TARGET_CHANGED")
         castbar:RegisterUnitEvent("UNIT_TARGET", "target")
     end
-    
+
     -- Unified event handler using dispatch table
     castbar:SetScript("OnEvent", function(self, event, eventUnit, castGUID, spellID)
         local handler = eventHandlers[event]
@@ -2915,10 +2915,10 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     if not settings or not settings.castbar or not settings.castbar.enabled then
         return nil
     end
-    
+
     local castSettings = settings.castbar
     InitializeDefaultSettings(castSettings, "boss")
-    
+
     local fontSize = castSettings.fontSize or 12
 
     -- Create anchor frame (outer frame for positioning/sizing)
@@ -2932,7 +2932,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
 
     -- Anchor to boss unit frame
     QUICore:SetSnappedPoint(anchorFrame, "TOP", unitFrame, "BOTTOM", castSettings.offsetX or 0, castSettings.offsetY or -25)
-    
+
     -- Create UI elements (icon with integrated border) - parented to anchorFrame
     local ir, ig, ib, ia = GetSafeColor(castSettings.iconBorderColor, {0, 0, 0, 1})
     UIKit.CreateIcon(anchorFrame, iconSize, castSettings.iconBorderSize or 1, ir, ig, ib, ia)
@@ -2955,12 +2955,12 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     timeText:SetPoint("RIGHT", statusBar, "RIGHT", -4, 0)
     timeText:SetJustifyH("RIGHT")
     anchorFrame.timeText = timeText
-    
+
     -- Set up UpdateCastbarElements function
     anchorFrame.UpdateCastbarElements = function(self)
         UpdateCastbarElements(self, "boss", castSettings)
     end
-    
+
     -- Apply colors and textures
     local barColor = castSettings.color or {1, 0.7, 0, 1}
     anchorFrame.customColor = barColor
@@ -2979,7 +2979,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     anchorFrame._quiDesiredVisible = false
     anchorFrame.bossIndex = bossIndex
     anchorFrame.isChanneled = false
-    
+
     -- Unified OnUpdate handler - handles both real casts and preview
     local function BossCastBar_OnUpdate(self, elapsed)
         -- Check if actually casting (real cast takes priority)
@@ -3085,10 +3085,10 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
             TryApplyDeferredCastbarRefresh(self)
         end
     end
-    
+
     -- Store OnUpdate handler reference
     anchorFrame.bossOnUpdate = BossCastBar_OnUpdate
-    
+
     -- Cast function
     function anchorFrame:Cast()
         -- Use shared GetCastInfo for secret timing detection and duration objects
@@ -3202,7 +3202,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
             end)
         end
     end
-    
+
     -- Register events
     anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_START", unit)
     anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_STOP", unit)
@@ -3213,11 +3213,11 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTIBLE", unit)
     anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", unit)
     anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", unit)
-    
+
     anchorFrame:SetScript("OnEvent", function(self, event, eventUnit)
         if event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
             self:Cast()
-        elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_CHANNEL_STOP" 
+        elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_CHANNEL_STOP"
             or event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_INTERRUPTED"
             or event == "UNIT_SPELLCAST_SUCCEEDED" then
             ClearChannelTickState(self)
@@ -3263,9 +3263,9 @@ _G.QUI_ShowCastbarPreview = function(unitKey)
     if not settings or not settings.castbar then
         return
     end
-    
+
     settings.castbar.previewMode = true
-    
+
     -- Refresh the frame to apply preview
     local QUI_UF = QUI_Castbar.unitFramesModule
     if QUI_UF then
@@ -3410,7 +3410,7 @@ function QUI_Castbar:RefreshCastbar(castbar, unitKey, castSettings, unitFrame)
     if castbar then
         DestroyCastbar(castbar)
     end
-    
+
     local newCastbar = self:CreateCastbar(unitFrame, unit, unitKey)
     if newCastbar then
         local QUI_UF = self.unitFramesModule
@@ -3434,7 +3434,7 @@ function QUI_Castbar:RefreshBossCastbar(castbar, bossKey, castSettings, unitFram
 
     local bossIndex = (castbar and castbar.bossIndex) or (bossKey and tonumber(bossKey:match("boss(%d+)")))
     if not bossIndex then return end
-    
+
     local unit = (castbar and castbar.unit) or ("boss" .. bossIndex)
     if castbar then
         ApplyLiveCastbarSettings(castbar, bossKey, castSettings)
@@ -3450,7 +3450,7 @@ function QUI_Castbar:RefreshBossCastbar(castbar, bossKey, castSettings, unitFram
     if castbar then
         DestroyCastbar(castbar)
     end
-    
+
     local newCastbar = self:CreateBossCastbar(unitFrame, unit, bossIndex)
     if newCastbar then
         local QUI_UF = self.unitFramesModule

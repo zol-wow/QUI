@@ -81,7 +81,7 @@ local _directCDIDByCatSpell = {
     buff       = {},
     trackedBar = {},
 }
--- Totem-backed CDM children (e.g. Anti-Magic Zone) get their swipe / active
+-- Totem-backed CDM children get their swipe / active
 -- state from PLAYER_TOTEM_UPDATE, NOT from any Cooldown:Set* on the child.
 -- Blizzard's mixin watches totem events and drives the visual through a path
 -- that bypasses our 5 Cooldown setter hooks. We listen for PLAYER_TOTEM_UPDATE
@@ -110,6 +110,7 @@ local RequestMirrorTextRefreshForState
 local RequestMirrorTextRefreshForChild
 local RequestMirrorTextRefreshForMappedSpells
 local ClearMirrorStackState
+local RefreshCarriedAuraStacksFromSource
 local AuraInstanceMatchesExpectedOwner
 local CleanScalar
 local CleanBool
@@ -329,6 +330,17 @@ local function ClearAuraDurationLane(_, s)
     s.auraDurationStateUnknown = nil
 end
 
+local function ClearCarriedAuraStackState(s, clearSource)
+    if not s then return end
+    s.auraStackText = nil
+    s.auraStackTextSource = nil
+    s.auraStackTextShown = nil
+    if clearSource then
+        s.auraStackSourceCooldownID = nil
+        s.auraStackSourceCategory = nil
+    end
+end
+
 local function ClearEventDrivenLanes(_, s)
     if not s then return end
     s.auraDurObj = nil
@@ -464,6 +476,7 @@ local function ClearMirrorAuraState(cdID, s, reason)
     s.auraInstanceIDSource = nil
     s.auraUnit = nil
     s.auraData = nil
+    ClearCarriedAuraStackState(s, true)
     s.pandemicActive = false
     s.pandemicStateKnown = nil
     s.mirrorEpoch = (s.mirrorEpoch or 0) + 1
@@ -793,6 +806,18 @@ local function PackState(cooldownID, viewerCategory)
     packed.stackTextSource        = s.stackTextSource
     packed.stackTextShown         = s.stackTextShown
     packed.stackTextEpoch         = s.stackTextEpoch
+    -- Cross-category aura stack text carried from the source child
+    -- (CaptureAuraInstanceFromChildFrame). Only surface it while an aura
+    -- instance is actually active so it never bleeds onto a plain cooldown.
+    if s.auraInstanceID then
+        packed.auraStackText       = s.auraStackText
+        packed.auraStackTextSource = s.auraStackTextSource
+        packed.auraStackTextShown  = s.auraStackTextShown
+    else
+        packed.auraStackText       = nil
+        packed.auraStackTextSource = nil
+        packed.auraStackTextShown  = nil
+    end
     local packedChargeCount, chargeTextOwnerShown = CDMBlizzMirror._GetPackedChargeCountFields(child)
     local chargeTextOwnerShownSecret = issecretvalue and issecretvalue(chargeTextOwnerShown)
     local chargeCountFrameShown, chargeCountFrameShownSecret = CDMBlizzMirror._SafeFrameShownOrSecretField(child and child.ChargeCount)
@@ -804,8 +829,13 @@ local function PackState(cooldownID, viewerCategory)
         s.chargeTextOwnerShown = chargeTextOwnerShown
     end
     if not cooldownChargesShownSecret and cooldownChargesShown == nil then
-        cooldownChargesShown = chargeCountFrameShown
-        cooldownChargesShownSecret = chargeCountFrameShownSecret
+        if chargeTextOwnerShownSecret or chargeTextOwnerShown ~= nil then
+            cooldownChargesShown = chargeTextOwnerShown
+            cooldownChargesShownSecret = chargeTextOwnerShownSecret
+        else
+            cooldownChargesShown = chargeCountFrameShown
+            cooldownChargesShownSecret = chargeCountFrameShownSecret
+        end
     end
     if cooldownChargesShownSecret or cooldownChargesShown ~= nil then
         s.cooldownChargesShown = cooldownChargesShown
@@ -1724,7 +1754,64 @@ local function CaptureAuraInstanceFromChildFrame(cdID, viewerCategory, child, so
             "childCat", GetFrameCategoryName(child),
             "instID", auraInstanceID)
     end
+    -- Cross-category aura: carry the SOURCE child's rendered stack text onto
+    -- the host state. The host (e.g. Reaper's Mark essential, cdID 51696) only
+    -- has its own chargeless ChargeCount text -- a combat secret that paints
+    -- blank -- while the borrowed debuff's real applications live on the
+    -- aura-related child (the buff child, cdID 157723). Stored on a dedicated
+    -- field consumed only while the aura is active (PackState gates it on
+    -- auraInstanceID), so a plain cooldown stays clean. A secret value renders
+    -- fine via SetText -- the source icon already displays it.
+    if stamped and source == "aura-related-child" and child.cooldownID then
+        local hostState = EnsureState(cdID, nil, viewerCategory)
+        local relState = EnsureState(child.cooldownID, child)
+        if hostState and relState then
+            hostState.auraStackSourceCooldownID = child.cooldownID
+            hostState.auraStackSourceCategory = relState.viewerCategory or GetFrameCategoryName(child)
+            local relText = relState.stackText
+            if (issecretvalue and issecretvalue(relText)) or relText ~= nil then
+                hostState.auraStackText = relText
+                hostState.auraStackTextSource = relState.stackTextSource
+                hostState.auraStackTextShown = relState.stackTextShown
+            elseif not (issecretvalue and issecretvalue(relState.stackTextShown))
+                and relState.stackTextShown == false then
+                ClearCarriedAuraStackState(hostState)
+            end
+        end
+    end
     return stamped
+end
+
+RefreshCarriedAuraStacksFromSource = function(sourceCDID, sourceState)
+    if not (sourceCDID and sourceState) then return end
+    local sourceCategory = sourceState.viewerCategory
+    local sourceText = sourceState.stackText
+    local sourceTextPresent = (issecretvalue and issecretvalue(sourceText)) or sourceText ~= nil
+    local sourceExplicitlyHidden = not (issecretvalue and issecretvalue(sourceState.stackTextShown))
+        and sourceState.stackTextShown == false
+
+    for _, hostState in pairs(_mirrorState) do
+        if hostState
+            and hostState.auraStackSourceCooldownID == sourceCDID
+            and (not hostState.auraStackSourceCategory
+                or not sourceCategory
+                or hostState.auraStackSourceCategory == sourceCategory)
+            and hostState.auraInstanceID then
+            if sourceTextPresent then
+                hostState.auraStackText = sourceText
+                hostState.auraStackTextSource = sourceState.stackTextSource
+                hostState.auraStackTextShown = sourceState.stackTextShown
+                hostState.mirrorEpoch = (hostState.mirrorEpoch or 0) + 1
+                hostState.lastTouch = GetTime()
+                RequestMirrorTextRefreshForState(hostState.cooldownID, hostState, "aura-stack-carry")
+            elseif sourceExplicitlyHidden then
+                ClearCarriedAuraStackState(hostState)
+                hostState.mirrorEpoch = (hostState.mirrorEpoch or 0) + 1
+                hostState.lastTouch = GetTime()
+                RequestMirrorTextRefreshForState(hostState.cooldownID, hostState, "aura-stack-hidden")
+            end
+        end
+    end
 end
 
 -- Per-category seen-set pools. These functions fire per UNIT_AURA × every
@@ -2418,6 +2505,15 @@ CDMBlizzMirror._GetCooldownChargesShown = function(child, s)
         end
         return chargesShown, chargesShownSecret
     end
+    local _, chargeTextOwnerShown = CDMBlizzMirror._GetPackedChargeCountFields(child)
+    local chargeTextOwnerShownSecret = issecretvalue and issecretvalue(chargeTextOwnerShown)
+    if chargeTextOwnerShownSecret or chargeTextOwnerShown ~= nil then
+        if s then
+            s.chargeTextOwnerShown = chargeTextOwnerShown
+            s.cooldownChargesShown = chargeTextOwnerShown
+        end
+        return chargeTextOwnerShown, chargeTextOwnerShownSecret
+    end
     chargesShown, chargesShownSecret = CDMBlizzMirror._SafeFrameShownOrSecretField(child and child.ChargeCount)
     if chargesShownSecret or chargesShown ~= nil then
         if s then
@@ -2463,6 +2559,24 @@ local function CaptureChildStackText(child, source, text, fromTextWrite, textOwn
         end
     end
 
+    if fromTextWrite then
+        if not CanReplaceStackTextSource(s.stackTextSource, source, s.stackTextShown) then
+            return
+        end
+        s.stackText = text
+        s.stackTextSource = source
+        if chargeCountShownSecret then
+            s.stackTextShown = chargeCountShown
+        else
+            s.stackTextShown = true
+        end
+        s.stackTextEpoch = (s.stackTextEpoch or 0) + 1
+        s.lastTouch = GetTime()
+        RequestMirrorTextRefreshForChild(child, cdID, s, "stack-text")
+        RefreshCarriedAuraStacksFromSource(cdID, s)
+        return
+    end
+
     if MirrorStackTextHasDisplay(source, text) then
         if not CanReplaceStackTextSource(s.stackTextSource, source, s.stackTextShown) then
             return
@@ -2477,12 +2591,14 @@ local function CaptureChildStackText(child, source, text, fromTextWrite, textOwn
         s.stackTextEpoch = (s.stackTextEpoch or 0) + 1
         s.lastTouch = GetTime()
         RequestMirrorTextRefreshForChild(child, cdID, s, "stack-text")
+        RefreshCarriedAuraStacksFromSource(cdID, s)
         return
     end
 
     if (not s.stackTextSource or s.stackTextSource == source) and ClearMirrorStackState(s) then
         s.lastTouch = GetTime()
         RequestMirrorTextRefreshForChild(child, cdID, s, "stack-empty")
+        RefreshCarriedAuraStacksFromSource(cdID, s)
     end
 end
 
@@ -2548,7 +2664,18 @@ local function CaptureTextFromOwner(child, source, owner, fromTextWrite)
 end
 
 local function CaptureTextFromPreferredOwner(child, source, owner, readOwner, fallbackText, fromTextWrite)
-    if fromTextWrite and MirrorStackTextHasDisplay(source, fallbackText) then
+    if fromTextWrite then
+        if readOwner and readOwner.GetText then
+            local text = readOwner:GetText()
+            if MirrorStackTextHasDisplay(source, text) then
+                CaptureChildStackText(child, source, text, fromTextWrite, readOwner)
+                return
+            end
+            if fallbackText == nil then
+                CaptureChildStackText(child, source, text, fromTextWrite, readOwner)
+                return
+            end
+        end
         CaptureChildStackText(child, source, fallbackText, fromTextWrite, owner)
         return
     end
@@ -2583,14 +2710,11 @@ local function HookTextOwner(child, source, owner, readOwner)
         if not s then return end
         if s.stackTextSource and s.stackTextSource ~= source then return end
         local changed
-        if source == "ChargeCount" then
-            changed = CDMBlizzMirror._HideMirrorStackState(s, source)
-        else
-            changed = ClearMirrorStackState(s)
-        end
+        changed = CDMBlizzMirror._HideMirrorStackState(s, source)
         if changed then
             s.lastTouch = GetTime()
             RequestMirrorTextRefreshForChild(child, cdID, s, source == "ChargeCount" and "stack-hidden" or "stack-clear")
+            RefreshCarriedAuraStacksFromSource(cdID, s)
         end
     end
 
@@ -2615,18 +2739,14 @@ local function HookTextOwner(child, source, owner, readOwner)
         hooksecurefunc(owner, "Hide", function()
             mirrorHookStats.show = mirrorHookStats.show + 1
             CDMBlizzMirror._knownShownByFrame[owner] = false
-            if source == "ChargeCount" then
-                ClearChildStackText()
-            else
-                CaptureTextFromPreferredOwner(child, source, owner, readOwner)
-            end
+            ClearChildStackText()
         end)
     end
     if owner.SetShown then
         hooksecurefunc(owner, "SetShown", function(_, shown)
             mirrorHookStats.show = mirrorHookStats.show + 1
             local decodedShown = CDMBlizzMirror._RememberKnownShown(owner, shown)
-            if source == "ChargeCount" and decodedShown == false then
+            if decodedShown == false then
                 CDMBlizzMirror._knownShownByFrame[owner] = false
                 ClearChildStackText()
             else
@@ -4074,8 +4194,8 @@ end
 ---------------------------------------------------------------------------
 -- Totem-backed mirror state.
 --
--- Some Blizzard CDM children (e.g. Anti-Magic Zone) are activated by a
--- totem on the player, not by an aura. Their visual is driven via a
+-- Some Blizzard CDM children are activated by a totem on the player,
+-- not by an aura. Their visual is driven via a
 -- PLAYER_TOTEM_UPDATE-bound mixin path that bypasses the 5 Cooldown setter
 -- hooks above; without a separate handler m.isActive stays false forever
 -- and the icon never pops in.
@@ -4447,7 +4567,7 @@ _eventFrame:RegisterEvent("SPELL_UPDATE_USES")
 -- become stale immediately. Re-capture so the new target's existing
 -- debuffs get fresh instIDs without waiting for a UNIT_AURA tick.
 _eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
--- Totem-backed CDM entries (Anti-Magic Zone, etc.) — only signal we get
+-- Totem-backed CDM entries: only signal we get
 -- when the Blizzard mixin's totem-driven path activates the child.
 _eventFrame:RegisterEvent("PLAYER_TOTEM_UPDATE")
 
@@ -4574,9 +4694,9 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
     end
 
     Walk()
-    -- Bootstrap totem-backed mirror state too: a /reload mid-AMZ would
-    -- otherwise wait for the next totem state change before flipping
-    -- isActive=true on the matching cdID.
+    -- Bootstrap totem-backed mirror state too: a reload during an active
+    -- totem would otherwise wait for the next totem state change before
+    -- flipping isActive=true on the matching cdID.
     HandlePlayerTotemUpdate()
     CDMBlizzMirror.SyncSuppressionToMaster()
 end)

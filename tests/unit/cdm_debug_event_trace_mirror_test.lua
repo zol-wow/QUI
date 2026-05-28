@@ -1,5 +1,6 @@
 -- tests/unit/cdm_debug_event_trace_mirror_test.lua
 -- Run: lua tests/unit/cdm_debug_event_trace_mirror_test.lua
+-- luacheck: globals GetTime CreateFrame print
 
 SlashCmdList = {}
 
@@ -69,10 +70,53 @@ local icon = {
     _lastAuraSourceID = "aura-related-child:71001:12",
     _auraInstanceID = 422,
     _auraUnit = "player",
+    _activeAuraSpellID = 48707,
     IsShown = function() return true end,
 }
 
+local bar = {
+    _spellID = 48707,
+    _spellEntry = {
+        id = 999001,
+        spellID = 999001,
+        overrideSpellID = 999002,
+        cooldownID = 71001,
+        name = "Mirror Backed",
+        viewerType = "buff",
+        linkedSpellIDs = { 999003 },
+    },
+    _active = true,
+    _auraInstanceID = 422,
+    _auraUnit = "player",
+    _auraDataUnit = "player",
+    _durObj = {
+        HasSecretValues = function() return false end,
+        IsZero = function() return false end,
+    },
+    _cSideFill = true,
+    _hasAuraExpirationTime = true,
+    _cdmRuntimeState = {
+        mode = "aura",
+        active = true,
+        auraUnit = "player",
+        countValue = 3,
+        countShown = true,
+        countSource = "aura",
+        mirrorBacked = true,
+        mirrorSourceID = "aura-related-child:71001:12",
+    },
+    IsShown = function() return true end,
+}
+
+local secretSpellID = { token = "secret-spell-id" }
+local filterQueries = {}
+
 local ns = {
+    Helpers = {
+        IsSecretValue = function(value)
+            return value == secretSpellID
+        end,
+    },
     CDMIcons = {
         IsRuntimeEnabled = function() return true end,
     },
@@ -86,6 +130,11 @@ local ns = {
             if cooldownID == 71001 and category == "buff" then
                 return mirrorState
             end
+        end,
+    },
+    CDMBars = {
+        GetActiveBars = function()
+            return { bar }
         end,
     },
     CDMSources = {
@@ -114,6 +163,20 @@ local ns = {
                 return "Debug Item Use", 555001
             end
             return nil, nil
+        end,
+        QueryAuraFilteredOutByInstanceID = function(unit, auraInstanceID, filter)
+            filterQueries[#filterQueries + 1] = {
+                unit = unit,
+                auraInstanceID = auraInstanceID,
+                filter = filter,
+            }
+            if unit == "target" and auraInstanceID == 9052 and filter == "HELPFUL|PLAYER" then
+                return false
+            end
+            if unit == "target" and auraInstanceID == 9052 and filter == "HARMFUL|PLAYER" then
+                return true
+            end
+            return nil
         end,
     },
     CDMResolvers = {
@@ -144,6 +207,47 @@ assert(summary:find("eov=999002", 1, true),
     "event trace summary should include the entry override ID")
 assert(summary:find("elinks=999003", 1, true),
     "event trace summary should include entry linked spell IDs")
+assert(summary:find("auraInst=422", 1, true),
+    "event trace summary should include the icon aura instance")
+assert(summary:find("activeAura=48707", 1, true),
+    "event trace summary should include the active aura spell")
+
+local barSummary = ns.CDMIcons.EventTraceBarSummary(48707)
+assert(barSummary:find("bars=1", 1, true),
+    "event trace bar summary should include matching bars")
+assert(barSummary:find("auraInst=422", 1, true),
+    "event trace bar summary should include the bar aura instance")
+assert(barSummary:find("auraUnit=player", 1, true),
+    "event trace bar summary should include the bar aura unit")
+
+local auraInfo = ns.CDMIcons.EventTraceAuraInfo({
+    isFullUpdate = false,
+    addedAuras = { {} },
+    updatedAuraInstanceIDs = { 422 },
+    removedAuraInstanceIDs = { 411, 412 },
+})
+assert(auraInfo:find("updatedIDs=422", 1, true),
+    "event trace aura info should expose NeverSecret updated aura instance IDs")
+assert(auraInfo:find("removedIDs=411,412", 1, true),
+    "event trace aura info should expose NeverSecret removed aura instance IDs")
+
+local targetAuraInfo = ns.CDMIcons.EventTraceAuraInfo("target", {
+    isFullUpdate = false,
+    addedAuras = {
+        {
+            auraInstanceID = 9052,
+            spellId = secretSpellID,
+            name = "Target Aura",
+            isHelpful = true,
+            isHarmful = false,
+            sourceUnit = "player",
+        },
+    },
+})
+assert(targetAuraInfo:find("addedAuras=[#1 inst=9052 sid=<SECRET:table> name=Target Aura help=true harm=false src=player helpfulPlayer=true harmfulPlayer=false]", 1, true),
+    "event trace aura info should expose added aura identity and target ownership filter results")
+assert(#filterQueries == 2,
+    "event trace aura info should query both target player-owned filters for clean aura instance IDs")
 
 local writeState = ns.CDMIcons.EventTraceIconWriteState(icon)
 assert(writeState:find("eid=999001", 1, true),
@@ -211,6 +315,34 @@ assert(captured[3]:find("throttled=1", 1, true),
     "event trace throttle should report suppressed event lines")
 assert(captured[4]:find("throttled=1", 1, true),
     "event trace throttle should report suppressed write lines")
+
+captured = {}
+print = function(...)
+    local parts = {}
+    for i = 1, select("#", ...) do
+        parts[#parts + 1] = tostring(select(i, ...))
+    end
+    captured[#captured + 1] = table.concat(parts, " ")
+end
+
+ns.CDMIcons._eventTraceSpellID = 48707
+ns.CDMIcons._eventTraceStartedAt = 20
+ns.CDMIcons._eventTraceMinInterval = 0.5
+ns.CDMIcons._eventTraceLastPrintAt = {}
+ns.CDMIcons._eventTraceSuppressed = {}
+
+now = 20.00
+ns.CDMIcons.EventTracePrint("aura-pre", "UNIT_AURA", "player", nil, nil, "aura full=false updated=1 updatedIDs=422")
+ns.CDMIcons.EventTracePrint("aura-post", "UNIT_AURA", "player", nil, nil, "aura full=false updated=1 updatedIDs=422")
+
+print = originalPrint
+
+assert(#captured == 2,
+    "aura pre/post trace lines should use separate throttle channels")
+assert(captured[2]:find("aura-post:UNIT_AURA", 1, true),
+    "aura post trace should be visible after the resolver updates state")
+assert(captured[2]:find("bars=1", 1, true),
+    "aura post trace should include matching bar aura state")
 
 ns.CDMIcons._eventTraceSpellID = nil
 ns.CDMIcons._eventTraceStartedAt = nil

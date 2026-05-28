@@ -112,6 +112,46 @@ local function RearmVisibleDurationBarTimer(bar, deferOneFrame)
     return ok
 end
 
+local function AuraInstanceListContains(list, auraInstanceID)
+    if type(list) ~= "table" or auraInstanceID == nil then return false end
+    for _, listedAuraInstanceID in ipairs(list) do
+        if listedAuraInstanceID == auraInstanceID then
+            return true
+        end
+    end
+    return false
+end
+
+local function BarAuraUnitMatches(bar, unit)
+    if not unit then return true end
+    local barUnit = bar and (bar._auraUnit or bar._auraDataUnit)
+    return barUnit == nil or barUnit == unit
+end
+
+function CDMBars.MarkBarAuraRefresh(bar, unit, updateInfo)
+    if not (bar and bar._active and BarAuraUnitMatches(bar, unit)) then
+        return false
+    end
+
+    local auraInstanceID = bar._auraInstanceID
+    if updateInfo == nil or updateInfo.isFullUpdate == true then
+        if auraInstanceID ~= nil or bar._durObj ~= nil then
+            bar._forceTimerDurationRebind = true
+            return true
+        end
+        return false
+    end
+
+    if auraInstanceID == nil then return false end
+    if AuraInstanceListContains(updateInfo.updatedAuraInstanceIDs, auraInstanceID)
+        or AuraInstanceListContains(updateInfo.removedAuraInstanceIDs, auraInstanceID) then
+        bar._forceTimerDurationRebind = true
+        return true
+    end
+
+    return false
+end
+
 ---------------------------------------------------------------------------
 -- STATE
 ---------------------------------------------------------------------------
@@ -748,8 +788,11 @@ local function ReleaseBar(bar)
     bar._spellID = nil
     bar._instanceKey = nil
     bar._active = false
+    bar._auraUnit = nil
+    bar._auraInstanceID = nil
     bar._cSideFill = nil
     bar._preferDurObjFill = nil
+    bar._forceTimerDurationRebind = nil
     bar._timerShowRearmPending = nil
     bar._lastPosKey = nil
     bar._lastAnchor = nil
@@ -786,6 +829,16 @@ end
 
 function CDMBars:GetActiveBars()
     return barPool
+end
+
+function CDMBars:MarkAuraRefresh(unit, updateInfo)
+    local marked = false
+    for _, bar in ipairs(barPool) do
+        if CDMBars.MarkBarAuraRefresh(bar, unit, updateInfo) then
+            marked = true
+        end
+    end
+    return marked
 end
 
 -- Aggressive reset: clear per-bar caches stamped during totem/aura
@@ -1162,27 +1215,31 @@ local _barCooldownStateContextOptions = {
     fallbackContainerKey = "trackedBar",
 }
 
-local function GetBarFrameState(bar)
-    local store = ns.CDMRuntimeStore
-    if store and store.GetFrameState then
-        return store.GetFrameState(bar)
-    end
-    return bar and bar._cdmRuntimeState or nil
-end
-
 function BuildBarCooldownStateContext(bar, entry, spellID)
     local resolvers = ns.CDMResolvers
     local builder = resolvers and resolvers.BuildCooldownStateContext
     if not builder then return nil end
 
     local options = _barCooldownStateContextOptions
-    local frameState = GetBarFrameState(bar)
     options.containerKey = entry and entry.viewerType
     options.totemSlot = bar and bar._totemSlot
     options.useBuffSwipe = not IsSpellCooldownEntry(entry)
     options.skipAuraPhase = nil
-    options.cachedMirrorState = frameState and frameState.mirrorState or nil
-    options.cachedMirrorSourceID = frameState and frameState.mirrorSourceID or nil
+    -- Do NOT feed a cached mirror state into the resolve. GetStateByCooldownID
+    -- returns a per-key PackState table that is only refreshed when it is
+    -- called, and the resolver's cached-state fast path deliberately skips
+    -- re-querying the mirror (asserted by cdm_resolvers_cooldown_state_test).
+    -- So a state cached while an aura was inactive stays frozen at
+    -- mode=inactive even after the buff goes live -- the cross-category
+    -- buff-bar "won't activate until a rebuild / breaks again on /reload" bug.
+    -- A buff-viewer aura (cdID in the buff category) placed in the trackedBar
+    -- container binds correctly but the frozen cache masks its live aura.
+    -- Resolving fresh each poll -- exactly what the icon path does (it never
+    -- feeds a cache) -- reads the live mirror and is cheap at the bar's 0.5s
+    -- cadence; aura-mode fill stays stable via the DurationObject
+    -- userdata-identity check, and cooldown-mode keys off the spellID.
+    options.cachedMirrorState = nil
+    options.cachedMirrorSourceID = nil
     return builder(bar, entry, spellID, options)
 end
 
@@ -1234,6 +1291,8 @@ function CDMBars:UpdateOwnedBarAura(bar)
     if r.isActive then
         bar._active = true
         bar._auraDataUnit = r.auraUnit
+        bar._auraUnit = r.auraUnit
+        bar._auraInstanceID = r.auraInstanceID
         bar._hasAuraExpirationTime = r.hasExpirationTime
         bar._hideDurationText = ShouldHideAuraDurationText(r)
             or GetBarSpellHideDurationOverride(bar)
@@ -1253,6 +1312,7 @@ function CDMBars:UpdateOwnedBarAura(bar)
             bar._durObj = nil
             bar._cSideFill = nil
             bar._preferDurObjFill = nil
+            bar._forceTimerDurationRebind = nil
             bar._lastDurationText = nil
             bar._lastDurationBucket = nil
             bar._totalDuration = nil
@@ -1286,6 +1346,7 @@ function CDMBars:UpdateOwnedBarAura(bar)
         local durObj = r.durObj
         if durObj and not bar._hideDurationText then
             local prevDurObj = bar._durObj
+            local forceRebind = bar._forceTimerDurationRebind == true
             bar._durObj = durObj
             local canUseTimerDuration = bar.StatusBar and bar.StatusBar.SetTimerDuration
             bar._preferDurObjFill = canUseTimerDuration and true or nil
@@ -1295,13 +1356,14 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 -- and cause visible flickering.  Detect aura refreshes
                 -- by comparing the DurationObject reference (C userdata
                 -- identity check — safe in combat, no secret values).
-                if durObj ~= prevDurObj then
+                if forceRebind or durObj ~= prevDurObj then
                     if canUseTimerDuration then
                         local ok = SetStatusBarTimerDuration(bar.StatusBar, durObj)
                         if not ok then
                             bar._preferDurObjFill = nil
                             bar._cSideFill = nil
                         end
+                        bar._forceTimerDurationRebind = nil
                     end
                 end
             elseif bar.StatusBar then
@@ -1313,6 +1375,7 @@ function CDMBars:UpdateOwnedBarAura(bar)
                         bar._preferDurObjFill = nil
                         bar._cSideFill = nil
                     end
+                    bar._forceTimerDurationRebind = nil
                 end
             end
 
@@ -1417,9 +1480,12 @@ function CDMBars:UpdateOwnedBarAura(bar)
         end
     else
         bar._active = false
+        bar._auraUnit = nil
+        bar._auraInstanceID = nil
         bar._durObj = nil
         bar._cSideFill = nil
         bar._preferDurObjFill = nil
+        bar._forceTimerDurationRebind = nil
         bar._totalDuration = nil
         bar._expirationTime = nil
         bar._hideDurationText = nil

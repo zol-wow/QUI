@@ -959,11 +959,19 @@ function CDMIconStackPolicy.Create(callbacks)
     local function MirrorStateEffectiveCooldownChargesShown(m)
         local cooldownChargesShown, cooldownChargesShownSecret =
             BooleanOrSecret(m and m.cooldownChargesShown)
+        local chargeCountFrameShown, chargeCountFrameShownSecret =
+            BooleanOrSecret(m and m.chargeCountFrameShown)
+        local chargeTextOwnerShown, chargeTextOwnerShownSecret =
+            BooleanOrSecret(m and m.chargeTextOwnerShown)
+        -- Secret show gates are not decoded here. Keep them intact so the
+        -- FontString alpha sink can evaluate them with C_CurveUtil and avoid
+        -- hiding valid cast-count text from a stale clean parent frame state.
         if BooleanOrSecretIsPresent(cooldownChargesShown, cooldownChargesShownSecret) then
             return cooldownChargesShown, cooldownChargesShownSecret
         end
-        local chargeCountFrameShown, chargeCountFrameShownSecret =
-            BooleanOrSecret(m and m.chargeCountFrameShown)
+        if BooleanOrSecretIsPresent(chargeTextOwnerShown, chargeTextOwnerShownSecret) then
+            return chargeTextOwnerShown, chargeTextOwnerShownSecret
+        end
         if BooleanOrSecretIsPresent(chargeCountFrameShown, chargeCountFrameShownSecret) then
             return chargeCountFrameShown, chargeCountFrameShownSecret
         end
@@ -986,7 +994,44 @@ function CDMIconStackPolicy.Create(callbacks)
             and MirrorStateChargeCountShown(m) == true
     end
 
-    local function ResolveMirrorStackTextFromState(m, cooldownChargeAuthority)
+    -- The borrowed cross-category aura applications value is captured from the
+    -- source child via two owners -- the raw SetText(number) argument and the
+    -- rendered owner:GetText() string -- which alternate per UNIT_AURA. Returning
+    -- a numeric value verbatim makes the essential icon's count flip secret-number
+    -- <-> secret-string every refresh (a visible flicker). Coerce a numeric value
+    -- to the rendered string the buff icon shows (C_StringUtil.TruncateWhenZero,
+    -- the secret-safe number->display path the working aura-stack write uses), so
+    -- consecutive frames write a stable glyph. type() is safe on secret values.
+    -- NOTE: scoped to the carried aura value only -- coercing the resolver's other
+    -- return paths regressed the buff icon and the host ChargeCount, so don't.
+    local function StabilizeMirrorAuraStackText(value)
+        if type(value) == "number" and C_StringUtil and C_StringUtil.TruncateWhenZero then
+            return C_StringUtil.TruncateWhenZero(value)
+        end
+        return value
+    end
+
+    local function ResolveMirrorStackTextFromState(m, cooldownChargeAuthority, auraRenderActive)
+        -- Cross-category aura: the host child carries only its own (chargeless)
+        -- ChargeCount text, but the borrowed aura's real applications text was
+        -- captured from the source child onto auraStackText (see
+        -- CaptureAuraInstanceFromChildFrame). Prefer it so the essential icon
+        -- shows the same count the buff/tracked icon shows. A secret value
+        -- renders fine via SetText (the source icon proves it); only the
+        -- chargeless ChargeCount secret paints blank.
+        --
+        -- Gated on auraRenderActive: the carried count belongs to the borrowed
+        -- aura, so it must only show while the icon is actually rendering that
+        -- aura. When the icon is on cooldown (debuff still up but the spell's
+        -- own cooldown is showing) or the viewer is configured not to show the
+        -- aura phase, the resolved mode is not "aura" and the count stays off.
+        if auraRenderActive
+            and controller:ValueIsPresent(m.auraStackText)
+            and SafeBoolean(m.auraStackTextShown) ~= false then
+            return StabilizeMirrorAuraStackText(m.auraStackText),
+                m.auraStackTextSource or "Applications", nil, true, m.auraStackTextShown
+        end
+
         local mirrorIsCharge = SafeBoolean(m.charges) == true
             or SafeBoolean(m.hasCharges) == true
             or SafeBoolean(m.wasSetFromCharges) == true
@@ -1034,7 +1079,12 @@ function CDMIconStackPolicy.Create(callbacks)
         end
 
         if stackIsVisible and controller:ValueIsPresent(stackText) then
-            return stackText, m.stackTextSource or "Applications", nil, true
+            local source = m.stackTextSource or "Applications"
+            local visibilityGate
+            if source ~= "ChargeCount" then
+                visibilityGate = m.stackTextShown
+            end
+            return stackText, source, nil, true, visibilityGate
         end
 
         if countTextPresent
@@ -1100,6 +1150,19 @@ function CDMIconStackPolicy.Create(callbacks)
         return not controller:ValueIsPresent(value)
     end
 
+    local function AuraCountTextHasDisplay(value)
+        if issecretvalue(value) then
+            return true
+        end
+        if type(value) == "number" then
+            return value > 0
+        end
+        if type(value) == "string" then
+            return value ~= "" and value ~= "0"
+        end
+        return value ~= nil
+    end
+
     function controller:Clear(icon)
         local sink = Sink()
         if sink and sink.Clear then
@@ -1138,20 +1201,41 @@ function CDMIconStackPolicy.Create(callbacks)
     function controller:GetAuraApplicationsFromData(auraData, unit, source)
         if not auraData then return nil end
 
-        local apps = controller:GetDisplayableAuraApplicationsFromData(auraData)
-        if controller:ValueIsPresent(apps) then
-            return apps, source
-        end
-
+        -- C-side display-count sink first: it accepts the (possibly secret) instance
+        -- ID and returns a secret-safe display string we forward verbatim to SetText
+        -- -- a secret applications value is never Lua-compared. minDisplayCount = 1 so
+        -- abilities that count from 1 (e.g. Reaper's Mark) show their stack.
         local auraInstanceID = callbacks.getAuraDataInstanceID
             and callbacks.getAuraDataInstanceID(auraData)
             or auraData.auraInstanceID
         local sources = Sources()
         if auraInstanceID and sources and sources.QueryAuraApplicationDisplayCount then
-            local stacks = sources.QueryAuraApplicationDisplayCount(unit or "player", auraInstanceID, 2, 99)
-            if stacks ~= nil then
+            local stacks = sources.QueryAuraApplicationDisplayCount(unit or "player", auraInstanceID, 1, 99)
+            if AuraCountTextHasDisplay(stacks) then
                 return stacks, "display-count"
             end
+        end
+
+        -- No instance to query (out-of-combat name/data fallbacks only): a confirmed
+        -- non-secret count. GetDisplayableAuraApplicationsFromData secret-guards before
+        -- its Lua comparison, so a secret value never reaches a Lua compare here either.
+        local apps = controller:GetDisplayableAuraApplicationsFromData(auraData)
+        if controller:ValueIsPresent(apps) then
+            return apps, source
+        end
+
+        return nil
+    end
+
+    function controller:GetAuraApplicationsForInstance(unit, auraInstanceID, source, minApplications)
+        local sources = Sources()
+        if not (unit and auraInstanceID and sources and sources.QueryAuraApplicationDisplayCount) then
+            return nil
+        end
+
+        local stacks = sources.QueryAuraApplicationDisplayCount(unit, auraInstanceID, minApplications or 1, 99)
+        if AuraCountTextHasDisplay(stacks) then
+            return stacks, source or "display-count"
         end
 
         return nil
@@ -1463,8 +1547,9 @@ function CDMIconStackPolicy.Create(callbacks)
         StampIconMirrorCountFields(icon, m)
         local entry = icon and icon._spellEntry
         local cooldownChargeAuthority = not (entry and IsAuraEntry(entry))
+        local auraRenderActive = icon and icon._resolvedCooldownMode == "aura"
         local stackText, stackSource, stackHidden, hasState =
-            ResolveMirrorStackTextFromState(m, cooldownChargeAuthority)
+            ResolveMirrorStackTextFromState(m, cooldownChargeAuthority, auraRenderActive)
         return stackText, stackSource, true, stackHidden, hasState
     end
 
@@ -1475,6 +1560,27 @@ function CDMIconStackPolicy.Create(callbacks)
         local entry = icon._spellEntry
 
         if IsAuraEntry(entry) then
+            -- Mirror-primary. A mirror-backed aura's captured frame text is the
+            -- authoritative source in combat: target-debuff C_UnitAuras data is
+            -- restricted there, so the live GetApplications query returns nothing
+            -- even for a debuff that genuinely stacks (e.g. Reaper's Mark). The
+            -- Blizzard CDM mirror child captured the rendered count, so prefer it.
+            -- The secret stack value forwards verbatim to the FontString -- it is
+            -- never Lua-compared (a secret applications value can't be). This is
+            -- the same frame text the essential icon borrows via the cross-category
+            -- carry; the live query below is only the out-of-combat / non-mirrored
+            -- fallback.
+            local mirrorText, mirrorSource, mirrorBacked, mirrorStackHidden =
+                controller:ResolveMirrorStackText(icon)
+            if controller:TextHasDisplay(mirrorText) then
+                return mirrorText, mirrorSource or "Applications", true, mirrorStackHidden
+            end
+
+            local mirrorTextKnown = controller:ValueIsPresent(mirrorText)
+            if mirrorBacked and (mirrorTextKnown or mirrorStackHidden) then
+                return nil, mirrorSource, true, mirrorStackHidden
+            end
+
             local active, auraUnit, instID
             if callbacks.resolveAuraActiveState then
                 active, auraUnit, instID = callbacks.resolveAuraActiveState(entry)
@@ -1482,7 +1588,7 @@ function CDMIconStackPolicy.Create(callbacks)
             local auraRuntime = AuraRuntime()
             if active and instID and auraRuntime and auraRuntime.GetApplications then
                 local resolved, stacks = auraRuntime.GetApplications(auraUnit or "player", instID)
-                if resolved and stacks ~= nil then
+                if resolved and AuraCountTextHasDisplay(stacks) then
                     return stacks, "Applications"
                 end
             end
@@ -1501,7 +1607,7 @@ function CDMIconStackPolicy.Create(callbacks)
 
         local mirrorText, mirrorSource, mirrorBacked, mirrorStackHidden =
             controller:ResolveMirrorStackText(icon)
-        if controller:ValueIsPresent(mirrorText) then
+        if controller:TextHasDisplay(mirrorText) then
             return mirrorText, mirrorSource, true, mirrorStackHidden
         end
         if mirrorBacked then
@@ -1606,7 +1712,7 @@ function CDMIconStackPolicy.Create(callbacks)
         end
 
         if controller:ValueIsPresent(count.sinkText) or showZero then
-            if showZero or controller:TextHasDisplay(stackValue) then
+            if showZero or count.mirrorAuthoritative or AuraCountTextHasDisplay(stackValue) then
                 local sink = Sink()
                 if sink and sink.Show then
                     sink.Show(icon, stackValue, count.source or "Applications", count.visibilityGate)
@@ -1626,7 +1732,7 @@ function CDMIconStackPolicy.Create(callbacks)
             displayText = C_StringUtil.TruncateWhenZero(stackValue)
         end
 
-        if controller:TextHasDisplay(displayText) then
+        if count.mirrorAuthoritative or AuraCountTextHasDisplay(displayText) then
             local sink = Sink()
             if sink and sink.Show then
                 sink.Show(icon, displayText, count.source or "Applications", count.visibilityGate)
@@ -1648,8 +1754,9 @@ function CDMIconStackPolicy.Create(callbacks)
         StampIconMirrorCountFields(icon, mirrorState)
         local entry = icon and icon._spellEntry
         local cooldownChargeAuthority = not (entry and IsAuraEntry(entry))
-        local stackText, stackSource, stackHidden =
-            ResolveMirrorStackTextFromState(mirrorState, cooldownChargeAuthority)
+        local auraRenderActive = icon and icon._resolvedCooldownMode == "aura"
+        local stackText, stackSource, stackHidden, _, visibilityGate =
+            ResolveMirrorStackTextFromState(mirrorState, cooldownChargeAuthority, auraRenderActive)
         if stackHidden or controller:ValueIsMissing(stackText) then
             return false
         end
@@ -1663,7 +1770,11 @@ function CDMIconStackPolicy.Create(callbacks)
         count.value = stackText
         count.shown = true
         count.source = stackSource or "Applications"
-        count.visibilityGate = MirrorStateEffectiveCooldownChargesShown(mirrorState)
+        count.visibilityGate = visibilityGate
+        if not issecretvalue(count.visibilityGate) and count.visibilityGate == nil then
+            count.visibilityGate = MirrorStateEffectiveCooldownChargesShown(mirrorState)
+        end
+        count.mirrorAuthoritative = true
 
         controller:ApplyAuraCountText(icon, count, showZero, true)
         icon._lastMirrorStackTextEpoch = mirrorState.stackTextEpoch
@@ -2085,6 +2196,19 @@ end
 
 local function isAuraEntry(callbacks, entry)
     return callbacks.isAuraEntry and callbacks.isAuraEntry(entry) or false
+end
+
+local function isSelfAuraUnit(unit)
+    return unit == "player" or unit == "pet" or unit == "vehicle"
+end
+
+local function listHasEntries(list)
+    return type(list) == "table" and #list > 0
+end
+
+local function auraDeltaShouldWakeAuraEntries(unit, updateInfo)
+    if not (updateInfo and listHasEntries(updateInfo.addedAuras)) then return false end
+    return isSelfAuraUnit(unit) or unit == "target"
 end
 
 local function isItemEntry(entry)
@@ -2542,6 +2666,8 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         wipe(spellIDs)
         local hasSpellIDs = false
 
+        local wakeAuraEntries = auraDeltaShouldWakeAuraEntries(unit, updateInfo)
+
         if updateInfo.addedAuras then
             for _, auraData in ipairs(updateInfo.addedAuras) do
                 local auraInstanceID = auraData and auraData.auraInstanceID
@@ -2572,7 +2698,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             end
         end
 
-        if not hasIDs and not hasSpellIDs then return 0 end
+        if not hasIDs and not hasSpellIDs and not wakeAuraEntries then return 0 end
 
         local refreshed = 0
         local batchStarted = false
@@ -2597,6 +2723,9 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 end
                 if not matches
                     and itemEntryMatchesAuraSpellIdentifierSet(callbacks, entry, spellIDs, hasSpellIDs) then
+                    matches = true
+                end
+                if not matches and wakeAuraEntries and isAuraEntry(callbacks, entry) then
                     matches = true
                 end
                 if matches and entry then
@@ -2955,12 +3084,15 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         if not isRuntimeEnabled(callbacks) then return end
         if callbacks.eventTracePrint then
             callbacks.eventTracePrint("aura-pre", "UNIT_AURA", unit, nil, nil,
-                callbacks.eventTraceAuraInfo and callbacks.eventTraceAuraInfo(updateInfo))
+                callbacks.eventTraceAuraInfo and callbacks.eventTraceAuraInfo(unit, updateInfo))
         end
 
         if callbacks.requestStackTextUpdate then
             callbacks.requestStackTextUpdate()
         end
+
+        local barsMarked = callbacks.markBarsForAuraRefresh
+            and callbacks.markBarsForAuraRefresh(unit, updateInfo) == true
 
         if not updateInfo or updateInfo.isFullUpdate then
             if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
@@ -2968,7 +3100,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
         else
             local refreshed = controller:ApplyAuraInstances(unit, updateInfo) or 0
-            if refreshed > 0 then
+            if refreshed > 0 or barsMarked then
                 if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
                 if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
             end
@@ -2976,7 +3108,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
 
         if callbacks.eventTracePrint then
             callbacks.eventTracePrint("aura-post", "UNIT_AURA", unit, nil, nil,
-                callbacks.eventTraceAuraInfo and callbacks.eventTraceAuraInfo(updateInfo))
+                callbacks.eventTraceAuraInfo and callbacks.eventTraceAuraInfo(unit, updateInfo))
         end
     end
 
@@ -5203,6 +5335,16 @@ local function SafeBoolean(val)
     return nil
 end
 
+local function SafeRuntimeString(val)
+    if issecretvalue and issecretvalue(val) then
+        return nil
+    end
+    if type(val) == "string" and val ~= "" then
+        return val
+    end
+    return nil
+end
+
 function _resolverRuntimePolicy.ApplyDurationObjectCooldown(cd, durObj, clearWhenZero, reverse)
     if ns.CDMRenderers and ns.CDMRenderers.ApplyDurationObjectCooldown then
         return ns.CDMRenderers.ApplyDurationObjectCooldown(cd, durObj, clearWhenZero, reverse)
@@ -5790,12 +5932,36 @@ local function ChargeSpellShouldStaySaturated(icon, entry)
     return cdInfo.isActive == false
 end
 
-local function ApplyCooldownDesaturation(icon, entry, settings, resolvedMode)
+-- Step curve mapping the real-CD-only remaining-percent to a desaturation
+-- amount for Texture:SetDesaturation: 0% remaining (real CD done / GCD-only /
+-- ready) -> 0 (saturated/bright); any positive remaining (real CD rolling) ->
+-- 1 (desaturated/dark). The near-instant 0..0.02 ramp keeps the snap crisp.
+-- Built once and reused; the DurationObject supplies the live timing C-side.
+local _cooldownDesatCurve = nil   -- nil = unbuilt, false = CurveUtil unavailable
+local function GetCooldownDesatCurve()
+    if _cooldownDesatCurve ~= nil then
+        return _cooldownDesatCurve or nil
+    end
+    if not (C_CurveUtil and C_CurveUtil.CreateCurve) then
+        _cooldownDesatCurve = false
+        return nil
+    end
+    local curve = C_CurveUtil.CreateCurve()
+    curve:AddPoint(-1.0, 0)  -- expired / negative percent -> bright
+    curve:AddPoint(0.0, 0)   -- 0% remaining -> bright
+    curve:AddPoint(0.02, 1)  -- any meaningful remaining -> dark
+    curve:AddPoint(1.0, 1)   -- full -> dark
+    _cooldownDesatCurve = curve
+    return curve
+end
+
+local function ApplyCooldownDesaturation(icon, entry, settings, resolvedMode, resolvedSpellID, resolvedDurObj)
     if not icon or not entry or not icon.Icon or not icon.Icon.SetDesaturated then
         return
     end
 
     settings = settings or ResolveTrackerSettingsNow(entry.viewerType)
+    resolvedMode = resolvedMode or icon._resolvedCooldownMode
 
     local showOnlyCooldownMode = settings and settings.showOnlyOnCooldown == true
     local customBar = IsCustomBarSettingsNow(settings)
@@ -5811,7 +5977,6 @@ local function ApplyCooldownDesaturation(icon, entry, settings, resolvedMode)
         shouldDesaturate = false
     end
 
-    resolvedMode = resolvedMode or icon._resolvedCooldownMode
     local hasRealCD = icon._hasCooldownActive == true
         and resolvedMode ~= "aura"
         and resolvedMode ~= "gcd-only"
@@ -5853,16 +6018,47 @@ local function ApplyCooldownDesaturation(icon, entry, settings, resolvedMode)
     -- Desaturation gate: range and usability tints are independent visual
     -- layers and must not factor in here (range red on top of a
     -- desaturated icon is the intended composite).
-    if entry.viewerType ~= "buff"
-       and not auraBlocks
-       and shouldDesaturate
-       and hasRealCD then
-        icon.Icon:SetDesaturated(true)
-        icon._cdDesaturated = true
-    else
+    local gatesAllowCooldownDesat = entry.viewerType ~= "buff"
+        and not auraBlocks
+        and shouldDesaturate
+
+    -- _cdDesaturated is the ownership flag the range/usability grey-out reads
+    -- (UpdateIconRangeUsability, ~cdm_icon_renderer.lua:9790/9801): it means
+    -- "cooldown-desat owns the desaturation channel, don't stomp it". Track the
+    -- resolved mode here exactly as the pre-curve code did so that coordination
+    -- is byte-for-byte unchanged; only the VISUAL saturation moves to the live
+    -- curve drive below.
+    icon._cdDesaturated = (gatesAllowCooldownDesat and hasRealCD) and true or nil
+
+    if not gatesAllowCooldownDesat then
         icon.Icon:SetDesaturated(false)
-        icon._cdDesaturated = nil
+        return
     end
+
+    -- Live, secret-safe saturation drive. resolvedMode is Lua-decoded and only
+    -- re-decided on the next SPELL_UPDATE_COOLDOWN, so a mode-gated
+    -- SetDesaturated lagged the real-CD->GCD transition by up to a GCD (the
+    -- icon stayed dark for seconds after the real cooldown ended -- see the
+    -- ApplyResolvedCooldown call site). Instead bind the real-CD-only
+    -- (ignoreGCD) DurationObject through a step curve straight into
+    -- SetDesaturation: dark while the real CD rolls, bright the instant it
+    -- reaches zero, re-sampled C-side every frame with the secret value never
+    -- read in Lua. GCD-only / ready periods report zero real-CD remaining ->
+    -- 0 -> bright. Falls back to the mode-based boolean only when the
+    -- DurationObject or CurveUtil is unavailable.
+    local realCdDur = resolvedMode == "item-cooldown" and resolvedDurObj or nil
+    if not realCdDur and resolvedSpellID and Sources and Sources.QuerySpellCooldownDuration then
+        realCdDur = Sources.QuerySpellCooldownDuration(resolvedSpellID, true)
+    end
+    local curve = realCdDur and GetCooldownDesatCurve()
+    if realCdDur and curve and realCdDur.EvaluateRemainingPercent
+        and icon.Icon.SetDesaturation then
+        icon.Icon:SetDesaturation(realCdDur:EvaluateRemainingPercent(curve))
+        return
+    end
+
+    -- Fallback: mode-based boolean (pre-curve behavior).
+    icon.Icon:SetDesaturated(hasRealCD == true)
 end
 
 local GetRecentCastAliasForEntry
@@ -6500,6 +6696,8 @@ ApplyResolvedCooldown = function(icon, preResolvedState)
     local mirrorBackedDuration = resolvedState.mirrorBacked == true
     local mirrorPayload = mirrorBackedDuration and resolvedState or nil
     icon._resolvedCooldownMode = mode
+    icon._itemAuraCooldownActive = nil
+    icon._itemAuraCooldownDurObj = nil
 
     local sid = resolvedSpellID
     if not sid and entry and not itemEntryForCooldown then
@@ -6552,19 +6750,15 @@ ApplyResolvedCooldown = function(icon, preResolvedState)
     end
     icon._hasCooldownActive = cdActive
     icon._hasRealCooldownActive = cdActive
-    -- Resolver is the single writer of desaturation. Action depends on
-    -- the resolved mode (ApplyCooldownDesaturation's hasRealCD gate at
-    -- cdm_icon_renderer.lua:1217-1220 makes the call):
-    --   * real-CD modes (cooldown / charge / item-cooldown) → desat ON
-    --   * aura / inactive / gcd-only                        → desat OFF
-    -- gcd-only means the visible swipe is a GCD, not a real CD
-    -- (feedback_blizz_cd_state_signals). If the resolver returns gcd-only
-    -- the real CD is either over or shorter than the remaining GCD, so the
-    -- spell is effectively usable and the icon must not be desaturated.
-    -- Without this call the prior real-CD desat=true persists through the
-    -- entire GCD-after-CD-end chain (mode stays gcd-only until GCDs stop),
-    -- leaving the icon greyed out for seconds after the real CD ended.
-    ApplyCooldownDesaturation(icon, entry, nil, mode)
+    -- Resolver is the single writer of desaturation. Saturation is driven by
+    -- the real-CD-only (ignoreGCD) DurationObject through a step curve into
+    -- SetDesaturation (see ApplyCooldownDesaturation): dark while the real CD
+    -- rolls, bright the instant it reaches zero -- re-sampled C-side, so no
+    -- lag and no dependence on the Lua-decoded mode. gcd-only / ready periods
+    -- report zero real-CD remaining and render bright. The resolved (override-
+    -- aware) sid is threaded so override-cooldown spells (e.g. Guardian
+    -- Incarnation) query the spellID that actually carries the real cooldown.
+    ApplyCooldownDesaturation(icon, entry, nil, mode, sid or resolvedSpellID, durObj)
 
     local hasNumericCooldown = resolvedState.numericCooldownActive == true
     local keySource = sourceID
@@ -6954,6 +7148,13 @@ stackPolicy = ns.CDMIconStackPolicy and ns.CDMIconStackPolicy.Create({
 function _resolverRuntimePolicy.GetAuraApplicationsFromData(auraData, unit, source)
     if stackPolicy then
         return stackPolicy:GetAuraApplicationsFromData(auraData, unit, source)
+    end
+    return nil
+end
+
+function _resolverRuntimePolicy.GetAuraApplicationsForInstance(unit, auraInstanceID, source, minApplications)
+    if stackPolicy then
+        return stackPolicy:GetAuraApplicationsForInstance(unit, auraInstanceID, source, minApplications)
     end
     return nil
 end
@@ -8035,7 +8236,9 @@ function _resolverRuntimePolicy.SyncBlizzMirrorIconState(icon)
         or (m.totemSlot and true or false)
         or (m.auraDurObj and true or false)
         or (m.totemDurObj and true or false)
-    local auraUnit = (m.selfAura == false) and "target" or "player"
+    local selfAura = SafeBoolean(m.selfAura)
+    local auraUnit = SafeRuntimeString(m.auraUnit)
+        or ((selfAura == false) and "target" or "player")
 
     local mirrorMod = ns.CDMBlizzMirror
     if _G.QUI_CDM_TAINT_DEBUG and mirrorMod and mirrorMod.TaintLog then
@@ -8380,9 +8583,15 @@ local function UpdateIconCooldownOwned(icon)
             local containerDB = GetTrackerSettings(entry.viewerType)
             local includeUses = containerDB and containerDB.showItemCharges == true
             local count = Sources.QueryItemCount(itemID, false, includeUses, true)
-            if count then
+            local baseCount
+            if includeUses then
+                baseCount = Sources.QueryItemCount(itemID, false, false, true)
+            end
+            if issecretvalue and issecretvalue(count) then
+                _resolverRuntimePolicy.ShowIconStackText(icon, count, containerDB, "item-count")
+            elseif IsSafeNumeric(count) then
                 local stackColor = icon._rowConfig and icon._rowConfig.stackTextColor or {1, 1, 1, 1}
-                local numericCount = count or 0
+                local numericCount = count
                 if numericCount > 1 then
                     if icon.StackText.SetTextColor then
                         icon.StackText:SetTextColor(stackColor[1], stackColor[2], stackColor[3], stackColor[4] or 1)
@@ -8390,12 +8599,20 @@ local function UpdateIconCooldownOwned(icon)
                     _resolverRuntimePolicy.ShowIconStackText(icon, tostring(numericCount), containerDB, "item-count")
                 elseif numericCount == 1 then
                     _resolverRuntimePolicy.HideIconStackText(icon, "item-count-one")
+                elseif includeUses
+                    and (issecretvalue and issecretvalue(baseCount)
+                        or (IsSafeNumeric(baseCount) and baseCount > 0)) then
+                    _resolverRuntimePolicy.HideIconStackText(icon, "item-count-no-uses")
                 else
                     if icon.StackText.SetTextColor then
                         icon.StackText:SetTextColor((stackColor[1] or 1) * 0.5, (stackColor[2] or 1) * 0.5, (stackColor[3] or 1) * 0.5, stackColor[4] or 1)
                     end
                     _resolverRuntimePolicy.ShowIconStackText(icon, "0", containerDB, "item-count-zero")
                 end
+            elseif includeUses
+                and (issecretvalue and issecretvalue(baseCount)
+                    or (IsSafeNumeric(baseCount) and baseCount > 0)) then
+                _resolverRuntimePolicy.HideIconStackText(icon, "item-count-no-uses")
             else
                 _resolverRuntimePolicy.ShowIconStackText(icon, "0", containerDB, "item-count-fallback")
             end
@@ -8741,7 +8958,9 @@ local function UpdateIconCooldownOwned(icon)
                     end
                 else
                     local displayText
-                    if type(stackVal) == "number" then
+                    if issecretvalue and issecretvalue(stackVal) then
+                        displayText = stackVal
+                    elseif type(stackVal) == "number" then
                         if stackSource == "ChargeCount" or stackSource == "spell-charge-count" then
                             displayText = tostring(stackVal)
                         else
@@ -8750,7 +8969,7 @@ local function UpdateIconCooldownOwned(icon)
                     else
                         displayText = stackVal
                     end
-                    local hasText = HookTextHasDisplay(displayText)
+                    local hasText = stackMirrorBacked or HookTextHasDisplay(displayText)
                     if hasText then
                         _resolverRuntimePolicy.ShowIconStackText(icon, displayText, GetTrackerSettings(entry.viewerType), stackSource or "api-aura-stack")
                         if stackMirrorBacked then
@@ -8769,6 +8988,45 @@ local function UpdateIconCooldownOwned(icon)
             elseif not InCombatLockdown() and not runtimeHasCharges then
                 _resolverRuntimePolicy.HideIconStackText(icon, "api-stack-nil")
             end
+        elseif entry.type == "trinket" or entry.type == "slot" then
+            local stackVal
+            local stackSource
+            if resolvedMode == "aura" and icon._auraActive == true then
+                if resolvedState and resolvedState.countShown == true then
+                    stackVal = resolvedState.countSinkText
+                    if _resolverRuntimePolicy.ValueIsMissing(stackVal) then
+                        stackVal = resolvedState.countValue
+                    end
+                    stackSource = resolvedState.countSource
+                end
+                if _resolverRuntimePolicy.ValueIsMissing(stackVal)
+                   and _resolverRuntimePolicy.GetAuraApplicationsForInstance then
+                    stackVal, stackSource = _resolverRuntimePolicy.GetAuraApplicationsForInstance(
+                        icon._auraUnit or (resolvedState and resolvedState.auraUnit) or "player",
+                        icon._auraInstanceID or (resolvedState and resolvedState.auraInstanceID),
+                        "item-aura-stack",
+                        2)
+                end
+            end
+
+            if _resolverRuntimePolicy.ValueIsPresent(stackVal) then
+                local displayText
+                if issecretvalue and issecretvalue(stackVal) then
+                    displayText = stackVal
+                elseif type(stackVal) == "number" then
+                    displayText = C_StringUtil.TruncateWhenZero(stackVal)
+                else
+                    displayText = stackVal
+                end
+                local hasText = HookTextHasDisplay(displayText)
+                if hasText then
+                    _resolverRuntimePolicy.ShowIconStackText(icon, displayText, GetTrackerSettings(entry.viewerType), stackSource or "item-aura-stack")
+                else
+                    _resolverRuntimePolicy.HideIconStackText(icon, "item-aura-stack-empty")
+                end
+            elseif not InCombatLockdown() then
+                _resolverRuntimePolicy.HideIconStackText(icon, "item-aura-stack-nil")
+            end
         elseif entry.type ~= "item" then
             -- Item entries set their bag-count badge above (item-count /
             -- item-count-zero / item-count-fallback writes). Falling
@@ -8776,14 +9034,17 @@ local function UpdateIconCooldownOwned(icon)
             -- HideIconStackText("harvested-stack-nil") for items — their
             -- itemID-as-spellID never resolves an aura — silently
             -- clobbering the count immediately after it was shown.
-            -- Trinket/slot/macro/spell still need this branch: trinket
-            -- and slot already cleared their text so a re-clear is a
-            -- no-op; macro entries in aura-family containers rely on
-            -- this path to clear; spell entries are the primary use.
+            -- Macro/spell entries still need this branch: macro entries
+            -- in aura-family containers rely on this path to clear; spell
+            -- entries are the primary use. Slot/trinket entries use their
+            -- active item aura instance above so the equipment slot number
+            -- is never treated as a spell/count source.
             local stackVal = GetAuraApplicationsForSpell(_runtimeSid, entry, icon)
             if _resolverRuntimePolicy.ValueIsPresent(stackVal) then
                 local displayText
-                if type(stackVal) == "number" then
+                if issecretvalue and issecretvalue(stackVal) then
+                    displayText = stackVal
+                elseif type(stackVal) == "number" then
                     displayText = C_StringUtil.TruncateWhenZero(stackVal)
                 else
                     displayText = stackVal
@@ -10606,8 +10867,8 @@ do
         eventTracePrint = function(...)
             return CDMIcons.EventTracePrint(...)
         end,
-        eventTraceAuraInfo = function(updateInfo)
-            return CDMIcons.EventTraceAuraInfo(updateInfo)
+        eventTraceAuraInfo = function(unit, updateInfo)
+            return CDMIcons.EventTraceAuraInfo(unit, updateInfo)
         end,
         setBarsDirty = function(dirty)
             if updateScheduler then
@@ -10643,6 +10904,12 @@ do
             local mirror = ns.CDMBlizzMirror
             return mirror and mirror.GetStateByCooldownID
                 and mirror.GetStateByCooldownID(cooldownID, category)
+        end,
+        markBarsForAuraRefresh = function(unit, updateInfo)
+            local bars = ns.CDMBars
+            return bars and bars.MarkAuraRefresh
+                and bars:MarkAuraRefresh(unit, updateInfo)
+                or false
         end,
         getItemIDForEntry = GetItemIDForEntry,
         queryItemSpell = function(itemID)

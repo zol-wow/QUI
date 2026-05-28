@@ -721,16 +721,16 @@ local function UpdateHealth(frame)
     end
 
     ApplyHealthFillDirection(frame, settings)
-    
+
     -- Get health values directly - StatusBar can handle secret values
     -- The key is to NOT do any comparisons or arithmetic on these values
     local hp = UnitHealth(unit)
     local maxHP = UnitHealthMax(unit)
-    
+
     -- Pass directly to StatusBar - it handles secret values gracefully
     frame.healthBar:SetMinMaxValues(0, maxHP or 1)
     frame.healthBar:SetValue(hp or 0)
-    
+
     -- Update health text using new display style system
     if frame.healthText then
         -- Check if health text is disabled
@@ -812,7 +812,7 @@ local function UpdateHealth(frame)
             end
         end
     end
-    
+
     -- Update health bar color using unit-specific settings
     local general = GetGeneralSettings()
 
@@ -1163,7 +1163,7 @@ local function UpdatePower(frame)
     frame.powerBar:SetMinMaxValues(0, pMax or 1)
     frame.powerBar:SetValue(p or 0)
     frame.powerBar:Show()
-    
+
     -- Set power color
     if settings.powerBarUsePowerColor ~= false then
         local r, g, b = GetUnitPowerColor(unit)
@@ -1604,7 +1604,7 @@ end
 ---------------------------------------------------------------------------
 local function UpdateFrame(frame)
     if not frame then return end
-    
+
     -- Always update health bar color (for dark mode toggle even when unit doesn't exist)
     if frame.healthBar then
         local general = GetGeneralSettings()
@@ -1659,13 +1659,13 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     -- Boss frames use shared "boss" settings
     local settings = GetUnitSettings("boss")
     local general = GetGeneralSettings()
-    
+
     if not settings then return nil end
-    
+
     -- Create secure button with unique name (QUI_Boss1, QUI_Boss2, etc.)
     local frameName = "QUI_Boss" .. bossIndex
     local frame = CreateFrame("Button", frameName, UIParent, "SecureUnitButtonTemplate, BackdropTemplate, PingableUnitFrameTemplate")
-    
+
     frame.unit = unit  -- "boss1", "boss2", etc.
     frame.unitKey = "boss"  -- Settings key
 
@@ -2364,16 +2364,16 @@ end
 local function CreateUnitFrame(unit, unitKey)
     local settings = GetUnitSettings(unitKey)
     local general = GetGeneralSettings()
-    
+
     if not settings then return nil end
-    
+
     -- Create secure button for click targeting
     local frameName = "QUI_" .. unitKey:gsub("^%l", string.upper)
     local frame = CreateFrame("Button", frameName, UIParent, "SecureUnitButtonTemplate, BackdropTemplate, PingableUnitFrameTemplate")
-    
+
     frame.unit = unit
     frame.unitKey = unitKey
-    
+
     -- Size and position (config values are virtual coords, snap to pixel grid)
     local width = (QUICore.PixelRound and QUICore:PixelRound(settings.width or 220, frame)) or (settings.width or 220)
     local height = (QUICore.PixelRound and QUICore:PixelRound(settings.height or 35, frame)) or (settings.height or 35)
@@ -2391,7 +2391,7 @@ local function CreateUnitFrame(unit, unitKey)
     -- Make it movable in Edit Mode (we'll handle this later)
     frame:SetMovable(true)
     frame:SetClampedToScreen(true)
-    
+
     -- Secure unit attributes for click targeting
     frame:SetAttribute("unit", unit)
     frame:SetAttribute("*type1", "target")      -- Left click = target
@@ -2425,13 +2425,13 @@ local function CreateUnitFrame(unit, unitKey)
         -- Boss frames: show when that boss unit exists
         RegisterStateDriver(frame, "visibility", "[@" .. unit .. ",exists] show; hide")
     end
-    
+
     -- Background
     local bgColor = { 0.1, 0.1, 0.1, 0.9 }
     if general and general.darkMode then
         bgColor = general.darkModeBgColor or { 0.25, 0.25, 0.25, 1 }
     end
-    
+
     -- Pixel-perfect border size
     local borderPx = settings.borderSize or 1
     local borderSize = borderPx > 0 and QUICore:Pixels(borderPx, frame) or 0
@@ -2607,7 +2607,7 @@ local function CreateUnitFrame(unit, unitKey)
     local textFrame = CreateFrame("Frame", nil, frame)
     textFrame:SetAllPoints()
     textFrame:SetFrameLevel(healthBar:GetFrameLevel() + 2)
-    
+
     -- Name text
     local fontPath = GetFontPath()
     local fontOutline = general and general.fontOutline or "OUTLINE"
@@ -2623,7 +2623,7 @@ local function CreateUnitFrame(unit, unitKey)
     nameText:SetJustifyH(nameAnchorInfo.justify)
     nameText:SetTextColor(1, 1, 1, 1)
     frame.nameText = nameText
-    
+
     -- Health text
     local healthFontSize = settings.healthFontSize or 12
     local healthAnchorInfo = GetTextAnchorInfo(settings.healthAnchor or "RIGHT")
@@ -2905,7 +2905,7 @@ local function CreateUnitFrame(unit, unitKey)
             end
         end
     end)
-    
+
     -- Initial update (player frame is always shown, others use state driver)
     if UnitExists(unit) or unitKey == "player" then
         UpdateFrame(frame)
@@ -2957,10 +2957,10 @@ function QUI_UF:ShowPreview(unitKey)
         local general = GetGeneralSettings()
         local settings = GetUnitSettings("boss")
         local spacing = settings and settings.spacing or 40
-        
+
         -- First apply current settings to all boss frames
         self:RefreshFrame("boss")
-        
+
         for i = 1, 5 do
             local bossKey = "boss" .. i
             local frame = self.frames[bossKey]
@@ -3074,23 +3074,23 @@ function QUI_UF:ShowPreview(unitKey)
 
     local frame = self.frames[unitKey]
     if not frame then return end
-    
+
     self.previewMode[unitKey] = true
-    
+
     -- Unregister state driver so we can show the frame manually
     if not InCombatLockdown() then
         UnregisterStateDriver(frame, "visibility")
     end
-    
+
     -- Show frame with fake data
     frame:Show()
     local settings = GetUnitSettings(unitKey)
-    
+
     -- Set fake health
     ApplyHealthFillDirection(frame, settings)
     frame.healthBar:SetMinMaxValues(0, 100)
     frame.healthBar:SetValue(75)
-    
+
     -- Set fake name
     if frame.nameText then
         local names = {
@@ -3102,7 +3102,7 @@ function QUI_UF:ShowPreview(unitKey)
         }
         frame.nameText:SetText(names[unitKey] or "Preview")
     end
-    
+
     -- Set fake health text
     if frame.healthText then
         local previewHPPct = 75
@@ -3117,7 +3117,7 @@ function QUI_UF:ShowPreview(unitKey)
             settings and settings.hideHealthPercentSymbol == true
         ))
     end
-    
+
     -- Set fake power
     if frame.powerBar then
         frame.powerBar:SetMinMaxValues(0, 100)
@@ -3267,9 +3267,9 @@ function QUI_UF:HidePreview(unitKey)
 
     local frame = self.frames[unitKey]
     if not frame then return end
-    
+
     self.previewMode[unitKey] = false
-    
+
     -- Re-register state driver for non-player units
     if not InCombatLockdown() then
         local unit = frame.unit
@@ -3283,7 +3283,7 @@ function QUI_UF:HidePreview(unitKey)
             RegisterStateDriver(frame, "visibility", "[@targettarget,exists] show; hide")
         end
     end
-    
+
     -- Hide classification icon preview
     if frame.classificationIcon then
         frame.classificationIcon:Hide()
@@ -3307,7 +3307,7 @@ function QUI_UF:RefreshFrame(unitKey)
         local settings = GetUnitSettings("boss")
         local general = GetGeneralSettings()
         local spacing = settings and settings.spacing or 40
-        
+
         if not settings or (InCombatLockdown() and not inInitSafeWindow) then
             -- Just update non-secure elements
             for i = 1, 5 do
@@ -3317,7 +3317,7 @@ function QUI_UF:RefreshFrame(unitKey)
             RefreshBossRangeCheck()
             return
         end
-        
+
         local borderPx = settings.borderSize or 1
         local texturePath = GetTexturePath(settings.texture)
 
@@ -3401,7 +3401,7 @@ function QUI_UF:RefreshFrame(unitKey)
                 frame.healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
                 frame.healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
                 CacheHealthBarExtents(frame, settings, width, height)
-                
+
                 -- Update power bar
                 if frame.powerBar then
                     if settings.showPowerBar then
@@ -3568,7 +3568,7 @@ function QUI_UF:RefreshFrame(unitKey)
                 if not self.previewMode[bossKey] then
                     UpdateFrame(frame)
                 end
-                
+
                 -- Refresh boss castbar if it exists (delegate to castbar module)
                 local castbar = self.castbars[bossKey]
                 if castbar and QUI_Castbar and QUI_Castbar.RefreshBossCastbar then
@@ -3587,7 +3587,7 @@ function QUI_UF:RefreshFrame(unitKey)
         RefreshBossRangeCheck()
         return
     end
-    
+
     local frame = self.frames[unitKey]
     if not frame then
         -- Standalone mode only applies to the player castbar.
@@ -3654,7 +3654,7 @@ function QUI_UF:RefreshFrame(unitKey)
             end
         end
     end
-    
+
     -- Get colors and separate opacity values based on dark mode state
     local bgColor, healthOpacity, bgOpacity
     if general and general.darkMode then
@@ -3700,7 +3700,7 @@ function QUI_UF:RefreshFrame(unitKey)
     frame.healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
     frame.healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
     CacheHealthBarExtents(frame, settings, width, height)
-    
+
     -- Update power bar (create dynamically if needed)
     if settings.showPowerBar then
         if not frame.powerBar then
@@ -3787,7 +3787,7 @@ function QUI_UF:RefreshFrame(unitKey)
         -- Determine border color first (needed for both styles)
         local borderR, borderG, borderB = 0, 0, 0
         if settings.portraitBorderUseClassColor then
-            borderR, borderG, borderB = GetUnitClassColor(frame.unit or unit)
+            borderR, borderG, borderB = GetUnitClassColor(frame.unit)
         elseif settings.portraitBorderColor then
             borderR = settings.portraitBorderColor[1] or 0
             borderG = settings.portraitBorderColor[2] or 0
@@ -3820,7 +3820,7 @@ function QUI_UF:RefreshFrame(unitKey)
     -- Update fonts and text positions
     local fontPath = GetFontPath()
     local fontOutline = general and general.fontOutline or "OUTLINE"
-    
+
     local refreshNameSettings = GetNameSettings(settings)
     if frame.nameText then
         frame.nameText:SetFont(fontPath, refreshNameSettings.nameFontSize or 12, fontOutline)
@@ -3834,7 +3834,7 @@ function QUI_UF:RefreshFrame(unitKey)
             frame.nameText:Hide()
         end
     end
-    
+
     if frame.healthText then
         frame.healthText:SetFont(fontPath, settings.healthFontSize or 12, fontOutline)
         frame.healthText:ClearAllPoints()
@@ -3989,7 +3989,7 @@ function QUI_UF:RefreshFrame(unitKey)
     else
         UpdateFrame(frame)
     end
-    
+
     -- Refresh or create castbar
     local castbar = self.castbars[unitKey]
     local castSettings = settings.castbar
@@ -4090,7 +4090,7 @@ function QUI_UF:Initialize()
 
     -- Hide Blizzard default frames first
     self:HideBlizzardFrames()
-    
+
     -- Create player frame
     if db.player and db.player.enabled then
         self.frames.player = CreateUnitFrame("player", "player")
@@ -4120,7 +4120,7 @@ function QUI_UF:Initialize()
             ns.QUI_UF_PrivateAuras:Setup(self.frames.target)
         end
     end
-    
+
     -- Create target of target frame
     if db.targettarget and db.targettarget.enabled then
         self.frames.targettarget = CreateUnitFrame("targettarget", "targettarget")
@@ -4157,7 +4157,7 @@ function QUI_UF:Initialize()
             ns.QUI_UF_PrivateAuras:Setup(self.frames.focus)
         end
     end
-    
+
     -- Create boss frames (boss1 through boss5)
     if db.boss and db.boss.enabled then
         local spacing = db.boss.spacing or 40
@@ -4166,7 +4166,7 @@ function QUI_UF:Initialize()
             local bossKey = "boss" .. i
             -- Pass bossKey (boss1, boss2, etc.) for unique frame names, but settings come from "boss"
             self.frames[bossKey] = CreateBossFrame(bossUnit, bossKey, i)
-            
+
             -- Position boss frames vertically stacked (skip if anchoring override active)
             if self.frames[bossKey] and i > 1 and not IsFrameOverridden(self.frames[bossKey]) then
                 local prevFrame = self.frames["boss" .. (i - 1)]
@@ -4175,7 +4175,7 @@ function QUI_UF:Initialize()
                     self.frames[bossKey]:SetPoint("TOP", prevFrame, "BOTTOM", 0, -spacing)
                 end
             end
-            
+
             -- Create boss castbar (uses "boss" settings but unique unit)
             if self.frames[bossKey] and db.boss.castbar and db.boss.castbar.enabled then
                 self.castbars[bossKey] = CreateBossCastbar(self.frames[bossKey], bossUnit, i)

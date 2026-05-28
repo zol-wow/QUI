@@ -482,7 +482,7 @@ local function SkinNewRecipeLearnedAlert(frame)
         frame.Icon:ClearAllPoints()
         frame.Icon:SetPoint("LEFT", SkinBase.GetFrameData(frame, "backdrop"), 9, 0)
 
-        CreateIconBorder(frame.Icon, frame)
+        local border = CreateIconBorder(frame.Icon, frame)
     end
 
     SkinBase.MarkSkinned(frame)
@@ -630,7 +630,7 @@ local function SkinLegendaryItemAlert(frame, itemLink)
         frame.Icon:SetTexCoord(unpack(ICON_TEX_COORDS))
         frame.Icon:SetDrawLayer("ARTWORK")
 
-        CreateIconBorder(frame.Icon, frame)
+        local border = CreateIconBorder(frame.Icon, frame)
 
         -- Color border by item quality
         if itemLink then

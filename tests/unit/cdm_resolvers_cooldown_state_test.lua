@@ -1,5 +1,6 @@
 -- tests/unit/cdm_resolvers_cooldown_state_test.lua
 -- Run: lua tests/unit/cdm_resolvers_cooldown_state_test.lua
+-- luacheck: globals InCombatLockdown geterrorhandler CreateFrame GetTime issecretvalue Enum C_CurveUtil C_DurationUtil GetInventoryItemCooldown
 
 local function noop() end
 
@@ -224,6 +225,21 @@ putState(2700, "essential", {
     linkedSpellIDs = { 50334, 102558 },
 })
 
+putState(55090, "essential", {
+    mirrorEpoch = 101,
+    spellID = 55090,
+    overrideSpellID = 55090,
+    hasAura = false,
+    childIsActive = true,
+    wasSetFromAura = false,
+    wasSetFromCooldown = true,
+    wasSetFromCharges = false,
+    cooldownDurObj = cooldownDur,
+    cooldownDurObjSource = "live-cooldown",
+})
+
+local auraRuntimeProbeCount = 0
+
 local ns = {
     Helpers = {},
     CDMShared = {
@@ -299,6 +315,9 @@ local ns = {
                 return { isActive = true, isOnGCD = false }
             end
             if spellID == 50003 then
+                return { isActive = true, isOnGCD = false }
+            end
+            if spellID == 55090 then
                 return { isActive = true, isOnGCD = false }
             end
             if spellID == 50004 or spellID == 50005 or spellID == 50007 or spellID == 50009 then
@@ -583,6 +602,24 @@ local ns = {
             return nil
         end,
     },
+    CDMAuraRuntime = {
+        ResolveState = function(params)
+            if params and params.spellID == 55090 then
+                auraRuntimeProbeCount = auraRuntimeProbeCount + 1
+                return {
+                    isActive = true,
+                    auraInstanceID = 550900,
+                    auraUnit = "player",
+                    durObj = auraDur,
+                    resolvedAuraSpellID = 55090,
+                    count = {
+                        shown = false,
+                    },
+                }
+            end
+            return nil
+        end,
+    },
     CDMBlizzMirror = {
         GetStateByCooldownID = function(cooldownID, category)
             mirrorStateLookups = mirrorStateLookups + 1
@@ -667,6 +704,24 @@ assert(state.countValue == 3, "mirror count numeric value should be copied when 
 assert(state.countShown == true, "mirror count visibility should be copied")
 assert(state.countSource == "Applications", "mirror count source should be copied")
 assert(state.countMirrorBacked == true, "mirror count should be marked mirror-backed")
+
+local auraRuntimeProbesBeforeNoAuraCooldown = auraRuntimeProbeCount
+state = resolve({
+    entry = cooldownEntry(55090),
+    runtimeSpellID = 55090,
+    mirrorCooldownID = 55090,
+    mirrorCategory = "essential",
+    containerKey = "essential",
+    useBuffSwipe = true,
+    showGCDSwipe = true,
+})
+
+assert(state.mode == "cooldown",
+    "hasAura=false active cooldown child without linked or sibling aura should remain cooldown")
+assert(state.durObj == cooldownDur,
+    "hasAura=false active cooldown child should keep the mirror cooldown duration")
+assert(auraRuntimeProbeCount == auraRuntimeProbesBeforeNoAuraCooldown,
+    "hasAura=false active cooldown child should not probe same-spell aura runtime without aura metadata")
 
 local lookupsBeforeCachedState = mirrorStateLookups
 state = resolve({

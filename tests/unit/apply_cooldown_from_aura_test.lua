@@ -1,8 +1,23 @@
 -- tests/unit/apply_cooldown_from_aura_test.lua
 -- Run: lua tests/unit/apply_cooldown_from_aura_test.lua
+-- luacheck: globals LibStub
 
 local secretExpiration = { token = "secret-expiration" }
 local secretDuration = { token = "secret-duration" }
+local secretCooldownStartComparisons = 0
+local secretCooldownDurationComparisons = 0
+local secretCooldownStart = setmetatable({ token = "secret-cooldown-start" }, {
+    __gt = function()
+        secretCooldownStartComparisons = secretCooldownStartComparisons + 1
+        error("secret cooldown start must not be compared")
+    end,
+})
+local secretCooldownDuration = setmetatable({ token = "secret-cooldown-duration" }, {
+    __gt = function()
+        secretCooldownDurationComparisons = secretCooldownDurationComparisons + 1
+        error("secret cooldown duration must not be compared")
+    end,
+})
 local durationObject = { token = "base-duration-object" }
 local durationObjectCalls = 0
 local returnDurationObject = true
@@ -14,7 +29,10 @@ end
 LibStub = function() return nil end
 
 _G.issecretvalue = function(value)
-    return value == secretExpiration or value == secretDuration
+    return value == secretExpiration
+        or value == secretDuration
+        or value == secretCooldownStart
+        or value == secretCooldownDuration
 end
 
 _G.C_UnitAuras = {
@@ -30,6 +48,21 @@ _G.C_UnitAuras = {
 
 local ns = {}
 assert(loadfile("core/utils.lua"))("QUI", ns)
+
+do
+    local handle = assert(io.open("core/utils.lua", "rb"))
+    local source = handle:read("*a")
+    handle:close()
+    assert(not source:find("pcall%(function%(%)%s*return duration > 0 and start > 0%s*end%)"),
+        "IsCooldownActive must not probe secret timing by attempting a Lua comparison")
+end
+
+local active = ns.Helpers.IsCooldownActive(secretCooldownStart, secretCooldownDuration, nil)
+assert(active == true, "secret cooldown timing should be treated as active/unknown")
+assertEquals(secretCooldownStartComparisons, 0, "secret cooldown start must not be Lua-compared")
+assertEquals(secretCooldownDurationComparisons, 0, "secret cooldown duration must not be Lua-compared")
+assert(ns.Helpers.IsCooldownActive(secretCooldownStart, secretCooldownDuration, false) == false,
+    "NeverSecret isActive=false should still win over secret timing")
 
 local defaultCooldown = {}
 function defaultCooldown:SetCooldownFromDurationObject(durObj, clearIfZero)

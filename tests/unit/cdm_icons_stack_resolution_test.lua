@@ -1,5 +1,6 @@
 -- tests/unit/cdm_icons_stack_resolution_test.lua
 -- Run: lua tests/unit/cdm_icons_stack_resolution_test.lua
+-- luacheck: globals issecretvalue InCombatLockdown GetTime wipe CreateFrame C_Timer C_StringUtil C_CurveUtil C_TradeSkillUI
 
 local BuildCooldownStateContext = dofile("tests/helpers/cdm_context_builder_stub.lua")
 
@@ -52,12 +53,13 @@ C_CurveUtil = {
 
 local queriedMinApplications
 local lastCooldownStateContext
+local trackerDB = {}
 
 local ns = {
     Helpers = {
         CreateDBGetter = function()
             return function()
-                return {}
+                return trackerDB
             end
         end,
         IsSecretValue = function() return false end,
@@ -252,6 +254,19 @@ local ns = {
                     wasSetFromCharges = false,
                 }
             end
+            if cooldownID == 73552 and category == "essential" then
+                return {
+                    cooldownChargesCount = secretStackText,
+                    cooldownChargesShown = secretChargeShown,
+                    chargeCountFrameShown = false,
+                    stackText = secretStackText,
+                    stackTextSource = "ChargeCount",
+                    stackTextShown = secretChargeShown,
+                    stackTextEpoch = 93,
+                    wasSetFromCooldown = true,
+                    wasSetFromCharges = false,
+                }
+            end
             if cooldownID == 73550 and category == "essential" then
                 return {
                     cooldownChargesCount = "9",
@@ -417,10 +432,10 @@ assert(icon.cooldownChargesShown == true,
 icon, stackWrites = makeMirrorStackProbe(73547)
 icons.OnFactoryMirrorBound(icon, 73547, "essential")
 
-assert(stackWrites[1].op == "set" and stackWrites[1].value == "",
-    "cooldown icons should not render count fields when the parent count frame is hidden")
-assert(stackWrites[2].op == "hide",
-    "hidden parent count frames should hide during mirror binding")
+assert(stackWrites[1].op == "set" and stackWrites[1].value == "8",
+    "cooldown icons should render count fields when the child count text owner is shown")
+assert(stackWrites[2].op == "show",
+    "shown child count text owners should show during mirror binding")
 
 icon, stackWrites = makeMirrorStackProbe(73549)
 icons.OnFactoryMirrorBound(icon, 73549, "essential")
@@ -443,6 +458,19 @@ assert(stackWrites[3].op == "alpha" and stackWrites[3].value == secretChargeAlph
     "secret Blizzard charge visibility should gate charge text through alpha")
 assert(icon.cooldownChargesShown == secretChargeShown,
     "bound QUI icon should preserve the secret charge visibility gate")
+
+icon, stackWrites = makeMirrorStackProbe(73552)
+icon._resolvedCooldownMode = "aura"
+icons.OnFactoryMirrorBound(icon, 73552, "essential")
+
+assert(stackWrites[1].op == "set" and rawequal(stackWrites[1].value, secretStackText),
+    "aura-mode mirrored ChargeCount text should forward the secret display count")
+assert(stackWrites[2].op == "show",
+    "aura-mode mirrored ChargeCount text should keep the stack text frame shown")
+assert(stackWrites[3].op == "alpha" and stackWrites[3].value == secretChargeAlpha,
+    "aura-mode mirrored ChargeCount text should use the secret show gate as alpha")
+assert(icon._lastMirrorStackTextEpoch == 93,
+    "aura-mode mirrored ChargeCount text should stamp the rendered mirror epoch")
 
 icon, stackWrites = makeMirrorStackProbe(73550)
 icons.OnFactoryMirrorBound(icon, 73550, "essential")
@@ -564,10 +592,10 @@ end
 icon, stackWrites = makeCooldownOnlyMirrorCountProbe()
 icons.ApplyResolvedCooldown(icon)
 
-assert(stackWrites[1] and stackWrites[1].op == "set" and stackWrites[1].value == "",
-    "direct resolved cooldown refresh should clear hidden parent count state")
-assert(stackWrites[2] and stackWrites[2].op == "hide",
-    "direct resolved cooldown refresh should hide hidden parent count state")
+assert(stackWrites[1] and stackWrites[1].op == "set" and stackWrites[1].value == "8",
+    "direct resolved cooldown refresh should write shown child count text")
+assert(stackWrites[2] and stackWrites[2].op == "show",
+    "direct resolved cooldown refresh should show shown child count text")
 
 icon, stackWrites = makeCooldownOnlyMirrorCountProbe()
 icon._blizzMirrorCooldownID = 73549
@@ -598,10 +626,10 @@ ns.CDMIconFactory._iconPools.essential = { icon }
 icons:UpdateCooldownOnly()
 ns.CDMIconFactory._iconPools.essential = priorPool
 
-assert(stackWrites[1] and stackWrites[1].op == "set" and stackWrites[1].value == "",
-    "cooldown-only mirror refresh should clear hidden parent count state")
-assert(stackWrites[2] and stackWrites[2].op == "hide",
-    "cooldown-only mirror refresh should hide hidden parent count state")
+assert(stackWrites[1] and stackWrites[1].op == "set" and stackWrites[1].value == "8",
+    "cooldown-only mirror refresh should write shown child count text")
+assert(stackWrites[2] and stackWrites[2].op == "show",
+    "cooldown-only mirror refresh should show shown child count text")
 
 icon, stackWrites = makeCooldownOnlyMirrorCountProbe(true)
 icon._lastMirrorStackTextEpoch = 88
@@ -612,14 +640,12 @@ ns.CDMIconFactory._iconPools.essential = { icon }
 icons:UpdateCooldownOnly()
 ns.CDMIconFactory._iconPools.essential = priorPool
 
-assert(stackWrites[1] and stackWrites[1].op == "set" and stackWrites[1].value == "",
-    "cooldown-only mirror refresh should clear stale visible stack text even at the same epoch")
-assert(stackWrites[2] and stackWrites[2].op == "hide",
-    "cooldown-only mirror refresh should hide stale visible stack text even at the same epoch")
-assert(icon.cooldownChargesShown == false,
-    "cooldown-only mirror refresh should overwrite stale visible cooldownChargesShown with the mirror state")
+assert(stackWrites[1] == nil,
+    "cooldown-only mirror refresh should not rewrite shown count text at the same epoch")
+assert(icon.cooldownChargesShown == true,
+    "cooldown-only mirror refresh should preserve shown child text owner state")
 assert(icon.chargeCountFrameShown == false,
-    "cooldown-only mirror refresh should overwrite stale visible chargeCountFrameShown with the mirror state")
+    "cooldown-only mirror refresh should still mirror the parent count frame state")
 
 ns.CDMAuraRuntime.SetAbilityAuraSpellIDResolver(function(spellID)
     if spellID == 55090 then
@@ -767,10 +793,171 @@ assert(aliasWrites[1] and aliasWrites[1].op == "set" and aliasWrites[1].value ==
 assert(aliasWrites[2] and aliasWrites[2].op == "show",
     "linked aura stack probes should show stack text through the icon runtime")
 
+local function makeSlotStackProbe()
+    local writes = {}
+    local probe = {
+        _spellEntry = {
+            type = "slot",
+            kind = "cooldown",
+            id = 13,
+            viewerType = "aliasCooldown",
+            name = "Slot Item",
+        },
+        Icon = {
+            SetTexture = noop,
+            SetDesaturated = noop,
+            SetDesaturation = noop,
+            SetVertexColor = noop,
+        },
+        Cooldown = {
+            SetDrawSwipe = noop,
+            SetDrawBling = noop,
+            SetDrawEdge = noop,
+            SetSwipeColor = noop,
+            SetHideCountdownNumbers = noop,
+            SetReverse = noop,
+            Clear = noop,
+            Show = noop,
+        },
+        StackText = {
+            SetText = function(_, value)
+                writes[#writes + 1] = { op = "set", value = value }
+            end,
+            Show = function()
+                writes[#writes + 1] = { op = "show" }
+            end,
+            Hide = function()
+                writes[#writes + 1] = { op = "hide" }
+            end,
+            SetTextColor = noop,
+        },
+        IsShown = function()
+            return true
+        end,
+        Show = noop,
+        Hide = noop,
+        SetAlpha = noop,
+    }
+    return probe, writes
+end
+
+local priorResolveCooldownState = ns.CDMResolvers.ResolveCooldownState
+local priorQueryInventoryItemID = ns.CDMSources.QueryInventoryItemID
+local priorQueryItemInfoInstant = ns.CDMSources.QueryItemInfoInstant
+local priorQueryItemIconByID = ns.CDMSources.QueryItemIconByID
+local priorQueryItemSpell = ns.CDMSources.QueryItemSpell
+local priorQueryAuraApplicationDisplayCount = ns.CDMSources.QueryAuraApplicationDisplayCount
+local priorQuerySpellCount = ns.CDMSources.QuerySpellCount
+
+local slotAuraDisplayText = ""
+local slotAuraDisplayQuery
+local slotSpellCountQueried = false
+ns.CDMResolvers.ResolveCooldownState = function(context)
+    if context and context.entry and context.entry.type == "slot" then
+        return {
+            mode = "aura",
+            active = true,
+            isActive = true,
+            auraResolved = true,
+            auraActive = true,
+            auraIsActive = true,
+            auraUnit = "player",
+            auraInstanceID = 4242,
+            resolvedAuraSpellID = 439530,
+            spellID = 1259633,
+        }
+    end
+    return priorResolveCooldownState(context)
+end
+ns.CDMSources.QueryInventoryItemID = function(unit, slotID)
+    if unit == "player" and slotID == 13 then
+        return 2001
+    end
+    return priorQueryInventoryItemID and priorQueryInventoryItemID(unit, slotID) or nil
+end
+ns.CDMSources.QueryItemInfoInstant = function(itemID)
+    if itemID == 2001 then
+        return itemID, nil, nil, nil, "slot-texture"
+    end
+    return priorQueryItemInfoInstant and priorQueryItemInfoInstant(itemID) or nil
+end
+ns.CDMSources.QueryItemIconByID = function(itemID)
+    if itemID == 2001 then
+        return "slot-texture"
+    end
+    return priorQueryItemIconByID and priorQueryItemIconByID(itemID) or nil
+end
+ns.CDMSources.QueryItemSpell = function(itemID)
+    if itemID == 2001 then
+        return "Use Slot Item", 1259633
+    end
+    return priorQueryItemSpell and priorQueryItemSpell(itemID) or nil
+end
+ns.CDMSources.QueryAuraApplicationDisplayCount = function(unit, auraInstanceID, minApplications, maxApplications)
+    if unit == "player" and auraInstanceID == 4242 then
+        slotAuraDisplayQuery = {
+            unit = unit,
+            auraInstanceID = auraInstanceID,
+            minApplications = minApplications,
+            maxApplications = maxApplications,
+        }
+        return slotAuraDisplayText
+    end
+    return priorQueryAuraApplicationDisplayCount
+        and priorQueryAuraApplicationDisplayCount(unit, auraInstanceID, minApplications, maxApplications)
+        or nil
+end
+ns.CDMSources.QuerySpellCount = function(spellID, icon)
+    if spellID == 13 then
+        slotSpellCountQueried = true
+        return 9
+    end
+    return priorQuerySpellCount and priorQuerySpellCount(spellID, icon) or nil
+end
+
+local slotIcon, slotWrites = makeSlotStackProbe()
+icons.OnContainerIconPlaced(slotIcon)
+
+assert(slotAuraDisplayQuery
+    and slotAuraDisplayQuery.unit == "player"
+    and slotAuraDisplayQuery.auraInstanceID == 4242
+    and slotAuraDisplayQuery.minApplications == 2
+    and slotAuraDisplayQuery.maxApplications == 99,
+    "slot aura stack text should query the active aura instance display count")
+assert(slotSpellCountQueried == false,
+    "slot aura stack text must not treat the equipment slot number as a spell count source")
+assert(slotWrites[#slotWrites] and slotWrites[#slotWrites].op == "hide",
+    "slot auras with no displayable applications should keep stack text hidden")
+
+slotAuraDisplayText = "3"
+slotAuraDisplayQuery = nil
+slotSpellCountQueried = false
+slotIcon, slotWrites = makeSlotStackProbe()
+icons.OnContainerIconPlaced(slotIcon)
+
+assert(slotAuraDisplayQuery and slotAuraDisplayQuery.auraInstanceID == 4242,
+    "stacking slot auras should query the active item aura instance")
+assert(slotSpellCountQueried == false,
+    "stacking slot auras should not use the slot ID spell-count fallback")
+assert(slotWrites[#slotWrites - 1] and slotWrites[#slotWrites - 1].op == "set"
+    and slotWrites[#slotWrites - 1].value == "3",
+    "stacking slot auras should render the active aura application display text")
+assert(slotWrites[#slotWrites] and slotWrites[#slotWrites].op == "show",
+    "stacking slot auras should show stack text when the active aura has applications")
+
+ns.CDMResolvers.ResolveCooldownState = priorResolveCooldownState
+ns.CDMSources.QueryInventoryItemID = priorQueryInventoryItemID
+ns.CDMSources.QueryItemInfoInstant = priorQueryItemInfoInstant
+ns.CDMSources.QueryItemIconByID = priorQueryItemIconByID
+ns.CDMSources.QueryItemSpell = priorQueryItemSpell
+ns.CDMSources.QueryAuraApplicationDisplayCount = priorQueryAuraApplicationDisplayCount
+ns.CDMSources.QuerySpellCount = priorQuerySpellCount
+
 local itemCounts = {
     [1001] = 1,
     [1002] = 0,
 }
+local itemUseCounts = {}
 local itemTextures = {
     [1001] = "rank-1-texture",
     [1002] = "rank-2-texture",
@@ -797,7 +984,10 @@ end
 ns.CDMSources.QueryItemIconByID = function(itemID)
     return itemTextures[itemID]
 end
-ns.CDMSources.QueryItemCount = function(itemID)
+ns.CDMSources.QueryItemCount = function(itemID, _, includeUses)
+    if includeUses then
+        return itemUseCounts[itemID]
+    end
     return itemCounts[itemID] or 0
 end
 ns.CDMSources.QueryItemNameByID = function(itemID)
@@ -838,7 +1028,8 @@ textOverlay = {
         return CreateQualityTexture(textOverlay)
     end,
 }
-local itemIcon = {
+local itemIcon
+itemIcon = {
     _spellEntry = {
         type = "item",
         id = 1001,
@@ -918,5 +1109,22 @@ assert(itemIcon.StackText._shown == true,
     "item icon stack text should remain shown after the full UpdateIconCooldown pass")
 assert(itemIcon.StackText._text == "7",
     "item icon stack text should reflect the bag count, not be hidden by the spell-only stack fallback")
+
+trackerDB.variantItem = { showItemCharges = true }
+itemCounts[1002] = 1
+itemUseCounts[1002] = 0
+icons.HandleRuntimeRefresh("BAG_UPDATE_DELAYED")
+assert(itemIcon.StackText._shown == false,
+    "item use count zero on an owned non-charge item should hide the stack text")
+assert(itemIcon.StackText._text == "",
+    "item use count zero on an owned non-charge item should clear stale item-count text")
+
+itemUseCounts[1002] = 4
+icons.HandleRuntimeRefresh("BAG_UPDATE_DELAYED")
+assert(itemIcon.StackText._shown == true,
+    "items with actual use charges should still show the item charge count")
+assert(itemIcon.StackText._text == "4",
+    "items with actual use charges should display their use charge count")
+trackerDB.variantItem = nil
 
 print("OK: cdm_icons_stack_resolution_test")

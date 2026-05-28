@@ -1,5 +1,6 @@
 -- tests/unit/cdm_icons_aura_delta_targeting_test.lua
 -- Run: lua tests/unit/cdm_icons_aura_delta_targeting_test.lua
+-- luacheck: globals InCombatLockdown GetTime wipe CreateFrame C_Timer
 
 local BuildCooldownStateContext = dofile("tests/helpers/cdm_context_builder_stub.lua")
 
@@ -43,6 +44,8 @@ local mirroredBuffPlayerDur = { token = "mirrored-buff-player-duration" }
 local mirroredBuffAppliedDuration
 local mirroredBuffReverse
 local runtimeBatches = 0
+local buffAuraResolutionUnit = "player"
+local buffAuraResolutionInstanceID = 621
 
 local function makeIcon(name, cooldownID)
     local icon = {
@@ -146,7 +149,6 @@ local mirrorStates = {
         overrideTooltipSpellID = 191587,
         auraInstanceID = 344,
         auraUnit = "target",
-        selfAura = false,
         auraDurObj = mirroredBuffTargetDur,
         auraDurObjSource = "aura-child-frame",
         mirrorEpoch = 1,
@@ -252,8 +254,8 @@ local ns = {
                     sourceID = "aura:direct:48707",
                     spellID = 48707,
                     auraResolved = true,
-                    auraInstanceID = 621,
-                    auraUnit = "player",
+                    auraInstanceID = buffAuraResolutionInstanceID,
+                    auraUnit = buffAuraResolutionUnit,
                     resolvedAuraSpellID = 48707,
                 }
             end
@@ -393,6 +395,75 @@ assert(resolveCounts.buffAura == 1, "added player aura should re-resolve matchin
 assert(buffAuraIcon._shown == true, "active buff aura icon should be shown by the aura-delta visibility path")
 assert(layoutRequests > 0, "buff aura visibility flips should request buff icon layout")
 assert(buffContainerShows > 0, "buff aura visibility flips should wake the owning buff container")
+
+buffAuraIcon._shown = false
+buffAuraIcon._auraActive = false
+layoutRequests = 0
+resolveCounts.buffAura = 0
+buffContainerShows = 0
+
+local nameAccessTrapAura = setmetatable({
+    spellId = 145629,
+    auraInstanceID = 623,
+}, {
+    __index = function(_, key)
+        if key == "name" then
+            error("auraData.name must not be read while targeting aura deltas", 2)
+        end
+    end,
+})
+
+local ok, err = pcall(function()
+    icons.HandleRuntimeRefresh("UNIT_AURA", "player", {
+        isFullUpdate = false,
+        addedAuras = {
+            nameAccessTrapAura,
+        },
+    })
+end)
+
+assert(ok, "player aura delta targeting should not read auraData.name: " .. tostring(err))
+assert(resolveCounts.buffAura == 1,
+    "added player aura should wake buff aura icons for resolver recheck when spell ID differs")
+assert(buffAuraIcon._shown == true,
+    "player aura wake-up should re-show a hidden active-only buff aura icon")
+assert(layoutRequests > 0,
+    "player aura wake-up should request buff icon layout after visibility flips")
+assert(buffContainerShows > 0,
+    "player aura wake-up should wake the owning buff container")
+
+buffAuraIcon._shown = false
+buffAuraIcon._auraActive = false
+buffAuraIcon._auraUnit = nil
+buffAuraIcon._auraInstanceID = nil
+layoutRequests = 0
+resolveCounts.buffAura = 0
+buffContainerShows = 0
+buffAuraResolutionUnit = "target"
+buffAuraResolutionInstanceID = 9052
+
+icons.HandleRuntimeRefresh("UNIT_AURA", "target", {
+    isFullUpdate = false,
+    addedAuras = {
+        { auraInstanceID = 9052 },
+    },
+})
+
+assert(resolveCounts.buffAura == 1,
+    "target added aura payloads without a readable spell ID should wake buff aura icons")
+assert(buffAuraIcon._shown == true,
+    "target aura wake-up should re-show hidden active-only buff aura icons")
+assert(buffAuraIcon._auraUnit == "target",
+    "target aura wake-up should preserve the resolver's target unit")
+assert(buffAuraIcon._auraInstanceID == 9052,
+    "target aura wake-up should preserve the resolver's target aura instance")
+assert(layoutRequests > 0,
+    "target aura wake-up should request buff icon layout after visibility flips")
+assert(buffContainerShows > 0,
+    "target aura wake-up should wake the owning buff container")
+
+buffAuraResolutionUnit = "player"
+buffAuraResolutionInstanceID = 621
 
 icons.HandleRuntimeRefresh("UNIT_AURA", "player", {
     isFullUpdate = false,

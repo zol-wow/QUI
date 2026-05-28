@@ -1477,7 +1477,9 @@ local function BuildBuffsSettings(content, gfdb, onChange)
         desc:SetPoint("TOPLEFT", PAD, -6)
         desc:SetPoint("RIGHT", body, "RIGHT", -PAD, 0)
         if not auras.buffBlacklist then auras.buffBlacklist = {} end
-        local _, blContainer = BuildSpellListSection(body, function() return auras.buffBlacklist end, function()
+        local blContainer
+        local _listFrame
+        _listFrame, blContainer = BuildSpellListSection(body, function() return auras.buffBlacklist end, function()
             if not blContainer then return end
             blContainer:ClearAllPoints()
             blContainer:SetPoint("TOPLEFT", PAD, -30)
@@ -1548,7 +1550,9 @@ local function BuildDebuffsSettings(content, gfdb, onChange)
         desc:SetPoint("TOPLEFT", PAD, -6)
         desc:SetPoint("RIGHT", body, "RIGHT", -PAD, 0)
         if not auras.debuffBlacklist then auras.debuffBlacklist = {} end
-        local _, blContainer = BuildSpellListSection(body, function() return auras.debuffBlacklist end, function()
+        local blContainer
+        local _listFrame
+        _listFrame, blContainer = BuildSpellListSection(body, function() return auras.debuffBlacklist end, function()
             if not blContainer then return end
             blContainer:ClearAllPoints()
             blContainer:SetPoint("TOPLEFT", PAD, -30)

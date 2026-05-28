@@ -1,5 +1,6 @@
 -- tests/unit/cdm_bars_label_test.lua
 -- Run: lua tests/unit/cdm_bars_label_test.lua
+-- luacheck: globals InCombatLockdown CreateFrame C_StringUtil
 
 local secretValueMT = {
     __eq = function()
@@ -378,10 +379,17 @@ assert(bar._cdmRuntimeState and bar._cdmRuntimeState.mirrorSourceID == "mirror:7
     "bar runtime state should keep the mirror source key on the bar frame")
 
 bars:UpdateOwnedBarAura(bar)
-assert(cachedBarMirrorState == barMirrorState,
-    "bar resolver context should reuse the frame-owned renderer mirror state")
-assert(cachedBarMirrorSourceID == "mirror:73543:1",
-    "bar resolver context should reuse the frame-owned mirror source key")
+-- The bar must NOT feed its frame-owned mirror state back into the resolve.
+-- GetStateByCooldownID returns a per-key PackState table refreshed only when
+-- called, and the resolver's cached-state fast path deliberately skips
+-- re-querying the live mirror -- so a snapshot cached while an aura was
+-- inactive freezes a cross-category buff bar at mode=inactive even after the
+-- buff goes live (the "won't activate until a rebuild / breaks on /reload"
+-- bug). Resolving fresh each poll, like the icon path, reads the live aura.
+assert(cachedBarMirrorState == nil,
+    "bar resolver context must not feed a cached mirror state (resolve fresh each poll)")
+assert(cachedBarMirrorSourceID == nil,
+    "bar resolver context must not feed a cached mirror source key")
 
 local spellCooldownDurObj = { token = "spell-cooldown-duration" }
 local spellCooldownTimerDuration
@@ -748,5 +756,83 @@ assert(immediateDurationFormat == "%.1f",
     "active timed bar should write the first duration text immediately")
 assert(rawequal(immediateDurationValue, immediateRemaining),
     "initial duration text should forward the secret remaining duration to the C-side formatter")
+
+local refreshedAuraDurObj = {
+    token = "refreshed-aura-duration",
+    GetRemainingDuration = function()
+        return NewSecretValue("refreshed-remaining")
+    end,
+}
+local refreshedAuraTimerCalls = 0
+ns.CDMResolvers = {
+    BuildCooldownStateContext = BuildTestCooldownStateContext,
+    ResolveCooldownState = function(context)
+        return {
+            mirrorBacked = true,
+            active = true,
+            isActive = true,
+            mode = "aura",
+            durObj = refreshedAuraDurObj,
+            auraUnit = "player",
+            auraInstanceID = 9901,
+            spellID = context and context.runtimeSpellID,
+            hasExpirationTime = true,
+        }
+    end,
+}
+
+local refreshedAuraBar = {
+    _spellID = 195181,
+    _spellEntry = {
+        id = 195181,
+        spellID = 195181,
+        name = "Bone Shield",
+        kind = "aura",
+        type = "spell",
+        viewerType = "trackedBar",
+    },
+    _active = true,
+    _auraUnit = "player",
+    _auraInstanceID = 9901,
+    _durObj = refreshedAuraDurObj,
+    _cSideFill = true,
+    StatusBar = {
+        SetMinMaxValues = function() end,
+        SetValue = function() end,
+        SetTimerDuration = function(_, durObj)
+            refreshedAuraTimerCalls = refreshedAuraTimerCalls + 1
+            assert(durObj == refreshedAuraDurObj,
+                "refreshed aura bar should rebind the live DurationObject")
+        end,
+    },
+    DurationText = {
+        SetText = function() end,
+        SetAlpha = function() end,
+        SetFormattedText = function() end,
+    },
+    PermanentFill = {
+        SetAlpha = function() end,
+    },
+    IconTexture = {
+        SetTexture = function() end,
+    },
+    NameText = {
+        SetText = function() end,
+        SetFormattedText = function() end,
+    },
+}
+
+assert(type(bars.MarkBarAuraRefresh) == "function",
+    "CDMBars should expose a per-bar aura refresh marker")
+assert(bars.MarkBarAuraRefresh(refreshedAuraBar, "player", {
+    updatedAuraInstanceIDs = { 9901 },
+}) == true, "matching updated aura instance should mark the bar for a timer rebind")
+
+bars:UpdateOwnedBarAura(refreshedAuraBar)
+
+assert(refreshedAuraTimerCalls == 1,
+    "a refreshed active aura bar should rebind SetTimerDuration even when the DurationObject identity is unchanged")
+assert(refreshedAuraBar._forceTimerDurationRebind == nil,
+    "aura refresh rebind flag should clear after the bar is rebound")
 
 print("OK: cdm_bars_label_test")

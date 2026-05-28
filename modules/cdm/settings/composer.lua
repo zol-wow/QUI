@@ -2931,6 +2931,28 @@ local function GetOrCreateAddCell(index)
     return cell
 end
 
+local function AppendSpellIDSearchCandidate(sourceEntries, filterText)
+    local asNum = tonumber(filterText)
+    if not asNum then return false end
+
+    for _, e in ipairs(sourceEntries) do
+        if e.spellID == asNum then
+            return false
+        end
+    end
+
+    if not (Sources and Sources.QuerySpellInfo) then return false end
+    local info = Sources.QuerySpellInfo(asNum)
+    local name = info and info.name or ""
+    local icon = info and info.iconID or 0
+    sourceEntries[#sourceEntries + 1] = {
+        spellID = asNum,
+        name = name ~= "" and name or ("Spell #" .. tostring(asNum)),
+        icon = icon,
+    }
+    return true
+end
+
 RefreshAddList = function()
     if not addListContent or not activeContainer then return end
 
@@ -3057,6 +3079,9 @@ RefreshAddList = function()
 
     elseif activeAddTab == "other_auras" then
         sourceEntries = spellData:GetPassiveAuras() or {}
+        if hasFilter then
+            AppendSpellIDSearchCandidate(sourceEntries, filterText)
+        end
 
     elseif activeAddTab == "items" then
         local items = spellData:GetUsableItems() or {}
@@ -3177,23 +3202,7 @@ RefreshAddList = function()
     -- append a resolved candidate so the user can add spells by ID without
     -- a dedicated tab. The active tab's kind contract handles the rest.
     if hasFilter and (activeAddTab == "cooldowns" or activeAddTab == "auras") then
-        local asNum = tonumber(filterText)
-        if asNum then
-            local alreadyPresent = false
-            for _, e in ipairs(sourceEntries) do
-                if e.spellID == asNum then alreadyPresent = true break end
-            end
-            if not alreadyPresent and Sources and Sources.QuerySpellInfo then
-                local info = Sources.QuerySpellInfo(asNum)
-                local name = info and info.name or ""
-                local icon = info and info.iconID or 0
-                sourceEntries[#sourceEntries + 1] = {
-                    spellID = asNum,
-                    name = name ~= "" and name or ("Spell #" .. tostring(asNum)),
-                    icon = icon,
-                }
-            end
-        end
+        AppendSpellIDSearchCandidate(sourceEntries, filterText)
     end
 
     -- Grid layout

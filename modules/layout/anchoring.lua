@@ -143,7 +143,7 @@ end
 -- frame param reserved for future frame-aware border calculations
 local function GetBorderAdjustment(frame, anchorPoint, borderSize)
     if not borderSize or borderSize == 0 then return 0, 0 end
-    
+
     local adjX, adjY = 0, 0
     if anchorPoint == "TOPLEFT" then
         adjX = borderSize
@@ -178,13 +178,13 @@ function QUI_Anchoring:RegisterAnchorTarget(name, frame, options)
     if not name or not frame then
         return false
     end
-    
+
     options = options or {}
     self.anchorTargets[name] = {
         frame = frame,
         options = options
     }
-    
+
     -- Register category with its order if provided
     local category = options.category
     if category then
@@ -194,7 +194,7 @@ function QUI_Anchoring:RegisterAnchorTarget(name, frame, options)
             }
         end
     end
-    
+
     return true
 end
 
@@ -208,13 +208,13 @@ end
 -- Get an anchor target by name
 function QUI_Anchoring:GetAnchorTarget(name)
     if not name then return nil end
-    
+
     -- Check registry only
     local registered = self.anchorTargets[name]
     if registered then
         return registered.frame
     end
-    
+
     return nil
 end
 
@@ -226,11 +226,11 @@ end
 -- Returns array of {value = name, text = displayName}
 function QUI_Anchoring:GetAnchorTargetList(include, exclude, excludeSelf)
     exclude = exclude or {}
-    
+
     -- Convert include/exclude to lookup tables for faster checking
     local includeLookup = {}
     local excludeLookup = {}
-    
+
     if include == nil then
         includeLookup = nil
     elseif type(include) == "table" then
@@ -238,13 +238,13 @@ function QUI_Anchoring:GetAnchorTargetList(include, exclude, excludeSelf)
             includeLookup[value] = true
         end
     end
-    
+
     if type(exclude) == "table" then
         for _, value in ipairs(exclude) do
             excludeLookup[value] = true
         end
     end
-    
+
     -- Helper to check if an anchor should be included
     local function ShouldInclude(value)
         -- Check exclude first
@@ -262,9 +262,9 @@ function QUI_Anchoring:GetAnchorTargetList(include, exclude, excludeSelf)
         -- Otherwise include all
         return true
     end
-    
+
     local list = {}
-    
+
     -- Add special anchor targets (always check include/exclude)
     if ShouldInclude("disabled") then
         table.insert(list, {value = "disabled", text = "Disabled"})
@@ -272,11 +272,11 @@ function QUI_Anchoring:GetAnchorTargetList(include, exclude, excludeSelf)
     if ShouldInclude("screen") then
         table.insert(list, {value = "screen", text = "Screen Center"})
     end
-    
+
     -- Group registered anchor targets by category
     local categorized = {}
     local uncategorized = {}
-    
+
     for name, data in pairs(self.anchorTargets) do
         if ShouldInclude(name) then
             local displayName = data.options and data.options.displayName or name
@@ -284,11 +284,11 @@ function QUI_Anchoring:GetAnchorTargetList(include, exclude, excludeSelf)
             -- Capitalize first letter and add spaces before capitals
             displayName = displayName:gsub("^%l", string.upper)
             displayName = displayName:gsub("([a-z])([A-Z])", "%1 %2")
-            
+
             local category = data.options and data.options.category
             local order = data.options and data.options.order or 999
             local item = {value = name, text = displayName, category = category, order = order}
-            
+
             if category then
                 if not categorized[category] then
                     categorized[category] = {}
@@ -299,7 +299,7 @@ function QUI_Anchoring:GetAnchorTargetList(include, exclude, excludeSelf)
             end
         end
     end
-    
+
     -- Sort categories by order (from category registry), then alphabetically
     local sortedCategories = {}
     for category, items in pairs(categorized) do
@@ -320,7 +320,7 @@ function QUI_Anchoring:GetAnchorTargetList(include, exclude, excludeSelf)
         end
         return a.name < b.name
     end)
-    
+
     -- Sort uncategorized items
     table.sort(uncategorized, function(a, b)
         if a.order ~= b.order then
@@ -328,7 +328,7 @@ function QUI_Anchoring:GetAnchorTargetList(include, exclude, excludeSelf)
         end
         return a.text < b.text
     end)
-    
+
     -- Build final list: special values, then categorized items, then uncategorized
     -- Add categorized items with headers
     for _, catInfo in ipairs(sortedCategories) do
@@ -340,7 +340,7 @@ function QUI_Anchoring:GetAnchorTargetList(include, exclude, excludeSelf)
             table.insert(list, item)
         end
     end
-    
+
     -- Add uncategorized items (only if there are any)
     if #uncategorized > 0 then
         -- Only add "Other" header if we have categorized items above
@@ -351,7 +351,7 @@ function QUI_Anchoring:GetAnchorTargetList(include, exclude, excludeSelf)
             table.insert(list, item)
         end
     end
-    
+
     return list
 end
 
@@ -361,33 +361,33 @@ end
 -- Get anchor frame dimensions and position data
 function QUI_Anchoring:GetAnchorDimensions(anchorFrame, anchorTargetName)
     if not anchorFrame then return nil end
-    
+
     local registered = self.anchorTargets[anchorTargetName]
     local options = registered and registered.options or {}
-    
+
     local width, height
     if options.customWidth then
         width = type(options.customWidth) == "function" and options.customWidth(anchorFrame) or options.customWidth
     else
         width = anchorFrame:GetWidth()
     end
-    
+
     if options.customHeight then
         height = type(options.customHeight) == "function" and options.customHeight(anchorFrame) or options.customHeight
     else
         height = anchorFrame:GetHeight()
     end
-    
+
     -- Special handling for CDM viewers (backward compatibility)
     if anchorTargetName == "essential" or anchorTargetName == "utility" then
         local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(anchorFrame)
         width = (vs and vs.row1Width) or width
         height = (vs and vs.totalHeight) or height
     end
-    
+
     local centerX, centerY = anchorFrame:GetCenter()
     if not centerX or not centerY then return nil end
-    
+
     return {
         width = width,
         height = height,
@@ -408,12 +408,12 @@ local function GetBorderSize(frame)
     if not frame or not frame.GetBackdrop then
         return 0
     end
-    
+
     local backdrop = frame:GetBackdrop()
     if not backdrop or not backdrop.edgeSize then
         return 0
     end
-    
+
     return backdrop.edgeSize or 0
 end
 
@@ -456,26 +456,26 @@ function QUI_Anchoring:PositionFrame(frame, anchorTarget, anchorPoint, offsetX, 
     options = options or {}
     offsetX = offsetX or 0
     offsetY = offsetY or 0
-    
+
     -- Validate anchor point
     anchorPoint = anchorPoint or "CENTER"
     if not VALID_ANCHOR_POINTS[anchorPoint] then
         anchorPoint = "CENTER"
     end
-    
+
     -- Get target anchor point from options (defaults to source anchor point for backward compatibility)
     local targetAnchorPoint = options.targetAnchorPoint or anchorPoint
     if not VALID_ANCHOR_POINTS[targetAnchorPoint] then
         targetAnchorPoint = anchorPoint
     end
-    
+
     -- Check if explicit dual anchor points are provided
     local sourceAnchorPoint2 = options.sourceAnchorPoint2
     local targetAnchorPoint2 = options.targetAnchorPoint2
     local useExplicitDualAnchors = sourceAnchorPoint2 and targetAnchorPoint2 and
                                    VALID_ANCHOR_POINTS[sourceAnchorPoint2] and
                                    VALID_ANCHOR_POINTS[targetAnchorPoint2]
-    
+
     -- Safely clear points (use pcall to handle secure frames)
     local success = pcall(function()
         frame:ClearAllPoints()
@@ -500,19 +500,19 @@ function QUI_Anchoring:PositionFrame(frame, anchorTarget, anchorPoint, offsetX, 
         frame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
         return true
     end
-    
+
     -- Handle "unitframe" anchor type (special case for castbars)
     if anchorTarget == "unitframe" and parentFrame then
         -- Get border sizes for pixel-perfect positioning
         local sourceBorderSize = GetBorderSize(frame)
         local targetBorderSize = GetBorderSize(parentFrame)
-        
+
         -- Calculate border adjustments
         local sourceAdjX, sourceAdjY = GetBorderAdjustment(frame, anchorPoint, sourceBorderSize)
         local targetAdjX, targetAdjY = GetBorderAdjustment(frame, targetAnchorPoint, targetBorderSize)
         local netAdjX = targetAdjX - sourceAdjX
         local netAdjY = targetAdjY - sourceAdjY
-        
+
         local scaledOffsetX = PixelRound(frame, Scale(offsetX, frame) + netAdjX)
         local scaledOffsetY = PixelRound(frame, Scale(offsetY, frame) + netAdjY)
 
@@ -535,27 +535,27 @@ function QUI_Anchoring:PositionFrame(frame, anchorTarget, anchorPoint, offsetX, 
         frame:SetPoint(anchorPoint, parentFrame, targetAnchorPoint, scaledOffsetX, scaledOffsetY)
         return true
     end
-    
+
     -- Get anchor target frame
     local anchorFrame = self:GetAnchorTarget(anchorTarget)
     if not anchorFrame then
         return false
     end
-    
+
     if not anchorFrame:IsShown() then
         return false
     end
-    
+
     -- Get border sizes for pixel-perfect positioning
     local sourceBorderSize = GetBorderSize(frame)
     local targetBorderSize = GetBorderSize(anchorFrame)
-    
+
     -- Calculate border adjustments
     local sourceAdjX, sourceAdjY = GetBorderAdjustment(frame, anchorPoint, sourceBorderSize)
     local targetAdjX, targetAdjY = GetBorderAdjustment(frame, targetAnchorPoint, targetBorderSize)
     local netAdjX = targetAdjX - sourceAdjX
     local netAdjY = targetAdjY - sourceAdjY
-    
+
     -- offsetX and offsetY already provide the gap/padding functionality
     -- When the anchor target changes size, the offset maintains that gap
     local scaledOffsetX = PixelRound(frame, Scale(offsetX, frame) + netAdjX)
@@ -579,7 +579,7 @@ function QUI_Anchoring:PositionFrame(frame, anchorTarget, anchorPoint, offsetX, 
 
     -- For single anchor point positioning, use direct SetPoint with source and target anchor points
     frame:SetPoint(anchorPoint, anchorFrame, targetAnchorPoint, scaledOffsetX, scaledOffsetY)
-    
+
     return true
 end
 
@@ -589,13 +589,13 @@ end
 -- Get anchor target name for a given frame (reverse lookup)
 function QUI_Anchoring:GetAnchorTargetName(frame)
     if not frame then return nil end
-    
+
     for name, data in pairs(self.anchorTargets) do
         if data.frame == frame then
             return name
         end
     end
-    
+
     return nil
 end
 
@@ -606,28 +606,28 @@ end
 -- Returns true if circular dependency would be created, false otherwise
 function QUI_Anchoring:CheckCircularDependency(frame, anchorTarget)
     if not frame or not anchorTarget then return false end
-    
+
     -- Skip check for special anchor targets
     if anchorTarget == "disabled" or anchorTarget == "screen" or anchorTarget == "none" then
         return false
     end
-    
+
     -- Get the anchor target frame
     local targetFrame = self:GetAnchorTarget(anchorTarget)
     if not targetFrame then return false end
-    
+
     -- Check if the target frame is the same as the source frame (self-anchoring)
     if targetFrame == frame then
         return true -- Self-anchoring detected
     end
-    
+
     -- Check if target frame is anchored to anything (must be already registered)
     local targetConfig = self.anchoredFrames[targetFrame]
-    if not targetConfig then 
+    if not targetConfig then
         -- Target frame is not yet anchored to anything, so no cycle possible
-        return false 
+        return false
     end
-    
+
     -- Recursively follow the anchor chain to see if we eventually loop back to the starting frame
     -- visited tracks frames we've seen to prevent infinite loops in case of malformed data
     local visited = {}
@@ -636,36 +636,36 @@ function QUI_Anchoring:CheckCircularDependency(frame, anchorTarget)
         if currentFrame == startFrame then
             return true -- Cycle detected
         end
-        
+
         -- If we've already visited this frame in this traversal, skip it (prevents infinite loops)
         if visited[currentFrame] then
             return false -- Already visited, no cycle through this path
         end
         visited[currentFrame] = true
-        
+
         -- Get the anchor configuration for the current frame
         local config = self.anchoredFrames[currentFrame]
-        if not config then 
+        if not config then
             -- This frame is not anchored to anything, chain ends here, no cycle
-            return false 
+            return false
         end
-        
+
         -- Skip special anchor targets (they don't create cycles)
         if config.anchorTarget == "disabled" or config.anchorTarget == "screen" or config.anchorTarget == "none" then
             return false
         end
-        
+
         -- Get the next frame in the chain
         local nextTargetFrame = self:GetAnchorTarget(config.anchorTarget)
-        if not nextTargetFrame then 
+        if not nextTargetFrame then
             -- Anchor target doesn't exist or isn't registered, chain ends, no cycle
-            return false 
+            return false
         end
-        
+
         -- Recursively check the next frame in the chain
         return CheckCycle(nextTargetFrame, startFrame)
     end
-    
+
     -- Start checking from the target frame, looking for a path back to the starting frame
     return CheckCycle(targetFrame, frame)
 end
@@ -673,7 +673,7 @@ end
 -- Register a frame for automatic updates when anchor targets move
 function QUI_Anchoring:RegisterAnchoredFrame(frame, config)
     if not frame or not config then return false end
-    
+
     -- Check for circular dependencies
     if config.anchorTarget and config.anchorTarget ~= "disabled" and config.anchorTarget ~= "screen" and config.anchorTarget ~= "none" then
         if self:CheckCircularDependency(frame, config.anchorTarget) then
@@ -681,7 +681,7 @@ function QUI_Anchoring:RegisterAnchoredFrame(frame, config)
             return false
         end
     end
-    
+
     -- Store anchors array if provided, otherwise use legacy anchorPoint/targetAnchorPoint
     local anchors = config.anchors
     if not anchors or #anchors == 0 then
@@ -692,7 +692,7 @@ function QUI_Anchoring:RegisterAnchoredFrame(frame, config)
             {source = sourceAnchorPoint, target = targetAnchorPoint}
         }
     end
-    
+
     self.anchoredFrames[frame] = {
         anchorTarget = config.anchorTarget,
         anchors = anchors,
@@ -710,7 +710,7 @@ function QUI_Anchoring:RegisterAnchoredFrame(frame, config)
         pendingAnchoredFrameUpdateAfterCombat = true
         return true
     end
-    
+
     -- Safely clear points (use pcall to handle secure frames)
     local success = pcall(function()
         frame:ClearAllPoints()
@@ -732,13 +732,13 @@ function QUI_Anchoring:RegisterAnchoredFrame(frame, config)
         end)
         return true
     end
-    
+
     if #anchors == 1 then
         -- Single anchor point
         local anchorPair = anchors[1]
         local source = anchorPair.source or "CENTER"
         local target = anchorPair.target or "CENTER"
-        
+
         self:PositionFrame(
             frame,
             config.anchorTarget,
@@ -758,7 +758,7 @@ function QUI_Anchoring:RegisterAnchoredFrame(frame, config)
         local target1 = anchorPair1.target or "CENTER"
         local source2 = anchorPair2.source or "CENTER"
         local target2 = anchorPair2.target or "CENTER"
-        
+
         self:PositionFrame(
             frame,
             config.anchorTarget,
@@ -773,7 +773,7 @@ function QUI_Anchoring:RegisterAnchoredFrame(frame, config)
             }
         )
     end
-    
+
     -- Re-register state drivers for unit frames after positioning (ClearAllPoints breaks them)
     if frame._quiReRegisterStateDriver then
         C_Timer.After(0, function()
@@ -782,7 +782,7 @@ function QUI_Anchoring:RegisterAnchoredFrame(frame, config)
             end
         end)
     end
-    
+
     return true
 end
 
@@ -811,11 +811,11 @@ function QUI_Anchoring:SnapTo(frame, anchorTarget, anchorPoint, offsetX, offsetY
     if not frame or not anchorTarget then
         return false
     end
-    
+
     options = options or {}
     offsetX = offsetX or 0
     offsetY = offsetY or 0
-    
+
     -- Get anchor target frame
     local targetFrame = self:GetAnchorTarget(anchorTarget)
     if not targetFrame then
@@ -836,7 +836,7 @@ function QUI_Anchoring:SnapTo(frame, anchorTarget, anchorPoint, offsetX, offsetY
             return false
         end
     end
-    
+
     -- Determine anchor point
     if not anchorPoint then
         if anchorTarget == "screen" or anchorTarget == "disabled" or anchorTarget == "none" then
@@ -845,13 +845,13 @@ function QUI_Anchoring:SnapTo(frame, anchorTarget, anchorPoint, offsetX, offsetY
             anchorPoint = "BOTTOMLEFT"
         end
     end
-    
+
     -- Position the frame (dual anchors auto-detected based on anchor points)
     local positionOptions = {
         targetAnchorPoint = options.targetAnchorPoint,
     }
     local success = self:PositionFrame(frame, anchorTarget, anchorPoint, offsetX, offsetY, nil, positionOptions)
-    
+
     -- Re-register state drivers for unit frames after positioning (ClearAllPoints breaks them)
     if success and frame._quiReRegisterStateDriver then
         C_Timer.After(0, function()
@@ -860,11 +860,11 @@ function QUI_Anchoring:SnapTo(frame, anchorTarget, anchorPoint, offsetX, offsetY
             end
         end)
     end
-    
+
     if success and options.onSuccess then
         options.onSuccess()
     end
-    
+
     return success
 end
 
@@ -895,7 +895,7 @@ function QUI_Anchoring:UpdateAllAnchoredFrames()
                     {source = sourceAnchorPoint, target = targetAnchorPoint}
                 }
             end
-            
+
             -- Safely clear points (use pcall to handle secure frames)
             local success = pcall(function()
                 frame:ClearAllPoints()
@@ -936,7 +936,7 @@ function QUI_Anchoring:UpdateAllAnchoredFrames()
                     local anchorPair = anchors[1]
                     local source = anchorPair.source or "CENTER"
                     local target = anchorPair.target or "CENTER"
-                    
+
                     self:PositionFrame(
                         frame,
                         config.anchorTarget,
@@ -956,7 +956,7 @@ function QUI_Anchoring:UpdateAllAnchoredFrames()
                     local target1 = anchorPair1.target or "CENTER"
                     local source2 = anchorPair2.source or "CENTER"
                     local target2 = anchorPair2.target or "CENTER"
-                    
+
                     self:PositionFrame(
                         frame,
                         config.anchorTarget,
@@ -1162,7 +1162,7 @@ function QUI_Anchoring:UpdateFramesForTarget(anchorTargetName)
         pendingAnchoredFrameUpdateAfterCombat = true
         return
     end
-    
+
     for frame, config in pairs(self.anchoredFrames) do
         if frame and frame:IsShown() and config.anchorTarget == anchorTargetName then
             local anchors = config.anchors
@@ -1174,7 +1174,7 @@ function QUI_Anchoring:UpdateFramesForTarget(anchorTargetName)
                     {source = sourceAnchorPoint, target = targetAnchorPoint}
                 }
             end
-            
+
             -- Safely clear points (use pcall to handle secure frames)
             local success = pcall(function()
                 frame:ClearAllPoints()
@@ -1215,7 +1215,7 @@ function QUI_Anchoring:UpdateFramesForTarget(anchorTargetName)
                     local anchorPair = anchors[1]
                     local source = anchorPair.source or "CENTER"
                     local target = anchorPair.target or "CENTER"
-                    
+
                     self:PositionFrame(
                         frame,
                         config.anchorTarget,
@@ -1235,7 +1235,7 @@ function QUI_Anchoring:UpdateFramesForTarget(anchorTargetName)
                     local target1 = anchorPair1.target or "CENTER"
                     local source2 = anchorPair2.source or "CENTER"
                     local target2 = anchorPair2.target or "CENTER"
-                    
+
                     self:PositionFrame(
                         frame,
                         config.anchorTarget,

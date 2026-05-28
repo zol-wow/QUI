@@ -11,9 +11,13 @@ tests/fixtures/test/QUI3.lua
 tools/view_sv.html
 /.scratch
 /.claude
+/.codex
 /.planning
 /docs/superpowers
 /.superpowers
 CLAUDE.md
 /docs/dev
 /.audit
+*.DS_Store
+._.gitignore
+/.worktrees

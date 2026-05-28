@@ -1099,6 +1099,12 @@ local function ResolveAppearance(windowID, ...)
 end
 QUI_DamageMeter.ResolveAppearance = ResolveAppearance
 
+local function ApplyRowBackgroundVisibility(row, windowID)
+    if not (row and row.BarBg) then return end
+    row.BarBg:SetShown(ResolveAppearance(windowID, "showRowBackground") ~= false)
+end
+QUI_DamageMeter.ApplyRowBackgroundVisibility = ApplyRowBackgroundVisibility
+
 -- Pure helper: returns the index of the local-player source in `sources`,
 -- or nil if not present. Used by pinned-self logic in Window:Refresh.
 local function FindLocalPlayerInSources(sources)
@@ -1291,6 +1297,8 @@ local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 
 function Window:_SetRowSource(row, source, maxAmount)
     local windowID = self.windowID
+
+    ApplyRowBackgroundVisibility(row, windowID)
 
     -- Bar texture: pick LSM media if user set one, else stick with the
     -- Phase 1 WHITE8X8 default. Applied here (per-source) rather than at
@@ -2435,6 +2443,8 @@ function Breakdown.New(parentWindow)
 end
 
 function Breakdown:_SetSpellRow(row, spell, maxAmount)
+    ApplyRowBackgroundVisibility(row, self.parentWindowID)
+
     -- Icon: spell iconID if available; else fallback question mark.
     if spell.iconID and spell.iconID ~= 0 then
         row.Icon:SetTexture(spell.iconID)
@@ -2474,6 +2484,8 @@ end
 -- present only for player targets (enemy->players direction); enemy targets
 -- render with a blank icon slot (matching iconStyle "none").
 function Breakdown:_SetTargetRow(row, target, maxAmount)
+    ApplyRowBackgroundVisibility(row, self.parentWindowID)
+
     if target.specIconID and target.specIconID ~= 0 then
         row.Icon:SetTexture(target.specIconID)
         row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)

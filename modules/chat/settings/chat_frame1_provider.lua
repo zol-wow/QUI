@@ -2045,7 +2045,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     soundDropdown:SetPoint("TOPLEFT", 0, -FORM_ROW)
                     soundDropdown:SetPoint("RIGHT", entryRow, "RIGHT", -80, 0)
 
-                    local removeBtn = GUI:CreateButton(entryRow, "X", 24, 22, function()
+                    local removeBtn
+                    removeBtn = GUI:CreateButton(entryRow, "X", 24, 22, function()
                         table.remove(entries, i)
                         RebuildSoundEntries()
                         Refresh()
@@ -2076,7 +2077,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
                 local nextChannel = GetFirstAvailableChannel()
                 if nextChannel then
-                    local addBtn = TrackSoundControl(GUI:CreateButton(soundEntriesContainer, "+ Add Channel + Sound", 180, 24, function()
+                    local addBtn
+                    addBtn = TrackSoundControl(GUI:CreateButton(soundEntriesContainer, "+ Add Channel + Sound", 180, 24, function()
                         local channel = GetFirstAvailableChannel()
                         if not channel then return end
                         table.insert(chat.newMessageSound.entries, { channel = channel, sound = "None" })

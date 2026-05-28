@@ -1518,15 +1518,14 @@ function Helpers.IsCooldownActive(start, duration, isActive)
     if type(isActive) == "boolean" then
         return isActive
     end
-    if not start or not duration then return false end
 
-    local ok, result = pcall(function()
-        return duration > 0 and start > 0
-    end)
-    if not ok then
+    if Helpers.IsSecretValue(start) or Helpers.IsSecretValue(duration) then
         return true
     end
-    return result
+
+    if not start or not duration then return false end
+    if type(start) ~= "number" or type(duration) ~= "number" then return false end
+    return duration > 0 and start > 0
 end
 
 --- Apply a cooldown from a DurationObject when available, falling back to
@@ -1801,4 +1800,3 @@ function Helpers.NotifyDragResolutionFailed()
         )
     end
 end
-

@@ -110,7 +110,7 @@ local function BuildUIScale(L, db)
         "uiScale", db.general, function(val)
             if InCombatLockdown() then return end
             UIParent:SetScale(val)
-        end, { deferOnDrag = true, precision = 7,
+        end, { deferOnDrag = true, precision = 7, editWidth = 58,
               description = "Global scale factor applied to the entire Blizzard UI." })
     s.AddRow(row(s.frame, "Global UI Scale", scaleSlider))
     L.closeSection(s)

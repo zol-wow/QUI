@@ -277,7 +277,7 @@ local function ApplyHideSettings()
             end
         end
     end
-    
+
     -- Minimap Border (Top)
     if MinimapCluster and MinimapCluster.BorderTop then
         if settings.hideMinimapBorder then
@@ -286,7 +286,7 @@ local function ApplyHideSettings()
             MinimapCluster.BorderTop:Show()
         end
     end
-    
+
     -- Time Manager Clock Button
     if TimeManagerClockButton then
         if settings.hideTimeManager then
@@ -295,7 +295,7 @@ local function ApplyHideSettings()
             TimeManagerClockButton:Show()
         end
     end
-    
+
     -- Game Time Frame (Calendar Button)
     if GameTimeFrame then
         if settings.hideGameTime then
@@ -352,7 +352,7 @@ local function ApplyHideSettings()
             end
         end
     end
-    
+
     -- Minimap Zone Text
     if MinimapZoneText then
         if settings.hideMinimapZoneText then
@@ -363,7 +363,7 @@ local function ApplyHideSettings()
 end
 
     -- Mail Icon is now controlled by Minimap module (showMail setting)
-    
+
     -- Buff Frame Collapse Button (uses alpha approach for persistence)
     if BuffFrame and BuffFrame.CollapseAndExpandButton then
         local btn = BuffFrame.CollapseAndExpandButton

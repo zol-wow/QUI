@@ -202,7 +202,7 @@ local function UpdateTimerAppearance()
     -- Skip LSM border if hideBorder is enabled
     local hideBorder = settings.hideBorder
     local effectiveUseLSMBorder = useLSMBorder and not hideBorder
-    
+
     local SSB = QUICore and QUICore.SafeSetBackdrop
     if showBackdrop or effectiveUseLSMBorder then
         local backdropInfo = UIKit.GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize, frame)

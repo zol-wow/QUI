@@ -257,6 +257,7 @@ local defaults = {
                         barColorAccent   = true,
                         barColor         = { 0.35, 0.55, 0.8, 1 },  -- {r,g,b,a} array form (CreateFormColorPicker contract)
                         barFillAlpha     = 1.0,
+                        showRowBackground = true,
                         -- LSM media names. nil = inherit QUI defaults
                         -- (Phase 1 hardcoded WHITE8x8 for bars; backgrounds + borders
                         -- still use Phase 1 hardcodes when nil — Phase 3 wires those).
@@ -3360,7 +3361,7 @@ local defaults = {
             buffPandemicDebuffEnabled = true,
             buffPandemicBuffEnabled = true,
         },
-        
+
         -- Cooldown Highlighter (flash on spell cast)
         cooldownHighlighter = {
             enabled = false,
@@ -3437,7 +3438,7 @@ local defaults = {
             debuffSortRule = "INDEX",
             debuffSortReverse = false,
         },
-        
+
         -- QUI Autohides
         uiHider = {
             hideObjectiveTrackerAlways = false,  -- Hide Objective Tracker always
@@ -3474,11 +3475,11 @@ local defaults = {
             hideDataBarsInPetBattle = false, -- Hide data bars during pet battles
             hideMainActionBarArt = false,
         },
-        
+
         -- Minimap Settings
         minimap = {
             enabled = true,  -- Enabled by default for clean minimap experience
-            
+
             -- Shape and Size
             shape = "SQUARE",  -- SQUARE or ROUND
             size = 226,
@@ -3489,11 +3490,11 @@ local defaults = {
             useClassColorBorder = false,
             useAccentColorBorder = false,
             buttonRadius = 2,  -- LibDBIcon button radius for square minimap
-            
+
             -- Position
             lock = false,  -- Unlocked by default so users can position it
             position = { point = "TOPLEFT", relPoint = "BOTTOMLEFT", x = 790, y = 285 },
-            
+
             -- Features
             autoZoom = false,  -- Auto zoom out after 10 seconds
             hideAddonButtons = true,  -- Show addon buttons on hover only
@@ -3522,7 +3523,7 @@ local defaults = {
             middleClickMenuEnabled = true,  -- Middle click minimap opens quick menu
             hideMicroMenu = false,  -- Hide Blizzard micro menu (Character/Spellbook/etc.)
             hideBagBar = false,  -- Hide Blizzard bag bar
-            
+
             -- Button Visibility
             showZoomButtons = true,
             showMail = true,
@@ -3567,7 +3568,7 @@ local defaults = {
                 useClassColor = false,
                 timeFormat = "local",  -- "local" or "server"
             },
-            
+
             -- Coordinates (anchored top-right)
             showCoords = false,
             coordPrecision = "%d,%d",  -- %d,%d = normal, %.1f,%.1f = high, %.2f,%.2f = very high
@@ -3583,7 +3584,7 @@ local defaults = {
                 color = {1, 1, 1, 1},
                 useClassColor = false,
             },
-            
+
             -- Zone Text (anchored top-center)
             showZoneText = true,
             zoneTextConfig = {
@@ -3604,13 +3605,13 @@ local defaults = {
                 colorContested = {1.0, 0.7, 0.0, 1}, -- Orange
             },
         },
-        
+
         -- Minimap Button (LibDBIcon) - separate from minimap module
         minimapButton = {
             hide = false,
             minimapPos = 180,  -- 9 o'clock position (left side)
         },
-        
+
         -- Datatext Panel (fixed below minimap - slot-based architecture)
         datatext = {
             enabled = true,
@@ -3622,7 +3623,7 @@ local defaults = {
             slot3 = { shortLabel = true, noLabel = false, xOffset = 3, yOffset = 0 },
 
             forceSingleLine = true,  -- If true, ignores wrapping and forces single line
-            
+
             -- Panel Settings (width auto-matches minimap)
             height = 22,
             offsetY = 0,  -- Y offset from minimap bottom
@@ -3638,10 +3639,10 @@ local defaults = {
             -- Color Settings
             useClassColor = false,
             valueColor = {0.1, 1.0, 0.1, 1},  -- #1AFF1A green
-            
+
             -- Separator
             separator = "  ",
-            
+
             -- Legacy Composite Mode Toggles
             showFPS = true,
             showLatency = false,
@@ -3652,7 +3653,7 @@ local defaults = {
             showFriends = false,
             showGuild = false,
             showLootSpec = false,
-            
+
             -- Time Settings (for Time datatext or legacy mode)
             timeFormat = "local",  -- "local" or "server"
             use24Hour = false,
@@ -3688,7 +3689,7 @@ local defaults = {
             currencyOrder = {},  -- Ordered currency IDs selected by user (up to 6)
             currencyEnabled = {}, -- Per-currency toggle map (id -> true/false)
         },
-        
+
         -- Additional Datapanels (user-created, independent of minimap)
         quiDatatexts = {
             panels = {},  -- Array of panel configurations

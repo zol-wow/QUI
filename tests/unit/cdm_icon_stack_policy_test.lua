@@ -1,5 +1,6 @@
 -- tests/unit/cdm_icon_stack_policy_test.lua
 -- Run: lua tests/unit/cdm_icon_stack_policy_test.lua
+-- luacheck: globals issecretvalue InCombatLockdown wipe C_StringUtil
 
 local secretStackText = { token = "secret-stack-text" }
 
@@ -49,6 +50,9 @@ local function makeIcon(entry)
             end,
             Hide = function()
                 writes[#writes + 1] = { op = "hide" }
+            end,
+            SetAlpha = function(_, value)
+                writes[#writes + 1] = { op = "alpha", value = value }
             end,
         },
     }
@@ -248,6 +252,64 @@ assert(source == "ChargeCount", "hidden cooldown count without explicit shown st
 assert(mirrorBacked == true, "hidden cooldown count without explicit shown state should remain mirror authoritative")
 assert(mirrorHidden == true, "cooldown count without explicit shown state should report hidden")
 
+-- Secret cooldown ChargeCount visibility must not be decoded or overridden by a
+-- clean parent frame state. The renderer forwards the secret boolean to the
+-- FontString alpha sink, which evaluates it through C_CurveUtil.
+mirrorStates["56:essential"] = {
+    stackText = secretStackText,
+    stackTextSource = "ChargeCount",
+    stackTextShown = secretStackText,
+    cooldownChargesShown = secretStackText,
+    chargeCountFrameShown = false,
+    chargeTextOwnerShown = false,
+}
+icon._blizzMirrorCooldownID = 56
+icon._runtimeSpellID = 439843
+icon._spellEntry = { kind = "cooldown", type = "spell", spellID = 439843 }
+text, source, mirrorBacked, mirrorHidden = policy:ResolveIconStackText(icon)
+assert(rawequal(text, secretStackText),
+    "secret cooldown ChargeCount text should be forwarded for alpha-gated display")
+assert(source == "ChargeCount",
+    "secret cooldown ChargeCount should preserve its source")
+assert(mirrorBacked == true,
+    "secret cooldown ChargeCount should stay mirror authoritative")
+assert(mirrorHidden ~= true,
+    "secret cooldown ChargeCount should not be reported mirror-hidden")
+
+mirrorStates["58:essential"] = {
+    stackText = secretStackText,
+    stackTextSource = "ChargeCount",
+    stackTextShown = secretStackText,
+    cooldownChargesShown = secretStackText,
+    chargeCountFrameShown = false,
+    chargeTextOwnerShown = true,
+}
+icon._blizzMirrorCooldownID = 58
+text, source, mirrorBacked, mirrorHidden = policy:ResolveIconStackText(icon)
+assert(rawequal(text, secretStackText),
+    "shown count text owner should preserve secret cooldown ChargeCount text")
+assert(source == "ChargeCount",
+    "shown count text owner should preserve its ChargeCount source")
+assert(mirrorBacked == true,
+    "shown count text owner should stay mirror authoritative")
+assert(mirrorHidden ~= true,
+    "shown count text owner should not be reported mirror-hidden")
+
+-- A definitive non-secret cooldownChargesShown=true still wins over a frame-hidden
+-- read (mirrors state 46): an explicit data-driven count can show even when the
+-- parent ChargeCount frame state reads false, so the override is secret-only.
+mirrorStates["57:essential"] = {
+    stackText = "3",
+    stackTextSource = "ChargeCount",
+    stackTextShown = true,
+    cooldownChargesShown = true,
+    chargeCountFrameShown = false,
+}
+icon._blizzMirrorCooldownID = 57
+text, source, mirrorBacked = policy:ResolveIconStackText(icon)
+assert(text == "3",
+    "an explicit non-secret cooldownChargesShown=true should still render despite frame-hidden")
+
 icon._blizzMirrorCooldownID = nil
 icon._runtimeSpellID = 100
 displayCounts[200] = 2
@@ -259,6 +321,12 @@ assert(mirrorBacked == nil, "non-mirror fallback should not report mirror author
 auraRuntime.GetApplications = function(unit, auraInstanceID)
     if unit == "target" and auraInstanceID == 9001 then
         return true, secretStackText
+    end
+    if unit == "target" and auraInstanceID == 9002 then
+        return true, "1"
+    end
+    if unit == "target" and auraInstanceID == 9003 then
+        return true, "2"
     end
     return false
 end
@@ -274,6 +342,79 @@ text, source = policy:ResolveIconStackText(auraIcon)
 assert(rawequal(text, secretStackText), "aura stack text should forward secret values unchanged")
 assert(source == "Applications", "aura stack text should report Applications")
 
+-- Mirror-primary for a mirror-backed aura. Reaper's Mark's target debuff genuinely
+-- stacks, but its C_UnitAuras data is restricted in combat, so the live applications
+-- query (GetApplications) returns not-resolved. The Blizzard CDM mirror child still
+-- captured the rendered stack as a secret value; the aura icon must surface that
+-- captured stackText (primary) instead of falling through to the empty live query.
+-- instID 9002 also has a live fallback in this test; the only way to pass is
+-- for the mirror state to stay authoritative. The secret value forwards verbatim.
+mirrorStates["434765:buff"] = {
+    stackText = secretStackText,
+    stackTextSource = "Applications",
+    stackTextShown = true,
+}
+local mirrorBackedAura = {
+    _spellEntry = {
+        kind = "aura",
+        type = "spell",
+        auraInstanceID = 9002,
+        auraUnit = "target",
+        identityCooldownID = 434765,
+        identityCategory = "buff",
+    },
+}
+text, source, mirrorBacked = policy:ResolveIconStackText(mirrorBackedAura)
+assert(rawequal(text, secretStackText),
+    "mirror-backed aura should use the captured mirror stackText when the live query is restricted")
+assert(source == "Applications", "mirror-backed aura stack should report Applications")
+assert(mirrorBacked == true, "mirror-backed aura stack should report mirror authority")
+
+mirrorStates["434766:buff"] = {
+    auraInstanceID = 9003,
+    auraUnit = "target",
+}
+local unknownMirrorBackedAura = {
+    _spellEntry = {
+        kind = "aura",
+        type = "spell",
+        auraInstanceID = 9003,
+        auraUnit = "target",
+        identityCooldownID = 434766,
+        identityCategory = "buff",
+    },
+}
+text, source, mirrorBacked = policy:ResolveIconStackText(unknownMirrorBackedAura)
+assert(text == "2",
+    "mirror-backed aura with no confirmed stack text should fall back to live Applications")
+assert(source == "Applications",
+    "unknown mirror fallback should keep the Applications source")
+assert(mirrorBacked ~= true,
+    "unknown mirror fallback should not report mirror authority")
+
+mirrorStates["434767:buff"] = {
+    stackText = "",
+    stackTextSource = "Applications",
+    stackTextShown = true,
+}
+local emptyMirrorBackedAura = {
+    _spellEntry = {
+        kind = "aura",
+        type = "spell",
+        auraInstanceID = 9003,
+        auraUnit = "target",
+        identityCooldownID = 434767,
+        identityCategory = "buff",
+    },
+}
+text, source, mirrorBacked = policy:ResolveIconStackText(emptyMirrorBackedAura)
+assert(text == nil,
+    "confirmed empty mirror Applications text should not fall back to live Applications")
+assert(source == "Applications",
+    "confirmed empty mirror Applications should keep the mirror source")
+assert(mirrorBacked == true,
+    "confirmed empty mirror Applications should report mirror authority")
+
 sources.QueryAuraApplicationDisplayCount = function(unit, auraInstanceID, minApplications)
     auraDisplayQueries[#auraDisplayQueries + 1] = {
         unit = unit,
@@ -288,8 +429,8 @@ local apps, appSource = policy:GetAuraApplicationsFromData({
 }, "player", "aura-data")
 assert(apps == "4", "aura data fallback should ask the display-count source")
 assert(appSource == "display-count", "display-count fallback should identify its source")
-assert(auraDisplayQueries[1].minApplications == 2,
-    "display-count fallback should request displayable stacks only")
+assert(auraDisplayQueries[1].minApplications == 1,
+    "display-count should request stacks from 1 (abilities that count from a single application)")
 
 local renderedIcon, writes = makeIcon({ kind = "aura", viewerType = "buff" })
 policy:ApplyAuraCountText(renderedIcon, {
@@ -303,6 +444,18 @@ assert(rawequal(writes[1].value, secretStackText),
 assert(writes[2].op == "show", "resolved count rendering should show the FontString")
 assert(renderedIcon._stackTextSource == "display-count",
     "resolved count rendering should stamp the source")
+
+renderedIcon, writes = makeIcon({ kind = "aura", viewerType = "buff" })
+policy:ApplyAuraCountText(renderedIcon, {
+    sinkText = "0",
+    value = 0,
+    shown = true,
+    source = "display-count",
+}, false, false)
+assert(writes[1].op == "set" and writes[1].value == "",
+    "aura display-count zero should clear stack text when zero display is not requested")
+assert(writes[2].op == "hide",
+    "aura display-count zero should hide stack text when zero display is not requested")
 
 renderedIcon, writes = makeIcon({ kind = "aura", viewerType = "buff" })
 renderedIcon._rowConfig = { hideStackText = true }
@@ -338,9 +491,9 @@ applied = policy:ApplyMirrorStackText(renderedIcon, {
     wasSetFromCooldown = true,
     wasSetFromCharges = false,
 }, false)
-assert(applied == false, "cooldown count text owner should not apply without visible parent count state")
-assert(writes[1] == nil,
-    "cooldown count text owner should not write without visible parent count state")
+assert(applied == true, "cooldown count text owner should apply when the child text owner is visible")
+assert(writes[1].op == "set" and writes[1].value == "8",
+    "cooldown count text owner should write when the child text owner is visible")
 
 renderedIcon, writes = makeIcon({ kind = "cooldown", viewerType = "essential" })
 applied = policy:ApplyMirrorStackText(renderedIcon, {
@@ -366,5 +519,185 @@ spellCounts[500] = 3
 local count, countSource = policy:GetSpellCountForEntry(500, nil, {})
 assert(count == 3, "spell count fallback should return positive action-button counts")
 assert(countSource == "spell-cast-count", "spell count fallback should report its source")
+
+-- Cross-category aura on a non-aura (cooldown) entry. The host (essential)
+-- mirror state carries the SOURCE (buff) child's applications text on
+-- auraStackText (CaptureAuraInstanceFromChildFrame). The icon must render that
+-- carried text -- NOT the host child's own (chargeless) ChargeCount text,
+-- which is the wrong source and paints blank in combat.
+mirrorStates["51:essential"] = {
+    stackText = "2",
+    stackTextSource = "ChargeCount",
+    stackTextShown = true,
+    auraInstanceID = 5151,
+    auraStackText = "7",
+    auraStackTextSource = "Applications",
+    auraStackTextShown = true,
+}
+icon._blizzMirrorCooldownID = 51
+icon._blizzMirrorCategory = "essential"
+icon._runtimeSpellID = 439843
+icon._spellEntry = { kind = "cooldown", type = "spell", spellID = 439843 }
+icon._resolvedCooldownMode = "aura"
+text, source = policy:ResolveIconStackText(icon)
+assert(text == "7",
+    "cross-category aura should render the carried aura stack text, not ChargeCount")
+assert(source == "Applications",
+    "carried aura stack text should report the Applications source")
+
+mirrorStates["55:essential"] = {
+    stackText = "2",
+    stackTextSource = "ChargeCount",
+    stackTextShown = true,
+    auraInstanceID = 5152,
+    auraStackText = secretStackText,
+    auraStackTextSource = "Applications",
+    auraStackTextShown = true,
+}
+icon._blizzMirrorCooldownID = 55
+icon._auraInstanceID = 5152
+icon._auraUnit = "target"
+text, source, mirrorBacked = policy:ResolveIconStackText(icon)
+assert(rawequal(text, secretStackText),
+    "secret carried aura stack text should stay mirror-authoritative")
+assert(source == "Applications",
+    "secret carried aura stack text should keep the Applications source")
+assert(mirrorBacked == true,
+    "secret carried aura stack text should report mirror authority")
+
+-- Leak guard: same carried aura stack, but the icon is NOT rendering the aura
+-- (on cooldown, or the viewer is configured to skip the aura phase). The
+-- carried count must stay off and fall back to the host ChargeCount path.
+icon._blizzMirrorCooldownID = 51
+icon._resolvedCooldownMode = "cooldown"
+local _, cooldownModeSource = policy:ResolveIconStackText(icon)
+assert(cooldownModeSource == "ChargeCount",
+    "carried aura stack must not show when the icon is not rendering the aura phase")
+icon._resolvedCooldownMode = "aura"
+
+local crossCatRender, crossCatWrites = makeIcon({ kind = "cooldown", viewerType = "essential" })
+crossCatRender._resolvedCooldownMode = "aura"
+applied = policy:ApplyMirrorStackText(crossCatRender, {
+    stackText = "2",
+    stackTextSource = "ChargeCount",
+    stackTextShown = true,
+    auraInstanceID = 5151,
+    auraStackText = "7",
+    auraStackTextSource = "Applications",
+    auraStackTextShown = true,
+    stackTextEpoch = 21,
+}, false)
+assert(applied == true,
+    "cross-category aura stack should apply through the mirror stack path")
+assert(crossCatWrites[1].op == "set" and crossCatWrites[1].value == "7",
+    "cross-category aura should write the carried aura stack text, not the ChargeCount value")
+assert(crossCatWrites[3].op == "alpha" and crossCatWrites[3].value == 1,
+    "cross-category aura stack should use the carried aura visibility gate")
+
+local hiddenHostChargeRender, hiddenHostChargeWrites = makeIcon({ kind = "cooldown", viewerType = "essential" })
+hiddenHostChargeRender._resolvedCooldownMode = "aura"
+applied = policy:ApplyMirrorStackText(hiddenHostChargeRender, {
+    stackText = secretStackText,
+    stackTextSource = "ChargeCount",
+    stackTextShown = secretStackText,
+    cooldownChargesShown = secretStackText,
+    chargeCountFrameShown = false,
+    chargeTextOwnerShown = true,
+    auraInstanceID = 5151,
+    auraStackText = "8",
+    auraStackTextSource = "Applications",
+    auraStackTextShown = true,
+    stackTextEpoch = 23,
+}, false)
+assert(applied == true,
+    "carried aura stack should apply even when the host ChargeCount frame is hidden")
+assert(hiddenHostChargeWrites[1].op == "set" and hiddenHostChargeWrites[1].value == "8",
+    "hidden host ChargeCount should not replace carried aura stack text")
+assert(hiddenHostChargeWrites[3].op == "alpha" and hiddenHostChargeWrites[3].value == 1,
+    "hidden host ChargeCount should not alpha-hide the carried aura stack text")
+
+local emptyMirrorRender, emptyMirrorWrites = makeIcon({ kind = "aura", viewerType = "buff" })
+applied = policy:ApplyMirrorStackText(emptyMirrorRender, {
+    stackText = "",
+    stackTextSource = "Applications",
+    stackTextShown = true,
+    stackTextEpoch = 22,
+}, false)
+assert(applied == true,
+    "mirror-backed aura stack text writes should be authoritative even when the Lua value is empty")
+assert(emptyMirrorWrites[1].op == "set" and emptyMirrorWrites[1].value == "",
+    "mirror-backed aura stack text should be forwarded verbatim to SetText")
+assert(emptyMirrorWrites[2].op == "show",
+    "mirror-backed aura stack text visibility should follow mirror shown-state")
+
+local buffAuraRender, buffAuraWrites = makeIcon({ kind = "aura", viewerType = "buff" })
+applied = policy:ApplyMirrorStackText(buffAuraRender, {
+    stackText = "8",
+    stackTextSource = "Applications",
+    stackTextShown = true,
+    cooldownChargesShown = secretStackText,
+    chargeCountFrameShown = false,
+    chargeTextOwnerShown = true,
+    stackTextEpoch = 24,
+}, false)
+assert(applied == true,
+    "buff aura stack should apply from its own Applications mirror text")
+assert(buffAuraWrites[1].op == "set" and buffAuraWrites[1].value == "8",
+    "buff aura stack should write the Applications count")
+assert(buffAuraWrites[3].op == "alpha" and buffAuraWrites[3].value == 1,
+    "buff aura Applications stack should not inherit the hidden ChargeCount gate")
+
+-- An explicitly hidden carried aura stack falls back to the host ChargeCount
+-- resolution (the source child hid its count, so show nothing).
+mirrorStates["52:essential"] = {
+    stackText = "2",
+    stackTextSource = "ChargeCount",
+    stackTextShown = true,
+    auraInstanceID = 5151,
+    auraStackText = "7",
+    auraStackTextSource = "Applications",
+    auraStackTextShown = false,
+}
+icon._blizzMirrorCooldownID = 52
+local _, hiddenSource = policy:ResolveIconStackText(icon)
+assert(hiddenSource == "ChargeCount",
+    "an explicitly hidden carried aura stack should fall back to the host ChargeCount path")
+
+-- A cooldown entry with no carried aura stack (plain cooldown) is untouched:
+-- the auraStackText branch only fires when the source child supplied one.
+mirrorStates["53:essential"] = {
+    stackText = "2",
+    stackTextSource = "ChargeCount",
+    stackTextShown = true,
+}
+icon._blizzMirrorCooldownID = 53
+local _, plainCdSource = policy:ResolveIconStackText(icon)
+assert(plainCdSource == "ChargeCount",
+    "a cooldown with no carried aura stack should still resolve via the mirror ChargeCount path")
+
+-- Flicker guard: the borrowed aura stack is captured from the source child via
+-- two paths -- the raw SetText(number) argument and the rendered owner:GetText()
+-- string -- which alternate per UNIT_AURA. Carrying the value verbatim made the
+-- essential icon's count flip secret-number <-> secret-string every refresh
+-- (visible flicker). The resolver must coerce a numeric carried value to the
+-- SAME rendered string the buff icon shows (C_StringUtil.TruncateWhenZero), so
+-- consecutive frames write a stable string regardless of which capture last won.
+mirrorStates["54:essential"] = {
+    stackText = "2",
+    stackTextSource = "ChargeCount",
+    stackTextShown = true,
+    auraInstanceID = 5151,
+    auraStackText = 7, -- numeric capture (raw SetText arg); the other path is "7"
+    auraStackTextSource = "Applications",
+    auraStackTextShown = true,
+}
+icon._blizzMirrorCooldownID = 54
+local numericText, numericSource = policy:ResolveIconStackText(icon)
+assert(type(numericText) == "string",
+    "a numeric carried aura stack must be coerced to a string so it can't oscillate with the string-capture frame")
+assert(numericText == "7",
+    "the coerced numeric carried aura stack must render the same glyph the buff icon shows")
+assert(numericSource == "Applications",
+    "coercing the carried aura stack type must not change its Applications source")
 
 print("OK: cdm_icon_stack_policy_test")

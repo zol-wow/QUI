@@ -138,6 +138,71 @@ local function EventTraceIDList(ids)
     return table.concat(out, ",")
 end
 
+local function EventTraceAuraSpellID(auraData)
+    if type(auraData) ~= "table" then return nil end
+    local spellID = auraData.spellId
+    if DebugIsSecretValue(spellID) then return spellID end
+    if spellID == nil then
+        spellID = auraData.spellID
+    end
+    return spellID
+end
+
+local function EventTraceCleanNumber(value)
+    if DebugIsSecretValue(value) then return nil end
+    if type(value) == "number" then return value end
+    return nil
+end
+
+local function EventTraceTargetFilterPass(unit, auraInstanceID, filter)
+    if DebugIsSecretValue(unit) then return "skip" end
+    if unit ~= "target" then return "skip" end
+    local cleanAuraInstanceID = EventTraceCleanNumber(auraInstanceID)
+    if cleanAuraInstanceID == nil then return "skip" end
+    if not (Sources and Sources.QueryAuraFilteredOutByInstanceID) then return "na" end
+
+    local filteredOut = Sources.QueryAuraFilteredOutByInstanceID(unit, cleanAuraInstanceID, filter)
+    if DebugIsSecretValue(filteredOut) then
+        return CDMIcons.EventTraceValue(filteredOut)
+    end
+    if type(filteredOut) == "boolean" then
+        return tostring(filteredOut == false)
+    end
+    return CDMIcons.EventTraceValue(filteredOut)
+end
+
+local function EventTraceAddedAuras(unit, addedAuras)
+    if type(addedAuras) ~= "table" or #addedAuras == 0 then return "nil" end
+
+    local out = {}
+    local limit = math.min(#addedAuras, 3)
+    for i = 1, limit do
+        local auraData = addedAuras[i]
+        if type(auraData) == "table" then
+            local auraInstanceID = auraData.auraInstanceID
+            out[#out + 1] = string.format(
+                "#%d inst=%s sid=%s name=%s help=%s harm=%s src=%s helpfulPlayer=%s harmfulPlayer=%s",
+                i,
+                CDMIcons.EventTraceValue(auraInstanceID),
+                CDMIcons.EventTraceValue(EventTraceAuraSpellID(auraData)),
+                CDMIcons.EventTraceValue(auraData.name),
+                CDMIcons.EventTraceValue(auraData.isHelpful),
+                CDMIcons.EventTraceValue(auraData.isHarmful),
+                CDMIcons.EventTraceValue(auraData.sourceUnit),
+                EventTraceTargetFilterPass(unit, auraInstanceID, "HELPFUL|PLAYER"),
+                EventTraceTargetFilterPass(unit, auraInstanceID, "HARMFUL|PLAYER"))
+        else
+            out[#out + 1] = string.format("#%d=%s", i, CDMIcons.EventTraceValue(auraData))
+        end
+    end
+
+    if #addedAuras > limit then
+        out[#out + 1] = "+" .. tostring(#addedAuras - limit)
+    end
+
+    return "[" .. table.concat(out, " | ") .. "]"
+end
+
 local function EventTraceMirrorState(icon)
     local mirror = ns.CDMBlizzMirror
     if not (icon and icon._blizzMirrorCooldownID
@@ -161,14 +226,26 @@ local function EventTraceMirrorStateMatches(targetID, state)
     return false
 end
 
-function CDMIcons.EventTraceIconMatches(icon, targetID)
-    local entry = icon and icon._spellEntry
-    if not entry or not targetID then return false end
-    if CDMIcons.EventTraceSpellIDMatches(targetID, icon._runtimeSpellID) then return true end
+local function EventTraceEntryMatches(targetID, entry)
+    if not (targetID and entry) then return false end
+    if CDMIcons.EventTraceSpellIDMatches(targetID, entry.cooldownID) then return true end
     if CDMIcons.EventTraceSpellIDMatches(targetID, entry.overrideSpellID) then return true end
     if CDMIcons.EventTraceSpellIDMatches(targetID, entry.spellID) then return true end
     if CDMIcons.EventTraceSpellIDMatches(targetID, entry.id) then return true end
     if CDMIcons.EventTraceSpellIDMatches(targetID, entry.itemID) then return true end
+    if type(entry.linkedSpellIDs) == "table" then
+        for _, linkedID in ipairs(entry.linkedSpellIDs) do
+            if CDMIcons.EventTraceSpellIDMatches(targetID, linkedID) then return true end
+        end
+    end
+    return false
+end
+
+function CDMIcons.EventTraceIconMatches(icon, targetID)
+    local entry = icon and icon._spellEntry
+    if not entry or not targetID then return false end
+    if CDMIcons.EventTraceSpellIDMatches(targetID, icon._runtimeSpellID) then return true end
+    if EventTraceEntryMatches(targetID, entry) then return true end
     if (entry.type == "trinket" or entry.type == "slot")
        and Sources and Sources.QueryInventoryItemID then
         local itemID = Sources.QueryInventoryItemID("player", entry.id)
@@ -326,7 +403,7 @@ function CDMIcons.EventTraceIconSummary(targetID)
                     local m = EventTraceMirrorState(icon)
                     local shown = icon.IsShown and icon:IsShown() and "shown" or "hidden"
                     parts[#parts + 1] = string.format(
-                        "%s/%s %s eid=%s espell=%s eov=%s ecid=%s runtime=%s kind=%s type=%s elinks=%s mode=%s aura=%s cd=%s real=%s gcd=%s key=%s mirror=%s/%s mspell=%s mov=%s mtooltip=%s mlinks=%s",
+                        "%s/%s %s eid=%s espell=%s eov=%s ecid=%s runtime=%s kind=%s type=%s elinks=%s mode=%s aura=%s cd=%s real=%s gcd=%s key=%s auraSource=%s auraInst=%s auraUnit=%s activeAura=%s mirror=%s/%s mspell=%s mov=%s mtooltip=%s mlinks=%s",
                         tostring(entry.name or "?"),
                         tostring(entry.viewerType or "?"),
                         shown,
@@ -344,6 +421,10 @@ function CDMIcons.EventTraceIconSummary(targetID)
                         tostring(icon._hasRealCooldownActive == true),
                         tostring(icon._showingGCDSwipe == true),
                         tostring(icon._lastDurObjKey),
+                        CDMIcons.EventTraceValue(icon._lastAuraSourceID),
+                        CDMIcons.EventTraceValue(icon._auraInstanceID),
+                        CDMIcons.EventTraceValue(icon._auraUnit),
+                        CDMIcons.EventTraceValue(icon._activeAuraSpellID),
                         tostring(m and m.viewerCategory or icon._blizzMirrorCategory),
                         tostring(m and m.cooldownID or icon._blizzMirrorCooldownID),
                         tostring(m and m.spellID),
@@ -380,12 +461,83 @@ end
 --   err    = predicate pcall failed (unexpected userdata shape)
 local function ProbeDurObjState(durObj)
     if durObj == nil then return "nil" end
+    local durObjType = type(durObj)
+    if durObjType ~= "table" and durObjType ~= "userdata" then
+        return durObjType
+    end
     local okSec, hasSecret = pcall(durObj.HasSecretValues, durObj)
     if not okSec then return "err" end
     if hasSecret then return "secret" end
     local okZero, isZero = pcall(durObj.IsZero, durObj)
     if not okZero then return "err" end
     return isZero and "zero" or "live"
+end
+
+local function EventTraceBarMatches(bar, targetID)
+    if not (bar and targetID) then return false end
+    if CDMIcons.EventTraceSpellIDMatches(targetID, bar._runtimeSpellID) then return true end
+    if CDMIcons.EventTraceSpellIDMatches(targetID, bar._spellID) then return true end
+    return EventTraceEntryMatches(targetID, bar._spellEntry)
+end
+
+local function EventTraceGetBarRuntimeState(bar)
+    local store = ns.CDMRuntimeStore
+    if store and store.GetFrameState then
+        return store.GetFrameState(bar)
+    end
+    return bar and bar._cdmRuntimeState or nil
+end
+
+function CDMIcons.EventTraceBarSummary(targetID)
+    local bars = ns.CDMBars
+    local getActiveBars = bars and bars.GetActiveBars
+    if not (targetID and getActiveBars) then return "bars=0" end
+
+    local activeBars = getActiveBars(bars)
+    if type(activeBars) ~= "table" then return "bars=0" end
+
+    local parts = {}
+    local matches = 0
+    for _, bar in ipairs(activeBars) do
+        if EventTraceBarMatches(bar, targetID) then
+            matches = matches + 1
+            if #parts < 3 then
+                local entry = bar._spellEntry or {}
+                local state = EventTraceGetBarRuntimeState(bar) or {}
+                local shown = bar.IsShown and bar:IsShown() and "shown" or "hidden"
+                parts[#parts + 1] = string.format(
+                    "%s/%s %s spell=%s eid=%s espell=%s eov=%s ecid=%s mode=%s active=%s auraInst=%s auraUnit=%s dataUnit=%s durObj=%s cside=%s hideDur=%s hasExp=%s stateActive=%s stateAuraUnit=%s count=%s/%s/%s mirror=%s source=%s",
+                    tostring(entry.name or "?"),
+                    tostring(entry.viewerType or "?"),
+                    shown,
+                    CDMIcons.EventTraceValue(bar._spellID),
+                    tostring(entry.id),
+                    tostring(entry.spellID),
+                    tostring(entry.overrideSpellID),
+                    tostring(entry.cooldownID),
+                    CDMIcons.EventTraceValue(state.mode),
+                    CDMIcons.EventTraceValue(bar._active),
+                    CDMIcons.EventTraceValue(bar._auraInstanceID),
+                    CDMIcons.EventTraceValue(bar._auraUnit),
+                    CDMIcons.EventTraceValue(bar._auraDataUnit),
+                    ProbeDurObjState(bar._durObj),
+                    CDMIcons.EventTraceValue(bar._cSideFill),
+                    CDMIcons.EventTraceValue(bar._hideDurationText),
+                    CDMIcons.EventTraceValue(bar._hasAuraExpirationTime),
+                    CDMIcons.EventTraceValue(state.active),
+                    CDMIcons.EventTraceValue(state.auraUnit),
+                    CDMIcons.EventTraceValue(state.countValue),
+                    CDMIcons.EventTraceValue(state.countShown),
+                    CDMIcons.EventTraceValue(state.countSource),
+                    CDMIcons.EventTraceValue(state.mirrorBacked),
+                    CDMIcons.EventTraceValue(state.mirrorSourceID))
+            end
+        end
+    end
+
+    if matches == 0 then return "bars=0" end
+    local more = matches > #parts and string.format(" +%d more", matches - #parts) or ""
+    return string.format("bars=%d [%s%s]", matches, table.concat(parts, " | "), more)
 end
 
 -- Numeric scalar probe. Tags: "clean" = numeric and non-secret (safe
@@ -436,6 +588,31 @@ function CDMIcons.EventTraceIconWriteState(icon)
         end
     end
 
+    -- Charge-system discriminator. A genuinely charged ability returns a
+    -- charge-info table from QuerySpellCharges with a maxCharges >= 1; a
+    -- chargeless spell (Reaper's Mark) returns nil => "no-charge-info". This
+    -- is the authoritative, non-secret way to tell whether a ChargeCount
+    -- render is even legitimate for this spell, independent of the secret
+    -- shown-booleans. "secret" here means maxCharges itself is tainted.
+    local eMaxCharges = "skip"
+    if baseSid and Sources and Sources.QuerySpellCharges then
+        local chargeInfo = Sources.QuerySpellCharges(baseSid)
+        if chargeInfo == nil then
+            eMaxCharges = "no-charge-info"
+        else
+            local mc = chargeInfo.maxCharges
+            if mc == nil then
+                eMaxCharges = "nil"
+            elseif issecretvalue and issecretvalue(mc) then
+                eMaxCharges = "secret"
+            elseif type(mc) == "number" then
+                eMaxCharges = tostring(mc)
+            else
+                eMaxCharges = type(mc)
+            end
+        end
+    end
+
     local probeNumeric = ProbeNumeric
     local mStart = probeNumeric(m and m.lastSetCooldownStart)
     local mDur   = probeNumeric(m and m.lastSetCooldownDuration)
@@ -449,7 +626,7 @@ function CDMIcons.EventTraceIconWriteState(icon)
     end
 
     return string.format(
-        "eid=%s espell=%s eov=%s ecid=%s runtime=%s kind=%s type=%s elinks=%s mode=%s aura=%s cd=%s real=%s gcd=%s key=%s auraSource=%s auraInst=%s auraUnit=%s activeAura=%s mirror=%s/%s mchildActive=%s mauraDur=%s mauraSrc=%s mtotemDur=%s mInst=%s mUnit=%s mepoch=%s mspell=%s mov=%s mtooltip=%s mlinks=%s mcdDur=%s qChg=%s qDur=%s qChgO=%s qDurO=%s mStart=%s mDur=%s cdStart=%s cdDur=%s",
+        "eid=%s espell=%s eov=%s ecid=%s runtime=%s kind=%s type=%s elinks=%s mode=%s aura=%s cd=%s real=%s gcd=%s key=%s auraSource=%s auraInst=%s auraUnit=%s activeAura=%s mirror=%s/%s mchildActive=%s mauraDur=%s mauraSrc=%s mtotemDur=%s mInst=%s mUnit=%s mepoch=%s mspell=%s mov=%s mtooltip=%s mlinks=%s mcdDur=%s qChg=%s qDur=%s qChgO=%s qDurO=%s mStart=%s mDur=%s cdStart=%s cdDur=%s mStackText=%s mStackSrc=%s mStackShown=%s mStackEpoch=%s iStackText=%s iStackSrc=%s mAuraStack=%s mAuraStackSrc=%s mAuraStackShown=%s mCooldownChargesShown=%s mChargeCountFrameShown=%s mChargeTextOwnerShown=%s eMaxCharges=%s",
         tostring(entry.id),
         tostring(entry.spellID),
         tostring(entry.overrideSpellID),
@@ -482,7 +659,37 @@ function CDMIcons.EventTraceIconWriteState(icon)
         tostring(m and m.overrideTooltipSpellID),
         EventTraceIDList(m and m.linkedSpellIDs),
         mcdDur, qChg, qDur, qChgO, qDurO,
-        mStart, mDur, cdStart, cdDur)
+        mStart, mDur, cdStart, cdDur,
+        -- Stack/count diagnostics. mStackText is the HOST mirror state's
+        -- packed stack text (BuildMirrorCountPayload reads only this). During
+        -- a cross-category aura phase the duration is borrowed from a related
+        -- aura child (mauraSrc=aura-related-child) but the count is NOT — so a
+        -- nil/empty mStackText here while a debuff carries live stacks pins the
+        -- "essential shows no stacks during the aura phase" gap to the
+        -- count-source asymmetry. iStackText/iStackSrc are what actually got
+        -- stamped onto / rendered by the icon.
+        CDMIcons.EventTraceValue(m and m.stackText),
+        CDMIcons.EventTraceValue(m and m.stackTextSource),
+        CDMIcons.EventTraceValue(m and m.stackTextShown),
+        tostring(m and m.stackTextEpoch),
+        CDMIcons.EventTraceValue(icon.stackText),
+        tostring(icon._stackTextSource),
+        -- Carried cross-category aura stack text on the host mirror state (the
+        -- buff child's applications, mirrored onto the essential state). When
+        -- the fix is live this is populated during the aura phase and drives
+        -- the count; mStackSrc stays ChargeCount (the host's own text).
+        CDMIcons.EventTraceValue(m and m.auraStackText),
+        CDMIcons.EventTraceValue(m and m.auraStackTextSource),
+        CDMIcons.EventTraceValue(m and m.auraStackTextShown),
+        -- Charge-shown signals. These distinguish a real charged ability (frame
+        -- genuinely shown) from a chargeless spell whose ChargeCount frame is
+        -- hidden by Blizzard. If these read non-secret false for Reaper's Mark
+        -- during cooldown, the resolver can gate ChargeCount on the real frame
+        -- Shown state instead of defaulting secret-boolean => shown.
+        CDMIcons.EventTraceValue(m and m.cooldownChargesShown),
+        CDMIcons.EventTraceValue(m and m.chargeCountFrameShown),
+        CDMIcons.EventTraceValue(m and m.chargeTextOwnerShown),
+        eMaxCharges)
 end
 
 function CDMIcons.EventTraceAPISummary(spellID)
@@ -544,15 +751,24 @@ function CDMIcons.EventTraceAPISummary(spellID)
         CDMIcons.EventTraceValue(itemSpellCdOnGCD))
 end
 
-function CDMIcons.EventTraceAuraInfo(updateInfo)
+function CDMIcons.EventTraceAuraInfo(unit, updateInfo)
+    if type(unit) == "table" and updateInfo == nil then
+        updateInfo = unit
+        unit = nil
+    end
     if type(updateInfo) ~= "table" then return "auraInfo=nil" end
     local added = type(updateInfo.addedAuras) == "table" and #updateInfo.addedAuras or 0
     local updated = type(updateInfo.updatedAuraInstanceIDs) == "table" and #updateInfo.updatedAuraInstanceIDs or 0
     local removed = type(updateInfo.removedAuraInstanceIDs) == "table" and #updateInfo.removedAuraInstanceIDs or 0
     return string.format(
-        "aura full=%s added=%d updated=%d removed=%d",
+        "aura full=%s added=%d addedAuras=%s updated=%d updatedIDs=%s removed=%d removedIDs=%s",
         CDMIcons.EventTraceValue(updateInfo.isFullUpdate),
-        added, updated, removed)
+        added,
+        EventTraceAddedAuras(unit, updateInfo.addedAuras),
+        updated,
+        EventTraceIDList(updateInfo.updatedAuraInstanceIDs),
+        removed,
+        EventTraceIDList(updateInfo.removedAuraInstanceIDs))
 end
 
 ---------------------------------------------------------------------------
@@ -626,7 +842,14 @@ function CDMIcons.EventTracePrint(source, event, arg1, arg2, arg3, arg4, extra)
     -- transitions and would otherwise be starved by chatty per-tick
     -- events sharing the "events" key. Splitting keeps proc-window
     -- transitions visible in the trace.
-    local throttleBucket = event == "SPELL_UPDATE_COOLDOWN" and "events:SUC" or "events"
+    local throttleBucket = "events"
+    if event == "SPELL_UPDATE_COOLDOWN" then
+        throttleBucket = "events:SUC"
+    elseif source == "aura-pre" then
+        throttleBucket = "events:aura-pre"
+    elseif source == "aura-post" then
+        throttleBucket = "events:aura-post"
+    end
     local now = GetTime and GetTime() or 0
     local shouldPrint, throttleNote = EventTraceThrottle(throttleBucket, now)
     if not shouldPrint then return end
@@ -639,7 +862,7 @@ function CDMIcons.EventTracePrint(source, event, arg1, arg2, arg3, arg4, extra)
 
     local start = CDMIcons._eventTraceStartedAt or now
     print(string.format(
-        "|cff34d399[cdmevents]|r +%.3f sid=%d %s:%s args=(%s,%s,%s,%s) %s %s %s",
+        "|cff34d399[cdmevents]|r +%.3f sid=%d %s:%s args=(%s,%s,%s,%s) %s %s %s %s",
         now - start,
         targetID,
         tostring(source or "?"),
@@ -650,6 +873,7 @@ function CDMIcons.EventTracePrint(source, event, arg1, arg2, arg3, arg4, extra)
         CDMIcons.EventTraceValue(arg4),
         CDMIcons.EventTraceAPISummary(targetID),
         CDMIcons.EventTraceIconSummary(targetID),
+        CDMIcons.EventTraceBarSummary(targetID),
         extra or ""))
 end
 
@@ -791,6 +1015,42 @@ local function InstallIconWriteProbe(icon)
                     ProbeDurObjState(durObj),
                     tostring(icon._resolvedCooldownMode))
                 CDMIcons.EventTracePrintWrite("Cooldown:SCFDO", icon, "(durObj)", extra)
+            end)
+        end
+    end
+    -- StackText (the count sink). The other probes never touch the count
+    -- FontString, so a "stacks missing during the aura phase" symptom is
+    -- invisible to them. Trace SetText/SetFormattedText/Hide so we can see
+    -- whether the renderer wrote a value, wrote empty, or hid the count, and
+    -- cross-reference against the mStackText/iStackSrc fields in the write
+    -- state. Values may be secret in combat, so route through EventTraceValue.
+    if icon.StackText then
+        if icon.StackText.SetText then
+            hooksecurefunc(icon.StackText, "SetText", function(_, value)
+                local extra = string.format(
+                    "mode=%s iStackSrc=%s",
+                    tostring(icon._resolvedCooldownMode),
+                    tostring(icon._stackTextSource))
+                CDMIcons.EventTracePrintWrite("StackText:SetText", icon,
+                    CDMIcons.EventTraceValue(value), extra)
+            end)
+        end
+        if icon.StackText.SetFormattedText then
+            hooksecurefunc(icon.StackText, "SetFormattedText", function(_, fmt, value)
+                CDMIcons.EventTracePrintWrite("StackText:SetFormattedText", icon,
+                    CDMIcons.EventTraceValue(value), "fmt=" .. tostring(fmt))
+            end)
+        end
+        if icon.StackText.Show then
+            hooksecurefunc(icon.StackText, "Show", function()
+                CDMIcons.EventTracePrintWrite("StackText:Show", icon, "show",
+                    "mode=" .. tostring(icon._resolvedCooldownMode))
+            end)
+        end
+        if icon.StackText.Hide then
+            hooksecurefunc(icon.StackText, "Hide", function()
+                CDMIcons.EventTracePrintWrite("StackText:Hide", icon, "hide",
+                    "mode=" .. tostring(icon._resolvedCooldownMode))
             end)
         end
     end
@@ -1222,6 +1482,7 @@ local function RunCDMDebugEvents(msg, interval)
         throttleText))
     print("|cff34d399[cdmevents]|r " .. CDMIcons.EventTraceAPISummary(spellID))
     print("|cff34d399[cdmevents]|r " .. CDMIcons.EventTraceIconSummary(spellID))
+    print("|cff34d399[cdmevents]|r " .. CDMIcons.EventTraceBarSummary(spellID))
 
     local installed, raInstalled = CDMIcons.EventTraceInstallWriteProbes(spellID)
     print(string.format(
@@ -4118,6 +4379,7 @@ local function RunCDMDebugMirror(msg)
     if text == "" then
         print("|cff34D399[CDM-Debug]|r mirror usage:")
         print("  /cdmdebug mirror [filter|spellID|cooldownID]       -> sanitized mirror info")
+        print("  /cdmdebug mirror all                               -> sanitized dump of every entry")
         print("  /cdmdebug mirror child <cooldownID> [category]      -> child frame/text dump")
         print("  /cdmdebug mirror raw                                -> raw viewer/category dump")
         print("  /cdmdebug mirror cdtest <cooldownID>                -> cooldown setter test frame")
@@ -4126,7 +4388,9 @@ local function RunCDMDebugMirror(msg)
 
     local cmd, rest = text:match("^(%S+)%s*(.-)$")
     local lower = cmd and cmd:lower() or ""
-    if lower == "child" then
+    if lower == "all" then
+        RunCDMDebugInfo("")
+    elseif lower == "child" then
         RunCDMDebugChild(rest)
     elseif lower == "raw" then
         RunCDMDebugRaw()

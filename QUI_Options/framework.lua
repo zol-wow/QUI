@@ -1584,6 +1584,8 @@ function GUI:ShowConfirmation(options)
         confirmDialog.warning = confirmDialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         SetFont(confirmDialog.warning, 11, "", C.warning)
         confirmDialog.warning:SetPoint("TOP", confirmDialog.message, "BOTTOM", 0, -8)
+        confirmDialog.warning:SetWidth(280)
+        confirmDialog.warning:SetJustifyH("CENTER")
 
         -- Accept button (left)
         confirmDialog.acceptBtn = CreateFrame("Button", nil, confirmDialog, "BackdropTemplate")
@@ -1654,6 +1656,16 @@ function GUI:ShowConfirmation(options)
     else
         confirmDialog.warning:Hide()
     end
+
+    -- Grow the dialog to fit the wrapped message + warning so long text stays
+    -- inside the frame instead of spilling past its edges or over the buttons.
+    -- (message top inset 50, 18px gap to buttons, 28px button + 20px bottom inset.)
+    local msgH = confirmDialog.message:GetStringHeight() or 14
+    local warnH = 0
+    if options.warningText then
+        warnH = (confirmDialog.warning:GetStringHeight() or 11) + 8
+    end
+    confirmDialog:SetHeight(math.max(160, 50 + msgH + warnH + 18 + 28 + 20))
 
     -- Accept button styling
     confirmDialog.acceptBtn.text:SetText(options.acceptText or "OK")
@@ -1814,7 +1826,7 @@ end
 function GUI:CreateColorPicker(parent, label, dbKey, dbTable, onChange, description)
     local container = CreateFrame("Frame", nil, parent)
     container:SetSize(200, 20)
-    
+
     -- Color swatch button (same size as checkbox: 16x16)
     local swatch = CreateFrame("Button", nil, container, "BackdropTemplate")
     swatch:SetSize(16, 16)
@@ -1832,10 +1844,10 @@ function GUI:CreateColorPicker(parent, label, dbKey, dbTable, onChange, descript
     SetFont(text, 12, "", C.text)
     text:SetText(label or "Color")
     text:SetPoint("LEFT", swatch, "RIGHT", 6, 0)
-    
+
     container.swatch = swatch
     container.label = text
-    
+
     local function GetColor()
         if dbTable and dbKey then
             local c = dbTable[dbKey]
@@ -1843,7 +1855,7 @@ function GUI:CreateColorPicker(parent, label, dbKey, dbTable, onChange, descript
         end
         return 1, 1, 1, 1
     end
-    
+
     local function SetColor(r, g, b, a)
         swatch:SetBackdropColor(r, g, b, a or 1)
         if dbTable and dbKey then
@@ -1851,19 +1863,19 @@ function GUI:CreateColorPicker(parent, label, dbKey, dbTable, onChange, descript
         end
         if onChange then onChange(r, g, b, a) end
     end
-    
+
     -- Initialize color
     local r, g, b, a = GetColor()
     swatch:SetBackdropColor(r, g, b, a)
-    
+
     container.GetColor = GetColor
     container.SetColor = SetColor
-    
+
     -- Open color picker on click
     swatch:SetScript("OnClick", function()
         local r, g, b, a = GetColor()
         local originalA = a or 1
-        
+
         local info = {
             r = r,
             g = g,
@@ -1884,10 +1896,10 @@ function GUI:CreateColorPicker(parent, label, dbKey, dbTable, onChange, descript
                 SetColor(prev.r, prev.g, prev.b, originalA)
             end,
         }
-        
+
         ColorPickerFrame:SetupColorPickerAndShow(info)
     end)
-    
+
     -- Hover effect
     swatch:SetScript("OnEnter", function(self)
         pcall(self.SetBackdropBorderColor, self, C_accent_r, C_accent_g, C_accent_b, C_accent_a)
@@ -2230,20 +2242,20 @@ function GUI:CreateCheckbox(parent, label, dbKey, dbTable, onChange, description
     box.check:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
     box.check:SetDesaturated(true)  -- Remove yellow, then apply mint
     box.check:Hide()
-    
+
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(text, 12, "", C.text)  -- Bumped from 11 to 12
     text:SetText(label or "Option")
     text:SetPoint("LEFT", box, "RIGHT", 6, 0)
-    
+
     container.box = box
     container.label = text
-    
+
     local function GetValue()
         if dbTable and dbKey then return dbTable[dbKey] end
         return container.checked
     end
-    
+
     local function SetValue(val)
         container.checked = val
         if val then
@@ -2258,11 +2270,11 @@ function GUI:CreateCheckbox(parent, label, dbKey, dbTable, onChange, description
         if dbTable and dbKey then dbTable[dbKey] = val end
         if onChange then onChange(val) end
     end
-    
+
     container.GetValue = GetValue
     container.SetValue = BindWidgetMethod(container, SetValue)
     SetValue(GetValue())
-    
+
     box:SetScript("OnClick", function() SetValue(not GetValue()) end)
     box:SetScript("OnEnter", function(self) pcall(self.SetBackdropBorderColor, self, C_accentHover_r, C_accentHover_g, C_accentHover_b, C_accentHover_a) end)
     box:SetScript("OnLeave", function(self)
@@ -2284,13 +2296,13 @@ end
 function GUI:CreateCheckboxCentered(parent, label, dbKey, dbTable, onChange, description)
     local container = CreateFrame("Frame", nil, parent)
     container:SetSize(100, 40)  -- Taller to fit label above
-    
+
     -- Label on top, centered
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(text, 11, "", C.accentLight)  -- Mint like slider labels
     text:SetText(label or "Option")
     text:SetPoint("TOP", container, "TOP", 0, 0)
-    
+
     -- Checkbox box below label, centered
     local box = CreateFrame("Button", nil, container, "BackdropTemplate")
     box:SetSize(16, 16)
@@ -2303,7 +2315,7 @@ function GUI:CreateCheckboxCentered(parent, label, dbKey, dbTable, onChange, des
     })
     box:SetBackdropColor(0.1, 0.1, 0.1, 1)
     box:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-    
+
     -- Checkmark
     box.check = box:CreateTexture(nil, "OVERLAY")
     box.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
@@ -2312,15 +2324,15 @@ function GUI:CreateCheckboxCentered(parent, label, dbKey, dbTable, onChange, des
     box.check:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
     box.check:SetDesaturated(true)
     box.check:Hide()
-    
+
     container.box = box
     container.label = text
-    
+
     local function GetValue()
         if dbTable and dbKey then return dbTable[dbKey] end
         return container.checked
     end
-    
+
     local function SetValue(val)
         container.checked = val
         if val then
@@ -2335,11 +2347,11 @@ function GUI:CreateCheckboxCentered(parent, label, dbKey, dbTable, onChange, des
         if dbTable and dbKey then dbTable[dbKey] = val end
         if onChange then onChange(val) end
     end
-    
+
     container.GetValue = GetValue
     container.SetValue = BindWidgetMethod(container, SetValue)
     SetValue(GetValue())
-    
+
     box:SetScript("OnClick", function() SetValue(not GetValue()) end)
     box:SetScript("OnEnter", function(self) pcall(self.SetBackdropBorderColor, self, C_accentHover_r, C_accentHover_g, C_accentHover_b, C_accentHover_a) end)
     box:SetScript("OnLeave", function(self)
@@ -2361,13 +2373,13 @@ end
 function GUI:CreateColorPickerCentered(parent, label, dbKey, dbTable, onChange, description)
     local container = CreateFrame("Frame", nil, parent)
     container:SetSize(100, 40)  -- Taller to fit label above
-    
+
     -- Label on top, centered (mint like slider labels)
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(text, 11, "", C.accentLight)
     text:SetText(label or "Color")
     text:SetPoint("TOP", container, "TOP", 0, 0)
-    
+
     -- Color swatch below label, centered
     local swatch = CreateFrame("Button", nil, container, "BackdropTemplate")
     swatch:SetSize(16, 16)
@@ -2379,10 +2391,10 @@ function GUI:CreateColorPickerCentered(parent, label, dbKey, dbTable, onChange, 
         edgeSize = px,
     })
     swatch:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-    
+
     container.swatch = swatch
     container.label = text
-    
+
     local function GetColor()
         if dbTable and dbKey then
             local c = dbTable[dbKey]
@@ -2390,7 +2402,7 @@ function GUI:CreateColorPickerCentered(parent, label, dbKey, dbTable, onChange, 
         end
         return 1, 1, 1, 1
     end
-    
+
     local function SetColor(r, g, b, a)
         swatch:SetBackdropColor(r, g, b, a or 1)
         if dbTable and dbKey then
@@ -2398,14 +2410,14 @@ function GUI:CreateColorPickerCentered(parent, label, dbKey, dbTable, onChange, 
         end
         if onChange then onChange(r, g, b, a) end
     end
-    
+
     -- Initialize color
     local r, g, b, a = GetColor()
     swatch:SetBackdropColor(r, g, b, a)
-    
+
     container.GetColor = GetColor
     container.SetColor = SetColor
-    
+
     -- Open color picker on click
     swatch:SetScript("OnClick", function()
         local r, g, b, a = GetColor()
@@ -2430,7 +2442,7 @@ function GUI:CreateColorPickerCentered(parent, label, dbKey, dbTable, onChange, 
         }
         ColorPickerFrame:SetupColorPickerAndShow(info)
     end)
-    
+
     swatch:SetScript("OnEnter", function(self)
         pcall(self.SetBackdropBorderColor, self, C_accent_r, C_accent_g, C_accent_b, C_accent_a)
     end)
@@ -2470,25 +2482,25 @@ function GUI:CreateCheckboxInverted(parent, label, dbKey, dbTable, onChange, des
     box.check:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
     box.check:SetDesaturated(true)
     box.check:Hide()
-    
+
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(text, 12, "", C.text)
     text:SetText(label or "Option")
     text:SetPoint("LEFT", box, "RIGHT", 6, 0)
-    
+
     container.box = box
     container.label = text
-    
+
     -- INVERTED: DB true = unchecked, DB false = checked
     local function GetDBValue()
         if dbTable and dbKey then return dbTable[dbKey] end
         return true
     end
-    
+
     local function IsChecked()
         return not GetDBValue()  -- Invert for display
     end
-    
+
     local function SetChecked(checked)
         container.checked = checked
         local dbVal = not checked  -- Invert for storage
@@ -2504,11 +2516,11 @@ function GUI:CreateCheckboxInverted(parent, label, dbKey, dbTable, onChange, des
         if dbTable and dbKey then dbTable[dbKey] = dbVal end
         if onChange then onChange(dbVal) end
     end
-    
+
     container.GetValue = IsChecked
     container.SetValue = SetChecked
     SetChecked(IsChecked())
-    
+
     box:SetScript("OnClick", function() SetChecked(not IsChecked()) end)
     box:SetScript("OnEnter", function(self) pcall(self.SetBackdropBorderColor, self, C_accentHover_r, C_accentHover_g, C_accentHover_b, C_accentHover_a) end)
     box:SetScript("OnLeave", function(self)
@@ -2967,7 +2979,7 @@ function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange, de
     end)
 
     container.dropdown = dropdown
-    
+
     -- Normalize options to {value, text} format
     local normalizedOptions = {}
     if type(options) == "table" then
@@ -2981,12 +2993,12 @@ function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange, de
         end
     end
     container.options = normalizedOptions
-    
+
     local function GetValue()
         if dbTable and dbKey then return dbTable[dbKey] end
         return container.value
     end
-    
+
     local function GetDisplayText(val)
         for _, opt in ipairs(container.options) do
             if opt.value == val then return opt.text end
@@ -2997,20 +3009,20 @@ function GUI:CreateDropdown(parent, label, options, dbKey, dbTable, onChange, de
         end
         return tostring(val or "Select...")
     end
-    
+
     local function SetValue(val, skipCallback)
         container.value = val
         dropdown.selected:SetText(GetDisplayText(val))
         if dbTable and dbKey then dbTable[dbKey] = val end
         if onChange and not skipCallback then onChange(val) end
     end
-    
+
     container.GetValue = GetValue
     container.SetValue = BindWidgetMethod(container, SetValue)
-    
+
     -- Initialize with current value
     SetValue(GetValue(), true)
-    
+
     -- Dropdown menu frame (parented to UIParent to avoid scroll frame clipping) — V3 surface
     local menuFrame = CreateFrame("Frame", nil, UIParent, useUIKitBorders and nil or "BackdropTemplate")
     if useUIKitBorders then
@@ -3248,12 +3260,12 @@ function GUI:CreateDropdownFullWidth(parent, label, options, dbKey, dbTable, onC
         end
     end
     container.options = normalizedOptions
-    
+
     local function GetValue()
         if dbTable and dbKey then return dbTable[dbKey] end
         return container.value
     end
-    
+
     local function GetDisplayText(val)
         for _, opt in ipairs(container.options) do
             if opt.value == val then return opt.text end
@@ -3263,18 +3275,18 @@ function GUI:CreateDropdownFullWidth(parent, label, options, dbKey, dbTable, onC
         end
         return tostring(val or "Select...")
     end
-    
+
     local function SetValue(val, skipCallback)
         container.value = val
         dropdown.selected:SetText(GetDisplayText(val))
         if dbTable and dbKey then dbTable[dbKey] = val end
         if onChange and not skipCallback then onChange(val) end
     end
-    
+
     container.GetValue = GetValue
     container.SetValue = BindWidgetMethod(container, SetValue)
     SetValue(GetValue(), true)
-    
+
     -- Dropdown menu (parented to UIParent to avoid scroll frame clipping)
     local menuFrame = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     menuFrame:SetBackdrop({
@@ -4081,6 +4093,19 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     local precision = options.precision
     local formatStr = precision and string.format("%%.%df", precision) or (step < 1 and "%.2f" or "%d")
 
+    -- High-precision values (e.g. UI scale at precision=7) print trailing
+    -- zeros — "0.6400000" — that overflow the narrow edit box. Strip them so
+    -- 0.64 reads "0.64" while genuinely long values (0.7111111) keep their
+    -- needed digits. Only applies to opt-in precision sliders; "%.2f"/"%d"
+    -- sliders are left untouched.
+    local function FormatValue(val)
+        local s = string.format(formatStr, val)
+        if precision and s:find(".", 1, true) then
+            s = s:gsub("0+$", ""):gsub("%.$", "")
+        end
+        return s
+    end
+
     -- Bare mode: label=nil skips the internal label and shrinks the container
     -- to just the slider + edit cluster — V3 BuildSettingRow provides the label.
     local text
@@ -4150,7 +4175,12 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     -- Nudge button (decrement) — left of editbox
     local nudgeMinus = CreateFrame("Button", nil, container, useUIKitBorders and nil or "BackdropTemplate")
     nudgeMinus:SetSize(16, 22)
-    nudgeMinus:SetPoint("RIGHT", container, "RIGHT", -64, 0)
+    -- Cluster (nudgeMinus | editBox | nudgePlus) hugs the container's right
+    -- edge. Derive the offset from editWidth so a wider edit box repositions
+    -- the whole cluster (and shrinks the slider track) instead of pushing the
+    -- plus button off the edge. Default 36 → -64, matching the prior constant.
+    local editBoxWidth = (options and options.editWidth) or 36
+    nudgeMinus:SetPoint("RIGHT", container, "RIGHT", -(editBoxWidth + 28), 0)
 
     -- Now that the nudge cluster's left edge is anchored, make the slider
     -- track shrink to fit — previously the fixed 120px track would collide
@@ -4176,7 +4206,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
 
     -- Editbox for value (between nudge buttons)
     local editBox = CreateFrame("EditBox", nil, container, useUIKitBorders and nil or "BackdropTemplate")
-    editBox:SetSize((options and options.editWidth) or 36, 18)
+    editBox:SetSize(editBoxWidth, 18)
     editBox:SetPoint("LEFT", nudgeMinus, "RIGHT", 1, 0)
     if useUIKitBorders then
         editBox.bg = UIKit.CreateBackground(editBox, C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
@@ -4272,7 +4302,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
             val = math.floor(val / container.step + 0.5) * container.step
         end
         slider:SetValue(val)
-        editBox:SetText(string.format(formatStr, val))
+        editBox:SetText(FormatValue(val))
         UpdateTrackFill(val)
     end
 
@@ -4343,7 +4373,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         if userInput and container.isEnabled == false then return end
 
         value = math.floor(value / container.step + 0.5) * container.step
-        editBox:SetText(string.format(formatStr, value))
+        editBox:SetText(FormatValue(value))
         UpdateTrackFill(value)
         if dbTable and dbKey then dbTable[dbKey] = value end
         if userInput then
@@ -4380,7 +4410,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         self:ClearFocus()
     end)
     editBox:SetScript("OnEscapePressed", function(self)
-        self:SetText(string.format(formatStr, GetValue()))
+        self:SetText(FormatValue(GetValue()))
         self:ClearFocus()
     end)
 
@@ -4416,7 +4446,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     -- widget becomes visible.
     container._refreshEditBox = function()
         local val = GetValue()
-        local txt = string.format(formatStr, val)
+        local txt = FormatValue(val)
         editBox:SetText(txt)
         -- Force WoW to re-render the EditBox text — SetText updates
         -- the internal state but the visual FontString may not refresh

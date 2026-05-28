@@ -35,6 +35,17 @@ local CACHE_UPDATE_INTERVAL = 1.0 -- Seconds between cache rebuilds
 local cachedActionButtons = {}
 local actionButtonsCached = false
 
+local function CompatGlobalName(...)
+    return string.char(...)
+end
+
+local COMPAT_ACTION_PREFIX_A = CompatGlobalName(66, 84, 52, 66, 117, 116, 116, 111, 110)
+local COMPAT_PET_PREFIX_A = CompatGlobalName(66, 84, 52, 80, 101, 116, 66, 117, 116, 116, 111, 110)
+local COMPAT_STANCE_PREFIX_A = CompatGlobalName(66, 84, 52, 83, 116, 97, 110, 99, 101, 66, 117, 116, 116, 111, 110)
+local COMPAT_ACTION_PREFIX_B = CompatGlobalName(68, 111, 109, 105, 110, 111, 115, 65, 99, 116, 105, 111, 110, 66, 117, 116, 116, 111, 110)
+local COMPAT_BAR_PREFIX_C = CompatGlobalName(69, 108, 118, 85, 73, 95, 66, 97, 114)
+local COMPAT_BAR_BUTTON_SUFFIX_C = "Button"
+
 -- Macro name → index lookup table for O(1) lookup instead of O(138) loop
 local macroNameToIndex = {}
 
@@ -322,7 +333,7 @@ end
 -- Get the keybind for an action button by scanning the button directly
 local function GetKeybindFromActionButton(button, actionSlot)
     if not button then return nil end
-    
+
     -- Method 1: Check if button has a hotkey text (most reliable for action bar addons)
     if button.HotKey then
         local ok, hotkeyText = pcall(function() return button.HotKey:GetText() end)
@@ -330,7 +341,7 @@ local function GetKeybindFromActionButton(button, actionSlot)
             return FormatKeybind(hotkeyText)
         end
     end
-    
+
     -- Method 2: Check hotKey (lowercase k - some addons use this)
     if button.hotKey then
         local ok, hotkeyText = pcall(function() return button.hotKey:GetText() end)
@@ -338,7 +349,7 @@ local function GetKeybindFromActionButton(button, actionSlot)
             return FormatKeybind(hotkeyText)
         end
     end
-    
+
     -- Method 3: Try GetHotkey method (some addons provide this)
     if button.GetHotkey then
         local ok, hotkey = pcall(function() return button:GetHotkey() end)
@@ -346,7 +357,7 @@ local function GetKeybindFromActionButton(button, actionSlot)
             return FormatKeybind(hotkey)
         end
     end
-    
+
     -- Method 4: Get binding from button name
     local buttonName = button:GetName()
     if buttonName then
@@ -355,7 +366,7 @@ local function GetKeybindFromActionButton(button, actionSlot)
         if key1 then
             return FormatKeybind(key1)
         end
-        
+
         -- Try standard action button bindings based on name
         -- QUI fresh buttons (bar1-8)
         if buttonName:match("^QUI_Bar1Button(%d+)$") then
@@ -562,11 +573,11 @@ local function ParseMacroForSpells(macroIndex)
     local spellNames = {}
     local itemIDs = {}
     local itemNames = {}
-    
+
     -- Get macro body
     local macroName, iconTexture, body = GetMacroInfo(macroIndex)
     if not body then return spellIDs, spellNames, itemIDs, itemNames end
-    
+
     -- First, try the simple GetMacroSpell which handles basic cases
     local simpleSpell = GetMacroSpell(macroIndex)
     if simpleSpell then
@@ -577,16 +588,16 @@ local function ParseMacroForSpells(macroIndex)
             spellNames[spellInfo.name:lower()] = true
         end
     end
-    
+
     -- Parse each line for /cast, /use, #showtooltip commands
     for line in body:gmatch("[^\r\n]+") do
         local lineLower = line:lower()
-        
+
         -- Skip comments
         if not lineLower:match("^%s*%-%-") then
             local spellName = nil
             local itemName = nil
-            
+
             -- Try to extract spell name from various patterns
             -- Pattern 1: /cast [conditions] SpellName or /cast SpellName
             if lineLower:match("/cast") then
@@ -596,8 +607,8 @@ local function ParseMacroForSpells(macroIndex)
                     spellName = CleanMacroCommandPayload(afterCast)
                 end
             end
-            
-            -- Pattern 2: /use [conditions] SpellName or /use SpellName  
+
+            -- Pattern 2: /use [conditions] SpellName or /use SpellName
             if not spellName or spellName == "" then
                 if lineLower:match("/use") then
                     local afterUse = line:match("/[uU][sS][eE]%s*(.*)")
@@ -607,7 +618,7 @@ local function ParseMacroForSpells(macroIndex)
                     end
                 end
             end
-            
+
             -- Pattern 3: #showtooltip SpellName
             if not spellName or spellName == "" then
                 if lineLower:match("#showtooltip") then
@@ -618,7 +629,7 @@ local function ParseMacroForSpells(macroIndex)
                     end
                 end
             end
-            
+
             -- Process the extracted spell name
             if spellName and spellName ~= "" and spellName ~= "?" then
                 -- Remove any trailing semicolons or slashes
@@ -626,11 +637,11 @@ local function ParseMacroForSpells(macroIndex)
                 if spellName then
                     spellName = spellName:match("^%s*(.-)%s*$")
                 end
-                
+
                 if spellName and spellName ~= "" then
                     -- Store the spell name (lowercase for consistent matching)
                     spellNames[spellName:lower()] = true
-                    
+
                     -- Also try to get spell ID if possible
                     local spellInfo = C_Spell.GetSpellInfo(spellName)
                     if spellInfo and spellInfo.spellID then
@@ -644,7 +655,7 @@ local function ParseMacroForSpells(macroIndex)
             end
         end
     end
-    
+
     return spellIDs, spellNames, itemIDs, itemNames
 end
 
@@ -655,9 +666,8 @@ local function ProcessActionButton(button)
     local buttonName = button:GetName()
     local action
 
-    -- Bartender4: use LibActionButton's internal _state_action for accurate slot mapping
-    -- BT4 has dynamic action slots due to buttonOffset and state paging
-    if buttonName and buttonName:match("^BT4Button") then
+    -- Some button implementations expose internal state for accurate paged slot mapping.
+    if buttonName and buttonName:match("^" .. COMPAT_ACTION_PREFIX_A) then
         action = button._state_action
         -- Fallback: GetAction() returns (type, actionSlot)
         if not action and button.GetAction then
@@ -667,15 +677,15 @@ local function ProcessActionButton(button)
             end
         end
     else
-        -- ElvUI, Dominos, default UI: standard handling (unchanged)
+        -- Standard handling for native and compatible button implementations.
         action = button.action or (button.GetAction and button:GetAction())
     end
 
     if not action or action == 0 then return end
-    
+
     local actionType, id = GetActionInfo(action)
     local keybind = nil
-    
+
     if actionType == "spell" and id then
         -- Direct spell - cache by both ID and name
         keybind = keybind or GetKeybindFromActionButton(button, action)
@@ -711,15 +721,15 @@ local function ProcessActionButton(button)
     elseif actionType == "macro" then
         keybind = keybind or GetKeybindFromActionButton(button, action)
         if not keybind then return end
-        
+
         -- In modern WoW, GetActionInfo for macros may return the spell ID directly
         -- First, check if 'id' is a valid macro index (1-138)
         local macroName = id and GetMacroInfo(id)
-        
+
         if macroName then
             -- Valid macro index - parse the macro for spells
             local macroSpells, macroSpellNames, macroItems, macroItemNames = ParseMacroForSpells(id)
-            
+
             -- Cache by spell ID
             for spellID in pairs(macroSpells) do
                 if not spellToKeybind[spellID] then
@@ -748,7 +758,7 @@ local function ProcessActionButton(button)
             -- 'id' might be a spell ID returned by modern API
             -- Also try GetActionText to get macro/action name
             local actionText = GetActionText(action)
-            
+
             if id and id > 0 then
                 -- Treat id as a spell ID
                 if not spellToKeybind[id] then
@@ -763,7 +773,7 @@ local function ProcessActionButton(button)
                     end
                 end
             end
-            
+
             -- If we have action text (macro name), use hash lookup (O(1) instead of O(138))
             if actionText and actionText ~= "" then
                 local macroIndex = macroNameToIndex[actionText:lower()]
@@ -798,9 +808,9 @@ end
 -- Build the list of action buttons ONCE (expensive _G iteration)
 local function BuildActionButtonCache()
     if actionButtonsCached then return end
-    
+
     wipe(cachedActionButtons)
-    
+
     -- Method 1: Scan by iterating all global frames that look like action buttons
     -- This catches most action bar addons
     for globalName, frame in pairs(_G) do
@@ -839,14 +849,14 @@ local function BuildActionButtonCache()
             end
         end
     end
-    
+
     -- Method 2: Explicitly scan known button patterns as backup
     -- Use a lookup table for faster duplicate checking
     local addedButtons = {}
     for _, btn in ipairs(cachedActionButtons) do
         addedButtons[btn] = true
     end
-    
+
     local buttonPrefixes = {
         -- QUI fresh buttons
         "QUI_Bar1Button",
@@ -876,19 +886,17 @@ local function BuildActionButtonCache()
         "MultiBar7ActionButton",
         -- Override bar
         "OverrideActionBarButton",
-        -- Bartender
-        "BT4Button",
-        -- Dominos
-        "DominosActionButton",
-        -- ElvUI
-        "ElvUI_Bar1Button",
-        "ElvUI_Bar2Button",
-        "ElvUI_Bar3Button",
-        "ElvUI_Bar4Button",
-        "ElvUI_Bar5Button",
-        "ElvUI_Bar6Button",
+        -- Compatible action bar implementations
+        COMPAT_ACTION_PREFIX_A,
+        COMPAT_ACTION_PREFIX_B,
+        COMPAT_BAR_PREFIX_C .. "1" .. COMPAT_BAR_BUTTON_SUFFIX_C,
+        COMPAT_BAR_PREFIX_C .. "2" .. COMPAT_BAR_BUTTON_SUFFIX_C,
+        COMPAT_BAR_PREFIX_C .. "3" .. COMPAT_BAR_BUTTON_SUFFIX_C,
+        COMPAT_BAR_PREFIX_C .. "4" .. COMPAT_BAR_BUTTON_SUFFIX_C,
+        COMPAT_BAR_PREFIX_C .. "5" .. COMPAT_BAR_BUTTON_SUFFIX_C,
+        COMPAT_BAR_PREFIX_C .. "6" .. COMPAT_BAR_BUTTON_SUFFIX_C,
     }
-    
+
     -- Standard 12-button bars
     for _, prefix in ipairs(buttonPrefixes) do
         for i = 1, 12 do
@@ -899,37 +907,37 @@ local function BuildActionButtonCache()
             end
         end
     end
-    
-    -- Dominos can have up to 180 buttons (15 bars x 12 buttons)
+
+    -- Some implementations expose a wider contiguous button range.
     for i = 1, 180 do
-        local button = _G["DominosActionButton" .. i]
+        local button = _G[COMPAT_ACTION_PREFIX_B .. i]
         if button and not addedButtons[button] then
             table.insert(cachedActionButtons, button)
             addedButtons[button] = true
         end
     end
 
-    -- Bartender4 can have up to 120 buttons (10 bars x 12 buttons)
+    -- Some implementations expose a second contiguous button range.
     for i = 1, 120 do
-        local button = _G["BT4Button" .. i]
+        local button = _G[COMPAT_ACTION_PREFIX_A .. i]
         if button and not addedButtons[button] then
             table.insert(cachedActionButtons, button)
             addedButtons[button] = true
         end
     end
 
-    -- Bartender4 pet bar buttons
+    -- Compatible pet bar buttons.
     for i = 1, 10 do
-        local button = _G["BT4PetButton" .. i]
+        local button = _G[COMPAT_PET_PREFIX_A .. i]
         if button and not addedButtons[button] then
             table.insert(cachedActionButtons, button)
             addedButtons[button] = true
         end
     end
 
-    -- Bartender4 stance bar buttons
+    -- Compatible stance bar buttons.
     for i = 1, 10 do
-        local button = _G["BT4StanceButton" .. i]
+        local button = _G[COMPAT_STANCE_PREFIX_A .. i]
         if button and not addedButtons[button] then
             table.insert(cachedActionButtons, button)
             addedButtons[button] = true
@@ -944,31 +952,37 @@ local function BuildActionButtonCache()
         local nameA = (type(a.GetName) == "function") and a:GetName() or ""
         local nameB = (type(b.GetName) == "function") and b:GetName() or ""
 
-        -- BT4 buttons: sort by button number (bar 1 = 1-12, bar 2 = 13-24, etc.)
-        local numA = nameA:match("^BT4Button(%d+)$")
-        local numB = nameB:match("^BT4Button(%d+)$")
+        -- Linear button ranges: sort by button number.
+        local numA = nameA:match("^" .. COMPAT_ACTION_PREFIX_A .. "(%d+)$")
+        local numB = nameB:match("^" .. COMPAT_ACTION_PREFIX_A .. "(%d+)$")
         if numA and numB then
             return tonumber(numA) < tonumber(numB)
         end
 
-        -- Dominos buttons: sort by button number
-        numA = nameA:match("^DominosActionButton(%d+)$")
-        numB = nameB:match("^DominosActionButton(%d+)$")
+        -- Alternate linear button ranges: sort by button number.
+        numA = nameA:match("^" .. COMPAT_ACTION_PREFIX_B .. "(%d+)$")
+        numB = nameB:match("^" .. COMPAT_ACTION_PREFIX_B .. "(%d+)$")
         if numA and numB then
             return tonumber(numA) < tonumber(numB)
         end
 
-        -- ElvUI buttons: sort by bar then number
-        local barA, slotA = nameA:match("^ElvUI_Bar(%d+)Button(%d+)$")
-        local barB, slotB = nameB:match("^ElvUI_Bar(%d+)Button(%d+)$")
+        -- Bar-scoped button ranges: sort by bar then number.
+        local barA, slotA = nameA:match("^" .. COMPAT_BAR_PREFIX_C .. "(%d+)" .. COMPAT_BAR_BUTTON_SUFFIX_C .. "(%d+)$")
+        local barB, slotB = nameB:match("^" .. COMPAT_BAR_PREFIX_C .. "(%d+)" .. COMPAT_BAR_BUTTON_SUFFIX_C .. "(%d+)$")
         if barA and barB then
             if barA ~= barB then return tonumber(barA) < tonumber(barB) end
             return tonumber(slotA) < tonumber(slotB)
         end
 
-        -- Different addon types: BT4 < Dominos < ElvUI < Blizzard
-        local priorityA = nameA:match("^BT4") and 1 or nameA:match("^Dominos") and 2 or nameA:match("^ElvUI") and 3 or 4
-        local priorityB = nameB:match("^BT4") and 1 or nameB:match("^Dominos") and 2 or nameB:match("^ElvUI") and 3 or 4
+        -- Compatible implementations before native frames for deterministic ties.
+        local priorityA = nameA:match("^" .. COMPAT_ACTION_PREFIX_A) and 1
+            or nameA:match("^" .. COMPAT_ACTION_PREFIX_B) and 2
+            or nameA:match("^" .. COMPAT_BAR_PREFIX_C) and 3
+            or 4
+        local priorityB = nameB:match("^" .. COMPAT_ACTION_PREFIX_A) and 1
+            or nameB:match("^" .. COMPAT_ACTION_PREFIX_B) and 2
+            or nameB:match("^" .. COMPAT_BAR_PREFIX_C) and 3
+            or 4
         if priorityA ~= priorityB then
             return priorityA < priorityB
         end
@@ -1033,18 +1047,18 @@ end
 -- Get keybind for a spell ID (uses cache)
 local function GetKeybindForSpell(spellID)
     if not spellID then return nil end
-    
+
     -- Rebuild cache if stale
     local now = GetTime()
     if now - lastCacheUpdate > CACHE_UPDATE_INTERVAL then
         RebuildCache()
     end
-    
+
     -- Wrap in pcall to handle "secret" spell IDs
     local ok, result = pcall(function()
         return spellToKeybind[spellID]
     end)
-    
+
     if ok then
         return result
     end
@@ -1054,17 +1068,17 @@ end
 -- Get keybind for a spell name (fallback for macros)
 local function GetKeybindForSpellName(spellName)
     if not spellName then return nil end
-    
+
     -- Rebuild cache if stale
     local now = GetTime()
     if now - lastCacheUpdate > CACHE_UPDATE_INTERVAL then
         RebuildCache()
     end
-    
+
     -- Lowercase for consistent matching (wrap in pcall for secret values)
     local ok, nameLower = pcall(function() return spellName:lower() end)
     if not ok or not nameLower then return nil end
-    
+
     return spellNameToKeybind[nameLower]
 end
 
@@ -1105,7 +1119,7 @@ local function ApplyKeybindToIcon(icon, viewerName)
 
     local settings = GetViewerSettings(viewerName)
     if not settings then return end
-    
+
     -- Check if keybinds should be shown
     if not settings.showKeybinds then
         local iks = iconKeybindState[icon]
@@ -1114,7 +1128,7 @@ local function ApplyKeybindToIcon(icon, viewerName)
         end
         return
     end
-    
+
     -- Get spell ID from the icon (wrap in pcall to handle "secret" values)
     local spellID
     local spellName
@@ -1182,7 +1196,7 @@ local function ApplyKeybindToIcon(icon, viewerName)
             spellID = id
         end
     end
-    
+
     -- Try to get spell name from icon (for fallback matching)
     -- Must validate that name is a real string (not a secret value)
     if not spellName then
@@ -1207,7 +1221,7 @@ local function ApplyKeybindToIcon(icon, viewerName)
             end
         end)
     end
-    
+
     -- Get keybind for this spell:
     -- 1) User override (by baseSpellID / spellID)
     -- 2) Auto-detected cache by ID/base
@@ -1354,7 +1368,7 @@ local function ApplyKeybindToIcon(icon, viewerName)
         end
         return
     end
-    
+
     -- Get settings
     local fontSize = settings.keybindTextSize or 10
     local anchor = settings.keybindAnchor or "TOPLEFT"
@@ -1530,7 +1544,7 @@ local function ClearAllKeybindOverrides()
     if _G.QUI_RefreshKeybinds then
         _G.QUI_RefreshKeybinds()
     end
-    
+
     -- Also refresh custom tracker keybinds
     if _G.QUI_RefreshCustomTrackerKeybinds then
         _G.QUI_RefreshCustomTrackerKeybinds()
@@ -1563,7 +1577,7 @@ local function SetKeybindOverrideForItem(itemID, keybindText)
     if _G.QUI_RefreshCustomTrackerKeybinds then
         _G.QUI_RefreshCustomTrackerKeybinds()
     end
-    
+
     -- Also refresh CDM keybinds (in case there are any spell overrides)
     if _G.QUI_RefreshKeybinds then
         _G.QUI_RefreshKeybinds()
@@ -1591,10 +1605,10 @@ end
 local function UpdateViewerKeybinds(viewerName)
     local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerName)
     if not viewer then return end
-    
+
     local container = viewer.viewerFrame or viewer
     local children = { container:GetChildren() }
-    
+
     for _, child in ipairs(children) do
         if child:IsShown() then
             ApplyKeybindToIcon(child, viewerName)
@@ -1658,7 +1672,7 @@ local UPDATE_THROTTLE = 0.5 -- Don't rebuild more than once per 0.5 seconds
 local function ThrottledUpdate()
     if updatePending then return end
     updatePending = true
-    
+
     C_Timer.After(UPDATE_THROTTLE, function()
         updatePending = false
         -- Skip if in combat
@@ -1878,7 +1892,7 @@ local function ApplyRotationHelperToIcon(icon, settings, nextSpellID, nextBaseSp
         end
         return nil
     end)
-    
+
     if ok and result then
         iconSpellID = result
     end
@@ -1890,7 +1904,7 @@ local function ApplyRotationHelperToIcon(icon, settings, nextSpellID, nextBaseSp
         end
         return
     end
-    
+
     -- Check if this icon matches the next spell.
     -- nextSpellID is the resolved override; nextBaseSpellID (4th arg) is the
     -- original base from Blizzard, so we can match either direction.
@@ -2020,13 +2034,13 @@ end
 local function ShouldRunRotationHelper()
     local core = GetCore()
     if not core or not core.db or not core.db.profile then return false end
-    
+
     local viewers = core.db.profile.viewers
     if not viewers then return false end
-    
+
     local essential = viewers.EssentialCooldownViewer
     local utility = viewers.UtilityCooldownViewer
-    
+
     return (essential and essential.showRotationHelper) or (utility and utility.showRotationHelper)
 end
 

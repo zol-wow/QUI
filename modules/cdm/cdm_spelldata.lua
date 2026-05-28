@@ -331,9 +331,9 @@ local FireChangeCallback
 -- negatives were hiding newly applied icons/stacks before the next rescan.
 local STACK_SEARCH_UNITS = { "player", "pet" }
 local SELF_AURA_CAPTURE_LOOKUP_UNITS = { "player", "pet" }
--- Captured cache only ever populates "player" and "pet" — target aura
--- state is owned by the Blizzard CDM mirror. Lookup unit set is the same.
-local AURA_CAPTURE_LOOKUP_UNITS = SELF_AURA_CAPTURE_LOOKUP_UNITS
+-- Target captures are source-filtered before storage; see
+-- CapturePayloadAllowedForUnit.
+local AURA_CAPTURE_LOOKUP_UNITS = { "player", "pet", "target" }
 
 ---------------------------------------------------------------------------
 -- EVENT-PAYLOAD AURA CAPTURE
@@ -362,10 +362,11 @@ local _capturedAuraBySpellID = {}    -- [spellID]      -> {auraInstanceID, unit,
 local _capturedAuraByName    = {}    -- [name:lower()] -> same entry
 local _capturedAuraByUnitSpellID = {} -- [unit][spellID]      -> same entry
 local _capturedAuraByUnitName    = {} -- [unit][name:lower()] -> same entry
+local TARGET_CAPTURED_AURA_FILTERS = { HELPFUL = true, HARMFUL = true }
 local DEFAULT_CAPTURED_AURA_FILTERS = {
     player = "HELPFUL",
     pet = "HELPFUL",
-    target = "HARMFUL",
+    target = TARGET_CAPTURED_AURA_FILTERS,
 }
 
 local function IsUsableTableKey(key)
@@ -538,6 +539,19 @@ local okR = true; local isHarmful = ad.isHarmful
     return nil
 end
 
+local function TargetPlayerFilterForCapture(auraFilter)
+    if auraFilter == "HELPFUL" then return "HELPFUL|PLAYER" end
+    if auraFilter == "HARMFUL" then return "HARMFUL|PLAYER" end
+    return nil
+end
+
+local function CapturePayloadAllowedForUnit(unit, instID, auraFilter)
+    if unit ~= "target" then return true end
+    local playerFilter = TargetPlayerFilterForCapture(auraFilter)
+    if not playerFilter then return false end
+    return AuraInstancePassesFilter(unit, instID, playerFilter) == true
+end
+
 local function CapturedAuraMatchesFilter(entry, allowedFiltersByUnit)
     if not entry then return false end
     if allowedFiltersByUnit == false then return true end
@@ -642,6 +656,9 @@ local okName = true; local cleanName, cleanNameKey = (function()
     end
 
     local auraFilter = ResolveCapturedAuraFilter(unit, ad, instID, explicitFilter)
+    if not CapturePayloadAllowedForUnit(unit, instID, auraFilter) then
+        return
+    end
 
     -- Cast→aura correlation. UNIT_SPELLCAST_SUCCEEDED only fires on us.
     -- Store a secondary runtime key under the recent cast spellID. The
@@ -681,13 +698,6 @@ local okName = true; local cleanName, cleanNameKey = (function()
         StoreCapturedSpellKey(unit, castSID, entry)
     end
 end
-
--- Target HARMFUL aura capture is handled entirely by the Blizzard CDM
--- mirror (cdm_blizz_mirror.lua). The combat-log correlation queue that
--- previously fed a target-keyed cache can't be built in 12.0 (RegisterEvent
--- on COMBAT_LOG_EVENT_UNFILTERED triggers ADDON_ACTION_FORBIDDEN), and OOC
--- resolution flows through the resolver's existing direct-query phases.
--- The function and its callers are removed.
 
 -- Drop every captured entry whose .unit field matches `unit`. This only
 -- compares the (non-secret) "player"/"pet"/"target" string, so it is safe
@@ -734,6 +744,41 @@ local function ReleaseCapturedEntry(entry)
     end
 end
 
+local function ReleaseCapturedAurasByInstanceIDsForUnit(unit, auraInstanceIDs)
+    if type(unit) ~= "string" or unit == "" then return false end
+    if type(auraInstanceIDs) ~= "table" then return false end
+
+    local removed = {}
+    local hasRemoved = false
+    for _, auraInstanceID in ipairs(auraInstanceIDs) do
+        if auraInstanceID ~= nil then
+            removed[auraInstanceID] = true
+            hasRemoved = true
+        end
+    end
+    if not hasRemoved then return false end
+
+    local released = false
+    local visited = {}
+    local function probe(map)
+        if not map then return end
+        for _, entry in pairs(map) do
+            if entry
+               and entry.unit == unit
+               and not visited[entry]
+               and entry.auraInstanceID ~= nil
+               and removed[entry.auraInstanceID] then
+                visited[entry] = true
+                ReleaseCapturedEntry(entry)
+                released = true
+            end
+        end
+    end
+    probe(_capturedAuraByUnitSpellID[unit])
+    probe(_capturedAuraByUnitName[unit])
+    return released
+end
+
 -- Eager eviction triggered by UNIT_AURA's `removedAuraInstanceIDs` payload.
 -- Walks every cached entry on `unit` and forwards its stored auraInstanceID
 -- to GetAuraDataByAuraInstanceID; nil response means the instance is gone.
@@ -775,10 +820,10 @@ end
 -- secret-safe on every field it reads.
 local function RescanCapturedAurasForUnit(unit)
     if not (AuraUtil and AuraUtil.ForEachAura) then return end
-    -- Target captures intentionally skipped — Blizzard CDM mirror
-    -- (cdm_blizz_mirror.lua) owns target-aura state in combat. OOC
-    -- direct queries handle target reads via the resolver phases.
-    if unit == "target" then return end
+    if unit == "target" then
+        ReleaseCapturedAurasForUnit(unit)
+        return
+    end
     ReleaseCapturedAurasForUnit(unit)
     AuraUtil.ForEachAura(unit, "HELPFUL", nil, function(ad)
         CaptureAuraFromPayload(unit, ad, nil, "HELPFUL")
@@ -821,20 +866,12 @@ local function AuraCaptureFrameOnEvent(self, event, ...)
         return
     end
     if event == "PLAYER_TARGET_CHANGED" then
-        -- Target aura state lives in the Blizzard CDM mirror, not our
-        -- local capture cache, so just notify consumers to re-resolve.
+        ReleaseCapturedAurasForUnit("target")
         NotifyAuraConsumers("target", nil)
         return
     end
     if event ~= "UNIT_AURA" then return end
     local unit, updateInfo = ...
-    if unit == "target" then
-        -- Target aura state is owned by the Blizzard CDM mirror; we still
-        -- notify aura consumers so icons/bars re-tick on target swaps and
-        -- aura applies, but no local capture work is needed.
-        NotifyAuraConsumers(unit, updateInfo)
-        return
-    end
     if not updateInfo or updateInfo.isFullUpdate then
         -- isFullUpdate carries no aura list; it's a "rescan everything"
         -- signal. Walk the live aura state directly to repopulate the
@@ -857,7 +894,11 @@ local function AuraCaptureFrameOnEvent(self, event, ...)
     -- ignored — duration changes don't affect cache liveness.
     if updateInfo.removedAuraInstanceIDs
         and #updateInfo.removedAuraInstanceIDs > 0 then
-        EvictDeadCacheEntriesForUnit(unit)
+        if unit == "target" then
+            ReleaseCapturedAurasByInstanceIDsForUnit(unit, updateInfo.removedAuraInstanceIDs)
+        else
+            EvictDeadCacheEntriesForUnit(unit)
+        end
     end
     NotifyAuraConsumers(unit, updateInfo)
 end
@@ -1201,8 +1242,13 @@ local function GetAuraApplications(unit, auraInstanceID)
     if not unit or not auraInstanceID or not (Sources and Sources.QueryAuraApplicationDisplayCount) then
         return false, nil
     end
-    local stacks = Sources.QueryAuraApplicationDisplayCount(unit, auraInstanceID, 2, 99)
-    if stacks then
+    -- minDisplayCount = 1: abilities that count from a single application (e.g.
+    -- Reaper's Mark) must show their stack. The C sink returns "" below this and
+    -- a secret string when the unit's auras are restricted -- forwarded verbatim,
+    -- never Lua-compared.
+    local stacks = Sources.QueryAuraApplicationDisplayCount(unit, auraInstanceID, 1, 99)
+    if (issecretvalue and issecretvalue(stacks))
+        or (type(stacks) == "string" and stacks ~= "" and stacks ~= "0") then
         return true, stacks
     end
     return false, nil
@@ -1519,6 +1565,8 @@ local _resolveAuraScratch = {
     mirrorRestrictedAuraIDs = nil, mirrorRestrictedAuraIDSet = nil,
     mirrorRestrictsAuraFallbacks = false,
     mirrorRestrictedAuraRequiresExactSpellID = false,
+    mirrorRestrictedAuraAllowsCapturedName = false,
+    mirrorRestrictedAuraUnit = nil,
 
     -- Phase 0 aura branch: match recording
     auraMirrorMatched = false, auraMirrorMatchedState = nil,
@@ -1553,6 +1601,8 @@ local function WipeResolveAuraScratch()
     s.mirrorRestrictedAuraIDs = nil; s.mirrorRestrictedAuraIDSet = nil
     s.mirrorRestrictsAuraFallbacks = false
     s.mirrorRestrictedAuraRequiresExactSpellID = false
+    s.mirrorRestrictedAuraAllowsCapturedName = false
+    s.mirrorRestrictedAuraUnit = nil
     s.auraMirrorMatched = false; s.auraMirrorMatchedState = nil
     s.auraMirrorMatchedCat = nil; s.auraMirrorMatchedID = nil
     s.hasCooldownAuraID = false
@@ -1624,7 +1674,11 @@ local function ResolveAuraRememberMirrorMatch(m, cat, tryID)
 end
 
 local function ResolveAuraHasActiveDuration(m)
-    return m and m.isActive and m.durObj
+    -- Packed mirror state (PackState) exposes aura activity via
+    -- auraInstanceID + auraDurObj, NOT flat isActive/durObj (those were
+    -- removed). Matches the migrated ResolveAuraTrySiblingMirror check so a
+    -- buff/trackedBar mirror state ranks as "active with a countdown."
+    return m and m.auraInstanceID and m.auraDurObj
 end
 
 local function ResolveAuraLookupAuraState(tryID)
@@ -1673,28 +1727,33 @@ local function ResolveAuraLookupAuraState(tryID)
 end
 
 local function ResolveAuraApplyMirrorState(m, hostCat, tryID, phaseName)
-    if not (m and m.isActive) then return false end
+    -- Active-with-duration is signalled by auraInstanceID + auraDurObj on the
+    -- packed state (PackState no longer emits isActive/durObj). Without this an
+    -- aura entry whose only backing cdID lives in the sibling viewer (buff
+    -- entry, trackedBar mirror) could find the state but never surface it.
+    if not (m and m.auraInstanceID and m.auraDurObj) then return false end
     local s = _resolveAuraScratch
     local r = _auraResult
     local auraUnit = ResolveMirrorAuraUnit(m)
     local targetAuraData
     if auraUnit == "target" then
+        -- The mirror capture path already applied the player-owned target
+        -- aura filter; live auraData is optional enrichment and may be hidden.
         targetAuraData = ResolveOwnedTargetMirrorAuraData(m, auraUnit)
         if not targetAuraData then
-            AuraStateDebug(s.debugAura, (phaseName or "phase0-aura") .. "-owner-reject",
+            AuraStateDebug(s.debugAura, (phaseName or "phase0-aura") .. "-owner-unreadable",
                 "spellID=", tryID, "hostCat=", hostCat,
                 "selfAura=", tostring(m.selfAura),
                 "cdID=", m.cooldownID, "epoch=", m.mirrorEpoch)
-            return false
         end
     end
     AuraStateDebug(s.debugAura, phaseName or "phase0-aura",
         "spellID=", tryID, "hostCat=", hostCat,
         "selfAura=", tostring(m.selfAura),
         "cdID=", m.cooldownID, "epoch=", m.mirrorEpoch,
-        "durObj=", m.durObj and "yes" or "nil")
+        "durObj=", m.auraDurObj and "yes" or "nil")
     r.isActive = true
-    r.durObj = m.durObj
+    r.durObj = m.auraDurObj
     -- Aura's destination unit comes from the cdID's own selfAura field, not
     -- the host viewer cat. Empirically buff cat carries selfAura=false
     -- target-side entries (Virulent Plague, Dread Plague), so cat-derived
@@ -1702,12 +1761,25 @@ local function ResolveAuraApplyMirrorState(m, hostCat, tryID, phaseName)
     r.auraUnit = auraUnit
     r.auraInstanceID = m.auraInstanceID
     r.auraData = targetAuraData or (type(m.auraData) == "table" and m.auraData or nil)
-    if not IsSecretCountValue(m.stackTextShown) and m.stackTextShown == false then
+    local auraStackText = m.auraStackText
+    if auraStackText ~= nil or IsSecretCountValue(auraStackText) then
+        if not IsSecretCountValue(m.auraStackTextShown) and m.auraStackTextShown == false then
+            SetAuraCount(r, nil, m.auraStackTextSource or "Applications", false)
+        else
+            SetAuraCount(r, auraStackText, m.auraStackTextSource or "Applications", true)
+        end
+    elseif not IsSecretCountValue(m.stackTextShown) and m.stackTextShown == false then
         SetAuraCount(r, nil, m.stackTextSource or "mirror-text", false)
     else
         local stackText = m.stackText
         if stackText ~= nil or IsSecretCountValue(stackText) then
             SetAuraCount(r, stackText, m.stackTextSource or "mirror-text", true)
+        end
+    end
+    if not r.count.shown then
+        local gotApps, apps = GetAuraApplications(r.auraUnit, r.auraInstanceID)
+        if gotApps then
+            SetAuraCount(r, apps, "display-count", true)
         end
     end
     SetResolvedAuraSpellID(r, nil, tryID)
@@ -1737,6 +1809,22 @@ local function ResolveAuraAddMirrorID(id)
     s.mirrorRestrictedAuraIDs[#s.mirrorRestrictedAuraIDs + 1] = id
 end
 
+local function ResolveAuraRememberActiveCooldownChildExactAuraIDs(state)
+    if not state or DecodePotentialSecretBoolean(state.childIsActive) ~= true then return end
+    local s = _resolveAuraScratch
+    ResolveAuraAddMirrorID(state.overrideTooltipSpellID)
+    ResolveAuraAddMirrorID(state.overrideSpellID)
+    ResolveAuraAddMirrorID(state.spellID)
+    ResolveAuraAddMirrorID(s.spellID)
+    ResolveAuraAddMirrorID(s.entrySpellID)
+    ResolveAuraAddMirrorID(s.entryID)
+    if s.mirrorRestrictedAuraIDs and #s.mirrorRestrictedAuraIDs > 0 then
+        s.mirrorRestrictsAuraFallbacks = true
+        s.mirrorRestrictedAuraRequiresExactSpellID = true
+        s.mirrorRestrictedAuraAllowsCapturedName = true
+    end
+end
+
 -- Category B (Phase 0 cooldown branch): cooldown info lookup, linked / sibling
 -- aura helpers.
 local function ResolveAuraLookupCooldownInfo(tryID)
@@ -1764,8 +1852,12 @@ local function ResolveAuraTryParentLinkedAura(tryID)
     local s = _resolveAuraScratch
     local info = ResolveAuraLookupCooldownInfo(tryID)
     ResolveAuraRememberCooldownInfoLinkedAuraIDs(info)
-    if not info or not info.hasAura then return false end
-    if type(info.linkedSpellIDs) ~= "table" then return false end
+    -- Validated linkedSpellIDs: the parent cooldown's hasAura flag is NOT a
+    -- prerequisite (and may be secret in combat). The junk filter is the
+    -- per-link validation below -- a linked ID only counts when it resolves to
+    -- a real aura-viewer mirror child carrying live aura state, so an unrelated
+    -- entry in linkedSpellIDs (which has no backing aura child) is ignored.
+    if not info or type(info.linkedSpellIDs) ~= "table" then return false end
     local mirror = s.mirror
     if not mirror.GetMirroredStateForViewer then return false end
     local getAuraState = mirror.GetDirectMirroredStateForViewer
@@ -1773,12 +1865,14 @@ local function ResolveAuraTryParentLinkedAura(tryID)
     local r = _auraResult
     -- Linked aura lookup: probe both aura categories without ranking on the
     -- parent cooldown's selfAura. The linked aura cdID's OWN info.selfAura
-    -- tells us where the aura sits at runtime.
+    -- tells us where the aura sits at runtime. Packed state signals activity
+    -- via auraInstanceID + auraDurObj (PackState), not the removed
+    -- isActive/durObj -- and that presence IS the junk-link filter.
     for _, linkedID in ipairs(info.linkedSpellIDs) do
         local lm, hostCat
         for _, cat in ipairs(_AURA_VIEWER_CAT_BUFF_FIRST) do
             local probe = getAuraState(linkedID, cat)
-            if probe and probe.isActive and probe.durObj then
+            if probe and probe.auraInstanceID and probe.auraDurObj then
                 lm, hostCat = probe, cat
                 break
             end
@@ -1790,8 +1884,10 @@ local function ResolveAuraTryParentLinkedAura(tryID)
                 "linkedSelfAura=", tostring(lm.selfAura),
                 "cdID=", lm.cooldownID, "epoch=", lm.mirrorEpoch)
             r.isActive = true
-            r.durObj = lm.durObj
-            r.auraUnit = (lm.selfAura == false) and "target" or "player"
+            r.durObj = lm.auraDurObj
+            r.auraInstanceID = lm.auraInstanceID
+            r.auraUnit = lm.auraUnit
+                or ((lm.selfAura == false) and "target" or "player")
             SetResolvedAuraSpellID(r, nil, linkedID)
             return true
         end
@@ -1903,9 +1999,23 @@ end
 -- Captured-aura attempt. Returns (didMatch, newAuraInstID, newAuraUnit);
 -- caller updates outer isActive/childAuraInstID/auraUnit on hit and
 -- r.* fields are written here.
+local function CapturedAuraNameMatchesEntry(captured)
+    local s = _resolveAuraScratch
+    local entryName = s.entryName
+    local capturedName = captured and captured.name
+    if issecretvalue and (issecretvalue(entryName) or issecretvalue(capturedName)) then
+        return false
+    end
+    if type(entryName) ~= "string" or entryName == "" then return false end
+    if type(capturedName) ~= "string" or capturedName == "" then return false end
+    return capturedName:lower() == entryName:lower()
+end
+
 local function ResolveAuraTryCaptured(preferredUnits, allowGlobalFallback, phaseName)
     local s = _resolveAuraScratch
-    local capturedName = s.mirrorRestrictsAuraFallbacks and nil or s.entryName
+    local capturedName =
+        (s.mirrorRestrictsAuraFallbacks and not s.mirrorRestrictedAuraAllowsCapturedName)
+        and nil or s.entryName
     local captured = GetCapturedAuraForLookup(_scratchCandidateIDs, capturedName,
         preferredUnits, allowGlobalFallback)
     if not (captured and captured.auraInstanceID) then
@@ -1921,6 +2031,13 @@ local function ResolveAuraTryCaptured(preferredUnits, allowGlobalFallback, phase
                 captured.spellID = capturedSpellID
                 if s.debugAura then
                     AuraStateDebug(s.debugAura, phaseName .. "-accept-strict",
+                        "capturedSpellID=", capturedSpellID,
+                        "allowed=", FormatIDList(s.mirrorRestrictedAuraIDs))
+                end
+            elseif s.mirrorRestrictedAuraAllowsCapturedName
+                and CapturedAuraNameMatchesEntry(captured) then
+                if s.debugAura then
+                    AuraStateDebug(s.debugAura, phaseName .. "-accept-name",
                         "capturedSpellID=", capturedSpellID,
                         "allowed=", FormatIDList(s.mirrorRestrictedAuraIDs))
                 end
@@ -2127,6 +2244,9 @@ local function ResolveAuraRuntimeStateImpl(params)
                     if not s.mirrorRestrictsAuraFallbacks then
                         s.mirrorRestrictedAuraIDs = nil
                         s.mirrorRestrictedAuraIDSet = nil
+                        s.mirrorRestrictedAuraUnit = nil
+                    elseif matchedState and ResolveMirrorAuraUnit(matchedState) == "target" then
+                        s.mirrorRestrictedAuraUnit = "target"
                     end
                     if debugAura then
                         AuraStateDebug(debugAura, "phase0-aura-mirror-inactive",
@@ -2153,6 +2273,9 @@ local function ResolveAuraRuntimeStateImpl(params)
                     if IsCooldownMirrorCategory(backedCat) then
                         ResolveAuraRememberCooldownInfoLinkedAuraIDs(backedState)
                         ResolveAuraRememberCooldownLinkedAuraMode(backedState)
+                        if DecodePotentialSecretBoolean(backedState.hasAura) == false then
+                            ResolveAuraRememberActiveCooldownChildExactAuraIDs(backedState)
+                        end
                         if debugAura then
                             AuraStateDebug(debugAura, "phase0-cd-backed-child",
                                 "cdID=", blizzardMirrorCooldownID,
@@ -2319,21 +2442,23 @@ local function ResolveAuraRuntimeStateImpl(params)
     if not isActive then
         for _, tryID in ipairs(_scratchCandidateIDs) do
             if childAuraInstID then break end
-            for unitIdx = 1, #STACK_SEARCH_UNITS do
-                if childAuraInstID then break end
-                local unitID = STACK_SEARCH_UNITS[unitIdx]
-                local ad = QueryUnitAuraBySpellID(unitID, tryID, "HELPFUL")
-                if ad then
-                    local instID = GetCleanAuraInstanceID(ad)
-                    if instID then
-                        childAuraInstID = instID
-                        auraUnit = unitID
-                        r.auraData = not InCombatLockdown() and ad or nil
-                        SetResolvedAuraSpellID(r, ad, tryID)
-                    elseif IsSelfUnit(unitID) and not directAuraActiveUnit then
-                        directAuraActiveUnit = unitID
-                        directAuraActivePhase = "phase3.2-player-active-no-inst"
-                        SetResolvedAuraSpellID(r, ad, tryID)
+            if s.mirrorRestrictedAuraUnit ~= "target" then
+                for unitIdx = 1, #STACK_SEARCH_UNITS do
+                    if childAuraInstID then break end
+                    local unitID = STACK_SEARCH_UNITS[unitIdx]
+                    local ad = QueryUnitAuraBySpellID(unitID, tryID, "HELPFUL")
+                    if ad then
+                        local instID = GetCleanAuraInstanceID(ad)
+                        if instID then
+                            childAuraInstID = instID
+                            auraUnit = unitID
+                            r.auraData = not InCombatLockdown() and ad or nil
+                            SetResolvedAuraSpellID(r, ad, tryID)
+                        elseif IsSelfUnit(unitID) and not directAuraActiveUnit then
+                            directAuraActiveUnit = unitID
+                            directAuraActivePhase = "phase3.2-player-active-no-inst"
+                            SetResolvedAuraSpellID(r, ad, tryID)
+                        end
                     end
                 end
             end
@@ -2381,7 +2506,7 @@ local function ResolveAuraRuntimeStateImpl(params)
     -- anything, use the captured UNIT_AURA index across player/pet.
     -- Target auras are owned by the Blizzard CDM mirror (Phase 3.0).
     -----------------------------------------------------------------------
-    if not isActive then
+    if not isActive and s.mirrorRestrictedAuraUnit ~= "target" then
         local matched, newInstID, newUnit = ResolveAuraTryCaptured(
             AURA_CAPTURE_LOOKUP_UNITS, nil,
             "phase3.4-event-captured")
@@ -2470,7 +2595,7 @@ local function ResolveAuraRuntimeStateImpl(params)
     -- like sourceUnit / isFromPlayerOrPlayerPet may be restricted, so
     -- player-unit queries go straight to the auraInstanceID DurationObject
     -- path.
-    if not isActive then
+    if not isActive and s.mirrorRestrictedAuraUnit ~= "target" then
         for _, tryID in ipairs(_scratchCandidateIDs) do
             if isActive then break end
             if tryID then
@@ -2496,6 +2621,7 @@ local function ResolveAuraRuntimeStateImpl(params)
     -- query, drop the strict ownership check whose secret-field gates fail
     -- in combat.
     if not isActive
+        and s.mirrorRestrictedAuraUnit ~= "target"
         and not s.mirrorRestrictsAuraFallbacks
         and entryName and entryName ~= ""
         and Sources and Sources.QueryAuraDataBySpellName then
@@ -2519,6 +2645,7 @@ local function ResolveAuraRuntimeStateImpl(params)
     end
     -- 3. Pet buff by name
     if not isActive
+        and s.mirrorRestrictedAuraUnit ~= "target"
         and not s.mirrorRestrictsAuraFallbacks
         and entryName and entryName ~= ""
         and Sources and Sources.QueryAuraDataBySpellName then
@@ -2659,6 +2786,8 @@ local function ResolveAuraRuntimeStateImpl(params)
         end
         if not appsResolved
             and childAuraInstID
+            and not InCombatLockdown()
+            and IsSelfUnit(auraUnit)
             and r.auraData then
             local directApps = GetDisplayableAuraApplications(r.auraData)
             if IsUsableResolvedAuraData(auraUnit, r.auraData) and directApps ~= nil then
@@ -2670,6 +2799,7 @@ local function ResolveAuraRuntimeStateImpl(params)
         if not appsResolved
             and childAuraInstID
             and not InCombatLockdown()
+            and IsSelfUnit(auraUnit)
             and Sources and Sources.QueryAuraDataByAuraInstanceID then
             local instData = QueryAuraData(auraUnit, childAuraInstID)
             local instApps = GetDisplayableAuraApplications(instData)
@@ -2698,10 +2828,11 @@ local function ResolveAuraRuntimeStateImpl(params)
             end
             if not appsResolved then
                 local tad = FindOwnedTargetAuraByName(entryName, "HARMFUL")
-                local tadApps = GetDisplayableAuraApplications(tad)
-                if tadApps ~= nil then
+                local tadInstID = GetRawAuraInstanceID(tad)
+                local gotApps, tadApps = GetAuraApplications("target", tadInstID)
+                if gotApps then
                     apps = tadApps
-                    stackSource = "name-target"
+                    stackSource = "display-count"
                     appsResolved = true
                 end
             end
@@ -5117,4 +5248,3 @@ function CDMSpellData._BindDebugImports()
     end
 end
 end
-

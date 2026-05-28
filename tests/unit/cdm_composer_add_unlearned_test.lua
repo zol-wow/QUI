@@ -33,6 +33,9 @@ assert(source:find("spellData:AddSpell(activeContainer, addID, kindFromTab, targ
     "right-click add should pass the picker known-state and target row to AddSpell")
 assert(not source:find("spells%[#spells%]%.row = targetRow", refreshStart),
     "right-click add should not assign targetRow by mutating the last active entry after AddSpell")
+assert(source:find('activeAddTab == "other_auras"', refreshStart, true)
+    and source:find('AppendSpellIDSearchCandidate(sourceEntries, filterText)', refreshStart, true),
+    "Other Auras should support numeric Spell ID search so non-passive aura entries can be added directly")
 
 -- Right-click add's row1/2/3 capacity check applies only to built-in cooldown
 -- containers (Essential/Utility). Custom bars (cooldown or auraBar shape) grow

@@ -464,6 +464,10 @@ BuildNativeDamageMeterTab = function(tabContent)
     pending = placeOverrideRow(sBars, "Bar Texture", texW, pending)
     pending = placeOverrideRow(sBars, "Bar Fill Alpha", fillW, pending)
 
+    local rowBgW = override(sBars.frame, "showRowBackground", function(p, bt)
+        return GUI:CreateFormCheckbox(p, nil, "showRowBackground", bt, ApplyNative,
+            { description = "Show the dark trough behind each row's colored fill." })
+    end)
     local classW = override(sBars.frame, "useClassColor", function(p, bt)
         return GUI:CreateFormCheckbox(p, nil, "useClassColor", bt, ApplyNative,
             { description = "Color bars by class instead of accent/custom." })
@@ -472,6 +476,7 @@ BuildNativeDamageMeterTab = function(tabContent)
         return GUI:CreateFormCheckbox(p, nil, "barColorAccent", bt, ApplyNative,
             { description = "When class color is off, use QUI accent color. Otherwise the custom Bar Color below is used." })
     end)
+    pending = placeOverrideRow(sBars, "Show Row Background", rowBgW, pending)
     pending = placeOverrideRow(sBars, "Use Class Color", classW, pending)
     pending = placeOverrideRow(sBars, "Use Accent (class off)", accentW, pending)
 

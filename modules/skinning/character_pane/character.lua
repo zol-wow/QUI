@@ -2750,7 +2750,7 @@ local function UpdateStatsPanel(panel, unit)
                                 elseif HasSPEffectsAttackPower and HasSPEffectsAttackPower() then
                                     row.tooltip2 = STAT_TOOLTIP_BONUS_AP_SP
                                 elseif (not primaryStat or primaryStat == 4) then
-                                    row.tooltip2 = format(row.tooltip2, max(0, effectiveStat))
+                                    row.tooltip2 = format(row.tooltip2, math.max(0, effectiveStat))
                                 else
                                     row.tooltip2 = STAT_NO_BENEFIT_TOOLTIP
                                 end
@@ -2883,7 +2883,7 @@ local function UpdateStatsPanel(panel, unit)
                 row.tooltip2 = format(CR_VERSATILITY_TOOLTIP, versatilityDamageBonus, versatilityDamageTakenReduction, BreakUpLargeNumbers(versatility), versatilityDamageBonus, versatilityDamageTakenReduction)
             end
         end
-        
+
         y = y - BAR_HEIGHT
     end
 
@@ -3043,7 +3043,7 @@ local function UpdateStatsPanel(panel, unit)
                 if stat.statKey == "ATTACK_POWER" then
                     if PaperDollFormatStat then
                         local base, posBuff, negBuff = SafeGetStatValues(UnitAttackPower, unit)
-                        local damageBonus = BreakUpLargeNumbers(max((base+posBuff+negBuff), 0)/ATTACK_POWER_MAGIC_NUMBER)
+                        local damageBonus = BreakUpLargeNumbers(math.max((base+posBuff+negBuff), 0)/ATTACK_POWER_MAGIC_NUMBER)
                         local tag, tooltip = MELEE_ATTACK_POWER, MELEE_ATTACK_POWER_TOOLTIP
                         local valueText, tooltipText = PaperDollFormatStat(tag, base, posBuff, negBuff)
                         row.tooltip = tooltipText

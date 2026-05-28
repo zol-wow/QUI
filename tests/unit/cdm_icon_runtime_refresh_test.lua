@@ -1,5 +1,6 @@
 -- tests/unit/cdm_icon_runtime_refresh_test.lua
 -- Run: lua tests/unit/cdm_icon_runtime_refresh_test.lua
+-- luacheck: globals InCombatLockdown wipe CreateFrame
 
 local function noop() end
 
@@ -124,6 +125,7 @@ local highlighterCasts = {}
 local textureClears = 0
 local durationKeyClears = 0
 local stableClears = 0
+local barAuraRefreshMarks = {}
 local mirrorStates = {
     ["505:essential"] = {
         auraInstanceID = 9001,
@@ -228,6 +230,12 @@ local controller = module.Create({
     end,
     setBarsDirty = function(dirty)
         barsDirty = dirty == true
+    end,
+    markBarsForAuraRefresh = function(unit, updateInfo)
+        barAuraRefreshMarks[#barAuraRefreshMarks + 1] = {
+            unit = unit,
+            updateInfo = updateInfo,
+        }
     end,
     runDirtyBarUpdate = function()
         dirtyBarRuns = dirtyBarRuns + 1
@@ -364,6 +372,7 @@ spellIcon._lastDurObj = nil
 
 reset(auraApplied)
 reset(clearedBindings)
+wipe(barAuraRefreshMarks)
 stackRequested = false
 local schedulesBeforeAuraDelta = #schedules
 mirrorAuraIcon._lastDurObjKey = "aura:9001"
@@ -376,6 +385,10 @@ controller:Handle("UNIT_AURA", "target", {
 assert(auraApplied.mirrorAura == 1, "aura delta should match mirror-backed aura instance IDs")
 assert(clearedBindings.mirrorAura == 1, "target aura deltas should invalidate stale aura DurationObject bindings before re-resolve")
 assert(mirrorAuraIcon._lastDurObjKey == nil, "target aura delta invalidation should clear the previous duration key")
+assert(#barAuraRefreshMarks == 1
+    and barAuraRefreshMarks[1].unit == "target"
+    and barAuraRefreshMarks[1].updateInfo.updatedAuraInstanceIDs[1] == 9001,
+    "aura deltas should mark matching bars for DurationObject rebind before the dirty bar update")
 assert(stackRequested == true, "aura deltas should request a follow-up stack text refresh")
 assert(#schedules == schedulesBeforeAuraDelta,
     "aura deltas should stay on the targeted aura path instead of scheduling a broad cooldown walk")
@@ -454,7 +467,7 @@ assert(textureClears == textureClearsBefore + 2
     and durationKeyClears == durationKeyClearsBefore + 2
     and stableClears == stableClearsBefore + 2,
     "SPELLS_CHANGED should still clear stable resolver caches immediately")
-queuedFrame = createdFrames[#createdFrames]
+local queuedFrame = createdFrames[#createdFrames]
 queuedFrame.scripts.OnUpdate(queuedFrame, 0.31)
 assert(runtimeUpdated.spell == 1 and runtimeUpdated.otherSpell == 1,
     "coalesced combat SPELLS_CHANGED should refresh spell-shaped icon runtime state through spell scope")

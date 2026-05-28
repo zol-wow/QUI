@@ -2860,10 +2860,28 @@ local function WipeMirrorPayloadScratch()
     p.hasExpirationTime = nil; p.hideDurationText = nil
 end
 
-local function BuildMirrorCountPayload(m)
+local function BuildMirrorCountPayload(m, renderMode)
     if not m then return nil end
     local c = _mirrorCountScratch
     c.value = nil; c.sinkText = nil; c.shown = false; c.source = nil
+
+    -- Cross-category aura applications carried from the source child (see
+    -- CaptureAuraInstanceFromChildFrame). The host child only has its own
+    -- (chargeless) ChargeCount text, so prefer the borrowed aura stack text --
+    -- but only while this payload renders the aura. When the icon is on
+    -- cooldown (debuff still up but the spell cooldown is showing) or the
+    -- viewer is configured to skip the aura phase, renderMode is not "aura"
+    -- and the carried count must stay off.
+    if renderMode == "aura"
+        and (ResolverIsSecretValue(m.auraStackText) or m.auraStackText ~= nil) then
+        if SafeBoolean(m.auraStackTextShown) ~= false then
+            c.value = SafeMirrorCountNumber(m.auraStackText)
+            c.sinkText = m.auraStackText
+            c.shown = true
+            c.source = SafeMirrorString(m.auraStackTextSource) or "Applications"
+            return c
+        end
+    end
 
     local shown = SafeBoolean(m.stackTextShown)
     local source = SafeMirrorString(m.stackTextSource) or "mirror-text"
@@ -2883,6 +2901,17 @@ local function BuildMirrorCountPayload(m)
     end
 
     return nil
+end
+
+local function MirrorAuraHasCapturedPresence(m)
+    -- Target auraData can be unreadable during combat; a stamped mirror aura
+    -- instance plus duration/count evidence is enough to keep the aura lane.
+    if not (m and HasOpaqueValue(m.auraInstanceID)) then return false end
+    if HasOpaqueValue(m.auraDurObj) then return true end
+    if m.auraDurationStateUnknown == true then return true end
+    if SafeBoolean(m.childIsActive) == true then return true end
+    if ResolverIsSecretValue(m.auraStackText) or m.auraStackText ~= nil then return true end
+    return false
 end
 
 -- Classify what mode this mirror state should render as, by querying live
@@ -2968,13 +2997,16 @@ local function DeriveMirrorPayloadMode(m, sid, suppressAura)
             return isAuraCategory and "aura" or "cooldown", nil, nil
         end
 
-        if HasOpaqueValue(m.auraInstanceID) and Sources and Sources.QueryAuraDataByAuraInstanceID then
+        if HasOpaqueValue(m.auraInstanceID) then
             local auraUnit = SafeMirrorString(m.auraUnit) or "player"
             local aura = m.auraData
-            if not aura then
+            if not aura and Sources and Sources.QueryAuraDataByAuraInstanceID then
                 aura = Sources.QueryAuraDataByAuraInstanceID(auraUnit, m.auraInstanceID)
             end
             if aura then return "aura", aura, nil end
+            if MirrorAuraHasCapturedPresence(m) then
+                return "aura", nil, nil
+            end
         end
 
         if isAuraCategory and SafeBoolean(m.childIsActive) == true then
@@ -2987,8 +3019,14 @@ local function DeriveMirrorPayloadMode(m, sid, suppressAura)
 
     local cdInfo = Sources and Sources.QuerySpellCooldown and Sources.QuerySpellCooldown(sid)
     local cdActive = cdInfo and cdInfo.isActive == true
+    -- isOnGCD distinguishes a real (non-GCD) cooldown from an incidental GCD.
+    -- This drives only the swipe lane (real-CD vs GCD); the icon's saturation
+    -- is driven independently and lag-free by the real-CD-only DurationObject
+    -- curve in cdm_icon_renderer.lua, so a cosmetic isOnGCD wobble here only
+    -- affects which swipe shows, never the dark/bright state the user sees.
+    local baseOnGCD = cdInfo and cdInfo.isOnGCD
     -- A real (non-GCD) cooldown on the base always wins.
-    if cdActive and cdInfo.isOnGCD ~= true then
+    if cdActive and baseOnGCD ~= true then
         return "cooldown", nil, sid
     end
     -- Talent-override cooldowns sit on the override spellID, not the registered
@@ -3014,12 +3052,15 @@ local function DeriveMirrorPayloadMode(m, sid, suppressAura)
     -- cooldown branch queries the matching duration.
     local overrideSid = m.overrideSpellID
     local overrideCdInfo
+    local overrideOnGCD
     if overrideSid and overrideSid ~= sid
         and Sources and Sources.QuerySpellCooldown then
         overrideCdInfo = Sources.QuerySpellCooldown(overrideSid)
-        if overrideCdInfo and overrideCdInfo.isActive == true
-            and overrideCdInfo.isOnGCD ~= true then
-            return "cooldown", nil, overrideSid
+        if overrideCdInfo and overrideCdInfo.isActive == true then
+            overrideOnGCD = overrideCdInfo.isOnGCD
+            if overrideOnGCD ~= true then
+                return "cooldown", nil, overrideSid
+            end
         end
     end
     -- An active multi-charge recharge outranks the GCD. While a charge is
@@ -3037,11 +3078,11 @@ local function DeriveMirrorPayloadMode(m, sid, suppressAura)
     -- No real cooldown on the base or override and no rolling recharge. Fall
     -- back to a GCD swipe (base first, then override) so a freshly cast spell
     -- still surfaces its GCD.
-    if cdActive and cdInfo.isOnGCD == true then
+    if cdActive and baseOnGCD == true then
         return "gcd-only", nil, sid
     end
     if overrideCdInfo and overrideCdInfo.isActive == true
-        and overrideCdInfo.isOnGCD == true then
+        and overrideOnGCD == true then
         return "gcd-only", nil, overrideSid
     end
     -- Hold gcd-only through the cast when cast time exceeds the GCD (Shadow
@@ -3127,7 +3168,7 @@ local function BuildMirrorRenderPayload(
 
     if active and mode == "aura" and auraUnit == "target" then
         auraData = ResolveOwnedTargetMirrorAuraData(m, auraUnit, auraData)
-        if not auraData then
+        if not auraData and not MirrorAuraHasCapturedPresence(m) then
             active = false
             mode = "inactive"
             auraInstanceID = nil
@@ -3246,7 +3287,7 @@ local function BuildMirrorRenderPayload(
     payload.totemIcon = m.totemIcon
     payload.cooldownDurObj = m.cooldownDurObj
     payload.isTotemInstance = m.totemSlot and true or false
-    payload.count = BuildMirrorCountPayload(m)
+    payload.count = BuildMirrorCountPayload(m, mode)
 
     if active and mode == "aura" and not payloadDurObj then
         payload.hasExpirationTime = false
@@ -3831,6 +3872,10 @@ local function MirrorPayloadMayHaveAuraOverlay(payload)
         -- spellID and surface it; without this gate the resolver bails
         -- on hasAura=false below and the cooldown icon never enters
         -- mode=aura during the buff phase.
+        --
+        -- childIsActive alone is not aura evidence here: an ordinary active
+        -- cooldown child also reports active, and probing same-spell auras for
+        -- those entries can promote a non-aura cooldown into mode="aura".
         local cat = m.viewerCategory
         if cat == "essential" or cat == "utility" then
             local mirror = ns.CDMBlizzMirror
@@ -4308,6 +4353,11 @@ local function ResolveCooldownStateCore(context)
         local cdInfo = gcdCdInfo or QueryCooldown(sid)
         local cdInfoActive = cdInfo and IsCooldownInfoActive(cdInfo)
         if cdInfoActive == true then
+            -- isOnGCD only selects the swipe lane (real-CD vs GCD); the icon's
+            -- saturation is driven lag-free by the real-CD-only DurationObject
+            -- curve in cdm_icon_renderer.lua, so a cosmetic-moment isOnGCD read
+            -- here can at most pick the wrong swipe for a frame, never strand
+            -- the dark/bright state the user sees.
             local cdInfoOnGCD = GetCurrentIsOnGCD(cdInfo)
             local durObj = QueryDuration(sid)
             local renderLiveGCD = ShouldRenderLiveGCD(cdInfoOnGCD)
@@ -4397,4 +4447,3 @@ function CDMResolvers.ResolveCooldownState(context)
     return ResolveCooldownStateCore(context)
 end
 end
-

@@ -258,7 +258,7 @@ local function GetForcesFont()
     local settings = GetSettings()
     local fontName = settings.forcesFont or "Poppins"
     local fontSize = settings.forcesFontSize or 11
-    
+
     local fontPath = "Fonts\\FRIZQT__.TTF"
     local media = ns.Media
     if media and media.GetFont then
@@ -267,7 +267,7 @@ local function GetForcesFont()
             fontPath = path
         end
     end
-    
+
     return fontPath, fontSize
 end
 

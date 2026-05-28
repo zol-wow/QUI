@@ -215,12 +215,12 @@ function Datatexts:Register(id, datatextDef)
         print("|cffff0000QUI:|r Datatext '" .. id .. "' is already registered!")
         return false
     end
-    
+
     if not datatextDef.OnEnable or type(datatextDef.OnEnable) ~= "function" then
         print("|cffff0000QUI:|r Datatext '" .. id .. "' missing OnEnable function!")
         return false
     end
-    
+
     self.registry[id] = {
         id = id,
         displayName = datatextDef.displayName or id,
@@ -229,7 +229,7 @@ function Datatexts:Register(id, datatextDef)
         OnEnable = datatextDef.OnEnable,
         OnDisable = datatextDef.OnDisable,
     }
-    
+
     return true
 end
 
@@ -267,12 +267,12 @@ function Datatexts:AttachToSlot(slotFrame, datatextID, settings)
         print("|cffff0000QUI:|r Invalid slot frame provided")
         return false
     end
-    
+
     -- Clean up existing datatext on this slot
     if slotFrame.datatextInstance then
         self:DetachFromSlot(slotFrame)
     end
-    
+
     local datatextDef = self.registry[datatextID]
     if not datatextDef then
         -- Empty slot - show placeholder (hidden when "No Label" is enabled for the slot)
@@ -287,56 +287,56 @@ function Datatexts:AttachToSlot(slotFrame, datatextID, settings)
         end
         return true
     end
-    
+
     -- Create datatext instance
     local success, instance = pcall(datatextDef.OnEnable, slotFrame, settings or {})
-    
+
     if not success then
         print("|cffff0000QUI:|r Failed to enable datatext '" .. datatextID .. "': " .. tostring(instance))
         return false
     end
-    
+
     -- Store instance for cleanup
     slotFrame.datatextInstance = {
         id = datatextID,
         frame = instance,
         def = datatextDef,
     }
-    
+
     -- Track globally for mass updates
     table.insert(self.activeInstances, {
         slot = slotFrame,
         instance = instance,
         id = datatextID,
     })
-    
+
     return true
 end
 
 --- Detach datatext from a slot
 function Datatexts:DetachFromSlot(slotFrame)
     if not slotFrame or not slotFrame.datatextInstance then return end
-    
+
     local instance = slotFrame.datatextInstance
-    
+
     -- Call OnDisable if provided
     if instance.def.OnDisable then
         pcall(instance.def.OnDisable, instance.frame)
     end
-    
+
     -- Clean up instance frame
     if instance.frame then
         instance.frame:Hide()
         instance.frame:SetParent(nil)
     end
-    
+
     -- Remove from global tracking
     for i = #self.activeInstances, 1, -1 do
         if self.activeInstances[i].slot == slotFrame then
             table.remove(self.activeInstances, i)
         end
     end
-    
+
     slotFrame.datatextInstance = nil
 end
 
@@ -358,18 +358,18 @@ Datatexts:Register("time", {
     displayName = "Time",
     category = "System",
     description = "Displays current time (local or server)",
-    
+
     OnEnable = function(slotFrame, settings)
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
-        
+
         local text = slotFrame.text
         if not text then
             text = slotFrame:CreateFontString(nil, "OVERLAY")
             text:SetPoint("CENTER")
             slotFrame.text = text
         end
-        
+
         local function Update()
             -- Read time settings from global config (not panel config)
             local dtSettings = QUICore.db and QUICore.db.profile and QUICore.db.profile.datatext
@@ -399,7 +399,7 @@ Datatexts:Register("time", {
 
         -- Update every second
         Datatexts:RegisterSharedTicker(frame, Update)
-        
+
         -- Tooltip with lockouts and reset timers
         slotFrame:EnableMouse(true)
         slotFrame:SetScript("OnEnter", function(self)
@@ -473,11 +473,11 @@ Datatexts:Register("time", {
                 end
             end
         end)
-        
+
         Update()
         return frame
     end,
-    
+
     OnDisable = function(frame)
         Datatexts:UnregisterSharedTicker(frame)
     end,
@@ -488,18 +488,18 @@ Datatexts:Register("fps", {
     displayName = "FPS",
     category = "System",
     description = "Displays frames per second",
-    
+
     OnEnable = function(slotFrame, settings)
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
-        
+
         local text = slotFrame.text
         if not text then
             text = slotFrame:CreateFontString(nil, "OVERLAY")
             text:SetPoint("CENTER")
             slotFrame.text = text
         end
-        
+
         local function Update()
             local fps = floor(GetFramerate() + 0.5)
             local r, g, b
@@ -511,14 +511,14 @@ Datatexts:Register("fps", {
             local label = GetLabel("FPS: ", "F: ", slotFrame.shortLabel, slotFrame.noLabel)
             text:SetFormattedText(label .. "|cff%02x%02x%02x%d|r", r, g, b, fps)
         end
-        
+
         frame.Update = Update
         Datatexts:RegisterSharedTicker(frame, Update)
-        
+
         Update()
         return frame
     end,
-    
+
     OnDisable = function(frame)
         Datatexts:UnregisterSharedTicker(frame)
     end,
@@ -529,18 +529,18 @@ Datatexts:Register("latency", {
     displayName = "Latency",
     category = "System",
     description = "Displays world latency",
-    
+
     OnEnable = function(slotFrame, settings)
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
-        
+
         local text = slotFrame.text
         if not text then
             text = slotFrame:CreateFontString(nil, "OVERLAY")
             text:SetPoint("CENTER")
             slotFrame.text = text
         end
-        
+
         local function Update()
             local _, _, home = GetNetStats()
             local ms = floor(home or 0)
@@ -560,7 +560,7 @@ Datatexts:Register("latency", {
         Update()
         return frame
     end,
-    
+
     OnDisable = function(frame)
         Datatexts:UnregisterSharedTicker(frame)
     end,
@@ -1187,18 +1187,18 @@ Datatexts:Register("durability", {
     displayName = "Durability",
     category = "Character",
     description = "Displays lowest equipment durability",
-    
+
     OnEnable = function(slotFrame, settings)
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
-        
+
         local text = slotFrame.text
         if not text then
             text = slotFrame:CreateFontString(nil, "OVERLAY")
             text:SetPoint("CENTER")
             slotFrame.text = text
         end
-        
+
         local DURABLE_SLOTS = {1, 3, 5, 6, 7, 8, 9, 10, 15, 16, 17}
         local SLOT_NAMES = {
             [1] = "Head",
@@ -1235,9 +1235,9 @@ Datatexts:Register("durability", {
             local label = GetLabel("Gear: ", "D: ", slotFrame.shortLabel, slotFrame.noLabel)
             text:SetFormattedText(label .. "|cff%02x%02x%02x%d%%|r", r, g, b, floor(minVal + 0.5))
         end
-        
+
         frame.Update = Update
-        
+
         frame:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
         frame:RegisterEvent("PLAYER_ENTERING_WORLD")
         frame:SetScript("OnEvent", Update)
@@ -1546,18 +1546,18 @@ Datatexts:Register("friends", {
     displayName = "Friends",
     category = "Social",
     description = "Displays online friends count with detailed tooltip",
-    
+
     OnEnable = function(slotFrame, settings)
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
-        
+
         local text = slotFrame.text
         if not text then
             text = slotFrame:CreateFontString(nil, "OVERLAY")
             text:SetPoint("CENTER")
             slotFrame.text = text
         end
-        
+
         local function Update()
             -- WoW friends
             local wowOnline = C_FriendList.GetNumOnlineFriends() or 0
@@ -1596,7 +1596,7 @@ Datatexts:Register("friends", {
             friendsCache.lastUpdate = 0  -- Invalidate cache
             Update()
         end)
-        
+
         -- Tooltip helper function (supports Shift-notes view)
         local function BuildFriendsTooltip(self)
             -- Rebuild cache if stale (> 1 second old)
@@ -1904,10 +1904,10 @@ Datatexts:Register("friends", {
         -- Initial update
         C_FriendList.ShowFriends()
         Update()
-        
+
         return frame
     end,
-    
+
     OnDisable = function(frame)
         frame:UnregisterAllEvents()
         frame.friendsDatatextEnabled = false  -- Disable modifier hook
@@ -1936,7 +1936,7 @@ local function StripMyRealm(name)
             return name  -- Can't strip without realm info
         end
     end
-    return (gsub(name, myRealmPattern, ""))
+    return (string.gsub(name, myRealmPattern, ""))
 end
 
 local function BuildGuildCache()
@@ -2008,18 +2008,18 @@ Datatexts:Register("guild", {
     displayName = "Guild",
     category = "Social",
     description = "Displays online guild members with detailed tooltip",
-    
+
     OnEnable = function(slotFrame, settings)
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
-        
+
         local text = slotFrame.text
         if not text then
             text = slotFrame:CreateFontString(nil, "OVERLAY")
             text:SetPoint("CENTER")
             slotFrame.text = text
         end
-        
+
         local function Update()
             if not IsInGuild() then
                 text:SetText("No Guild")
@@ -2056,7 +2056,7 @@ Datatexts:Register("guild", {
             guildCache.lastUpdate = 0  -- Invalidate cache
             Update()
         end)
-        
+
         -- Tooltip helper function (supports Shift-notes view)
         local function BuildGuildTooltip(self)
             if not IsInGuild() then return end
@@ -2283,18 +2283,18 @@ Datatexts:Register("lootspec", {
     displayName = "Loot Specialization",
     category = "Character",
     description = "Displays and changes loot specialization",
-    
+
     OnEnable = function(slotFrame, settings)
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
-        
+
         local text = slotFrame.text
         if not text then
             text = slotFrame:CreateFontString(nil, "OVERLAY")
             text:SetPoint("CENTER")
             slotFrame.text = text
         end
-        
+
         local function Update()
             local label = GetLabel("Loot: ", "L: ", slotFrame.shortLabel, slotFrame.noLabel)
             local specIndex = GetSpecialization()
@@ -2330,9 +2330,9 @@ Datatexts:Register("lootspec", {
 
             text:SetFormattedText(label .. "|cff%02x%02x%02x%s|r", r, g, b, displayName or "?")
         end
-        
+
         frame.Update = Update
-        
+
         -- Events
         frame:RegisterEvent("PLAYER_ENTERING_WORLD")
         frame:RegisterEvent("PLAYER_LOOT_SPEC_UPDATED")
@@ -2354,13 +2354,13 @@ Datatexts:Register("lootspec", {
             GameTooltip:ClearLines()
             GameTooltip:AddLine("Loot Specialization", 1, 1, 1)
             GameTooltip:AddLine(" ")
-            
+
             local specIndex = GetSpecialization()
             if specIndex then
                 local lootSpec = GetLootSpecialization()
                 local sameSpec = (lootSpec == 0) and specIndex or nil
                 local displaySpecIndex = sameSpec or lootSpec
-                
+
                 if displaySpecIndex and displaySpecIndex ~= 0 then
                     local specID, specName, _, icon = GetSpecializationInfo((displaySpecIndex ~= 0 and displaySpecIndex) or specIndex)
                     if specName then
@@ -2372,7 +2372,7 @@ Datatexts:Register("lootspec", {
                     end
                 end
             end
-            
+
             GameTooltip:AddLine(" ")
             local ar, ag, ab = GetValueColor(); ar, ag, ab = ar/255, ag/255, ab/255
             GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Change Loot Spec", ar, ag, ab)
@@ -2394,7 +2394,7 @@ Datatexts:Register("lootspec", {
                     local currentSpec = GetSpecialization()
                     local currentLoot = GetLootSpecialization()
                     local numSpecs = GetNumSpecializations() or 0
-                    
+
                     if currentLoot == 0 then
                         -- Currently auto, switch to spec 1
                         local specID = select(1, GetSpecializationInfo(1))
@@ -2411,7 +2411,7 @@ Datatexts:Register("lootspec", {
                                 break
                             end
                         end
-                        
+
                         -- Cycle to next
                         if lootIndex >= numSpecs then
                             SetLootSpecialization(0)  -- Back to auto
@@ -2425,11 +2425,11 @@ Datatexts:Register("lootspec", {
                 end
             end
         end)
-        
+
         Update()
         return frame
     end,
-    
+
     OnDisable = function(frame)
         frame:UnregisterAllEvents()
     end,
@@ -3502,4 +3502,3 @@ Datatexts:Register("experience", {
         frame:UnregisterAllEvents()
     end,
 })
-

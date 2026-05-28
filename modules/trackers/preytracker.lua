@@ -517,7 +517,8 @@ local function GetBarColors()
         bgb = settings.barBackgroundColor[3] or 0.1
         bga = settings.barBackgroundColor[4] or 0.8
     else
-        _, _, _, _, bgr, bgg, bgb, bga = Helpers.GetSkinColors()
+        local _sr, _sg, _sb, _sa
+        _sr, _sg, _sb, _sa, bgr, bgg, bgb, bga = Helpers.GetSkinColors()
     end
 
     -- Border color

@@ -774,7 +774,7 @@ local function UpdateVigorBar()
             flashTexture:SetPoint("LEFT", vigorBar, "LEFT", segmentStart, 0)
             flashTexture:SetWidth(segmentWidth)
             flashTexture:SetHeight(skyridingFrame:GetHeight())
-            
+
             -- Use Thrill of the Skies color for flash if buff is active
             if ShouldUseThrillOfTheSkiesColor(settings) then
                 local thrillColor = settings.thrillOfTheSkiesColor
@@ -782,7 +782,7 @@ local function UpdateVigorBar()
             else
                 flashTexture:SetVertexColor(1, 1, 1, 0.5)  -- Default white flash
             end
-            
+
             flashAnim:Play()
         end
     end

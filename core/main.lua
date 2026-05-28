@@ -358,7 +358,7 @@ function QUICore:OnProfileChanged(event, db, profileKey)
             self._preservedUIScale = newProfileScale
         end
     end
-    
+
     -- Handle Panel Scale and Alpha preservation
     -- Always restore the preserved panel settings on profile change (new, reset, or switch)
     -- This keeps the panel consistent across all profile operations
@@ -389,7 +389,7 @@ function QUICore:OnProfileChanged(event, db, profileKey)
             print("|cFFFF6666QUI:|r RefreshAll error: " .. tostring(err))
         end
     end
-    
+
     -- Refresh Minimap module on profile change
     if QUICore.Minimap then
         -- Small delay to ensure profile data is fully loaded
@@ -399,7 +399,7 @@ function QUICore:OnProfileChanged(event, db, profileKey)
             end
         end)
     end
-    
+
     -- Reset castbar previewMode flags before refreshing unit frames.
     -- previewMode is a transient UI state (options panel toggle) that should not
     -- persist across profile changes, but it lives in the DB and gets copied along.
@@ -713,18 +713,18 @@ end
 function QUICore:CreateMinimapButton()
     local LDB = LibStub("LibDataBroker-1.1", true)
     local LibDBIcon = LibStub("LibDBIcon-1.0", true)
-    
+
     if not LDB or not LibDBIcon then
         return
     end
-    
+
     -- Initialize minimap button database (separate from minimap module settings)
     if not self.db.profile.minimapButton then
         self.db.profile.minimapButton = {
             hide = false,
         }
     end
-    
+
     -- Create DataBroker object
     local dataObj = LDB:NewDataObject(ADDON_NAME, {
         type = "launcher",
@@ -745,7 +745,7 @@ function QUICore:CreateMinimapButton()
             tooltip:AddLine("Right-click to toggle Edit Mode", 1, 1, 1)
         end,
     })
-    
+
     -- Register with LibDBIcon using separate minimapButton settings
     LibDBIcon:Register(ADDON_NAME, dataObj, self.db.profile.minimapButton)
 end
@@ -754,7 +754,7 @@ end
 function QUICore:HookEditMode()
     if self.__editModeHooked then return end
     self.__editModeHooked = true
-    
+
     -- Hook EditModeManagerFrame if it exists
     if EditModeManagerFrame then
         -- Track whether we've already hooked BossTargetFrameContainer.GetScaledSelectionSides
@@ -883,7 +883,7 @@ function QUICore:HookEditMode()
                 end
             end
         end)
-        
+
         -- Hook when Edit Mode is exited (minimal — no callback dispatch)
         hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
             -- Hide power bar edit overlays that persist after edit mode exits
@@ -897,7 +897,7 @@ function QUICore:HookEditMode()
             end)
         end)
     end
-            
+
     -- Hook combat end to reapply frame anchoring overrides deferred during combat
     local combatEndFrame = CreateFrame("Frame")
     combatEndFrame:RegisterEvent("PLAYER_REGEN_ENABLED")

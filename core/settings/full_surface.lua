@@ -603,7 +603,8 @@ function FullSurface.BuildScrollTabBody(body, options)
 
     local scrollContent
     if ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
-        _, scrollContent = ns.QUI_Options.CreateScrollableContent(scrollWrap)
+        local _scrollFrame
+        _scrollFrame, scrollContent = ns.QUI_Options.CreateScrollableContent(scrollWrap)
     end
 
     local state = type(options.state) == "table" and options.state or nil
@@ -721,7 +722,8 @@ function FullSurface.BuildMultiHostTabBody(body, options)
 
         local content = container
         if definition.kind == "scroll" and ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
-            _, content = ns.QUI_Options.CreateScrollableContent(container)
+            local _scrollFrame
+            _scrollFrame, content = ns.QUI_Options.CreateScrollableContent(container)
         end
 
         hosts[hostKey] = {

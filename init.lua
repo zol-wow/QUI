@@ -673,7 +673,7 @@ function QUI:OnEnable()
     self:RegisterEvent("PLAYER_REGEN_ENABLED")
     self:RegisterEvent("ADDON_LOADED")
     self:RegisterOptionalPullAlias()
-    
+
     -- Initialize QUICore (AceDB-based integration)
     if self.QUICore then
         -- Show intro message if enabled (defaults to true)

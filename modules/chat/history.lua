@@ -84,6 +84,48 @@ local function resolveChatTypeKey(chatTypeID)
     return idToKey and idToKey[chatTypeID] or nil
 end
 
+local EVENT_TYPE_TO_BASE_KEY = {
+    PARTY_LEADER = "PARTY",
+    RAID_LEADER = "RAID",
+    RAID_WARNING = "RAID",
+    INSTANCE_CHAT_LEADER = "INSTANCE_CHAT",
+    GUILD_ACHIEVEMENT = "GUILD",
+    GUILD_ITEM_LOOTED = "GUILD",
+    WHISPER_INFORM = "WHISPER",
+    BN_WHISPER_INFORM = "BN_WHISPER",
+}
+
+local function readPackedNeverSecret(eventArgs, index)
+    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(eventArgs) then return nil end
+    if type(eventArgs) ~= "table" then return nil end
+    local value = eventArgs[index]
+    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value) then return nil end
+    return value
+end
+
+local function resolveChatTypeKeyFromEvent(event, eventArgs)
+    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(event) then return nil end
+    if type(event) ~= "string" then return nil end
+
+    local eventType = event:match("^CHAT_MSG_(.+)$")
+    if not eventType then return nil end
+
+    if eventType == "CHANNEL" or eventType == "COMMUNITIES_CHANNEL" then
+        -- ChatInfoDocumentation marks channelIndex (payload arg 8) NeverSecret.
+        local slot = tonumber(readPackedNeverSecret(eventArgs, 8))
+        if slot and slot > 0 then
+            return "CHANNEL" .. slot
+        end
+        return "CHANNEL"
+    end
+
+    local categoryList = _G.CHAT_INVERTED_CATEGORY_LIST
+    if type(categoryList) == "table" and categoryList[eventType] then
+        return categoryList[eventType]
+    end
+    return EVENT_TYPE_TO_BASE_KEY[eventType] or eventType
+end
+
 -- Whisper-family chatTypeKeys. Used by the storeWhispers gate to drop
 -- whisper messages without falling back on locale-fragile text sniffing.
 local WHISPER_KEYS = {
@@ -104,7 +146,7 @@ local function isExcludedChannel(chatTypeKey, excludedSet)
     return excludedSet[channelName] == true
 end
 
-local function captureToHistory(frame, msg, r, g, b, chatTypeID, ...)
+local function captureToHistory(frame, msg, r, g, b, chatTypeID, accessID, typeID, event, eventArgs, ...)
     if History._repumping then return end
 
     -- Secret guards must precede type(msg) and the msg == "" compare —
@@ -112,7 +154,7 @@ local function captureToHistory(frame, msg, r, g, b, chatTypeID, ...)
     -- back through AddMessage into Blizzard's HistoryKeeper. Same
     -- IsSecretValue-first ordering as copy.lua:135.
     if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(msg) then return end
-    if Helpers and Helpers.HasSecretValue and Helpers.HasSecretValue(r, g, b, chatTypeID) then return end
+    if Helpers and Helpers.HasSecretValue and Helpers.HasSecretValue(r, g, b) then return end
 
     if type(msg) ~= "string" or msg == "" then return end
 
@@ -131,7 +173,13 @@ local function captureToHistory(frame, msg, r, g, b, chatTypeID, ...)
     end
     if not frameID then return end
 
-    local chatTypeKey = resolveChatTypeKey(chatTypeID)
+    local chatTypeKey
+    if not (Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(chatTypeID)) then
+        chatTypeKey = resolveChatTypeKey(chatTypeID)
+    end
+    if not chatTypeKey then
+        chatTypeKey = resolveChatTypeKeyFromEvent(event, eventArgs)
+    end
 
     if not s.storeWhispers and chatTypeKey and WHISPER_KEYS[chatTypeKey] then
         return

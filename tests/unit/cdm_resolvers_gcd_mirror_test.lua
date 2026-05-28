@@ -1,5 +1,7 @@
 -- tests/unit/cdm_resolvers_gcd_mirror_test.lua
 -- Run: lua tests/unit/cdm_resolvers_gcd_mirror_test.lua
+-- luacheck: globals InCombatLockdown geterrorhandler CreateFrame issecretvalue
+-- luacheck: ignore 111
 
 local function noop() end
 
@@ -267,6 +269,9 @@ local ns = {
             end
             if spellID == 99999 then
                 return { isActive = true, isOnGCD = true, activeCategory = "spell" }
+            end
+            if spellID == 439843 then
+                return { isActive = true, isOnGCD = false }
             end
             if spellID == 121212 then
                 return { isActive = true, isOnGCD = true, activeCategory = SECRET_COOLDOWN_FIELD }
@@ -660,6 +665,25 @@ local ns = {
                     auraUnit = "target",
                     auraDurObj = auraMirrorDuration,
                     auraDurObjSource = "aura-duration",
+                }
+            end
+            if cooldownID == 51696 and viewerCategory == "essential" then
+                return {
+                    cooldownID = cooldownID,
+                    mirrorEpoch = 184,
+                    spellID = 439843,
+                    overrideSpellID = 439843,
+                    overrideTooltipSpellID = 434765,
+                    viewerCategory = "essential",
+                    selfAura = false,
+                    hasAura = true,
+                    auraInstanceID = 862,
+                    auraUnit = "target",
+                    auraDurObj = auraMirrorDuration,
+                    auraDurObjSource = "aura-related-child",
+                    auraStackText = "7",
+                    auraStackTextSource = "Applications",
+                    auraStackTextShown = true,
                 }
             end
         end,
@@ -1561,6 +1585,28 @@ assert(mode == "aura", "owned target aura mirrors should resolve as aura mode")
 assert(mirrorPayload and mirrorPayload.auraData == ownedTargetAuraData,
     "owned target aura mirrors should retain the ownership-proving auraData")
 
+local reapersMarkEssentialIcon = {
+    _blizzMirrorCooldownID = 51696,
+    _blizzMirrorCategory = "essential",
+    _spellEntry = {
+        id = 439843,
+        spellID = 439843,
+        viewerType = "essential",
+        kind = "cooldown",
+        type = "spell",
+        linkedSpellIDs = { 434765 },
+    },
+}
+durObj, mode, sourceID, _, _, _, mirrorBacked, mirrorPayload =
+    ResolveIconFields(reapersMarkEssentialIcon)
+
+assert(durObj == auraMirrorDuration,
+    "target aura mirrors with a captured DurationObject should not flicker to the real cooldown")
+assert(mode == "aura",
+    "target aura mirrors should keep aura mode when the live auraData re-query is restricted")
+assert(mirrorPayload and mirrorPayload.countSinkText == "7",
+    "target aura mirrors should keep the carried Applications stack while rendering aura mode")
+
 cooldownQueryCounts[232323] = nil
 local inactiveMirrorIcon = {
     _blizzMirrorCooldownID = 890,
@@ -1628,5 +1674,7 @@ assert(durObj == realCooldownDuration,
     "talent-override icon should bind the override's real cooldown duration during an incidental GCD, got " .. tostring(durObj))
 assert(sourceID == "mirror:1769:357210",
     "talent-override cooldown should key on the mirror cooldownID + base spellID, got " .. tostring(sourceID))
+
+setGCDState(nil)
 
 print("OK: cdm_resolvers_gcd_mirror_test")

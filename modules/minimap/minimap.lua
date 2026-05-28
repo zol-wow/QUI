@@ -507,14 +507,14 @@ local function SetMinimapShape(shape)
             mask:SetTexture("Interface\\BUTTONS\\WHITE8X8")
         end
         _G.GetMinimapShape = function() return "SQUARE" end
-        
+
         -- Handle HybridMinimap (Delves/scenarios)
         if HybridMinimap then
             HybridMinimap.MapCanvas:SetUseMaskTexture(false)
             HybridMinimap.CircleMask:SetTexture("Interface\\BUTTONS\\WHITE8X8")
             HybridMinimap.MapCanvas:SetUseMaskTexture(true)
         end
-        
+
         -- Remove the waffle texture in quest areas
         Minimap:SetArchBlobRingScalar(0)
         Minimap:SetArchBlobRingAlpha(0)
@@ -527,14 +527,14 @@ local function SetMinimapShape(shape)
             mask:SetTexture("Interface\\MINIMAP\\UI-Minimap-Background")
         end
         _G.GetMinimapShape = function() return "ROUND" end
-        
+
         if HybridMinimap then
             HybridMinimap.MapCanvas:SetUseMaskTexture(false)
             HybridMinimap.CircleMask:SetTexture("Interface\\MINIMAP\\UI-Minimap-Background")
             HybridMinimap.MapCanvas:SetUseMaskTexture(true)
         end
     end
-    
+
     -- Refresh LibDBIcon button positions if available
     if LibDBIcon then
         local buttons = LibDBIcon:GetButtonList()
@@ -550,17 +550,17 @@ end
 
 local function CreateBackdrop()
     if backdropFrame then return end
-    
+
     backdropFrame = CreateFrame("Frame", "QUI_MinimapBackdrop", Minimap)
     backdropFrame:SetFrameStrata("BACKGROUND")
     backdropFrame:SetFrameLevel(1)
     backdropFrame:SetFixedFrameStrata(true)
     backdropFrame:SetFixedFrameLevel(true)
     backdropFrame:Show()
-    
+
     backdrop = backdropFrame:CreateTexture(nil, "BACKGROUND")
     backdrop:SetPoint("CENTER", Minimap, "CENTER")
-    
+
     mask = backdropFrame:CreateMaskTexture()
     mask:SetAllPoints(backdrop)
     mask:SetParent(backdropFrame)
@@ -578,7 +578,7 @@ local function UpdateBackdrop()
     -- Border shows on all 4 sides, so we need size + (borderSize * 2)
     local fullSize = settings.size + (settings.borderSize * 2)
     backdrop:SetSize(fullSize, fullSize)
-    
+
     -- Apply border color
     local r, g, b, a = unpack(settings.borderColor)
     if settings.useClassColorBorder then
@@ -593,7 +593,7 @@ local function UpdateBackdrop()
         end
     end
     backdrop:SetColorTexture(r, g, b, a)
-    
+
     -- Update mask based on shape
     if settings.shape == "SQUARE" then
         mask:SetTexture("Interface\\BUTTONS\\WHITE8X8")
@@ -818,11 +818,11 @@ end
 
 local function CreateClock()
     if clockFrame then return end
-    
+
     clockFrame = CreateFrame("Button", nil, Minimap)
     clockText = clockFrame:CreateFontString(nil, "OVERLAY")
     clockText:SetAllPoints(clockFrame)
-    
+
     -- Hide Blizzard clock
     if TimeManagerClockButton then
         TimeManagerClockButton:SetParent(CreateFrame("Frame"))
@@ -832,7 +832,7 @@ local function CreateClock()
         TimeManagerClockTicker:SetParent(CreateFrame("Frame"))
         TimeManagerClockTicker:Hide()
     end
-    
+
     clockFrame:EnableMouse(true)
     clockFrame:RegisterForClicks("AnyUp")
 
@@ -860,7 +860,7 @@ local function CreateClock()
         GameTooltip:AddLine("|cffFFFFFFRight Click:|r Toggle Clock", 0.2, 1, 0.2)
         GameTooltip:Show()
     end)
-    
+
     clockFrame:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
@@ -870,19 +870,28 @@ local function UpdateClock()
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     if not clockFrame then CreateClock() end
-    
+
     local clockConfig = settings.clockConfig
-    
+
     if not settings.showClock then
         clockFrame:Hide()
         return
     end
-    
+
     clockFrame:Show()
     clockFrame:ClearAllPoints()
     clockFrame:SetPoint("TOPLEFT", Minimap, "TOPLEFT", clockConfig.offsetX, clockConfig.offsetY)
     clockFrame:SetHeight(clockConfig.fontSize + 1)
-    
+
+    -- Use general font settings
+    local generalFont = "Quazii"
+    local generalOutline = "OUTLINE"
+    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general then
+        local general = QUICore.db.profile.general
+        generalFont = general.font or "Quazii"
+        generalOutline = general.fontOutline or "OUTLINE"
+    end
+
     -- Build font flags
     local flags = nil
     if clockConfig.monochrome and clockConfig.outline ~= "NONE" then
@@ -892,11 +901,11 @@ local function UpdateClock()
     elseif clockConfig.outline ~= "NONE" then
         flags = clockConfig.outline
     end
-    
+
     local fontPath = LSM:Fetch("font", clockConfig.font) or "Fonts\\FRIZQT__.TTF"
     QUICore:SafeSetFont(clockText, fontPath, clockConfig.fontSize, flags)
     clockText:SetJustifyH(clockConfig.align)
-    
+
     -- Set color
     local r, g, b, a = unpack(clockConfig.color)
     if clockConfig.useClassColor then
@@ -906,7 +915,7 @@ local function UpdateClock()
         end
     end
     clockText:SetTextColor(r, g, b, a)
-    
+
     -- Calculate width
     clockText:SetText("99:99")
     local width = clockText:GetUnboundedStringWidth()
@@ -917,9 +926,9 @@ local function UpdateClockTime()
     if not clockFrame or not clockText then return end
     local settings = GetSettings()
     if not settings or not settings.showClock then return end
-    
+
     local clockConfig = settings.clockConfig
-    
+
     -- Ensure font is set before formatting text
     local currentFont = clockText:GetFont()
     if not currentFont then
@@ -934,18 +943,18 @@ local function UpdateClockTime()
         end
         QUICore:SafeSetFont(clockText, fontPath, clockConfig.fontSize, flags)
     end
-    
+
     local hour, minute
-    
+
     -- Use our own setting instead of CVar
     local useLocalTime = (clockConfig.timeFormat == "local")
-    
+
     if useLocalTime then
         hour, minute = tonumber(date("%H")), tonumber(date("%M"))
     else
         hour, minute = GetGameTime()
     end
-    
+
     if GetCVarBool("timeMgrUseMilitaryTime") then
         clockText:SetFormattedText(TIMEMANAGER_TICKER_24HOUR, hour, minute)
     else
@@ -964,7 +973,7 @@ end
 
 local function CreateCoords()
     if coordsFrame then return end
-    
+
     coordsFrame = CreateFrame("Frame", nil, Minimap)
     coordsText = coordsFrame:CreateFontString(nil, "OVERLAY")
     coordsText:SetAllPoints(coordsFrame)
@@ -974,19 +983,19 @@ local function UpdateCoords()
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     if not coordsFrame then CreateCoords() end
-    
+
     local coordsConfig = settings.coordsConfig
-    
+
     if not settings.showCoords then
         coordsFrame:Hide()
         return
     end
-    
+
     coordsFrame:Show()
     coordsFrame:ClearAllPoints()
     coordsFrame:SetPoint("TOPRIGHT", Minimap, "TOPRIGHT", coordsConfig.offsetX, coordsConfig.offsetY)
     coordsFrame:SetHeight(coordsConfig.fontSize + 1)
-    
+
     -- Build font flags
     local flags = nil
     if coordsConfig.monochrome and coordsConfig.outline ~= "NONE" then
@@ -996,11 +1005,11 @@ local function UpdateCoords()
     elseif coordsConfig.outline ~= "NONE" then
         flags = coordsConfig.outline
     end
-    
+
     local fontPath = LSM:Fetch("font", coordsConfig.font) or "Fonts\\FRIZQT__.TTF"
     QUICore:SafeSetFont(coordsText, fontPath, coordsConfig.fontSize, flags)
     coordsText:SetJustifyH(coordsConfig.align)
-    
+
     -- Set color
     local r, g, b, a = unpack(coordsConfig.color)
     if coordsConfig.useClassColor then
@@ -1010,7 +1019,7 @@ local function UpdateCoords()
         end
     end
     coordsText:SetTextColor(r, g, b, a)
-    
+
     -- Calculate width
     coordsText:SetFormattedText(settings.coordPrecision, 100.77, 100.77)
     local width = coordsText:GetUnboundedStringWidth()
@@ -1021,7 +1030,7 @@ local function UpdateCoordsPosition()
     if not coordsFrame or not coordsText then return end
     local settings = GetSettings()
     if not settings or not settings.showCoords then return end
-    
+
     -- Ensure font is set before formatting text
     local coordsConfig = settings.coordsConfig
     local currentFont = coordsText:GetFont()
@@ -1037,7 +1046,7 @@ local function UpdateCoordsPosition()
         end
         QUICore:SafeSetFont(coordsText, fontPath, coordsConfig.fontSize, flags)
     end
-    
+
     local uiMapID = C_Map.GetBestMapForUnit("player")
     if uiMapID then
         local pos = C_Map.GetPlayerMapPosition(uiMapID, "player")
@@ -1057,11 +1066,11 @@ local UpdateZoneTextDisplay  -- forward declaration (defined after CreateZoneTex
 
 local function CreateZoneText()
     if zoneTextFrame then return end
-    
+
     zoneTextFrame = CreateFrame("Button", nil, Minimap)
     zoneTextFont = zoneTextFrame:CreateFontString(nil, "OVERLAY")
     zoneTextFont:SetAllPoints(zoneTextFrame)
-    
+
     -- Hide Blizzard zone text
     if MinimapCluster and MinimapCluster.ZoneTextButton then
         MinimapCluster.ZoneTextButton:SetParent(CreateFrame("Frame"))
@@ -1072,24 +1081,24 @@ local function CreateZoneText()
         hiddenBorder:Hide()
         MinimapCluster.BorderTop:SetParent(hiddenBorder)
     end
-    
+
     zoneTextFrame:RegisterEvent("ZONE_CHANGED")
     zoneTextFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
     zoneTextFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-    
+
     zoneTextFrame:SetScript("OnEvent", function()
         UpdateZoneTextDisplay()
     end)
-    
+
     zoneTextFrame:SetScript("OnEnter", function(self)
         local GetZonePVPInfo = C_PvP and C_PvP.GetZonePVPInfo or GetZonePVPInfo
         local pvpType, _, factionName = GetZonePVPInfo()
         local zoneName = GetZoneText()
         local subzoneName = GetSubZoneText()
-        
+
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine(zoneName, 1, 1, 1)
-        
+
         if subzoneName and subzoneName ~= "" and subzoneName ~= zoneName then
             if pvpType == "sanctuary" then
                 GameTooltip:AddLine(subzoneName, 0.41, 0.8, 0.94)
@@ -1114,10 +1123,10 @@ local function CreateZoneText()
                 GameTooltip:AddLine(subzoneName, 1, 0.82, 0)
             end
         end
-        
+
         GameTooltip:Show()
     end)
-    
+
     zoneTextFrame:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
@@ -1127,20 +1136,29 @@ local function UpdateZoneText()
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     if not zoneTextFrame then CreateZoneText() end
-    
+
     local zoneConfig = settings.zoneTextConfig
-    
+
     if not settings.showZoneText then
         zoneTextFrame:Hide()
         return
     end
-    
+
     zoneTextFrame:Show()
     zoneTextFrame:ClearAllPoints()
     zoneTextFrame:SetPoint("TOP", Minimap, "TOP", zoneConfig.offsetX, zoneConfig.offsetY)
     zoneTextFrame:SetWidth(settings.size)
     zoneTextFrame:SetHeight(zoneConfig.fontSize + 1)
-    
+
+    -- Use general font settings
+    local generalFont = "Quazii"
+    local generalOutline = "OUTLINE"
+    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general then
+        local general = QUICore.db.profile.general
+        generalFont = general.font or "Quazii"
+        generalOutline = general.fontOutline or "OUTLINE"
+    end
+
     -- Build font flags
     local flags = nil
     if zoneConfig.monochrome and zoneConfig.outline ~= "NONE" then
@@ -1150,21 +1168,12 @@ local function UpdateZoneText()
     elseif zoneConfig.outline ~= "NONE" then
         flags = generalOutline
     end
-    
-    -- Use general font settings
-    local generalFont = "Quazii"
-    local generalOutline = "OUTLINE"
-    if QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general then
-        local general = QUICore.db.profile.general
-        generalFont = general.font or "Quazii"
-        generalOutline = general.fontOutline or "OUTLINE"
-    end
-    
+
     -- Override flags with general outline if not using monochrome
     if not zoneConfig.monochrome then
         flags = generalOutline
     end
-    
+
     local fontPath = LSM:Fetch("font", generalFont) or "Fonts\\FRIZQT__.TTF"
     QUICore:SafeSetFont(zoneTextFont, fontPath, zoneConfig.fontSize, flags)
     zoneTextFont:SetJustifyH(zoneConfig.align)
@@ -1176,9 +1185,9 @@ UpdateZoneTextDisplay = function()
     if not zoneTextFrame or not zoneTextFont then return end
     local settings = GetSettings()
     if not settings or not settings.showZoneText then return end
-    
+
     local zoneConfig = settings.zoneTextConfig
-    
+
     -- Ensure font is set before setting text
     local currentFont = zoneTextFont:GetFont()
     if not currentFont then
@@ -1190,7 +1199,7 @@ UpdateZoneTextDisplay = function()
             generalFont = general.font or "Quazii"
             generalOutline = general.fontOutline or "OUTLINE"
         end
-        
+
         local fontPath = LSM:Fetch("font", generalFont) or "Fonts\\FRIZQT__.TTF"
         local flags = nil
         if zoneConfig.monochrome and generalOutline ~= "NONE" then
@@ -1204,18 +1213,18 @@ UpdateZoneTextDisplay = function()
     end
 
     local text = GetMinimapZoneText()
-    
+
     -- Apply all caps if enabled
     if zoneConfig.allCaps then
         text = string.upper(text)
     end
-    
+
     zoneTextFont:SetText(text)
-    
+
     -- Color based on PvP zone type
     local GetZonePVPInfo = C_PvP and C_PvP.GetZonePVPInfo or GetZonePVPInfo
     local pvpType = GetZonePVPInfo()
-    
+
     local r, g, b, a
     if zoneConfig.useClassColor then
         local color = GetClassColor()
@@ -1235,7 +1244,7 @@ UpdateZoneTextDisplay = function()
     else
         r, g, b, a = unpack(zoneConfig.colorNormal)
     end
-    
+
     zoneTextFont:SetTextColor(r, g, b, a)
 end
 
@@ -1643,10 +1652,10 @@ local function UpdateButtonVisibility()
     if InCombatLockdown() and not inInitSafeWindow then return end
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
-    
+
     local minimapSize = settings.size or 160
     local halfSize = minimapSize / 2
-    
+
     -- Zoom buttons - position at bottom right corner
     if Minimap.ZoomIn and Minimap.ZoomOut then
         if settings.showZoomButtons then
@@ -1654,7 +1663,7 @@ local function UpdateButtonVisibility()
             Minimap.ZoomIn:ClearAllPoints()
             Minimap.ZoomIn:SetPoint("BOTTOMRIGHT", Minimap, "BOTTOMRIGHT", -5, 25)
             Minimap.ZoomIn:Show()
-            
+
             Minimap.ZoomOut:SetParent(Minimap)
             Minimap.ZoomOut:ClearAllPoints()
             Minimap.ZoomOut:SetPoint("BOTTOMRIGHT", Minimap, "BOTTOMRIGHT", -5, 5)
@@ -1680,7 +1689,7 @@ local function UpdateButtonVisibility()
             end
         end
     end
-    
+
     -- Crafting order indicator - position next to mail
     if MinimapCluster and MinimapCluster.IndicatorFrame and MinimapCluster.IndicatorFrame.CraftingOrderFrame then
         local craftingFrame = MinimapCluster.IndicatorFrame.CraftingOrderFrame
@@ -1705,7 +1714,7 @@ local function UpdateButtonVisibility()
             craftingFrame:Hide()
         end
     end
-    
+
     -- Addon compartment - position at top right
     if AddonCompartmentFrame then
         if settings.showAddonCompartment then
@@ -1718,7 +1727,7 @@ local function UpdateButtonVisibility()
             AddonCompartmentFrame:Hide()
         end
     end
-    
+
     -- Difficulty indicator - position at top left
     ForEachDifficultyFrame(function(diffFrame)
         if settings.showDifficulty then
@@ -1729,7 +1738,7 @@ local function UpdateButtonVisibility()
             diffFrame:SetParent(hiddenButtonParent)
         end
     end)
-    
+
     -- Expansion landing page button (garrison/missions) - position at left side
     -- In WoW 12.0+, Blizzard only shows this button for characters with old
     -- expansion garrison content (WoD-Shadowlands). For Midnight, the landing
@@ -1747,7 +1756,7 @@ local function UpdateButtonVisibility()
             ExpansionLandingPageMinimapButton:Hide()
         end
     end
-    
+
     -- Calendar - position at top right (next to addon compartment if shown)
     if GameTimeFrame then
         if settings.showCalendar then
@@ -1764,7 +1773,7 @@ local function UpdateButtonVisibility()
             GameTimeFrame:Hide()
         end
     end
-    
+
     -- Tracking button - position at top left (next to difficulty if shown)
     if MinimapCluster and MinimapCluster.Tracking then
         local trackingFrame = MinimapCluster.Tracking
@@ -2321,7 +2330,7 @@ local function SetupAddonButtonHiding()
         for i = 1, #buttons do
             LibDBIcon:ShowOnEnter(buttons[i], true)
         end
-        
+
         -- Hook for new buttons
         LibDBIcon.RegisterCallback(Minimap_Module, "LibDBIcon_IconCreated", function(_, _, buttonName)
             LibDBIcon:ShowOnEnter(buttonName, true)
@@ -3352,7 +3361,7 @@ local function UpdateMinimapSize()
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
     CountMinimapDebug("size")
-    
+
     -- Set minimap size inside the HUD suppression window so our own geometry
     -- updates do not look like an external overlay taking over the minimap.
     BeginQUIControlledMinimapUpdate()
@@ -3379,7 +3388,7 @@ local function UpdateMinimapSize()
             Minimap:SetZoom(z)
         end
     end
-    
+
     -- Update LibDBIcon button radius for square minimap
     if LibDBIcon then
         if settings.shape == "SQUARE" then
@@ -3715,7 +3724,7 @@ local autoZoomCurrent = 0
 local function SetupAutoZoom()
     local settings = GetSettings()
     if not settings or not settings.enabled or not settings.autoZoom then return end
-    
+
     local function ZoomOut()
         autoZoomCurrent = autoZoomCurrent + 1
         if autoZoomTimer == autoZoomCurrent then
@@ -3726,7 +3735,7 @@ local function SetupAutoZoom()
             autoZoomTimer, autoZoomCurrent = 0, 0
         end
     end
-    
+
     local function OnZoom()
         if settings.autoZoom then
             autoZoomTimer = autoZoomTimer + 1
@@ -3745,7 +3754,7 @@ local function SetupAutoZoom()
             C_Timer.After(0, OnZoom)
         end)
     end
-    
+
     -- Initial zoom out
     OnZoom()
 end
@@ -3809,25 +3818,25 @@ function Minimap_Module:Initialize()
 
     -- Set shape first (affects other elements)
     SetMinimapShape(settings.shape)
-    
+
     -- Create and update elements
     CreateBackdrop()
     UpdateBackdrop()
-    
+
     SetupMinimapDragging()
     UpdateMinimapSize()
 
     CreateClock()
     UpdateClock()
     UpdateClockTime()
-    
+
     CreateCoords()
     UpdateCoords()
     UpdateCoordsPosition()
-    
+
     CreateZoneText()
     UpdateZoneText()
-    
+
     -- Datatext panel (integrated below minimap with 3 slots)
     CreateDatatextPanel()
     UpdateDatatextPanel()
@@ -3894,12 +3903,12 @@ function Minimap_Module:Initialize()
     if MinimapBorderTop then
         MinimapBorderTop:SetParent(CreateFrame("Frame"))
     end
-    
+
     -- Hide any backdrop on the Minimap itself (this removes the built-in border)
     if Minimap.SetBackdrop then
         Minimap:SetBackdrop(nil)
     end
-    
+
     -- Hide the backdrop edge textures that Blizzard creates (LeftEdge, RightEdge, TopEdge, BottomEdge, corners, etc.)
     local edgeNames = {"LeftEdge", "RightEdge", "TopEdge", "BottomEdge", "TopLeftCorner", "TopRightCorner", "BottomLeftCorner", "BottomRightCorner", "Center"}
     for _, edgeName in ipairs(edgeNames) do
@@ -3908,7 +3917,7 @@ function Minimap_Module:Initialize()
             Minimap[edgeName]:SetAlpha(0)
         end
     end
-    
+
     -- Also check for backdropInfo table which stores edge references
     if Minimap.backdropInfo then
         for _, edgeName in ipairs(edgeNames) do
@@ -3917,12 +3926,12 @@ function Minimap_Module:Initialize()
             end
         end
     end
-    
+
     -- Hide MinimapCluster backdrop if it exists
     if MinimapCluster and MinimapCluster.SetBackdrop then
         MinimapCluster:SetBackdrop(nil)
     end
-    
+
     -- Hide the minimap's built-in border texture if present
     if Minimap.BorderTop then
         Minimap.BorderTop:Hide()
@@ -3930,7 +3939,7 @@ function Minimap_Module:Initialize()
     if Minimap.Background then
         Minimap.Background:Hide()
     end
-    
+
     -- Iterate through all children to find and hide edge textures
     for _, child in pairs({Minimap:GetChildren()}) do
         -- Check if child has edge-related name or is a backdrop frame

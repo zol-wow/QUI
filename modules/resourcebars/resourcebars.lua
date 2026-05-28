@@ -1554,7 +1554,7 @@ local function GetPrimaryResource()
 
     if type(primaryResources[playerClass]) == "table" then
         return primaryResources[playerClass][specID]
-    else 
+    else
         return primaryResources[playerClass]
     end
 end
@@ -1620,7 +1620,7 @@ local function GetSecondaryResource()
 
     if type(secondaryResources[playerClass]) == "table" then
         return secondaryResources[playerClass][specID]
-    else 
+    else
         return secondaryResources[playerClass]
     end
 end
@@ -2041,6 +2041,12 @@ local function UpdateBarIndicatorLines(bar, indicatorPool, values, maxValue, thi
         local indicator = indicatorPool[i]
         if not indicator then
             indicator = bar:CreateTexture(nil, "OVERLAY")
+            -- Snap thin marker lines to the pixel grid. Without this, an
+            -- unsnapped 1-3px texture anti-aliases across pixel boundaries and
+            -- renders faint/indistinct, so lower thickness steps look identical
+            -- until ~4px finally covers a solid column. Matches the skyriding
+            -- marker pattern (Pixels(n) width + ApplyPixelSnapping).
+            QUICore:ApplyPixelSnapping(indicator)
             indicatorPool[i] = indicator
         end
 
@@ -2073,7 +2079,7 @@ function QUICore:GetPowerBar()
     if self.powerBar then return self.powerBar end
 
     local cfg = self.db.profile.powerBar
-    
+
     -- Always parent to UIParent so power bar works independently of Essential Cooldowns
     local bar = CreateFrame("Frame", ADDON_NAME .. "PowerBar", UIParent)
     bar:SetFrameStrata("MEDIUM")
@@ -3058,7 +3064,7 @@ function QUICore:CreateFragmentedPowerBars(bar, resource, isVertical)
             fragmentBar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
             fragmentBar:SetFrameLevel(bar.StatusBar:GetFrameLevel())
             bar.FragmentedPowerBars[i] = fragmentBar
-            
+
             -- Create text for reload time display (pixel-perfect)
             local text = fragmentBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             QUICore:SetSnappedPoint(text, "CENTER", fragmentBar, "CENTER", cfg.runeTimerTextX or 0, cfg.runeTimerTextY or 0)
@@ -3088,7 +3094,7 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
         fragmentedBarWidth = barWidth / maxPower
         fragmentedBarHeight = barHeight
     end
-    
+
     -- Hide the main status bar fill (we display bars representing one (1) unit of resource each)
     bar.StatusBar:SetAlpha(0)
 
@@ -3129,7 +3135,7 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
         local readyList = {}
         local cdList = {}
         local now = GetTime()
-        
+
         for i = 1, maxPower do
             local start, duration, runeReady = GetRuneCooldown(i)
             if runeReady then
@@ -3155,12 +3161,12 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
         local displayOrder = {}
         local readyLookup = {}
         local cdLookup = {}
-        
+
         for _, v in ipairs(readyList) do
             table_insert(displayOrder, v.index)
             readyLookup[v.index] = true
         end
-        
+
         for _, v in ipairs(cdList) do
             table_insert(displayOrder, v.index)
             cdLookup[v.index] = v
@@ -3200,14 +3206,14 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
                     if cdInfo then
                         runeFrame:SetMinMaxValues(0, 1)
                         runeFrame:SetValue(cdInfo.frac)
-                        
+
                         -- Only show timer text if enabled
                         if cfg.showFragmentedPowerBarText ~= false then
                             runeText:SetFormattedText("%.1f", math_max(0, cdInfo.remaining))
                         else
                             runeText:SetText("")
                         end
-                        
+
                         runeFrame:SetStatusBarColor(color.r * 0.5, color.g * 0.5, color.b * 0.5)
                     else
                         runeFrame:SetMinMaxValues(0, 1)
@@ -3230,7 +3236,7 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
                 end
             end
         end
-        
+
         -- Add ticks between rune segments if enabled (pixel-perfect)
         if cfg.showTicks then
             local runeTickPx = QUICore:GetPixelSize(bar)
@@ -3256,7 +3262,7 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical)
                 end
                 tick:Show()
             end
-            
+
             -- Hide extra ticks
             for i = maxPower, #bar.ticks do
                 if bar.ticks[i] then
@@ -4351,7 +4357,7 @@ function QUICore:UpdateSecondaryPowerBar()
     else
         bar.TextValue:SetText(tostring(displayValue or 0))
     end
-    
+
     -- Hide fragmented bars
     for _, fragmentBar in ipairs(bar.FragmentedPowerBars) do
         fragmentBar:Hide()

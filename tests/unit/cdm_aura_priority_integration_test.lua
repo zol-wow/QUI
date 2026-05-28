@@ -1,4 +1,5 @@
 -- tests/unit/cdm_aura_priority_integration_test.lua
+-- luacheck: globals InCombatLockdown geterrorhandler CreateFrame
 -- Run: lua tests/unit/cdm_aura_priority_integration_test.lua
 --
 -- Locks the swipe-priority contract end-to-end across the resolver's
@@ -86,6 +87,14 @@ makeState(50006, "buff", {
 -- Scenario G: utility cooldown entry with aura captured by runtime
 makeState(50007, "utility", {
     charges = true,
+    hasAura = false,
+    childIsActive = true,
+})
+makeState(50007, "buff", {
+    hasAura = true,
+    auraInstanceID = 7007,
+    auraUnit = "player",
+    auraDurObj = auraDur,
 })
 
 -- Scenario H: cooldown entry with hook-cached cooldownDurObj. The resolver
@@ -179,7 +188,12 @@ local ns = {
         HasChildForCooldownID = function(cooldownID, category)
             return states[tostring(category) .. ":" .. tostring(cooldownID)] ~= nil
         end,
-        GetCooldownIDForViewer = function() return nil end,
+        GetCooldownIDForViewer = function(spellID, viewerType)
+            if spellID == 50007 and viewerType == "buff" then
+                return 50007
+            end
+            return nil
+        end,
         GetDirectCooldownIDForViewer = function() return nil end,
     },
     CDMAuraRuntime = {
