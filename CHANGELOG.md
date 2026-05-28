@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha62 - 2026-05-28
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha61 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Added
+- **Damage meter: optional row backgrounds.** A new Appearance setting lets you keep or hide the dark trough behind each damage-meter row, with the option included in search.
+
+### Changed
+- **CDM: stronger cooldown and aura stack handling.** Cooldown icons now preserve stack text more reliably across mirrored aura states, item auras, trinket/slot entries, charge text, and secret combat values.
+- **Options and validation upkeep.** The options search cache was refreshed, and the Lua lint configuration now understands more current client globals so local checks are easier to run cleanly.
+
+### Fixed
+- **CDM: aura counts no longer leak, flicker, or show misleading zeroes.** Aura stack text now respects empty display counts, carries mirrored aura stacks only while the aura is active, keeps secret values on safe render paths, and avoids treating equipment slot numbers as spell counts.
+- **CDM: cooldown desaturation is more accurate.** Item cooldowns now use the resolved item cooldown duration for greying out instead of falling back to a spell cooldown lane that may not represent the item.
+- **Chat history: secret chat metadata no longer drops normal messages.** Guild, raid, and community channel lines can still be captured when the chat type ID is protected; the event payload is used for a safe fallback.
+- **Layout, minimap, and utility modules received stability cleanup.** Several frame-positioning, minimap/data text, combat timer, consumable check, action tracker, and unit frame paths were tightened to reduce stale state and improve consistency after reloads or setting changes.
+
+
+
 ## v3.6.0-alpha61 - 2026-05-25
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha60 profiles carry over unchanged.
@@ -2542,4 +2563,3 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 - Totem bar late declaration of Helpers causing errors
-
