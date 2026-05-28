@@ -451,8 +451,8 @@ end
 
 function Data:Refresh()
     local _t0 = Perf.enabled and PerfNow() or 0
-    -- Walk dirty flags; refetch each. _allDirty short-circuits to "refetch
-    -- every cached (sessionType, damageMeterType)".
+    -- Walk dirty flags; refetch each. _allDirty drops selector caches so
+    -- windows lazily rebuild against their current runtime selector.
     if self._allDirty then
         self._allDirty = false
         self._cache = {}
