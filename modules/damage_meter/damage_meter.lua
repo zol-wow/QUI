@@ -650,7 +650,7 @@ end
 
 -- Players who damaged a single enemy source (window meter type =
 -- EnemyDamageTaken, user clicks an enemy row).
-function Data:GetEnemyAttackers(sessionType, sessionID, sourceGUID, sourceCreatureID)
+function Data:GetEnemyAttackers(sessionType, sourceGUID, sourceCreatureID, sessionID)
     local eType = EnemyDamageTakenType()
     if not eType then return {} end
     local IsSecret = Helpers and Helpers.IsSecretValue
@@ -687,7 +687,7 @@ function Data:GetPlayerTargetsMap(sessionType, sessionID)
     return map
 end
 
-function Data:GetPlayerTargets(sessionType, sessionID, playerName)
+function Data:GetPlayerTargets(sessionType, playerName, sessionID)
     if playerName == nil then return {} end
     local IsSecret = Helpers and Helpers.IsSecretValue
     if IsSecret and IsSecret(playerName) then return {} end
@@ -775,7 +775,7 @@ function Data:GetCombinedHealingView(sessionType, sessionID)
     }
 end
 
-function Data:GetCombinedHealingBreakdown(sessionType, sessionID, sourceGUID, sourceCreatureID)
+function Data:GetCombinedHealingBreakdown(sessionType, sourceGUID, sourceCreatureID, sessionID)
     local T = Enum and Enum.DamageMeterType
     local hType = T and T.HealingDone
     local aType = T and T.Absorbs
@@ -2598,9 +2598,9 @@ function Breakdown:_ResolveTargets(meterType)
     local st = self.parentWindow.sessionType
     local sid = self.parentWindow.sessionID
     if meterType == T.EnemyDamageTaken then
-        return Data:GetEnemyAttackers(st, sid, self.source.sourceGUID, self.source.sourceCreatureID), "Attacked By"
+        return Data:GetEnemyAttackers(st, self.source.sourceGUID, self.source.sourceCreatureID, sid), "Attacked By"
     elseif meterType == T.DamageDone or meterType == T.Dps then
-        return Data:GetPlayerTargets(st, sid, self.source.name), "Targets"
+        return Data:GetPlayerTargets(st, self.source.name, sid), "Targets"
     end
     return nil, nil
 end
@@ -2616,8 +2616,8 @@ function Breakdown:Refresh()
     local s_combo = GetSettings()
     if IsHealingType(damageMeterType)
         and s_combo and s_combo.combineAbsorbsIntoHealing then
-        view = Data:GetCombinedHealingBreakdown(sessionType, sessionID,
-            self.source.sourceGUID, self.source.sourceCreatureID)
+        view = Data:GetCombinedHealingBreakdown(sessionType,
+            self.source.sourceGUID, self.source.sourceCreatureID, sessionID)
     else
         view = Data:GetBreakdownView(sessionType, damageMeterType,
             self.source.sourceGUID, self.source.sourceCreatureID, sessionID)
