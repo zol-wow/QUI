@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha66 - 2026-05-29
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha65 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Changed
+- **Skinning internals consolidated.** The auction house, crafting orders, professions, and instance-frame skins now share a common set of widget stylers instead of each maintaining its own copy, removing roughly 470 lines of duplicated code. Frame-specific behavior is preserved; this is groundwork that keeps future skin fixes consistent across these windows.
+
+### Fixed
+- **Instance-frame queue tabs now show which tab is active,** matching the active-tab highlight already used by the other skinned windows.
+
+
+
 ## v3.6.0-alpha65 - 2026-05-28
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha64 profiles carry over unchanged. The new boss-frame layout keys are seeded from your current boss spacing, so frames stay where they are until you change the grow direction.
