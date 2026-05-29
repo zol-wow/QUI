@@ -40,7 +40,7 @@ local function SkinAuctionHouseTabs()
     local AuctionHouseFrame = _G.AuctionHouseFrame
     if not AuctionHouseFrame or not AuctionHouseFrame.Tabs then return end
 
-    SkinBase.SkinTabGroup(AuctionHouseFrame.Tabs, AuctionHouseFrame)
+    SkinBase.SkinTabGroup(AuctionHouseFrame.Tabs, AuctionHouseFrame, { font = true })
 
     -- Reposition tabs: left justify and tighten spacing
     local tabs = AuctionHouseFrame.Tabs
@@ -66,15 +66,26 @@ local function SkinSearchBar()
     if searchBar then
         -- Search input box
         if searchBar.SearchBox then
-            SkinBase.SkinEditBox(searchBar.SearchBox)
+            SkinBase.SkinEditBox(searchBar.SearchBox, { font = true })
         end
         -- Filter button (WowStyle1 dropdown — standard button textures don't apply)
         if searchBar.FilterButton then
-            SkinBase.SkinButton(searchBar.FilterButton, { strip = true })
+            SkinBase.SkinButton(searchBar.FilterButton, { strip = true, font = true })
+            -- Keep the QUI backdrop BELOW the dropdown's children so the
+            -- clear-filters "X" (ClearFiltersButton, over the top-right corner)
+            -- renders on top. Lowering our own backdrop is stable; raising the X
+            -- is not — the dropdown/menu machinery re-levels its child buttons on
+            -- show/interaction (Blizzard_Menu MenuTemplates: "Machinery is
+            -- broken"), so a one-time level bump on the X gets undone on the
+            -- first click. Mirrors the proven professions.lua belowChildren path.
+            local filterBd = SkinBase.GetBackdrop(searchBar.FilterButton)
+            if filterBd then
+                filterBd:SetFrameLevel(math.max(0, searchBar.FilterButton:GetFrameLevel() - 1))
+            end
         end
         -- Search button
         if searchBar.SearchButton then
-            SkinBase.SkinButton(searchBar.SearchButton)
+            SkinBase.SkinButton(searchBar.SearchButton, { font = true })
         end
         -- Favorites search button (star) — raise frame level so it isn't
         -- obscured by the SearchBox EditBox, which captures mouse across its
@@ -124,7 +135,7 @@ local function SkinBrowsePanel()
         -- Buy button
         if commoditiesBuy.BuyDisplay then
             if commoditiesBuy.BuyDisplay.BuyButton then
-                SkinBase.SkinButton(commoditiesBuy.BuyDisplay.BuyButton)
+                SkinBase.SkinButton(commoditiesBuy.BuyDisplay.BuyButton, { font = true })
             end
             -- Quantity input
             if commoditiesBuy.BuyDisplay.QuantityInput and commoditiesBuy.BuyDisplay.QuantityInput.InputBox then
@@ -143,12 +154,12 @@ local function SkinBrowsePanel()
         -- Buyout / Bid buttons
         if itemBuy.BuyoutFrame then
             if itemBuy.BuyoutFrame.BuyoutButton then
-                SkinBase.SkinButton(itemBuy.BuyoutFrame.BuyoutButton)
+                SkinBase.SkinButton(itemBuy.BuyoutFrame.BuyoutButton, { font = true })
             end
         end
         if itemBuy.BidFrame then
             if itemBuy.BidFrame.BidButton then
-                SkinBase.SkinButton(itemBuy.BidFrame.BidButton)
+                SkinBase.SkinButton(itemBuy.BidFrame.BidButton, { font = true })
             end
         end
     end
@@ -180,7 +191,7 @@ local function SkinSellPanel()
         end
         -- Post button
         if commoditiesSell.PostButton then
-            SkinBase.SkinButton(commoditiesSell.PostButton)
+            SkinBase.SkinButton(commoditiesSell.PostButton, { font = true })
         end
     end
 
@@ -205,7 +216,7 @@ local function SkinSellPanel()
         end
         -- Post button
         if itemSell.PostButton then
-            SkinBase.SkinButton(itemSell.PostButton)
+            SkinBase.SkinButton(itemSell.PostButton, { font = true })
         end
         -- Secondary price input (bid vs buyout)
         if itemSell.SecondaryPriceInput and itemSell.SecondaryPriceInput.MoneyInputFrame then
@@ -244,12 +255,12 @@ local function SkinAuctionsPanel()
 
     -- Cancel auctions button
     if auctionsFrame.CancelAuctionButton then
-        SkinBase.SkinButton(auctionsFrame.CancelAuctionButton)
+        SkinBase.SkinButton(auctionsFrame.CancelAuctionButton, { font = true })
     end
 
     -- Bid frame button (if present)
     if auctionsFrame.BidFrame and auctionsFrame.BidFrame.BidButton then
-        SkinBase.SkinButton(auctionsFrame.BidFrame.BidButton)
+        SkinBase.SkinButton(auctionsFrame.BidFrame.BidButton, { font = true })
     end
 end
 
@@ -334,6 +345,9 @@ local function SkinCategoriesList(sr, sg, sb, sa, bgr, bgg, bgb, bga)
         StyleCategoryButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         SuppressCategoryTextures(button)
         UpdateCategorySelected(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        -- Reapply the QUI font: Blizzard's element initializer calls
+        -- SetNormalFontObject on every rebind, reverting the label font.
+        SkinBase.SkinFontString(button.Text)
     end
     local function RefreshCategoryButtons(self)
         SafeForEachFrame(self, StyleCategoryRow)

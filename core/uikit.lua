@@ -330,24 +330,37 @@ local function RunQueuedScaleRefresh()
     UIKit.RefreshPixelBorders()
 end
 
+local function OnScaleRefreshUpdate(self)
+    RunQueuedScaleRefresh()
+    queuedScaleRefreshTicks = queuedScaleRefreshTicks - 1
+    if queuedScaleRefreshTicks <= 0 then
+        self:SetScript("OnUpdate", nil)
+    end
+end
+
+-- Coalesce the global border/scale resnap onto a short OnUpdate burst instead of
+-- running a full registry walk synchronously on every call. CreateBorderLines
+-- calls this once per bordered widget; doing the walk inline made each options
+-- page build O(n^2) in bordered-widget count -- and re-touched every bordered
+-- frame in the whole UI on each widget -- freezing the client while a settings
+-- tab loaded. Each widget still snaps its OWN border synchronously inside
+-- CreateBorderLines (RefreshBorderLines(frame)); only the global catch-up that
+-- actual scale changes need is deferred a frame, which is imperceptible.
 function UIKit.QueueScaleRefresh(ticks)
     ticks = max(Round(ticks or 1), 1)
-    RunQueuedScaleRefresh()
 
-    if type(CreateFrame) ~= "function" then return end
+    if type(CreateFrame) ~= "function" then
+        -- No frame driver available (e.g. headless tooling): refresh inline.
+        RunQueuedScaleRefresh()
+        return
+    end
 
     queuedScaleRefreshTicks = max(queuedScaleRefreshTicks, ticks)
     if not scaleRefreshFrame then
         scaleRefreshFrame = CreateFrame("Frame")
     end
 
-    scaleRefreshFrame:SetScript("OnUpdate", function(self)
-        RunQueuedScaleRefresh()
-        queuedScaleRefreshTicks = queuedScaleRefreshTicks - 1
-        if queuedScaleRefreshTicks <= 0 then
-            self:SetScript("OnUpdate", nil)
-        end
-    end)
+    scaleRefreshFrame:SetScript("OnUpdate", OnScaleRefreshUpdate)
 end
 
 local animationDriver

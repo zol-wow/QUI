@@ -1797,3 +1797,15 @@ ns.QUI_RefreshTooltipSkinColors = RefreshAllColors
 ns.QUI_RefreshTooltipFontSize = RefreshAllFonts
 ns.QUI_RefitTooltipChromeToContent = RefitChromeToContent
 ns.QUI_RequestTooltipChromeRefit = RequestTooltipChromeRefit
+
+-- Register in the standard skinning refresh path so a global skin-color change
+-- (RefreshAll("skinning")) recolors open tooltips. The ns.QUI_* globals above
+-- remain for tooltip-specific changes driven from the tooltip settings page.
+if ns.Registry then
+    ns.Registry:Register("tooltips", {
+        refresh = RefreshAllColors,
+        priority = 80,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
+    })
+end

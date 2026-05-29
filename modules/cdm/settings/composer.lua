@@ -795,6 +795,18 @@ local function BuildPreviewSection(parent)
         end
     end)
 
+    -- Symmetric to the OnHide teardown above. The options window is hidden (not
+    -- destroyed) on close and tiles are built once and cached, so re-showing the
+    -- preview host -- reopening the panel on the CDM page, tabbing back, or
+    -- reopening the composer -- does NOT rebuild it. The preview was torn down on
+    -- the matching hide, so re-arm it here; otherwise it stays blank until a
+    -- manual container switch calls RefreshPreview.
+    container:SetScript("OnShow", function()
+        if _G.QUI_RefreshCDMPreview then
+            _G.QUI_RefreshCDMPreview()
+        end
+    end)
+
     return container
 end
 

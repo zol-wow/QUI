@@ -6,6 +6,28 @@ ns.SettingsBuilders = SettingsBuilders
 local surfaceSeq = 0
 local providerSurfaces = {}
 local pendingProviderRefresh = {}
+local providerRevisions = {}
+
+-- Monotonic per-provider change counter, bumped on every NotifyProviderChanged
+-- (the canonical "this provider's data changed" signal). A built surface stamps
+-- the revision it was built at, so OnShow can tell whether anything actually
+-- changed while the surface was hidden -- and skip a full rebuild when not.
+local function BumpProviderRevision(providerKey)
+    providerRevisions[providerKey] = (providerRevisions[providerKey] or 0) + 1
+end
+
+function SettingsBuilders.GetProviderRevision(providerKey)
+    return providerRevisions[providerKey] or 0
+end
+
+-- True when a shown surface must be rebuilt because its provider changed since
+-- the surface was last built. A never-stamped surface always rebuilds.
+function SettingsBuilders.SurfaceNeedsRebuildOnShow(parent, providerKey)
+    if not parent then return true end
+    local built = parent._quiBuiltProviderRevision
+    if built == nil then return true end
+    return built ~= (providerRevisions[providerKey] or 0)
+end
 
 local function GetGUI()
     return _G.QUI and _G.QUI.GUI
@@ -140,6 +162,8 @@ end
 function SettingsBuilders.NotifyProviderChanged(providerKey, opts)
     if not providerKey then return end
     opts = opts or {}
+
+    BumpProviderRevision(providerKey)
 
     local pending = pendingProviderRefresh[providerKey]
     if not pending then
@@ -601,6 +625,10 @@ local function BuildViaProvider(providerKey, parent, width, options)
         refreshFn = RefreshSurface,
     }
 
+    -- Stamp the provider revision this surface is being built at, so a later
+    -- OnShow can skip the rebuild when nothing changed while it was hidden.
+    parent._quiBuiltProviderRevision = providerRevisions[providerKey] or 0
+
     SettingsBuilders.RegisterProviderSurface(providerKey, surfaceId, RefreshSurface, function()
         return IsSurfaceVisible(parent)
     end)
@@ -619,6 +647,18 @@ local function BuildViaProvider(providerKey, parent, width, options)
             SettingsBuilders.RegisterProviderSurface(info.providerKey, info.surfaceId, info.refreshFn, function()
                 return IsSurfaceVisible(self)
             end)
+            -- Rebuild on show only when needed: the first time the surface is
+            -- shown after building (some providers finalize width-dependent
+            -- layout on that first deferred pass, so we preserve it), or when
+            -- the provider actually changed while the surface was hidden (e.g.
+            -- an edit on another tab). Re-showing an unchanged, already-shown
+            -- subpage skips the ClearHost + full provider.build that froze the
+            -- client on every settings tab switch.
+            if self._quiProviderShownRefreshed
+                and not SettingsBuilders.SurfaceNeedsRebuildOnShow(self, info.providerKey) then
+                return
+            end
+            self._quiProviderShownRefreshed = true
             C_Timer.After(0, function()
                 local latestInfo = self._quiProviderSurfaceInfo
                 if latestInfo ~= info or not IsSurfaceVisible(self) then

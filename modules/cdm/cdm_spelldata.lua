@@ -3096,20 +3096,6 @@ ResolveAuraDisplaySpellID = function(entryID)
             entryID, _abilityToAuraSpellID, ns.CDMBlizzMirror)
     end
 
-    local mappedID = _abilityToAuraSpellID[entryID]
-    if mappedID then
-        local hasDirectBlizzardAuraChild = false
-        local mirror = ns.CDMBlizzMirror
-        if mirror and mirror.GetDirectCooldownIDForViewer then
-            hasDirectBlizzardAuraChild =
-                mirror.GetDirectCooldownIDForViewer(entryID, "buff")
-                or mirror.GetDirectCooldownIDForViewer(entryID, "trackedBar")
-        end
-        if not hasDirectBlizzardAuraChild then
-            return mappedID, true
-        end
-    end
-
     return entryID, false
 end
 
@@ -3123,37 +3109,6 @@ local function AttachCatalogAuraIDs(resolved, ...)
         AuraCatalog.AttachLinkedAuraIDs(resolved, _auraIDsForSpell, function(spellID)
             return CDMSpellData:GetAuraIDsForSpell(spellID)
         end, ...)
-        return
-    end
-
-    if not resolved then return end
-    local out, seen
-    local function appendForSpellID(spellID)
-        local ids
-        if spellID and CDMSpellData.GetAuraIDsForSpell then
-            ids = CDMSpellData:GetAuraIDsForSpell(spellID)
-        elseif spellID then
-            ids = _auraIDsForSpell[spellID]
-        end
-        if type(ids) ~= "table" then return end
-        if not out then
-            out = {}
-            seen = {}
-        end
-        for _, auraID in ipairs(ids) do
-            if auraID and not seen[auraID] then
-                seen[auraID] = true
-                out[#out + 1] = auraID
-            end
-        end
-    end
-
-    for i = 1, select("#", ...) do
-        appendForSpellID(select(i, ...))
-    end
-
-    if out and #out > 0 then
-        resolved.linkedSpellIDs = out
     end
 end
 
@@ -3163,15 +3118,12 @@ local function ResolveOwnedEntry(entry, containerKey, index)
     if not entry or not entry.id then return nil end
 
     local resolved = {
-        spellID = nil,
-        overrideSpellID = nil,
         name = "",
         isAura = false,
         hasCharges = false,
         layoutIndex = index or 9999,
         viewerType = containerKey,
         _isOwnedEntry = true,
-        _ownedEntry = entry,
         -- Forward entry type info for custom-like cooldown resolution
         type = entry.type,
         id = entry.id,
@@ -3355,9 +3307,11 @@ local function ResolveOwnedEntry(entry, containerKey, index)
     return resolved
 end
 
--- BuildAuraInstanceKey produces a stable per-entry instance key.
-local function BuildAuraInstanceKey(containerKey, ordinal)
-    return string.format("%s:entry:%d", containerKey or "aura", ordinal or 1)
+-- BuildAuraInstanceKey produces a stable per-entry instance key. String
+-- concatenation avoids the string.format parser cost on this hot path; the
+-- ":entry:1" suffix must stay byte-identical to what the renderers compare.
+local function BuildAuraInstanceKey(containerKey)
+    return (containerKey or "aura") .. ":entry:1"
 end
 
 -- ExpandResolvedAuraEntry: previously fanned a resolved aura entry into
@@ -3367,7 +3321,7 @@ end
 -- element list.
 local function ExpandResolvedAuraEntry(containerKey, resolved)
     if resolved then
-        resolved._instanceKey = BuildAuraInstanceKey(containerKey, 1)
+        resolved._instanceKey = BuildAuraInstanceKey(containerKey)
     end
     return { resolved }
 end
@@ -3440,7 +3394,7 @@ function CDMSpellData:BuildSpellListFromOwned(containerKey)
                     if resolved.isAura then
                         expanded = ExpandResolvedAuraEntry(containerKey, resolved)
                     else
-                        resolved._instanceKey = BuildAuraInstanceKey(containerKey, 1)
+                        resolved._instanceKey = BuildAuraInstanceKey(containerKey)
                         expanded = { resolved }
                     end
                     for _, expandedEntry in ipairs(expanded) do
@@ -3552,6 +3506,19 @@ local function GetCooldownViewerKnownStateForSpell(spellID, family)
     end
     if sawMatch then return false end
     return nil
+end
+
+-- Sort returning dormant spells by saved slot, then by dormant sequence for
+-- deterministic same-slot restores. Module-local (closes over nothing) so the
+-- dormant pass does not allocate a fresh comparator closure each call.
+local function CompareDormantReturning(a, b)
+    if a.slot ~= b.slot then
+        return a.slot < b.slot
+    end
+    if a.seq ~= b.seq then
+        return a.seq < b.seq
+    end
+    return a.id < b.id
 end
 
 function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
@@ -3693,15 +3660,7 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
         end
     end
     -- Sort by saved slot, then by dormant sequence for deterministic same-slot restores.
-    table.sort(returning, function(a, b)
-        if a.slot ~= b.slot then
-            return a.slot < b.slot
-        end
-        if a.seq ~= b.seq then
-            return a.seq < b.seq
-        end
-        return a.id < b.id
-    end)
+    table.sort(returning, CompareDormantReturning)
     for _, info in ipairs(returning) do
         db.dormantSpells[info.id] = nil  -- remove from dormant
         local insertAt = math.min(info.slot, #activeEntries + 1)
@@ -3830,37 +3789,16 @@ end
 ---------------------------------------------------------------------------
 
 
--- globalTracked: set of "type:id" keys across ALL containers. Built once in
--- ReconcileAllContainers and passed in. Prevents the same spell from being
--- auto-added to multiple containers (e.g. essential AND utility both scan
--- categories {0,1}, so without this a spell would appear in both).
--- Updated in-place as new spells are added so subsequent containers see them.
-function CDMSpellData:ReconcileOwnedSpells(containerKey, globalTracked)
-    if InCombatLockdown() then return false end
-
-    local db = GetContainerDB(containerKey)
-    if not db then return false end
-    -- Only reconcile containers that have been snapshotted
-    if db.ownedSpells == nil then return false end
-
-    -- Build set of existing tracked entries in THIS container (for within-container dedup)
-    local keptSet = {}
-    for _, entry in ipairs(db.ownedSpells) do
-        local norm = NormalizeOwnedEntry(entry)
-        if norm and norm.id then
-            keptSet[norm.type .. ":" .. norm.id] = true
-        end
+-- Shared reconcile tail. CheckAllDormantSpells shelves/restores spells for
+-- the active character, ReconcileAllContainers rebuilds the spellID maps, and
+-- FireChangeCallback refreshes display after any dormant cleanup. Callers must
+-- invoke this inside their own combat-lockdown guard.
+local function RunReconcileSequence()
+    CDMSpellData:CheckAllDormantSpells()
+    CDMSpellData:ReconcileAllContainers()
+    if FireChangeCallback then
+        FireChangeCallback()
     end
-
-    local added = false
-
-    -- Reconciliation does NOT auto-add spells to a curated list.
-    -- Once ownedSpells has been snapshotted, only the user adds/removes
-    -- entries via the Composer. Dormant spell management (CheckDormantSpells)
-    -- runs before this; nothing further is needed at the per-container
-    -- reconciliation level.
-
-    return false
 end
 
 -- Cold-load single-trigger entry point. Called from cdm_blizz_mirror.lua's
@@ -3876,14 +3814,12 @@ function CDMSpellData:RunColdLoadReconcile()
         -- SPELLS_CHANGED / data_loaded events fire normal reconcile.
         return
     end
+    -- Cold-load ordering contract: the catalog must be fresh before the
+    -- dormant check, so rebuild explicitly here ahead of the shared tail.
     if RebuildSpellToCooldownID then
         RebuildSpellToCooldownID()
     end
-    self:CheckAllDormantSpells()
-    self:ReconcileAllContainers()
-    if FireChangeCallback then
-        FireChangeCallback()
-    end
+    RunReconcileSequence()
 end
 
 function CDMSpellData:ReconcileAllContainers()
@@ -3891,56 +3827,10 @@ function CDMSpellData:ReconcileAllContainers()
         return
     end
 
-    -- Rebuild spellID maps before reconciliation
+    -- Rebuild spellID maps. No spell is auto-added at the per-container level;
+    -- the user owns the curated list via the Composer and CheckAllDormantSpells
+    -- handles spec-switch cleanup separately.
     RebuildSpellToCooldownID()
-
-    local containerKeys = GetBuiltinContainerKeys()
-    if ns.CDMContainers and ns.CDMContainers.GetAllContainerKeys then
-        containerKeys = ns.CDMContainers:GetAllContainerKeys()
-    end
-
-    -- Build global tracked set: union of all containers' ownedSpells + removedSpells + dormantSpells.
-    -- Passed to each ReconcileOwnedSpells and updated in-place as new spells are added,
-    -- so a spell added to essential won't also be auto-added to utility.
-    local globalTracked = {}
-    for _, key in ipairs(containerKeys) do
-        local db = GetContainerDB(key)
-        if db then
-            if type(db.ownedSpells) == "table" then
-                for _, entry in ipairs(db.ownedSpells) do
-                    local norm = NormalizeOwnedEntry(entry)
-                    if norm and norm.id then
-                        globalTracked[norm.type .. ":" .. norm.id] = true
-                    end
-                end
-            end
-            if type(db.removedSpells) == "table" then
-                for sid, _ in pairs(db.removedSpells) do
-                    if type(sid) == "number" then
-                        globalTracked["spell:" .. sid] = true
-                    end
-                end
-            end
-            if type(db.dormantSpells) == "table" then
-                -- dormantSpells is a map: { [spellID] = { slot, row } }
-                for sid, _ in pairs(db.dormantSpells) do
-                    if type(sid) == "number" then
-                        globalTracked["spell:" .. sid] = true
-                    end
-                end
-            end
-        end
-    end
-
-    local anyAdded = false
-    for _, key in ipairs(containerKeys) do
-        local added = self:ReconcileOwnedSpells(key, globalTracked)
-        if added then anyAdded = true end
-    end
-
-    if anyAdded then
-        FireChangeCallback()
-    end
 end
 
 ---------------------------------------------------------------------------
@@ -4028,13 +3918,15 @@ local function GetSpecKeyForSpecID(specID)
 end
 
 local function GetCurrentSpecKey()
-    local class
-    if UnitClass then
-        local _
-        _, class = UnitClass("player")
-    end
     local specID = GetCurrentSpecID()
-    if not specID then return class or "UNKNOWN" end
+    if not specID then
+        local class
+        if UnitClass then
+            local _
+            _, class = UnitClass("player")
+        end
+        return class or "UNKNOWN"
+    end
     return GetSpecKeyForSpecID(specID)
 end
 
@@ -4645,16 +4537,16 @@ function CDMSpellData:GetAllLearnedCooldowns()
 
     -- Iterate spell book using C_SpellBook APIs
     if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines then
-local okTabs = true; local numTabs = C_SpellBook.GetNumSpellBookSkillLines()
+local numTabs = C_SpellBook.GetNumSpellBookSkillLines()
         if numTabs then
             for tab = 1, numTabs do
-local okLine = true; local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(tab)
+local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(tab)
                 if skillLineInfo and skillLineInfo.name ~= GENERAL then
                     local offset = skillLineInfo.itemIndexOffset or 0
                     local numEntries = skillLineInfo.numSpellBookItems or 0
                     for i = 1, numEntries do
                         local slotIndex = offset + i
-local okItem = true; local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIndex, Enum.SpellBookSpellBank.Player)
+local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIndex, Enum.SpellBookSpellBank.Player)
                         if itemInfo and itemInfo.spellID and not itemInfo.isPassive and not itemInfo.isOffSpec then
                             local sid = itemInfo.spellID
                             if not seen[sid] then
@@ -4777,17 +4669,17 @@ function CDMSpellData:GetPassiveAuras()
         return result
     end
 
-local okTabs = true; local numTabs = C_SpellBook.GetNumSpellBookSkillLines()
-    if not okTabs or not numTabs then return result end
+local numTabs = C_SpellBook.GetNumSpellBookSkillLines()
+    if not numTabs then return result end
 
     for tab = 1, numTabs do
-local okLine = true; local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(tab)
+local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(tab)
         if skillLineInfo and skillLineInfo.name ~= GENERAL then
             local offset = skillLineInfo.itemIndexOffset or 0
             local numEntries = skillLineInfo.numSpellBookItems or 0
             for i = 1, numEntries do
                 local slotIndex = offset + i
-local okItem = true; local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIndex, Enum.SpellBookSpellBank.Player)
+local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIndex, Enum.SpellBookSpellBank.Player)
                 if itemInfo and itemInfo.spellID and itemInfo.isPassive and not itemInfo.isOffSpec then
                     local sid = itemInfo.spellID
                     if not seen[sid] then
@@ -4882,10 +4774,10 @@ function CDMSpellData:GetUsableItems()
     local seenItemIDs = {}
     if C_Container and C_Container.GetContainerNumSlots then
         for bag = 0, 4 do
-local okN = true; local numSlots = C_Container.GetContainerNumSlots(bag)
+local numSlots = C_Container.GetContainerNumSlots(bag)
             if numSlots then
                 for slot = 1, numSlots do
-local okC = true; local containerInfo = C_Container.GetContainerItemInfo(bag, slot)
+local containerInfo = C_Container.GetContainerItemInfo(bag, slot)
                     if containerInfo and containerInfo.itemID then
                         local itemID = containerInfo.itemID
                         -- Check for on-use spell
@@ -4979,8 +4871,7 @@ function CDMSpellData:InvalidateLearnedCache()
     InvalidateLearnedCooldownsCache()
 end
 
--- Wipe per-batch resolve memos. Normally cleared once per batch in
--- Aggregate cache stats for /qui cdm_cache status.
+-- Aggregate cache stats for /qui cdm_cache status (read by QUI_Debug memaudit probes).
 function CDMSpellData:GetCacheStats()
     local function size(t)
         if type(t) ~= "table" then return 0 end
@@ -5039,18 +4930,12 @@ function CDMSpellData:GetCacheStats()
     end
     local capturedAuraEntries, capturedAuraUnits = capturedStats()
     return {
-        childMapDirty       = false,
-        childMapSize        = 0,
         capturedAuraEntries = capturedAuraEntries,
         capturedAuraUnits   = capturedAuraUnits,
         capturedAuraSpellKeys = size(_capturedAuraBySpellID),
         capturedAuraNameKeys  = size(_capturedAuraByName),
         learnedDirty        = learnedCooldownsCacheDirty and true or false,
         learnedSize         = learnedSize,
-        tickAuraData        = 0,
-        tickAuraDuration    = 0,
-        tickAuraExpiration  = 0,
-        tickAuraApplication = 0,
     }
 end
 
@@ -5174,11 +5059,9 @@ function CDMSpellData:Initialize()
                     return
                 end
                 if not InCombatLockdown() then
-                    CDMSpellData:CheckAllDormantSpells()
-                    CDMSpellData:ReconcileAllContainers()
                     -- Notify containers to refresh display after dormant cleanup
                     -- removed stale spells from ownedSpells.
-                    FireChangeCallback()
+                    RunReconcileSequence()
                 end
             end)
         elseif event == "PLAYER_EQUIPMENT_CHANGED" then

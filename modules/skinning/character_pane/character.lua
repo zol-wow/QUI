@@ -348,26 +348,27 @@ local function ApplySlotPixelBackdrop(borderFrame, borderColor)
     ApplyOnePixelBorder(borderFrame, false, borderColor)
 end
 
+-- Character-pane frame chrome is unified onto the standard skin colors (the
+-- same source every other skinned frame uses) so the pane tracks global
+-- skin-color changes. Semantic stat/status/text colors in C stay fixed.
 local function GetCharacterBorderColor()
-    local globalQUI = _G.QUI
-    if globalQUI and globalQUI.GetSkinColor then
-        local r, g, b, a = globalQUI:GetSkinColor()
-        if r and g and b then
-            return r, g, b, a or 1
-        end
-    end
+    local r, g, b, a = Helpers.GetSkinBorderColor()
+    if r then return r, g, b, a or 1 end
     return C.border[1], C.border[2], C.border[3], 1
 end
 
+-- Same source as the border color for now; kept as a separate named getter so
+-- accent (hover) and resting-border can diverge later without touching callers.
 local function GetCharacterAccentColor()
-    local globalQUI = _G.QUI
-    if globalQUI and globalQUI.GetSkinColor then
-        local r, g, b, a = globalQUI:GetSkinColor()
-        if r and g and b then
-            return r, g, b, a or 1
-        end
-    end
+    local r, g, b, a = Helpers.GetSkinBorderColor()
+    if r then return r, g, b, a or 1 end
     return C.accent[1], C.accent[2], C.accent[3], 1
+end
+
+local function GetCharacterBgColor()
+    local r, g, b, a = Helpers.GetSkinBgColorWithOverride()
+    if r then return r, g, b, a or 1 end
+    return C.bg[1], C.bg[2], C.bg[3], C.bg[4] or 0.95
 end
 
 local function StyleCloseButton(button)
@@ -390,8 +391,9 @@ local function StyleCloseButton(button)
     end
     border:SetFrameLevel(math.max(button:GetFrameLevel() - 1, 1))
     local br, bg, bb = GetCharacterBorderColor()
-    ApplyOnePixelBorder(border, true, { br, bg, bb, 1 }, { 0.08, 0.10, 0.14, 0.96 })
-    border:SetBackdropColor(0.08, 0.10, 0.14, 0.96)
+    local cbr, cbg, cbb, cba = GetCharacterBgColor()
+    ApplyOnePixelBorder(border, true, { br, bg, bb, 1 }, { cbr, cbg, cbb, cba })
+    border:SetBackdropColor(cbr, cbg, cbb, cba)
     border:SetBackdropBorderColor(br, bg, bb, 1)
 
     local label = closeButtonLabels[button]
@@ -1777,16 +1779,8 @@ local function CreateCustomBackground()
     else
         -- Skinning disabled - create our own background for character pane
         -- Use global skinning colors for consistency
-        local QUI = _G.QUI
-        local sr, sg, sb, sa = C.border[1], C.border[2], C.border[3], 1
-        local bgr, bgg, bgb, bga = C.bg[1], C.bg[2], C.bg[3], C.bg[4] or 0.95
-
-        if QUI and QUI.GetSkinColor then
-            sr, sg, sb, sa = QUI:GetSkinColor()
-        end
-        if QUI and QUI.GetSkinBgColor then
-            bgr, bgg, bgb, bga = QUI:GetSkinBgColor()
-        end
+        local sr, sg, sb, sa = GetCharacterBorderColor()
+        local bgr, bgg, bgb, bga = GetCharacterBgColor()
 
         if not customBg then
             customBg = CreateFrame("Frame", "QUI_CharacterFrameBg_CharPane", CharacterFrame, "BackdropTemplate")
@@ -4500,6 +4494,15 @@ end)
 -- Global refresh function
 ---------------------------------------------------------------------------
 _G.QUI_RefreshCharacterPane = function()
+    -- Re-apply the chrome that reads the skin colors (close button + sidebar
+    -- tabs) so a global skin-color change recolors them live, not just the
+    -- equipment-slot borders that ScheduleUpdate handles.
+    if CharacterFrame then
+        if CharacterFrame.CloseButton then
+            StyleCloseButton(CharacterFrame.CloseButton)
+        end
+        StyleSidebarTabs()
+    end
     ScheduleUpdate()
 end
 
@@ -4544,5 +4547,14 @@ if ns.Registry then
         priority = 45,
         group = "character",
         importCategories = { "skinning" },
+    })
+    -- Second registration in the "skinning" group so a global skin-color change
+    -- (RefreshAll("skinning")) recolors the character pane like every other
+    -- skinned frame. The "character" group above is driven by other triggers.
+    ns.Registry:Register("characterSkin", {
+        refresh = _G.QUI_RefreshCharacterPane,
+        priority = 45,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
     })
 end

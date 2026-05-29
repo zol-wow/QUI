@@ -686,8 +686,18 @@ local PANEL_TAB_TEXTURES = {
     "LeftDisabled", "MiddleDisabled", "RightDisabled",
 }
 
-function SkinBase.SkinTabButton(tab)
+-- Re-apply the global QUI font to a tab's label when the tab opted in via
+-- opts.font. Blizzard re-applies a font OBJECT (face + color) on every
+-- selection change, so this runs from RefreshTabSelected as well as on skin.
+local function ReapplyTabFont(tab)
+    if not SkinBase.GetFrameData(tab, "skinTabFont") then return end
+    local fs = tab.Text or (tab.GetFontString and tab:GetFontString())
+    SkinBase.SkinFontString(fs)
+end
+
+function SkinBase.SkinTabButton(tab, opts)
     if not tab or SkinBase.IsStyled(tab) then return end
+    opts = opts or {}
 
     -- Nuke each PanelTabButtonTemplate texture by name (atlas-backed; Show()
     -- by Blizzard tab-state code wouldn't otherwise affect our alpha=0).
@@ -711,11 +721,17 @@ function SkinBase.SkinTabButton(tab)
         -- the backdrop above them.)
     end
 
-    -- Leave tab.Text untouched. Blizzard handles unselected/selected text
-    -- color via PanelTemplates_SelectTab swapping font objects between
-    -- GameFontNormalSmall (yellow) and GameFontHighlightSmall (white) —
-    -- the character pane tabs (StyleCharacterFrameTab in frames/character.lua)
-    -- intentionally don't override this and look right, so we match.
+    -- Tab text: by default leave it to Blizzard, which swaps font objects
+    -- between GameFontNormalSmall (yellow/unselected) and GameFontHighlightSmall
+    -- (white/selected) via PanelTemplates_SelectTab. Most QUI frames (e.g. the
+    -- character pane) intentionally keep that. opts.font opts a caller in to the
+    -- global QUI font + themed text instead; because Blizzard re-swaps the font
+    -- object on selection change, RefreshTabSelected re-applies it (the backdrop
+    -- still signals which tab is selected).
+    if opts.font then
+        SkinBase.SetFrameData(tab, "skinTabFont", true)
+        ReapplyTabFont(tab)
+    end
 
     SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(tab, "bgColor",   { bgr, bgg, bgb })
@@ -741,6 +757,10 @@ local function IsTabSelected(tab, owner)
 end
 
 function SkinBase.RefreshTabSelected(tab, owner)
+    -- Re-assert the QUI font first (Blizzard's selected/unselected font-object
+    -- swap would otherwise revert opted-in tabs on every tab change).
+    ReapplyTabFont(tab)
+
     local bd = SkinBase.GetBackdrop(tab)
     local sc = SkinBase.GetFrameData(tab, "skinColor")
     local bg = SkinBase.GetFrameData(tab, "bgColor")
@@ -801,7 +821,7 @@ end
 function SkinBase.SkinTab(tab, owner, opts)
     if not tab then return end
     opts = opts or {}
-    SkinBase.SkinTabButton(tab)
+    SkinBase.SkinTabButton(tab, opts)
     if opts.hover and not SkinBase.GetFrameData(tab, "qTabHoverHooked") then
         tab:HookScript("OnEnter", TabHoverEnter)
         tab:HookScript("OnLeave", function(self) SkinBase.RefreshTabSelected(self, owner) end)
@@ -959,6 +979,58 @@ local function AttachHover(frame)
 end
 
 ---------------------------------------------------------------------------
+-- SkinFontString(fontString, opts)
+-- Apply the global QUI font (face + outline) and a themed text color to a
+-- fontstring (or an EditBox / any object exposing SetFont). This is the single
+-- source of truth for "make this label use the QUI font/color", mirroring the
+-- peer convention in statustracking.lua (default near-white text).
+--   opts.size    : size override (default: keep the fontstring's current size)
+--   opts.outline : outline override (default: Helpers.GetGeneralFontOutline())
+--   opts.color   : { r, g, b, a } text color (default: near-white 0.95)
+-- No-ops on nil or objects without SetFont, so callers can pass optional fields
+-- directly. Idempotent in effect (re-applying the same font/color is harmless),
+-- which matters for labels Blizzard re-skins on state changes.
+---------------------------------------------------------------------------
+function SkinBase.SkinFontString(fontString, opts)
+    if not fontString or not fontString.SetFont then return end
+    opts = opts or {}
+
+    local font = (Helpers.GetGeneralFont and Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
+    local outline = opts.outline
+    if outline == nil then
+        outline = (Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline()) or ""
+    end
+
+    local size = opts.size
+    if not size and fontString.GetFont then
+        local _, curSize = fontString:GetFont()
+        size = curSize
+    end
+    size = size or 12
+
+    fontString:SetFont(font, size, outline)
+
+    if fontString.SetTextColor then
+        local c = opts.color
+        if type(c) == "table" then
+            fontString:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+        else
+            fontString:SetTextColor(0.95, 0.95, 0.95, 1)
+        end
+    end
+end
+
+-- Resolve a frame's primary label fontstring (button text / editbox).
+local function GetLabelFontString(frame)
+    if not frame then return nil end
+    if frame.GetFontString then
+        local fs = frame:GetFontString()
+        if fs then return fs end
+    end
+    return frame.Text
+end
+
+---------------------------------------------------------------------------
 -- SkinButton(button, opts)
 --   opts.strip   : StripTextures instead of hiding named Left/Right/Middle/
 --                  Center (use for WowStyle1-style buttons).
@@ -991,6 +1063,14 @@ function SkinBase.SkinButton(button, opts)
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(button, "skinKind", "button")
     SkinBase.SetFrameData(button, "bgBoost", boost)
+    -- opt-in: restyle the label with the global QUI font (default off so the
+    -- many shared SkinButton callers keep Blizzard fonts unless they ask).
+    -- Flagged so RefreshWidget re-applies it on live font/theme changes.
+    if opts.font then
+        SkinBase.SetFrameData(button, "skinFont", true)
+        SkinBase.SetFrameData(button, "skinFontColor", opts.fontColor)
+        SkinBase.SkinFontString(GetLabelFontString(button), { color = opts.fontColor })
+    end
     if opts.hover ~= false then AttachHover(button) end
     SkinBase.MarkStyled(button)
 end
@@ -998,13 +1078,20 @@ end
 ---------------------------------------------------------------------------
 -- SkinEditBox(editBox) — strip Blizzard textures + QUI backdrop (no boost).
 ---------------------------------------------------------------------------
-function SkinBase.SkinEditBox(editBox)
+function SkinBase.SkinEditBox(editBox, opts)
     if not editBox or SkinBase.IsStyled(editBox) then return end
+    opts = opts or {}
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
     SkinBase.StripTextures(editBox)
     SkinBase.CreateBackdrop(editBox, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     SkinBase.SetFrameData(editBox, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(editBox, "skinKind", "editbox")
+    -- opt-in: restyle the input text with the global QUI font.
+    if opts.font then
+        SkinBase.SetFrameData(editBox, "skinFont", true)
+        SkinBase.SetFrameData(editBox, "skinFontColor", opts.fontColor)
+        SkinBase.SkinFontString(editBox, { color = opts.fontColor })
+    end
     SkinBase.MarkStyled(editBox)
 end
 
@@ -1136,6 +1223,14 @@ function SkinBase.RefreshWidget(frame)
         bd:SetBackdropColor(math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), bgAlpha)
         bd:SetBackdropBorderColor(sr, sg, sb, sa * mult)
         SkinBase.SetFrameData(frame, "skinColor", { sr, sg, sb, sa * mult })
+    end
+
+    -- Re-apply the global QUI font on live font/theme changes for widgets that
+    -- opted in at skin time (SkinButton/SkinEditBox {font=true}).
+    if SkinBase.GetFrameData(frame, "skinFont") then
+        local color = SkinBase.GetFrameData(frame, "skinFontColor")
+        local target = (kind == "editbox") and frame or GetLabelFontString(frame)
+        SkinBase.SkinFontString(target, { color = color })
     end
 end
 

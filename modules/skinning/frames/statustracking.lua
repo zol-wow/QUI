@@ -385,6 +385,18 @@ end
 
 _G.QUI_RefreshStatusTrackingBarSkin = RefreshStatusTrackingBarSkin
 
+-- Register in the standard skinning refresh path so a global skin-color change
+-- (RefreshAll("skinning")) recolors the bars. The _G.QUI_* global and its manual
+-- call sites remain; the resulting double-refresh is idempotent.
+if ns.Registry then
+    ns.Registry:Register("statusTracking", {
+        refresh = RefreshStatusTrackingBarSkin,
+        priority = 80,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
+    })
+end
+
 ---------------------------------------------------------------------------
 -- Init: Blizzard_ActionBar provides StatusTrackingBarManager
 ---------------------------------------------------------------------------

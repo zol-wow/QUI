@@ -40,15 +40,24 @@ local function UpdateCategorySelected(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
     end
 end
 
--- Style a category list button
-local function StyleCategoryButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    if not button or SkinBase.IsStyled(button) then return end
-
+-- Suppress a category button's default textures (safe to call on every refresh;
+-- the ScrollBox element initializer restores NormalTexture alpha to 1.0 when
+-- it re-binds a button — see ProfessionsCustomerOrdersCategoryButtonMixin:Init).
+local function SuppressCategoryTextures(button)
+    if not button then return end
     SkinBase.StripTextures(button)
     if button.SelectedTexture then button.SelectedTexture:SetAlpha(0) end
     if button.NormalTexture then button.NormalTexture:SetAlpha(0) end
     local highlight = button:GetHighlightTexture()
     if highlight then highlight:SetAlpha(0) end
+end
+
+-- Style a category list button
+local function StyleCategoryButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    if not button or SkinBase.IsStyled(button) then return end
+
+    -- Hide default textures but keep SelectedTexture for state detection (hidden visually)
+    SuppressCategoryTextures(button)
 
     SkinBase.CreateBackdrop(button, sr, sg, sb, sa * 0.5, math.min(bgr + 0.05, 1), math.min(bgg + 0.05, 1), math.min(bgb + 0.05, 1), 0.7)
 
@@ -102,7 +111,7 @@ end
 local function SkinTabs(frame)
     if not frame then return end
     local tabs = { frame.BrowseTab, frame.OrdersTab }
-    SkinBase.SkinTabGroup(tabs, frame)
+    SkinBase.SkinTabGroup(tabs, frame, { font = true })
     -- Reposition tabs
     if tabs[1] then
         tabs[1]:ClearAllPoints()
@@ -128,17 +137,36 @@ local function SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local searchBar = browseOrders.SearchBar
     if searchBar then
         if searchBar.SearchBox then
-            SkinBase.SkinEditBox(searchBar.SearchBox)
+            SkinBase.SkinEditBox(searchBar.SearchBox, { font = true })
         end
         if searchBar.SearchButton then
-            SkinBase.SkinButton(searchBar.SearchButton)
+            SkinBase.SkinButton(searchBar.SearchButton, { font = true })
         end
         if searchBar.FavoritesSearchButton then
             SkinBase.SkinButton(searchBar.FavoritesSearchButton)
         end
         -- Filter dropdown (WowStyle1 dropdown — standard button textures don't apply)
         if searchBar.FilterDropdown then
-            SkinBase.SkinButton(searchBar.FilterDropdown, { strip = true })
+            SkinBase.SkinButton(searchBar.FilterDropdown, { strip = true, font = true })
+            local dropdown = searchBar.FilterDropdown
+            -- Keep the QUI backdrop BELOW the dropdown's children (belowChildren).
+            local filterBd = SkinBase.GetBackdrop(dropdown)
+            if filterBd then
+                filterBd:SetFrameLevel(math.max(0, dropdown:GetFrameLevel() - 1))
+            end
+            -- The reset "X" (ResetButton) is purely a SHOW/hide issue, not
+            -- z-order: it sits well above the backdrop, but Blizzard's
+            -- WowDropdownFilterBehaviorMixin:ValidateResetState() only shows it
+            -- when a filter is non-default. On a fresh open the dropdown's first
+            -- OnShow can run ValidateResetState before InitFilterDropdown wires
+            -- the isDefault callback, so an already-active filter's X stays
+            -- hidden until the next validate (the menu click). Re-validate once
+            -- after skinning so the X reflects the real filter state immediately.
+            -- No-op when filters are default (the X correctly stays hidden — it
+            -- only appears when there is something to reset).
+            if dropdown.ValidateResetState then
+                C_Timer.After(0, function() pcall(dropdown.ValidateResetState, dropdown) end)
+            end
         end
     end
 
@@ -149,12 +177,38 @@ local function SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         if categoryList.NineSlice then categoryList.NineSlice:Hide() end
         if categoryList.Background then categoryList.Background:SetAlpha(0) end
 
+        -- Per-button styler (used both on acquisition and by the SetCategoryFilter
+        -- refresh). Re-suppress on every call because Blizzard's element
+        -- initializer restores NormalTexture alpha when it re-binds a button.
         local function StyleCategoryRow(button)
             StyleCategoryButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+            SuppressCategoryTextures(button)
             UpdateCategorySelected(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+            -- Reapply the QUI font: Blizzard's element initializer calls
+            -- SetNormalFontObject on every rebind, reverting the label font.
+            SkinBase.SkinFontString(button.Text)
+        end
+        local function RefreshCategoryButtons(self)
+            SafeForEachFrame(self, StyleCategoryRow)
         end
 
         SkinBase.HookScrollBoxAcquired(categoryList.ScrollBox, StyleCategoryRow)
+
+        -- Selecting/deselecting a category invalidates the tree data provider,
+        -- which re-runs the element initializer (restoring Blizzard textures) on
+        -- buttons that stay on screen WITHOUT re-firing the acquired-frame
+        -- callback. Re-suppress all visible buttons afterward, mirroring the
+        -- Auction House OnFilterClicked hook.
+        if categoryList.SetCategoryFilter and not SkinBase.GetFrameData(categoryList, "clickHooked") then
+            hooksecurefunc(categoryList, "SetCategoryFilter", function()
+                C_Timer.After(0, function()
+                    if categoryList.ScrollBox then
+                        RefreshCategoryButtons(categoryList.ScrollBox)
+                    end
+                end)
+            end)
+            SkinBase.SetFrameData(categoryList, "clickHooked", true)
+        end
 
         if categoryList.ScrollBar and categoryList.ScrollBar.Background then
             categoryList.ScrollBar.Background:Hide()
@@ -180,7 +234,7 @@ local function SkinMyOrders(frame)
 
     -- Refresh button
     if myOrders.RefreshButton then
-        SkinBase.SkinButton(myOrders.RefreshButton)
+        SkinBase.SkinButton(myOrders.RefreshButton, { font = true })
     end
 end
 
@@ -210,17 +264,17 @@ local function SkinForm(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     -- Back button
     if form.BackButton then
-        SkinBase.SkinButton(form.BackButton)
+        SkinBase.SkinButton(form.BackButton, { font = true })
     end
 
     -- Payment container
     if form.PaymentContainer then
         local pc = form.PaymentContainer
         if pc.ListOrderButton then
-            SkinBase.SkinButton(pc.ListOrderButton)
+            SkinBase.SkinButton(pc.ListOrderButton, { font = true })
         end
         if pc.CancelOrderButton then
-            SkinBase.SkinButton(pc.CancelOrderButton)
+            SkinBase.SkinButton(pc.CancelOrderButton, { font = true })
         end
         -- Duration dropdown
         if pc.DurationDropdown then

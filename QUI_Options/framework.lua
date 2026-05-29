@@ -3554,17 +3554,24 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
         container:SetAlpha(enabled and 1 or 0.4)
     end
 
-    RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
-        label = label,
-        widgetType = "toggle",
-        widgetBuilder = function(p)
-            return GUI:CreateFormToggle(p, label, dbKey, dbTable, onChange)
-        end,
-        widgetDescriptor = GUI:BuildSearchWidgetDescriptor("toggle", dbKey, dbTable),
-        keywords = registryInfo and registryInfo.keywords or nil,
-        description = registryInfo and registryInfo.description or nil,
-        relatedTo = registryInfo and registryInfo.relatedTo or nil,
-    })
+    -- Once the generated search cache is present the search registry
+    -- short-circuits on HasGeneratedSearchCache, so building the entry table,
+    -- the builder closure, and the descriptor below is pure per-widget
+    -- allocation waste -- and it runs for every widget on every options page
+    -- (re)build (i.e. every settings tab switch). Skip it entirely.
+    if not GUI:HasGeneratedSearchCache() then
+        RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
+            label = label,
+            widgetType = "toggle",
+            widgetBuilder = function(p)
+                return GUI:CreateFormToggle(p, label, dbKey, dbTable, onChange)
+            end,
+            widgetDescriptor = GUI:BuildSearchWidgetDescriptor("toggle", dbKey, dbTable),
+            keywords = registryInfo and registryInfo.keywords or nil,
+            description = registryInfo and registryInfo.description or nil,
+            relatedTo = registryInfo and registryInfo.relatedTo or nil,
+        })
+    end
 
     local tooltipDescription = registryInfo and registryInfo.description or nil
     AttachFormWidgetTooltip(container, toggle, tooltipDescription, label)
@@ -3704,17 +3711,21 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange, r
         container:SetAlpha(enabled and 1 or 0.4)
     end
 
-    RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
-        label = label,
-        widgetType = "toggle",
-        widgetBuilder = function(p)
-            return GUI:CreateFormToggleInverted(p, label, dbKey, dbTable, onChange, registryInfo)
-        end,
-        widgetDescriptor = GUI:BuildSearchWidgetDescriptor("toggle_inverted", dbKey, dbTable),
-        keywords = registryInfo and registryInfo.keywords or nil,
-        description = registryInfo and registryInfo.description or nil,
-        relatedTo = registryInfo and registryInfo.relatedTo or nil,
-    })
+    -- Skip search registration when the generated cache is present (avoids
+    -- per-widget allocation on every page rebuild; see CreateFormToggle).
+    if not GUI:HasGeneratedSearchCache() then
+        RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
+            label = label,
+            widgetType = "toggle",
+            widgetBuilder = function(p)
+                return GUI:CreateFormToggleInverted(p, label, dbKey, dbTable, onChange, registryInfo)
+            end,
+            widgetDescriptor = GUI:BuildSearchWidgetDescriptor("toggle_inverted", dbKey, dbTable),
+            keywords = registryInfo and registryInfo.keywords or nil,
+            description = registryInfo and registryInfo.description or nil,
+            relatedTo = registryInfo and registryInfo.relatedTo or nil,
+        })
+    end
 
     local tooltipDescription = registryInfo and registryInfo.description or nil
     AttachFormWidgetTooltip(container, toggle, tooltipDescription, label)
@@ -4057,19 +4068,23 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
         or (options and options.description)
         or nil
 
-    RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
-        label = label,
-        widgetType = "editbox",
-        widgetBuilder = function(p)
-            return GUI:CreateFormEditBox(p, label, dbKey, dbTable, onChange, options)
-        end,
-        widgetDescriptor = GUI:BuildSearchWidgetDescriptor("editbox", dbKey, dbTable, {
-            options = options,
-        }),
-        keywords = registryInfo and registryInfo.keywords or nil,
-        description = effectiveDescription,
-        relatedTo = registryInfo and registryInfo.relatedTo or nil,
-    })
+    -- Skip search registration when the generated cache is present (avoids
+    -- per-widget allocation on every page rebuild; see CreateFormToggle).
+    if not GUI:HasGeneratedSearchCache() then
+        RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
+            label = label,
+            widgetType = "editbox",
+            widgetBuilder = function(p)
+                return GUI:CreateFormEditBox(p, label, dbKey, dbTable, onChange, options)
+            end,
+            widgetDescriptor = GUI:BuildSearchWidgetDescriptor("editbox", dbKey, dbTable, {
+                options = options,
+            }),
+            keywords = registryInfo and registryInfo.keywords or nil,
+            description = effectiveDescription,
+            relatedTo = registryInfo and registryInfo.relatedTo or nil,
+        })
+    end
 
     AttachFormWidgetTooltip(container, editBox, effectiveDescription, label)
     return container
@@ -4479,22 +4494,26 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         or (options and options.description)
         or nil
 
-    RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
-        label = label,
-        widgetType = "slider",
-        widgetBuilder = function(p)
-            return GUI:CreateFormSlider(p, label, min, max, step, dbKey, dbTable, onChange, options)
-        end,
-        widgetDescriptor = GUI:BuildSearchWidgetDescriptor("slider", dbKey, dbTable, {
-            min = min,
-            max = max,
-            step = step,
-            options = options,
-        }),
-        keywords = registryInfo and registryInfo.keywords or nil,
-        description = effectiveDescription,
-        relatedTo = registryInfo and registryInfo.relatedTo or nil,
-    })
+    -- Skip search registration when the generated cache is present (avoids
+    -- per-widget allocation on every page rebuild; see CreateFormToggle).
+    if not GUI:HasGeneratedSearchCache() then
+        RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
+            label = label,
+            widgetType = "slider",
+            widgetBuilder = function(p)
+                return GUI:CreateFormSlider(p, label, min, max, step, dbKey, dbTable, onChange, options)
+            end,
+            widgetDescriptor = GUI:BuildSearchWidgetDescriptor("slider", dbKey, dbTable, {
+                min = min,
+                max = max,
+                step = step,
+                options = options,
+            }),
+            keywords = registryInfo and registryInfo.keywords or nil,
+            description = effectiveDescription,
+            relatedTo = registryInfo and registryInfo.relatedTo or nil,
+        })
+    end
 
     AttachFormWidgetTooltip(container, slider, effectiveDescription, label)
     return container
@@ -5087,20 +5106,24 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     end
     container.isEnabled = true
 
-    RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
-        label = label,
-        widgetType = "dropdown",
-        widgetBuilder = function(p)
-            return GUI:CreateFormDropdown(p, label, options, dbKey, dbTable, onChange, nil, opts)
-        end,
-        widgetDescriptor = GUI:BuildSearchWidgetDescriptor("dropdown", dbKey, dbTable, {
-            options = options,
-            dropdownOptions = opts,
-        }),
-        keywords = registryInfo and registryInfo.keywords or nil,
-        description = registryInfo and registryInfo.description or nil,
-        relatedTo = registryInfo and registryInfo.relatedTo or nil,
-    })
+    -- Skip search registration when the generated cache is present (avoids
+    -- per-widget allocation on every page rebuild; see CreateFormToggle).
+    if not GUI:HasGeneratedSearchCache() then
+        RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
+            label = label,
+            widgetType = "dropdown",
+            widgetBuilder = function(p)
+                return GUI:CreateFormDropdown(p, label, options, dbKey, dbTable, onChange, nil, opts)
+            end,
+            widgetDescriptor = GUI:BuildSearchWidgetDescriptor("dropdown", dbKey, dbTable, {
+                options = options,
+                dropdownOptions = opts,
+            }),
+            keywords = registryInfo and registryInfo.keywords or nil,
+            description = registryInfo and registryInfo.description or nil,
+            relatedTo = registryInfo and registryInfo.relatedTo or nil,
+        })
+    end
 
     local tooltipDescription = registryInfo and registryInfo.description or nil
     AttachFormWidgetTooltip(container, dropdown, tooltipDescription, label)
@@ -5264,19 +5287,23 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
         or (options and options.description)
         or nil
 
-    RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
-        label = label,
-        widgetType = "colorpicker",
-        widgetBuilder = function(p)
-            return GUI:CreateFormColorPicker(p, label, dbKey, dbTable, onChange, options)
-        end,
-        widgetDescriptor = GUI:BuildSearchWidgetDescriptor("colorpicker", dbKey, dbTable, {
-            options = options,
-        }),
-        keywords = registryInfo and registryInfo.keywords or nil,
-        description = effectiveDescription,
-        relatedTo = registryInfo and registryInfo.relatedTo or nil,
-    })
+    -- Skip search registration when the generated cache is present (avoids
+    -- per-widget allocation on every page rebuild; see CreateFormToggle).
+    if not GUI:HasGeneratedSearchCache() then
+        RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
+            label = label,
+            widgetType = "colorpicker",
+            widgetBuilder = function(p)
+                return GUI:CreateFormColorPicker(p, label, dbKey, dbTable, onChange, options)
+            end,
+            widgetDescriptor = GUI:BuildSearchWidgetDescriptor("colorpicker", dbKey, dbTable, {
+                options = options,
+            }),
+            keywords = registryInfo and registryInfo.keywords or nil,
+            description = effectiveDescription,
+            relatedTo = registryInfo and registryInfo.relatedTo or nil,
+        })
+    end
 
     AttachFormWidgetTooltip(container, swatch, effectiveDescription, label)
     return container
