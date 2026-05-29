@@ -64,6 +64,9 @@ local ContextSelection = FullSurface and FullSurface.CreateSelectionController
         normalize = NormalizeContextMode,
         afterSet = function(key)
             EnsureTabModel():ApplyNormalized()
+            if State.invalidateTabBodies then
+                State.invalidateTabBodies()
+            end
 
             if _G.QUI_RefreshGroupFramePreview then
                 _G.QUI_RefreshGroupFramePreview(key)
@@ -206,6 +209,7 @@ end
 local function BuildTileBody(body, _, _, feature)
     local tabModel = EnsureTabModel(feature)
     return FullSurface.BuildScrollTabBody(body, {
+        cacheTabBodies = true,
         state = State,
         clearFrame = ClearFrame,
         createTabStrip = BuildTabStrip,
@@ -221,8 +225,8 @@ local function BuildTileBody(body, _, _, feature)
         setActiveTab = function(tabKey)
             tabModel:SetActiveKey(tabKey)
         end,
-        render = function(host)
-            return tabModel:RenderKey(host)
+        render = function(host, activeTab)
+            return tabModel:RenderKey(host, activeTab)
         end,
         repaintOnSizeChanged = true,
         deferResizeRepaint = true,

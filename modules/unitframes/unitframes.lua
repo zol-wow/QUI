@@ -256,6 +256,21 @@ local function ApplyStandalonePlayerCastbarMode()
     return false
 end
 
+local function ApplyExistingCastbarLiveSettings(unitKey)
+    local castbar = QUI_UF.castbars and QUI_UF.castbars[unitKey]
+    if not castbar or not QUI_Castbar or not QUI_Castbar.ApplyLiveCastbarSettings then
+        return
+    end
+
+    local settings = GetUnitSettings(unitKey)
+    local castSettings = settings and settings.castbar
+    if not castSettings or castSettings.enabled == false then
+        return
+    end
+
+    QUI_Castbar:ApplyLiveCastbarSettings(castbar, unitKey, castSettings)
+end
+
 local function IsTargetHealthDirectionInverted(unitKey, settings)
     return unitKey == "target" and settings and settings.invertHealthDirection == true
 end
@@ -3602,6 +3617,7 @@ function QUI_UF:RefreshFrame(unitKey)
     if InCombatLockdown() and not inInitSafeWindow then
         -- Only update non-secure elements (colors, text)
         UpdateFrame(frame)
+        ApplyExistingCastbarLiveSettings(unitKey)
         return
     end
 

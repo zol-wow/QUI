@@ -16,6 +16,8 @@
 local addonName, ns = ...
 local SkinBase = ns.SkinBase
 local GetCore = ns.Helpers.GetCore
+local MAP_CANVAS_FRAME_LEVEL = 100
+local MAP_OVERLAY_FRAME_LEVEL = 200
 
 local function IsSettingEnabled(key)
     local core = GetCore()
@@ -23,35 +25,30 @@ local function IsSettingEnabled(key)
     return settings and settings[key]
 end
 
--- Build (or fetch) the LOW-strata fill frame that paints the QUI bg color
--- behind the map canvas. WorldMapFrame's title bar / chrome area sits
--- outside .ScrollContainer's bounds (Blizzard_WorldMap.xml:12-18), so a
--- fullscreen fill at LOW strata is invisible where the (opaque) map
--- covers it and visible only in the surrounding chrome — giving an
--- opaque QUI title bar without obscuring the map.
-local function EnsureMapFill(frame)
-    local fill = SkinBase.GetFrameData(frame, "mapFill")
-    if fill then return fill end
-
-    fill = CreateFrame("Frame", nil, frame)
-    fill:SetAllPoints()
-    fill:SetFrameStrata("LOW") -- behind ScrollContainer (MEDIUM)
-    fill:EnableMouse(false)
-
-    local tex = fill:CreateTexture(nil, "BACKGROUND")
-    tex:SetAllPoints()
-    tex:SetTexture("Interface\\Buttons\\WHITE8x8")
-    fill.tex = tex
-
-    SkinBase.SetFrameData(frame, "mapFill", fill)
-    return fill
+local function RaiseFrame(frame, frameLevel)
+    if not frame then return end
+    frame:SetFrameStrata("HIGH")
+    frame:SetFrameLevel(frameLevel)
 end
 
-local function ApplyMapFillColor(frame)
-    local fill = SkinBase.GetFrameData(frame, "mapFill")
-    if not fill or not fill.tex then return end
-    local _, _, _, _, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
-    fill.tex:SetVertexColor(bgr, bgg, bgb, bga or 1)
+local function RaiseMapCanvas(frame)
+    if not frame then return end
+
+    RaiseFrame(frame.ScrollContainer, MAP_CANVAS_FRAME_LEVEL)
+
+    if frame.overlayFrames then
+        for _, overlayFrame in ipairs(frame.overlayFrames) do
+            RaiseFrame(overlayFrame, MAP_OVERLAY_FRAME_LEVEL)
+        end
+    end
+
+    RaiseFrame(frame.NavBar, MAP_OVERLAY_FRAME_LEVEL)
+end
+
+local function ApplyBorderBackdrop(backdrop)
+    if not backdrop then return end
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    SkinBase.ApplyPixelBackdrop(backdrop, 1, true, true, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
 end
 
 local function SkinWorldMap()
@@ -61,25 +58,17 @@ local function SkinWorldMap()
 
     -- BorderFrame carries the PortraitFrameTemplateMinimizable chrome.
     -- The shared helper handles chrome strip + backdrop + close button.
-    -- Because BorderFrame is frameStrata="HIGH" and sits ABOVE the map
-    -- canvas (.ScrollContainer at MEDIUM, child of WorldMapFrame —
-    -- Blizzard_WorldMap.xml:12-43), we keep its backdrop's BORDER opaque
-    -- (the outline must be in front of the map) but zero the FILL alpha
-    -- (it would otherwise cover the map). The QUI fill is restored by a
-    -- separate LOW-strata frame below.
+    -- BorderFrame is frameStrata="HIGH"; raise ScrollContainer and overlay
+    -- controls to that strata so they stay above the full-frame skinned
+    -- backdrop while title controls remain above the canvas at frameLevel 510.
     if frame.BorderFrame then
         SkinBase.SkinButtonFrameTemplate(frame.BorderFrame)
-        local bd = SkinBase.GetBackdrop(frame.BorderFrame)
-        if bd then
-            local _, _, _, _, bgr, bgg, bgb = SkinBase.GetSkinColors()
-            bd:SetBackdropColor(bgr, bgg, bgb, 0)
-        end
+        ApplyBorderBackdrop(SkinBase.GetBackdrop(frame.BorderFrame))
         if frame.BorderFrame.Underlay then frame.BorderFrame.Underlay:Hide() end
         if frame.BorderFrame.InsetBorderTop then frame.BorderFrame.InsetBorderTop:Hide() end
     end
 
-    EnsureMapFill(frame)
-    ApplyMapFillColor(frame)
+    RaiseMapCanvas(frame)
 
     SkinBase.MarkSkinned(frame)
 end
@@ -88,16 +77,9 @@ local function RefreshWorldMap()
     local frame = _G.WorldMapFrame
     if not frame then return end
     if frame.BorderFrame then
-        local bd = SkinBase.GetBackdrop(frame.BorderFrame)
-        if bd then
-            local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetSkinColors()
-            -- Keep border opaque; fill stays alpha=0 so the map shows through.
-            -- The opaque fill lives on the separate LOW-strata frame below.
-            bd:SetBackdropColor(bgr, bgg, bgb, 0)
-            bd:SetBackdropBorderColor(sr, sg, sb, sa)
-        end
+        ApplyBorderBackdrop(SkinBase.GetBackdrop(frame.BorderFrame))
     end
-    ApplyMapFillColor(frame)
+    RaiseMapCanvas(frame)
 end
 
 _G.QUI_RefreshWorldMapColors = RefreshWorldMap

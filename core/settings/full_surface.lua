@@ -575,6 +575,7 @@ function FullSurface.BuildScrollTabBody(body, options)
     options = options or {}
 
     local clearFrame = options.clearFrame or FullSurface.ClearFrame
+    local cacheTabBodies = options.cacheTabBodies == true
     if clearFrame then
         clearFrame(body)
     end
@@ -602,14 +603,104 @@ function FullSurface.BuildScrollTabBody(body, options)
     scrollWrap:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -contentRight, contentBottom)
 
     local scrollContent
-    if ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
+    if not cacheTabBodies and ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
         local _scrollFrame
         _scrollFrame, scrollContent = ns.QUI_Options.CreateScrollableContent(scrollWrap)
     end
 
     local state = type(options.state) == "table" and options.state or nil
+    local tabBodyCache = {}
 
-    local function RenderActive()
+    local function GetTabCacheKey(tabKey)
+        if tabKey == nil then
+            return "__nil"
+        end
+        return tostring(tabKey)
+    end
+
+    local function CreateCachedTabBody(tabKey)
+        local cacheKey = GetTabCacheKey(tabKey)
+        local cached = tabBodyCache[cacheKey]
+        if cached then
+            return cached
+        end
+
+        local container = CreateFrame("Frame", nil, scrollWrap)
+        container:SetAllPoints(scrollWrap)
+        container:Hide()
+
+        local content = container
+        if ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
+            local _scrollFrame
+            _scrollFrame, content = ns.QUI_Options.CreateScrollableContent(container)
+        end
+
+        cached = {
+            container = container,
+            content = content or container,
+            rendered = false,
+        }
+        tabBodyCache[cacheKey] = cached
+        return cached
+    end
+
+    local function ShowCachedTabBody(tabKey)
+        local cached = CreateCachedTabBody(tabKey)
+        for _, info in pairs(tabBodyCache) do
+            if info.container then
+                if info == cached then
+                    info.container:Show()
+                else
+                    info.container:Hide()
+                end
+            end
+        end
+        return cached
+    end
+
+    local function RenderCachedTabBody(tabKey, cached, force)
+        local host = cached.content
+        if force or not cached.rendered then
+            if clearFrame then
+                clearFrame(host)
+            end
+            if type(options.render) == "function" then
+                options.render(host, tabKey, cached)
+            end
+            cached.rendered = true
+        end
+        return host
+    end
+
+    local function InvalidateCachedTabBodies(tabKey)
+        if not cacheTabBodies then
+            return
+        end
+
+        if tabKey ~= nil then
+            local cached = tabBodyCache[GetTabCacheKey(tabKey)]
+            if cached then
+                cached.rendered = false
+            end
+            return
+        end
+
+        for _, cached in pairs(tabBodyCache) do
+            cached.rendered = false
+        end
+    end
+
+    local function RenderActive(force)
+        if cacheTabBodies then
+            local activeTab = type(options.getActiveTab) == "function" and options.getActiveTab() or nil
+            local cached = ShowCachedTabBody(activeTab)
+            local host = RenderCachedTabBody(activeTab, cached, force)
+            if state then
+                state.activeBody = host
+            end
+            return
+        end
+
         local host = scrollContent or scrollWrap
         if clearFrame then
             clearFrame(host)
@@ -639,8 +730,8 @@ function FullSurface.BuildScrollTabBody(body, options)
             end
         end
 
-        paintTabs(tabs, activeTab, function(tabKey)
-            if tabKey == activeTab then
+        local function HandleTabClick(tabKey, previousActiveTab)
+            if tabKey == previousActiveTab then
                 return
             end
             if type(options.setActiveTab) == "function" then
@@ -651,19 +742,24 @@ function FullSurface.BuildScrollTabBody(body, options)
             end
             repainting = false
             RepaintTabs()
-            RenderActive()
+            RenderActive(false)
+        end
+
+        paintTabs(tabs, activeTab, function(tabKey)
+            return HandleTabClick(tabKey, activeTab)
         end)
 
         repainting = false
     end
 
-    local function RepaintAndRender()
+    local function RepaintAndRender(force)
         RepaintTabs()
-        RenderActive()
+        RenderActive(force ~= false)
     end
 
     if state then
         state.repaintTabs = RepaintAndRender
+        state.invalidateTabBodies = InvalidateCachedTabBodies
     end
 
     if options.repaintOnSizeChanged then
@@ -676,7 +772,7 @@ function FullSurface.BuildScrollTabBody(body, options)
         end)
     end
 
-    RepaintAndRender()
+    RepaintAndRender(true)
 
     return {
         tabStrip = tabStrip,
@@ -684,6 +780,7 @@ function FullSurface.BuildScrollTabBody(body, options)
         scrollContent = scrollContent,
         RepaintTabs = RepaintTabs,
         RenderActive = RenderActive,
+        InvalidateCachedTabBodies = InvalidateCachedTabBodies,
     }
 end
 
@@ -691,6 +788,7 @@ function FullSurface.BuildMultiHostTabBody(body, options)
     options = options or {}
 
     local clearFrame = options.clearFrame or FullSurface.ClearFrame
+    local cacheTabBodies = options.cacheTabBodies == true
     if clearFrame then
         clearFrame(body)
     end
@@ -714,7 +812,52 @@ function FullSurface.BuildMultiHostTabBody(body, options)
     tabStrip:SetPoint("RIGHT", body, "RIGHT", -pad, 0)
 
     local hosts = {}
-    for hostKey, definition in pairs(options.hosts or {}) do
+    if not cacheTabBodies then
+        for hostKey, definition in pairs(options.hosts or {}) do
+            local container = CreateFrame("Frame", nil, body)
+            container:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, contentTop)
+            container:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -contentRight, contentBottom)
+            container:Hide()
+
+            local content = container
+            if definition.kind == "scroll" and ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
+                local _scrollFrame
+                _scrollFrame, content = ns.QUI_Options.CreateScrollableContent(container)
+            end
+
+            hosts[hostKey] = {
+                container = container,
+                content = content or container,
+                clearFrame = definition.clearFrame or clearFrame,
+            }
+        end
+    end
+
+    local state = type(options.state) == "table" and options.state or nil
+    local tabBodyCache = {}
+
+    local function ResolveHostKey(activeTab)
+        local activeHostKey = type(options.resolveHostKey) == "function"
+            and options.resolveHostKey(activeTab) or options.defaultHostKey
+        if activeHostKey ~= nil then
+            return activeHostKey
+        end
+        return options.defaultHostKey
+    end
+
+    local function GetTabCacheKey(tabKey, hostKey)
+        return tostring(hostKey or "__host") .. "\31" .. tostring(tabKey or "__nil")
+    end
+
+    local function CreateCachedHost(activeTab, activeHostKey)
+        local cacheKey = GetTabCacheKey(activeTab, activeHostKey)
+        local cached = tabBodyCache[cacheKey]
+        if cached then
+            return cached
+        end
+
+        local definitions = options.hosts or {}
+        local definition = definitions[activeHostKey] or definitions[options.defaultHostKey] or {}
         local container = CreateFrame("Frame", nil, body)
         container:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, contentTop)
         container:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -contentRight, contentBottom)
@@ -726,19 +869,70 @@ function FullSurface.BuildMultiHostTabBody(body, options)
             _scrollFrame, content = ns.QUI_Options.CreateScrollableContent(container)
         end
 
-        hosts[hostKey] = {
+        cached = {
             container = container,
             content = content or container,
             clearFrame = definition.clearFrame or clearFrame,
+            hostKey = activeHostKey,
+            tabKey = activeTab,
+            rendered = false,
         }
+        tabBodyCache[cacheKey] = cached
+        return cached
     end
 
-    local state = type(options.state) == "table" and options.state or nil
+    local function ShowCachedHost(activeTab, activeHostKey)
+        local cached = CreateCachedHost(activeTab, activeHostKey)
+        for _, info in pairs(tabBodyCache) do
+            if info.container then
+                if info == cached then
+                    info.container:Show()
+                else
+                    info.container:Hide()
+                end
+            end
+        end
+        return cached
+    end
 
-    local function RenderActive()
+    local function RenderCachedHost(activeTab, activeHostKey, cached, force)
+        if force or not cached.rendered then
+            if cached.clearFrame then
+                cached.clearFrame(cached.content)
+            end
+            if type(options.render) == "function" then
+                options.render(cached.content, activeTab, activeHostKey, cached)
+            end
+            cached.rendered = true
+        end
+        return cached.content
+    end
+
+    local function InvalidateCachedTabBodies(tabKey)
+        if not cacheTabBodies then
+            return
+        end
+
+        for _, cached in pairs(tabBodyCache) do
+            if tabKey == nil or cached.tabKey == tabKey then
+                cached.rendered = false
+            end
+        end
+    end
+
+    local function RenderActive(force)
         local activeTab = type(options.getActiveTab) == "function" and options.getActiveTab() or nil
-        local activeHostKey = type(options.resolveHostKey) == "function"
-            and options.resolveHostKey(activeTab) or options.defaultHostKey
+        local activeHostKey = ResolveHostKey(activeTab)
+
+        if cacheTabBodies then
+            local cached = ShowCachedHost(activeTab, activeHostKey)
+            local host = RenderCachedHost(activeTab, activeHostKey, cached, force)
+            if state then
+                state.activeBody = host
+            end
+            return
+        end
+
         local hostInfo = hosts[activeHostKey] or hosts[options.defaultHostKey]
         if not hostInfo then
             return
@@ -782,8 +976,8 @@ function FullSurface.BuildMultiHostTabBody(body, options)
             end
         end
 
-        paintTabs(tabs, activeTab, function(tabKey)
-            if tabKey == activeTab then
+        local function HandleTabClick(tabKey, previousActiveTab)
+            if tabKey == previousActiveTab then
                 return
             end
             if type(options.setActiveTab) == "function" then
@@ -794,27 +988,33 @@ function FullSurface.BuildMultiHostTabBody(body, options)
             end
             repainting = false
             RepaintTabs()
-            RenderActive()
+            RenderActive(false)
+        end
+
+        paintTabs(tabs, activeTab, function(tabKey)
+            return HandleTabClick(tabKey, activeTab)
         end)
 
         repainting = false
     end
 
-    local function RepaintAndRender()
+    local function RepaintAndRender(force)
         RepaintTabs()
-        RenderActive()
+        RenderActive(force ~= false)
     end
 
     if state then
         state.repaintTabs = RepaintAndRender
+        state.invalidateTabBodies = InvalidateCachedTabBodies
     end
 
-    RepaintAndRender()
+    RepaintAndRender(true)
 
     return {
         tabStrip = tabStrip,
         hosts = hosts,
         RepaintTabs = RepaintTabs,
         RenderActive = RenderActive,
+        InvalidateCachedTabBodies = InvalidateCachedTabBodies,
     }
 end

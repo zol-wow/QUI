@@ -1,5 +1,6 @@
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
+local SkinBase = ns.SkinBase
 local UIKit = ns.UIKit
 local GetCore = Helpers.GetCore
 local issecretvalue = issecretvalue
@@ -472,6 +473,28 @@ local function IsEmbedded(tooltip)
             or (parent.NineSlice and parent ~= UIParent and parent ~= WorldFrame))
 end
 
+local function StyleShoppingCompareHeader(header, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    if not header then return end
+    if header.IsForbidden and header:IsForbidden() then return end
+
+    if not SkinBase then
+        if header.SetBackdrop then pcall(header.SetBackdrop, header, nil) end
+        if header.NineSlice then pcall(header.NineSlice.Hide, header.NineSlice) end
+        return
+    end
+
+    SkinBase.StripTextures(header)
+    SkinBase.CreateBackdrop(header, sr, sg, sb, sa, bgr, bgg, bgb, 0.92)
+    local bd = SkinBase.GetBackdrop(header)
+    if bd then
+        SkinBase.SetPixelInsetPoints(bd, header, 3, 3, 3, 0)
+    end
+
+    if header.Label and header.Label.SetTextColor then
+        header.Label:SetTextColor(sr, sg, sb, 1)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Skin Application
 ---------------------------------------------------------------------------
@@ -523,11 +546,8 @@ local function ApplyTooltipChrome(tooltip)
     ResetChromeToBase(tooltip, frame)
     frame:Show()
 
-    -- Strip CompareHeader on shopping tooltips
     if tooltip.CompareHeader then
-        local h = tooltip.CompareHeader
-        if h.SetBackdrop then pcall(h.SetBackdrop, h, nil) end
-        if h.NineSlice then pcall(h.NineSlice.Hide, h.NineSlice) end
+        StyleShoppingCompareHeader(tooltip.CompareHeader, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     end
 
     -- Normal tooltip chrome follows Blizzard's tooltip frame directly.

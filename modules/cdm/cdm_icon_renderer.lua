@@ -2661,6 +2661,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         local ids = controller.auraDeltaInstanceIDs
         wipe(ids)
         local hasIDs = false
+        local hasRemovedIDs = false
 
         local spellIDs = controller.auraDeltaSpellIDs
         wipe(spellIDs)
@@ -2694,6 +2695,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 if auraInstanceID ~= nil then
                     ids[auraInstanceID] = true
                     hasIDs = true
+                    hasRemovedIDs = true
                 end
             end
         end
@@ -2723,6 +2725,15 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 end
                 if not matches
                     and itemEntryMatchesAuraSpellIdentifierSet(callbacks, entry, spellIDs, hasSpellIDs) then
+                    matches = true
+                end
+                if not matches
+                    and hasRemovedIDs
+                    and isSelfAuraUnit(unit)
+                    and isItemEntry(entry)
+                    and icon
+                    and icon._auraActive == true
+                    and iconAuraInstanceID == nil then
                     matches = true
                 end
                 if not matches and wakeAuraEntries and isAuraEntry(callbacks, entry) then

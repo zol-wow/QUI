@@ -2572,6 +2572,9 @@ local ContainerSelection = FullSurface and FullSurface.CreateSelectionController
             end
 
             EnsureTabModel():ApplyNormalized()
+            if State.invalidateTabBodies then
+                State.invalidateTabBodies()
+            end
 
             if State.repaintTabs then
                 State.repaintTabs()
@@ -2958,6 +2961,7 @@ end
 local function BuildTileBody(body, _, _, feature)
     local tabModel = EnsureTabModel(feature)
     return FullSurface.BuildMultiHostTabBody(body, {
+        cacheTabBodies = true,
         state = State,
         clearFrame = ResetBody,
         createTabStrip = BuildTabStrip,

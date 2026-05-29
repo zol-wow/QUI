@@ -184,6 +184,40 @@ local function RefreshIconLayout(iconFrame)
     end
 end
 
+function UIKit.UpdateIconLayout(iconFrame, sizePixels, borderSizePixels, r, g, b, a)
+    if not iconFrame then
+        return
+    end
+
+    local state = iconState[iconFrame]
+    if not state then
+        if sizePixels then
+            UIKit.SetSizePx(iconFrame, sizePixels, sizePixels)
+        end
+        return
+    end
+
+    if sizePixels then
+        state.sizePixels = sizePixels
+    end
+    if borderSizePixels then
+        state.borderSizePixels = borderSizePixels
+    end
+    if r ~= nil or g ~= nil or b ~= nil or a ~= nil then
+        local color = state.color
+        if not color then
+            color = {}
+            state.color = color
+        end
+        color[1] = r or color[1] or 0
+        color[2] = g or color[2] or 0
+        color[3] = b or color[3] or 0
+        color[4] = a or color[4] or 1
+    end
+
+    RefreshIconLayout(iconFrame)
+end
+
 local function RefreshAccentCheckboxLayout(checkbox)
     local state = accentCheckboxState[checkbox]
     if not state then return end

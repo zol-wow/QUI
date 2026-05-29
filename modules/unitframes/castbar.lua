@@ -337,6 +337,15 @@ local function GetSizingValues(castSettings, frame)
     return barHeight, iconSize, iconScale
 end
 
+local function CoordinateSizeToPhysicalPixels(value, frame)
+    -- Castbar size settings are laid out in frame coordinates, while UIKit
+    -- icon helpers store physical-pixel sizes for scale refreshes.
+    if not value then return nil end
+    local pixelSize = (QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(frame)) or 1
+    if not pixelSize or pixelSize <= 0 then return value end
+    return value / pixelSize
+end
+
 ---------------------------------------------------------------------------
 -- COLOR HELPERS
 ---------------------------------------------------------------------------
@@ -610,7 +619,13 @@ local function UpdateIconPosition(anchorFrame, castSettings, iconSize, iconScale
     end
 
     local baseIconSize = iconSize * iconScale
-    iconFrame:SetSize(baseIconSize, baseIconSize)
+    local iconBorderOffset = QUICore:Pixels(iconBorderSize or 1, iconFrame)
+    local r, g, b, a = GetSafeColor(castSettings.iconBorderColor, {0, 0, 0, 1})
+    if UIKit and UIKit.UpdateIconLayout then
+        UIKit.UpdateIconLayout(iconFrame, CoordinateSizeToPhysicalPixels(baseIconSize, iconFrame), iconBorderSize, r, g, b, a)
+    else
+        iconFrame:SetSize(baseIconSize, baseIconSize)
+    end
     iconFrame:ClearAllPoints()
     local iconAnchor = castSettings.iconAnchor or "TOPLEFT"
     iconFrame:SetPoint(iconAnchor, anchorFrame, iconAnchor, 0, 0)
@@ -620,8 +635,8 @@ local function UpdateIconPosition(anchorFrame, castSettings, iconSize, iconScale
         iconTexture:SetTexture(textureToUse)
         -- Inset texture by borderSize so border shows around it
         iconTexture:ClearAllPoints()
-        iconTexture:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", iconBorderSize, -iconBorderSize)
-        iconTexture:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -iconBorderSize, iconBorderSize)
+        iconTexture:SetPoint("TOPLEFT", iconFrame, "TOPLEFT", iconBorderOffset, -iconBorderOffset)
+        iconTexture:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -iconBorderOffset, iconBorderOffset)
         if ShouldShowIcon(anchorFrame, castSettings) then
             iconFrame:Show()
         else
@@ -630,7 +645,6 @@ local function UpdateIconPosition(anchorFrame, castSettings, iconSize, iconScale
         end
 
         if iconBorder then
-            local r, g, b, a = GetSafeColor(castSettings.iconBorderColor, {0, 0, 0, 1})
             iconBorder:SetColorTexture(r, g, b, a)
             iconBorder:ClearAllPoints()
             iconBorder:SetAllPoints(iconFrame)
@@ -1422,7 +1436,7 @@ local function UpdateCastbarElements(anchorFrame, unitKey, castSettings)
 
     local barHeight, iconSize, iconScale = GetSizingValues(currentCastSettings, anchorFrame)
     local borderSize = QUICore:Pixels(currentCastSettings.borderSize or 1, anchorFrame)
-    local iconBorderSize = QUICore:Pixels(currentCastSettings.iconBorderSize or 1, anchorFrame)
+    local iconBorderSize = currentCastSettings.iconBorderSize or 1
 
     anchorFrame:SetHeight(barHeight)
 
@@ -1527,6 +1541,15 @@ local function SetIconTexture(castbar, texture)
     return true
 end
 
+local function RefreshCastbarElementLayout(castbar, fallbackCastSettings)
+    if castbar and castbar.UpdateCastbarElements then
+        castbar:UpdateCastbarElements()
+    end
+
+    local settings = castbar and castbar.unitKey and GetUnitSettings(castbar.unitKey)
+    return settings and settings.castbar or fallbackCastSettings
+end
+
 ---------------------------------------------------------------------------
 -- PREVIEW MODE / SIMULATE CAST
 ---------------------------------------------------------------------------
@@ -1558,7 +1581,8 @@ local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
 
     if SetIconTexture(castbar, iconTexture) then
         castbar.previewIconTexture = iconTexture
-        if ShouldShowIcon(castbar, castSettings) then
+        local currentCastSettings = RefreshCastbarElementLayout(castbar, castSettings)
+        if ShouldShowIcon(castbar, currentCastSettings) then
             castbar.icon:Show()
         else
             castbar.icon:Hide()
@@ -1905,7 +1929,7 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
     end
 
     local ir, ig, ib, ia = GetSafeColor(castSettings.iconBorderColor, {0, 0, 0, 1})
-    UIKit.CreateIcon(anchorFrame, iconSize, castSettings.iconBorderSize or 1, ir, ig, ib, ia)
+    UIKit.CreateIcon(anchorFrame, CoordinateSizeToPhysicalPixels(iconSize, anchorFrame), castSettings.iconBorderSize or 1, ir, ig, ib, ia)
     local statusBar = CreateStatusBar(anchorFrame)
 
     local br, bg_, bb, ba = GetSafeColor(castSettings.borderColor, {0, 0, 0, 1})
@@ -2360,6 +2384,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
         SetCastbarFrameVisible(self, true)
 
         if SetIconTexture(self, iconTexture) then
+            currentCastSettings = RefreshCastbarElementLayout(self, currentCastSettings)
             if ShouldShowIcon(self, currentCastSettings) then
                 self.icon:Show()
             else
@@ -2694,7 +2719,8 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
 
             -- Set icon texture IMMEDIATELY
             if SetIconTexture(self, texture) then
-                if ShouldShowIcon(self, castSettings) then
+                local currentCastSettings = RefreshCastbarElementLayout(self, castSettings)
+                if ShouldShowIcon(self, currentCastSettings) then
                     self.icon:Show()
                 else
                     self.icon:Hide()
@@ -2935,7 +2961,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
 
     -- Create UI elements (icon with integrated border) - parented to anchorFrame
     local ir, ig, ib, ia = GetSafeColor(castSettings.iconBorderColor, {0, 0, 0, 1})
-    UIKit.CreateIcon(anchorFrame, iconSize, castSettings.iconBorderSize or 1, ir, ig, ib, ia)
+    UIKit.CreateIcon(anchorFrame, CoordinateSizeToPhysicalPixels(iconSize, anchorFrame), castSettings.iconBorderSize or 1, ir, ig, ib, ia)
     local statusBar = CreateStatusBar(anchorFrame)
 
     -- Create border for status bar (parented to statusBar)
@@ -3168,6 +3194,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
             end
 
             if SetIconTexture(self, texture) then
+                currentCastSettings = RefreshCastbarElementLayout(self, currentCastSettings)
                 if ShouldShowIcon(self, currentCastSettings) then
                     self.icon:Show()
                 else
@@ -3366,6 +3393,10 @@ local function ApplyLiveCastbarSettings(castbar, unitKey, castSettings)
     end
 
     RefreshChannelTickMarkers(castbar, castSettings)
+end
+
+function QUI_Castbar:ApplyLiveCastbarSettings(castbar, unitKey, castSettings)
+    ApplyLiveCastbarSettings(castbar, unitKey, castSettings)
 end
 
 local function QueueDeferredCastbarRefresh(castbar, refreshKey)

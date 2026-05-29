@@ -53,8 +53,7 @@ end
 
 -- Hidden parent for evicted protected frames. Sized to UIParent so children's
 -- GetRect() returns valid geometry (matters for EditMode magnetic-snap loop's
--- GetScaledSelectionSides() which crashes on nil-rect frames). Mirrors the
--- ElvUI/oUF hiddenParent pattern.
+-- GetScaledSelectionSides() which crashes on nil-rect frames).
 local _hiddenPetParent
 local _petReevictPending = false
 
@@ -84,7 +83,7 @@ local function SuppressBlizzardPetFrame()
     -- Reparent PetFrame off PlayerFrameBottomManagedFramesContainer so the
     -- container's combat-triggered Layout pass (fired by TotemFrame/pet/vehicle
     -- SetShown events) no longer iterates PetFrame via :GetChildren() and
-    -- never reads any field from it. Mirrors ElvUI/oUF's approach.
+    -- never reads any field from it.
     --
     -- Why reparent instead of ignoreInLayout: setting PetFrame.ignoreInLayout
     -- works to skip PetFrame in iteration, but the addon-write taints the
@@ -152,6 +151,69 @@ local function KillBlizzardChildFrame(frame)
         _hookedOnShowFrames[frame] = true
         Helpers.DeferredHideOnShow(frame, { clearAlpha = true, combatCheck = false })
     end
+end
+
+local function SuppressPlayerCastingBarFrame()
+    local frame = PlayerCastingBarFrame
+    if not frame then return false end
+
+    -- CastingBarFrame can be forbidden/restricted on newer clients, so keep
+    -- every frame interaction guarded. This must be repeatable because the
+    -- default player bar can reattach to spellcast events after login reloads.
+    pcall(function()
+        frame:SetAlpha(0)
+        frame:SetScale(0.0001)
+        frame:SetPoint("BOTTOMLEFT", UIParent, "TOPLEFT", -10000, 10000)
+        frame:UnregisterAllEvents()
+        frame:Hide()
+    end)
+
+    pcall(function()
+        frame:SetUnit(nil)
+    end)
+
+    if frame.Icon then
+        pcall(function()
+            frame.Icon:SetAlpha(0)
+            frame.Icon:Hide()
+        end)
+    end
+
+    return true
+end
+
+local function QueuePlayerCastingBarSuppression()
+    if _blizzFrameGuards.castbarSuppressPending then return end
+    _blizzFrameGuards.castbarSuppressPending = true
+
+    C_Timer.After(0, function()
+        _blizzFrameGuards.castbarSuppressPending = false
+        if InCombatLockdown() or Helpers.IsEditModeActive() then return end
+        SuppressPlayerCastingBarFrame()
+    end)
+end
+
+local function EnsurePlayerCastbarHideWatcher()
+    if _blizzFrameGuards.castbarShowHooked then return end
+    _blizzFrameGuards.castbarShowHooked = true
+
+    local castbarHideWatcher = CreateFrame("Frame", nil, UIParent)
+    castbarHideWatcher:SetScript("OnUpdate", function()
+        -- Skip re-hiding during Edit Mode; Blizzard uses the default castbar
+        -- visibility as part of the Cast Bar toggle and preview behavior.
+        if Helpers.IsEditModeActive() then return end
+
+        local frame = PlayerCastingBarFrame
+        if not frame then return end
+
+        local isShown = false
+        local ok = pcall(function()
+            isShown = frame:IsShown()
+        end)
+        if ok and isShown then
+            QueuePlayerCastingBarSuppression()
+        end
+    end)
 end
 
 local function HideBlizzardTargetVisuals()
@@ -255,38 +317,9 @@ function QUI_UF:HideBlizzardCastbars()
     local shouldHidePlayerCastbar = (playerFrameEnabled and playerCastbarEnabled) or standaloneActive
     if not shouldHidePlayerCastbar then return end
 
-    -- NOTE: As of 12.0.x beta, CastingBarFrame can be a forbidden/restricted frame.
-    -- All interactions are wrapped in pcall to prevent errors from blocking initialization.
-    if PlayerCastingBarFrame then
-        pcall(function()
-            PlayerCastingBarFrame:SetAlpha(0)
-            PlayerCastingBarFrame:SetScale(0.0001)
-            PlayerCastingBarFrame:SetPoint("BOTTOMLEFT", UIParent, "TOPLEFT", -10000, 10000)
-            PlayerCastingBarFrame:UnregisterAllEvents()
-        end)
-        pcall(function()
-            PlayerCastingBarFrame:SetUnit(nil)
-        end)
-        -- TAINT SAFETY: Do NOT use hooksecurefunc on PlayerCastingBarFrame (secure frame).
-        -- Even deferred callbacks taint the secure execution context.
-        -- Use an OnUpdate watcher to re-hide if Blizzard shows it again.
-        if not _blizzFrameGuards.castbarShowHooked then
-            _blizzFrameGuards.castbarShowHooked = true
-            local castbarHideWatcher = CreateFrame("Frame", nil, UIParent)
-            castbarHideWatcher:SetScript("OnUpdate", function()
-                -- Skip re-hiding during Edit Mode — PlayerCastingBarFrame visibility
-                -- is used as a signal for the Cast Bar toggle checkbox. Re-hiding it
-                -- would immediately undo the toggle and cause castbar previews to flash.
-                if Helpers.IsEditModeActive() then return end
-                if PlayerCastingBarFrame:IsShown() then
-                    C_Timer.After(0, function()
-                        if InCombatLockdown() then return end
-                        pcall(function() PlayerCastingBarFrame:Hide() end)
-                    end)
-                end
-            end)
-        end
-    end
+    EnsurePlayerCastbarHideWatcher()
+    SuppressPlayerCastingBarFrame()
+
     -- Hide pet castbar only when QUI pet frame is enabled.
     if db.enabled and db.pet and db.pet.enabled and PetCastingBarFrame then
         pcall(function()
@@ -385,4 +418,3 @@ end
 -- causing "secret number tainted by QUI" errors when Edit Mode reads them.
 -- NOTE: Use SetAlpha(0) instead of Hide(). Hidden frames return nil from
 -- GetRect(), crashing GetScaledSelectionSides() in Blizzard's magnetic snap loop.
-

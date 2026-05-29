@@ -1229,6 +1229,10 @@ assert(state.mode == "aura", "item entry should use scanned related aura while t
 assert(state.active == true, "item related aura should mark the cooldown state active")
 assert(state.auraResolved == true, "item related aura should publish auraResolved for icon state stamping")
 assert(state.auraActive == true, "item related aura should publish auraActive for icon state stamping")
+assert(state.auraInstanceID == 93001,
+    "item related aura should stamp the aura instance used for its DurationObject")
+assert(state.auraUnit == "player",
+    "item related aura should stamp the unit used for its DurationObject")
 assert(state.durObj == itemAuraDur, "item related aura should carry the aura DurationObject")
 assert(state.resolvedAuraSpellID == 92001, "item related aura should publish the buff spell ID")
 assert(state.isOnCooldown == false, "item related aura should not be treated as a real cooldown")
@@ -1260,6 +1264,8 @@ assert(state.auraResolved == true,
 assert(state.auraActive == true,
     "captured cooldown-aura mapping should publish auraActive for icon state stamping")
 assert(state.auraUnit == "player", "captured cooldown-aura mapping should keep the player unit")
+assert(state.auraInstanceID == 93001,
+    "captured cooldown-aura mapping should stamp the captured aura instance")
 
 inCombat = false
 directAuraQueriesAvailable = true

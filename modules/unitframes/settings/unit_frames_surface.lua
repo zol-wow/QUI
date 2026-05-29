@@ -69,6 +69,10 @@ local UnitSelection = FullSurface and FullSurface.CreateSelectionController
                 _G.QUI_RefreshUnitFramePreview()
             end
 
+            if State.invalidateTabBodies then
+                State.invalidateTabBodies()
+            end
+
             local activeTab = EnsureTabModel():GetActiveKey()
             local model = ResolveModel()
             local isPerUnitTab = model and model.IsPerUnitTab
@@ -977,6 +981,7 @@ end
 local function BuildTileBody(body, _, _, feature)
     local tabModel = EnsureTabModel(feature)
     return FullSurface.BuildScrollTabBody(body, {
+        cacheTabBodies = true,
         state = State,
         clearFrame = ClearFrame,
         createTabStrip = BuildTabStrip,
@@ -988,7 +993,7 @@ local function BuildTileBody(body, _, _, feature)
         setActiveTab = function(tabKey)
             tabModel:SetActiveKey(tabKey)
         end,
-        render = function(host) return tabModel:RenderKey(host) end,
+        render = function(host, activeTab) return tabModel:RenderKey(host, activeTab) end,
     })
 end
 

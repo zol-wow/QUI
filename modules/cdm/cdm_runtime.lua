@@ -2232,8 +2232,11 @@ local function QueryCapturedPlayerAuraDuration(spellID, name)
         return nil
     end
 
-    return Sources.QueryAuraDuration(captured.unit or "player", auraInstanceID),
-        captured.spellID
+    local auraUnit = captured.unit or "player"
+    return Sources.QueryAuraDuration(auraUnit, auraInstanceID),
+        captured.spellID,
+        auraInstanceID,
+        auraUnit
 end
 
 local function QueryPlayerAuraDurationBySpellID(rawSpellID, name)
@@ -2241,9 +2244,10 @@ local function QueryPlayerAuraDurationBySpellID(rawSpellID, name)
         return nil
     end
 
-    local capturedDurObj, capturedAuraSpellID = QueryCapturedPlayerAuraDuration(rawSpellID, name)
+    local capturedDurObj, capturedAuraSpellID, capturedAuraInstanceID, capturedAuraUnit =
+        QueryCapturedPlayerAuraDuration(rawSpellID, name)
     if capturedDurObj then
-        return capturedDurObj, capturedAuraSpellID
+        return capturedDurObj, capturedAuraSpellID, capturedAuraInstanceID, capturedAuraUnit
     end
 
     local function queryAuraData(auraSpellID)
@@ -2268,15 +2272,15 @@ local function QueryPlayerAuraDurationBySpellID(rawSpellID, name)
         local auraInstanceID = GetAuraDataInstanceID(auraData)
         if not HasOpaqueValue(auraInstanceID) then return nil end
 
-        return Sources.QueryAuraDuration("player", auraInstanceID), auraSpellID
+        return Sources.QueryAuraDuration("player", auraInstanceID), auraSpellID, auraInstanceID, "player"
     end
 
     if Sources.QueryCooldownAuraBySpellID then
         local auraSpellID = Sources.QueryCooldownAuraBySpellID(rawSpellID)
         if not ResolverIsSecretValue(auraSpellID) and auraSpellID ~= nil then
-            local durObj = queryDuration(auraSpellID)
+            local durObj, resolvedAuraSpellID, auraInstanceID, auraUnit = queryDuration(auraSpellID)
             if durObj then
-                return durObj, auraSpellID
+                return durObj, resolvedAuraSpellID, auraInstanceID, auraUnit
             end
         end
     end
@@ -2291,9 +2295,10 @@ local function QueryPlayerAuraDurationByName(name)
         return nil
     end
 
-    local capturedDurObj = QueryCapturedPlayerAuraDuration(nil, name)
+    local capturedDurObj, _, capturedAuraInstanceID, capturedAuraUnit =
+        QueryCapturedPlayerAuraDuration(nil, name)
     if capturedDurObj then
-        return capturedDurObj
+        return capturedDurObj, capturedAuraInstanceID, capturedAuraUnit
     end
 
     if not Sources.QueryAuraDataBySpellName then
@@ -2308,7 +2313,7 @@ local function QueryPlayerAuraDurationByName(name)
     local auraInstanceID = GetAuraDataInstanceID(auraData)
     if not HasOpaqueValue(auraInstanceID) then return nil end
 
-    return Sources.QueryAuraDuration("player", auraInstanceID)
+    return Sources.QueryAuraDuration("player", auraInstanceID), auraInstanceID, "player"
 end
 
 local function IsUsableMirrorID(value)
@@ -3963,8 +3968,10 @@ local function ResolveItemAuraForContext(state, context, entry, itemID, itemSpel
     end
 
     local function trySpellID(rawSpellID, sourceKey)
-        local durObj, resolvedAuraSpellID = QueryPlayerAuraDurationBySpellID(rawSpellID, entry.name)
+        local durObj, resolvedAuraSpellID, auraInstanceID, auraUnit =
+            QueryPlayerAuraDurationBySpellID(rawSpellID, entry.name)
         if durObj then
+            local cleanAuraInstanceID = CleanOpaqueValue(auraInstanceID)
             state.mode = "aura"
             SetCooldownStateActivity(state, true)
             state.durObj = durObj
@@ -3973,7 +3980,9 @@ local function ResolveItemAuraForContext(state, context, entry, itemID, itemSpel
             state.auraResolved = true
             state.auraActive = true
             state.auraIsActive = true
-            state.auraUnit = "player"
+            state.auraUnit = auraUnit or "player"
+            state.auraInstanceID = cleanAuraInstanceID
+            state.hasAuraInstanceID = HasOpaqueValue(auraInstanceID)
             state.resolvedAuraSpellID = resolvedAuraSpellID or rawSpellID
             return true
         end
@@ -4071,8 +4080,9 @@ local function ResolveItemAuraForContext(state, context, entry, itemID, itemSpel
     if trySpellID(entry.overrideSpellID, "override") then return true end
     if trySpellID(entry.id, "id") then return true end
 
-    local durObj = QueryPlayerAuraDurationByName(entry.name)
+    local durObj, auraInstanceID, auraUnit = QueryPlayerAuraDurationByName(entry.name)
     if durObj then
+        local cleanAuraInstanceID = CleanOpaqueValue(auraInstanceID)
         state.mode = "aura"
         SetCooldownStateActivity(state, true)
         state.durObj = durObj
@@ -4080,7 +4090,9 @@ local function ResolveItemAuraForContext(state, context, entry, itemID, itemSpel
         state.auraResolved = true
         state.auraActive = true
         state.auraIsActive = true
-        state.auraUnit = "player"
+        state.auraUnit = auraUnit or "player"
+        state.auraInstanceID = cleanAuraInstanceID
+        state.hasAuraInstanceID = HasOpaqueValue(auraInstanceID)
         state.resolvedAuraSpellID = itemSpellID
         state.spellID = itemSpellID
         return true

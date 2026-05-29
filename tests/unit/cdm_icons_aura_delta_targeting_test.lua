@@ -36,9 +36,12 @@ local layoutRequests = 0
 local subscriptions = {}
 local buffContainerShows = 0
 local itemAuraDur = { token = "item-aura-duration" }
+local itemCooldownDur = { token = "item-cooldown-duration" }
 local itemAuraAppliedDuration
 local itemAuraReverse
 local itemAuraApplyCount = 0
+local itemAuraActive = true
+local itemAuraPublishesInstanceID = true
 local mirroredBuffTargetDur = { token = "mirrored-buff-target-duration" }
 local mirroredBuffPlayerDur = { token = "mirrored-buff-player-duration" }
 local mirroredBuffAppliedDuration
@@ -276,6 +279,19 @@ local ns = {
                 }
             end
             if name == "itemAura" then
+                if not itemAuraActive then
+                    return {
+                        mode = "item-cooldown",
+                        active = true,
+                        isActive = true,
+                        durObj = itemCooldownDur,
+                        sourceID = "item-cooldown:241288",
+                        spellID = 1236994,
+                        isOnCooldown = true,
+                        hasDurationObject = true,
+                        hasRenderableCooldown = true,
+                    }
+                end
                 return {
                     mode = "aura",
                     active = true,
@@ -286,7 +302,7 @@ local ns = {
                     auraResolved = true,
                     auraActive = true,
                     auraIsActive = true,
-                    auraInstanceID = 622,
+                    auraInstanceID = itemAuraPublishesInstanceID and 622 or nil,
                     auraUnit = "player",
                     resolvedAuraSpellID = 555001,
                     isOnCooldown = false,
@@ -492,6 +508,36 @@ inCombat = false
 
 assert(itemAuraApplyCount == 2,
     "combat aura refresh should rebind the DurationObject even when auraInstanceID and durObj identity are unchanged")
+
+itemAuraActive = true
+itemAuraPublishesInstanceID = false
+itemAuraIcon._auraActive = true
+itemAuraIcon._auraUnit = "player"
+itemAuraIcon._auraInstanceID = nil
+itemAuraIcon._lastAuraDurObj = itemAuraDur
+itemAuraAppliedDuration = nil
+itemAuraReverse = nil
+resolveCounts.itemAura = 0
+
+itemAuraActive = false
+icons.HandleRuntimeRefresh("UNIT_AURA", "player", {
+    isFullUpdate = false,
+    removedAuraInstanceIDs = { 622 },
+})
+
+assert(resolveCounts.itemAura == 1,
+    "removed player aura should re-resolve active item aura icons even when no auraInstanceID was stamped")
+assert(itemAuraIcon._auraActive == false,
+    "removed player aura should clear stale item aura state")
+assert(itemAuraIcon._resolvedCooldownMode == "item-cooldown",
+    "removed item aura should reveal the underlying item cooldown")
+assert(itemAuraAppliedDuration == itemCooldownDur,
+    "removed item aura should bind the item cooldown DurationObject")
+assert(itemAuraReverse == false,
+    "removed item aura should leave aura/reverse cooldown mode")
+
+itemAuraActive = true
+itemAuraPublishesInstanceID = true
 
 buffAuraIcon._shown = false
 buffAuraIcon._auraActive = false

@@ -8398,7 +8398,111 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
     -- Prevents widget-instance leaks and preserves ephemeral state.
     tile._subPageBodies = tile._subPageBodies or {}
 
-    local function select(i)
+    local function RunOnSelect(sp, contentBody)
+        return onSelect(sp, contentBody)
+    end
+
+    local select
+
+    local function BuildSubPageBody(i)
+        if tile._subPageBodies[i] then
+            return tile._subPageBodies[i]
+        end
+
+        local sp = subPages[i]
+        if not sp then
+            return nil
+        end
+
+        local container = CreateFrame("Frame", nil, body)
+        container:SetAllPoints(body)
+        container:Hide()
+        tile._subPageBodies[i] = container
+
+        local function installRegisterSection(targetBody)
+            targetBody._sections = {}
+            function targetBody:RegisterSection(id, label, frame)
+                if type(id) ~= "string" or id == "" or not frame then return end
+                local resolvedLabel = (type(label) == "string" and label ~= "") and label or id
+                -- Dedupe by id so partial re-renders that don't go through
+                -- ClearDynamicContent (e.g. provider notifications that
+                -- re-invoke the renderer in place) replace the stale frame
+                -- reference instead of growing the list. Without this the
+                -- chip strip's idx-based clicks land on hidden ghosts.
+                for j, existing in ipairs(self._sections) do
+                    if existing.id == id then
+                        self._sections[j] = { id = id, label = resolvedLabel, frame = frame }
+                        return
+                    end
+                end
+                self._sections[#self._sections + 1] = {
+                    id = id,
+                    label = resolvedLabel,
+                    frame = frame,
+                }
+            end
+        end
+
+        -- installRegisterSection must run before onSelect in each branch:
+        -- onSelect triggers the page builder (e.g. BuildFeatureStackPage),
+        -- which calls RegisterSection, so the method must already exist on
+        -- contentBody by then. The guard in BuildFeatureStackPage drops
+        -- registrations silently if the method is missing.
+        local scrollFrame, contentBody
+        if sp.noScroll then
+            contentBody = container
+            installRegisterSection(contentBody)
+            RunOnSelect(sp, contentBody)
+        elseif ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
+            scrollFrame, contentBody = ns.QUI_Options.CreateScrollableContent(container)
+            installRegisterSection(contentBody)
+            RunOnSelect(sp, contentBody)
+        else
+            contentBody = container
+            installRegisterSection(contentBody)
+            RunOnSelect(sp, contentBody)
+        end
+
+        container._scrollFrame = scrollFrame
+        container._contentBody = contentBody
+
+        -- Section nav strip (opt-in). Requires a scroll frame, >=2
+        -- registered sections, and content taller than the viewport.
+        -- The strip is built lazily because contentBody height isn't
+        -- known until the first layout pass settles.
+        if sp.sectionNav and scrollFrame and #contentBody._sections >= 2 then
+            local function tryBuildSectionNav()
+                if container._sectionNav then return end
+                local bodyH = contentBody:GetHeight() or 0
+                local viewH = scrollFrame:GetHeight() or 0
+                if bodyH > viewH and viewH > 0 then
+                    container._sectionNav = GUI:RenderSectionNav(scrollFrame, contentBody, contentBody._sections)
+                end
+            end
+
+            -- Try immediately (covers the case where everything is already
+            -- laid out by the time onSelect returns), then again after a
+            -- frame so deferred layout settles.
+            tryBuildSectionNav()
+            C_Timer.After(0, tryBuildSectionNav)
+
+            -- And also when content height changes -- newly arriving content
+            -- can flip the page from no-scroll to scroll.
+            contentBody:HookScript("OnSizeChanged", function()
+                if not container._sectionNav then
+                    C_Timer.After(0, tryBuildSectionNav)
+                end
+            end)
+        end
+
+        return container
+    end
+
+    local function RunSubPageTabClick(i)
+        return select(i)
+    end
+
+    select = function(i)
         currentIndex = i
         tile._activeSubPageIndex = i
         for j, t in ipairs(tabs) do
@@ -8432,92 +8536,10 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
         -- Lazily build this sub-page's body the first time it's selected.
         -- Each sub-page gets its own container. If the sub-page's builder
         -- doesn't self-wrap (BuildXxxTab pattern), we wrap it in a QUI-skinned
-        -- scroll frame. If it DOES self-wrap (CreateXxxPage pattern → calls
+        -- scroll frame. If it DOES self-wrap (CreateXxxPage pattern -> calls
         -- CreateScrollableContent internally), set noScroll=true on the
         -- sub-page entry so we don't nest scroll frames.
-        if not tile._subPageBodies[i] then
-            local sp = subPages[i]
-            local container = CreateFrame("Frame", nil, body)
-            container:SetAllPoints(body)
-            container:Hide()
-            tile._subPageBodies[i] = container
-
-            local function installRegisterSection(targetBody)
-                targetBody._sections = {}
-                function targetBody:RegisterSection(id, label, frame)
-                    if type(id) ~= "string" or id == "" or not frame then return end
-                    local resolvedLabel = (type(label) == "string" and label ~= "") and label or id
-                    -- Dedupe by id so partial re-renders that don't go through
-                    -- ClearDynamicContent (e.g. provider notifications that
-                    -- re-invoke the renderer in place) replace the stale frame
-                    -- reference instead of growing the list. Without this the
-                    -- chip strip's idx-based clicks land on hidden ghosts.
-                    for i, existing in ipairs(self._sections) do
-                        if existing.id == id then
-                            self._sections[i] = { id = id, label = resolvedLabel, frame = frame }
-                            return
-                        end
-                    end
-                    self._sections[#self._sections + 1] = {
-                        id = id,
-                        label = resolvedLabel,
-                        frame = frame,
-                    }
-                end
-            end
-
-            -- installRegisterSection must run before onSelect in each branch:
-            -- onSelect triggers the page builder (e.g. BuildFeatureStackPage),
-            -- which calls RegisterSection, so the method must already exist on
-            -- contentBody by then. The guard in BuildFeatureStackPage drops
-            -- registrations silently if the method is missing.
-            local scrollFrame, contentBody
-            if sp.noScroll then
-                contentBody = container
-                installRegisterSection(contentBody)
-                onSelect(sp, contentBody)
-            elseif ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
-                scrollFrame, contentBody = ns.QUI_Options.CreateScrollableContent(container)
-                installRegisterSection(contentBody)
-                onSelect(sp, contentBody)
-            else
-                contentBody = container
-                installRegisterSection(contentBody)
-                onSelect(sp, contentBody)
-            end
-
-            container._scrollFrame = scrollFrame
-            container._contentBody = contentBody
-
-            -- Section nav strip (opt-in). Requires a scroll frame, ≥2
-            -- registered sections, and content taller than the viewport.
-            -- The strip is built lazily because contentBody height isn't
-            -- known until the first layout pass settles.
-            if sp.sectionNav and scrollFrame and #contentBody._sections >= 2 then
-                local function tryBuildSectionNav()
-                    if container._sectionNav then return end
-                    local bodyH = contentBody:GetHeight() or 0
-                    local viewH = scrollFrame:GetHeight() or 0
-                    if bodyH > viewH and viewH > 0 then
-                        container._sectionNav = GUI:RenderSectionNav(scrollFrame, contentBody, contentBody._sections)
-                    end
-                end
-
-                -- Try immediately (covers the case where everything is
-                -- already laid out by the time onSelect returns), then
-                -- again after a frame so deferred layout settles.
-                tryBuildSectionNav()
-                C_Timer.After(0, tryBuildSectionNav)
-
-                -- And also when content height changes — newly arriving
-                -- content can flip the page from no-scroll to scroll.
-                contentBody:HookScript("OnSizeChanged", function()
-                    if not container._sectionNav then
-                        C_Timer.After(0, tryBuildSectionNav)
-                    end
-                end)
-            end
-        end
+        BuildSubPageBody(i)
 
         tile._subPageBodies[i]:Show()
     end
@@ -8546,7 +8568,7 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
         btn.activeBar:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
         btn.activeBar:Hide()
 
-        btn:SetScript("OnClick", function() select(i) end)
+        btn:SetScript("OnClick", function() RunSubPageTabClick(i) end)
 
         tabs[i] = btn
     end
