@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha65 - 2026-05-28
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha64 profiles carry over unchanged. The new boss-frame layout keys are seeded from your current boss spacing, so frames stay where they are until you change the grow direction.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Added
+- **Damage meter: previous-session history.** The damage meter now keeps recorded sessions instead of only the current fight. A session selector lets you switch between the live session and previous ones, with per-session breakdowns routed to the session you pick. Resetting the meter clears the stored sessions and invalidates the cached view.
+- **Unit frames: configurable boss frame group layout.** Boss frames can now grow in any of four directions (Up, Down, Left, Right) with independent X and Y spacing, instead of a fixed vertical stack. New Grow Direction dropdown and X/Y Spacing sliders live in the boss-frame appearance settings; the layout-mode mover treats the boss group as one unit.
+
+### Changed
+- **Castbar settings apply live, including in combat.** Castbar element changes refresh immediately rather than waiting for a reload, and castbar icon sizing now routes through the shared pixel-aware icon helpers so the icon and its border stay crisp after UI-scale changes.
+- **Options surfaces load faster.** Settings tabs are cached and warmed up, and the full-surface render path was tightened to cut redundant work when opening and switching options pages.
+
+### Fixed
+- **CDM: pandemic glow is no longer suppressed by the per-spell glow toggle.** A spell's per-spell overlay/proc glow override and its pandemic (aura-expiry) glow are distinct signals; turning off the overlay glow no longer hides the pandemic glow.
+- **Item aura removal now refreshes correctly.** Removing an item-based aura updates the affected frames immediately instead of leaving stale state behind.
+- **Skinning regressions cleaned up.** World map fill layering and the shopping/compare tooltip header skinning were corrected, and the Blizzard unit-frame castbar suppression path was hardened.
+
+
+
 ## v3.6.0-alpha64 - 2026-05-28
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** This alpha supersedes `v3.6.0-alpha63`, which shipped the same runtime changes with fallback release notes. No schema migrations; existing alpha62/alpha63 profiles carry over unchanged.
