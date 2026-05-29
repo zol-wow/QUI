@@ -612,13 +612,12 @@ function QUI_LayoutMode:Open()
                     if _G.QUI_SetFrameLayoutOwned then
                         _G.QUI_SetFrameLayoutOwned(targetFrame, hKey)
                     end
+                    local cdx, cdy = 0, 0
+                    if hDef.getCenterOffset then
+                        cdx, cdy = hDef.getCenterOffset(handle:GetSize())
+                    end
                     targetFrame:ClearAllPoints()
-                    if hKey == "bossFrames" then
-                        -- Boss1 anchors to the TOP of the handle, not center
-                        targetFrame:SetPoint("TOPLEFT", handle, "TOPLEFT", 0, 0)
-                        targetFrame:SetPoint("TOPRIGHT", handle, "TOPRIGHT", 0, 0)
-                    elseif hDef.getCenterOffset then
-                        local cdx, cdy = hDef.getCenterOffset(handle:GetSize())
+                    if hDef.getCenterOffset then
                         targetFrame:SetPoint("CENTER", handle, "CENTER", -cdx, -cdy)
                     else
                         targetFrame:SetAllPoints(handle)
@@ -637,6 +636,9 @@ function QUI_LayoutMode:Open()
                                     bf:SetParent(handle)
                                     bf:SetFrameStrata("DIALOG")
                                     bf:SetFrameLevel(1)
+                                    if _G.QUI_SetFrameLayoutOwned then
+                                        _G.QUI_SetFrameLayoutOwned(bf, hKey)
+                                    end
                                 end
                             end
                             -- Reparent boss castbars
@@ -767,7 +769,12 @@ function QUI_LayoutMode:Close(skipSaveCheck)
             if bossFrames then
                 for i, savedParent in pairs(handle._savedBossParents) do
                     local bf = bossFrames["boss" .. i]
-                    if bf then pcall(bf.SetParent, bf, savedParent) end
+                    if bf then
+                        pcall(bf.SetParent, bf, savedParent)
+                        if _G.QUI_SetFrameLayoutOwned then
+                            _G.QUI_SetFrameLayoutOwned(bf, nil)
+                        end
+                    end
                 end
             end
             handle._savedBossParents = nil
@@ -1931,14 +1938,17 @@ AddHandleScripts = function(handle, def)
                 if def2 then
                     local targetFrame = def2.getFrame and def2.getFrame()
                     if targetFrame then
-                        pcall(targetFrame.ClearAllPoints, targetFrame)
-                        -- Boss frames: keep boss1 at TOPLEFT of handle.
-                        -- Boss1 is a child of the handle so it moves with it;
-                        -- setting CENTER/UIParent would fight the anchor point.
+                        -- Boss frames: place boss1 at the group center within the
+                        -- handle so the multi-direction group stays inside the mover.
                         if key == "bossFrames" then
-                            pcall(targetFrame.SetPoint, targetFrame, "TOPLEFT", frame, "TOPLEFT", 0, 0)
-                            pcall(targetFrame.SetPoint, targetFrame, "TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+                            local cdx, cdy = 0, 0
+                            if def2.getCenterOffset then
+                                cdx, cdy = def2.getCenterOffset(frame:GetSize())
+                            end
+                            pcall(targetFrame.ClearAllPoints, targetFrame)
+                            pcall(targetFrame.SetPoint, targetFrame, "CENTER", frame, "CENTER", -cdx, -cdy)
                         else
+                            pcall(targetFrame.ClearAllPoints, targetFrame)
                             local frameOx, frameOy = postSnapOx, postSnapOy
                             if def2.getCenterOffset then
                                 local cdx, cdy = def2.getCenterOffset(frame:GetSize())
@@ -1962,14 +1972,23 @@ AddHandleScripts = function(handle, def)
                     if def2 then
                         local targetFrame = def2.getFrame and def2.getFrame()
                         if targetFrame then
-                            local frameOx, frameOy = newOx, newOy
-                            if def2.getCenterOffset then
-                                local cdx, cdy = def2.getCenterOffset(data.handle:GetSize())
-                                frameOx = frameOx - cdx
-                                frameOy = frameOy - cdy
+                            if k == "bossFrames" then
+                                local cdx, cdy = 0, 0
+                                if def2.getCenterOffset then
+                                    cdx, cdy = def2.getCenterOffset(data.handle:GetSize())
+                                end
+                                pcall(targetFrame.ClearAllPoints, targetFrame)
+                                pcall(targetFrame.SetPoint, targetFrame, "CENTER", data.handle, "CENTER", -cdx, -cdy)
+                            else
+                                local frameOx, frameOy = newOx, newOy
+                                if def2.getCenterOffset then
+                                    local cdx, cdy = def2.getCenterOffset(data.handle:GetSize())
+                                    frameOx = frameOx - cdx
+                                    frameOy = frameOy - cdy
+                                end
+                                pcall(targetFrame.ClearAllPoints, targetFrame)
+                                pcall(targetFrame.SetPoint, targetFrame, "CENTER", UIParent, "CENTER", frameOx, frameOy)
                             end
-                            pcall(targetFrame.ClearAllPoints, targetFrame)
-                            pcall(targetFrame.SetPoint, targetFrame, "CENTER", UIParent, "CENTER", frameOx, frameOy)
                         end
                     end
                     -- Update coordinate display
@@ -2087,14 +2106,23 @@ AddHandleScripts = function(handle, def)
             if def2 then
                 local targetFrame = def2.getFrame and def2.getFrame()
                 if targetFrame then
-                    local frameOx, frameOy = ox, oy
-                    if def2.getCenterOffset then
-                        local cdx, cdy = def2.getCenterOffset(self:GetSize())
-                        frameOx = frameOx - cdx
-                        frameOy = frameOy - cdy
+                    if key == "bossFrames" then
+                        local cdx, cdy = 0, 0
+                        if def2.getCenterOffset then
+                            cdx, cdy = def2.getCenterOffset(self:GetSize())
+                        end
+                        pcall(targetFrame.ClearAllPoints, targetFrame)
+                        pcall(targetFrame.SetPoint, targetFrame, "CENTER", self, "CENTER", -cdx, -cdy)
+                    else
+                        local frameOx, frameOy = ox, oy
+                        if def2.getCenterOffset then
+                            local cdx, cdy = def2.getCenterOffset(self:GetSize())
+                            frameOx = frameOx - cdx
+                            frameOy = frameOy - cdy
+                        end
+                        pcall(targetFrame.ClearAllPoints, targetFrame)
+                        pcall(targetFrame.SetPoint, targetFrame, "CENTER", UIParent, "CENTER", frameOx, frameOy)
                     end
-                    pcall(targetFrame.ClearAllPoints, targetFrame)
-                    pcall(targetFrame.SetPoint, targetFrame, "CENTER", UIParent, "CENTER", frameOx, frameOy)
                 end
                 if def2.onLiveMove then
                     pcall(def2.onLiveMove, key)
@@ -2463,15 +2491,18 @@ SyncHandle = function(key)
         end
     end
 
-    -- Boss frames: re-anchor boss1 to the top of the handle after any sync.
-    -- ApplyFrameAnchor may have repositioned boss1 relative to a different
-    -- parent, breaking the TOP anchoring set during deferred reparenting.
+    -- Boss frames: keep boss1 placed inside the grouped handle after any
+    -- sync. ApplyFrameAnchor may have repositioned boss1 relative to a
+    -- different parent during layout updates.
     if key == "bossFrames" and not handle._isChildOverlay then
         local frame = def.getFrame and def.getFrame()
         if frame and handle._savedTargetParent then
+            local cdx, cdy = 0, 0
+            if def.getCenterOffset then
+                cdx, cdy = def.getCenterOffset(handle:GetSize())
+            end
             pcall(frame.ClearAllPoints, frame)
-            pcall(frame.SetPoint, frame, "TOPLEFT", handle, "TOPLEFT", 0, 0)
-            pcall(frame.SetPoint, frame, "TOPRIGHT", handle, "TOPRIGHT", 0, 0)
+            pcall(frame.SetPoint, frame, "CENTER", handle, "CENTER", -cdx, -cdy)
         end
     end
 
@@ -2575,12 +2606,15 @@ function QUI_LayoutMode:NudgeMover(key, dx, dy)
         if def then
             local frame = def.getFrame and def.getFrame()
             if frame then
-                pcall(frame.ClearAllPoints, frame)
-                -- Boss frames: keep boss1 anchored to TOP of handle
                 if key == "bossFrames" then
-                    pcall(frame.SetPoint, frame, "TOPLEFT", handle, "TOPLEFT", 0, 0)
-                    pcall(frame.SetPoint, frame, "TOPRIGHT", handle, "TOPRIGHT", 0, 0)
+                    local cdx, cdy = 0, 0
+                    if def.getCenterOffset then
+                        cdx, cdy = def.getCenterOffset(handle:GetSize())
+                    end
+                    pcall(frame.ClearAllPoints, frame)
+                    pcall(frame.SetPoint, frame, "CENTER", handle, "CENTER", -cdx, -cdy)
                 else
+                    pcall(frame.ClearAllPoints, frame)
                     pcall(frame.SetPoint, frame, "CENTER", UIParent, "CENTER", ox, oy)
                 end
             end
@@ -3375,6 +3409,34 @@ function QUI_LayoutMode:ToggleHandlePreview(key)
             end
             handle._savedTargetParent = nil
         end
+        if key == "bossFrames" then
+            if handle._savedBossParents then
+                local QUI_UF = ns.QUI_UnitFrames
+                local bossFrames = QUI_UF and QUI_UF.frames
+                if bossFrames then
+                    for i, savedParent in pairs(handle._savedBossParents) do
+                        local bf = bossFrames["boss" .. i]
+                        if bf then
+                            pcall(bf.SetParent, bf, savedParent)
+                            if _G.QUI_SetFrameLayoutOwned then
+                                _G.QUI_SetFrameLayoutOwned(bf, nil)
+                            end
+                        end
+                    end
+                end
+                handle._savedBossParents = nil
+            end
+            if handle._savedCastbarParents then
+                local castbars = ns.QUI_Castbar and ns.QUI_Castbar.castbars
+                if castbars then
+                    for i, savedParent in pairs(handle._savedCastbarParents) do
+                        local cb = castbars["boss" .. i]
+                        if cb then pcall(cb.SetParent, cb, savedParent) end
+                    end
+                end
+                handle._savedCastbarParents = nil
+            end
+        end
         -- Hide it
         handle:Hide()
         if hidden then hidden[key] = true end
@@ -3433,6 +3495,38 @@ function QUI_LayoutMode:ToggleHandlePreview(key)
                     targetFrame:SetPoint("CENTER", handle, "CENTER", -cdx, -cdy)
                 else
                     targetFrame:SetAllPoints(handle)
+                end
+                if key == "bossFrames" then
+                    local QUI_UF = ns.QUI_UnitFrames
+                    local bossFrames = QUI_UF and QUI_UF.frames
+                    if bossFrames then
+                        for i = 2, 5 do
+                            local bf = bossFrames["boss" .. i]
+                            if bf and bf:IsShown() then
+                                if not handle._savedBossParents then handle._savedBossParents = {} end
+                                handle._savedBossParents[i] = bf:GetParent()
+                                bf:SetParent(handle)
+                                bf:SetFrameStrata("DIALOG")
+                                bf:SetFrameLevel(1)
+                                if _G.QUI_SetFrameLayoutOwned then
+                                    _G.QUI_SetFrameLayoutOwned(bf, key)
+                                end
+                            end
+                        end
+                        local castbars = ns.QUI_Castbar and ns.QUI_Castbar.castbars
+                        if castbars then
+                            if not handle._savedCastbarParents then handle._savedCastbarParents = {} end
+                            for i = 1, 5 do
+                                local cb = castbars["boss" .. i]
+                                if cb and cb:IsShown() then
+                                    handle._savedCastbarParents[i] = cb:GetParent()
+                                    cb:SetParent(handle)
+                                    cb:SetFrameStrata("DIALOG")
+                                    cb:SetFrameLevel(2)
+                                end
+                            end
+                        end
+                    end
                 end
             end
         end)

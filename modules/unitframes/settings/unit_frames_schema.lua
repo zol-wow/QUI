@@ -494,6 +494,29 @@ local function RefreshUnitFrames()
     end
 end
 
+local BOSS_GROW_OPTIONS = {
+    { value = "UP",    text = "Up" },
+    { value = "DOWN",  text = "Down" },
+    { value = "LEFT",  text = "Left" },
+    { value = "RIGHT", text = "Right" },
+}
+
+local BOSS_GROW_DIRECTIONS_VALID = { UP = true, DOWN = true, LEFT = true, RIGHT = true }
+
+-- Refresh boss frames after a layout setting changes: rebuild the frames,
+-- re-chain boss2-5 off boss1, and resync the grouped layout-mode mover.
+local function RefreshBossLayout()
+    RefreshUnitFrames()
+    local unitFrames = ns.QUI_UnitFrames
+    if unitFrames and unitFrames.UpdateBossFrameLayout then
+        unitFrames:UpdateBossFrameLayout()
+    end
+    local layoutMode = ns.QUI_LayoutMode
+    if layoutMode and layoutMode.SyncElement then
+        layoutMode:SyncElement("bossFrames")
+    end
+end
+
 local function RefreshUnitAuras(unitKey)
     RefreshUnitFrames()
     if _G.QUI_RefreshAuras and type(unitKey) == "string" and unitKey ~= "" then
@@ -1245,10 +1268,33 @@ local function RenderFrameAppearanceSection(sectionHost, ctx)
     )
 
     if unitKey == "boss" then
-        local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "spacing", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
-            description = "Vertical spacing in pixels between adjacent boss frames in an encounter.",
+        -- Seed the directional spacing keys from the legacy single spacing so
+        -- existing profiles keep their customized boss spacing.
+        local legacySpacing = unit.unitDB.spacing or 35
+        if not BOSS_GROW_DIRECTIONS_VALID[unit.unitDB.growDirection] then
+            unit.unitDB.growDirection = "DOWN"
+        end
+        if rawget(unit.unitDB, "xSpacing") == nil then
+            unit.unitDB.xSpacing = legacySpacing
+        end
+        if rawget(unit.unitDB, "ySpacing") == nil then
+            unit.unitDB.ySpacing = legacySpacing
+        end
+
+        local growDropdown = gui:CreateFormDropdown(card.frame, nil, BOSS_GROW_OPTIONS, "growDirection", unit.unitDB, RefreshBossLayout, {
+            description = "Direction the boss frame group grows from the first frame: Up, Down, Left, or Right.",
         })
-        card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Spacing", spacingSlider))
+        local xSpacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "xSpacing", unit.unitDB, RefreshBossLayout, { deferOnDrag = true }, {
+            description = "Horizontal spacing in pixels between adjacent boss frames (used when growing Left or Right).",
+        })
+        local ySpacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "ySpacing", unit.unitDB, RefreshBossLayout, { deferOnDrag = true }, {
+            description = "Vertical spacing in pixels between adjacent boss frames (used when growing Up or Down).",
+        })
+        card.AddRow(
+            optionsAPI.BuildSettingRow(card.frame, "Grow Direction", growDropdown),
+            optionsAPI.BuildSettingRow(card.frame, "X Spacing", xSpacingSlider)
+        )
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Y Spacing", ySpacingSlider))
     elseif unitKey == "target" then
         local invertCheckbox = gui:CreateFormCheckbox(card.frame, nil, "invertHealthDirection", unit.unitDB, RefreshUnitFrames, {
             description = "Fill the target's health bar left-to-right instead of right-to-left, so both the player and target bars grow inward toward the center.",

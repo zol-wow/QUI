@@ -188,6 +188,57 @@ local function GetUnitSettings(unit)
     return db and db[unit]
 end
 
+local VALID_BOSS_GROW_DIRECTION = {
+    UP = true,
+    DOWN = true,
+    LEFT = true,
+    RIGHT = true,
+}
+
+local function GetBossLayoutSettings(settings)
+    if not settings then return "DOWN", 35, 35 end
+
+    local direction = rawget(settings, "growDirection") or settings.growDirection or "DOWN"
+    if not VALID_BOSS_GROW_DIRECTION[direction] then
+        direction = "DOWN"
+    end
+
+    local legacySpacing = rawget(settings, "spacing")
+    if legacySpacing == nil then
+        legacySpacing = settings.spacing
+    end
+    legacySpacing = tonumber(legacySpacing) or 35
+
+    local xSpacing = rawget(settings, "xSpacing")
+    if xSpacing == nil then
+        xSpacing = legacySpacing
+    end
+    xSpacing = tonumber(xSpacing) or legacySpacing
+
+    local ySpacing = rawget(settings, "ySpacing")
+    if ySpacing == nil then
+        ySpacing = legacySpacing
+    end
+    ySpacing = tonumber(ySpacing) or legacySpacing
+
+    return direction, xSpacing, ySpacing
+end
+
+local function AnchorBossFrameToPrevious(frame, previousFrame, direction, xSpacing, ySpacing)
+    if not frame or not previousFrame then return end
+
+    frame:ClearAllPoints()
+    if direction == "UP" then
+        frame:SetPoint("BOTTOM", previousFrame, "TOP", 0, ySpacing)
+    elseif direction == "LEFT" then
+        frame:SetPoint("RIGHT", previousFrame, "LEFT", -xSpacing, 0)
+    elseif direction == "RIGHT" then
+        frame:SetPoint("LEFT", previousFrame, "RIGHT", xSpacing, 0)
+    else
+        frame:SetPoint("TOP", previousFrame, "BOTTOM", 0, -ySpacing)
+    end
+end
+
 -- Resolve name settings: group frames use nested "name" sub-table, solo frames use flat keys
 local function GetNameSettings(settings)
     return settings and settings.name or settings
@@ -3321,7 +3372,7 @@ function QUI_UF:RefreshFrame(unitKey)
     if unitKey == "boss" then
         local settings = GetUnitSettings("boss")
         local general = GetGeneralSettings()
-        local spacing = settings and settings.spacing or 40
+        local bossGrowDirection, bossSpacingX, bossSpacingY = GetBossLayoutSettings(settings)
 
         if not settings or (InCombatLockdown() and not inInitSafeWindow) then
             -- Just update non-secure elements
@@ -3364,21 +3415,21 @@ function QUI_UF:RefreshFrame(unitKey)
                 local width, height = ResolveRefreshSize(frame, baseWidth, baseHeight)
                 frame:SetSize(width, height)
 
-                -- Position: first boss at configured position, rest stacked below
+                -- Position: first boss at configured position, rest stacked by layout settings
                 -- (skip if frame has an active anchoring override)
-                if not IsFrameOverridden(frame) then
-                    frame:ClearAllPoints()
-                    if i == 1 then
+                if i == 1 then
+                    if not IsFrameOverridden(frame) then
+                        frame:ClearAllPoints()
                         if QUICore.SetSnappedPoint then
                             QUICore:SetSnappedPoint(frame, "CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
                         else
                             frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 0)
                         end
-                    else
-                        local prevFrame = self.frames["boss" .. (i - 1)]
-                        if prevFrame then
-                            frame:SetPoint("TOP", prevFrame, "BOTTOM", 0, -spacing)
-                        end
+                    end
+                else
+                    local prevFrame = self.frames["boss" .. (i - 1)]
+                    if prevFrame then
+                        AnchorBossFrameToPrevious(frame, prevFrame, bossGrowDirection, bossSpacingX, bossSpacingY)
                     end
                 end
 
@@ -4037,6 +4088,18 @@ function QUI_UF:RefreshFrame(unitKey)
     end
 end
 
+function QUI_UF:UpdateBossFrameLayout()
+    local settings = GetUnitSettings("boss")
+    if not settings or (InCombatLockdown() and not inInitSafeWindow) then return end
+
+    local direction, xSpacing, ySpacing = GetBossLayoutSettings(settings)
+    for i = 2, 5 do
+        local frame = self.frames and self.frames["boss" .. i]
+        local previousFrame = self.frames and self.frames["boss" .. (i - 1)]
+        AnchorBossFrameToPrevious(frame, previousFrame, direction, xSpacing, ySpacing)
+    end
+end
+
 function QUI_UF:RefreshAll()
     -- Track if we've refreshed boss frames to avoid doing it 5 times
     local bossRefreshed = false
@@ -4176,20 +4239,17 @@ function QUI_UF:Initialize()
 
     -- Create boss frames (boss1 through boss5)
     if db.boss and db.boss.enabled then
-        local spacing = db.boss.spacing or 40
+        local bossGrowDirection, bossSpacingX, bossSpacingY = GetBossLayoutSettings(db.boss)
         for i = 1, 5 do
             local bossUnit = "boss" .. i
             local bossKey = "boss" .. i
             -- Pass bossKey (boss1, boss2, etc.) for unique frame names, but settings come from "boss"
             self.frames[bossKey] = CreateBossFrame(bossUnit, bossKey, i)
 
-            -- Position boss frames vertically stacked (skip if anchoring override active)
+            -- Position boss frames in the configured group layout (skip if anchoring override active)
             if self.frames[bossKey] and i > 1 and not IsFrameOverridden(self.frames[bossKey]) then
                 local prevFrame = self.frames["boss" .. (i - 1)]
-                if prevFrame then
-                    self.frames[bossKey]:ClearAllPoints()
-                    self.frames[bossKey]:SetPoint("TOP", prevFrame, "BOTTOM", 0, -spacing)
-                end
+                AnchorBossFrameToPrevious(self.frames[bossKey], prevFrame, bossGrowDirection, bossSpacingX, bossSpacingY)
             end
 
             -- Create boss castbar (uses "boss" settings but unique unit)
@@ -4640,7 +4700,7 @@ do
             })
         end
 
-        -- Boss frames (single mover for boss1, rest chain below)
+        -- Boss frames (single mover for boss1, rest chain by layout settings)
         um:RegisterElement({
             key = "bossFrames",
             label = "Boss Frames",
@@ -4678,49 +4738,64 @@ do
             getSize = function()
                 -- Measure actual visual extent of all shown boss frames + castbars
                 if not QUI_UF.frames or not QUI_UF.frames.boss1 then return nil end
-                local boss1 = QUI_UF.frames.boss1
-                local w = boss1:GetWidth()
-                local top = boss1:GetTop()
-                local bottom = boss1:GetBottom()
-                if not top or not bottom then return nil end
+                local left, right, top, bottom
 
                 for i = 1, 5 do
                     local f = QUI_UF.frames["boss" .. i]
                     if f and f:IsShown() then
-                        local fB = f:GetBottom()
-                        if fB and fB < bottom then bottom = fB end
+                        local fL, fR, fT, fB = f:GetLeft(), f:GetRight(), f:GetTop(), f:GetBottom()
+                        if fL and fR and fT and fB then
+                            left = left and math.min(left, fL) or fL
+                            right = right and math.max(right, fR) or fR
+                            top = top and math.max(top, fT) or fT
+                            bottom = bottom and math.min(bottom, fB) or fB
+                        end
                         local cb = ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["boss" .. i]
                         if cb and cb:IsShown() then
-                            local cbB = cb:GetBottom()
-                            if cbB and cbB < bottom then bottom = cbB end
+                            local cbL, cbR, cbT, cbB = cb:GetLeft(), cb:GetRight(), cb:GetTop(), cb:GetBottom()
+                            if cbL and cbR and cbT and cbB then
+                                left = left and math.min(left, cbL) or cbL
+                                right = right and math.max(right, cbR) or cbR
+                                top = top and math.max(top, cbT) or cbT
+                                bottom = bottom and math.min(bottom, cbB) or cbB
+                            end
                         end
                     end
                 end
-                return w, top - bottom
+                if not left or not right or not top or not bottom then return nil end
+                return right - left, top - bottom
             end,
             getCenterOffset = function()
                 if not QUI_UF.frames or not QUI_UF.frames.boss1 then return 0, 0 end
                 local boss1 = QUI_UF.frames.boss1
-                local boss1H = boss1:GetHeight() or 34
-                local top = boss1:GetTop()
-                local bottom = boss1:GetBottom()
-                if not top or not bottom then return 0, 0 end
+                local boss1CX, boss1CY = boss1:GetCenter()
+                if not boss1CX or not boss1CY then return 0, 0 end
+                local left, right, top, bottom
 
                 for i = 1, 5 do
                     local f = QUI_UF.frames["boss" .. i]
                     if f and f:IsShown() then
-                        local fB = f:GetBottom()
-                        if fB and fB < bottom then bottom = fB end
+                        local fL, fR, fT, fB = f:GetLeft(), f:GetRight(), f:GetTop(), f:GetBottom()
+                        if fL and fR and fT and fB then
+                            left = left and math.min(left, fL) or fL
+                            right = right and math.max(right, fR) or fR
+                            top = top and math.max(top, fT) or fT
+                            bottom = bottom and math.min(bottom, fB) or fB
+                        end
                         local cb = ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["boss" .. i]
                         if cb and cb:IsShown() then
-                            local cbB = cb:GetBottom()
-                            if cbB and cbB < bottom then bottom = cbB end
+                            local cbL, cbR, cbT, cbB = cb:GetLeft(), cb:GetRight(), cb:GetTop(), cb:GetBottom()
+                            if cbL and cbR and cbT and cbB then
+                                left = left and math.min(left, cbL) or cbL
+                                right = right and math.max(right, cbR) or cbR
+                                top = top and math.max(top, cbT) or cbT
+                                bottom = bottom and math.min(bottom, cbB) or cbB
+                            end
                         end
                     end
                 end
-                local totalH = top - bottom
-                if totalH <= boss1H then return 0, 0 end
-                return 0, -(totalH - boss1H) / 2
+                if not left or not right or not top or not bottom then return 0, 0 end
+                return ((left + right) / 2) - boss1CX, ((top + bottom) / 2) - boss1CY
             end,
             setGameplayHidden = function(hide)
                 for i = 1, 5 do

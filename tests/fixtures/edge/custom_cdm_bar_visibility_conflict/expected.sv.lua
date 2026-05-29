@@ -4503,6 +4503,7 @@ return {
                 [4] = 1
               },
               enabled = true,
+              growDirection = "DOWN",
               healthAnchor = "RIGHT",
               healthDisplayStyle = "both",
               healthDivider = " | ",
@@ -4583,7 +4584,9 @@ return {
               texture = "Quazii v5",
               useClassColor = true,
               useHostilityColor = true,
-              width = 162
+              width = 162,
+              xSpacing = 35,
+              ySpacing = 35
             },
             enabled = true,
             focus = {

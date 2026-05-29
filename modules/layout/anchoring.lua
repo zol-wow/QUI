@@ -2226,6 +2226,55 @@ local function SetFrameOverride(frame, active, key)
     end
 end
 
+local VALID_BOSS_GROW_DIRECTION = {
+    UP = true,
+    DOWN = true,
+    LEFT = true,
+    RIGHT = true,
+}
+
+local function GetBossFrameLayout()
+    local profile = QUICore and QUICore.db and QUICore.db.profile
+    local boss = profile and profile.quiUnitFrames and profile.quiUnitFrames.boss
+    if type(boss) ~= "table" then return "DOWN", 35, 35 end
+
+    local direction = rawget(boss, "growDirection") or boss.growDirection or "DOWN"
+    if not VALID_BOSS_GROW_DIRECTION[direction] then
+        direction = "DOWN"
+    end
+
+    local legacySpacing = rawget(boss, "spacing")
+    if legacySpacing == nil then
+        legacySpacing = boss.spacing
+    end
+    legacySpacing = tonumber(legacySpacing) or 35
+
+    local xSpacing = rawget(boss, "xSpacing")
+    if xSpacing == nil then
+        xSpacing = legacySpacing
+    end
+    xSpacing = tonumber(xSpacing) or legacySpacing
+
+    local ySpacing = rawget(boss, "ySpacing")
+    if ySpacing == nil then
+        ySpacing = legacySpacing
+    end
+    ySpacing = tonumber(ySpacing) or legacySpacing
+
+    return direction, xSpacing, ySpacing
+end
+
+local function GetBossStackPoint(direction, xSpacing, ySpacing)
+    if direction == "UP" then
+        return "BOTTOM", "TOP", 0, ySpacing
+    elseif direction == "LEFT" then
+        return "RIGHT", "LEFT", -xSpacing, 0
+    elseif direction == "RIGHT" then
+        return "LEFT", "RIGHT", xSpacing, 0
+    end
+    return "TOP", "BOTTOM", 0, -ySpacing
+end
+
 -- Track which parent frames have been hooked for OnSizeChanged
 local hookedParentFrames = {}
 do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "Anch_hookedParentFrames", tbl = hookedParentFrames } end
@@ -2799,25 +2848,32 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         useSizeStable = false
     end
 
-    -- Boss frames: single setting applied to all with stacking Y offset
+    -- Boss frames: apply the saved anchor to boss1, then chain the rest
+    -- according to the boss frame layout settings.
     if key == "bossFrames" and type(resolved) == "table" and not resolved.GetObjectType then
+        local bossGrowDirection, bossSpacingX, bossSpacingY = GetBossFrameLayout()
         for i, frame in ipairs(resolved) do
-            local stackOffsetY = offsetY - ((i - 1) * 50)
             if useSizeStable then
                 ApplyAutoSizing(frame, settings, parentFrame, key)
             end
+            local targetParent = parentFrame
             local targetPt, targetRelPt, targetX, targetY
-            if useSizeStable then
-                local centerX, centerY = ComputeCenterOffsetsForAnchor(
-                    frame, key, parentFrame, point, relative, offsetX, stackOffsetY, settings.parent
-                )
-                targetPt, targetRelPt, targetX, targetY = "CENTER", "CENTER", centerX, centerY
+            if i == 1 then
+                if useSizeStable then
+                    local centerX, centerY = ComputeCenterOffsetsForAnchor(
+                        frame, key, parentFrame, point, relative, offsetX, offsetY, settings.parent
+                    )
+                    targetPt, targetRelPt, targetX, targetY = "CENTER", "CENTER", centerX, centerY
+                else
+                    targetPt, targetRelPt, targetX, targetY = point, relative, offsetX, offsetY
+                end
             else
-                targetPt, targetRelPt, targetX, targetY = point, relative, offsetX, stackOffsetY
+                targetParent = resolved[i - 1]
+                targetPt, targetRelPt, targetX, targetY = GetBossStackPoint(bossGrowDirection, bossSpacingX, bossSpacingY)
             end
-            if not FrameAlreadyAtPosition(frame, targetPt, parentFrame, targetRelPt, targetX, targetY) then
+            if targetParent and not FrameAlreadyAtPosition(frame, targetPt, targetParent, targetRelPt, targetX, targetY) then
                 _editModeReapplyGuard = true
-                pcall(SmoothSetPoint, frame, targetPt, parentFrame, targetRelPt, targetX, targetY)
+                pcall(SmoothSetPoint, frame, targetPt, targetParent, targetRelPt, targetX, targetY)
                 _editModeReapplyGuard = false
             end
         end

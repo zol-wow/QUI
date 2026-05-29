@@ -350,7 +350,7 @@ Focus also supports portrait settings (same structure as Player/Target).
 
 ## Boss Frames
 
-Settings at `quiUnitFrames.boss`. Displays up to 5 boss unit frames stacked vertically.
+Settings at `quiUnitFrames.boss`. Displays up to 5 boss unit frames grown from the first frame in a configurable direction.
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
@@ -359,7 +359,10 @@ Settings at `quiUnitFrames.boss`. Displays up to 5 boss unit frames stacked vert
 | `boss.height` | number | `36` | Frame height |
 | `boss.offsetX` | number | `974` | Horizontal offset (far right) |
 | `boss.offsetY` | number | `106` | Vertical offset |
-| `boss.spacing` | number | `35` | Vertical spacing between boss frames |
+| `boss.growDirection` | string | `"DOWN"` | Group growth direction: `UP`, `DOWN`, `LEFT`, or `RIGHT` |
+| `boss.xSpacing` | number | `35` | Horizontal spacing between boss frames (used when growing Left/Right) |
+| `boss.ySpacing` | number | `35` | Vertical spacing between boss frames (used when growing Up/Down) |
+| `boss.spacing` | number | `35` | Legacy spacing; used as a fallback when `xSpacing`/`ySpacing` are unset |
 | `boss.texture` | string | `"Quazii v5"` | Health bar texture |
 | `boss.useHostilityColor` | boolean | `true` | Use hostility coloring |
 | `boss.customHealthColor` | color | `{0.6, 0.2, 0.2, 1}` | Custom health color (red tint) |
