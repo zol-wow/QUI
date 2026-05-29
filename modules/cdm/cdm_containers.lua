@@ -3894,6 +3894,12 @@ local _editModeActive = false
 local _disabledMouseFrames = {}
 local _forceLayoutKey = nil  -- set temporarily to bypass edit mode check for one container
 local _containerMouseSyncPending = false
+-- Combat-deferred CHALLENGE_MODE_START recovery flag. The key-start dormant
+-- restore + reconcile + refresh cannot run during combat lockdown; when the
+-- player pulls before it fires, this records that recovery is owed so
+-- PLAYER_REGEN_ENABLED can drain it (drained at line ~5402). Without this, an
+-- in-combat key start dropped the recovery permanently (stale until /reload).
+local _challengeModeRecoveryPending = false
 
 local function IsCDMMouseoverFadeEnabled()
     local vis = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.cdmVisibility
@@ -5449,21 +5455,41 @@ function ownedEngine:Initialize()
                 _containerMouseSyncPending = false
                 SyncAllContainerMouseStates(true)
             end
+
+            -- Drain a CHALLENGE_MODE_START recovery that was deferred because
+            -- the key started in combat. Mirrors the dormant-restore + reconcile
+            -- + refresh the CHALLENGE_MODE_START handler runs out of combat, so
+            -- an in-combat key start no longer needs a /reload to recover.
+            if _challengeModeRecoveryPending and not InCombatLockdown() then
+                _challengeModeRecoveryPending = false
+                if ns.CDMSpellData then
+                    ns.CDMSpellData:CheckAllDormantSpells(true)
+                    ns.CDMSpellData:ReconcileAllContainers()
+                end
+                RefreshAll()
+            end
         elseif event == "CHALLENGE_MODE_START" then
             -- Restore dormant spells before refreshing — SPELLS_CHANGED
             -- may have incorrectly shelved spells during the zone
             -- transition when WoW APIs were temporarily stale.
             -- restoreOnly=true: only rescue spells from dormant, don't
             -- risk marking more spells dormant with still-settling APIs.
-            -- If already in combat, PLAYER_REGEN_ENABLED handles recovery.
+            -- If already in combat (the player pulled before this fires),
+            -- defer to PLAYER_REGEN_ENABLED via _challengeModeRecoveryPending —
+            -- otherwise the recovery is lost and the display stays stale until
+            -- /reload.
             C_Timer.After(0.5, function()
-                if not InCombatLockdown() then
-                    if ns.CDMSpellData then
-                        ns.CDMSpellData:CheckAllDormantSpells(true)
-                        ns.CDMSpellData:ReconcileAllContainers()
-                    end
-                    RefreshAll()
+                if not IsCDMRuntimeEnabled() then return end
+                if InCombatLockdown() then
+                    _challengeModeRecoveryPending = true
+                    return
                 end
+                _challengeModeRecoveryPending = false
+                if ns.CDMSpellData then
+                    ns.CDMSpellData:CheckAllDormantSpells(true)
+                    ns.CDMSpellData:ReconcileAllContainers()
+                end
+                RefreshAll()
             end)
         elseif event == "ZONE_CHANGED_NEW_AREA" then
             C_Timer.After(0.3, RefreshAll)
@@ -5502,6 +5528,7 @@ function ownedEngine:DisableRuntime()
         loadoutDebounceTimer = nil
     end
     pendingLoadoutRefresh = false
+    _challengeModeRecoveryPending = false
     loadoutTrackingToken = loadoutTrackingToken + 1
 
     if runtimeEventFrame then

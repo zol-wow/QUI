@@ -4752,3 +4752,52 @@ if ns.CDMIndex and ns.CDMIndex.Subscribe then
         CDMBlizzMirror.SyncSuppressionToMaster()
     end, 10)
 end
+
+---------------------------------------------------------------------------
+-- Resolver-bus catalog rebuild subscription.
+--
+-- RebuildCatalog() (cdm_runtime.lua) publishes CDM:CATALOG_REBUILT on
+-- PLAYER_LOGIN / TRAIT_TREE_CHANGED / SPELLS_CHANGED / ENCOUNTER_START /
+-- CHALLENGE_MODE_START / PVP_MATCH_ACTIVE. The mirror's own _eventFrame walks
+-- on login / spec / trait / PEW, but the encounter / M+ / rated-PvP starts
+-- re-randomize aura instance IDs (see the RebuildCatalog header) and were not
+-- reaching the mirror at all — the published event had no subscriber, so
+-- cooldown/aura bindings stayed bound to the pre-key state until /reload.
+-- Re-walk here so the re-randomized instances get re-captured.
+--
+-- RebuildCatalog already gates itself on combat (defers to
+-- PLAYER_REGEN_ENABLED), so this normally fires out of combat; the combat
+-- guard below mirrors the other walk sites defensively and re-uses the same
+-- _walkPendingOnRegen drain. SPELLS_CHANGED bursts during talent swaps, so the
+-- walk is debounced into a single pass (matching the SPELLS_CHANGED debounce in
+-- cdm_spelldata.lua).
+if ns.CDMResolvers and ns.CDMResolvers.Subscribe then
+    local _catalogRebuildToken = 0
+    ns.CDMResolvers.Subscribe("CDM:CATALOG_REBUILT", function()
+        -- Cold-load grace: the deferred PLAYER_LOGIN walk owns the initial build.
+        if ns._cdmColdLoadActive then
+            return
+        end
+        _catalogRebuildToken = _catalogRebuildToken + 1
+        local token = _catalogRebuildToken
+        C_Timer.After(0.1, function()
+            if token ~= _catalogRebuildToken then
+                return
+            end
+            -- Re-check the cold-load grace at execution time: on PLAYER_LOGIN the
+            -- resolver bus fires before the mirror's own PLAYER_LOGIN handler sets
+            -- _cdmColdLoadActive, so the synchronous guard above can miss it. The
+            -- deferred PLAYER_LOGIN walk owns the initial build.
+            if ns._cdmColdLoadActive then
+                return
+            end
+            if InCombatLockdown() and not (ns and ns._inInitSafeWindow) then
+                _walkPendingOnRegen = true
+                return
+            end
+            Walk()
+            HandlePlayerTotemUpdate()
+            CDMBlizzMirror.SyncSuppressionToMaster()
+        end)
+    end)
+end

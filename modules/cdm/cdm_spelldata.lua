@@ -266,6 +266,11 @@ CDMSpellData.SyncCooldownViewerCVar = SyncCooldownViewerCVarToMasterToggle
 -- deletion while WoW APIs (IsSpellKnown, C_CooldownViewer, spellbook) are
 -- returning stale/incomplete data.
 local _inZoneTransition = false
+-- Set true when a SPELLS_CHANGED is suppressed because _inZoneTransition is
+-- active. Drained when the zone-transition window closes (the 2s timer on
+-- PLAYER_ENTERING_WORLD), so a reconcile dropped during the window is re-run
+-- once the APIs settle instead of being lost until /reload.
+local _spellsChangedDuringZoneTransition = false
 
 ---------------------------------------------------------------------------
 -- CONSTANTS
@@ -5041,6 +5046,10 @@ function CDMSpellData:Initialize()
             -- incorrectly marked dormant. PLAYER_ENTERING_WORLD already
             -- holds these checks until APIs stabilise.
             if _inZoneTransition then
+                -- Record that a reconcile is owed: the 2s PLAYER_ENTERING_WORLD
+                -- timer drains this once the APIs settle, so this SPELLS_CHANGED
+                -- is not lost if no further one fires after the window closes.
+                _spellsChangedDuringZoneTransition = true
                 return
             end
             -- Cold-load grace: PLAYER_LOGIN's deferred callback runs the
@@ -5125,7 +5134,21 @@ function CDMSpellData:Initialize()
             -- Suppress SPELLS_CHANGED dormant checks during zone transitions.
             -- APIs are stale for ~1-2s after entering a new zone/instance.
             _inZoneTransition = true
-            C_Timer.After(2.0, function() _inZoneTransition = false end)
+            C_Timer.After(2.0, function()
+                _inZoneTransition = false
+                -- Drain a SPELLS_CHANGED that was suppressed while the window
+                -- was open. The APIs have settled now, so run the reconcile the
+                -- SPELLS_CHANGED handler would have run; otherwise it is lost
+                -- (the display stays stale) until the next SPELLS_CHANGED or a
+                -- /reload. Combat-guarded like the SPELLS_CHANGED debounce.
+                if _spellsChangedDuringZoneTransition then
+                    _spellsChangedDuringZoneTransition = false
+                    if IsCDMRuntimeEnabled() and not InCombatLockdown()
+                        and not ns._cdmColdLoadActive then
+                        RunReconcileSequence()
+                    end
+                end
+            end)
             C_Timer.After(1.0, function()
                 if not IsCDMRuntimeEnabled() then return end
                 if not initialized then
