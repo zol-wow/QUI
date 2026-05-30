@@ -342,7 +342,7 @@ local function CreateCounterFrame()
 
     local countText = frame:CreateFontString(nil, "OVERLAY")
     countText:SetPoint("CENTER", frame, "CENTER", 0, 1)
-    countText:SetFont(UIKit.ResolveFontPath(), DEFAULTS.fontSize, "OUTLINE")
+    countText:SetFont(UIKit.ResolveFontPath(), DEFAULTS.fontSize, Helpers.GetGeneralFontOutline())
     countText:SetJustifyH("CENTER")
     countText:SetJustifyV("MIDDLE")
     countText:SetText("0")
@@ -403,7 +403,7 @@ local function ApplyAppearance()
 
     local fontName = settings.useCustomFont and settings.font or nil
     local fontPath = UIKit.ResolveFontPath(fontName)
-    frame.countText:SetFont(fontPath, settings.fontSize or DEFAULTS.fontSize, "OUTLINE")
+    frame.countText:SetFont(fontPath, settings.fontSize or DEFAULTS.fontSize, Helpers.GetGeneralFontOutline())
 
     if settings.hideIcon then
         frame.icon:Hide()
@@ -432,7 +432,9 @@ local function ApplyAppearance()
             local bgColor = settings.backdropColor or DEFAULTS.backdropColor
             frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 0.6)
         else
-            frame:SetBackdropColor(0, 0, 0, 0)
+            local _abgR, _abgG, _abgB = 0, 0, 0
+            if Helpers and Helpers.GetSkinBgColor then _abgR, _abgG, _abgB = Helpers.GetSkinBgColor() end
+            frame:SetBackdropColor(_abgR, _abgG, _abgB, 0)
         end
 
         if useLSMBorder and not SSB then

@@ -182,7 +182,8 @@ local function BuildSpecProfilesContent(content)
     local factoryLabel = factoryCell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     factoryLabel:SetPoint("LEFT", factoryCell, "LEFT", 0, 0)
     factoryLabel:SetText("Factory Reset")
-    factoryLabel:SetTextColor(0.9, 0.3, 0.3, 1)
+    local errText = GUI and GUI.ERROR_TEXT or {0.9, 0.3, 0.3, 1}
+    factoryLabel:SetTextColor(errText[1], errText[2], errText[3], errText[4])
     local factoryBtn = GUI:CreateButton(factoryCell, "Erase All", 100, 22, function()
         GUI:ShowConfirmation({
             title = "Reset All Data?", message = "Erase ALL QUI data and restore fresh-install defaults?",
@@ -195,7 +196,7 @@ local function BuildSpecProfilesContent(content)
         })
     end)
     factoryBtn:SetPoint("RIGHT", factoryCell, "RIGHT", 0, 0)
-    if factoryBtn.text then factoryBtn.text:SetTextColor(0.9, 0.3, 0.3, 1) end
+    if factoryBtn.text then factoryBtn.text:SetTextColor(errText[1], errText[2], errText[3], errText[4]) end
     currentCard.AddRow(factoryCell)
 
     currentCard.Finalize()

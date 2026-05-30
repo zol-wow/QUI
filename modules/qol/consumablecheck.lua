@@ -1,5 +1,6 @@
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
+local SkinBase = ns.SkinBase
 local UIKit = ns.UIKit
 
 ---------------------------------------------------------------------------
@@ -976,13 +977,27 @@ local function EnsurePickerFrame()
     pickerFrame:Hide()
     pickerFrame.rows = {}
     pickerFrame.activeRows = {}
-    pickerFrame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GetPixelSize(pickerFrame),
-    })
-    pickerFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
-    pickerFrame:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+    do
+        local bgr, bgg, bgb = 0.05, 0.05, 0.05     -- original fallback literals
+        if Helpers and Helpers.GetSkinBgColor then
+            bgr, bgg, bgb = Helpers.GetSkinBgColor()
+        end
+        local sr, sg, sb = 0.35, 0.35, 0.35        -- original fallback literals
+        if Helpers and Helpers.GetSkinBorderColor then
+            sr, sg, sb = Helpers.GetSkinBorderColor()
+        end
+        if SkinBase and SkinBase.CreateBackdrop then
+            SkinBase.CreateBackdrop(pickerFrame, sr, sg, sb, 1, bgr, bgg, bgb, 0.95)
+        else
+            pickerFrame:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Buttons\\WHITE8x8",
+                edgeSize = GetPixelSize(pickerFrame),
+            })
+            pickerFrame:SetBackdropColor(bgr, bgg, bgb, 0.95)
+            pickerFrame:SetBackdropBorderColor(sr, sg, sb, 1)
+        end
+    end
     if UIKit and UIKit.CreateObjectPool then
         pickerFrame.rowPool = UIKit.CreateObjectPool(
             function()
@@ -1860,6 +1875,23 @@ _G.QUI_RefreshConsumables = function()
         ConsumablesFrame:SetScale(GetConsumableScale())
         ConsumablesFrame:ClearAllPoints()
         ConsumablesFrame:SetPoint(point, relativeTo, relativePoint, x, y)
+    end
+    -- Re-apply picker frame skin colors on theme change.
+    if pickerFrame then
+        local bgr, bgg, bgb = 0.05, 0.05, 0.05
+        if Helpers and Helpers.GetSkinBgColor then
+            bgr, bgg, bgb = Helpers.GetSkinBgColor()
+        end
+        local sr, sg, sb = 0.35, 0.35, 0.35
+        if Helpers and Helpers.GetSkinBorderColor then
+            sr, sg, sb = Helpers.GetSkinBorderColor()
+        end
+        if SkinBase and SkinBase.CreateBackdrop then
+            SkinBase.CreateBackdrop(pickerFrame, sr, sg, sb, 1, bgr, bgg, bgb, 0.95)
+        else
+            pickerFrame:SetBackdropColor(bgr, bgg, bgb, 0.95)
+            pickerFrame:SetBackdropBorderColor(sr, sg, sb, 1)
+        end
     end
 end
 

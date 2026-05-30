@@ -52,7 +52,11 @@ local function CreateTimerFrame()
 
     -- Set up backdrop (background only)
     frame:SetBackdrop(UIKit.GetBackdropInfo(nil, nil, frame))
-    frame:SetBackdropColor(0, 0, 0, 0.6)
+    local _cbgr, _cbgg, _cbgb = 0, 0, 0        -- original fallback literals
+    if Helpers and Helpers.GetSkinBgColor then
+        _cbgr, _cbgg, _cbgb = Helpers.GetSkinBgColor()
+    end
+    frame:SetBackdropColor(_cbgr, _cbgg, _cbgb, 0.6)
 
     -- Create manual border lines for uniform edges
     UIKit.CreateBorderLines(frame)

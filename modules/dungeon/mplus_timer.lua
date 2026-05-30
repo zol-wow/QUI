@@ -6,6 +6,7 @@
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
+local SkinBase = ns.SkinBase
 
 local GetCore = ns.Helpers.GetCore
 
@@ -73,7 +74,7 @@ local COMPACT_AFFIX_ICON_SPACING = 2
 local SLEEK_AFFIX_ICON_SIZE = 12
 local SLEEK_AFFIX_ICON_SPACING = 2
 
-local FONT_FLAGS = "OUTLINE"
+local FONT_FLAGS = (Helpers and Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline()) or "OUTLINE"
 
 local MIN_SPACING = 6
 
@@ -259,7 +260,7 @@ local function GetForcesFont()
     local fontName = settings.forcesFont or "Poppins"
     local fontSize = settings.forcesFontSize or 11
 
-    local fontPath = "Fonts\\FRIZQT__.TTF"
+    local fontPath = Helpers.GetGeneralFont()
     local media = ns.Media
     if media and media.GetFont then
         local path = media:GetFont(fontName)
@@ -479,6 +480,15 @@ function MPlusTimer:CreateFrames()
     sleekBarContainer:SetSize(SLEEK_BAR_WIDTH, SLEEK_BAR_HEIGHT)
     sleekBarContainer:Hide()
     self.frames.sleekBar = sleekBarContainer
+    do
+        local sr, sg, sb, sa = 0, 0, 0, 1
+        if Helpers and Helpers.GetSkinBorderColor then sr, sg, sb, sa = Helpers.GetSkinBorderColor() end
+        local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.9
+        if Helpers and Helpers.GetSkinBgColor then bgr, bgg, bgb, bga = Helpers.GetSkinBgColor() end
+        if SkinBase and SkinBase.CreateBackdrop then
+            SkinBase.CreateBackdrop(sleekBarContainer, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        end
+    end
 
     -- Create three segment regions inside the sleek bar
     self.sleekSegments = {}
@@ -540,6 +550,15 @@ function MPlusTimer:CreateProgressBar(parent, barType)
     local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     frame:SetSize(BAR_WIDTH, BAR_HEIGHT)
     bar.frame = frame
+    do
+        local sr, sg, sb, sa = 0, 0, 0, 1
+        if Helpers and Helpers.GetSkinBorderColor then sr, sg, sb, sa = Helpers.GetSkinBorderColor() end
+        local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.9
+        if Helpers and Helpers.GetSkinBgColor then bgr, bgg, bgb, bga = Helpers.GetSkinBgColor() end
+        if SkinBase and SkinBase.CreateBackdrop then
+            SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        end
+    end
 
     -- Status bar
     local statusBar = CreateFrame("StatusBar", nil, frame)

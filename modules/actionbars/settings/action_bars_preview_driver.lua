@@ -235,7 +235,9 @@ local function GetPreviewDisplayedTexture(slot, sourceButton)
 end
 
 local function GetPreviewFontSettings()
-    local fontPath = "Fonts\\FRIZQT__.TTF"
+    local fontPath = (QUI and QUI.GUI and type(QUI.GUI.GetFontPath) == "function" and QUI.GUI:GetFontPath())
+        or (QUI and QUI.GUI and QUI.GUI.FONT_PATH)
+        or [[Interface\AddOns\QUI\assets\Quazii.ttf]]
     local outline = "OUTLINE"
     local core = GetCore and GetCore()
     local general = core and core.db and core.db.profile and core.db.profile.general

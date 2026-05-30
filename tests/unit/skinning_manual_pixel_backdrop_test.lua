@@ -139,7 +139,15 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/skinning/base.lua"))("QUI", ns)
+assert(loadfile("core/uikit.lua"))("QUI", ns)
+
+-- uikit.lua defines its own UIKit table (overwriting the mock ns.UIKit above), so
+-- monkey-patch the real RegisterScaleRefresh to capture the scale-refresh callback
+-- the engine registers from ApplyPixelBackdrop. ns.UIKit, ns.SkinBase, and the
+-- engine's UIKit upvalue are all the same table, so this override is honored.
+ns.UIKit.RegisterScaleRefresh = function(_, _, callback)
+    registeredRefresh = callback
+end
 
 local SkinBase = ns.SkinBase
 local owner = NewFrame()

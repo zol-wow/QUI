@@ -39,7 +39,7 @@ local ns = { Helpers = { CHROME=CHROME, CreateStateTable=CreateStateTable,
     GetSkinBgColorWithOverride = function() return 0.1,0.2,0.3,0.9 end,
     GetGeneralFont = function() return "Q" end, GetGeneralFontOutline = function() return "" end },
     UIKit = { RegisterScaleRefresh = function() end } }
-assert(loadfile("modules/skinning/base.lua"))("QUI", ns)
+assert(loadfile("core/uikit.lua"))("QUI", ns)
 local SkinBase = ns.SkinBase
 
 assert(type(SkinBase.SkinCategoryButton) == "function", "SkinCategoryButton must exist")

@@ -44,10 +44,13 @@ for _, f in ipairs({ "modules/skinning/character_pane/character.lua", "modules/s
 end
 
 -- 4) Constants exist and are aliased
+-- The skinning engine was relocated into core/uikit.lua (loaded first, exposed as
+-- both ns.UIKit and ns.SkinBase); modules/skinning/base.lua is now a thin stub, so
+-- the engine-content checks below read the merged kit at its new home.
 assertContains(readFile("core/utils.lua"), "Helpers.CHROME", "core/utils.lua must define Helpers.CHROME")
-assertContains(readFile("modules/skinning/base.lua"), "SkinBase.CHROME = Helpers.CHROME", "base.lua must alias SkinBase.CHROME")
-assertContains(readFile("modules/skinning/base.lua"), "function SkinBase.GetDepthColor", "base.lua must define GetDepthColor")
-assertContains(readFile("modules/skinning/base.lua"), "function SkinBase.SkinFrameText", "base.lua must define SkinFrameText")
+assertContains(readFile("core/uikit.lua"), "SkinBase.CHROME = Helpers.CHROME", "uikit.lua must alias SkinBase.CHROME")
+assertContains(readFile("core/uikit.lua"), "function SkinBase.GetDepthColor", "uikit.lua must define GetDepthColor")
+assertContains(readFile("core/uikit.lua"), "function SkinBase.SkinFrameText", "uikit.lua must define SkinFrameText")
 
 -- 5) Every skinning module routes text through the sweep helper
 for _, f in ipairs({
@@ -77,17 +80,18 @@ assertContains(readFile("modules/skinning/character_pane/character.lua"), "maste
 -- 7) (#3) Render path unified: the SkinBase.SafeSetBackdrop wrapper + ApplySafeBackdrop
 -- are gone; QUICore.SafeSetBackdrop (shared combat-safe API) is untouched.
 do
-    local base = readFile("modules/skinning/base.lua")
-    assertAbsent(base, "function SkinBase%.SafeSetBackdrop", "base.lua must drop the SkinBase.SafeSetBackdrop wrapper (#3)")
-    assertAbsent(base, "local function ApplySafeBackdrop", "base.lua must drop ApplySafeBackdrop (#3)")
+    -- Engine relocated to core/uikit.lua; check the merged kit there.
+    local base = readFile("core/uikit.lua")
+    assertAbsent(base, "function SkinBase%.SafeSetBackdrop", "uikit.lua must drop the SkinBase.SafeSetBackdrop wrapper (#3)")
+    assertAbsent(base, "local function ApplySafeBackdrop", "uikit.lua must drop ApplySafeBackdrop (#3)")
     assertContains(readFile("core/backdrop_deferred.lua"), "function QUICore.SafeSetBackdrop",
         "QUICore.SafeSetBackdrop must remain (shared combat-safe API)")
 end
 
 -- 8) (#2) Widget consolidation: new helper exists and the category files use it.
 do
-    assertContains(readFile("modules/skinning/base.lua"), "function SkinBase.SkinCategoryButton",
-        "base.lua must define SkinCategoryButton (#2)")
+    assertContains(readFile("core/uikit.lua"), "function SkinBase.SkinCategoryButton",
+        "uikit.lua must define SkinCategoryButton (#2)")
     for _, f in ipairs({ "modules/skinning/frames/auctionhouse.lua", "modules/skinning/frames/craftingorders.lua" }) do
         local src = readFile(f)
         assert(src:find("SkinCategoryButton", 1, true), f .. " must use SkinBase.SkinCategoryButton (#2)")

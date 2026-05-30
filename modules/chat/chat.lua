@@ -325,15 +325,33 @@ local function GetChatSurfaceColors(settings)
     settings = settings or GetSettings()
 
     local glass = settings and settings.glass
-    local bg = (glass and glass.bgColor) or {0, 0, 0}
     local alpha = glass and glass.bgAlpha
     if alpha == nil then
-        alpha = bg[4] or 0.25
+        -- Fall back to glass.bgColor[4] if present, else a sensible default.
+        local legacyBg = glass and glass.bgColor
+        alpha = (legacyBg and legacyBg[4]) or 0.25
     end
 
-    local accent = I.GetAccent and I.GetAccent() or I.QUI_COLORS.accent
-    return {bg[1] or 0, bg[2] or 0, bg[3] or 0, alpha},
-           {accent[1] or 1, accent[2] or 1, accent[3] or 1, 0.55}
+    -- Source bg RGB from the skin theme with optional per-module override,
+    -- falling back to GetSkinBgColor() when the override API is unavailable.
+    -- Guarded multi-assign: never use `local r,g,b = X and fn()` — Lua
+    -- truncates the multi-return to 1 when the first operand is truthy.
+    local bgR, bgG, bgB = 0, 0, 0
+    if Helpers and Helpers.GetSkinBgColorWithOverride then
+        bgR, bgG, bgB = Helpers.GetSkinBgColorWithOverride(settings, "chat")
+    elseif Helpers and Helpers.GetSkinBgColor then
+        bgR, bgG, bgB = Helpers.GetSkinBgColor()
+    end
+
+    -- Source border from the skin theme; preserve the 0.55 alpha used for the
+    -- chat-frame border accent. Guarded for the same multi-return reason above.
+    local brR, brG, brB = 1, 1, 1
+    if Helpers and Helpers.GetSkinBorderColor then
+        brR, brG, brB = Helpers.GetSkinBorderColor(settings, "chat")
+    end
+
+    return {bgR, bgG, bgB, alpha},
+           {brR, brG, brB, 0.55}
 end
 
 local function NormalizeScrollbackLines(settings)

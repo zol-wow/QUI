@@ -722,7 +722,9 @@ local function CreateBuffIcon(parent, index)
         edgeSize = px,
         insets = { left = px, right = px, top = px, bottom = px }
     })
-    button:SetBackdropColor(0, 0, 0, 0.8)
+    local bgr, bgg, bgb = 0, 0, 0
+    if Helpers and Helpers.GetSkinBgColor then bgr, bgg, bgb = Helpers.GetSkinBgColor() end
+    button:SetBackdropColor(bgr, bgg, bgb, 0.8)
 
     -- Icon texture (inset dynamically based on border width)
     button.icon = button:CreateTexture(nil, "ARTWORK")
@@ -732,7 +734,7 @@ local function CreateBuffIcon(parent, index)
 
     -- Buff count text (e.g., "11/18")
     button.countText = button:CreateFontString(nil, "OVERLAY")
-    button.countText:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
+    button.countText:SetFont(Helpers.GetGeneralFont(), 10, Helpers.GetGeneralFontOutline())
     button.countText:SetPoint("BOTTOM", button, "BOTTOM", 0, 2)
     button.countText:SetTextColor(1, 1, 1, 1)
     button.countText:Hide()
@@ -805,6 +807,9 @@ local function ApplyIconBorderSettings()
         end
     end
 
+    local iconBgR, iconBgG, iconBgB = 0, 0, 0
+    if Helpers and Helpers.GetSkinBgColor then iconBgR, iconBgG, iconBgB = Helpers.GetSkinBgColor() end
+
     for _, icon in ipairs(buffIcons) do
         -- Update backdrop with new border width (pixel-perfect)
         local bpx = QUICore:Pixels(borderWidth, icon)
@@ -814,7 +819,7 @@ local function ApplyIconBorderSettings()
             edgeSize = bpx,
             insets = { left = bpx, right = bpx, top = bpx, bottom = bpx }
         })
-        icon:SetBackdropColor(0, 0, 0, 0.8)
+        icon:SetBackdropColor(iconBgR, iconBgG, iconBgB, 0.8)
 
         if borderSettings.show then
             icon:SetBackdropBorderColor(br, bg, bb, ba)
@@ -936,12 +941,14 @@ local function CreateMainFrame()
         edgeSize = labelPx,
         insets = { left = labelPx, right = labelPx, top = labelPx, bottom = labelPx }
     })
-    mainFrame.labelBar:SetBackdropColor(0.05, 0.05, 0.05, 0.95)
+    local lblBgR, lblBgG, lblBgB = 0.05, 0.05, 0.05
+    if Helpers and Helpers.GetSkinBgColor then lblBgR, lblBgG, lblBgB = Helpers.GetSkinBgColor() end
+    mainFrame.labelBar:SetBackdropColor(lblBgR, lblBgG, lblBgB, 0.95)
 
     -- Label text
     mainFrame.labelBar.text = mainFrame.labelBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     mainFrame.labelBar.text:SetPoint("CENTER", 0, 0)
-    mainFrame.labelBar.text:SetFont(STANDARD_TEXT_FONT, 10, "OUTLINE")
+    mainFrame.labelBar.text:SetFont(Helpers.GetGeneralFont(), 10, Helpers.GetGeneralFontOutline())
     mainFrame.labelBar.text:SetText("Raid Buffs")
 
     -- Pre-create icon slots
@@ -1205,7 +1212,7 @@ UpdateDisplay = function()
         local labelBarHeight = fontSize + 8  -- Font size + padding
         local labelBarGap = 2
 
-        mainFrame.labelBar.text:SetFont(STANDARD_TEXT_FONT, fontSize, "OUTLINE")
+        mainFrame.labelBar.text:SetFont(Helpers.GetGeneralFont(), fontSize, Helpers.GetGeneralFontOutline())
         mainFrame.labelBar.text:SetText("Raid Buffs")
 
         -- Resize frames based on orientation
@@ -1602,5 +1609,19 @@ if ns.Registry then
         priority = 20,
         group = "frames",
         importCategories = { "groupFrames" },
+    })
+
+    -- Register in the skinning refresh path so a global skin-color / font change
+    -- (RefreshAll("skinning")) re-applies the dynamic skin bg/border and fonts to
+    -- the buff display. Distinct name so it does not clobber the "frames" entry.
+    -- ApplySkin() re-sources GetSkinBgColor/GetGeneralFont; Refresh() also reflows
+    -- the label font, so route through the existing _G.QUI_RefreshRaidBuffs.
+    ns.Registry:Register("raidbuffsSkin", {
+        refresh = function()
+            if _G.QUI_RefreshRaidBuffs then _G.QUI_RefreshRaidBuffs() end
+        end,
+        priority = 80,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
     })
 end

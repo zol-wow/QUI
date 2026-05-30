@@ -1196,7 +1196,9 @@ local function CreateAuraIcon(parent, size)
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = px,
     })
-    icon:SetBackdropBorderColor(0, 0, 0, 1)
+    local bdr, bdg, bdb, bda = 0, 0, 0, 1
+    if Helpers and Helpers.GetSkinBorderColor then bdr, bdg, bdb, bda = Helpers.GetSkinBorderColor() end
+    icon:SetBackdropBorderColor(bdr, bdg, bdb, bda)
 
     -- Cooldown swipe
     local cooldown = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
@@ -1411,7 +1413,10 @@ local function UpdateAuraIcon(icon, auraData, unit)
             icon:SetBackdropBorderColor(0.8, 0, 0, 1) -- Default debuff red
         end
     else
-        icon:SetBackdropBorderColor(0, 0, 0, 1) -- Default black border
+        -- Default chrome border (neutral, non-semantic) — sourced from skin theme
+        local bdr, bdg, bdb, bda = 0, 0, 0, 1
+        if Helpers and Helpers.GetSkinBorderColor then bdr, bdg, bdb, bda = Helpers.GetSkinBorderColor() end
+        icon:SetBackdropBorderColor(bdr, bdg, bdb, bda)
     end
 
     icon:Show()

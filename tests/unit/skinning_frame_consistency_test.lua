@@ -16,7 +16,10 @@ local function assertAbsent(text, needle, reason)
     assert(not text:find(needle, 1, true), reason)
 end
 
-local base = readFile("modules/skinning/base.lua")
+-- The skinning engine was relocated into core/uikit.lua (loaded first, exposed as
+-- both ns.UIKit and ns.SkinBase); modules/skinning/base.lua is now a thin stub.
+-- The shared-widget SkinBase.* definitions this gate checks live in uikit.lua.
+local base = readFile("core/uikit.lua")
 local professions = readFile("modules/skinning/frames/professions.lua")
 local auctionHouse = readFile("modules/skinning/frames/auctionhouse.lua")
 local craftingOrders = readFile("modules/skinning/frames/craftingorders.lua")

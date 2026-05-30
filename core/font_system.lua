@@ -318,4 +318,12 @@ function QUICore:ApplyGlobalFont()
     if shouldApply and self.db.profile.general.overrideSCTFont then
         _G.DAMAGE_TEXT_FONT = fontPath
     end
+
+    -- Notify the options panel so its own FontStrings pick up the new font
+    -- immediately if the panel is currently open.  GUI:OnFontChanged() is a
+    -- no-op when the panel is hidden, so this is safe to call unconditionally.
+    local gui = QUI and QUI.GUI
+    if gui and gui.OnFontChanged then
+        gui:OnFontChanged()
+    end
 end

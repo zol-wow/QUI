@@ -76,7 +76,7 @@ local function CreateImportBanner(parent, title, message, titleColor, bgColor, b
     ApplyImportSurface(frame, bgColor or {0.08, 0.1, 0.14, 0.95}, borderColor or C.border)
 
     local titleText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    titleText:SetFont(GUI.FONT_PATH or "Fonts\\FRIZQT__.TTF", 12, "")
+    titleText:SetFont((GUI and GUI.GetFontPath and GUI:GetFontPath()) or "Fonts\\FRIZQT__.TTF", 12, "")
     titleText:SetTextColor(
         (titleColor or C.accentLight)[1],
         (titleColor or C.accentLight)[2],

@@ -114,7 +114,7 @@ local ns = {
 CreateFrame = function() return NewBackdropFrame() end
 
 -- Load the real SkinBase, then the real M+ timer skinning module.
-assert(loadfile("modules/skinning/base.lua"))("QUI", ns)
+assert(loadfile("core/uikit.lua"))("QUI", ns)
 assert(type(ns.SkinBase) == "function" or type(ns.SkinBase) == "table", "SkinBase must load")
 local SkinBase = ns.SkinBase
 assert(loadfile("modules/skinning/gameplay/mplus_timer.lua"))("QUI", ns)

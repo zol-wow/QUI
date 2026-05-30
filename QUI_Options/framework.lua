@@ -68,6 +68,16 @@ GUI.Colors = GUI.Colors or {
     warning = {0.961, 0.620, 0.043, 1},
 }
 
+-- Fixed-surface chrome constants (options UI only — NOT routed through skin/CHROME)
+GUI.DIALOG_BUTTON_BG = { 0.15, 0.15, 0.15, 1 }
+GUI.CHECKBOX_BG      = { 0.1, 0.1, 0.1, 1 }
+GUI.SLIDER_BG        = { 0.1, 0.1, 0.1, 1 }
+GUI.GRID_BG          = { 0.1, 0.1, 0.1, 1 }
+GUI.BORDER_INACTIVE  = { 0.3, 0.3, 0.3, 1 }
+GUI.BORDER_SWATCH    = { 0.4, 0.4, 0.4, 1 }
+GUI.ERROR_TEXT       = { 0.9, 0.3, 0.3, 1 }
+GUI.DESCRIPTION_TEXT = { 0.5, 0.5, 0.5, 1 }
+
 local C = GUI.Colors
 
 ---------------------------------------------------------------------------
@@ -1596,7 +1606,7 @@ function GUI:ShowConfirmation(options)
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = px,
         })
-        confirmDialog.acceptBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
+        confirmDialog.acceptBtn:SetBackdropColor(GUI.DIALOG_BUTTON_BG[1], GUI.DIALOG_BUTTON_BG[2], GUI.DIALOG_BUTTON_BG[3], GUI.DIALOG_BUTTON_BG[4])
         confirmDialog.acceptBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
 
         confirmDialog.acceptBtn.text = confirmDialog.acceptBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1619,7 +1629,7 @@ function GUI:ShowConfirmation(options)
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = px,
         })
-        confirmDialog.cancelBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
+        confirmDialog.cancelBtn:SetBackdropColor(GUI.DIALOG_BUTTON_BG[1], GUI.DIALOG_BUTTON_BG[2], GUI.DIALOG_BUTTON_BG[3], GUI.DIALOG_BUTTON_BG[4])
         confirmDialog.cancelBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
 
         confirmDialog.cancelBtn.text = confirmDialog.cancelBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1837,7 +1847,7 @@ function GUI:CreateColorPicker(parent, label, dbKey, dbTable, onChange, descript
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = px,
     })
-    swatch:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    swatch:SetBackdropBorderColor(GUI.BORDER_SWATCH[1], GUI.BORDER_SWATCH[2], GUI.BORDER_SWATCH[3], GUI.BORDER_SWATCH[4])
 
     -- Label (same font size as checkbox: 12)
     local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1973,8 +1983,8 @@ function GUI:CreateSubTabs(parent, tabs)
         btn:SetSize(RoundVirtual(90, btn), RoundVirtual(24, btn))
         SetSnappedPoint(btn, "TOPLEFT", buttonGroup, "TOPLEFT", 10 + (i-1) * (90 + spacing), -3)
         ApplyPixelBackdrop(btn)
-        btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
-        btn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+        btn:SetBackdropColor(GUI.DIALOG_BUTTON_BG[1], GUI.DIALOG_BUTTON_BG[2], GUI.DIALOG_BUTTON_BG[3], GUI.DIALOG_BUTTON_BG[4])
+        btn:SetBackdropBorderColor(GUI.BORDER_INACTIVE[1], GUI.BORDER_INACTIVE[2], GUI.BORDER_INACTIVE[3], GUI.BORDER_INACTIVE[4])
         if UIKit and UIKit.RegisterScaleRefresh then
             UIKit.RegisterScaleRefresh(btn, "subTabPixelBackdrop", function(owner)
                 owner:SetHeight(RoundVirtual(24, owner))
@@ -1986,8 +1996,8 @@ function GUI:CreateSubTabs(parent, tabs)
                     pcall(owner.SetBackdropColor, owner, 0.12, 0.18, 0.18, 1)
                     pcall(owner.SetBackdropBorderColor, owner, C_accent_r, C_accent_g, C_accent_b, C_accent_a)
                 else
-                    pcall(owner.SetBackdropColor, owner, 0.15, 0.15, 0.15, 1)
-                    pcall(owner.SetBackdropBorderColor, owner, 0.3, 0.3, 0.3, 1)
+                    pcall(owner.SetBackdropColor, owner, GUI.DIALOG_BUTTON_BG[1], GUI.DIALOG_BUTTON_BG[2], GUI.DIALOG_BUTTON_BG[3], GUI.DIALOG_BUTTON_BG[4])
+                    pcall(owner.SetBackdropBorderColor, owner, GUI.BORDER_INACTIVE[1], GUI.BORDER_INACTIVE[2], GUI.BORDER_INACTIVE[3], GUI.BORDER_INACTIVE[4])
                 end
             end)
         end
@@ -2241,8 +2251,8 @@ function GUI:CreateCheckbox(parent, label, dbKey, dbTable, onChange, description
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = px,
     })
-    box:SetBackdropColor(0.1, 0.1, 0.1, 1)
-    box:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    box:SetBackdropColor(GUI.CHECKBOX_BG[1], GUI.CHECKBOX_BG[2], GUI.CHECKBOX_BG[3], GUI.CHECKBOX_BG[4])
+    box:SetBackdropBorderColor(GUI.BORDER_SWATCH[1], GUI.BORDER_SWATCH[2], GUI.BORDER_SWATCH[3], GUI.BORDER_SWATCH[4])
 
     -- Checkmark (mint-colored using standard check but tinted)
     box.check = box:CreateTexture(nil, "OVERLAY")
@@ -2275,7 +2285,7 @@ function GUI:CreateCheckbox(parent, label, dbKey, dbTable, onChange, description
         else
             box.check:Hide()
             box:SetBackdropBorderColor(C_border_r, C_border_g, C_border_b, C_border_a)
-            box:SetBackdropColor(0.1, 0.1, 0.1, 1)
+            box:SetBackdropColor(GUI.CHECKBOX_BG[1], GUI.CHECKBOX_BG[2], GUI.CHECKBOX_BG[3], GUI.CHECKBOX_BG[4])
         end
         if dbTable and dbKey then dbTable[dbKey] = val end
         if onChange then onChange(val) end
@@ -2323,8 +2333,8 @@ function GUI:CreateCheckboxCentered(parent, label, dbKey, dbTable, onChange, des
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = px,
     })
-    box:SetBackdropColor(0.1, 0.1, 0.1, 1)
-    box:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    box:SetBackdropColor(GUI.CHECKBOX_BG[1], GUI.CHECKBOX_BG[2], GUI.CHECKBOX_BG[3], GUI.CHECKBOX_BG[4])
+    box:SetBackdropBorderColor(GUI.BORDER_SWATCH[1], GUI.BORDER_SWATCH[2], GUI.BORDER_SWATCH[3], GUI.BORDER_SWATCH[4])
 
     -- Checkmark
     box.check = box:CreateTexture(nil, "OVERLAY")
@@ -2352,7 +2362,7 @@ function GUI:CreateCheckboxCentered(parent, label, dbKey, dbTable, onChange, des
         else
             box.check:Hide()
             box:SetBackdropBorderColor(C_border_r, C_border_g, C_border_b, C_border_a)
-            box:SetBackdropColor(0.1, 0.1, 0.1, 1)
+            box:SetBackdropColor(GUI.CHECKBOX_BG[1], GUI.CHECKBOX_BG[2], GUI.CHECKBOX_BG[3], GUI.CHECKBOX_BG[4])
         end
         if dbTable and dbKey then dbTable[dbKey] = val end
         if onChange then onChange(val) end
@@ -2400,7 +2410,7 @@ function GUI:CreateColorPickerCentered(parent, label, dbKey, dbTable, onChange, 
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = px,
     })
-    swatch:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    swatch:SetBackdropBorderColor(GUI.BORDER_SWATCH[1], GUI.BORDER_SWATCH[2], GUI.BORDER_SWATCH[3], GUI.BORDER_SWATCH[4])
 
     container.swatch = swatch
     container.label = text
@@ -2482,8 +2492,8 @@ function GUI:CreateCheckboxInverted(parent, label, dbKey, dbTable, onChange, des
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = px,
     })
-    box:SetBackdropColor(0.1, 0.1, 0.1, 1)
-    box:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    box:SetBackdropColor(GUI.CHECKBOX_BG[1], GUI.CHECKBOX_BG[2], GUI.CHECKBOX_BG[3], GUI.CHECKBOX_BG[4])
+    box:SetBackdropBorderColor(GUI.BORDER_SWATCH[1], GUI.BORDER_SWATCH[2], GUI.BORDER_SWATCH[3], GUI.BORDER_SWATCH[4])
 
     box.check = box:CreateTexture(nil, "OVERLAY")
     box.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
@@ -2521,7 +2531,7 @@ function GUI:CreateCheckboxInverted(parent, label, dbKey, dbTable, onChange, des
         else
             box.check:Hide()
             box:SetBackdropBorderColor(C_border_r, C_border_g, C_border_b, C_border_a)
-            box:SetBackdropColor(0.1, 0.1, 0.1, 1)
+            box:SetBackdropColor(GUI.CHECKBOX_BG[1], GUI.CHECKBOX_BG[2], GUI.CHECKBOX_BG[3], GUI.CHECKBOX_BG[4])
         end
         if dbTable and dbKey then dbTable[dbKey] = dbVal end
         if onChange then onChange(dbVal) end
@@ -9461,6 +9471,17 @@ function GUI:FocusSearchBox()
         box:SetFocus()
         if box.HighlightText then pcall(box.HighlightText, box) end
     end
+end
+
+---------------------------------------------------------------------------
+-- FONT CHANGE REFRESH
+-- Called when the user changes the global QUI font while the options panel
+-- is open. Rebuilds the panel so all FontStrings pick up the new font.
+-- No-op if the panel is not currently shown (avoids invisible rebuilds).
+---------------------------------------------------------------------------
+function GUI:OnFontChanged()
+    if not self.MainFrame or not self.MainFrame:IsShown() then return end
+    self:RefreshAccentColor()
 end
 
 -- Store reference

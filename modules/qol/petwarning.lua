@@ -1,5 +1,6 @@
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
+local SkinBase = ns.SkinBase
 
 ---------------------------------------------------------------------------
 -- PET WARNING
@@ -60,13 +61,24 @@ PetWarningFrame:SetSize(220, 50)
 PetWarningFrame:SetFrameStrata("HIGH")
 PetWarningFrame:Hide()
 
-PetWarningFrame:SetBackdrop({
-    bgFile = "Interface\\Buttons\\WHITE8x8",
-    edgeFile = "Interface\\Buttons\\WHITE8x8",
-    edgeSize = 2,
-})
-PetWarningFrame:SetBackdropColor(0.1, 0.1, 0.1, 0.9)
-PetWarningFrame:SetBackdropBorderColor(1, 0.3, 0.3, 1)
+do
+    local bgr, bgg, bgb = 0.1, 0.1, 0.1        -- original fallback literals
+    if Helpers and Helpers.GetSkinBgColor then
+        bgr, bgg, bgb = Helpers.GetSkinBgColor()
+    end
+    local sr, sg, sb = 1, 0.3, 0.3              -- semantic warning border: keep as-is
+    if SkinBase and SkinBase.CreateBackdrop then
+        SkinBase.CreateBackdrop(PetWarningFrame, sr, sg, sb, 1, bgr, bgg, bgb, 0.9)
+    else
+        PetWarningFrame:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = 2,
+        })
+        PetWarningFrame:SetBackdropColor(bgr, bgg, bgb, 0.9)
+        PetWarningFrame:SetBackdropBorderColor(sr, sg, sb, 1)
+    end
+end
 
 PetWarningFrame.icon = PetWarningFrame:CreateTexture(nil, "ARTWORK")
 PetWarningFrame.icon:SetSize(32, 32)
@@ -290,6 +302,17 @@ _G.QUI_RepositionPetWarning = PositionPetWarningFrame
 _G.QUI_RefreshPetWarning = function()
     PositionPetWarningFrame()
     UpdatePetWarningEventRegistration()
+    -- Re-apply skin bg color on theme change; keep the semantic red warning border.
+    local bgr, bgg, bgb = 0.1, 0.1, 0.1
+    if Helpers and Helpers.GetSkinBgColor then
+        bgr, bgg, bgb = Helpers.GetSkinBgColor()
+    end
+    local sr, sg, sb = 1, 0.3, 0.3             -- semantic warning border
+    if SkinBase and SkinBase.CreateBackdrop then
+        SkinBase.CreateBackdrop(PetWarningFrame, sr, sg, sb, 1, bgr, bgg, bgb, 0.9)
+    else
+        PetWarningFrame:SetBackdropColor(bgr, bgg, bgb, 0.9)
+    end
     if InCombatLockdown() and combatEventsRegistered then
         StartPetWarningPolling()
     else

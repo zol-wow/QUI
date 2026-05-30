@@ -710,7 +710,9 @@ local function CreateIconIndicator(parent)
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = px,
     })
-    frame:SetBackdropBorderColor(0, 0, 0, 1)
+    local bdr, bdg, bdb, bda = 0, 0, 0, 1
+    if Helpers and Helpers.GetSkinBorderColor then bdr, bdg, bdb, bda = Helpers.GetSkinBorderColor() end
+    frame:SetBackdropBorderColor(bdr, bdg, bdb, bda)
 
     local cd = CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate")
     cd:SetAllPoints()

@@ -143,7 +143,9 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
     local bgAlpha = (bgColor[4] or 1) * bgOpacity
     frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgAlpha)
     if borderSize > 0 then
-        frame:SetBackdropBorderColor(0.15, 0.15, 0.15, 1)
+        local bdr, bdg, bdb, bda = 0.15, 0.15, 0.15, 1
+        if Helpers and Helpers.GetSkinBorderColor then bdr, bdg, bdb, bda = Helpers.GetSkinBorderColor() end
+        frame:SetBackdropBorderColor(bdr, bdg, bdb, bda)
     end
 
     -- Power bar

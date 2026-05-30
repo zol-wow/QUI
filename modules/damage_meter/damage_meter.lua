@@ -17,6 +17,7 @@ local _, ns = ...
 
 -- ns.Helpers is provided by core/utils.lua (loaded before this module via core.xml).
 local Helpers = ns.Helpers
+local SkinBase = ns.SkinBase
 
 local QUI_DamageMeter = {}
 ns.QUI_DamageMeter = QUI_DamageMeter
@@ -1213,7 +1214,13 @@ function Window:_AttachRowVisuals(row)
     -- Bar bg (dark behind the fill)
     row.BarBg = row.Bar:CreateTexture(nil, "BACKGROUND")
     row.BarBg:SetAllPoints(row.Bar)
-    row.BarBg:SetColorTexture(0.05, 0.05, 0.05, 0.55)
+    do
+        local _r, _g, _b = 0.05, 0.05, 0.05
+        if SkinBase and SkinBase.GetDepthColor then
+            _r, _g, _b = SkinBase.GetDepthColor("ROW")
+        end
+        row.BarBg:SetColorTexture(_r or 0.05, _g or 0.05, _b or 0.05, 0.55)
+    end
 
     -- Name (left-justified, over the bar)
     row.Name = row.Bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -1490,7 +1497,14 @@ function Window:_ApplyColors()
 
     -- Window bg
     if self.backdropTex then
-        local bg = ResolveAppearance(windowID, "colors", "bg") or { 0, 0, 0, 0.85 }
+        local bg = ResolveAppearance(windowID, "colors", "bg")
+        if not bg then
+            local _r, _g, _b = 0, 0, 0
+            if Helpers and Helpers.GetSkinBgColor then
+                _r, _g, _b = Helpers.GetSkinBgColor()
+            end
+            bg = { _r or 0, _g or 0, _b or 0, 0.85 }
+        end
         self.backdropTex:SetColorTexture(bg[1] or 0, bg[2] or 0, bg[3] or 0, bg[4] or 0.85)
     end
 
@@ -2201,7 +2215,14 @@ function Window.New(windowID)
     bgTex:SetAllPoints(backdrop)
     -- colors.bg is { r, g, b, a } array form (Phase 2 schema); per-window
     -- override resolution lands here so window-specific bg colors paint at spawn.
-    local appBg = ResolveAppearance(windowID, "colors", "bg") or { 0, 0, 0, 0.85 }
+    local appBg = ResolveAppearance(windowID, "colors", "bg")
+    if not appBg then
+        local _r, _g, _b = 0, 0, 0
+        if Helpers and Helpers.GetSkinBgColor then
+            _r, _g, _b = Helpers.GetSkinBgColor()
+        end
+        appBg = { _r or 0, _g or 0, _b or 0, 0.85 }
+    end
     bgTex:SetColorTexture(appBg[1], appBg[2], appBg[3], appBg[4])
     self.backdrop = backdrop
     self.backdropTex = bgTex
@@ -2420,7 +2441,13 @@ function Breakdown:_AttachBreakdownRowVisuals(row, barH)
 
     row.BarBg = row.Bar:CreateTexture(nil, "BACKGROUND")
     row.BarBg:SetAllPoints(row.Bar)
-    row.BarBg:SetColorTexture(0.05, 0.05, 0.05, 0.55)
+    do
+        local _r, _g, _b = 0.05, 0.05, 0.05
+        if SkinBase and SkinBase.GetDepthColor then
+            _r, _g, _b = SkinBase.GetDepthColor("ROW")
+        end
+        row.BarBg:SetColorTexture(_r or 0.05, _g or 0.05, _b or 0.05, 0.55)
+    end
 
     row.Name = row.Bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.Name:SetPoint("LEFT", row.Bar, "LEFT", 4, 0)
@@ -2493,7 +2520,14 @@ function Breakdown.New(parentWindow)
     -- Backdrop
     local bgTex = frame:CreateTexture(nil, "BACKGROUND")
     bgTex:SetAllPoints(frame)
-    local bg = ResolveAppearance(self.parentWindowID, "colors", "bg") or { 0, 0, 0, 0.85 }
+    local bg = ResolveAppearance(self.parentWindowID, "colors", "bg")
+    if not bg then
+        local _r, _g, _b = 0, 0, 0
+        if Helpers and Helpers.GetSkinBgColor then
+            _r, _g, _b = Helpers.GetSkinBgColor()
+        end
+        bg = { _r or 0, _g or 0, _b or 0, 0.85 }
+    end
     bgTex:SetColorTexture(bg[1], bg[2], bg[3], bg[4])
     self.backdropTex = bgTex
 

@@ -10,6 +10,7 @@
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
+local SkinBase = ns.SkinBase
 
 -- Defensive: assert _internals exists before reading state through it.
 -- Set up by chat.lua, which loads first per chat.xml.
@@ -1005,13 +1006,28 @@ local function UpdateTabColors(tab)
     -- Accent resolved live so a theme-preset change propagates on the next
     -- repaint instead of being captured at module load.
     local accent = I.GetAccent and I.GetAccent() or I.QUI_COLORS.accent
+
+    -- Source tab background RGB from the themed depth tiers.
+    -- Selected tab → SUBPANEL tier (slightly raised bg); inactive → PANEL tier.
+    -- Guarded multi-assign: never `local r,g,b = X and fn()` — Lua truncates
+    -- the multi-return to 1. Alphas are kept relative to settings (selected is
+    -- alpha + 0.2 more opaque than inactive) to preserve the original look.
+    local selR, selG, selB = 0, 0, 0
+    if SkinBase and SkinBase.GetDepthColor then
+        selR, selG, selB = SkinBase.GetDepthColor("SUBPANEL")
+    end
+    local inactR, inactG, inactB = 0, 0, 0
+    if SkinBase and SkinBase.GetDepthColor then
+        inactR, inactG, inactB = SkinBase.GetDepthColor("PANEL")
+    end
+
     if isSelected then
-        I.ApplySurfaceStyle(I.tabBackdrops[tab], {0, 0, 0, alpha + 0.2}, accent, 1)
+        I.ApplySurfaceStyle(I.tabBackdrops[tab], {selR, selG, selB, alpha + 0.2}, accent, 1)
         if fontString then
             fontString:SetTextColor(accent[1], accent[2], accent[3], 1)
         end
     else
-        I.ApplySurfaceStyle(I.tabBackdrops[tab], {0, 0, 0, alpha}, {0, 0, 0, alpha}, 1)
+        I.ApplySurfaceStyle(I.tabBackdrops[tab], {inactR, inactG, inactB, alpha}, {0, 0, 0, alpha}, 1)
         if fontString then
             local c = I.QUI_COLORS.textDim or {0.72, 0.72, 0.76, 1}
             fontString:SetTextColor(c[1], c[2], c[3], 1)

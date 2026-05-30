@@ -190,7 +190,7 @@ CreateIconFrame = function()
 
     -- Keybind text
     iconFrame.keybindText = iconFrame:CreateFontString(nil, "OVERLAY")
-    iconFrame.keybindText:SetFont(STANDARD_TEXT_FONT, 13, "OUTLINE")
+    iconFrame.keybindText:SetFont(QUI.Helpers.GetGeneralFont(), 13, QUI.Helpers.GetGeneralFontOutline())
     iconFrame.keybindText:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", -2, 2)
     iconFrame.keybindText:SetTextColor(1, 1, 1, 1)
     iconFrame.keybindText:SetShadowOffset(1, -1)
@@ -511,7 +511,9 @@ RefreshIconFrame = function()
                 iconFrame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
             end
         end
-        iconFrame:SetBackdropColor(0, 0, 0, 0)
+        local _rbgR, _rbgG, _rbgB = 0, 0, 0
+        if QUI.Helpers and QUI.Helpers.GetSkinBgColor then _rbgR, _rbgG, _rbgB = QUI.Helpers.GetSkinBgColor() end
+        iconFrame:SetBackdropColor(_rbgR, _rbgG, _rbgB, 0)
     else
         if SafeSetBackdrop then
             SafeSetBackdrop(iconFrame, nil)
@@ -547,9 +549,9 @@ RefreshIconFrame = function()
                 fontName = core.db.profile.general.font
             end
         end
-        local fontPath = LSM:Fetch("font", fontName) or STANDARD_TEXT_FONT
+        local fontPath = LSM:Fetch("font", fontName) or QUI.Helpers.GetGeneralFont()
         local fontSize = db.keybindSize or 13
-        local outline = db.keybindOutline and "OUTLINE" or ""
+        local outline = db.keybindOutline and QUI.Helpers.GetGeneralFontOutline() or ""
         iconFrame.keybindText:SetFont(fontPath, fontSize, outline)
 
         local color = db.keybindColor or { 1, 1, 1, 1 }

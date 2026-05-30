@@ -5,6 +5,7 @@
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
+local SkinBase = ns.SkinBase
 local LSM = ns.LSM
 local LibDBIcon = LibStub("LibDBIcon-1.0", true)
 
@@ -804,7 +805,13 @@ local function UpdateDatatextPanel()
     datatextFrame.borderBottom:SetShown(showBorder)
 
     -- Background (content area with opacity)
-    datatextFrame.bg:SetColorTexture(0, 0, 0, bgAlpha)
+    do
+        local bgR, bgG, bgB = 0, 0, 0
+        if Helpers and Helpers.GetSkinBgColor then
+            bgR, bgG, bgB = Helpers.GetSkinBgColor()
+        end
+        datatextFrame.bg:SetColorTexture(bgR or 0, bgG or 0, bgB or 0, bgAlpha)
+    end
 
     datatextFrame:Show()
 
@@ -1323,8 +1330,16 @@ end
 
 local function ApplyMinimapButtonBackground(button)
     local bg = CreateFrame("Frame", nil, button, "BackdropTemplate")
-    bg:SetBackdrop({ bgFile = "Interface\\ChatFrame\\ChatFrameBackground" })
-    bg:SetBackdropColor(0, 0, 0, 0.8)
+    local bgR, bgG, bgB = 0, 0, 0
+    if Helpers and Helpers.GetSkinBgColor then
+        bgR, bgG, bgB = Helpers.GetSkinBgColor()
+    end
+    if SkinBase and SkinBase.ApplyFullBackdrop then
+        SkinBase.ApplyFullBackdrop(bg, nil, nil, nil, nil, bgR or 0, bgG or 0, bgB or 0, 0.8)
+    else
+        bg:SetBackdrop({ bgFile = "Interface\\ChatFrame\\ChatFrameBackground" })
+        bg:SetBackdropColor(bgR or 0, bgG or 0, bgB or 0, 0.8)
+    end
     bg:SetAllPoints(button)
     bg:SetFrameLevel(button:GetFrameLevel() - 1)
     return bg
@@ -2909,7 +2924,16 @@ local function CreateDrawerToggleButton()
     -- Background
     local bg = drawerToggleButton:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
-    bg:SetColorTexture(0.05, 0.05, 0.05, 0.9)
+    do
+        local bgR, bgG, bgB
+        if SkinBase and SkinBase.GetDepthColor then
+            bgR, bgG, bgB = SkinBase.GetDepthColor("PANEL")
+        end
+        if not bgR and Helpers.GetSkinBgColor then
+            bgR, bgG, bgB = Helpers.GetSkinBgColor()
+        end
+        bg:SetColorTexture(bgR or 0.05, bgG or 0.05, bgB or 0.05, 0.9)
+    end
 
     -- Hammer icon texture
     local hammer = drawerToggleButton:CreateTexture(nil, "ARTWORK")

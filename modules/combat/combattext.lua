@@ -93,7 +93,7 @@ local function CreateTextFrame()
 
     local text = frame:CreateFontString(nil, "OVERLAY")
     text:SetPoint("CENTER", frame, "CENTER", 0, 0)
-    text:SetFont("Fonts\\FRIZQT__.TTF", 24, "OUTLINE")
+    text:SetFont(Helpers.GetGeneralFont(), 24, Helpers.GetGeneralFontOutline())
     text:SetTextColor(0.376, 0.647, 0.980, 1)  -- QUI sky blue accent
     text:SetJustifyH("CENTER")
     frame.text = text

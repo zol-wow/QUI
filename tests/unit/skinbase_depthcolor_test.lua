@@ -20,7 +20,7 @@ local ns = { Helpers = {
     GetSkinBgColorWithOverride = function() return 0.10, 0.20, 0.30, 0.9 end,
     GetGeneralFont = function() return "Q" end, GetGeneralFontOutline = function() return "" end,
 }, UIKit = { RegisterScaleRefresh = function() end } }
-assert(loadfile("modules/skinning/base.lua"))("QUI", ns)
+assert(loadfile("core/uikit.lua"))("QUI", ns)
 local SkinBase = ns.SkinBase
 
 local r, g, b, a = SkinBase.GetDepthColor("SUBPANEL")

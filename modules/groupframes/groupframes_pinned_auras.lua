@@ -262,7 +262,9 @@ local function CreateIndicator(parent)
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = px,
     })
-    frame:SetBackdropBorderColor(0, 0, 0, 1)
+    local bdr, bdg, bdb, bda = 0, 0, 0, 1
+    if Helpers and Helpers.GetSkinBorderColor then bdr, bdg, bdb, bda = Helpers.GetSkinBorderColor() end
+    frame:SetBackdropBorderColor(bdr, bdg, bdb, bda)
 
     -- Cooldown swipe (used by icon display type)
     local cd = CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate")
@@ -308,7 +310,9 @@ local function ReleaseIndicator(item)
     if item.icon then item.icon:Show(); item.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
     if item.solidColor then item.solidColor:Hide() end
     item:SetAlpha(1)
-    item:SetBackdropBorderColor(0, 0, 0, 1)
+    local bdr, bdg, bdb, bda = 0, 0, 0, 1
+    if Helpers and Helpers.GetSkinBorderColor then bdr, bdg, bdb, bda = Helpers.GetSkinBorderColor() end
+    item:SetBackdropBorderColor(bdr, bdg, bdb, bda)
     if #iconPool < POOL_SIZE then
         table_insert(iconPool, item)
     end
@@ -319,6 +323,8 @@ end
 local function UpdateIndicatorData(ind, unit, slot, auraData, showSwipe)
     local isActive = auraData ~= nil
     local displayType = slot.displayType or "icon"
+    local bdr, bdg, bdb, bda = 0, 0, 0, 1
+    if Helpers and Helpers.GetSkinBorderColor then bdr, bdg, bdb, bda = Helpers.GetSkinBorderColor() end
 
     if not isActive then
         if ind.cooldown then
@@ -354,7 +360,7 @@ local function UpdateIndicatorData(ind, unit, slot, auraData, showSwipe)
             ind.stackText:SetText("")
         end
         ind:SetAlpha(1)
-        ind:SetBackdropBorderColor(0, 0, 0, 1)
+        ind:SetBackdropBorderColor(bdr, bdg, bdb, bda)
     else
         ind.solidColor:Hide()
         ind.icon:Show()
@@ -387,7 +393,7 @@ local function UpdateIndicatorData(ind, unit, slot, auraData, showSwipe)
         end
 
         ind:SetAlpha(1)
-        ind:SetBackdropBorderColor(0, 0, 0, 1)
+        ind:SetBackdropBorderColor(bdr, bdg, bdb, bda)
     end
 end
 

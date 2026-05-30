@@ -1293,19 +1293,16 @@ local function CreateHuntPanel()
     panel:SetFrameStrata("TOOLTIP")
 
     local _, _, _, _, bgr, bgg, bgb, bga = Helpers.GetSkinColors()
+    local bdr, bdg, bdb = 1, 1, 1
+    if Helpers and Helpers.GetSkinBorderColor then bdr, bdg, bdb = Helpers.GetSkinBorderColor() end
     local panelPx = GetPixelSize(panel)
-    panel:SetBackdrop({
-        bgFile = DEFAULT_FALLBACK_TEXTURE,
-        edgeFile = DEFAULT_FALLBACK_TEXTURE,
-        edgeSize = panelPx,
-        insets = { left = panelPx, right = panelPx, top = panelPx, bottom = panelPx },
-    })
-    panel:SetBackdropColor(bgr, bgg, bgb, 0.95)
-    panel:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    SkinBase.ApplyPixelBackdrop(panel, panelPx, true, true,
+        { bdr, bdg, bdb, 1 },
+        { bgr, bgg, bgb, 0.95 })
 
     panel.title = panel:CreateFontString(nil, "OVERLAY")
     panel.title:SetPoint("TOPLEFT", 6, -6)
-    panel.title:SetFont(STANDARD_TEXT_FONT, 12, FONT_FLAGS)
+    panel.title:SetFont(Helpers.GetGeneralFont(), 12, Helpers.GetGeneralFontOutline())
     panel.title:SetTextColor(1, 0.82, 0)
     panel.title:SetText("Available Hunts")
 
@@ -1313,7 +1310,7 @@ local function CreateHuntPanel()
     for i = 1, 8 do
         local line = panel:CreateFontString(nil, "OVERLAY")
         line:SetPoint("TOPLEFT", 6, -6 - 16 * i)
-        line:SetFont(STANDARD_TEXT_FONT, 11, "")
+        line:SetFont(Helpers.GetGeneralFont(), 11, "")
         line:SetTextColor(0.9, 0.9, 0.9)
         line:SetWidth(208)
         line:SetJustifyH("LEFT")

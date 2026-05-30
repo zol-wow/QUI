@@ -490,6 +490,7 @@ function QUI_Anchoring_Options:CreateSnapButton(parent, text, x, y, width, heigh
     width = width or 100
     height = height or 24
 
+    local GUI = GetGUI()
     local C = GetColors()
 
     local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
@@ -504,7 +505,8 @@ function QUI_Anchoring_Options:CreateSnapButton(parent, text, x, y, width, heigh
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = pxBtn
     })
-    button:SetBackdropColor(0.15, 0.15, 0.15, 1)
+    local dbg = GUI and GUI.DIALOG_BUTTON_BG or {0.15, 0.15, 0.15, 1}
+    button:SetBackdropColor(dbg[1], dbg[2], dbg[3], dbg[4])
     button:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
 
     local buttonText = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -668,6 +670,7 @@ end
 ---------------------------------------------------------------------------
 function QUI_Anchoring_Options:CreateAnchorPointSelector(parent, label, settingsDB, key, x, y, onChange, size)
     size = size or 200
+    local GUI = GetGUI()
     local C = GetColors()
 
     -- Container frame
@@ -697,7 +700,9 @@ function QUI_Anchoring_Options:CreateAnchorPointSelector(parent, label, settings
         edgeSize = px,
         insets = {left = px, right = px, top = px, bottom = px}
     })
-    grid:SetBackdropColor(0.1, 0.1, 0.1, 1)
+    local gridBg = GUI and GUI.GRID_BG or {0.1, 0.1, 0.1, 1}
+    local cellBg = GUI and GUI.DIALOG_BUTTON_BG or {0.15, 0.15, 0.15, 1}
+    grid:SetBackdropColor(gridBg[1], gridBg[2], gridBg[3], gridBg[4])
     grid:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 0.5)
 
     -- Anchor point mapping: [row][col] = anchorPoint
@@ -722,7 +727,7 @@ function QUI_Anchoring_Options:CreateAnchorPointSelector(parent, label, settings
                 edgeFile = "Interface\\Buttons\\WHITE8x8",
                 edgeSize = pxCell,
             })
-            cell:SetBackdropColor(0.15, 0.15, 0.15, 1)
+            cell:SetBackdropColor(cellBg[1], cellBg[2], cellBg[3], cellBg[4])
             cell:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 0.3)
 
             -- Visual indicator (small square representing the anchor point)
@@ -797,7 +802,7 @@ function QUI_Anchoring_Options:CreateAnchorPointSelector(parent, label, settings
                             end
                         else
                             cellFrame:SetBackdropBorderColor(self.C.border[1], self.C.border[2], self.C.border[3], 0.3)
-                            cellFrame:SetBackdropColor(0.15, 0.15, 0.15, 1)
+                            cellFrame:SetBackdropColor(cellBg[1], cellBg[2], cellBg[3], cellBg[4])
                             if cellFrame.indicator then
                                 cellFrame.indicator:SetColorTexture(self.C.accent[1], self.C.accent[2], self.C.accent[3], 0.6)
                             end

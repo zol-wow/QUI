@@ -1,6 +1,7 @@
--- tests/unit/skinbase_chrome_defaults_test.lua
--- Run: lua tests/unit/skinbase_chrome_defaults_test.lua
--- Verifies SkinBase.CHROME aliases the core table and primitives read defaults from it.
+-- tests/unit/uikit_skinbase_merge_test.lua
+-- Run: lua tests/unit/uikit_skinbase_merge_test.lua
+-- Verifies the skinning engine was merged into core/uikit.lua: ns.SkinBase aliases
+-- ns.UIKit (one table) and the merged kit exposes every UIKit + SkinBase method.
 
 -- luacheck: globals CreateFrame C_Timer hooksecurefunc ScrollUtil STANDARD_TEXT_FONT
 CreateFrame = function()
@@ -43,15 +44,18 @@ local ns = {
         GetGeneralFont = function() return "Q.ttf" end,
         GetGeneralFontOutline = function() return "" end,
     },
-    UIKit = { RegisterScaleRefresh = function() end },
 }
 assert(loadfile("core/uikit.lua"))("QUI", ns)
-local SkinBase = ns.SkinBase
 
-assert(SkinBase.CHROME == CHROME, "SkinBase.CHROME must alias Helpers.CHROME (same table)")
-
-local frame = CreateFrame()
-SkinBase.CreateBackdrop(frame)
-local bd = SkinBase.GetBackdrop(frame)
-assert(bd._quiBgA == 0.95, "CreateBackdrop bg-alpha default must come from CHROME.BG_FALLBACK")
-print("OK: skinbase_chrome_defaults_test")
+assert(ns.SkinBase == ns.UIKit, "ns.SkinBase must alias ns.UIKit (one table)")
+local K = ns.UIKit
+for _, name in ipairs({
+    "CreateBackdrop","ApplyPixelBackdrop","ApplyFullBackdrop","ApplyTextureBackdrop",
+    "GetDepthColor","GetSkinColors","GetPixelSize","SkinFontString","SkinFrameText",
+    "SkinButton","SkinEditBox","SkinDropdown","SkinScrollRow","SkinCategoryButton",
+    "StripTextures","RefreshWidget","GetBackdrop","MarkSkinned","IsStyled",
+    "CreateBorderLines","UpdateBorderLines","CreateBackground","GetBackdropInfo",
+}) do
+    assert(type(K[name]) == "function", "merged kit must expose " .. name)
+end
+print("OK: uikit_skinbase_merge_test")

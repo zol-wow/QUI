@@ -85,7 +85,7 @@ local ns = {
 
 CreateFrame = function() return NewBackdropFrame() end
 
-assert(loadfile("modules/skinning/base.lua"))("QUI", ns)
+assert(loadfile("core/uikit.lua"))("QUI", ns)
 local SkinBase = ns.SkinBase
 assert(type(SkinBase.ApplyPixelBackdrop) == "function", "SkinBase.ApplyPixelBackdrop must exist")
 

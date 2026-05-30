@@ -2929,7 +2929,7 @@ local function RenderPortraitUnavailableSection(sectionHost, ctx)
         local label = sectionHost:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         label:SetPoint("TOPLEFT", 10, -10)
         label:SetText("Portrait is only supported on the Player, Target, and Focus frames.")
-        label:SetTextColor(0.5, 0.5, 0.5, 1)
+        label:SetTextColor(DESCRIPTION_TEXT_COLOR[1], DESCRIPTION_TEXT_COLOR[2], DESCRIPTION_TEXT_COLOR[3], DESCRIPTION_TEXT_COLOR[4])
     end
     return 60
 end
@@ -3354,7 +3354,7 @@ local function RenderPrivateAurasUnavailableSection(sectionHost, ctx)
         local label = sectionHost:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         label:SetPoint("TOPLEFT", 10, -10)
         label:SetText("Private Auras are only supported on the Player, Target, and Focus frames.")
-        label:SetTextColor(0.5, 0.5, 0.5, 1)
+        label:SetTextColor(DESCRIPTION_TEXT_COLOR[1], DESCRIPTION_TEXT_COLOR[2], DESCRIPTION_TEXT_COLOR[3], DESCRIPTION_TEXT_COLOR[4])
     end
     return 60
 end

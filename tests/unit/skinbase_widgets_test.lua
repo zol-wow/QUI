@@ -71,7 +71,7 @@ local ns = {
     UIKit = { RegisterScaleRefresh = function() end },
 }
 
-assert(loadfile("modules/skinning/base.lua"))("QUI", ns)
+assert(loadfile("core/uikit.lua"))("QUI", ns)
 local SkinBase = ns.SkinBase
 
 -- SkinButton: backdrop with button boost, hides named + state textures, tags kind, idempotent

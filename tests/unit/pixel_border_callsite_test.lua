@@ -132,7 +132,10 @@ assert(not layoutModeUi:find("guide:SetHeight%(1%)"),
 assert(not layoutModeUi:find("guide:SetWidth%(1%)"),
     "layout mode UI snap guides must convert one-pixel widths through the pixel helper")
 
-local skinBase = readFile("modules/skinning/base.lua")
+-- The skinning engine was relocated into core/uikit.lua (loaded first, exposed as
+-- both ns.UIKit and ns.SkinBase). The scale-refreshing pixel backdrop helper now
+-- lives there; modules/skinning/base.lua is a thin stub.
+local skinBase = readFile("core/uikit.lua")
 assert(skinBase:find("function SkinBase.ApplyPixelBackdrop", 1, true),
     "skinning base must expose a scale-refreshing pixel backdrop helper")
 assert(skinBase:find("RegisterScaleRefresh", 1, true),

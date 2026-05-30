@@ -2367,7 +2367,9 @@ local function DecorateGroupFrame(frame)
     frame._lastBackdropReapplyTime = GetTime()
     SetBackdropFillColor(frame, bgColor[1], bgColor[2], bgColor[3], bgAlpha)
     if borderSize > 0 then
-        frame:SetBackdropBorderColor(0, 0, 0, 1)
+        local bdr, bdg, bdb, bda = 0, 0, 0, 1
+        if Helpers and Helpers.GetSkinBorderColor then bdr, bdg, bdb, bda = Helpers.GetSkinBorderColor() end
+        frame:SetBackdropBorderColor(bdr, bdg, bdb, bda)
     end
 
     -- Power bar height calculation
@@ -2745,7 +2747,9 @@ local function DecorateGroupFrame(frame)
         end
 
         EnsureBackdrop(portrait, GetCachedBackdrop(nil, "Interface\\Buttons\\WHITE8x8", portraitBorderPx))
-        portrait:SetBackdropBorderColor(0, 0, 0, 1)
+        local pbdr, pbdg, pbdb, pbda = 0, 0, 0, 1
+        if Helpers and Helpers.GetSkinBorderColor then pbdr, pbdg, pbdb, pbda = Helpers.GetSkinBorderColor() end
+        portrait:SetBackdropBorderColor(pbdr, pbdg, pbdb, pbda)
         portrait:SetFrameLevel(frame:GetFrameLevel() + 1)
 
         local portraitTex = frame.portraitTexture or portrait:CreateTexture(nil, "ARTWORK")

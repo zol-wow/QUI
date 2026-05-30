@@ -1777,7 +1777,9 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     end)
 
     -- Background
-    local bgColor = { 0.1, 0.1, 0.1, 0.9 }
+    local skinBgR, skinBgG, skinBgB = 0.1, 0.1, 0.1
+    if Helpers and Helpers.GetSkinBgColor then skinBgR, skinBgG, skinBgB = Helpers.GetSkinBgColor() end
+    local bgColor = { skinBgR, skinBgG, skinBgB, 0.9 }
     if general and general.darkMode then
         bgColor = general.darkModeBgColor or { 0.25, 0.25, 0.25, 1 }
     end
@@ -1792,7 +1794,9 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     })
     Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 1)
     if borderSize > 0 then
-        Helpers.SetFrameBackdropBorderColor(frame, 0, 0, 0, 1)
+        local skinBorderR, skinBorderG, skinBorderB = 0, 0, 0
+        if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB = Helpers.GetSkinBorderColor() end
+        Helpers.SetFrameBackdropBorderColor(frame, skinBorderR, skinBorderG, skinBorderB, 1)
     end
 
     -- Health bar
@@ -2493,7 +2497,9 @@ local function CreateUnitFrame(unit, unitKey)
     end
 
     -- Background
-    local bgColor = { 0.1, 0.1, 0.1, 0.9 }
+    local skinBgR, skinBgG, skinBgB = 0.1, 0.1, 0.1
+    if Helpers and Helpers.GetSkinBgColor then skinBgR, skinBgG, skinBgB = Helpers.GetSkinBgColor() end
+    local bgColor = { skinBgR, skinBgG, skinBgB, 0.9 }
     if general and general.darkMode then
         bgColor = general.darkModeBgColor or { 0.25, 0.25, 0.25, 1 }
     end
@@ -2509,7 +2515,9 @@ local function CreateUnitFrame(unit, unitKey)
     })
     Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 1)
     if borderSize > 0 then
-        Helpers.SetFrameBackdropBorderColor(frame, 0, 0, 0, 1)
+        local skinBorderR, skinBorderG, skinBorderB = 0, 0, 0
+        if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB = Helpers.GetSkinBorderColor() end
+        Helpers.SetFrameBackdropBorderColor(frame, skinBorderR, skinBorderG, skinBorderB, 1)
     end
 
     -- Health bar (pixel-perfect insets)
@@ -3440,7 +3448,9 @@ function QUI_UF:RefreshFrame(unitKey)
                     healthOpacity = general.darkModeHealthOpacity or general.darkModeOpacity or 1.0
                     bgOpacity = general.darkModeBgOpacity or general.darkModeOpacity or 1.0
                 else
-                    bgColor = general and general.defaultBgColor or { 0.1, 0.1, 0.1, 0.9 }
+                    local skinBgR, skinBgG, skinBgB = 0.1, 0.1, 0.1
+                    if Helpers and Helpers.GetSkinBgColor then skinBgR, skinBgG, skinBgB = Helpers.GetSkinBgColor() end
+                    bgColor = general and general.defaultBgColor or { skinBgR, skinBgG, skinBgB, 0.9 }
                     healthOpacity = general and general.defaultHealthOpacity or general and general.defaultOpacity or 1.0
                     bgOpacity = general and general.defaultBgOpacity or general and general.defaultOpacity or 1.0
                 end
@@ -3454,7 +3464,9 @@ function QUI_UF:RefreshFrame(unitKey)
                 })
                 Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], bgAlpha)
                 if borderSize > 0 then
-                    Helpers.SetFrameBackdropBorderColor(frame, 0, 0, 0, 1)
+                    local skinBorderR, skinBorderG, skinBorderB = 0, 0, 0
+                    if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB = Helpers.GetSkinBorderColor() end
+                    Helpers.SetFrameBackdropBorderColor(frame, skinBorderR, skinBorderG, skinBorderB, 1)
                 end
 
                 -- Apply opacity to bars only (not text)
@@ -3729,7 +3741,9 @@ function QUI_UF:RefreshFrame(unitKey)
         healthOpacity = general.darkModeHealthOpacity or general.darkModeOpacity or 1.0
         bgOpacity = general.darkModeBgOpacity or general.darkModeOpacity or 1.0
     else
-        bgColor = general and general.defaultBgColor or { 0.1, 0.1, 0.1, 0.9 }
+        local skinBgR, skinBgG, skinBgB = 0.1, 0.1, 0.1
+        if Helpers and Helpers.GetSkinBgColor then skinBgR, skinBgG, skinBgB = Helpers.GetSkinBgColor() end
+        bgColor = general and general.defaultBgColor or { skinBgR, skinBgG, skinBgB, 0.9 }
         healthOpacity = general and general.defaultHealthOpacity or general and general.defaultOpacity or 1.0
         bgOpacity = general and general.defaultBgOpacity or general and general.defaultOpacity or 1.0
     end
@@ -3747,7 +3761,9 @@ function QUI_UF:RefreshFrame(unitKey)
     })
     Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], bgAlpha)
     if borderSize > 0 then
-        Helpers.SetFrameBackdropBorderColor(frame, 0, 0, 0, 1)
+        local skinBorderR, skinBorderG, skinBorderB = 0, 0, 0
+        if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB = Helpers.GetSkinBorderColor() end
+        Helpers.SetFrameBackdropBorderColor(frame, skinBorderR, skinBorderG, skinBorderB, 1)
     end
 
     -- Apply opacity to bars only (not text)

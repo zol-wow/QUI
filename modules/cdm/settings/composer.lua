@@ -10,6 +10,7 @@
 
 local _, ns = ...
 local Helpers = ns.Helpers
+local SkinBase = ns.SkinBase
 local Shared = ns.CDMShared
 
 ns.CDMComposer = ns.CDMComposer or {}
@@ -44,6 +45,39 @@ local function RefreshAccentColor()
         local a = GUI.Colors.accent
         ACCENT_R, ACCENT_G, ACCENT_B = a[1], a[2], a[3]
     end
+end
+
+-- Skin chrome colors — resolved lazily so they pick up the active skin.
+-- PANEL = main panel bg tier; SUBPANEL = darker nav/container bg tier;
+-- BORDER = themed gray border. Resolved at paint-time rather than at
+-- module load so late-loading skins are honored.
+local function GetChromeBgPanel()
+    local r, g, b = 0.08, 0.08, 0.1
+    if SkinBase and SkinBase.GetDepthColor then r, g, b = SkinBase.GetDepthColor("PANEL") end
+    return r, g, b
+end
+local function GetChromeBgSubpanel()
+    local r, g, b = 0.04, 0.04, 0.06
+    if SkinBase and SkinBase.GetDepthColor then r, g, b = SkinBase.GetDepthColor("SUBPANEL") end
+    return r, g, b
+end
+local function GetChromeBorder()
+    local r, g, b = 0.2, 0.2, 0.2
+    if Helpers and Helpers.GetSkinBorderColor then r, g, b = Helpers.GetSkinBorderColor() end
+    return r, g, b
+end
+local function GetChromeBgMain()
+    local r, g, b = 0.08, 0.08, 0.1
+    if Helpers and Helpers.GetSkinBgColor then r, g, b = Helpers.GetSkinBgColor() end
+    return r, g, b
+end
+local function GetChromeFont()
+    if Helpers and Helpers.GetGeneralFont then return Helpers.GetGeneralFont() end
+    return STANDARD_TEXT_FONT
+end
+local function GetChromeFontOutline()
+    if Helpers and Helpers.GetGeneralFontOutline then return Helpers.GetGeneralFontOutline() end
+    return ""
 end
 
 local function GetPixelSize(frame)
@@ -546,8 +580,11 @@ end
 local function CreateSmallButton(parent, text, width, height)
     local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
     btn:SetSize(width or 22, height or 20)
-    SetSimpleBackdrop(btn, 0.12, 0.12, 0.15, 0.9, 0.3, 0.3, 0.3, 1)
+    local _sbR, _sbG, _sbB = GetChromeBgPanel()
+    local _sbBR, _sbBG, _sbBB = GetChromeBorder()
+    SetSimpleBackdrop(btn, _sbR, _sbG, _sbB, 0.9, _sbBR, _sbBG, _sbBB, 1)
     local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(label, { fontOnly = true }) end
     label:SetPoint("CENTER")
     label:SetText(text or "")
     label:SetTextColor(0.9, 0.9, 0.9, 1)
@@ -556,7 +593,8 @@ local function CreateSmallButton(parent, text, width, height)
         self:SetBackdropBorderColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
     end)
     btn:SetScript("OnLeave", function(self)
-        self:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+        local _r, _g, _b = GetChromeBorder()
+        self:SetBackdropBorderColor(_r, _g, _b, 1)
     end)
     return btn
 end
@@ -567,6 +605,7 @@ local function CreateAccentButton(parent, text, width, height)
     SetSimpleBackdrop(btn, ACCENT_R * 0.2, ACCENT_G * 0.2, ACCENT_B * 0.2, 0.9,
         ACCENT_R, ACCENT_G, ACCENT_B, 0.8)
     local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(label, { fontOnly = true }) end
     label:SetPoint("CENTER")
     label:SetText(text or "")
     label:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
@@ -585,13 +624,16 @@ end
 local function CreateSearchBox(parent, width, placeholder)
     local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     box:SetSize(width or 200, 22)
-    SetSimpleBackdrop(box, 0.06, 0.06, 0.08, 1, 0.25, 0.25, 0.25, 1)
-    box:SetFontObject("GameFontNormalSmall")
+    local _csBR, _csBG, _csBB = GetChromeBgPanel()
+    local _csBdR, _csBdG, _csBdB = GetChromeBorder()
+    SetSimpleBackdrop(box, _csBR, _csBG, _csBB, 1, _csBdR, _csBdG, _csBdB, 1)
+    box:SetFont(GetChromeFont(), 11, GetChromeFontOutline())
     box:SetTextInsets(6, 6, 0, 0)
     box:SetAutoFocus(false)
     box:SetMaxLetters(50)
 
     local ph = box:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(ph, { fontOnly = true }) end
     ph:SetPoint("LEFT", 6, 0)
     ph:SetTextColor(0.4, 0.4, 0.4, 1)
     ph:SetText(placeholder or "Search...")
@@ -616,7 +658,8 @@ local function CreateSearchBox(parent, width, placeholder)
         self:SetBackdropBorderColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
     end)
     box:SetScript("OnEditFocusLost", function(self)
-        self:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+        local _r, _g, _b = GetChromeBorder()
+        self:SetBackdropBorderColor(_r, _g, _b, 1)
     end)
     return box
 end
@@ -711,9 +754,12 @@ local previewScale = 1.5
 local function BuildPreviewSection(parent)
     local container = CreateBackdropFrame(parent)
     container:SetHeight(180)
-    SetSimpleBackdrop(container, 0.04, 0.04, 0.06, 1, 0.15, 0.15, 0.15, 1)
+    local _bpsBR, _bpsBG, _bpsBB = GetChromeBgSubpanel()
+    local _bpsBdR, _bpsBdG, _bpsBdB = GetChromeBorder()
+    SetSimpleBackdrop(container, _bpsBR, _bpsBG, _bpsBB, 1, _bpsBdR, _bpsBdG, _bpsBdB, 1)
 
     local title = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(title, { fontOnly = true }) end
     title:SetPoint("TOPLEFT", 8, -6)
     title:SetText("Live Preview")
     title:SetTextColor(0.6, 0.6, 0.6, 1)
@@ -727,11 +773,13 @@ local function BuildPreviewSection(parent)
 
     -- Scale slider area
     local scaleLabel = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(scaleLabel, { fontOnly = true }) end
     scaleLabel:SetPoint("BOTTOMLEFT", container, "BOTTOMLEFT", 8, 10)
     scaleLabel:SetText("Preview Scale:")
     scaleLabel:SetTextColor(0.5, 0.5, 0.5, 1)
 
     local scaleValueText = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(scaleValueText, { fontOnly = true }) end
     scaleValueText:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -8, 10)
     scaleValueText:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
 
@@ -1243,7 +1291,8 @@ local function BuildOverridePanel(parent)
     panel:SetHeight(180)
     panel:SetFrameStrata("TOOLTIP")
     panel:SetFrameLevel(500)
-    SetSimpleBackdrop(panel, 0.06, 0.06, 0.08, 0.98, ACCENT_R * 0.5, ACCENT_G * 0.5, ACCENT_B * 0.5, 0.8)
+    local _opBR, _opBG, _opBB = GetChromeBgPanel()
+    SetSimpleBackdrop(panel, _opBR, _opBG, _opBB, 0.98, ACCENT_R * 0.5, ACCENT_G * 0.5, ACCENT_B * 0.5, 0.8)
     panel:EnableMouse(true)
     panel:SetMovable(true)
     panel:RegisterForDrag("LeftButton")
@@ -1257,6 +1306,7 @@ local function BuildOverridePanel(parent)
     closeBtn:SetFrameLevel(panel:GetFrameLevel() + 10)
     closeBtn:RegisterForClicks("AnyUp")
     local closeText = closeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(closeText, { fontOnly = true }) end
     closeText:SetPoint("CENTER")
     closeText:SetText("X")
     closeText:SetTextColor(0.6, 0.6, 0.6, 1)
@@ -1344,6 +1394,7 @@ local function ShowOverridePanel(parentRow, containerKey, entry, entryIndex)
 
     -- Spell name title
     local titleLabel = overridePanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(titleLabel, { fontOnly = true }) end
     titleLabel:SetPoint("TOPLEFT", overridePanel, "TOPLEFT", 8, -6)
     titleLabel:SetPoint("RIGHT", overridePanel, "RIGHT", -24, 0)
     titleLabel:SetJustifyH("LEFT")
@@ -1560,9 +1611,12 @@ local dragState = {
 
 local function BuildEntryListSection(parent)
     local container = CreateBackdropFrame(parent)
-    SetSimpleBackdrop(container, 0.04, 0.04, 0.06, 1, 0.15, 0.15, 0.15, 1)
+    local _elsBR, _elsBG, _elsBB = GetChromeBgSubpanel()
+    local _elsBdR, _elsBdG, _elsBdB = GetChromeBorder()
+    SetSimpleBackdrop(container, _elsBR, _elsBG, _elsBB, 1, _elsBdR, _elsBdG, _elsBdB, 1)
 
     local title = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(title, { fontOnly = true }) end
     title:SetPoint("TOPLEFT", 8, -6)
     title:SetText("Spell List")
     title:SetTextColor(0.6, 0.6, 0.6, 1)
@@ -1695,7 +1749,8 @@ local function GetOrCreateEntryCell(index)
     cell:RegisterForDrag("LeftButton")
 
     -- Border (dim by default)
-    SetSimpleBackdrop(cell, 0, 0, 0, 0, 0.2, 0.2, 0.2, 0.5)
+    local _ecBdR, _ecBdG, _ecBdB = GetChromeBorder()
+    SetSimpleBackdrop(cell, 0, 0, 0, 0, _ecBdR, _ecBdG, _ecBdB, 0.5)
 
     -- Icon
     cell._icon = cell:CreateTexture(nil, "ARTWORK")
@@ -1712,6 +1767,7 @@ local function GetOrCreateEntryCell(index)
     cell._warnBadge:SetColorTexture(0.95, 0.15, 0.15, 1)
     cell._warnBadge:Hide()
     cell._warnBadgeText = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(cell._warnBadgeText, { fontOnly = true }) end
     cell._warnBadgeText:SetPoint("CENTER", cell._warnBadge, "CENTER", 0, 0)
     cell._warnBadgeText:SetText("!")
     cell._warnBadgeText:SetTextColor(1, 1, 1, 1)
@@ -1783,7 +1839,8 @@ local function GetOrCreateEntryCell(index)
         if self._isMissingFromCDM then
             self:SetBackdropBorderColor(1, 0.2, 0.2, 1)
         else
-            self:SetBackdropBorderColor(0.2, 0.2, 0.2, 0.5)
+            local _r, _g, _b = GetChromeBorder()
+            self:SetBackdropBorderColor(_r, _g, _b, 0.5)
         end
         GameTooltip:Hide()
     end)
@@ -1809,6 +1866,7 @@ local function GetOrCreateSectionHeader(index)
     end
 
     f._label = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(f._label, { fontOnly = true }) end
     f._label:SetPoint("LEFT", 6, 0)
     f._label:SetJustifyH("LEFT")
 
@@ -1896,7 +1954,8 @@ local function UpdateDropIndicator()
     if dragState._highlightedHeader and dragState._highlightedHeader ~= bestCell then
         local hdr = dragState._highlightedHeader
         if hdr:GetHeight() <= 18 then
-            hdr:SetBackdropColor(0.06, 0.06, 0.08, 0.3)
+            local _r, _g, _b = GetChromeBgPanel()
+            hdr:SetBackdropColor(_r, _g, _b, 0.3)
         else
             hdr:SetBackdropColor(ACCENT_R * 0.1, ACCENT_G * 0.1, ACCENT_B * 0.1, 0.8)
         end
@@ -1920,7 +1979,8 @@ local function UpdateDropIndicator()
     if dragState._highlightedHeader then
         local hdr = dragState._highlightedHeader
         if hdr:GetHeight() <= 18 then
-            hdr:SetBackdropColor(0.06, 0.06, 0.08, 0.3)
+            local _r, _g, _b = GetChromeBgPanel()
+            hdr:SetBackdropColor(_r, _g, _b, 0.3)
         else
             hdr:SetBackdropColor(ACCENT_R * 0.1, ACCENT_G * 0.1, ACCENT_B * 0.1, 0.8)
         end
@@ -1989,7 +2049,8 @@ StopDrag = function()
 
     -- Restore cell border
     if cell then
-        cell:SetBackdropBorderColor(0.2, 0.2, 0.2, 0.5)
+        local _r, _g, _b = GetChromeBorder()
+        cell:SetBackdropBorderColor(_r, _g, _b, 0.5)
     end
 
     -- Restore highlight textures on all cells
@@ -2013,10 +2074,11 @@ StopDrag = function()
     local targetSpecKey = targetCell and targetCell._entrySpecKey or nil
 
     -- Clean up all header highlights (reset every header to its default color)
+    local _stopHdrR, _stopHdrG, _stopHdrB = GetChromeBgPanel()
     for _, hdr in ipairs(sectionHeaders) do
         if hdr:IsShown() then
             if hdr:GetHeight() <= 18 then
-                hdr:SetBackdropColor(0.06, 0.06, 0.08, 0.3)
+                hdr:SetBackdropColor(_stopHdrR, _stopHdrG, _stopHdrB, 0.3)
             else
                 hdr:SetBackdropColor(ACCENT_R * 0.1, ACCENT_G * 0.1, ACCENT_B * 0.1, 0.8)
             end
@@ -2326,8 +2388,10 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex, isDormant)
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = GetPixelSize(menu),
     })
-    menu:SetBackdropColor(0.08, 0.08, 0.1, 0.98)
-    menu:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    local _ecmBR, _ecmBG, _ecmBB = GetChromeBgMain()
+    local _ecmBdR, _ecmBdG, _ecmBdB = GetChromeBorder()
+    menu:SetBackdropColor(_ecmBR, _ecmBG, _ecmBB, 0.98)
+    menu:SetBackdropBorderColor(_ecmBdR, _ecmBdG, _ecmBdB, 1)
     menu:EnableMouse(true)
     menu:SetPoint("TOPLEFT", anchorCell, "BOTTOMLEFT", 0, -2)
     menu:SetClampedToScreen(true)
@@ -2337,6 +2401,7 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex, isDormant)
         btn:SetSize(menuWidth - 4, itemHeight)
         btn:SetPoint("TOPLEFT", 2, -(2 + (i - 1) * itemHeight))
         local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(label, { fontOnly = true }) end
         label:SetPoint("LEFT", 8, 0)
         label:SetText(item.label)
         local c = item.color or { 0.8, 0.8, 0.8 }
@@ -2548,7 +2613,8 @@ RefreshEntryList = function()
             if cell._warnBadgeText then cell._warnBadgeText:Show() end
         else
             cell._icon:SetVertexColor(1, 1, 1)
-            cell:SetBackdropBorderColor(0.2, 0.2, 0.2, 0.5)
+            local _rEcBd, _gEcBd, _bEcBd = GetChromeBorder()
+            cell:SetBackdropBorderColor(_rEcBd, _gEcBd, _bEcBd, 0.5)
             if cell._warnBadge then cell._warnBadge:Hide() end
             if cell._warnBadgeText then cell._warnBadgeText:Hide() end
         end
@@ -2606,7 +2672,8 @@ RefreshEntryList = function()
         cell._icon:Show()
         cell:SetAlpha(0.6)
         cell._isMissingFromCDM = false
-        cell:SetBackdropBorderColor(0.2, 0.2, 0.2, 0.5)
+        local _rdcBdR, _rdcBdG, _rdcBdB = GetChromeBorder()
+        cell:SetBackdropBorderColor(_rdcBdR, _rdcBdG, _rdcBdB, 0.5)
         if cell._warnBadge then cell._warnBadge:Hide() end
         if cell._warnBadgeText then cell._warnBadgeText:Hide() end
 
@@ -2680,7 +2747,8 @@ RefreshEntryList = function()
                 hdr:SetPoint("TOPLEFT", entryListContent, "TOPLEFT", 0, sy)
                 hdr:SetPoint("RIGHT", entryListContent, "RIGHT", 0, 0)
                 hdr:SetHeight(18)
-                hdr:SetBackdropColor(0.06, 0.06, 0.08, 0.3)
+                local _eHdrR, _eHdrG, _eHdrB = GetChromeBgPanel()
+                hdr:SetBackdropColor(_eHdrR, _eHdrG, _eHdrB, 0.3)
                 hdr._label:SetText("  (empty — drag or right-click icons to move between rows)")
                 hdr._label:SetTextColor(0.35, 0.35, 0.35, 1)
                 hdr._rowNum = rowNum
@@ -2871,9 +2939,12 @@ local addTabButtons = {}
 
 local function BuildAddSection(parent)
     local container = CreateBackdropFrame(parent)
-    SetSimpleBackdrop(container, 0.04, 0.04, 0.06, 1, 0.15, 0.15, 0.15, 1)
+    local _asBR, _asBG, _asBB = GetChromeBgSubpanel()
+    local _asBdR, _asBdG, _asBdB = GetChromeBorder()
+    SetSimpleBackdrop(container, _asBR, _asBG, _asBB, 1, _asBdR, _asBdG, _asBdB, 1)
 
     local title = container:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(title, { fontOnly = true }) end
     title:SetPoint("TOPLEFT", 8, -6)
     title:SetText("Add Entries")
     title:SetTextColor(0.6, 0.6, 0.6, 1)
@@ -2923,7 +2994,8 @@ local function GetOrCreateAddCell(index)
     cell:SetSize(GRID_CELL_SIZE, GRID_CELL_SIZE)
     cell:RegisterForClicks("RightButtonUp")
 
-    SetSimpleBackdrop(cell, 0, 0, 0, 0, 0.2, 0.2, 0.2, 0.5)
+    local _acBdR, _acBdG, _acBdB = GetChromeBorder()
+    SetSimpleBackdrop(cell, 0, 0, 0, 0, _acBdR, _acBdG, _acBdB, 0.5)
 
     cell._icon = cell:CreateTexture(nil, "ARTWORK")
     cell._icon:SetSize(GRID_ICON_SIZE, GRID_ICON_SIZE)
@@ -2937,6 +3009,7 @@ local function GetOrCreateAddCell(index)
     cell._warnBadge:SetColorTexture(0.95, 0.15, 0.15, 1)
     cell._warnBadge:Hide()
     cell._warnBadgeText = cell:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(cell._warnBadgeText, { fontOnly = true }) end
     cell._warnBadgeText:SetPoint("CENTER", cell._warnBadge, "CENTER", 0, 0)
     cell._warnBadgeText:SetText("!")
     cell._warnBadgeText:SetTextColor(1, 1, 1, 1)
@@ -3008,7 +3081,8 @@ local function GetOrCreateAddCell(index)
         if primaryRed then
             self:SetBackdropBorderColor(1, 0.2, 0.2, 1)
         else
-            self:SetBackdropBorderColor(0.2, 0.2, 0.2, 0.5)
+            local _r, _g, _b = GetChromeBorder()
+            self:SetBackdropBorderColor(_r, _g, _b, 0.5)
         end
         GameTooltip:Hide()
     end)
@@ -3360,7 +3434,8 @@ RefreshAddList = function()
                 cell:SetBackdropBorderColor(1, 0.2, 0.2, 1)
             else
                 cell._icon:SetVertexColor(1, 1, 1)
-                cell:SetBackdropBorderColor(0.2, 0.2, 0.2, 0.5)
+                local _ralBdR, _ralBdG, _ralBdB = GetChromeBorder()
+                cell:SetBackdropBorderColor(_ralBdR, _ralBdG, _ralBdB, 0.5)
             end
 
             -- Right-click to add directly
@@ -3528,6 +3603,7 @@ RefreshAddList = function()
         local hint = addListContent._emptyHint
         if not hint then
             hint = addListContent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(hint, { fontOnly = true }) end
             hint:SetJustifyH("LEFT")
             hint:SetJustifyV("TOP")
             hint:SetTextColor(0.55, 0.55, 0.55, 1)
@@ -3625,6 +3701,7 @@ local function BuildAddTabs()
             btn:SetHeight(TAB_HEIGHT - 2)
             addTabButtons[i] = btn
             btn._label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(btn._label, { fontOnly = true }) end
             btn._label:SetPoint("CENTER")
         end
 
@@ -3642,7 +3719,9 @@ local function BuildAddTabs()
                 ACCENT_R, ACCENT_G, ACCENT_B, 0.8)
             btn._label:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
         else
-            SetSimpleBackdrop(btn, 0.08, 0.08, 0.1, 1, 0.2, 0.2, 0.2, 1)
+            local _atBR, _atBG, _atBB = GetChromeBgMain()
+            local _atBdR, _atBdG, _atBdB = GetChromeBorder()
+            SetSimpleBackdrop(btn, _atBR, _atBG, _atBB, 1, _atBdR, _atBdG, _atBdB, 1)
             btn._label:SetTextColor(0.6, 0.6, 0.6, 1)
         end
 
@@ -3659,7 +3738,8 @@ local function BuildAddTabs()
         end)
         btn:SetScript("OnLeave", function(self)
             if tabKey ~= activeAddTab then
-                self:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+                local _r, _g, _b = GetChromeBorder()
+                self:SetBackdropBorderColor(_r, _g, _b, 1)
             end
         end)
 
@@ -3694,7 +3774,8 @@ local function ShowNewContainerPopup(onCreated)
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = GetPixelSize(popup),
     })
-    popup:SetBackdropColor(0.08, 0.08, 0.1, 0.98)
+    local _ncpBR, _ncpBG, _ncpBB = GetChromeBgMain()
+    popup:SetBackdropColor(_ncpBR, _ncpBG, _ncpBB, 0.98)
     popup:SetBackdropBorderColor(ACCENT_R, ACCENT_G, ACCENT_B, 0.8)
     popup:EnableMouse(true)
     popup:SetMovable(true)
@@ -3704,12 +3785,14 @@ local function ShowNewContainerPopup(onCreated)
 
     -- Title
     local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(title, { fontOnly = true }) end
     title:SetPoint("TOP", 0, -10)
     title:SetText("New Container")
     title:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
 
     -- Name label + editbox
     local nameLabel = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(nameLabel, { fontOnly = true }) end
     nameLabel:SetPoint("TOPLEFT", 12, -36)
     nameLabel:SetText("Name:")
     nameLabel:SetTextColor(0.7, 0.7, 0.7, 1)
@@ -3722,9 +3805,11 @@ local function ShowNewContainerPopup(onCreated)
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = GetPixelSize(nameBox),
     })
-    nameBox:SetBackdropColor(0.06, 0.06, 0.08, 1)
-    nameBox:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
-    nameBox:SetFontObject("GameFontNormalSmall")
+    local _nbBR, _nbBG, _nbBB = GetChromeBgPanel()
+    local _nbBdR, _nbBdG, _nbBdB = GetChromeBorder()
+    nameBox:SetBackdropColor(_nbBR, _nbBG, _nbBB, 1)
+    nameBox:SetBackdropBorderColor(_nbBdR, _nbBdG, _nbBdB, 1)
+    nameBox:SetFont(GetChromeFont(), 11, GetChromeFontOutline())
     nameBox:SetTextInsets(6, 6, 0, 0)
     nameBox:SetAutoFocus(false)
     nameBox:SetMaxLetters(30)
@@ -3734,6 +3819,7 @@ local function ShowNewContainerPopup(onCreated)
 
     -- Type label + dropdown buttons
     local typeLabel = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(typeLabel, { fontOnly = true }) end
     typeLabel:SetPoint("TOPLEFT", 12, -82)
     typeLabel:SetText("Type:")
     typeLabel:SetTextColor(0.7, 0.7, 0.7, 1)
@@ -3756,7 +3842,8 @@ local function ShowNewContainerPopup(onCreated)
                 btn:SetBackdropBorderColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
                 btn._label:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
             else
-                btn:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+                local _r, _g, _b = GetChromeBorder()
+                btn:SetBackdropBorderColor(_r, _g, _b, 1)
                 btn._label:SetTextColor(0.6, 0.6, 0.6, 1)
             end
         end
@@ -3772,8 +3859,10 @@ local function ShowNewContainerPopup(onCreated)
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = GetPixelSize(btn),
         })
-        btn:SetBackdropColor(0.1, 0.1, 0.12, 1)
+        local _tbBR, _tbBG, _tbBB = GetChromeBgPanel()
+        btn:SetBackdropColor(_tbBR, _tbBG, _tbBB, 1)
         local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(label, { fontOnly = true }) end
         label:SetPoint("CENTER")
         label:SetText(opt.text)
         btn._label = label
@@ -3842,6 +3931,7 @@ local function ShowNewContainerPopup(onCreated)
     closeBtn:SetSize(16, 16)
     closeBtn:SetPoint("TOPRIGHT", -4, -4)
     local closeText = closeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(closeText, { fontOnly = true }) end
     closeText:SetPoint("CENTER")
     closeText:SetText("X")
     closeText:SetTextColor(0.5, 0.5, 0.5, 1)
@@ -3869,8 +3959,10 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = GetPixelSize(menu),
     })
-    menu:SetBackdropColor(0.08, 0.08, 0.1, 0.98)
-    menu:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    local _ccmBR, _ccmBG, _ccmBB = GetChromeBgMain()
+    local _ccmBdR, _ccmBdG, _ccmBdB = GetChromeBorder()
+    menu:SetBackdropColor(_ccmBR, _ccmBG, _ccmBB, 0.98)
+    menu:SetBackdropBorderColor(_ccmBdR, _ccmBdG, _ccmBdB, 1)
     menu:EnableMouse(true)
     menu:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, -2)
 
@@ -3879,6 +3971,7 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
     renameBtn:SetSize(136, 24)
     renameBtn:SetPoint("TOPLEFT", 2, -2)
     local renameText = renameBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(renameText, { fontOnly = true }) end
     renameText:SetPoint("LEFT", 8, 0)
     renameText:SetText("Rename")
     renameText:SetTextColor(0.8, 0.8, 0.8, 1)
@@ -3927,6 +4020,7 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
     deleteBtn:SetSize(136, 24)
     deleteBtn:SetPoint("TOPLEFT", renameBtn, "BOTTOMLEFT", 0, 0)
     local deleteText = deleteBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(deleteText, { fontOnly = true }) end
     deleteText:SetPoint("LEFT", 8, 0)
     deleteText:SetText("Delete")
     deleteText:SetTextColor(0.9, 0.3, 0.3, 1)
@@ -3989,6 +4083,7 @@ BuildContainerTabs = function()
             btn = CreateFrame("Button", nil, tabBar, "BackdropTemplate")
             containerTabs[i] = btn
             btn._label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(btn._label, { fontOnly = true }) end
             btn._label:SetPoint("LEFT", 8, 0)
             btn._label:SetPoint("RIGHT", -4, 0)
             btn._label:SetJustifyH("LEFT")
@@ -4006,7 +4101,9 @@ BuildContainerTabs = function()
                 ACCENT_R, ACCENT_G, ACCENT_B, 1)
             btn._label:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
         else
-            SetSimpleBackdrop(btn, 0.06, 0.06, 0.08, 1, 0.2, 0.2, 0.2, 1)
+            local _ctBR, _ctBG, _ctBB = GetChromeBgSubpanel()
+            local _ctBdR, _ctBdG, _ctBdB = GetChromeBorder()
+            SetSimpleBackdrop(btn, _ctBR, _ctBG, _ctBB, 1, _ctBdR, _ctBdG, _ctBdB, 1)
             btn._label:SetTextColor(0.6, 0.6, 0.6, 1)
         end
 
@@ -4040,7 +4137,8 @@ BuildContainerTabs = function()
         end)
         btn:SetScript("OnLeave", function(self)
             if key ~= activeContainer then
-                self:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+                local _r, _g, _b = GetChromeBorder()
+                self:SetBackdropBorderColor(_r, _g, _b, 1)
             end
         end)
 
@@ -4056,6 +4154,7 @@ BuildContainerTabs = function()
         newBtn:SetHeight(TAB_HEIGHT)
         containerTabs[newIdx] = newBtn
         newBtn._label = newBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(newBtn._label, { fontOnly = true }) end
         newBtn._label:SetPoint("LEFT", 8, 0)
         newBtn._label:SetJustifyH("LEFT")
     end
@@ -4063,7 +4162,8 @@ BuildContainerTabs = function()
     newBtn:ClearAllPoints()
     newBtn:SetPoint("TOPLEFT", tabBar, "TOPLEFT", 2, yOff)
     newBtn:SetPoint("RIGHT", tabBar, "RIGHT", -2, 0)
-    SetSimpleBackdrop(newBtn, 0.06, 0.06, 0.08, 1, ACCENT_R * 0.4, ACCENT_G * 0.4, ACCENT_B * 0.4, 0.6)
+    local _nbtnBR, _nbtnBG, _nbtnBB = GetChromeBgSubpanel()
+    SetSimpleBackdrop(newBtn, _nbtnBR, _nbtnBG, _nbtnBB, 1, ACCENT_R * 0.4, ACCENT_G * 0.4, ACCENT_B * 0.4, 0.6)
     newBtn._label:SetTextColor(ACCENT_R * 0.6, ACCENT_G * 0.6, ACCENT_B * 0.6, 1)
     newBtn:SetScript("OnClick", function()
         ShowNewContainerPopup()
@@ -4139,7 +4239,8 @@ local function BuildFooter(parent)
         GameTooltip:Show()
     end)
     resetBtn:SetScript("OnLeave", function(self)
-        self:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+        local _r, _g, _b = GetChromeBorder()
+        self:SetBackdropBorderColor(_r, _g, _b, 1)
         GameTooltip:Hide()
     end)
 
@@ -4229,7 +4330,8 @@ local function BuildComposerLayout(host)
     scroll:SetScrollChild(frame)
     local bg = frame:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints(frame)
-    bg:SetColorTexture(0.06, 0.06, 0.08, 0.97)
+    local _bclR, _bclG, _bclB = GetChromeBgPanel()
+    bg:SetColorTexture(_bclR, _bclG, _bclB, 0.97)
     frame._bg = bg
     local borders = {}
     for i = 1, 4 do borders[i] = frame:CreateTexture(nil, "BORDER") end
@@ -4302,7 +4404,9 @@ local function BuildComposerLayout(host)
         navPanel:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 36)
         local navBg = navPanel:CreateTexture(nil, "BACKGROUND")
         navBg:SetAllPoints(navPanel)
-        navBg:SetColorTexture(0.04, 0.04, 0.06, 1)
+        local _navBR, _navBG, _navBB = GetChromeBgSubpanel()
+        navBg:SetColorTexture(_navBR, _navBG, _navBB, 1)
+        navPanel._bg = navBg  -- stored for ReThemeComposer
         frame._navPanel = navPanel
         frame._tabBar = navPanel  -- BuildContainerTabs reads ._tabBar
 
@@ -4311,7 +4415,9 @@ local function BuildComposerLayout(host)
         navBorder:SetWidth(1)
         navBorder:SetPoint("TOPRIGHT", navPanel, "TOPRIGHT", 0, 0)
         navBorder:SetPoint("BOTTOMRIGHT", navPanel, "BOTTOMRIGHT", 0, 0)
-        navBorder:SetColorTexture(0.2, 0.2, 0.2, 1)
+        local _navBdR, _navBdG, _navBdB = GetChromeBorder()
+        navBorder:SetColorTexture(_navBdR, _navBdG, _navBdB, 1)
+        navPanel._navBorder = navBorder  -- stored for ReThemeComposer
 
         contentLeft = NAV_WIDTH + 4
         footerLeft = NAV_WIDTH
@@ -4405,6 +4511,25 @@ local function ReThemeComposer(frame)
     -- Title text
     if frame._title then
         frame._title:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+    end
+    -- Skin-change: re-apply panel/nav chrome bg/border so a skin swap
+    -- recolors the composer without a full rebuild. Dynamic sections
+    -- (tabs, cells, menus) pull colors at render time and don't need this.
+    if frame._bg then
+        local _r, _g, _b = GetChromeBgPanel()
+        frame._bg:SetColorTexture(_r, _g, _b, 0.97)
+    end
+    if frame._navPanel then
+        local navBg = frame._navPanel._bg
+        if navBg then
+            local _r, _g, _b = GetChromeBgSubpanel()
+            navBg:SetColorTexture(_r, _g, _b, 1)
+        end
+        local navBd = frame._navPanel._navBorder
+        if navBd then
+            local _r, _g, _b = GetChromeBorder()
+            navBd:SetColorTexture(_r, _g, _b, 1)
+        end
     end
 end
 

@@ -4,6 +4,7 @@ local LSM = ns.LSM
 local UIKit = ns.UIKit
 
 local Helpers = ns.Helpers
+local SkinBase = ns.SkinBase
 local GetCore = Helpers.GetCore
 local floor = math.floor
 
@@ -3732,11 +3733,8 @@ function QUICore:UpdateChargedComboPoints(bar, resource, max, current, isVertica
             end
 
             -- Border outline always visible on charged positions
-            overlay:SetBackdrop({
-                edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = px,
-            })
-            overlay:SetBackdropBorderColor(chargedColor[1], chargedColor[2], chargedColor[3], chargedColor[4] or 1)
+            SkinBase.ApplyPixelBackdrop(overlay, px, false, false,
+                { chargedColor[1], chargedColor[2], chargedColor[3], chargedColor[4] or 1 })
             overlay:Show()
         end
     end

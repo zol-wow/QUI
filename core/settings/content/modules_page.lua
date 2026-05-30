@@ -220,7 +220,8 @@ local function BuildModuleCell(parent, item)
 
     -- Bold label (left-aligned, right edge leaves room for the 26px pill + 4px gap)
     local nameLabel = cell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    nameLabel:SetTextColor(0.953, 0.957, 0.965, 1)
+    local nameColor = C and C.text or {0.953, 0.957, 0.965, 1}
+    nameLabel:SetTextColor(nameColor[1], nameColor[2], nameColor[3], nameColor[4] or 1)
     nameLabel:SetText(label)
     nameLabel:SetJustifyH("LEFT")
     nameLabel:SetWordWrap(false)

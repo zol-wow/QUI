@@ -90,7 +90,7 @@ local ns = {
     UIKit = { RegisterScaleRefresh = function() end },
 }
 
-assert(loadfile("modules/skinning/base.lua"))("QUI", ns)
+assert(loadfile("core/uikit.lua"))("QUI", ns)
 local SkinBase = ns.SkinBase
 
 assert(type(SkinBase.SkinFontString) == "function", "SkinBase.SkinFontString must exist")
