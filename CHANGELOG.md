@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha71 - 2026-05-30
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha70 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **Hidden frames no longer reappear at login.** Rebuilding a skinned backdrop during the login scale-refresh pass was forcing some intentionally-hidden frames (the loot window and the alert/toast/Battle.net movers) back into view; building a backdrop no longer changes a frame's visibility.
+- **No more "Invalid fontHeight" error when skinning certain labels.** A label whose font hadn't finished loading could report a bad size that crashed the skinner; QUI now falls back to the default size in that case.
+- **Right-click menus no longer error in some cases.** QUI now skins only the frame and backdrop of modern Blizzard menus and leaves their text untouched, since their font is locked by the game; classic dropdown menus still use the QUI font as before.
+
+
+
 ## v3.6.0-alpha70 - 2026-05-30
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha69 profiles carry over unchanged.
