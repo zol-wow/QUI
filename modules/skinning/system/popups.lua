@@ -278,7 +278,13 @@ local function HookStaticPopups()
     end
 end
 
-local function SkinContextMenuFrame(frame)
+-- isCompositorMenu: the frame belongs to Blizzard's modern Menu manager, whose
+-- FontStrings are Compositor-managed and disallow SetFont. Reading or calling
+-- SetFont on them reports "Use of function 'SetFont' is disallowed" via assertsafe
+-- (which routes to the error handler and does NOT throw, so pcall can't suppress
+-- it). For those menus we skin the frame/backdrop only and leave their text alone;
+-- legacy DropDownList fontstrings are not Compositor-managed and still get the font.
+local function SkinContextMenuFrame(frame, isCompositorMenu)
     if not frame or IsForbidden(frame) or not ContextMenusEnabled() then return end
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetColors("contextMenu")
@@ -301,7 +307,10 @@ local function SkinContextMenuFrame(frame)
     if backdrop then
         backdrop:SetFrameLevel(math.max(0, SafeFrameLevel(frame) - 1))
     end
-    SkinBase.SkinFrameText(frame, { recurse = true })
+    -- Compositor menus lock SetFont; skin frame/backdrop only (see note above).
+    if not isCompositorMenu then
+        SkinBase.SkinFrameText(frame, { recurse = true })
+    end
 end
 
 local function SkinLegacyDropdowns()
@@ -334,14 +343,14 @@ local function OnMenuOpen(manager, _, menuDescription)
     Defer(function()
         local menu = manager and manager.GetOpenMenu and manager:GetOpenMenu()
         if menu then
-            SkinContextMenuFrame(menu)
+            SkinContextMenuFrame(menu, true)
         end
 
         if menuDescription and menuDescription.AddMenuAcquiredCallback and not menuCallbacks[menuDescription] then
             menuCallbacks[menuDescription] = true
             menuDescription:AddMenuAcquiredCallback(function(frame)
                 Defer(function()
-                    SkinContextMenuFrame(frame)
+                    SkinContextMenuFrame(frame, true)
                 end)
             end)
         end
@@ -382,7 +391,7 @@ local function RefreshOpenContextMenus()
     if _G.Menu and _G.Menu.GetManager then
         local manager = _G.Menu.GetManager()
         local menu = manager and manager.GetOpenMenu and manager:GetOpenMenu()
-        if menu then SkinContextMenuFrame(menu) end
+        if menu then SkinContextMenuFrame(menu, true) end
     end
     SkinLegacyDropdowns()
 end
