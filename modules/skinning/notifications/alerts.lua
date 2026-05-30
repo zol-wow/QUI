@@ -1,6 +1,9 @@
 --- QUI Alert & Toast Skinning
 --- Skins Blizzard alert frames with QUI styling and adds movers
 
+-- Blizzard FrameXML globals this module post-hooks (declared for luacheck).
+-- luacheck: read globals LootWonAlertFrame_SetUp MoneyWonAlertFrame_SetUp BonusRollFrame_StartBonusRoll BonusRollFrame
+
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
@@ -84,8 +87,8 @@ local function CreateAlertBackdrop(frame, xOffset1, yOffset1, xOffset2, yOffset2
     backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", xOffset1 or 0, yOffset1 or 0)
     backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", xOffset2 or 0, yOffset2 or 0)
     SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
-    backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-    backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
+    Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
 
     SkinBase.SetFrameData(frame, "backdrop", backdrop)
     return backdrop
@@ -97,8 +100,8 @@ local function UpdateBackdropColors(frame)
     if not bd then return end
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
-    bd:SetBackdropColor(bgr, bgg, bgb, bga)
-    bd:SetBackdropBorderColor(sr, sg, sb, sa)
+    Helpers.SetFrameBackdropColor(bd, bgr, bgg, bgb, bga)
+    Helpers.SetFrameBackdropBorderColor(bd, sr, sg, sb, sa)
 end
 
 --- Create icon border frame with optional quality color
@@ -112,9 +115,9 @@ local function CreateIconBorder(icon, parent, qualityColor)
     local existingBorder = SkinBase.GetFrameData(icon, "border")
     if existingBorder then
         if qualityColor then
-            existingBorder:SetBackdropBorderColor(qualityColor.r or qualityColor[1], qualityColor.g or qualityColor[2], qualityColor.b or qualityColor[3], 1)
+            Helpers.SetFrameBackdropBorderColor(existingBorder, qualityColor.r or qualityColor[1], qualityColor.g or qualityColor[2], qualityColor.b or qualityColor[3], 1)
         else
-            existingBorder:SetBackdropBorderColor(sr, sg, sb, sa)
+            Helpers.SetFrameBackdropBorderColor(existingBorder, sr, sg, sb, sa)
         end
         return existingBorder
     end
@@ -126,9 +129,9 @@ local function CreateIconBorder(icon, parent, qualityColor)
 
     -- Use quality color if provided, otherwise use skin accent
     if qualityColor then
-        border:SetBackdropBorderColor(qualityColor.r or qualityColor[1], qualityColor.g or qualityColor[2], qualityColor.b or qualityColor[3], 1)
+        Helpers.SetFrameBackdropBorderColor(border, qualityColor.r or qualityColor[1], qualityColor.g or qualityColor[2], qualityColor.b or qualityColor[3], 1)
     else
-        border:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropBorderColor(border, sr, sg, sb, sa)
     end
 
     SkinBase.SetFrameData(icon, "border", border)
@@ -201,6 +204,7 @@ local function SkinAchievementAlert(frame)
         StyleIcon(frame.Icon.Texture, frame)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -227,6 +231,7 @@ local function SkinCriteriaAlert(frame)
 
     StyleIcon(frame.Icon.Texture, frame)
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -296,11 +301,12 @@ local function SkinLootWonAlert(frame)
         backdrop:SetPoint("TOPLEFT", iconBorder, "TOPLEFT", -4, 4)
         backdrop:SetPoint("BOTTOMRIGHT", iconBorder, "BOTTOMRIGHT", 180, -4)
         SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
-        backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-        backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
+        Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
         SkinBase.SetFrameData(frame, "backdrop", backdrop)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -350,11 +356,12 @@ local function SkinLootUpgradeAlert(frame)
         backdrop:SetPoint("TOPLEFT", iconBorder, "TOPLEFT", -8, 8)
         backdrop:SetPoint("BOTTOMRIGHT", iconBorder, "BOTTOMRIGHT", 180, -8)
         SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
-        backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-        backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
+        Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
         SkinBase.SetFrameData(frame, "backdrop", backdrop)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -380,11 +387,12 @@ local function SkinMoneyWonAlert(frame)
         backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", 5, -5)
         backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -5, 5)
         SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
-        backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-        backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
+        Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
         SkinBase.SetFrameData(frame, "backdrop", backdrop)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -412,11 +420,12 @@ local function SkinHonorAwardedAlert(frame)
         backdrop:SetPoint("TOPLEFT", iconBorder, "TOPLEFT", -4, 4)
         backdrop:SetPoint("BOTTOMRIGHT", iconBorder, "BOTTOMRIGHT", 180, -4)
         SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
-        backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-        backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
+        Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
         SkinBase.SetFrameData(frame, "backdrop", backdrop)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -454,6 +463,7 @@ local function SkinNewRecipeLearnedAlert(frame)
         local border = CreateIconBorder(frame.Icon, frame)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -492,6 +502,7 @@ local function SkinDungeonCompletionAlert(frame)
         CreateIconBorder(frame.dungeonTexture, frame)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -531,6 +542,7 @@ local function SkinScenarioAlert(frame)
         CreateIconBorder(frame.dungeonTexture, frame)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -556,6 +568,7 @@ local function SkinWorldQuestCompleteAlert(frame)
         CreateIconBorder(frame.QuestTexture, frame)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -570,7 +583,7 @@ local function SkinLegendaryItemAlert(frame, itemLink)
             if quality then
                 local r, g, b = GetItemQualityColor(quality)
                 local border = SkinBase.GetFrameData(frame.Icon, "border")
-                if border then border:SetBackdropBorderColor(r, g, b, 1) end
+                if border then Helpers.SetFrameBackdropBorderColor(border, r, g, b, 1) end
             end
         end
         return
@@ -606,11 +619,12 @@ local function SkinLegendaryItemAlert(frame, itemLink)
             local quality = C_Item.GetItemQualityByID(itemLink)
             if quality then
                 local r, g, b = GetItemQualityColor(quality)
-                border:SetBackdropBorderColor(r, g, b, 1)
+                Helpers.SetFrameBackdropBorderColor(border, r, g, b, 1)
             end
         end
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -661,12 +675,13 @@ local function SkinMiscAlert(frame)
             backdrop:SetPoint("TOPLEFT", border, "TOPLEFT", -8, 8)
             backdrop:SetPoint("BOTTOMRIGHT", border, "BOTTOMRIGHT", 180, -8)
             SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
-            backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-            backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+            Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
+            Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
             SkinBase.SetFrameData(frame, "backdrop", backdrop)
         end
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -695,6 +710,7 @@ local function SkinEntitlementAlert(frame)
         CreateIconBorder(frame.Icon, frame)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -721,6 +737,7 @@ local function SkinDigsiteCompleteAlert(frame)
         frame.DigsiteTypeTexture:SetPoint("LEFT", -10, -14)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -753,6 +770,7 @@ local function SkinGuildChallengeAlert(frame)
         SetLargeGuildTabardTextures("player", frame.EmblemIcon)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -786,6 +804,7 @@ local function SkinInvasionAlert(frame)
         end
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -793,63 +812,117 @@ end
 -- BONUS ROLL FRAMES (Not part of AlertSystem)
 ---------------------------------------------------------------------------
 
-local function SkinBonusRollFrames()
-    local db = GetAlertSettings()
-    if not db.enabled then return end
+-- The BonusRollFrame PROMPT window (loot spinner + item icon + Roll/Pass buttons +
+-- currency cost + timer) is a standalone Blizzard frame that QUI otherwise only
+-- positions. Skin it to match the loot-roll / alert look. Taint-safe: only
+-- display-only methods on Blizzard regions + QUI-owned child backdrops (weak-keyed
+-- via SetFrameData) -- no field writes, OnClick hooks, or secure attributes. The
+-- Roll/Pass buttons are plain (insecure) buttons (OnClick just calls
+-- Accept/DeclineSpellConfirmationPrompt), so a QUI border is safe.
+local function SkinBonusRollPromptButton(btn)
+    if not btn or SkinBase.IsStyled(btn) then return end
+    local sr, sg, sb, sa = GetThemeColors()
+    -- Accent border around the dice/pass icon. A border-only child keeps the
+    -- button's own NormalTexture (the dice / pass art) visible underneath.
+    local border = CreateFrame("Frame", nil, btn, "BackdropTemplate")
+    border:SetFrameLevel(btn:GetFrameLevel() + 1)
+    border:SetAllPoints()
+    SkinBase.ApplyPixelBackdrop(border, 1, false, false)
+    Helpers.SetFrameBackdropBorderColor(border, sr, sg, sb, sa)
+    local hl = btn.GetHighlightTexture and btn:GetHighlightTexture()
+    if hl then hl:SetColorTexture(sr, sg, sb, 0.25) end
+    SkinBase.MarkStyled(btn)
+end
 
-    -- BonusRollMoneyWonFrame
-    local moneyFrame = BonusRollMoneyWonFrame
-    if moneyFrame and not SkinBase.IsSkinned(moneyFrame) then
-        moneyFrame:SetAlpha(1)
-        hooksecurefunc(moneyFrame, "SetAlpha", ForceAlpha)
+local function SkinBonusRollPrompt(frame)
+    if not frame then return end
+    local prompt = frame.PromptFrame
+    if not prompt then return end
 
-        Kill(moneyFrame.Background)
-        Kill(moneyFrame.IconBorder)
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
 
-        StyleIcon(moneyFrame.Icon, moneyFrame)
+    if not SkinBase.IsSkinned(frame) then
+        -- Strip Blizzard LootToast art (OnShow already hides LootSpinnerBG/IconBorder)
+        Kill(frame.Background)
+        Kill(frame.IconBorder)
+        Kill(frame.LootSpinnerBG)
 
-        local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
-        local moneyIconBorder = SkinBase.GetFrameData(moneyFrame.Icon, "border")
-        if moneyIconBorder then
-            local backdrop = CreateFrame("Frame", nil, moneyFrame, "BackdropTemplate")
-            backdrop:SetFrameLevel(moneyFrame:GetFrameLevel())
-            backdrop:SetPoint("TOPLEFT", moneyIconBorder, "TOPLEFT", -4, 4)
-            backdrop:SetPoint("BOTTOMRIGHT", moneyIconBorder, "BOTTOMRIGHT", 180, -4)
+        -- QUI backdrop behind the whole prompt, one level below the content frames
+        -- (PromptFrame/RollingFrame use the parent frame level) so it renders behind.
+        if not SkinBase.GetFrameData(frame, "backdrop") then
+            local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+            backdrop:SetFrameLevel(math.max(0, frame:GetFrameLevel() - 1))
+            backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -6)
+            backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -6, 6)
             SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
-            backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-            backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-            SkinBase.SetFrameData(moneyFrame, "backdrop", backdrop)
+            Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
+            Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
+            SkinBase.SetFrameData(frame, "backdrop", backdrop)
         end
-        SkinBase.MarkSkinned(moneyFrame)
+
+        -- Timer bar -> QUI accent tint (keep Blizzard's bar texture)
+        if prompt.Timer then
+            prompt.Timer:SetStatusBarColor(sr, sg, sb, 1)
+        end
+
+        -- Global QUI font on the prompt labels
+        if prompt.InfoFrame then
+            SkinBase.SkinFontString(prompt.InfoFrame.Label)
+            SkinBase.SkinFontString(prompt.InfoFrame.Cost)
+        end
+        if frame.CurrentCountFrame then SkinBase.SkinFontString(frame.CurrentCountFrame.Text) end
+        if frame.RollingFrame then SkinBase.SkinFontString(frame.RollingFrame.Label) end
+
+        SkinBonusRollPromptButton(prompt.RollButton)
+        SkinBonusRollPromptButton(prompt.PassButton)
+
+        SkinBase.MarkSkinned(frame)
     end
 
-    -- BonusRollLootWonFrame
-    local lootFrame = BonusRollLootWonFrame
-    if lootFrame and not SkinBase.IsSkinned(lootFrame) then
-        lootFrame:SetAlpha(1)
-        hooksecurefunc(lootFrame, "SetAlpha", ForceAlpha)
-
-        Kill(lootFrame.Background)
-        Kill(lootFrame.glow)
-        Kill(lootFrame.shine)
-
-        local lootItem = lootFrame.lootItem or lootFrame
-        lootItem.Icon:SetTexCoord(unpack(ICON_TEX_COORDS))
-        Kill(lootItem.IconBorder)
-
-        local border = CreateIconBorder(lootItem.Icon, lootFrame)
-
-        local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
-        local backdrop = CreateFrame("Frame", nil, lootFrame, "BackdropTemplate")
-        backdrop:SetFrameLevel(lootFrame:GetFrameLevel())
-        backdrop:SetPoint("TOPLEFT", border, "TOPLEFT", -4, 4)
-        backdrop:SetPoint("BOTTOMRIGHT", border, "BOTTOMRIGHT", 180, -4)
-        SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
-        backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-        backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
-        SkinBase.SetFrameData(lootFrame, "backdrop", backdrop)
-        SkinBase.MarkSkinned(lootFrame)
+    -- The item icon is re-set on every StartBonusRoll, so re-crop + (re)border it
+    -- each roll. StyleIcon just updates the existing QUI border if one is present.
+    if prompt.Icon then
+        StyleIcon(prompt.Icon, prompt)
     end
+end
+
+-- BonusRollLootWonFrame / BonusRollMoneyWonFrame are standalone ContainedAlertFrames
+-- that Blizzard sets up by calling the GLOBAL LootWonAlertFrame_SetUp /
+-- MoneyWonAlertFrame_SetUp directly (GroupLootFrame.lua) and adds straight to
+-- AlertFrame. They never flow through the pooled Loot/MoneyWon alert systems whose
+-- setUpFunction we hook in HookAlertSystems -- so a one-shot init skin both races
+-- frame creation and is wiped every time Blizzard re-runs SetUp on show. Instead we
+-- post-hook the two global setup funcs and route the bonus-roll frames through the
+-- exact same idempotent skinners used for the pooled loot/money alerts, so they get
+-- (re)skinned on every show.
+local bonusRollHooked = false
+local function HookBonusRollFrames()
+    local db = GetAlertSettings()
+    if not db.enabled or bonusRollHooked then return end
+
+    local hooked = false
+    if type(LootWonAlertFrame_SetUp) == "function" then
+        hooksecurefunc("LootWonAlertFrame_SetUp", function(frame)
+            if frame == BonusRollLootWonFrame then SkinLootWonAlert(frame) end
+        end)
+        hooked = true
+    end
+    if type(MoneyWonAlertFrame_SetUp) == "function" then
+        hooksecurefunc("MoneyWonAlertFrame_SetUp", function(frame)
+            if frame == BonusRollMoneyWonFrame then SkinMoneyWonAlert(frame) end
+        end)
+        hooked = true
+    end
+    -- The bonus-roll PROMPT window is populated/shown via the global
+    -- BonusRollFrame_StartBonusRoll; post-hook it so the prompt is (re)skinned on
+    -- every roll (the item icon is re-set each time, so this also re-crops it).
+    if type(BonusRollFrame_StartBonusRoll) == "function" then
+        hooksecurefunc("BonusRollFrame_StartBonusRoll", function()
+            SkinBonusRollPrompt(BonusRollFrame)
+        end)
+        hooked = true
+    end
+    bonusRollHooked = hooked
 end
 
 ---------------------------------------------------------------------------
@@ -963,8 +1036,8 @@ local function CreateAlertMover()
         alertMover = CreateFrame("Frame", "QUI_AlertFrameMover", alertHolder, "BackdropTemplate")
         alertMover:SetAllPoints(alertHolder)
         SkinBase.ApplyPixelBackdrop(alertMover, 1, true, false)
-        alertMover:SetBackdropColor(0.2, 0.8, 0.8, 0.5)
-        alertMover:SetBackdropBorderColor(0.2, 0.8, 0.8, 1)
+        Helpers.SetFrameBackdropColor(alertMover, 0.2, 0.8, 0.8, 0.5)
+        Helpers.SetFrameBackdropBorderColor(alertMover, 0.2, 0.8, 0.8, 1)
         alertMover:EnableMouse(true)
         alertMover:SetMovable(true)
         alertMover:RegisterForDrag("LeftButton")
@@ -1080,8 +1153,8 @@ local function CreateEventToastMover()
         toastMover = CreateFrame("Frame", "QUI_EventToastMover", toastHolder, "BackdropTemplate")
         toastMover:SetAllPoints(toastHolder)
         SkinBase.ApplyPixelBackdrop(toastMover, 1, true, false)
-        toastMover:SetBackdropColor(0.8, 0.6, 0.2, 0.5)
-        toastMover:SetBackdropBorderColor(0.8, 0.6, 0.2, 1)
+        Helpers.SetFrameBackdropColor(toastMover, 0.8, 0.6, 0.2, 0.5)
+        Helpers.SetFrameBackdropBorderColor(toastMover, 0.8, 0.6, 0.2, 1)
         toastMover:EnableMouse(true)
         toastMover:SetMovable(true)
         toastMover:RegisterForDrag("LeftButton")
@@ -1175,8 +1248,8 @@ local function CreateBNetToastMover()
         bnetToastMover = CreateFrame("Frame", "QUI_BNetToastMover", bnetToastHolder, "BackdropTemplate")
         bnetToastMover:SetAllPoints(bnetToastHolder)
         SkinBase.ApplyPixelBackdrop(bnetToastMover, 1, true, false)
-        bnetToastMover:SetBackdropColor(0.2, 0.6, 1.0, 0.5)
-        bnetToastMover:SetBackdropBorderColor(0.2, 0.6, 1.0, 1)
+        Helpers.SetFrameBackdropColor(bnetToastMover, 0.2, 0.6, 1.0, 0.5)
+        Helpers.SetFrameBackdropBorderColor(bnetToastMover, 0.2, 0.6, 1.0, 1)
         bnetToastMover:EnableMouse(true)
         bnetToastMover:SetMovable(true)
         bnetToastMover:RegisterForDrag("LeftButton")
@@ -1278,14 +1351,14 @@ local function RefreshAlertColors()
             for frame in system.alertFramePool:EnumerateActive() do
                 local bd = SkinBase.GetFrameData(frame, "backdrop")
                 if bd then
-                    bd:SetBackdropColor(bgr, bgg, bgb, bga)
-                    bd:SetBackdropBorderColor(sr, sg, sb, sa)
+                    Helpers.SetFrameBackdropColor(bd, bgr, bgg, bgb, bga)
+                    Helpers.SetFrameBackdropBorderColor(bd, sr, sg, sb, sa)
                 end
                 -- Update icon borders
                 if frame.Icon then
                     local ib = SkinBase.GetFrameData(frame.Icon, "border")
                     if ib then
-                        ib:SetBackdropBorderColor(sr, sg, sb, sa)
+                        Helpers.SetFrameBackdropBorderColor(ib, sr, sg, sb, sa)
                     end
                 end
             end
@@ -1295,13 +1368,13 @@ local function RefreshAlertColors()
     -- Update bonus roll frames
     local moneyBd = BonusRollMoneyWonFrame and SkinBase.GetFrameData(BonusRollMoneyWonFrame, "backdrop")
     if moneyBd then
-        moneyBd:SetBackdropColor(bgr, bgg, bgb, bga)
-        moneyBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropColor(moneyBd, bgr, bgg, bgb, bga)
+        Helpers.SetFrameBackdropBorderColor(moneyBd, sr, sg, sb, sa)
     end
     local lootBd = BonusRollLootWonFrame and SkinBase.GetFrameData(BonusRollLootWonFrame, "backdrop")
     if lootBd then
-        lootBd:SetBackdropColor(bgr, bgg, bgb, bga)
-        lootBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropColor(lootBd, bgr, bgg, bgb, bga)
+        Helpers.SetFrameBackdropBorderColor(lootBd, sr, sg, sb, sa)
     end
 end
 
@@ -1387,8 +1460,8 @@ function Alerts:HookAlertSystems()
     DeferredHook(SkillLineSpecsUnlockedAlertSystem, SkinMiscAlert)
     DeferredHook(GuildRenameAlertSystem, SkinMiscAlert)
 
-    -- Skin bonus roll frames
-    SkinBonusRollFrames()
+    -- Bonus roll won frames: hook the global setup funcs so they skin on show
+    HookBonusRollFrames()
 end
 
 function Alerts:Initialize()

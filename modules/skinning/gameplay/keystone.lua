@@ -2,6 +2,7 @@ local addonName, ns = ...
 
 local GetCore = ns.Helpers.GetCore
 local SkinBase = ns.SkinBase
+local Helpers = ns.Helpers
 
 ---------------------------------------------------------------------------
 -- KEYSTONE FRAME SKINNING
@@ -33,8 +34,8 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local btnBgR = math.min(bgr + 0.07, 1)
     local btnBgG = math.min(bgg + 0.07, 1)
     local btnBgB = math.min(bgb + 0.07, 1)
-    btnBd:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
-    btnBd:SetBackdropBorderColor(sr, sg, sb, sa)
+    Helpers.SetFrameBackdropColor(btnBd, btnBgR, btnBgG, btnBgB, 1)
+    Helpers.SetFrameBackdropBorderColor(btnBd, sr, sg, sb, sa)
 
     -- Hide default textures
     if button.Left then button.Left:SetAlpha(0) end
@@ -86,9 +87,9 @@ local function StyleKeystoneSlot(slot, sr, sg, sb, sa)
         SkinBase.SetExpandedPixelPoints(slotBorder, slot, 4)
         slotBorder:SetFrameLevel(slot:GetFrameLevel() - 1)
         slotBorder:EnableMouse(false)
-        SkinBase.ApplyPixelBackdrop(slotBorder, 2, true, true)
-        slotBorder:SetBackdropColor(0, 0, 0, 0.5)
-        slotBorder:SetBackdropBorderColor(sr, sg, sb, sa)
+        SkinBase.ApplyPixelBackdrop(slotBorder, SkinBase.CHROME.BORDER_PX, true, true)
+        Helpers.SetFrameBackdropColor(slotBorder, 0, 0, 0, 0.5)
+        Helpers.SetFrameBackdropBorderColor(slotBorder, sr, sg, sb, sa)
         SkinBase.SetFrameData(slot, "border", slotBorder)
     end
 end
@@ -167,6 +168,7 @@ local function SkinKeystoneFrame()
         end
     end)
 
+    SkinBase.SkinFrameText(keystoneFrame, { recurse = true })
     SkinBase.MarkSkinned(keystoneFrame)
 end
 
@@ -192,15 +194,15 @@ local function RefreshKeystoneColors()
         local btnBgR = math.min(bgr + 0.07, 1)
         local btnBgG = math.min(bgg + 0.07, 1)
         local btnBgB = math.min(bgb + 0.07, 1)
-        startBtnBd:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
-        startBtnBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropColor(startBtnBd, btnBgR, btnBgG, btnBgB, 1)
+        Helpers.SetFrameBackdropBorderColor(startBtnBd, sr, sg, sb, sa)
         SkinBase.SetFrameData(keystoneFrame.StartButton, "skinColor", { sr, sg, sb, sa })
     end
 
     -- Update keystone slot border
     local slotBorder = keystoneFrame.KeystoneSlot and SkinBase.GetFrameData(keystoneFrame.KeystoneSlot, "border")
     if slotBorder then
-        slotBorder:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropBorderColor(slotBorder, sr, sg, sb, sa)
     end
 
     -- Update affix borders (see note on parentArray="Affixes" above).

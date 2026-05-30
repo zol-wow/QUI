@@ -33,6 +33,7 @@ local function StyleScrollBoxRow(row)
     if not row.Label and not row.Text and not row.Icon then return end
 
     SkinBase.SkinScrollRow(row)
+    SkinBase.SkinFrameText(row, { recurse = true })
 
     -- Inset backdrop past the skill-up icon area on recipe rows
     if row.SkillUps then
@@ -119,7 +120,8 @@ local function SkinCraftingPage(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         if schematicForm.NineSlice then schematicForm.NineSlice:Hide() end
         if schematicForm.Background then schematicForm.Background:SetAlpha(0) end
         if schematicForm.MinimalBackground then schematicForm.MinimalBackground:SetAlpha(0) end
-        SkinBase.CreateBackdrop(schematicForm, sr, sg, sb, sa * 0.3, math.min(bgr + 0.02, 1), math.min(bgg + 0.02, 1), math.min(bgb + 0.02, 1), 0.5)
+        local dr, dg, db, da = SkinBase.GetDepthColor("SUBPANEL")
+        SkinBase.CreateBackdrop(schematicForm, sr, sg, sb, sa * 0.3, dr, dg, db, da)
 
         -- Details panel backgrounds
         local details = schematicForm.Details
@@ -128,7 +130,7 @@ local function SkinCraftingPage(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             if details.BackgroundMiddle then details.BackgroundMiddle:SetAlpha(0) end
             if details.BackgroundBottom then details.BackgroundBottom:SetAlpha(0) end
             if details.BackgroundMinimized then details.BackgroundMinimized:SetAlpha(0) end
-            SkinBase.CreateBackdrop(details, sr, sg, sb, sa * 0.3, math.min(bgr + 0.04, 1), math.min(bgg + 0.04, 1), math.min(bgb + 0.04, 1), 0.6)
+            SkinBase.CreateBackdrop(details, sr, sg, sb, sa * 0.3, dr, dg, db, da)
         end
     end
 
@@ -194,13 +196,15 @@ local function SkinOrdersPage(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             local od = orderView.OrderDetails
             if od.NineSlice then od.NineSlice:Hide() end
             if od.Background then od.Background:SetAlpha(0) end
-            SkinBase.CreateBackdrop(od, sr, sg, sb, sa * 0.3, math.min(bgr + 0.02, 1), math.min(bgg + 0.02, 1), math.min(bgb + 0.02, 1), 0.5)
+            local dr, dg, db, da = SkinBase.GetDepthColor("SUBPANEL")
+            SkinBase.CreateBackdrop(od, sr, sg, sb, sa * 0.3, dr, dg, db, da)
         end
         if orderView.OrderInfo then
             local oi = orderView.OrderInfo
             if oi.NineSlice then oi.NineSlice:Hide() end
             if oi.Background then oi.Background:SetAlpha(0) end
-            SkinBase.CreateBackdrop(oi, sr, sg, sb, sa * 0.3, math.min(bgr + 0.02, 1), math.min(bgg + 0.02, 1), math.min(bgb + 0.02, 1), 0.5)
+            local dr, dg, db, da = SkinBase.GetDepthColor("SUBPANEL")
+            SkinBase.CreateBackdrop(oi, sr, sg, sb, sa * 0.3, dr, dg, db, da)
         end
         -- Buttons
         if orderView.CreateButton then
@@ -338,6 +342,7 @@ local function SkinProfessions()
     SkinOrdersPage(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     SkinSpecPage(frame)
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -350,7 +355,7 @@ end
 local function UpdatePanelColors(panel, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local bd = panel and SkinBase.GetBackdrop(panel)
     if not bd then return end
-    bd:SetBackdropColor(math.min(bgr + 0.02, 1), math.min(bgg + 0.02, 1), math.min(bgb + 0.02, 1), 0.5)
+    bd:SetBackdropColor(SkinBase.GetDepthColor("SUBPANEL"))
     bd:SetBackdropBorderColor(sr, sg, sb, sa * 0.3)
 end
 
@@ -387,7 +392,7 @@ local function RefreshProfessionsColors()
         if craftingPage.SchematicForm and craftingPage.SchematicForm.Details then
             local detBd = SkinBase.GetBackdrop(craftingPage.SchematicForm.Details)
             if detBd then
-                detBd:SetBackdropColor(math.min(bgr + 0.04, 1), math.min(bgg + 0.04, 1), math.min(bgb + 0.04, 1), 0.6)
+                detBd:SetBackdropColor(SkinBase.GetDepthColor("SUBPANEL"))
                 detBd:SetBackdropBorderColor(sr, sg, sb, sa * 0.3)
             end
         end

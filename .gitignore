@@ -21,3 +21,6 @@ CLAUDE.md
 *.DS_Store
 ._.gitignore
 /.worktrees
+
+# Lua gate hook: transient list of files touched this turn
+.claude/hooks/.gate-touched*

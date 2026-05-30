@@ -4,6 +4,7 @@
 -- Frame created in utils/qui_mplus_timer.lua
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
+local Helpers = ns.Helpers
 local GetCore = ns.Helpers.GetCore
 local SkinBase = ns.SkinBase
 
@@ -77,11 +78,11 @@ local function ApplyBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga, showBord
     end
 
     SkinBase.ApplyPixelBackdrop(backdrop, 1, true, true)
-    backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
+    Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
 
     -- Border visibility controlled by showBorder setting (alpha 0 when hidden)
     local borderAlpha = showBorder and sa or 0
-    backdrop:SetBackdropBorderColor(sr, sg, sb, borderAlpha)
+    Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, borderAlpha)
 end
 
 ---------------------------------------------------------------------------
@@ -94,10 +95,10 @@ local function ApplyBarSkin(bar, sr, sg, sb, br, bg, bb, colors, isTimerBar, bar
     local borderMult = colors.barBorder
 
     SkinBase.ApplyPixelBackdrop(bar.frame, 1, true, false)
-    bar.frame:SetBackdropColor(barBg[1], barBg[2], barBg[3], barBg[4])
+    Helpers.SetFrameBackdropColor(bar.frame, barBg[1], barBg[2], barBg[3], barBg[4])
 
     local borderAlpha = showBorder and 1 or 0
-    bar.frame:SetBackdropBorderColor(sr * borderMult, sg * borderMult, sb * borderMult, borderAlpha)
+    Helpers.SetFrameBackdropBorderColor(bar.frame, sr * borderMult, sg * borderMult, sb * borderMult, borderAlpha)
 
     if bar.bar then
         bar.bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
@@ -237,8 +238,8 @@ local function ApplyMPlusTimerSkin()
         local borderMult = colors.barBorder
         local borderAlpha = showBorder and 1 or 0
         SkinBase.ApplyPixelBackdrop(MPlusTimer.frames.sleekBar, 1, true, false)
-        MPlusTimer.frames.sleekBar:SetBackdropColor(barBg[1], barBg[2], barBg[3], barBg[4])
-        MPlusTimer.frames.sleekBar:SetBackdropBorderColor(sr * borderMult, sg * borderMult, sb * borderMult, borderAlpha)
+        Helpers.SetFrameBackdropColor(MPlusTimer.frames.sleekBar, barBg[1], barBg[2], barBg[3], barBg[4])
+        Helpers.SetFrameBackdropBorderColor(MPlusTimer.frames.sleekBar, sr * borderMult, sg * borderMult, sb * borderMult, borderAlpha)
     end
 
     -- Sleek mode: Update segment colors to use accent for +1
@@ -279,6 +280,7 @@ local function ApplyMPlusTimerSkin()
     -- Store colors for refresh
     SkinBase.MarkSkinned(MPlusTimer.frames.root)
     SkinBase.SetFrameData(MPlusTimer.frames.root, "colors", colors)
+    SkinBase.SkinFrameText(MPlusTimer.frames.root, { recurse = true })
 end
 
 ---------------------------------------------------------------------------

@@ -253,6 +253,7 @@ local function SetupInspectFrameSkinning()
     if not IsSkinningEnabled() then return end
     if not InspectFrame then return end
 
+    SkinBase.SkinFrameText(InspectFrame, { recurse = true })
     CreateOrUpdateBackground()
     SkinInspectFrameTabs()
 

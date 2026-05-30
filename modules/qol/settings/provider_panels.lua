@@ -1049,6 +1049,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local showMythicW = GUI:CreateFormCheckbox(s2.frame, nil, "showPlayerMythicRating", tooltip, RefreshTooltips,
             { description = "Show the player's Mythic+ rating on player tooltips." })
         s2.AddRow(row(s2.frame, "Show M+ Rating", showMythicW))
+
+        local hideGuildW = GUI:CreateFormToggle(s2.frame, nil, "hideGuildName", tooltip, RefreshTooltips,
+            { description = "Strip the guild name line from player tooltips." })
+        s2.AddRow(row(s2.frame, "Hide Guild Name", hideGuildW))
         L.closeSection(s2)
 
         -- PLAYER ITEM LEVEL

@@ -77,6 +77,7 @@ local generalFont = "Interface\\QUIFont.ttf"
 
 local ns = {
     Helpers = {
+        CHROME = { BORDER_PX = 1, BG_FALLBACK = { 0.05, 0.05, 0.05, 0.95 }, BORDER_FALLBACK = { 0, 0, 0, 1 }, BUTTON_BOOST = 0.07, SCROLLROW_BOOST = 0.03, DEPTH = { PANEL = { boost = 0, alpha = 0.95 }, SUBPANEL = { boost = 0.04, alpha = 0.85 }, ROW = { boost = 0.07, alpha = 0.75 } } },
         CreateStateTable = CreateStateTable,
         GetCore = function() return { GetPixelSize = function() return 0.5 end } end,
         SafeToNumber = function(v, d) return tonumber(v) or d end,

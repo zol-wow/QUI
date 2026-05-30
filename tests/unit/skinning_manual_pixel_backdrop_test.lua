@@ -104,6 +104,7 @@ end
 
 local ns = {
     Helpers = {
+        CHROME = { BORDER_PX = 1, BG_FALLBACK = { 0.05, 0.05, 0.05, 0.95 }, BORDER_FALLBACK = { 0, 0, 0, 1 }, BUTTON_BOOST = 0.07, SCROLLROW_BOOST = 0.03, DEPTH = { PANEL = { boost = 0, alpha = 0.95 }, SUBPANEL = { boost = 0.04, alpha = 0.85 }, ROW = { boost = 0.07, alpha = 0.75 } } },
         CreateStateTable = function()
             return setmetatable({}, { __mode = "k" })
         end,
@@ -162,15 +163,13 @@ assert(backdrop.textures[1].colorTexture[1] == 0.2 and backdrop.textures[1].colo
 assert(backdrop.textures[2].colorTexture[1] == 0.7 and backdrop.textures[2].colorTexture[4] == 1,
     "manual SetBackdropBorderColor must recolor solid border textures directly")
 
+-- A frame that also has SetBackdrop (a "native" Blizzard backdrop frame). After
+-- render-path unification (#3) it goes through the same manual 4-texture path as
+-- every other frame, so colors stored in _quiBg*/_quiBorder* must still survive a
+-- scale-refresh rebuild via that path.
 local native = NewFrame()
 function native:SetBackdrop(info)
     self.backdropInfo = info
-end
-function native:SetBackdropColor(r, g, b, a)
-    self.bgColor = { r, g, b, a }
-end
-function native:SetBackdropBorderColor(r, g, b, a)
-    self.borderColor = { r, g, b, a }
 end
 
 SkinBase.ApplyPixelBackdrop(native, 1, true, true)
@@ -178,10 +177,14 @@ native._quiBgR, native._quiBgG, native._quiBgB, native._quiBgA = 0.11, 0.12, 0.1
 native._quiBorderR, native._quiBorderG, native._quiBorderB, native._quiBorderA = 0.61, 0.62, 0.63, 1
 registeredRefresh(native)
 
-local refreshed = safeBackdropCalls[#safeBackdropCalls]
-assert(refreshed.bgColor and refreshed.bgColor[1] == 0.11 and refreshed.bgColor[4] == 0.91,
-    "scale refresh must preserve stored native pixel backdrop background colors")
-assert(refreshed.borderColor and refreshed.borderColor[1] == 0.61 and refreshed.borderColor[4] == 1,
-    "scale refresh must preserve stored native pixel backdrop border colors")
+-- After unification the manual-path SetBackdropColor/SetBackdropBorderColor stubs
+-- are installed by EnsureManualBackdrop; they store colors in _qui* fields. Verify
+-- the rebuild picked up the pre-stored colors via those fields.
+assert(native._quiBgR == 0.11 and native._quiBgA == 0.91,
+    "scale refresh must preserve stored native pixel backdrop background colors (#3 unified path)")
+assert(native._quiBorderR == 0.61 and native._quiBorderA == 1,
+    "scale refresh must preserve stored native pixel backdrop border colors (#3 unified path)")
+assert(native.backdropInfo == nil,
+    "unified path must not call frame:SetBackdrop on a native frame (#3)")
 
 print("OK: skinning_manual_pixel_backdrop_test")

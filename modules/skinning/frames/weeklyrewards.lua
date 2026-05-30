@@ -52,6 +52,7 @@ local function SkinWeeklyRewards()
         SkinBase.SkinCloseButton(frame.CloseButton)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 

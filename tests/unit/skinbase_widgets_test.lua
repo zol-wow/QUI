@@ -52,6 +52,7 @@ local skinColors = { 0.6, 0.7, 0.8, 1, 0.1, 0.2, 0.3, 0.9 }
 
 local ns = {
     Helpers = {
+        CHROME = { BORDER_PX = 1, BG_FALLBACK = { 0.05, 0.05, 0.05, 0.95 }, BORDER_FALLBACK = { 0, 0, 0, 1 }, BUTTON_BOOST = 0.07, SCROLLROW_BOOST = 0.03, DEPTH = { PANEL = { boost = 0, alpha = 0.95 }, SUBPANEL = { boost = 0.04, alpha = 0.85 }, ROW = { boost = 0.07, alpha = 0.75 } } },
         CreateStateTable = function()
             local tbl = setmetatable({}, { __mode = "k" })
             local function get(key)

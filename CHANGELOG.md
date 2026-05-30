@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha69 - 2026-05-29
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha68 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Added
+- **New "Hide Guild Name" toggle in QoL > Tooltip.** Off by default; when enabled, the guild-name line is stripped from player tooltips, matching the existing Hide Server Name option.
+
+### Fixed
+- **Skinned frames no longer flash white when the UI scale changes.** Loot, alerts, the Mythic+ timer, the keystone frame, status-tracking bars, the override action bar, and more now keep their themed colors through a scale refresh, and selected options sub-tabs stay tinted instead of briefly turning white.
+- **Bonus-roll windows now match the QUI theme.** The roll prompt (dice/pass buttons, item icon, cost, and timer) and the won-loot/won-money toasts are skinned every time they appear instead of occasionally showing up unstyled.
+- **Target/focus castbars no longer break the action bars in combat.** Switching targets with a keybind mid-fight could block protected actions and leave parts of the UI stuck; the castbar update is now deferred safely until it can run without interfering.
+
+
+
 ## v3.6.0-alpha68 - 2026-05-29
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha67 profiles carry over unchanged.

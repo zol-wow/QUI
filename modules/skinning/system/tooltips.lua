@@ -569,6 +569,7 @@ local function StyleTooltip(tooltip)
     TooltipDebugCount("skin.style")
     local dbg, dbgStart, dbgHeap = TooltipDebugBegin()
     pcall(ApplyTooltipChrome, tooltip)
+    SkinBase.SkinFrameText(tooltip, { recurse = true })
     TooltipDebugEnd(dbg, "skin.style", dbgStart, nil, dbgHeap)
 end
 

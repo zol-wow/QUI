@@ -1,6 +1,7 @@
 local addonName, ns = ...
 
 local GetCore = ns.Helpers.GetCore
+local Helpers = ns.Helpers
 local SkinBase = ns.SkinBase
 
 ---------------------------------------------------------------------------
@@ -82,9 +83,9 @@ local function StyleGroupFinderButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
         SkinBase.SetFrameData(button, "backdrop", backdrop)
     end
 
-    local btnBgR = math.min(bgr + 0.07, 1)
-    local btnBgG = math.min(bgg + 0.07, 1)
-    local btnBgB = math.min(bgb + 0.07, 1)
+    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
     SkinBase.ApplyFullBackdrop(backdrop, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
 
     -- Style the icon
@@ -102,7 +103,7 @@ local function StyleGroupFinderButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
             iconBackdrop:SetFrameLevel(button:GetFrameLevel())
             iconBackdrop:EnableMouse(false)
             SkinBase.ApplyPixelBackdrop(iconBackdrop, 1, false, false)
-            iconBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+            Helpers.SetFrameBackdropBorderColor(iconBackdrop, sr, sg, sb, sa)
             SkinBase.SetFrameData(button.icon, "backdrop", iconBackdrop)
         end
     end
@@ -191,6 +192,7 @@ local function SkinPVEFrame()
         end
     end
 
+    SkinBase.SkinFrameText(PVEFrame, { recurse = true })
     SkinBase.MarkSkinned(PVEFrame)
 end
 
@@ -327,6 +329,7 @@ local function SkinLFDFrame()
         SkinBase.SkinDropdown(typeDropdown, { keepArrow = true, insetY = 2 })
     end
 
+    SkinBase.SkinFrameText(LFDQueueFrame, { recurse = true })
     SkinBase.MarkSkinned(LFDQueueFrame)
 end
 
@@ -373,6 +376,7 @@ local function SkinRaidFinderFrame()
         SkinBase.SkinDropdown(selectionDropdown, { keepArrow = true, insetY = 2 })
     end
 
+    SkinBase.SkinFrameText(RaidFinderQueueFrame, { recurse = true })
     SkinBase.MarkSkinned(RaidFinderQueueFrame)
 end
 
@@ -511,6 +515,7 @@ local function SkinLFGListFrame()
         end
     end
 
+    SkinBase.SkinFrameText(LFGListFrame, { recurse = true })
     SkinBase.MarkSkinned(LFGListFrame)
 end
 
@@ -551,7 +556,7 @@ local function StyleDungeonIcon(icon, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             iconBackdrop:SetFrameLevel(icon:GetFrameLevel())
             iconBackdrop:EnableMouse(false)
             SkinBase.ApplyPixelBackdrop(iconBackdrop, 1, false, false)
-            iconBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+            Helpers.SetFrameBackdropBorderColor(iconBackdrop, sr, sg, sb, sa)
             SkinBase.SetFrameData(icon.Icon, "backdrop", iconBackdrop)
         end
     end
@@ -580,7 +585,7 @@ local function StyleAffixIcon(affix, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             portraitBackdrop:SetFrameLevel(affix:GetFrameLevel())
             portraitBackdrop:EnableMouse(false)
             SkinBase.ApplyPixelBackdrop(portraitBackdrop, 1, false, false)
-            portraitBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+            Helpers.SetFrameBackdropBorderColor(portraitBackdrop, sr, sg, sb, sa)
             SkinBase.SetFrameData(affix.Portrait, "backdrop", portraitBackdrop)
         end
     end
@@ -655,6 +660,7 @@ local function SkinChallengesFrame()
         end
     end
 
+    SkinBase.SkinFrameText(ChallengesFrame, { recurse = true })
     SkinBase.MarkSkinned(ChallengesFrame)
 end
 
@@ -730,11 +736,11 @@ local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
 
     SkinBase.ApplyPixelBackdrop(backdrop, 1, true, true)
 
-    local btnBgR = math.min(bgr + 0.07, 1)
-    local btnBgG = math.min(bgg + 0.07, 1)
-    local btnBgB = math.min(bgb + 0.07, 1)
-    backdrop:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
-    backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
+    Helpers.SetFrameBackdropColor(backdrop, btnBgR, btnBgG, btnBgB, 1)
+    Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
 
     -- Style selected texture
     if button.SelectedTexture then
@@ -755,7 +761,7 @@ local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
                 rewardIconBackdrop:SetFrameLevel(reward:GetFrameLevel())
                 rewardIconBackdrop:EnableMouse(false)
                 SkinBase.ApplyPixelBackdrop(rewardIconBackdrop, 1, false, false)
-                rewardIconBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+                Helpers.SetFrameBackdropBorderColor(rewardIconBackdrop, sr, sg, sb, sa)
                 SkinBase.SetFrameData(reward.Icon, "backdrop", rewardIconBackdrop)
             end
         end
@@ -817,11 +823,11 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     SkinBase.ApplyPixelBackdrop(backdrop, 1, true, true)
 
-    local btnBgR = math.min(bgr + 0.05, 1)
-    local btnBgG = math.min(bgg + 0.05, 1)
-    local btnBgB = math.min(bgb + 0.05, 1)
-    backdrop:SetBackdropColor(btnBgR, btnBgG, btnBgB, 0.9)
-    backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
+    Helpers.SetFrameBackdropColor(backdrop, btnBgR, btnBgG, btnBgB, 0.9)
+    Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
 
     -- Style selected texture
     if button.SelectedTexture then
@@ -839,7 +845,7 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             iconBackdrop:SetFrameLevel(button:GetFrameLevel())
             iconBackdrop:EnableMouse(false)
             SkinBase.ApplyPixelBackdrop(iconBackdrop, 1, false, false)
-            iconBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+            Helpers.SetFrameBackdropBorderColor(iconBackdrop, sr, sg, sb, sa)
             SkinBase.SetFrameData(button.Icon, "backdrop", iconBackdrop)
         end
     end
@@ -879,8 +885,8 @@ local function StyleConquestBar(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     end
 
     SkinBase.ApplyPixelBackdrop(backdrop, 1, true, true)
-    backdrop:SetBackdropColor(bgr, bgg, bgb, 0.8)
-    backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, 0.8)
+    Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
 
     -- Style reward icon
     if bar.Reward then
@@ -1070,6 +1076,7 @@ local function SkinPVPFrame()
         SkinBase.MarkSkinned(TrainingGroundsFrame)
     end
 
+    SkinBase.SkinFrameText(PVPQueueFrame, { recurse = true })
     SkinBase.MarkSkinned(PVPQueueFrame)
 end
 
@@ -1091,16 +1098,16 @@ end
 local function UpdateGroupFinderButtonColors(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local bd = button and SkinBase.GetFrameData(button, "backdrop")
     if not bd then return end
-    local btnBgR = math.min(bgr + 0.07, 1)
-    local btnBgG = math.min(bgg + 0.07, 1)
-    local btnBgB = math.min(bgb + 0.07, 1)
+    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
     bd:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
     bd:SetBackdropBorderColor(sr, sg, sb, sa)
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     -- Update icon border if present
     local iconBd = button.icon and SkinBase.GetFrameData(button.icon, "backdrop")
     if iconBd then
-        iconBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropBorderColor(iconBd, sr, sg, sb, sa)
     end
 end
 
@@ -1108,18 +1115,18 @@ end
 local function UpdatePVPActivityButtonColors(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local bd = button and SkinBase.GetFrameData(button, "backdrop")
     if not bd then return end
-    local btnBgR = math.min(bgr + 0.07, 1)
-    local btnBgG = math.min(bgg + 0.07, 1)
-    local btnBgB = math.min(bgb + 0.07, 1)
-    bd:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
-    bd:SetBackdropBorderColor(sr, sg, sb, sa)
+    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
+    Helpers.SetFrameBackdropColor(bd, btnBgR, btnBgG, btnBgB, 1)
+    Helpers.SetFrameBackdropBorderColor(bd, sr, sg, sb, sa)
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     if button.SelectedTexture then
         button.SelectedTexture:SetColorTexture(sr, sg, sb, 0.2)
     end
     local rewardIconBd = button.Reward and button.Reward.Icon and SkinBase.GetFrameData(button.Reward.Icon, "backdrop")
     if rewardIconBd then
-        rewardIconBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropBorderColor(rewardIconBd, sr, sg, sb, sa)
     end
 end
 
@@ -1127,8 +1134,8 @@ end
 local function UpdateConquestBarColors(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local bd = bar and SkinBase.GetFrameData(bar, "backdrop")
     if not bd then return end
-    bd:SetBackdropColor(bgr, bgg, bgb, 0.8)
-    bd:SetBackdropBorderColor(sr, sg, sb, sa)
+    Helpers.SetFrameBackdropColor(bd, bgr, bgg, bgb, 0.8)
+    Helpers.SetFrameBackdropBorderColor(bd, sr, sg, sb, sa)
 end
 
 -- Helper to update dungeon icon colors
@@ -1136,7 +1143,7 @@ local function UpdateDungeonIconColors(icon, sr, sg, sb, sa)
     if not icon or not icon.Icon then return end
     local bd = SkinBase.GetFrameData(icon.Icon, "backdrop")
     if not bd then return end
-    bd:SetBackdropBorderColor(sr, sg, sb, sa)
+    Helpers.SetFrameBackdropBorderColor(bd, sr, sg, sb, sa)
     SkinBase.SetFrameData(icon, "skinColor", { sr, sg, sb, sa })
 end
 
@@ -1145,7 +1152,7 @@ local function UpdateAffixIconColors(affix, sr, sg, sb, sa)
     if not affix or not affix.Portrait then return end
     local bd = SkinBase.GetFrameData(affix.Portrait, "backdrop")
     if not bd then return end
-    bd:SetBackdropBorderColor(sr, sg, sb, sa)
+    Helpers.SetFrameBackdropBorderColor(bd, sr, sg, sb, sa)
 end
 
 -- Refresh colors

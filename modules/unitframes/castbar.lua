@@ -409,6 +409,27 @@ local function SetCastbarFrameVisible(frame, shouldShow)
     frame:Hide()
 end
 
+-- TAINT SAFETY: target/focus-change events (PLAYER_TARGET_CHANGED, etc.) can fire
+-- synchronously inside a secure execution context -- e.g. a TargetNearestEnemy
+-- keybind, which is a protected action in combat. Running Cast() there blocks
+-- every protected call in its tree (SetHeight, Show/Hide, channel-tick SetPoint/
+-- Hide, ...) with ADDON_ACTION_BLOCKED. Deferring one frame in combat moves Cast()
+-- out of that context into a normal, unrestricted frame (OnUpdate already mutates
+-- the same protected geometry in combat without issue). Out of combat there is no
+-- restriction, so run synchronously for an instant update.
+local function CastOnTargetChange(castbar)
+    if InCombatLockdown() then
+        C_Timer.After(0, function()
+            -- The frame may be destroyed (settings refresh) before this fires.
+            if not castbar._quiDestroyed then
+                castbar:Cast()
+            end
+        end)
+    else
+        castbar:Cast()
+    end
+end
+
 local function CreateStatusBar(anchorFrame)
     local statusBar = CreateFrame("StatusBar", nil, anchorFrame)
     statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
@@ -2746,10 +2767,12 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
 
     -- Event dispatch table (cleaner than if-elseif chain)
     local eventHandlers = {
-        -- Target/focus change events
-        PLAYER_TARGET_CHANGED = function(self) self:Cast() end,
-        PLAYER_FOCUS_CHANGED = function(self) self:Cast() end,
-        UNIT_TARGET = function(self) self:Cast() end,
+        -- Target/focus change events. These can fire inside a secure execution
+        -- context in combat (e.g. a TargetNearestEnemy keybind), so route through
+        -- CastOnTargetChange, which defers Cast() out of that context.
+        PLAYER_TARGET_CHANGED = function(self) CastOnTargetChange(self) end,
+        PLAYER_FOCUS_CHANGED = function(self) CastOnTargetChange(self) end,
+        UNIT_TARGET = function(self) CastOnTargetChange(self) end,
 
         -- Cast start events
         UNIT_SPELLCAST_START = function(self, spellID) self:Cast(spellID, false) end,
@@ -3326,6 +3349,10 @@ end
 ---------------------------------------------------------------------------
 local function DestroyCastbar(castbar)
     if not castbar then return end
+
+    -- Mark destroyed so a deferred CastOnTargetChange callback queued before this
+    -- runs no-ops instead of operating on the orphaned frame.
+    castbar._quiDestroyed = true
 
     ClearChannelTickState(castbar)
     castbar:UnregisterAllEvents()

@@ -53,9 +53,9 @@ local function SkinButton(button, sr, sg, sb, bgr, bgg, bgb, bga)
     end
 
     -- Create backdrop
-    local btnBgr = math.min(bgr + 0.07, 1)  -- Slightly lighter for buttons
-    local btnBgg = math.min(bgg + 0.07, 1)
-    local btnBgb = math.min(bgb + 0.07, 1)
+    local btnBgr = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)  -- Slightly lighter for buttons
+    local btnBgg = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgb = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
     SkinBase.CreateBackdrop(button, sr, sg, sb, 1, btnBgr, btnBgg, btnBgb, bga)
 
     -- Store colors for hover effects (in local weak-keyed table via SkinBase)
@@ -94,9 +94,9 @@ local function RefreshButtonColors(button, sr, sg, sb, bgr, bgg, bgb, bga)
     local backdrop = button and SkinBase.GetBackdrop(button)
     if not backdrop then return end
 
-    local btnBgr = math.min(bgr + 0.07, 1)
-    local btnBgg = math.min(bgg + 0.07, 1)
-    local btnBgb = math.min(bgb + 0.07, 1)
+    local btnBgr = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgg = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgb = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
 
     SkinBase.SetFrameData(button, "normalBg", { btnBgr, btnBgg, btnBgb, bga })
     SkinBase.SetFrameData(button, "hoverBg", { math.min(btnBgr + 0.1, 1), math.min(btnBgg + 0.1, 1), math.min(btnBgb + 0.1, 1), bga })
@@ -260,6 +260,7 @@ local function SkinReadyCheckFrame()
         end
     end)
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 

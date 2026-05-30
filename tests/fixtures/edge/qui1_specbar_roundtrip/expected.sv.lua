@@ -6088,6 +6088,7 @@ return {
             engine = "default",
             fontSize = 12,
             hideDelay = 0,
+            hideGuildName = false,
             hideHealthBar = true,
             hideInCombat = false,
             hidePlayerTitle = false,

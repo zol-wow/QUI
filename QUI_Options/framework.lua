@@ -1979,6 +1979,16 @@ function GUI:CreateSubTabs(parent, tabs)
             UIKit.RegisterScaleRefresh(btn, "subTabPixelBackdrop", function(owner)
                 owner:SetHeight(RoundVirtual(24, owner))
                 ApplyPixelBackdrop(owner)
+                -- ApplyPixelBackdrop re-runs SetBackdrop, which resets the
+                -- backdrop textures to white; restore the tab's selection-aware
+                -- colors so the sub-tab doesn't flash white on a scale refresh.
+                if buttonGroup.selectedTab == owner.index then
+                    pcall(owner.SetBackdropColor, owner, 0.12, 0.18, 0.18, 1)
+                    pcall(owner.SetBackdropBorderColor, owner, C_accent_r, C_accent_g, C_accent_b, C_accent_a)
+                else
+                    pcall(owner.SetBackdropColor, owner, 0.15, 0.15, 0.15, 1)
+                    pcall(owner.SetBackdropBorderColor, owner, 0.3, 0.3, 0.3, 1)
+                end
             end)
         end
 

@@ -136,9 +136,9 @@ local function GetOrCreateButtonOverlay(button, sr, sg, sb, sa, bgr, bgg, bgb, b
     SyncButtonOverlayLayering(overlay, button)
     overlay:EnableMouse(false)
 
-    local btnBgR = math.min(bgr + 0.07, 1)
-    local btnBgG = math.min(bgg + 0.07, 1)
-    local btnBgB = math.min(bgb + 0.07, 1)
+    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
 
     info = {
         overlay = overlay,
@@ -325,9 +325,9 @@ local function UpdateButtonColors(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local info = buttonOverlays[button]
     if not info or not info.overlay then return end
 
-    local btnBgR = math.min(bgr + 0.07, 1)
-    local btnBgG = math.min(bgg + 0.07, 1)
-    local btnBgB = math.min(bgb + 0.07, 1)
+    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
     info.skinColor = { sr, sg, sb, sa }
     info.bgColor = { btnBgR, btnBgG, btnBgB, 1 }
     RefreshButtonOverlayVisuals(info)
@@ -436,6 +436,7 @@ local function SkinGameMenu()
         end
     end
 
+    SkinBase.SkinFrameText(GameMenuFrame, { recurse = true })
     skinState.skinned = true
 end
 

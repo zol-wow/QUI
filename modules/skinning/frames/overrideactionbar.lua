@@ -1,6 +1,7 @@
 local addonName, ns = ...
 local QUICore = ns.Addon
 local SkinBase = ns.SkinBase
+local Helpers = ns.Helpers
 
 ---------------------------------------------------------------------------
 -- OVERRIDE ACTION BAR SKINNING (Compact style)
@@ -43,8 +44,8 @@ local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb, b
     end
 
     SkinBase.ApplyPixelBackdrop(btnBd, 1, true, true)
-    btnBd:SetBackdropColor(bgr, bgg, bgb, 0.8)
-    btnBd:SetBackdropBorderColor(sr, sg, sb, sa)
+    Helpers.SetFrameBackdropColor(btnBd, bgr, bgg, bgb, 0.8)
+    Helpers.SetFrameBackdropBorderColor(btnBd, sr, sg, sb, sa)
 
     -- Hide default border/normal texture
     local normalTexture = button:GetNormalTexture()
@@ -140,8 +141,8 @@ local function SkinOverrideActionBar()
     end
 
     SkinBase.ApplyPixelBackdrop(barBd, 1, true, true)
-    barBd:SetBackdropColor(bgr, bgg, bgb, bga)
-    barBd:SetBackdropBorderColor(sr, sg, sb, sa)
+    Helpers.SetFrameBackdropColor(barBd, bgr, bgg, bgb, bga)
+    Helpers.SetFrameBackdropBorderColor(barBd, sr, sg, sb, sa)
 
     -- Style and reposition spell buttons
     for i = 1, 6 do
@@ -168,8 +169,8 @@ local function SkinOverrideActionBar()
         end
 
         SkinBase.ApplyPixelBackdrop(leaveBd, 1, true, true)
-        leaveBd:SetBackdropColor(0.6, 0.1, 0.1, 0.9)  -- Reddish for exit
-        leaveBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropColor(leaveBd, 0.6, 0.1, 0.1, 0.9)  -- Reddish for exit
+        Helpers.SetFrameBackdropBorderColor(leaveBd, sr, sg, sb, sa)
     end
 
     -- Style and reposition health bar (vertical, on the left)
@@ -195,8 +196,8 @@ local function SkinOverrideActionBar()
         end
 
         SkinBase.ApplyPixelBackdrop(hbBd, 1, true, true)
-        hbBd:SetBackdropColor(bgr, bgg, bgb, 0.8)
-        hbBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropColor(hbBd, bgr, bgg, bgb, 0.8)
+        Helpers.SetFrameBackdropBorderColor(hbBd, sr, sg, sb, sa)
     end
 
     -- Style and reposition power bar (vertical, on the right)
@@ -222,10 +223,11 @@ local function SkinOverrideActionBar()
         end
 
         SkinBase.ApplyPixelBackdrop(pbBd, 1, true, true)
-        pbBd:SetBackdropColor(bgr, bgg, bgb, 0.8)
-        pbBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropColor(pbBd, bgr, bgg, bgb, 0.8)
+        Helpers.SetFrameBackdropBorderColor(pbBd, sr, sg, sb, sa)
     end
 
+    SkinBase.SkinFrameText(bar, { recurse = true })
     SkinBase.MarkSkinned(bar)
 
     -- BUG-005: Reset MicroMenu to normal position after skinning
@@ -253,8 +255,8 @@ local function RefreshOverrideActionBarColors()
     -- Update main backdrop
     local mainBd = SkinBase.GetFrameData(bar, "backdrop")
     if mainBd then
-        mainBd:SetBackdropColor(bgr, bgg, bgb, bga)
-        mainBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropColor(mainBd, bgr, bgg, bgb, bga)
+        Helpers.SetFrameBackdropBorderColor(mainBd, sr, sg, sb, sa)
     end
 
     -- Update spell buttons
@@ -262,8 +264,8 @@ local function RefreshOverrideActionBarColors()
         local button = bar["SpellButton" .. i]
         local spellBd = button and SkinBase.GetFrameData(button, "backdrop")
         if spellBd then
-            spellBd:SetBackdropColor(bgr, bgg, bgb, 0.8)
-            spellBd:SetBackdropBorderColor(sr, sg, sb, sa)
+            Helpers.SetFrameBackdropColor(spellBd, bgr, bgg, bgb, 0.8)
+            Helpers.SetFrameBackdropBorderColor(spellBd, sr, sg, sb, sa)
             SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
         end
     end
@@ -271,22 +273,22 @@ local function RefreshOverrideActionBarColors()
     -- Update leave button
     local leaveBd = bar.LeaveButton and SkinBase.GetFrameData(bar.LeaveButton, "backdrop")
     if leaveBd then
-        leaveBd:SetBackdropColor(0.6, 0.1, 0.1, 0.9)
-        leaveBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropColor(leaveBd, 0.6, 0.1, 0.1, 0.9)
+        Helpers.SetFrameBackdropBorderColor(leaveBd, sr, sg, sb, sa)
     end
 
     -- Update health bar
     local healthBd = bar.healthBar and SkinBase.GetFrameData(bar.healthBar, "backdrop")
     if healthBd then
-        healthBd:SetBackdropColor(bgr, bgg, bgb, 0.8)
-        healthBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropColor(healthBd, bgr, bgg, bgb, 0.8)
+        Helpers.SetFrameBackdropBorderColor(healthBd, sr, sg, sb, sa)
     end
 
     -- Update power bar
     local powerBd = bar.powerBar and SkinBase.GetFrameData(bar.powerBar, "backdrop")
     if powerBd then
-        powerBd:SetBackdropColor(bgr, bgg, bgb, 0.8)
-        powerBd:SetBackdropBorderColor(sr, sg, sb, sa)
+        Helpers.SetFrameBackdropColor(powerBd, bgr, bgg, bgb, 0.8)
+        Helpers.SetFrameBackdropBorderColor(powerBd, sr, sg, sb, sa)
     end
 end
 

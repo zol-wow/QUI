@@ -9,6 +9,7 @@ local UIKit = ns.UIKit
 
 local SkinBase = {}
 ns.SkinBase = SkinBase
+SkinBase.CHROME = Helpers.CHROME
 
 -- Weak-keyed table to store backdrop references WITHOUT writing to Blizzard frames
 -- All code that previously used frame.quiBackdrop should use SkinBase.GetBackdrop(frame) instead
@@ -23,8 +24,8 @@ local DEFAULT_BACKDROP_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 
 -- Shared color deltas for widget skinning (single source of truth — replaces
 -- the magic numbers previously copy-pasted across frame skin files).
-local BG_BOOST_BUTTON = 0.07
-local BG_BOOST_ROW = 0.03
+local BG_BOOST_BUTTON = Helpers.CHROME.BUTTON_BOOST
+local BG_BOOST_ROW = Helpers.CHROME.SCROLLROW_BOOST
 local HOVER_BRIGHTEN = 1.3
 
 ---------------------------------------------------------------------------
@@ -167,6 +168,19 @@ function SkinBase.GetSkinBarColor(moduleSettings, prefix)
     return Helpers.GetSkinBarColor(moduleSettings, prefix)
 end
 
+-- Resolve a background-depth color for a tier (PANEL/SUBPANEL/ROW), expressed as
+-- a boost+alpha on top of the themed skin bg. Replaces the ad-hoc per-module
+-- "math.min(bgr + 0.0X, 1)" depth math so all panels layer consistently.
+function SkinBase.GetDepthColor(tier, moduleSettings, prefix)
+    local depth = SkinBase.CHROME.DEPTH[tier] or SkinBase.CHROME.DEPTH.PANEL
+    local _, _, _, _, bgr, bgg, bgb = SkinBase.GetSkinColors(moduleSettings, prefix)
+    bgr = bgr or SkinBase.CHROME.BG_FALLBACK[1]
+    bgg = bgg or SkinBase.CHROME.BG_FALLBACK[2]
+    bgb = bgb or SkinBase.CHROME.BG_FALLBACK[3]
+    local boost = depth.boost
+    return math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), depth.alpha
+end
+
 local function SetTextureSource(texture, file)
     if not texture then return end
     if file == DEFAULT_BACKDROP_TEXTURE and texture.SetColorTexture then
@@ -302,31 +316,6 @@ function SkinBase.ApplyTextureBackdrop(frame, bgFile, edgeFile, edgeSize, border
     return true
 end
 
-local function ApplySafeBackdrop(frame, backdropInfo, borderColor, bgColor)
-    if not frame or not frame.SetBackdrop then return false end
-
-    local core = Helpers.GetCore()
-    local safeSetBackdrop = core and core.SafeSetBackdrop
-    if type(safeSetBackdrop) == "function" then
-        return safeSetBackdrop(frame, backdropInfo, borderColor, bgColor)
-    end
-
-    local ok = pcall(frame.SetBackdrop, frame, backdropInfo)
-    if ok and backdropInfo then
-        if borderColor then
-            frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
-        end
-        if bgColor then
-            frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 1)
-        end
-    end
-    return ok
-end
-
-function SkinBase.SafeSetBackdrop(frame, backdropInfo, borderColor, bgColor)
-    return ApplySafeBackdrop(frame, backdropInfo, borderColor, bgColor)
-end
-
 local function RefreshPixelBackdrop(frame)
     local data = pixelBackdropData[frame]
     if not data then return end
@@ -340,18 +329,6 @@ local function RefreshPixelBackdrop(frame)
         end
         bgInset = insetPixels * SkinBase.GetPixelSize(frame, 1)
     end
-    local backdropInfo = {
-        edgeFile = data.edgeFile or DEFAULT_BACKDROP_TEXTURE,
-        edgeSize = edgeSize,
-    }
-
-    if data.withBackground then
-        backdropInfo.bgFile = data.bgFile or DEFAULT_BACKDROP_TEXTURE
-        if data.withInsets then
-            backdropInfo.insets = { left = bgInset, right = bgInset, top = bgInset, bottom = bgInset }
-        end
-    end
-
     local bgColor = data.bgColor
     if not bgColor and frame._quiBgR ~= nil then
         bgColor = { frame._quiBgR, frame._quiBgG, frame._quiBgB, frame._quiBgA }
@@ -361,13 +338,11 @@ local function RefreshPixelBackdrop(frame)
         borderColor = { frame._quiBorderR, frame._quiBorderG, frame._quiBorderB, frame._quiBorderA }
     end
 
-    if frame.SetBackdrop and frame.SetBackdropColor and frame.SetBackdropBorderColor then
-        ApplySafeBackdrop(frame, backdropInfo, borderColor, bgColor)
-    else
-        local bgFile = data.withBackground and (data.bgFile or DEFAULT_BACKDROP_TEXTURE) or false
-        local edgeFile = edgeSize > 0 and (data.edgeFile or DEFAULT_BACKDROP_TEXTURE) or false
-        SkinBase.ApplyTextureBackdrop(frame, bgFile, edgeFile, edgeSize, borderColor, bgColor, bgInset)
-    end
+    -- One render path (#3): always build the manual 4-texture backdrop. Works on
+    -- any frame and is more taint-safe than SetBackdrop on Blizzard frames.
+    local bgFile = data.withBackground and (data.bgFile or DEFAULT_BACKDROP_TEXTURE) or false
+    local edgeFile = edgeSize > 0 and (data.edgeFile or DEFAULT_BACKDROP_TEXTURE) or false
+    SkinBase.ApplyTextureBackdrop(frame, bgFile, edgeFile, edgeSize, borderColor, bgColor, bgInset)
 end
 
 function SkinBase.ApplyPixelBackdrop(frame, borderPixels, withBackground, withInsets, borderColor, bgColor, bgFile, edgeFile, insetPixels)
@@ -378,7 +353,7 @@ function SkinBase.ApplyPixelBackdrop(frame, borderPixels, withBackground, withIn
         pixelBackdropData[frame] = data
     end
 
-    data.borderPixels = borderPixels or 1
+    data.borderPixels = borderPixels or SkinBase.CHROME.BORDER_PX
     data.withBackground = withBackground and true or false
     data.withInsets = withInsets and true or false
     data.borderColor = borderColor
@@ -413,14 +388,14 @@ function SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local backdrop = frameBackdrops[frame]
     -- Store backup color fields so third-party frame cleanup recognizes this
     -- as a QUI-owned frame and skips it during orphan/NineSlice suppression.
-    backdrop._quiBgR = bgr or 0.05
-    backdrop._quiBgG = bgg or 0.05
-    backdrop._quiBgB = bgb or 0.05
-    backdrop._quiBgA = bga or 0.95
-    backdrop._quiBorderR = sr or 0
-    backdrop._quiBorderG = sg or 0
-    backdrop._quiBorderB = sb or 0
-    backdrop._quiBorderA = sa or 1
+    backdrop._quiBgR = bgr or SkinBase.CHROME.BG_FALLBACK[1]
+    backdrop._quiBgG = bgg or SkinBase.CHROME.BG_FALLBACK[2]
+    backdrop._quiBgB = bgb or SkinBase.CHROME.BG_FALLBACK[3]
+    backdrop._quiBgA = bga or SkinBase.CHROME.BG_FALLBACK[4]
+    backdrop._quiBorderR = sr or SkinBase.CHROME.BORDER_FALLBACK[1]
+    backdrop._quiBorderG = sg or SkinBase.CHROME.BORDER_FALLBACK[2]
+    backdrop._quiBorderB = sb or SkinBase.CHROME.BORDER_FALLBACK[3]
+    backdrop._quiBorderA = sa or SkinBase.CHROME.BORDER_FALLBACK[4]
     SkinBase.ApplyPixelBackdrop(backdrop, 1, true, true, {
         backdrop._quiBorderR, backdrop._quiBorderG, backdrop._quiBorderB, backdrop._quiBorderA,
     }, {
@@ -438,14 +413,14 @@ function SkinBase.ApplyFullBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not frame then return end
     -- Store backup color fields so third-party frame cleanup recognizes this
     -- as a QUI-owned frame and skips it during orphan/NineSlice suppression.
-    frame._quiBgR = bgr or 0.05
-    frame._quiBgG = bgg or 0.05
-    frame._quiBgB = bgb or 0.05
-    frame._quiBgA = bga or 0.95
-    frame._quiBorderR = sr or 0
-    frame._quiBorderG = sg or 0
-    frame._quiBorderB = sb or 0
-    frame._quiBorderA = sa or 1
+    frame._quiBgR = bgr or SkinBase.CHROME.BG_FALLBACK[1]
+    frame._quiBgG = bgg or SkinBase.CHROME.BG_FALLBACK[2]
+    frame._quiBgB = bgb or SkinBase.CHROME.BG_FALLBACK[3]
+    frame._quiBgA = bga or SkinBase.CHROME.BG_FALLBACK[4]
+    frame._quiBorderR = sr or SkinBase.CHROME.BORDER_FALLBACK[1]
+    frame._quiBorderG = sg or SkinBase.CHROME.BORDER_FALLBACK[2]
+    frame._quiBorderB = sb or SkinBase.CHROME.BORDER_FALLBACK[3]
+    frame._quiBorderA = sa or SkinBase.CHROME.BORDER_FALLBACK[4]
     SkinBase.ApplyPixelBackdrop(frame, 1, true, true, {
         frame._quiBorderR, frame._quiBorderG, frame._quiBorderB, frame._quiBorderA,
     }, {
@@ -978,6 +953,13 @@ local function AttachHover(frame)
     SkinBase.SetFrameData(frame, "qHoverHooked", true)
 end
 
+-- Hover that restores a custom state on leave (vs the plain border reset that
+-- AttachHover/HoverLeave does). Used by selection-state widgets.
+local function AttachHoverWithRestore(frame, restoreFn)
+    frame:HookScript("OnEnter", HoverEnter)
+    frame:HookScript("OnLeave", function(self) restoreFn(self) end)
+end
+
 ---------------------------------------------------------------------------
 -- SkinFontString(fontString, opts)
 -- Apply the global QUI font (face + outline) and a themed text color to a
@@ -1009,6 +991,7 @@ function SkinBase.SkinFontString(fontString, opts)
     size = size or 12
 
     fontString:SetFont(font, size, outline)
+    if opts.fontOnly then return end
 
     if fontString.SetTextColor then
         local c = opts.color
@@ -1016,6 +999,36 @@ function SkinBase.SkinFontString(fontString, opts)
             fontString:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
         else
             fontString:SetTextColor(0.95, 0.95, 0.95, 1)
+        end
+    end
+end
+
+-- Walk a frame's fontstrings and apply the QUI font. Font is applied to EVERY
+-- fontstring (family/outline only; current size preserved), color is preserved
+-- unless opts.chrome is set (chrome labels take the themed/near-white color via
+-- opts.color). Optionally recurses into child frames (opts.recurse) up to
+-- opts.maxDepth (default 6) so nested Blizzard fontstrings are covered too.
+function SkinBase.SkinFrameText(frame, opts)
+    if not frame then return end
+    opts = opts or {}
+    local fontOpts = opts.chrome and { color = opts.color } or { fontOnly = true }
+
+    if frame.GetRegions then
+        for i = 1, select("#", frame:GetRegions()) do
+            local region = select(i, frame:GetRegions())
+            if region and region.GetObjectType and region:GetObjectType() == "FontString" then
+                SkinBase.SkinFontString(region, fontOpts)
+            end
+        end
+    end
+
+    if opts.recurse and frame.GetChildren then
+        local depth = opts.maxDepth or 6
+        if depth > 0 then
+            for i = 1, select("#", frame:GetChildren()) do
+                local child = select(i, frame:GetChildren())
+                SkinBase.SkinFrameText(child, { recurse = true, maxDepth = depth - 1 })
+            end
         end
     end
 end
@@ -1060,6 +1073,10 @@ function SkinBase.SkinButton(button, opts)
 
     SkinBase.CreateBackdrop(button, sr, sg, sb, sa,
         math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), 1)
+    if opts.belowChildren then
+        local bd = SkinBase.GetBackdrop(button)
+        if bd then bd:SetFrameLevel(math.max(0, button:GetFrameLevel() - 1)) end
+    end
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(button, "skinKind", "button")
     SkinBase.SetFrameData(button, "bgBoost", boost)
@@ -1082,6 +1099,8 @@ function SkinBase.SkinEditBox(editBox, opts)
     if not editBox or SkinBase.IsStyled(editBox) then return end
     opts = opts or {}
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    if opts.borderAlpha then sa = sa * opts.borderAlpha end
+    if opts.bgAlpha then bga = opts.bgAlpha end
     SkinBase.StripTextures(editBox)
     SkinBase.CreateBackdrop(editBox, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     SkinBase.SetFrameData(editBox, "skinColor", { sr, sg, sb, sa })
@@ -1120,6 +1139,43 @@ function SkinBase.SkinScrollRow(row, opts)
     SkinBase.SetFrameData(row, "borderAlphaMult", borderAlphaMult)
     if opts.hover ~= false then AttachHover(row) end
     SkinBase.MarkStyled(row)
+end
+
+---------------------------------------------------------------------------
+-- Selection-state category list button (AH / crafting-orders category lists).
+-- Selected -> ROW depth + full border; unselected -> dimmer. State is read from
+-- the button's SelectedTexture visibility (kept for detection, alpha 0).
+---------------------------------------------------------------------------
+function SkinBase.RefreshCategorySelected(button)
+    local bd = SkinBase.GetBackdrop(button)
+    local sc = SkinBase.GetFrameData(button, "skinColor")
+    if not bd or not sc then return end
+    local selected = button.SelectedTexture and button.SelectedTexture:IsShown()
+    if selected then
+        bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], sc[4])
+        bd:SetBackdropColor(SkinBase.GetDepthColor("ROW"))
+    else
+        bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], (sc[4] or 1) * 0.5)
+        local r, g, b = SkinBase.GetDepthColor("ROW")
+        bd:SetBackdropColor(r, g, b, 0.7)
+    end
+end
+
+function SkinBase.SkinCategoryButton(button, opts)
+    if not button or SkinBase.IsStyled(button) then return end
+    opts = opts or {}
+    SkinBase.StripTextures(button)
+    if button.SelectedTexture then button.SelectedTexture:SetAlpha(0) end
+    if button.NormalTexture then button.NormalTexture:SetAlpha(0) end
+    local hl = button.GetHighlightTexture and button:GetHighlightTexture()
+    if hl then hl:SetAlpha(0) end
+    local sr, sg, sb, sa = SkinBase.GetSkinColors()
+    SkinBase.CreateBackdrop(button, sr, sg, sb, sa)
+    SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
+    SkinBase.SetFrameData(button, "skinKind", "category")
+    SkinBase.RefreshCategorySelected(button)
+    AttachHoverWithRestore(button, SkinBase.RefreshCategorySelected)
+    SkinBase.MarkStyled(button)
 end
 
 ---------------------------------------------------------------------------

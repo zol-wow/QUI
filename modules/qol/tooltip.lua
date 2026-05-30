@@ -1772,7 +1772,8 @@ local function SetupTooltipHook()
 
         local hideServer = settings.hideServerName
         local hideTitle = settings.hidePlayerTitle
-        if not hideServer and not hideTitle then return end
+        local hideGuild = settings.hideGuildName
+        if not hideServer and not hideTitle and not hideGuild then return end
 
         if hideTitle then
             local nameLine = tooltip.GetLeftLine and tooltip:GetLeftLine(1) or GameTooltipTextLeft1
@@ -1797,6 +1798,27 @@ local function SetupTooltipHook()
                         local okLT, lt = pcall(line.GetText, line)
                         if okLT and lt and not Helpers.IsSecretValue(lt) then
                             if lt == unitRealm then
+                                pcall(line.SetText, line, "")
+                                pcall(line.Hide, line)
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        if hideGuild then
+            local okGuild, guildName = pcall(GetGuildInfo, unit)
+            if okGuild and guildName and guildName ~= "" and not Helpers.IsSecretValue(guildName) then
+                local bracketed = "<" .. guildName .. ">"
+                for i = 2, 5 do
+                    local line = tooltip.GetLeftLine and tooltip:GetLeftLine(i)
+                        or _G["GameTooltipTextLeft" .. i]
+                    if line then
+                        local okLT, lt = pcall(line.GetText, line)
+                        if okLT and lt and not Helpers.IsSecretValue(lt) then
+                            if lt == guildName or lt == bracketed then
                                 pcall(line.SetText, line, "")
                                 pcall(line.Hide, line)
                                 break

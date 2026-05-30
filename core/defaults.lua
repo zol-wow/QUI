@@ -1486,6 +1486,7 @@ local defaults = {
             hideHealthBar = true,              -- Hide the health bar on unit tooltips
             hideServerName = false,            -- Hide server/realm name line from player tooltips
             hidePlayerTitle = false,           -- Hide player title from tooltip name line
+            hideGuildName = false,             -- Hide guild name line from player tooltips
             showTooltipTarget = true,          -- Show target of unit on tooltip
             showPlayerMount = true,            -- Show active mount on player tooltip
             showPlayerMythicRating = true,     -- Show M+ rating on player tooltip

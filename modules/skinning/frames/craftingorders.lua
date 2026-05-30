@@ -24,20 +24,7 @@ end
 -- Style each pooled ScrollBox row as it's acquired (shared by all lists).
 local function skinRow(row)
     SkinBase.SkinScrollRow(row)
-end
-
--- Update a category button's backdrop to reflect selected state
-local function UpdateCategorySelected(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    local bd = SkinBase.GetBackdrop(button)
-    if not bd then return end
-    local isSelected = button.SelectedTexture and button.SelectedTexture:IsShown()
-    if isSelected then
-        bd:SetBackdropBorderColor(sr, sg, sb, sa)
-        bd:SetBackdropColor(math.min(bgr + 0.10, 1), math.min(bgg + 0.10, 1), math.min(bgb + 0.10, 1), 0.9)
-    else
-        bd:SetBackdropBorderColor(sr, sg, sb, sa * 0.5)
-        bd:SetBackdropColor(math.min(bgr + 0.05, 1), math.min(bgg + 0.05, 1), math.min(bgb + 0.05, 1), 0.7)
-    end
+    SkinBase.SkinFrameText(row, { recurse = true })
 end
 
 -- Suppress a category button's default textures (safe to call on every refresh;
@@ -50,40 +37,6 @@ local function SuppressCategoryTextures(button)
     if button.NormalTexture then button.NormalTexture:SetAlpha(0) end
     local highlight = button:GetHighlightTexture()
     if highlight then highlight:SetAlpha(0) end
-end
-
--- Style a category list button
-local function StyleCategoryButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    if not button or SkinBase.IsStyled(button) then return end
-
-    -- Hide default textures but keep SelectedTexture for state detection (hidden visually)
-    SuppressCategoryTextures(button)
-
-    SkinBase.CreateBackdrop(button, sr, sg, sb, sa * 0.5, math.min(bgr + 0.05, 1), math.min(bgg + 0.05, 1), math.min(bgb + 0.05, 1), 0.7)
-
-    UpdateCategorySelected(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-
-    SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
-    SkinBase.SetFrameData(button, "bgColor", { bgr, bgg, bgb })
-
-    button:HookScript("OnEnter", function(self)
-        local bd = SkinBase.GetBackdrop(self)
-        local sc = SkinBase.GetFrameData(self, "skinColor")
-        if bd and sc then
-            local r, g, b = unpack(sc)
-            bd:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), 1)
-        end
-    end)
-    button:HookScript("OnLeave", function(self)
-        local bd = SkinBase.GetBackdrop(self)
-        local sc = SkinBase.GetFrameData(self, "skinColor")
-        local bg = SkinBase.GetFrameData(self, "bgColor")
-        if bd and sc and bg then
-            UpdateCategorySelected(self, sc[1], sc[2], sc[3], 1, bg[1], bg[2], bg[3], 1)
-        end
-    end)
-
-    SkinBase.MarkStyled(button)
 end
 
 ---------------------------------------------------------------------------
@@ -147,13 +100,9 @@ local function SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         end
         -- Filter dropdown (WowStyle1 dropdown — standard button textures don't apply)
         if searchBar.FilterDropdown then
-            SkinBase.SkinButton(searchBar.FilterDropdown, { strip = true, font = true })
             local dropdown = searchBar.FilterDropdown
-            -- Keep the QUI backdrop BELOW the dropdown's children (belowChildren).
-            local filterBd = SkinBase.GetBackdrop(dropdown)
-            if filterBd then
-                filterBd:SetFrameLevel(math.max(0, dropdown:GetFrameLevel() - 1))
-            end
+            -- belowChildren keeps the QUI backdrop BELOW the dropdown's children.
+            SkinBase.SkinButton(dropdown, { strip = true, font = true, belowChildren = true })
             -- The reset "X" (ResetButton) is purely a SHOW/hide issue, not
             -- z-order: it sits well above the backdrop, but Blizzard's
             -- WowDropdownFilterBehaviorMixin:ValidateResetState() only shows it
@@ -181,9 +130,9 @@ local function SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         -- refresh). Re-suppress on every call because Blizzard's element
         -- initializer restores NormalTexture alpha when it re-binds a button.
         local function StyleCategoryRow(button)
-            StyleCategoryButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+            SkinBase.SkinCategoryButton(button)
             SuppressCategoryTextures(button)
-            UpdateCategorySelected(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+            SkinBase.RefreshCategorySelected(button)
             -- Reapply the QUI font: Blizzard's element initializer calls
             -- SetNormalFontObject on every rebind, reverting the label font.
             SkinBase.SkinFontString(button.Text)
@@ -252,14 +201,16 @@ local function SkinForm(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if form.LeftPanelBackground then
         if form.LeftPanelBackground.NineSlice then form.LeftPanelBackground.NineSlice:Hide() end
         if form.LeftPanelBackground.Background then form.LeftPanelBackground.Background:SetAlpha(0) end
-        SkinBase.CreateBackdrop(form.LeftPanelBackground, sr, sg, sb, sa * 0.3, math.min(bgr + 0.02, 1), math.min(bgg + 0.02, 1), math.min(bgb + 0.02, 1), 0.5)
+        local dr, dg, db, da = SkinBase.GetDepthColor("SUBPANEL")
+        SkinBase.CreateBackdrop(form.LeftPanelBackground, sr, sg, sb, sa * 0.3, dr, dg, db, da)
     end
 
     -- Right panel background
     if form.RightPanelBackground then
         if form.RightPanelBackground.NineSlice then form.RightPanelBackground.NineSlice:Hide() end
         if form.RightPanelBackground.Background then form.RightPanelBackground.Background:SetAlpha(0) end
-        SkinBase.CreateBackdrop(form.RightPanelBackground, sr, sg, sb, sa * 0.3, math.min(bgr + 0.02, 1), math.min(bgg + 0.02, 1), math.min(bgb + 0.02, 1), 0.5)
+        local dr, dg, db, da = SkinBase.GetDepthColor("SUBPANEL")
+        SkinBase.CreateBackdrop(form.RightPanelBackground, sr, sg, sb, sa * 0.3, dr, dg, db, da)
     end
 
     -- Back button
@@ -280,10 +231,9 @@ local function SkinForm(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         if pc.DurationDropdown then
             SkinBase.SkinDropdown(pc.DurationDropdown)
         end
-        -- Note edit box border (non-standard alphas — NOT migrated to SkinEditBox)
-        if pc.NoteEditBox and pc.NoteEditBox.Border then
-            pc.NoteEditBox.Border:SetAlpha(0)
-            SkinBase.CreateBackdrop(pc.NoteEditBox, sr, sg, sb, sa * 0.5, bgr, bgg, bgb, 0.8)
+        -- Note edit box
+        if pc.NoteEditBox then
+            SkinBase.SkinEditBox(pc.NoteEditBox, { borderAlpha = 0.5, bgAlpha = 0.8 })
         end
     end
 
@@ -338,6 +288,7 @@ local function SkinCraftingOrders()
     SkinMyOrders(frame)
     SkinForm(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -348,7 +299,7 @@ end
 local function UpdatePanelColors(panel, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local bd = panel and SkinBase.GetBackdrop(panel)
     if not bd then return end
-    bd:SetBackdropColor(math.min(bgr + 0.02, 1), math.min(bgg + 0.02, 1), math.min(bgb + 0.02, 1), 0.5)
+    bd:SetBackdropColor(SkinBase.GetDepthColor("SUBPANEL"))
     bd:SetBackdropBorderColor(sr, sg, sb, sa * 0.3)
 end
 
@@ -406,11 +357,7 @@ local function RefreshCraftingOrdersColors()
             SkinBase.RefreshWidget(pc.ListOrderButton)
             SkinBase.RefreshWidget(pc.CancelOrderButton)
             SkinBase.RefreshWidget(pc.DurationDropdown)
-            local noteBd = pc.NoteEditBox and SkinBase.GetBackdrop(pc.NoteEditBox)
-            if noteBd then
-                noteBd:SetBackdropColor(bgr, bgg, bgb, 0.8)
-                noteBd:SetBackdropBorderColor(sr, sg, sb, sa * 0.5)
-            end
+            SkinBase.RefreshWidget(pc.NoteEditBox)
         end
         -- Current listings
         if form.CurrentListings then

@@ -254,6 +254,7 @@ local function SkinStaticPopup(popup)
     end
 
     StyleEditBox(popup.editBox or (name and _G[name .. "EditBox"]), "staticPopup")
+    SkinBase.SkinFrameText(popup, { recurse = true })
 
     if popup.UpdateRecapButton and not SkinBase.GetFrameData(popup, "systemPopupRecapHooked") then
         SkinBase.SetFrameData(popup, "systemPopupRecapHooked", true)
@@ -300,6 +301,7 @@ local function SkinContextMenuFrame(frame)
     if backdrop then
         backdrop:SetFrameLevel(math.max(0, SafeFrameLevel(frame) - 1))
     end
+    SkinBase.SkinFrameText(frame, { recurse = true })
 end
 
 local function SkinLegacyDropdowns()

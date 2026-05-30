@@ -45,6 +45,7 @@ local function SkinFriends()
         if tab then tabs[#tabs + 1] = tab end
     end
     SkinBase.SkinTabGroup(tabs, frame)
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -67,6 +68,7 @@ local function SkinCommunities()
     local frame = _G.CommunitiesFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
     SkinBase.SkinButtonFrameTemplate(frame)
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 

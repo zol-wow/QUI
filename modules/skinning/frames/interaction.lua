@@ -56,6 +56,7 @@ local function SkinBank()
     local frame = _G.BankFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
     SkinBase.SkinButtonFrameTemplate(frame)
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -80,6 +81,7 @@ local function SkinMerchant()
     SkinBase.SkinButtonFrameTemplate(frame)
     -- MerchantFrameTab1 (Items), MerchantFrameTab2 (Buyback)
     SkinBase.SkinTabGroup(CollectNumberedTabs("MerchantFrame", 2), frame)
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -104,6 +106,7 @@ local function SkinMail()
     SkinBase.SkinButtonFrameTemplate(frame)
     -- MailFrameTab1 (Inbox), MailFrameTab2 (Send Mail)
     SkinBase.SkinTabGroup(CollectNumberedTabs("MailFrame", 2), frame)
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -126,6 +129,7 @@ local function SkinGuildBank()
     local frame = _G.GuildBankFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
     SkinBase.SkinButtonFrameTemplate(frame)
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 

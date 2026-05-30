@@ -186,12 +186,14 @@ local ns = {
         end,
     },
     SkinBase = {
+        CHROME = { BUTTON_BOOST = 0.07 },
         GetSkinColors = function()
             return 0.2, 0.6, 1, 1, 0.02, 0.02, 0.02, 0.95
         end,
         ApplyFullBackdrop = function()
             backdropApplications = backdropApplications + 1
         end,
+        SkinFrameText = function() end,
     },
 }
 

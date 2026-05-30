@@ -64,6 +64,7 @@ local function SkinAchievement()
         SkinBase.SkinCloseButton(header.CloseButton)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 

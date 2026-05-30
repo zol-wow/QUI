@@ -303,3 +303,19 @@ files["modules/dungeon/party_keystones.lua"] = {
 files["modules/integrations/*.lua"] = {
     ignore = { "113" },
 }
+
+-- Unit / integration tests stub the WoW client API and frame globals by
+-- assigning to them (CreateFrame, GetPlayerInfoByGUID, ChatTypeInfo,
+-- RAID_CLASS_COLORS, hooksecurefunc, SetChatColorNameByClass, NUM_CHAT_WINDOWS,
+-- ChatFrame1, ...), which are read-only or undefined in addon code. Allow
+-- defining / overwriting globals in the test harness. 113 (reading an undefined
+-- global) stays ON so genuine typos in test reads still surface.
+files["tests/"] = {
+    ignore = {
+        "111", -- setting an undefined global (a test-invented mock global)
+        "112", -- mutating an undefined global
+        "121", -- setting a read-only global (stubbing a WoW API global)
+        "122", -- setting a read-only field of a global
+        "131", -- unused implicitly defined global
+    },
+}

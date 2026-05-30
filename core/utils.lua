@@ -1067,6 +1067,26 @@ function Helpers.GetSkinBgColorWithOverride(moduleSettings, prefix)
     return r, g, b, a
 end
 
+-- Shared skin "chrome" constants — single source of truth for backdrop border
+-- thickness, fallback colors, background-depth tiers, and the widget bg boosts.
+-- Defined in core (loaded before skinning/ and character_pane/) so every skin
+-- module — including the early-loading character pane — reads the same values.
+-- These are DEFAULTS: any call may still pass an explicit value to override.
+Helpers.CHROME = {
+    BORDER_PX       = 1,                          -- default pixel border thickness
+    BG_FALLBACK     = { 0.05, 0.05, 0.05, 0.95 }, -- when no themed bg resolves
+    BORDER_FALLBACK = { 0, 0, 0, 1 },             -- when no themed border resolves
+    BUTTON_BOOST    = 0.07,                        -- lighten a button bg vs its panel
+    SCROLLROW_BOOST = 0.03,                        -- alternating scroll-row shading
+    -- Background "depth" tiers as adjustments to the themed skin bg, so they
+    -- still track the user's skin-bg color.
+    DEPTH = {
+        PANEL    = { boost = 0.00, alpha = 0.95 }, -- top-level frame background
+        SUBPANEL = { boost = 0.04, alpha = 0.85 }, -- inset forms / sub-frames
+        ROW      = { boost = 0.07, alpha = 0.75 }, -- list rows / row highlights
+    },
+}
+
 --- Get class color for a class token (e.g., "WARRIOR", "MAGE")
 --- @param classToken string The uppercase class token from UnitClass
 --- @return number, number, number r, g, b values (0-1)

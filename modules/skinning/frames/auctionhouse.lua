@@ -107,6 +107,7 @@ end
 -- Style each pooled ScrollBox row as it's acquired (shared by all lists).
 local function skinRow(row)
     SkinBase.SkinScrollRow(row)
+    SkinBase.SkinFrameText(row, { recurse = true })
 end
 
 -- Skin browse panel (item list / commodities list)
@@ -264,22 +265,6 @@ local function SkinAuctionsPanel()
     end
 end
 
--- Update a category button's backdrop to reflect selected state
-local function UpdateCategorySelected(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    local bd = SkinBase.GetBackdrop(button)
-    if not bd then return end
-    local isSelected = button.SelectedTexture and button.SelectedTexture:IsShown()
-    if isSelected then
-        -- Selected: full border + brighter background
-        bd:SetBackdropBorderColor(sr, sg, sb, sa)
-        bd:SetBackdropColor(math.min(bgr + 0.10, 1), math.min(bgg + 0.10, 1), math.min(bgb + 0.10, 1), 0.9)
-    else
-        -- Deselected: subtle border + normal background
-        bd:SetBackdropBorderColor(sr, sg, sb, sa * 0.5)
-        bd:SetBackdropColor(math.min(bgr + 0.05, 1), math.min(bgg + 0.05, 1), math.min(bgb + 0.05, 1), 0.7)
-    end
-end
-
 -- Suppress a category button's default textures (safe to call on every refresh;
 -- the ScrollBox element initializer can restore alphas when recycling buttons)
 local function SuppressCategoryTextures(button)
@@ -289,43 +274,6 @@ local function SuppressCategoryTextures(button)
     if button.NormalTexture then button.NormalTexture:SetAlpha(0) end
     local highlight = button:GetHighlightTexture()
     if highlight then highlight:SetAlpha(0) end
-end
-
--- Style a category list button (left side navigation)
-local function StyleCategoryButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    if not button or SkinBase.IsStyled(button) then return end
-
-    -- Hide default textures but keep SelectedTexture for state detection (hidden visually)
-    SuppressCategoryTextures(button)
-
-    -- Create subtle backdrop
-    SkinBase.CreateBackdrop(button, sr, sg, sb, sa * 0.5, math.min(bgr + 0.05, 1), math.min(bgg + 0.05, 1), math.min(bgb + 0.05, 1), 0.7)
-
-    -- Apply initial selected state
-    UpdateCategorySelected(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-
-    -- Store colors for hover
-    SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
-    SkinBase.SetFrameData(button, "bgColor", { bgr, bgg, bgb })
-
-    button:HookScript("OnEnter", function(self)
-        local bd = SkinBase.GetBackdrop(self)
-        local sc = SkinBase.GetFrameData(self, "skinColor")
-        if bd and sc then
-            local r, g, b = unpack(sc)
-            bd:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), 1)
-        end
-    end)
-    button:HookScript("OnLeave", function(self)
-        local bd = SkinBase.GetBackdrop(self)
-        local sc = SkinBase.GetFrameData(self, "skinColor")
-        local bg = SkinBase.GetFrameData(self, "bgColor")
-        if bd and sc and bg then
-            UpdateCategorySelected(self, sc[1], sc[2], sc[3], 1, bg[1], bg[2], bg[3], 1)
-        end
-    end)
-
-    SkinBase.MarkStyled(button)
 end
 
 -- Skin the left-side categories list
@@ -342,9 +290,9 @@ local function SkinCategoriesList(sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     -- Per-button styler (used both on acquisition and by OnFilterClicked refresh).
     local function StyleCategoryRow(button)
-        StyleCategoryButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        SkinBase.SkinCategoryButton(button)
         SuppressCategoryTextures(button)
-        UpdateCategorySelected(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        SkinBase.RefreshCategorySelected(button)
         -- Reapply the QUI font: Blizzard's element initializer calls
         -- SetNormalFontObject on every rebind, reverting the label font.
         SkinBase.SkinFontString(button.Text)
@@ -402,6 +350,7 @@ local function SkinAuctionHouse()
     pcall(SkinSellPanel)
     pcall(SkinAuctionsPanel)
 
+    SkinBase.SkinFrameText(AuctionHouseFrame, { recurse = true })
     SkinBase.MarkSkinned(AuctionHouseFrame)
 end
 

@@ -373,9 +373,10 @@ local function SkinReputationEntry(child)
         if not SkinBase.GetFrameData(ReputationBar, "backdrop") then
             local backdrop = CreateFrame("Frame", nil, ReputationBar:GetParent(), "BackdropTemplate")
             backdrop:SetFrameLevel(ReputationBar:GetFrameLevel())
-            SetExpandedPixelPoints(backdrop, ReputationBar, 2)
-            ApplyPixelBackdrop(backdrop, 2, true, false, { sr, sg, sb, 1 }, { 0, 0, 0, 0.9 })
-            backdrop:SetBackdropColor(0, 0, 0, 0.9)
+            local dr, dg, db, da = SkinBase.GetDepthColor("ROW")
+            SetExpandedPixelPoints(backdrop, ReputationBar, SkinBase.CHROME.BORDER_PX)
+            ApplyPixelBackdrop(backdrop, SkinBase.CHROME.BORDER_PX, true, false, { sr, sg, sb, 1 }, { dr, dg, db, da })
+            backdrop:SetBackdropColor(dr, dg, db, da)
             backdrop:SetBackdropBorderColor(sr, sg, sb, 1)
             backdrop:Show()
             SkinBase.SetFrameData(ReputationBar, "backdrop", backdrop)
@@ -494,6 +495,8 @@ local function SetupCharacterFrameSkinning()
     if not IsSkinningEnabled() then return end
     if not CharacterFrame then return end
 
+    SkinBase.SkinFrameText(CharacterFrame, { recurse = true })
+
     -- Create initial background (non-extended for Rep/Currency default)
     CreateOrUpdateBackground()
 
@@ -505,12 +508,18 @@ local function SetupCharacterFrameSkinning()
     -- Update tick, so debouncing is no longer needed.
     if ReputationFrame and ReputationFrame.ScrollBox then
         SkinBase.HookScrollBoxAcquired(ReputationFrame.ScrollBox, function(row)
-            if IsSkinningEnabled() then SkinReputationEntry(row) end
+            if IsSkinningEnabled() then
+                SkinReputationEntry(row)
+                SkinBase.SkinFrameText(row, { recurse = true })
+            end
         end)
     end
     if TokenFrame and TokenFrame.ScrollBox then
         SkinBase.HookScrollBoxAcquired(TokenFrame.ScrollBox, function(row)
-            if IsSkinningEnabled() then SkinCurrencyEntry(row) end
+            if IsSkinningEnabled() then
+                SkinCurrencyEntry(row)
+                SkinBase.SkinFrameText(row, { recurse = true })
+            end
         end)
     end
 

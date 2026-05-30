@@ -868,6 +868,7 @@ local function SkinObjectiveTracker()
         TrackerFrame:EnableMouse(false)
     end
 
+    SkinBase.SkinFrameText(TrackerFrame, { recurse = true })
     SkinBase.MarkSkinned(TrackerFrame)
 end
 

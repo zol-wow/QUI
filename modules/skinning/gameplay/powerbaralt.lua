@@ -2,6 +2,7 @@ local addonName, ns = ...
 
 local GetCore = ns.Helpers.GetCore
 local SkinBase = ns.SkinBase
+local Helpers = ns.Helpers
 
 ---------------------------------------------------------------------------
 -- PLAYER POWER BAR ALT SKINNING
@@ -173,8 +174,8 @@ local function CreateQUIAltPowerBar()
     end
     bar.backdrop:SetFrameLevel(safeLevel)
     SkinBase.ApplyPixelBackdrop(bar.backdrop, 1, true, true)
-    bar.backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-    bar.backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    Helpers.SetFrameBackdropColor(bar.backdrop, bgr, bgg, bgb, bga)
+    Helpers.SetFrameBackdropBorderColor(bar.backdrop, sr, sg, sb, sa)
 
     -- Create text
     bar.text = bar:CreateFontString(nil, "OVERLAY")
@@ -187,6 +188,7 @@ local function CreateQUIAltPowerBar()
     SkinBase.SetFrameData(bar, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(bar, "bgColor", { bgr, bgg, bgb, bga })
     SkinBase.MarkSkinned(bar)
+    SkinBase.SkinFrameText(bar, { recurse = true })
 
     -- Tooltip support
     bar:EnableMouse(true)
@@ -244,8 +246,8 @@ local function RefreshPowerBarAltColors()
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetModuleSkinColors()
 
     QUIAltPowerBar:SetStatusBarColor(sr, sg, sb)
-    QUIAltPowerBar.backdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-    QUIAltPowerBar.backdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    Helpers.SetFrameBackdropColor(QUIAltPowerBar.backdrop, bgr, bgg, bgb, bga)
+    Helpers.SetFrameBackdropBorderColor(QUIAltPowerBar.backdrop, sr, sg, sb, sa)
 
     SkinBase.SetFrameData(QUIAltPowerBar, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(QUIAltPowerBar, "bgColor", { bgr, bgg, bgb, bga })

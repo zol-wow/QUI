@@ -70,6 +70,7 @@ local function SkinWorldMap()
 
     RaiseMapCanvas(frame)
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 

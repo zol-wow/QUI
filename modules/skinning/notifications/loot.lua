@@ -222,8 +222,8 @@ local function CreateLootWindow()
 
     -- QUI backdrop
     SkinBase.ApplyPixelBackdrop(frame, 1, true, false)
-    frame:SetBackdropColor(unpack(bgColor))
-    frame:SetBackdropBorderColor(unpack(borderColor))
+    Helpers.SetFrameBackdropColor(frame, unpack(bgColor))
+    Helpers.SetFrameBackdropBorderColor(frame, unpack(borderColor))
 
     -- Header
     frame.header = frame:CreateFontString(nil, "OVERLAY")
@@ -262,6 +262,7 @@ local function CreateLootWindow()
         frame.slots[i] = CreateLootSlot(frame, i)
     end
 
+    SkinBase.SkinFrameText(frame, { recurse = true })
     return frame
 end
 
@@ -329,7 +330,7 @@ local function OnLootOpened(autoLoot)
 
             -- Quality color
             local r, g, b = GetItemQualityColor(quality or 1)
-            slot.iconBorder:SetBackdropBorderColor(r, g, b, 1)
+            Helpers.SetFrameBackdropBorderColor(slot.iconBorder, r, g, b, 1)
             slot.name:SetTextColor(r, g, b)
 
             -- Stack count
@@ -461,8 +462,8 @@ local function CreateRollFrame(index)
 
     -- Minimal backdrop (very subtle border)
     SkinBase.ApplyPixelBackdrop(frame, 1, true, false)
-    frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.95)
-    frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], 0.3)  -- Very subtle border
+    Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], 0.95)
+    Helpers.SetFrameBackdropBorderColor(frame, borderColor[1], borderColor[2], borderColor[3], 0.3)  -- Very subtle border
 
     -- Quality tint overlay (set per item)
     frame.qualityTint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
@@ -480,7 +481,7 @@ local function CreateRollFrame(index)
     frame.iconBorder = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     frame.iconBorder:SetSize(ROLL_ICON_SIZE + 4, ROLL_ICON_SIZE + 4)
     frame.iconBorder:SetPoint("CENTER", frame.icon, "CENTER")
-    SkinBase.ApplyPixelBackdrop(frame.iconBorder, 2, false, false)
+    SkinBase.ApplyPixelBackdrop(frame.iconBorder, SkinBase.CHROME.BORDER_PX, false, false)
 
     -- Item name (larger font) - aligned with icon
     frame.name = frame:CreateFontString(nil, "OVERLAY")
@@ -664,7 +665,7 @@ StartRoll = function(rollID, rollTime, lootHandle)
 
     -- Quality color
     local r, g, b = GetItemQualityColor(quality or 1)
-    frame.iconBorder:SetBackdropBorderColor(r, g, b, 1)
+    Helpers.SetFrameBackdropBorderColor(frame.iconBorder, r, g, b, 1)
     frame.name:SetTextColor(r, g, b)
 
     -- Quality background tint
@@ -797,7 +798,7 @@ local function SkinLootHistoryElement(button)
                 local quiBorder = CreateFrame("Frame", nil, item, "BackdropTemplate")
                 SkinBase.SetExpandedPixelPoints(quiBorder, icon, 1)
                 SkinBase.ApplyPixelBackdrop(quiBorder, 1, false, false)
-                quiBorder:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+                Helpers.SetFrameBackdropBorderColor(quiBorder, 0.6, 0.6, 0.6, 1)
                 itemBorders[item] = quiBorder
             end
 
@@ -812,7 +813,7 @@ local function SkinLootHistoryElement(button)
                     C_Timer.After(0, function()
                         local border = itemBorders[item]
                         if border then
-                            border:SetBackdropBorderColor(r, g, b, 1)
+                            Helpers.SetFrameBackdropBorderColor(border, r, g, b, 1)
                         end
                     end)
                 end)
@@ -856,8 +857,8 @@ local function SkinGroupLootHistoryFrame()
         SkinBase.ApplyPixelBackdrop(hfBd, 1, true, false)
         SkinBase.SetFrameData(HistoryFrame, "backdrop", hfBd)
     end
-    hfBd:SetBackdropColor(unpack(bgColor))
-    hfBd:SetBackdropBorderColor(unpack(borderColor))
+    Helpers.SetFrameBackdropColor(hfBd, unpack(bgColor))
+    Helpers.SetFrameBackdropBorderColor(hfBd, unpack(borderColor))
 
     -- Style the timer bar
     local Timer = HistoryFrame.Timer
@@ -908,8 +909,8 @@ local function SkinGroupLootHistoryFrame()
             rbBd = CreateFrame("Frame", nil, ResizeButton, "BackdropTemplate")
             rbBd:SetAllPoints()
             SkinBase.ApplyPixelBackdrop(rbBd, 1, true, false)
-            rbBd:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.8)
-            rbBd:SetBackdropBorderColor(unpack(borderColor))
+            Helpers.SetFrameBackdropColor(rbBd, bgColor[1], bgColor[2], bgColor[3], 0.8)
+            Helpers.SetFrameBackdropBorderColor(rbBd, unpack(borderColor))
             SkinBase.SetFrameData(ResizeButton, "backdrop", rbBd)
 
             -- Add resize text
@@ -990,8 +991,8 @@ function Loot:ApplyLootHistoryTheme()
     if HistoryFrame.NineSlice then HistoryFrame.NineSlice:SetAlpha(0) end
     if HistoryFrame.Bg then HistoryFrame.Bg:SetAlpha(0) end
 
-    themeBd:SetBackdropColor(unpack(bgColor))
-    themeBd:SetBackdropBorderColor(unpack(borderColor))
+    Helpers.SetFrameBackdropColor(themeBd, unpack(bgColor))
+    Helpers.SetFrameBackdropBorderColor(themeBd, unpack(borderColor))
 
     if HistoryFrame.Timer then
         if HistoryFrame.Timer.Background then HistoryFrame.Timer.Background:SetAlpha(0) end
@@ -1009,8 +1010,8 @@ function Loot:ApplyLootHistoryTheme()
         if HistoryFrame.ResizeButton.NineSlice then
             HistoryFrame.ResizeButton.NineSlice:SetAlpha(0)
         end
-        enRbBd:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.8)
-        enRbBd:SetBackdropBorderColor(unpack(borderColor))
+        Helpers.SetFrameBackdropColor(enRbBd, bgColor[1], bgColor[2], bgColor[3], 0.8)
+        Helpers.SetFrameBackdropBorderColor(enRbBd, unpack(borderColor))
         local rbParts = frameParts[HistoryFrame.ResizeButton]
         if rbParts and rbParts.text then
             rbParts.text:SetFont(LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
@@ -1265,8 +1266,8 @@ function Loot:ApplyLootTheme()
     local bgColor, borderColor, textColor = GetThemeColors()
     local fontPath = LSM:Fetch("font", GetGeneralFont())
 
-    lootFrame:SetBackdropColor(unpack(bgColor))
-    lootFrame:SetBackdropBorderColor(unpack(borderColor))
+    Helpers.SetFrameBackdropColor(lootFrame, unpack(bgColor))
+    Helpers.SetFrameBackdropBorderColor(lootFrame, unpack(borderColor))
     lootFrame.header:SetFont(fontPath, 12, "OUTLINE")
     lootFrame.header:SetTextColor(unpack(textColor))
     lootFrame.closeBtn.text:SetFont(fontPath, 14, "OUTLINE")
@@ -1291,8 +1292,8 @@ function Loot:ApplyRollTheme()
     for i = 1, MAX_ROLL_FRAMES do
         local frame = rollFramePool[i]
         if frame then
-            frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.95)
-            frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], 0.3)  -- Subtle border
+            Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], 0.95)
+            Helpers.SetFrameBackdropBorderColor(frame, borderColor[1], borderColor[2], borderColor[3], 0.3)  -- Subtle border
             frame.timer:SetStatusBarColor(borderColor[1], borderColor[2], borderColor[3], 1)  -- Accent color
             frame.name:SetFont(fontPath, 12, "OUTLINE")
         end
@@ -1363,7 +1364,7 @@ function Loot:ShowLootPreview()
         slot.icon:SetTexture(item.texture)
         slot.name:SetText(item.name)
         local r, g, b = GetItemQualityColor(item.quality)
-        slot.iconBorder:SetBackdropBorderColor(r, g, b, 1)
+        Helpers.SetFrameBackdropBorderColor(slot.iconBorder, r, g, b, 1)
         slot.name:SetTextColor(r, g, b)
         if item.count and item.count > 1 then
             slot.count:SetText(item.count)
@@ -1452,14 +1453,14 @@ function Loot:ShowRollPreview()
         local frame = rollFramePool[i]
 
         -- Apply current theme (subtle border)
-        frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], 0.95)
-        frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], 0.3)
+        Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], 0.95)
+        Helpers.SetFrameBackdropBorderColor(frame, borderColor[1], borderColor[2], borderColor[3], 0.3)
 
         frame.rollID = nil  -- Not a real roll
         frame.icon:SetTexture(item.texture)
         frame.name:SetText(item.name)
         local r, g, b = GetItemQualityColor(item.quality)
-        frame.iconBorder:SetBackdropBorderColor(r, g, b, 1)
+        Helpers.SetFrameBackdropBorderColor(frame.iconBorder, r, g, b, 1)
         frame.name:SetTextColor(r, g, b)
 
         -- Quality background tint

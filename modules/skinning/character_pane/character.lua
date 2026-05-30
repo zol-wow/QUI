@@ -248,7 +248,6 @@ local closeButtonBorders = Helpers.CreateStateTable()
 local closeButtonLabels = Helpers.CreateStateTable()
 local sidebarTabBorders = Helpers.CreateStateTable()
 local sidebarTabHooked = Helpers.CreateStateTable()
-local pixelBorderState = Helpers.CreateStateTable()
 local pixelInsetState = Helpers.CreateStateTable()
 local sidebarTabBaseWidth = nil
 local sidebarTabBaseHeight = nil
@@ -282,46 +281,12 @@ local function SetInsetPixelPoints(region, relativeTo, pixels)
     end
 end
 
-local function RefreshOnePixelBorder(frame)
-    local state = pixelBorderState[frame]
-    if not state then return end
-    if not frame or not frame.SetBackdrop then return end
-    local px = QUICore:GetPixelSize(frame)
-    local backdrop = {
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    }
-
-    if state.withBackground then
-        backdrop.bgFile = "Interface\\Buttons\\WHITE8x8"
-        backdrop.insets = { left = px, right = px, top = px, bottom = px }
-    end
-
-    frame:SetBackdrop(backdrop)
-    if state.bgColor then
-        local c = state.bgColor
-        frame:SetBackdropColor(c[1], c[2], c[3], c[4])
-    end
-    if state.borderColor then
-        local c = state.borderColor
-        frame:SetBackdropBorderColor(c[1], c[2], c[3], c[4])
-    end
-end
-
+-- Border chrome delegates to the shared SkinBase primitive (one canonical
+-- backdrop path). Kept as a local name so existing call sites are unchanged.
 local function ApplyOnePixelBorder(frame, withBackground, borderColor, bgColor)
-    if not frame or not frame.SetBackdrop then return end
-    local state = pixelBorderState[frame]
-    if not state then
-        state = {}
-        pixelBorderState[frame] = state
-    end
-    state.withBackground = withBackground and true or false
-    state.borderColor = borderColor
-    state.bgColor = bgColor
-    RefreshOnePixelBorder(frame)
-    if UIKit and UIKit.RegisterScaleRefresh and not state.registered then
-        UIKit.RegisterScaleRefresh(frame, "characterPanePixelBorder", RefreshOnePixelBorder)
-        state.registered = true
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.ApplyPixelBackdrop then
+        skinBase.ApplyPixelBackdrop(frame, skinBase.CHROME.BORDER_PX, withBackground, withBackground, borderColor, bgColor)
     end
 end
 
@@ -2077,6 +2042,11 @@ ApplyCharacterPaneLayout = function(force)
         PositionModelScene()
         PositionStatsPanelForLayout()
     end)
+
+    local skinBase = GetSkinBase()
+    if skinBase and CharacterFrame then
+        skinBase.SkinFrameText(CharacterFrame, { recurse = true })
+    end
 
     layoutApplied = true
 end

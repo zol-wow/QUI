@@ -56,6 +56,7 @@ local function SkinPlayerSpells()
             SkinBase.SetFrameData(frame.TabSystem, "qTabSysHooked", true)
         end
     end
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -78,6 +79,7 @@ local function SkinEncounterJournal()
     local frame = _G.EncounterJournal
     if not frame or SkinBase.IsSkinned(frame) then return end
     SkinBase.SkinButtonFrameTemplate(frame)
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 
@@ -107,6 +109,7 @@ local function SkinCollections()
         if tab then tabs[#tabs + 1] = tab end
     end
     SkinBase.SkinTabGroup(tabs, frame)
+    SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
 end
 

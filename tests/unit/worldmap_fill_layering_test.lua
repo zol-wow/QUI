@@ -146,6 +146,7 @@ ns.SkinBase = {
             frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
         end
     end,
+    SkinFrameText = function() end,
     OnAddOnLoaded = function(_, callback)
         capturedCallback = callback
     end,
