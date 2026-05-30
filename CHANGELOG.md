@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha72 - 2026-05-30
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha71 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **Layout Mode now shows only position settings for several movers.** Right-clicking the M+ timer, missing raid buffs, pet warning, ready check, M+ progress, minimap, datatext panel, and other movers in Layout Mode opened their full settings panel instead of just the Position controls. These now show only the position settings plus a link to open their full settings, matching every other mover in Layout Mode.
+
+
+
 ## v3.6.0-alpha71 - 2026-05-30
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha70 profiles carry over unchanged.
