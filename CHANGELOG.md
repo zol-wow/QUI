@@ -6,7 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
-## v3.6.0-alpha74 - 2026-05-31
+## v3.6.0-alpha75 - 2026-05-31
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha74 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **Cooldown bars no longer flicker to stale defaults right after login.** The built-in cooldown sets are now captured during the cold-load grace window so your saved layout is reconciled against the correct catalog, and the grace window always clears — even when you log in while in combat.
+- **Changing the accent color keeps you on the current options subpage.** Adjusting the accent while the options window is open no longer bounces you back to the first subpage of the active section.
+- **Spellbook and Adventure Guide text stays skinned as you navigate.** Newly rendered text on later spellbook pages and in Encounter Journal sections now picks up the QUI font and themed color instead of only the text that was visible when the frame first opened.
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha73 profiles carry over unchanged. (If you skipped alpha73 and are upgrading straight from alpha72, the border-color *source* migration is a little smarter about preserving your previous class-colored borders.)
 >
