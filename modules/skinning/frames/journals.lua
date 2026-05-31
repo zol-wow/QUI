@@ -15,6 +15,8 @@
 -- covers most visible chrome; per-tab work is a follow-up if needed.
 ---------------------------------------------------------------------------
 
+-- luacheck: globals PagedContentFrameBaseMixin
+
 local addonName, ns = ...
 local SkinBase = ns.SkinBase
 local GetCore = ns.Helpers.GetCore
@@ -30,6 +32,47 @@ local RefreshBackdropColors = SkinBase.RefreshFrameBackdropColors
 ---------------------------------------------------------------------------
 -- PlayerSpellsFrame (SpellBook + Talents)
 ---------------------------------------------------------------------------
+local function GetSpellBookFrame(frame)
+    return frame and (frame.SpellBookFrame or _G.SpellBookFrame)
+end
+
+local function SkinPlayerSpellsText(frame)
+    if not frame or not IsSettingEnabled("skinSpellBook") then return end
+
+    SkinBase.SkinFrameText(frame, { recurse = true, chrome = true })
+
+    local spellBookFrame = GetSpellBookFrame(frame)
+    local pagedSpellsFrame = spellBookFrame and spellBookFrame.PagedSpellsFrame
+    if pagedSpellsFrame and pagedSpellsFrame.EnumerateFrames then
+        for _, spellFrame in pagedSpellsFrame:EnumerateFrames() do
+            SkinBase.SkinFrameText(spellFrame, { recurse = true, chrome = true })
+        end
+    end
+end
+
+local function SchedulePlayerSpellsText(frame)
+    C_Timer.After(0, function()
+        SkinPlayerSpellsText(frame)
+    end)
+end
+
+local function HookPlayerSpellsTextUpdates(frame)
+    local spellBookFrame = GetSpellBookFrame(frame)
+    local pagedSpellsFrame = spellBookFrame and spellBookFrame.PagedSpellsFrame
+    if not pagedSpellsFrame or not pagedSpellsFrame.RegisterCallback then return end
+    if SkinBase.GetFrameData(pagedSpellsFrame, "qSpellBookTextHooked") then return end
+
+    local event = PagedContentFrameBaseMixin
+        and PagedContentFrameBaseMixin.Event
+        and PagedContentFrameBaseMixin.Event.OnUpdate
+    if not event then return end
+
+    pagedSpellsFrame:RegisterCallback(event, function()
+        SchedulePlayerSpellsText(frame)
+    end, frame)
+    SkinBase.SetFrameData(pagedSpellsFrame, "qSpellBookTextHooked", true)
+end
+
 local function SkinPlayerSpells()
     if not IsSettingEnabled("skinSpellBook") then return end
     local frame = _G.PlayerSpellsFrame
@@ -49,11 +92,22 @@ local function SkinPlayerSpells()
             SkinBase.SetFrameData(frame.TabSystem, "qTabSysHooked", true)
         end
     end
-    SkinBase.SkinFrameText(frame, { recurse = true })
+    HookPlayerSpellsTextUpdates(frame)
+    SkinPlayerSpellsText(frame)
     SkinBase.MarkSkinned(frame)
 end
 
-local function RefreshPlayerSpells() RefreshBackdropColors(_G.PlayerSpellsFrame) end
+local function RefreshPlayerSpells()
+    local frame = _G.PlayerSpellsFrame
+    if not frame or not IsSettingEnabled("skinSpellBook") then return end
+    if not SkinBase.IsSkinned(frame) then
+        SkinPlayerSpells()
+        return
+    end
+    RefreshBackdropColors(frame)
+    HookPlayerSpellsTextUpdates(frame)
+    SkinPlayerSpellsText(frame)
+end
 _G.QUI_RefreshSpellBookColors = RefreshPlayerSpells
 if ns.Registry then
     ns.Registry:Register("skinSpellBook", {
@@ -67,16 +121,118 @@ end
 ---------------------------------------------------------------------------
 -- EncounterJournal
 ---------------------------------------------------------------------------
+local function SkinEncounterJournalTextFrame(frame)
+    if frame then
+        SkinBase.SkinFrameText(frame, { recurse = true, chrome = true })
+    end
+end
+
+local function SkinEncounterJournalText(frame)
+    if not frame or not IsSettingEnabled("skinEncounterJournal") then return end
+
+    SkinEncounterJournalTextFrame(frame)
+
+    local encounter = frame.encounter
+    if not encounter then return end
+
+    SkinEncounterJournalTextFrame(encounter.infoFrame)
+    SkinEncounterJournalTextFrame(encounter.overviewFrame)
+
+    local overviewFrame = encounter.overviewFrame
+    if overviewFrame and overviewFrame.overviews then
+        for _, overview in ipairs(overviewFrame.overviews) do
+            SkinEncounterJournalTextFrame(overview)
+        end
+    end
+
+    if encounter.usedHeaders then
+        for _, header in ipairs(encounter.usedHeaders) do
+            SkinEncounterJournalTextFrame(header)
+        end
+    end
+
+    if encounter.freeHeaders then
+        for _, header in ipairs(encounter.freeHeaders) do
+            SkinEncounterJournalTextFrame(header)
+        end
+    end
+end
+
+local function ScheduleEncounterJournalText(frame, focusFrame)
+    C_Timer.After(0, function()
+        SkinEncounterJournalTextFrame(focusFrame)
+        if focusFrame and focusFrame.GetParent then
+            SkinEncounterJournalTextFrame(focusFrame:GetParent())
+        end
+        SkinEncounterJournalText(frame)
+    end)
+end
+
+local function HookEncounterJournalFunction(name, callback)
+    if _G[name] then
+        hooksecurefunc(name, callback)
+    end
+end
+
+local function HookEncounterJournalScrollBox(scrollBox)
+    if SkinBase.HookScrollBoxAcquired then
+        SkinBase.HookScrollBoxAcquired(scrollBox, SkinEncounterJournalTextFrame)
+    end
+end
+
+local function HookEncounterJournalScrollBoxes(frame)
+    local encounter = frame and frame.encounter
+    local info = encounter and encounter.info
+    if info then
+        HookEncounterJournalScrollBox(info.BossesScrollBox)
+        HookEncounterJournalScrollBox(info.LootContainer and info.LootContainer.ScrollBox)
+    end
+    HookEncounterJournalScrollBox(frame and frame.searchResults and frame.searchResults.ScrollBox)
+    HookEncounterJournalScrollBox(frame and frame.instanceSelect and frame.instanceSelect.ScrollBox)
+end
+
+local function HookEncounterJournalTextUpdates(frame)
+    if not frame or SkinBase.GetFrameData(frame, "qEncounterJournalTextHooked") then return end
+
+    HookEncounterJournalFunction("EncounterJournal_ToggleHeaders", function()
+        ScheduleEncounterJournalText(frame)
+    end)
+    HookEncounterJournalFunction("EncounterJournal_SetBullets", function()
+        ScheduleEncounterJournalText(frame)
+    end)
+    HookEncounterJournalFunction("EncounterJournal_SetDescriptionWithBullets", function()
+        ScheduleEncounterJournalText(frame)
+    end)
+    HookEncounterJournalFunction("EncounterJournal_UpdateButtonState", function(button)
+        ScheduleEncounterJournalText(frame, button)
+    end)
+
+    SkinBase.SetFrameData(frame, "qEncounterJournalTextHooked", true)
+end
+
 local function SkinEncounterJournal()
     if not IsSettingEnabled("skinEncounterJournal") then return end
     local frame = _G.EncounterJournal
     if not frame or SkinBase.IsSkinned(frame) then return end
     SkinBase.SkinButtonFrameTemplate(frame)
-    SkinBase.SkinFrameText(frame)
+    HookEncounterJournalTextUpdates(frame)
+    HookEncounterJournalScrollBoxes(frame)
+    SkinEncounterJournalText(frame)
     SkinBase.MarkSkinned(frame)
 end
 
-local function RefreshEncounterJournal() RefreshBackdropColors(_G.EncounterJournal) end
+local function RefreshEncounterJournal()
+    local frame = _G.EncounterJournal
+    RefreshBackdropColors(frame)
+    if not frame or not IsSettingEnabled("skinEncounterJournal") then return end
+    if not SkinBase.IsSkinned(frame) then
+        SkinEncounterJournal()
+        return
+    end
+    HookEncounterJournalTextUpdates(frame)
+    HookEncounterJournalScrollBoxes(frame)
+    SkinEncounterJournalText(frame)
+end
 _G.QUI_RefreshEncounterJournalColors = RefreshEncounterJournal
 if ns.Registry then
     ns.Registry:Register("skinEncounterJournal", {

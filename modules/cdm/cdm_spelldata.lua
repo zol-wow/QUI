@@ -3361,6 +3361,16 @@ function CDMSpellData:SnapshotBlizzardCDM(containerKey)
     return true
 end
 
+local function SnapshotUnsetBuiltinContainers()
+    local snapshotted = false
+    for _, key in ipairs(GetBuiltinContainerKeys()) do
+        if CDMSpellData:SnapshotBlizzardCDM(key) then
+            snapshotted = true
+        end
+    end
+    return snapshotted
+end
+
 -- BuildSpellListFromOwned: Build runtime spell list from owned data
 function CDMSpellData:BuildSpellListFromOwned(containerKey)
     local db = GetContainerDB(containerKey)
@@ -3824,6 +3834,7 @@ function CDMSpellData:RunColdLoadReconcile()
     if RebuildSpellToCooldownID then
         RebuildSpellToCooldownID()
     end
+    SnapshotUnsetBuiltinContainers()
     RunReconcileSequence()
 end
 
@@ -5119,9 +5130,8 @@ function CDMSpellData:Initialize()
                 if not IsCDMRuntimeEnabled() then return end
                 if token ~= _cdmViewerReconcileToken then return end
                 if not InCombatLockdown() then
-                    CDMSpellData:CheckAllDormantSpells()
-                    CDMSpellData:ReconcileAllContainers()
-                    FireChangeCallback()
+                    SnapshotUnsetBuiltinContainers()
+                    RunReconcileSequence()
                 end
             end)
         elseif event == "PLAYER_REGEN_ENABLED" then

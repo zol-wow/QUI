@@ -1,14 +1,14 @@
 -- tests/unit/encounter_journal_font_scope_test.lua
 -- Run: lua tests/unit/encounter_journal_font_scope_test.lua
 --
--- The Encounter Journal contains parchment/body text with Blizzard-managed
--- font objects and adaptive sizing. Its QUI skin should apply frame chrome
--- without recursively replacing every content font.
+-- The Encounter Journal contains nested Blizzard-managed text regions. Its QUI
+-- skin should apply the QUI font and chrome text color recursively.
 
 -- luacheck: globals _G
 
 local callbacks = {}
 local calls = {}
+local frameData = setmetatable({}, { __mode = "k" })
 
 _G.EncounterJournal = { name = "EncounterJournal" }
 
@@ -56,6 +56,14 @@ ns.SkinBase = {
     MarkSkinned = function(frame)
         calls.marked = frame
     end,
+    SetFrameData = function(frame, key, value)
+        frameData[frame] = frameData[frame] or {}
+        frameData[frame][key] = value
+    end,
+    GetFrameData = function(frame, key)
+        local data = frameData[frame]
+        return data and data[key]
+    end,
     OnAddOnLoaded = function(addon, callback)
         callbacks[addon] = callback
     end,
@@ -69,9 +77,12 @@ callbacks.Blizzard_EncounterJournal()
 assert(calls.buttonFrame == _G.EncounterJournal, "Encounter Journal must still get QUI frame chrome")
 assert(calls.marked == _G.EncounterJournal, "Encounter Journal must be marked skinned")
 
+local foundRecursiveText = false
 for _, call in ipairs(calls) do
-    assert(not (call.frame == _G.EncounterJournal and call.opts.recurse == true),
-        "Encounter Journal skinning must not recursively replace content fonts")
+    if call.frame == _G.EncounterJournal and call.opts.recurse == true and call.opts.chrome == true then
+        foundRecursiveText = true
+    end
 end
+assert(foundRecursiveText, "Encounter Journal skinning must recursively apply QUI chrome text styling")
 
 print("OK: encounter_journal_font_scope_test")

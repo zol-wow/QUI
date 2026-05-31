@@ -2183,7 +2183,12 @@ function SkinBase.SkinFrameText(frame, opts)
         if depth > 0 then
             for i = 1, select("#", frame:GetChildren()) do
                 local child = select(i, frame:GetChildren())
-                SkinBase.SkinFrameText(child, { recurse = true, maxDepth = depth - 1 })
+                SkinBase.SkinFrameText(child, {
+                    recurse = true,
+                    maxDepth = depth - 1,
+                    chrome = opts.chrome,
+                    color = opts.color,
+                })
             end
         end
     end

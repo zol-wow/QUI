@@ -4649,11 +4649,11 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
     -- TABLE_HOTFIXED) are handled via the ns.CDMIndex broker subscription
     -- at the bottom of this file.
     --
-    -- Cold-login single-trigger grace window. Per Vigil's reference
-    -- (CDMBridge.lua:1612-1617), CDM's data provider briefly reports a
-    -- pre-customization default at PLAYER_LOGIN before the user's saved
-    -- layout applies on top. Walking immediately reads stale defaults,
-    -- producing visible UI flicker as later Walks correct the catalog.
+    -- Cold-login single-trigger grace window. The CooldownViewer settings
+    -- provider can briefly report a pre-customization default at PLAYER_LOGIN
+    -- before the user's saved layout applies on top. Walking immediately
+    -- reads stale defaults, producing visible UI flicker as later Walks
+    -- correct the catalog.
     --
     -- Defer everything for the initial cold-load by 2s. Set
     -- ns._cdmColdLoadActive = true at PLAYER_LOGIN so the broker
@@ -4663,9 +4663,9 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
     if event == "PLAYER_LOGIN" then
         ns._cdmColdLoadActive = true
         C_Timer.After(2.0, function()
+            ns._cdmColdLoadActive = false
             if InCombatLockdown() and not (ns and ns._inInitSafeWindow) then
                 _walkPendingOnRegen = true
-                ns._cdmColdLoadActive = false
                 return
             end
             Walk()
@@ -4677,7 +4677,6 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
             if sd and sd.RunColdLoadReconcile then
                 sd:RunColdLoadReconcile()
             end
-            ns._cdmColdLoadActive = false
         end)
         return
     end

@@ -7312,6 +7312,11 @@ function GUI:RefreshAccentColor()
     if not self.MainFrame then return end
     local wasShown = self.MainFrame:IsShown()
     local prevTileIndex = self.MainFrame._lastTileIndex
+    local activeTile = prevTileIndex
+        and self.MainFrame._tiles
+        and self.MainFrame._tiles[prevTileIndex]
+        or nil
+    local prevSubPageIndex = activeTile and activeTile._activeSubPageIndex or nil
 
     local point, _, relPoint, xOfs, yOfs = self.MainFrame:GetPoint()
 
@@ -7335,7 +7340,9 @@ function GUI:RefreshAccentColor()
     end
 
     if prevTileIndex and self.MainFrame and self.MainFrame._tiles and self.MainFrame._tiles[prevTileIndex] then
-        self:SelectFeatureTile(self.MainFrame, prevTileIndex)
+        self:SelectFeatureTile(self.MainFrame, prevTileIndex, {
+            subPageIndex = prevSubPageIndex,
+        })
     end
 
     if wasShown and self.MainFrame then
