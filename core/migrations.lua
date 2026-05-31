@@ -1287,14 +1287,20 @@ local function MigrateBorderColorSource(profile)
     local tooltip = profile.tooltip
     if type(tooltip) == "table" and tooltip.borderColorSource == nil then
         local accent = general and general.addonAccentColor
+        local hasLegacyClassKey = rawget(tooltip, "borderUseClassColor") ~= nil
+        local hasLegacyAccentKey = rawget(tooltip, "borderUseAccentColor") ~= nil
         local source
         if tooltip.borderUseClassColor == true then
             source = "class"
         elseif tooltip.borderUseAccentColor == true then
             source = "theme"
+        elseif hasLegacyClassKey and tooltip.borderUseClassColor == false then
+            source = "custom"
         elseif type(tooltip.borderColor) == "table"
             and not IsBorderFreezeSnapshot(tooltip.borderColor, accent) then
             source = "custom"
+        elseif not hasLegacyClassKey and not hasLegacyAccentKey then
+            source = "class"
         else
             source = "theme"
         end

@@ -3015,7 +3015,7 @@ end
 
 function WindowManager:ApplyChallengeModeStart()
     local s = GetSettings()
-    if not s then return end
+    if not s or s.enabled == false then return end
 
     if s.autoResetOnChallengeStart ~= false then
         ResetAllDamageMeterSessions()
@@ -3042,7 +3042,7 @@ end
 
 function WindowManager:ApplyChallengeModeCompleted()
     local s = GetSettings()
-    if not (s and s.autoSwapChallengeSessions) then return end
+    if not (s and s.enabled ~= false and s.autoSwapChallengeSessions) then return end
     local S = Enum and Enum.DamageMeterSessionType
     local currentSession = (S and S.Current) or 1
     local overallSession = (S and S.Overall) or 0
@@ -3061,14 +3061,21 @@ function WindowManager:ApplyChallengeModeCompleted()
     self:RefreshAll()
 end
 
+function WindowManager:ApplyChallengeModeReset()
+    self:ApplyChallengeModeCompleted()
+end
+
 local challengeModeFrame = CreateFrame("Frame")
 challengeModeFrame:RegisterEvent("CHALLENGE_MODE_START")
 challengeModeFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
+challengeModeFrame:RegisterEvent("CHALLENGE_MODE_RESET")
 challengeModeFrame:SetScript("OnEvent", function(_, event)
     if event == "CHALLENGE_MODE_START" then
         WindowManager:ApplyChallengeModeStart()
     elseif event == "CHALLENGE_MODE_COMPLETED" then
         WindowManager:ApplyChallengeModeCompleted()
+    elseif event == "CHALLENGE_MODE_RESET" then
+        WindowManager:ApplyChallengeModeReset()
     end
 end)
 

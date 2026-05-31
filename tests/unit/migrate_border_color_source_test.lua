@@ -98,6 +98,18 @@ do
         tostring(p.tooltip.borderColorSource))
 end
 
+-- tooltip: default-stripped legacy class/default-accent keys preserve old class behavior
+do
+    local p = freshProfile(function(p)
+        p.tooltip.enabled = true
+        p.tooltip.borderColor = nil
+        p.tooltip.borderUseClassColor = nil
+        p.tooltip.borderUseAccentColor = nil
+    end)
+    check("tooltip default-stripped legacy toggles -> class", p.tooltip.borderColorSource == "class",
+        tostring(p.tooltip.borderColorSource))
+end
+
 -- idempotency: a second RunOnProfile leaves the result unchanged
 do
     local p = { _schemaVersion = 38, general = { skinBorderUseClassColor = true }, tooltip = {} }

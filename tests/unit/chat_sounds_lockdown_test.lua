@@ -1,6 +1,6 @@
 -- tests/unit/chat_sounds_lockdown_test.lua
 -- Run: lua tests/unit/chat_sounds_lockdown_test.lua
--- luacheck: globals CreateFrame PlaySoundFile hooksecurefunc C_Timer NUM_CHAT_WINDOWS ChatFrame1 ChatFrame2
+-- luacheck: globals CreateFrame PlaySoundFile hooksecurefunc C_Timer NUM_CHAT_WINDOWS ChatFrame1 ChatFrame2 UnitGUID
 
 local function noop() end
 local unpack = unpack
@@ -29,10 +29,18 @@ end
 local hasSecretChecks = 0
 local soundsPlayed = 0
 local soundHooks = 0
+local unitGUIDCalls = 0
 local locked = true
+local secret = { __secret = true }
 
 function PlaySoundFile()
     soundsPlayed = soundsPlayed + 1
+end
+
+function UnitGUID(unit)
+    unitGUIDCalls = unitGUIDCalls + 1
+    assert(unit == "player", "self-message suppression should only query the player GUID")
+    return "Player-0001"
 end
 
 function hooksecurefunc(target, method, func)
@@ -65,7 +73,7 @@ ChatFrame2 = newChatFrame()
 
 local ns = {
     Helpers = {
-        IsSecretValue = function() return false end,
+        IsSecretValue = function(value) return value == secret end,
         HasSecretValue = function()
             hasSecretChecks = hasSecretChecks + 1
             return true
@@ -108,7 +116,7 @@ ChatFrame1:AddMessage(
     1, 1, 1,
     1, 0, 0,
     "CHAT_MSG_PARTY",
-    { [11] = 1002 }
+    { [11] = 1002, [12] = "Player-0002" }
 )
 assert(soundsPlayed == 1, "chat sounds should play from rendered AddMessage when unlocked")
 
@@ -117,8 +125,28 @@ ChatFrame2:AddMessage(
     1, 1, 1,
     1, 0, 0,
     "CHAT_MSG_PARTY",
-    { [11] = 1002 }
+    { [11] = 1002, [12] = "Player-0002" }
 )
 assert(soundsPlayed == 1, "chat sounds should dedupe a line rendered into multiple chat frames")
+
+ChatFrame1:AddMessage(
+    "own party text",
+    1, 1, 1,
+    1, 0, 0,
+    "CHAT_MSG_PARTY",
+    { [11] = 1003, [12] = "Player-0001" }
+)
+assert(soundsPlayed == 1, "chat sounds must suppress own party messages when both GUIDs are readable")
+
+local unitGUIDCallsBeforeSecretGuid = unitGUIDCalls
+ChatFrame1:AddMessage(
+    "secret sender text",
+    1, 1, 1,
+    1, 0, 0,
+    "CHAT_MSG_PARTY",
+    { [11] = 1004, [12] = secret }
+)
+assert(unitGUIDCalls == unitGUIDCallsBeforeSecretGuid, "secret sender GUID must not be compared to UnitGUID")
+assert(soundsPlayed == 2, "chat sounds should not suppress when sender GUID is secret")
 
 print("OK: chat_sounds_lockdown_test")

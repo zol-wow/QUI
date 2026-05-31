@@ -332,10 +332,12 @@ local function GetChatSurfaceColors(settings)
         alpha = (legacyBg and legacyBg[4]) or 0.25
     end
 
-    -- An explicit per-chat background color (picker writes glass.bgColor; factory
-    -- default is black {0,0,0}) overrides the skin; otherwise track the skin theme.
+    -- An explicit per-chat background color (picker writes {r,g,b,a}; factory
+    -- default is legacy black {0,0,0}) overrides the skin; otherwise track the
+    -- skin theme. The alpha slot lets users explicitly choose black.
     local legacyBg = glass and glass.bgColor
-    local userSet = type(legacyBg) == "table" and (legacyBg[1] ~= 0 or legacyBg[2] ~= 0 or legacyBg[3] ~= 0)
+    local userSet = type(legacyBg) == "table"
+        and (legacyBg[4] ~= nil or legacyBg[1] ~= 0 or legacyBg[2] ~= 0 or legacyBg[3] ~= 0)
     local bgR, bgG, bgB
     if userSet then
         bgR, bgG, bgB = legacyBg[1], legacyBg[2], legacyBg[3]
@@ -752,6 +754,14 @@ local function TransformRenderedMessage(frame, message, r, g, b, infoID, accessI
     return modified, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...
 end
 
+local function MarkRenderedLineSeen(frame, event, eventArgs)
+    if not frame then return end
+    local lineKey = GetRenderedLineKey(event, eventArgs)
+    if lineKey then
+        GetRenderedState(frame).lineKeys[lineKey] = true
+    end
+end
+
 local function MarkExistingRenderedLines(frame)
     if not frame or not frame.GetNumMessages or not frame.GetMessageInfo then return end
     local okCount, count = pcall(frame.GetNumMessages, frame)
@@ -777,8 +787,11 @@ local function HookRenderedMessageFrame(frame)
     renderedTransformFrames[frame] = true
     MarkExistingRenderedLines(frame)
 
-    hooksecurefunc(frame, "AddMessage", function(chatFrame)
-        if I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown() then return end
+    hooksecurefunc(frame, "AddMessage", function(chatFrame, _, _, _, _, _, _, _, event, eventArgs)
+        if I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown() then
+            MarkRenderedLineSeen(chatFrame, event, eventArgs)
+            return
+        end
         if not chatFrame or not chatFrame.TransformMessages then return end
         chatFrame:TransformMessages(
             function(...) return ShouldTransformRenderedMessage(chatFrame, ...) end,

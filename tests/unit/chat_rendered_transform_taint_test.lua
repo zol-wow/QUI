@@ -229,6 +229,10 @@ chatFrame:AddMessage(
     { [2] = "RaidLead-Realm", [11] = 103 }
 )
 assert(chatFrame.messages[3][1] == "secret event https://example.com", "secret event token should skip transform safely")
+assert(
+    chatFrame.messages[2][1] == "locked https://example.com",
+    "line added during chat lockdown must be marked seen and never transformed after unlock"
+)
 
 LOOT_ITEM_SELF = "You receive item: %s."
 LOOT_ITEM = "%s receives item: %s."

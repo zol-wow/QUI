@@ -102,6 +102,30 @@ local function IsDuplicateRenderedLine(event, eventArgs)
     return false
 end
 
+local function GetRenderedSenderGUID(eventArgs)
+    if IsSecret(eventArgs) or type(eventArgs) ~= "table" then return nil end
+    local guid = eventArgs[12]
+    if IsSecret(guid) or type(guid) ~= "string" or guid == "" then return nil end
+    return guid
+end
+
+local function GetReadablePlayerGUID()
+    if not UnitGUID then return nil end
+    local guid = UnitGUID("player")
+    if IsSecret(guid) or type(guid) ~= "string" or guid == "" then return nil end
+    return guid
+end
+
+local function IsSelfRenderedMessage(eventArgs)
+    local senderGUID = GetRenderedSenderGUID(eventArgs)
+    if not senderGUID then return false end
+
+    local playerGUID = GetReadablePlayerGUID()
+    if not playerGUID then return false end
+
+    return senderGUID == playerGUID
+end
+
 local function FindConfiguredSoundEntry(event, entries)
     for _, entry in ipairs(entries) do
         local channel = entry.channel or "guild_officer"
@@ -135,6 +159,7 @@ local function PlayNewMessageSound(event, eventArgs)
 
     local entry = FindConfiguredSoundEntry(event, entries)
     if not entry then return end
+    if IsSelfRenderedMessage(eventArgs) then return end
     if IsDuplicateRenderedLine(event, eventArgs) then return end
 
     PlayConfiguredMessageSound(entry)

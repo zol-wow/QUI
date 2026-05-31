@@ -3,7 +3,7 @@
 --
 -- Guards Mythic+ lifecycle behavior:
 --   * optional reset on CHALLENGE_MODE_START
---   * optional Current/Overall swap at start/completion
+--   * optional Current/Overall swap at start/completion/reset
 --   * behavior options are exposed in defaults and settings
 
 local function readAll(path)
@@ -16,6 +16,11 @@ end
 local coreSrc = readAll("modules/damage_meter/damage_meter.lua")
 local defaultsSrc = readAll("core/defaults.lua")
 local contentSrc = readAll("modules/damage_meter/settings/damage_meter_content.lua")
+local challengeStartPos = coreSrc:find("function WindowManager:ApplyChallengeModeStart", 1, true)
+assert(challengeStartPos, "WindowManager must expose ApplyChallengeModeStart")
+local challengeCompletedPos = coreSrc:find("function WindowManager:ApplyChallengeModeCompleted", challengeStartPos, true)
+assert(challengeCompletedPos, "WindowManager must expose ApplyChallengeModeCompleted")
+local challengeStartBlock = coreSrc:sub(challengeStartPos, challengeCompletedPos - 1)
 
 local nativeStart = defaultsSrc:find("native = {", 1, true)
 assert(nativeStart, "could not locate damageMeter.native defaults")
@@ -40,17 +45,19 @@ assert(coreSrc:find('RegisterEvent("CHALLENGE_MODE_START"', 1, true),
     "damage meter must listen for CHALLENGE_MODE_START")
 assert(coreSrc:find('RegisterEvent("CHALLENGE_MODE_COMPLETED"', 1, true),
     "damage meter must listen for CHALLENGE_MODE_COMPLETED")
+assert(coreSrc:find('RegisterEvent("CHALLENGE_MODE_RESET"', 1, true),
+    "damage meter must listen for CHALLENGE_MODE_RESET")
 assert(coreSrc:find("autoResetOnChallengeStart", 1, true),
     "CHALLENGE_MODE_START handler must consult autoResetOnChallengeStart")
 assert(coreSrc:find("autoSwapChallengeSessions", 1, true),
     "challenge lifecycle handler must consult autoSwapChallengeSessions")
+assert(challengeStartBlock:find("s.enabled", 1, true),
+    "CHALLENGE_MODE_START must be inert when damageMeter.native.enabled is false")
 assert(coreSrc:find("C_DamageMeter.ResetAllCombatSessions", 1, true),
     "key-start reset must call C_DamageMeter.ResetAllCombatSessions")
 assert(coreSrc:find("function Data:ResetCombatClock", 1, true),
     "damage meter must reset its local combat timer when session data is reset")
-assert(coreSrc:find("function WindowManager:ApplyChallengeModeStart", 1, true),
-    "WindowManager must expose ApplyChallengeModeStart")
-assert(coreSrc:find("function WindowManager:ApplyChallengeModeCompleted", 1, true),
-    "WindowManager must expose ApplyChallengeModeCompleted")
+assert(coreSrc:find("function WindowManager:ApplyChallengeModeReset", 1, true),
+    "WindowManager must expose ApplyChallengeModeReset")
 
 print("OK: damage_meter_challenge_mode_test")
