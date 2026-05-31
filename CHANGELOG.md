@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha76 - 2026-05-31
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha75 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **Tracked cooldown auras no longer get cleared right after login.** During a fresh login the game can finish loading its cooldown list before its buff/aura list. QUI now waits for the aura list specifically before pruning, so your tracked auras are no longer briefly mistaken for ones that don't belong to you and shelved.
+
 ## v3.6.0-alpha75 - 2026-05-31
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha74 profiles carry over unchanged.
