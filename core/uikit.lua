@@ -149,6 +149,14 @@ local function RefreshBorderLines(frame)
     end
 end
 
+local function ForgetBorderLineState(frame)
+    borderLineState[frame] = nil
+    local callbacks = scaleRefreshRegistry[frame]
+    if callbacks then
+        callbacks.borderLines = nil
+    end
+end
+
 local function ApplyBackdropBorderLayout(borderFrame)
     local state = backdropBorderState[borderFrame]
     if not state or not state.parent then return end
@@ -336,8 +344,18 @@ function UIKit.RefreshScaleBoundWidgets()
 end
 
 function UIKit.RefreshPixelBorders()
+    local failedBorderFrames
     for frame in pairs(borderLineState) do
-        RefreshBorderLines(frame)
+        local ok = pcall(RefreshBorderLines, frame)
+        if not ok then
+            failedBorderFrames = failedBorderFrames or {}
+            failedBorderFrames[#failedBorderFrames + 1] = frame
+        end
+    end
+    if failedBorderFrames then
+        for i = 1, #failedBorderFrames do
+            ForgetBorderLineState(failedBorderFrames[i])
+        end
     end
     for borderFrame in pairs(backdropBorderState) do
         ApplyBackdropBorderLayout(borderFrame)
