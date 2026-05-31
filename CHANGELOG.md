@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha74 - 2026-05-31
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha73 profiles carry over unchanged. (If you skipped alpha73 and are upgrading straight from alpha72, the border-color *source* migration is a little smarter about preserving your previous class-colored borders.)
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **Chat no longer plays the new-message sound for your own messages.** Lines you send are now matched by sender and skipped, so configured chat sounds only fire for messages from other players.
+- **Your explicitly chosen black chat background is respected.** Picking pure black in the chat background color picker now sticks instead of being treated as "unset" and overridden by the skin theme; default chat surfaces still track the skin.
+- **Chat lines that arrive while chat is locked down stay correct.** Messages rendered during the game's protected chat path are now tracked so they aren't re-processed once the lockdown clears, avoiding a late re-color of those lines.
+- **Damage meter Mythic+ handling respects the disabled state.** The automatic session reset/swap on key start, completion, and abandonment no longer runs when the damage meter is turned off, and key resets (abandoned/restarted runs) are now handled alongside completions.
+
 ## v3.6.0-alpha73 - 2026-05-31
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** **Schema migration to v39** — the separate border-color checkboxes are replaced by a single border-color *source* (Theme / Class / Custom) for both the global skin border and tooltip borders. Existing alpha72 profiles upgrade automatically: a genuinely custom border color is kept on **Custom**, while borders that were only tracking your accent or theme preset are restored to **Theme**. The old toggle keys are removed.
