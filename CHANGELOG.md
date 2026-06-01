@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha78 - 2026-05-31
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha77 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **Tracked buffs and cooldowns no longer come up blank on a cold login.** Right after logging in, QUI waited a fixed two seconds and then built its cooldown display once — even if the game's Cooldown Manager hadn't finished loading yet. When that happened the tracked-buff section could be built from empty data and stay blank until you `/reload`. QUI now waits until the Cooldown Manager actually reports ready (retrying briefly if needed) before building, and any updates that arrive during that window are applied afterward instead of being dropped.
+
 ## v3.6.0-alpha77 - 2026-05-31
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha76 profiles carry over unchanged.
