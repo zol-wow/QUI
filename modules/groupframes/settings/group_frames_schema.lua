@@ -186,17 +186,7 @@ local function CreateSearchContext(tabKey, contextMode)
     }
 end
 
-local function DeepCopy(value)
-    if type(value) ~= "table" then
-        return value
-    end
-
-    local copy = {}
-    for key, child in pairs(value) do
-        copy[key] = DeepCopy(child)
-    end
-    return copy
-end
+local DeepCopy = ns.Helpers.DeepCopy
 
 local function EnsureSubTable(parent, key)
     if type(parent) ~= "table" then

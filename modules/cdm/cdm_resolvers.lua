@@ -1252,6 +1252,42 @@ local function MirrorStateMatchesEntryIdentity(state, entry)
     return not sawStateIdentity
 end
 
+function CDMResolvers._MirrorStateContainsEntryID(state, id)
+    if not (state and IsUsableMirrorID(id) and MirrorStateHasSpellIdentity(state)) then
+        return false
+    end
+
+    local overrideID = QueryOverrideSpell(id)
+    local hasOverride = IsUsableMirrorID(overrideID) and overrideID ~= id
+
+    local candidate = state.overrideTooltipSpellID
+    if IsUsableMirrorID(candidate) and (candidate == id or (hasOverride and candidate == overrideID)) then
+        return true
+    end
+
+    candidate = state.overrideSpellID
+    if IsUsableMirrorID(candidate) and (candidate == id or (hasOverride and candidate == overrideID)) then
+        return true
+    end
+
+    candidate = state.spellID
+    if IsUsableMirrorID(candidate) and (candidate == id or (hasOverride and candidate == overrideID)) then
+        return true
+    end
+
+    local linkedStateIDs = state.linkedSpellIDs
+    if type(linkedStateIDs) == "table" then
+        for _, linkedID in ipairs(linkedStateIDs) do
+            if IsUsableMirrorID(linkedID)
+                and (linkedID == id or (hasOverride and linkedID == overrideID)) then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
 local function MirrorBindingIsStrictAura(entry, entryType, viewerCategory)
     if not entry then return false end
     local entryKind = SafeEntryField(entry, "kind")
@@ -1331,9 +1367,16 @@ local function ResolveMirrorIDInCategory(mirror, id, category, viewerCategory, s
     if not IsUsableMirrorID(id) then return nil, nil, nil end
 
     local cooldownID
+    local requireStateIdentity = false
     if strictAuraBinding and IsAuraMirrorCategory(category) then
-        if not mirror.GetDirectCooldownIDForViewer then return nil, nil, nil end
-        cooldownID = mirror.GetDirectCooldownIDForViewer(id, category)
+        if mirror.GetDirectCooldownIDForViewer then
+            cooldownID = mirror.GetDirectCooldownIDForViewer(id, category)
+        end
+        if not IsUsableMirrorID(cooldownID) then
+            if not mirror.GetCooldownIDForViewer then return nil, nil, nil end
+            cooldownID = mirror.GetCooldownIDForViewer(id, category)
+            requireStateIdentity = true
+        end
     else
         if not mirror.GetCooldownIDForViewer then return nil, nil, nil end
         cooldownID = mirror.GetCooldownIDForViewer(id, category)
@@ -1344,6 +1387,10 @@ local function ResolveMirrorIDInCategory(mirror, id, category, viewerCategory, s
     local acceptedCategory, state = MirrorIdentityStateAccepted(
         mirror, cooldownID, category, viewerCategory, strictAuraBinding)
     if acceptedCategory then
+        if requireStateIdentity
+            and not CDMResolvers._MirrorStateContainsEntryID(state, id) then
+            return nil, nil, nil
+        end
         return cooldownID, acceptedCategory, state
     end
 

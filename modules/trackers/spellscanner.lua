@@ -463,12 +463,20 @@ local function ScanSpellFromBuffs(castSpellID, itemID)
         local icon = aura.icon
         local name = aura.name
 
+        -- Strict match: only accept a buff whose spellId equals the spell that
+        -- was cast/used. That is the same ID for self-buff abilities and
+        -- self-buff trinkets, and it eliminates the "newest recent buff wins"
+        -- false positives (e.g. an external Ebon Might landing in the window
+        -- when a health potion is used). A secret spellId cannot be confirmed
+        -- to match, so it is rejected.
+        local matchesCast = IsCleanNumber(spellId) and spellId == castSpellID
+
         local buffAge
         if IsCleanNumber(expirationTime) and IsCleanPositiveDuration(duration) then
             buffAge = duration - (expirationTime - now)
         end
 
-        local isRecentBuff = buffAge ~= nil and buffAge < 2 and duration >= 3
+        local isRecentBuff = matchesCast and buffAge ~= nil and buffAge < 2
 
         if isRecentBuff then
             if not bestMatch or buffAge < bestMatch.age then
@@ -878,21 +886,69 @@ SlashCmdList["QUISCANNED"] = function()
     print(string_format("|cff888888Active buffs tracked: %d|r", activeCount))
 end
 
--- /quiclearspell <spellID> - Remove a scanned spell
-SLASH_QUICLEARSPELL1 = "/quiclearspell"
-SlashCmdList["QUICLEARSPELL"] = function(msg)
-    local spellID = tonumber(msg:trim())
-    if not spellID then
-        print("|cffff0000QUI:|r Usage: /quiclearspell <spellID>")
+-- /quiclearscan <spellID|itemID> | all - Remove a scanned entry, or wipe all
+SLASH_QUICLEARSCAN1 = "/quiclearscan"
+SlashCmdList["QUICLEARSCAN"] = function(msg)
+    local db = GetDB()
+    if not db then
+        print("|cffff0000QUI:|r Database not available")
         return
     end
 
-    local db = GetDB()
-    if db and db.spells and db.spells[spellID] then
-        local name = db.spells[spellID].name or "Unknown"
-        db.spells[spellID] = nil
-        print(string_format("|cff00ff00QUI:|r Cleared spell: %s [%d]", name, spellID))
-    else
-        print(string_format("|cffff8800QUI:|r Spell %d not found in scanned list", spellID))
+    local arg = strtrim(msg or "")
+    if arg == "" then
+        print("|cffff0000QUI:|r Usage: /quiclearscan <spellID|itemID> | all")
+        return
+    end
+
+    if arg:lower() == "all" then
+        local spellCount, itemCount = 0, 0
+        for _ in pairs(db.spells or {}) do spellCount = spellCount + 1 end
+        for _ in pairs(db.items or {}) do itemCount = itemCount + 1 end
+        if db.spells then wipe(db.spells) end
+        if db.items then wipe(db.items) end
+        wipe(SpellScanner.activeBuffs)
+        wipe(SpellScanner.registeredItemUseSpells)
+        wipe(SpellScanner.pendingScanning)
+        wipe(SpellScanner.pendingItemAuraCasts)
+        wipe(SpellScanner.recentPlayerAuras)
+        wipe(SpellScanner.itemCooldownStates)
+        print(string_format(
+            "|cff00ff00QUI:|r Cleared all scanner data (%d spells, %d items)",
+            spellCount, itemCount))
+        return
+    end
+
+    local id = tonumber(arg)
+    if not id then
+        print("|cffff0000QUI:|r Usage: /quiclearscan <spellID|itemID> | all")
+        return
+    end
+
+    local cleared = false
+
+    if db.spells and db.spells[id] then
+        local name = db.spells[id].name or "Unknown"
+        db.spells[id] = nil
+        SpellScanner.activeBuffs[id] = nil
+        print(string_format("|cff00ff00QUI:|r Cleared spell: %s [%d]", name, id))
+        cleared = true
+    end
+
+    if db.items and db.items[id] then
+        local entry = db.items[id]
+        local name = entry.name or "Unknown"
+        local useSpellID = entry.useSpellID
+        db.items[id] = nil
+        if useSpellID then
+            SpellScanner.registeredItemUseSpells[useSpellID] = nil
+            SpellScanner.activeBuffs[useSpellID] = nil
+        end
+        print(string_format("|cff00ff00QUI:|r Cleared item: %s [%d]", name, id))
+        cleared = true
+    end
+
+    if not cleared then
+        print(string_format("|cffff8800QUI:|r %d not found in scanned spells or items", id))
     end
 end

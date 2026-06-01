@@ -2535,6 +2535,9 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             local duration = endTime - startTime
             if duration <= 0 then duration = 0.001 end
 
+            -- Unit settings can't change within a single frame, so fetch once
+            -- here and reuse `currentSettings` in the branches below (each keeps
+            -- its own currentCastSettings derivation, which differ in fallback).
             local currentSettings = GetUnitSettings(self.unitKey)
             local currentCastSettings = currentSettings and currentSettings.castbar or castSettings
             local shouldReverseGCD = isShowingGCD and currentCastSettings and currentCastSettings.showGCDReverse
@@ -2553,7 +2556,6 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                 local refreshInterval = self.channelTickLayoutDirty and 0.05 or 0.2
                 if self.channelTickLayoutThrottle >= refreshInterval then
                     self.channelTickLayoutThrottle = 0
-                    local currentSettings = GetUnitSettings(self.unitKey)
                     local currentCastSettings = currentSettings and currentSettings.castbar or castSettings
                     RefreshChannelTickMarkers(self, currentCastSettings)
                 end
@@ -2581,7 +2583,6 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                 end
 
                 -- Update time text visibility if hiding on empowered
-                local currentSettings = GetUnitSettings(self.unitKey)
                 local currentCastSettings = currentSettings and currentSettings.castbar
                 if currentCastSettings and currentCastSettings.hideTimeTextOnEmpowered then
                     if self.timeText then
@@ -2592,7 +2593,6 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                 self.empoweredLevelText:SetText("")
 
                 -- Show time text again if not empowered
-                local currentSettings = GetUnitSettings(self.unitKey)
                 local currentCastSettings = currentSettings and currentSettings.castbar
                 if currentCastSettings and currentCastSettings.showTimeText and self.timeText then
                     self.timeText:Show()
@@ -2601,7 +2601,6 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
 
             -- Update time text (throttle to 10 FPS) - only if not hiding on empowered
             if isPlayer and self.isEmpowered then
-                local currentSettings = GetUnitSettings(self.unitKey)
                 local currentCastSettings = currentSettings and currentSettings.castbar
                 if not (currentCastSettings and currentCastSettings.hideTimeTextOnEmpowered) then
                     if UpdateThrottledText(self, elapsed, self.timeText, remaining) and remaining > 0 then
@@ -3549,7 +3548,10 @@ _G.QUI_RefreshCastbars = function()
     -- Note: Edit overlay restoration is handled by RefreshFrame
 end
 
-_G.QUI_Castbars = QUI_Castbar.castbars
+-- _G.QUI_Castbars is owned by unitframes.lua (loaded after this file): it points
+-- at QUI_UF.castbars, the table castbar frames are registered into (unitframes.lua
+-- re-points QUI_Castbar.castbars at it too). Do not assign it here — this file's
+-- assignment was a dead write, overwritten at load before any read.
 
 ---------------------------------------------------------------------------
 -- EDIT MODE STUBS (old overlay system removed — Layout Mode handles replace)

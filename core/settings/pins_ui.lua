@@ -22,23 +22,7 @@ local wipe = wipe
 
 local PIN_ICON_TEXTURE = ns.Helpers.AssetPath .. "pin_icon.png"
 
-local function CloneValue(value, seen)
-    if type(value) ~= "table" then
-        return value
-    end
-
-    seen = seen or {}
-    if seen[value] then
-        return seen[value]
-    end
-
-    local copy = {}
-    seen[value] = copy
-    for key, nestedValue in pairs(value) do
-        copy[CloneValue(key, seen)] = CloneValue(nestedValue, seen)
-    end
-    return copy
-end
+local CloneValue = ns.Helpers.DeepCopy
 
 local function GetGUI()
     return _G.QUI and _G.QUI.GUI or nil

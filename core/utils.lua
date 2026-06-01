@@ -251,6 +251,40 @@ function Helpers.GetCharConsumableMacrosDB()
     return core and core.db and core.db.char and core.db.char.consumableMacros
 end
 
+--- Cycle-safe deep copy of an arbitrary value. Tables are cloned recursively
+--- (keys and values); shared/cyclic references are preserved via a `seen` map
+--- so a self-referential table can't stack-overflow. Non-tables are returned
+--- as-is. Metatables are NOT copied (matches the local copies it replaces).
+--- Canonical home for the former per-file DeepCopy/CloneValue duplicates.
+function Helpers.DeepCopy(value, seen)
+    if type(value) ~= "table" then
+        return value
+    end
+    seen = seen or {}
+    if seen[value] then
+        return seen[value]
+    end
+    local copy = {}
+    seen[value] = copy
+    for k, v in pairs(value) do
+        copy[Helpers.DeepCopy(k, seen)] = Helpers.DeepCopy(v, seen)
+    end
+    return copy
+end
+
+--- Shallow copy: a new top-level table whose entries are copied by reference
+--- (nested tables are shared). Non-tables are returned as-is.
+function Helpers.ShallowCopy(value)
+    if type(value) ~= "table" then
+        return value
+    end
+    local copy = {}
+    for k, v in pairs(value) do
+        copy[k] = v
+    end
+    return copy
+end
+
 --- Deep-copy a defaults table (shallow values, recursive sub-tables).
 --- Used by GetModuleSettings to repair corrupted entries.
 local function DeepCopyDefaults(src)

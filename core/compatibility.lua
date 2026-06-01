@@ -34,14 +34,7 @@ local ADDON_NAME, ns = ...
 -- will see it.
 ---------------------------------------------------------------------------
 
-local function DeepCopy(value)
-    if type(value) ~= "table" then return value end
-    local copy = {}
-    for k, v in pairs(value) do
-        copy[k] = DeepCopy(v)
-    end
-    return copy
-end
+local DeepCopy = ns.Helpers.DeepCopy
 
 local function DeepEqual(a, b)
     if a == b then return true end

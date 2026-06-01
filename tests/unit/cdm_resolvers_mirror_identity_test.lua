@@ -27,12 +27,40 @@ local states = {
         spellID = 48707,
         overrideSpellID = 48707,
     },
+    ["buff:9103"] = {
+        cooldownID = 9103,
+        viewerCategory = "buff",
+        spellID = 395152,
+        overrideTooltipSpellID = 395296,
+        linkedSpellIDs = { 395296 },
+    },
 }
 
 local bySpell = {
     buff = {
         [101] = 9001,
         [301] = 9001,
+        [777] = 9103,
+        [395152] = 9103,
+        [395296] = 9103,
+    },
+    trackedBar = {
+        [102] = 9002,
+    },
+    utility = {
+        [202] = 8002,
+        [48707] = 28527,
+    },
+    essential = {
+        [77575] = 70759,
+    },
+}
+
+local directBySpell = {
+    buff = {
+        [101] = 9001,
+        [301] = 9001,
+        [395296] = 9103,
     },
     trackedBar = {
         [102] = 9002,
@@ -53,7 +81,7 @@ local ns = {
     },
     CDMBlizzMirror = {
         GetDirectCooldownIDForViewer = function(spellID, viewerCategory)
-            local cat = bySpell[viewerCategory]
+            local cat = directBySpell[viewerCategory]
             return cat and cat[spellID] or nil
         end,
         GetCooldownIDForViewer = function(spellID, viewerCategory)
@@ -110,6 +138,28 @@ assert(identity and identity.category == "trackedBar",
     "fallback aura identity should expose the accepted fallback category")
 assert(identity and identity.viewerCategory == nil,
     "custom-bar aura identity should not invent a native viewer category")
+
+identity = resolveIdentityState({
+    type = "spell",
+    id = 395152,
+    kind = "aura",
+    viewerType = "buff",
+})
+
+assert(identity and identity.cooldownID == 9103,
+    "existing source-ability aura entries should resolve through mirror-backed aliases")
+assert(identity and identity.category == "buff",
+    "source-ability aura aliases should keep the accepted aura mirror category")
+
+identity = resolveIdentityState({
+    type = "spell",
+    id = 777,
+    kind = "aura",
+    viewerType = "buff",
+})
+
+assert(identity == nil,
+    "broad aura aliases should not bind unless the mirror state carries the entry identity")
 
 identity = resolveIdentityState({
     type = "spell",

@@ -286,18 +286,7 @@ local function FormatTime(seconds)
     return negative and ("-" .. str) or str
 end
 
-local function DeepCopy(orig)
-    local copy
-    if type(orig) == 'table' then
-        copy = {}
-        for k, v in pairs(orig) do
-            copy[k] = DeepCopy(v)
-        end
-    else
-        copy = orig
-    end
-    return copy
-end
+local DeepCopy = ns.Helpers.DeepCopy
 
 local Clamp = Helpers.Clamp
 

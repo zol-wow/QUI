@@ -16,23 +16,7 @@ local MAX_DISPLAY_SCHEMA_ERRORS = 3
 local MAX_DETAIL_TYPE_MISMATCHES = 64
 local MAX_SANITIZE_STEPS = 128
 
-local function CloneValue(value, seen)
-    if type(value) ~= "table" then
-        return value
-    end
-
-    seen = seen or {}
-    if seen[value] then
-        return seen[value]
-    end
-
-    local copy = {}
-    seen[value] = copy
-    for k, v in pairs(value) do
-        copy[CloneValue(k, seen)] = CloneValue(v, seen)
-    end
-    return copy
-end
+local CloneValue = ns.Helpers.DeepCopy
 
 local function GetDisplayPath(path, rootLabel)
     if type(path) ~= "string" or path == "" then

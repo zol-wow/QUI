@@ -809,8 +809,8 @@ end
 ---------------------------------------------------------------------------
 -- Update Recharge Animation
 ---------------------------------------------------------------------------
-local function UpdateRechargeAnimation()
-    local settings = GetSettings()
+local function UpdateRechargeAnimation(settings)
+    settings = settings or GetSettings()
     if not settings or not skyridingFrame then return end
 
     local current, max, startTime, duration, modRate = GetVigorInfo()
@@ -849,8 +849,8 @@ end
 ---------------------------------------------------------------------------
 -- Update Second Wind Recharge Animation
 ---------------------------------------------------------------------------
-local function UpdateSecondWindRecharge()
-    local settings = GetSettings()
+local function UpdateSecondWindRecharge(settings)
+    settings = settings or GetSettings()
     if not settings or not secondWindMiniBar or not swRechargeOverlay then return end
 
     -- Only show for MINIBAR mode
@@ -908,8 +908,8 @@ end
 ---------------------------------------------------------------------------
 -- Update Speed Display
 ---------------------------------------------------------------------------
-local function UpdateSpeed()
-    local settings = GetSettings()
+local function UpdateSpeed(settings)
+    settings = settings or GetSettings()
     if not settings or not skyridingFrame then return end
 
     if settings.showSpeed == false then
@@ -1287,10 +1287,12 @@ local function OnUpdate(self, delta)
         UpdateVisibility()
     end
 
-    -- Animation-driven updates: must run every tick for smooth visuals
-    UpdateRechargeAnimation()
-    UpdateSecondWindRecharge()
-    UpdateSpeed()
+    -- Animation-driven updates: must run every tick for smooth visuals.
+    -- Thread the settings we already fetched above so these helpers don't each
+    -- re-walk the profile chain on every tick.
+    UpdateRechargeAnimation(settings)
+    UpdateSecondWindRecharge(settings)
+    UpdateSpeed(settings)
 
 end
 

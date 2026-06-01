@@ -24,6 +24,9 @@ end
 local spelldata = readAll("modules/cdm/cdm_spelldata.lua")
 local containers = readAll("modules/cdm/cdm_containers.lua")
 
+assert(not spelldata:find("MergeBlizzardTrackedEntries", 1, true),
+    "cold-load repair must not append Blizzard tracked entries into the authoritative QUI CDM lists")
+
 local snapshotFn = sliceBetween(
     spelldata,
     "function CDMSpellData:SnapshotBlizzardCDM(containerKey)",

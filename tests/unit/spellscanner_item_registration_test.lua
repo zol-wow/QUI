@@ -51,8 +51,11 @@ C_Timer = {
 C_UnitAuras = {
     GetAuraDataByIndex = function(unit, index, filter)
         if unit == "player" and index == 1 and filter == "HELPFUL" then
+            -- Same-ID self-buff: the aura's spellId equals the item use spell
+            -- (9002). The scanner only adopts a buff whose spellId matches the
+            -- spell that was cast/used.
             return {
-                spellId = 8002,
+                spellId = 9002,
                 duration = 30,
                 expirationTime = now + 30,
                 icon = 123,
@@ -120,10 +123,10 @@ eventFrame.OnEvent(eventFrame, "UNIT_SPELLCAST_SUCCEEDED", "player", "cast-guid"
 
 local db = QUI.db.global.spellScanner
 assert(db.spells[9002] == nil, "registered item cast should not save generic spell aura mapping")
-assert(db.items[2001].buffSpellID == 8002, "registered item cast should save item aura mapping")
+assert(db.items[2001].buffSpellID == 9002, "registered item cast should save item aura mapping")
 assert(db.items[2001].useSpellID == 9002, "registered item mapping should keep use spell")
 
-local active, expiration, duration = scanner.IsItemActive(2001)
+local active, expiration, duration, auraInstanceID, auraUnit = scanner.IsItemActive(2001)
 assert(active == true and expiration == 130 and duration == 30,
     "registered item cast should activate item aura timing")
 

@@ -2560,7 +2560,7 @@ _G.QUI_UpdateLockedPowerBar = function()
     -- them to cfg.width or the bar will flash at the Edit Mode width on
     -- next load.  Use QUI's own flag (not Blizzard's IsEditModeActive which
     -- can lag behind our exit callback).
-    if _G.QUI_IsCDMEditModeHidden and _G.QUI_IsCDMEditModeHidden() then return end
+    if _G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive() then return end
 
     local core = GetCore()
     if not core or not core.db then return end
@@ -2660,7 +2660,7 @@ end
 -- Global callback for NCDM to update power bar locked to Utility
 _G.QUI_UpdateLockedPowerBarToUtility = function()
     if InCombatLockdown() then return end
-    if _G.QUI_IsCDMEditModeHidden and _G.QUI_IsCDMEditModeHidden() then return end
+    if _G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive() then return end
 
     local core = GetCore()
     if not core or not core.db then return end
@@ -2763,7 +2763,7 @@ local cachedPrimaryDimensions = {
 -- Global callback for NCDM to update SECONDARY power bar locked to Essential
 _G.QUI_UpdateLockedSecondaryPowerBar = function()
     if InCombatLockdown() then return end
-    if _G.QUI_IsCDMEditModeHidden and _G.QUI_IsCDMEditModeHidden() then return end
+    if _G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive() then return end
 
     local core = GetCore()
     if not core or not core.db then return end
@@ -2865,7 +2865,7 @@ end
 -- Global callback for NCDM to update SECONDARY power bar locked to Utility
 _G.QUI_UpdateLockedSecondaryPowerBarToUtility = function()
     if InCombatLockdown() then return end
-    if _G.QUI_IsCDMEditModeHidden and _G.QUI_IsCDMEditModeHidden() then return end
+    if _G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive() then return end
 
     local core = GetCore()
     if not core or not core.db then return end

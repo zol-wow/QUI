@@ -868,14 +868,7 @@ end
 -- char defaults. Stale profile data is left in place so a downgrade can
 -- recover it.
 ---------------------------------------------------------------------------
-local function DeepCopy(value)
-    if type(value) ~= "table" then return value end
-    local copy = {}
-    for k, v in pairs(value) do
-        copy[k] = DeepCopy(v)
-    end
-    return copy
-end
+local DeepCopy = ns.Helpers.DeepCopy
 
 function MigrateProfileClickCastToChar()
     local QUI = _G.QUI
