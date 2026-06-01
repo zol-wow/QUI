@@ -8,7 +8,10 @@ local function readFile(path)
     return text:gsub("\r\n", "\n")
 end
 
-local actionBars = readFile("modules/actionbars/actionbars.lua")
+local actionBars = table.concat({
+    readFile("modules/actionbars/actionbars_skinning.lua"),
+    readFile("modules/actionbars/actionbars_per_bar_builders.lua"),
+}, "\n")
 local defaults = readFile("core/defaults.lua")
 local preview = readFile("modules/actionbars/settings/action_bars_preview_driver.lua")
 
@@ -28,7 +31,7 @@ for _, field in ipairs({
     assertContains(actionBars, '"' .. field .. '"', "copy-settings list or form controls must include " .. field)
 end
 
-assertContains(actionBars, "local function UpdateCooldownText(button, settings)",
+assertContains(actionBars, "function UpdateCooldownText(button, settings)",
     "runtime must have a dedicated cooldown countdown text styler")
 assertContains(actionBars, "cooldown:GetCountdownFontString()",
     "runtime styler must use Blizzard's native cooldown countdown FontString")

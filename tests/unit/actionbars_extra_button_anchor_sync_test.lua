@@ -8,7 +8,7 @@ local function readFile(path)
     return text
 end
 
-local source = readFile("modules/actionbars/actionbars.lua")
+local source = readFile("modules/actionbars/actionbars_extra_buttons.lua")
 
 local function blockBetween(startText, endText)
     local startPos = assert(source:find(startText, 1, true), "missing block start: " .. startText)
@@ -17,7 +17,7 @@ local function blockBetween(startText, endText)
 end
 
 assert(
-    source:find("local function SaveExtraButtonHolderPosition", 1, true),
+    source:find("function SaveExtraButtonHolderPosition", 1, true),
     "extra/zone mover drags must use a shared persistence helper")
 
 assert(
@@ -35,20 +35,20 @@ assert(
     nudgeBlock:find("SaveExtraButtonHolderPosition", 1, true),
     "extra/zone mover nudges must sync actionBars position and frameAnchoring")
 
-local reanchorBlock = blockBetween("local function QueueExtraButtonReanchor", "local function HookExtraButtonPositioning")
+local reanchorBlock = blockBetween("function QueueExtraButtonReanchor", "function HookExtraButtonPositioning")
 assert(
     reanchorBlock:find("ApplyExtraButtonSettings%(buttonType%)")
         and reanchorBlock:find("ApplyExtraButtonFrameAnchor%(buttonType%)"),
     "extra/zone reanchor refresh must reapply the saved frame anchor after updating holder size")
 
-local holderSizeBlock = blockBetween("local function GetExtraButtonHolderSize", "local pendingExtraButtonReanchor")
+local holderSizeBlock = blockBetween("function GetExtraButtonHolderSize", "pendingExtraButtonReanchor")
 assert(
     holderSizeBlock:find("settings.hideArtwork", 1, true)
         and holderSizeBlock:find("GetExtraButtonVisualFrame", 1, true)
         and holderSizeBlock:find("holder:SetSize(holderWidth, holderHeight)", 1, true),
     "extra/zone holder sizing must use the visible button footprint when artwork is hidden before anchors reapply")
 
-local hookBlock = blockBetween("local function HookExtraButtonPositioning", "local function ShowExtraButtonMovers")
+local hookBlock = blockBetween("function HookExtraButtonPositioning", "function ShowExtraButtonMovers")
 assert(
     hookBlock:find("ExtraAbilityContainer", 1, true)
         and hookBlock:find('QueueExtraButtonReanchor("extraActionButton")', 1, true)

@@ -1,6 +1,22 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
+    <Script file="actionbars_env.lua"/>
     <Script file="actionbars.lua"/>
+    <Script file="actionbars_helpers.lua"/>
+    <Script file="actionbars_layout.lua"/>
+    <Script file="actionbars_editmode.lua"/>
+    <Script file="actionbars_builder.lua"/>
+    <Script file="actionbars_petstance.lua"/>
+    <Script file="actionbars_cooldowns.lua"/>
+    <Script file="actionbars_glow.lua"/>
+    <Script file="actionbars_events.lua"/>
+    <Script file="actionbars_extra_buttons.lua"/>
+    <Script file="actionbars_skinning.lua"/>
+    <Script file="actionbars_usability.lua"/>
+    <Script file="actionbars_mouseover.lua"/>
+    <Script file="actionbars_flyout.lua"/>
+    <Script file="actionbars_public.lua"/>
+    <Script file="actionbars_per_bar_builders.lua"/>
     <Script file="gse_compat.lua"/>
     <Include file="buffborders_template.xml"/>
     <Script file="buffborders.lua"/>

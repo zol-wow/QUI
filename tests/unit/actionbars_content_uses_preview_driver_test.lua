@@ -28,10 +28,10 @@ assert(content:find("_accum < 1.0", 1, true)
 assert(not content:find("_accum < 0.25", 1, true),
     "content.lua must no longer poll at 0.25s")
 
--- T9: actionbars.lua _G.QUI_RefreshActionBars chains the driver refresh
-local actionbars = readAll("modules/actionbars/actionbars.lua")
+-- T9: actionbars_public.lua _G.QUI_RefreshActionBars chains the driver refresh
+local actionbars = readAll("modules/actionbars/actionbars_public.lua")
 assert(actionbars:find("ns.QUI_ActionBarsPreviewDriver", 1, true),
-    "actionbars.lua _G.QUI_RefreshActionBars must chain ns.QUI_ActionBarsPreviewDriver.Refresh")
+    "actionbars_public.lua _G.QUI_RefreshActionBars must chain ns.QUI_ActionBarsPreviewDriver.Refresh")
 
 -- T9: options.xml registers the driver file
 local optionsXml = readAll("QUI_Options/options.xml")
