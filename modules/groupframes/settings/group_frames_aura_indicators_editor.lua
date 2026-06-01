@@ -13,6 +13,14 @@ local SUGGEST_CELL_SIZE = 36
 local SUGGEST_ICON_SIZE = 28
 local SUGGEST_CELL_GAP = 2
 local SUGGEST_CELL_STRIDE = SUGGEST_CELL_SIZE + SUGGEST_CELL_GAP
+local COLUMN_GAP = 16
+local MIN_COLUMN_WIDTH = 220
+local MIN_RIGHT_COLUMN_WIDTH = 300
+local MAX_LEFT_COLUMN_WIDTH = 520
+local RIGHT_CONFIG_TOP_OFFSET = 42
+local RIGHT_CONFIG_LABEL_STEP = 18
+local LIST_START_GAP = 6
+local RIGHT_CONFIG_ACTION_STEP = 24 + LIST_START_GAP
 
 local NINE_POINT_OPTIONS = {
     { value = "TOPLEFT", text = "Top Left" },
@@ -249,7 +257,7 @@ local function LayoutDraggableRows(container, rows, placeholder, rowStep, skipRo
         if skipRow and insertIndex == index and not placedPlaceholder then
             placeholder:ClearAllPoints()
             placeholder:SetPoint("TOPLEFT", container, "TOPLEFT", 0, nextY)
-            placeholder:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+            placeholder:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, nextY)
             placeholder:Show()
             nextY = nextY - rowStep
             placedPlaceholder = true
@@ -257,7 +265,7 @@ local function LayoutDraggableRows(container, rows, placeholder, rowStep, skipRo
         if row ~= skipRow then
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", container, "TOPLEFT", 0, nextY)
-            row:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+            row:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, nextY)
             nextY = nextY - rowStep
         end
     end
@@ -265,7 +273,7 @@ local function LayoutDraggableRows(container, rows, placeholder, rowStep, skipRo
     if skipRow and not placedPlaceholder then
         placeholder:ClearAllPoints()
         placeholder:SetPoint("TOPLEFT", container, "TOPLEFT", 0, nextY)
-        placeholder:SetPoint("RIGHT", container, "RIGHT", 0, 0)
+        placeholder:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, nextY)
         placeholder:Show()
         nextY = nextY - rowStep
     elseif placeholder then
@@ -377,6 +385,423 @@ local function GetSuggestionSpells(entries)
     return {}
 end
 
+local function RebuildAuraList(ctx)
+    local normalizeAuraIndicators = ctx.normalizeAuraIndicators
+    local auraIndicatorsDB = ctx.auraIndicatorsDB
+    if normalizeAuraIndicators then
+        normalizeAuraIndicators(auraIndicatorsDB)
+    end
+
+    local entries = auraIndicatorsDB.entries or {}
+    if #entries == 0 then
+        ctx.selectedAuraIndex = 1
+        ctx.selectedIndicatorIndex = 1
+    else
+        ctx.selectedAuraIndex = math.max(1, math.min(ctx.selectedAuraIndex, #entries))
+        local selectedEntry = entries[ctx.selectedAuraIndex]
+        local indicatorCount = #(selectedEntry and selectedEntry.indicators or {})
+        ctx.selectedIndicatorIndex = math.max(1, math.min(ctx.selectedIndicatorIndex, math.max(indicatorCount, 1)))
+    end
+
+    ctx.ReleaseAuraRows()
+    ctx.ReleaseSuggestRows()
+    ctx.ReleaseIndicatorRows()
+    ctx.ClearDetailWidgets()
+
+    local C = ctx.C
+    local GUI = ctx.GUI
+    local specID = GetPlayerSpecID()
+    ctx.title:SetText("|cFF34D399" .. (GetPlayerSpecName(specID) or "Tracked Auras") .. "|r")
+
+    local leftWidth = ctx.LayoutEditorColumns()
+    local leftY = 0
+    local rightY = RIGHT_CONFIG_TOP_OFFSET
+    ctx.auraRowsContainer:ClearAllPoints()
+    ctx.auraRowsContainer:SetPoint("TOPLEFT", ctx.leftColumn, "TOPLEFT", 0, -LIST_START_GAP)
+    ctx.auraRowsContainer:SetPoint("TOPRIGHT", ctx.leftColumn, "TOPRIGHT", 0, -LIST_START_GAP)
+
+    for index, entry in ipairs(entries) do
+        local row = ctx.AcquireAuraRow()
+        row:SetParent(ctx.auraRowsContainer)
+        row.icon:SetTexture(GetSpellTexture(entry.spellID))
+
+        local spellName = GetSpellName(entry.spellID) or ("Spell " .. tostring(entry.spellID))
+        row.name:SetText((entry.enabled ~= false and "|cFFFFFFFF" or "|cFF808080") .. spellName .. "|r")
+
+        local iconCount, barCount, tintCount = CountIndicatorTypes(entry)
+        row.summary:SetText(string.format("I:%d B:%d T:%d%s", iconCount, barCount, tintCount, entry.onlyMine and " |cff56D1FFMine|r" or ""))
+
+        local selected = index == ctx.selectedAuraIndex
+        row:SetBackdropColor(selected and 0.16 or 0.08, selected and 0.16 or 0.08, selected and 0.2 or 0.08, 0.9)
+        row:SetBackdropBorderColor(
+            selected and ((C.accent and C.accent[1]) or 0.3) or ((C.border and C.border[1]) or 0.2),
+            selected and ((C.accent and C.accent[2]) or 0.7) or ((C.border and C.border[2]) or 0.2),
+            selected and ((C.accent and C.accent[3]) or 1) or ((C.border and C.border[3]) or 0.2),
+            1
+        )
+
+        row:SetScript("OnClick", function()
+            if ctx.auraDragState.suppressClick then
+                ctx.auraDragState.suppressClick = nil
+                return
+            end
+            ctx.selectedAuraIndex = index
+            ctx.selectedIndicatorIndex = 1
+            ctx.rebuildAuraList()
+        end)
+        row:SetScript("OnDragStart", function(self)
+            local drag = ctx.auraDragState
+            drag.active = true
+            drag.row = self
+            drag.fromIndex = index
+            drag.toIndex = index
+            drag.baseStrata = self:GetFrameStrata()
+            drag.baseLevel = self:GetFrameLevel()
+            drag.baseAlpha = self:GetAlpha()
+            self:StartMoving()
+            self:SetFrameStrata("TOOLTIP")
+            self:SetFrameLevel(400)
+            self:SetAlpha(0.92)
+            self.dragHandle:SetBackdropBorderColor((C.accent and C.accent[1]) or 0.3, (C.accent and C.accent[2]) or 0.7, (C.accent and C.accent[3]) or 1, 1)
+            LayoutDraggableRows(ctx.auraRowsContainer, ctx.activeAuraRows, ctx.auraPlaceholder, ctx.auraRowStep, self, drag.toIndex)
+            self:SetScript("OnUpdate", function(dragged)
+                if not drag.active then
+                    return
+                end
+                local nextIndex = ComputeDropIndex(ctx.activeAuraRows, ctx.auraRowsContainer, ctx.auraRowStep)
+                if nextIndex ~= drag.toIndex then
+                    drag.toIndex = nextIndex
+                    LayoutDraggableRows(ctx.auraRowsContainer, ctx.activeAuraRows, ctx.auraPlaceholder, ctx.auraRowStep, dragged, drag.toIndex)
+                end
+            end)
+        end)
+        row:SetScript("OnDragStop", function(self)
+            local drag = ctx.auraDragState
+            if not drag.active then
+                return
+            end
+            self:StopMovingOrSizing()
+            self:SetScript("OnUpdate", nil)
+            self:SetAlpha(drag.baseAlpha or 1)
+            self:SetFrameStrata(drag.baseStrata or "MEDIUM")
+            if drag.baseLevel then
+                self:SetFrameLevel(drag.baseLevel)
+            end
+            self.dragHandle:SetBackdropBorderColor(0.24, 0.24, 0.28, 1)
+            drag.active = false
+            local changed, targetIndex = CommitReorder(entries, drag.fromIndex or index, drag.toIndex or index)
+            drag.row = nil
+            drag.fromIndex = nil
+            drag.toIndex = nil
+            drag.baseStrata = nil
+            drag.baseLevel = nil
+            drag.baseAlpha = nil
+            ctx.auraPlaceholder:Hide()
+            if changed then
+                ctx.selectedAuraIndex = RemapSelectedIndex(ctx.selectedAuraIndex, index, targetIndex)
+                drag.suppressClick = true
+                ctx.NotifyChanged()
+            end
+            ctx.rebuildAuraList()
+        end)
+        row.remove:SetScript("OnClick", function()
+            table.remove(entries, index)
+            ctx.NotifyChanged()
+            ctx.rebuildAuraList()
+        end)
+
+        ctx.activeAuraRows[#ctx.activeAuraRows + 1] = row
+    end
+
+    local auraRowsHeight = LayoutDraggableRows(ctx.auraRowsContainer, ctx.activeAuraRows, ctx.auraPlaceholder, ctx.auraRowStep)
+    leftY = -(LIST_START_GAP + auraRowsHeight + 4)
+    ctx.addHeader:ClearAllPoints()
+    ctx.addHeader:SetPoint("TOPLEFT", 0, leftY)
+    ctx.addHeader:SetText("|cFFAAAAAAAdd Tracked Aura:|r")
+    leftY = leftY - 16
+
+    ctx.inputRow:ClearAllPoints()
+    ctx.inputRow:SetPoint("TOPLEFT", 0, leftY)
+    ctx.inputRow:SetPoint("TOPRIGHT", ctx.leftColumn, "TOPRIGHT", 0, leftY)
+    leftY = leftY - 28
+
+    local suggestions = GetSuggestionSpells(entries)
+    if #suggestions > 0 then
+        local contentWidth = leftWidth
+        if type(contentWidth) ~= "number" or contentWidth < SUGGEST_CELL_STRIDE then
+            contentWidth = MAX_LEFT_COLUMN_WIDTH
+        end
+        local cols = math.max(1, math.floor(contentWidth / SUGGEST_CELL_STRIDE))
+        local rows = math.ceil(#suggestions / cols)
+        for index, spell in ipairs(suggestions) do
+            local cell = ctx.AcquireSuggestCell()
+            local col = (index - 1) % cols
+            local row = math.floor((index - 1) / cols)
+            cell:SetParent(ctx.leftColumn)
+            cell:SetPoint("TOPLEFT", col * SUGGEST_CELL_STRIDE, leftY - (row * SUGGEST_CELL_STRIDE))
+            cell._spell = spell
+            cell.icon:SetTexture(spell.icon or GetSpellTexture(spell.id))
+            cell:SetScript("OnClick", function(_, button)
+                if button == "LeftButton" or button == "RightButton" then
+                    ctx.AddNewAura(spell.id)
+                    ctx.rebuildAuraList()
+                end
+            end)
+            ctx.activeSuggestRows[#ctx.activeSuggestRows + 1] = cell
+        end
+        leftY = leftY - (rows * SUGGEST_CELL_STRIDE) - 4
+    end
+
+    local selectedEntry = entries[ctx.selectedAuraIndex]
+    if selectedEntry then
+        ctx.selectedAuraLabel:ClearAllPoints()
+        ctx.selectedAuraLabel:SetPoint("TOPLEFT", ctx.rightColumn, "TOPLEFT", 0, rightY)
+        ctx.selectedAuraLabel:SetPoint("TOPRIGHT", ctx.rightColumn, "TOPRIGHT", 0, rightY)
+        ctx.selectedAuraLabel:SetText("Configure: " .. (GetSpellName(selectedEntry.spellID) or ("Spell " .. tostring(selectedEntry.spellID))))
+        rightY = rightY - RIGHT_CONFIG_LABEL_STEP
+
+        ctx.indicatorActionsRow:ClearAllPoints()
+        ctx.indicatorActionsRow:SetPoint("TOPLEFT", ctx.rightColumn, "TOPLEFT", 0, rightY)
+        ctx.indicatorActionsRow:SetPoint("TOPRIGHT", ctx.rightColumn, "TOPRIGHT", 0, rightY)
+        ctx.indicatorActionsRow:Show()
+        rightY = rightY - RIGHT_CONFIG_ACTION_STEP
+
+        local indicatorCount = #(selectedEntry.indicators or {})
+        if indicatorCount == 0 then
+            ctx.selectedIndicatorIndex = 1
+        else
+            ctx.selectedIndicatorIndex = math.max(1, math.min(ctx.selectedIndicatorIndex, indicatorCount))
+        end
+
+        for index, indicator in ipairs(selectedEntry.indicators or {}) do
+            local row = ctx.AcquireIndicatorRow()
+            row:SetParent(ctx.indicatorRowsContainer)
+            row.label:SetText(GetIndicatorLabel(indicator, index))
+
+            local selected = index == ctx.selectedIndicatorIndex
+            row:SetBackdropColor(selected and 0.15 or 0.07, selected and 0.15 or 0.07, selected and 0.18 or 0.07, 0.9)
+            row:SetBackdropBorderColor(
+                selected and ((C.accent and C.accent[1]) or 0.3) or ((C.border and C.border[1]) or 0.2),
+                selected and ((C.accent and C.accent[2]) or 0.7) or ((C.border and C.border[2]) or 0.2),
+                selected and ((C.accent and C.accent[3]) or 1) or ((C.border and C.border[3]) or 0.2),
+                1
+            )
+
+            row:SetScript("OnClick", function()
+                if ctx.indicatorDragState.suppressClick then
+                    ctx.indicatorDragState.suppressClick = nil
+                    return
+                end
+                ctx.selectedIndicatorIndex = index
+                ctx.rebuildAuraList()
+            end)
+            row:SetScript("OnDragStart", function(self)
+                local drag = ctx.indicatorDragState
+                drag.active = true
+                drag.row = self
+                drag.fromIndex = index
+                drag.toIndex = index
+                drag.baseStrata = self:GetFrameStrata()
+                drag.baseLevel = self:GetFrameLevel()
+                drag.baseAlpha = self:GetAlpha()
+                self:StartMoving()
+                self:SetFrameStrata("TOOLTIP")
+                self:SetFrameLevel(401)
+                self:SetAlpha(0.92)
+                self.dragHandle:SetBackdropBorderColor((C.accent and C.accent[1]) or 0.3, (C.accent and C.accent[2]) or 0.7, (C.accent and C.accent[3]) or 1, 1)
+                LayoutDraggableRows(ctx.indicatorRowsContainer, ctx.activeIndicatorRows, ctx.indicatorPlaceholder, ctx.indicatorRowStep, self, drag.toIndex)
+                self:SetScript("OnUpdate", function(dragged)
+                    if not drag.active then
+                        return
+                    end
+                    local nextIndex = ComputeDropIndex(ctx.activeIndicatorRows, ctx.indicatorRowsContainer, ctx.indicatorRowStep)
+                    if nextIndex ~= drag.toIndex then
+                        drag.toIndex = nextIndex
+                        LayoutDraggableRows(ctx.indicatorRowsContainer, ctx.activeIndicatorRows, ctx.indicatorPlaceholder, ctx.indicatorRowStep, dragged, drag.toIndex)
+                    end
+                end)
+            end)
+            row:SetScript("OnDragStop", function(self)
+                local drag = ctx.indicatorDragState
+                if not drag.active then
+                    return
+                end
+                self:StopMovingOrSizing()
+                self:SetScript("OnUpdate", nil)
+                self:SetAlpha(drag.baseAlpha or 1)
+                self:SetFrameStrata(drag.baseStrata or "MEDIUM")
+                if drag.baseLevel then
+                    self:SetFrameLevel(drag.baseLevel)
+                end
+                self.dragHandle:SetBackdropBorderColor(0.24, 0.24, 0.28, 1)
+                drag.active = false
+                local changed, targetIndex = CommitReorder(selectedEntry.indicators, drag.fromIndex or index, drag.toIndex or index)
+                drag.row = nil
+                drag.fromIndex = nil
+                drag.toIndex = nil
+                drag.baseStrata = nil
+                drag.baseLevel = nil
+                drag.baseAlpha = nil
+                ctx.indicatorPlaceholder:Hide()
+                if changed then
+                    ctx.selectedIndicatorIndex = RemapSelectedIndex(ctx.selectedIndicatorIndex, index, targetIndex)
+                    drag.suppressClick = true
+                    ctx.NotifyChanged()
+                end
+                ctx.rebuildAuraList()
+            end)
+            row.remove:SetScript("OnClick", function()
+                table.remove(selectedEntry.indicators, index)
+                if normalizeAuraIndicators then
+                    normalizeAuraIndicators(auraIndicatorsDB)
+                end
+                ctx.NotifyChanged()
+                ctx.rebuildAuraList()
+            end)
+
+            ctx.activeIndicatorRows[#ctx.activeIndicatorRows + 1] = row
+        end
+
+        ctx.indicatorRowsContainer:ClearAllPoints()
+        ctx.indicatorRowsContainer:SetPoint("TOPLEFT", ctx.rightColumn, "TOPLEFT", 0, rightY)
+        ctx.indicatorRowsContainer:SetPoint("TOPRIGHT", ctx.rightColumn, "TOPRIGHT", 0, rightY)
+        local indicatorRowsHeight = LayoutDraggableRows(ctx.indicatorRowsContainer, ctx.activeIndicatorRows, ctx.indicatorPlaceholder, ctx.indicatorRowStep)
+        rightY = rightY - indicatorRowsHeight
+
+        local selectedIndicator = selectedEntry.indicators and selectedEntry.indicators[ctx.selectedIndicatorIndex]
+        if selectedIndicator then
+            rightY = rightY - 6
+            ctx.detailArea:ClearAllPoints()
+            ctx.detailArea:SetPoint("TOPLEFT", ctx.rightColumn, "TOPLEFT", 0, rightY)
+            ctx.detailArea:SetPoint("TOPRIGHT", ctx.rightColumn, "TOPRIGHT", 0, rightY)
+
+            local detailY = -2
+            local function AddDetailWidget(widget, height)
+                ctx.RegisterDetailWidget(widget)
+                widget:ClearAllPoints()
+                widget:SetPoint("TOPLEFT", PAD, detailY)
+                widget:SetPoint("TOPRIGHT", ctx.detailArea, "TOPRIGHT", -PAD, detailY)
+                detailY = detailY - height
+            end
+
+            AddDetailWidget(GUI:CreateFormCheckbox(ctx.detailArea, "Aura Enabled", "enabled", selectedEntry, function()
+                ctx.NotifyChanged()
+                ctx.rebuildAuraList()
+            end, {
+                description = "Toggle tracking of this aura. When off, none of its attached indicators display.",
+            }), FORM_ROW)
+            AddDetailWidget(GUI:CreateFormCheckbox(ctx.detailArea, "Only My Cast", "onlyMine", selectedEntry, function()
+                ctx.NotifyChanged()
+                ctx.rebuildAuraList()
+            end, {
+                description = "Only track this aura when you applied it.",
+            }), FORM_ROW)
+            AddDetailWidget(GUI:CreateFormDropdown(ctx.detailArea, "Indicator Type", AURA_INDICATOR_TYPE_OPTIONS, "type", selectedIndicator, function()
+                if normalizeAuraIndicators then
+                    normalizeAuraIndicators(auraIndicatorsDB)
+                end
+                ctx.NotifyChanged()
+                ctx.rebuildAuraList()
+            end, {
+                description = "How this indicator displays: icon in the shared strip, a standalone bar, or a tint applied across the health bar.",
+            }), DROP_ROW)
+            AddDetailWidget(GUI:CreateFormCheckbox(ctx.detailArea, "Indicator Enabled", "enabled", selectedIndicator, function()
+                ctx.NotifyChanged()
+                ctx.rebuildAuraList()
+            end, {
+                description = "Toggle just this indicator without removing it.",
+            }), FORM_ROW)
+
+            if selectedIndicator.type == "bar" then
+                AddDetailWidget(GUI:CreateFormDropdown(ctx.detailArea, "Orientation", BAR_ORIENTATION_OPTIONS, "orientation", selectedIndicator, function()
+                    ctx.NotifyChanged()
+                    ctx.rebuildAuraList()
+                end, {
+                    description = "Whether the bar drains horizontally or vertically as the tracked aura ticks down.",
+                }), DROP_ROW)
+                AddDetailWidget(GUI:CreateFormSlider(ctx.detailArea, "Thickness", 1, 20, 1, "thickness", selectedIndicator, ctx.onChange, nil, {
+                    description = "Pixel thickness of the bar.",
+                }), SLIDER_HEIGHT)
+                AddDetailWidget(GUI:CreateFormSlider(ctx.detailArea, "Width / Height", 4, 200, 1, "length", selectedIndicator, ctx.onChange, nil, {
+                    description = "Pixel length of the bar.",
+                }), SLIDER_HEIGHT)
+                AddDetailWidget(GUI:CreateFormCheckbox(ctx.detailArea, "Match Frame Width / Height", "matchFrameSize", selectedIndicator, function()
+                    ctx.NotifyChanged()
+                    ctx.rebuildAuraList()
+                end, {
+                    description = "Stretch the bar to match the frame size.",
+                }), FORM_ROW)
+                AddDetailWidget(GUI:CreateFormDropdown(ctx.detailArea, "Anchor", NINE_POINT_OPTIONS, "anchor", selectedIndicator, ctx.onChange, {
+                    description = "Where on the frame the bar is anchored.",
+                }), DROP_ROW)
+                AddDetailWidget(GUI:CreateFormSlider(ctx.detailArea, "X Offset", -100, 100, 1, "offsetX", selectedIndicator, ctx.onChange, nil, {
+                    description = "Horizontal pixel offset for the bar from its anchor.",
+                }), SLIDER_HEIGHT)
+                AddDetailWidget(GUI:CreateFormSlider(ctx.detailArea, "Y Offset", -100, 100, 1, "offsetY", selectedIndicator, ctx.onChange, nil, {
+                    description = "Vertical pixel offset for the bar from its anchor.",
+                }), SLIDER_HEIGHT)
+                AddDetailWidget(GUI:CreateFormColorPicker(ctx.detailArea, "Bar Color", "color", selectedIndicator, ctx.onChange, nil, {
+                    description = "Fill color of the bar while the tracked aura is active.",
+                }), FORM_ROW)
+                AddDetailWidget(GUI:CreateFormColorPicker(ctx.detailArea, "Background Color", "backgroundColor", selectedIndicator, ctx.onChange, nil, {
+                    description = "Color drawn behind the bar fill.",
+                }), FORM_ROW)
+                AddDetailWidget(GUI:CreateFormCheckbox(ctx.detailArea, "Hide Border", "hideBorder", selectedIndicator, function()
+                    ctx.NotifyChanged()
+                    ctx.rebuildAuraList()
+                end, {
+                    description = "Remove the border drawn around the bar.",
+                }), FORM_ROW)
+                AddDetailWidget(GUI:CreateFormSlider(ctx.detailArea, "Border Size", 1, 8, 1, "borderSize", selectedIndicator, ctx.onChange, nil, {
+                    description = "Pixel thickness of the bar's border.",
+                }), SLIDER_HEIGHT)
+                AddDetailWidget(GUI:CreateFormColorPicker(ctx.detailArea, "Border Color", "borderColor", selectedIndicator, ctx.onChange, nil, {
+                    description = "Color of the bar's border.",
+                }), FORM_ROW)
+                AddDetailWidget(GUI:CreateFormSlider(ctx.detailArea, "Low-Time Seconds", 0, 30, 0.5, "lowTimeThreshold", selectedIndicator, ctx.onChange, {
+                    precision = 1,
+                }, {
+                    description = "When the remaining duration drops below this many seconds, the bar switches to the Low-Time Color.",
+                }), SLIDER_HEIGHT)
+                AddDetailWidget(GUI:CreateFormColorPicker(ctx.detailArea, "Low-Time Color", "lowTimeColor", selectedIndicator, ctx.onChange, nil, {
+                    description = "Bar fill color used once the remaining duration crosses the Low-Time threshold.",
+                }), FORM_ROW)
+            elseif selectedIndicator.type == "healthBarColor" then
+                AddDetailWidget(GUI:CreateFormColorPicker(ctx.detailArea, "Tint Color", "color", selectedIndicator, ctx.onChange, nil, {
+                    description = "Color tint applied across the health bar while the tracked aura is active.",
+                }), FORM_ROW)
+                AddDetailWidget(GUI:CreateFormDropdown(ctx.detailArea, "Tint Animation", HEALTH_TINT_ANIMATION_OPTIONS, "animation", selectedIndicator, ctx.onChange, {
+                    description = "How the health-bar tint appears when the tracked aura is detected.",
+                }), DROP_ROW)
+                AddDetailWidget(CreateHealthTintAnimationPreview(ctx.detailArea, GUI, C, selectedIndicator), 72)
+            else
+                local note = GUI:CreateLabel(ctx.detailArea, "Icon indicators use the shared icon-strip settings in the section above.", 11, C.textMuted)
+                note:SetJustifyH("LEFT")
+                AddDetailWidget(note, 28)
+            end
+
+            ctx.detailArea:SetHeight(math.abs(detailY) + 8)
+            rightY = rightY - (ctx.detailArea:GetHeight() + 4)
+        else
+            ctx.detailArea:SetHeight(1)
+        end
+    else
+        ctx.selectedAuraLabel:SetText("No tracked auras yet.")
+        ctx.selectedAuraLabel:ClearAllPoints()
+        ctx.selectedAuraLabel:SetPoint("TOPLEFT", ctx.rightColumn, "TOPLEFT", 0, rightY)
+        ctx.selectedAuraLabel:SetPoint("TOPRIGHT", ctx.rightColumn, "TOPRIGHT", 0, rightY)
+        ctx.indicatorActionsRow:Hide()
+        ctx.detailArea:SetHeight(1)
+        rightY = rightY - 24
+    end
+
+    local contentHeight = math.max(math.abs(leftY), math.abs(rightY), 1)
+    ctx.auraListArea:SetHeight(contentHeight)
+    ctx.leftColumn:SetHeight(contentHeight)
+    ctx.rightColumn:SetHeight(contentHeight)
+    ctx.host:SetHeight(56 + ctx.auraListArea:GetHeight())
+end
+
 function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChange)
     local GUI = GetGUI()
     if not host or not GUI or type(auraIndicatorsDB) ~= "table" then
@@ -393,8 +818,10 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
     local suggestRows = {}
     local indicatorRows = {}
     local detailWidgets = {}
-    local selectedAuraIndex = 1
-    local selectedIndicatorIndex = 1
+    local editor = {
+        selectedAuraIndex = 1,
+        selectedIndicatorIndex = 1,
+    }
 
     local title = host:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -6)
@@ -410,30 +837,39 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
     auraListArea:SetPoint("RIGHT", host, "RIGHT", 0, 0)
     auraListArea:SetHeight(1)
 
+    local leftColumn = CreateFrame("Frame", nil, auraListArea)
+    leftColumn:SetPoint("TOPLEFT", auraListArea, "TOPLEFT", 0, 0)
+    leftColumn:SetHeight(1)
+
+    local rightColumn = CreateFrame("Frame", nil, auraListArea)
+    rightColumn:SetPoint("TOPLEFT", leftColumn, "TOPRIGHT", COLUMN_GAP, 0)
+    rightColumn:SetPoint("TOPRIGHT", auraListArea, "TOPRIGHT", 0, 0)
+    rightColumn:SetHeight(1)
+
     local auraRowHeight = 28
     local auraRowStep = 30
     local indicatorRowHeight = 24
     local indicatorRowStep = 26
 
-    local auraRowsContainer = CreateFrame("Frame", nil, auraListArea)
+    local auraRowsContainer = CreateFrame("Frame", nil, leftColumn)
     auraRowsContainer:SetPoint("TOPLEFT", 0, 0)
-    auraRowsContainer:SetPoint("RIGHT", auraListArea, "RIGHT", 0, 0)
+    auraRowsContainer:SetPoint("TOPRIGHT", leftColumn, "TOPRIGHT", 0, 0)
     auraRowsContainer:SetHeight(1)
 
-    local indicatorRowsContainer = CreateFrame("Frame", nil, auraListArea)
+    local indicatorRowsContainer = CreateFrame("Frame", nil, rightColumn)
     indicatorRowsContainer:SetPoint("TOPLEFT", 0, 0)
-    indicatorRowsContainer:SetPoint("RIGHT", auraListArea, "RIGHT", 0, 0)
+    indicatorRowsContainer:SetPoint("TOPRIGHT", rightColumn, "TOPRIGHT", 0, 0)
     indicatorRowsContainer:SetHeight(1)
 
-    local addHeader = auraListArea:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local addHeader = leftColumn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     addHeader:SetJustifyH("LEFT")
 
-    local inputRow = CreateFrame("Frame", nil, auraListArea)
+    local inputRow = CreateFrame("Frame", nil, leftColumn)
     inputRow:SetHeight(24)
 
     local inputBox = CreateFrame("EditBox", nil, inputRow, "BackdropTemplate")
     inputBox:SetSize(80, 20)
-    inputBox:SetPoint("LEFT", 4, 0)
+    inputBox:SetPoint("LEFT", 0, 0)
     inputBox:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -456,7 +892,7 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
 
     local addManualButton = CreateFrame("Button", nil, inputRow, "BackdropTemplate")
     addManualButton:SetSize(40, 20)
-    addManualButton:SetPoint("RIGHT", inputRow, "RIGHT", -2, 0)
+    addManualButton:SetPoint("LEFT", inputLabel, "RIGHT", 8, 0)
     addManualButton:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -468,10 +904,10 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
     addManualText:SetPoint("CENTER")
     addManualText:SetText("Add")
 
-    local indicatorActionsRow = CreateFrame("Frame", nil, auraListArea)
+    local indicatorActionsRow = CreateFrame("Frame", nil, rightColumn)
     indicatorActionsRow:SetHeight(26)
-    indicatorActionsRow:SetPoint("TOPLEFT", auraListArea, "TOPLEFT", 0, 0)
-    indicatorActionsRow:SetPoint("RIGHT", auraListArea, "RIGHT", 0, 0)
+    indicatorActionsRow:SetPoint("TOPLEFT", rightColumn, "TOPLEFT", 0, 0)
+    indicatorActionsRow:SetPoint("TOPRIGHT", rightColumn, "TOPRIGHT", 0, 0)
 
     local addIconButton = GUI:CreateButton(indicatorActionsRow, "Add Icon", 74, 22)
     addIconButton:SetPoint("LEFT", 0, 0)
@@ -483,13 +919,31 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
         "Add a tint indicator — recolors the unit's health bar while the selected aura is active. Useful for at-a-glance buff/debuff awareness without adding screen clutter.",
         "Add Tint Indicator")
 
-    local selectedAuraLabel = auraListArea:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local selectedAuraLabel = rightColumn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     selectedAuraLabel:SetJustifyH("LEFT")
 
-    local detailArea = CreateFrame("Frame", nil, auraListArea)
-    detailArea:SetPoint("TOPLEFT", auraListArea, "TOPLEFT", 0, 0)
-    detailArea:SetPoint("RIGHT", auraListArea, "RIGHT", 0, 0)
+    local detailArea = CreateFrame("Frame", nil, rightColumn)
+    detailArea:SetPoint("TOPLEFT", rightColumn, "TOPLEFT", 0, 0)
+    detailArea:SetPoint("TOPRIGHT", rightColumn, "TOPRIGHT", 0, 0)
     detailArea:SetHeight(1)
+
+    editor.GUI = GUI
+    editor.C = C
+    editor.host = host
+    editor.auraIndicatorsDB = auraIndicatorsDB
+    editor.normalizeAuraIndicators = normalizeAuraIndicators
+    editor.onChange = onChange
+    editor.title = title
+    editor.auraListArea = auraListArea
+    editor.leftColumn = leftColumn
+    editor.rightColumn = rightColumn
+    editor.auraRowsContainer = auraRowsContainer
+    editor.indicatorRowsContainer = indicatorRowsContainer
+    editor.addHeader = addHeader
+    editor.inputRow = inputRow
+    editor.indicatorActionsRow = indicatorActionsRow
+    editor.selectedAuraLabel = selectedAuraLabel
+    editor.detailArea = detailArea
 
     local function CreateDropPlaceholder(parent, height)
         local placeholder = CreateFrame("Frame", nil, parent, "BackdropTemplate")
@@ -506,6 +960,13 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
     local auraDragState = {}
     local indicatorDragState = {}
 
+    editor.auraRowStep = auraRowStep
+    editor.indicatorRowStep = indicatorRowStep
+    editor.auraPlaceholder = auraPlaceholder
+    editor.indicatorPlaceholder = indicatorPlaceholder
+    editor.auraDragState = auraDragState
+    editor.indicatorDragState = indicatorDragState
+
     local function NotifyChanged()
         if normalizeAuraIndicators then
             normalizeAuraIndicators(auraIndicatorsDB)
@@ -514,6 +975,7 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
             onChange()
         end
     end
+    editor.NotifyChanged = NotifyChanged
 
     local function AcquireAuraRow()
         local row = table.remove(auraRows)
@@ -523,7 +985,7 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
             return row
         end
 
-        row = CreateFrame("Button", nil, auraListArea, "BackdropTemplate")
+        row = CreateFrame("Button", nil, leftColumn, "BackdropTemplate")
         row:SetHeight(auraRowHeight)
         row:RegisterForClicks("LeftButtonUp")
         row:SetMovable(true)
@@ -574,8 +1036,10 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
 
         return row
     end
+    editor.AcquireAuraRow = AcquireAuraRow
 
     local activeAuraRows = {}
+    editor.activeAuraRows = activeAuraRows
     local function ReleaseAuraRows()
         for _, row in ipairs(activeAuraRows) do
             row:Hide()
@@ -593,6 +1057,7 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
         end
         wipe(activeAuraRows)
     end
+    editor.ReleaseAuraRows = ReleaseAuraRows
 
     local function AcquireSuggestCell()
         local cell = table.remove(suggestRows)
@@ -602,7 +1067,7 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
             return cell
         end
 
-        cell = CreateFrame("Button", nil, auraListArea, "BackdropTemplate")
+        cell = CreateFrame("Button", nil, leftColumn, "BackdropTemplate")
         cell:SetSize(SUGGEST_CELL_SIZE, SUGGEST_CELL_SIZE)
         cell:RegisterForClicks("LeftButtonUp", "RightButtonUp")
         ApplyPixelBackdrop(cell, 1, true)
@@ -642,8 +1107,10 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
 
         return cell
     end
+    editor.AcquireSuggestCell = AcquireSuggestCell
 
     local activeSuggestRows = {}
+    editor.activeSuggestRows = activeSuggestRows
     local function ReleaseSuggestRows()
         for _, cell in ipairs(activeSuggestRows) do
             cell:Hide()
@@ -658,6 +1125,7 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
         end
         wipe(activeSuggestRows)
     end
+    editor.ReleaseSuggestRows = ReleaseSuggestRows
 
     local function AcquireIndicatorRow()
         local row = table.remove(indicatorRows)
@@ -667,7 +1135,7 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
             return row
         end
 
-        row = CreateFrame("Button", nil, auraListArea, "BackdropTemplate")
+        row = CreateFrame("Button", nil, rightColumn, "BackdropTemplate")
         row:SetHeight(indicatorRowHeight)
         row:RegisterForClicks("LeftButtonUp")
         row:SetMovable(true)
@@ -709,8 +1177,10 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
 
         return row
     end
+    editor.AcquireIndicatorRow = AcquireIndicatorRow
 
     local activeIndicatorRows = {}
+    editor.activeIndicatorRows = activeIndicatorRows
     local function ReleaseIndicatorRows()
         for _, row in ipairs(activeIndicatorRows) do
             row:Hide()
@@ -728,6 +1198,7 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
         end
         wipe(activeIndicatorRows)
     end
+    editor.ReleaseIndicatorRows = ReleaseIndicatorRows
 
     local function ClearDetailWidgets()
         for _, widget in ipairs(detailWidgets) do
@@ -735,11 +1206,13 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
         end
         wipe(detailWidgets)
     end
+    editor.ClearDetailWidgets = ClearDetailWidgets
 
     local function RegisterDetailWidget(widget)
         detailWidgets[#detailWidgets + 1] = widget
         return widget
     end
+    editor.RegisterDetailWidget = RegisterDetailWidget
 
     local function AddNewAura(spellID)
         auraIndicatorsDB.entries = auraIndicatorsDB.entries or {}
@@ -754,15 +1227,16 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
         if normalizeAuraIndicators then
             normalizeAuraIndicators(auraIndicatorsDB)
         end
-        selectedAuraIndex = #auraIndicatorsDB.entries
-        selectedIndicatorIndex = 1
+        editor.selectedAuraIndex = #auraIndicatorsDB.entries
+        editor.selectedIndicatorIndex = 1
         NotifyChanged()
     end
+    editor.AddNewAura = AddNewAura
 
     local rebuildAuraList
 
     local function AddIndicator(indicatorType)
-        local entry = auraIndicatorsDB.entries and auraIndicatorsDB.entries[selectedAuraIndex]
+        local entry = auraIndicatorsDB.entries and auraIndicatorsDB.entries[editor.selectedAuraIndex]
         if not entry then
             return
         end
@@ -773,12 +1247,13 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
         if normalizeAuraIndicators then
             normalizeAuraIndicators(auraIndicatorsDB)
         end
-        selectedIndicatorIndex = #entry.indicators
+        editor.selectedIndicatorIndex = #entry.indicators
         NotifyChanged()
         if rebuildAuraList then
             rebuildAuraList()
         end
     end
+    editor.AddIndicator = AddIndicator
 
     addIconButton:SetScript("OnClick", function()
         AddIndicator("icon")
@@ -808,405 +1283,40 @@ function AuraIndicatorsEditor.RenderTrackedAuras(host, auraIndicatorsDB, onChang
         end
     end)
 
-    rebuildAuraList = function()
-        if normalizeAuraIndicators then
-            normalizeAuraIndicators(auraIndicatorsDB)
+    local function LayoutEditorColumns()
+        local width = auraListArea:GetWidth()
+        if type(width) ~= "number" or width < 1 then
+            width = 960
         end
 
-        local entries = auraIndicatorsDB.entries or {}
-        if #entries == 0 then
-            selectedAuraIndex = 1
-            selectedIndicatorIndex = 1
+        local minStableWidth = MAX_LEFT_COLUMN_WIDTH + COLUMN_GAP + MIN_RIGHT_COLUMN_WIDTH
+        local leftWidth
+        if width >= minStableWidth then
+            leftWidth = MAX_LEFT_COLUMN_WIDTH
         else
-            selectedAuraIndex = math.max(1, math.min(selectedAuraIndex, #entries))
-            local selectedEntry = entries[selectedAuraIndex]
-            local indicatorCount = #(selectedEntry and selectedEntry.indicators or {})
-            selectedIndicatorIndex = math.max(1, math.min(selectedIndicatorIndex, math.max(indicatorCount, 1)))
+            leftWidth = math.floor((width - COLUMN_GAP) * 0.46)
+            leftWidth = math.max(MIN_COLUMN_WIDTH, math.min(leftWidth, MAX_LEFT_COLUMN_WIDTH))
+            if width - leftWidth - COLUMN_GAP < MIN_RIGHT_COLUMN_WIDTH then
+                leftWidth = math.max(MIN_COLUMN_WIDTH, width - COLUMN_GAP - MIN_RIGHT_COLUMN_WIDTH)
+            end
         end
 
-        ReleaseAuraRows()
-        ReleaseSuggestRows()
-        ReleaseIndicatorRows()
-        ClearDetailWidgets()
+        leftColumn:ClearAllPoints()
+        leftColumn:SetPoint("TOPLEFT", auraListArea, "TOPLEFT", 0, 0)
+        leftColumn:SetWidth(leftWidth)
 
-        local specID = GetPlayerSpecID()
-        title:SetText("|cFF34D399" .. (GetPlayerSpecName(specID) or "Tracked Auras") .. "|r")
+        rightColumn:ClearAllPoints()
+        rightColumn:SetPoint("TOPLEFT", leftColumn, "TOPRIGHT", COLUMN_GAP, 0)
+        rightColumn:SetPoint("TOPRIGHT", auraListArea, "TOPRIGHT", 0, 0)
 
-        local y = 0
-        for index, entry in ipairs(entries) do
-            local row = AcquireAuraRow()
-            row:SetParent(auraRowsContainer)
-            row.icon:SetTexture(GetSpellTexture(entry.spellID))
-
-            local spellName = GetSpellName(entry.spellID) or ("Spell " .. tostring(entry.spellID))
-            row.name:SetText((entry.enabled ~= false and "|cFFFFFFFF" or "|cFF808080") .. spellName .. "|r")
-
-            local iconCount, barCount, tintCount = CountIndicatorTypes(entry)
-            row.summary:SetText(string.format("I:%d B:%d T:%d%s", iconCount, barCount, tintCount, entry.onlyMine and " |cff56D1FFMine|r" or ""))
-
-            local selected = index == selectedAuraIndex
-            row:SetBackdropColor(selected and 0.16 or 0.08, selected and 0.16 or 0.08, selected and 0.2 or 0.08, 0.9)
-            row:SetBackdropBorderColor(
-                selected and ((C.accent and C.accent[1]) or 0.3) or ((C.border and C.border[1]) or 0.2),
-                selected and ((C.accent and C.accent[2]) or 0.7) or ((C.border and C.border[2]) or 0.2),
-                selected and ((C.accent and C.accent[3]) or 1) or ((C.border and C.border[3]) or 0.2),
-                1
-            )
-
-            row:SetScript("OnClick", function()
-                if auraDragState.suppressClick then
-                    auraDragState.suppressClick = nil
-                    return
-                end
-                selectedAuraIndex = index
-                selectedIndicatorIndex = 1
-                rebuildAuraList()
-            end)
-            row:SetScript("OnDragStart", function(self)
-                auraDragState.active = true
-                auraDragState.row = self
-                auraDragState.fromIndex = index
-                auraDragState.toIndex = index
-                auraDragState.baseStrata = self:GetFrameStrata()
-                auraDragState.baseLevel = self:GetFrameLevel()
-                auraDragState.baseAlpha = self:GetAlpha()
-                self:StartMoving()
-                self:SetFrameStrata("TOOLTIP")
-                self:SetFrameLevel(400)
-                self:SetAlpha(0.92)
-                self.dragHandle:SetBackdropBorderColor((C.accent and C.accent[1]) or 0.3, (C.accent and C.accent[2]) or 0.7, (C.accent and C.accent[3]) or 1, 1)
-                LayoutDraggableRows(auraRowsContainer, activeAuraRows, auraPlaceholder, auraRowStep, self, auraDragState.toIndex)
-                self:SetScript("OnUpdate", function(dragged)
-                    if not auraDragState.active then
-                        return
-                    end
-                    local nextIndex = ComputeDropIndex(activeAuraRows, auraRowsContainer, auraRowStep)
-                    if nextIndex ~= auraDragState.toIndex then
-                        auraDragState.toIndex = nextIndex
-                        LayoutDraggableRows(auraRowsContainer, activeAuraRows, auraPlaceholder, auraRowStep, dragged, auraDragState.toIndex)
-                    end
-                end)
-            end)
-            row:SetScript("OnDragStop", function(self)
-                if not auraDragState.active then
-                    return
-                end
-                self:StopMovingOrSizing()
-                self:SetScript("OnUpdate", nil)
-                self:SetAlpha(auraDragState.baseAlpha or 1)
-                self:SetFrameStrata(auraDragState.baseStrata or "MEDIUM")
-                if auraDragState.baseLevel then
-                    self:SetFrameLevel(auraDragState.baseLevel)
-                end
-                self.dragHandle:SetBackdropBorderColor(0.24, 0.24, 0.28, 1)
-                auraDragState.active = false
-                local changed, targetIndex = CommitReorder(entries, auraDragState.fromIndex or index, auraDragState.toIndex or index)
-                auraDragState.row = nil
-                auraDragState.fromIndex = nil
-                auraDragState.toIndex = nil
-                auraDragState.baseStrata = nil
-                auraDragState.baseLevel = nil
-                auraDragState.baseAlpha = nil
-                auraPlaceholder:Hide()
-                if changed then
-                    selectedAuraIndex = RemapSelectedIndex(selectedAuraIndex, index, targetIndex)
-                    auraDragState.suppressClick = true
-                    NotifyChanged()
-                end
-                rebuildAuraList()
-            end)
-            row.remove:SetScript("OnClick", function()
-                table.remove(entries, index)
-                NotifyChanged()
-                rebuildAuraList()
-            end)
-
-            activeAuraRows[#activeAuraRows + 1] = row
-        end
-
-        local auraRowsHeight = LayoutDraggableRows(auraRowsContainer, activeAuraRows, auraPlaceholder, auraRowStep)
-        y = -(auraRowsHeight + 4)
-        addHeader:ClearAllPoints()
-        addHeader:SetPoint("TOPLEFT", 0, y)
-        addHeader:SetText("|cFFAAAAAAAdd Tracked Aura:|r")
-        y = y - 16
-
-        inputRow:ClearAllPoints()
-        inputRow:SetPoint("TOPLEFT", 0, y)
-        inputRow:SetPoint("RIGHT", auraListArea, "RIGHT", 0, 0)
-        y = y - 28
-
-        local suggestions = GetSuggestionSpells(entries)
-        if #suggestions > 0 then
-            local contentWidth = auraListArea:GetWidth()
-            if type(contentWidth) ~= "number" or contentWidth < SUGGEST_CELL_STRIDE then
-                contentWidth = 520
-            end
-            local cols = math.max(1, math.floor(contentWidth / SUGGEST_CELL_STRIDE))
-            local rows = math.ceil(#suggestions / cols)
-            for index, spell in ipairs(suggestions) do
-                local cell = AcquireSuggestCell()
-                local col = (index - 1) % cols
-                local row = math.floor((index - 1) / cols)
-                cell:SetParent(auraListArea)
-                cell:SetPoint("TOPLEFT", col * SUGGEST_CELL_STRIDE, y - (row * SUGGEST_CELL_STRIDE))
-                cell._spell = spell
-                cell.icon:SetTexture(spell.icon or GetSpellTexture(spell.id))
-                cell:SetScript("OnClick", function(_, button)
-                    if button == "LeftButton" or button == "RightButton" then
-                        AddNewAura(spell.id)
-                        rebuildAuraList()
-                    end
-                end)
-                activeSuggestRows[#activeSuggestRows + 1] = cell
-            end
-            y = y - (rows * SUGGEST_CELL_STRIDE) - 4
-        end
-
-        local selectedEntry = entries[selectedAuraIndex]
-        if selectedEntry then
-            y = y - 10
-            selectedAuraLabel:ClearAllPoints()
-            selectedAuraLabel:SetPoint("TOPLEFT", 0, y)
-            selectedAuraLabel:SetText("Configure: " .. (GetSpellName(selectedEntry.spellID) or ("Spell " .. tostring(selectedEntry.spellID))))
-            y = y - 22
-
-            indicatorActionsRow:ClearAllPoints()
-            indicatorActionsRow:SetPoint("TOPLEFT", 0, y)
-            indicatorActionsRow:SetPoint("RIGHT", auraListArea, "RIGHT", 0, 0)
-            indicatorActionsRow:Show()
-            y = y - 30
-
-            local indicatorCount = #(selectedEntry.indicators or {})
-            if indicatorCount == 0 then
-                selectedIndicatorIndex = 1
-            else
-                selectedIndicatorIndex = math.max(1, math.min(selectedIndicatorIndex, indicatorCount))
-            end
-
-            for index, indicator in ipairs(selectedEntry.indicators or {}) do
-                local row = AcquireIndicatorRow()
-                row:SetParent(indicatorRowsContainer)
-                row.label:SetText(GetIndicatorLabel(indicator, index))
-
-                local selected = index == selectedIndicatorIndex
-                row:SetBackdropColor(selected and 0.15 or 0.07, selected and 0.15 or 0.07, selected and 0.18 or 0.07, 0.9)
-                row:SetBackdropBorderColor(
-                    selected and ((C.accent and C.accent[1]) or 0.3) or ((C.border and C.border[1]) or 0.2),
-                    selected and ((C.accent and C.accent[2]) or 0.7) or ((C.border and C.border[2]) or 0.2),
-                    selected and ((C.accent and C.accent[3]) or 1) or ((C.border and C.border[3]) or 0.2),
-                    1
-                )
-
-                row:SetScript("OnClick", function()
-                    if indicatorDragState.suppressClick then
-                        indicatorDragState.suppressClick = nil
-                        return
-                    end
-                    selectedIndicatorIndex = index
-                    rebuildAuraList()
-                end)
-                row:SetScript("OnDragStart", function(self)
-                    indicatorDragState.active = true
-                    indicatorDragState.row = self
-                    indicatorDragState.fromIndex = index
-                    indicatorDragState.toIndex = index
-                    indicatorDragState.baseStrata = self:GetFrameStrata()
-                    indicatorDragState.baseLevel = self:GetFrameLevel()
-                    indicatorDragState.baseAlpha = self:GetAlpha()
-                    self:StartMoving()
-                    self:SetFrameStrata("TOOLTIP")
-                    self:SetFrameLevel(401)
-                    self:SetAlpha(0.92)
-                    self.dragHandle:SetBackdropBorderColor((C.accent and C.accent[1]) or 0.3, (C.accent and C.accent[2]) or 0.7, (C.accent and C.accent[3]) or 1, 1)
-                    LayoutDraggableRows(indicatorRowsContainer, activeIndicatorRows, indicatorPlaceholder, indicatorRowStep, self, indicatorDragState.toIndex)
-                    self:SetScript("OnUpdate", function(dragged)
-                        if not indicatorDragState.active then
-                            return
-                        end
-                        local nextIndex = ComputeDropIndex(activeIndicatorRows, indicatorRowsContainer, indicatorRowStep)
-                        if nextIndex ~= indicatorDragState.toIndex then
-                            indicatorDragState.toIndex = nextIndex
-                            LayoutDraggableRows(indicatorRowsContainer, activeIndicatorRows, indicatorPlaceholder, indicatorRowStep, dragged, indicatorDragState.toIndex)
-                        end
-                    end)
-                end)
-                row:SetScript("OnDragStop", function(self)
-                    if not indicatorDragState.active then
-                        return
-                    end
-                    self:StopMovingOrSizing()
-                    self:SetScript("OnUpdate", nil)
-                    self:SetAlpha(indicatorDragState.baseAlpha or 1)
-                    self:SetFrameStrata(indicatorDragState.baseStrata or "MEDIUM")
-                    if indicatorDragState.baseLevel then
-                        self:SetFrameLevel(indicatorDragState.baseLevel)
-                    end
-                    self.dragHandle:SetBackdropBorderColor(0.24, 0.24, 0.28, 1)
-                    indicatorDragState.active = false
-                    local changed, targetIndex = CommitReorder(selectedEntry.indicators, indicatorDragState.fromIndex or index, indicatorDragState.toIndex or index)
-                    indicatorDragState.row = nil
-                    indicatorDragState.fromIndex = nil
-                    indicatorDragState.toIndex = nil
-                    indicatorDragState.baseStrata = nil
-                    indicatorDragState.baseLevel = nil
-                    indicatorDragState.baseAlpha = nil
-                    indicatorPlaceholder:Hide()
-                    if changed then
-                        selectedIndicatorIndex = RemapSelectedIndex(selectedIndicatorIndex, index, targetIndex)
-                        indicatorDragState.suppressClick = true
-                        NotifyChanged()
-                    end
-                    rebuildAuraList()
-                end)
-                row.remove:SetScript("OnClick", function()
-                    table.remove(selectedEntry.indicators, index)
-                    if normalizeAuraIndicators then
-                        normalizeAuraIndicators(auraIndicatorsDB)
-                    end
-                    NotifyChanged()
-                    rebuildAuraList()
-                end)
-
-                activeIndicatorRows[#activeIndicatorRows + 1] = row
-            end
-
-            indicatorRowsContainer:ClearAllPoints()
-            indicatorRowsContainer:SetPoint("TOPLEFT", 0, y)
-            indicatorRowsContainer:SetPoint("RIGHT", auraListArea, "RIGHT", 0, 0)
-            local indicatorRowsHeight = LayoutDraggableRows(indicatorRowsContainer, activeIndicatorRows, indicatorPlaceholder, indicatorRowStep)
-            y = y - indicatorRowsHeight
-
-            local selectedIndicator = selectedEntry.indicators and selectedEntry.indicators[selectedIndicatorIndex]
-            if selectedIndicator then
-                y = y - 6
-                detailArea:ClearAllPoints()
-                detailArea:SetPoint("TOPLEFT", 0, y)
-                detailArea:SetPoint("RIGHT", auraListArea, "RIGHT", 0, 0)
-
-                local detailY = -2
-                local function AddDetailWidget(widget, height)
-                    RegisterDetailWidget(widget)
-                    widget:ClearAllPoints()
-                    widget:SetPoint("TOPLEFT", PAD, detailY)
-                    widget:SetPoint("RIGHT", detailArea, "RIGHT", -PAD, 0)
-                    detailY = detailY - height
-                end
-
-                AddDetailWidget(GUI:CreateFormCheckbox(detailArea, "Aura Enabled", "enabled", selectedEntry, function()
-                    NotifyChanged()
-                    rebuildAuraList()
-                end, {
-                    description = "Toggle tracking of this aura. When off, none of its attached indicators display.",
-                }), FORM_ROW)
-                AddDetailWidget(GUI:CreateFormCheckbox(detailArea, "Only My Cast", "onlyMine", selectedEntry, function()
-                    NotifyChanged()
-                    rebuildAuraList()
-                end, {
-                    description = "Only track this aura when you applied it.",
-                }), FORM_ROW)
-                AddDetailWidget(GUI:CreateFormDropdown(detailArea, "Indicator Type", AURA_INDICATOR_TYPE_OPTIONS, "type", selectedIndicator, function()
-                    if normalizeAuraIndicators then
-                        normalizeAuraIndicators(auraIndicatorsDB)
-                    end
-                    NotifyChanged()
-                    rebuildAuraList()
-                end, {
-                    description = "How this indicator displays: icon in the shared strip, a standalone bar, or a tint applied across the health bar.",
-                }), DROP_ROW)
-                AddDetailWidget(GUI:CreateFormCheckbox(detailArea, "Indicator Enabled", "enabled", selectedIndicator, function()
-                    NotifyChanged()
-                    rebuildAuraList()
-                end, {
-                    description = "Toggle just this indicator without removing it.",
-                }), FORM_ROW)
-
-                if selectedIndicator.type == "bar" then
-                    AddDetailWidget(GUI:CreateFormDropdown(detailArea, "Orientation", BAR_ORIENTATION_OPTIONS, "orientation", selectedIndicator, function()
-                        NotifyChanged()
-                        rebuildAuraList()
-                    end, {
-                        description = "Whether the bar drains horizontally or vertically as the tracked aura ticks down.",
-                    }), DROP_ROW)
-                    AddDetailWidget(GUI:CreateFormSlider(detailArea, "Thickness", 1, 20, 1, "thickness", selectedIndicator, onChange, nil, {
-                        description = "Pixel thickness of the bar.",
-                    }), SLIDER_HEIGHT)
-                    AddDetailWidget(GUI:CreateFormSlider(detailArea, "Width / Height", 4, 200, 1, "length", selectedIndicator, onChange, nil, {
-                        description = "Pixel length of the bar.",
-                    }), SLIDER_HEIGHT)
-                    AddDetailWidget(GUI:CreateFormCheckbox(detailArea, "Match Frame Width / Height", "matchFrameSize", selectedIndicator, function()
-                        NotifyChanged()
-                        rebuildAuraList()
-                    end, {
-                        description = "Stretch the bar to match the frame size.",
-                    }), FORM_ROW)
-                    AddDetailWidget(GUI:CreateFormDropdown(detailArea, "Anchor", NINE_POINT_OPTIONS, "anchor", selectedIndicator, onChange, {
-                        description = "Where on the frame the bar is anchored.",
-                    }), DROP_ROW)
-                    AddDetailWidget(GUI:CreateFormSlider(detailArea, "X Offset", -100, 100, 1, "offsetX", selectedIndicator, onChange, nil, {
-                        description = "Horizontal pixel offset for the bar from its anchor.",
-                    }), SLIDER_HEIGHT)
-                    AddDetailWidget(GUI:CreateFormSlider(detailArea, "Y Offset", -100, 100, 1, "offsetY", selectedIndicator, onChange, nil, {
-                        description = "Vertical pixel offset for the bar from its anchor.",
-                    }), SLIDER_HEIGHT)
-                    AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Bar Color", "color", selectedIndicator, onChange, nil, {
-                        description = "Fill color of the bar while the tracked aura is active.",
-                    }), FORM_ROW)
-                    AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Background Color", "backgroundColor", selectedIndicator, onChange, nil, {
-                        description = "Color drawn behind the bar fill.",
-                    }), FORM_ROW)
-                    AddDetailWidget(GUI:CreateFormCheckbox(detailArea, "Hide Border", "hideBorder", selectedIndicator, function()
-                        NotifyChanged()
-                        rebuildAuraList()
-                    end, {
-                        description = "Remove the border drawn around the bar.",
-                    }), FORM_ROW)
-                    AddDetailWidget(GUI:CreateFormSlider(detailArea, "Border Size", 1, 8, 1, "borderSize", selectedIndicator, onChange, nil, {
-                        description = "Pixel thickness of the bar's border.",
-                    }), SLIDER_HEIGHT)
-                    AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Border Color", "borderColor", selectedIndicator, onChange, nil, {
-                        description = "Color of the bar's border.",
-                    }), FORM_ROW)
-                    AddDetailWidget(GUI:CreateFormSlider(detailArea, "Low-Time Seconds", 0, 30, 0.5, "lowTimeThreshold", selectedIndicator, onChange, {
-                        precision = 1,
-                    }, {
-                        description = "When the remaining duration drops below this many seconds, the bar switches to the Low-Time Color.",
-                    }), SLIDER_HEIGHT)
-                    AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Low-Time Color", "lowTimeColor", selectedIndicator, onChange, nil, {
-                        description = "Bar fill color used once the remaining duration crosses the Low-Time threshold.",
-                    }), FORM_ROW)
-                elseif selectedIndicator.type == "healthBarColor" then
-                    AddDetailWidget(GUI:CreateFormColorPicker(detailArea, "Tint Color", "color", selectedIndicator, onChange, nil, {
-                        description = "Color tint applied across the health bar while the tracked aura is active.",
-                    }), FORM_ROW)
-                    AddDetailWidget(GUI:CreateFormDropdown(detailArea, "Tint Animation", HEALTH_TINT_ANIMATION_OPTIONS, "animation", selectedIndicator, onChange, {
-                        description = "How the health-bar tint appears when the tracked aura is detected.",
-                    }), DROP_ROW)
-                    AddDetailWidget(CreateHealthTintAnimationPreview(detailArea, GUI, C, selectedIndicator), 72)
-                else
-                    local note = GUI:CreateLabel(detailArea, "Icon indicators use the shared icon-strip settings in the section above.", 11, C.textMuted)
-                    note:SetJustifyH("LEFT")
-                    AddDetailWidget(note, 28)
-                end
-
-                detailArea:SetHeight(math.abs(detailY) + 8)
-                y = y - (detailArea:GetHeight() + 4)
-            else
-                indicatorActionsRow:Hide()
-                detailArea:SetHeight(1)
-            end
-        else
-            selectedAuraLabel:SetText("No tracked auras yet.")
-            selectedAuraLabel:ClearAllPoints()
-            selectedAuraLabel:SetPoint("TOPLEFT", 0, y)
-            indicatorActionsRow:Hide()
-            detailArea:SetHeight(1)
-            y = y - 24
-        end
-
-        auraListArea:SetHeight(math.max(1, math.abs(y)))
-        host:SetHeight(56 + auraListArea:GetHeight())
+        return leftWidth
     end
+    editor.LayoutEditorColumns = LayoutEditorColumns
+
+    rebuildAuraList = function()
+        RebuildAuraList(editor)
+    end
+    editor.rebuildAuraList = rebuildAuraList
 
     rebuildAuraList()
     return host:GetHeight()

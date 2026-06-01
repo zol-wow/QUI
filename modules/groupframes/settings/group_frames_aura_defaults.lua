@@ -131,25 +131,6 @@ local DANDERS_PRESETS = {
     },
 }
 
-local COMMON_UTILITY_PRESET = {
-    name = "Common Utility",
-    source = "QUI",
-    spells = {
-        { id = 31821, name = "Aura Mastery" },
-        { id = 97463, name = "Rallying Cry" },
-        { id = 15286, name = "Vampiric Embrace" },
-        { id = 64843, name = "Divine Hymn" },
-        { id = 51052, name = "Anti-Magic Zone" },
-        { id = 196718, name = "Darkness" },
-        { id = 102342, name = "Ironbark", secret = true },
-        { id = 33206, name = "Pain Suppression", secret = true },
-        { id = 47788, name = "Guardian Spirit", secret = true },
-        { id = 6940, name = "Blessing of Sacrifice", secret = true },
-        { id = 116849, name = "Life Cocoon", secret = true },
-        { id = 357170, name = "Time Dilation", secret = true },
-    },
-}
-
 local SPEC_TO_PRESET = {}
 for _, preset in ipairs(DANDERS_PRESETS) do
     SPEC_TO_PRESET[preset.specID] = preset
@@ -248,6 +229,12 @@ local function GetCDMAuraEntries()
     return composer.GetAvailableSpellsForContainer("buff", "aura", {}, nil) or {}
 end
 
+local function IsKnownCDMSuggestion(entry)
+    -- CDM exposes the full Blizzard catalog here; only known entries belong in
+    -- this class/spec suggestion strip.
+    return entry and entry.isKnown == true
+end
+
 local function BuildCDMPreset(entries)
     if type(entries) ~= "table" or #entries == 0 then
         return nil
@@ -256,7 +243,7 @@ local function BuildCDMPreset(entries)
     local spells = {}
     for _, entry in ipairs(entries) do
         local spellID = entry.spellID or entry.id
-        if spellID then
+        if spellID and IsKnownCDMSuggestion(entry) then
             spells[#spells + 1] = {
                 id = spellID,
                 name = entry.name,
@@ -323,7 +310,6 @@ function AuraDefaults.GetDefaultPresets(options)
         presets[#presets + 1] = cdmPreset
     end
 
-    presets[#presets + 1] = COMMON_UTILITY_PRESET
     return DeduplicatePresets(presets)
 end
 
@@ -360,4 +346,3 @@ function AuraDefaults.GetSuggestionSpells(existingEntries)
         existingEntries = existingEntries,
     })
 end
-

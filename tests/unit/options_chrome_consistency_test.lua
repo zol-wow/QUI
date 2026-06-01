@@ -202,4 +202,20 @@ do
         "click_cast_content.lua: click-cast hide cleanup hook should guard duplicate registration")
 end
 
+-- ===========================================================================
+-- modules/groupframes/settings/group_frames_aura_indicators_editor.lua
+-- ===========================================================================
+do
+    local src = readFile("modules/groupframes/settings/group_frames_aura_indicators_editor.lua")
+
+    assertContains(src, "local function RebuildAuraList(ctx)",
+        "group_frames_aura_indicators_editor.lua: aura rebuild should live in a file-level helper")
+    assertContains(src, "RebuildAuraList(editor)",
+        "group_frames_aura_indicators_editor.lua: local rebuild wrapper should delegate to the helper")
+    assertAbsent(src, "\n%s*selectedAuraIndex%s*=%s*math%.max",
+        "group_frames_aura_indicators_editor.lua: bare selectedAuraIndex assignments must use editor/ctx state")
+    assertAbsent(src, "\n%s*selectedIndicatorIndex%s*=%s*math%.max",
+        "group_frames_aura_indicators_editor.lua: bare selectedIndicatorIndex assignments must use editor/ctx state")
+end
+
 print("OK: options_chrome_consistency_test")
