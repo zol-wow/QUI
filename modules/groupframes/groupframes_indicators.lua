@@ -97,6 +97,8 @@ local HEALTH_TINT_ANIMATION_DURATIONS = {
     fillFade = 0.35,
     pulse = 0.28,
 }
+local STATUS_BAR_INTERPOLATION_IMMEDIATE = 0
+local STATUS_BAR_TIMER_REMAINING = 1
 
 local FILTER_RAID = "PLAYER|HELPFUL|RAID"
 local FILTER_RIC = "PLAYER|HELPFUL|RAID_IN_COMBAT"
@@ -815,6 +817,8 @@ local function ReleaseBar(item)
     item._indicator = nil
     item._auraData = nil
     item._unit = nil
+    item._usesDurationObjectFill = nil
+    item._durationObject = nil
     item._layoutOrientation = nil
     item._layoutWidth = nil
     item._layoutHeight = nil
@@ -862,10 +866,62 @@ local function ApplyBarColor(bar, indicator, remaining)
     end
 end
 
+local function BindBarDurationObject(bar)
+    if not bar or not bar.SetTimerDuration then
+        return false
+    end
+
+    local auraData = bar._auraData
+    local auraInstanceID = auraData and auraData.auraInstanceID
+    local unit = bar._unit
+    if not unit or not auraInstanceID or not C_UnitAuras or not C_UnitAuras.GetAuraDuration then
+        return false
+    end
+
+    local readableDuration = auraData.duration
+    if readableDuration ~= nil
+        and not IsSecretValue(readableDuration)
+        and SafeToNumber(readableDuration, 0) <= 0
+    then
+        return false
+    end
+
+    local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraInstanceID)
+    if not ok or not durationObj then
+        return false
+    end
+
+    local applied = pcall(
+        bar.SetTimerDuration,
+        bar,
+        durationObj,
+        STATUS_BAR_INTERPOLATION_IMMEDIATE,
+        STATUS_BAR_TIMER_REMAINING
+    )
+    if not applied then
+        return false
+    end
+
+    bar._usesDurationObjectFill = true
+    bar._durationObject = durationObj
+    return true
+end
+
 local function UpdateBarProgress(bar)
     local auraData = bar._auraData
     local indicator = bar._indicator
     if not auraData or not indicator then
+        return
+    end
+
+    bar._usesDurationObjectFill = nil
+    bar._durationObject = nil
+
+    if BindBarDurationObject(bar) then
+        -- Let the client drive fill timing from the live DurationObject.  The
+        -- cached AuraData can be stale during mixed UNIT_AURA deltas, so avoid
+        -- using expired Lua timestamps to zero the bar immediately afterward.
+        ApplyBarColor(bar, indicator, nil)
         return
     end
 
@@ -1001,7 +1057,9 @@ local function ConfigureBarIndicator(bar, frame, auraData, indicator)
 
     local duration = SafeToNumber(auraData.duration, 0)
     local expirationTime = SafeToNumber(auraData.expirationTime, 0)
-    if duration > 0 and expirationTime > 0 and not IsSecretValue(auraData.duration) and not IsSecretValue(auraData.expirationTime) then
+    if bar._usesDurationObjectFill then
+        UnregisterBarTimer(bar)
+    elseif duration > 0 and expirationTime > 0 and not IsSecretValue(auraData.duration) and not IsSecretValue(auraData.expirationTime) then
         RegisterBarTimer(bar)
     else
         UnregisterBarTimer(bar)
@@ -1392,6 +1450,52 @@ end
 
 function QUI_GFI:RefreshFrame(frame)
     UpdateFrameIndicators(frame)
+end
+
+local function UpdatedListContains(updated, auraInstanceID)
+    if not updated or not auraInstanceID then
+        return false
+    end
+    for i = 1, #updated do
+        if updated[i] == auraInstanceID then
+            return true
+        end
+    end
+    return false
+end
+
+function QUI_GFI:RefreshUpdatedBars(frames, nFrames, unit, updatedAuraInstanceIDs)
+    if not frames or not updatedAuraInstanceIDs or #updatedAuraInstanceIDs == 0 then
+        return false
+    end
+
+    local rebound = false
+    for f = 1, nFrames do
+        local frame = frames[f]
+        local state = frame and frameIndicatorState[frame]
+        if frame and frame:IsShown() and state and state.bars then
+            for i = 1, #state.bars do
+                local bar = state.bars[i]
+                local auraData = bar and bar._auraData
+                local auraInstanceID = auraData and auraData.auraInstanceID
+                if bar
+                    and bar:IsShown()
+                    and bar._unit == unit
+                    and UpdatedListContains(updatedAuraInstanceIDs, auraInstanceID)
+                then
+                    if BindBarDurationObject(bar) then
+                        ApplyBarColor(bar, bar._indicator, nil)
+                        UnregisterBarTimer(bar)
+                        rebound = true
+                    else
+                        UpdateBarProgress(bar)
+                    end
+                end
+            end
+        end
+    end
+
+    return rebound
 end
 
 ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}

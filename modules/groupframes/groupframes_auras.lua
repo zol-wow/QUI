@@ -2383,6 +2383,10 @@ if ns.AuraEvents then
             auraStats.fastUpdates = auraStats.fastUpdates + 1
 
             RefreshUpdatedAuraIcons(frames, nFrames, unit, updated)
+            local GFI = ns.QUI_GroupFrameIndicators
+            if GFI and GFI.RefreshUpdatedBars then
+                GFI:RefreshUpdatedBars(frames, nFrames, unit, updated)
+            end
             return
         end
 
@@ -2457,8 +2461,12 @@ if ns.AuraEvents then
             and updateInfo.updatedAuraInstanceIDs
             and (updateInfo.addedAuras or updateInfo.removedAuraInstanceIDs)
         then
+            local updated = updateInfo.updatedAuraInstanceIDs
             if RefreshUpdatedAuraIcons(frames, nFrames, unit, updateInfo.updatedAuraInstanceIDs) then
                 auraStats.mixedIconRefreshes = auraStats.mixedIconRefreshes + 1
+            end
+            if GFI and GFI.RefreshUpdatedBars then
+                GFI:RefreshUpdatedBars(frames, nFrames, unit, updated)
             end
         end
     end)
