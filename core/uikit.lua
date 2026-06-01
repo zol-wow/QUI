@@ -1333,6 +1333,208 @@ function SkinBase.GetDepthColor(tier, moduleSettings, prefix)
     return math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), depth.alpha
 end
 
+local function ResolveChromeColor(color, fallback, defaultAlpha)
+    fallback = fallback or SkinBase.CHROME.BORDER_FALLBACK
+    if type(color) == "function" then
+        local r, g, b, a = color()
+        if type(r) == "table" then
+            color = r
+        elseif r ~= nil then
+            return { r, g, b, a == nil and (fallback[4] or defaultAlpha or 1) or a }
+        end
+    end
+    if type(color) == "table" then
+        return {
+            color[1] == nil and fallback[1] or color[1],
+            color[2] == nil and fallback[2] or color[2],
+            color[3] == nil and fallback[3] or color[3],
+            color[4] == nil and (fallback[4] or defaultAlpha or 1) or color[4],
+        }
+    end
+    return {
+        fallback[1] or 0,
+        fallback[2] or 0,
+        fallback[3] or 0,
+        fallback[4] == nil and (defaultAlpha or 1) or fallback[4],
+    }
+end
+
+-- Shared chrome policy: one resolver for border/accent/background colors and
+-- the canonical pixel-backdrop call. Frame files should pass frame-specific
+-- wiring here instead of each cloning the color/default/backdrop branch.
+function SkinBase.GetChromePalette(opts)
+    opts = opts or {}
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(opts.moduleSettings, opts.prefix)
+    local borderFallback = opts.borderFallback or SkinBase.CHROME.BORDER_FALLBACK
+    local bgFallback = opts.bgFallback or SkinBase.CHROME.BG_FALLBACK
+    local border = ResolveChromeColor(opts.borderColor or { sr, sg, sb, sa }, borderFallback, 1)
+    local bg = ResolveChromeColor(opts.bgColor or { bgr, bgg, bgb, bga }, bgFallback, 0.95)
+    local accentSource = opts.accentColor or opts.borderColor
+    if not accentSource then
+        accentSource = sr ~= nil and { sr, sg, sb, sa } or opts.accentFallback
+    end
+    local accent = ResolveChromeColor(accentSource, opts.accentFallback or border, 1)
+    return { border = border, accent = accent, bg = bg }
+end
+
+function SkinBase.ApplyChromeBackdrop(frame, opts)
+    if not frame then return nil end
+    opts = opts or {}
+    local palette = opts.palette or SkinBase.GetChromePalette(opts)
+    local borderColor = ResolveChromeColor(opts.borderColor, palette.border, 1)
+    local bgColor = ResolveChromeColor(opts.bgColor, palette.bg, 0.95)
+    local withBackground = opts.withBackground
+    if withBackground == nil then
+        withBackground = opts.background
+    end
+    local withInsets = opts.withInsets
+    if withInsets == nil then
+        withInsets = withBackground
+    end
+    SkinBase.ApplyPixelBackdrop(
+        frame,
+        opts.borderPixels or SkinBase.CHROME.BORDER_PX,
+        withBackground and true or false,
+        withInsets and true or false,
+        borderColor,
+        withBackground and bgColor or nil,
+        opts.bgFile,
+        opts.edgeFile,
+        opts.insetPixels
+    )
+    return palette
+end
+
+local function HideButtonTextures(button)
+    if button.Border then button.Border:SetAlpha(0) end
+    if button.GetNormalTexture and button:GetNormalTexture() then button:GetNormalTexture():SetAlpha(0) end
+    if button.GetPushedTexture and button:GetPushedTexture() then button:GetPushedTexture():SetAlpha(0) end
+    if button.GetHighlightTexture and button:GetHighlightTexture() then button:GetHighlightTexture():SetAlpha(0) end
+    if button.GetDisabledTexture and button:GetDisabledTexture() then button:GetDisabledTexture():SetAlpha(0) end
+end
+
+function SkinBase.SkinChromeCloseButton(button, opts)
+    if not button then return end
+    opts = opts or {}
+    local key = opts.stateKey or "chromeCloseButton"
+    HideButtonTextures(button)
+
+    local palette = SkinBase.GetChromePalette(opts)
+    local border = SkinBase.GetFrameData(button, key .. "Border")
+    if not border then
+        border = CreateFrame("Frame", nil, button, "BackdropTemplate")
+        border:EnableMouse(false)
+        SkinBase.SetFrameData(button, key .. "Border", border)
+    end
+    SkinBase.SetInsetPixelPoints(border, button, opts.insetPixels or 2)
+    border:SetFrameLevel(math.max(button:GetFrameLevel() - 1, 1))
+    SkinBase.ApplyChromeBackdrop(border, {
+        palette = palette,
+        withBackground = true,
+        withInsets = true,
+        borderColor = palette.border,
+        bgColor = palette.bg,
+    })
+
+    local label = SkinBase.GetFrameData(button, key .. "Label")
+    if not label then
+        label = button:CreateFontString(nil, "OVERLAY")
+        label:SetPoint("CENTER", button, "CENTER", 0, 0)
+        if label.SetDrawLayer then
+            label:SetDrawLayer("OVERLAY", 7)
+        end
+        SkinBase.SetFrameData(button, key .. "Label", label)
+    end
+    label:SetFont(opts.font or STANDARD_TEXT_FONT, opts.fontSize or 11, opts.fontFlags or "OUTLINE")
+    label:SetText(opts.label or "X")
+    local textColor = ResolveChromeColor(opts.textColor, { 1, 1, 1, 1 }, 1)
+    label:SetTextColor(textColor[1], textColor[2], textColor[3], textColor[4])
+
+    if SkinBase.GetFrameData(button, key .. "Hooked") then return end
+    button:HookScript("OnEnter", function(self)
+        local bd = SkinBase.GetFrameData(self, key .. "Border")
+        if not bd then return end
+        local hoverPalette = SkinBase.GetChromePalette(opts)
+        bd:SetBackdropBorderColor(hoverPalette.accent[1], hoverPalette.accent[2], hoverPalette.accent[3], hoverPalette.accent[4])
+    end)
+    button:HookScript("OnLeave", function(self)
+        local bd = SkinBase.GetFrameData(self, key .. "Border")
+        if not bd then return end
+        local restPalette = SkinBase.GetChromePalette(opts)
+        bd:SetBackdropBorderColor(restPalette.border[1], restPalette.border[2], restPalette.border[3], restPalette.border[4])
+    end)
+    SkinBase.SetFrameData(button, key .. "Hooked", true)
+end
+
+function SkinBase.CreateSecretAwareStatPolicy(opts)
+    opts = opts or {}
+    local policy = {
+        unit = opts.unit,
+        secretsRestricted = false,
+    }
+    if opts.unit == "player" and type(opts.secretDetector) == "function" then
+        local ok, restricted = pcall(opts.secretDetector)
+        policy.secretsRestricted = ok and restricted and true or false
+    end
+
+    function policy:CanUseRichTooltip()
+        return not self.secretsRestricted
+    end
+
+    function policy:ReadableNumber(value)
+        if Helpers.IsSecretValue(value) then return nil end
+        return tonumber(value)
+    end
+
+    function policy:GetNumber(func, fallback, ...)
+        if type(func) ~= "function" then
+            return fallback or 0
+        end
+        local ok, result = pcall(func, ...)
+        if not ok then
+            return fallback or 0
+        end
+        local value = self:ReadableNumber(result)
+        if value == nil then
+            return fallback or 0
+        end
+        return value
+    end
+
+    function policy:GetNumbers(func, ...)
+        if type(func) ~= "function" then
+            return 0, 0, 0, 0
+        end
+        local ok, a, b, c, d = pcall(func, ...)
+        if not ok then
+            return 0, 0, 0, 0
+        end
+        return self:ReadableNumber(a) or 0,
+               self:ReadableNumber(b) or 0,
+               self:ReadableNumber(c) or 0,
+               self:ReadableNumber(d) or 0
+    end
+
+    function policy:GetRaw(func, ...)
+        if type(func) ~= "function" then return nil end
+        local ok, result = pcall(func, ...)
+        if not ok or Helpers.IsSecretValue(result) then return nil end
+        return result
+    end
+
+    function policy:ApplyTooltip(row, title, body, extraBody, richBuilder)
+        if not row then return end
+        row.tooltip = title
+        row.tooltip2 = body
+        row.tooltip3 = extraBody
+        if self:CanUseRichTooltip() and type(richBuilder) == "function" then
+            pcall(richBuilder, row, self)
+        end
+    end
+
+    return policy
+end
+
 local function SetTextureSource(texture, file)
     if not texture then return end
     if file == DEFAULT_BACKDROP_TEXTURE and texture.SetColorTexture then

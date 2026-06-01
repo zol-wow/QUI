@@ -243,50 +243,37 @@ end
 ---------------------------------------------------------------------------
 -- Shared styling helpers (character panel widgets)
 ---------------------------------------------------------------------------
-local styledCloseButtons = Helpers.CreateStateTable()
-local closeButtonBorders = Helpers.CreateStateTable()
-local closeButtonLabels = Helpers.CreateStateTable()
 local sidebarTabBorders = Helpers.CreateStateTable()
 local sidebarTabHooked = Helpers.CreateStateTable()
-local pixelInsetState = Helpers.CreateStateTable()
 local sidebarTabBaseWidth = nil
 local sidebarTabBaseHeight = nil
 
 local function GetPixelSize(frame)
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.GetPixelSize then
+        return skinBase.GetPixelSize(frame, 1)
+    end
     return QUICore:GetPixelSize(frame)
 end
 
-local function RefreshInsetPixelPoints(region)
-    local state = pixelInsetState[region]
-    if not state or not state.relativeTo then return end
-    local inset = (state.pixels or 1) * GetPixelSize(region)
-    region:ClearAllPoints()
-    region:SetPoint("TOPLEFT", state.relativeTo, "TOPLEFT", inset, -inset)
-    region:SetPoint("BOTTOMRIGHT", state.relativeTo, "BOTTOMRIGHT", -inset, inset)
-end
-
 local function SetInsetPixelPoints(region, relativeTo, pixels)
-    if not region or not relativeTo then return end
-    local state = pixelInsetState[region]
-    if not state then
-        state = {}
-        pixelInsetState[region] = state
-    end
-    state.relativeTo = relativeTo
-    state.pixels = pixels or 1
-    RefreshInsetPixelPoints(region)
-    if UIKit and UIKit.RegisterScaleRefresh and not state.registered then
-        UIKit.RegisterScaleRefresh(region, "characterPaneInsetPoints", RefreshInsetPixelPoints)
-        state.registered = true
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.SetInsetPixelPoints then
+        skinBase.SetInsetPixelPoints(region, relativeTo, pixels)
     end
 end
 
--- Border chrome delegates to the shared SkinBase primitive (one canonical
--- backdrop path). Kept as a local name so existing call sites are unchanged.
+-- Border chrome delegates to the shared SkinBase policy. Kept as a local name
+-- so existing call sites remain thin per-frame wiring.
 local function ApplyOnePixelBorder(frame, withBackground, borderColor, bgColor)
     local skinBase = GetSkinBase()
-    if skinBase and skinBase.ApplyPixelBackdrop then
-        skinBase.ApplyPixelBackdrop(frame, skinBase.CHROME.BORDER_PX, withBackground, withBackground, borderColor, bgColor)
+    if skinBase and skinBase.ApplyChromeBackdrop then
+        skinBase.ApplyChromeBackdrop(frame, {
+            withBackground = withBackground,
+            withInsets = withBackground,
+            borderColor = borderColor,
+            bgColor = bgColor,
+        })
     end
 end
 
@@ -305,8 +292,13 @@ end
 
 local function ApplySlotPixelBackdrop(borderFrame, borderColor)
     local skinBase = GetSkinBase()
-    if skinBase and skinBase.ApplyPixelBackdrop then
-        skinBase.ApplyPixelBackdrop(borderFrame, 1, false, false, borderColor)
+    if skinBase and skinBase.ApplyChromeBackdrop then
+        skinBase.ApplyChromeBackdrop(borderFrame, {
+            withBackground = false,
+            withInsets = false,
+            borderColor = borderColor,
+            borderPixels = 1,
+        })
         return
     end
 
@@ -316,76 +308,55 @@ end
 -- Character-pane frame chrome is unified onto the standard skin colors (the
 -- same source every other skinned frame uses) so the pane tracks global
 -- skin-color changes. Semantic stat/status/text colors in C stay fixed.
+local function GetCharacterChromePalette()
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.GetChromePalette then
+        return skinBase.GetChromePalette({
+            borderFallback = C.border,
+            accentFallback = C.accent,
+            bgFallback = C.bg,
+        })
+    end
+    return {
+        border = C.border,
+        accent = C.accent,
+        bg = C.bg,
+    }
+end
+
 local function GetCharacterBorderColor()
-    local r, g, b, a = Helpers.GetSkinBorderColor()
-    if r then return r, g, b, a or 1 end
-    return C.border[1], C.border[2], C.border[3], 1
+    local color = GetCharacterChromePalette().border
+    return color[1], color[2], color[3], color[4] or 1
 end
 
 -- Same source as the border color for now; kept as a separate named getter so
 -- accent (hover) and resting-border can diverge later without touching callers.
 local function GetCharacterAccentColor()
-    local r, g, b, a = Helpers.GetSkinBorderColor()
-    if r then return r, g, b, a or 1 end
-    return C.accent[1], C.accent[2], C.accent[3], 1
+    local color = GetCharacterChromePalette().accent
+    return color[1], color[2], color[3], color[4] or 1
 end
 
 local function GetCharacterBgColor()
-    local r, g, b, a = Helpers.GetSkinBgColorWithOverride()
-    if r then return r, g, b, a or 1 end
-    return C.bg[1], C.bg[2], C.bg[3], C.bg[4] or 0.95
+    local color = GetCharacterChromePalette().bg
+    return color[1], color[2], color[3], color[4] or 0.95
 end
 
 local function StyleCloseButton(button)
-    if not button then return end
-
-    if button.Border then button.Border:SetAlpha(0) end
-    if button.GetNormalTexture and button:GetNormalTexture() then button:GetNormalTexture():SetAlpha(0) end
-    if button.GetPushedTexture and button:GetPushedTexture() then button:GetPushedTexture():SetAlpha(0) end
-    if button.GetHighlightTexture and button:GetHighlightTexture() then button:GetHighlightTexture():SetAlpha(0) end
-    if button.GetDisabledTexture and button:GetDisabledTexture() then button:GetDisabledTexture():SetAlpha(0) end
-
-    local border = closeButtonBorders[button]
-    if not border then
-        border = CreateFrame("Frame", nil, button, "BackdropTemplate")
-        SetInsetPixelPoints(border, button, 2)
-        border:SetFrameLevel(math.max(button:GetFrameLevel() - 1, 1))
-        border:EnableMouse(false)
-        ApplyOnePixelBorder(border, true)
-        closeButtonBorders[button] = border
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.SkinChromeCloseButton then
+        skinBase.SkinChromeCloseButton(button, {
+            stateKey = "characterPaneClose",
+            label = "X",
+            font = GetGlobalFont(),
+            fontSize = 11,
+            fontFlags = "OUTLINE",
+            textColor = C.text,
+            borderColor = function() local r, g, b = GetCharacterBorderColor(); return r, g, b, 1 end,
+            accentColor = function() local r, g, b = GetCharacterAccentColor(); return r, g, b, 1 end,
+            bgColor = function() return GetCharacterBgColor() end,
+            insetPixels = 2,
+        })
     end
-    border:SetFrameLevel(math.max(button:GetFrameLevel() - 1, 1))
-    local br, bg, bb = GetCharacterBorderColor()
-    local cbr, cbg, cbb, cba = GetCharacterBgColor()
-    ApplyOnePixelBorder(border, true, { br, bg, bb, 1 }, { cbr, cbg, cbb, cba })
-    border:SetBackdropColor(cbr, cbg, cbb, cba)
-    border:SetBackdropBorderColor(br, bg, bb, 1)
-
-    local label = closeButtonLabels[button]
-    if not label then
-        label = button:CreateFontString(nil, "OVERLAY")
-        label:SetPoint("CENTER", button, "CENTER", 0, 0)
-        if label.SetDrawLayer then
-            label:SetDrawLayer("OVERLAY", 7)
-        end
-        closeButtonLabels[button] = label
-    end
-    label:SetFont(GetGlobalFont(), 11, "OUTLINE")
-    label:SetText("X")
-    label:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-
-    if styledCloseButtons[button] then return end
-    button:HookScript("OnEnter", function(self)
-        local r, g, b = GetCharacterAccentColor()
-        local bd = closeButtonBorders[self]
-        if bd then bd:SetBackdropBorderColor(r, g, b, 1) end
-    end)
-    button:HookScript("OnLeave", function(self)
-        local r, g, b = GetCharacterBorderColor()
-        local bd = closeButtonBorders[self]
-        if bd then bd:SetBackdropBorderColor(r, g, b, 1) end
-    end)
-    styledCloseButtons[button] = true
 end
 
 local function GetSidebarTabIcon(tab, index)
@@ -2591,48 +2562,23 @@ local function UpdateStatsPanel(panel, unit)
         local SECTION_GAP = 8
         local BAR_HEIGHT = 16
 
-        -- Helper to read stats without collapsing secret values through Safe* wrappers.
-        local function SafeGetStat(func, ...)
-            if type(func) ~= "function" then
-                return 0
-            end
-            local ok, result = pcall(func, ...)
-            if not ok then
-                return 0
-            end
-            return ReadableNumber(result) or 0
+        local statPolicy = GetSkinBase().CreateSecretAwareStatPolicy({
+            unit = unit,
+            secretDetector = AreCharacterStatsSecretsDisabled,
+        })
+        local SafeGetStat = function(func, ...)
+            return statPolicy:GetNumber(func, 0, ...)
         end
-
-        local function SafeGetStatValues(func, ...)
-            if type(func) ~= "function" then
-                return 0, 0, 0, 0
-            end
-
-            local ok, a, b, c, d = pcall(func, ...)
-            if not ok then
-                return 0, 0, 0, 0
-            end
-
-            return ReadableNumber(a) or 0,
-                   ReadableNumber(b) or 0,
-                   ReadableNumber(c) or 0,
-                   ReadableNumber(d) or 0
+        local SafeGetStatValues = function(func, ...)
+            return statPolicy:GetNumbers(func, ...)
         end
-
-        -- Returns the raw value (secret-checked) or nil if unavailable. Used
-        -- by freeze rows that need to distinguish "real zero" from "secret".
-        local function GetStatOrNil(func, ...)
-            if type(func) ~= "function" then return nil end
-            local ok, result = pcall(func, ...)
-            if not ok or Helpers.IsSecretValue(result) then return nil end
-            return result
+        local GetStatOrNil = function(func, ...)
+            return statPolicy:GetRaw(func, ...)
         end
-
-        -- Combat / encounter / M+ / PvP gate. When true, we cannot do Lua
-        -- arithmetic on API returns (they're secret-tainted); rich tooltips
-        -- and value-derived calculations are skipped. Direct API +
-        -- SetFormattedText still renders live values via the C-side printf.
-        local secretsOff = (unit == "player") and AreCharacterStatsSecretsDisabled() or false
+        -- Combat / encounter / M+ / PvP gate. When true, rich tooltips and
+        -- Lua-side value-derived calculations are skipped; direct C-side
+        -- SetFormattedText calls still render live values.
+        local secretsOff = statPolicy.secretsRestricted
 
         -- HEALTH & RESOURCE
         local row = CreateStatRow(scrollChild, y)
@@ -2644,14 +2590,12 @@ local function UpdateStatsPanel(panel, unit)
             end
         end
         row.value:SetTextColor(C.health[1], C.health[2], C.health[3], 1)
-        row.tooltip = HEALTH
-        row.tooltip2 = (unit == "player") and STAT_HEALTH_TOOLTIP or STAT_HEALTH_PET_TOOLTIP
-        if not secretsOff then
+        statPolicy:ApplyTooltip(row, HEALTH, (unit == "player") and STAT_HEALTH_TOOLTIP or STAT_HEALTH_PET_TOOLTIP, nil, function()
             local healthMaxRaw = GetStatOrNil(UnitHealthMax, unit)
             if healthMaxRaw then
                 row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, HEALTH).." "..BreakUpLargeNumbers(healthMaxRaw)..FONT_COLOR_CODE_CLOSE
             end
-        end
+        end)
         y = y - ROW_HEIGHT
 
         local powerType, powerToken = UnitPowerType(unit)
@@ -2666,14 +2610,12 @@ local function UpdateStatsPanel(panel, unit)
             end
         end
         row.value:SetTextColor(C.mana[1], C.mana[2], C.mana[3], 1)
-        row.tooltip = _G[powerToken] or powerName
-        row.tooltip2 = _G["STAT_"..powerToken.."_TOOLTIP"]
-        if not secretsOff then
+        statPolicy:ApplyTooltip(row, _G[powerToken] or powerName, _G["STAT_"..powerToken.."_TOOLTIP"], nil, function()
             local powerMaxRaw = GetStatOrNil(UnitPowerMax, unit, powerType)
             if powerMaxRaw then
                 row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, row.tooltip).." "..BreakUpLargeNumbers(powerMaxRaw)..FONT_COLOR_CODE_CLOSE
             end
-        end
+        end)
         y = y - ROW_HEIGHT
 
         y = y - 5
@@ -2726,11 +2668,12 @@ local function UpdateStatsPanel(panel, unit)
                     row.value:SetFormattedText("%s", eff)
                 end
 
-                -- Static lore tooltip (works in combat)
-                row.tooltip = _G["SPELL_STAT"..stat.statIndex.."_NAME"] or stat.label
-                row.tooltip2 = _G["DEFAULT_STAT"..stat.statIndex.."_TOOLTIP"]
-
-                if not secretsOff then
+                statPolicy:ApplyTooltip(
+                    row,
+                    _G["SPELL_STAT"..stat.statIndex.."_NAME"] or stat.label,
+                    _G["DEFAULT_STAT"..stat.statIndex.."_TOOLTIP"],
+                    nil,
+                    function()
                     -- Set tooltip (Blizzard format)
                     local statName = _G["SPELL_STAT"..stat.statIndex.."_NAME"]
                     local tooltipText = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, statName).." "
@@ -2821,7 +2764,7 @@ local function UpdateStatsPanel(panel, unit)
                         end)
                         -- If pcall failed, keep the default tooltip2
                     end
-                end
+                end)
 
                 y = y - ROW_HEIGHT
             end
@@ -2870,24 +2813,20 @@ local function UpdateStatsPanel(panel, unit)
             pcall(row.bar.SetValue, row.bar, pct)
         end
 
-        -- Static lore tooltip works in combat (no API math). Rich tooltip
-        -- with live numbers / deltas only when secret-free.
-        row.tooltip = stat.label
+        local tooltipTitle = stat.label
+        local tooltipBody
         if stat.statKey == "CRIT" then
-            row.tooltip2 = STAT_CRITICAL_STRIKE_TOOLTIP
+            tooltipBody = STAT_CRITICAL_STRIKE_TOOLTIP
         elseif stat.statKey == "HASTE" then
             local _, class = UnitClass(unit)
-            row.tooltip2 = _G["STAT_HASTE_"..class.."_TOOLTIP"] or STAT_HASTE_TOOLTIP
+            tooltipBody = _G["STAT_HASTE_"..class.."_TOOLTIP"] or STAT_HASTE_TOOLTIP
         elseif stat.statKey == "MASTERY" then
-            row.tooltip2 = STAT_MASTERY_TOOLTIP
+            tooltipBody = STAT_MASTERY_TOOLTIP
         elseif stat.statKey == "VERSATILITY" then
-            row.tooltip2 = STAT_VERSATILITY_TOOLTIP
+            tooltipBody = STAT_VERSATILITY_TOOLTIP
         end
 
-        if not secretsOff then
-            -- Rich tooltips read live values via Lua arithmetic — only safe OOC.
-            local percentValue = SafeGetStat(stat.percentFunc)
-            local ratingValue = SafeGetStat(stat.ratingFunc)
+        statPolicy:ApplyTooltip(row, tooltipTitle, tooltipBody, nil, function()
             if stat.statKey == "CRIT" then
                 local extraCritChance = SafeGetStat(GetCombatRatingBonus, CR_CRIT_SPELL)
                 local extraCritRating = SafeGetStat(GetCombatRating, CR_CRIT_SPELL)
@@ -2945,7 +2884,7 @@ local function UpdateStatsPanel(panel, unit)
                 row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, STAT_VERSATILITY)..FONT_COLOR_CODE_CLOSE
                 row.tooltip2 = format(CR_VERSATILITY_TOOLTIP, versatilityDamageBonus, versatilityDamageTakenReduction, BreakUpLargeNumbers(versatility), versatilityDamageBonus, versatilityDamageTakenReduction)
             end
-        end
+        end)
 
         y = y - BAR_HEIGHT
     end
@@ -3000,20 +2939,19 @@ local function UpdateStatsPanel(panel, unit)
                 if vOk and v then row.value:SetFormattedText("%.2f%%", v) end
             end
 
-            -- Static lore tooltip
+            local tooltipTitle, tooltipBody
             if stat.statKey == "AVOIDANCE" then
-                row.tooltip = _G.STAT_AVOIDANCE or "Avoidance"
-                row.tooltip2 = _G.CR_AVOIDANCE_TOOLTIP_BASE or "Reduces damage taken from area effects."
+                tooltipTitle = _G.STAT_AVOIDANCE or "Avoidance"
+                tooltipBody = _G.CR_AVOIDANCE_TOOLTIP_BASE or "Reduces damage taken from area effects."
             elseif stat.statKey == "LIFESTEAL" then
-                row.tooltip = STAT_LIFESTEAL
-                row.tooltip2 = _G.STAT_LIFESTEAL_TOOLTIP or _G.CR_LIFESTEAL_TOOLTIP
+                tooltipTitle = STAT_LIFESTEAL
+                tooltipBody = _G.STAT_LIFESTEAL_TOOLTIP or _G.CR_LIFESTEAL_TOOLTIP
             elseif stat.statKey == "SPEED" then
-                row.tooltip = STAT_SPEED
-                row.tooltip2 = _G.STAT_SPEED_TOOLTIP or _G.CR_SPEED_TOOLTIP
+                tooltipTitle = STAT_SPEED
+                tooltipBody = _G.STAT_SPEED_TOOLTIP or _G.CR_SPEED_TOOLTIP
             end
 
-            if not secretsOff then
-                -- Set tooltips (Blizzard format)
+            statPolicy:ApplyTooltip(row, tooltipTitle, tooltipBody, nil, function()
                 if stat.statKey == "AVOIDANCE" then
                     local avoidanceValue = 0
                     if GetAvoidance then
@@ -3041,7 +2979,7 @@ local function UpdateStatsPanel(panel, unit)
                     row.tooltip = HIGHLIGHT_FONT_COLOR_CODE .. format(PAPERDOLLFRAME_TOOLTIP_FORMAT, STAT_SPEED) .. " " .. format("%.2F%%", speedValue) .. FONT_COLOR_CODE_CLOSE
                     row.tooltip2 = format(CR_SPEED_TOOLTIP, BreakUpLargeNumbers(SafeGetStat(GetCombatRating, CR_SPEED)), SafeGetStat(GetCombatRatingBonus, CR_SPEED))
                 end
-            end
+            end)
 
             y = y - ROW_HEIGHT
         end
@@ -3089,20 +3027,19 @@ local function UpdateStatsPanel(panel, unit)
             local vOk, v = pcall(stat.func)
             if vOk and v then row.value:SetFormattedText(fmtStr, v) end
 
-            -- Static lore tooltip (combat-safe)
+            local tooltipTitle, tooltipBody
             if stat.statKey == "ATTACK_POWER" then
-                row.tooltip = MELEE_ATTACK_POWER
-                row.tooltip2 = MELEE_ATTACK_POWER_TOOLTIP
+                tooltipTitle = MELEE_ATTACK_POWER
+                tooltipBody = MELEE_ATTACK_POWER_TOOLTIP
             elseif stat.statKey == "SPELLPOWER" then
-                row.tooltip = STAT_SPELLPOWER
-                row.tooltip2 = STAT_SPELLPOWER_TOOLTIP
+                tooltipTitle = STAT_SPELLPOWER
+                tooltipBody = STAT_SPELLPOWER_TOOLTIP
             elseif stat.statKey == "ATTACK_SPEED" then
-                row.tooltip = ATTACK_SPEED
-                row.tooltip2 = _G.STAT_ATTACK_SPEED_BASE_TOOLTIP
+                tooltipTitle = ATTACK_SPEED
+                tooltipBody = _G.STAT_ATTACK_SPEED_BASE_TOOLTIP
             end
 
-            if not secretsOff then
-                -- Set tooltips (Blizzard format)
+            statPolicy:ApplyTooltip(row, tooltipTitle, tooltipBody, nil, function()
                 if stat.statKey == "ATTACK_POWER" then
                     if PaperDollFormatStat then
                         local base, posBuff, negBuff = SafeGetStatValues(UnitAttackPower, unit)
@@ -3122,7 +3059,7 @@ local function UpdateStatsPanel(panel, unit)
                     local meleeHaste = SafeGetStat(GetMeleeHaste)
                     row.tooltip2 = format(STAT_ATTACK_SPEED_BASE_TOOLTIP, BreakUpLargeNumbers(meleeHaste))
                 end
-            end
+            end)
 
             y = y - ROW_HEIGHT
         end
@@ -3219,26 +3156,25 @@ local function UpdateStatsPanel(panel, unit)
                 end
             end
 
-            -- Static lore tooltip (combat-safe)
+            local tooltipTitle, tooltipBody
             if stat.statKey == "ARMOR" then
-                row.tooltip = ARMOR
-                row.tooltip2 = _G.STAT_ARMOR_TOOLTIP
+                tooltipTitle = ARMOR
+                tooltipBody = _G.STAT_ARMOR_TOOLTIP
             elseif stat.statKey == "DODGE" then
-                row.tooltip = DODGE_CHANCE
-                row.tooltip2 = _G.STAT_DODGE_TOOLTIP or _G.CR_DODGE_TOOLTIP
+                tooltipTitle = DODGE_CHANCE
+                tooltipBody = _G.STAT_DODGE_TOOLTIP or _G.CR_DODGE_TOOLTIP
             elseif stat.statKey == "PARRY" then
-                row.tooltip = PARRY_CHANCE
-                row.tooltip2 = _G.STAT_PARRY_TOOLTIP or _G.CR_PARRY_TOOLTIP
+                tooltipTitle = PARRY_CHANCE
+                tooltipBody = _G.STAT_PARRY_TOOLTIP or _G.CR_PARRY_TOOLTIP
             elseif stat.statKey == "BLOCK" then
-                row.tooltip = BLOCK_CHANCE
-                row.tooltip2 = _G.STAT_BLOCK_TOOLTIP or _G.CR_BLOCK_TOOLTIP
+                tooltipTitle = BLOCK_CHANCE
+                tooltipBody = _G.STAT_BLOCK_TOOLTIP or _G.CR_BLOCK_TOOLTIP
             elseif stat.statKey == "STAGGER" then
-                row.tooltip = _G.STAT_STAGGER or "Stagger"
-                row.tooltip2 = _G.STAT_STAGGER_TOOLTIP or "Percentage of incoming Physical damage delayed by Stagger."
+                tooltipTitle = _G.STAT_STAGGER or "Stagger"
+                tooltipBody = _G.STAT_STAGGER_TOOLTIP or "Percentage of incoming Physical damage delayed by Stagger."
             end
 
-            if not secretsOff then
-                -- Set tooltips (Blizzard format)
+            statPolicy:ApplyTooltip(row, tooltipTitle, tooltipBody, nil, function()
                 if stat.statKey == "ARMOR" then
                     row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, ARMOR).." "..BreakUpLargeNumbers(effectiveArmor)..FONT_COLOR_CODE_CLOSE
                     if PaperDollFrame_GetArmorReduction then
@@ -3278,7 +3214,7 @@ local function UpdateStatsPanel(panel, unit)
                     row.tooltip = HIGHLIGHT_FONT_COLOR_CODE .. format(PAPERDOLLFRAME_TOOLTIP_FORMAT, staggerLabel) .. " " .. format("%.2F%%", staggerPercent) .. FONT_COLOR_CODE_CLOSE
                     row.tooltip2 = _G.STAT_STAGGER_TOOLTIP or "Percentage of incoming Physical damage delayed by Stagger."
                 end
-            end
+            end)
 
             y = y - ROW_HEIGHT
         end

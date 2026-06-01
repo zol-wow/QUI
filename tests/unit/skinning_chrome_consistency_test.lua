@@ -51,6 +51,14 @@ assertContains(readFile("core/utils.lua"), "Helpers.CHROME", "core/utils.lua mus
 assertContains(readFile("core/uikit.lua"), "SkinBase.CHROME = Helpers.CHROME", "uikit.lua must alias SkinBase.CHROME")
 assertContains(readFile("core/uikit.lua"), "function SkinBase.GetDepthColor", "uikit.lua must define GetDepthColor")
 assertContains(readFile("core/uikit.lua"), "function SkinBase.SkinFrameText", "uikit.lua must define SkinFrameText")
+assertContains(readFile("core/uikit.lua"), "function SkinBase.GetChromePalette",
+    "uikit.lua must define the shared chrome color policy")
+assertContains(readFile("core/uikit.lua"), "function SkinBase.ApplyChromeBackdrop",
+    "uikit.lua must define the shared chrome backdrop policy")
+assertContains(readFile("core/uikit.lua"), "function SkinBase.SkinChromeCloseButton",
+    "uikit.lua must define the shared chrome close-button policy")
+assertContains(readFile("core/uikit.lua"), "function SkinBase.CreateSecretAwareStatPolicy",
+    "uikit.lua must define the shared secret-aware stat policy")
 
 -- 5) Every skinning module routes text through the sweep helper
 for _, f in ipairs({
@@ -97,6 +105,29 @@ do
         assert(src:find("SkinCategoryButton", 1, true), f .. " must use SkinBase.SkinCategoryButton (#2)")
         assertAbsent(src, "local function StyleCategoryButton", f .. " must retire its inline StyleCategoryButton (#2)")
     end
+end
+
+-- 9) (#9) Character/inspect pane chrome and stat policy consolidation.
+do
+    for _, f in ipairs({ "modules/skinning/character_pane/character.lua", "modules/skinning/character_pane/inspect.lua" }) do
+        local src = readFile(f)
+        assertContains(src, "ApplyChromeBackdrop", f .. " must route one-pixel chrome through the shared policy (#9)")
+        assertContains(src, "SetInsetPixelPoints(region, relativeTo, pixels)", f .. " must keep only a thin inset wrapper (#9)")
+        assertAbsent(src, "pixelInsetState", f .. " must not keep a local pixel-inset state clone (#9)")
+        assertAbsent(src, "local function RefreshInsetPixelPoints", f .. " must not keep a local inset refresh clone (#9)")
+        assertAbsent(src, "skinBase.ApplyPixelBackdrop(frame, skinBase.CHROME.BORDER_PX",
+            f .. " must not bypass the shared chrome policy (#9)")
+    end
+
+    local characterPane = readFile("modules/skinning/character_pane/character.lua")
+    assertContains(characterPane, "CreateSecretAwareStatPolicy",
+        "character pane must use the shared secret-aware stat policy (#9)")
+    assertContains(characterPane, "statPolicy:ApplyTooltip",
+        "character pane stat rows must route tooltip fallback/enrichment through policy (#9)")
+    assertAbsent(characterPane, "local function SafeGetStat",
+        "character pane must retire inline stat read helpers (#9)")
+    assertAbsent(characterPane, "if not secretsOff then",
+        "character pane must retire repeated rich-tooltip secret branches (#9)")
 end
 
 local _ = ALLOWLIST  -- referenced for documentation; loosen patterns only by adding entries above

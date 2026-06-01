@@ -26,14 +26,17 @@ local function assertAbsent(text, needle, reason)
 end
 
 local character = readFile("modules/skinning/character_pane/character.lua")
+local uikit = readFile("core/uikit.lua")
 local tooltips = readFile("modules/skinning/system/tooltips.lua")
 local statusTracking = readFile("modules/skinning/frames/statustracking.lua")
 
 -- (1) Character-pane frame chrome unified onto the standard skin colors
-assertContains(character, "Helpers.GetSkinBorderColor",
-    "character pane must source border/accent from Helpers.GetSkinBorderColor")
-assertContains(character, "Helpers.GetSkinBgColorWithOverride",
-    "character pane must source backgrounds from Helpers.GetSkinBgColorWithOverride")
+assertContains(character, "GetChromePalette",
+    "character pane must source border/accent/background through the shared chrome policy")
+assertContains(uikit, "Helpers.GetSkinBorderColor",
+    "shared chrome policy must source border/accent from Helpers.GetSkinBorderColor")
+assertContains(uikit, "Helpers.GetSkinBgColorWithOverride",
+    "shared chrome policy must source backgrounds from Helpers.GetSkinBgColorWithOverride")
 assertContains(character, "local function GetCharacterBgColor",
     "character pane must expose a GetCharacterBgColor helper")
 assertAbsent(character, "QUI:GetSkinColor(",

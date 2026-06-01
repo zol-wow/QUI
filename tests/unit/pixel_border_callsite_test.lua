@@ -72,7 +72,9 @@ local characterBorderFiles = {
 
 for _, path in ipairs(characterBorderFiles) do
     local src = readFile(path)
-    assert(src:find("RegisterScaleRefresh", 1, true),
+    assert(src:find("RegisterScaleRefresh", 1, true)
+        or src:find("ApplyChromeBackdrop", 1, true)
+        or src:find("SetExpandedPixelPoints", 1, true),
         path .. " must refresh pixel backdrops after scale changes")
     assert(not src:find("SetPoint%(\"TOPLEFT\"[^\n]*%-1,%s*1%)"),
         path .. " must not expand border frames with raw -1/1 UI-unit offsets")

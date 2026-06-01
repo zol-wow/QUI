@@ -7,7 +7,6 @@ local ADDON_NAME, ns = ...
 local QUI = ns.QUI or {}
 ns.QUI = QUI
 local QUICore = ns.Addon
-local UIKit = ns.UIKit
 
 local Helpers = ns.Helpers
 local GetCore = Helpers.GetCore
@@ -23,7 +22,6 @@ local inspectPaneInitialized = false
 local inspectOverlays = {}  -- Stores overlay frames for inspect slots
 local inspectLayoutApplied = false
 local currentInspectTab = 1  -- 1=Character, 2=PvP, 3=Guild
-local pixelInsetState = Helpers.CreateStateTable()
 
 ---------------------------------------------------------------------------
 -- COMBAT DEFERRAL — InspectFrame is a managed panel; SetWidth,
@@ -86,42 +84,24 @@ local inspectSessionGUID = nil
 local inspectSessionUnit = nil
 local RefreshCurrentInspectGUID
 
-local function GetPixelSize(frame)
-    local core = GetCore()
-    return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
-end
-
-local function RefreshInsetPixelPoints(region)
-    local state = pixelInsetState[region]
-    if not state or not state.relativeTo then return end
-    local inset = (state.pixels or 1) * GetPixelSize(region)
-    region:ClearAllPoints()
-    region:SetPoint("TOPLEFT", state.relativeTo, "TOPLEFT", inset, -inset)
-    region:SetPoint("BOTTOMRIGHT", state.relativeTo, "BOTTOMRIGHT", -inset, inset)
-end
-
 local function SetInsetPixelPoints(region, relativeTo, pixels)
-    if not region or not relativeTo then return end
-    local state = pixelInsetState[region]
-    if not state then
-        state = {}
-        pixelInsetState[region] = state
-    end
-    state.relativeTo = relativeTo
-    state.pixels = pixels or 1
-    RefreshInsetPixelPoints(region)
-    if UIKit and UIKit.RegisterScaleRefresh and not state.registered then
-        UIKit.RegisterScaleRefresh(region, "inspectPaneInsetPoints", RefreshInsetPixelPoints)
-        state.registered = true
+    local skinBase = GetSkinBase()
+    if skinBase and skinBase.SetInsetPixelPoints then
+        skinBase.SetInsetPixelPoints(region, relativeTo, pixels)
     end
 end
 
--- Border chrome delegates to the shared SkinBase primitive (one canonical
--- backdrop path). Kept as a local name so existing call sites are unchanged.
+-- Border chrome delegates to the shared SkinBase policy. Kept as a local name
+-- so existing call sites remain thin per-frame wiring.
 local function ApplyOnePixelBorder(frame, withBackground, borderColor, bgColor)
     local skinBase = GetSkinBase()
-    if skinBase and skinBase.ApplyPixelBackdrop then
-        skinBase.ApplyPixelBackdrop(frame, skinBase.CHROME.BORDER_PX, withBackground, withBackground, borderColor, bgColor)
+    if skinBase and skinBase.ApplyChromeBackdrop then
+        skinBase.ApplyChromeBackdrop(frame, {
+            withBackground = withBackground,
+            withInsets = withBackground,
+            borderColor = borderColor,
+            bgColor = bgColor,
+        })
     end
 end
 
