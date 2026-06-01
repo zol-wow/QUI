@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha80 - 2026-06-01
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha79 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **Closed another way tracked buffs and cooldowns could come up blank on a cold login.** Building on the earlier cold-login fix, QUI could still capture an empty snapshot of your tracked spells if it ran before the game's Cooldown Manager settings finished loading. Every snapshot path — including the first-login and spec-change paths — now waits for the same readiness signal and retries briefly instead of committing an empty list, so your tracked rows populate without needing a `/reload`.
+
 ## v3.6.0-alpha79 - 2026-06-01
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** This build migrates your saved border colors to a new per-module format (schema v40). The upgrade runs automatically on first login and your borders will look exactly as they did before; a one-time backup of the previous values is kept.
