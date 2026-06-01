@@ -84,6 +84,21 @@ assert(controller:RefreshType("missing", {}) == 0,
     "missing type refresh should be a no-op")
 
 calls = {}
+refreshed = controller:RefreshRuntimeType("essential", {
+    ncdm = { marker = "db" },
+    ncdmContainers = {},
+    editMode = false,
+    inCombat = true,
+})
+assert(refreshed == 2, "type runtime refresh should walk only the requested cooldown pool")
+assert(hasCall("resolve:essential:db"), "type runtime refresh should resolve container facts")
+assert(hasCall("cooldown:full-a"), "type runtime refresh should update cooldown state")
+assert(hasCall("visibility:full-a:false:true"),
+    "type runtime refresh should apply visibility after cooldown state")
+assert(controller:RefreshRuntimeType("missing", {}) == 0,
+    "missing runtime type refresh should be a no-op")
+
+calls = {}
 measured = {}
 ns.MemAuditProfilerMeasure = function(name, fn, ...)
     measured[#measured + 1] = name

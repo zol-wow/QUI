@@ -3802,6 +3802,60 @@ function CDMIconRefreshWalker.Create(callbacks)
         return refreshed
     end
 
+    function controller:RefreshRuntimeType(viewerType, context)
+        context = context or {}
+        local pool = getIconPools(callbacks)[viewerType]
+        if not pool then return 0 end
+
+        local refreshed = 0
+        local measure = ns.MemAuditProfilerMeasure
+        for _, icon in ipairs(pool) do
+            local entry = icon and icon._spellEntry
+            if entry then
+                local containerDB, containerType
+                if callbacks.resolveContainerDBAndType then
+                    if measure then
+                        containerDB, containerType = measure(
+                            "CDM_walkResolve",
+                            callbacks.resolveContainerDBAndType,
+                            entry,
+                            context.ncdm,
+                            context.ncdmContainers)
+                    else
+                        containerDB, containerType = callbacks.resolveContainerDBAndType(
+                            entry, context.ncdm, context.ncdmContainers)
+                    end
+                end
+                if not isAuraContainerType(containerType) then
+                    if callbacks.refreshCooldownOnlyIcon then
+                        if measure then
+                            measure("CDM_walkCooldownIcon", callbacks.refreshCooldownOnlyIcon, icon, entry, context)
+                        else
+                            callbacks.refreshCooldownOnlyIcon(icon, entry, context)
+                        end
+                    end
+                    if callbacks.updateIconVisibility then
+                        if measure then
+                            measure(
+                                "CDM_walkVisibility",
+                                callbacks.updateIconVisibility,
+                                icon,
+                                entry,
+                                containerDB,
+                                context.editMode,
+                                context.inCombat)
+                        else
+                            callbacks.updateIconVisibility(
+                                icon, entry, containerDB, context.editMode, context.inCombat)
+                        end
+                    end
+                    refreshed = refreshed + 1
+                end
+            end
+        end
+        return refreshed
+    end
+
     return controller
 end
 end
@@ -10258,6 +10312,42 @@ function CDMIcons:UpdateCooldownsForType(viewerType)
         SyncSpellRangeChecks()
         EndIconRefreshBatch()
     end
+end
+
+function CDMIcons:UpdateRuntimeForType(viewerType)
+    local pool = iconPools[viewerType]
+    if not pool then return end
+
+    local editMode, ncdm, ncdmContainers, inCombat = PrepareCooldownUpdateBatch()
+    SetRefreshBatchStackTextWrites(true)
+    BeginIconRefreshBatch("typeRuntime")
+
+    local context = {
+        editMode = editMode,
+        ncdm = ncdm,
+        ncdmContainers = ncdmContainers,
+        inCombat = inCombat,
+    }
+    local walker = GetIconRefreshWalker()
+    if walker and walker.RefreshRuntimeType then
+        walker:RefreshRuntimeType(viewerType, context)
+    else
+        for _, icon in ipairs(pool) do
+            local entry = icon._spellEntry
+            if entry then
+                local containerDB, cType = ResolveContainerDBAndType(entry, ncdm, ncdmContainers)
+                if cType ~= "aura" and cType ~= "auraBar" then
+                    UpdateCooldownOnlyIcon(icon, entry)
+                    UpdateCooldownContainerVisibility(icon, entry, containerDB, editMode, inCombat)
+                end
+            end
+        end
+    end
+
+    SetRefreshBatchStackTextWrites(false)
+    SyncSpellRangeChecks()
+    EndIconRefreshBatch()
+    DrainLayoutDirty()
 end
 
 function CDMIcons.OnContainerIconPlaced(icon, rowConfig)

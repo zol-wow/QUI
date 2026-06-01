@@ -159,6 +159,7 @@ local cdmIconsPublicSurface = {
         UpdateAllCooldowns = true,
         UpdateCooldownOnly = true,
         UpdateCooldownsForType = true,
+        UpdateRuntimeForType = true,
         OnContainerIconPlaced = true,
         OnIconRowConfigApplied = true,
         OnContainerIconInteractionRestored = true,
@@ -472,6 +473,61 @@ assertContains(
     cooldownOnlyBlock,
     "walker:RefreshCooldownOnly(context)",
     "cooldown-only broad walk should route through the private refresh walker"
+)
+assertContains(
+    iconRefreshWalker,
+    "function controller:RefreshRuntimeType(viewerType, context)",
+    "type-scoped runtime refresh should live in the private refresh walker"
+)
+
+local typeRuntimeBlock = extractBlock(
+    icons,
+    "function CDMIcons:UpdateRuntimeForType(viewerType)",
+    "function CDMIcons.OnContainerIconPlaced(icon, rowConfig)",
+    "type runtime update block"
+)
+assertContainsOrdered(
+    typeRuntimeBlock,
+    {
+        "SetRefreshBatchStackTextWrites(true)",
+        "walker:RefreshRuntimeType(viewerType, context)",
+        "SetRefreshBatchStackTextWrites(false)",
+        "DrainLayoutDirty()",
+    },
+    "type-scoped runtime refresh should update cooldown state plus visibility before dirty-layout drain"
+)
+
+local customPostLayoutBlock = extractBlock(
+    containers,
+    "local function RefreshCustomBarRuntimeAfterLayout(trackerKey, settings)",
+    "---------------------------------------------------------------------------\n-- CORE: Layout icons in a container",
+    "custom bar post-layout refresh helper"
+)
+assertContains(
+    customPostLayoutBlock,
+    'settings.containerType ~= "customBar"',
+    "post-layout runtime refresh should stay scoped to custom tracker bars"
+)
+assertContains(
+    customPostLayoutBlock,
+    "ns.CDMIcons:UpdateRuntimeForType(trackerKey)",
+    "custom tracker post-layout refresh should use the type-scoped runtime pass"
+)
+
+local layoutPostPlacementBlock = extractBlock(
+    containers,
+    "applying[trackerKey] = false",
+    "-- Trigger Utility anchor after Essential layout",
+    "layout post-placement block"
+)
+assertContainsOrdered(
+    layoutPostPlacementBlock,
+    {
+        "applying[trackerKey] = false",
+        "RefreshCustomBarRuntimeAfterLayout(trackerKey, settings)",
+        "-- Trigger Utility anchor after Essential layout",
+    },
+    "custom tracker layout should apply per-icon visibility before delayed post-layout work"
 )
 
 local updateAllBlock = extractBlock(

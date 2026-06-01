@@ -2101,6 +2101,7 @@ local viewerState = {} -- keyed by container frame
 local buffFingerprint = nil  -- fingerprint string for buff icon rebuild skipping
 local applying = {}    -- re-entry guard per tracker
 local refreshTimers = {} -- stored timer handles so overlapping RefreshAll calls cancel prior timers
+local postLayoutRuntimeRefreshing = {}
 local initialized = false
 local runtimeEventFrame = nil
 local RegisterContainerFrame
@@ -4100,6 +4101,16 @@ SyncAllContainerMouseStates = function(force)
     end
 end
 
+local function RefreshCustomBarRuntimeAfterLayout(trackerKey, settings)
+    if not trackerKey or not settings or settings.containerType ~= "customBar" then return end
+    if postLayoutRuntimeRefreshing[trackerKey] then return end
+    if not (ns.CDMIcons and ns.CDMIcons.UpdateRuntimeForType) then return end
+
+    postLayoutRuntimeRefreshing[trackerKey] = true
+    ns.CDMIcons:UpdateRuntimeForType(trackerKey)
+    postLayoutRuntimeRefreshing[trackerKey] = nil
+end
+
 ---------------------------------------------------------------------------
 -- CORE: Layout icons in a container
 -- Ported from cdm_viewer.lua:1069-1554 for addon-owned containers.
@@ -4431,6 +4442,7 @@ local function LayoutContainer(trackerKey)
     end
 
     applying[trackerKey] = false
+    RefreshCustomBarRuntimeAfterLayout(trackerKey, settings)
 
     -- Trigger Utility anchor after Essential layout
     if trackerKey == "essential" then
