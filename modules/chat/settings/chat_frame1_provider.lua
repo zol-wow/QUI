@@ -201,7 +201,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local sectionPresets = {
             general = {
                 "chatModule", "frameSize", "introMessage", "defaultTab",
-                "chatBackground", "inputBoxBackground", "messageFade",
+                "chatBackground", "inputBoxBackground", "chatBorder", "messageFade",
                 "urlDetection", "chatHyperlinks",
                 "channelColors",
                 "uiCleanup", "copyButton",
@@ -528,6 +528,19 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 inputPositionCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "positionTop", chat.editBox, Refresh, { description = "Move the input box above the chat tabs instead of below the chat frame." })
                 card.AddRow(row(card.frame, "Background Color", inputColorPicker), row(card.frame, "Position Input Box at Top", inputPositionCheckbox))
                 UpdateInputBackgroundStates()
+            end)
+        end
+
+        -- Chat Border Color
+        if ns.QUI_BorderControl then
+            if chat.chatBorderColorSource == nil then chat.chatBorderColorSource = "inherit" end
+            if chat.chatBorderColor == nil then chat.chatBorderColor = {0, 0, 0, 1} end
+            CreateChatSection("chatBorder", "Chat Border", 2 * FORM_ROW + 8, function(card)
+                local srcW, colW = ns.QUI_BorderControl.Attach(
+                    GUI, card.frame, chat, "chat", Refresh,
+                    { label = "Border Color Source", colorLabel = "Border Color" }
+                )
+                card.AddRow(row(card.frame, "Border Color Source", srcW), row(card.frame, "Border Color", colW))
             end)
         end
 

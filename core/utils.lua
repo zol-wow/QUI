@@ -927,19 +927,21 @@ end
 local function GetBorderKeys(prefix)
     if not prefix or prefix == "" then
         return {
-            override  = "borderOverride",
-            hide      = "hideBorder",
-            useClass  = "borderUseClassColor",
-            color     = "borderColor",
+            source = "borderColorSource",
+            color  = "borderColor",
+            hide   = "hideBorder",
         }
     end
     return {
-        override  = prefix .. "BorderOverride",
-        hide      = prefix .. "HideBorder",
-        useClass  = prefix .. "BorderUseClassColor",
-        color     = prefix .. "BorderColor",
+        source = prefix .. "BorderColorSource",
+        color  = prefix .. "BorderColor",
+        hide   = prefix .. "HideBorder",
     }
 end
+
+-- Expose for reuse by the options component and the migration, so key derivation
+-- lives in exactly one place.
+Helpers.GetBorderKeys = GetBorderKeys
 
 --- Get skin border color from dedicated border settings.
 --- Falls back to skin accent color so existing profiles keep current visuals.
@@ -981,22 +983,29 @@ function Helpers.GetSkinBorderColor(moduleSettings, prefix)
     if type(moduleSettings) == "table" then
         local keys = GetBorderKeys(type(prefix) == "string" and prefix or "")
 
-        if moduleSettings[keys.override] then
-            if moduleSettings[keys.useClass] then
-                r, g, b = Helpers.GetPlayerClassColor()
-                a = 1
-            elseif type(moduleSettings[keys.color]) == "table" then
-                local moduleColor = moduleSettings[keys.color]
-                r = moduleColor[1] or r
-                g = moduleColor[2] or g
-                b = moduleColor[3] or b
-                a = moduleColor[4] or a
-            end
-
-            if moduleSettings[keys.hide] then
-                a = 0
+        -- New enum, with a legacy fallback for un-migrated profiles.
+        local source = moduleSettings[keys.source]
+        if source == nil then
+            if moduleSettings.useClassColorBorder or moduleSettings.borderUseClassColor then
+                source = "class"
+            elseif moduleSettings.useAccentColorBorder then
+                source = "theme"
             end
         end
+
+        if source == "theme" then
+            r, g, b = Helpers.GetSkinAccentColor()
+            a = 1
+        elseif source == "class" then
+            r, g, b = Helpers.GetPlayerClassColor()
+            a = 1
+        elseif source == "custom" and type(moduleSettings[keys.color]) == "table" then
+            local mc = moduleSettings[keys.color]
+            r, g, b, a = mc[1] or r, mc[2] or g, mc[3] or b, mc[4] or a
+        end
+        -- "inherit"/nil -> keep the global (r,g,b,a) computed above.
+
+        if moduleSettings[keys.hide] then a = 0 end
     end
 
     return r, g, b, a

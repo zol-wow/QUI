@@ -593,6 +593,10 @@ local PROFILE_SKINNING_GENERAL_KEYS = {
     "skinBorderColorSource",
     "skinBorderColor",
     "hideSkinBorders",
+    "alertsBorderColorSource",
+    "alertsBorderColor",
+    "readyCheckBorderColorSource",
+    "readyCheckBorderColor",
 }
 
 local PROFILE_LAYOUT_PATHS = {

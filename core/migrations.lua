@@ -220,11 +220,26 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --        skinBorderColorSource / borderColorSource enum: "theme" | "class" |
 --        "custom". Auto-heals accent-snapshot freeze-bug colors back to "theme"
 --        via a preset-RGB fingerprint; preserves genuine custom colors.)
+-- v40 = MigrateBorderColoring
+--       (options-v2: registry-driven roll-out of the per-module border color
+--        SOURCE enum to the remaining in-scope modules. Iterates
+--        Helpers.BorderRegistry; for each module's DB table (or each instance
+--        of a `multi` module) it renames the legacy color key, folds crosshair
+--        borderR/G/B/A scalars into a color table, and derives the new
+--        {prefix}BorderColorSource from the module's old useClass / accent
+--        booleans — preserving the current look (class/theme), defaulting to
+--        "custom" otherwise. Existing profiles migrate ONCE to "custom"/"class"/
+--        "theme"; fresh installs are stamped at the current version on first
+--        save and never run this gate, so they keep the new "inherit" default.
+--        Per-table idempotent: a table that already carries the source key is
+--        skipped. The registry is empty until later tasks register modules, so
+--        on a current build this gate is a no-op stamp — its behavior is
+--        exercised by the unit test with synthetic registry entries.)
 --
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 39
+local CURRENT_SCHEMA_VERSION = 40
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -1308,6 +1323,118 @@ local function MigrateBorderColorSource(profile)
         tooltip.borderUseClassColor = nil
         tooltip.borderUseAccentColor = nil
     end
+end
+
+---------------------------------------------------------------------------
+-- v40: MigrateBorderColoring (registry-driven)
+--
+-- Rolls the per-module border color SOURCE enum out to the remaining
+-- in-scope modules. Each module is described by a Helpers.BorderRegistry
+-- entry carrying a `prefix`, a `db(profile)` accessor (or, for `multi`
+-- modules, an `instances(profile)` list), and a `legacy` descriptor:
+--   legacy = { table=<oldColorKey>, useClass=<oldBool>, accent=<oldBool>,
+--              scalars=<bool>, override=<oldBool> }
+--
+-- For each module DB table we (in order):
+--   1. Skip entirely if it already carries the source key (idempotent).
+--   2. Rename the legacy color key onto the canonical {prefix}BorderColor.
+--   3. Fold crosshair-style borderR/G/B/A scalars into {prefix}BorderColor.
+--   4. Derive {prefix}BorderColorSource preserving the current look:
+--        override declared AND off/absent -> "inherit" (NO pinned color);
+--        else useClass truthy -> "class"; else accent truthy -> "theme";
+--        else "custom" (keeping whatever literal color is present).
+--      The `override` arm is for modules whose OFF state historically meant
+--      "inherit the global skin border" (preyTracker/mplusTimer/readyCheck);
+--      those users must NOT be pinned to the frozen custom color.
+--   5. Delete the now-dead legacy boolean keys (including override).
+--
+-- Exposed as Helpers.MigrateBorderColoringTable (one table) and
+-- Helpers.MigrateBorderColoring (whole registry) so the gate and the unit
+-- test invoke the exact same conversion. Key derivation is shared with the
+-- options page and the resolver via Helpers.GetBorderKeys.
+---------------------------------------------------------------------------
+local function MigrateBorderColoringTable(db, entry)
+    if type(db) ~= "table" or type(entry) ~= "table" then return end
+
+    local Helpers = ns.Helpers
+    local prefix = entry.prefix or ""
+    local keys = (Helpers and Helpers.GetBorderKeys and Helpers.GetBorderKeys(prefix)) or {
+        source = (prefix == "" and "borderColorSource") or (prefix .. "BorderColorSource"),
+        color  = (prefix == "" and "borderColor") or (prefix .. "BorderColor"),
+    }
+    local sourceKey = keys.source
+    local colorKey = keys.color
+    local legacy = entry.legacy or {}
+
+    -- 1. Idempotent guard: a table that already has the source key is done.
+    if db[sourceKey] ~= nil then return end
+
+    -- 2. Rename legacy color key -> canonical color key (don't clobber).
+    if legacy.table and db[legacy.table] ~= nil and db[colorKey] == nil then
+        db[colorKey] = db[legacy.table]
+        db[legacy.table] = nil
+    end
+
+    -- 3. Crosshair scalar fold: borderR/G/B/A -> {prefix}BorderColor table.
+    if legacy.scalars and db[colorKey] == nil and db.borderR ~= nil then
+        db[colorKey] = { db.borderR, db.borderG, db.borderB, db.borderA }
+    end
+
+    -- 4. Derive source, preserving the current look.
+    --
+    -- Override-flag modules (preyTracker, mplusTimer, readyCheck) historically
+    -- had an OFF state meaning "inherit the global skin border" — their apply
+    -- called the no-arg global resolver when the override was off. When such an
+    -- entry declares `legacy.override`, a FALSY (false/nil/absent) override must
+    -- migrate to "inherit" — NOT a pinned custom color — or those users would
+    -- suddenly get the frozen (usually black) borderColor instead of the global
+    -- accent they actually see today. The useClass/accent/custom derivation only
+    -- applies when the override was explicitly ON.
+    if legacy.override and not db[legacy.override] then
+        db[sourceKey] = "inherit"
+    elseif legacy.useClass and db[legacy.useClass] then
+        db[sourceKey] = "class"
+    elseif legacy.accent and db[legacy.accent] then
+        db[sourceKey] = "theme"
+    else
+        db[sourceKey] = "custom"
+    end
+
+    -- 5. Delete dead legacy booleans.
+    if legacy.override then db[legacy.override] = nil end
+    if legacy.useClass then db[legacy.useClass] = nil end
+    if legacy.accent then db[legacy.accent] = nil end
+end
+
+local function MigrateBorderColoring(profile)
+    if type(profile) ~= "table" then return end
+    local Helpers = ns.Helpers
+    local registry = Helpers and Helpers.BorderRegistry
+    if not registry or type(registry.Each) ~= "function" then return end
+
+    registry.Each(function(entry)
+        if type(entry) ~= "table" then return end
+        if entry.multi then
+            local instances = type(entry.instances) == "function" and entry.instances(profile)
+            if type(instances) == "table" then
+                for _, db in ipairs(instances) do
+                    MigrateBorderColoringTable(db, entry)
+                end
+            end
+        else
+            local db = type(entry.db) == "function" and entry.db(profile)
+            if db ~= nil then
+                MigrateBorderColoringTable(db, entry)
+            end
+        end
+    end)
+end
+
+-- Expose the conversion so the gate, the options page, and the unit test all
+-- share one implementation. Guarded so a partially-loaded ns can't error.
+if ns.Helpers then
+    ns.Helpers.MigrateBorderColoringTable = MigrateBorderColoringTable
+    ns.Helpers.MigrateBorderColoring = MigrateBorderColoring
 end
 
 local DEFAULT_SKY_BLUE_ACCENT = { 0.376, 0.647, 0.980, 1 }
@@ -3995,6 +4122,13 @@ function Migrations.RunOnProfile(profile)
 
     -- v39: Replace the two-toggle border color model with an explicit enum.
     if stored < 39 then MigrateBorderColorSource(profile) end
+
+    -- v40: Roll the per-module border color SOURCE enum out to the remaining
+    -- in-scope modules via Helpers.BorderRegistry, preserving the current look
+    -- (class/theme) and defaulting to "custom" so existing profiles never flip
+    -- to the new "inherit" default. Fresh installs are stamped at the current
+    -- version and skip this gate. No-op until later tasks populate the registry.
+    if stored < 40 then MigrateBorderColoring(profile) end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame

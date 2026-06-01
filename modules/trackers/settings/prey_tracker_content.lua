@@ -204,17 +204,20 @@ function ns.QUI_PreyTrackerOptions.BuildPreyTrackerContent(content)
 
     local baBgColorW = GUI:CreateFormColorPicker(sBA.frame, nil, "barBackgroundColor", db, RefreshPreview, nil,
         { description = "Background color applied when the override above is enabled." })
-    local baBdOverrideW = GUI:CreateFormCheckbox(sBA.frame, nil, "borderOverride", db, RefreshPreview,
-        { description = "Use a custom color for the bar border instead of inheriting from the global skin." })
-    sBA.AddRow(
-        row(sBA.frame, "Background Color", baBgColorW),
-        row(sBA.frame, "Override Border Color", baBdOverrideW)
-    )
-
-    local baBdColorW = GUI:CreateFormColorPicker(sBA.frame, nil, "borderColor", db, RefreshPreview, nil,
-        { description = "Border color applied when the override above is enabled." })
-    sBA.AddRow(row(sBA.frame, "Border Color", baBdColorW))
+    sBA.AddRow(row(sBA.frame, "Background Color", baBgColorW))
     L.closeSection(sBA)
+
+    ---------------------------------------------------------------------------
+    -- BORDER
+    ---------------------------------------------------------------------------
+    L.headerAt("Border")
+    local sBD = L.sectionAt()
+    if ns.QUI_BorderControl then
+        local srcW, colW = ns.QUI_BorderControl.Attach(GUI, sBD.frame, db, "", RefreshPreview,
+            { label = "Border Color Source", colorLabel = "Border Color" })
+        sBD.AddRow(row(sBD.frame, "Border Color Source", srcW), row(sBD.frame, "Border Color", colW))
+    end
+    L.closeSection(sBD)
 
     ---------------------------------------------------------------------------
     -- TEXT & DISPLAY

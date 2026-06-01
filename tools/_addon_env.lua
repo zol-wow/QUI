@@ -17,6 +17,11 @@
   Path-independent: resolves bundled libs relative to its own location.
 ]]
 
+-- This headless harness intentionally sets WoW global stubs (string/table
+-- helpers, CreateFrame, Unit* etc.) so bundled libs and addon files load
+-- outside the client. Declare them so luacheck doesn't flag the assignments.
+-- luacheck: globals strmatch strfind strsub strlower strupper strrep strtrim strjoin tinsert tremove tconcat wipe geterrorhandler CreateFrame GetRealmName UnitName UnitClass UnitRace UnitFactionGroup GetLocale GetCurrentRegion
+
 local M = {}
 
 local function ScriptDir()
@@ -147,9 +152,10 @@ local function LoadCore()
 
     -- Load order matches modules.xml: utils first, then defaults, then
     -- migration / compat / io machinery.
-    LoadAddonFile("core/utils.lua",         "QUI", SHARED_NS)
-    LoadAddonFile("core/defaults.lua",      "QUI", SHARED_NS)
-    LoadAddonFile("core/migrations.lua",    "QUI", SHARED_NS)
+    LoadAddonFile("core/utils.lua",          "QUI", SHARED_NS)
+    LoadAddonFile("core/border_registry.lua", "QUI", SHARED_NS)
+    LoadAddonFile("core/defaults.lua",       "QUI", SHARED_NS)
+    LoadAddonFile("core/migrations.lua",     "QUI", SHARED_NS)
     LoadAddonFile("core/compatibility.lua", "QUI", SHARED_NS)
     LoadAddonFile("core/profile_io.lua",    "QUI", SHARED_NS)
 

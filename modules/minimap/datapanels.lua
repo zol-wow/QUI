@@ -54,7 +54,8 @@ function Datapanels:CreatePanel(panelID, config)
 
     -- Borders
     local borderSize = config.borderSize or 2
-    local borderColor = config.borderColor or {0, 0, 0, 1}
+    local bR, bG, bB, bA = ns.Helpers.GetSkinBorderColor(config, "")
+    local borderColor = { bR, bG, bB, bA }
     panel.borderLeft = panel:CreateTexture(nil, "BORDER")
     panel.borderRight = panel:CreateTexture(nil, "BORDER")
     panel.borderTop = panel:CreateTexture(nil, "BORDER")
@@ -276,7 +277,8 @@ function Datapanels:UpdatePanel(panelID)
 
     -- Update borders
     local borderSize = panel.config.borderSize or 2
-    local borderColor = panel.config.borderColor or {0, 0, 0, 1}
+    local bR, bG, bB, bA = ns.Helpers.GetSkinBorderColor(panel.config, "")
+    local borderColor = { bR, bG, bB, bA }
     panel.borderLeft:SetWidth(borderSize)
     panel.borderRight:SetWidth(borderSize)
     panel.borderTop:SetHeight(borderSize)
@@ -408,6 +410,59 @@ if ns.Registry then
         priority = 40,
         group = "data",
         importCategories = { "minimapDatatexts" },
+    })
+end
+
+---=================================================================================
+--- BORDER COLORING REGISTRY (multi-instance)
+---
+--- One entry owns every datatext border surface: the global minimap datatext
+--- panel (profile.datatext) plus each user-created custom datapanel
+--- (profile.quiDatatexts.panels[*]). Custom panels are created dynamically, so
+--- instances() enumerates whatever panel tables exist in the live profile at
+--- call time. Each returned table holds a borderColor + borderColorSource and is
+--- mutated in place by the bulk-apply control and the v40 migration. The global
+--- panel repaints via QUI_RefreshMinimap; custom panels via QUI_RefreshDatapanels.
+---=================================================================================
+local function CollectDatatextSurfaces(profile)
+    local out = {}
+    if type(profile) ~= "table" then return out end
+
+    -- Global minimap datatext panel.
+    if type(profile.datatext) == "table" and profile.datatext.borderColor ~= nil then
+        out[#out + 1] = profile.datatext
+    end
+
+    -- User-created custom datapanels (array; created at runtime).
+    local store = profile.quiDatatexts
+    if type(store) == "table" and type(store.panels) == "table" then
+        for _, panelDB in ipairs(store.panels) do
+            if type(panelDB) == "table" and panelDB.borderColor ~= nil then
+                out[#out + 1] = panelDB
+            end
+        end
+    end
+
+    return out
+end
+
+if ns.Helpers and ns.Helpers.BorderRegistry then
+    ns.Helpers.BorderRegistry.Register({
+        key      = "datatext",
+        label    = "Datatext",
+        category = "HUD",
+        prefix   = "",
+        multi    = true,
+        instances = CollectDatatextSurfaces,
+        db       = function(p)
+            local insts = CollectDatatextSurfaces(p)
+            return insts and insts[1]
+        end,
+        refresh  = function()
+            if _G.QUI_RefreshMinimap then _G.QUI_RefreshMinimap() end
+            if _G.QUI_RefreshDatapanels then _G.QUI_RefreshDatapanels() end
+        end,
+        legacy   = {},
     })
 end
 

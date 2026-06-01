@@ -578,19 +578,8 @@ local function UpdateBackdrop()
     local fullSize = settings.size + (settings.borderSize * 2)
     backdrop:SetSize(fullSize, fullSize)
 
-    -- Apply border color
-    local r, g, b, a = unpack(settings.borderColor)
-    if settings.useClassColorBorder then
-        local color = GetClassColor()
-        if color then
-            r, g, b = color.r, color.g, color.b
-        end
-    elseif settings.useAccentColorBorder then
-        local QUI = _G.QUI
-        if QUI and QUI.GetAddonAccentColor then
-            r, g, b, a = QUI:GetAddonAccentColor()
-        end
-    end
+    -- Apply border color via the centralized resolver (honors per-module source enum)
+    local r, g, b, a = Helpers.GetSkinBorderColor(settings, "")
     backdrop:SetColorTexture(r, g, b, a)
 
     -- Update mask based on shape
@@ -748,7 +737,8 @@ local function UpdateDatatextPanel()
     local minimapScale = minimapSettings.scale or 1.0
     local minimapBorderSize = minimapSettings.borderSize or 3
     local dtBorderSize = dtSettings.borderSize or 2
-    local dtBorderColor = dtSettings.borderColor or {0, 0, 0, 1}  -- (#90)
+    local dtBr, dtBg, dtBb, dtBa = Helpers.GetSkinBorderColor(dtSettings, "")
+    local dtBorderColor = { dtBr, dtBg, dtBb, dtBa }  -- (#90) resolved via border source enum
     local dtHeight = dtSettings.height or 22
     local yOffset = dtSettings.offsetY or 0
     local bgAlpha = (dtSettings.bgOpacity or 60) / 100
@@ -2830,9 +2820,7 @@ local function StyleDrawerFrame()
     local bgR, bgG, bgB, bgA = 0.03, 0.03, 0.03, 0.98
 
     if Helpers and Helpers.GetSkinBorderColor then
-        borderR, borderG, borderB, borderA = Helpers.GetSkinBorderColor()
-    elseif _G.QUI and _G.QUI.GetAddonAccentColor then
-        borderR, borderG, borderB, borderA = _G.QUI:GetAddonAccentColor()
+        borderR, borderG, borderB, borderA = Helpers.GetSkinBorderColor(drawerSettings, "")
     end
     borderA = borderA or 1
 
@@ -2840,13 +2828,6 @@ local function StyleDrawerFrame()
         bgR, bgG, bgB, bgA = Helpers.GetSkinBgColor()
     end
 
-    if drawerSettings and type(drawerSettings.borderColor) == "table" then
-        local c = drawerSettings.borderColor
-        borderR = c[1] or borderR
-        borderG = c[2] or borderG
-        borderB = c[3] or borderB
-        borderA = c[4] or borderA
-    end
     if drawerSettings and type(drawerSettings.bgColor) == "table" then
         local c = drawerSettings.bgColor
         bgR = c[1] or bgR
@@ -4204,6 +4185,21 @@ _G.QUI_GetDrawerButtonNames = function()
     end
     table.sort(names)
     return names
+end
+
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "minimap", label = "Minimap", category = "HUD", prefix = "",
+        db = function(p) return p.minimap end,
+        refresh = function() if _G.QUI_RefreshMinimap then _G.QUI_RefreshMinimap() end end,
+        legacy = { useClass = "useClassColorBorder", accent = "useAccentColorBorder" },
+    })
+    Helpers.BorderRegistry.Register({
+        key = "buttonDrawer", label = "Minimap Button Drawer", category = "HUD", prefix = "",
+        db = function(p) return p.minimap and p.minimap.buttonDrawer end,
+        refresh = function() if _G.QUI_RefreshMinimap then _G.QUI_RefreshMinimap() end end,
+        legacy = {},
+    })
 end
 
 if ns.Registry then

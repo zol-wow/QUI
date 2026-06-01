@@ -720,12 +720,18 @@ local function AppendTrackerRowSection(builder, gui, optionsAPI, rowNum, rowData
     local borderSizeSlider = gui:CreateFormSlider(card.frame, nil, 0, 5, 1, "borderSize", rowData, refresh, nil, {
         description = "Border thickness in pixels around each icon in this row. Set to 0 to hide.",
     })
-    local borderColorPicker = gui:CreateFormColorPicker(card.frame, nil, "borderColorTable", rowData, refresh, nil, {
-        description = "Border color applied to every icon in this row.",
-    })
+    -- Per-row border color via the central source enum (inherit/theme/class/custom).
+    -- Binds rowData.borderColorSource / rowData.borderColor (prefix "").
+    local borderSourceWidget, borderColorWidget = ns.QUI_BorderControl.Attach(
+        gui, card.frame, rowData, "", refresh,
+        { label = "Border Color Source", colorLabel = "Border Color" }
+    )
     card.AddRow(
         optionsAPI.BuildSettingRow(card.frame, "Border Size", borderSizeSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Border Color", borderColorPicker)
+        optionsAPI.BuildSettingRow(card.frame, "Border Color Source", borderSourceWidget)
+    )
+    card.AddRow(
+        optionsAPI.BuildSettingRow(card.frame, "Border Color", borderColorWidget)
     )
 
     local iconZoomSlider = gui:CreateFormSlider(card.frame, nil, 0, 0.2, 0.01, "zoom", rowData, refresh, nil, {

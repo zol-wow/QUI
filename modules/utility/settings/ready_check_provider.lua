@@ -88,15 +88,6 @@ do
             if not general then return 80 end
 
             if general.skinReadyCheck == nil then general.skinReadyCheck = true end
-            Helpers.EnsureDefaults(general, {
-                readyCheckBorderOverride = false,
-                readyCheckHideBorder = false,
-                readyCheckBorderUseClassColor = false,
-            })
-            if general.readyCheckBorderColor == nil then
-                local fallback = general.skinBorderColor or general.addonAccentColor or { 0.376, 0.647, 0.980, 1 }
-                general.readyCheckBorderColor = { fallback[1], fallback[2], fallback[3], fallback[4] or 1 }
-            end
 
             local L = MakeLayout(content)
 
@@ -118,44 +109,9 @@ do
             -- Border
             L.headerAt("Border")
             local sBd = L.sectionAt()
-            local colorPicker, hideCheck, classCheck
-
-            local function UpdateBorderState()
-                local enabled = general.readyCheckBorderOverride
-                if hideCheck and hideCheck.SetEnabled then hideCheck:SetEnabled(enabled) end
-                if classCheck and classCheck.SetEnabled then classCheck:SetEnabled(enabled) end
-                if colorPicker and colorPicker.SetEnabled then
-                    colorPicker:SetEnabled(enabled and not general.readyCheckBorderUseClassColor)
-                end
-            end
-
-            local overrideCheck = GUI:CreateFormCheckbox(sBd.frame, nil, "readyCheckBorderOverride", general, function()
-                UpdateBorderState()
-                RefreshColors()
-            end, { description = "Use ready-check-specific border settings instead of the shared skinning border. Enables the controls below." })
-
-            hideCheck = GUI:CreateFormCheckbox(sBd.frame, nil, "readyCheckHideBorder", general, RefreshColors,
-                { description = "Hide the border around the ready-check frame entirely." })
-
-            sBd.AddRow(
-                row(sBd.frame, "Override Global Border", overrideCheck),
-                row(sBd.frame, "Hide Border", hideCheck)
-            )
-
-            classCheck = GUI:CreateFormCheckbox(sBd.frame, nil, "readyCheckBorderUseClassColor", general, function()
-                UpdateBorderState()
-                RefreshColors()
-            end, { description = "Tint the ready-check border with your class color instead of the custom Border Color below." })
-
-            colorPicker = GUI:CreateFormColorPicker(sBd.frame, nil, "readyCheckBorderColor", general, RefreshColors, { noAlpha = true },
-                { description = "Custom border color applied when Override Global Border is on and Use Class Color is off." })
-
-            sBd.AddRow(
-                row(sBd.frame, "Use Class Color", classCheck),
-                row(sBd.frame, "Border Color", colorPicker)
-            )
-
-            UpdateBorderState()
+            local rcSrcW, rcColW = ns.QUI_BorderControl.Attach(GUI, sBd.frame, general, "readyCheck", RefreshColors,
+                { label = "Border Color Source", colorLabel = "Border Color", noAlpha = true })
+            sBd.AddRow(row(sBd.frame, "Border Color Source", rcSrcW), row(sBd.frame, "Border Color", rcColW))
             L.closeSection(sBd)
 
             -- Layout-mode chrome (V3-styled collapsibles)

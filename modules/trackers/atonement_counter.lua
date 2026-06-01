@@ -373,20 +373,6 @@ local function GetTextColor(settings, count)
     return settings.zeroCountColor or DEFAULTS.zeroCountColor
 end
 
-local function GetBorderColor(settings)
-    if settings.useClassColorBorder then
-        return GetClassColor()
-    end
-    if settings.useAccentColorBorder then
-        local addon = _G.QUI
-        if addon and addon.GetAddonAccentColor then
-            local r, g, b, a = addon:GetAddonAccentColor()
-            return { r, g, b, a }
-        end
-    end
-    return settings.borderColor or DEFAULTS.borderColor
-end
-
 local function ApplyAppearance()
     CreateCounterFrame()
 
@@ -415,15 +401,16 @@ local function ApplyAppearance()
     local borderTexture = settings.borderTexture or DEFAULTS.borderTexture
     local hideBorder = settings.hideBorder
     local useLSMBorder = borderTexture ~= "None" and borderSize > 0 and not hideBorder
-    local borderColor = GetBorderColor(settings)
+    local bR, bG, bB, bA = Helpers.GetSkinBorderColor(settings, "")
     local showBackdrop = settings.showBackdrop
     if showBackdrop == nil then showBackdrop = true end
 
     local SSB = QUICore and QUICore.SafeSetBackdrop
     if showBackdrop or useLSMBorder then
+        local borderColorTable = useLSMBorder and { bR, bG, bB, bA } or nil
         local backdropInfo = UIKit.GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize, frame)
         if SSB then
-            SSB(frame, backdropInfo, useLSMBorder and borderColor or nil)
+            SSB(frame, backdropInfo, borderColorTable)
         else
             frame:SetBackdrop(backdropInfo)
         end
@@ -438,7 +425,7 @@ local function ApplyAppearance()
         end
 
         if useLSMBorder and not SSB then
-            frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
+            frame:SetBackdropBorderColor(bR, bG, bB, bA)
         end
     else
         if SSB then
@@ -449,7 +436,7 @@ local function ApplyAppearance()
     end
 
     UIKit.CreateBorderLines(frame)
-    UIKit.UpdateBorderLines(frame, borderSize, borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1, useLSMBorder or hideBorder)
+    UIKit.UpdateBorderLines(frame, borderSize, bR, bG, bB, bA, useLSMBorder or hideBorder)
 end
 
 local function ShouldShowCounter(settings)
@@ -580,6 +567,15 @@ if ns.Registry then
         priority = 40,
         group = "trackers",
         importCategories = { "trackersTimers" },
+    })
+end
+
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "atonement", label = "Atonement Counter", category = "Trackers", prefix = "",
+        db = function(p) return p.atonementCounter end,
+        refresh = function() if _G.QUI_RefreshAtonementCounter then _G.QUI_RefreshAtonementCounter() end end,
+        legacy = { useClass = "useClassColorBorder", accent = "useAccentColorBorder" },
     })
 end
 

@@ -64,16 +64,9 @@ end
 -- Colors & Border
 ---------------------------------------------------------------------------
 
-local function GetPlayerClassColor()
-    local _, classToken = UnitClass("player")
-    local c = Helpers.GetClassColorTable(classToken)
-    if c then return c.r, c.g, c.b, 1 end
-    return 0.376, 0.647, 0.980, 1
-end
-
 local function GetEffectiveColors()
     local settings = GetSettings()
-    local sr, sg, sb, sa = Helpers.GetSkinBorderColor()
+    local sr, sg, sb, sa = Helpers.GetSkinBorderColor(settings, "")
     local bgr, bgg, bgb, bga = Helpers.GetSkinBgColor()
 
     if settings then
@@ -83,26 +76,6 @@ local function GetEffectiveColors()
             bgb = settings.bgColor[3] or bgb
         end
         if settings.bgOpacity then bga = settings.bgOpacity end
-
-        -- Source enum: "theme" (accent), "class", or "custom". Legacy read maps
-        -- the old class/accent toggles; accent == theme in QUI.
-        local borderSource = settings.borderColorSource
-            or (settings.borderUseClassColor and "class")
-            or (settings.borderUseAccentColor and "theme")
-            or "theme"
-        if borderSource == "class" then
-            sr, sg, sb, sa = GetPlayerClassColor()
-        elseif borderSource == "theme" then
-            local QUI = _G.QUI
-            if QUI and QUI.GetAddonAccentColor then
-                sr, sg, sb, sa = QUI:GetAddonAccentColor()
-            end
-        elseif borderSource == "custom" and settings.borderColor then
-            sr = settings.borderColor[1] or sr
-            sg = settings.borderColor[2] or sg
-            sb = settings.borderColor[3] or sb
-            sa = settings.borderColor[4] or sa
-        end
 
         if settings.showBorder == false then
             sr, sg, sb, sa = 0, 0, 0, 0
@@ -1812,5 +1785,18 @@ if ns.Registry then
         priority = 80,
         group = "skinning",
         importCategories = { "skinning", "theme" },
+    })
+end
+
+local Helpers = ns.Helpers
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key      = "tooltip",
+        label    = "Tooltip",
+        category = "Skinning",
+        prefix   = "",
+        db       = function(p) return p.tooltip end,
+        refresh  = function() if ns.QUI_RefreshTooltipSkinColors then ns.QUI_RefreshTooltipSkinColors() end end,
+        legacy   = {},
     })
 end

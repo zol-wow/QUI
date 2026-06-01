@@ -482,7 +482,7 @@ function MPlusTimer:CreateFrames()
     self.frames.sleekBar = sleekBarContainer
     do
         local sr, sg, sb, sa = 0, 0, 0, 1
-        if Helpers and Helpers.GetSkinBorderColor then sr, sg, sb, sa = Helpers.GetSkinBorderColor() end
+        if Helpers and Helpers.GetSkinBorderColor then sr, sg, sb, sa = Helpers.GetSkinBorderColor(GetSettings(), "") end
         local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.9
         if Helpers and Helpers.GetSkinBgColor then bgr, bgg, bgb, bga = Helpers.GetSkinBgColor() end
         if SkinBase and SkinBase.CreateBackdrop then
@@ -552,7 +552,7 @@ function MPlusTimer:CreateProgressBar(parent, barType)
     bar.frame = frame
     do
         local sr, sg, sb, sa = 0, 0, 0, 1
-        if Helpers and Helpers.GetSkinBorderColor then sr, sg, sb, sa = Helpers.GetSkinBorderColor() end
+        if Helpers and Helpers.GetSkinBorderColor then sr, sg, sb, sa = Helpers.GetSkinBorderColor(GetSettings(), "") end
         local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.9
         if Helpers and Helpers.GetSkinBgColor then bgr, bgg, bgb, bga = Helpers.GetSkinBgColor() end
         if SkinBase and SkinBase.CreateBackdrop then

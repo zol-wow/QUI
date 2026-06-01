@@ -95,8 +95,8 @@ assert(coreSrc2:find("function WindowManager:DespawnAll", 1, true),
 -- function exists, is wired into the linear gate chain, and the schema version
 -- was bumped.
 local migSrc = readAll("core/migrations.lua")
-assert(migSrc:find("CURRENT_SCHEMA_VERSION = 39", 1, true),
-    "CURRENT_SCHEMA_VERSION must be bumped to 39")
+assert(migSrc:find("CURRENT_SCHEMA_VERSION = 40", 1, true),
+    "CURRENT_SCHEMA_VERSION must be bumped to 40")
 assert(migSrc:find("local function DropDamageMeterMaxVisibleRows", 1, true),
     "v38 migration function DropDamageMeterMaxVisibleRows must be defined")
 assert(migSrc:find("if stored < 38 then DropDamageMeterMaxVisibleRows", 1, true),

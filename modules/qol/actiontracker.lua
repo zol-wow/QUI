@@ -19,7 +19,7 @@ local DEFAULT_SETTINGS = {
     iconSize = 28,
     iconSpacing = 4,
     iconHideBorder = false,
-    iconBorderUseClassColor = false,
+    iconBorderColorSource = "inherit",
     iconBorderColor = {0, 0, 0, 0.85},
     orientation = "VERTICAL", -- VERTICAL | HORIZONTAL
     invertScrollDirection = false,
@@ -29,6 +29,7 @@ local DEFAULT_SETTINGS = {
     showBackdrop = true,
     hideBorder = false,
     borderSize = 1,
+    borderColorSource = "inherit",
     backdropColor = {0, 0, 0, 0.6},
     borderColor = {0, 0, 0, 1},
 }
@@ -160,7 +161,6 @@ local function GetSettings()
     settings.iconSize = math.floor(Clamp(settings.iconSize, 16, 64))
     settings.iconSpacing = math.floor(Clamp(settings.iconSpacing, 0, 24))
     settings.iconHideBorder = settings.iconHideBorder == true
-    settings.iconBorderUseClassColor = settings.iconBorderUseClassColor == true
     settings.iconBorderColor = CopyColor(settings.iconBorderColor, DEFAULT_SETTINGS.iconBorderColor)
     settings.inactivityFadeEnabled = settings.inactivityFadeEnabled == true
     settings.inactivityFadeSeconds = math.floor(Clamp(settings.inactivityFadeSeconds, 10, 60))
@@ -451,17 +451,6 @@ local function SetIconTarget(icon, x, y, alpha, removeWhenDone)
     icon.removeWhenDone = removeWhenDone == true
 end
 
-local function GetIconBorderColor(settings)
-    if settings.iconBorderUseClassColor and Helpers and Helpers.GetPlayerClassColor then
-        local r, g, b = Helpers.GetPlayerClassColor()
-        if r and g and b then
-            return r, g, b, settings.iconBorderColor[4] or 0.85
-        end
-    end
-    local c = settings.iconBorderColor or DEFAULT_SETTINGS.iconBorderColor
-    return c[1], c[2], c[3], c[4]
-end
-
 local function StyleIconForEntry(icon, entry, settings)
     icon.tex:SetTexture(entry.icon or FALLBACK_ICON)
     icon.tex:SetDesaturated(entry.failed == true)
@@ -470,7 +459,7 @@ local function StyleIconForEntry(icon, entry, settings)
         icon.border:Hide()
     else
         icon.border:Show()
-        local br, bg, bb, ba = GetIconBorderColor(settings)
+        local br, bg, bb, ba = Helpers.GetSkinBorderColor(settings, "icon")
         icon.border:SetColorTexture(br or 0, bg or 0, bb or 0, ba or 0.85)
     end
 
@@ -788,13 +777,11 @@ local function RefreshAppearance()
 
     if UIKit and UIKit.CreateBorderLines and UIKit.UpdateBorderLines then
         UIKit.CreateBorderLines(state.frame)
+        local bR, bG, bB, bA = Helpers.GetSkinBorderColor(settings, "")
         UIKit.UpdateBorderLines(
             state.frame,
             settings.borderSize or 1,
-            settings.borderColor[1],
-            settings.borderColor[2],
-            settings.borderColor[3],
-            settings.borderColor[4],
+            bR, bG, bB, bA,
             settings.hideBorder == true or (settings.borderSize or 1) <= 0
         )
     end
@@ -1230,6 +1217,20 @@ end)
 _G.QUI_RefreshActionTracker = RefreshActionTracker
 _G.QUI_ToggleActionTrackerPreview = TogglePreview
 _G.QUI_IsActionTrackerPreviewMode = IsPreviewMode
+
+if Helpers and Helpers.BorderRegistry then
+    local function dbAccessor(p) return p.general and p.general.actionTracker end
+    local function refreshFn() if _G.QUI_RefreshActionTracker then _G.QUI_RefreshActionTracker() end end
+    Helpers.BorderRegistry.Register({
+        key = "actionTracker", label = "Action Tracker", category = "Trackers", prefix = "",
+        db = dbAccessor, refresh = refreshFn, legacy = {},
+    })
+    Helpers.BorderRegistry.Register({
+        key = "actionTrackerIcon", label = "Action Tracker Icons", category = "Trackers", prefix = "icon",
+        db = dbAccessor, refresh = refreshFn,
+        legacy = { useClass = "iconBorderUseClassColor" },
+    })
+end
 
 ns.QUI_ActionTracker = {
     Refresh = RefreshActionTracker,

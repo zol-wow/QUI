@@ -486,7 +486,7 @@ RefreshIconFrame = function()
     local SafeSetBackdrop = core and core.SafeSetBackdrop
 
     if db.showBorder then
-        local borderColor = db.borderColor or { 0, 0, 0, 1 }
+        local bR, bG, bB, bA = QUI.Helpers.GetSkinBorderColor(db, "")
         local thickness = db.borderThickness or 2
         inset = thickness
 
@@ -505,10 +505,10 @@ RefreshIconFrame = function()
             end
         else
             if SafeSetBackdrop then
-                SafeSetBackdrop(iconFrame, backdropInfo, borderColor)
+                SafeSetBackdrop(iconFrame, backdropInfo, { bR, bG, bB, bA })
             else
                 iconFrame:SetBackdrop(backdropInfo)
-                iconFrame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
+                iconFrame:SetBackdropBorderColor(bR, bG, bB, bA)
             end
         end
         local _rbgR, _rbgG, _rbgB = 0, 0, 0
@@ -690,5 +690,14 @@ if QUI.Registry then
         priority = 40,
         group = "combat",
         importCategories = { "cdm" },
+    })
+end
+
+if QUI.Helpers and QUI.Helpers.BorderRegistry then
+    QUI.Helpers.BorderRegistry.Register({
+        key = "rotationAssist", label = "Rotation Assist Icon", category = "Trackers", prefix = "",
+        db = function(p) return p.rotationAssistIcon end,
+        refresh = function() if _G.QUI_RefreshRotationAssistIcon then _G.QUI_RefreshRotationAssistIcon() end end,
+        legacy = {},
     })
 end

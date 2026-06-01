@@ -897,8 +897,19 @@ end
 local function ApplyPreviewIconTextConfig(rowInfo, primary, secondary, defaults)
     defaults = defaults or {}
 
-    rowInfo.borderColorTable = ReadPreviewConfigValue(primary, secondary, "borderColorTable", defaults.borderColorTable or {0, 0, 0, 1})
-    rowInfo.borderColor = rowInfo.borderColorTable
+    -- Resolve the per-row icon border via the central source enum so the
+    -- preview matches the live renderer (inherit/theme/class/custom).
+    local borderSrcTable = (type(primary) == "table" and primary) or secondary
+    local pbr, pbg, pbb, pba
+    if Helpers and type(Helpers.GetSkinBorderColor) == "function" then
+        pbr, pbg, pbb, pba = Helpers.GetSkinBorderColor(borderSrcTable, "")
+    else
+        local fallback = ReadPreviewConfigValue(primary, secondary, "borderColor",
+            ReadPreviewConfigValue(primary, secondary, "borderColorTable", defaults.borderColor or defaults.borderColorTable or {0, 0, 0, 1}))
+        pbr, pbg, pbb, pba = fallback[1], fallback[2], fallback[3], fallback[4]
+    end
+    rowInfo.borderColor = { pbr, pbg, pbb, pba }
+    rowInfo.borderColorTable = rowInfo.borderColor
     rowInfo.aspectRatioCrop = rowInfo.aspectRatioCrop or ReadPreviewConfigValue(primary, secondary, "aspectRatioCrop", defaults.aspectRatioCrop or 1.0)
     rowInfo.zoom = ReadPreviewConfigValue(primary, secondary, "zoom", defaults.zoom or 0)
     rowInfo.durationFont = ReadPreviewConfigValue(primary, secondary, "durationFont", nil)

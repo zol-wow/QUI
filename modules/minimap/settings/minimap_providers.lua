@@ -140,15 +140,11 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local s2 = L.sectionAt()
         local borderSizeW = GUI:CreateFormSlider(s2.frame, nil, 1, 16, 1, "borderSize", mm, Refresh,
             { description = "Thickness of the border drawn around the minimap." })
-        local borderColorW = GUI:CreateFormColorPicker(s2.frame, nil, "borderColor", mm, Refresh, nil,
-            { description = "Color of the minimap border. Ignored if Class Color or Accent Color is enabled below." })
-        s2.AddRow(row(s2.frame, "Border Size", borderSizeW), row(s2.frame, "Border Color", borderColorW))
+        s2.AddRow(row(s2.frame, "Border Size", borderSizeW))
 
-        local classColorW = GUI:CreateFormCheckbox(s2.frame, nil, "useClassColorBorder", mm, Refresh,
-            { description = "Color the border by your class instead of the Border Color swatch above." })
-        local accentColorW = GUI:CreateFormCheckbox(s2.frame, nil, "useAccentColorBorder", mm, Refresh,
-            { description = "Color the border using the UI accent color instead of the Border Color swatch above." })
-        s2.AddRow(row(s2.frame, "Class Color Border", classColorW), row(s2.frame, "Accent Color Border", accentColorW))
+        local srcW, colorW = ns.QUI_BorderControl.Attach(GUI, s2.frame, mm, "", Refresh,
+            { label = "Border Color Source", colorLabel = "Border Color" })
+        s2.AddRow(row(s2.frame, "Border Color Source", srcW), row(s2.frame, "Border Color", colorW))
         L.closeSection(s2)
 
         -- HIDE ELEMENTS
@@ -392,9 +388,11 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         local daBorderSizeW = GUI:CreateFormSlider(s8.frame, nil, 0, 8, 1, "borderSize", drawer, Refresh,
             { description = "Thickness of the drawer border. Set to 0 to hide the border." })
-        local daBorderColorW = GUI:CreateFormColorPicker(s8.frame, nil, "borderColor", drawer, Refresh,
-            { noAlpha = true, description = "Color of the drawer border." })
-        s8.AddRow(row(s8.frame, "Border Size (0=hidden)", daBorderSizeW), row(s8.frame, "Border Color", daBorderColorW))
+        s8.AddRow(row(s8.frame, "Border Size (0=hidden)", daBorderSizeW))
+
+        local daBdSrcW, daBdColW = ns.QUI_BorderControl.Attach(GUI, s8.frame, drawer, "", Refresh,
+            { label = "Border Color Source", colorLabel = "Border Color", noAlpha = true })
+        s8.AddRow(row(s8.frame, "Border Color Source", daBdSrcW), row(s8.frame, "Border Color", daBdColW))
         L.closeSection(s8)
 
         -- HIDDEN BUTTONS IN DRAWER
@@ -478,6 +476,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         if not panelDB.numSlots then panelDB.numSlots = 3 end
         if not panelDB.bgOpacity then panelDB.bgOpacity = 50 end
         if panelDB.borderSize == nil then panelDB.borderSize = 2 end
+        if panelDB.borderColorSource == nil then panelDB.borderColorSource = "inherit" end
         if not panelDB.borderColor then panelDB.borderColor = { 0, 0, 0, 1 } end
         if not panelDB.fontSize then panelDB.fontSize = 12 end
         if not panelDB.position then panelDB.position = { "CENTER", "CENTER", 0, 300 } end
@@ -1220,9 +1219,11 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
             local borSizeW = GUI:CreateFormSlider(ps.frame, nil, 0, 8, 1, "borderSize", dtGlobal, RefreshAllDatatextSurfaces,
                 { description = "Thickness of the minimap datatext border. Set to 0 to hide it." })
-            local borColorW = GUI:CreateFormColorPicker(ps.frame, nil, "borderColor", dtGlobal, RefreshAllDatatextSurfaces, nil,
-                { description = "Color of the minimap datatext border." })
-            ps.AddRow(row(ps.frame, "Border Size (0=hidden)", borSizeW), row(ps.frame, "Border Color", borColorW))
+            local borSrcW, borColorW = ns.QUI_BorderControl.Attach(GUI, ps.frame, dtGlobal, "", RefreshAllDatatextSurfaces,
+                { label = "Border Color Source", colorLabel = "Border Color",
+                  colorDescription = "Color of the minimap datatext border." })
+            ps.AddRow(row(ps.frame, "Border Size (0=hidden)", borSizeW), row(ps.frame, "Border Color Source", borSrcW))
+            ps.AddRow(row(ps.frame, "Border Color", borColorW))
 
             local offYW = GUI:CreateFormSlider(ps.frame, nil, -40, 40, 1, "offsetY", dtGlobal, RefreshAllDatatextSurfaces,
                 { description = "Vertical offset from the minimap. Positive moves up, negative moves down." })
@@ -1297,11 +1298,13 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 { description = "Border thickness in pixels. Set to 0 to hide the border entirely." })
             ps.AddRow(row(ps.frame, "Background Opacity", bgW), row(ps.frame, "Border Size (0=hidden)", borSizeW))
 
-            local borColorW = GUI:CreateFormColorPicker(ps.frame, nil, "borderColor", selected.panelDB, RefreshAllDatatextSurfaces, nil,
-                { description = "Color used for the panel border." })
+            local borSrcW, borColorW = ns.QUI_BorderControl.Attach(GUI, ps.frame, selected.panelDB, "", RefreshAllDatatextSurfaces,
+                { label = "Border Color Source", colorLabel = "Border Color",
+                  colorDescription = "Color used for the panel border." })
             local fontSizeW = GUI:CreateFormSlider(ps.frame, nil, 8, 18, 1, "fontSize", selected.panelDB, RefreshAllDatatextSurfaces,
                 { description = "Font size for every datatext slot on this panel." })
-            ps.AddRow(row(ps.frame, "Border Color", borColorW), row(ps.frame, "Font Size", fontSizeW))
+            ps.AddRow(row(ps.frame, "Border Color Source", borSrcW), row(ps.frame, "Font Size", fontSizeW))
+            ps.AddRow(row(ps.frame, "Border Color", borColorW))
             L.closeSection(ps)
 
             for s = 1, selected.numSlots do

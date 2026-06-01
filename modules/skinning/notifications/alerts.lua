@@ -1390,6 +1390,19 @@ if ns.Registry then
     })
 end
 
+local Helpers = ns.Helpers
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key      = "alerts",
+        label    = "Skin Alerts",
+        category = "Skinning",
+        prefix   = "alerts",
+        db       = function(p) return p.general end,
+        refresh  = function() if _G.QUI_RefreshAlertColors then _G.QUI_RefreshAlertColors() end end,
+        legacy   = {},
+    })
+end
+
 ---------------------------------------------------------------------------
 -- MAIN INITIALIZATION
 ---------------------------------------------------------------------------

@@ -308,7 +308,7 @@ local function EnsurePortraitSettings(unitDB, unitKey)
     if unitDB.portraitGap == nil then unitDB.portraitGap = 0 end
     if unitDB.portraitOffsetX == nil then unitDB.portraitOffsetX = 0 end
     if unitDB.portraitOffsetY == nil then unitDB.portraitOffsetY = 0 end
-    if unitDB.portraitBorderUseClassColor == nil then unitDB.portraitBorderUseClassColor = false end
+    if unitDB.portraitBorderColorSource == nil then unitDB.portraitBorderColorSource = "inherit" end
     if unitDB.portraitBorderColor == nil then unitDB.portraitBorderColor = { 0, 0, 0, 1 } end
 end
 
@@ -1622,6 +1622,7 @@ local CASTBAR_COPY_KEYS = {
     "iconAnchor", "iconSpacing", "spellTextAnchor", "spellTextOffsetX", "spellTextOffsetY",
     "timeTextAnchor", "timeTextOffsetX", "timeTextOffsetY", "showSpellText", "showTimeText",
     "useClassColor", "channelFillForward",
+    "borderColorSource", "iconBorderColorSource",
 }
 
 local CASTBAR_UNIT_COPY_LABELS = {
@@ -1645,6 +1646,10 @@ local function EnsureCastbarSettings(unitDB, unitKey)
     if castDB.widthAdjustment == nil then castDB.widthAdjustment = 0 end
     castDB.borderSize = castDB.borderSize or 1
     castDB.iconBorderSize = castDB.iconBorderSize or 2
+    if castDB.borderColorSource == nil then castDB.borderColorSource = "inherit" end
+    if castDB.borderColor == nil then castDB.borderColor = { 0, 0, 0, 1 } end
+    if castDB.iconBorderColorSource == nil then castDB.iconBorderColorSource = "inherit" end
+    if castDB.iconBorderColor == nil then castDB.iconBorderColor = { 0, 0, 0, 1 } end
     castDB.texture = castDB.texture or "Solid"
     if castDB.useClassColor == nil then castDB.useClassColor = false end
     if castDB.color == nil then
@@ -1718,7 +1723,7 @@ local function CopyCastbarSettings(sourceDB, targetDB, sourceUnitKey, targetUnit
             targetDB.channelTickColor = { sourceDB.channelTickColor[1], sourceDB.channelTickColor[2], sourceDB.channelTickColor[3], sourceDB.channelTickColor[4] }
         end
     end
-    for _, colorKey in ipairs({ "color", "bgColor", "gcdColor", "notInterruptibleColor" }) do
+    for _, colorKey in ipairs({ "color", "bgColor", "gcdColor", "notInterruptibleColor", "borderColor", "iconBorderColor" }) do
         local c = sourceDB[colorKey]
         if c then targetDB[colorKey] = { c[1], c[2], c[3], c[4] } end
     end
@@ -1832,6 +1837,37 @@ local function RenderCastbarSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(generalCard.frame, "Bar Texture", textureDropdown),
         optionsAPI.BuildSettingRow(generalCard.frame, "Border Size", borderSlider)
     )
+
+    if ns.QUI_BorderControl then
+        local barBorderSourceW, barBorderColorW = ns.QUI_BorderControl.Attach(
+            gui, generalCard.frame, castDB, "", refresh,
+            {
+                label             = "Border Color Source",
+                colorLabel        = "Border Color",
+                sourceDescription = "Where the castbar outline gets its color: Inherit (global skin border), Theme accent, Class color, or a Custom color.",
+                colorDescription  = "Custom castbar outline color, used when Border Color Source is set to Custom.",
+            }
+        )
+        generalCard.AddRow(
+            optionsAPI.BuildSettingRow(generalCard.frame, "Border Color Source", barBorderSourceW),
+            optionsAPI.BuildSettingRow(generalCard.frame, "Border Color", barBorderColorW)
+        )
+
+        local iconBorderSourceW, iconBorderColorW = ns.QUI_BorderControl.Attach(
+            gui, generalCard.frame, castDB, "icon", refresh,
+            {
+                label             = "Icon Border Color Source",
+                colorLabel        = "Icon Border Color",
+                sourceDescription = "Where the cast icon border gets its color: Inherit (global skin border), Theme accent, Class color, or a Custom color.",
+                colorDescription  = "Custom cast icon border color, used when Icon Border Color Source is set to Custom.",
+            }
+        )
+        generalCard.AddRow(
+            optionsAPI.BuildSettingRow(generalCard.frame, "Icon Border Color Source", iconBorderSourceW),
+            optionsAPI.BuildSettingRow(generalCard.frame, "Icon Border Color", iconBorderColorW)
+        )
+    end
+
     builder.CloseCard(generalCard)
 
     -- GCD (player) ------------------------------------------------------
@@ -2952,7 +2988,6 @@ local function RenderPortraitSettingsSection(sectionHost, ctx)
 
     builder.Header("Portrait")
     local card = builder.Card()
-    local borderColorCell
 
     local showCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showPortrait", unit.unitDB, RefreshUnitFrames, {
         description = "Show a 3D unit portrait next to this frame. Side, size, gap, and border style are set below.",
@@ -2990,25 +3025,25 @@ local function RenderPortraitSettingsSection(sectionHost, ctx)
     local offsetYSlider = gui:CreateFormSlider(card.frame, nil, -500, 500, 1, "portraitOffsetY", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Extra vertical pixel offset applied to the portrait.",
     })
-    local classColorCheckbox = gui:CreateFormCheckbox(card.frame, nil, "portraitBorderUseClassColor", unit.unitDB, function()
-        RefreshUnitFrames()
-        if borderColorCell then
-            borderColorCell:SetAlpha(unit.unitDB.portraitBorderUseClassColor and 0.4 or 1.0)
-        end
-    end, {
-        description = "Color the portrait border by the unit's class color instead of the Custom Border Color below.",
-    })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Portrait Offset Y", offsetYSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Use Class Color for Border", classColorCheckbox)
+        optionsAPI.BuildSettingRow(card.frame, "Portrait Offset Y", offsetYSlider)
     )
 
-    local borderColorPicker = gui:CreateFormColorPicker(card.frame, nil, "portraitBorderColor", unit.unitDB, RefreshUnitFrames, nil, {
-        description = "Fallback color for the portrait border when Use Class Color for Border is off.",
-    })
-    borderColorCell = optionsAPI.BuildSettingRow(card.frame, "Border Color", borderColorPicker)
-    borderColorCell:SetAlpha(unit.unitDB.portraitBorderUseClassColor and 0.4 or 1.0)
-    card.AddRow(borderColorCell)
+    if ns.QUI_BorderControl then
+        local borderSourceW, borderColorW = ns.QUI_BorderControl.Attach(
+            gui, card.frame, unit.unitDB, "portrait", RefreshUnitFrames,
+            {
+                label             = "Border Color Source",
+                colorLabel        = "Border Color",
+                sourceDescription = "Where the portrait ring gets its color: Inherit (global skin border), Theme accent, Class color, or a Custom color.",
+                colorDescription  = "Custom portrait ring color, used when Border Color Source is set to Custom.",
+            }
+        )
+        card.AddRow(
+            optionsAPI.BuildSettingRow(card.frame, "Border Color Source", borderSourceW),
+            optionsAPI.BuildSettingRow(card.frame, "Border Color", borderColorW)
+        )
+    end
 
     builder.CloseCard(card)
     return builder.Height()

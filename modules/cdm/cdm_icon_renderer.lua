@@ -7701,9 +7701,12 @@ local function ConfigureIcon(icon, rowConfig)
     local borderSize = rowConfig.borderSize or 0
     if borderSize > 0 then
         local bs = (QUICore and QUICore.Pixels) and QUICore:Pixels(borderSize, icon) or borderSize
-        local bc = rowConfig.borderColorTable or {0, 0, 0, 1}
+        -- Resolve the per-row icon border via the central source enum
+        -- (inherit/theme/class/custom). rowConfig carries borderColorSource +
+        -- borderColor forwarded from the live per-row settings.
+        local br, bg, bb, ba = Helpers.GetSkinBorderColor(rowConfig, "")
 
-        icon.Border:SetColorTexture(bc[1], bc[2], bc[3], bc[4])
+        icon.Border:SetColorTexture(br, bg, bb, ba)
         icon.Border:ClearAllPoints()
         icon.Border:SetPoint("TOPLEFT", icon, "TOPLEFT", -bs, bs)
         icon.Border:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", bs, -bs)

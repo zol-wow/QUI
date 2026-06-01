@@ -363,6 +363,19 @@ local function GetSafeColor(color, fallback)
     return fallback[1], fallback[2], fallback[3], fallback[4] or 1
 end
 
+-- Border-color resolver: routes the castbar bar border (prefix "") and icon
+-- border (prefix "icon") through the central GetSkinBorderColor enum so they can
+-- inherit the global skin border, the theme accent, the class color, or a custom
+-- per-unit color. Falls back to the stored literal color when the resolver is
+-- unavailable (e.g. a partial load), preserving the prior visuals.
+local function GetBorderColor(castSettings, prefix)
+    if nsHelpers and nsHelpers.GetSkinBorderColor then
+        return nsHelpers.GetSkinBorderColor(castSettings, prefix)
+    end
+    local key = (prefix == "icon") and "iconBorderColor" or "borderColor"
+    return GetSafeColor(castSettings[key], {0, 0, 0, 1})
+end
+
 ---------------------------------------------------------------------------
 -- UI ELEMENT CREATION
 ---------------------------------------------------------------------------
@@ -641,7 +654,7 @@ local function UpdateIconPosition(anchorFrame, castSettings, iconSize, iconScale
 
     local baseIconSize = iconSize * iconScale
     local iconBorderOffset = QUICore:Pixels(iconBorderSize or 1, iconFrame)
-    local r, g, b, a = GetSafeColor(castSettings.iconBorderColor, {0, 0, 0, 1})
+    local r, g, b, a = GetBorderColor(castSettings, "icon")
     if UIKit and UIKit.UpdateIconLayout then
         UIKit.UpdateIconLayout(iconFrame, CoordinateSizeToPhysicalPixels(baseIconSize, iconFrame), iconBorderSize, r, g, b, a)
     else
@@ -707,7 +720,7 @@ local function UpdateStatusBarPosition(anchorFrame, castSettings, barHeight, ico
         statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", -borderSize, borderSize)
     end
 
-    local r, g, b, a = GetSafeColor(castSettings.borderColor, {0, 0, 0, 1})
+    local r, g, b, a = GetBorderColor(castSettings, "")
     if UIKit and UIKit.CreateBackdropBorder then
         border = UIKit.CreateBackdropBorder(statusBar, castSettings.borderSize or 1, r, g, b, a)
         statusBar.Border = border
@@ -1949,11 +1962,11 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
         anchorFrame:SetFrameLevel(frameLevel)
     end
 
-    local ir, ig, ib, ia = GetSafeColor(castSettings.iconBorderColor, {0, 0, 0, 1})
+    local ir, ig, ib, ia = GetBorderColor(castSettings, "icon")
     UIKit.CreateIcon(anchorFrame, CoordinateSizeToPhysicalPixels(iconSize, anchorFrame), castSettings.iconBorderSize or 1, ir, ig, ib, ia)
     local statusBar = CreateStatusBar(anchorFrame)
 
-    local br, bg_, bb, ba = GetSafeColor(castSettings.borderColor, {0, 0, 0, 1})
+    local br, bg_, bb, ba = GetBorderColor(castSettings, "")
     UIKit.CreateBackdropBorder(statusBar, castSettings.borderSize or 1, br, bg_, bb, ba)
     statusBar.Border:SetFrameLevel(statusBar:GetFrameLevel() - 1)
 
@@ -2983,12 +2996,12 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     QUICore:SetSnappedPoint(anchorFrame, "TOP", unitFrame, "BOTTOM", castSettings.offsetX or 0, castSettings.offsetY or -25)
 
     -- Create UI elements (icon with integrated border) - parented to anchorFrame
-    local ir, ig, ib, ia = GetSafeColor(castSettings.iconBorderColor, {0, 0, 0, 1})
+    local ir, ig, ib, ia = GetBorderColor(castSettings, "icon")
     UIKit.CreateIcon(anchorFrame, CoordinateSizeToPhysicalPixels(iconSize, anchorFrame), castSettings.iconBorderSize or 1, ir, ig, ib, ia)
     local statusBar = CreateStatusBar(anchorFrame)
 
     -- Create border for status bar (parented to statusBar)
-    local br, bg_, bb, ba = GetSafeColor(castSettings.borderColor, {0, 0, 0, 1})
+    local br, bg_, bb, ba = GetBorderColor(castSettings, "")
     UIKit.CreateBackdropBorder(statusBar, castSettings.borderSize or 1, br, bg_, bb, ba)
     statusBar.Border:SetFrameLevel(statusBar:GetFrameLevel() - 1)
 

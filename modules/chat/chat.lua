@@ -1120,3 +1120,15 @@ if ns.Registry then
         importCategories = { "chat" },
     })
 end
+
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key      = "chat",
+        label    = "Chat",
+        category = "Skinning",
+        prefix   = "chat",
+        db       = function(p) return p.chat end,
+        refresh  = function() if _G.QUI_RefreshChat then _G.QUI_RefreshChat() end end,
+        legacy   = {},
+    })
+end

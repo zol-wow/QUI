@@ -311,3 +311,13 @@ if ns.Registry then
         importCategories = { "skinning", "theme" },
     })
 end
+
+local Helpers = ns.Helpers
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "mplusTimer", label = "M+ Timer", category = "HUD", prefix = "",
+        db = function(p) return p.mplusTimer end,
+        refresh = function() if _G.QUI_RefreshMPlusTimerColors then _G.QUI_RefreshMPlusTimerColors() end end,
+        legacy = { override = "borderOverride", useClass = "borderUseClassColor" },
+    })
+end

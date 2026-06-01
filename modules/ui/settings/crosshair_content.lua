@@ -275,18 +275,15 @@ local function BuildCrosshairTab(tabContent)
             Shared.RefreshCrosshair()
         end, nil, { description = "Base color of the crosshair lines. Overridden by range tints when range checking is enabled and applicable." })
 
-        if not ch.borderColorTable then
-            ch.borderColorTable = { ch.borderR or 0, ch.borderG or 0, ch.borderB or 0, ch.borderA or 1 }
-        end
-        local apBorderW = GUI:CreateFormColorPicker(sAp.frame, nil, "borderColorTable", ch, function()
-            ch.borderR, ch.borderG, ch.borderB, ch.borderA = ch.borderColorTable[1], ch.borderColorTable[2], ch.borderColorTable[3], ch.borderColorTable[4]
-            Shared.RefreshCrosshair()
-        end, nil, { description = "Color of the outline drawn around the crosshair lines, used to make the crosshair readable against any background." })
+        local apBorderSrcW, apBorderColW = ns.QUI_BorderControl.Attach(GUI, sAp.frame, ch, "", Shared.RefreshCrosshair,
+            { label = "Outline Color Source", colorLabel = "Outline Color",
+              colorDescription = "Color of the outline drawn around the crosshair lines, used to make the crosshair readable against any background." })
 
         sAp.AddRow(
             row(sAp.frame, "Crosshair Color", apLineW),
-            row(sAp.frame, "Outline Color", apBorderW)
+            row(sAp.frame, "Outline Color Source", apBorderSrcW)
         )
+        sAp.AddRow(row(sAp.frame, "Outline Color", apBorderColW))
 
         local apLenW = GUI:CreateFormSlider(sAp.frame, nil, 5, 50, 1, "size", ch, Shared.RefreshCrosshair,
             { description = "Length of each crosshair arm in pixels." })

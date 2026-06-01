@@ -258,10 +258,7 @@ local function UpdateCrosshair()
     local borderSize = settings.borderSize or 2
     local offsetX = settings.offsetX or 0
     local offsetY = settings.offsetY or 0
-    local borderR = settings.borderR or 0
-    local borderG = settings.borderG or 0
-    local borderB = settings.borderB or 0
-    local borderA = settings.borderA or 1
+    local borderR, borderG, borderB, borderA = Helpers.GetSkinBorderColor(settings, "")
     local strata = settings.strata or "HIGH"
     local onlyInCombat = settings.onlyInCombat
 
@@ -413,4 +410,13 @@ QUI.Crosshair = {
     Update = UpdateCrosshair,
     Create = CreateCrosshair,
 }
+
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "crosshair", label = "Crosshair", category = "HUD", prefix = "",
+        db = function(p) return p.crosshair end,
+        refresh = function() if _G.QUI_RefreshCrosshair then _G.QUI_RefreshCrosshair() end end,
+        legacy = { table = "borderColorTable", scalars = true },
+    })
+end
 

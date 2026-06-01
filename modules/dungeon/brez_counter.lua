@@ -396,29 +396,18 @@ local function UpdateAppearance()
     local borderTexture = settings.borderTexture or "None"
     local useLSMBorder = borderTexture ~= "None" and borderSize > 0
 
-    local borderColor
-    if settings.useClassColorBorder then
-        borderColor = GetClassColor()
-    elseif settings.useAccentColorBorder then
-        local QUI = _G.QUI
-        if QUI and QUI.GetAddonAccentColor then
-            local ar, ag, ab, aa = QUI:GetAddonAccentColor()
-            borderColor = { ar, ag, ab, aa }
-        else
-            borderColor = settings.borderColor or { 0, 0, 0, 1 }
-        end
-    else
-        borderColor = settings.borderColor or { 0, 0, 0, 1 }
-    end
+    -- Get border color via centralized resolver (honors per-module source enum)
+    local bR, bG, bB, bA = Helpers.GetSkinBorderColor(settings, "")
 
     local hideBorder = settings.hideBorder
     local effectiveUseLSMBorder = useLSMBorder and not hideBorder
 
     local SSB = QUICore and QUICore.SafeSetBackdrop
     if showBackdrop or effectiveUseLSMBorder then
+        local borderColorTable = effectiveUseLSMBorder and { bR, bG, bB, bA } or nil
         local backdropInfo = UIKit.GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize, frame)
         if SSB then
-            SSB(frame, backdropInfo, effectiveUseLSMBorder and borderColor or nil)
+            SSB(frame, backdropInfo, borderColorTable)
         else
             frame:SetBackdrop(backdropInfo)
         end
@@ -431,7 +420,7 @@ local function UpdateAppearance()
         end
 
         if effectiveUseLSMBorder and not SSB then
-            frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
+            frame:SetBackdropBorderColor(bR, bG, bB, bA)
         end
     else
         if SSB then
@@ -443,7 +432,7 @@ local function UpdateAppearance()
 
     -- Update manual border lines
     UIKit.CreateBorderLines(frame)
-    UIKit.UpdateBorderLines(frame, borderSize, borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1, useLSMBorder or hideBorder)
+    UIKit.UpdateBorderLines(frame, borderSize, bR, bG, bB, bA, useLSMBorder or hideBorder)
 
     -- Lock/unlock state
     local locked = settings.locked ~= false
@@ -685,5 +674,14 @@ if ns.Registry then
         priority = 40,
         group = "trackers",
         importCategories = { "trackersTimers" },
+    })
+end
+
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "brezCounter", label = "Brez Counter", category = "Trackers", prefix = "",
+        db = function(p) return p.brzCounter end,
+        refresh = function() if _G.QUI_RefreshBrezCounter then _G.QUI_RefreshBrezCounter() end end,
+        legacy = { useClass = "useClassColorBorder", accent = "useAccentColorBorder" },
     })
 end

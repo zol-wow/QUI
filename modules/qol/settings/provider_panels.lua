@@ -67,9 +67,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             y = y - height - SECTION_GAP
         end
 
-        -- Tail relayout for legacy V2 collapsibles (Position, OpenFullSettings,
-        -- BuildBackdropBorderSection). They get laid out starting from the
-        -- bottom of the V3 cards above, not from -8.
+        -- Tail relayout for legacy V2 collapsibles (Position, OpenFullSettings).
+        -- They get laid out starting from the bottom of the V3 cards above, not from -8.
         local function relayoutSections()
             local cy = y
             for _, s in ipairs(sections) do
@@ -152,10 +151,16 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         local backdropColorW = GUI:CreateFormColorPicker(s2.frame, nil, "backdropColor", xp, Refresh, nil,
             { description = "Background color behind the XP bar." })
-        local borderColorW = GUI:CreateFormColorPicker(s2.frame, nil, "borderColor", xp, Refresh, nil,
-            { description = "Border color around the XP bar frame." })
-        s2.AddRow(row(s2.frame, "Backdrop Color", backdropColorW), row(s2.frame, "Border Color", borderColorW))
+        s2.AddRow(row(s2.frame, "Backdrop Color", backdropColorW))
         L.closeSection(s2)
+
+        -- BORDER
+        L.headerAt("Border")
+        local s2b = L.sectionAt()
+        local srcW, colW = ns.QUI_BorderControl.Attach(GUI, s2b.frame, xp, "", Refresh,
+            { label = "Border Color Source", colorLabel = "Border Color" })
+        s2b.AddRow(row(s2b.frame, "Border Color Source", srcW), row(s2b.frame, "Border Color", colW))
+        L.closeSection(s2b)
 
         -- DISPLAY
         L.headerAt("Display")
@@ -221,8 +226,29 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
         L.closeSection(s2)
 
-        -- Backdrop & Border (V2 collapsible, appears below V3 cards via L.relayoutSections)
-        U.BuildBackdropBorderSection(content, ct, L.sections, L.relayoutSections, Refresh)
+        -- BACKDROP
+        L.headerAt("Backdrop")
+        local s3 = L.sectionAt()
+        local showBdW = GUI:CreateFormCheckbox(s3.frame, nil, "showBackdrop", ct, Refresh,
+            { description = "Draw a semi-transparent backdrop behind the combat timer so it stands out against busy scenes." })
+        local bdColorW = GUI:CreateFormColorPicker(s3.frame, nil, "backdropColor", ct, Refresh, nil,
+            { description = "Color and opacity of the backdrop when Show Backdrop is on." })
+        s3.AddRow(row(s3.frame, "Show Backdrop", showBdW), row(s3.frame, "Backdrop Color", bdColorW))
+        L.closeSection(s3)
+
+        -- BORDER
+        L.headerAt("Border")
+        local s4 = L.sectionAt()
+        local hideBorderW = GUI:CreateFormCheckbox(s4.frame, nil, "hideBorder", ct, Refresh,
+            { description = "Hide the border outline entirely." })
+        local borderSizeW2 = GUI:CreateFormSlider(s4.frame, nil, 1, 5, 0.5, "borderSize", ct, Refresh,
+            { description = "Border thickness in pixels. Ignored while Hide Border is on." })
+        s4.AddRow(row(s4.frame, "Hide Border", hideBorderW), row(s4.frame, "Border Size", borderSizeW2))
+
+        local srcW, colW = ns.QUI_BorderControl.Attach(GUI, s4.frame, ct, "", Refresh,
+            { label = "Border Color Source", colorLabel = "Border Color" })
+        s4.AddRow(row(s4.frame, "Border Color Source", srcW), row(s4.frame, "Border Color", colW))
+        L.closeSection(s4)
 
         return FinishProviderPage(L, content, key, "combatTimer")
     end })
@@ -284,7 +310,29 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
         L.closeSection(s2)
 
-        U.BuildBackdropBorderSection(content, bz, L.sections, L.relayoutSections, Refresh)
+        -- BACKDROP
+        L.headerAt("Backdrop")
+        local s3 = L.sectionAt()
+        local showBdW = GUI:CreateFormCheckbox(s3.frame, nil, "showBackdrop", bz, Refresh,
+            { description = "Draw a semi-transparent backdrop behind the brez counter so it stands out against busy scenes." })
+        local bdColorW = GUI:CreateFormColorPicker(s3.frame, nil, "backdropColor", bz, Refresh, nil,
+            { description = "Color and opacity of the backdrop when Show Backdrop is on." })
+        s3.AddRow(row(s3.frame, "Show Backdrop", showBdW), row(s3.frame, "Backdrop Color", bdColorW))
+        L.closeSection(s3)
+
+        -- BORDER
+        L.headerAt("Border")
+        local s4 = L.sectionAt()
+        local hideBorderW = GUI:CreateFormCheckbox(s4.frame, nil, "hideBorder", bz, Refresh,
+            { description = "Hide the border outline entirely." })
+        local borderSizeW2 = GUI:CreateFormSlider(s4.frame, nil, 1, 5, 0.5, "borderSize", bz, Refresh,
+            { description = "Border thickness in pixels. Ignored while Hide Border is on." })
+        s4.AddRow(row(s4.frame, "Hide Border", hideBorderW), row(s4.frame, "Border Size", borderSizeW2))
+
+        local srcW, colW = ns.QUI_BorderControl.Attach(GUI, s4.frame, bz, "", Refresh,
+            { label = "Border Color Source", colorLabel = "Border Color" })
+        s4.AddRow(row(s4.frame, "Border Color Source", srcW), row(s4.frame, "Border Color", colW))
+        L.closeSection(s4)
 
         return FinishProviderPage(L, content, key, "brezCounter")
     end })
@@ -344,7 +392,29 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
         L.closeSection(s2)
 
-        U.BuildBackdropBorderSection(content, ac, L.sections, L.relayoutSections, Refresh)
+        -- BACKDROP
+        L.headerAt("Backdrop")
+        local s3 = L.sectionAt()
+        local showBdW = GUI:CreateFormCheckbox(s3.frame, nil, "showBackdrop", ac, Refresh,
+            { description = "Draw a semi-transparent backdrop behind the Atonement counter so it stands out against busy scenes." })
+        local bdColorW = GUI:CreateFormColorPicker(s3.frame, nil, "backdropColor", ac, Refresh, nil,
+            { description = "Color and opacity of the backdrop when Show Backdrop is on." })
+        s3.AddRow(row(s3.frame, "Show Backdrop", showBdW), row(s3.frame, "Backdrop Color", bdColorW))
+        L.closeSection(s3)
+
+        -- BORDER
+        L.headerAt("Border")
+        local s4 = L.sectionAt()
+        local hideBorderW = GUI:CreateFormCheckbox(s4.frame, nil, "hideBorder", ac, Refresh,
+            { description = "Hide the border outline entirely." })
+        local borderSizeW2 = GUI:CreateFormSlider(s4.frame, nil, 1, 5, 0.5, "borderSize", ac, Refresh,
+            { description = "Border thickness in pixels. Ignored while Hide Border is on." })
+        s4.AddRow(row(s4.frame, "Hide Border", hideBorderW), row(s4.frame, "Border Size", borderSizeW2))
+
+        local srcW, colW = ns.QUI_BorderControl.Attach(GUI, s4.frame, ac, "", Refresh,
+            { label = "Border Color Source", colorLabel = "Border Color" })
+        s4.AddRow(row(s4.frame, "Border Color Source", srcW), row(s4.frame, "Border Color", colW))
+        L.closeSection(s4)
 
         return FinishProviderPage(L, content, key, "atonementCounter")
     end })
@@ -388,14 +458,24 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         s1.AddRow(row(s1.frame, "Icon Size", iconSizeW), row(s1.frame, "Border Size", borderSizeW))
         L.closeSection(s1)
 
-        -- BORDER & KEYBIND
-        L.headerAt("Border & Keybind")
+        -- BORDER
+        L.headerAt("Border")
+        local s1b = L.sectionAt()
+        local showBorderW = GUI:CreateFormCheckbox(s1b.frame, nil, "showBorder", ra, Refresh,
+            { description = "Show a colored border around the rotation assist icon." })
+        s1b.AddRow(row(s1b.frame, "Show Border", showBorderW))
+
+        local srcW, colW = ns.QUI_BorderControl.Attach(GUI, s1b.frame, ra, "", Refresh,
+            { label = "Border Color Source", colorLabel = "Border Color" })
+        s1b.AddRow(row(s1b.frame, "Border Color Source", srcW), row(s1b.frame, "Border Color", colW))
+        L.closeSection(s1b)
+
+        -- KEYBIND
+        L.headerAt("Keybind")
         local s2 = L.sectionAt()
-        local borderColorW = GUI:CreateFormColorPicker(s2.frame, nil, "borderColor", ra, Refresh, nil,
-            { description = "Color of the border drawn around the icon." })
         local showKbW = GUI:CreateFormCheckbox(s2.frame, nil, "showKeybind", ra, Refresh,
             { description = "Overlay the keybind text of the bound spell on the icon." })
-        s2.AddRow(row(s2.frame, "Border Color", borderColorW), row(s2.frame, "Show Keybind", showKbW))
+        s2.AddRow(row(s2.frame, "Show Keybind", showKbW))
 
         local kbColorW = GUI:CreateFormColorPicker(s2.frame, nil, "keybindColor", ra, Refresh, nil,
             { description = "Color of the keybind text." })
@@ -491,9 +571,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             enabled = false, onlyInCombat = true, clearOnCombatEnd = true,
             inactivityFadeEnabled = false, inactivityFadeSeconds = 20, clearOnInactivity = false,
             showFailedCasts = true, maxEntries = 6, iconSize = 28, iconSpacing = 4,
-            iconHideBorder = false, iconBorderUseClassColor = false, iconBorderColor = {0,0,0,0.85},
+            iconHideBorder = false, iconBorderColorSource = "inherit", iconBorderColor = {0,0,0,0.85},
             orientation = "VERTICAL", invertScrollDirection = false,
             showBackdrop = true, hideBorder = false, borderSize = 1,
+            borderColorSource = "inherit",
             backdropColor = {0,0,0,0.6}, borderColor = {0,0,0,1}, blocklistText = "",
         })
         local L = MakeLayout(content)
@@ -547,13 +628,13 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local s3 = L.sectionAt()
         local hideIconBdrW = GUI:CreateFormCheckbox(s3.frame, nil, "iconHideBorder", at, Refresh,
             { description = "Hide the border drawn around each spell icon." })
-        local iconClassClrW = GUI:CreateFormCheckbox(s3.frame, nil, "iconBorderUseClassColor", at, Refresh,
-            { description = "Color the icon borders by your class instead of the Icon Border Color swatch below." })
-        s3.AddRow(row(s3.frame, "Hide Icon Borders", hideIconBdrW), row(s3.frame, "Use Class Color for Icon Borders", iconClassClrW))
+        s3.AddRow(row(s3.frame, "Hide Icon Borders", hideIconBdrW))
 
-        local iconBdrClrW = GUI:CreateFormColorPicker(s3.frame, nil, "iconBorderColor", at, Refresh, nil,
-            { description = "Color used for the icon borders when Use Class Color is off." })
-        s3.AddRow(row(s3.frame, "Icon Border Color", iconBdrClrW))
+        if ns.QUI_BorderControl then
+            local iconSrcW, iconColW = ns.QUI_BorderControl.Attach(GUI, s3.frame, at, "icon", Refresh,
+                { label = "Icon Border Source", colorLabel = "Icon Border Color" })
+            s3.AddRow(row(s3.frame, "Icon Border Source", iconSrcW), row(s3.frame, "Icon Border Color", iconColW))
+        end
         L.closeSection(s3)
 
         -- CONTAINER BACKDROP & BORDER
@@ -571,9 +652,11 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             { description = "Thickness of the tracker container border. Set to 0 to hide the border." })
         s4.AddRow(row(s4.frame, "Hide Container Border", hideBdrW), row(s4.frame, "Border Size", bdrSizeW))
 
-        local bdrColorW = GUI:CreateFormColorPicker(s4.frame, nil, "borderColor", at, Refresh, nil,
-            { description = "Color of the tracker container border." })
-        s4.AddRow(row(s4.frame, "Container Border Color", bdrColorW))
+        if ns.QUI_BorderControl then
+            local srcW, colW = ns.QUI_BorderControl.Attach(GUI, s4.frame, at, "", Refresh,
+                { label = "Border Color Source", colorLabel = "Border Color" })
+            s4.AddRow(row(s4.frame, "Border Color Source", srcW), row(s4.frame, "Border Color", colW))
+        end
         L.closeSection(s4)
 
         -- SPELL BLOCKLIST (custom block — edit box + placeholder + help label)
@@ -980,23 +1063,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         local bdrThickW = GUI:CreateFormSlider(s1.frame, nil, 1, 10, 1, "borderThickness", tooltip, RefreshTooltipSkin,
             { description = "Thickness of the tooltip border in pixels." })
-        local TOOLTIP_BORDER_SOURCE_OPTIONS = {
-            { value = "theme",  text = "Theme" },
-            { value = "class",  text = "Class" },
-            { value = "custom", text = "Custom" },
-        }
-        local borderColorPicker
-        local borderSourceDrop = GUI:CreateFormDropdown(s1.frame, nil, TOOLTIP_BORDER_SOURCE_OPTIONS, "borderColorSource", tooltip, function(value)
-            if borderColorPicker and borderColorPicker.SetEnabled then
-                borderColorPicker:SetEnabled(value == "custom")
-            end
-            RefreshTooltipSkin()
-        end, { description = "Where the tooltip border gets its color: Theme (your theme accent), Class (the unit's class color), or Custom (the color picker)." })
-        borderColorPicker = GUI:CreateFormColorPicker(s1.frame, nil, "borderColor", tooltip, RefreshTooltipSkin, nil,
-            { description = "Custom tooltip border color, used when Border Color Source is set to Custom." })
-        if borderColorPicker and borderColorPicker.SetEnabled then
-            borderColorPicker:SetEnabled((tooltip.borderColorSource or "theme") == "custom")
-        end
+        local borderSourceDrop, borderColorPicker = ns.QUI_BorderControl.Attach(
+            GUI, s1.frame, tooltip, "", RefreshTooltipSkin,
+            { label = "Border Color Source", colorLabel = "Border Color" }
+        )
         s1.AddRow(row(s1.frame, "Border Thickness", bdrThickW))
         s1.AddRow(row(s1.frame, "Border Color Source", borderSourceDrop), row(s1.frame, "Border Color", borderColorPicker))
 
@@ -1353,6 +1423,18 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end, { description = "Font size of the vigor and speed text overlays on the bar." })
         s5.AddRow(row(s5.frame, "Show Whirling Surge Icon", showAbilityW), row(s5.frame, "Text Font Size", textSizeW))
         L.closeSection(s5)
+
+        -- BORDER
+        L.headerAt("Border")
+        local s6 = L.sectionAt()
+        local borderSizeW = GUI:CreateFormSlider(s6.frame, nil, 0, 5, 1, "borderSize", sr, Refresh,
+            { description = "Thickness of the border drawn around the skyriding bar." })
+        s6.AddRow(row(s6.frame, "Border Size", borderSizeW))
+
+        local srcW, colW = ns.QUI_BorderControl.Attach(GUI, s6.frame, sr, "", Refresh,
+            { label = "Border Color Source", colorLabel = "Border Color" })
+        s6.AddRow(row(s6.frame, "Border Color Source", srcW), row(s6.frame, "Border Color", colW))
+        L.closeSection(s6)
 
         return FinishProviderPage(L, content, key, "skyriding")
     end })

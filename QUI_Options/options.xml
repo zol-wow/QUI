@@ -2,6 +2,7 @@
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
     <Script file="search_synonyms.lua"/>
     <Script file="framework.lua"/>
+    <Script file="border_control.lua"/>
     <Script file="search_cache.lua"/>
     <Script file="shared.lua"/>
     <Script file="..\QUI\modules\actionbars\settings\action_bars_preview_driver.lua"/>
@@ -16,6 +17,7 @@
     <Script file="..\QUI\modules\ui\settings\hud_layering_content.lua"/>
     <Script file="..\QUI\modules\ui\settings\autohide_content.lua"/>
     <Script file="..\QUI\modules\skinning\settings\skinning_content.lua"/>
+    <Script file="..\QUI\modules\skinning\settings\border_coloring_content.lua"/>
     <Script file="..\QUI\modules\damage_meter\settings\damage_meter_content.lua"/>
     <Script file="..\QUI\core\settings\content\welcome_page.lua"/>
     <Script file="..\QUI\core\settings\content\modules_page.lua"/>

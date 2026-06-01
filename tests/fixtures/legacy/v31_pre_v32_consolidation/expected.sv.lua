@@ -94,7 +94,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 39,
+        _schemaVersion = 40,
         _shippedDefaults = {
           abilityTimeline = {
             bigIcon = {
@@ -503,6 +503,7 @@ return {
               [3] = 0,
               [4] = 1
             },
+            borderColorSource = "inherit",
             borderSize = 1,
             borderTexture = "None",
             enabled = true,
@@ -513,8 +514,6 @@ return {
             locked = true,
             showBackdrop = true,
             showOnlyInInstance = false,
-            useAccentColorBorder = false,
-            useClassColorBorder = false,
             useClassColorText = false,
             useCustomFont = false,
             width = 50,
@@ -568,6 +567,7 @@ return {
               [3] = 0,
               [4] = 1
             },
+            borderColorSource = "inherit",
             borderSize = 1,
             borderTexture = "None",
             enabled = true,
@@ -600,8 +600,6 @@ return {
               [4] = 1
             },
             timerFontSize = 12,
-            useAccentColorBorder = false,
-            useClassColorBorder = false,
             useClassColorText = false,
             useCustomFont = false,
             width = 50,
@@ -741,6 +739,13 @@ return {
           chat = {
             buttonBars = {},
             channelColors = {},
+            chatBorderColor = {
+              [1] = 0,
+              [2] = 0,
+              [3] = 0,
+              [4] = 1
+            },
+            chatBorderColorSource = "inherit",
             copyButtonMode = "always",
             copyHistorySource = "live",
             defaultTab = 1,
@@ -915,6 +920,7 @@ return {
               [3] = 0,
               [4] = 1
             },
+            borderColorSource = "inherit",
             borderSize = 1,
             borderTexture = "None",
             enabled = true,
@@ -930,8 +936,6 @@ return {
               [3] = 1,
               [4] = 1
             },
-            useAccentColorBorder = false,
-            useClassColorBorder = false,
             useClassColorText = false,
             useCustomFont = false,
             width = 80,
@@ -975,16 +979,13 @@ return {
           crosshair = {
             a = 1,
             b = 0.78000000000000003,
-            borderA = 1,
-            borderB = 0,
-            borderColorTable = {
+            borderColor = {
               [1] = 0,
               [2] = 0,
               [3] = 0,
               [4] = 1
             },
-            borderG = 0,
-            borderR = 0,
+            borderColorSource = "inherit",
             borderSize = 3,
             changeColorOnRange = false,
             enableMeleeRangeCheck = true,
@@ -1294,6 +1295,7 @@ return {
               [3] = 0,
               [4] = 1
             },
+            borderColorSource = "inherit",
             borderSize = 2,
             currencyEnabled = {},
             currencyOrder = {},
@@ -2237,6 +2239,7 @@ return {
                 [3] = 0,
                 [4] = 1
               },
+              borderColorSource = "inherit",
               borderSize = 1,
               clearOnCombatEnd = true,
               clearOnInactivity = false,
@@ -2248,7 +2251,7 @@ return {
                 [3] = 0,
                 [4] = 0.84999999999999998
               },
-              iconBorderUseClassColor = false,
+              iconBorderColorSource = "inherit",
               iconHideBorder = false,
               iconSize = 28,
               iconSpacing = 4,
@@ -2265,6 +2268,13 @@ return {
             },
             addEditModeButton = true,
             addQUIButton = true,
+            alertsBorderColor = {
+              [1] = 0,
+              [2] = 0,
+              [3] = 0,
+              [4] = 1
+            },
+            alertsBorderColorSource = "inherit",
             allowReloadInCombat = false,
             applyGlobalFontToBlizzard = true,
             auctionHouseExpansionFilter = true,
@@ -2447,6 +2457,13 @@ return {
               enabled = false,
               modifier = "ALT"
             },
+            readyCheckBorderColor = {
+              [1] = 0,
+              [2] = 0,
+              [3] = 0,
+              [4] = 1
+            },
+            readyCheckBorderColorSource = "inherit",
             sellJunk = true,
             showOptionTooltips = true,
             skinAlerts = true,
@@ -2455,6 +2472,12 @@ return {
               [1] = 0.0080000000000000002,
               [2] = 0.0080000000000000002,
               [3] = 0.0080000000000000002,
+              [4] = 1
+            },
+            skinBorderColor = {
+              [1] = 0,
+              [2] = 0,
+              [3] = 0,
               [4] = 1
             },
             skinBorderColorSource = "theme",
@@ -2560,6 +2583,7 @@ return {
               [3] = 0,
               [4] = 1
             },
+            borderColorSource = "inherit",
             borderSize = 1,
             buttonDrawer = {
               anchor = "RIGHT",
@@ -2578,6 +2602,7 @@ return {
                 [3] = 0.59999999999999998,
                 [4] = 1
               },
+              borderColorSource = "inherit",
               borderSize = 1,
               buttonSize = 28,
               buttonSpacing = 2,
@@ -2671,8 +2696,6 @@ return {
             showZoneText = true,
             showZoomButtons = true,
             size = 226,
-            useAccentColorBorder = false,
-            useClassColorBorder = false,
             zoneTextConfig = {
               align = "CENTER",
               allCaps = false,
@@ -2746,6 +2769,13 @@ return {
             tooltipShowNoProgress = false
           },
           mplusTimer = {
+            borderColor = {
+              [1] = 0,
+              [2] = 0,
+              [3] = 0,
+              [4] = 1
+            },
+            borderColorSource = "inherit",
             enabled = false,
             forcesBarEnabled = true,
             forcesDisplayMode = "bar",
@@ -2853,12 +2883,13 @@ return {
                 removedSpells = {},
                 row1 = {
                   aspectRatioCrop = 1,
-                  borderColorTable = {
+                  borderColor = {
                     [1] = 0,
                     [2] = 0,
                     [3] = 0,
                     [4] = 1
                   },
+                  borderColorSource = "inherit",
                   borderSize = 1,
                   durationAnchor = "CENTER",
                   durationOffsetX = 0,
@@ -2890,12 +2921,13 @@ return {
                 },
                 row2 = {
                   aspectRatioCrop = 1,
-                  borderColorTable = {
+                  borderColor = {
                     [1] = 0,
                     [2] = 0,
                     [3] = 0,
                     [4] = 1
                   },
+                  borderColorSource = "inherit",
                   borderSize = 1,
                   durationAnchor = "CENTER",
                   durationOffsetX = 0,
@@ -2926,12 +2958,13 @@ return {
                 },
                 row3 = {
                   aspectRatioCrop = 1,
-                  borderColorTable = {
+                  borderColor = {
                     [1] = 0,
                     [2] = 0,
                     [3] = 0,
                     [4] = 1
                   },
+                  borderColorSource = "inherit",
                   borderSize = 1,
                   durationAnchor = "CENTER",
                   durationOffsetX = 0,
@@ -3035,12 +3068,13 @@ return {
                 removedSpells = {},
                 row1 = {
                   aspectRatioCrop = 1,
-                  borderColorTable = {
+                  borderColor = {
                     [1] = 0,
                     [2] = 0,
                     [3] = 0,
                     [4] = 1
                   },
+                  borderColorSource = "inherit",
                   borderSize = 1,
                   durationAnchor = "CENTER",
                   durationOffsetX = 0,
@@ -3071,12 +3105,13 @@ return {
                 },
                 row2 = {
                   aspectRatioCrop = 1,
-                  borderColorTable = {
+                  borderColor = {
                     [1] = 0,
                     [2] = 0,
                     [3] = 0,
                     [4] = 1
                   },
+                  borderColorSource = "inherit",
                   borderSize = 1,
                   durationAnchor = "CENTER",
                   durationOffsetX = 0,
@@ -3107,12 +3142,13 @@ return {
                 },
                 row3 = {
                   aspectRatioCrop = 1,
-                  borderColorTable = {
+                  borderColor = {
                     [1] = 0,
                     [2] = 0,
                     [3] = 0,
                     [4] = 1
                   },
+                  borderColorSource = "inherit",
                   borderSize = 1,
                   durationAnchor = "CENTER",
                   durationOffsetX = 0,
@@ -3165,12 +3201,13 @@ return {
               removedSpells = {},
               row1 = {
                 aspectRatioCrop = 1,
-                borderColorTable = {
+                borderColor = {
                   [1] = 0,
                   [2] = 0,
                   [3] = 0,
                   [4] = 1
                 },
+                borderColorSource = "inherit",
                 borderSize = 1,
                 durationAnchor = "CENTER",
                 durationOffsetX = 0,
@@ -3202,12 +3239,13 @@ return {
               },
               row2 = {
                 aspectRatioCrop = 1,
-                borderColorTable = {
+                borderColor = {
                   [1] = 0,
                   [2] = 0,
                   [3] = 0,
                   [4] = 1
                 },
+                borderColorSource = "inherit",
                 borderSize = 1,
                 durationAnchor = "CENTER",
                 durationOffsetX = 0,
@@ -3238,12 +3276,13 @@ return {
               },
               row3 = {
                 aspectRatioCrop = 1,
-                borderColorTable = {
+                borderColor = {
                   [1] = 0,
                   [2] = 0,
                   [3] = 0,
                   [4] = 1
                 },
+                borderColorSource = "inherit",
                 borderSize = 1,
                 durationAnchor = "CENTER",
                 durationOffsetX = 0,
@@ -3346,12 +3385,13 @@ return {
               removedSpells = {},
               row1 = {
                 aspectRatioCrop = 1,
-                borderColorTable = {
+                borderColor = {
                   [1] = 0,
                   [2] = 0,
                   [3] = 0,
                   [4] = 1
                 },
+                borderColorSource = "inherit",
                 borderSize = 1,
                 durationAnchor = "CENTER",
                 durationOffsetX = 0,
@@ -3382,12 +3422,13 @@ return {
               },
               row2 = {
                 aspectRatioCrop = 1,
-                borderColorTable = {
+                borderColor = {
                   [1] = 0,
                   [2] = 0,
                   [3] = 0,
                   [4] = 1
                 },
+                borderColorSource = "inherit",
                 borderSize = 1,
                 durationAnchor = "CENTER",
                 durationOffsetX = 0,
@@ -3418,12 +3459,13 @@ return {
               },
               row3 = {
                 aspectRatioCrop = 1,
-                borderColorTable = {
+                borderColor = {
                   [1] = 0,
                   [2] = 0,
                   [3] = 0,
                   [4] = 1
                 },
+                borderColorSource = "inherit",
                 borderSize = 1,
                 durationAnchor = "CENTER",
                 durationOffsetX = 0,
@@ -3720,9 +3762,8 @@ return {
               [3] = 0,
               [4] = 1
             },
-            borderOverride = false,
+            borderColorSource = "inherit",
             borderSize = 1,
-            borderUseClassColor = false,
             completionSound = true,
             currencyEnabled = true,
             currencyShowSession = true,
@@ -4773,8 +4814,8 @@ return {
                 [3] = 0,
                 [4] = 1
               },
+              portraitBorderColorSource = "inherit",
               portraitBorderSize = 1,
-              portraitBorderUseClassColor = false,
               portraitGap = 0,
               portraitSide = "RIGHT",
               portraitSize = 30,
@@ -5179,6 +5220,13 @@ return {
                   [3] = 0.14899999999999999,
                   [4] = 1
                 },
+                borderColor = {
+                  [1] = 0,
+                  [2] = 0,
+                  [3] = 0,
+                  [4] = 1
+                },
+                borderColorSource = "inherit",
                 borderSize = 1,
                 color = {
                   [1] = 0.40400000000000003,
@@ -5190,6 +5238,13 @@ return {
                 fontSize = 14,
                 height = 25,
                 highlightInterruptible = false,
+                iconBorderColor = {
+                  [1] = 0,
+                  [2] = 0,
+                  [3] = 0,
+                  [4] = 1
+                },
+                iconBorderColorSource = "inherit",
                 interruptibleColor = {
                   [1] = 0.20000000000000001,
                   [2] = 0.80000000000000004,
@@ -5297,8 +5352,8 @@ return {
                 [3] = 0,
                 [4] = 1
               },
+              portraitBorderColorSource = "inherit",
               portraitBorderSize = 1,
-              portraitBorderUseClassColor = false,
               portraitGap = 0,
               portraitSide = "LEFT",
               portraitSize = 40,
@@ -5516,6 +5571,13 @@ return {
                   [3] = 0.14899999999999999,
                   [4] = 1
                 },
+                borderColor = {
+                  [1] = 0,
+                  [2] = 0,
+                  [3] = 0,
+                  [4] = 1
+                },
+                borderColorSource = "inherit",
                 borderSize = 1,
                 color = {
                   [1] = 0.20000000000000001,
@@ -5527,6 +5589,13 @@ return {
                 fontSize = 14,
                 height = 25,
                 highlightInterruptible = true,
+                iconBorderColor = {
+                  [1] = 0,
+                  [2] = 0,
+                  [3] = 0,
+                  [4] = 1
+                },
+                iconBorderColorSource = "inherit",
                 interruptibleColor = {
                   [1] = 0.20000000000000001,
                   [2] = 0.80000000000000004,
@@ -5614,8 +5683,8 @@ return {
                 [3] = 0,
                 [4] = 1
               },
+              portraitBorderColorSource = "inherit",
               portraitBorderSize = 1,
-              portraitBorderUseClassColor = false,
               portraitGap = 0,
               portraitSide = "RIGHT",
               portraitSize = 40,
@@ -5899,6 +5968,7 @@ return {
               [3] = 0,
               [4] = 1
             },
+            borderColorSource = "inherit",
             borderThickness = 2,
             cooldownSwipeEnabled = true,
             enabled = false,
@@ -6038,6 +6108,7 @@ return {
               [3] = 0,
               [4] = 1
             },
+            borderColorSource = "inherit",
             borderSize = 1,
             enabled = true,
             fadeDelay = 1,
@@ -6110,7 +6181,7 @@ return {
               [3] = 0.97999999999999998,
               [4] = 1
             },
-            borderColorSource = "theme",
+            borderColorSource = "inherit",
             borderThickness = 1,
             classColorName = true,
             colorPlayerItemLevel = true,
@@ -6342,6 +6413,7 @@ return {
               [3] = 0,
               [4] = 1
             },
+            borderColorSource = "inherit",
             detailsGrowDirection = "auto",
             enabled = false,
             fontSize = 11,

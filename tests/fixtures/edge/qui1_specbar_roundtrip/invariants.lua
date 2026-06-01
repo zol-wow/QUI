@@ -36,7 +36,7 @@ return {
     {
         name = "_schemaVersion at CURRENT after re-run",
         assert = function(sv, ctx)
-            return sv.QUI_DB.profiles.Default._schemaVersion == 39
+            return sv.QUI_DB.profiles.Default._schemaVersion == 40
         end,
     },
 }

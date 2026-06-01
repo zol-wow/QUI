@@ -219,7 +219,7 @@ local function CreateFrame_XPTracker()
     frame:SetFrameLevel(50)
     frame:SetClampedToScreen(true)
 
-    local bc = settings.borderColor or {0, 0, 0, 1}
+    local bcR, bcG, bcB, bcA = Helpers.GetSkinBorderColor(settings, "")
 
     -- Details panel (separate from anchor frame so anchoring always targets the bar)
     local detailsFrame = CreateFrame("Frame", nil, frame, "BackdropTemplate")
@@ -230,7 +230,7 @@ local function CreateFrame_XPTracker()
     local bg = settings.backdropColor or {0.05, 0.05, 0.07, 0.85}
     detailsFrame:SetBackdropColor(bg[1], bg[2], bg[3], bg[4])
     UIKit.CreateBorderLines(detailsFrame)
-    UIKit.UpdateBorderLines(detailsFrame, 1, bc[1], bc[2], bc[3], bc[4])
+    UIKit.UpdateBorderLines(detailsFrame, 1, bcR, bcG, bcB, bcA)
     detailsFrame:EnableMouse(true)
     frame.detailsFrame = detailsFrame
     UpdateDetailsDirection(frame)
@@ -573,7 +573,7 @@ local function UpdateAppearance()
         frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 150)
     end
 
-    local bc = settings.borderColor or {0, 0, 0, 1}
+    local bcR, bcG, bcB, bcA = Helpers.GetSkinBorderColor(settings, "")
 
     -- Details panel appearance/size
     local bg = settings.backdropColor or {0.05, 0.05, 0.07, 0.85}
@@ -581,7 +581,7 @@ local function UpdateAppearance()
     frame.detailsFrame:SetHeight(detailsHeight)
     frame.detailsFrame:SetBackdrop(UIKit.GetBackdropInfo(nil, nil, frame.detailsFrame))
     frame.detailsFrame:SetBackdropColor(bg[1], bg[2], bg[3], bg[4])
-    UIKit.UpdateBorderLines(frame.detailsFrame, 1, bc[1], bc[2], bc[3], bc[4])
+    UIKit.UpdateBorderLines(frame.detailsFrame, 1, bcR, bcG, bcB, bcA)
     UpdateDetailsDirection(frame)
 
     -- Font
@@ -885,5 +885,14 @@ if ns.Registry then
         priority = 40,
         group = "trackers",
         importCategories = { "trackersTimers" },
+    })
+end
+
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "xpTracker", label = "XP Tracker", category = "Trackers", prefix = "",
+        db = function(p) return p.xpTracker end,
+        refresh = function() if _G.QUI_RefreshXPTracker then _G.QUI_RefreshXPTracker() end end,
+        legacy = {},
     })
 end

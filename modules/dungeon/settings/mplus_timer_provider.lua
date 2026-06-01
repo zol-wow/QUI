@@ -171,52 +171,11 @@ do
             L.closeSection(sGen)
 
             -- Border
-            Helpers.EnsureDefaults(mpDB, {
-                borderOverride = false,
-                hideBorder = false,
-                borderUseClassColor = false,
-            })
-            if mpDB.borderColor == nil then
-                local fb = general and (general.skinBorderColor or general.addonAccentColor) or { 0.376, 0.647, 0.980, 1 }
-                mpDB.borderColor = { fb[1], fb[2], fb[3], fb[4] or 1 }
-            end
-
             L.headerAt("Border")
             local sBd = L.sectionAt()
-            local bdColorPicker, bdHideCheck, bdClassCheck
-
-            local function UpdateBorderState()
-                local enabled = mpDB.borderOverride
-                if bdHideCheck and bdHideCheck.SetEnabled then bdHideCheck:SetEnabled(enabled) end
-                if bdClassCheck and bdClassCheck.SetEnabled then bdClassCheck:SetEnabled(enabled) end
-                if bdColorPicker and bdColorPicker.SetEnabled then
-                    bdColorPicker:SetEnabled(enabled and not mpDB.borderUseClassColor)
-                end
-            end
-
-            local bdOverrideW = GUI:CreateFormCheckbox(sBd.frame, nil, "borderOverride", mpDB, function()
-                UpdateBorderState()
-                RefreshColors()
-            end, { description = "Use M+ timer-specific border settings instead of the shared skinning border. Enables the controls below." })
-            bdHideCheck = GUI:CreateFormCheckbox(sBd.frame, nil, "hideBorder", mpDB, RefreshColors,
-                { description = "Hide the border around the M+ timer panel entirely." })
-            sBd.AddRow(
-                row(sBd.frame, "Override Global Border", bdOverrideW),
-                row(sBd.frame, "Hide Border", bdHideCheck)
-            )
-
-            bdClassCheck = GUI:CreateFormCheckbox(sBd.frame, nil, "borderUseClassColor", mpDB, function()
-                UpdateBorderState()
-                RefreshColors()
-            end, { description = "Tint the M+ timer border with your class color instead of the custom Border Color below." })
-            bdColorPicker = GUI:CreateFormColorPicker(sBd.frame, nil, "borderColor", mpDB, RefreshColors, { noAlpha = true },
-                { description = "Custom border color applied when Override Global Border is on and Use Class Color is off." })
-            sBd.AddRow(
-                row(sBd.frame, "Use Class Color", bdClassCheck),
-                row(sBd.frame, "Border Color", bdColorPicker)
-            )
-
-            UpdateBorderState()
+            local bdSrcW, bdColW = ns.QUI_BorderControl.Attach(GUI, sBd.frame, mpDB, "", RefreshColors,
+                { label = "Border Color Source", colorLabel = "Border Color", noAlpha = true })
+            sBd.AddRow(row(sBd.frame, "Border Color Source", bdSrcW), row(sBd.frame, "Border Color", bdColW))
             L.closeSection(sBd)
 
             -- Background

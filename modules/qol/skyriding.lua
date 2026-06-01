@@ -1152,8 +1152,8 @@ local function ApplySettings()
 
     -- Border
     local borderSize = settings.borderSize or 1
-    local borderColor = settings.borderColor or {0, 0, 0, 1}
-    QUICore:SetPixelPerfectBackdrop(skyridingFrame.border, borderSize, nil, borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
+    local bR, bG, bB, bA = Helpers.GetSkinBorderColor(settings, "")
+    QUICore:SetPixelPerfectBackdrop(skyridingFrame.border, borderSize, nil, bR, bG, bB, bA)
     if skyridingFrame.border.Center then skyridingFrame.border.Center:Hide() end
 
     -- Recharge overlay height
@@ -1552,3 +1552,12 @@ QUI.Skyriding = {
     ResolveDisplaySpeed = ResolveDisplaySpeed,
     FormatSpeedText = FormatSpeedText,
 }
+
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "skyriding", label = "Skyriding Vigor Bar", category = "Trackers", prefix = "",
+        db = function(p) return p.skyriding end,
+        refresh = function() if _G.QUI_RefreshSkyriding then _G.QUI_RefreshSkyriding() end end,
+        legacy = {},
+    })
+end

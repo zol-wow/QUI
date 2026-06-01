@@ -40,6 +40,8 @@ local defaults = {
             skinGameMenu = true,  -- Skin ESC menu (opt-in)
             skinContextMenus = true,  -- Skin context/dropdown menus
             skinReadyCheck = true,  -- Skin ready check popup
+            readyCheckBorderColorSource = "inherit",  -- inherit | theme | class | custom
+            readyCheckBorderColor = {0, 0, 0, 1},    -- custom border color (used when source == "custom")
             skinStaticPopups = true,  -- Skin StaticPopup dialogs
             allowReloadInCombat = false,  -- Allow /reload during combat (bypass SafeReload)
             showOptionTooltips = true,  -- Show on-hover explanations over each option in the settings panel
@@ -82,10 +84,13 @@ local defaults = {
             skinProfessions = true,  -- Skin Professions frame (opt-in)
             skinBgColor = { 0.008, 0.008, 0.008, 1 },  -- Skinning background color (with alpha)
             skinAlerts = true,  -- Skin alert/toast frames
+            alertsBorderColorSource = "inherit",  -- Alert border color: "inherit" | "theme" | "class" | "custom"
+            alertsBorderColor = {0, 0, 0, 1},     -- Alert border custom color (used when source == "custom")
             skinCharacterFrame = true,  -- Skin Character Frame (Character, Reputation, Currency tabs)
             skinInspectFrame = true,  -- Skin Inspect Frame to match Character Frame
             skinUseClassColor = true,  -- Use class color for skin accents
             skinBorderColorSource = "theme",  -- Border color: "theme" | "class" | "custom"
+            skinBorderColor = { 0, 0, 0, 1 },  -- Global skin border custom color (used when source == "custom")
             -- QoL Automation
             sellJunk = true,
             autoRepair = "personal",      -- "off", "personal", "guild"
@@ -206,7 +211,7 @@ local defaults = {
                 iconSize = 28,
                 iconSpacing = 4,
                 iconHideBorder = false,
-                iconBorderUseClassColor = false,
+                iconBorderColorSource = "inherit",
                 iconBorderColor = {0, 0, 0, 0.85},
                 orientation = "VERTICAL",
                 invertScrollDirection = false,
@@ -216,6 +221,7 @@ local defaults = {
                 showBackdrop = true,
                 hideBorder = false,
                 borderSize = 1,
+                borderColorSource = "inherit",
                 backdropColor = {0, 0, 0, 0.6},
                 borderColor = {0, 0, 0, 1},
             },
@@ -360,6 +366,8 @@ local defaults = {
             forcesFont = "Poppins",
             forcesFontSize = 11,
             maxDungeonNameLength = 18,
+            borderColorSource = "inherit",  -- inherit | theme | class | custom
+            borderColor = {0, 0, 0, 1},     -- custom border color (used when source == "custom")
         },
 
         mplusProgress = {
@@ -465,7 +473,8 @@ local defaults = {
                     iconCount = 12,     -- How many icons in row 1 (0 = disabled)
                     iconSize = 39,      -- Icon size in pixels (width)
                     borderSize = 1,     -- Border thickness around icon (0 to 5)
-                    borderColorTable = {0, 0, 0, 1}, -- Border color (RGBA)
+                    borderColorSource = "inherit", -- inherit | theme | class | custom
+                    borderColor = {0, 0, 0, 1}, -- Border color (RGBA, used when source == "custom")
                     aspectRatioCrop = 1.0,  -- 1.0 = square, higher = flatter
                     zoom = 0,           -- Icon texture zoom (0 to 0.2)
                     padding = 0,        -- Spacing between icons (-20 to 20)
@@ -487,7 +496,8 @@ local defaults = {
                     iconCount = 10,
                     iconSize = 39,
                     borderSize = 1,
-                    borderColorTable = {0, 0, 0, 1},
+                    borderColorSource = "inherit",
+                    borderColor = {0, 0, 0, 1},
                     aspectRatioCrop = 1.0,
                     zoom = 0,
                     padding = 1,
@@ -508,7 +518,8 @@ local defaults = {
                     iconCount = 10,     -- 0 = row disabled by default
                     iconSize = 39,
                     borderSize = 1,
-                    borderColorTable = {0, 0, 0, 1},
+                    borderColorSource = "inherit",
+                    borderColor = {0, 0, 0, 1},
                     aspectRatioCrop = 1.0,
                     zoom = 0,
                     padding = 0,
@@ -549,7 +560,8 @@ local defaults = {
                     iconCount = 7,
                     iconSize = 30,
                     borderSize = 1,
-                    borderColorTable = {0, 0, 0, 1},
+                    borderColorSource = "inherit",
+                    borderColor = {0, 0, 0, 1},
                     aspectRatioCrop = 1.0,
                     zoom = 0,
                     padding = 0,
@@ -570,7 +582,8 @@ local defaults = {
                     iconCount = 6,
                     iconSize = 30,
                     borderSize = 1,
-                    borderColorTable = {0, 0, 0, 1},
+                    borderColorSource = "inherit",
+                    borderColor = {0, 0, 0, 1},
                     aspectRatioCrop = 1.0,
                     zoom = 0,
                     padding = 0,
@@ -591,7 +604,8 @@ local defaults = {
                     iconCount = 6,
                     iconSize = 30,
                     borderSize = 1,
-                    borderColorTable = {0, 0, 0, 1},
+                    borderColorSource = "inherit",
+                    borderColor = {0, 0, 0, 1},
                     aspectRatioCrop = 1.0,
                     zoom = 0,
                     padding = 0,
@@ -717,7 +731,7 @@ local defaults = {
                     layoutDirection = "HORIZONTAL",
                     row1 = {
                         iconCount = 12, iconSize = 39, borderSize = 1,
-                        borderColorTable = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
+                        borderColorSource = "inherit", borderColor = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
                         zoom = 0, padding = 0, xOffset = 0, yOffset = 0,
                         hideDurationText = false, durationSize = 16,
                         durationOffsetX = 0, durationOffsetY = 0,
@@ -727,7 +741,7 @@ local defaults = {
                     },
                     row2 = {
                         iconCount = 10, iconSize = 39, borderSize = 1,
-                        borderColorTable = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
+                        borderColorSource = "inherit", borderColor = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
                         zoom = 0, padding = 1, xOffset = 0, yOffset = 0,
                         durationSize = 16, durationOffsetX = 0, durationOffsetY = 0,
                         stackSize = 12, stackOffsetX = 0, stackOffsetY = 0,
@@ -736,7 +750,7 @@ local defaults = {
                     },
                     row3 = {
                         iconCount = 10, iconSize = 39, borderSize = 1,
-                        borderColorTable = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
+                        borderColorSource = "inherit", borderColor = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
                         zoom = 0, padding = 0, xOffset = 0, yOffset = 0,
                         durationSize = 16, durationOffsetX = 0, durationOffsetY = 0,
                         stackSize = 12, stackOffsetX = 0, stackOffsetY = 0,
@@ -764,7 +778,7 @@ local defaults = {
                     layoutDirection = "HORIZONTAL",
                     row1 = {
                         iconCount = 7, iconSize = 30, borderSize = 1,
-                        borderColorTable = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
+                        borderColorSource = "inherit", borderColor = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
                         zoom = 0, padding = 0, xOffset = 0, yOffset = 0,
                         durationSize = 14, durationOffsetX = 0, durationOffsetY = 0,
                         stackSize = 14, stackOffsetX = 0, stackOffsetY = -1,
@@ -773,7 +787,7 @@ local defaults = {
                     },
                     row2 = {
                         iconCount = 6, iconSize = 30, borderSize = 1,
-                        borderColorTable = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
+                        borderColorSource = "inherit", borderColor = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
                         zoom = 0, padding = 0, xOffset = 0, yOffset = 0,
                         durationSize = 14, durationOffsetX = 0, durationOffsetY = 0,
                         stackSize = 14, stackOffsetX = 0, stackOffsetY = -1,
@@ -782,7 +796,7 @@ local defaults = {
                     },
                     row3 = {
                         iconCount = 6, iconSize = 30, borderSize = 1,
-                        borderColorTable = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
+                        borderColorSource = "inherit", borderColor = {0, 0, 0, 1}, aspectRatioCrop = 1.0,
                         zoom = 0, padding = 0, xOffset = 0, yOffset = 0,
                         durationSize = 14, durationOffsetX = 0, durationOffsetY = 0,
                         stackSize = 14, stackOffsetX = 0, stackOffsetY = -1,
@@ -1038,6 +1052,7 @@ local defaults = {
             -- Border
             showBorder = true,
             borderThickness = 2,
+            borderColorSource = "inherit",  -- inherit | theme | class | custom
             borderColor = { 0, 0, 0, 1 },
             -- Cooldown
             cooldownSwipeEnabled = true,
@@ -1243,13 +1258,10 @@ local defaults = {
             g = 1,                   -- Crosshair color green
             b = 0.780,               -- Crosshair color blue
             a = 1,                   -- Crosshair alpha
-            borderR = 0,             -- Border color red
-            borderG = 0,             -- Border color green
-            borderB = 0,             -- Border color blue
-            borderA = 1,             -- Border alpha
             strata = "LOW",          -- Frame strata
             lineColor = { 0.796, 1, 0.780, 1 },
-            borderColorTable = { 0, 0, 0, 1 },
+            borderColorSource = "inherit",  -- inherit | theme | class | custom
+            borderColor = { 0, 0, 0, 1 },
             -- Range-based color changes
             changeColorOnRange = false,           -- Master toggle for range checking
             enableMeleeRangeCheck = true,         -- Check melee range (5 yards)
@@ -1292,6 +1304,7 @@ local defaults = {
             segmentColor = { 0, 0, 0, 1 },                -- 000000
             rechargeColor = { 0.4, 0.9, 1.0, 1 },         -- 66E6FF
             borderSize = 1,
+            borderColorSource = "inherit",  -- inherit | theme | class | custom
             borderColor = { 0, 0, 0, 1 },
             barTexture = "Quazii v4",
             showSegments = true,
@@ -1448,6 +1461,9 @@ local defaults = {
             -- the Channel Colors options section, this map stays empty and
             -- ChangeChatColor is never called, so Blizzard's defaults apply.
             channelColors = {},
+            -- Border color for chat frame border (prefix "chat" → chatBorderColorSource/chatBorderColor)
+            chatBorderColorSource = "inherit",  -- inherit | theme | class | custom
+            chatBorderColor = {0, 0, 0, 1},     -- custom border color (used when source == "custom")
         },
 
         -- Tooltip Management
@@ -1468,7 +1484,7 @@ local defaults = {
             showBorder = true,                 -- Toggle border visibility
             borderThickness = 1,               -- Border thickness (1-10)
             borderColor = {0.376, 0.647, 0.980, 1}, -- Custom border color (used when borderColorSource == "custom")
-            borderColorSource = "theme",       -- Border color: "theme" | "class" | "custom"
+            borderColorSource = "inherit",     -- Border color: "inherit" | "theme" | "class" | "custom"
             showSpellIDs = true,               -- Show spell ID and icon ID on buff/debuff tooltips
             showPlayerItemLevel = true,        -- Show inspected player item level on player tooltips
             colorPlayerItemLevel = true,       -- Color tooltip player item level by configured ilvl brackets
@@ -1860,8 +1876,8 @@ local defaults = {
                 portraitSide = "LEFT",
                 portraitSize = 40,
                 portraitBorderSize = 1,
-                portraitBorderUseClassColor = false,
-                portraitBorderColor = { 0, 0, 0, 1 },
+                portraitBorderColorSource = "inherit",  -- inherit | theme | class | custom
+                portraitBorderColor = { 0, 0, 0, 1 },   -- custom border color (used when source == "custom")
                 portraitGap = 0,
                 -- Name text
                 showName = true,
@@ -1930,6 +1946,10 @@ local defaults = {
                     texture = "Quazii v5",
                     bgColor = {0.149, 0.149, 0.149, 1},
                     borderSize = 1,
+                    borderColorSource = "inherit",      -- inherit | theme | class | custom
+                    borderColor = {0, 0, 0, 1},         -- custom bar-border color (used when source == "custom")
+                    iconBorderColorSource = "inherit",  -- inherit | theme | class | custom
+                    iconBorderColor = {0, 0, 0, 1},     -- custom icon-border color (used when source == "custom")
                     useClassColor = false,
                     highlightInterruptible = false,
                     interruptibleColor = {0.2, 0.8, 0.2, 1},
@@ -2083,8 +2103,8 @@ local defaults = {
                 portraitSide = "RIGHT",
                 portraitSize = 40,
                 portraitBorderSize = 1,
-                portraitBorderUseClassColor = false,
-                portraitBorderColor = { 0, 0, 0, 1 },
+                portraitBorderColorSource = "inherit",  -- inherit | theme | class | custom
+                portraitBorderColor = { 0, 0, 0, 1 },   -- custom border color (used when source == "custom")
                 portraitGap = 0,
                 -- Name text
                 showName = true,
@@ -2161,6 +2181,10 @@ local defaults = {
                     texture = "Quazii v5",
                     bgColor = {0.149, 0.149, 0.149, 1},
                     borderSize = 1,
+                    borderColorSource = "inherit",      -- inherit | theme | class | custom
+                    borderColor = {0, 0, 0, 1},         -- custom bar-border color (used when source == "custom")
+                    iconBorderColorSource = "inherit",  -- inherit | theme | class | custom
+                    iconBorderColor = {0, 0, 0, 1},     -- custom icon-border color (used when source == "custom")
                     highlightInterruptible = true,
                     interruptibleColor = {0.2, 0.8, 0.2, 1},
                     maxLength = 12,
@@ -2495,8 +2519,8 @@ local defaults = {
                 portraitSide = "RIGHT",
                 portraitSize = 30,
                 portraitBorderSize = 1,
-                portraitBorderUseClassColor = false,
-                portraitBorderColor = { 0, 0, 0, 1 },
+                portraitBorderColorSource = "inherit",  -- inherit | theme | class | custom
+                portraitBorderColor = { 0, 0, 0, 1 },   -- custom border color (used when source == "custom")
                 portraitGap = 0,
                 -- Name text
                 showName = true,
@@ -3190,9 +3214,8 @@ local defaults = {
             useClassColorText = false,
             borderSize = 1,
             hideBorder = false,
-            borderColor = { 0, 0, 0, 1 },
-            useClassColorBorder = false,
-            useAccentColorBorder = false,
+            borderColorSource = "inherit",  -- inherit | theme | class | custom
+            borderColor = { 0, 0, 0, 1 },  -- used when borderColorSource == "custom"
             borderTexture = "None",
             useCustomFont = false,
             font = nil,
@@ -3216,9 +3239,8 @@ local defaults = {
             useClassColorText = false,
             borderSize = 1,
             hideBorder = false,
-            borderColor = { 0, 0, 0, 1 },
-            useClassColorBorder = false,
-            useAccentColorBorder = false,
+            borderColorSource = "inherit",  -- inherit | theme | class | custom
+            borderColor = { 0, 0, 0, 1 },  -- used when borderColorSource == "custom"
             borderTexture = "None",
             useCustomFont = false,
             font = nil,
@@ -3242,9 +3264,8 @@ local defaults = {
             -- Border settings
             borderSize = 1,
             borderTexture = "None", -- Border texture from LibSharedMedia (or "None" for solid)
-            useClassColorBorder = false,  -- If true, use player class color
-            useAccentColorBorder = false,  -- If true, use addon accent color
-            borderColor = {0, 0, 0, 1},  -- Black border
+            borderColorSource = "inherit",  -- inherit | theme | class | custom
+            borderColor = {0, 0, 0, 1},  -- used when borderColorSource == "custom"
             hideBorder = false,  -- If true, hide border completely (overrides other border settings)
             onlyShowInEncounters = false,  -- If true, only show during boss encounters (not general combat)
         },
@@ -3270,6 +3291,7 @@ local defaults = {
             barColor = {0.2, 0.5, 1.0, 1},
             restedColor = {1.0, 0.7, 0.1, 0.5},
             backdropColor = {0.05, 0.05, 0.07, 0.85},
+            borderColorSource = "inherit",  -- inherit | theme | class | custom
             borderColor = {0, 0, 0, 1},
         },
 
@@ -3288,8 +3310,7 @@ local defaults = {
             barBgOverride = false,
             barBackgroundColor = { 0.1, 0.1, 0.1, 0.8 },
             -- Border
-            borderOverride = false,
-            borderUseClassColor = false,
+            borderColorSource = "inherit",  -- inherit | theme | class | custom
             borderColor = { 0, 0, 0, 1 },
             -- Text
             showText = true,
@@ -3503,9 +3524,8 @@ local defaults = {
             scale = 1.0,  -- Scale multiplier for minimap frame
             zoomLevel = 0,  -- World zoom level (0-5); does not change the frame size
             borderSize = 1,
-            borderColor = {0, 0, 0, 1},  -- Black border
-            useClassColorBorder = false,
-            useAccentColorBorder = false,
+            borderColorSource = "inherit",  -- inherit | theme | class | custom
+            borderColor = {0, 0, 0, 1},     -- custom border color (used when source == "custom")
             buttonRadius = 2,  -- LibDBIcon button radius for square minimap
 
             -- Position
@@ -3535,7 +3555,8 @@ local defaults = {
                 bgColor = {0.03, 0.03, 0.03, 1}, -- Drawer background color (alpha controlled by bgOpacity)
                 bgOpacity = 98,            -- Drawer background opacity (0-100)
                 borderSize = 1,            -- Drawer border thickness multiplier (0 hides border)
-                borderColor = {0.2, 0.8, 0.6, 1}, -- Drawer border color
+                borderColor = {0.2, 0.8, 0.6, 1}, -- Drawer border color (used when source == "custom")
+                borderColorSource = "inherit",     -- inherit | theme | class | custom
             },
             middleClickMenuEnabled = true,  -- Middle click minimap opens quick menu
             hideMicroMenu = false,  -- Hide Blizzard micro menu (Character/Spellbook/etc.)
@@ -3646,6 +3667,7 @@ local defaults = {
             offsetY = 0,  -- Y offset from minimap bottom
             bgOpacity = 60,  -- 0-100
             borderSize = 2,  -- Border thickness (0-8, 0=hidden)
+            borderColorSource = "inherit",  -- inherit | theme | class | custom
             borderColor = {0, 0, 0, 1},  -- Black border (#90)
 
             -- Font Settings

@@ -2628,16 +2628,9 @@ local function CreateUnitFrame(unit, unitKey)
             edgeSize = portraitBorderSize,
         })
 
-        -- Determine border color
-        local borderR, borderG, borderB = 0, 0, 0
-        if settings.portraitBorderUseClassColor then
-            borderR, borderG, borderB = GetUnitClassColor(unit)
-        elseif settings.portraitBorderColor then
-            borderR = settings.portraitBorderColor[1] or 0
-            borderG = settings.portraitBorderColor[2] or 0
-            borderB = settings.portraitBorderColor[3] or 0
-        end
-        portrait:SetBackdropBorderColor(borderR, borderG, borderB, 1)
+        -- Determine border color (routed through the central border-color resolver)
+        local borderR, borderG, borderB, borderA = Helpers.GetSkinBorderColor(settings, "portrait")
+        portrait:SetBackdropBorderColor(borderR, borderG, borderB, borderA)
 
         local portraitTex = portrait:CreateTexture(nil, "ARTWORK")
         portraitTex:SetPoint("TOPLEFT", portraitBorderSize, -portraitBorderSize)
@@ -3839,22 +3832,16 @@ function QUI_UF:RefreshFrame(unitKey)
             frame.portrait:SetPoint("LEFT", frame, "RIGHT", portraitGap + portraitOffsetX, portraitOffsetY)
         end
 
-        -- Determine border color first (needed for both styles)
-        local borderR, borderG, borderB = 0, 0, 0
-        if settings.portraitBorderUseClassColor then
-            borderR, borderG, borderB = GetUnitClassColor(frame.unit)
-        elseif settings.portraitBorderColor then
-            borderR = settings.portraitBorderColor[1] or 0
-            borderG = settings.portraitBorderColor[2] or 0
-            borderB = settings.portraitBorderColor[3] or 0
-        end
+        -- Determine border color first (needed for both styles), routed through
+        -- the central border-color resolver.
+        local borderR, borderG, borderB, borderA = Helpers.GetSkinBorderColor(settings, "portrait")
 
         frame.portrait:SetBackdrop({
             bgFile = nil,
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = portraitBorderSize,
         })
-        frame.portrait:SetBackdropBorderColor(borderR, borderG, borderB, 1)
+        frame.portrait:SetBackdropBorderColor(borderR, borderG, borderB, borderA)
 
         -- Position portrait texture inside border
         frame.portraitTexture:ClearAllPoints()
@@ -4810,6 +4797,85 @@ do
 
     -- Deferred: unit frames initialize at 0.5s, register at 2s
     C_Timer.After(2, RegisterLayoutModeElements)
+end
+
+-- Border Coloring registry: per-unit castbar borders, castbar icon borders, and
+-- portrait ring borders (multi-instance — one module owns N unit tables).
+--
+-- castbar  (prefix "")      reads borderColorSource + borderColor
+-- castbarIcon (prefix "icon") reads iconBorderColorSource + iconBorderColor
+--   Both live on the same per-unit castbar sub-table, so they share instances().
+-- portrait (prefix "portrait") reads portraitBorderColorSource + portraitBorderColor
+--   directly on the unit table; only units that draw a portrait ring qualify.
+-- The resolver default ("inherit") tracks the global skin border; migration v40
+-- stamps a per-table source so existing per-unit colors are preserved.
+if Helpers and Helpers.BorderRegistry then
+    -- Units that own a castbar sub-table in quiUnitFrames.
+    local CASTBAR_UNITS = { "player", "target", "targettarget", "pet", "focus", "boss" }
+    -- Units that draw a portrait ring (the only ones with portraitBorder* keys).
+    local PORTRAIT_UNITS = { "player", "target", "focus" }
+
+    local function CollectCastbars(profile)
+        local out = {}
+        local uf = profile and profile.quiUnitFrames
+        if type(uf) ~= "table" then return out end
+        for _, unit in ipairs(CASTBAR_UNITS) do
+            local u = uf[unit]
+            if type(u) == "table" and type(u.castbar) == "table" then
+                out[#out + 1] = u.castbar
+            end
+        end
+        return out
+    end
+
+    local function CollectPortraitUnits(profile)
+        local out = {}
+        local uf = profile and profile.quiUnitFrames
+        if type(uf) ~= "table" then return out end
+        for _, unit in ipairs(PORTRAIT_UNITS) do
+            local u = uf[unit]
+            if type(u) == "table" then
+                out[#out + 1] = u
+            end
+        end
+        return out
+    end
+
+    Helpers.BorderRegistry.Register({
+        key       = "castbar",
+        label     = "Castbar",
+        category  = "Unit Frames",
+        prefix    = "",
+        multi     = true,
+        db        = function(p) local i = CollectCastbars(p); return i and i[1] end,
+        instances = CollectCastbars,
+        refresh   = _G.QUI_RefreshUnitFrames,
+        legacy    = {},
+    })
+
+    Helpers.BorderRegistry.Register({
+        key       = "castbarIcon",
+        label     = "Castbar Icon",
+        category  = "Unit Frames",
+        prefix    = "icon",
+        multi     = true,
+        db        = function(p) local i = CollectCastbars(p); return i and i[1] end,
+        instances = CollectCastbars,
+        refresh   = _G.QUI_RefreshUnitFrames,
+        legacy    = {},
+    })
+
+    Helpers.BorderRegistry.Register({
+        key       = "portrait",
+        label     = "Portrait Ring",
+        category  = "Unit Frames",
+        prefix    = "portrait",
+        multi     = true,
+        db        = function(p) local i = CollectPortraitUnits(p); return i and i[1] end,
+        instances = CollectPortraitUnits,
+        refresh   = _G.QUI_RefreshUnitFrames,
+        legacy    = { useClass = "portraitBorderUseClassColor" },
+    })
 end
 
 if ns.Registry then

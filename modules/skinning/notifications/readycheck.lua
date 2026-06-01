@@ -305,6 +305,16 @@ if ns.Registry then
     })
 end
 
+local Helpers = ns.Helpers
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "readyCheck", label = "Ready Check", category = "Skinning", prefix = "readyCheck",
+        db = function(p) return p.general end,
+        refresh = function() if _G.QUI_RefreshReadyCheckColors then _G.QUI_RefreshReadyCheckColors() end end,
+        legacy = { override = "readyCheckBorderOverride", useClass = "readyCheckBorderUseClassColor" },
+    })
+end
+
 ---------------------------------------------------------------------------
 -- INITIALIZATION
 ---------------------------------------------------------------------------

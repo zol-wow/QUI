@@ -529,23 +529,8 @@ local function GetBarColors()
         _sr, _sg, _sb, _sa, bgr, bgg, bgb, bga = Helpers.GetSkinColors()
     end
 
-    -- Border color
-    local bdr, bdg, bdb, bda
-    if settings.borderOverride then
-        if settings.borderUseClassColor then
-            bdr, bdg, bdb = Helpers.GetPlayerClassColor()
-            bda = 1
-        elseif type(settings.borderColor) == "table" then
-            bdr = settings.borderColor[1] or 0
-            bdg = settings.borderColor[2] or 0
-            bdb = settings.borderColor[3] or 0
-            bda = settings.borderColor[4] or 1
-        else
-            bdr, bdg, bdb, bda = 0, 0, 0, 1
-        end
-    else
-        bdr, bdg, bdb, bda = Helpers.GetSkinBorderColor()
-    end
+    -- Border color via centralized resolver (honors per-module source enum)
+    local bdr, bdg, bdb, bda = Helpers.GetSkinBorderColor(settings, "")
 
     return br, bg, bb, ba, bgr, bgg, bgb, bga, bdr, bdg, bdb, bda
 end
@@ -1293,11 +1278,11 @@ local function CreateHuntPanel()
     panel:SetFrameStrata("TOOLTIP")
 
     local _, _, _, _, bgr, bgg, bgb, bga = Helpers.GetSkinColors()
-    local bdr, bdg, bdb = 1, 1, 1
-    if Helpers and Helpers.GetSkinBorderColor then bdr, bdg, bdb = Helpers.GetSkinBorderColor() end
+    local huntSettings = GetSettings()
+    local bdr, bdg, bdb, bda = Helpers.GetSkinBorderColor(huntSettings, "")
     local panelPx = GetPixelSize(panel)
     SkinBase.ApplyPixelBackdrop(panel, panelPx, true, true,
-        { bdr, bdg, bdb, 1 },
+        { bdr, bdg, bdb, bda },
         { bgr, bgg, bgb, 0.95 })
 
     panel.title = panel:CreateFontString(nil, "OVERLAY")
@@ -1738,3 +1723,12 @@ ns.QUI_PreyTracker = {
     TogglePreview = TogglePreview,
     ToggleDefaultIndicator = ToggleDefaultIndicator,
 }
+
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "preyTracker", label = "Prey Tracker", category = "Trackers", prefix = "",
+        db = function(p) return p.preyTracker end,
+        refresh = function() if _G.QUI_RefreshPreyTracker then _G.QUI_RefreshPreyTracker() end end,
+        legacy = { override = "borderOverride", useClass = "borderUseClassColor" },
+    })
+end

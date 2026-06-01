@@ -366,23 +366,10 @@ local function BuildThemeColorsTab(tabContent)
 
     local tsBorderThickW = GUI:CreateFormSlider(sTS.frame, nil, 1, 10, 1, "borderThickness", tooltip, RefreshTooltipSkin,
         { description = "Thickness of the tooltip border in pixels." })
-    local TOOLTIP_BORDER_SOURCE_OPTIONS = {
-        { value = "theme",  text = "Theme" },
-        { value = "class",  text = "Class" },
-        { value = "custom", text = "Custom" },
-    }
-    local tsBorderColorW
-    local tsBorderSourceW = GUI:CreateFormDropdown(sTS.frame, nil, TOOLTIP_BORDER_SOURCE_OPTIONS, "borderColorSource", tooltip, function(value)
-        if tsBorderColorW and tsBorderColorW.SetEnabled then
-            tsBorderColorW:SetEnabled(value == "custom")
-        end
-        RefreshTooltipSkin()
-    end, { description = "Where the tooltip border gets its color: Theme (your theme accent), Class (the unit's class color), or Custom (the color picker)." })
-    tsBorderColorW = GUI:CreateFormColorPicker(sTS.frame, nil, "borderColor", tooltip, RefreshTooltipSkin, nil,
-        { description = "Custom tooltip border color, used when Border Color Source is set to Custom." })
-    if tsBorderColorW and tsBorderColorW.SetEnabled then
-        tsBorderColorW:SetEnabled((tooltip.borderColorSource or "theme") == "custom")
-    end
+    local tsBorderSourceW, tsBorderColorW = ns.QUI_BorderControl.Attach(
+        GUI, sTS.frame, tooltip, "", RefreshTooltipSkin,
+        { label = "Border Color Source", colorLabel = "Border Color" }
+    )
     sTS.AddRow(
         row(sTS.frame, "Border Thickness", tsBorderThickW),
         row(sTS.frame, "Border Color Source", tsBorderSourceW)
@@ -666,6 +653,28 @@ local function BuildSkinningTab(tabContent)
     end
     pairCells(sSBF, sbfCells)
     L.closeSection(sSBF)
+
+    ---------------------------------------------------------------------------
+    -- ALERT FRAMES (border color)
+    ---------------------------------------------------------------------------
+    if general.alertsBorderColorSource == nil then general.alertsBorderColorSource = "inherit" end
+    if general.alertsBorderColor == nil then general.alertsBorderColor = {0, 0, 0, 1} end
+
+    local function RefreshAlerts()
+        if _G.QUI_RefreshAlertColors then _G.QUI_RefreshAlertColors() end
+    end
+
+    L.headerAt("Alert Frames Border")
+    local sAF = L.sectionAt()
+    local afBorderSourceW, afBorderColorW = ns.QUI_BorderControl.Attach(
+        GUI, sAF.frame, general, "alerts", RefreshAlerts,
+        { label = "Border Color Source", colorLabel = "Border Color" }
+    )
+    sAF.AddRow(
+        row(sAF.frame, "Border Color Source", afBorderSourceW),
+        row(sAF.frame, "Border Color", afBorderColorW)
+    )
+    L.closeSection(sAF)
 
     ---------------------------------------------------------------------------
     -- STATUS TRACKING BARS

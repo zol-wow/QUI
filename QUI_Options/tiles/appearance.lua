@@ -149,6 +149,19 @@ function V2.Register(frame)
                     subTabName = "Theme & Colors",
                 },
             },
+            {
+                id = "borderColoring",
+                name = "Border Coloring",
+                sectionNav = true,
+                featureId = "borderColoringPage",
+                searchContext = {
+                    tileId = "appearance",
+                    tabName = SEARCH_TAB_NAME,
+                    subPageIndex = 11,
+                    subTabName = "Border Coloring",
+                },
+                searchAliases = { "border", "border color", "outline", "edge color", "frame border" },
+            },
         },
         relatedSettings = {
             { label = "Chat & Tooltips",    tileId = "chat_tooltips", subPageIndex = 1 },

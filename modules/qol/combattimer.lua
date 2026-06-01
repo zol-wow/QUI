@@ -186,21 +186,8 @@ local function UpdateTimerAppearance()
     local borderTexture = settings.borderTexture or "None"
     local useLSMBorder = borderTexture ~= "None" and borderSize > 0
 
-    -- Get border color
-    local borderColor
-    if settings.useClassColorBorder then
-        borderColor = GetClassColor()
-    elseif settings.useAccentColorBorder then
-        local QUI = _G.QUI
-        if QUI and QUI.GetAddonAccentColor then
-            local ar, ag, ab, aa = QUI:GetAddonAccentColor()
-            borderColor = { ar, ag, ab, aa }
-        else
-            borderColor = settings.borderColor or {0, 0, 0, 1}
-        end
-    else
-        borderColor = settings.borderColor or {0, 0, 0, 1}
-    end
+    -- Get border color via centralized resolver (honors per-module source enum)
+    local bR, bG, bB, bA = Helpers.GetSkinBorderColor(settings, "")
 
     -- Set up backdrop with or without LSM border
     -- Skip LSM border if hideBorder is enabled
@@ -209,9 +196,10 @@ local function UpdateTimerAppearance()
 
     local SSB = QUICore and QUICore.SafeSetBackdrop
     if showBackdrop or effectiveUseLSMBorder then
+        local borderColorTable = effectiveUseLSMBorder and { bR, bG, bB, bA } or nil
         local backdropInfo = UIKit.GetBackdropInfo(hideBorder and "None" or borderTexture, hideBorder and 0 or borderSize, frame)
         if SSB then
-            SSB(frame, backdropInfo, effectiveUseLSMBorder and borderColor or nil)
+            SSB(frame, backdropInfo, borderColorTable)
         else
             frame:SetBackdrop(backdropInfo)
         end
@@ -224,7 +212,7 @@ local function UpdateTimerAppearance()
         end
 
         if effectiveUseLSMBorder and not SSB then
-            frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
+            frame:SetBackdropBorderColor(bR, bG, bB, bA)
         end
     else
         if SSB then
@@ -236,9 +224,8 @@ local function UpdateTimerAppearance()
 
     -- Update manual border lines (only used when no LSM border is selected)
     -- Hide all borders if hideBorder is enabled
-    local hideBorder = settings.hideBorder
     UIKit.CreateBorderLines(frame)
-    UIKit.UpdateBorderLines(frame, borderSize, borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1, useLSMBorder or hideBorder)
+    UIKit.UpdateBorderLines(frame, borderSize, bR, bG, bB, bA, useLSMBorder or hideBorder)
 
     -- Ensure text is always centered
     frame.text:ClearAllPoints()
@@ -473,5 +460,14 @@ if ns.Registry then
         priority = 40,
         group = "skinning",
         importCategories = { "skinning", "theme" },
+    })
+end
+
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "combatTimer", label = "Combat Timer", category = "Trackers", prefix = "",
+        db = function(p) return p.combatTimer end,
+        refresh = function() if _G.QUI_RefreshCombatTimer then _G.QUI_RefreshCombatTimer() end end,
+        legacy = { useClass = "useClassColorBorder", accent = "useAccentColorBorder" },
     })
 end
