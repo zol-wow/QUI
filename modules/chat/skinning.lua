@@ -1063,9 +1063,14 @@ local function UpdateTabColors(tab)
     LayoutUnreadPulse(tab)
 
     local fontString = tab:GetFontString()
-    -- Accent resolved live so a theme-preset change propagates on the next
+    -- Accent resolved live so text/glow theme states propagate on the next
     -- repaint instead of being captured at module load.
     local accent = I.GetAccent and I.GetAccent() or I.QUI_COLORS.accent
+    local tabBorder = accent
+    if I.GetChatTabBorderColor then
+        local tr, tg, tb, ta = I.GetChatTabBorderColor(settings)
+        tabBorder = {tr, tg, tb, ta}
+    end
 
     -- Source tab background RGB from the themed depth tiers.
     -- Selected tab → SUBPANEL tier (slightly raised bg); inactive → PANEL tier.
@@ -1082,12 +1087,17 @@ local function UpdateTabColors(tab)
     end
 
     if isSelected then
-        ApplyTabSurfaceStyle(I.tabBackdrops[tab], {selR, selG, selB, alpha + 0.2}, accent, 1)
+        ApplyTabSurfaceStyle(I.tabBackdrops[tab], {selR, selG, selB, alpha + 0.2}, tabBorder, 1)
         if fontString then
             fontString:SetTextColor(accent[1], accent[2], accent[3], 1)
         end
     else
-        ApplyTabSurfaceStyle(I.tabBackdrops[tab], {inactR, inactG, inactB, alpha}, {0, 0, 0, alpha}, 1)
+        local inactiveBorder = {0, 0, 0, alpha}
+        local source = settings and settings.chatTabBorderColorSource
+        if source and source ~= "theme" then
+            inactiveBorder = {tabBorder[1], tabBorder[2], tabBorder[3], math.min(alpha, tabBorder[4] or alpha)}
+        end
+        ApplyTabSurfaceStyle(I.tabBackdrops[tab], {inactR, inactG, inactB, alpha}, inactiveBorder, 1)
         if fontString then
             local c = I.QUI_COLORS.textDim or {0.72, 0.72, 0.76, 1}
             fontString:SetTextColor(c[1], c[2], c[3], 1)

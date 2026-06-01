@@ -50,4 +50,14 @@ assert(applyColorsBody:find("SetBackdropBorderColor", 1, true),
 assert(applyColorsBody:find("_ResolveBorderColor", 1, true),
     "_ApplyColors must use _ResolveBorderColor for the live border color")
 
+-- 5. The native damage meter participates in the shared Border Coloring page.
+--    That page is driven by Helpers.BorderRegistry, so the module must expose a
+--    registry entry whose refresh path repaints live windows.
+assert(src:find("BorderRegistry.Register", 1, true),
+    "damage meter must register with Helpers.BorderRegistry")
+assert(src:find('key = "damageMeter"', 1, true),
+    "damage meter BorderRegistry key must be damageMeter")
+assert(src:find("WindowManager:RefreshAll()", 1, true),
+    "damage meter border registry refresh must repaint live windows")
+
 print("OK: damage_meter_border_apply_test")

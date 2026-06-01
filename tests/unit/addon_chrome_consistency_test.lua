@@ -313,6 +313,8 @@ do
     -- GetDepthColor must now be referenced for tab chrome.
     assertContains(src, "GetDepthColor",
         "skinning.lua: must reference GetDepthColor for tab bg tiers")
+    assertContains(src, "GetChatTabBorderColor",
+        "skinning.lua: tab borders must source from the chatTab border-color settings")
 
     -- Semantic guard: I.QUI_COLORS.textDim fallback for inactive-tab label must remain.
     assertContains(src, "I.QUI_COLORS.textDim",
@@ -525,6 +527,12 @@ do
         "chat.lua: GetSkinBgColorWithOverride must still be the skin-default bg RGB source")
     assertContains(chatSrc, "GetSkinBgColor",
         "chat.lua: GetSkinBgColor fallback must still be present for older Helpers API")
+    assertContains(chatSrc, "GetChatTabBorderColor",
+        "chat.lua: must expose chat-tab border color resolution")
+    assertContains(chatSrc, 'key      = "chatTabs"',
+        "chat.lua: chat tabs must register separately in BorderRegistry")
+    assertContains(chatSrc, 'prefix   = "chatTab"',
+        "chat.lua: chat tab border registry entry must use the chatTab key prefix")
 end
 
 print("OK: addon_chrome_consistency_test")

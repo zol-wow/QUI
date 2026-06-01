@@ -361,6 +361,30 @@ local function GetChatSurfaceColors(settings)
            {brR, brG, brB, 0.55}
 end
 
+local function EnsureChatTabBorderSettings(settings)
+    if type(settings) ~= "table" then return nil end
+    if settings.chatTabBorderColorSource == nil then
+        -- Preserve the current selected-tab look: chat tabs used the live
+        -- accent before the shared Border Coloring row existed.
+        settings.chatTabBorderColorSource = "theme"
+    end
+    if type(settings.chatTabBorderColor) ~= "table" then
+        settings.chatTabBorderColor = {0, 0, 0, 1}
+    end
+    return settings
+end
+
+local function GetChatTabBorderColor(settings)
+    settings = EnsureChatTabBorderSettings(settings or GetSettings())
+
+    local accent = I.GetAccent and I.GetAccent() or I.QUI_COLORS.accent
+    local r, g, b, a = accent[1] or 1, accent[2] or 1, accent[3] or 1, accent[4] or 1
+    if Helpers and Helpers.GetSkinBorderColor then
+        r, g, b, a = Helpers.GetSkinBorderColor(settings, "chatTab")
+    end
+    return r, g, b, a
+end
+
 local function NormalizeScrollbackLines(settings)
     local lines = tonumber(settings and settings.scrollbackLines) or 0
     if lines <= 0 then return 0 end
@@ -416,6 +440,7 @@ I.IsTemporaryChatFrame= IsTemporaryChatFrame
 I.GetTabChatFrame     = GetTabChatFrame
 I.ApplySurfaceStyle   = ApplySurfaceStyle
 I.GetChatSurfaceColors= GetChatSurfaceColors
+I.GetChatTabBorderColor = GetChatTabBorderColor
 I.ApplyScrollbackLines= ApplyScrollbackLines
 
 ---------------------------------------------------------------------------
@@ -1128,6 +1153,15 @@ if Helpers and Helpers.BorderRegistry then
         category = "Skinning",
         prefix   = "chat",
         db       = function(p) return p.chat end,
+        refresh  = function() if _G.QUI_RefreshChat then _G.QUI_RefreshChat() end end,
+        legacy   = {},
+    })
+    Helpers.BorderRegistry.Register({
+        key      = "chatTabs",
+        label    = "Chat Tabs",
+        category = "Skinning",
+        prefix   = "chatTab",
+        db       = function(p) return EnsureChatTabBorderSettings(p and p.chat) end,
         refresh  = function() if _G.QUI_RefreshChat then _G.QUI_RefreshChat() end end,
         legacy   = {},
     })

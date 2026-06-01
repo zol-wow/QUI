@@ -1167,6 +1167,28 @@ local function GetAccentColor()
     return 0.376, 0.647, 0.980, 1   -- sky blue fallback
 end
 
+local function CopyColor(color)
+    if type(color) ~= "table" then return nil end
+    return { color[1], color[2], color[3], color[4] }
+end
+
+local function EnsureDamageMeterBorderSettings(app)
+    if type(app) ~= "table" then return nil end
+
+    app.colors = app.colors or {}
+    local legacyBorder = app.colors.border
+
+    if app.borderColorSource == nil then
+        app.borderColorSource = type(legacyBorder) == "table" and "custom" or "inherit"
+    end
+    if type(app.borderColor) ~= "table" then
+        app.borderColor = CopyColor(legacyBorder) or { 0, 0, 0, 1 }
+    end
+
+    return app
+end
+QUI_DamageMeter.EnsureBorderSettings = EnsureDamageMeterBorderSettings
+
 -- Resolve a deep path through the appearance schema with per-window override
 -- precedence. Walks db.profile.damageMeter.native.appearance.perWindow[windowID]
 -- first; if the leaf is nil (or any intermediate node), falls back to the
@@ -1513,9 +1535,18 @@ function Window:_ApplyHeader()
         .. " | " .. sessionLabel)
 end
 
--- Window border color resolves like headerText: an explicit colors.border
--- override wins; nil falls back to the QUI accent. Returns r, g, b, a.
+-- Window border color first honors the shared borderColorSource/borderColor
+-- keys used by the Border Coloring page. Older colors.border values remain a
+-- fallback so existing native damage-meter profiles keep their look.
 function Window:_ResolveBorderColor()
+    local source = ResolveAppearance(self.windowID, "borderColorSource")
+    if source ~= nil and Helpers and Helpers.GetSkinBorderColor then
+        return Helpers.GetSkinBorderColor({
+            borderColorSource = source,
+            borderColor = ResolveAppearance(self.windowID, "borderColor"),
+        })
+    end
+
     local border = ResolveAppearance(self.windowID, "colors", "border")
     if border then
         return border[1] or 1, border[2] or 1, border[3] or 1, border[4] or 1
@@ -3217,5 +3248,25 @@ if ns.Registry then
         priority = 50,
         group = "skinning",
         importCategories = { "skinning", "theme" },
+    })
+end
+
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "damageMeter",
+        label = "Damage Meter",
+        category = "HUD",
+        prefix = "",
+        db = function(p)
+            local native = p and p.damageMeter and p.damageMeter.native
+            local app = native and native.appearance and native.appearance.global
+            return EnsureDamageMeterBorderSettings(app)
+        end,
+        refresh = function()
+            if WindowManager and WindowManager.RefreshAll then
+                WindowManager:RefreshAll()
+            end
+        end,
+        legacy = {},
     })
 end

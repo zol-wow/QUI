@@ -56,6 +56,15 @@ local function row(parent, label, widget, desc)
     return Shared.BuildSettingRow(parent, label, widget, desc)
 end
 
+local function RefreshBorderColoring()
+    if Helpers and Helpers.RefreshAllBorders then
+        Helpers.RefreshAllBorders()
+    end
+    if ns.Registry and type(ns.Registry.RefreshAll) == "function" then
+        ns.Registry:RefreshAll("skinning")
+    end
+end
+
 ---------------------------------------------------------------------------
 -- BUILD FUNCTION
 ---------------------------------------------------------------------------
@@ -94,7 +103,7 @@ local function BuildBorderColoringTab(tabContent)
         sGB.frame,
         general,
         "skin",
-        function() Helpers.RefreshAllBorders() end,
+        RefreshBorderColoring,
         {
             includeInherit   = false,
             noAlpha          = true,
@@ -104,7 +113,7 @@ local function BuildBorderColoringTab(tabContent)
     )
 
     local gbHideW = GUI:CreateFormCheckbox(sGB.frame, nil, "hideSkinBorders", general,
-        function() Helpers.RefreshAllBorders() end,
+        RefreshBorderColoring,
         { description = "Hide the 1px border drawn around all globally skinned frames." }
     )
 
@@ -158,7 +167,7 @@ local function BuildBorderColoringTab(tabContent)
                                         }
                                     end
                                 end
-                                if type(e.refresh) == "function" then e.refresh() end
+                                RefreshBorderColoring()
                             end,
                             {
                                 label      = e.label .. " Source (all)",
@@ -176,9 +185,7 @@ local function BuildBorderColoringTab(tabContent)
                             sCat.frame,
                             dbTable,
                             e.prefix or "",
-                            function()
-                                if type(e.refresh) == "function" then e.refresh() end
-                            end,
+                            RefreshBorderColoring,
                             {
                                 label      = e.label .. " Source",
                                 colorLabel = e.label .. " Color",

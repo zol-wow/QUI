@@ -28,13 +28,14 @@ local function check(name, ok, detail)
     end
 end
 
--- The 21 "remaining" converted modules plus minimap == 22 keys.
+-- The 21 "remaining" converted modules plus minimap, the native damage meter,
+-- and chat-tab chrome == 24 keys.
 local EXPECTED_KEYS = {
     "minimap", "buttonDrawer", "datatext", "crosshair", "castbar", "castbarIcon",
     "portrait", "skyriding", "xpTracker", "preyTracker", "atonement",
     "combatTimer", "brezCounter", "actionTracker", "actionTrackerIcon",
     "rotationAssist", "cdmContainers", "mplusTimer", "readyCheck", "alerts",
-    "chat", "tooltip",
+    "chat", "chatTabs", "tooltip", "damageMeter",
 }
 local expectedLookup = {}
 for _, k in ipairs(EXPECTED_KEYS) do expectedLookup[k] = true end
@@ -56,6 +57,7 @@ local function listModuleLuaFiles()
         "modules/cdm/cdm_containers.lua",
         "modules/chat/chat.lua",
         "modules/combat/rotationassist.lua",
+        "modules/damage_meter/damage_meter.lua",
         "modules/dungeon/brez_counter.lua",
         "modules/minimap/datapanels.lua",
         "modules/minimap/minimap.lua",
@@ -80,6 +82,24 @@ local function readFile(path)
     local data = fh:read("*a")
     fh:close()
     return data
+end
+
+local function assertBorderColoringRefreshBroadcast()
+    local src = assert(readFile("modules/skinning/settings/border_coloring_content.lua"),
+        "cannot open border coloring settings file")
+
+    local refreshPos = src:find("local function RefreshBorderColoring", 1, true)
+    check("border coloring page centralizes refresh callback", refreshPos ~= nil)
+    if not refreshPos then return end
+
+    local nextFn = src:find("\nlocal function ", refreshPos + 1, true)
+    local body = src:sub(refreshPos, (nextFn or #src + 1) - 1)
+    check("border coloring refresh repaints border registry",
+        body:find("Helpers.RefreshAllBorders", 1, true) ~= nil)
+    check("border coloring refresh broadcasts skinning group",
+        body:find('RefreshAll("skinning")', 1, true) ~= nil)
+    check("border coloring controls avoid narrow refresh callback",
+        not src:find("function%(%) Helpers%.RefreshAllBorders%(%) end"))
 end
 
 -- Extract each BorderRegistry.Register({ ... }) block as raw text. A block runs
@@ -194,6 +214,8 @@ check("every Register block declares db", #blocksMissingDb == 0,
       #blocksMissingDb > 0 and table.concat(blocksMissingDb, "; ") or nil)
 check("every Register block declares refresh", #blocksMissingRefresh == 0,
       #blocksMissingRefresh > 0 and table.concat(blocksMissingRefresh, "; ") or nil)
+
+assertBorderColoringRefreshBroadcast()
 
 -- Informational dump of no-arg call sites (NOT a failure).
 print(("\n-- informational: %d no-arg GetSkinBorderColor() call site(s) (human review):")
