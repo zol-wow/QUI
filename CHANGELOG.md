@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v3.6.0-alpha79 - 2026-06-01
+
+> ⚠️ **Still alpha — back up your `WTF` folder before installing.** This build migrates your saved border colors to a new per-module format (schema v40). The upgrade runs automatically on first login and your borders will look exactly as they did before; a one-time backup of the previous values is kept.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Added
+- **Per-module border color control across many more elements.** You can now choose how each element's border is colored — inherit the global skin color, use the theme accent, use your class color, or pick a custom color — individually for the Minimap, Datatext panels, Minimap button drawer, Chat, Tooltips, CDM icon containers, unit frame castbar (frame and icon), portrait ring, Crosshair, Combat Timer, XP Tracker, Action Tracker (and its icons), Skyriding vigor bar, Prey/Atonement/Brez counters, Rotation Assist icon, M+ Timer, Ready Check, and skin alerts. A new **Border Coloring** page under the skinning options lists every element in one place.
+
+### Changed
+- **Existing border settings are carried over automatically.** Older per-module border colors — including the previous "use class color" toggles — are converted to the new color-source format on first login so every element keeps its current appearance.
+
 ## v3.6.0-alpha78 - 2026-05-31
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha77 profiles carry over unchanged.
