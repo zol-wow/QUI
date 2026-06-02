@@ -1,23 +1,31 @@
 ---------------------------------------------------------------------------
 -- QUI Chat Module — Per-Channel Color Overrides
 -- Stores user-chosen colors for built-in chat types (SAY/YELL/...) and
--- joined custom channels by NAME (not slot). Re-applies on PLAYER_LOGIN
--- and CHANNEL_UI_UPDATE so a channel's color follows its name across
--- rejoins / sessions / characters.
+-- joined custom channels by NAME (not slot).
 --
 -- Storage: db.profile.chat.channelColors = { [key] = {r, g, b}, ... }
 --   - Built-in keys: uppercase strings (SAY, RAID, WHISPER, ...).
 --   - Custom keys: channel name as joined ("Trade", "LookingForGroup").
 --
--- Baselines: captured at PLAYER_LOGIN BEFORE applying overrides, used to
--- restore Blizzard's default color when the user resets a row. Not
--- persisted; recaptured each session.
+-- Colors are applied at RENDER TIME: this module is a pure data store plus a
+-- `ColorFor(event, eventArgs)` resolver that chat.lua's rendered-message
+-- transform consults to override a line's r,g,b. It NEVER calls ChangeChatColor
+-- or writes Blizzard's ChatTypeInfo table -- doing so taints chat dispatch and
+-- poisons ChatHistory_GetAccessID (a secret-string crash on the first secret
+-- chat payload). See chat_channel_colors_no_chattypeinfo_write_test.lua.
 ---------------------------------------------------------------------------
 
 local ADDON_NAME, ns = ...
 
-local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
+-- Load-order guard: chat.lua must run first so ns.QUI.Chat exists for us to
+-- attach ChannelColors and the color resolver onto.
+assert(ns.QUI.Chat and ns.QUI.Chat._internals,
     "QUI Chat: channel_colors.lua loaded before chat.lua. Check chat.xml — chat.lua must precede channel_colors.lua.")
+
+local Helpers = ns.Helpers
+local function IsSecret(value)
+    return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
+end
 
 ns.QUI.Chat.ChannelColors = ns.QUI.Chat.ChannelColors or {}
 local ChannelColors = ns.QUI.Chat.ChannelColors
@@ -62,12 +70,6 @@ ChannelColors.BUILTIN_LABELS = BUILTIN_LABELS
 local BUILTIN_SET = {}
 for i = 1, #BUILTIN_KEYS do BUILTIN_SET[BUILTIN_KEYS[i]] = true end
 
-local CHANNEL_SLOT_CAP = 20  -- Blizzard's hard cap for numbered channels.
-
--- File-local: baselines[key] = {r, g, b} for built-ins + every CHANNEL%d slot.
-local baselines = {}
-local baselinesCaptured = false
-
 -- Built-in chat-type keys are a closed set defined above; channel names are
 -- arbitrary user strings. Use literal membership rather than a regex so
 -- channel names that happen to be all uppercase (e.g. "PVP", "EU", "LFG")
@@ -75,37 +77,6 @@ local baselinesCaptured = false
 local function isBuiltinKey(key)
     if type(key) ~= "string" then return false end
     return BUILTIN_SET[key] == true
-end
-
-local function captureBaselines()
-    if type(ChatTypeInfo) ~= "table" then return end
-
-    -- Built-ins. Skip keys that already have a baseline so we don't echo our
-    -- own override back as the "default" if the function is called twice.
-    for i = 1, #BUILTIN_KEYS do
-        local key = BUILTIN_KEYS[i]
-        if not baselines[key] then
-            local info = ChatTypeInfo[key]
-            if info and info.r ~= nil then
-                baselines[key] = { info.r, info.g, info.b }
-            end
-        end
-    end
-
-    -- CHANNEL slots. Some entries init lazily, so this function is allowed to
-    -- be called multiple times — first PLAYER_LOGIN, then again on every
-    -- CHANNEL_UI_UPDATE — to fill in slots as Blizzard initializes them.
-    for slot = 1, CHANNEL_SLOT_CAP do
-        local key = "CHANNEL" .. slot
-        if not baselines[key] then
-            local info = ChatTypeInfo[key]
-            if info and info.r ~= nil then
-                baselines[key] = { info.r, info.g, info.b }
-            end
-        end
-    end
-
-    baselinesCaptured = true
 end
 
 -- Walk GetChannelList() and return a name → "CHANNEL%d" map.
@@ -130,59 +101,6 @@ local function getDB()
     return db.channelColors
 end
 
-local function applyBuiltins()
-    local store = getDB()
-    if not store then return end
-    if type(ChangeChatColor) ~= "function" then return end
-    for i = 1, #BUILTIN_KEYS do
-        local key = BUILTIN_KEYS[i]
-        local c = store[key]
-        if c then ChangeChatColor(key, c[1], c[2], c[3]) end
-    end
-end
-
-local function applyCustoms()
-    local store = getDB()
-    if not store then return end
-    if type(ChangeChatColor) ~= "function" then return end
-    local nameToSlot = buildNameToSlotMap()
-    for name, slotKey in pairs(nameToSlot) do
-        local c = store[name]
-        if c then ChangeChatColor(slotKey, c[1], c[2], c[3]) end
-    end
-end
-
-local function applyAll()
-    applyBuiltins()
-    applyCustoms()
-end
-
--- Walk every key we manage (built-ins + currently joined channels). For
--- each key NOT overridden by the active profile, restore its baseline.
--- Used on profile import/switch where the previous profile's overrides
--- may still be live in ChatTypeInfo from when they were applied.
-local function revertUnmanaged()
-    local store = getDB()
-    if not store then return end
-    if type(ChangeChatColor) ~= "function" then return end
-
-    for i = 1, #BUILTIN_KEYS do
-        local key = BUILTIN_KEYS[i]
-        if store[key] == nil then
-            local b = baselines[key]
-            if b then ChangeChatColor(key, b[1], b[2], b[3]) end
-        end
-    end
-
-    local nameToSlot = buildNameToSlotMap()
-    for name, slotKey in pairs(nameToSlot) do
-        if store[name] == nil then
-            local b = baselines[slotKey]
-            if b then ChangeChatColor(slotKey, b[1], b[2], b[3]) end
-        end
-    end
-end
-
 -----------------------------------------------------------------------
 -- Public API
 -----------------------------------------------------------------------
@@ -203,22 +121,19 @@ function ChannelColors.HasOverride(key)
     return (store and store[key] ~= nil) or false
 end
 
--- Returns r, g, b for the currently effective color (override if set,
--- else captured baseline, else live ChatTypeInfo, else white).
+-- Returns r, g, b for the currently effective color (override if set, else
+-- Blizzard's live default read from ChatTypeInfo, else white). Reading
+-- ChatTypeInfo is taint-safe -- only writing it poisons chat dispatch.
 function ChannelColors.GetEffective(key)
     local store = getDB()
     local c = store and store[key]
     if c then return c[1], c[2], c[3] end
 
-    -- Baseline lookup. For customs, baseline is keyed by the CURRENT slot.
+    -- For customs, the default lives under the CURRENT slot key.
     local lookupKey = key
     if not isBuiltinKey(key) then
         lookupKey = ChannelColors.SlotForChannel(key)
     end
-    local b = lookupKey and baselines[lookupKey]
-    if b then return b[1], b[2], b[3] end
-
-    -- Last-resort live read (covers entries that init after baseline capture).
     local info = lookupKey and type(ChatTypeInfo) == "table" and ChatTypeInfo[lookupKey]
     if info and info.r then return info.r, info.g, info.b end
     return 1, 1, 1
@@ -229,13 +144,6 @@ function ChannelColors.Set(key, r, g, b)
     local store = getDB()
     if not store then return end
     store[key] = { r, g, b }
-    if type(ChangeChatColor) ~= "function" then return end
-    if isBuiltinKey(key) then
-        ChangeChatColor(key, r, g, b)
-    else
-        local slotKey = ChannelColors.SlotForChannel(key)
-        if slotKey then ChangeChatColor(slotKey, r, g, b) end
-    end
 end
 
 function ChannelColors.Clear(key)
@@ -243,92 +151,50 @@ function ChannelColors.Clear(key)
     local store = getDB()
     if not store then return end
     store[key] = nil
-    if type(ChangeChatColor) ~= "function" then return end
-    if isBuiltinKey(key) then
-        local b = baselines[key]
-        if b then ChangeChatColor(key, b[1], b[2], b[3]) end
-    else
-        local slotKey = ChannelColors.SlotForChannel(key)
-        if slotKey then
-            local b = baselines[slotKey]
-            if b then ChangeChatColor(slotKey, b[1], b[2], b[3]) end
-        end
-    end
 end
 
 function ChannelColors.ClearAll()
     local store = getDB()
     if not store then return end
     -- Only touch keys we manage: BUILTIN_KEYS + currently joined channels.
-    -- Leaves orphan imported keys (e.g. MONSTER_SAY) untouched in SV — the
-    -- apply pipeline ignores them anyway.
-    local touched = {}
+    -- Leaves orphan imported keys (e.g. MONSTER_SAY) untouched in SV.
     for i = 1, #BUILTIN_KEYS do
-        local key = BUILTIN_KEYS[i]
-        if store[key] ~= nil then
-            store[key] = nil
-            touched[key] = true
-        end
+        store[BUILTIN_KEYS[i]] = nil
     end
     local nameToSlot = buildNameToSlotMap()
-    for name, slotKey in pairs(nameToSlot) do
-        if store[name] ~= nil then
-            store[name] = nil
-            touched[slotKey] = true
-        end
-    end
-    if type(ChangeChatColor) ~= "function" then return end
-    for key in pairs(touched) do
-        local b = baselines[key]
-        if b then ChangeChatColor(key, b[1], b[2], b[3]) end
+    for name in pairs(nameToSlot) do
+        store[name] = nil
     end
 end
 
 -----------------------------------------------------------------------
--- Profile-import refresh hook (ns.QUI.Chat._afterRefresh)
+-- Render-time color resolver (consumed by chat.lua)
 -----------------------------------------------------------------------
-local function ApplyEnabled()
-    local settings = I.GetSettings and I.GetSettings()
-    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then
-        -- Master chat toggle is off — revert every override and stop.
-        revertUnmanaged()  -- restores any unset entries
-        local store = getDB()
-        if store and type(ChangeChatColor) == "function" then
-            for i = 1, #BUILTIN_KEYS do
-                local key = BUILTIN_KEYS[i]
-                if store[key] then
-                    local b = baselines[key]
-                    if b then ChangeChatColor(key, b[1], b[2], b[3]) end
-                end
-            end
-            local nameToSlot = buildNameToSlotMap()
-            for name, slotKey in pairs(nameToSlot) do
-                if store[name] then
-                    local b = baselines[slotKey]
-                    if b then ChangeChatColor(slotKey, b[1], b[2], b[3]) end
-                end
-            end
-        end
-        return
+
+-- Resolve the override color for one rendered chat line. Returns r, g, b for a
+-- user override on this event's key, else nil (leave Blizzard's color). Never
+-- mutates any Blizzard global -- this is the whole point of the render-time
+-- approach. Secret-safe: returns nil on secret event / channel name.
+function ChannelColors.ColorFor(event, eventArgs)
+    if type(event) ~= "string" or event == "" then return nil end
+    local store = getDB()
+    if not store then return nil end
+
+    local key
+    if event == "CHAT_MSG_CHANNEL" then
+        if type(eventArgs) ~= "table" then return nil end
+        local name = eventArgs[9]  -- channel base name; matches the stored custom key
+        if IsSecret(name) or type(name) ~= "string" or name == "" then return nil end
+        key = name
+    else
+        key = event:match("^CHAT_MSG_(.+)$")  -- SAY / WHISPER / BN_WHISPER_INFORM / ...
+        if not key then return nil end
     end
-    revertUnmanaged()
-    applyAll()
+
+    local c = store[key]
+    if c then return c[1], c[2], c[3] end
+    return nil
 end
 
------------------------------------------------------------------------
--- Event wiring
------------------------------------------------------------------------
-local f = CreateFrame("Frame")
-f:RegisterEvent("PLAYER_LOGIN")
-f:RegisterEvent("CHANNEL_UI_UPDATE")
-f:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_LOGIN" then
-        captureBaselines()
-        applyAll()
-    elseif event == "CHANNEL_UI_UPDATE" then
-        captureBaselines()  -- fills slots that init lazily
-        applyCustoms()
-    end
-end)
-
-table.insert(ns.QUI.Chat._afterRefresh, ApplyEnabled)
+-- Register the resolver so chat.lua's rendered-message transform can apply it.
+ns.QUI.Chat._lineColorResolver = ChannelColors.ColorFor

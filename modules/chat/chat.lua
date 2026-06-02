@@ -735,6 +735,13 @@ local function ShouldTransformRenderedMessage(frame, message, r, g, b, infoID, a
         return true
     end
 
+    -- A line with a per-channel color override must be transformed even when it
+    -- has no timestamp/URL/pipeline work (this is what pulls whispers in).
+    local resolver = ns.QUI.Chat and ns.QUI.Chat._lineColorResolver
+    if resolver and resolver(cleanEvent, eventArgs) then
+        return true
+    end
+
     return markSeenAndSkip()
 end
 
@@ -769,6 +776,16 @@ local function TransformRenderedMessage(frame, message, r, g, b, infoID, accessI
         local newMessage = Pipeline.Run(modified, BuildRenderedInfo(cleanEvent, eventArgs), cleanEvent)
         if newMessage ~= nil and not IsSecret(newMessage) and type(newMessage) == "string" then
             modified = newMessage
+        end
+    end
+
+    -- Per-channel color override: substitute the line's r,g,b (reproduces native
+    -- ChatTypeInfo tinting without ever writing that global). See channel_colors.lua.
+    local colorResolver = ns.QUI.Chat and ns.QUI.Chat._lineColorResolver
+    if colorResolver then
+        local cr, cg, cb = colorResolver(cleanEvent, eventArgs)
+        if cr ~= nil and not IsSecret(cr) then
+            r, g, b = cr, cg, cb
         end
     end
 

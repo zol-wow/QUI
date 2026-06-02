@@ -528,6 +528,58 @@ local function applyDualCornerSize(f, x, y, pt, relPt)
 	f:SetPoint("BOTTOMRIGHT", UIParent, relPt, (x or 0) + w, (y or 0) - h)
 end
 
+---------------------------------------------------------------------------
+-- Secure positioner: reposition/scale PROTECTED frames without tainting them.
+--
+-- Calling frame:SetPoint / frame:SetScale on a protected Blizzard frame from
+-- insecure code taints the frame. Frames that drive their OnShow through
+-- secureexecuterange (e.g. the world map) then propagate that taint into the
+-- protected calls in that path, producing ADDON_ACTION_BLOCKED. Running the
+-- SetPoint inside a SecureHandlerBaseTemplate :Execute snippet keeps the
+-- mutation in the restricted (untainted) environment -- the same secure-handler
+-- idiom used elsewhere in QUI.
+---------------------------------------------------------------------------
+local securePositioner
+local secureAnchor
+
+local function ensureSecurePositioner()
+	if securePositioner then return securePositioner end
+	if type(CreateFrame) ~= "function" then return nil end
+	secureAnchor = CreateFrame("Frame", "QUI_MoverSecureAnchor", UIParent, "SecureFrameTemplate")
+	if secureAnchor.SetAllPoints then secureAnchor:SetAllPoints(UIParent) end
+	securePositioner = CreateFrame("Frame", "QUI_MoverSecurePositioner", UIParent, "SecureHandlerBaseTemplate")
+	securePositioner:SetFrameRef("anchor", secureAnchor)
+	return securePositioner
+end
+
+-- Pin `frame` to (point, x, y) relative to the UIParent-mirroring secure anchor
+-- and/or set its scale, entirely inside the secure snippet. Passing point=nil
+-- (scale-only) skips the SetPoint. Saved positions are always UIParent-relative
+-- with anchorPoint == relativePoint, matching the legacy raw path. All attribute
+-- values are non-nil (SetAttribute's value is non-nilable); false means "skip".
+local function securePlace(frame, point, x, y, scale)
+	local poser = ensureSecurePositioner()
+	if not poser then return false end
+	poser:SetFrameRef("frame", frame)
+	poser:SetAttribute("point", point or false)
+	poser:SetAttribute("offX", x or 0)
+	poser:SetAttribute("offY", y or 0)
+	poser:SetAttribute("scale", scale or false)
+	poser:Execute([[
+		local f = self:GetFrameRef("frame")
+		if not f then return end
+		local point = self:GetAttribute("point")
+		if point then
+			f:ClearAllPoints()
+			f:SetPoint(point, self:GetFrameRef("anchor"), point,
+				self:GetAttribute("offX"), self:GetAttribute("offY"))
+		end
+		local s = self:GetAttribute("scale")
+		if s then f:SetScale(s) end
+	]])
+	return true
+end
+
 function M.functions.applyFrameSettings(f, entry)
 	local panel = resolvePanel(entry) or M.functions.GetEntryForFrameName(f:GetName() or "")
 	if not panel or not panelIsActive(panel) then return end
@@ -542,15 +594,24 @@ function M.functions.applyFrameSettings(f, entry)
 	end
 	local c = ctx(f)
 	c.applyingLayout = true
-	if hasPos then
-		if panel.keepTwoPointSize then
-			applyDualCornerSize(f, saved.x, saved.y, saved.point, saved.point)
-		else
-			f:ClearAllPoints()
-			f:SetPoint(saved.point, UIParent, saved.point, saved.x, saved.y)
+	if f.IsProtected and f:IsProtected() and not panel.keepTwoPointSize then
+		-- Protected frame: position/scale via the secure positioner (no taint).
+		if hasPos then
+			securePlace(f, saved.point, saved.x, saved.y, sc)
+		elseif sc then
+			securePlace(f, nil, nil, nil, sc)  -- scale only; leaves current anchor
 		end
+	else
+		if hasPos then
+			if panel.keepTwoPointSize then
+				applyDualCornerSize(f, saved.x, saved.y, saved.point, saved.point)
+			else
+				f:ClearAllPoints()
+				f:SetPoint(saved.point, UIParent, saved.point, saved.x, saved.y)
+			end
+		end
+		if sc and f.SetScale then f:SetScale(sc) end
 	end
-	if sc and f.SetScale then f:SetScale(sc) end
 	c.applyingLayout = false
 end
 
@@ -790,7 +851,11 @@ function M.functions.createHooks(root, entry)
 			M.functions.deferApply(root, panel)
 			return
 		end
-		if root.SetScale then root:SetScale(next) end
+		if root.IsProtected and root:IsProtected() then
+			securePlace(root, nil, nil, nil, next)  -- scale via secure snippet; no taint
+		elseif root.SetScale then
+			root:SetScale(next)
+		end
 	end
 
 	local function nudgeScale(delta)
