@@ -899,8 +899,10 @@ eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
 eventFrame:RegisterEvent("ACTIVE_COMBAT_CONFIG_CHANGED")
+eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 
 local loadoutDebounceTimer = nil
+local rosterDebounceTimer = nil
 
 eventFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_ENTERING_WORLD" then
@@ -974,6 +976,26 @@ eventFrame:SetScript("OnEvent", function(self, event)
             loadoutDebounceTimer = nil
             if not InCombatLockdown() then
                 QUI_GFCC:RefreshBindings()
+            else
+                QUI_GFCC.pendingRefresh = true
+            end
+        end)
+    elseif event == "GROUP_ROSTER_UPDATE" then
+        -- Roster changed (e.g. zoning into a dungeon adds party members, including
+        -- NPC followers). Secure group headers create and assign their child unit
+        -- buttons lazily as the roster settles — frequently AFTER the one-shot
+        -- PLAYER_ENTERING_WORLD catch-up — so frames that appear on a roster change
+        -- would otherwise have no click-cast bindings until the next /reload.
+        -- Re-register all frames: SetupFrameClickCast is idempotent (it skips
+        -- already-registered frames), so this only binds the newly created ones.
+        -- Debounce because GRU fires in bursts and the header needs a moment to
+        -- create/assign children.
+        if rosterDebounceTimer then rosterDebounceTimer:Cancel() end
+        rosterDebounceTimer = C_Timer.NewTimer(0.3, function()
+            rosterDebounceTimer = nil
+            if not InCombatLockdown() then
+                QUI_GFCC:RegisterAllFrames()
+                QUI_GFCC:RegisterUnitFrames()
             else
                 QUI_GFCC.pendingRefresh = true
             end
