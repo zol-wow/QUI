@@ -6,7 +6,6 @@ local ADDON_NAME, ns = ...
 local QUI = ns.QUI or {}
 ns.QUI = QUI
 local Helpers = ns.Helpers
-local CreateOnUpdateThrottle = Helpers and Helpers.CreateOnUpdateThrottle
 
 local crosshairFrame, horizLine, vertLine, horizBorder, vertBorder
 

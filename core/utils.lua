@@ -27,10 +27,6 @@ Helpers.AssetPath = "Interface\\AddOns\\" .. ADDON_NAME .. "\\assets\\"
 local issecretvalue = _G.issecretvalue
 local canaccesstable = _G.canaccesstable
 
-local function GetCore()
-    return (_G.QUI and _G.QUI.QUICore) or ns.Addon
-end
-
 ---------------------------------------------------------------------------
 -- SECRET VALUE UTILITIES (Patch 12.0+)
 -- Combat-related APIs can return "secret values" in restricted contexts.
@@ -1257,31 +1253,6 @@ function Helpers.CreateTimeThrottle(interval, callback)
         lastRun = now
         return callback(...)
     end
-end
-
--- if QUI Player or Target Frames don't exist, find a 3rd party UF
--- eg Elv, Unhalted, or Blizzard UF for anchoring purposes
--- @param type string eg player or target
--- @return frame
-function Helpers.FindAnchorFrame(type)
-    local frameHighestWidth, highestWidth = nil, 0
-    local f = EnumerateFrames()
-    while f do
-        -- Fast field access first; only fall back to GetAttribute if nil
-        local unit = f.unit
-        if unit == nil and f.GetAttribute then
-            unit = f:GetAttribute("unit")
-        end
-        -- Cheapest checks first: unit match > IsVisible > IsObjectType > GetName
-        if unit == type and f:IsVisible() and f:IsObjectType("Button") and f:GetName() then
-            local w = f:GetWidth()
-            if w > 20 and w > highestWidth then
-                frameHighestWidth, highestWidth = f, w
-            end
-        end
-        f = EnumerateFrames(f)
-    end
-    return frameHighestWidth
 end
 
 --- Clamp a value between min and max bounds

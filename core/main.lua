@@ -283,9 +283,6 @@ function QUICore:OnProfileChanged(event, db, profileKey)
         if ns.UIKit and ns.UIKit.RefreshScaleBoundWidgets then
             ns.UIKit.RefreshScaleBoundWidgets()
         end
-        if not InCombatLockdown() and self.UIMult then
-            self:UIMult()
-        end
     end
     local function DeferUIScale(scale)
         QUICore._pendingUIScale = scale
@@ -470,10 +467,6 @@ function QUICore:OnProfileChanged(event, db, profileKey)
         C_Timer.After(1.8, function()
             if InCombatLockdown() then
                 return
-            end
-
-            if self.UIMult then
-                self:UIMult()
             end
 
             if ns.Registry then
