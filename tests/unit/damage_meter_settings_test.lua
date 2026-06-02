@@ -20,11 +20,8 @@ assert(xmlSrc:find('Script file="settings/damage_meter_content.lua"', 1, true)
     or xmlSrc:find('Script file="settings\\damage_meter_content.lua"', 1, true),
     "damage_meter.xml must load the settings content file")
 
--- QUI_Options/options.xml picked it up too
-local optsSrc = readAll("QUI_Options/options.xml")
-assert(optsSrc:find("damage_meter_content.lua", 1, true)
-    or optsSrc:find("damageMeter", 1, true),
-    "QUI_Options/options.xml must reference the damage_meter content file")
+-- Settings content now lives in the module package (loaded by the main addon
+-- via damage_meter.xml, asserted above) rather than QUI_Options/options.xml.
 
 -- T12 (Phase 2): Behavior section additions
 assert(contentSrc:find("refreshRateIdle", 1, true),

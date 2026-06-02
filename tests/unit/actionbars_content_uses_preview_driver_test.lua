@@ -33,14 +33,15 @@ local actionbars = readAll("modules/actionbars/actionbars_public.lua")
 assert(actionbars:find("ns.QUI_ActionBarsPreviewDriver", 1, true),
     "actionbars_public.lua _G.QUI_RefreshActionBars must chain ns.QUI_ActionBarsPreviewDriver.Refresh")
 
--- T9: options.xml registers the driver file
-local optionsXml = readAll("QUI_Options/options.xml")
-assert(optionsXml:find("action_bars_preview_driver.lua", 1, true),
-    "QUI_Options/options.xml must register action_bars_preview_driver.lua")
+-- T9: the module XML registers the driver file. Settings content now lives in
+-- the module package (loaded by the main addon) rather than QUI_Options/options.xml.
+local moduleXml = readAll("modules/actionbars/actionbars.xml")
+assert(moduleXml:find("action_bars_preview_driver.lua", 1, true),
+    "actionbars.xml must register action_bars_preview_driver.lua")
 -- And it must come BEFORE action_bars_content.lua so the driver is loaded first
-local driverPos = optionsXml:find("action_bars_preview_driver.lua", 1, true)
-local contentPos = optionsXml:find("action_bars_content.lua", 1, true)
+local driverPos = moduleXml:find("action_bars_preview_driver.lua", 1, true)
+local contentPos = moduleXml:find("action_bars_content.lua", 1, true)
 assert(driverPos and contentPos and driverPos < contentPos,
-    "options.xml must load action_bars_preview_driver.lua before action_bars_content.lua")
+    "actionbars.xml must load action_bars_preview_driver.lua before action_bars_content.lua")
 
 print("OK: actionbars_content_uses_preview_driver_test")

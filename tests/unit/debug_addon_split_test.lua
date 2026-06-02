@@ -67,15 +67,19 @@ assertContains(
     'local DIAGNOSE_ADDON_NAME = "QUI"',
     "diagnostic blocker capture must still watch the main addon")
 
+-- Release packaging (hardened): QUI_Debug is dropped from the release zip
+-- entirely and the packaging guards against it via forbidden_paths, rather than
+-- an rsync --exclude. The debug companion must never be nested under QUI...
 assertContains(
     ".github/workflows/release.yml",
-    "--exclude='QUI_Debug'",
-    "release package must not nest QUI_Debug under QUI")
+    "build/QUI/QUI_Debug",
+    "release packaging must forbid nesting QUI_Debug under QUI")
 
+-- ...and must not ship as a top-level addon in the release zip either.
 assertContains(
     ".github/workflows/release.yml",
     "build/QUI_Debug",
-    "release package must include the debug companion as a sibling addon")
+    "release packaging must forbid shipping QUI_Debug in the release zip")
 
 local initLua = readFile("init.lua")
 local _, debugLoadCallCount = initLua:gsub("self:EnsureDebugToolsLoaded%(%s*%)", "")
