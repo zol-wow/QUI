@@ -150,6 +150,15 @@ assert(child2.attributes["type1"] == "macro",
 assert(child2.attributes["macrotext1"] and child2.attributes["macrotext1"]:find("Rejuvenation", 1, true),
     "new follower frame should cast the configured spell")
 
+-- Secure headers can be sparse while the roster is settling. A later child
+-- must not be skipped just because an earlier child slot is temporarily empty.
+partyHeader.attributes["child2"] = nil
+local child4 = NewFrame("Button", "QUI_TestUnit4", nil, "SecureUnitButtonTemplate")
+partyHeader.attributes["child4"] = child4
+fire("GROUP_ROSTER_UPDATE")
+assert(child4.attributes["type1"] == "macro",
+    "BUG: sparse secure-header children should still be click-cast bound after roster updates")
+
 -- And the in-combat case should defer, then apply when combat ends.
 local child3 = NewFrame("Button", "QUI_TestUnit3", nil, "SecureUnitButtonTemplate")
 partyHeader.attributes["child3"] = child3

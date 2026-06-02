@@ -50,6 +50,7 @@ local activeBindings = {} -- Resolved mouse bindings for current spec
 local keyboardBindings = {} -- Resolved keyboard bindings for current spec
 local smartResSwapped = setmetatable({}, { __mode = "k" }) -- Per-frame: true when OnEnter swapped to res
 local isEnabled = false
+local currentKeyboardFrame = nil
 
 ---------------------------------------------------------------------------
 -- PING MACROS: /ping [@mouseover] <type> for each ping action type
@@ -217,6 +218,31 @@ local HIDE_SNIPPET = [[
     owner:ClearBindings()
 ]]
 
+local CLEAR_HEADER_BINDINGS_SNIPPET = [[
+    self:ClearBindings()
+]]
+
+local REFRESH_HEADER_BINDINGS_SNIPPET = [[
+    self:ClearBindings()
+
+    local frame = self:GetFrameRef("clickcast-hover-frame")
+    if not frame then return end
+
+    local frameName = frame:GetName()
+    if not frameName then return end
+
+    local count = self:GetAttribute("clickcast-keycount") or 0
+    if count == 0 then return end
+
+    for i = 1, count do
+        local key = self:GetAttribute("clickcast-key" .. i)
+        local vBtn = self:GetAttribute("clickcast-vbtn" .. i)
+        if key and vBtn then
+            self:SetBindingClick(true, key, frameName, vBtn)
+        end
+    end
+]]
+
 -- Wrap a frame's OnEnter/OnLeave/OnHide with secure handler snippets.
 -- Only called once per frame (tracked by secureWrappedFrames).
 local function WrapFrameSecureHandlers(frame)
@@ -229,6 +255,29 @@ local function WrapFrameSecureHandlers(frame)
     SecureHandlerWrapScript(frame, "OnHide", header, HIDE_SNIPPET)
 
     secureWrappedFrames[frame] = true
+end
+
+local function ClearHeaderOverrideBindings()
+    if InCombatLockdown() then return end
+    if bindingHeader and bindingHeader.Execute then
+        bindingHeader:Execute(CLEAR_HEADER_BINDINGS_SNIPPET)
+    end
+end
+
+local function RefreshHeaderOverrideBindings()
+    if InCombatLockdown() then return end
+
+    local header = bindingHeader
+    if not header or not header.Execute then return end
+
+    local frame = currentKeyboardFrame
+    if frame and registeredFrames[frame] and header.SetFrameRef then
+        header:SetFrameRef("clickcast-hover-frame", frame)
+        header:Execute(REFRESH_HEADER_BINDINGS_SNIPPET)
+    else
+        currentKeyboardFrame = nil
+        header:Execute(CLEAR_HEADER_BINDINGS_SNIPPET)
+    end
 end
 
 -- Build virtual button name from a binding's modifiers + key.
@@ -472,6 +521,22 @@ local function SetupFrameClickCast(frame)
     if not hookedFrames[frame] then
         hookedFrames[frame] = true
 
+        frame:HookScript("OnEnter", function(self)
+            if isEnabled then currentKeyboardFrame = self end
+        end)
+        frame:HookScript("OnLeave", function(self)
+            if currentKeyboardFrame == self then
+                currentKeyboardFrame = nil
+                ClearHeaderOverrideBindings()
+            end
+        end)
+        frame:HookScript("OnHide", function(self)
+            if currentKeyboardFrame == self then
+                currentKeyboardFrame = nil
+                ClearHeaderOverrideBindings()
+            end
+        end)
+
         -- Smart resurrection: hook to swap spell when target is dead.
         -- Always install the hook — check db.clickCast.smartRes at runtime
         -- so toggling the setting takes effect without reload.
@@ -598,6 +663,16 @@ local function ClearFrameClickCast(frame)
     registeredFrames[frame] = nil
 end
 
+local function RegisterHeaderChildren(header)
+    if not header then return end
+    for i = 1, 40 do
+        local child = header:GetAttribute("child" .. i)
+        if child then
+            SetupFrameClickCast(child)
+        end
+    end
+end
+
 ---------------------------------------------------------------------------
 -- PUBLIC API
 ---------------------------------------------------------------------------
@@ -640,38 +715,19 @@ function QUI_GFCC:RegisterAllFrames()
     -- Walk header children directly rather than relying on a cached list.
     -- This always gets current children regardless of creation timing.
     for _, headerKey in ipairs({"party", "raid", "self"}) do
-        local header = GF.headers[headerKey]
-        if header then
-            for i = 1, 40 do
-                local child = header:GetAttribute("child" .. i)
-                if not child then break end
-                SetupFrameClickCast(child)
-            end
-        end
+        RegisterHeaderChildren(GF.headers[headerKey])
     end
 
     -- Raid section headers used for grouped raids and raid self-first ordering.
     -- These are separate from headers.raid and must be registered independently.
     if GF.raidGroupHeaders then
         for _, header in ipairs(GF.raidGroupHeaders) do
-            if header then
-                for i = 1, 40 do
-                    local child = header:GetAttribute("child" .. i)
-                    if not child then break end
-                    SetupFrameClickCast(child)
-                end
-            end
+            RegisterHeaderChildren(header)
         end
     end
 
     -- Spotlight header children
-    if GF.spotlightHeader then
-        for i = 1, 40 do
-            local child = GF.spotlightHeader:GetAttribute("child" .. i)
-            if not child then break end
-            SetupFrameClickCast(child)
-        end
-    end
+    RegisterHeaderChildren(GF.spotlightHeader)
 end
 
 function QUI_GFCC:RegisterUnitFrames()
@@ -715,6 +771,8 @@ function QUI_GFCC:RefreshBindings()
         wipe(activeBindings)
         wipe(keyboardBindings)
         UpdateHeaderKeyAttributes()
+        ClearHeaderOverrideBindings()
+        currentKeyboardFrame = nil
         isEnabled = false
         return
     end
@@ -725,6 +783,7 @@ function QUI_GFCC:RefreshBindings()
     UpdateHeaderKeyAttributes()
     self:RegisterAllFrames()
     self:RegisterUnitFrames()
+    RefreshHeaderOverrideBindings()
 end
 
 function QUI_GFCC:IsEnabled()
@@ -996,6 +1055,7 @@ eventFrame:SetScript("OnEvent", function(self, event)
             if not InCombatLockdown() then
                 QUI_GFCC:RegisterAllFrames()
                 QUI_GFCC:RegisterUnitFrames()
+                RefreshHeaderOverrideBindings()
             else
                 QUI_GFCC.pendingRefresh = true
             end
