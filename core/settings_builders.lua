@@ -198,6 +198,7 @@ local function WithSuppressedPosition(includePosition, fn)
     local original = U and U.BuildPositionCollapsible
 
     if U and includePosition == false then
+        ---@type fun(...)
         U.BuildPositionCollapsible = function() end
     end
 
@@ -562,9 +563,11 @@ local function RenderWithTileChrome(fn)
     end
 
     if originalBuildPosition then
+        ---@type fun(...)
         U.BuildPositionCollapsible = function() end
     end
     if originalOpenLink then
+        ---@type fun(...)
         U.BuildOpenFullSettingsLink = function() end
     end
 

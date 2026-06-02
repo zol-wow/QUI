@@ -3024,6 +3024,7 @@ function ownedEngine:Initialize()
         QUI.CustomGlows = ns._OwnedGlows
         _G.QUI_RefreshCustomGlows = ns._OwnedGlows.RefreshAllGlows
         -- No-op effects refresh (owned engine has no effects.lua)
+        ---@type fun(...)
         _G.QUI_RefreshCooldownEffects = function() end
     end
     if ns._OwnedSwipe then

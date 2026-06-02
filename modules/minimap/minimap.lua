@@ -94,6 +94,7 @@ local minimapDebugStats = {
 -- Minimap is reparented to UIParent by QUI and is not in the Edit Mode secure chain.
 local function InstallMinimapLayoutNoop()
     if Minimap and not Minimap.Layout then
+        ---@type fun(...)
         Minimap.Layout = function() end
         return true
     end
@@ -1702,6 +1703,7 @@ local function UpdateButtonVisibility()
             craftingFrame._quiSetParentHooked = true
             hooksecurefunc(craftingFrame, "SetParent", function(_, parent)
                 if type(parent) == "table" and parent.Layout == nil then
+                    ---@type fun(...)
                     parent.Layout = function() end
                 end
             end)
@@ -3106,6 +3108,7 @@ local function CollectButton(frame, name)
     -- LibDBIcon uses SetAlpha(0) + fadeOut animation, not Hide()
     local mt = getmetatable(frame)
     local mtSetAlpha = mt and mt.__index and mt.__index.SetAlpha
+    ---@type fun(...)
     frame.Hide = function() end
     frame.SetShown = function(self, shown)
         if shown and mt and mt.__index then

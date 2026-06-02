@@ -1371,6 +1371,7 @@ end
 -- FormatAuraMirrorState) live in the load-on-demand debug addon. The
 -- placeholders below are rebound by cdm_debug.lua's BindAll() when loaded.
 local ShouldDebugAuraState = function() return false end
+---@type fun(...)
 local AuraStateDebug       = function() end
 local FormatAuraMirrorState = function() return "nil" end
 local FormatIDList         = function() return "nil" end

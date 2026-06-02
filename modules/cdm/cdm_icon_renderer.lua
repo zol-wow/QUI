@@ -17,12 +17,19 @@ local Shared = ns.CDMShared
 ---------------------------------------------------------------------------
 local CDMIcons = {}
 ns.CDMIcons = CDMIcons
+---@type fun(...)
 CDMIcons.ChargeDebug = function() end
+---@type fun(...)
 CDMIcons.DebugStackText = function() end
+---@type fun(...)
 CDMIcons.DebugSpellEvent = function() end
+---@type fun(...)
 CDMIcons.DebugIconEvent = function() end
+---@type fun(...)
 CDMIcons.DebugEntryBuild = function() end
+---@type fun(...)
 CDMIcons.DebugLayoutFilter = function() end
+---@type fun(...)
 CDMIcons.EventTracePrint = function() end
 CDMIcons.EventTraceAuraInfo = function() return nil end
 
@@ -371,9 +378,11 @@ end
 -- Implementation lives in the load-on-demand debug addon. The placeholder
 -- below is rebound by cdm_debug.lua's BindAll() when loaded.
 ---------------------------------------------------------------------------
+---@type fun(...)
 local ChargeDebug = function() end
 CDMIcons._ShouldDebugBlizzEntry = function() return false end
 CDMIcons._FormatMirrorState     = function() return "nil" end
+---@type fun(...)
 CDMIcons._DebugBlizzEntry       = function() end
 
 ---------------------------------------------------------------------------

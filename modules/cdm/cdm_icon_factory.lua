@@ -590,6 +590,7 @@ CDMIconFactory.ClearIconBlizzMirrorBinding = ClearIconBlizzMirrorBinding
 -- Placeholders below are rebound by cdm_debug.lua's BindAll() when loaded.
 local ShouldDebugBlizzEntry = function() return false end
 local FormatMirrorState     = function() return "nil" end
+---@type fun(...)
 local DebugBlizzEntry       = function() end
 
 -- Resolve entry -> exact Blizzard mirror identity. Bars use the same resolver,

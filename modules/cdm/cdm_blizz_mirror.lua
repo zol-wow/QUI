@@ -2939,6 +2939,7 @@ end
 -- below is rebound by cdm_debug.lua's BindAll() when loaded; cdm_debug.lua
 -- also re-attaches the public CDMBlizzMirror.TaintLog method.
 ---------------------------------------------------------------------------
+---@type fun(...)
 local TaintLog = function() end
 function CDMBlizzMirror.TaintLog(...)
     return TaintLog(...)

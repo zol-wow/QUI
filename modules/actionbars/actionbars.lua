@@ -471,6 +471,7 @@ end
 hiddenBarParent = CreateFrame("Frame")
 hiddenBarParent:Hide()
 
+---@type fun(...)
 noop = function() end
 
 function HideManagedBlizzardBarFrame(frame, clearEvents)

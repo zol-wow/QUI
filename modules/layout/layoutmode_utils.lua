@@ -342,6 +342,7 @@ end
 -- child sweep reclaims on the next drawer rebuild.
 function Utils.MakeSuppressedProviderLayout(content)
     local sections = {}
+    ---@type fun(...)
     local noop = function() end
 
     -- Hidden host for widgets the provider body creates against sectionAt().frame.

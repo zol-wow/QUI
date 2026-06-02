@@ -221,6 +221,7 @@ function SetupStandardOwnedButtonRuntime(container, btn)
     btn.UpdateAction = ActionBarsOwned.SafeSyncAction
     btn.SafeSyncAction = ActionBarsOwned.SafeSyncAction
     btn.UpdateCooldown = SharedOwnedButtonUpdateCooldown
+    ---@type fun(...)
     btn.UpdatePressAndHoldAction = function() end
     btn.UpdateCount = SharedOwnedButtonUpdateCount
     if SetActionUIButton and btn.action and btn.cooldown then
@@ -844,6 +845,7 @@ function BuildBar(barKey)
         end
 
         local bagButtons = GetBarButtons("bags")
+        ---@type fun(...)
         local noopFunc = function() end
         for i, btn in ipairs(bagButtons) do
             btn:SetParent(container)

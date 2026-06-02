@@ -366,6 +366,7 @@ function HL.ShowPlayerMenu(name, realm)
                 info.tooltipTitle = "Inspect"
                 info.tooltipText  = "Player not in group/target/mouseover/focus."
                 info.tooltipOnButton = true
+                ---@type fun(...)
                 info.func = function() end
             end
             UIDropDownMenu_AddButton(info, level)

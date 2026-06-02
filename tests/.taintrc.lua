@@ -22,6 +22,7 @@ return {
         "libs/",
         "tests/",
         "importstrings/",
+        "meta/",  -- LuaLS editor-only ---@meta stubs; never loaded in-game
     },
     coverage = {
         secretWhenCooldownsRestricted = true,

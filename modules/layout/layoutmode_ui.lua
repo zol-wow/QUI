@@ -1400,7 +1400,9 @@ CreateToolbar = function(ui)
     end)
 
     -- No-ops for backward compatibility (drawer references these)
+    ---@type fun(...)
     ui._cancelCollapseTimer = function() end
+    ---@type fun(...)
     ui._startCollapseTimer = function() end
 
     -- Start/stop glow and pulse when tab is shown/hidden

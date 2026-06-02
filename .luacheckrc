@@ -12,6 +12,11 @@
 std = "lua51"
 max_line_length = false   -- WoW addons commonly run wider than 120 cols
 
+-- meta/ holds LuaLS ---@meta definition stubs for the editor only (never loaded
+-- in-game). They are generated function stubs, so linting them is meaningless
+-- and noisy (unused args, "setting read-only global").
+exclude_files = { "meta" }
+
 -- Suppress noise from common WoW idioms:
 --   212/self   — frames pass `self` to OnEvent/OnUpdate scripts; often unused
 --   212/event  — OnEvent handlers receive event but often only inspect args
@@ -120,6 +125,7 @@ read_globals = {
 
 -- Additional current WoW/client globals referenced by the checked Lua files.
 local additional_read_globals = [[
+BonusRollFrame BonusRollFrame_StartBonusRoll CLASS_ICON_TCOORDS LootWonAlertFrame_SetUp MoneyWonAlertFrame_SetUp PagedContentFrameBaseMixin
 ADVENTURE_JOURNAL ARMOR ATTACK_POWER_MAGIC_NUMBER ATTACK_SPEED AbbreviateLargeNumbers AbbreviateNumbers AcceptGroup AcceptQuest
 AchievementAlertSystem ActionBarController_UpdateAll ActionButtonSpellAlertManager ActionButton_ShowOverlayGlow ActionButton_StartFlash ActionButton_StopFlash ActionButton_Update ActionButton_UpdateCooldown
 AddonCompartmentFrame AlertFrame AuctionFrame AuctionHouseFrame BASE_MOVEMENT_SPEED BATTLEFIELD_MINIMAP BLOCK_CHANCE BNConnected

@@ -2145,6 +2145,7 @@ local function ResolveParentFrame(parentKey, originKey)
 end
 
 -- No-op stubs: proxy system removed (Unlock Mode replaced Edit Mode dependency)
+---@type fun(...)
 _G.QUI_UpdateCDMAnchorProxyFrames = function() end
 _G.QUI_GetCDMAnchorProxyFrame = function() return nil end
 

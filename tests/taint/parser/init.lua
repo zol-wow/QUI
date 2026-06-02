@@ -50,6 +50,12 @@ function M.parse(source, chunkName)
         return nil, (chunkName and chunkName .. ": " or "") ..
                     "source must be a string, got " .. type(source)
     end
+    -- Mirror luaL_loadfile: a leading line beginning with '#' (e.g. the "#!"
+    -- shebang on an executable CLI script) is not Lua source. Strip its
+    -- contents but keep the newline so later line numbers stay accurate.
+    if source:sub(1, 1) == "#" then
+        source = source:gsub("^[^\n]*", "", 1)
+    end
     -- LuaMinify's ParseLua(src) returns (true, ast) on success and
     -- (false, errMsg) on failure.  The chunkName is used as a prefix in
     -- error output if passed, but ParseLua itself doesn't take a name

@@ -398,6 +398,7 @@ end
 
 -- DebugBarLabel implementation lives in the load-on-demand debug addon.
 -- The placeholder below is rebound by cdm_debug.lua's BindAll() when loaded.
+---@type fun(...)
 local DebugBarLabel = function() end
 
 local function ReadBoolean(value)
