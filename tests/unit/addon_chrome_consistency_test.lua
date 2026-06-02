@@ -393,20 +393,21 @@ do
 end
 
 do
-    -- groupframes.lua: decorated-frame chrome border + portrait chrome border migrated
-    local src = readFile("modules/groupframes/groupframes.lua")
-    assertAbsent(src, "SetBackdropBorderColor%(0, 0, 0, 1%)",
-        "groupframes.lua: black chrome borders SetBackdropBorderColor(0,0,0,1) must use GetSkinBorderColor()")
-    assertContains(src, "GetSkinBorderColor",
-        "groupframes.lua: must reference GetSkinBorderColor() for frame/portrait chrome border")
+    -- groupframes_layout.lua: decorated-frame chrome border + portrait chrome border migrated
+    local layoutSrc = readFile("modules/groupframes/groupframes_layout.lua")
+    assertAbsent(layoutSrc, "SetBackdropBorderColor%(0, 0, 0, 1%)",
+        "groupframes_layout.lua: black chrome borders SetBackdropBorderColor(0,0,0,1) must use GetSkinBorderColor()")
+    assertContains(layoutSrc, "GetSkinBorderColor",
+        "groupframes_layout.lua: must reference GetSkinBorderColor() for frame/portrait chrome border")
 
     -- Secure taint-mitigation forwarder must remain byte-for-byte (mechanism, not value)
-    assertContains(src, "local function SetBackdropFillColor(frame, r, g, b, a)",
+    local parentSrc = readFile("modules/groupframes/groupframes.lua")
+    assertContains(parentSrc, "local function SetBackdropFillColor(frame, r, g, b, a)",
         "groupframes.lua: secure SetBackdropFillColor forwarder definition must not be altered")
-    assertContains(src, "center:SetVertexColor(r, g, b, a)",
+    assertContains(parentSrc, "center:SetVertexColor(r, g, b, a)",
         "groupframes.lua: secure forwarder frame.Center:SetVertexColor mechanism must not be altered")
-    assertContains(src, "SetBackdropFillColor(frame, bgColor[1], bgColor[2], bgColor[3], bgAlpha)",
-        "groupframes.lua: secure fill forwarder call (bgColor) must not be altered")
+    assertContains(layoutSrc, "SetBackdropFillColor(frame, bgColor[1], bgColor[2], bgColor[3], bgAlpha)",
+        "groupframes_layout.lua: secure fill forwarder call (bgColor) must not be altered")
 end
 
 do

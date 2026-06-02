@@ -7,7 +7,7 @@
 -- on unregistered the only event that drives UpdateHealAbsorb, freezing the
 -- heal-absorb bar. The heal-absorb event must be gated on its own setting.
 
-local path = "modules/groupframes/groupframes.lua"
+local path = "modules/groupframes/groupframes_roster.lua"
 local file = assert(io.open(path, "rb"))
 local source = file:read("*a")
 file:close()

@@ -11,11 +11,16 @@
     <Script file="settings/group_frames_surface.lua"/>
     <Include file="groupframes_template.xml"/>
     <Script file="groupframes.lua"/>
+    <Script file="groupframes_health.lua"/>
+    <Script file="groupframes_power.lua"/>
+    <Script file="groupframes_name.lua"/>
+    <Script file="groupframes_layout.lua"/>
+    <Script file="groupframes_clickcast.lua"/>
+    <Script file="groupframes_roster.lua"/>
     <Script file="groupframes_auras.lua"/>
     <Script file="groupframes_indicators.lua"/>
     <Script file="groupframes_pinned_auras.lua"/>
     <Script file="groupframes_private_auras.lua"/>
-    <Script file="groupframes_clickcast.lua"/>
     <Script file="settings/click_cast_content.lua"/>
     <Script file="groupframes_blizzard.lua"/>
     <Script file="groupframes_editmode.lua"/>

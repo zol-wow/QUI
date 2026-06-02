@@ -467,7 +467,7 @@ local BUTTON_NUMBERS = {
 -- FRAME SETUP: Apply click-cast attributes to a frame
 ---------------------------------------------------------------------------
 local function SetupFrameClickCast(frame)
-    if not frame or registeredFrames[frame] then return end
+    if not frame then return end
     if InCombatLockdown() then return end
 
     local db = GetDB()
@@ -723,6 +723,15 @@ function QUI_GFCC:RegisterAllFrames()
     if GF.raidGroupHeaders then
         for _, header in ipairs(GF.raidGroupHeaders) do
             RegisterHeaderChildren(header)
+        end
+    end
+
+    -- Fallback for split/deferred layout paths. The decorated frame list is
+    -- maintained by groupframes_layout.lua and can contain buttons even when a
+    -- SecureGroupHeader child walk is temporarily incomplete.
+    if GF.allFrames then
+        for _, frame in ipairs(GF.allFrames) do
+            SetupFrameClickCast(frame)
         end
     end
 
