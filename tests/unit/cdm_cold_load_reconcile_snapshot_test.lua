@@ -32,6 +32,8 @@ local coldReconcile = sliceBetween(
 
 local snapshotPos = coldReconcile:find("SnapshotUnsetBuiltinContainers", 1, true)
 local sequencePos = coldReconcile:find("RunReconcileSequence", 1, true)
+local notReadyPos = coldReconcile:find("if not snapshotReady then", 1, true)
+local notReadyReturnPos = notReadyPos and coldReconcile:find("return", notReadyPos, true)
 
 assert(snapshotPos,
     "cold-load reconcile must retry unsnapshotted built-in containers")
@@ -39,6 +41,10 @@ assert(sequencePos,
     "cold-load reconcile must still run the normal dormant/reconcile sequence")
 assert(snapshotPos < sequencePos,
     "cold-load snapshot retry must happen before dormant cleanup/reconcile")
+assert(notReadyPos and notReadyReturnPos and notReadyReturnPos < sequencePos,
+    "cold-load reconcile must not run dormant cleanup/reconcile while snapshots are not ready")
+assert(coldReconcile:find("COLD_LOAD_SNAPSHOT_RETRY_SLOW_DELAY", 1, true),
+    "cold-load reconcile must keep retrying after the fast retry window")
 
 local playerLoginBranch = sliceBetween(
     mirror,

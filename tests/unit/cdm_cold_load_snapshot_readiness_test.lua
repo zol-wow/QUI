@@ -58,6 +58,14 @@ assert(coldReconcileFn:find("C_Timer.After", 1, true),
     "RunColdLoadReconcile must retry while tracked settings are not ready")
 assert(coldReconcileFn:find("RunReconcileSequence", 1, true),
     "RunColdLoadReconcile must still run the normal reconcile once ready")
+assert(coldReconcileFn:find("COLD_LOAD_SNAPSHOT_RETRY_SLOW_DELAY", 1, true),
+    "RunColdLoadReconcile must keep retrying after the fast retry window")
+
+local notReadyPos = coldReconcileFn:find("if not snapshotReady then", 1, true)
+local returnPos = notReadyPos and coldReconcileFn:find("return", notReadyPos, true)
+local sequencePos = coldReconcileFn:find("RunReconcileSequence", 1, true)
+assert(notReadyPos and returnPos and sequencePos and returnPos < sequencePos,
+    "RunColdLoadReconcile must not run the normal reconcile until snapshots are ready")
 
 local trySnapshotFn = sliceBetween(
     containers,

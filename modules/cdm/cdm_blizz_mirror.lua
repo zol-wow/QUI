@@ -3517,9 +3517,13 @@ local function MarkColdLoadDeferredMirrorRefresh()
 end
 
 local function RunColdLoadMirrorRefresh()
-    Walk()
+    local ready = Walk()
+    if not ready then
+        return false
+    end
     HandlePlayerTotemUpdate()
     CDMBlizzMirror.SyncSuppressionToMaster()
+    return true
 end
 
 local function DrainColdLoadDeferredMirrorRefresh()
@@ -3537,7 +3541,12 @@ local function DrainColdLoadDeferredMirrorRefresh()
             MarkColdLoadDeferredMirrorRefresh()
             return
         end
-        RunColdLoadMirrorRefresh()
+        local ready = RunColdLoadMirrorRefresh()
+        if not ready then
+            MarkColdLoadDeferredMirrorRefresh()
+            C_Timer.After(0.5, DrainColdLoadDeferredMirrorRefresh)
+            return
+        end
         local sd = ns.CDMSpellData
         if sd and sd.RunColdLoadReconcile then
             sd:RunColdLoadReconcile()
@@ -3554,22 +3563,21 @@ Walk = function()
     -- (essential/utility/buff/trackedBar) fails to bind until combat ends.
     if InCombatLockdown() and not (ns and ns._inInitSafeWindow) then
         _walkPendingOnRegen = true
-        return
+        return false
     end
     if not C_CooldownViewer or not C_CooldownViewer.GetCooldownViewerCategorySet then
-        return
+        return false
     end
 
     -- Cold-login availability gate.
     --
     -- Per Blizzard CooldownViewerDocumentation, the cooldown viewer is not
     -- ready until C_CooldownViewer.IsCooldownViewerAvailable() returns true
-    -- (driven by the COOLDOWN_VIEWER_DATA_LOADED event). Before that point
-    -- GetCooldownViewerCategorySet returns an empty table and
-    -- GetCooldownViewerCooldownInfo returns nil — so any Walk run during
-    -- PLAYER_ENTERING_WORLD on cold-login would wipe the catalog with
-    -- ClearCatalogMaps() and then fail to repopulate, leaving the
-    -- spell->cdID map empty. Cross-category mirror binding
+    -- (driven by the COOLDOWN_VIEWER_DATA_LOADED event). In addition,
+    -- GetCooldownViewerCooldownInfo is documented MayReturnNothing, so
+    -- any incomplete Walk must not wipe the catalog with ClearCatalogMaps()
+    -- and then fail to repopulate, leaving the spell->cdID map empty.
+    -- Cross-category mirror binding
     -- (ResolveBlizzardMirrorIdentityState falling back from utility to
     -- essential for Death's Advance, etc.) then permanently fails until
     -- /reload or spec swap forces a reconcile against a hot table.
@@ -3579,28 +3587,49 @@ Walk = function()
     -- subscription at the bottom of this file) already
     -- calls Walk(); when the event fires, Walk() re-enters here and the
     -- availability check passes.
-    if C_CooldownViewer.IsCooldownViewerAvailable
-       and not C_CooldownViewer.IsCooldownViewerAvailable() then
-        return
+    if C_CooldownViewer.IsCooldownViewerAvailable then
+        local ok, viewerReady = pcall(C_CooldownViewer.IsCooldownViewerAvailable)
+        if not ok or viewerReady ~= true then
+            return false
+        end
     end
 
-    ClearCatalogMaps()
-
-    -- First trust Blizzard's category-set API as the category authority.
-    -- Live children can be parented under a different viewer container than
-    -- their category-set owner, so indexing only same-viewer children drops
-    -- entries that still have valid CooldownViewer info.
+    local catalogScan = {}
+    local scanSeen = {}
     for catNum = 0, 3 do
         local catName = CATEGORY_NAMES[catNum]
-        local cooldownIDs = C_CooldownViewer.GetCooldownViewerCategorySet(catNum, false)
-        if type(cooldownIDs) == "table" then
-            for _, cdID in ipairs(cooldownIDs) do
-                CaptureCooldownInfoForCategory(cdID, catName, nil)
+        local okSet, cooldownIDs = pcall(
+            C_CooldownViewer.GetCooldownViewerCategorySet,
+            catNum,
+            false)
+        if not okSet or type(cooldownIDs) ~= "table" then
+            return false
+        end
+        for _, cdID in ipairs(cooldownIDs) do
+            local okInfo, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cdID)
+            if not okInfo or not info then
+                return false
+            end
+            local key = MakeInstanceKey(cdID, catName)
+            if key and not scanSeen[key] then
+                scanSeen[key] = true
+                catalogScan[#catalogScan + 1] = {
+                    cdID = cdID,
+                    catName = catName,
+                    info = SanitizeCooldownInfo(cdID, info),
+                }
             end
         end
     end
 
-    -- Then bind whatever live children Blizzard actually parented under the
+    ClearCatalogMaps()
+    for _, entry in ipairs(catalogScan) do
+        RegisterCooldownInstance(entry.cdID, entry.catName, nil, entry.info)
+        MapCooldownInfoIDs(_cdIDByCatSpell[entry.catName], entry.info, entry.cdID)
+        _IndexSpellNameForCDID(entry.cdID, entry.info)
+    end
+
+    -- Bind whatever live children Blizzard actually parented under the
     -- viewer frames. If a child's cdID is known to exactly one API category,
     -- bind it to that category even when it lives under another viewer.
     for catNum = 0, 3 do
@@ -3617,10 +3646,11 @@ Walk = function()
             end
         end
     end
+    return true
 end
 
 function CDMBlizzMirror.ForceRescan()
-    Walk()
+    return Walk()
 end
 
 ---------------------------------------------------------------------------
@@ -4712,10 +4742,16 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
         -- SPELLS_CHANGED events that would rebuild it, tracked buffs then stay
         -- blank until /reload (alpha54 regression; alpha53 had no grace and
         -- rebuilt on every DATA_LOADED). So keep the grace open and retry
-        -- (bounded) until the viewer is available, then commit once.
+        -- until the viewer and mirror catalog are available, then commit once.
         local attempts = 0
-        local MAX_ATTEMPTS = 20  -- ~10s cap past the initial 2s settle delay
-        local function FinalizeColdLoad()
+        local MAX_FAST_ATTEMPTS = 20
+        local FinalizeColdLoad
+        local function RetryColdLoadFinalize()
+            attempts = attempts + 1
+            local delay = attempts <= MAX_FAST_ATTEMPTS and 0.5 or 2.0
+            C_Timer.After(delay, FinalizeColdLoad)
+        end
+        FinalizeColdLoad = function()
             if InCombatLockdown() and not (ns and ns._inInitSafeWindow) then
                 -- Combat: end the grace and let PLAYER_REGEN_ENABLED / the
                 -- normal post-combat events drive the rebuild.
@@ -4723,16 +4759,21 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
                 _walkPendingOnRegen = true
                 return
             end
-            local viewerReady = not C_CooldownViewer
-                or not C_CooldownViewer.IsCooldownViewerAvailable
-                or C_CooldownViewer.IsCooldownViewerAvailable()
-            if not viewerReady and attempts < MAX_ATTEMPTS then
-                attempts = attempts + 1
-                C_Timer.After(0.5, FinalizeColdLoad)
+            local viewerReady = true
+            if C_CooldownViewer and C_CooldownViewer.IsCooldownViewerAvailable then
+                local ok, available = pcall(C_CooldownViewer.IsCooldownViewerAvailable)
+                viewerReady = ok and available == true
+            end
+            if not viewerReady then
+                RetryColdLoadFinalize()
+                return
+            end
+            local mirrorReady = RunColdLoadMirrorRefresh()
+            if not mirrorReady then
+                RetryColdLoadFinalize()
                 return
             end
             ns._cdmColdLoadActive = false
-            RunColdLoadMirrorRefresh()
             -- Drive the spelldata reconcile from the same trigger so the
             -- whole cold-load is one coordinated update, not multiple.
             local sd = ns.CDMSpellData
