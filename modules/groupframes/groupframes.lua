@@ -5027,6 +5027,28 @@ end
 local function OnEvent(self, event, arg1, ...)
     if not QUI_GF.initialized then return end
 
+    -- READY_CHECK fires with arg1 = initiatorName (a player NAME, not a unit
+    -- token), so it MUST be handled before the unit-token fast path below: that
+    -- path enters the type(arg1) == "string" branch, misses the name in
+    -- unitFrameMap, and bails (`if not frames then return end`), which left
+    -- every frame without its initial "waiting" icon when a ready check started.
+    -- Paint all frames here. (READY_CHECK_CONFIRM's arg1 IS a unit token, so it
+    -- stays on the fast path; READY_CHECK_FINISHED falls through to the non-unit
+    -- section below.)
+    if event == "READY_CHECK" then
+        if not _state.cachedModuleEnabled then return end
+        if QUI_GF._readyCheckHideTimer then
+            QUI_GF._readyCheckHideTimer:Cancel()
+            QUI_GF._readyCheckHideTimer = nil
+        end
+        for _, list in pairs(QUI_GF.unitFrameMap) do
+            for i = 1, #list do
+                UpdateReadyCheck(list[i])
+            end
+        end
+        return
+    end
+
     -- Fast path: unit events use O(1) map lookup.
     -- Skip GetSettings() entirely for units not in the map (nameplates,
     -- boss, arena, target, focus, pet) — saves ~20k table lookups/sec in raids.
@@ -5184,22 +5206,6 @@ local function OnEvent(self, event, arg1, ...)
                         prevList[#prevList + 1] = frame
                     end
                 end
-            end
-        end
-
-    elseif event == "READY_CHECK" or event == "READY_CHECK_CONFIRM" then
-        -- QUI pattern: iterate all frames for both events.
-        -- READY_CHECK fires with arg1=initiatorName (not a unit token).
-        -- READY_CHECK_CONFIRM fires per-unit but we refresh all frames to
-        -- avoid relying on unitFrameMap lookup which can miss stale tokens.
-        -- Cancel any pending hide timer from a previous ready check
-        if event == "READY_CHECK" and QUI_GF._readyCheckHideTimer then
-            QUI_GF._readyCheckHideTimer:Cancel()
-            QUI_GF._readyCheckHideTimer = nil
-        end
-        for _, list in pairs(QUI_GF.unitFrameMap) do
-            for i = 1, #list do
-                UpdateReadyCheck(list[i])
             end
         end
 
@@ -5481,14 +5487,15 @@ UpdateSelectiveEvents = function()
     -- in the current mode. These fire 50-100×/sec during raid damage.
     local vdb = GetVisualDB(isRaid)
     local absorbEnabled = vdb and vdb.absorbs and vdb.absorbs.enabled ~= false
+    local healAbsorbEnabled = vdb and vdb.healAbsorbs and vdb.healAbsorbs.enabled ~= false
     local healPredEnabled = vdb and vdb.healPrediction and vdb.healPrediction.enabled ~= false
-    if absorbEnabled then
-        _state.SetUnitEventActive("UNIT_ABSORB_AMOUNT_CHANGED", true)
-        _state.SetUnitEventActive("UNIT_HEAL_ABSORB_AMOUNT_CHANGED", true)
-    else
-        _state.SetUnitEventActive("UNIT_ABSORB_AMOUNT_CHANGED", false)
-        _state.SetUnitEventActive("UNIT_HEAL_ABSORB_AMOUNT_CHANGED", false)
-    end
+    -- Gate each event on its OWN toggle. "Show Absorb Shield" (absorbs) and
+    -- "Show Heal Absorb" (healAbsorbs) are independent, and
+    -- UNIT_HEAL_ABSORB_AMOUNT_CHANGED is the only runtime driver of
+    -- UpdateHealAbsorb (the UNIT_HEALTH fast path deliberately skips it), so
+    -- coupling it to absorbEnabled froze the heal-absorb bar.
+    _state.SetUnitEventActive("UNIT_ABSORB_AMOUNT_CHANGED", absorbEnabled and true or false)
+    _state.SetUnitEventActive("UNIT_HEAL_ABSORB_AMOUNT_CHANGED", healAbsorbEnabled and true or false)
     if healPredEnabled then
         _state.SetUnitEventActive("UNIT_HEAL_PREDICTION", true)
     else
@@ -5692,6 +5699,19 @@ function QUI_GF:RefreshSettings()
     UpdateFrameScaling(true)
     UpdateHeaderSizes()
     UpdateSelectiveEvents()
+
+    -- Re-decoration above (UpdateFrameScaling -> DecorateGroupFrame) resets the
+    -- absorb / heal-absorb / heal-prediction overlays to SetValue(0) + Hide
+    -- without repopulating them. Because UNIT_HEALTH takes a health-only fast
+    -- path, a STATIC overlay (one whose value isn't changing, so no dedicated
+    -- UNIT_*_AMOUNT_CHANGED fires) would otherwise stay hidden until its next
+    -- value change. Repopulate from current unit state so it reappears now.
+    -- Combat-guarded: RefreshAllFrames runs PrivateAuras:RefreshAll (which the
+    -- in-combat roster path deliberately skips via reason == "roster"), and we
+    -- can reach here in combat through the init-safe window above.
+    if not InCombatLockdown() then
+        self:RefreshAllFrames()
+    end
 end
 
 ---------------------------------------------------------------------------

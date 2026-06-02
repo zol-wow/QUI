@@ -110,7 +110,7 @@ local GROUP_FRAMES_SEARCH_FEATURE_ID = "groupFramesPage"
 local GROUP_FRAMES_SEARCH_SUB_PAGE_INDEX = 2
 local VISUAL_DB_KEYS = {
     general = true, layout = true, health = true, power = true, name = true,
-    absorbs = true, healPrediction = true, indicators = true,
+    absorbs = true, healAbsorbs = true, healPrediction = true, indicators = true,
     healer = true, classPower = true, range = true, auras = true,
     privateAuras = true, auraIndicators = true, castbar = true,
     portrait = true, pets = true, dimensions = true, spotlight = true,
