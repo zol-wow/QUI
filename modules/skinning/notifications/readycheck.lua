@@ -28,6 +28,20 @@ end
 -- HELPER FUNCTIONS
 ---------------------------------------------------------------------------
 
+-- Re-assert the QUI font/color on a button's label.
+-- Blizzard reapplies the button's font object (face + color) when the popup is
+-- shown and on enable/disable; that overwrites the styling we set at skin time
+-- and can leave the Ready / Not Ready label unrendered. Re-running this from the
+-- button's OnShow/OnEnable/OnDisable keeps the label styled and visible — the
+-- same state-refresh approach the StaticPopup skin (popups.lua) uses.
+local function RestyleButtonText(button)
+    local text = button and button.GetFontString and button:GetFontString()
+    if not text or not text.SetFont then return end
+    local font = (ns.Helpers and ns.Helpers.GetGeneralFont and ns.Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
+    text:SetFont(font, 12, FONT_FLAGS)
+    if text.SetTextColor then text:SetTextColor(0.9, 0.9, 0.9, 1) end
+end
+
 -- Style a button with QUI look
 local function SkinButton(button, sr, sg, sb, bgr, bgg, bgb, bga)
     if not button or SkinBase.IsSkinned(button) then return end
@@ -58,6 +72,13 @@ local function SkinButton(button, sr, sg, sb, bgr, bgg, bgb, bga)
     local btnBgb = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
     SkinBase.CreateBackdrop(button, sr, sg, sb, 1, btnBgr, btnBgg, btnBgb, bga)
 
+    -- Drop the backdrop a level below the button so its fill/border never sit
+    -- over the label (matches popups.lua / the belowChildren path in uikit.lua).
+    local btnBackdrop = SkinBase.GetBackdrop(button)
+    if btnBackdrop then
+        btnBackdrop:SetFrameLevel(math.max(0, button:GetFrameLevel() - 1))
+    end
+
     -- Store colors for hover effects (in local weak-keyed table via SkinBase)
     SkinBase.SetFrameData(button, "normalBg", { btnBgr, btnBgg, btnBgb, bga })
     SkinBase.SetFrameData(button, "hoverBg", { math.min(btnBgr + 0.1, 1), math.min(btnBgg + 0.1, 1), math.min(btnBgb + 0.1, 1), bga })
@@ -79,12 +100,13 @@ local function SkinButton(button, sr, sg, sb, bgr, bgg, bgb, bga)
         end
     end)
 
-    -- Style button text
-    local text = button:GetFontString()
-    if text then
-        text:SetFont(STANDARD_TEXT_FONT, 12, FONT_FLAGS)
-        text:SetTextColor(0.9, 0.9, 0.9, 1)
-    end
+    -- Style the label, and re-assert it whenever the button is shown or its
+    -- enabled state changes — Blizzard reapplies the button's font object on
+    -- those, which can otherwise leave the Ready / Not Ready label unrendered.
+    RestyleButtonText(button)
+    button:HookScript("OnShow", RestyleButtonText)
+    button:HookScript("OnEnable", RestyleButtonText)
+    button:HookScript("OnDisable", RestyleButtonText)
 
     SkinBase.MarkSkinned(button)
 end
@@ -180,6 +202,13 @@ local function SkinReadyCheckFrame()
     -- Create QUI backdrop on ListenerFrame (where the content is)
     local targetFrame = listenerFrame or frame
     SkinBase.CreateBackdrop(targetFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+
+    -- Keep the backdrop a level below the frame content so its fill never sits
+    -- over the message, title, or button labels (mirrors popups.lua).
+    local mainBackdrop = SkinBase.GetBackdrop(targetFrame)
+    if mainBackdrop then
+        mainBackdrop:SetFrameLevel(math.max(0, targetFrame:GetFrameLevel() - 1))
+    end
 
     -- Store backdrop reference on main frame for refresh (via SkinBase to avoid taint)
     SkinBase.SetFrameData(frame, "backdrop", SkinBase.GetBackdrop(targetFrame))
