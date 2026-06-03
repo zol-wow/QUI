@@ -123,6 +123,22 @@ jobs:
             fi
           done
 
+          # Stamp every shipped .toc's "## Version:" from the release tag so the
+          # packaged addon always matches the tag (the tag is the single source
+          # of truth) no matter what the committed .toc files happen to read.
+          # Only QUI + QUI_Options ship (QUI_Debug is in forbidden_paths above).
+          toc_version="${{ steps.version.outputs.version }}"
+          toc_version="${toc_version#v}"   # v4.0.0-beta9 -> 4.0.0-beta9
+          for toc in build/QUI/QUI.toc build/QUI_Options/QUI_Options.toc; do
+            sed -i "s/^## Version:.*/## Version: ${toc_version}/" "$toc"
+            # Fail loudly if the substitution didn't land (e.g. the header
+            # format changed) rather than silently shipping a stale version.
+            grep -qx "## Version: ${toc_version}" "$toc" || {
+              echo "Failed to stamp version into $toc" >&2
+              exit 1
+            }
+          done
+
           # create the zip from inside build/ so the paths are QUI/... and QUI_Options/...
           rm -f QUI-${{ steps.version.outputs.version }}.zip
           cd build
