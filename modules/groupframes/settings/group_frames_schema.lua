@@ -1772,25 +1772,6 @@ local function RenderPrivateAurasSection(sectionHost, ctx)
     controlledRows[#controlledRows + 1] = reverseSwipeRow
     card.AddRow(showCountdownNumbersRow, reverseSwipeRow)
 
-    local textScaleSlider = gui:CreateFormSlider(card.frame, nil, 0.5, 5, 0.5, "textScale", privateAuras, refresh, { deferOnDrag = true }, {
-        description = "Scale multiplier for the stack count and countdown number text on private aura icons.",
-    })
-    local textScaleRow = optionsAPI.BuildSettingRow(card.frame, "Stack & Countdown Scale", textScaleSlider)
-    controlledRows[#controlledRows + 1] = textScaleRow
-    local textOffsetXSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "textOffsetX", privateAuras, refresh, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the stack count and countdown number text on private aura icons.",
-    })
-    local textOffsetXRow = optionsAPI.BuildSettingRow(card.frame, "Stack & Countdown X Offset", textOffsetXSlider)
-    controlledRows[#controlledRows + 1] = textOffsetXRow
-    card.AddRow(textScaleRow, textOffsetXRow)
-
-    local textOffsetYSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "textOffsetY", privateAuras, refresh, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the stack count and countdown number text on private aura icons.",
-    })
-    local textOffsetYRow = optionsAPI.BuildSettingRow(card.frame, "Stack & Countdown Y Offset", textOffsetYSlider)
-    controlledRows[#controlledRows + 1] = textOffsetYRow
-    card.AddRow(textOffsetYRow)
-
     UpdatePrivateAuraRows()
     builder.CloseCard(card)
     return builder.Height()

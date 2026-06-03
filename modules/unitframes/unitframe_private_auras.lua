@@ -5,9 +5,15 @@
     addon APIs and can only be rendered by the client into addon-provided
     anchor frames.
 
-    Dual-anchor system: each slot registers a main anchor for the icon and
-    cooldown spiral, and (when textScale != 1) a second scaled anchor that
-    renders the stack count / countdown numbers at a custom scale.
+    Single-anchor design: each slot registers ONE anchor that renders the icon,
+    cooldown spiral, stack count and duration at Blizzard's native sizes. Every
+    private-aura anchor independently draws its own Count and Duration
+    fontstrings (see Blizzard_PrivateAurasUI PrivateAuraMixin:Update), so a
+    second anchor would only double them.
+
+    The icon container locks a DIALOG strata: the Blizzard-rendered aura frame is
+    created at frame level 0 and does not use the parent's level, so a strata
+    bump (not a frame-level bump) is what keeps the icon above the healthbar.
 ]]
 
 local ADDON_NAME, ns = ...
@@ -51,11 +57,9 @@ local math_max = math.max
 local SUPPORTED_UNITS = { player = true, target = true, focus = true }
 
 -- Weak-keyed per-frame state:
---   containers    = { [i] = frame }    main icon containers
---   scaleFrames   = { [i] = frame }    tiny scaled parents for text anchor
---   anchorIDs     = { [i] = id }       main anchor IDs
---   textAnchorIDs = { [i] = id }       text (stack/countdown) anchor IDs
---   unit          = string             last anchored unit token
+--   containers = { [i] = frame }    icon containers
+--   anchorIDs  = { [i] = id }       anchor IDs
+--   unit       = string            last anchored unit token
 local frameState = Helpers.CreateStateTable()
 
 ---------------------------------------------------------------------------
@@ -87,25 +91,22 @@ local function CalculateSlotOffset(index, iconSize, spacing, direction, totalCou
     return step, 0
 end
 
---- Register main + optional text anchor for one slot.
-local function RegisterDualAnchor(unit, auraIndex, container, scaleFrame, settings)
+--- Register the private-aura anchor for one slot. The client renders the icon,
+--- cooldown spiral, stack count and duration into this one anchor at native
+--- sizes — every anchor draws its own Count/Duration, so a second anchor would
+--- only double them.
+local function RegisterAnchor(unit, auraIndex, container, settings)
     local iconSize = settings.iconSize or 22
     local borderScale = settings.borderScale or 1
     local showCountdown = settings.showCountdown ~= false
-    local textScale = settings.textScale or 1
-    local textOffsetX = settings.textOffsetX or 0
-    local textOffsetY = settings.textOffsetY or 0
+    local showCountdownNumbers = settings.showCountdownNumbers ~= false
 
-    -- When textScale != 1 we render the numbers from the second anchor at
-    -- that scale; silence numbers on the main anchor to avoid double draw.
-    local mainShowNumbers = (textScale == 1) and (settings.showCountdownNumbers ~= false)
-
-    local mainArgs = {
+    local args = {
         unitToken = unit,
         auraIndex = auraIndex,
         parent = container,
         showCountdownFrame = showCountdown,
-        showCountdownNumbers = mainShowNumbers,
+        showCountdownNumbers = showCountdownNumbers,
         iconInfo = {
             iconWidth = iconSize,
             iconHeight = iconSize,
@@ -119,57 +120,15 @@ local function RegisterDualAnchor(unit, auraIndex, container, scaleFrame, settin
             },
         },
     }
-    if IS_CONTAINER_SUPPORTED then mainArgs.isContainer = false end
-    local ok1, mainID = pcall(AddPrivateAuraAnchor, mainArgs)
-    local mainAnchorID = (ok1 and mainID) or nil
-
-    local textAnchorID = nil
-    if textScale ~= 1 and mainAnchorID then
-        scaleFrame:SetSize(0.001, 0.001)
-        scaleFrame:SetScale(textScale)
-        scaleFrame:SetFrameStrata("DIALOG")
-        scaleFrame:ClearAllPoints()
-        scaleFrame:SetPoint("CENTER", container, "CENTER", 0, 0)
-        scaleFrame:Show()
-
-        local anchorOffX = textOffsetX / textScale
-        local anchorOffY = textOffsetY / textScale
-
-        local textArgs = {
-            unitToken = unit,
-            auraIndex = auraIndex,
-            parent = scaleFrame,
-            showCountdownFrame = showCountdown,
-            showCountdownNumbers = settings.showCountdownNumbers ~= false,
-            iconInfo = {
-                iconWidth = 0.001,
-                iconHeight = 0.001,
-                borderScale = -100,
-                iconAnchor = {
-                    point = "BOTTOMRIGHT",
-                    relativeTo = container,
-                    relativePoint = "BOTTOMRIGHT",
-                    offsetX = anchorOffX,
-                    offsetY = anchorOffY,
-                },
-            },
-        }
-        if IS_CONTAINER_SUPPORTED then textArgs.isContainer = false end
-        local ok2, textID = pcall(AddPrivateAuraAnchor, textArgs)
-        textAnchorID = (ok2 and textID) or nil
-    end
-
-    return mainAnchorID, textAnchorID
+    if IS_CONTAINER_SUPPORTED then args.isContainer = false end
+    local ok, id = pcall(AddPrivateAuraAnchor, args)
+    return (ok and id) or nil
 end
 
 local function RemoveAllAnchors(state)
     for i, id in ipairs(state.anchorIDs) do
         pcall(RemovePrivateAuraAnchor, id)
         state.anchorIDs[i] = nil
-    end
-    for i, id in ipairs(state.textAnchorIDs) do
-        pcall(RemovePrivateAuraAnchor, id)
-        state.textAnchorIDs[i] = nil
     end
     -- Hide stale WoW-rendered children left on containers. pcall in case any
     -- child is a protected C-side frame that can't be hidden in combat.
@@ -201,10 +160,6 @@ local function ClearFrame(frame)
 
     RemoveAllAnchors(state)
 
-    for _, scaleFrame in ipairs(state.scaleFrames) do
-        scaleFrame:Hide()
-        scaleFrame:ClearAllPoints()
-    end
     for _, container in ipairs(state.containers) do
         container:Hide()
         container:ClearAllPoints()
@@ -237,7 +192,7 @@ local function SetupFrame(frame)
 
     local state = frameState[frame]
     if not state then
-        state = { containers = {}, scaleFrames = {}, anchorIDs = {}, textAnchorIDs = {}, unit = "" }
+        state = { containers = {}, anchorIDs = {}, unit = "" }
         frameState[frame] = state
     end
 
@@ -270,19 +225,17 @@ local function SetupFrame(frame)
         container:Show()
         container:SetSize(iconSize, iconSize)
         container:SetFrameLevel(frame:GetFrameLevel() + frameLevelOffset)
+        -- The Blizzard-rendered aura frame is created at frame level 0 and does
+        -- not use the parent's level, so the offset above is a no-op for the
+        -- icon — a strata bump is what keeps it above the healthbar. Lock it so
+        -- a later reparent can't drop the container's strata below the bars.
+        container:SetFrameStrata("DIALOG")
+        container:SetFixedFrameStrata(true)
 
         local slotOffX, slotOffY = CalculateSlotOffset(i, iconSize, spacingVal, direction, maxSlots)
         container:SetPoint(anchorPoint, frame, anchorPoint, offsetX + slotOffX, offsetY + slotOffY)
 
-        local scaleFrame = state.scaleFrames[i]
-        if not scaleFrame then
-            scaleFrame = CreateFrame("Frame", nil, frame)
-            state.scaleFrames[i] = scaleFrame
-        end
-
-        local mainID, textID = RegisterDualAnchor(unit, i, container, scaleFrame, settings)
-        state.anchorIDs[i] = mainID
-        state.textAnchorIDs[i] = textID
+        state.anchorIDs[i] = RegisterAnchor(unit, i, container, settings)
     end
 
     -- Blizzard creates the cooldown spiral children asynchronously; apply

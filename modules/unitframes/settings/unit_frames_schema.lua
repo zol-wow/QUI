@@ -398,9 +398,6 @@ local function EnsurePrivateAurasSettings(unitDB)
             showCountdownNumbers = true,
             reverseSwipe = false,
             borderScale = 1,
-            textScale = 1,
-            textOffsetX = 0,
-            textOffsetY = 0,
             frameLevel = 50,
         }
     end
@@ -3479,26 +3476,11 @@ local function RenderPrivateAurasSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Border Scale", borderSlider)
     )
 
-    local textScaleSlider = gui:CreateFormSlider(card.frame, nil, 0.5, 5, 0.5, "textScale", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Scale factor applied to the stack count and countdown number on each private-aura icon.",
-    })
     local frameLevelSlider = gui:CreateFormSlider(card.frame, nil, 0, 100, 1, "frameLevel", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Frame-level offset added to the private-aura container so icons render above or below other elements on this frame.",
     })
     card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Stack/Number Scale", textScaleSlider),
         optionsAPI.BuildSettingRow(card.frame, "Frame Level Offset", frameLevelSlider)
-    )
-
-    local textOffsetXSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "textOffsetX", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Horizontal offset for the stack count / countdown number within each private-aura icon.",
-    })
-    local textOffsetYSlider = gui:CreateFormSlider(card.frame, nil, -20, 20, 1, "textOffsetY", privateAuras, RefreshUnitFrames, { deferOnDrag = true }, {
-        description = "Vertical offset for the stack count / countdown number within each private-aura icon.",
-    })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Stack/Number X Offset", textOffsetXSlider),
-        optionsAPI.BuildSettingRow(card.frame, "Stack/Number Y Offset", textOffsetYSlider)
     )
 
     builder.CloseCard(card)

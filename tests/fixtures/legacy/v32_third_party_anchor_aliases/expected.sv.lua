@@ -4074,10 +4074,7 @@ return {
                 reverseSwipe = false,
                 showCountdown = true,
                 showCountdownNumbers = true,
-                spacing = 2,
-                textOffsetX = 0,
-                textOffsetY = 0,
-                textScale = 2
+                spacing = 2
               },
               range = {
                 enabled = true,
@@ -4452,10 +4449,7 @@ return {
                 reverseSwipe = false,
                 showCountdown = true,
                 showCountdownNumbers = true,
-                spacing = 2,
-                textOffsetX = 0,
-                textOffsetY = 0,
-                textScale = 2
+                spacing = 2
               },
               range = {
                 enabled = true,
@@ -4779,10 +4773,7 @@ return {
                 reverseSwipe = false,
                 showCountdown = true,
                 showCountdownNumbers = true,
-                spacing = 2,
-                textOffsetX = 0,
-                textOffsetY = 0,
-                textScale = 1
+                spacing = 2
               },
               showHealth = true,
               showHealthAbsolute = true,
@@ -5317,10 +5308,7 @@ return {
                 reverseSwipe = false,
                 showCountdown = true,
                 showCountdownNumbers = true,
-                spacing = 2,
-                textOffsetX = 0,
-                textOffsetY = 0,
-                textScale = 1
+                spacing = 2
               },
               showHealth = true,
               showHealthAbsolute = true,
@@ -5648,10 +5636,7 @@ return {
                 reverseSwipe = false,
                 showCountdown = true,
                 showCountdownNumbers = true,
-                spacing = 2,
-                textOffsetX = 0,
-                textOffsetY = 0,
-                textScale = 1
+                spacing = 2
               },
               showHealth = true,
               showHealthAbsolute = true,

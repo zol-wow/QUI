@@ -1660,9 +1660,6 @@ local function BuildPrivateAurasSettings(content, gfdb, onChange)
         L:Row(GUI:CreateFormCheckbox(body, "Show Countdown", "showCountdown", pa, onChange, { description = "Show the cooldown swipe animation over private aura icons." }), FORM_ROW, cond)
         L:Row(GUI:CreateFormCheckbox(body, "Show Countdown Numbers", "showCountdownNumbers", pa, onChange, { description = "Show the remaining-duration countdown text over private aura icons." }), FORM_ROW, cond)
         L:Row(GUI:CreateFormCheckbox(body, "Reverse Swipe", "reverseSwipe", pa, onChange, { description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as the aura ticks down." }), FORM_ROW, cond)
-        L:Row(GUI:CreateFormSlider(body, "Stack & Countdown Scale", 0.5, 5, 0.5, "textScale", pa, onChange, nil, { description = "Scale multiplier for the stack count and countdown number text on private aura icons." }), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Stack & Countdown X Offset", -20, 20, 1, "textOffsetX", pa, onChange, nil, { description = "Horizontal pixel offset for the stack count and countdown number text on private aura icons." }), SLIDER_HEIGHT, cond)
-        L:Row(GUI:CreateFormSlider(body, "Stack & Countdown Y Offset", -20, 20, 1, "textOffsetY", pa, onChange, nil, { description = "Vertical pixel offset for the stack count and countdown number text on private aura icons." }), SLIDER_HEIGHT, cond)
         L:Finish()
     end, sections, relayout)
 
@@ -3847,14 +3844,10 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         end
         local paContainer = CreateIconStrip(frame, { FAKE_PRIVATE_AURA_ICON }, paMax, paSize, paAnchor, paGrow, paSpacing, paOffX, paOffY, "privateAuraContainer")
 
-        -- Overlay stack count and countdown text on each icon
+        -- Overlay native-size stack count and countdown text on each icon
         if paContainer then
-            local paTextScale = paDB.textScale or 2
-            local paTextOffX = (paDB.textOffsetX or 0) * PREVIEW_SCALE
-            local paTextOffY = (paDB.textOffsetY or 0) * PREVIEW_SCALE
             local paShowNumbers = paDB.showCountdownNumbers ~= false
-            local baseFontSize = math.max(8, paSize * 0.55)
-            local scaledFontSize = baseFontSize * paTextScale
+            local fontSize = math.max(8, paSize * 0.55)
 
             -- Walk the icon textures created by CreateIconStrip and attach text
             local textures = { paContainer:GetRegions() }
@@ -3862,18 +3855,18 @@ local function CreateDesignerPreview(container, previewType, childRefs)
                 if tex:IsObjectType("Texture") then
                     -- Stack count (bottom-right, like Blizzard default)
                     local stackText = paContainer:CreateFontString(nil, "OVERLAY")
-                    stackText:SetFont(STANDARD_TEXT_FONT, scaledFontSize, "OUTLINE")
+                    stackText:SetFont(STANDARD_TEXT_FONT, fontSize, "OUTLINE")
                     stackText:SetTextColor(1, 1, 1, 1)
                     stackText:SetText("2")
-                    stackText:SetPoint("BOTTOMRIGHT", tex, "BOTTOMRIGHT", paTextOffX, paTextOffY)
+                    stackText:SetPoint("BOTTOMRIGHT", tex, "BOTTOMRIGHT", 0, 0)
 
                     -- Countdown number (center)
                     if paShowNumbers then
                         local cdText = paContainer:CreateFontString(nil, "OVERLAY")
-                        cdText:SetFont(STANDARD_TEXT_FONT, scaledFontSize, "OUTLINE")
+                        cdText:SetFont(STANDARD_TEXT_FONT, fontSize, "OUTLINE")
                         cdText:SetTextColor(1, 0.82, 0, 1)
                         cdText:SetText(idx == 1 and "5" or "12")
-                        cdText:SetPoint("CENTER", tex, "CENTER", paTextOffX, paTextOffY)
+                        cdText:SetPoint("CENTER", tex, "CENTER", 0, 0)
                     end
                 end
             end

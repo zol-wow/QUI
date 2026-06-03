@@ -4,10 +4,16 @@
     C_UnitAuras.AddPrivateAuraAnchor. These auras are hidden from addon
     APIs and can only be rendered by the client into addon-provided frames.
 
-    Dual-anchor system: each aura slot registers two anchors with the same
-    auraIndex — the main anchor shows the icon/cooldown, and a second
-    scaled anchor renders the application count (stacks) and optionally
-    repositioned countdown numbers.
+    Single-anchor design: each aura slot registers ONE anchor that renders the
+    icon, cooldown spiral, stack count and duration at Blizzard's native sizes.
+    A second "scaled text" anchor used to exist for enlarging the stack/countdown
+    text, but every private-aura anchor independently draws its own Count and
+    Duration fontstrings (see Blizzard_PrivateAurasUI PrivateAuraMixin:Update),
+    so two anchors double-rendered them — hence one anchor only.
+
+    The icon container locks a DIALOG strata: the Blizzard-rendered aura frame
+    carries frame level 0 and does not use the parent's level, so a strata bump
+    (not a frame-level bump) is what keeps the icon above the healthbar.
 ]]
 
 local ADDON_NAME, ns = ...
@@ -51,11 +57,9 @@ local table_insert = table.insert
 local table_remove = table.remove
 
 -- Weak-keyed state per frame:
---   containers    = { [i] = frame }       main icon containers
---   scaleFrames   = { [i] = frame }       tiny scaled parents for text anchor
---   anchorIDs     = { [i] = id }          main anchor IDs
---   textAnchorIDs = { [i] = id }          text (stack/countdown) anchor IDs
---   unit          = string
+--   containers = { [i] = frame }       icon containers
+--   anchorIDs  = { [i] = id }          anchor IDs
+--   unit       = string
 local frameState = Helpers.CreateStateTable()
 local unitPrivateDispelState = {}
 
@@ -210,32 +214,27 @@ local function CalculateSlotOffset(index, iconSize, spacing, direction, totalCou
     return step, 0 -- fallback to RIGHT
 end
 
---- Register both anchors (main + text) for a single aura slot.
+--- Register the private-aura anchor for a single aura slot.
+--- The client renders the icon, cooldown spiral, stack count and duration into
+--- this one anchor at native sizes — every anchor draws its own Count/Duration
+--- fontstrings, so a second anchor would only double them.
 --- @param unit string unit token
 --- @param auraIndex number slot index
---- @param container frame main icon container
---- @param scaleFrame frame tiny scaled parent for text anchor
+--- @param container table icon container frame
 --- @param settings table privateAuras settings
---- @return number|nil mainAnchorID, number|nil textAnchorID
-local function RegisterDualAnchor(unit, auraIndex, container, scaleFrame, settings)
+--- @return number|nil anchorID
+local function RegisterAnchor(unit, auraIndex, container, settings)
     local iconSize = settings.iconSize or 20
     local borderScale = settings.borderScale or 1
     local showCountdown = settings.showCountdown ~= false
-    local textScale = settings.textScale or 2
-    local textOffsetX = settings.textOffsetX or 0
-    local textOffsetY = settings.textOffsetY or 0
+    local showCountdownNumbers = settings.showCountdownNumbers ~= false
 
-    -- Disable countdown numbers on main anchor when text scale != 1,
-    -- because the second anchor will render them at the scaled size instead.
-    local mainShowNumbers = (textScale == 1) and (settings.showCountdownNumbers ~= false)
-
-    -- Main anchor: icon + cooldown spiral
-    local mainArgs = {
+    local args = {
         unitToken = unit,
         auraIndex = auraIndex,
         parent = container,
         showCountdownFrame = showCountdown,
-        showCountdownNumbers = mainShowNumbers,
+        showCountdownNumbers = showCountdownNumbers,
         iconInfo = {
             iconWidth = iconSize,
             iconHeight = iconSize,
@@ -249,65 +248,16 @@ local function RegisterDualAnchor(unit, auraIndex, container, scaleFrame, settin
             },
         },
     }
-    if IS_CONTAINER_SUPPORTED then mainArgs.isContainer = false end
-    local ok1, mainID = pcall(AddPrivateAuraAnchor, mainArgs)
-
-    local mainAnchorID = (ok1 and mainID) or nil
-
-    -- Text anchor: stacks + countdown numbers at custom scale
-    -- Only register when textScale != 1, otherwise main anchor handles everything
-    local textAnchorID = nil
-    if textScale ~= 1 and mainAnchorID then
-        -- Configure scale frame
-        scaleFrame:SetSize(0.001, 0.001)
-        scaleFrame:SetScale(textScale)
-        scaleFrame:SetFrameStrata("DIALOG")
-        scaleFrame:ClearAllPoints()
-        scaleFrame:SetPoint("CENTER", container, "CENTER", 0, 0)
-        scaleFrame:Show()
-
-        -- Offset compensation: divide by textScale so the text lands
-        -- at the intended pixel offset relative to the main icon
-        local anchorOffX = textOffsetX / textScale
-        local anchorOffY = textOffsetY / textScale
-
-        local textArgs = {
-            unitToken = unit,
-            auraIndex = auraIndex,
-            parent = scaleFrame,
-            showCountdownFrame = showCountdown,
-            showCountdownNumbers = settings.showCountdownNumbers ~= false,
-            iconInfo = {
-                iconWidth = 0.001,
-                iconHeight = 0.001,
-                borderScale = -100,
-                iconAnchor = {
-                    point = "BOTTOMRIGHT",
-                    relativeTo = container,
-                    relativePoint = "BOTTOMRIGHT",
-                    offsetX = anchorOffX,
-                    offsetY = anchorOffY,
-                },
-            },
-        }
-        if IS_CONTAINER_SUPPORTED then textArgs.isContainer = false end
-        local ok2, textID = pcall(AddPrivateAuraAnchor, textArgs)
-
-        textAnchorID = (ok2 and textID) or nil
-    end
-
-    return mainAnchorID, textAnchorID
+    if IS_CONTAINER_SUPPORTED then args.isContainer = false end
+    local ok, id = pcall(AddPrivateAuraAnchor, args)
+    return (ok and id) or nil
 end
 
---- Remove all anchors (main + text) from a state table
+--- Remove all anchors from a state table
 local function RemoveAllAnchors(state)
     for i, anchorID in ipairs(state.anchorIDs) do
         pcall(RemovePrivateAuraAnchor, anchorID)
         state.anchorIDs[i] = nil
-    end
-    for i, anchorID in ipairs(state.textAnchorIDs) do
-        pcall(RemovePrivateAuraAnchor, anchorID)
-        state.textAnchorIDs[i] = nil
     end
     -- Hide stale WoW-rendered children left on containers. pcall in case any
     -- child is a protected C-side frame that can't be hidden in combat.
@@ -341,9 +291,6 @@ local function ApplyPrivateAuraSwipeReverse(state, reverse)
     for _, container in ipairs(state.containers) do
         ApplyCooldownReverseRecursive(container, reverse, 1)
     end
-    for _, scaleFrame in ipairs(state.scaleFrames) do
-        ApplyCooldownReverseRecursive(scaleFrame, reverse, 1)
-    end
 end
 
 local function SchedulePrivateAuraSwipeReverse(frame, state, reverse)
@@ -367,7 +314,7 @@ local function SetupPrivateAuras(frame)
 
     local state = frameState[frame]
     if not state then
-        state = { containers = {}, scaleFrames = {}, anchorIDs = {}, textAnchorIDs = {}, unit = "" }
+        state = { containers = {}, anchorIDs = {}, unit = "" }
         frameState[frame] = state
     end
 
@@ -403,22 +350,19 @@ local function SetupPrivateAuras(frame)
 
         container:SetSize(iconSize, iconSize)
         container:SetFrameLevel(frame:GetFrameLevel() + (settings.frameLevel or 50))
+        -- The Blizzard-rendered aura frame is created at frame level 0 and does
+        -- not use the parent's level, so the +50 above is a no-op for the icon —
+        -- a strata bump is what keeps it above the healthbar. Lock it so the
+        -- pool reparent (SetParent(UIParent) on release) and SecureGroupHeader
+        -- roster churn can't drop the container's strata back below the bars.
+        container:SetFrameStrata("DIALOG")
+        container:SetFixedFrameStrata(true)
 
         -- Position relative to the anchor point on the parent frame
         local slotOffX, slotOffY = CalculateSlotOffset(i, iconSize, spacingVal, direction, maxSlots)
         container:SetPoint(anchor, frame, anchor, offsetX + slotOffX, offsetY + slotOffY)
 
-        -- Acquire or reuse scale frame for text anchor
-        local scaleFrame = state.scaleFrames[i]
-        if not scaleFrame then
-            scaleFrame = CreateFrame("Frame", nil, frame)
-            state.scaleFrames[i] = scaleFrame
-        end
-
-        -- Register dual anchors
-        local mainID, textID = RegisterDualAnchor(unit, i, container, scaleFrame, settings)
-        state.anchorIDs[i] = mainID
-        state.textAnchorIDs[i] = textID
+        state.anchorIDs[i] = RegisterAnchor(unit, i, container, settings)
     end
 
     SchedulePrivateAuraSwipeReverse(frame, state, reverseSwipe)
@@ -434,13 +378,7 @@ local function ClearPrivateAuras(frame)
     -- Remove all anchors
     RemoveAllAnchors(state)
 
-    -- Hide scale frames (reused on next setup)
-    for i, scaleFrame in ipairs(state.scaleFrames) do
-        scaleFrame:Hide()
-        scaleFrame:ClearAllPoints()
-    end
-
-    -- Release main containers back to pool
+    -- Release containers back to pool
     for i, container in ipairs(state.containers) do
         ReleaseContainer(container)
         state.containers[i] = nil
@@ -472,7 +410,7 @@ local function ReanchorPrivateAuras(frame)
     -- Same unit — nothing to do
     if state.unit == unit and #state.anchorIDs > 0 then return end
 
-    -- Remove old anchors (keep containers and scale frames)
+    -- Remove old anchors (keep containers, which retain their locked strata)
     RemoveAllAnchors(state)
 
     state.unit = unit
@@ -484,15 +422,7 @@ local function ReanchorPrivateAuras(frame)
         local container = state.containers[i]
         if not container then break end
 
-        local scaleFrame = state.scaleFrames[i]
-        if not scaleFrame then
-            scaleFrame = CreateFrame("Frame", nil, frame)
-            state.scaleFrames[i] = scaleFrame
-        end
-
-        local mainID, textID = RegisterDualAnchor(unit, i, container, scaleFrame, settings)
-        state.anchorIDs[i] = mainID
-        state.textAnchorIDs[i] = textID
+        state.anchorIDs[i] = RegisterAnchor(unit, i, container, settings)
     end
 
     SchedulePrivateAuraSwipeReverse(frame, state, reverseSwipe)
