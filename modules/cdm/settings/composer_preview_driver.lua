@@ -499,6 +499,35 @@ function CDMComposerPreview.Build(gridArea)
     end)
 end
 
+-- Release every preview icon frame. Refresh only ever repaints one frame
+-- family per container type, so when the active container switches family
+-- (icon-shape -> bar, or back) the previous family's frames must be cleared
+-- here or they linger on screen. Mirrors the icon half of Teardown.
+local function ClearPreviewIcons()
+    for _, icon in ipairs(state.previewIcons) do
+        if icon then
+            StopGlow(icon, state.containerDB)
+            ns.CDMIconFactory.ReleaseForPreview(icon)
+            state.iconState[icon] = nil
+        end
+    end
+    state.previewIcons = {}
+    state.glowOwnerIdx = 1
+    state.glowOwnerT   = 0
+end
+
+-- Symmetric counterpart for the bar family. Mirrors the bar half of Teardown.
+local function ClearPreviewBars()
+    for _, bar in ipairs(state.previewBars) do
+        if bar then
+            state.iconState[bar] = nil
+            bar:Hide()
+            bar:SetParent(nil)
+        end
+    end
+    state.previewBars = {}
+end
+
 function CDMComposerPreview.Refresh(containerKey)
     state.containerKey = containerKey
     state.containerDB  = GetContainerDB(containerKey)
@@ -508,10 +537,17 @@ function CDMComposerPreview.Refresh(containerKey)
     state.scriptKind = ResolveScriptKind(containerType)
 
     if containerType == "auraBar" then
+        -- Drop any icon-shape frames left over from a previous container;
+        -- RefreshBars only manages the bar family. (No-op when the prior
+        -- container was already a bar type, so same-type refreshes keep
+        -- their incremental reuse and cycle animation state.)
+        ClearPreviewIcons()
         RefreshBars(containerKey, state.containerDB)
         return
     end
 
+    -- Symmetric: shed leftover bar frames RefreshIcons won't touch.
+    ClearPreviewBars()
     RefreshIcons(containerKey, state.containerDB)
 end
 
