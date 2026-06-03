@@ -25,6 +25,10 @@ local ns = select(2, ...)
 
 local CDMBlizzMirror = {}
 ns.CDMBlizzMirror = CDMBlizzMirror
+-- TEMP DEBUG (cold-boot trackedBar investigation): global handle so the mirror
+-- API is reachable from a base /dump on a cold boot without the debug companion.
+-- Remove before commit.
+_G.QUI_CDM_MIRROR = CDMBlizzMirror
 
 local Helpers = ns.Helpers
 local Sources = ns.CDMSources
