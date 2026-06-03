@@ -25,10 +25,6 @@ local ns = select(2, ...)
 
 local CDMBlizzMirror = {}
 ns.CDMBlizzMirror = CDMBlizzMirror
--- TEMP DEBUG (cold-boot trackedBar investigation): global handle so the mirror
--- API is reachable from a base /dump on a cold boot without the debug companion.
--- Remove before commit.
-_G.QUI_CDM_MIRROR = CDMBlizzMirror
 
 local Helpers = ns.Helpers
 local Sources = ns.CDMSources
@@ -4786,6 +4782,17 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
                 sd:RunColdLoadReconcile()
             end
             DrainColdLoadDeferredMirrorRefresh()
+            -- The buff container's rebuild skip-caches key only on the configured
+            -- spell set, not on catalog/mirror state, so a lazily-childed buff
+            -- (e.g. an Augmentation Evoker's Ebon Might, a childless trackedBar
+            -- self-buff) that only resolves after this cold-load settle would be
+            -- skipped until /reload. Now that the viewer + mirror catalog are
+            -- confirmed ready, force one clean buff rebuild so its icon frame is
+            -- created against live data; the UNIT_AURA visibility pass shows it on
+            -- activation.
+            if ns.CDMContainers and ns.CDMContainers.RebuildBuffContainer then
+                ns.CDMContainers.RebuildBuffContainer()
+            end
         end
         C_Timer.After(2.0, FinalizeColdLoad)
         return

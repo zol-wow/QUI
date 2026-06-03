@@ -2765,11 +2765,19 @@ _G.QUI_ForceLayoutContainer = function(containerKey)
     end
 end
 
--- TEMP DEBUG (cold-boot buff investigation): force a clean buff-container
--- rebuild, bypassing the fingerprint/build-signature skip caches. Lets us test
--- whether a post-settle relayout surfaces a childless trackedBar buff without a
--- full /reload. Remove before commit.
-_G.QUI_CDM_FORCE_BUFF_REBUILD = function()
+-- Force a clean buff-container rebuild, bypassing the fingerprint / build-
+-- signature skip caches. Both caches key only on the configured buff spell set,
+-- not on the Blizzard catalog/mirror resolution state, so a buff whose viewer
+-- child Blizzard creates lazily (a childless trackedBar self-buff such as an
+-- Augmentation Evoker's Ebon Might) only becomes resolvable after the catalog
+-- settles. On a cold boot that settle happens after the initial buff layout, and
+-- because the configured spell set is unchanged the stale pool is reused — so the
+-- icon never gets built until a /reload. Invoked from the CDM cold-load finalize
+-- once the catalog + mirror are confirmed ready: this rebuilds the pool against
+-- live data, and the normal UNIT_AURA visibility pass then shows the icon on
+-- activation.
+local function RebuildBuffContainer()
+    if not initialized then return end
     buffFingerprint = nil
     local c = containers and containers["buff"]
     if c then c._lastBuildSignature = nil end
@@ -3865,6 +3873,7 @@ ns.CDMContainers = {
     GetContainer = function(viewerType) return containers[viewerType] end,
     LayoutContainer = LayoutContainer,
     RefreshAll = RefreshAll,
+    RebuildBuffContainer = RebuildBuffContainer,
     GetTrackedBarContainer = function() return containers.trackedBar end,
     GetContainerShape = GetContainerShape,
     IsBarShape = IsBarShape,
