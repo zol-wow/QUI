@@ -640,6 +640,8 @@ local defaults = {
                 pos = nil,  -- { ox = number, oy = number } saved container position (nil = first-time, seed from Blizzard)
                 iconSize = 30,      -- Icon size in pixels
                 borderSize = 0,     -- Border thickness (0 to 8)
+                borderColorSource = "inherit",  -- inherit | theme | class | custom
+                borderColor = {0, 0, 0, 1},
                 shape = "square",   -- DEPRECATED: use aspectRatioCrop instead
                 aspectRatioCrop = 1.0,  -- Aspect ratio (0.5-2.0): <1=taller, 1=square, >1=wider
                 growthDirection = "CENTERED_HORIZONTAL",  -- CENTERED_HORIZONTAL, LEFT, or RIGHT
@@ -680,6 +682,8 @@ local defaults = {
                 colorOverrides = {},                  -- Per-spell color overrides {spellID → {r, g, b, a}}
                 barOpacity = 1.0,
                 borderSize = 2,
+                borderColorSource = "inherit",  -- inherit | theme | class | custom
+                borderColor = {0, 0, 0, 1},
                 bgColor = {0, 0, 0, 1},
                 bgOpacity = 0.5,
                 textSize = 14,
@@ -819,6 +823,7 @@ local defaults = {
                     enabled = true,
                     pos = nil,
                     iconSize = 30, borderSize = 0,
+                    borderColorSource = "inherit", borderColor = {0, 0, 0, 1},
                     shape = "square",
                     aspectRatioCrop = 1.0,
                     growthDirection = "CENTERED_HORIZONTAL",
@@ -854,6 +859,7 @@ local defaults = {
                     colorOverrides = {},
                     barOpacity = 1.0,
                     borderSize = 2,
+                    borderColorSource = "inherit", borderColor = {0, 0, 0, 1},
                     bgColor = {0, 0, 0, 1},
                     bgOpacity = 0.5,
                     textSize = 14,

@@ -1397,7 +1397,12 @@ local function MigrateBorderColoringTable(db, entry)
     elseif legacy.accent and db[legacy.accent] then
         db[sourceKey] = "theme"
     else
-        db[sourceKey] = "custom"
+        -- Containers that never carried a per-instance border color (the flat
+        -- CDM aura/auraBar buff containers) declare legacy.defaultSource so the
+        -- fall-through lands on "inherit" instead of pinning a colorless
+        -- "custom". Icon-row containers omit it and keep the "custom" default,
+        -- preserving the legacy per-row color renamed in step 2.
+        db[sourceKey] = legacy.defaultSource or "custom"
     end
 
     -- 5. Delete dead legacy booleans.

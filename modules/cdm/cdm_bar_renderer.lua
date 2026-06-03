@@ -532,6 +532,11 @@ end
 function CDMBars.ConfigureBar(bar, settings, overrideWidth)
     if not bar then return end
 
+    -- Remember this bar's live container settings so a skin-color-only refresh
+    -- (RefreshSkinColors, which bypasses ConfigureBar) can re-resolve the
+    -- per-container border source without the settings table in hand.
+    bar._borderSettings = settings
+
     local barHeight = settings.barHeight or 25
     local barWidth = overrideWidth or settings.barWidth or 215
     local texture = settings.texture or "Quazii v5"
@@ -728,9 +733,11 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth)
             borderFrame._right:SetPoint("BOTTOMRIGHT", borderFrame, "BOTTOMRIGHT", 0, 0)
             borderFrame._right:SetWidth(borderSizePx)
 
-            -- Themed skin border color (was hardcoded black at creation; now follows the
-            -- user's skin border color and the global hideSkinBorders toggle, like unit frames)
-            local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor()
+            -- Per-container border color via the central source enum
+            -- (inherit/theme/class/custom). Passing `settings` lets the bar honor
+            -- its own borderColorSource/borderColor like the icon-row containers;
+            -- "inherit" falls back to the global skin border + hideSkinBorders.
+            local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor(settings, "")
             borderFrame._top:SetColorTexture(sbR, sbG, sbB, sbA)
             borderFrame._bottom:SetColorTexture(sbR, sbG, sbB, sbA)
             borderFrame._left:SetColorTexture(sbR, sbG, sbB, sbA)
@@ -1630,12 +1637,26 @@ function CDMBars:LayoutBars(container, settings)
     local visibleIndex = 0
     -- Build a lightweight config fingerprint so ConfigureBar is skipped
     -- when settings haven't changed between LayoutBars calls.
+    --
+    -- Fold the per-container border source + custom color in too: a
+    -- border-color-only change leaves every numeric below untouched, so without
+    -- this the fingerprint would match and the border would never repaint.
+    local bcs = settings.borderColorSource
+    local bcsHash = (bcs == "theme" and 1) or (bcs == "class" and 2)
+        or (bcs == "custom" and 3) or 0
+    local bc = settings.borderColor
+    local bcHash = 0
+    if type(bc) == "table" then
+        bcHash = (bc[1] or 0) + (bc[2] or 0) * 7 + (bc[3] or 0) * 53 + (bc[4] or 0) * 131
+    end
     local cfgFingerprint = (settings.barHeight or 0)
         + (barWidth or 0) * 7
         + (settings.borderSize or 0) * 97
         + (settings.textSize or 0) * 1009
         + ((settings.barOpacity or 1) * 10000)
         + ((settings.useClassColor and 1 or 0) * 100003)
+        + bcsHash * 1300031
+        + bcHash * 700001
     for _, bar in ipairs(barPool) do
         -- In edit/layout mode, force bar active BEFORE ConfigureBar so that
         -- inactive styling (alpha=0 for "hide" mode) doesn't apply.
@@ -1915,10 +1936,13 @@ end
 function CDMBars:RefreshSkinColors()
     local H = ns.Helpers
     if not (H and H.GetSkinBorderColor) then return end
-    local r, g, b, a = H.GetSkinBorderColor()
     for _, bar in ipairs(self:GetActiveBars() or {}) do
         local bc = bar and bar.BorderContainer
         if bc and bc._top and bc._top.SetColorTexture then
+            -- Resolve each bar from its own container settings so a per-container
+            -- source (inherit/theme/class/custom) is honored; a nil settings ref
+            -- (bar never configured) falls back to the global skin border.
+            local r, g, b, a = H.GetSkinBorderColor(bar._borderSettings, "")
             bc._top:SetColorTexture(r, g, b, a)
             bc._bottom:SetColorTexture(r, g, b, a)
             bc._left:SetColorTexture(r, g, b, a)

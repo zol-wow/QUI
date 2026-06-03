@@ -1242,6 +1242,18 @@ local function RenderLayoutSection(sectionHost, ctx)
                 optionsAPI.BuildSettingRow(appearanceCard.frame, "Border Size", borderSlider)
             )
 
+            -- Per-container border color via the central source enum
+            -- (inherit/theme/class/custom). Binds tracker.borderColorSource /
+            -- tracker.borderColor (prefix ""), matching the cooldown-row control.
+            local auraBorderSourceW, auraBorderColorW = ns.QUI_BorderControl.Attach(
+                gui, appearanceCard.frame, tracker, "", refresh,
+                { label = "Border Color Source", colorLabel = "Border Color" }
+            )
+            appearanceCard.AddRow(
+                optionsAPI.BuildSettingRow(appearanceCard.frame, "Border Color Source", auraBorderSourceW),
+                optionsAPI.BuildSettingRow(appearanceCard.frame, "Border Color", auraBorderColorW)
+            )
+
             local zoomSlider = gui:CreateFormSlider(appearanceCard.frame, nil, 0, 0.2, 0.01, "zoom", tracker, refresh, nil, {
                 description = "Crop the edges of each icon to hide Blizzard's default border. Higher values crop more.",
             })
@@ -1490,6 +1502,19 @@ local function RenderLayoutSection(sectionHost, ctx)
                 description = "Opacity of the backdrop fill behind the bar.",
             })
             colorCard.AddRow(optionsAPI.BuildSettingRow(colorCard.frame, "Background Opacity", backgroundOpacitySlider))
+
+            -- Per-container bar border color via the central source enum
+            -- (inherit/theme/class/custom). Binds tracker.borderColorSource /
+            -- tracker.borderColor (prefix ""); resolved in cdm_bar_renderer's
+            -- ConfigureBar via GetSkinBorderColor(settings, "").
+            local barBorderSourceW, barBorderColorW = ns.QUI_BorderControl.Attach(
+                gui, colorCard.frame, tracker, "", refresh,
+                { label = "Border Color Source", colorLabel = "Border Color" }
+            )
+            colorCard.AddRow(
+                optionsAPI.BuildSettingRow(colorCard.frame, "Border Color Source", barBorderSourceW),
+                optionsAPI.BuildSettingRow(colorCard.frame, "Border Color", barBorderColorW)
+            )
             builder.CloseCard(colorCard)
 
             builder.Spacer(6)

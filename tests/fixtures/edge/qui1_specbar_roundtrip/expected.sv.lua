@@ -2776,6 +2776,13 @@ return {
               anchorTargetPoint = "CENTER",
               anchorTo = "disabled",
               aspectRatioCrop = 1,
+              borderColor = {
+                [1] = 0,
+                [2] = 0,
+                [3] = 0,
+                [4] = 1
+              },
+              borderColorSource = "inherit",
               borderSize = 0,
               containerType = "aura",
               dormantSpells = {},
@@ -2808,6 +2815,13 @@ return {
                 anchorTargetPoint = "CENTER",
                 anchorTo = "disabled",
                 aspectRatioCrop = 1,
+                borderColor = {
+                  [1] = 0,
+                  [2] = 0,
+                  [3] = 0,
+                  [4] = 1
+                },
+                borderColorSource = "inherit",
                 borderSize = 0,
                 builtIn = true,
                 containerType = "aura",
@@ -2990,6 +3004,13 @@ return {
                   [4] = 1
                 },
                 bgOpacity = 0.5,
+                borderColor = {
+                  [1] = 0,
+                  [2] = 0,
+                  [3] = 0,
+                  [4] = 1
+                },
+                borderColorSource = "inherit",
                 borderSize = 2,
                 builtIn = true,
                 colorOverrides = {},
@@ -3309,6 +3330,13 @@ return {
                 [4] = 1
               },
               bgOpacity = 0.5,
+              borderColor = {
+                [1] = 0,
+                [2] = 0,
+                [3] = 0,
+                [4] = 1
+              },
+              borderColorSource = "inherit",
               borderSize = 2,
               colorOverrides = {},
               containerType = "auraBar",

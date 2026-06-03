@@ -42,6 +42,47 @@ local function CollectContainerRows(profile)
     return out
 end
 
+-- Collect the FLAT buff containers (aura icons + auraBar bars). Unlike the
+-- cooldown containers above, these store their border config directly on the
+-- container table (no row1/row2/row3), so the per-row collector never sees
+-- them. The border color lives in borderColorSource + borderColor (prefix "")
+-- exactly like a row table, so the resolver/options/refresh machinery works
+-- once these tables are surfaced. Returns the SAME live tables for in-place
+-- migration + bulk-apply. Built-in buff/trackedBar live at the top level (the
+-- authoritative tables GetContainerDB returns first); the unified mirror and
+-- any custom aura/auraBar containers come from ncdm.containers.
+local function CollectBuffContainers(profile)
+    local out = {}
+    local ncdm = profile and profile.ncdm
+    if type(ncdm) ~= "table" then return out end
+
+    local seen = {}
+    local function add(container)
+        if type(container) == "table" and not seen[container] then
+            seen[container] = true
+            out[#out + 1] = container
+        end
+    end
+
+    -- Built-in top-level buff containers (authoritative live tables).
+    add(ncdm.buff)
+    add(ncdm.trackedBar)
+
+    -- Unified mirror + any custom aura/auraBar containers.
+    if type(ncdm.containers) == "table" then
+        add(ncdm.containers.buff)
+        add(ncdm.containers.trackedBar)
+        for _, container in pairs(ncdm.containers) do
+            if type(container) == "table"
+                and (container.containerType == "aura" or container.containerType == "auraBar") then
+                add(container)
+            end
+        end
+    end
+
+    return out
+end
+
 if Helpers and Helpers.BorderRegistry then
     Helpers.BorderRegistry.Register({
         key      = "cdmContainers",
@@ -56,5 +97,24 @@ if Helpers and Helpers.BorderRegistry then
         instances = CollectContainerRows,
         refresh  = function() if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end end,
         legacy   = { table = "borderColorTable" },
+    })
+
+    Helpers.BorderRegistry.Register({
+        key      = "cdmBuffContainers",
+        label    = "CDM Buff Containers",
+        category = "CDM",
+        prefix   = "",
+        multi    = true,
+        db       = function(p)
+            local insts = CollectBuffContainers(p)
+            return insts and insts[1]
+        end,
+        instances = CollectBuffContainers,
+        refresh  = function() if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end end,
+        -- These containers never had a per-instance border color, so an
+        -- un-migrated profile must fall through to "inherit" (the global skin
+        -- border) — NOT the colorless "custom" the icon-row containers default
+        -- to. See MigrateBorderColoringTable's defaultSource handling.
+        legacy   = { defaultSource = "inherit" },
     })
 end

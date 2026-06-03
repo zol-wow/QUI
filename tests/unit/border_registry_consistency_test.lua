@@ -29,13 +29,14 @@ local function check(name, ok, detail)
 end
 
 -- The 21 "remaining" converted modules plus minimap, the native damage meter,
--- and chat-tab chrome == 24 keys.
+-- and chat-tab chrome == 24 keys, plus the CDM Buff Icons/Bars (aura/auraBar)
+-- container border entry == 25 keys.
 local EXPECTED_KEYS = {
     "minimap", "buttonDrawer", "datatext", "crosshair", "castbar", "castbarIcon",
     "portrait", "skyriding", "xpTracker", "preyTracker", "atonement",
     "combatTimer", "brezCounter", "actionTracker", "actionTrackerIcon",
-    "rotationAssist", "cdmContainers", "mplusTimer", "readyCheck", "alerts",
-    "chat", "chatTabs", "tooltip", "damageMeter",
+    "rotationAssist", "cdmContainers", "cdmBuffContainers", "mplusTimer",
+    "readyCheck", "alerts", "chat", "chatTabs", "tooltip", "damageMeter",
 }
 local expectedLookup = {}
 for _, k in ipairs(EXPECTED_KEYS) do expectedLookup[k] = true end

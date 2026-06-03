@@ -329,6 +329,23 @@ do
 end
 
 ---------------------------------------------------------------------------
+-- defaultSource opt-in: an entry whose legacy descriptor declares a
+-- defaultSource must fall through to THAT source (not "custom") when no legacy
+-- color/flag is present. This is the flat aura/auraBar CDM container case: the
+-- Buff Icons and Buff Bars containers never carried a per-container border
+-- color, so an un-migrated profile must land on "inherit" — not a pinned
+-- "custom" with no color (which the icon-row containers correctly use).
+---------------------------------------------------------------------------
+do
+    local db = {}
+    Helpers.MigrateBorderColoringTable(db, { prefix = "", legacy = { defaultSource = "inherit" } })
+    check("defaultSource inherit -> inherit (no legacy color)",
+        db.borderColorSource == "inherit", tostring(db.borderColorSource))
+    check("defaultSource inherit: no borderColor pinned",
+        db.borderColor == nil, tostring(db.borderColor))
+end
+
+---------------------------------------------------------------------------
 -- Gate wiring: RunOnProfile at a pre-v40 version runs the registry migration
 -- and stamps the schema version; a fresh (current-version) profile skips it.
 ---------------------------------------------------------------------------
