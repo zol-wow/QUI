@@ -350,6 +350,32 @@ local lastBest = {}
 local GetDB = Helpers.GetConsumableMacrosDB
 
 ---------------------------------------------------------------------------
+-- Selection lookup (consumed by the consumable-check popup)
+---------------------------------------------------------------------------
+
+-- dbKey -> defs table, derived once from MACRO_SLOTS so the item-ID tables
+-- live in exactly one place.
+local DEFS_BY_DBKEY = {}
+for _, slot in ipairs(MACRO_SLOTS) do
+    DEFS_BY_DBKEY[slot.dbKey] = slot.defs
+end
+
+--- Returns the representative item for the family currently configured in the
+--- given macro slot, as { itemID = <first variant id>, label = <family label> },
+--- or nil when the slot is unset, "none", or unknown.
+function ConsumableMacros.GetSelectedItem(dbKey)
+    local db = GetDB and GetDB()
+    if not db then return nil end
+    local key = db[dbKey]
+    if not key or key == "none" then return nil end
+    local defs = DEFS_BY_DBKEY[dbKey]
+    local def = defs and defs[key]
+    local variant = def and def.variants and def.variants[1]
+    if not variant or type(variant.itemID) ~= "number" then return nil end
+    return { itemID = variant.itemID, label = def.label }
+end
+
+---------------------------------------------------------------------------
 -- Core logic
 ---------------------------------------------------------------------------
 

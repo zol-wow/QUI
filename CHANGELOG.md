@@ -6,6 +6,94 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## Unreleased
+
+### Added
+- **Consumable Check now follows your configured consumable macros.** When you've set a flask, weapon oil/stone, or augment rune in the consumables options, the reminder popup suggests that same item by default instead of its built-in order. Right-clicking an icon to pick a specific item still overrides the macro for that character. Hunters can now have a weapon **oil** suggested on their bow (the popup previously only offered ranged ammo there).
+
+## v4.0.0-beta6 - 2026-06-02
+
+> 🧪 **QUI 4 beta — diagnostic build.** A small instrumented follow-up to beta5 that exposes the Cooldown Manager mirror API for cold-boot troubleshooting. No functional or visual changes and no schema migrations: your beta5 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Internal
+- **Cold-boot Cooldown Manager diagnostics.** Exposed the Cooldown Manager mirror as a global handle so its tracked-bar state can be inspected with a base `/dump` on a fresh login, without the separate diagnostic companion. This is a temporary investigation aid with no effect on normal use.
+
+## v4.0.0-beta5 - 2026-06-02
+
+> 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta4 squashing two WoW 12.0 taint/error bugs and finishing the keyboard click-casting work. No schema migrations: your beta4 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Chat no longer errors on raid warnings and monster emotes.** Channel coloring used to write Blizzard's chat color table directly, which tainted chat dispatch and threw a "secret string value" error when a raid warning or monster yell/whisper arrived. Channel colors are now applied purely at render time without touching any Blizzard global, so the error is gone and your custom channel colors still apply.
+- **Opening the World Map by keybind no longer blocks emotes.** Restoring saved positions for protected frames (World Map, Mail) tainted them, which blocked the map's read animation and produced an "action blocked" error. Protected frames are now repositioned through a secure path that no longer taints them.
+- **Keyboard click-cast rebinds apply immediately.** Changing a keyboard click-cast key out of combat now takes effect right away instead of waiting for you to re-hover the frame or `/reload`.
+- **Click-casting no longer skips party/raid frames while the roster settles.** A momentarily-empty frame slot could cause later frames to be skipped during setup; all frames are now bound reliably.
+
+### Internal
+- **Editor-only WoW API language-server definitions.** Added generated Lua language-server type definitions for the WoW client API, widget types, and supporting tooling. These are development aids only — not loaded in-game and not shipped in the release zip.
+
+## v4.0.0-beta4 - 2026-06-02
+
+> 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta3 with group-frame and click-casting fixes. No schema migrations: your beta3 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Click-casting now survives instance zone-ins.** Entering a group instance (e.g. a follower dungeon, where party members are NPCs) grows the party roster and makes the secure frames create their unit buttons after the initial setup pass, so the new party frames had no click-cast bindings until you `/reload`. Click-casting is now re-applied on every roster change (deferred out of combat), so the new frames are bound immediately.
+- **Heal-absorb bar respects its own toggle.** The heal-absorb bar is now driven by the Heal Absorbs toggle instead of the Absorb Shield toggle, so it no longer freezes when Show Absorb Shield is turned off.
+- **Ready-check icons appear on the initial check.** Frames now show the waiting icon the moment a ready check starts, instead of staying blank until someone responds.
+- **Overlays reappear after a settings change.** Absorb, heal-absorb, and heal-prediction overlays are repopulated after any group-frame settings refresh, instead of staying hidden until their next value change.
+- **Copy All Settings includes heal-absorb settings.** Heal-absorb options are now copied with the rest of the group-frame visuals instead of being silently skipped.
+
+## v4.0.0-beta3 - 2026-06-01
+
+> 🧪 **QUI 4 beta — internal refactor sync.** This beta brings the QUI 4 line in step with the latest development work: the Cooldown Manager and action bar internals have been split into smaller modules, chrome skinning is centralized behind a shared policy, and release packaging is hardened. These are largely under-the-hood changes — your beta2 profiles carry over unchanged, with no schema migrations. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+>
+> **Packaging change:** the release zip now ships **two** folders — `QUI/` and `QUI_Options/` — which must live next to each other in `Interface/AddOns/`. The optional `QUI_Debug` diagnostic companion is no longer bundled in the release.
+
+### Changed
+- **Options search surfaces group-frame subtabs.** The in-options search index was refreshed so group-frame settings are found from the search box.
+
+### Internal
+- **Cooldown Manager runtime modularized.** The monolithic CDM runtime was split into shared, catalog, resolver, and scheduler modules with dedicated aura, icon, and buff-layout helpers, and the XML load order updated to match. No behavior change intended.
+- **Action bars split into env-backed submodules.** Action bar logic was moved into dedicated files with shared cross-file wiring.
+- **Centralized chrome skinning and stat tooltip policy.** Chrome palette/backdrop and close-button styling now route through a shared `SkinBase` policy (including the character and inspect panes), and character stat tooltip secret handling is consolidated behind one shared path.
+- **Hardened release packaging.** The release zip is now assembled from an explicit runtime file list with required/forbidden-path validation, and the debug companion is dropped from the package.
+- Updated structural test guards to match the new module and packaging boundaries.
+
+## v4.0.0-beta2 - 2026-06-01
+
+> 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta1. Still expect rough edges — please report anything you hit on GitHub. **Back up your `WTF` folder before installing.** No schema migrations: your beta1 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Fixed
+- **Cooldown Manager icons and tracked buffs now bind reliably on a fresh login.** On a cold start the cooldown viewer can report data before it is fully populated; the mirror used to wipe its catalog on that partial read and fail to repopulate, leaving some cooldown icons and tracked buffs blank until a `/reload` or spec swap. The scan is now two-phase — it only commits once a complete read succeeds — and keeps retrying past the initial settle window instead of giving up.
+
+### Internal
+- Removed a batch of confirmed-dead code (legacy options widget builders, unreachable scale branches, retired profile keys, an unused import) with guard tests locking in each removal.
+
+## v4.0.0-beta1 - 2026-06-01
+
+> 🧪 **QUI 4 — first beta.** This is the opening beta of the QUI 4 line. It is more settled than the alpha builds, but still expect rough edges — please report anything you hit on GitHub. **Back up your `WTF` folder before installing.** No new schema migrations: your alpha80 profiles carry over unchanged.
+>
+> **Reminder: QUI ships as three folders — `QUI/`, `QUI_Options/`, and `QUI_Debug/`.** All three must live next to each other in `Interface/AddOns/`. The release zip already contains all three.
+
+### Added
+- **Aura presets and a reorganized aura indicator editor.** The group-frame aura indicator options are now laid out in two columns with grouped tabs, and you can apply ready-made aura presets instead of configuring every indicator by hand.
+- **Border coloring for chat tabs and the damage meter.** The per-module border color controls now extend to chat tab chrome and the damage meter window.
+
+### Changed
+- **Aura bars track live duration changes.** Aura bar timers now follow updates to an aura's duration (refreshes and extensions) instead of staying pinned to the original time.
+- **Consumable reminders always show on instance triggers.** Entering a triggering instance now reliably surfaces your consumable reminders.
+- **`/quiclearspell` is now `/quiclearscan`.** The scanner command accepts a spell **or** item ID, and `/quiclearscan all` wipes everything the scanner has learned.
+
+### Fixed
+- **More reliable consumable and trinket buff detection.** The spell scanner now only adopts a buff whose spell ID matches the ability or trinket you actually used. This removes false matches where an unrelated buff landing in the same moment — for example an external buff arriving just as you use a potion — was picked up instead.
+- **Click-cast overlay focus and cleanup.** Fixes to how the click-cast overlay takes focus and tears itself down.
+- **Custom bars refresh correctly after a layout change.** Custom bar runtime state is now rebuilt after Layout Mode changes.
+- **Locked power bars respect Cooldown Manager Edit Mode again.** A stale always-off check was replaced so the locked power bar correctly holds its position while the Cooldown Manager Edit Mode is active.
+
+### Internal
+- Consolidated the duplicated deep-copy helpers into one shared, cycle-safe implementation; cached per-tick settings lookups in the skyriding and castbar update loops; and moved chat tab chrome and click-cast buttons onto shared pixel-safe helpers.
+
 ## v3.6.0-alpha80 - 2026-06-01
 
 > ⚠️ **Still alpha — back up your `WTF` folder before installing.** No schema migrations; existing alpha79 profiles carry over unchanged.

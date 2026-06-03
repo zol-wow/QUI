@@ -94,6 +94,31 @@ local PREFERENCE_KEYS = {
     oilOH = "consumablePreferredOilOH",
 }
 
+-- Maps a consumable-check button type to the macro slot dbKey it follows.
+-- Healthstone is listed for completeness, but the popup shows it as a count
+-- only, so the link is inert there.
+local MACRO_SLOT_FOR_BUTTON = {
+    flask       = "selectedFlask",
+    rune        = "selectedAugment",
+    healthstone = "selectedHealthstone",
+    oilMH       = "selectedWeapon",
+}
+
+-- Returns { itemID, label } for the macro family configured for this button,
+-- or nil. Safe when the macro module isn't present (e.g. unit tests / early load).
+local function GetMacroSelection(buttonType)
+    local dbKey = MACRO_SLOT_FOR_BUTTON[buttonType]
+    if not dbKey then return nil end
+    local cm = ns.ConsumableMacros
+    if not (cm and cm.GetSelectedItem) then return nil end
+    return cm.GetSelectedItem(dbKey)
+end
+
+local function GetMacroPreferredItemID(buttonType)
+    local sel = GetMacroSelection(buttonType)
+    return sel and sel.itemID or nil
+end
+
 ---------------------------------------------------------------------------
 -- CLASS-AWARE WEAPON ENHANCEMENT CONFIG
 ---------------------------------------------------------------------------
@@ -274,6 +299,13 @@ end
 
 local function GetEnhancementLabel(slot)
     local config = GetEnhancementConfig(slot)
+    -- Item-based slots (Hunter) follow the configured weapon-macro family label
+    -- when one is set, so the popup/options text matches the oil being suggested.
+    if config and config.items then
+        local buttonType = slot == "MH" and "oilMH" or "oilOH"
+        local sel = GetMacroSelection(buttonType)
+        if sel and sel.label then return sel.label end
+    end
     if config and config.label then return config.label end
     return slot == "MH" and "Weapon Oil" or "Weapon Oil"
 end
@@ -399,6 +431,21 @@ local function SetPreferredItemID(buttonType, itemID)
     end
 end
 
+-- Whether left-click-to-use should persist the used item as an explicit
+-- preference. While a category is following its configured macro (a macro is
+-- set and the user hasn't right-click-picked an explicit item), using the
+-- suggestion must NOT pin it, so the popup keeps tracking later macro changes.
+-- Categories with no macro, or with an explicit pref already set, pin as before.
+local function ShouldPersistPreferenceOnUse(buttonType)
+    if GetPreferredItemID(buttonType) ~= nil then
+        return true   -- an explicit right-click preference exists; re-affirm it
+    end
+    if GetMacroPreferredItemID(buttonType) ~= nil then
+        return false  -- following the macro default; don't pin on use
+    end
+    return true       -- no macro, no pref: legacy pin-on-use
+end
+
 local function GetMacroVariantOrder(itemID)
     if Helpers.IsSecretValue and Helpers.IsSecretValue(itemID) then return nil end
     itemID = tonumber(itemID)
@@ -498,6 +545,21 @@ local function ResolveBestOwnedVariantItemData(itemID, ownedItems)
     end
 
     return ownedByID[itemID]
+end
+
+-- Concatenates item-ID lists, dropping duplicates so a shared item isn't
+-- double-counted. Order is preserved (first list's items rank first).
+local function MergeItemLists(a, b)
+    local merged, seen = {}, {}
+    for _, list in ipairs({ a, b }) do
+        for _, itemID in ipairs(list) do
+            if not seen[itemID] then
+                seen[itemID] = true
+                merged[#merged + 1] = itemID
+            end
+        end
+    end
+    return merged
 end
 
 local function BuildItemOrderLookup(itemIDs)
@@ -626,7 +688,10 @@ local function GetOwnedItemsForButton(buttonType)
             if config.source == "spell" then
                 return GetKnownSpellsForConfig(config)
             elseif config.items then
-                return BuildOwnedItemsFromList(config.items)
+                -- Item-based slots (Hunter ammo) also surface weapon oils/stones,
+                -- so a configured oil macro can be suggested on the bow. Ammo keeps
+                -- its priority (listed first), so the no-macro default is unchanged.
+                return BuildOwnedItemsFromList(MergeItemLists(config.items, OIL_ITEMS))
             end
         end
         return BuildOwnedItemsFromList(OIL_ITEMS)
@@ -635,16 +700,25 @@ local function GetOwnedItemsForButton(buttonType)
 end
 
 local function ResolveSelectedOwnedItem(buttonType, ownedItems)
-    local preferredItemID = GetPreferredItemID(buttonType)
+    local explicitItemID = GetPreferredItemID(buttonType)
+    local preferredItemID = explicitItemID or GetMacroPreferredItemID(buttonType)
     if preferredItemID then
         local preferredVariant = ResolveBestOwnedVariantItemData(preferredItemID, ownedItems)
         if preferredVariant then
+            -- Runes intentionally defer to the list-ordered top entry (current
+            -- augment rune) over any explicit/macro preference; with today's
+            -- single configurable augment family this matches the macro default.
             if buttonType == "rune" and ownedItems[1] and ownedItems[1]._listOrder then
                 return ownedItems[1]
             end
             return preferredVariant
         end
-        SetPreferredItemID(buttonType, nil)
+        -- Only an explicit right-click preference is stored in settings, so it's
+        -- the only thing that can be stale and cleared. The macro default is
+        -- derived live and must never be written back.
+        if explicitItemID then
+            SetPreferredItemID(buttonType, nil)
+        end
     end
     return ownedItems[1]
 end
@@ -685,7 +759,7 @@ local function ApplyPreferredItemIcons(buttons, settings)
     local function apply(buttonType)
         local button = buttons[buttonType]
         if not button then return end
-        local preferredID = GetPreferredItemID(buttonType)
+        local preferredID = GetPreferredItemID(buttonType) or GetMacroPreferredItemID(buttonType)
         if not preferredID then return end
         -- Check if this is a spell preference (for class-based enhancements)
         local slot = (buttonType == "oilMH" and "MH") or (buttonType == "oilOH" and "OH") or nil
@@ -890,7 +964,8 @@ local function CreateConsumableButton(parent, index, buttonType, iconID, isClick
             if mouseButton == "RightButton" then
                 return
             end
-            if mouseButton == "LeftButton" and self.selectedItemID then
+            if mouseButton == "LeftButton" and self.selectedItemID
+                and ShouldPersistPreferenceOnUse(button.buttonType) then
                 SetPreferredItemID(button.buttonType, self.selectedItemID)
             end
         end)
@@ -1923,5 +1998,8 @@ if ns.__test then
         GetOwnedItemsForButton = GetOwnedItemsForButton,
         ResolveSelectedOwnedItem = ResolveSelectedOwnedItem,
         BuildOwnedItemsFromTotals = BuildOwnedItemsFromTotals,
+        GetMacroPreferredItemID = GetMacroPreferredItemID,
+        GetEnhancementLabel = GetEnhancementLabel,
+        ShouldPersistPreferenceOnUse = ShouldPersistPreferenceOnUse,
     }
 end
