@@ -609,10 +609,39 @@ ApplyAllBarSpacing = function()
     end
 end
 
+-- Resolve a concrete flyout direction for "AUTO".
+--
+-- QUI's owned-flyout action buttons are not real Blizzard action-bar buttons —
+-- they have no `self.bar`, so Blizzard's UpdateFlyout never reaches its
+-- position-based auto-detect branch (`if not popupDirection and self.bar then
+-- popupDirection = self.bar:GetSpellFlyoutDirection()`). Left on AUTO the arrow
+-- and the opened container disagree: the arrow falls back to GetPopupDirection's
+-- hard "DOWN" default while the owned container snippet defaults to "UP".
+--
+-- Mirror Blizzard's ActionBarMixin:UpdateSpellFlyoutDirection ourselves: the bar
+-- orientation picks the axis, the button's on-screen position picks the side
+-- (so the flyout opens toward screen center, away from the nearest edge).
+ComputeAutoFlyoutDirection = function(btn, isVertical)
+    -- GetCenter MayReturnNothing and is SecretWhenAnchoringSecret, so coerce
+    -- through SafeToNumber (nil on a secret/absent center) before comparing —
+    -- never compare a possibly-secret coordinate in Lua. Fall back to the
+    -- closed-side default when the position can't be read.
+    local rawX, rawY = btn:GetCenter()
+    local cx = Helpers.SafeToNumber(rawX)
+    local cy = Helpers.SafeToNumber(rawY)
+    if isVertical then
+        if cx then return cx > (GetScreenWidth() / 2) and "LEFT" or "RIGHT" end
+        return "RIGHT"
+    end
+    if cy then return cy < (GetScreenHeight() / 2) and "UP" or "DOWN" end
+    return "UP"
+end
+
 -- Apply the user's flyoutDirection setting to each button on a standard bar.
--- "AUTO" clears the attribute so Blizzard's position-based auto-detect runs.
--- Writing secure attributes on tainted addon buttons during combat causes
--- taint, so defer to PLAYER_REGEN_ENABLED when locked down.
+-- "AUTO" resolves to a concrete, position-based direction per button (see
+-- ComputeAutoFlyoutDirection) so the Blizzard arrow and the opened owned-flyout
+-- container always agree. Writing secure attributes on tainted addon buttons
+-- during combat causes taint, so defer to PLAYER_REGEN_ENABLED when locked down.
 VALID_FLYOUT_DIRS = { UP = true, DOWN = true, LEFT = true, RIGHT = true }
 
 ApplyFlyoutDirection = function(barKey)
@@ -635,14 +664,19 @@ ApplyFlyoutDirection = function(barKey)
 
     local dir = layout.flyoutDirection
     if not VALID_FLYOUT_DIRS[dir] then dir = nil end -- AUTO / unset
+    local isVertical = (GetOwnedLayout(barKey)) == "vertical"
 
     for _, btn in ipairs(buttons) do
         if btn and btn.SetAttribute then
-            btn:SetAttribute("flyoutDirection", dir)
-            -- Explicitly sync popup direction: UpdateFlyout only calls
-            -- SetPopupDirection when the value is non-nil, so switching
-            -- back to AUTO would leave the old direction stuck.
-            if btn.SetPopupDirection then btn:SetPopupDirection(dir) end
+            -- AUTO resolves per button from its on-screen position so the
+            -- owned-container snippet and the Blizzard arrow read the SAME
+            -- value; an explicit setting is used verbatim.
+            local effectiveDir = dir or ComputeAutoFlyoutDirection(btn, isVertical)
+            btn:SetAttribute("flyoutDirection", effectiveDir)
+            -- Keep Blizzard's arrow in sync with the container. SetPopupDirection
+            -- is always given a concrete value now, so the arrow can never get
+            -- stuck on a stale direction when toggling AUTO <-> explicit.
+            if btn.SetPopupDirection then btn:SetPopupDirection(effectiveDir) end
             if btn.UpdateFlyout then pcall(btn.UpdateFlyout, btn) end
         end
     end

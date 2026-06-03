@@ -147,11 +147,23 @@ EnsureOwnedFlyoutFrame = function()
 
     ownedFlyout = CreateFrame("Frame", "QUI_SpellFlyout", UIParent, "SecureHandlerBaseTemplate")
     ownedFlyout:SetFrameStrata("DIALOG")
+    -- Lock the strata. The secure HandleFlyout snippet reparents this frame
+    -- onto the clicked action button (self:SetParent(parent)). A non-fixed
+    -- frame *inherits its new parent's strata* on reparent (see Blizzard's
+    -- PlayerCastingBarFrame: SetFixedFrameStrata(false) is commented "Inherit
+    -- parent strata"), which would drop the flyout from DIALOG down to the
+    -- action bar's strata and let group/raid frames render on top of it.
+    -- Fixing the strata makes DIALOG survive every reparent.
+    if ownedFlyout.SetFixedFrameStrata then
+        ownedFlyout:SetFixedFrameStrata(true)
+    end
     ownedFlyout:SetClampedToScreen(true)
     ownedFlyout:Hide()
-    ownedFlyout.Background = CreateFrame("Frame", nil, ownedFlyout)
-    ownedFlyout.Background:SetAllPoints()
-    ownedFlyout.BackgroundTex = ownedFlyout.Background:CreateTexture(nil, "BACKGROUND")
+    -- Background tint lives directly on the flyout frame's BACKGROUND layer, not
+    -- on a separate child frame. A sibling child frame shares the popup buttons'
+    -- frame level, so its texture can draw *over* the button icons and dim them;
+    -- a parent's own draw layers always render beneath its child button frames.
+    ownedFlyout.BackgroundTex = ownedFlyout:CreateTexture(nil, "BACKGROUND")
     ownedFlyout.BackgroundTex:SetAllPoints()
     ownedFlyout.BackgroundTex:SetColorTexture(0, 0, 0, 0.35)
     ownedFlyout:SetScript("OnShow", function(self)

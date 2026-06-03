@@ -302,6 +302,23 @@ files["modules/actionbars/*_compat.lua"] = {
     ignore = { "112", "113" },
 }
 
+-- Action bar chunk-env files load under a setfenv() environment swap
+-- (SetChunkEnv): every module-internal function and cross-file helper is a
+-- field on ActionBarsEnv, not a real Lua global, so luacheck (which can't see
+-- the swapped _ENV) reports them all as W111 "setting non-standard global",
+-- W112 "mutating non-standard global", and W113 "accessing undefined variable".
+-- Those codes carry no signal for these files; genuine breakage surfaces via the
+-- unit suite + taint analyzer instead. Scoped to the specific chunk-env files
+-- (the non-chunk-env actionbars files — buffborders/gse_compat/totems — keep
+-- full undefined-global checking). Extend this list when touching other
+-- SetChunkEnv files in modules/actionbars/.
+files["modules/actionbars/actionbars_flyout.lua"] = {
+    ignore = { "111", "112", "113" },
+}
+files["modules/actionbars/actionbars_usability.lua"] = {
+    ignore = { "111", "112", "113" },
+}
+
 files["modules/dungeon/party_keystones.lua"] = {
     ignore = { "113" },
 }
