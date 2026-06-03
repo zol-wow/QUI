@@ -1093,6 +1093,11 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
         self:UnregisterEvent("ADDON_LOADED")
 
+        local Sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
+        if Sizing and Sizing.DetachFromEditMode then
+            Sizing.DetachFromEditMode()
+        end
+
         -- Setup new message sound (works independently of chat skinning)
         ns.QUI.Chat.Sounds.Setup()
 
