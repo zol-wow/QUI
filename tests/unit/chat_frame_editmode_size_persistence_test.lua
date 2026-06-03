@@ -32,8 +32,23 @@ function chatFrame:SetSize(w, h)
     self.height = h
 end
 
+-- Detach support: ChatFrame1 is reparented out of Edit Mode before QUI sizes
+-- it (chat_frame1.lua). Provide the methods + globals the detach path needs.
+function chatFrame:SetParent(p) self.parent = p end
+function chatFrame:SetClampedToScreen(v) self.clamped = v end
+function chatFrame:GetPoint() return "BOTTOMLEFT", _G.UIParent, "BOTTOMLEFT", 0, 0 end
+chatFrame.Selection = { SetParent = function(self, p) self.parent = p end }
+chatFrame.EditModeResizeButton = { SetParent = function(self, p) self.parent = p end }
+
 _G.ChatFrame1 = chatFrame
 
+UIParent = { SetAllPoints = function() end, EnableMouse = function() end }
+function CreateFrame()
+    return { SetAllPoints = function() end, EnableMouse = function() end, Hide = function() end }
+end
+
+-- Spy: present so the module COULD call it, but post-detach sizing must use
+-- plain SetSize instead. Any call here is a regression (it re-enters Edit Mode).
 function FCF_SetWindowSize(frame, w, h)
     frame:SetSize(w, h)
     frame.fcfSetWindowSize = { w, h }
@@ -97,12 +112,18 @@ assert(registeredFeature.render and registeredFeature.render.layout, "chatFrame1
 registeredFeature.render.layout({ GetHeight = function() return 1 end }, { providerKey = "chatFrame1" })
 assert(capturedSizeConfig and capturedSizeConfig.setSize, "chatFrame1 size config should expose setSize")
 
--- setSize: resizes the live frame via Blizzard's chat API, saves the legacy
--- floating-chat dimensions, mirrors the size into the QUI profile, and leaves
--- Edit Mode untouched.
+-- ChatFrame1 must be detached from Edit Mode before QUI will size it (that is
+-- the taint fix: never size a still-managed frame).
+assert(ns.QUI.ChatFrame1Sizing.DetachFromEditMode() == true, "detach should succeed out of combat")
+
+-- setSize: resizes the live frame via plain SetSize (post-detach), saves the
+-- legacy floating-chat dimensions, mirrors the size into the QUI profile, and
+-- leaves Edit Mode untouched. It must NOT call FCF_SetWindowSize -- that
+-- re-enters Blizzard's Edit Mode sizing chain and taints the frame.
 capturedSizeConfig.setSize(640, 320)
 
-assert(chatFrame.fcfSetWindowSize[1] == 640 and chatFrame.fcfSetWindowSize[2] == 320, "ChatFrame1 should be resized through Blizzard's chat API")
+assert(chatFrame.width == 640 and chatFrame.height == 320, "ChatFrame1 should be resized via plain SetSize")
+assert(chatFrame.fcfSetWindowSize == nil, "setSize must NOT call FCF_SetWindowSize (re-enters Edit Mode)")
 assert(chatFrame.fcfSaved == true, "legacy floating chat dimensions should still be saved")
 assert(fakeProfile.chat.frameSize and fakeProfile.chat.frameSize.w == 640 and fakeProfile.chat.frameSize.h == 320,
     "setSize should mirror the chat size into the QUI profile")
@@ -141,8 +162,7 @@ chatFrame.fcfSetWindowSize = nil
 local applied = ns.QUI.ChatFrame1Sizing.ApplyStoredSize()
 assert(applied == true, "ApplyStoredSize should resize the frame when the stored size differs")
 assert(chatFrame.width == 512 and chatFrame.height == 256, "ApplyStoredSize should apply the stored dimensions to the live frame")
-assert(chatFrame.fcfSetWindowSize and chatFrame.fcfSetWindowSize[1] == 512 and chatFrame.fcfSetWindowSize[2] == 256,
-    "ApplyStoredSize should route through Blizzard's chat sizing API")
+assert(chatFrame.fcfSetWindowSize == nil, "ApplyStoredSize must NOT route through FCF_SetWindowSize (re-enters Edit Mode)")
 assert(#settingChanges == 0, "ApplyStoredSize should not touch Edit Mode")
 
 -- No-op when the live frame already matches the stored size.

@@ -13,6 +13,16 @@ local ProviderFeatures = Settings and Settings.ProviderFeatures
 local CHAT_RESIZE_MIN_W, CHAT_RESIZE_MAX_W = 296, 1400
 local CHAT_RESIZE_MIN_H, CHAT_RESIZE_MAX_H = 120, 900
 
+-- Detach state. ChatFrame1 is an EditModeSystem frame; QUI only ever resizes or
+-- repositions it AFTER detaching it from Blizzard's Edit Mode hierarchy (see
+-- DetachFromEditMode). `detached` gates every SetSize/SetPoint we issue so we
+-- can never taint the managed layout chain. `chatContainer` is the plain
+-- reparent target; `editModeOverlayHome` is an off-screen home for Blizzard's
+-- Edit Mode selection/resize widgets.
+local detached = false
+local chatContainer
+local editModeOverlayHome
+
 local function IsChatLayoutLockedDown()
     local I = ns.QUI and ns.QUI.Chat and ns.QUI.Chat._internals
     return (type(InCombatLockdown) == "function" and InCombatLockdown())
@@ -68,6 +78,16 @@ local function GetChatProfileDB()
     return core and core.db and core.db.profile and core.db.profile.chat
 end
 
+-- True when the user has anchored "Chat Frame" via the Frame Positioning panel.
+-- In that case the anchoring system owns ChatFrame1's position (it applies a
+-- live SetPoint to the chosen target), so our stored drag position stands down
+-- to avoid the two systems fighting. Size stays QUI-owned either way.
+local function HasSavedChatFrameAnchor()
+    local core = Helpers and Helpers.GetCore and Helpers.GetCore()
+    local fa = core and core.db and core.db.profile and core.db.profile.frameAnchoring
+    return type(fa) == "table" and type(fa.chatFrame1) == "table"
+end
+
 local function StoreChatFrameSize(width, height)
     width = ReadSafeNumber(width)
     height = ReadSafeNumber(height)
@@ -94,6 +114,8 @@ end
 -- size wins. Only resizes the live frame — it does not re-persist. No-op when
 -- nothing is stored or the size already matches.
 function ChatFrame1Sizing.ApplyStoredSize()
+    -- Never size a still-Edit-Mode-managed frame -- that is the taint vector.
+    if not detached then return false end
     local chatDB = GetChatProfileDB()
     local stored = chatDB and chatDB.frameSize
     if type(stored) ~= "table" then return false end
@@ -104,11 +126,9 @@ function ChatFrame1Sizing.ApplyStoredSize()
     if not frame then return false end
     if IsChatLayoutLockedDown() then return false end
     if IsSameFrameSize(frame, width, height) then return false end
-    if _G.FCF_SetWindowSize then
-        _G.FCF_SetWindowSize(frame, width, height)
-    else
-        frame:SetSize(width, height)
-    end
+    -- Plain SetSize only: ChatFrame1 is detached, so this no longer re-enters
+    -- Blizzard's Edit Mode sizing chain. (FCF_SetWindowSize WOULD re-enter it.)
+    frame:SetSize(width, height)
     return true
 end
 
@@ -131,14 +151,15 @@ end
 function ChatFrame1Sizing.SetSize(width, height)
     local frame = _G.ChatFrame1
     if not frame or type(width) ~= "number" or type(height) ~= "number" then return false end
+    -- Refuse to size until detached from Edit Mode (login detach normally runs
+    -- well before any settings UI is reachable, so this is effectively always
+    -- satisfied at user-interaction time).
+    if not detached then return false end
     if IsChatLayoutLockedDown() then return false end
     if IsSameFrameSize(frame, width, height) then return false end
 
-    if _G.FCF_SetWindowSize then
-        _G.FCF_SetWindowSize(frame, width, height)
-    else
-        frame:SetSize(width, height)
-    end
+    -- Plain SetSize: ChatFrame1 is detached from the Edit Mode layout chain.
+    frame:SetSize(width, height)
 
     ChatFrame1Sizing.PersistSize(frame, width, height)
 
@@ -146,6 +167,156 @@ function ChatFrame1Sizing.SetSize(width, height)
         _G.QUI_RefreshChatSizeSliders()
     end
 
+    return true
+end
+
+---------------------------------------------------------------------------
+-- Detach ChatFrame1 from Blizzard's Edit Mode hierarchy + own its position.
+--
+-- ChatFrame1 is an EditModeSystem frame. Resizing/repositioning it from addon
+-- (tainted) code while it is Edit-Mode-managed taints the frame's secure
+-- layout chain; that taint then surfaces on the frame's OWN chat-event
+-- dispatch and trips Blizzard's secret-string guard the moment a public
+-- channel body (e.g. LookingForGroup) is a secret value -- Blizzard's own
+-- gsub on the message body in ChatFrameOverrides' MessageFormatter throws
+-- "string conversion on a secret string value (execution tainted by 'QUI')".
+--
+-- Reparenting ChatFrame1 under a plain container -- once, before any secret
+-- chat payload is processed -- removes it from the managed layout chain, so
+-- plain SetSize/SetPoint on it no longer taint. Blizzard then no longer
+-- persists the frame's position, so QUI owns it: profile.chat.framePosition is
+-- stored (lazily, like frameSize) and re-applied on login.
+--
+-- We deliberately do NOT install a SetPoint/SetParent hooksecurefunc. A
+-- reactive hook re-fires during chat event processing and re-taints the secure
+-- chain (the very thing we are removing). Position may drift if Blizzard tries
+-- to re-assert it; we accept that -- taint-free chat is the priority.
+---------------------------------------------------------------------------
+
+function ChatFrame1Sizing.IsDetached()
+    return detached
+end
+
+local function StorePosition(point, relPoint, x, y)
+    if type(point) ~= "string" then return false end
+    x = ReadSafeNumber(x)
+    y = ReadSafeNumber(y)
+    if not x or not y then return false end
+    local chatDB = GetChatProfileDB()
+    if not chatDB then return false end
+    chatDB.framePosition = {
+        point = point,
+        relPoint = (type(relPoint) == "string" and relPoint) or point,
+        x = math.floor(x + 0.5),
+        y = math.floor(y + 0.5),
+    }
+    return true
+end
+
+-- Exposed for the layout-mode mover's savePosition callback.
+function ChatFrame1Sizing.StorePosition(point, relPoint, x, y)
+    return StorePosition(point, relPoint, x, y)
+end
+
+function ChatFrame1Sizing.PersistCurrentPosition(frame)
+    frame = frame or _G.ChatFrame1
+    if not frame or type(frame.GetPoint) ~= "function" then return false end
+    local ok, point, _, relPoint, x, y = pcall(frame.GetPoint, frame, 1)
+    if not ok or type(point) ~= "string" then return false end
+    return StorePosition(point, relPoint, x, y)
+end
+
+function ChatFrame1Sizing.ApplyStoredPosition()
+    -- Only reposition once detached (same invariant as sizing).
+    if not detached then return false end
+    -- Defer to the anchoring system when the user anchored chat via the Frame
+    -- Positioning panel (it owns position then; ours would fight it).
+    if HasSavedChatFrameAnchor() then return false end
+    local chatDB = GetChatProfileDB()
+    local pos = chatDB and chatDB.framePosition
+    if type(pos) ~= "table" or type(pos.point) ~= "string" then return false end
+    local x = ReadSafeNumber(pos.x)
+    local y = ReadSafeNumber(pos.y)
+    if not x or not y then return false end
+    local frame = _G.ChatFrame1
+    if not frame then return false end
+    if IsChatLayoutLockedDown() then return false end
+    -- Preserve the current size across the re-anchor. If Edit Mode sized the
+    -- frame via two anchors, ClearAllPoints would otherwise collapse it; pinning
+    -- the captured dimensions afterward keeps the frame intact regardless of the
+    -- prior anchoring scheme. (A later ApplyStoredSize applies any custom size.)
+    local w = (type(frame.GetWidth) == "function") and ReadSafeNumber(frame:GetWidth()) or nil
+    local h = (type(frame.GetHeight) == "function") and ReadSafeNumber(frame:GetHeight()) or nil
+    frame:ClearAllPoints()
+    frame:SetPoint(pos.point, UIParent, pos.relPoint or pos.point, x, y)
+    if w and h and type(frame.SetSize) == "function" then
+        frame:SetSize(w, h)
+    end
+    return true
+end
+
+local function GetEditModeOverlayHome()
+    if not editModeOverlayHome and type(CreateFrame) == "function" then
+        editModeOverlayHome = CreateFrame("Frame", nil, UIParent)
+        if editModeOverlayHome and editModeOverlayHome.Hide then
+            editModeOverlayHome:Hide()
+        end
+    end
+    return editModeOverlayHome
+end
+
+-- Reparent ChatFrame1 out of Blizzard's Edit Mode hierarchy. One-time and
+-- idempotent; must run before any secret chat payload is processed (callers
+-- invoke it on login). Returns false (without detaching) under combat/messaging
+-- lockdown so the caller can retry on a lockdown-end event.
+function ChatFrame1Sizing.DetachFromEditMode()
+    if detached then return true end
+    local frame = _G.ChatFrame1
+    if not frame or type(frame.SetParent) ~= "function" then return false end
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then return false end
+    if IsChatLayoutLockedDown() then return false end
+    if type(CreateFrame) ~= "function" then return false end
+
+    -- Seed position from the live (Blizzard-restored) frame before reparenting,
+    -- so we keep the current position and don't visually jump.
+    local chatDB = GetChatProfileDB()
+    if chatDB and type(chatDB.framePosition) ~= "table" then
+        ChatFrame1Sizing.PersistCurrentPosition(frame)
+    end
+
+    chatContainer = chatContainer or CreateFrame("Frame", "QUIChatFrame1Container", UIParent)
+    if chatContainer.SetAllPoints then chatContainer:SetAllPoints(UIParent) end
+    if chatContainer.EnableMouse then chatContainer:EnableMouse(false) end
+
+    frame:SetParent(chatContainer)
+    if frame.SetClampedToScreen then frame:SetClampedToScreen(false) end
+
+    -- Pull Blizzard's Edit Mode selection + resize widgets off-screen so they
+    -- never render and QUI never needs to poke Edit Mode selection state.
+    local hidden = GetEditModeOverlayHome()
+    if hidden then
+        if frame.Selection and frame.Selection.SetParent then
+            pcall(frame.Selection.SetParent, frame.Selection, hidden)
+        end
+        if frame.EditModeResizeButton and frame.EditModeResizeButton.SetParent then
+            pcall(frame.EditModeResizeButton.SetParent, frame.EditModeResizeButton, hidden)
+        end
+    end
+
+    detached = true
+    return true
+end
+
+-- Login / lockdown-end entry point: detach once, then re-assert QUI-owned
+-- position + size. Guarded + idempotent. No-op (and no taint) while the chat
+-- module is disabled -- we leave ChatFrame1 to Blizzard entirely in that case.
+function ChatFrame1Sizing.SyncToStored()
+    local chatDB = GetChatProfileDB()
+    if chatDB and chatDB.enabled == false then return false end
+    ChatFrame1Sizing.DetachFromEditMode()
+    if not detached then return false end  -- locked down; caller retries
+    ChatFrame1Sizing.ApplyStoredPosition()
+    ChatFrame1Sizing.ApplyStoredSize()
     return true
 end
 

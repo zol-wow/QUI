@@ -785,8 +785,16 @@ function QUICore:HookEditMode()
             "PlayerCastingBarFrame",
             -- Tooltip
             "GameTooltipDefaultContainer",
-            -- Chat
-            "ChatFrame1",
+            -- Chat: ChatFrame1 is intentionally NOT suppressed. It is an
+            -- EditModeSystem frame, so poking its Edit Mode secure state from
+            -- addon (tainted) code -- ClearHighlight, EditModeMagnetismManager
+            -- UnregisterFrame, HighlightSystem/SelectSystem hooks -- taints the
+            -- frame's secure context. That taint surfaces on its chat-event
+            -- dispatch and trips Blizzard's secret-string guard the moment a
+            -- public channel body (e.g. LookingForGroup) is a secret value
+            -- (ChatFrameOverrides MessageFormatter gsub). Cost of not
+            -- suppressing: Blizzard's blue selection overlay shows on the chat
+            -- frame while in Edit Mode only -- purely cosmetic.
         }
 
         -- PartyFrame is only suppressed when QUI group frames own party frames.

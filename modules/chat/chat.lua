@@ -1126,12 +1126,16 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "PLAYER_LOGIN" or event == "CVAR_UPDATE" then
         ApplyTimestampMode()
     elseif event == "PLAYER_ENTERING_WORLD" then
-        -- Run after this frame's Edit Mode layout restore lands so QUI's saved
-        -- chat size wins over the active (possibly preset) Edit Mode layout.
+        -- Run after this frame's Edit Mode layout restore lands so QUI detaches
+        -- ChatFrame1 from Edit Mode and re-asserts its owned position + size
+        -- over the active (possibly preset) Edit Mode layout. SyncToStored is a
+        -- no-op while chat is disabled and bails (for a lockdown-end retry) if
+        -- we entered the world under combat/messaging lockdown.
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
         C_Timer.After(0, function()
-            if ns.QUI and ns.QUI.ChatFrame1Sizing and ns.QUI.ChatFrame1Sizing.ApplyStoredSize then
-                ns.QUI.ChatFrame1Sizing.ApplyStoredSize()
+            local Sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
+            if Sizing and Sizing.SyncToStored then
+                Sizing.SyncToStored()
             end
         end)
     elseif event == "PLAYER_REGEN_ENABLED"
@@ -1141,6 +1145,12 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         or event == "PVP_MATCH_COMPLETE"
         or event == "PVP_MATCH_INACTIVE" then
         FlushPendingCombatReskin()
+        -- Retry the ChatFrame1 detach/geometry sync if the login attempt was
+        -- skipped under lockdown. Idempotent once detached.
+        local Sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
+        if Sizing and Sizing.SyncToStored then
+            Sizing.SyncToStored()
+        end
     end
 end)
 

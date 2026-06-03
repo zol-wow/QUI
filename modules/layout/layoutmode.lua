@@ -2897,6 +2897,15 @@ do
             getFrame = function()
                 return _G.ChatFrame1
             end,
+            -- ChatFrame1 is detached from Edit Mode (chat_frame1.lua), so QUI
+            -- owns its position. Persist layout-mode drags into
+            -- profile.chat.framePosition; it is re-applied on login.
+            savePosition = function(_key, point, relPoint, offsetX, offsetY)
+                local sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
+                if sizing and sizing.StorePosition then
+                    sizing.StorePosition(point, relPoint, offsetX, offsetY)
+                end
+            end,
             -- Extend overlay to cover tab bar above + glass backdrop + editbox below
             setupOverlay = function(overlay, frame)
                 overlay:ClearAllPoints()
@@ -2964,6 +2973,11 @@ do
                                     sizing.PersistCurrentSize(f)
                                 elseif _G.FCF_SavePositionAndDimensions then
                                     _G.FCF_SavePositionAndDimensions(f)
+                                end
+                                -- A corner resize re-anchors the frame; persist
+                                -- the new position too (QUI owns it post-detach).
+                                if sizing and sizing.PersistCurrentPosition then
+                                    sizing.PersistCurrentPosition(f)
                                 end
                             end
                             if _G.QUI_RefreshChatSizeSliders then

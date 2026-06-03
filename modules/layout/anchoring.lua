@@ -1059,6 +1059,15 @@ local DYNAMIC_REANCHOR_KEYS = { buffFrame = true, debuffFrame = true }
 
 local function InstallAnchorGuard(frame, key)
     if _anchorGuardedFrames[frame] then return end
+    -- chatFrame1 is detached from Edit Mode and owned by the chat module
+    -- (chat_frame1.lua). A reactive ApplySystemAnchor/SetPoint guard re-SetPoints
+    -- the frame from inside Blizzard's secure execution context, which taints the
+    -- chat-event dispatch and throws a secret-string crash on secret channel/
+    -- party payloads. The guard is also unnecessary post-detach: a frame-anchor
+    -- to UIParent or another frame is a live SetPoint that needs no re-assertion
+    -- (Edit Mode no longer manages the frame). ApplyFrameAnchor still positions
+    -- it directly; we just never install the reactive hook.
+    if key == "chatFrame1" then return end
     if not frame.ApplySystemAnchor then
         -- Frames without ApplySystemAnchor (e.g. UIWidget containers) get
         -- repositioned by Blizzard layout code via direct SetPoint calls.
@@ -2589,6 +2598,18 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     local resolved = ResolveApplyFrameForKey(key)
     if not resolved then
         return
+    end
+
+    -- ChatFrame1 must be detached from Edit Mode before we SetPoint it, or the
+    -- positioning taints the chat dispatch (secret-string crash). Detach is
+    -- combat/lockdown-guarded and idempotent; if it can't run yet, defer to the
+    -- post-combat anchor reapply rather than touch a still-managed frame.
+    if key == "chatFrame1" then
+        local sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
+        if sizing and sizing.DetachFromEditMode and not sizing.DetachFromEditMode() then
+            pendingAnchoredFrameUpdateAfterCombat = true
+            return
+        end
     end
 
     -- Never anchor UIParent-managed right-side frames from addon code.
