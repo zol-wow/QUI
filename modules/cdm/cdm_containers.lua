@@ -2765,6 +2765,20 @@ _G.QUI_ForceLayoutContainer = function(containerKey)
     end
 end
 
+-- TEMP DEBUG (cold-boot buff investigation): force a clean buff-container
+-- rebuild, bypassing the fingerprint/build-signature skip caches. Lets us test
+-- whether a post-settle relayout surfaces a childless trackedBar buff without a
+-- full /reload. Remove before commit.
+_G.QUI_CDM_FORCE_BUFF_REBUILD = function()
+    buffFingerprint = nil
+    local c = containers and containers["buff"]
+    if c then c._lastBuildSignature = nil end
+    LayoutContainer("buff")
+    if ns.CDMIcons and ns.CDMIcons.UpdateAllCooldowns then
+        ns.CDMIcons:UpdateAllCooldowns()
+    end
+end
+
 -- Callback for buff aura events (from hooks on Blizzard buff children).
 -- Runs LayoutContainer to rebuild buff icons, then notifies buffbar.
 _G.QUI_OnBuffDataChanged = function()
