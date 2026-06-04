@@ -86,7 +86,7 @@ function UnitIsDeadOrGhost() return false end
 function UnitIsConnected() return true end
 function UnitIsPlayer() return true end
 function GetSpecialization() return 1 end
-function GetSpecializationInfo() return specReady and 102 or nil end  -- nil => spec data not ready
+function GetSpecializationInfo() return specReady and 102 or 0 end  -- 0 => spec data not ready
 function SecureHandlerWrapScript(frame, script, header, preBody)
     frame.secureWraps[script] = { header = header, preBody = preBody }
 end
@@ -157,13 +157,13 @@ local BASE_CLICKCAST = {
 -- Reset all cross-load state and load the click-cast module fresh, returning the
 -- module's event frame plus the party child frame and header. Each call is an
 -- independent "session" (module upvalues reset because loadfile re-runs the chunk).
-local function loadModule(initialSpecReady)
+local function loadModule(initialSpecReady, clickCast)
     inCombat = false
     specReady = initialSpecReady
     createdFrames = {}
     afterQueue = {}
     _G.QUI_ClickCastHeader = nil
-    _G.QUI.db.char.clickCast = DeepCopy(BASE_CLICKCAST)
+    _G.QUI.db.char.clickCast = DeepCopy(clickCast or BASE_CLICKCAST)
 
     local child = NewFrame("Button", "QUI_TestUnit1", nil, "SecureUnitButtonTemplate")
     local partyHeader = NewFrame("Frame", "QUI_TestPartyHeader", nil, "SecureGroupHeaderTemplate")
@@ -277,6 +277,39 @@ do
     eventFrame.scripts.OnEvent(eventFrame, "PLAYER_TALENT_UPDATE")
     assert(#afterQueue == 0, "BUG: resolved state still scheduled a refresh on PLAYER_TALENT_UPDATE")
     print("OK: recovery triggers do not churn once resolved")
+end
+
+---------------------------------------------------------------------------
+-- Scenario 4: generated docs say GetSpecializationInfo returns specId 0 when
+-- the active spec is not resolved. If a legacy/shared mouse binding resolves
+-- during that cold window, the old "both resolved tables are empty" guard
+-- treats startup as successful and never retries the per-spec keyboard table.
+---------------------------------------------------------------------------
+do
+    local clickCast = DeepCopy(BASE_CLICKCAST)
+    clickCast.bindings = {
+        { button = "LeftButton", modifiers = "", actionType = "spell",
+          spell = "Rejuvenation", spellID = 774 },
+    }
+
+    local eventFrame, child = loadModule(false, clickCast)
+    eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
+
+    drain(100)
+    assert(#afterQueue == 0, "startup retry should be bounded/exhausted")
+    assert(keycount() == 0,
+        "precondition: shared mouse fallback must not count as keyboard readiness")
+
+    specReady = true
+    hover(child)
+    assert(#afterQueue >= 1,
+        "BUG: shared mouse fallback masked unresolved per-spec keyboard bindings")
+    flushAfter()
+
+    assert(keycount() == 1, "header keycount = " .. tostring(keycount())
+        .. " -- per-spec keyboard bindings were not revived after spec data arrived")
+    assertHoverBindsF(child)
+    print("OK: shared mouse fallback does not mask cold per-spec keyboard recovery")
 end
 
 print("OK: groupframes_clickcast_slow_cold_login_test")

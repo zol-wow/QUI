@@ -371,15 +371,25 @@ local function ResolveSpellName(binding)
     return binding.spell
 end
 
+local function GetCurrentSpecID()
+    local specIndex = GetSpecialization()
+    if not specIndex then return nil end
+    local specID = GetSpecializationInfo(specIndex)
+    if specID and specID ~= 0 then return specID end
+    return nil
+end
+
 -- Return the stable saved-loadout config ID for the current spec.
 -- GetActiveConfigID() returns an ephemeral staging copy that changes each
 -- session; GetLastSelectedSavedConfigID() returns the persistent saved ID.
 local function GetStableLoadoutID()
-    local specID = GetSpecializationInfo(GetSpecialization() or 1)
+    local specID = GetCurrentSpecID()
     if not specID or not C_ClassTalents then return nil, specID end
     local savedID = C_ClassTalents.GetLastSelectedSavedConfigID and C_ClassTalents.GetLastSelectedSavedConfigID(specID)
     if savedID then return savedID, specID end
-    return C_ClassTalents.GetActiveConfigID() or 0, specID
+    local activeID = C_ClassTalents.GetActiveConfigID()
+    if activeID and activeID ~= 0 then return activeID, specID end
+    return nil, specID
 end
 
 -- Look up the correct binding table for the current spec/loadout settings.
@@ -389,18 +399,19 @@ local function GetActiveBindingTable()
     local cc = db.clickCast
 
     if cc.perSpec then
-        local specID = GetSpecializationInfo(GetSpecialization() or 1)
-        if specID then
-            if cc.perLoadout then
-                local configID = GetStableLoadoutID()
-                if configID and cc.loadoutBindings and cc.loadoutBindings[specID] then
-                    return cc.loadoutBindings[specID][configID]
-                end
-                return nil
+        local specID = GetCurrentSpecID()
+        if not specID then return nil end
+
+        if cc.perLoadout then
+            local configID = GetStableLoadoutID()
+            if configID and cc.loadoutBindings and cc.loadoutBindings[specID] then
+                return cc.loadoutBindings[specID][configID]
             end
-            local specBindings = cc.specBindings and cc.specBindings[specID]
-            if specBindings then return specBindings end
+            return nil
         end
+
+        local specBindings = cc.specBindings and cc.specBindings[specID]
+        if specBindings then return specBindings end
     end
 
     return cc.bindings
