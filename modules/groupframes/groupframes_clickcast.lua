@@ -979,6 +979,10 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
 eventFrame:RegisterEvent("ACTIVE_COMBAT_CONFIG_CHANGED")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
+-- Cold-login data-ready signals: spec/talent data can land after the bounded
+-- startup retry gives up, so re-resolve when the client says it's available.
+eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
+eventFrame:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
 
 local loadoutDebounceTimer = nil
 local rosterDebounceTimer = nil
@@ -991,9 +995,13 @@ local rosterDebounceTimer = nil
 -- binding table actually resolves -- the way an in-world /reload (data already
 -- cached) gets it right on the first pass. Bounded so a profile with genuinely
 -- no resolvable bindings doesn't spin.
-local STARTUP_REFRESH_INTERVAL = 1.0
-local STARTUP_REFRESH_MAX_ATTEMPTS = 12
+local STARTUP_REFRESH_INTERVAL = 1.0       -- fast retry cadence
+local STARTUP_SLOW_INTERVAL = 5.0          -- backoff cadence once the fast window is spent
+local STARTUP_FAST_ATTEMPTS = 12           -- fast attempts before backing off
+local STARTUP_REFRESH_MAX_ATTEMPTS = 22    -- hard ceiling (~12s fast + ~50s slow) so a slow cold login still resolves
 local startupRefreshAttempts = 0
+local startupColdLogin = false             -- true while catching up from the initial login (enables the slow tail)
+local dataReadyRefreshScheduled = false    -- coalesces PLAYER_TALENT_UPDATE / ACTIVE_PLAYER_SPECIALIZATION_CHANGED bursts
 
 -- True when the character has click-cast bindings configured somewhere (shared /
 -- per-spec / per-loadout). Lets the catch-up tell "data not ready yet" (retry)
@@ -1020,6 +1028,17 @@ local function HasConfiguredBindings()
     return false
 end
 
+-- True when click-cast is on and configured but nothing has resolved yet
+-- (both binding tables empty) -- i.e. the secure header is stranded at keycount
+-- 0 while spec/loadout data is still landing. Shared by the startup retry guard
+-- and the data-ready event handlers so they agree on "still dead". Checking both
+-- tables means a legitimately mouse-only or keyboard-only resolve counts as done.
+local function IsUnresolvedButConfigured()
+    local db = GetDB()
+    if not db or not db.clickCast or not db.clickCast.enabled then return false end
+    return #activeBindings == 0 and #keyboardBindings == 0 and HasConfiguredBindings()
+end
+
 local function RunStartupRefresh()
     -- Secure setup can't run in combat; defer to PLAYER_REGEN_ENABLED.
     if InCombatLockdown() then
@@ -1031,20 +1050,24 @@ local function RunStartupRefresh()
     QUI_GFCC:RefreshBindings()
 
     -- Bindings configured but nothing resolved => spec/loadout data isn't ready
-    -- yet. Try again until it lands (or we hit the attempt cap).
-    local db = GetDB()
-    local stillEnabled = db and db.clickCast and db.clickCast.enabled
-    if stillEnabled
-        and startupRefreshAttempts < STARTUP_REFRESH_MAX_ATTEMPTS
-        and #activeBindings == 0 and #keyboardBindings == 0
-        and HasConfiguredBindings()
-    then
-        C_Timer.After(STARTUP_REFRESH_INTERVAL, RunStartupRefresh)
+    -- yet. Keep trying until it lands: fast for the first dozen attempts, then
+    -- back off so a slow cold login (data arriving well after the usual window)
+    -- still gets caught instead of stranding the header at keycount 0. The slow
+    -- tail only runs on the initial login; mid-session zone-ins cap at the fast
+    -- window (data is already cached there, and the PLAYER_TALENT_UPDATE /
+    -- ACTIVE_PLAYER_SPECIALIZATION_CHANGED handlers cover any later landing).
+    local maxAttempts = startupColdLogin and STARTUP_REFRESH_MAX_ATTEMPTS or STARTUP_FAST_ATTEMPTS
+    if startupRefreshAttempts < maxAttempts and IsUnresolvedButConfigured() then
+        local interval = (startupRefreshAttempts < STARTUP_FAST_ATTEMPTS)
+            and STARTUP_REFRESH_INTERVAL or STARTUP_SLOW_INTERVAL
+        C_Timer.After(interval, RunStartupRefresh)
     end
 end
 
-eventFrame:SetScript("OnEvent", function(self, event)
+eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "PLAYER_ENTERING_WORLD" then
+        -- arg1 = isInitialLogin (SystemDocumentation: non-nilable bool).
+        local isInitialLogin = arg1
         -- Migrate old QUI ping bindings (CLICK format and QUI_PING_* action
         -- names) to Blizzard's native ping actions.
         local OLD_TO_NATIVE = {
@@ -1084,6 +1107,7 @@ eventFrame:SetScript("OnEvent", function(self, event)
             QUI_GFCC:Initialize()
         end
         if isEnabled then
+            startupColdLogin = isInitialLogin and true or false
             startupRefreshAttempts = 0
             C_Timer.After(STARTUP_REFRESH_INTERVAL, RunStartupRefresh)
         end
@@ -1101,6 +1125,24 @@ eventFrame:SetScript("OnEvent", function(self, event)
                 QUI_GFCC.pendingRefresh = true
             end
         end)
+    elseif event == "PLAYER_TALENT_UPDATE" or event == "ACTIVE_PLAYER_SPECIALIZATION_CHANGED" then
+        -- Spec/talent data may have just become available on a cold login. This is
+        -- the catch-all that revives keyboard click-cast if the bounded startup
+        -- retry gave up before the data landed. These fire frequently, so act only
+        -- while still stranded (keycount 0 with bindings configured) and coalesce
+        -- a burst into a single deferred resolve.
+        if not dataReadyRefreshScheduled and IsUnresolvedButConfigured() then
+            dataReadyRefreshScheduled = true
+            C_Timer.After(0.5, function()
+                dataReadyRefreshScheduled = false
+                if not IsUnresolvedButConfigured() then return end
+                if not InCombatLockdown() then
+                    QUI_GFCC:RefreshBindings()
+                else
+                    QUI_GFCC.pendingRefresh = true
+                end
+            end)
+        end
     elseif event == "TRAIT_CONFIG_UPDATED" or event == "ACTIVE_COMBAT_CONFIG_CHANGED" then
         -- Loadout changed within same spec — only relevant if perLoadout is on
         local db = GetDB()
