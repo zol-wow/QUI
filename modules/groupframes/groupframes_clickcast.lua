@@ -51,6 +51,12 @@ local keyboardBindings = {} -- Resolved keyboard bindings for current spec
 local smartResSwapped = setmetatable({}, { __mode = "k" }) -- Per-frame: true when OnEnter swapped to res
 local isEnabled = false
 local currentKeyboardFrame = nil
+-- Coalesces deferred "recovery" RefreshBindings (the on-hover trigger and the
+-- data-ready event handlers) so a burst schedules only one. Declared up here
+-- because the OnEnter hook installed in SetupFrameClickCast (below) closes over
+-- both this flag and IsUnresolvedButConfigured, which is defined later.
+local dataReadyRefreshScheduled = false
+local IsUnresolvedButConfigured  -- forward-declared; body assigned after HasConfiguredBindings
 
 ---------------------------------------------------------------------------
 -- PING MACROS: /ping [@mouseover] <type> for each ping action type
@@ -522,7 +528,22 @@ local function SetupFrameClickCast(frame)
         hookedFrames[frame] = true
 
         frame:HookScript("OnEnter", function(self)
-            if isEnabled then currentKeyboardFrame = self end
+            if not isEnabled then return end
+            currentKeyboardFrame = self
+            -- On-demand recovery: if click-cast is configured but still unresolved
+            -- (secure header stranded at keycount 0 -- spec/loadout data landed
+            -- after the startup retry window, or frames laid out late), rebuild now.
+            -- The frame is provably present and the player is reaching for the
+            -- keybind. Defer out of this (secure) event context via C_Timer.After(0)
+            -- so RefreshBindings' protected attribute writes don't taint; the flag
+            -- coalesces hovering several still-dead frames into one rebuild.
+            if IsUnresolvedButConfigured() and not dataReadyRefreshScheduled then
+                dataReadyRefreshScheduled = true
+                C_Timer.After(0, function()
+                    dataReadyRefreshScheduled = false
+                    if not InCombatLockdown() then QUI_GFCC:RefreshBindings() end
+                end)
+            end
         end)
         frame:HookScript("OnLeave", function(self)
             if currentKeyboardFrame == self then
@@ -995,13 +1016,9 @@ local rosterDebounceTimer = nil
 -- binding table actually resolves -- the way an in-world /reload (data already
 -- cached) gets it right on the first pass. Bounded so a profile with genuinely
 -- no resolvable bindings doesn't spin.
-local STARTUP_REFRESH_INTERVAL = 1.0       -- fast retry cadence
-local STARTUP_SLOW_INTERVAL = 5.0          -- backoff cadence once the fast window is spent
-local STARTUP_FAST_ATTEMPTS = 12           -- fast attempts before backing off
-local STARTUP_REFRESH_MAX_ATTEMPTS = 22    -- hard ceiling (~12s fast + ~50s slow) so a slow cold login still resolves
+local STARTUP_REFRESH_INTERVAL = 1.0
+local STARTUP_REFRESH_MAX_ATTEMPTS = 12
 local startupRefreshAttempts = 0
-local startupColdLogin = false             -- true while catching up from the initial login (enables the slow tail)
-local dataReadyRefreshScheduled = false    -- coalesces PLAYER_TALENT_UPDATE / ACTIVE_PLAYER_SPECIALIZATION_CHANGED bursts
 
 -- True when the character has click-cast bindings configured somewhere (shared /
 -- per-spec / per-loadout). Lets the catch-up tell "data not ready yet" (retry)
@@ -1033,7 +1050,7 @@ end
 -- 0 while spec/loadout data is still landing. Shared by the startup retry guard
 -- and the data-ready event handlers so they agree on "still dead". Checking both
 -- tables means a legitimately mouse-only or keyboard-only resolve counts as done.
-local function IsUnresolvedButConfigured()
+IsUnresolvedButConfigured = function()
     local db = GetDB()
     if not db or not db.clickCast or not db.clickCast.enabled then return false end
     return #activeBindings == 0 and #keyboardBindings == 0 and HasConfiguredBindings()
@@ -1050,24 +1067,17 @@ local function RunStartupRefresh()
     QUI_GFCC:RefreshBindings()
 
     -- Bindings configured but nothing resolved => spec/loadout data isn't ready
-    -- yet. Keep trying until it lands: fast for the first dozen attempts, then
-    -- back off so a slow cold login (data arriving well after the usual window)
-    -- still gets caught instead of stranding the header at keycount 0. The slow
-    -- tail only runs on the initial login; mid-session zone-ins cap at the fast
-    -- window (data is already cached there, and the PLAYER_TALENT_UPDATE /
-    -- ACTIVE_PLAYER_SPECIALIZATION_CHANGED handlers cover any later landing).
-    local maxAttempts = startupColdLogin and STARTUP_REFRESH_MAX_ATTEMPTS or STARTUP_FAST_ATTEMPTS
-    if startupRefreshAttempts < maxAttempts and IsUnresolvedButConfigured() then
-        local interval = (startupRefreshAttempts < STARTUP_FAST_ATTEMPTS)
-            and STARTUP_REFRESH_INTERVAL or STARTUP_SLOW_INTERVAL
-        C_Timer.After(interval, RunStartupRefresh)
+    -- yet. Retry for a bounded window. If the data lands after the window closes,
+    -- two catch-alls pick it up: the PLAYER_TALENT_UPDATE /
+    -- ACTIVE_PLAYER_SPECIALIZATION_CHANGED handlers (proactive), and the on-hover
+    -- re-resolve (on demand, when the user reaches for the keybind).
+    if startupRefreshAttempts < STARTUP_REFRESH_MAX_ATTEMPTS and IsUnresolvedButConfigured() then
+        C_Timer.After(STARTUP_REFRESH_INTERVAL, RunStartupRefresh)
     end
 end
 
-eventFrame:SetScript("OnEvent", function(self, event, arg1)
+eventFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_ENTERING_WORLD" then
-        -- arg1 = isInitialLogin (SystemDocumentation: non-nilable bool).
-        local isInitialLogin = arg1
         -- Migrate old QUI ping bindings (CLICK format and QUI_PING_* action
         -- names) to Blizzard's native ping actions.
         local OLD_TO_NATIVE = {
@@ -1107,7 +1117,6 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             QUI_GFCC:Initialize()
         end
         if isEnabled then
-            startupColdLogin = isInitialLogin and true or false
             startupRefreshAttempts = 0
             C_Timer.After(STARTUP_REFRESH_INTERVAL, RunStartupRefresh)
         end

@@ -5,12 +5,12 @@
 -- spec/loadout data lands (slow realm/disk/first login), leaving the secure
 -- header at keycount 0 (keyboard click-cast dead) until /reload or a respec.
 -- The companion cold_login_catchup_test only covers the FAST case (data lands
--- within the first dozen attempts). This file covers the two gaps:
---   A) spec data lands AFTER the old 12-attempt cap -> retry tail must still catch it
---   B) spec data lands AFTER the whole retry ladder is exhausted -> the
---      PLAYER_TALENT_UPDATE / ACTIVE_PLAYER_SPECIALIZATION_CHANGED "data ready"
---      signal must re-resolve and bring keyboard binds alive
---   C) once resolved, those signals must NOT churn (no redundant refresh)
+-- within the retry window). This file covers recovery AFTER the retry gives up,
+-- via the two catch-alls:
+--   1) PLAYER_TALENT_UPDATE / ACTIVE_PLAYER_SPECIALIZATION_CHANGED (proactive)
+--   2) the on-hover deferred re-resolve (on demand, when the user reaches for the
+--      keybind -- the frame is provably present at that point)
+--   3) once resolved, neither catch-all churns (no redundant refresh)
 
 local inCombat = false
 local function noop() end
@@ -199,65 +199,84 @@ local function drain(maxTicks)
     end
 end
 
----------------------------------------------------------------------------
--- Scenario A: spec data lands AFTER the old 12-attempt cap.
--- The retry tail must keep going long enough to catch it.
----------------------------------------------------------------------------
-do
-    local eventFrame = loadModule(false)
-    -- Cold login (isInitialLogin = true): PEW while spec data is NOT ready.
-    eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD", true, false)
+-- Fire a frame's insecure OnEnter HookScript(s) -- simulates the player hovering.
+local function hover(frame)
+    for _, h in ipairs(frame.hooks.OnEnter or {}) do h(frame) end
+end
 
-    -- Slow boot: spec stays unresolved well past the old 12-attempt cap.
-    -- (Old code stops scheduling at attempt 12, so the queue empties early.)
-    for _ = 1, 14 do
-        if #afterQueue == 0 then break end
-        flushAfter()
-    end
-
-    -- Spec data finally lands; drain whatever retries are still scheduled.
-    specReady = true
-    drain(30)
-
-    assert(keycount() == 1,
-        "BUG: header keycount = " .. tostring(keycount())
-        .. " -- retry gave up before slow spec data landed (past the 12-attempt cap)")
-    print("OK: slow-boot retry tail catches late spec data")
+-- Assert that hovering binds key "F" via the secure OnEnter pre-body (i.e. the
+-- keyboard side is genuinely wired up, not just keycount set).
+local function assertHoverBindsF(child)
+    local wrap = assert(child.secureWraps.OnEnter,
+        "frame was never keyboard-wrapped -- secure OnEnter missing")
+    child.overrideBindings = {}
+    local loader = loadstring or load
+    assert(loader("local self, owner = ...\n" .. wrap.preBody))(child, wrap.header)
+    assert(wrap.header.overrideBindings.F and wrap.header.overrideBindings.F.button == "keyf",
+        "hovering binds nothing -- keyboard click-cast still dead")
 end
 
 ---------------------------------------------------------------------------
--- Scenario B: spec data lands ONLY AFTER the whole retry ladder is exhausted.
--- The PLAYER_TALENT_UPDATE data-ready signal must re-resolve and revive binds.
+-- Scenario 1: spec data lands AFTER the startup retry is exhausted, and the
+-- client fires PLAYER_TALENT_UPDATE. The proactive data-ready handler must
+-- re-resolve and revive keyboard binds.
 ---------------------------------------------------------------------------
 do
-    local eventFrame = loadModule(false)
-    eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD", true, false)
+    local _, child = nil, nil
+    local eventFrame; eventFrame, child = loadModule(false)
+    eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
 
-    -- Run the entire retry ladder to exhaustion with spec never becoming ready.
-    drain(100)
-    assert(#afterQueue == 0, "retry ladder should be exhausted (bounded)")
+    drain(100)  -- exhaust the bounded startup retry with spec never ready
+    assert(#afterQueue == 0, "startup retry should be bounded/exhausted")
     assert(keycount() == 0, "precondition: keyboard still dead while spec unresolved")
 
-    -- Much later the client populates spec/talent data and signals it.
     specReady = true
     eventFrame.scripts.OnEvent(eventFrame, "PLAYER_TALENT_UPDATE")
-    assert(#afterQueue >= 1,
-        "BUG: PLAYER_TALENT_UPDATE did not schedule a re-resolve after the retry gave up")
+    assert(#afterQueue >= 1, "PLAYER_TALENT_UPDATE should schedule a re-resolve")
     flushAfter()
 
-    assert(keycount() == 1,
-        "BUG: header keycount = " .. tostring(keycount())
+    assert(keycount() == 1, "header keycount = " .. tostring(keycount())
         .. " -- data-ready signal failed to revive keyboard click-cast")
+    assertHoverBindsF(child)
     print("OK: PLAYER_TALENT_UPDATE revives keyboard binds after retry exhaustion")
+end
 
-    ---------------------------------------------------------------------------
-    -- Scenario C: now that bindings are resolved, the data-ready signal must be
-    -- a no-op (no redundant refresh churn on the frequent PLAYER_TALENT_UPDATE).
-    ---------------------------------------------------------------------------
+---------------------------------------------------------------------------
+-- Scenario 2: spec data lands after the retry is exhausted and NO data-ready
+-- event fires (e.g. it never fired, or frames laid out late). When the user
+-- HOVERS the frame, the on-hover trigger must re-resolve on demand and revive
+-- keyboard binds (worst case: live on the next hover, not "dead until /reload").
+---------------------------------------------------------------------------
+do
+    local eventFrame, child = loadModule(false)
+    eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
+
+    drain(100)  -- exhaust the bounded startup retry with spec never ready
+    assert(#afterQueue == 0, "startup retry should be bounded/exhausted")
+    assert(keycount() == 0, "precondition: keyboard still dead while spec unresolved")
+    assert(child.hooks.OnEnter and #child.hooks.OnEnter > 0,
+        "precondition: insecure OnEnter hook installed during registration")
+
+    -- Data lands; no event fires. The player hovers the frame.
+    specReady = true
+    hover(child)
+    assert(#afterQueue >= 1, "BUG: hovering a still-dead frame scheduled no recovery re-resolve")
+    flushAfter()
+
+    assert(keycount() == 1, "header keycount = " .. tostring(keycount())
+        .. " -- on-hover trigger failed to revive keyboard click-cast")
+    assertHoverBindsF(child)
+    print("OK: on-hover trigger revives keyboard binds on demand")
+
+    -----------------------------------------------------------------------
+    -- Scenario 3: now resolved -- neither a hover nor a data-ready event may
+    -- schedule a redundant refresh.
+    -----------------------------------------------------------------------
+    hover(child)
+    assert(#afterQueue == 0, "BUG: resolved state still scheduled a refresh on hover")
     eventFrame.scripts.OnEvent(eventFrame, "PLAYER_TALENT_UPDATE")
-    assert(#afterQueue == 0,
-        "BUG: resolved state still scheduled a redundant refresh on PLAYER_TALENT_UPDATE")
-    print("OK: data-ready signal does not churn once resolved")
+    assert(#afterQueue == 0, "BUG: resolved state still scheduled a refresh on PLAYER_TALENT_UPDATE")
+    print("OK: recovery triggers do not churn once resolved")
 end
 
 print("OK: groupframes_clickcast_slow_cold_login_test")
