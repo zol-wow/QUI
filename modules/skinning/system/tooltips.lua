@@ -143,16 +143,20 @@ end
 local function ApplyFontSizeViaFontObjects(size)
     CacheDefaultFontMetrics()
     local headerSize = size + 2
+    local font = (Helpers.GetGeneralFont and Helpers.GetGeneralFont()) or defaultBodyFont or STANDARD_TEXT_FONT
+    local outline = Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline()
     if GameTooltipHeaderText and defaultHeaderFont then
-        local _, curSize = GameTooltipHeaderText:GetFont()
-        if not curSize or math.abs(curSize - headerSize) >= 0.5 then
-            GameTooltipHeaderText:SetFont(defaultHeaderFont, headerSize, defaultHeaderFlag or "")
+        local curFont, curSize, curFlags = GameTooltipHeaderText:GetFont()
+        local targetFlags = outline or curFlags or defaultHeaderFlag or ""
+        if curFont ~= font or curFlags ~= targetFlags or not curSize or math.abs(curSize - headerSize) >= 0.5 then
+            GameTooltipHeaderText:SetFont(font or defaultHeaderFont, headerSize, targetFlags)
         end
     end
     if GameTooltipText and defaultBodyFont then
-        local _, curSize = GameTooltipText:GetFont()
-        if not curSize or math.abs(curSize - size) >= 0.5 then
-            GameTooltipText:SetFont(defaultBodyFont, size, defaultBodyFlag or "")
+        local curFont, curSize, curFlags = GameTooltipText:GetFont()
+        local targetFlags = outline or curFlags or defaultBodyFlag or ""
+        if curFont ~= font or curFlags ~= targetFlags or not curSize or math.abs(curSize - size) >= 0.5 then
+            GameTooltipText:SetFont(font or defaultBodyFont, size, targetFlags)
         end
     end
 end

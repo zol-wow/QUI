@@ -1,0 +1,168 @@
+-- tests/unit/tooltip_game_font_object_test.lua
+-- Run: lua tests/unit/tooltip_game_font_object_test.lua
+
+local function makeFrame()
+    local frame = {
+        shown = false,
+        scripts = {},
+        events = {},
+    }
+
+    function frame:RegisterEvent(event)
+        self.events[event] = true
+    end
+
+    function frame:SetScript(scriptName, handler)
+        self.scripts[scriptName] = handler
+    end
+
+    function frame:IsShown()
+        return self.shown
+    end
+
+    function frame:Show()
+        self.shown = true
+    end
+
+    function frame:Hide()
+        self.shown = false
+    end
+
+    function frame:SetAllPoints()
+        self.allPoints = true
+    end
+
+    function frame:EnableMouse()
+    end
+
+    function frame:SetFrameLevel(level)
+        self.frameLevel = level
+    end
+
+    function frame:SetFrameStrata(strata)
+        self.frameStrata = strata
+    end
+
+    function frame:GetWidth()
+        return 200
+    end
+
+    function frame:GetHeight()
+        return 80
+    end
+
+    function frame:GetFrameLevel()
+        return 10
+    end
+
+    function frame:GetFrameStrata()
+        return "TOOLTIP"
+    end
+
+    function frame:GetOwner()
+        return nil
+    end
+
+    return frame
+end
+
+local function makeFontObject(path, size, flags)
+    local fontObject = {
+        path = path,
+        size = size,
+        flags = flags,
+    }
+
+    function fontObject:GetFont()
+        return self.path, self.size, self.flags
+    end
+
+    function fontObject:SetFont(pathArg, sizeArg, flagsArg)
+        self.path = pathArg
+        self.size = sizeArg
+        self.flags = flagsArg
+    end
+
+    return fontObject
+end
+
+local eventFrame
+local customFont = "Interface\\AddOns\\QUI\\assets\\Quazii.ttf"
+
+_G.UIParent = makeFrame()
+_G.WorldFrame = makeFrame()
+_G.GameTooltip = makeFrame()
+_G.GameTooltip.shown = true
+_G.GameTooltipHeaderText = makeFontObject("Fonts\\FRIZQT__.TTF", 14, "")
+_G.GameTooltipText = makeFontObject("Fonts\\FRIZQT__.TTF", 12, "")
+_G.InCombatLockdown = function() return false end
+_G.issecretvalue = function() return false end
+_G.STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
+_G.ADDON_LOADED = "ADDON_LOADED"
+_G.CreateFrame = function()
+    local frame = makeFrame()
+    if not eventFrame then eventFrame = frame end
+    return frame
+end
+_G.C_Timer = { After = function(_, callback) callback() end }
+_G.hooksecurefunc = function() end
+_G.wipe = function(tbl)
+    for key in pairs(tbl) do
+        tbl[key] = nil
+    end
+end
+
+local ns = {
+    Helpers = {
+        GetCore = function()
+            return {
+                db = {
+                    profile = {
+                        tooltip = {
+                            enabled = true,
+                            skinTooltips = true,
+                            fontSize = 13,
+                        },
+                    },
+                },
+            }
+        end,
+        CreateStateTable = function()
+            return setmetatable({}, { __mode = "k" })
+        end,
+        GetSkinBorderColor = function() return 1, 1, 1, 1 end,
+        GetSkinBgColor = function() return 0, 0, 0, 1 end,
+        GetGeneralFont = function() return customFont end,
+        GetGeneralFontOutline = function() return "OUTLINE" end,
+        IsSecretValue = function() return false end,
+    },
+    SkinBase = {
+        SkinFrameText = function() end,
+    },
+    UIKit = {
+        CreateBackground = function()
+            return { SetVertexColor = function() end }
+        end,
+        CreateBorderLines = function() end,
+        UpdateBorderLines = function() end,
+    },
+}
+
+assert(loadfile("modules/skinning/system/tooltips.lua"))("QUI", ns)
+assert(eventFrame and eventFrame.scripts.OnEvent, "tooltip skinning must register an event handler")
+eventFrame.scripts.OnEvent(eventFrame, "ADDON_LOADED", "QUI")
+
+assert(GameTooltipHeaderText.path == customFont,
+    "GameTooltip header Font object should use the configured addon font")
+assert(GameTooltipText.path == customFont,
+    "GameTooltip body Font object should use the configured addon font for later tooltip lines")
+assert(GameTooltipHeaderText.flags == "OUTLINE",
+    "GameTooltip header Font object should use the configured outline")
+assert(GameTooltipText.flags == "OUTLINE",
+    "GameTooltip body Font object should use the configured outline")
+assert(GameTooltipHeaderText.size == 15,
+    "GameTooltip header Font object should be tooltip font size + 2")
+assert(GameTooltipText.size == 13,
+    "GameTooltip body Font object should be tooltip font size")
+
+print("OK: tooltip_game_font_object_test")
