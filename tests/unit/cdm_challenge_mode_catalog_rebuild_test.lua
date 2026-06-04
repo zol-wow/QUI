@@ -59,35 +59,59 @@ for _, name in ipairs(CDM_FILES) do
 end
 
 local resolvers = sources["cdm_resolvers.lua"]
+local mirror = sources["cdm_blizz_mirror.lua"]
 
--- Sanity: the trigger and the publish exist, so the consumer assertion below
--- stays meaningful (if either disappears, this test should be revisited).
+-- Entering a key / encounter / rated-PvP match re-randomizes aura instance IDs.
+-- The cdID<->spell catalog and child bindings are UNCHANGED, so the recovery is
+-- a targeted aura RE-CAPTURE in the Blizzard mirror (re-stamps the instance IDs),
+-- NOT a full catalog Walk deferred to combat end. These boundary events are
+-- handled directly by the mirror's event frame so the re-capture runs in combat
+-- (no PLAYER_REGEN_ENABLED end-of-pull stutter).
+for _, evt in ipairs({ "CHALLENGE_MODE_START", "ENCOUNTER_START", "PVP_MATCH_ACTIVE" }) do
+    assert(
+        countPlain(mirror, 'RegisterEvent("' .. evt .. '")') >= 1,
+        evt .. " must be handled by the Blizzard mirror (cdm_blizz_mirror.lua) so the "
+            .. "re-randomized aura instance IDs are re-captured live on key entry."
+    )
+end
+
+-- The mirror's boundary handler must run an aura re-capture
+-- (HandleUnitAuraChanged / CaptureAurasFromUnit), not a full catalog Walk. Walk
+-- rebuilds the cdID<->spell catalog + child bindings, which do NOT change on a
+-- reroll, and was the deferred end-of-pull cost this fix removes.
 assert(
-    countPlain(resolvers, 'RegisterEvent("CHALLENGE_MODE_START")') >= 1,
-    "expected CHALLENGE_MODE_START to be registered as a catalog rebuild trigger"
+    countPlain(mirror, "HandleUnitAuraChanged") >= 1
+        or countPlain(mirror, "CaptureAurasFromUnit") >= 1,
+    "the mirror's reroll handler must re-capture auras (HandleUnitAuraChanged / "
+        .. "CaptureAurasFromUnit) to re-stamp the re-randomized instance IDs."
 )
+
+-- The resolver must NOT also fire a catalog rebuild on those boundaries — that
+-- was the old path that deferred a full mirror Walk to PLAYER_REGEN_ENABLED.
+for _, evt in ipairs({ "CHALLENGE_MODE_START", "ENCOUNTER_START", "PVP_MATCH_ACTIVE" }) do
+    assert(
+        countPlain(resolvers, 'RegisterEvent("' .. evt .. '")') == 0,
+        evt .. " should no longer trigger a cdm_resolvers catalog rebuild — the "
+            .. "mirror owns the cheap in-combat aura re-capture for it now."
+    )
+end
+
+-- The STRUCTURAL catalog-rebuild path (spec / talent / spell-list changes) must
+-- still publish to a live consumer, or cooldown bindings would go stale on a
+-- real catalog reshape.
 assert(
     countPlain(resolvers, 'publish("CDM:CATALOG_REBUILT")') >= 1,
-    "expected RebuildCatalog() to publish CDM:CATALOG_REBUILT"
+    "expected RebuildCatalog() to still publish CDM:CATALOG_REBUILT for structural reshapes"
 )
-
--- THE REGRESSION: the published lifecycle event must reach a consumer. A
--- consumer subscribes to the resolver bus event. Without one, the catalog
--- rebuild triggered on key entry does nothing.
 local subscriberCount = 0
 for _, text in pairs(sources) do
     subscriberCount = subscriberCount + countPlain(text, 'Subscribe("CDM:CATALOG_REBUILT"')
     subscriberCount = subscriberCount + countPlain(text, "Subscribe('CDM:CATALOG_REBUILT'")
 end
-
 assert(
     subscriberCount >= 1,
-    "CDM:CATALOG_REBUILT is published on CHALLENGE_MODE_START / ENCOUNTER_START / "
-        .. "PVP_MATCH_ACTIVE but NO module subscribes to it. The catalog rebuild "
-        .. "never reaches a consumer, so cooldown/aura bindings stay stale on key "
-        .. "entry until /reload. Wire a consumer (e.g. re-walk the Blizzard mirror "
-        .. "to re-capture re-randomized aura instance IDs) or remove the dead "
-        .. "publish + _catalogVersion bump."
+    "CDM:CATALOG_REBUILT is published for structural catalog reshapes but NO module "
+        .. "subscribes to it; the rebuild never reaches a consumer."
 )
 
 print("OK: cdm_challenge_mode_catalog_rebuild_test")

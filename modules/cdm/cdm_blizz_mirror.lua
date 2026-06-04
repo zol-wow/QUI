@@ -3511,6 +3511,10 @@ end
 ---------------------------------------------------------------------------
 local _walkPendingOnRegen = false
 local _coldLoadDeferredMirrorRefreshPending = false
+-- Signature of the last fully-walked catalog (catName/cdID/spellID/overrideSpellID
+-- per entry). Lets Walk() skip the ClearCatalogMaps + re-register + child re-bind
+-- when a (frequently noisy) trigger did not actually change the catalog.
+local _lastCatalogSignature = nil
 local Walk
 
 local function MarkColdLoadDeferredMirrorRefresh()
@@ -3555,7 +3559,7 @@ local function DrainColdLoadDeferredMirrorRefresh()
     end)
 end
 
-Walk = function()
+Walk = function(force)
     -- Allow execution during the ADDON_LOADED / PLAYER_ENTERING_WORLD
     -- safe window even though InCombatLockdown() returns true on a combat
     -- /reload. Walk's body is hook-installation + read-only C_CooldownViewer
@@ -3623,6 +3627,35 @@ Walk = function()
         end
     end
 
+    -- Catalog-unchanged fast path. The costly part of a Walk is the
+    -- ClearCatalogMaps() wipe + full re-register + child re-bind below; most
+    -- Walk triggers (noisy SPELLS_CHANGED, override / hotfix broker pings) do
+    -- not change the cdID set or its spell mappings — only an actual spec /
+    -- talent reshape does. Skip the rebuild when the scanned catalog is
+    -- identical to the last successful Walk. Never skip while forced, nor during
+    -- cold-load (the deferred finalize Walk must still bind late-parented
+    -- children). spellID / overrideSpellID came through CleanScalar (secrets ->
+    -- nil), so the signature is plain text and secret-safe.
+    local signature
+    do
+        local parts = {}
+        for i = 1, #catalogScan do
+            local e = catalogScan[i]
+            local info = e.info
+            parts[i] = e.catName .. "\0" .. tostring(e.cdID)
+                .. "\0" .. tostring(info and info.spellID)
+                .. "\0" .. tostring(info and info.overrideSpellID)
+        end
+        table.sort(parts)
+        signature = table.concat(parts, "\1")
+    end
+    if not force
+        and not (ns and ns._cdmColdLoadActive)
+        and _lastCatalogSignature ~= nil
+        and signature == _lastCatalogSignature then
+        return true
+    end
+
     ClearCatalogMaps()
     for _, entry in ipairs(catalogScan) do
         RegisterCooldownInstance(entry.cdID, entry.catName, nil, entry.info)
@@ -3647,11 +3680,12 @@ Walk = function()
             end
         end
     end
+    _lastCatalogSignature = signature
     return true
 end
 
 function CDMBlizzMirror.ForceRescan()
-    return Walk()
+    return Walk(true)
 end
 
 ---------------------------------------------------------------------------
@@ -4636,6 +4670,16 @@ _eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 -- Totem-backed CDM entries: only signal we get
 -- when the Blizzard mixin's totem-driven path activates the child.
 _eventFrame:RegisterEvent("PLAYER_TOTEM_UPDATE")
+-- Encounter / Mythic+ / rated-PvP start re-randomize aura instance IDs (see the
+-- auraInstanceID note near the top of the file). The cdID<->spell catalog and
+-- child bindings do NOT change, so a full Walk()/catalog rebuild is the wrong
+-- (and expensive) recovery. We re-capture per unit below — the same targeted,
+-- in-combat path PLAYER_TARGET_CHANGED uses for stale target instIDs — so no
+-- catalog rebuild is deferred to PLAYER_REGEN_ENABLED (previously routed through
+-- cdm_resolvers' CDM:CATALOG_REBUILT, the source of end-of-pull stutter).
+_eventFrame:RegisterEvent("ENCOUNTER_START")
+_eventFrame:RegisterEvent("CHALLENGE_MODE_START")
+_eventFrame:RegisterEvent("PVP_MATCH_ACTIVE")
 
 -- Targeted refresh after a base→override swap. Searches every per-category
 -- map for an existing cooldownID for either spellID, refreshes that cdID's
@@ -4691,6 +4735,22 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
 
     if event == "PLAYER_TARGET_CHANGED" then
         CDMBlizzMirror.HandlePlayerTargetChanged()
+        return
+    end
+
+    if event == "ENCOUNTER_START"
+        or event == "CHALLENGE_MODE_START"
+        or event == "PVP_MATCH_ACTIVE" then
+        -- Aura instance IDs re-randomized; the catalog is unchanged. Re-stamp the
+        -- live auras (StampAuraInstanceForCooldown) via the per-unit capture path
+        -- instead of a full Walk. This is non-protected and cheap (iterates only
+        -- the buff/trackedBar catalog entries), so it runs inline in combat — no
+        -- deferral to PLAYER_REGEN_ENABLED. The cold-load grace owns the initial
+        -- build, so skip while it is active.
+        if ns and ns._cdmColdLoadActive then return end
+        CDMBlizzMirror.HandleUnitAuraChanged("player")
+        CDMBlizzMirror.HandleUnitAuraChanged("pet")
+        CDMBlizzMirror.HandleUnitAuraChanged("target")
         return
     end
 

@@ -667,11 +667,14 @@ function QUICore:OnEnable()
         self:HookEditMode()
     end, 0.1)
 
-    -- DEFERRED: Unit frames (secure APIs now safe) + global font override + alerts
+    -- DEFERRED: alert/toast skinning + global font override.
+    -- (Unit frames are NOT initialized here. They init synchronously in
+    -- unitframes.lua's ADDON_LOADED handler because, like BuffBorders, their
+    -- secure frames must be created in the addon-load safe window so a combat
+    -- /reload can still build them. The old `self.UnitFrames:Initialize()`
+    -- deferred path was dead code — QUICore.UnitFrames is never assigned — and
+    -- wiring it up would break secure creation on combat reloads.)
     RunAfterFirstFrame(function()
-        if self.UnitFrames and self.db.profile.unitFrames and self.db.profile.unitFrames.enabled then
-            self.UnitFrames:Initialize()
-        end
         -- Initialize alert/toast skinning
         if self.Alerts and self.db.profile.general and self.db.profile.general.skinAlerts then
             self.Alerts:Initialize()

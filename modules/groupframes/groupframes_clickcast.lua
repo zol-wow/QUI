@@ -696,6 +696,17 @@ function QUI_GFCC:Initialize()
         end
     end
 
+    -- Re-entrant Initialize (already set up once): refresh through the
+    -- consistent path. A bare re-resolve here updates only the header's key
+    -- attributes; if the resolve is transiently empty (spec/loadout data not
+    -- ready yet) that would zero the header while frames stay keyboard-wrapped
+    -- — silently killing keyboard click-cast (mouse, set directly on the frame,
+    -- survives). RefreshBindings rebuilds the header and frames together.
+    if isEnabled then
+        self:RefreshBindings()
+        return
+    end
+
     ResolveBindings()
     UpdateHeaderKeyAttributes()
     isEnabled = true
@@ -972,6 +983,66 @@ eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 local loadoutDebounceTimer = nil
 local rosterDebounceTimer = nil
 
+-- Startup catch-up: on a cold login, spec/loadout data lands asynchronously
+-- after PLAYER_ENTERING_WORLD, so the first binding resolve can come up empty
+-- and leave the secure header at keycount 0 (keyboard click-cast dead) while the
+-- directly-applied mouse attributes still work. A single fixed-delay pass loses
+-- that race and nothing re-runs it. Retry RefreshBindings until the active
+-- binding table actually resolves -- the way an in-world /reload (data already
+-- cached) gets it right on the first pass. Bounded so a profile with genuinely
+-- no resolvable bindings doesn't spin.
+local STARTUP_REFRESH_INTERVAL = 1.0
+local STARTUP_REFRESH_MAX_ATTEMPTS = 12
+local startupRefreshAttempts = 0
+
+-- True when the character has click-cast bindings configured somewhere (shared /
+-- per-spec / per-loadout). Lets the catch-up tell "data not ready yet" (retry)
+-- apart from "nothing to apply" (stop).
+local function HasConfiguredBindings()
+    local db = GetDB()
+    if not db or not db.clickCast then return false end
+    local cc = db.clickCast
+    if cc.bindings and #cc.bindings > 0 then return true end
+    if cc.specBindings then
+        for _, t in pairs(cc.specBindings) do
+            if type(t) == "table" and #t > 0 then return true end
+        end
+    end
+    if cc.loadoutBindings then
+        for _, specTable in pairs(cc.loadoutBindings) do
+            if type(specTable) == "table" then
+                for _, t in pairs(specTable) do
+                    if type(t) == "table" and #t > 0 then return true end
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function RunStartupRefresh()
+    -- Secure setup can't run in combat; defer to PLAYER_REGEN_ENABLED.
+    if InCombatLockdown() then
+        QUI_GFCC.pendingRefresh = true
+        return
+    end
+
+    startupRefreshAttempts = startupRefreshAttempts + 1
+    QUI_GFCC:RefreshBindings()
+
+    -- Bindings configured but nothing resolved => spec/loadout data isn't ready
+    -- yet. Try again until it lands (or we hit the attempt cap).
+    local db = GetDB()
+    local stillEnabled = db and db.clickCast and db.clickCast.enabled
+    if stillEnabled
+        and startupRefreshAttempts < STARTUP_REFRESH_MAX_ATTEMPTS
+        and #activeBindings == 0 and #keyboardBindings == 0
+        and HasConfiguredBindings()
+    then
+        C_Timer.After(STARTUP_REFRESH_INTERVAL, RunStartupRefresh)
+    end
+end
+
 eventFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_ENTERING_WORLD" then
         -- Migrate old QUI ping bindings (CLICK format and QUI_PING_* action
@@ -1012,12 +1083,9 @@ eventFrame:SetScript("OnEvent", function(self, event)
             -- ADDON_LOADED ran before DB was ready)
             QUI_GFCC:Initialize()
         end
-        if isEnabled and not InCombatLockdown() then
-            C_Timer.After(1.0, function()
-                if not InCombatLockdown() then
-                    QUI_GFCC:RefreshBindings()
-                end
-            end)
+        if isEnabled then
+            startupRefreshAttempts = 0
+            C_Timer.After(STARTUP_REFRESH_INTERVAL, RunStartupRefresh)
         end
         return
     end

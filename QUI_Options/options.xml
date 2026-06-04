@@ -68,6 +68,7 @@
     <Script file="..\QUI\modules\groupframes\settings\raid_buffs.lua"/>
     <Script file="..\QUI\modules\layout\settings\bonus_roll_provider.lua"/>
     <Script file="..\QUI\modules\layout\settings\third_party_anchoring_content.lua"/>
+    <Script file="..\QUI\modules\minimap\settings\minimap.lua"/>
     <Script file="..\QUI\modules\minimap\settings\minimap_providers.lua"/>
     <Script file="..\QUI\modules\qol\settings\pet_warning.lua"/>
     <Script file="..\QUI\modules\qol\settings\consumables.lua"/>

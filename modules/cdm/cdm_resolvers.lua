@@ -114,10 +114,11 @@ end
 ---------------------------------------------------------------------------
 -- Catalog publication
 --
--- Publishes CDM:CATALOG_REBUILT on lifecycle events. Combat-deferred:
--- TRAIT_TREE_CHANGED fires inside combat, so rebuild waits for
--- PLAYER_REGEN_ENABLED. Aura instance IDs re-randomize on encounter/M+/PvP
--- starts, so those are also rebuild triggers.
+-- Publishes CDM:CATALOG_REBUILT when the cdID<->spell catalog actually reshapes
+-- (spec / talent / spell-list changes). Combat-deferred: these can fire inside
+-- combat, so the rebuild waits for PLAYER_REGEN_ENABLED. Encounter / Mythic+ /
+-- rated-PvP starts only re-randomize aura instance IDs (not the catalog) and are
+-- handled by cdm_blizz_mirror.lua's own re-capture, NOT here.
 ---------------------------------------------------------------------------
 local _busEventFrame = CreateFrame("Frame")
 local _rebuildPending = false
@@ -137,9 +138,11 @@ CDMResolvers._RebuildCatalog = RebuildCatalog
 _busEventFrame:RegisterEvent("PLAYER_LOGIN")
 _busEventFrame:RegisterEvent("TRAIT_TREE_CHANGED")
 _busEventFrame:RegisterEvent("SPELLS_CHANGED")
-_busEventFrame:RegisterEvent("ENCOUNTER_START")
-_busEventFrame:RegisterEvent("CHALLENGE_MODE_START")
-_busEventFrame:RegisterEvent("PVP_MATCH_ACTIVE")
+-- ENCOUNTER_START / CHALLENGE_MODE_START / PVP_MATCH_ACTIVE are NOT catalog
+-- triggers: those boundaries only re-randomize aura instance IDs, not the
+-- cdID<->spell catalog. cdm_blizz_mirror.lua handles them directly with a cheap
+-- in-combat aura re-capture (re-stamps the instance IDs) — no full catalog
+-- rebuild deferred to PLAYER_REGEN_ENABLED.
 _busEventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 _busEventFrame:SetScript("OnEvent", function(_, evt)
     if evt == "PLAYER_REGEN_ENABLED" then
