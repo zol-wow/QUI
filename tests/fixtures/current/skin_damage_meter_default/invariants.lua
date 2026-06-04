@@ -1,10 +1,11 @@
 return {
     {
-        name = "skinDamageMeter present in shipped defaults",
+        name = "shipped defaults snapshot stored globally",
         assert = function(sv, ctx)
             local p = sv.QUI_DB.profiles.Default
-            local sd = p and p._shippedDefaults
-            return sd and sd.general and sd.general.skinDamageMeter == true
+            local sd = sv.QUI_DB.global and sv.QUI_DB.global._shippedProfileDefaults
+            return p and p._shippedDefaults == nil
+                and sd and sd.general and sd.general.skinDamageMeter == true
         end,
     },
     {

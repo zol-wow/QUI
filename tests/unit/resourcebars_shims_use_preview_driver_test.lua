@@ -33,13 +33,13 @@ assert(not rb:find("local function MockValueText", 1, true),
 assert(rb:find("ns.QUI_ResourceBars_Internal", 1, true),
     "ns.QUI_ResourceBars_Internal export must still be present (driver needs it)")
 
--- T10: resourcebars.xml registers the preview driver, AFTER resourcebars.lua
-local xml = readAll("modules/resourcebars/resourcebars.xml")
+-- T10: options.xml registers the preview driver after its settings builders.
+local xml = readAll("QUI_Options/options.xml")
 assert(xml:find("resource_bars_preview_driver.lua", 1, true),
-    "modules/resourcebars/resourcebars.xml must register resource_bars_preview_driver.lua")
-local rbPos     = xml:find("resourcebars.lua", 1, true)
+    "QUI_Options/options.xml must register resource_bars_preview_driver.lua")
+local rbPos     = xml:find("resource_bars_builders.lua", 1, true)
 local driverPos = xml:find("resource_bars_preview_driver.lua", 1, true)
 assert(rbPos and driverPos and rbPos < driverPos,
-    "resourcebars.xml must load resource_bars_preview_driver.lua AFTER resourcebars.lua")
+    "QUI_Options/options.xml must load resource_bars_preview_driver.lua AFTER resource_bars_builders.lua")
 
 print("OK: resourcebars_shims_use_preview_driver_test")

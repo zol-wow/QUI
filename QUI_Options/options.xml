@@ -5,6 +5,105 @@
     <Script file="border_control.lua"/>
     <Script file="search_cache.lua"/>
     <Script file="shared.lua"/>
+    <!-- Options-only settings framework, deferred out of the login path. Every
+         consumer reaches these lazily (inside a function) from UI-build code; none
+         is captured at file scope on the login path. Loaded here ahead of the
+         surfaces/pins/content files that use them. Order among the 9 is irrelevant
+         (none cross-references another at file scope). The sibling framework files
+         util/render_adapters/registry/schema/provider_features/pins/pins_lifecycle
+         stay in core.xml — feature registration needs them at login. -->
+    <Script file="..\QUI\core\settings\providers.lua"/>
+    <Script file="..\QUI\core\settings\provider_panels.lua"/>
+    <Script file="..\QUI\core\settings\model_kit.lua"/>
+    <Script file="..\QUI\core\settings\fields.lua"/>
+    <Script file="..\QUI\core\settings\surfaces.lua"/>
+    <Script file="..\QUI\core\settings\surface_features.lua"/>
+    <Script file="..\QUI\core\settings\nav.lua"/>
+    <Script file="..\QUI\core\settings\sync.lua"/>
+    <Script file="..\QUI\core\settings\renderer.lua"/>
+    <!-- Options-only profile machinery, deferred out of the main-addon login path.
+         profile_io.lua (import/export engine) + bundled preset import strings:
+         nothing in the gameplay/login path references these, so they load here. -->
+    <Script file="..\QUI\core\profile_io.lua"/>
+    <Script file="..\QUI\importstrings\qui_editmode_base.lua"/>
+    <Script file="..\QUI\importstrings\coco_profile.lua"/>
+    <Script file="..\QUI\importstrings\nokterian_healing_profile.lua"/>
+    <Script file="..\QUI\importstrings\oak_tankdps_profile.lua"/>
+    <Script file="..\QUI\importstrings\oak_healer_profile.lua"/>
+    <Script file="..\QUI\core\settings\full_surface.lua"/>
+    <Script file="..\QUI\core\settings\pins_ui.lua"/>
+    <Script file="..\QUI\core\settings\content\anchoring_shared_content.lua"/>
+    <Script file="..\QUI\core\settings\content\welcome_page.lua"/>
+    <Script file="..\QUI\core\settings\content\help_page.lua"/>
+    <Script file="..\QUI\core\settings\content\troubleshooting_page.lua"/>
+    <Script file="..\QUI\core\settings\content\profiles_content.lua"/>
+    <Script file="..\QUI\core\settings\content\import_export_content.lua"/>
+    <Script file="..\QUI\modules\actionbars\settings\action_bars.lua"/>
+    <Script file="..\QUI\modules\actionbars\settings\action_bars_per_bar.lua"/>
+    <Script file="..\QUI\modules\actionbars\settings\action_bars_preview_driver.lua"/>
+    <Script file="..\QUI\modules\actionbars\settings\action_bars_content.lua"/>
+    <Script file="..\QUI\modules\actionbars\settings\action_bars_buffdebuff_content.lua"/>
+    <Script file="..\QUI\modules\cdm\settings\containers_page.lua"/>
+    <Script file="..\QUI\modules\cdm\settings\composer_preview_driver.lua"/>
+    <Script file="..\QUI\modules\cdm\settings\composer.lua"/>
+    <Script file="..\QUI\modules\chat\settings\chat_frame1.lua"/>
+    <Script file="..\QUI\modules\chat\settings\chat_frame1_provider.lua"/>
+    <Script file="..\QUI\modules\combat\settings\rotation_assist.lua"/>
+    <Script file="..\QUI\modules\damage_meter\settings\damage_meter_content.lua"/>
+    <Script file="..\QUI\modules\dungeon\settings\mplus_timer.lua"/>
+    <Script file="..\QUI\modules\dungeon\settings\mplus_timer_provider.lua"/>
+    <Script file="..\QUI\modules\dungeon\settings\mplus_progress.lua"/>
+    <Script file="..\QUI\modules\dungeon\settings\mplus_progress_provider.lua"/>
+    <Script file="..\QUI\modules\dungeon\settings\party_keystones.lua"/>
+    <Script file="..\QUI\modules\dungeon\settings\brez_counter.lua"/>
+    <Script file="..\QUI\modules\groupframes\settings\group_frames_aura_defaults.lua"/>
+    <Script file="..\QUI\modules\groupframes\settings\group_frames_spell_list.lua"/>
+    <Script file="..\QUI\modules\groupframes\settings\group_frames_aura_indicators_editor.lua"/>
+    <Script file="..\QUI\modules\groupframes\settings\group_frames_pinned_editor.lua"/>
+    <Script file="..\QUI\modules\groupframes\settings\group_frames_schema.lua"/>
+    <Script file="..\QUI\modules\groupframes\settings\group_frames_model.lua"/>
+    <Script file="..\QUI\modules\groupframes\settings\group_frames.lua"/>
+    <Script file="..\QUI\modules\groupframes\settings\group_frames_surface.lua"/>
+    <Script file="..\QUI\modules\groupframes\settings\click_cast_content.lua"/>
+    <Script file="..\QUI\modules\groupframes\settings\raid_buffs.lua"/>
+    <Script file="..\QUI\modules\layout\settings\bonus_roll_provider.lua"/>
+    <Script file="..\QUI\modules\layout\settings\third_party_anchoring_content.lua"/>
+    <Script file="..\QUI\modules\minimap\settings\minimap_providers.lua"/>
+    <Script file="..\QUI\modules\qol\settings\pet_warning.lua"/>
+    <Script file="..\QUI\modules\qol\settings\consumables.lua"/>
+    <Script file="..\QUI\modules\qol\settings\combat_timer.lua"/>
+    <Script file="..\QUI\modules\qol\settings\tooltip_anchor.lua"/>
+    <Script file="..\QUI\modules\qol\settings\provider_panels.lua"/>
+    <Script file="..\QUI\modules\qol\settings\action_tracker.lua"/>
+    <Script file="..\QUI\modules\qol\settings\skyriding.lua"/>
+    <Script file="..\QUI\modules\qol\settings\xp_tracker.lua"/>
+    <Script file="..\QUI\modules\qol\settings\focus_cast_alert.lua"/>
+    <Script file="..\QUI\modules\qol\settings\qol_content.lua"/>
+    <Script file="..\QUI\modules\resourcebars\settings\resource_bars.lua"/>
+    <Script file="..\QUI\modules\resourcebars\settings\resource_bars_builders.lua"/>
+    <Script file="..\QUI\modules\resourcebars\settings\resource_bars_preview_driver.lua"/>
+    <Script file="..\QUI\modules\skinning\settings\skinning_content.lua"/>
+    <Script file="..\QUI\modules\skinning\settings\border_coloring_content.lua"/>
+    <Script file="..\QUI\modules\skinning\character_pane\settings\character_pane_content.lua"/>
+    <Script file="..\QUI\modules\trackers\settings\atonement_counter.lua"/>
+    <Script file="..\QUI\modules\trackers\settings\prey_tracker_content.lua"/>
+    <Script file="..\QUI\modules\ui\settings\blizzard_mover_content.lua"/>
+    <Script file="..\QUI\modules\ui\settings\crosshair_content.lua"/>
+    <Script file="..\QUI\modules\ui\settings\hud_visibility_content.lua"/>
+    <Script file="..\QUI\modules\ui\settings\hud_layering_content.lua"/>
+    <Script file="..\QUI\modules\ui\settings\autohide_content.lua"/>
+    <Script file="..\QUI\modules\unitframes\settings\unit_frames_schema.lua"/>
+    <Script file="..\QUI\modules\unitframes\settings\unit_frames_model.lua"/>
+    <Script file="..\QUI\modules\unitframes\settings\unit_frames.lua"/>
+    <Script file="..\QUI\modules\unitframes\settings\unit_frames_surface.lua"/>
+    <Script file="..\QUI\modules\unitframes\settings\unit_frames_castbar_preview.lua"/>
+    <Script file="..\QUI\modules\unitframes\settings\unit_frames_body_preview.lua"/>
+    <Script file="..\QUI\modules\utility\settings\ready_check.lua"/>
+    <Script file="..\QUI\modules\utility\settings\ready_check_provider.lua"/>
+    <Script file="..\QUI\modules\utility\settings\keybinds_content.lua"/>
+    <Script file="..\QUI\core\settings\content\modules_visual_onboarding.lua"/>
+    <Script file="..\QUI\core\settings\content\modules_nonvisual_onboarding.lua"/>
+    <Script file="..\QUI\core\settings\content\modules_page.lua"/>
     <Script file="tiles\help_content.lua"/>
     <Script file="init.lua"/>
     <Script file="tiles\related.lua"/>

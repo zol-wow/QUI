@@ -18,6 +18,4 @@
     <Script file="editbox_basics.lua"/>
     <Script file="channel_colors.lua"/>
     <Script file="skinning.lua"/>
-    <Script file="settings/chat_frame1.lua"/>
-    <Script file="settings/chat_frame1_provider.lua"/>
 </Ui>

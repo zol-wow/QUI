@@ -14,6 +14,19 @@ local GetFontFlags = Helpers.GetGeneralFontOutline
 -- Debounce flag to prevent multiple concurrent backdrop updates
 local pendingBackdropUpdate = false
 
+local function RunAfterFirstFrame(callback, delay)
+    if ns.RunAfterFirstFrame then
+        return ns.RunAfterFirstFrame(callback, delay)
+    end
+    if C_Timer and C_Timer.After then
+        return C_Timer.After(delay or 0, callback)
+    end
+    if type(callback) == "function" then
+        return callback()
+    end
+    return nil
+end
+
 -- Get settings
 local function GetSettings()
     local core = GetCore()
@@ -1000,14 +1013,13 @@ local frame = CreateFrame("Frame")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_ENTERING_WORLD" then
-        -- Delay to ensure ObjectiveTrackerFrame is ready
-        C_Timer.After(1, function()
+        RunAfterFirstFrame(function()
             SkinObjectiveTracker()
             -- Register for tracking events after initial skin
             for _, trackEvent in ipairs(trackingEvents) do
                 self:RegisterEvent(trackEvent)
             end
-        end)
+        end, 0.2)
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
     elseif event == "SUPER_TRACKING_CHANGED" then
         -- Quest selection changed, hide glow immediately (with tiny delay for POI to update)

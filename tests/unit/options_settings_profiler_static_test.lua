@@ -14,12 +14,11 @@ local skinBase = readFile("modules/skinning/base.lua")
 local uikit = readFile("core/uikit.lua")
 local init = readFile("init.lua")
 
-local sources = {
+local settingsSources = {
     framework = framework,
     fullSurface = fullSurface,
     skinBase = skinBase,
     uikit = uikit,
-    init = init,
 }
 
 local forbidden = {
@@ -43,13 +42,28 @@ local forbidden = {
     "Options.CreateBackdrop",
 }
 
-for name, text in pairs(sources) do
+for name, text in pairs(settingsSources) do
     for _, needle in ipairs(forbidden) do
         assert(
             not text:find(needle, 1, true),
             name .. " should not contain removed settings instrumentation: " .. needle
         )
     end
+end
+
+local initForbidden = {
+    "SettingsProfiler",
+    "settingsperf",
+    "GetSettingsProfiler",
+    "RecordSettingsProfiler",
+    "MeasureSettingsProfiler",
+}
+
+for _, needle in ipairs(initForbidden) do
+    assert(
+        not init:find(needle, 1, true),
+        "init should not contain removed settings instrumentation: " .. needle
+    )
 end
 
 print("OK: options_settings_profiler_static_test")

@@ -1,8 +1,5 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
-    <Script file="settings/ready_check.lua"/>
-    <Script file="settings/ready_check_provider.lua"/>
     <Script file="keybinds.lua"/>
-    <Script file="settings/keybinds_content.lua"/>
     <Script file="consumablemacros.lua"/>
 </Ui>

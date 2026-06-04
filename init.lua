@@ -1,5 +1,61 @@
 local ADDON_NAME, ns = ...
 
+-- Run a callback once the first frame has rendered (queues until then, then
+-- runs immediately afterward). Lets startup work defer past the initial paint.
+
+local firstFrameRendered = false
+local afterFirstFrameQueue = {}
+
+local function StartupRunAfterFirstFrame(callback, delay)
+    if type(callback) ~= "function" then return end
+
+    delay = type(delay) == "number" and delay or 0
+    if firstFrameRendered then
+        if C_Timer and C_Timer.After then
+            C_Timer.After(delay, callback)
+        else
+            callback()
+        end
+        return
+    end
+
+    afterFirstFrameQueue[#afterFirstFrameQueue + 1] = {
+        callback = callback,
+        delay = delay,
+    }
+end
+
+local function StartupFlushAfterFirstFrameQueue()
+    firstFrameRendered = true
+
+    local queue = afterFirstFrameQueue
+    afterFirstFrameQueue = {}
+    for i = 1, #queue do
+        local item = queue[i]
+        if item and type(item.callback) == "function" then
+            if C_Timer and C_Timer.After then
+                C_Timer.After(item.delay or 0, item.callback)
+            else
+                item.callback()
+            end
+        end
+    end
+end
+
+function ns.RunAfterFirstFrame(callback, delay)
+    return StartupRunAfterFirstFrame(callback, delay)
+end
+
+-- Flush the after-first-frame queue once the first frame renders.
+if CreateFrame then
+    local firstFrameFrame = CreateFrame("Frame")
+    firstFrameFrame:RegisterEvent("FIRST_FRAME_RENDERED")
+    firstFrameFrame:SetScript("OnEvent", function(self)
+        StartupFlushAfterFirstFrameQueue()
+        self:UnregisterEvent("FIRST_FRAME_RENDERED")
+    end)
+end
+
 -- Keybinding display names (must be global before Bindings.xml loads)
 BINDING_NAME_QUI_TOGGLE_OPTIONS = "Open QUI Options"
 ---@type table|AceAddon
@@ -151,7 +207,7 @@ local function CreateBlizzardSettingsPanel()
     Settings.RegisterAddOnCategory(category)
 end
 
-C_Timer.After(0.1, CreateBlizzardSettingsPanel)
+ns.RunAfterFirstFrame(CreateBlizzardSettingsPanel, 0.1)
 
 -- Deferred importstring loading: importstring files register loaders
 -- instead of eagerly constructing large tables at login. Data is built
@@ -217,7 +273,6 @@ function QUI:OnInitialize()
     self:RegisterChatCommand("rl", "SlashCommandReload")
     self:RegisterChatCommand("qpull", "SlashCommandPull")
     self:RegisterChatCommand("quipull", "SlashCommandPull")
-
     -- Register our media files with LibSharedMedia
     self:CheckMediaRegistration()
 end
@@ -779,8 +834,8 @@ function QUI:PLAYER_ENTERING_WORLD(_, isInitialLogin, isReloadingUi)
         self:DebugPrint("Debug Mode Enabled")
     end
 
-    -- Auto-recover QUI frame backdrops after all modules have initialized
-    C_Timer.After(3, RecoverQUIBackdrops)
+    -- Auto-recover QUI frame backdrops after the first rendered frame.
+    ns.RunAfterFirstFrame(RecoverQUIBackdrops, 0.5)
 end
 
 function QUI:DebugPrint(...)

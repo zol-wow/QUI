@@ -2,7 +2,6 @@
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
     <Script file="minimap.lua"/>
     <Script file="settings/minimap.lua"/>
-    <Script file="settings/minimap_providers.lua"/>
     <Script file="dungeon_data.lua"/>
     <Script file="datatexts.lua"/>
     <Script file="datapanels.lua"/>

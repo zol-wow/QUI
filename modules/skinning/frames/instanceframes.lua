@@ -1359,6 +1359,19 @@ local function HookPVEFrame()
     end
 end
 
+local function RunAfterFirstFrame(callback, delay)
+    if ns.RunAfterFirstFrame then
+        return ns.RunAfterFirstFrame(callback, delay)
+    end
+    if C_Timer and C_Timer.After then
+        return C_Timer.After(delay or 0, callback)
+    end
+    if type(callback) == "function" then
+        return callback()
+    end
+    return nil
+end
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -1369,7 +1382,9 @@ frame:SetScript("OnEvent", function(self, event, addon)
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
         HookPVEFrame()
-        C_Timer.After(1, SkinInstanceFrames)
+        RunAfterFirstFrame(function()
+            SkinInstanceFrames()
+        end, 0.25)
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
     end
 end)

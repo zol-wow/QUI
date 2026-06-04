@@ -115,6 +115,10 @@ local originalInput = setmetatable({}, { __mode = "k" })
 -- ChatFrame.OnEditBoxPreSendText after ParseText and before GetText, which is
 -- the safe addon extension point for observing the outgoing message.
 local preSendCallbackRegistered = false
+-- Stable owner key so the pre-send callback can be both registered and later
+-- unregistered (EventRegistry keys callbacks by owner). Shared by
+-- RegisterPreSendCallback / UnregisterPreSendCallback so they always agree.
+local PRE_SEND_OWNER = "QUI_ChatEditBoxHistory"
 
 local function captureSent(editBox)
     if not editBox then return end
@@ -260,7 +264,21 @@ local function RegisterPreSendCallback()
     preSendCallbackRegistered = true
     EventRegistry:RegisterCallback("ChatFrame.OnEditBoxPreSendText", function(_, editBox)
         pcall(captureSent, editBox)
-    end, "QUI_ChatEditBoxHistory")
+    end, PRE_SEND_OWNER)
+end
+
+-- Tear the pre-send capture callback back down so it is physically gone (not
+-- merely short-circuiting) while the chat module / edit-box history is off.
+-- EventRegistry keys callbacks by owner, so this removes exactly the one we
+-- registered. pcall-guarded as defensive cover; safe to call when nothing is
+-- currently registered (the early return handles that).
+local function UnregisterPreSendCallback()
+    if not preSendCallbackRegistered then return end
+    preSendCallbackRegistered = false
+    if EventRegistry and EventRegistry.UnregisterCallback then
+        pcall(EventRegistry.UnregisterCallback, EventRegistry,
+            "ChatFrame.OnEditBoxPreSendText", PRE_SEND_OWNER)
+    end
 end
 
 -- ---------------------------------------------------------------------------
@@ -395,6 +413,18 @@ local function IsEditBoxHistoryEnabled()
         and settings.editboxHistory and settings.editboxHistory.enabled
 end
 
+-- Add the pre-send capture callback only while the feature is active; remove it
+-- otherwise. Called from load, login, and every settings refresh so toggling
+-- the chat module (or the edit-box history sub-toggle) installs/removes the hook
+-- live instead of leaving it registered-but-inert.
+local function SyncPreSendCallback()
+    if IsEditBoxHistoryEnabled() then
+        RegisterPreSendCallback()
+    else
+        UnregisterPreSendCallback()
+    end
+end
+
 local function ApplyAltArrowModeToEditBox(editBox)
     if editBox and editBox.SetAltArrowKeyMode then
         editBox:SetAltArrowKeyMode(not IsEditBoxHistoryEnabled())
@@ -473,18 +503,24 @@ EBH._SetAllowSecureCommands = function(v) allowSecureCommands = v end
 -- ---------------------------------------------------------------------------
 -- ApplyEnabled: settings change hook
 -- ---------------------------------------------------------------------------
--- Sync alt-arrow mode on already-hooked editboxes, then arm arrow navigation on
--- any editboxes that weren't hooked at load (toggle off→on flow). Once
--- installed, disabling later is handled by the IsEditBoxHistoryEnabled() gate
--- inside captureSent / navigate.
+-- Add or remove the pre-send capture callback to match the current enabled
+-- state, sync alt-arrow mode on already-hooked editboxes, then arm arrow
+-- navigation on any editboxes that weren't hooked at load (toggle off→on flow).
+-- The per-editbox OnArrowPressed / AddHistoryLine hooks cannot be unhooked
+-- (HookScript and hooksecurefunc are permanent in the WoW API, and the latter
+-- is the taint-safe way to observe AddHistoryLine), so they are installed only
+-- while enabled (see InitializeForFrame's IsEditBoxHistoryEnabled gate) and
+-- otherwise short-circuit via the same gate inside captureSlashCommand /
+-- navigate; the chat master toggle prompts a reload, which drops them entirely
+-- on the next load.
 local function ApplyEnabled()
-    RegisterPreSendCallback()
+    SyncPreSendCallback()
     ApplyAltArrowMode()
     InitializeForAllFrames()
 end
 
 -- Initial hook setup at file-load (defensive — frames may not exist yet).
-RegisterPreSendCallback()
+SyncPreSendCallback()
 InitializeForAllFrames()
 
 local addonFrame = CreateFrame("Frame")
@@ -492,10 +528,10 @@ addonFrame:RegisterEvent("ADDON_LOADED")
 addonFrame:RegisterEvent("PLAYER_LOGIN")
 addonFrame:SetScript("OnEvent", function(self, event, name)
     if event == "ADDON_LOADED" and name == ADDON_NAME then
-        RegisterPreSendCallback()
+        SyncPreSendCallback()
         InitializeForAllFrames()
     elseif event == "PLAYER_LOGIN" then
-        RegisterPreSendCallback()
+        SyncPreSendCallback()
         InitializeForAllFrames()
     end
 end)

@@ -6,6 +6,4 @@
     <Script file="layoutmode_utils.lua"/>
     <Script file="layoutmode_composer.lua"/>
     <Script file="anchoring.lua"/>
-    <Script file="settings/bonus_roll_provider.lua"/>
-    <Script file="settings/third_party_anchoring_content.lua"/>
 </Ui>

@@ -9,20 +9,19 @@ local function readAll(path)
 end
 
 local source = readAll("modules/cdm/cdm.xml")
+local optionsXml = readAll("QUI_Options/options.xml")
 
 local iconRenderer = assert(source:find("cdm_icon_renderer.lua", 1, true),
     "cdm_icon_renderer.lua must be registered")
 local barRenderer = assert(source:find("cdm_bar_renderer.lua", 1, true),
     "cdm_bar_renderer.lua must be registered")
-local previewDriver = assert(source:find("composer_preview_driver.lua", 1, true),
+local previewDriver = assert(optionsXml:find("composer_preview_driver.lua", 1, true),
     "composer_preview_driver.lua must be registered")
-local composer = assert(source:find("composer.lua\"", 1, true),
+local composer = assert(optionsXml:find("composer.lua\"", 1, true),
     "composer.lua must be registered")
 
-assert(iconRenderer < previewDriver,
-    "cdm_icon_renderer.lua must load BEFORE composer_preview_driver.lua")
-assert(barRenderer < previewDriver,
-    "cdm_bar_renderer.lua must load BEFORE composer_preview_driver.lua")
+assert(iconRenderer < barRenderer,
+    "cdm_icon_renderer.lua must load BEFORE cdm_bar_renderer.lua")
 assert(previewDriver < composer,
     "composer_preview_driver.lua must load BEFORE composer.lua")
 

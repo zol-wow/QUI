@@ -1,22 +1,18 @@
 return {
     {
-        name = "damageMeter.native shelf present in shipped defaults with stable top-level keys",
+        name = "shipped defaults snapshot stored globally",
         assert = function(sv, ctx)
             local p = sv.QUI_DB.profiles.Default
-            local n = p and p._shippedDefaults and p._shippedDefaults.damageMeter and p._shippedDefaults.damageMeter.native
-            if not n then return false end
+            local n = sv.QUI_DB.global
+                and sv.QUI_DB.global._shippedProfileDefaults
+                and sv.QUI_DB.global._shippedProfileDefaults.damageMeter
+                and sv.QUI_DB.global._shippedProfileDefaults.damageMeter.native
+            if not p or p._shippedDefaults ~= nil or not n then return false end
             for _, key in ipairs({"enabled","visibility","refreshRateCombat","refreshRateIdle",
                                   "showPinnedSelf","showHoverTooltip","breakdownAnchor",
                                   "appearance","windows"}) do
                 if n[key] == nil then return false end
             end
-            return true
-        end,
-    },
-    {
-        name = "damageMeter.native defaults match spec",
-        assert = function(sv, ctx)
-            local n = sv.QUI_DB.profiles.Default._shippedDefaults.damageMeter.native
             local g = n.appearance and n.appearance.global
             return n.enabled == true
                and n.visibility == "always"

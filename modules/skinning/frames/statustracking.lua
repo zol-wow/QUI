@@ -13,6 +13,19 @@ local FALLBACK_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 
 local managerHooked = false
 
+local function RunAfterFirstFrame(callback, delay)
+    if ns.RunAfterFirstFrame then
+        return ns.RunAfterFirstFrame(callback, delay)
+    end
+    if C_Timer and C_Timer.After then
+        return C_Timer.After(delay or 0, callback)
+    end
+    if type(callback) == "function" then
+        return callback()
+    end
+    return nil
+end
+
 local function GetGeneralSettings()
     local core = Helpers.GetCore()
     return core and core.db and core.db.profile and core.db.profile.general
@@ -406,11 +419,11 @@ initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 initFrame:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" and arg1 == "Blizzard_ActionBar" then
-        C_Timer.After(0.1, function()
+        RunAfterFirstFrame(function()
             HookManager()
             ApplyAll()
-        end)
+        end, 0.1)
     elseif event == "PLAYER_ENTERING_WORLD" then
-        C_Timer.After(0.5, ApplyAll)
+        RunAfterFirstFrame(ApplyAll, 0.25)
     end
 end)

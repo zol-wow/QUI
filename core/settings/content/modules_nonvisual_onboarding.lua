@@ -334,18 +334,36 @@ Register(
 ---------------------------------------------------------------------------
 
 -- Chat module master toggle. QUI_RefreshChat tears down glass, tabs, edit
--- box styling, copy buttons, and fade; message filters and link hooks are
--- permanent but re-check db.profile.chat.enabled on every event.
-Register(
-    "chat",
-    "Chat",
-    "Chat Engine",
-    "Glass chat frames, URL clickability, timestamps, copy buttons, and message history.",
-    true,
-    DBProfile("chat"),
-    "enabled",
-    "QUI_RefreshChat"
-)
+-- box styling, copy buttons, and fade live; message filters and link hooks are
+-- permanent but re-check db.profile.chat.enabled on every event. A reload is
+-- still required to fully hand ChatFrame1 back to (or retake it from)
+-- Blizzard's Edit Mode, so this prompts like the other module master toggles
+-- rather than using the bare-DB-write MakeSubtableEntry path.
+RegisterNonVisualFeature("chat", {
+    group        = "Chat",
+    label        = "Chat Engine",
+    caption      = "Glass chat frames, URL clickability, timestamps, copy buttons, and message history.",
+    combatLocked = true,
+    isEnabled    = function()
+        local db = DBProfile("chat")()
+        return db and db.enabled ~= false
+    end,
+    setEnabled   = function(val)
+        local db = DBProfile("chat")()
+        if not db then return end
+        local enabled = val ~= false
+        local old = db.enabled ~= false
+        if old == enabled then return end
+        db.enabled = enabled
+        if ns.QUI_Modules then
+            ns.QUI_Modules:NotifyChanged("chat")
+        end
+        if type(_G.QUI_RefreshChat) == "function" then
+            _G.QUI_RefreshChat()
+        end
+        ShowReloadConfirmation("Enabling or disabling the chat module requires a UI reload to take effect.")
+    end,
+})
 
 ---------------------------------------------------------------------------
 -- Consumable Macros (QoL) — custom setEnabled routes through the module API

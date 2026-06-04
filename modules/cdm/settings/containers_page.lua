@@ -2,8 +2,9 @@
 -- Consolidated CDM settings page. Former file chunks remain scoped to preserve Lua 5.1 local limits.
 do
 -- Inlined from containers_page_model.lua
-local ADDON_NAME, ns = ...
-if not (QUI and QUI._optionsAddonName == ADDON_NAME) then
+local _, ns = ...
+if not ns._CDMContainersPageModelLoaded then
+ns._CDMContainersPageModelLoaded = true
 
 local function GetCore()
     return (ns.Helpers and ns.Helpers.GetCore and ns.Helpers.GetCore()) or ns.Addon or QUI
@@ -160,13 +161,14 @@ end
 
 do
 -- Inlined from containers_page_schema.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local Settings = ns.Settings
 local Renderer = Settings and Settings.Renderer
 local Schema = Settings and Settings.Schema
-if not (QUI and QUI._optionsAddonName == ADDON_NAME)
+if not ns._CDMContainersPageSchemaLoaded
     and Renderer and type(Renderer.RenderFeature) == "function"
     and Schema and type(Schema.Feature) == "function" then
+ns._CDMContainersPageSchemaLoaded = true
 
 local FullSurface = Settings and Settings.FullSurface
 if not Renderer or type(Renderer.RenderFeature) ~= "function"
@@ -2490,7 +2492,7 @@ end
 
 do
 -- Inlined from containers_page_surface.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local Settings = ns.Settings
 if QUI and QUI.GUI and Settings and Settings.FullSurface then
 --[[
@@ -3042,11 +3044,10 @@ end
 
 do
 -- Inlined from containers_page.lua
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local Settings = ns.Settings
 local SurfaceFeatures = Settings and Settings.SurfaceFeatures
-if not (QUI and QUI._optionsAddonName == ADDON_NAME)
-    and SurfaceFeatures and type(SurfaceFeatures.Register) == "function"
+if SurfaceFeatures and type(SurfaceFeatures.Register) == "function"
     and not ns._CDMContainersPageRegistered then
 ns._CDMContainersPageRegistered = true
 

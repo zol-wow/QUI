@@ -1,9 +1,4 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
     <Script file="uihider.lua"/>
-    <Script file="settings/blizzard_mover_content.lua"/>
-    <Script file="settings/crosshair_content.lua"/>
-    <Script file="settings/hud_visibility_content.lua"/>
-    <Script file="settings/hud_layering_content.lua"/>
-    <Script file="settings/autohide_content.lua"/>
 </Ui>

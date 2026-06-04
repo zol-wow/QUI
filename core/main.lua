@@ -18,6 +18,19 @@ local InCombatLockdown = InCombatLockdown
 local C_Timer = C_Timer
 local hooksecurefunc = hooksecurefunc
 
+local function RunAfterFirstFrame(callback, delay)
+    if ns and ns.RunAfterFirstFrame then
+        return ns.RunAfterFirstFrame(callback, delay)
+    end
+    if C_Timer and C_Timer.After then
+        return C_Timer.After(delay or 0, callback)
+    end
+    if type(callback) == "function" then
+        return callback()
+    end
+    return nil
+end
+
 -- Create QUICore as an Ace3 module within QUI
 local QUICore = QUI:NewModule("QUICore", "AceConsole-3.0", "AceEvent-3.0")
 QUI.QUICore = QUICore
@@ -136,6 +149,13 @@ function QUICore:OnInitialize()
     self.db = LibStub("AceDB-3.0"):New("QUIDB", defaults, true)
     QUI.db = self.db  -- Make database accessible to other QUI modules
 
+    -- Consume legacy per-profile shipped-default snapshots before pruning
+    -- them, so default flips stay pinned without carrying the large table
+    -- deeper into login.
+    if ns.Compatibility and ns.Compatibility.RunShippedDefaultsMaintenance then
+        ns.Compatibility.RunShippedDefaultsMaintenance(self.db)
+    end
+
     -- Run all profile migrations (consolidated in migrations.lua)
     if ns.Migrations and ns.Migrations.Run then
         ns.Migrations.Run(self.db)
@@ -175,10 +195,10 @@ function QUICore:OnInitialize()
     -- Note: Main /qui command is handled by init.lua
     -- (quicorerefresh slash command removed — classic viewer skinning deleted)
 
-    -- Defer minimap button creation to reduce load-time CPU
-    C_Timer.After(0.1, function()
+    -- Defer minimap button creation until after the first visible frame.
+    RunAfterFirstFrame(function()
         self:CreateMinimapButton()
-    end)
+    end, 0.1)
 
     -- Apply theme accent color to GUI.Colors early so modules outside the
     -- options panel (layout mode, skinning, etc.) see the correct color.
@@ -639,16 +659,16 @@ function QUICore:OnEnable()
     -- the ADDON_LOADED handler and cannot make protected calls in combat.
     ns._inInitSafeWindow = false
 
-    -- DEFERRED 0.1s: Hook setup (spreads work across frames)
+    -- DEFERRED: Hook setup after the first visible frame.
     -- Combat-safe: uses hooksecurefunc + CreateFrame only. Must always run so
     -- the PLAYER_REGEN_ENABLED recovery handler inside HookEditMode is created
     -- even after a combat reload.
-    C_Timer.After(0.1, function()
+    RunAfterFirstFrame(function()
         self:HookEditMode()
-    end)
+    end, 0.1)
 
-    -- DEFERRED 0.5s: Unit frames (secure APIs now safe) + global font override + alerts
-    C_Timer.After(0.5, function()
+    -- DEFERRED: Unit frames (secure APIs now safe) + global font override + alerts
+    RunAfterFirstFrame(function()
         if self.UnitFrames and self.db.profile.unitFrames and self.db.profile.unitFrames.enabled then
             self.UnitFrames:Initialize()
         end
@@ -664,10 +684,10 @@ function QUICore:OnEnable()
         -- positioned immediately; protected frames deferred to PLAYER_REGEN_ENABLED
         -- via pendingAnchoredFrameUpdateAfterCombat in the anchoring system.
         ApplyFrameOverrides()
-    end)
+    end, 0.2)
 
-    -- DEFERRED 1.0s: UI hider + buff borders
-    C_Timer.After(1.0, function()
+    -- DEFERRED: UI hider + buff borders
+    RunAfterFirstFrame(function()
         -- Cache _G function lookups at point of use
         local RefreshUIHider = _G.QUI_RefreshUIHider
         local RefreshBuffBorders = _G.QUI_RefreshBuffBorders
@@ -678,20 +698,20 @@ function QUICore:OnEnable()
             RefreshBuffBorders()
         end
         ApplyFrameOverrides()
-    end)
+    end, 0.35)
 
-    -- DEFERRED 2.0s: Safety retry for late-loading frames
-    C_Timer.After(2.0, function()
+    -- DEFERRED: Safety retry for late-loading frames
+    RunAfterFirstFrame(function()
         ApplyFrameOverrides()
-    end)
+    end, 0.8)
 
-    -- DEFERRED 3.0s: Register all frames as anchor targets + final override apply
-    C_Timer.After(3.0, function()
+    -- DEFERRED: Register all frames as anchor targets + final override apply
+    RunAfterFirstFrame(function()
         if ns.QUI_Anchoring then
             ns.QUI_Anchoring:RegisterAllFrameTargets()
         end
         ApplyFrameOverrides()
-    end)
+    end, 1.0)
 
     self:SetupEncounterWarningsSecretValuePatch()
 end
@@ -1096,4 +1116,3 @@ function QUICore:RefreshAll()
         RefreshSkyriding()
     end
 end
-

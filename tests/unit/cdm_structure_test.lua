@@ -51,9 +51,6 @@ local expectedOrder = {
     "cdm_containers.lua",
     "cdm_layout_mode.lua",
     "cdm_container_border_registry.lua",
-    "settings\\containers_page.lua",
-    "settings\\composer_preview_driver.lua",
-    "settings\\composer.lua",
 }
 
 local positions = {}
@@ -83,5 +80,24 @@ end
 assert(not indexOf(xml, 'file="glows.lua"'), "glows.lua should remain consolidated")
 assert(not indexOf(xml, 'file="swipe.lua"'), "swipe.lua should remain consolidated")
 assert(not indexOf(xml, 'file="highlighter.lua"'), "highlighter.lua should remain consolidated")
+
+local optionsXml = readAll("QUI_Options/options.xml")
+local expectedOptionsOrder = {
+    "..\\QUI\\modules\\cdm\\settings\\containers_page.lua",
+    "..\\QUI\\modules\\cdm\\settings\\composer_preview_driver.lua",
+    "..\\QUI\\modules\\cdm\\settings\\composer.lua",
+}
+local optionPositions = {}
+for _, fileName in ipairs(expectedOptionsOrder) do
+    local pos = indexOf(optionsXml, 'file="' .. fileName .. '"')
+    assert(pos, fileName .. " should load on demand")
+    optionPositions[fileName] = pos
+end
+for i = 2, #expectedOptionsOrder do
+    local before = expectedOptionsOrder[i - 1]
+    local after = expectedOptionsOrder[i]
+    assert(optionPositions[before] < optionPositions[after],
+        before .. " should load before " .. after)
+end
 
 print("OK: cdm_structure_test")

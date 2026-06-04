@@ -312,8 +312,32 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         -- Master enable toggle. Disabling tears down all chat customization
         -- (glass, tabs, edit box, copy buttons, fade, message filters); the
         -- per-feature toggles below remain visible but no-op until re-enabled.
+        --
+        -- Toggling the master switch also changes whether QUI owns ChatFrame1:
+        -- disabling hands it back to Blizzard's Edit Mode, enabling re-takes it.
+        -- Neither the reattach nor the early detach can be performed live without
+        -- tainting chat dispatch, so we offer a reload to fully apply the change
+        -- (matching the master toggles of QUI's other modules).
+        local function ShowChatModuleReloadPrompt()
+            local Q = _G.QUI
+            local G = Q and Q.GUI
+            if G and G.ShowConfirmation then
+                G:ShowConfirmation({
+                    title      = "Reload UI?",
+                    message    = "Enabling or disabling the chat module requires a UI reload to take effect.",
+                    acceptText = "Reload",
+                    cancelText = "Later",
+                    onAccept   = function()
+                        if Q and Q.SafeReload then Q:SafeReload() end
+                    end,
+                })
+            end
+        end
         CreateChatSection("chatModule", "Chat Module", FORM_ROW + 8, function(card)
-            local w = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat, Refresh, { description = "Master switch for QUI's chat customization. When off, all chat frames revert to Blizzard defaults and the per-feature toggles below have no effect." })
+            local w = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat, function()
+                Refresh()
+                ShowChatModuleReloadPrompt()
+            end, { description = "Master switch for QUI's chat customization. When off, all chat frames revert to Blizzard defaults and the per-feature toggles below have no effect. A UI reload is offered to hand ChatFrame1 back to (or retake it from) Blizzard's Edit Mode." })
             card.AddRow(row(card.frame, "Enable Chat Module", w))
         end)
 

@@ -15,37 +15,24 @@
     <Script file="defaults.lua"/>
     <Script file="main.lua"/>
     <Script file="backdrop_deferred.lua"/>
-    <Script file="profile_io.lua"/>
+    <!-- profile_io.lua (import/export engine) is options-only; loaded by QUI_Options/options.xml -->
     <Script file="font_system.lua"/>
     <Script file="scaling.lua"/>
     <Script file="uikit.lua"/>
-    <Script file="settings/providers.lua"/>
-    <Script file="settings/provider_panels.lua"/>
+    <!-- Settings framework: only these are needed on the login path — feature
+         registration runs at login (module do-blocks call
+         Registry:RegisterFeature(Schema.Feature{...}), and Schema.Feature ->
+         CloneTable needs Util), and pins is touched by main.lua on profile change.
+         The options-only framework files (providers/provider_panels/model_kit/
+         fields/surfaces/surface_features/nav/sync/renderer) load on demand via
+         QUI_Options/options.xml. -->
     <Script file="settings/util.lua"/>
     <Script file="settings_builders.lua"/>
-    <Script file="settings/model_kit.lua"/>
     <Script file="settings/render_adapters.lua"/>
     <Script file="settings/registry.lua"/>
-    <Script file="settings/fields.lua"/>
     <Script file="settings/schema.lua"/>
     <Script file="settings/provider_features.lua"/>
-    <Script file="settings/surfaces.lua"/>
-    <Script file="settings/full_surface.lua"/>
-    <Script file="settings/surface_features.lua"/>
-    <Script file="settings/nav.lua"/>
-    <Script file="settings/sync.lua"/>
     <Script file="settings/pins.lua"/>
     <Script file="settings/pins_lifecycle.lua"/>
-    <Script file="settings/renderer.lua"/>
-    <Script file="settings/pins_ui.lua"/>
-    <Script file="settings/content/anchoring_shared_content.lua"/>
-    <Script file="settings/content/welcome_page.lua"/>
-    <Script file="settings/content/modules_page.lua"/>
-    <Script file="settings/content/modules_visual_onboarding.lua"/>
-    <Script file="settings/content/modules_nonvisual_onboarding.lua"/>
-    <Script file="settings/content/help_page.lua"/>
-    <Script file="settings/content/troubleshooting_page.lua"/>
-    <Script file="settings/content/profiles_content.lua"/>
-    <Script file="settings/content/import_export_content.lua"/>
     <Script file="rangeutils.lua"/>
 </Ui>

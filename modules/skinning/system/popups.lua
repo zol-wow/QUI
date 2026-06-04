@@ -276,6 +276,7 @@ local function HookStaticPopups()
             if popup:IsShown() then SkinStaticPopup(popup) end
         end
     end
+    return true
 end
 
 -- isCompositorMenu: the frame belongs to Blizzard's modern Menu manager, whose
@@ -328,13 +329,14 @@ end
 local legacyDropdownHooksInstalled = false
 
 local function HookLegacyDropdowns()
-    if legacyDropdownHooksInstalled then return end
-    if not _G.ToggleDropDownMenu then return end
+    if legacyDropdownHooksInstalled then return true end
+    if not _G.ToggleDropDownMenu then return false end
 
     legacyDropdownHooksInstalled = true
     hooksecurefunc("ToggleDropDownMenu", function()
         Defer(SkinLegacyDropdowns)
     end)
+    return true
 end
 
 local function OnMenuOpen(manager, _, menuDescription)
@@ -360,9 +362,10 @@ local function OnMenuOpen(manager, _, menuDescription)
 end
 
 local function HookContextMenus()
-    if not _G.Menu or not _G.Menu.GetManager then return end
+    if not _G.Menu or not _G.Menu.GetManager then return false end
     local manager = _G.Menu.GetManager()
-    if not manager or SkinBase.GetFrameData(manager, "quiContextMenuHooks") then return end
+    if not manager then return false end
+    if SkinBase.GetFrameData(manager, "quiContextMenuHooks") then return true end
 
     SkinBase.SetFrameData(manager, "quiContextMenuHooks", true)
     if manager.OpenMenu then
@@ -375,6 +378,7 @@ local function HookContextMenus()
             OnMenuOpen(self, ownerRegion, menuDescription)
         end)
     end
+    return true
 end
 
 local function RefreshOpenStaticPopups()
@@ -419,10 +423,27 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("ADDON_LOADED")
+local startupHooksComplete = false
+local function InstallStartupHooks()
+    if startupHooksComplete then return true end
+
+    HookStaticPopups()
+    local contextReady = HookContextMenus()
+    local legacyReady = HookLegacyDropdowns()
+    startupHooksComplete = contextReady and legacyReady
+    return startupHooksComplete
+end
+
 eventFrame:SetScript("OnEvent", function(self, event, addon)
-    if event == "PLAYER_LOGIN" or addon == ADDON_NAME then
-        HookStaticPopups()
-        HookContextMenus()
-        HookLegacyDropdowns()
+    if event == "ADDON_LOADED" then
+        if addon ~= ADDON_NAME then return end
+        if InstallStartupHooks() then
+            self:UnregisterEvent("PLAYER_LOGIN")
+        end
+        self:UnregisterEvent("ADDON_LOADED")
+    elseif event == "PLAYER_LOGIN" then
+        InstallStartupHooks()
+        self:UnregisterEvent("PLAYER_LOGIN")
+        self:UnregisterEvent("ADDON_LOADED")
     end
 end)

@@ -3744,22 +3744,28 @@ end
 ---------------------------------------------------------------------------
 -- Before the migration pipeline mutates a profile, we save a deep copy of
 -- the profile under `_migrationBackup`. If a migration corrupts data, the
--- user can run `/qui migration restore [N]` to roll back to a previous
--- pre-migration state. We keep up to MAX_BACKUP_SLOTS snapshots in a
--- circular buffer (slot 1 = newest, slot N = oldest); each successful
--- migration run pushes a new snapshot to the front and trims the tail.
+-- user can run `/qui migration restore [N]` to roll back to the latest
+-- pre-migration state. Only the newest snapshot is retained; older builds
+-- kept several full profile copies, which made SavedVariables expensive to
+-- parse during login/reload.
 --
--- The backup excludes `_migrationBackup` itself to prevent recursive growth.
+-- The backup excludes `_migrationBackup` itself to prevent recursive growth,
+-- and excludes legacy per-profile shipped-default snapshots because those are
+-- now represented once in global storage.
 
 local BACKUP_KEY = "_migrationBackup"
-local MAX_BACKUP_SLOTS = 5
+local MAX_BACKUP_SLOTS = 1
+local BACKUP_EXCLUDED_KEYS = {
+    [BACKUP_KEY] = true,
+    _shippedDefaults = true,
+}
 
-local function DeepCloneExcluding(value, excludeKey)
+local function DeepCloneExcluding(value, excludedKeys)
     if type(value) ~= "table" then return value end
     local copy = {}
     for k, v in pairs(value) do
-        if k ~= excludeKey then
-            copy[k] = DeepCloneExcluding(v, excludeKey)
+        if not excludedKeys[k] then
+            copy[k] = DeepCloneExcluding(v, excludedKeys)
         end
     end
     return copy
@@ -3794,7 +3800,7 @@ local function CreateBackup(profile, fromVersion)
         fromVersion = fromVersion or 0,
         toVersion   = CURRENT_SCHEMA_VERSION,
         savedAt     = (time and time()) or 0,
-        snapshot    = DeepCloneExcluding(profile, BACKUP_KEY),
+        snapshot    = DeepCloneExcluding(profile, BACKUP_EXCLUDED_KEYS),
     }
     -- Push to front, trim tail to MAX_BACKUP_SLOTS.
     table.insert(container.slots, 1, newEntry)
@@ -3831,17 +3837,62 @@ function Migrations.Restore(profile, slotIndex)
         end
     end
     for k, v in pairs(entry.snapshot) do
-        profile[k] = DeepCloneExcluding(v, BACKUP_KEY)
+        profile[k] = DeepCloneExcluding(v, BACKUP_EXCLUDED_KEYS)
     end
     -- After restore, the profile is back at its pre-migration version. The
     -- backup container is preserved so the user can restore other slots.
     return true, entry
 end
 
+local function PruneBackupContainer(profile)
+    local existing = profile[BACKUP_KEY]
+    local container = GetBackupContainer(profile)
+    if not container or type(container.slots) ~= "table" then
+        if existing ~= nil then
+            profile[BACKUP_KEY] = nil
+            return true
+        end
+        return false
+    end
+
+    local changed = existing ~= profile[BACKUP_KEY]
+    local prunedSlots = {}
+    for _, entry in ipairs(container.slots) do
+        local snapshot = entry and entry.snapshot
+        if type(snapshot) == "table" then
+            for excludedKey in pairs(BACKUP_EXCLUDED_KEYS) do
+                if snapshot[excludedKey] ~= nil then
+                    snapshot[excludedKey] = nil
+                    changed = true
+                end
+            end
+            if #prunedSlots < MAX_BACKUP_SLOTS then
+                prunedSlots[#prunedSlots + 1] = entry
+            else
+                changed = true
+            end
+        else
+            changed = true
+        end
+    end
+
+    if #prunedSlots == 0 then
+        changed = changed or profile[BACKUP_KEY] ~= nil
+        profile[BACKUP_KEY] = nil
+    else
+        changed = changed or #container.slots ~= #prunedSlots
+        container.slots = prunedSlots
+        profile[BACKUP_KEY] = container
+    end
+
+    return changed
+end
+
 -- Returns the full backup container ({slots = {...}}) for inspection.
 -- Lazily upgrades legacy single-slot shape on read.
 function Migrations.GetBackupInfo(profile)
     if type(profile) ~= "table" then return nil end
+    PruneBackupContainer(profile)
     return GetBackupContainer(profile)
 end
 
@@ -3918,6 +3969,8 @@ end
 function Migrations.RunOnProfile(profile)
     if type(profile) ~= "table" then return false end
 
+    local cleanupChanged = PruneBackupContainer(profile)
+
     local stored = tonumber(profile._schemaVersion) or 0
 
     -- Flag legacy/fresh profiles for the late EditMode action bar import.
@@ -3955,7 +4008,7 @@ function Migrations.RunOnProfile(profile)
 
     if stored >= CURRENT_SCHEMA_VERSION then
         MigLog("RunOnProfile: stored >= current, NOTHING TO DO")
-        return false  -- Nothing to do. Backup (if any) remains untouched.
+        return cleanupChanged
     end
 
     -- Skip the backup for empty/fresh profiles — there's nothing worth

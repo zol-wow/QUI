@@ -35,7 +35,4 @@
     <Script file="cdm_containers.lua"/>
     <Script file="cdm_layout_mode.lua"/>
     <Script file="cdm_container_border_registry.lua"/>
-    <Script file="settings\containers_page.lua"/>
-    <Script file="settings\composer_preview_driver.lua"/>
-    <Script file="settings\composer.lua"/>
 </Ui>

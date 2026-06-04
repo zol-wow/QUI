@@ -1093,9 +1093,22 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
         self:UnregisterEvent("ADDON_LOADED")
 
-        local Sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
-        if Sizing and Sizing.DetachFromEditMode then
-            Sizing.DetachFromEditMode()
+        -- Only take ChatFrame1 out of Blizzard's Edit Mode when the chat module
+        -- is enabled. The detach is a one-way customization step (it reparents
+        -- the frame and pulls Edit Mode's resize/select widgets off-screen) with
+        -- no reattach path, so doing it while the module is disabled would strand
+        -- chat under QUI even though the user asked for Blizzard's default chat.
+        -- When disabled we leave ChatFrame1 entirely to Blizzard. The early
+        -- detach matters only because QUI's later geometry writes would taint
+        -- chat dispatch -- and a disabled module issues no geometry writes, so
+        -- skipping it here is taint-safe. SyncToStored re-checks the enabled flag
+        -- on PLAYER_ENTERING_WORLD, so an enabled module still detaches even if
+        -- the profile DB were somehow not ready at this instant.
+        if IsChatEnabled(GetSettings()) then
+            local Sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
+            if Sizing and Sizing.DetachFromEditMode then
+                Sizing.DetachFromEditMode()
+            end
         end
 
         -- Setup new message sound (works independently of chat skinning)

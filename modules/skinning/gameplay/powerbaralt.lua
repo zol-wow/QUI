@@ -32,6 +32,19 @@ local QUIAltPowerBar = nil
 local powerBarMover = nil
 local isEnabled = false
 
+local function RunAfterFirstFrame(callback, delay)
+    if ns.RunAfterFirstFrame then
+        return ns.RunAfterFirstFrame(callback, delay)
+    end
+    if C_Timer and C_Timer.After then
+        return C_Timer.After(delay or 0, callback)
+    end
+    if type(callback) == "function" then
+        return callback()
+    end
+    return nil
+end
+
 ---------------------------------------------------------------------------
 -- DATABASE ACCESS
 ---------------------------------------------------------------------------
@@ -297,6 +310,7 @@ local frame = CreateFrame("Frame")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:SetScript("OnEvent", function(self, event)
     self:UnregisterEvent("PLAYER_ENTERING_WORLD")
-    -- Delay slightly to ensure QUI is loaded
-    C_Timer.After(0.1, Initialize)
+    RunAfterFirstFrame(function()
+        Initialize()
+    end, 0.1)
 end)

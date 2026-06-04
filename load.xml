@@ -8,6 +8,5 @@
     <Include file="core\core.xml"/>
     <!-- Feature Modules -->
     <Include file="modules\modules.xml"/>
-    <!-- Load Edit Mode Profiles -->
-    <Include file="importstrings\importstrings.xml"/>
+    <!-- Edit Mode / preset import strings load on demand via QUI_Options (options.xml) -->
 </Ui>

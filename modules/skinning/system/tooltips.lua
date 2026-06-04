@@ -924,6 +924,24 @@ local function DiscoverExtraTooltips()
     end
 end
 
+local extraTooltipDiscoveryQueued = false
+local function RunQueuedExtraTooltipDiscovery()
+    extraTooltipDiscoveryQueued = false
+    if InCombatLockdown() then return end
+
+    DiscoverExtraTooltips()
+end
+
+local function QueueExtraTooltipDiscovery()
+    if extraTooltipDiscoveryQueued then return end
+    extraTooltipDiscoveryQueued = true
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, RunQueuedExtraTooltipDiscovery)
+    else
+        RunQueuedExtraTooltipDiscovery()
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Backdrop Style Hooks (Blizzard re-applies styles on show/restyle)
 ---------------------------------------------------------------------------
@@ -1188,7 +1206,7 @@ eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     -- After initialization, discover addon tooltips on each ADDON_LOADED
     if event == "ADDON_LOADED" and initialized then
-        if not InCombatLockdown() then DiscoverExtraTooltips() end
+        QueueExtraTooltipDiscovery()
         return
     end
 
