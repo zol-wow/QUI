@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta12 - 2026-06-03
+
+> 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta11 fixing a Mythic+ keystone skinning glitch. No schema migrations: your beta11 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Mythic+ keystone affix icons are no longer covered by a colored square.** When you slotted a keystone, QUI's themed border on each affix icon was being drawn as a solid filled square on top of the icon, hiding the affix art behind a skin-colored block. QUI now draws a proper hollow border around each affix icon, so the affix art stays visible and the border follows your skin color as intended.
+
 ## v4.0.0-beta11 - 2026-06-03
 
 > 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta10 making the chat protected-message fix airtight on login. No schema migrations: your beta10 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
