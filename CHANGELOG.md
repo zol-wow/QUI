@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta14 - 2026-06-04
+
+> 🧪 **QUI 4 beta — performance + a fix.** Follow-up to beta13 that smooths out Mythic+ and raid pulls and fixes keyboard click-casting right after login. No schema migrations: your beta13 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Performance
+- **No more stutter at the end of Mythic+ and raid pulls.** Whenever an encounter, Mythic+ run, or rated PvP match began, QUI's cooldown manager was queuing a full rebuild of its internal cooldown catalog and running it the moment combat ended — adding a brief hitch right as each pull wrapped up. QUI now does only the cheap, targeted refresh those moments actually need (re-syncing tracked auras), and does it on the spot rather than at the end of combat, so pull transitions stay smooth.
+- **A little more login work moved off the startup path.** Following beta13's change to build the options UI on demand, the minimap's settings page is now also assembled only when you open the settings, taking a bit more work off login.
+
+### Fixed
+- **Keyboard click-casting on group frames now works reliably right after login.** On a cold login your specialization and talent data can arrive a moment after the game finishes loading, and QUI could finish wiring up click-cast bindings before it was ready — leaving your keyboard click-cast bindings inactive (mouse bindings still worked) until a `/reload`. QUI now keeps retrying until that data lands, so keyboard click-casting is live from the first login.
+
 ## v4.0.0-beta13 - 2026-06-04
 
 > 🧪 **QUI 4 beta — performance + a fix.** Follow-up to beta12 that speeds up login and tidies up tooltip fonts. Your beta12 profiles carry over unchanged; on first login QUI also slims down its own saved data behind the scenes. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
