@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta13 - 2026-06-04
+
+> 🧪 **QUI 4 beta — performance + a fix.** Follow-up to beta12 that speeds up login and tidies up tooltip fonts. Your beta12 profiles carry over unchanged; on first login QUI also slims down its own saved data behind the scenes. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Performance
+- **Faster login.** QUI no longer builds its options panel on every login — the configuration UI is now assembled on demand the first time you open the settings, taking that work off the startup path. Remaining startup tasks now also wait until the game has rendered its first frame before running, so they stop competing with the initial login.
+- **Smaller saved data.** QUI's per-profile saved-variables footprint has been trimmed so there's less to read and copy at login. The safeguard that preserves your customizations when a built-in default changes still works exactly as before — it's just stored far more compactly now, as a single account-level snapshot instead of a copy per profile. QUI also keeps only the most recent pre-migration backup rather than several.
+
+### Fixed
+- **Tooltips now use your configured QUI font throughout.** Tooltip lines could keep the game's default font face even though QUI was applying the configured size, leaving a mismatch on later lines. QUI now sets the font face and outline alongside the size, so tooltip text renders in the QUI font as intended.
+
 ## v4.0.0-beta12 - 2026-06-03
 
 > 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta11 fixing a Mythic+ keystone skinning glitch. No schema migrations: your beta11 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
