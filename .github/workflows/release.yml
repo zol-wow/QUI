@@ -89,7 +89,7 @@ jobs:
             build/QUI/core/core.xml
             build/QUI/modules/modules.xml
             build/QUI/libs/libs.xml
-            build/QUI/importstrings/importstrings.xml
+            build/QUI/importstrings/qui_editmode_base.lua
             build/QUI/assets/QUI.tga
             build/QUI_Options/QUI_Options.toc
             build/QUI_Options/bootstrap.lua
