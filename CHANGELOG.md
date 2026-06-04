@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta16 - 2026-06-04
+
+> 🧪 **QUI 4 beta — a follow-up fix.** A small follow-up to beta15 that makes keyboard click-cast recover on its own no matter how late your spec/talent data lands. No schema migrations: your beta15 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Keyboard click-casting reliably wires itself up after a slow login.** beta15 kept retrying click-cast setup on a fixed timer; on an unusually slow login your specialization and talent data could still arrive after that retry window closed, leaving keyboard bindings inactive (mouse bindings still worked) until a `/reload`. QUI now re-checks the moment the game reports your spec/talent data is ready, and again the moment you hover a unit frame to use a binding — so keyboard click-casting comes alive on its own, and at worst heals on your very next hover.
+
 ## v4.0.0-beta15 - 2026-06-04
 
 > 🧪 **QUI 4 beta — a follow-up fix.** A small follow-up to beta14 that makes the keyboard click-cast cold-login fix hold up even on slow logins. No schema migrations: your beta14 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
