@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta15 - 2026-06-04
+
+> 🧪 **QUI 4 beta — a follow-up fix.** A small follow-up to beta14 that makes the keyboard click-cast cold-login fix hold up even on slow logins. No schema migrations: your beta14 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Keyboard click-casting now comes alive even after a slow first login.** beta14 made QUI keep retrying click-cast setup until your specialization and talent data arrived, but on a slow login (busy realm, first load of the session) that data could still show up after QUI had stopped retrying — leaving keyboard click-cast bindings inactive (mouse bindings still worked) until a `/reload`. QUI now watches for that data longer, and also re-checks the moment the game reports your spec/talent data is ready, so keyboard click-casting wires itself up on its own no matter how late that data lands.
+
 ## v4.0.0-beta14 - 2026-06-04
 
 > 🧪 **QUI 4 beta — performance + a fix.** Follow-up to beta13 that smooths out Mythic+ and raid pulls and fixes keyboard click-casting right after login. No schema migrations: your beta13 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
