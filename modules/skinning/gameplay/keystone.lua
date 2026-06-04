@@ -153,16 +153,25 @@ local function SkinKeystoneFrame()
     -- Affixes are declared via parentArray="Affixes" on ChallengesKeystoneFrameAffixTemplate
     -- (Blizzard_ChallengesUI.xml:183), so they live at frame.Affixes[i] — NOT
     -- frame.Affix1..Affix4 as a previous iteration assumed.
+    --
+    -- Draw a HOLLOW pixel border (BackdropTemplate frame), matching the M+ affix
+    -- styling in instanceframes.lua StyleAffixIcon. A solid SetColorTexture would
+    -- instead fill the whole portrait rect and, on the OVERLAY layer, paint over
+    -- the icon — masking each affix with a solid skin-color (red) square.
     hooksecurefunc(keystoneFrame, "OnKeystoneSlotted", function(f)
         if not f.Affixes then return end
         local sc = SkinBase.GetFrameData(f, "skinColor") or { 0.376, 0.647, 0.980, 1 }
         local r, g, b, a = unpack(sc)
         for _, affix in ipairs(f.Affixes) do
             if affix.Portrait and not SkinBase.GetFrameData(affix, "border") then
-                local affixBorder = affix:CreateTexture(nil, "OVERLAY")
+                if affix.Border then affix.Border:SetAlpha(0) end
+                affix.Portrait:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                local affixBorder = CreateFrame("Frame", nil, affix, "BackdropTemplate")
                 SkinBase.SetExpandedPixelPoints(affixBorder, affix.Portrait, 1)
-                affixBorder:SetColorTexture(r, g, b, a)
-                affixBorder:SetDrawLayer("OVERLAY", -1)
+                affixBorder:SetFrameLevel(affix:GetFrameLevel())
+                affixBorder:EnableMouse(false)
+                SkinBase.ApplyPixelBackdrop(affixBorder, 1, false, false)
+                Helpers.SetFrameBackdropBorderColor(affixBorder, r, g, b, a)
                 SkinBase.SetFrameData(affix, "border", affixBorder)
             end
         end
@@ -210,7 +219,7 @@ local function RefreshKeystoneColors()
         for _, affix in ipairs(keystoneFrame.Affixes) do
             local affixBorder = SkinBase.GetFrameData(affix, "border")
             if affixBorder then
-                affixBorder:SetColorTexture(sr, sg, sb, sa)
+                Helpers.SetFrameBackdropBorderColor(affixBorder, sr, sg, sb, sa)
             end
         end
     end
