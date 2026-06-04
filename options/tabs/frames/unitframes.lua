@@ -143,6 +143,9 @@ local function CreateUnitFramesPage(parent)
             end)
             sy = P(darkEnable, body, sy)
 
+            local darkClassColourEnable = GUI:CreateFormCheckbox(body, "Use Darkmode Background Class Color", "darkModeUseBgClassColor", general, RefreshNewUF)
+            sy = P(darkClassColourEnable, body, sy)
+
             local hc = GUI:CreateFormColorPicker(body, "Darkmode Health Color", "darkModeHealthColor", general, RefreshNewUF, { noAlpha = true })
             sy = P(hc, body, sy)
             darkModeWidgets.healthColor = hc
