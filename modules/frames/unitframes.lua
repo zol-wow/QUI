@@ -331,6 +331,8 @@ local function ApplyHealthFillDirection(frame, settings)
     if not frame or not frame.healthBar then return false end
     settings = settings or (frame.unitKey and GetUnitSettings(frame.unitKey))
     local reverseFill = IsTargetHealthDirectionInverted(frame.unitKey, settings)
+    local general = GetGeneralSettings()
+    if general and general.darkMode and general.darkModeUseBgClassColor then reverseFill = not reverseFill end
     frame.healthBar:SetReverseFill(reverseFill)
     return reverseFill
 end
@@ -765,9 +767,14 @@ local function UpdateHealth(frame)
     local hp = UnitHealth(unit)
     local maxHP = UnitHealthMax(unit)
     
+    local general = GetGeneralSettings()
     -- Pass directly to StatusBar - it handles secret values gracefully
     frame.healthBar:SetMinMaxValues(0, maxHP or 1)
-    frame.healthBar:SetValue(hp or 0)
+    if general and general.darkMode and general.darkModeUseBgClassColor then
+        frame.healthBar:SetValue(UnitHealthMissing(unit, true) or 0)
+    else
+        frame.healthBar:SetValue(hp or 0)
+    end
     
     -- Update health text using new display style system
     if frame.healthText then
@@ -809,9 +816,7 @@ local function UpdateHealth(frame)
     end
     
     -- Update health bar color using unit-specific settings
-    local general = GetGeneralSettings()
-
-    if general and general.darkMode then
+    if general and general.darkMode and not general.darkModeUseBgClassColor then
         local c = general.darkModeHealthColor or { 0.15, 0.15, 0.15, 1 }
         frame.healthBar:SetStatusBarColor(c[1], c[2], c[3], c[4] or 1)
     else
@@ -1140,6 +1145,9 @@ local function UpdatePower(frame)
     if settings.powerBarUsePowerColor ~= false then
         local r, g, b = GetUnitPowerColor(unit)
         frame.powerBar:SetStatusBarColor(r, g, b, 1)
+    elseif settings.powerBarUseClassColor ~= false then
+        local r, g, b = GetUnitClassColor(unit)
+        frame.powerBar:SetStatusBarColor(r, g, b, 1) 
     else
         local c = settings.powerBarColor or { 0, 0.5, 1, 1 }
         frame.powerBar:SetStatusBarColor(c[1], c[2], c[3], 1)
@@ -2336,7 +2344,12 @@ local function CreateUnitFrame(unit, unitKey)
     healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
     healthBar:SetStatusBarTexture(GetTexturePath(settings.texture))
     healthBar:SetMinMaxValues(0, 100)
-    healthBar:SetValue(100)
+
+    if general and general.darkMode and general.darkModeUseBgClassColor then
+        healthBar:SetValue(0)
+    else
+        healthBar:SetValue(100)
+    end
     healthBar:EnableMouse(false)
     frame.healthBar = healthBar
     ApplyHealthFillDirection(frame, settings)
@@ -5006,6 +5019,7 @@ do
                 sy = P(GUI:CreateFormSlider(body, "Height", 1, 20, 1, "powerBarHeight", unitDB, RefreshUF, DEFER), body, sy)
                 sy = P(GUI:CreateFormCheckbox(body, "Show Border", "powerBarBorder", unitDB, RefreshUF), body, sy)
                 sy = P(GUI:CreateFormCheckbox(body, "Use Power Type Color", "powerBarUsePowerColor", unitDB, RefreshUF), body, sy)
+                sy = P(GUI:CreateFormCheckbox(body, "Use Class Color", "powerBarUseClassColor", unitDB, RefreshUF), body, sy)
                 P(GUI:CreateFormColorPicker(body, "Custom Bar Color", "powerBarColor", unitDB, RefreshUF), body, sy)
             end, sections, relayout)
 

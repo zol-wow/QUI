@@ -925,7 +925,8 @@ local function RefreshObjectiveTracker()
     local moduleColor = settings.objectiveTrackerModuleColor
     local titleColor = settings.objectiveTrackerTitleColor
     local textColor = settings.objectiveTrackerTextColor
-    ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, moduleColor, titleColor, textColor)
+    --ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, moduleColor, titleColor, textColor)
+    ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, {sr, sg, sb, sa}, titleColor, textColor)
 
     -- Ensure hooks are in place
     HookLineCreation()
