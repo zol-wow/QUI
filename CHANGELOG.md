@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta17 - 2026-06-04
+
+> 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta16 with two fixes for click-cast and the Ready Check skin. No schema migrations: your beta16 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Keyboard click-casting holds up through a slow login even with all-spec bindings.** Building on beta16, QUI could still treat a brief, not-yet-resolved specialization the game reports during a slow login as if it were your real spec. If you also kept a global (all-spec) click-cast binding set, that set could resolve first and make setup look finished — leaving your per-spec keyboard bindings inactive (mouse bindings still worked) until a `/reload`. QUI now recognizes that not-yet-ready state and keeps recovering until your real specialization lands, so per-spec keyboard click-casting comes alive on its own.
+- **The skinned Ready Check popup no longer draws over its own text.** On some setups the Ready Check window sits at the very bottom of the interface's layering, where QUI's themed background and border could cover the "Ready Check" title, the prompt, or the Yes/No button labels. QUI now draws that background and border as dedicated layered pieces that always stay behind the text, so the popup is fully readable.
+
 ## v4.0.0-beta16 - 2026-06-04
 
 > 🧪 **QUI 4 beta — a follow-up fix.** A small follow-up to beta15 that makes keyboard click-cast recover on its own no matter how late your spec/talent data lands. No schema migrations: your beta15 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
