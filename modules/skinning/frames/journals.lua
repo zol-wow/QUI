@@ -15,7 +15,7 @@
 -- covers most visible chrome; per-tab work is a follow-up if needed.
 ---------------------------------------------------------------------------
 
--- luacheck: globals PagedContentFrameBaseMixin
+-- luacheck: globals PagedContentFrameBaseMixin MonthlyActivitiesFrameMixin
 
 local addonName, ns = ...
 local SkinBase = ns.SkinBase
@@ -127,10 +127,83 @@ local function SkinEncounterJournalTextFrame(frame)
     end
 end
 
+local function ScheduleEncounterJournalTextFrame(frame)
+    C_Timer.After(0, function()
+        SkinEncounterJournalTextFrame(frame)
+    end)
+end
+
+local function HookEncounterJournalObjectMethod(object, key, method, callback)
+    if not object or SkinBase.GetFrameData(object, key) then return end
+    if type(object[method]) ~= "function" then return end
+
+    hooksecurefunc(object, method, callback)
+    SkinBase.SetFrameData(object, key, true)
+end
+
+local function SkinMonthlyActivitiesActivityButton(button)
+    HookEncounterJournalObjectMethod(button, "qMonthlyActivityButtonTextHooked", "UpdateButtonStateShared",
+        function(activityButton)
+            ScheduleEncounterJournalTextFrame(activityButton)
+        end)
+    HookEncounterJournalObjectMethod(button and button.TextContainer, "qMonthlyActivityTextContainerHooked",
+        "UpdateTextColor", function(textContainer)
+            ScheduleEncounterJournalTextFrame(textContainer)
+        end)
+
+    SkinEncounterJournalTextFrame(button)
+    SkinEncounterJournalTextFrame(button and button.TextContainer)
+end
+
+local function SkinMonthlyActivitiesFilterButton(button)
+    HookEncounterJournalObjectMethod(button, "qMonthlyActivityFilterTextHooked", "UpdateStateInternal",
+        function(filterButton)
+            ScheduleEncounterJournalTextFrame(filterButton)
+        end)
+
+    SkinEncounterJournalTextFrame(button)
+end
+
+local function SkinMonthlyActivitiesRewardCurrency(frame)
+    HookEncounterJournalObjectMethod(frame, "qMonthlyActivityRewardTextHooked", "SetThresholdInfo",
+        function(rewardCurrency)
+            ScheduleEncounterJournalTextFrame(rewardCurrency)
+        end)
+
+    SkinEncounterJournalTextFrame(frame)
+end
+
+local function SkinMonthlyActivitiesText(monthlyFrame)
+    if not monthlyFrame then return end
+
+    SkinEncounterJournalTextFrame(monthlyFrame)
+    SkinEncounterJournalTextFrame(monthlyFrame.HeaderContainer)
+    SkinEncounterJournalTextFrame(monthlyFrame.ThresholdContainer)
+    SkinEncounterJournalTextFrame(monthlyFrame.BarComplete)
+    SkinEncounterJournalTextFrame(monthlyFrame.FilterList)
+
+    if monthlyFrame.thresholdFrames then
+        for _, thresholdFrame in ipairs(monthlyFrame.thresholdFrames) do
+            SkinEncounterJournalTextFrame(thresholdFrame)
+            SkinMonthlyActivitiesRewardCurrency(thresholdFrame and thresholdFrame.RewardCurrency)
+        end
+    end
+
+    if monthlyFrame.ScrollBox and monthlyFrame.ScrollBox.ForEachFrame then
+        pcall(monthlyFrame.ScrollBox.ForEachFrame, monthlyFrame.ScrollBox, SkinMonthlyActivitiesActivityButton)
+    end
+
+    local filterScrollBox = monthlyFrame.FilterList and monthlyFrame.FilterList.ScrollBox
+    if filterScrollBox and filterScrollBox.ForEachFrame then
+        pcall(filterScrollBox.ForEachFrame, filterScrollBox, SkinMonthlyActivitiesFilterButton)
+    end
+end
+
 local function SkinEncounterJournalText(frame)
     if not frame or not IsSettingEnabled("skinEncounterJournal") then return end
 
     SkinEncounterJournalTextFrame(frame)
+    SkinMonthlyActivitiesText(frame.MonthlyActivitiesFrame)
 
     local encounter = frame.encounter
     if not encounter then return end
@@ -174,10 +247,23 @@ local function HookEncounterJournalFunction(name, callback)
     end
 end
 
-local function HookEncounterJournalScrollBox(scrollBox)
-    if SkinBase.HookScrollBoxAcquired then
-        SkinBase.HookScrollBoxAcquired(scrollBox, SkinEncounterJournalTextFrame)
+local function HookEncounterJournalMixinMethod(mixin, method, callback)
+    if mixin and type(mixin[method]) == "function" then
+        hooksecurefunc(mixin, method, callback)
     end
+end
+
+local function HookEncounterJournalScrollBox(scrollBox, callback)
+    if SkinBase.HookScrollBoxAcquired then
+        SkinBase.HookScrollBoxAcquired(scrollBox, callback or SkinEncounterJournalTextFrame)
+    end
+end
+
+local function HookMonthlyActivitiesScrollBoxes(monthlyFrame)
+    if not monthlyFrame then return end
+    HookEncounterJournalScrollBox(monthlyFrame.ScrollBox, SkinMonthlyActivitiesActivityButton)
+    HookEncounterJournalScrollBox(monthlyFrame.FilterList and monthlyFrame.FilterList.ScrollBox,
+        SkinMonthlyActivitiesFilterButton)
 end
 
 local function HookEncounterJournalScrollBoxes(frame)
@@ -189,10 +275,73 @@ local function HookEncounterJournalScrollBoxes(frame)
     end
     HookEncounterJournalScrollBox(frame and frame.searchResults and frame.searchResults.ScrollBox)
     HookEncounterJournalScrollBox(frame and frame.instanceSelect and frame.instanceSelect.ScrollBox)
+    HookMonthlyActivitiesScrollBoxes(frame and frame.MonthlyActivitiesFrame)
+end
+
+local function ScheduleMonthlyActivitiesText(monthlyFrame, focusFrame, skinAll)
+    C_Timer.After(0, function()
+        SkinEncounterJournalTextFrame(focusFrame)
+        if skinAll ~= false then
+            SkinMonthlyActivitiesText(monthlyFrame)
+        end
+    end)
+end
+
+local function HookMonthlyActivitiesTextUpdates(frame)
+    if not frame or SkinBase.GetFrameData(frame, "qMonthlyActivitiesTextHooked") then return end
+
+    local monthlyFrame = frame.MonthlyActivitiesFrame
+    HookEncounterJournalObjectMethod(monthlyFrame, "qMonthlyActivitiesOnShowTextHooked", "OnShow",
+        function(activeMonthlyFrame)
+            ScheduleMonthlyActivitiesText(activeMonthlyFrame)
+        end)
+    HookEncounterJournalObjectMethod(monthlyFrame, "qMonthlyActivitiesUpdateTextHooked", "UpdateActivities",
+        function(activeMonthlyFrame)
+            ScheduleMonthlyActivitiesText(activeMonthlyFrame)
+        end)
+    HookEncounterJournalObjectMethod(monthlyFrame, "qMonthlyActivitiesSetActivitiesTextHooked", "SetActivities",
+        function(activeMonthlyFrame)
+            ScheduleMonthlyActivitiesText(activeMonthlyFrame)
+        end)
+    HookEncounterJournalObjectMethod(monthlyFrame, "qMonthlyActivitiesSetThresholdsTextHooked", "SetThresholds",
+        function(activeMonthlyFrame)
+            ScheduleMonthlyActivitiesText(activeMonthlyFrame)
+        end)
+    HookEncounterJournalObjectMethod(monthlyFrame, "qMonthlyActivitiesRewardsTextHooked",
+        "SetRewardsEarnedAndCollected", function(activeMonthlyFrame)
+            ScheduleMonthlyActivitiesText(activeMonthlyFrame, activeMonthlyFrame and activeMonthlyFrame.BarComplete)
+        end)
+    HookEncounterJournalObjectMethod(monthlyFrame, "qMonthlyActivitiesTimeTextHooked", "UpdateTime",
+        function(activeMonthlyFrame)
+            ScheduleMonthlyActivitiesText(activeMonthlyFrame, activeMonthlyFrame and activeMonthlyFrame.HeaderContainer)
+        end)
+
+    HookEncounterJournalMixinMethod(MonthlyActivitiesFrameMixin, "OnShow", function(monthlyFrame)
+        ScheduleMonthlyActivitiesText(monthlyFrame)
+    end)
+    HookEncounterJournalMixinMethod(MonthlyActivitiesFrameMixin, "UpdateActivities", function(monthlyFrame)
+        ScheduleMonthlyActivitiesText(monthlyFrame)
+    end)
+    HookEncounterJournalMixinMethod(MonthlyActivitiesFrameMixin, "SetActivities", function(monthlyFrame)
+        ScheduleMonthlyActivitiesText(monthlyFrame)
+    end)
+    HookEncounterJournalMixinMethod(MonthlyActivitiesFrameMixin, "SetThresholds", function(monthlyFrame)
+        ScheduleMonthlyActivitiesText(monthlyFrame)
+    end)
+    HookEncounterJournalMixinMethod(MonthlyActivitiesFrameMixin, "SetRewardsEarnedAndCollected", function(monthlyFrame)
+        ScheduleMonthlyActivitiesText(monthlyFrame, monthlyFrame and monthlyFrame.BarComplete)
+    end)
+    HookEncounterJournalMixinMethod(MonthlyActivitiesFrameMixin, "UpdateTime", function(monthlyFrame)
+        ScheduleMonthlyActivitiesText(monthlyFrame, monthlyFrame and monthlyFrame.HeaderContainer)
+    end)
+
+    SkinBase.SetFrameData(frame, "qMonthlyActivitiesTextHooked", true)
 end
 
 local function HookEncounterJournalTextUpdates(frame)
-    if not frame or SkinBase.GetFrameData(frame, "qEncounterJournalTextHooked") then return end
+    if not frame then return end
+    HookMonthlyActivitiesTextUpdates(frame)
+    if SkinBase.GetFrameData(frame, "qEncounterJournalTextHooked") then return end
 
     HookEncounterJournalFunction("EncounterJournal_ToggleHeaders", function()
         ScheduleEncounterJournalText(frame)
