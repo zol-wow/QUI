@@ -247,8 +247,15 @@ function ChatFrame1Sizing.ApplyStoredPosition()
     -- prior anchoring scheme. (A later ApplyStoredSize applies any custom size.)
     local w = (type(frame.GetWidth) == "function") and ReadSafeNumber(frame:GetWidth()) or nil
     local h = (type(frame.GetHeight) == "function") and ReadSafeNumber(frame:GetHeight()) or nil
-    frame:ClearAllPoints()
-    frame:SetPoint(pos.point, UIParent, pos.relPoint or pos.point, x, y)
+    -- ChatFrame1 is an Edit Mode system frame whose SetPoint/ClearAllPoints are
+    -- overridden to re-enter EditModeManagerFrame. Reparenting it (DetachFromEditMode)
+    -- does NOT remove those overrides, so calling them here -- from our tainted
+    -- login path -- taints ChatFrame1's own chat-event dispatch and trips
+    -- Blizzard's secret-string guard (ChatHistory_GetToken) on the next secret
+    -- chat line. Use the saved *Base setters so positioning never re-enters Edit
+    -- Mode. (SetSize is not overridden, so ApplyStoredSize stays a plain call.)
+    Helpers.BaseClearAllPoints(frame)
+    Helpers.BaseSetPoint(frame, pos.point, UIParent, pos.relPoint or pos.point, x, y)
     if w and h and type(frame.SetSize) == "function" then
         frame:SetSize(w, h)
     end

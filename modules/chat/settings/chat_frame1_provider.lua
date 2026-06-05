@@ -275,9 +275,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             return container
         end
 
-        -- Frame Size drives ChatFrame1 directly via FCF_SetWindowSize, so
-        -- Blizzard persists the dimensions in ChatConfig on logout. The proxy
-        -- table lets CreateFormSlider read/write live frame dimensions.
+        -- Frame Size drives ChatFrame1 through ChatFrame1Sizing so the live
+        -- frame is only resized after the chat module has detached it from
+        -- Edit Mode. The proxy table lets CreateFormSlider read/write live
+        -- frame dimensions.
         local sizeProxy = MarkTransientOptionsBinding(setmetatable({}, {
             __index = function(_, k)
                 local f = _G.ChatFrame1
@@ -296,15 +297,6 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 local sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
                 if sizing and sizing.SetSize then
                     sizing.SetSize(w, h)
-                else
-                    if _G.FCF_SetWindowSize then
-                        _G.FCF_SetWindowSize(f, w, h)
-                    else
-                        f:SetSize(w, h)
-                    end
-                    if _G.FCF_SavePositionAndDimensions then
-                        _G.FCF_SavePositionAndDimensions(f)
-                    end
                 end
             end,
         }))

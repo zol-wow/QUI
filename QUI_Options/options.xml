@@ -46,7 +46,6 @@
     <Script file="..\QUI\modules\cdm\settings\containers_page.lua"/>
     <Script file="..\QUI\modules\cdm\settings\composer_preview_driver.lua"/>
     <Script file="..\QUI\modules\cdm\settings\composer.lua"/>
-    <Script file="..\QUI\modules\chat\settings\chat_frame1.lua"/>
     <Script file="..\QUI\modules\chat\settings\chat_frame1_provider.lua"/>
     <Script file="..\QUI\modules\combat\settings\rotation_assist.lua"/>
     <Script file="..\QUI\modules\damage_meter\settings\damage_meter_content.lua"/>

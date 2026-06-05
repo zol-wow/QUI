@@ -74,17 +74,22 @@ end
 -- Falls back to ClearAllPoints+SetPoint when the point name differs or the
 -- frame has multiple anchors.
 local function SmoothSetPoint(frame, pt, relativeTo, relPt, x, y)
+    -- Prefer the Edit Mode *Base setters so anchoring a detached system frame
+    -- (e.g. ChatFrame1, anchored via Frame Positioning) never re-enters
+    -- EditModeManagerFrame and taints its secure chat-event dispatch. Plain
+    -- frames have no *Base method, so this is a transparent passthrough.
+    local H = ns.Helpers
     local numPts = frame:GetNumPoints()
     if numPts == 1 then
         local cp = frame:GetPoint(1)
         if cp == pt then
             -- Same point name — update in place, no ClearAllPoints needed
-            frame:SetPoint(pt, relativeTo, relPt, x, y)
+            H.BaseSetPoint(frame, pt, relativeTo, relPt, x, y)
             return
         end
     end
-    frame:ClearAllPoints()
-    frame:SetPoint(pt, relativeTo, relPt, x, y)
+    H.BaseClearAllPoints(frame)
+    H.BaseSetPoint(frame, pt, relativeTo, relPt, x, y)
 end
 
 ---------------------------------------------------------------------------
@@ -3199,15 +3204,16 @@ _G.QUI_ReanchorFramePositionOnly = function(key)
         useSizeStable = false
     end
 
+    local H = nsHelpers or ns.Helpers
     pcall(function()
-        resolved:ClearAllPoints()
+        H.BaseClearAllPoints(resolved)
         if useSizeStable then
             local centerX, centerY = ComputeCenterOffsetsForAnchor(
                 resolved, key, parentFrame, point, relative, offsetX, offsetY, settings.parent
             )
-            resolved:SetPoint("CENTER", parentFrame, "CENTER", centerX, centerY)
+            H.BaseSetPoint(resolved, "CENTER", parentFrame, "CENTER", centerX, centerY)
         else
-            resolved:SetPoint(point, parentFrame, relative, offsetX, offsetY)
+            H.BaseSetPoint(resolved, point, parentFrame, relative, offsetX, offsetY)
         end
     end)
 end

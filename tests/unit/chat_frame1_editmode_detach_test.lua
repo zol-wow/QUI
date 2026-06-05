@@ -6,20 +6,28 @@
 --    (execution tainted by 'QUI')" at ChatFrameOverrides MessageFormatter,
 --   firing when a public channel body (e.g. "4. LookingForGroup") is secret.
 --
--- ROOT CAUSE: ChatFrame1 is an EditModeSystem frame. QUI sized it on login via
--- FCF_SetWindowSize/SetSize while it was still Edit-Mode-managed; that taints
--- the frame's secure layout chain, which then surfaces on the frame's OWN
--- chat-event dispatch and trips Blizzard's secret-string guard.
+-- ROOT CAUSE: ChatFrame1 is an EditModeSystem frame. EditModeSystemMixin:
+-- OnSystemLoad saves its real setters as *Base and REPLACES SetPoint/
+-- ClearAllPoints/SetScale with overrides that re-enter EditModeManagerFrame
+-- (SetPointOverride -> OnEditModeSystemAnchorChanged). Calling those from QUI's
+-- (tainted) code taints the frame's secure layout chain, which then surfaces on
+-- the frame's OWN chat-event dispatch and trips Blizzard's secret-string guard.
+-- Reparenting the frame (detach) does NOT remove those per-instance overrides --
+-- so FCF_SetWindowSize AND a plain-looking frame:SetPoint/frame:ClearAllPoints
+-- are both taint vectors.
 --
--- THE FIX (chat_frame1.lua): detach ChatFrame1 from the Edit Mode hierarchy
--- once (reparent to a plain container), and ONLY then resize/reposition it with
--- plain SetSize/SetPoint. QUI owns position post-detach. This test asserts:
+-- THE FIX (chat_frame1.lua): detach ChatFrame1 from the Edit Mode hierarchy once
+-- (reparent to a plain container), and reposition it through the saved *Base
+-- setters (Helpers.BaseSetPoint/BaseClearAllPoints) so positioning never
+-- re-enters Edit Mode. SetSize is NOT overridden, so the size path stays plain.
+-- QUI owns position post-detach. This test asserts:
 --   * geometry is NEVER applied before detach,
 --   * detach reparents ChatFrame1 + pulls its Edit Mode overlay widgets away,
 --   * post-detach sizing uses plain SetSize and NEVER FCF_SetWindowSize,
---   * stored position round-trips through SetPoint(UIParent),
+--   * stored position round-trips through the *Base setters against UIParent and
+--     NEVER through the Edit Mode SetPoint/ClearAllPoints overrides,
 --   * SyncToStored is inert while chat is disabled.
--- It FAILS on the pre-fix source (FCF_SetWindowSize on a managed frame).
+-- It FAILS on the pre-fix source (FCF_SetWindowSize, or the overridden setters).
 
 local function newWidget(name)
     local w = { _name = name, _children = {} }
@@ -44,16 +52,23 @@ UIParent = newWidget("UIParent")
 local chat = newWidget("ChatFrame1")
 chat._width, chat._height = 400, 200
 chat._setSizeCalls = 0
-chat._clearPointsCalls = 0
-chat._setPointArgs = nil
+chat._baseClearPointsCalls = 0      -- taint-safe path (what QUI must use)
+chat._baseSetPointArgs = nil
+chat._overrideClearPointsCalls = 0  -- Edit Mode override (QUI must NEVER call it)
+chat._overrideSetPointCalls = 0
 function chat:SetSize(w, h) self._setSizeCalls = self._setSizeCalls + 1; self._width, self._height = w, h end
 function chat:GetWidth() return self._width end
 function chat:GetHeight() return self._height end
 function chat:SetClampedToScreen(v) self._clamped = v end
-function chat:ClearAllPoints() self._clearPointsCalls = self._clearPointsCalls + 1 end
-function chat:SetPoint(point, rel, relPoint, x, y)
-    self._setPointArgs = { point = point, rel = rel, relPoint = relPoint, x = x, y = y }
+-- Model the EditModeSystemMixin method swap: the real setters are saved as *Base;
+-- SetPoint/ClearAllPoints are overrides that re-enter EditModeManagerFrame (the
+-- taint vector). QUI must drive the *Base setters and never the overrides.
+function chat:ClearAllPointsBase() self._baseClearPointsCalls = self._baseClearPointsCalls + 1 end
+function chat:SetPointBase(point, rel, relPoint, x, y)
+    self._baseSetPointArgs = { point = point, rel = rel, relPoint = relPoint, x = x, y = y }
 end
+function chat:ClearAllPoints() self._overrideClearPointsCalls = self._overrideClearPointsCalls + 1 end
+function chat:SetPoint() self._overrideSetPointCalls = self._overrideSetPointCalls + 1 end
 -- Seed anchor read by PersistCurrentPosition on first detach.
 function chat:GetPoint() return "BOTTOMLEFT", UIParent, "BOTTOMLEFT", 12.6, 7.2 end
 chat.Selection = newWidget("Selection")
@@ -73,6 +88,17 @@ local ns = {
     Helpers = {
         IsSecretValue = function() return false end,
         GetCore = function() return core end,
+        -- Mirror the real core/utils.lua override-bypass helpers.
+        BaseClearAllPoints = function(frame)
+            if not frame then return end
+            local fn = frame.ClearAllPointsBase or frame.ClearAllPoints
+            if fn then fn(frame) end
+        end,
+        BaseSetPoint = function(frame, ...)
+            if not frame then return end
+            local fn = frame.SetPointBase or frame.SetPoint
+            if fn then fn(frame, ...) end
+        end,
     },
     QUI = {},
     -- No ns.Settings: the file's ProviderFeatures registration early-returns,
@@ -123,13 +149,17 @@ check(chat._setSizeCalls == 1 and chat._width == 640 and chat._height == 320,
     "ApplyStoredSize must plain-SetSize to the stored dimensions")
 check(fcfSetWindowSizeCalls == 0, "FCF_SetWindowSize must NEVER be called (it re-enters Edit Mode)")
 
--- Phase E: stored position re-applies via SetPoint against UIParent.
+-- Phase E: stored position re-applies via the *Base setters against UIParent --
+-- NEVER the Edit Mode overrides (which would re-enter EditModeManagerFrame and
+-- taint ChatFrame1's chat-event dispatch -> the secret-string crash).
 chatDB.framePosition = { point = "TOPRIGHT", relPoint = "TOPRIGHT", x = -5, y = -5 }
 check(Sizing.ApplyStoredPosition() == true, "ApplyStoredPosition must apply once detached")
-check(chat._clearPointsCalls >= 1, "ApplyStoredPosition must ClearAllPoints first")
-check(chat._setPointArgs and chat._setPointArgs.point == "TOPRIGHT"
-    and chat._setPointArgs.rel == UIParent and chat._setPointArgs.x == -5,
-    "ApplyStoredPosition must SetPoint against UIParent with stored offsets")
+check(chat._baseClearPointsCalls >= 1, "ApplyStoredPosition must ClearAllPointsBase first (override-bypass)")
+check(chat._baseSetPointArgs and chat._baseSetPointArgs.point == "TOPRIGHT"
+    and chat._baseSetPointArgs.rel == UIParent and chat._baseSetPointArgs.x == -5,
+    "ApplyStoredPosition must SetPointBase against UIParent with stored offsets")
+check(chat._overrideClearPointsCalls == 0 and chat._overrideSetPointCalls == 0,
+    "ApplyStoredPosition must NEVER call the Edit Mode SetPoint/ClearAllPoints overrides")
 
 -- Phase F: StorePosition rounds offsets to integers.
 Sizing.StorePosition("CENTER", "CENTER", 10.4, -20.6)

@@ -70,6 +70,37 @@ function Helpers.SafeValue(value, fallback)
     return value
 end
 
+---------------------------------------------------------------------------
+-- EDIT MODE SYSTEM FRAME GEOMETRY (taint-safe)
+-- EditModeSystemMixin:OnSystemLoad swaps a system frame's SetPoint/
+-- ClearAllPoints/SetScale for overrides that re-enter EditModeManagerFrame
+-- (SetPointOverride -> OnEditModeSystemAnchorChanged). Calling those from addon
+-- (tainted) code taints the frame's OWN secure event dispatch -- e.g.
+-- ChatFrame1, where it surfaces as a secret-string crash in ChatHistory_GetToken
+-- the moment a chat line carries a secret payload (M+/raid/public channels).
+-- Reparenting the frame out of Edit Mode does NOT remove these per-instance
+-- overrides, so QUI must call the saved *Base originals when repositioning a
+-- detached system frame. Plain (non-system) frames have no *Base method, so
+-- these are a transparent passthrough to the normal setters.
+---------------------------------------------------------------------------
+
+--- ClearAllPoints that bypasses an Edit Mode system frame's override.
+--- @param frame table The frame to clear
+function Helpers.BaseClearAllPoints(frame)
+    if not frame then return end
+    local fn = frame.ClearAllPointsBase or frame.ClearAllPoints
+    if fn then fn(frame) end
+end
+
+--- SetPoint that bypasses an Edit Mode system frame's override (and the
+--- EditModeManagerFrame re-entry/taint it causes). Args mirror frame:SetPoint.
+--- @param frame table The frame to anchor
+function Helpers.BaseSetPoint(frame, ...)
+    if not frame then return end
+    local fn = frame.SetPointBase or frame.SetPoint
+    if fn then fn(frame, ...) end
+end
+
 --- Safely compare two values (returns false if either is secret)
 --- @param a any First value
 --- @param b any Second value
