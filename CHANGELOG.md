@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta22 - 2026-06-05
+
+> 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta21 with another keyboard click-cast fix. No schema migrations: your beta21 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Keyboard click-casting no longer cuts out when you move between unit frames after a busy login.** All of your party/raid frames share a single keyboard-binding manager. During a slow or cold login the frames shuffle around a lot, and a "mouse left" event for a frame you'd *already* moved off of could arrive late and clear the binding the frame you're actually hovering just set — dropping that key back to its normal action (for example an action-bar keybind sharing the same key) until a `/reload`. Mouse click-casting was unaffected. QUI now tracks which frame is genuinely under your cursor and only clears bindings for that frame, so keyboard click-casting stays live through login.
+
 ## v4.0.0-beta20 - 2026-06-05
 
 > 🧪 **QUI 4 beta — hotfix build.** Follow-up to beta19 for protected chat-event handling. No schema migrations: your beta19 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
