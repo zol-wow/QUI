@@ -1461,6 +1461,17 @@ local defaults = {
                     { channel = "guild_officer", sound = "None" },
                 },
             },
+            -- Custom chat display (staged takeover). "blizzard" = classic
+            -- skinned Blizzard frames (default); "custom" = QUI-owned display
+            -- fed by direct event capture, shown alongside Blizzard chat.
+            displayMode = "blizzard",
+            customDisplay = {
+                width = 430,
+                height = 190,
+                position = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 35, y = 40 },
+                maxLines = 1000,        -- scrollback cap (store + view)
+                bgAlpha = 0.25,         -- glass backdrop alpha
+            },
             -- Per-channel color overrides. Stored by name for custom channels
             -- (e.g. "Trade") and by chat-type key for built-ins (SAY, RAID,
             -- WHISPER, ...). Empty by default — until a user sets a color via

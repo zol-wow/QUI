@@ -17,5 +17,11 @@
     <Script file="editbox_history.lua"/>
     <Script file="editbox_basics.lua"/>
     <Script file="channel_colors.lua"/>
+    <Script file="message_store.lua"/>
+    <Script file="message_format.lua"/>
+    <Script file="message_capture.lua"/>
+    <Script file="display_layer.lua"/>
+    <Script file="tab_manager.lua"/>
+    <Script file="display_fallback.lua"/>
     <Script file="skinning.lua"/>
 </Ui>

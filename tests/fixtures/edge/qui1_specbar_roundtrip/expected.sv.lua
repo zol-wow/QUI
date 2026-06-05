@@ -661,9 +661,22 @@ return {
           chatBorderColorSource = "inherit",
           copyButtonMode = "always",
           copyHistorySource = "live",
+          customDisplay = {
+            bgAlpha = 0.25,
+            height = 190,
+            maxLines = 1000,
+            position = {
+              point = "BOTTOMLEFT",
+              relPoint = "BOTTOMLEFT",
+              x = 35,
+              y = 40
+            },
+            width = 430
+          },
           defaultTab = 1,
           defaultTabBySpec = {},
           defaultTabPerSpec = false,
+          displayMode = "blizzard",
           editBox = {
             bgAlpha = 0.25,
             bgColor = {

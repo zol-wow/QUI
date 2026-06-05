@@ -1047,6 +1047,13 @@ local function RefreshAll()
             end
         end
     end
+
+    -- Re-apply custom display mode (handles displayMode flips + setting
+    -- changes from options / profile import without a /reload). Cheap when
+    -- the mode hasn't changed (full rebuild only on transitions).
+    if ns.QUI.Chat.DisplayFallback then
+        ns.QUI.Chat.DisplayFallback.Apply()
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1277,6 +1284,13 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         end
     elseif event == "PLAYER_LOGIN" or event == "CVAR_UPDATE" then
         ApplyTimestampMode()
+        if event == "PLAYER_LOGIN" then
+            -- Custom display (chat.displayMode): start capture + show the custom
+            -- frame when opted in. Idempotent; profile/options changes re-apply via RefreshAll.
+            if ns.QUI.Chat.DisplayFallback then
+                ns.QUI.Chat.DisplayFallback.Apply()
+            end
+        end
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Idempotent fallback in case EditModeManagerFrame wasn't ready at
         -- ADDON_LOADED (no-op once already hooked).
