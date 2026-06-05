@@ -216,6 +216,26 @@ local function assertHoverBindsF(child)
         "hovering binds nothing -- keyboard click-cast still dead")
 end
 
+-- Run a frame's secure WrapScript pre-body (self = frame, owner = header).
+local function runWrap(frame, scriptName)
+    local wrap = assert(frame.secureWraps[scriptName],
+        tostring(frame.name) .. " missing secure " .. scriptName)
+    local loader = loadstring or load
+    assert(loader("local self, owner = ...\n" .. wrap.preBody))(frame, wrap.header)
+end
+
+-- What frame name a binding key currently routes to (header- or frame-owned).
+local function boundTo(key)
+    local hdr = _G.QUI_ClickCastHeader
+    if hdr and hdr.overrideBindings[key] then return hdr.overrideBindings[key].target end
+    for _, f in ipairs(createdFrames) do
+        if f.overrideBindings and f.overrideBindings[key] then
+            return f.overrideBindings[key].target
+        end
+    end
+    return nil
+end
+
 ---------------------------------------------------------------------------
 -- Scenario 1: spec data lands AFTER the startup retry is exhausted, and the
 -- client fires PLAYER_TALENT_UPDATE. The proactive data-ready handler must
@@ -349,6 +369,39 @@ do
         .. "after combat ends (needs /reload)")
     assertHoverBindsF(child)
     print("OK: combat-window recovery is durable (revives on PLAYER_REGEN_ENABLED)")
+end
+
+---------------------------------------------------------------------------
+-- Scenario 6: shared-header clobbering. All frames route their override
+-- bindings through ONE header. A stale OnLeave/OnHide from a frame you've
+-- already moved off of must NOT wipe the binding the currently-hovered frame
+-- just set. Before the guard, owner:ClearBindings() on ANY leave cleared
+-- everything, dropping the key back to whatever lower binding existed (e.g. an
+-- action-bar keybind on the same key) -- the cold-boot "works after /reload"
+-- symptom, since frame layout churn fires spurious leaves/hides.
+---------------------------------------------------------------------------
+do
+    _G.currentHoverFrame = nil
+    local eventFrame, child, partyHeader = loadModule(true)  -- spec ready on login
+    local child2 = NewFrame("Button", "QUI_TestUnit2", nil, "SecureUnitButtonTemplate")
+    partyHeader.attributes["child2"] = child2
+
+    eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
+    drain(100)
+    assert(keycount() == 1, "precondition: resolved")
+    assert(child.secureWraps.OnEnter and child2.secureWraps.OnEnter,
+        "precondition: both party frames keyboard-wrapped")
+
+    -- Hover child1, move to child2 (both OnEnter fire), then child1's stale
+    -- OnLeave fires after we've already moved on.
+    runWrap(child, "OnEnter")
+    runWrap(child2, "OnEnter")
+    runWrap(child, "OnLeave")
+
+    assert(boundTo("F") == "QUI_TestUnit2",
+        "BUG: a stale frame's OnLeave wiped the hovered frame's keyboard binding "
+        .. "(shared-header clobbering); F bound to " .. tostring(boundTo("F")))
+    print("OK: stale OnLeave does not clobber the active frame's keyboard binding")
 end
 
 print("OK: groupframes_clickcast_slow_cold_login_test")

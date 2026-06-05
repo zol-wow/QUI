@@ -194,7 +194,13 @@ end
 
 -- WrapScript pre-body for OnEnter.
 -- `self` = the hovered frame, `owner` = the header (SecureHandlerBaseTemplate).
--- The header owns and manages all override bindings.
+-- The header owns the override bindings; `currentHoverFrame` (a variable in the
+-- header's shared managed environment, like a clickcast header's mouseover
+-- tracker) records which frame is the active hover so OnLeave/OnHide clear ONLY
+-- for that frame. Without it, ANY frame's leave/hide would clear the whole
+-- header, wiping the binding the currently-hovered frame just set — frame layout
+-- churn on a cold login fires spurious leaves/hides and the key falls back to a
+-- lower binding (e.g. an action-bar keybind on the same key) until /reload.
 local ENTER_SNIPPET = [[
     owner:ClearBindings()
     local count = owner:GetAttribute("clickcast-keycount") or 0
@@ -202,6 +208,10 @@ local ENTER_SNIPPET = [[
 
     local frameName = self:GetName()
     if not frameName then return end
+
+    -- Claim the hover context (owner:ClearBindings above hands off the previous
+    -- frame); OnLeave/OnHide only clear while this stays the active frame.
+    currentHoverFrame = self
 
     for i = 1, count do
         local key = owner:GetAttribute("clickcast-key" .. i)
@@ -212,20 +222,29 @@ local ENTER_SNIPPET = [[
     end
 ]]
 
--- WrapScript pre-body for OnLeave.
+-- WrapScript pre-body for OnLeave. Guard on currentHoverFrame so a stale leave
+-- from a frame we've already moved off of can't clear the active binding.
 local LEAVE_SNIPPET = [[
-    owner:ClearBindings()
+    if currentHoverFrame == self then
+        owner:ClearBindings()
+        currentHoverFrame = nil
+    end
 ]]
 
 -- WrapScript pre-body for OnHide — clears override bindings when the frame
 -- hides while still hovered (e.g. group member leaves, unit watch hides frame).
--- Without this, keyboard override bindings linger on a hidden frame.
+-- Guarded like OnLeave so hiding a non-hovered frame (common during cold-login
+-- group layout) doesn't wipe the active frame's bindings.
 local HIDE_SNIPPET = [[
-    owner:ClearBindings()
+    if currentHoverFrame == self then
+        owner:ClearBindings()
+        currentHoverFrame = nil
+    end
 ]]
 
 local CLEAR_HEADER_BINDINGS_SNIPPET = [[
     self:ClearBindings()
+    currentHoverFrame = nil
 ]]
 
 local REFRESH_HEADER_BINDINGS_SNIPPET = [[
@@ -236,6 +255,9 @@ local REFRESH_HEADER_BINDINGS_SNIPPET = [[
 
     local frameName = frame:GetName()
     if not frameName then return end
+
+    -- Keep the hover tracker in sync so this frame's OnLeave clears correctly.
+    currentHoverFrame = frame
 
     local count = self:GetAttribute("clickcast-keycount") or 0
     if count == 0 then return end
