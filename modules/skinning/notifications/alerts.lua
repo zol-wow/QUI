@@ -935,13 +935,18 @@ local alertMover = nil
 -- Positioning constants (grow down from anchor)
 local POSITION, ANCHOR_POINT, Y_OFFSET = "TOP", "BOTTOM", -5
 
+local function GetAlertAnchorRelativeFrame(relativeAlert)
+    if not alertHolder then return relativeAlert end
+    if relativeAlert == AlertFrame then return alertHolder end
+    if AlertFrame and relativeAlert == AlertFrame.baseAnchorFrame then return alertHolder end
+    return relativeAlert
+end
+
 -- Custom AdjustAnchors for queued alert systems (most alerts)
 local function AdjustQueuedAnchors(self, relativeAlert)
     -- Only use our holder for the first subsystem in the chain
-    -- (when relativeAlert is AlertFrame itself, not a previous alert)
-    if alertHolder and relativeAlert == AlertFrame then
-        relativeAlert = alertHolder
-    end
+    -- (when relativeAlert is AlertFrame or its temporary base anchor, not a previous alert)
+    relativeAlert = GetAlertAnchorRelativeFrame(relativeAlert)
     for alert in self.alertFramePool:EnumerateActive() do
         alert:ClearAllPoints()
         alert:SetPoint(POSITION, relativeAlert, ANCHOR_POINT, 0, Y_OFFSET)
@@ -953,9 +958,7 @@ end
 -- Custom AdjustAnchors for simple alert systems
 local function AdjustSimpleAnchors(self, relativeAlert)
     -- Only use our holder for the first subsystem in the chain
-    if alertHolder and relativeAlert == AlertFrame then
-        relativeAlert = alertHolder
-    end
+    relativeAlert = GetAlertAnchorRelativeFrame(relativeAlert)
     local alert = self.alertFrame
     if alert:IsShown() then
         alert:ClearAllPoints()
@@ -968,9 +971,7 @@ end
 -- Custom AdjustAnchors for anchor frame systems
 local function AdjustAnchorFrameAnchors(self, relativeAnchor)
     -- Only use our holder for the first subsystem in the chain
-    if alertHolder and relativeAnchor == AlertFrame then
-        relativeAnchor = alertHolder
-    end
+    relativeAnchor = GetAlertAnchorRelativeFrame(relativeAnchor)
     local anchor = self.anchorFrame
     if anchor:IsShown() then
         anchor:ClearAllPoints()
