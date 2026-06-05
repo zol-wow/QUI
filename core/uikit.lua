@@ -1466,6 +1466,21 @@ function SkinBase.SkinChromeCloseButton(button, opts)
     SkinBase.SetFrameData(button, key .. "Hooked", true)
 end
 
+local function TooltipTextHasPrintfPlaceholder(text)
+    if type(text) ~= "string" then return false end
+    if Helpers.IsSecretValue and Helpers.IsSecretValue(text) then return false end
+
+    local withoutLiteralPercents = text:gsub("%%%%", "")
+    return withoutLiteralPercents:find("%%[-+0#%d%.$]*[AacdeEfgGioqsuxX]") ~= nil
+end
+
+local function SanitizeSecretRestrictedTooltipText(text)
+    if TooltipTextHasPrintfPlaceholder(text) then
+        return nil
+    end
+    return text
+end
+
 function SkinBase.CreateSecretAwareStatPolicy(opts)
     opts = opts or {}
     local policy = {
@@ -1525,8 +1540,13 @@ function SkinBase.CreateSecretAwareStatPolicy(opts)
     function policy:ApplyTooltip(row, title, body, extraBody, richBuilder)
         if not row then return end
         row.tooltip = title
-        row.tooltip2 = body
-        row.tooltip3 = extraBody
+        if self:CanUseRichTooltip() then
+            row.tooltip2 = body
+            row.tooltip3 = extraBody
+        else
+            row.tooltip2 = SanitizeSecretRestrictedTooltipText(body)
+            row.tooltip3 = SanitizeSecretRestrictedTooltipText(extraBody)
+        end
         if self:CanUseRichTooltip() and type(richBuilder) == "function" then
             pcall(richBuilder, row, self)
         end
