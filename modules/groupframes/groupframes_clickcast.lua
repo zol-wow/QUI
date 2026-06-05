@@ -220,13 +220,16 @@ local ENTER_SNIPPET = [[
     -- frame); OnLeave/OnHide only clear while this stays the active frame.
     currentHoverFrame = self
 
+    local dbgBound = 0
     for i = 1, count do
         local key = owner:GetAttribute("clickcast-key" .. i)
         local vBtn = owner:GetAttribute("clickcast-vbtn" .. i)
         if key and vBtn then
             owner:SetBindingClick(true, key, frameName, vBtn)
+            dbgBound = dbgBound + 1
         end
     end
+    self:SetAttribute("cc-dbg-enterbound", dbgBound)
 ]]
 
 -- Shared restore body (owner = header): re-apply each owned key's action-bar
@@ -639,8 +642,9 @@ local function SetupFrameClickCast(frame)
             if _G.QUI_CC_DEBUG then
                 local hdr = bindingHeader
                 local kc = (hdr and hdr:GetAttribute("clickcast-keycount")) or 0
-                print(("|cff00ffffQUI-CC|r name=%s wrapped=%s keycount=%s"):format(
-                    tostring(self:GetName()), secureWrappedFrames[self] and "Y" or "N", tostring(kc)))
+                print(("|cff00ffffQUI-CC|r name=%s wrapped=%s keycount=%s enterbound=%s"):format(
+                    tostring(self:GetName()), secureWrappedFrames[self] and "Y" or "N", tostring(kc),
+                    tostring(self:GetAttribute("cc-dbg-enterbound"))))
                 -- Per key: ovr = override-aware action (what actually fires when you
                 -- press it now), base = saved binding-set action. ovr containing this
                 -- frame's name => click-cast won; ovr containing a Bar button =>
