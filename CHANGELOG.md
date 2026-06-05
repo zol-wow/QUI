@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta19 - 2026-06-05
+
+> 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta18 with fixes for the character pane and chat positioning. No schema migrations: your beta18 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **The character pane's Versatility row stays live in restricted combat.** Versatility could freeze or show an empty bar while the other secondary stats kept updating in dungeons, raids, or PvP, because its full displayed value needed a Lua-side calculation that is unsafe when the stat values are restricted. QUI now uses a combat-safe live value path for that row and keeps the tooltip plain when the richer breakdown cannot be read safely.
+- **Main chat window positioning no longer re-enters Edit Mode.** The earlier chat protection fixes detached the main chat window, but stored-position restores and frame-position refreshes could still call the game's Edit Mode geometry overrides and re-taint chat handling, causing protected chat lines to error again. QUI now positions detached system frames through the original frame geometry setters and loads the chat sizing helper on the runtime path, so login positioning and layout refreshes stay out of Edit Mode.
+
 ## v4.0.0-beta18 - 2026-06-04
 
 > 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta17 with three fixes for click-cast and skinning. No schema migrations: your beta17 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
