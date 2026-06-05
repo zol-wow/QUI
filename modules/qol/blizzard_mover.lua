@@ -825,11 +825,41 @@ function M.functions.createHooks(root, entry)
 	c.hooksInstalled = true
 	M.variables.combatQueue[root] = nil
 
-	local function beginDrag(_, btn)
+	local partners = {}
+	local stripAnchors = {}
+
+	local function readMouseHandlerState(widget, method)
+		if not (widget and widget[method]) then return false end
+		local ok, enabled = pcall(widget[method], widget)
+		if not ok then return true end
+		return enabled and true or false
+	end
+
+	local function isMoverFocus(widget, trigger)
+		if not widget then return false end
+		if widget == trigger or widget == root then return true end
+		if partners[widget] or stripAnchors[widget] then return true end
+		return M.variables.moveHandleSet and M.variables.moveHandleSet[widget] == root
+	end
+
+	local function hasInteractiveFocusInFront(trigger)
+		if not GetMouseFoci then return false end
+		for _, focus in ipairs(GetMouseFoci()) do
+			if not isMoverFocus(focus, trigger)
+				and (readMouseHandlerState(focus, "IsMouseClickEnabled")
+					or readMouseHandlerState(focus, "IsMouseWheelEnabled")) then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function beginDrag(trigger, btn)
 		if btn and btn ~= "LeftButton" then return end
 		if not panelIsActive(panel) then return end
 		if not moveModifierHeld() then return end
 		if InCombatLockdown() and root:IsProtected() then return end
+		if hasInteractiveFocusInFront(trigger) then return end
 		c.dragging = true
 		root:StartMoving()
 	end
@@ -838,6 +868,7 @@ function M.functions.createHooks(root, entry)
 		if btn and btn ~= "LeftButton" then return end
 		if not panelIsActive(panel) then return end
 		if InCombatLockdown() and root:IsProtected() then return end
+		if not c.dragging then return end
 		root:StopMovingOrSizing()
 		c.dragging = false
 		M.functions.StoreFramePosition(root, panel)
@@ -953,6 +984,7 @@ function M.functions.createHooks(root, entry)
 
 	local function makeDragStrip(anchor)
 		if not anchor then return nil end
+		stripAnchors[anchor] = true
 		local strip
 		local ok = pcall(function()
 			strip = CreateFrame("Frame", nil, anchor, "PanelDragBarTemplate")
@@ -985,7 +1017,6 @@ function M.functions.createHooks(root, entry)
 		return strip
 	end
 
-	local partners = {}
 	c.dragPartners = partners
 
 	local function wireDirectDrag(surface)
