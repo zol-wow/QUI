@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta24 - 2026-06-05
+
+> 🧪 **QUI 4 beta — feature preview build.** Follow-up to beta23 laying the groundwork for a QUI-owned chat display. Everything new in this build ships **off by default** — your chat works exactly as in beta23 unless you opt in. No schema migrations: your beta23 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Custom chat display (early preview, opt-in).** First phase of the chat takeover: QUI can now capture chat messages directly from the game's events and render them in its own message view, instead of restyling Blizzard's window. The capture path respects Blizzard's chat filters, and you can flip between the custom view and stock Blizzard chat losslessly at any time. There is no options toggle yet — the feature sits behind the `chat.displayMode` profile setting and defaults to the Blizzard display, so nothing changes until a later build exposes it. Shipping it dark lets the plumbing soak in real sessions first.
+
 ## v4.0.0-beta23 - 2026-06-05
 
 > 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta22 with a keyboard click-cast keybind fix and main-chat polish. No schema migrations: your beta22 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
