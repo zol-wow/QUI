@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta23 - 2026-06-05
+
+> 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta22 with a keyboard click-cast keybind fix and main-chat polish. No schema migrations: your beta22 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Keyboard click-cast keys that are also action-bar keybinds no longer get shadowed after a cold login.** If the same key was bound to both a keyboard click-cast and an action-bar slot, the action bar could win that key on a slow or cold login and the hovercast would silently stop working on it until a `/reload`. The two systems now coordinate: click-cast owns the key end to end — it casts on the frame you're hovering and falls straight back to the action-bar action when you aren't hovering anyone — so there's no longer a tug-of-war over the binding.
+- **The main chat frame keeps its custom size across `/reload`.** Blizzard regenerates its preset chat layout from code on load, which could snap a resized chat window back to the default dimensions. QUI now re-applies your stored chat width and height once the login layout settles.
+
+### Changed
+- **Blizzard's Edit Mode selection box and resize grip no longer clutter the chat frame.** Since QUI skins and owns the chat window, that blue selection outline and the corner resize handle are now hidden while Edit Mode is open.
+
 ## v4.0.0-beta22 - 2026-06-05
 
 > 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta21 with another keyboard click-cast fix. No schema migrations: your beta21 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
