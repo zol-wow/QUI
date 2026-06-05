@@ -1,12 +1,24 @@
--- tests/unit/chat_frame1_detach_before_skinning_test.lua
--- Run: lua tests/unit/chat_frame1_detach_before_skinning_test.lua
+-- tests/unit/chat_frame1_runtime_no_detach_test.lua
+-- Run: lua tests/unit/chat_frame1_runtime_no_detach_test.lua
 --
--- Regression guard for ChatFrame1/Edit Mode taint surfacing in Blizzard's
--- chat history path during restricted chat messaging. Runtime chat startup must
--- leave ChatFrame1 owned by Blizzard and must not call the old detach/sync path
--- before skinning.
+-- Regression: loading chat_frame1.lua on the runtime chat path made login call
+-- ChatFrame1Sizing.DetachFromEditMode / SyncToStored. Those paths reparent and
+-- reposition ChatFrame1 from addon code. Blizzard's generated widget docs mark
+-- SetParent, SetPoint, and ClearAllPoints protected, and Blizzard's chat event
+-- handler later enters HistoryKeeper's protected accessIDs table. If the chat
+-- frame's event script is already tainted, channel notices fault there.
 
 local function noop() end
+
+local function readAll(path)
+    local f = assert(io.open(path, "rb"), "failed to open " .. path)
+    local d = f:read("*a"); f:close()
+    return d:gsub("\r\n", "\n")
+end
+
+local chatXML = readAll("modules/chat/chat.xml")
+assert(not chatXML:find([[<Script file="settings/chat_frame1.lua"/>]], 1, true),
+    "runtime chat.xml must not load ChatFrame1 sizing/detach helper")
 
 local calls = {}
 local function record(name)
@@ -32,9 +44,6 @@ local function createStateTable()
         return value
     end
 end
-
-ChatFrameUtil = { AddMessageEventFilter = noop }
-function ChatFrame_AddMessageEventFilter() end
 
 function hooksecurefunc() end
 
@@ -105,16 +114,19 @@ local ns = {
 
 assert(loadfile("modules/chat/chat.lua"))("QUI", ns)
 
-assert(eventFrame and eventFrame.OnEvent, "chat module should install an ADDON_LOADED handler")
+assert(eventFrame and eventFrame.OnEvent, "chat module should install an event handler")
 eventFrame.OnEvent(eventFrame, "ADDON_LOADED", "QUI")
+eventFrame.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
+eventFrame.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
+eventFrame.OnEvent(eventFrame, "CHALLENGE_MODE_COMPLETED")
+eventFrame.OnEvent(eventFrame, "CHALLENGE_MODE_RESET")
+eventFrame.OnEvent(eventFrame, "ENCOUNTER_END")
+eventFrame.OnEvent(eventFrame, "PVP_MATCH_COMPLETE")
+eventFrame.OnEvent(eventFrame, "PVP_MATCH_INACTIVE")
 
 for i = 1, #calls do
     assert(calls[i] ~= "detach" and calls[i] ~= "sync",
-        "runtime chat startup must not detach/sync ChatFrame1; got " .. tostring(calls[i]))
+        "runtime chat module must not call ChatFrame1Sizing." .. calls[i])
 end
-assert(calls[1] == "skin",
-    "chat skinning should still run on ADDON_LOADED; first call was " .. tostring(calls[1]))
-assert(calls[2] == "tabs",
-    "tab styling should run after SkinAll; second call was " .. tostring(calls[2]))
 
-print("OK: chat_frame1_detach_before_skinning_test")
+print("OK: chat_frame1_runtime_no_detach_test")

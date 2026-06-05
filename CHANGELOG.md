@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta20 - 2026-06-05
+
+> 🧪 **QUI 4 beta — hotfix build.** Follow-up to beta19 for protected chat-event handling. No schema migrations: your beta19 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Protected channel notices no longer trip over the main chat frame on login.** beta19 loaded the main chat sizing helper on the runtime path and automatically detached/synced the main chat frame during startup. On restricted chat events, Blizzard can deliver secret channel-notice fields; if the frame's event path had already been tainted by that startup sync, Blizzard's own channel-notice comparisons could error. QUI now keeps that helper load-on-demand for options/layout controls and no longer runs the automatic startup detach/sync, while leaving manual chat width, height, and position controls available.
+
 ## v4.0.0-beta19 - 2026-06-05
 
 > 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta18 with fixes for the character pane and chat positioning. No schema migrations: your beta18 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.

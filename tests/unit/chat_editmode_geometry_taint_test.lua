@@ -1,27 +1,17 @@
 -- tests/unit/chat_editmode_geometry_taint_test.lua
 -- Run: lua tests/unit/chat_editmode_geometry_taint_test.lua
 --
--- Regression: ChatFrame1 is an Edit Mode system frame. EditModeSystemMixin:
--- OnSystemLoad replaces its SetPoint/ClearAllPoints/SetScale with overrides that
--- re-enter EditModeManagerFrame (SetPointOverride -> OnEditModeSystemAnchorChanged).
--- Reparenting ChatFrame1 out of Edit Mode (DetachFromEditMode) does NOT remove
--- those per-instance overrides, so any QUI frame:SetPoint/frame:ClearAllPoints on
--- it still re-enters the secure manager from our tainted execution. That taints
--- ChatFrame1's OWN chat-event dispatch, and the next chat line carrying a secret
--- payload trips Blizzard's secret-string guard inside ChatHistory_GetToken:
---     attempt to perform string conversion on a secret string value
---     (execution tainted by 'QUI')   [HistoryKeeper.lua]:35
+-- Regression: ChatFrame1 is an Edit Mode system frame whose event script enters
+-- Blizzard's protected chat HistoryKeeper tables. Runtime addon calls that
+-- reparent or reposition ChatFrame1 can taint that dispatch path before a
+-- channel notice reaches ChatHistory_GetAccessID. The runtime chat addon must
+-- therefore not load or call the old ChatFrame1 detach/geometry helper.
 --
--- Fix: reposition ChatFrame1 through the saved *Base setters (the original C
--- methods, captured before the override swap) via Helpers.BaseSetPoint /
--- Helpers.BaseClearAllPoints, so positioning never re-enters Edit Mode. SetSize
--- is NOT overridden, so the size path may stay a plain call.
---
--- Covered always-on vectors:
---   0. chat.xml loads chat_frame1.lua before chat.lua, so startup detach exists
---   1. chat_frame1.lua ApplyStoredPosition  (runs on every login -> session taint)
---   2. anchoring.lua  SmoothSetPoint         (chat anchored via Frame Positioning)
---   3. anchoring.lua  QUI_ReanchorFramePositionOnly (settings/layout refresh)
+-- Covered vectors:
+--   0. chat.xml does not load chat_frame1.lua on the runtime path
+--   1. options.xml keeps chat_frame1.lua load-on-demand only
+--   2. chat.lua does not call ChatFrame1Sizing.DetachFromEditMode/SyncToStored
+--   3. shared anchoring still uses *Base setters for any system frame it owns
 
 local function readAll(path)
     local f = assert(io.open(path, "rb"), "failed to open " .. path)
@@ -36,19 +26,22 @@ local function hasnot(src, needle, msg)
     assert(not src:find(needle, 1, true), msg)
 end
 
--- 0. The runtime chat addon must load the sizing/detach helper before chat.lua
---    calls it on ADDON_LOADED / PLAYER_ENTERING_WORLD. Loading it only from the
---    load-on-demand options addon leaves startup ChatFrame1 managed by Edit Mode.
+-- 0. The runtime chat addon must not load the sizing/detach helper. It stays in
+--    the load-on-demand options addon only, so normal chat startup never calls
+--    protected ChatFrame1 geometry paths.
 local chatXML = readAll("modules/chat/chat.xml")
-has(chatXML, [[<Script file="settings/chat_frame1.lua"/>]],
-    "chat.xml must load the ChatFrame1 sizing/detach helper on the runtime path")
-has(chatXML, [[<Script file="settings/chat_frame1.lua"/>
-    <Script file="chat.lua"/>]],
-    "chat.xml must load chat_frame1.lua before chat.lua")
+hasnot(chatXML, [[<Script file="settings/chat_frame1.lua"/>]],
+    "chat.xml must not load the ChatFrame1 sizing/detach helper on the runtime path")
 
 local optionsXML = readAll("QUI_Options/options.xml")
-hasnot(optionsXML, [[<Script file="..\QUI\modules\chat\settings\chat_frame1.lua"/>]],
-    "options.xml must not load chat_frame1.lua a second time and reset its file-local detach state")
+has(optionsXML, [[<Script file="..\QUI\modules\chat\settings\chat_frame1.lua"/>]],
+    "options.xml should load chat_frame1.lua only for load-on-demand settings")
+
+local chatRuntime = readAll("modules/chat/chat.lua")
+hasnot(chatRuntime, "DetachFromEditMode",
+    "runtime chat.lua must not call ChatFrame1Sizing.DetachFromEditMode")
+hasnot(chatRuntime, "SyncToStored",
+    "runtime chat.lua must not call ChatFrame1Sizing.SyncToStored")
 
 -- 1. The shared helpers exist and prefer the Edit Mode *Base originals.
 local utils = readAll("core/utils.lua")
@@ -61,8 +54,8 @@ has(utils, "function Helpers.BaseSetPoint(frame, ...)",
 has(utils, "frame.SetPointBase or frame.SetPoint",
     "BaseSetPoint must prefer the saved SetPointBase override-bypass")
 
--- 2. The login reposition (ApplyStoredPosition) goes through the base helpers and
---    no longer calls the overridden frame:SetPoint/frame:ClearAllPoints directly.
+-- 2. The options-only helper still avoids the overridden frame:SetPoint /
+--    frame:ClearAllPoints directly if a manual settings path uses it.
 local chat = readAll("modules/chat/settings/chat_frame1.lua")
 has(chat, "Helpers.BaseClearAllPoints(frame)",
     "ApplyStoredPosition must clear points via the override-bypass helper")

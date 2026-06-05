@@ -1076,13 +1076,8 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("CVAR_UPDATE")
--- One-shot: re-apply the QUI-stored ChatFrame1 size after Edit Mode restores
--- its layout size on login (Edit Mode preset layouts can't persist a custom
--- chat size). Unregistered after the first fire.
-eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
--- Lockdown-end events. PLAYER_REGEN_ENABLED covers plain combat; the
--- remainder cover chat messaging lockdown sources (M+ keys, encounters,
--- PvP matches) that persist past combat exit.
+-- Lockdown-end events. PLAYER_REGEN_ENABLED covers plain combat; the remainder
+-- cover chat messaging lockdown sources that persist past combat exit.
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
 eventFrame:RegisterEvent("CHALLENGE_MODE_RESET")
@@ -1092,24 +1087,6 @@ eventFrame:RegisterEvent("PVP_MATCH_INACTIVE")
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
         self:UnregisterEvent("ADDON_LOADED")
-
-        -- Only take ChatFrame1 out of Blizzard's Edit Mode when the chat module
-        -- is enabled. The detach is a one-way customization step (it reparents
-        -- the frame and pulls Edit Mode's resize/select widgets off-screen) with
-        -- no reattach path, so doing it while the module is disabled would strand
-        -- chat under QUI even though the user asked for Blizzard's default chat.
-        -- When disabled we leave ChatFrame1 entirely to Blizzard. The early
-        -- detach matters only because QUI's later geometry writes would taint
-        -- chat dispatch -- and a disabled module issues no geometry writes, so
-        -- skipping it here is taint-safe. SyncToStored re-checks the enabled flag
-        -- on PLAYER_ENTERING_WORLD, so an enabled module still detaches even if
-        -- the profile DB were somehow not ready at this instant.
-        if IsChatEnabled(GetSettings()) then
-            local Sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
-            if Sizing and Sizing.DetachFromEditMode then
-                Sizing.DetachFromEditMode()
-            end
-        end
 
         -- Setup new message sound (works independently of chat skinning)
         ns.QUI.Chat.Sounds.Setup()
@@ -1143,19 +1120,6 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         end
     elseif event == "PLAYER_LOGIN" or event == "CVAR_UPDATE" then
         ApplyTimestampMode()
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        -- Run after this frame's Edit Mode layout restore lands so QUI detaches
-        -- ChatFrame1 from Edit Mode and re-asserts its owned position + size
-        -- over the active (possibly preset) Edit Mode layout. SyncToStored is a
-        -- no-op while chat is disabled and bails (for a lockdown-end retry) if
-        -- we entered the world under combat/messaging lockdown.
-        self:UnregisterEvent("PLAYER_ENTERING_WORLD")
-        C_Timer.After(0, function()
-            local Sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
-            if Sizing and Sizing.SyncToStored then
-                Sizing.SyncToStored()
-            end
-        end)
     elseif event == "PLAYER_REGEN_ENABLED"
         or event == "CHALLENGE_MODE_COMPLETED"
         or event == "CHALLENGE_MODE_RESET"
@@ -1163,12 +1127,6 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         or event == "PVP_MATCH_COMPLETE"
         or event == "PVP_MATCH_INACTIVE" then
         FlushPendingCombatReskin()
-        -- Retry the ChatFrame1 detach/geometry sync if the login attempt was
-        -- skipped under lockdown. Idempotent once detached.
-        local Sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
-        if Sizing and Sizing.SyncToStored then
-            Sizing.SyncToStored()
-        end
     end
 end)
 
