@@ -1072,10 +1072,163 @@ local function FlushPendingCombatReskin()
     ns.QUI.Chat.Skinning.StyleAllTabs()
 end
 
+---------------------------------------------------------------------------
+-- ChatFrame1 size restore (login)
+--
+-- QUI stores ChatFrame1's width/height in profile.chat.frameSize whenever the
+-- user resizes it (the Layout Mode resize grips / the size sliders). Blizzard
+-- does not persist a custom size on its preset Edit Mode layouts -- they
+-- regenerate from code on load -- so on /reload the frame reverts unless QUI
+-- re-asserts the stored size after Blizzard's login layout restore lands.
+--
+-- TAINT: ChatFrame1 is an EditModeSystem frame. We use ONLY a plain SetSize.
+-- SetSize is not one of Blizzard's Edit-Mode-overridden setters (unlike SetPoint
+-- / ClearAllPoints / SetParent), so it does not re-enter the secure
+-- EditModeManager chain. We never reparent or reposition the frame from this
+-- runtime path -- those writes were what tainted ChatFrame1's chat-event
+-- dispatch and tripped Blizzard's secret-string guard on channel notices.
+local CHAT_SIZE_MIN_W, CHAT_SIZE_MAX_W = 296, 1400
+local CHAT_SIZE_MIN_H, CHAT_SIZE_MAX_H = 120, 900
+local chatSizeRestorePending = false
+
+local function ReadLiveFrameNumber(value)
+    if Helpers.IsSecretValue and Helpers.IsSecretValue(value) then return nil end
+    return tonumber(value)
+end
+
+local function ApplyStoredChatSize()
+    local settings = GetSettings()
+    if not IsChatEnabled(settings) then return end
+    local stored = settings and settings.frameSize
+    if type(stored) ~= "table" then return end
+    local w, h = tonumber(stored.w), tonumber(stored.h)
+    if not w or not h then return end
+    if w < CHAT_SIZE_MIN_W or w > CHAT_SIZE_MAX_W then return end
+    if h < CHAT_SIZE_MIN_H or h > CHAT_SIZE_MAX_H then return end
+    -- Defer if we logged in under combat / chat-messaging lockdown; the event
+    -- handler retries on the lockdown-end events it already listens for.
+    if IsAnyChatLayoutLocked() then
+        chatSizeRestorePending = true
+        return
+    end
+    local frame = _G.ChatFrame1
+    if not frame or type(frame.SetSize) ~= "function" then return end
+    chatSizeRestorePending = false
+    -- No-op when the live frame already matches (skip a redundant secure write).
+    local cw = (type(frame.GetWidth) == "function") and ReadLiveFrameNumber(frame:GetWidth()) or nil
+    local ch = (type(frame.GetHeight) == "function") and ReadLiveFrameNumber(frame:GetHeight()) or nil
+    if cw and ch and math.floor(cw + 0.5) == w and math.floor(ch + 0.5) == h then
+        return
+    end
+    frame:SetSize(w, h)
+end
+
+---------------------------------------------------------------------------
+-- Suppress Blizzard's Edit Mode selection chrome on ChatFrame1 (the blue
+-- selection box + the resize handle) while Blizzard's Edit Mode is open. QUI
+-- skins and owns the chat frame, so the overlay is visual noise.
+--
+-- TAINT: we touch ONLY the .Selection / .EditModeResizeButton CHILD overlays'
+-- alpha. ChatFrame1's own Edit Mode secure state (ClearHighlight, magnetism
+-- (un)registration, the HighlightSystem/SelectSystem hooks) is never touched --
+-- poking it taints the frame's chat-event dispatch and crashes on secret
+-- channel bodies, which is why core/main.lua deliberately leaves ChatFrame1 out
+-- of its selection-suppression list. SetAlpha on a child overlay is taint-free
+-- (matches the group-frame / CDM precedent). Never Hide() the overlay: Blizzard's
+-- magnetic-snap loop reads Selection:GetRect(), which returns nil while hidden
+-- and errors.
+local chatSelectionEditModeActive = false
+local chatSelectionSuppressionHooked = false
+local chatSelectionWatcher
+
+local function ZeroChatSelectionAlpha()
+    local frame = _G.ChatFrame1
+    if not frame then return end
+    local selection = frame.Selection
+    if selection and type(selection.SetAlpha) == "function" then
+        selection:SetAlpha(0)
+    end
+    local resizeButton = frame.EditModeResizeButton
+    if resizeButton and type(resizeButton.SetAlpha) == "function" then
+        resizeButton:SetAlpha(0)
+    end
+end
+
+local function ChatSelectionOverlayVisible()
+    local frame = _G.ChatFrame1
+    if not frame then return false end
+    local selection = frame.Selection
+    if selection and type(selection.GetAlpha) == "function" and selection:GetAlpha() > 0 then
+        return true
+    end
+    local resizeButton = frame.EditModeResizeButton
+    if resizeButton and type(resizeButton.GetAlpha) == "function" and resizeButton:GetAlpha() > 0 then
+        return true
+    end
+    return false
+end
+
+local function OnBlizzardEditModeEnter()
+    -- Honor the master toggle live: a disabled chat module hands ChatFrame1 back
+    -- to Blizzard, so its normal Edit Mode selection should show.
+    if not IsChatEnabled(GetSettings()) then return end
+    chatSelectionEditModeActive = true
+    -- Blizzard's ShowSystemSelections runs (via secureexecuterange) after
+    -- EnterEditMode, so zero the alpha now and again on the next frame.
+    ZeroChatSelectionAlpha()
+    C_Timer.After(0, ZeroChatSelectionAlpha)
+    -- Make the (now-invisible) Blizzard resize grip inert so a stray drag can't
+    -- resize the chat outside QUI's own resize controls (QUI wouldn't persist
+    -- it). Edit Mode is combat-exclusive, so this protected EnableMouse call is
+    -- always out of combat; once is enough (Blizzard never re-enables it). Child
+    -- overlay only -- never ChatFrame1 itself.
+    local frame = _G.ChatFrame1
+    local resizeButton = frame and frame.EditModeResizeButton
+    if resizeButton and type(resizeButton.EnableMouse) == "function" then
+        resizeButton:EnableMouse(false)
+    end
+    if not chatSelectionWatcher then
+        chatSelectionWatcher = CreateFrame("Frame", nil, UIParent)
+        chatSelectionWatcher:SetScript("OnUpdate", function()
+            -- Re-zero whenever Blizzard re-shows the overlay on a select/click
+            -- cycle. Only runs while Edit Mode is open (hidden on exit).
+            if not chatSelectionEditModeActive then return end
+            if ChatSelectionOverlayVisible() then
+                ZeroChatSelectionAlpha()
+            end
+        end)
+    elseif type(chatSelectionWatcher.Show) == "function" then
+        chatSelectionWatcher:Show()
+    end
+end
+
+local function OnBlizzardEditModeExit()
+    chatSelectionEditModeActive = false
+    if chatSelectionWatcher and type(chatSelectionWatcher.Hide) == "function" then
+        chatSelectionWatcher:Hide()
+    end
+end
+
+local function InstallChatSelectionSuppression()
+    if chatSelectionSuppressionHooked then return end
+    if not (EditModeManagerFrame and type(EditModeManagerFrame.EnterEditMode) == "function") then
+        return
+    end
+    chatSelectionSuppressionHooked = true
+    hooksecurefunc(EditModeManagerFrame, "EnterEditMode", OnBlizzardEditModeEnter)
+    if type(EditModeManagerFrame.ExitEditMode) == "function" then
+        hooksecurefunc(EditModeManagerFrame, "ExitEditMode", OnBlizzardEditModeExit)
+    end
+end
+
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("CVAR_UPDATE")
+-- One-shot: re-assert the QUI-stored ChatFrame1 size after Blizzard's login
+-- Edit Mode layout restore lands (see ApplyStoredChatSize). Unregistered after
+-- the first fire so later zone changes don't fight a Blizzard custom-layout size.
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 -- Lockdown-end events. PLAYER_REGEN_ENABLED covers plain combat; the remainder
 -- cover chat messaging lockdown sources that persist past combat exit.
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -1105,6 +1258,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             end)
         end)
 
+        -- Hook Blizzard's Edit Mode so the chat selection chrome is suppressed
+        -- (alpha-only; never touches ChatFrame1's secure Edit Mode state).
+        InstallChatSelectionSuppression()
+
         -- Hook for new chat windows (handler re-checks the master toggle internally)
         HookNewChatWindows()
 
@@ -1120,6 +1277,16 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         end
     elseif event == "PLAYER_LOGIN" or event == "CVAR_UPDATE" then
         ApplyTimestampMode()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        -- Idempotent fallback in case EditModeManagerFrame wasn't ready at
+        -- ADDON_LOADED (no-op once already hooked).
+        InstallChatSelectionSuppression()
+        -- Re-apply QUI's stored chat size after this frame's Edit Mode layout
+        -- restore lands (plain SetSize only -- see ApplyStoredChatSize). One-shot:
+        -- if we entered under lockdown it sets a pending flag and the lockdown-end
+        -- branch below retries.
+        self:UnregisterEvent("PLAYER_ENTERING_WORLD")
+        C_Timer.After(0, ApplyStoredChatSize)
     elseif event == "PLAYER_REGEN_ENABLED"
         or event == "CHALLENGE_MODE_COMPLETED"
         or event == "CHALLENGE_MODE_RESET"
@@ -1127,6 +1294,9 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         or event == "PVP_MATCH_COMPLETE"
         or event == "PVP_MATCH_INACTIVE" then
         FlushPendingCombatReskin()
+        if chatSizeRestorePending then
+            ApplyStoredChatSize()
+        end
     end
 end)
 
