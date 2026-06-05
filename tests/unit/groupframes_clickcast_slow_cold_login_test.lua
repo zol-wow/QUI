@@ -404,4 +404,41 @@ do
     print("OK: stale OnLeave does not clobber the active frame's keyboard binding")
 end
 
+---------------------------------------------------------------------------
+-- Scenario 7: action-bar fall-through. A click-cast key that's ALSO an
+-- action-bar key (the bar yields it via SetKeyRestingTarget) casts the hovered
+-- frame on hover and fires its action-bar action when NOT hovering -- click-cast
+-- OWNS the key, so there's no override-priority fight (the cold-boot bug where
+-- the action bar's binding shadowed click-cast).
+---------------------------------------------------------------------------
+do
+    _G.currentHoverFrame = nil
+    local eventFrame, child = loadModule(true)  -- spec ready on login
+    eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
+    drain(100)
+
+    local CC = ns.QUI_GroupFrameClickCast
+    assert(CC:OwnsKeyboardKey("F"), "click-cast should own its resolved key F")
+    assert(not CC:OwnsKeyboardKey("X"), "click-cast must not claim unrelated keys")
+
+    -- Action bar yields F and hands click-cast the fall-through target.
+    CC:SetKeyRestingTarget("F", "QUI_Bar1Button6", "Keybind")
+    assert(boundTo("F") == "QUI_Bar1Button6",
+        "off-frame F should fall through to the action bar; got " .. tostring(boundTo("F")))
+
+    -- Hover -> click-cast on the hovered frame.
+    runWrap(child, "OnEnter")
+    assert(boundTo("F") == "QUI_TestUnit1",
+        "hovering should bind F to the frame; got " .. tostring(boundTo("F")))
+
+    -- Leave -> restore the action-bar fall-through.
+    runWrap(child, "OnLeave")
+    assert(boundTo("F") == "QUI_Bar1Button6",
+        "leaving should restore the action-bar fall-through; got " .. tostring(boundTo("F")))
+
+    -- A click-cast key with NO resting target (not on a bar) stays unbound off-frame.
+    assert(not CC:OwnsKeyboardKey("X"), "sanity")
+    print("OK: click-cast key falls through to action bar off-frame, casts frame on hover")
+end
+
 print("OK: groupframes_clickcast_slow_cold_login_test")

@@ -318,6 +318,9 @@ files["modules/actionbars/actionbars_flyout.lua"] = {
 files["modules/actionbars/actionbars_usability.lua"] = {
     ignore = { "111", "112", "113" },
 }
+files["modules/actionbars/actionbars_editmode.lua"] = {
+    ignore = { "111", "112", "113" },
+}
 
 files["modules/dungeon/party_keystones.lua"] = {
     ignore = { "113" },

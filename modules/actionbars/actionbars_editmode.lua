@@ -153,20 +153,31 @@ function ApplyBarOverrideBindings(barKey)
     local prefix = BINDING_COMMANDS[barKey]
     if not buttons or not prefix then return end
 
+    local CC = ns.QUI_GroupFrameClickCast
     for i, btn in ipairs(buttons) do
         local command = prefix .. i
         for ki = 1, select("#", GetBindingKey(command)) do
             local key = select(ki, GetBindingKey(command))
             if key then
-                local existing = GetBindingAction(key, true)
-                if not existing or existing == "" or existing == command then
-                    -- Pet/stance buttons use PetActionButtonTemplate / StanceButtonTemplate
-                    -- whose OnClick handlers check for "LeftButton" specifically.  Standard
-                    -- action bars (SecureActionButtonTemplate) fire via secure attributes
-                    -- regardless of button string, so "Keybind" works for them.
-                    local vBtn = ((barKey == "pet" or barKey == "stance") or btn:GetAttribute("gse-button"))
-                        and "LeftButton" or "Keybind"
-                    SetOverrideBindingClick(container, false, key, btn:GetName(), vBtn)
+                -- Pet/stance buttons use PetActionButtonTemplate / StanceButtonTemplate
+                -- whose OnClick handlers check for "LeftButton" specifically.  Standard
+                -- action bars (SecureActionButtonTemplate) fire via secure attributes
+                -- regardless of button string, so "Keybind" works for them.
+                local vBtn = ((barKey == "pet" or barKey == "stance") or btn:GetAttribute("gse-button"))
+                    and "LeftButton" or "Keybind"
+                if CC and CC.OwnsKeyboardKey and CC:OwnsKeyboardKey(key) then
+                    -- Click-cast owns this key for hovercasting. Yield it: don't set our
+                    -- override (that would fight click-cast's hover binding via priority),
+                    -- and hand click-cast the fall-through target so the key still fires
+                    -- this bar action when no unit frame is hovered.
+                    if CC.SetKeyRestingTarget then
+                        CC:SetKeyRestingTarget(key, btn:GetName(), vBtn)
+                    end
+                else
+                    local existing = GetBindingAction(key, true)
+                    if not existing or existing == "" or existing == command then
+                        SetOverrideBindingClick(container, false, key, btn:GetName(), vBtn)
+                    end
                 end
             end
         end
