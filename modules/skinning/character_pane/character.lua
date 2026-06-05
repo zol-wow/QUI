@@ -2780,7 +2780,7 @@ local function UpdateStatsPanel(panel, unit)
         { label = "Crit", statKey = "CRIT", percentFunc = function() return GetSpellCritChance("player") end, ratingFunc = function() return GetCombatRating(CR_CRIT_SPELL) end, color = C.crit },
         { label = "Haste", statKey = "HASTE", percentFunc = function() return UnitSpellHaste("player") end, ratingFunc = function() return GetCombatRating(CR_HASTE_SPELL) end, color = C.haste },
         { label = "Mastery", statKey = "MASTERY", percentFunc = GetMasteryEffect, ratingFunc = function() return GetCombatRating(CR_MASTERY) end, color = C.mastery },
-        { label = "Versatility", statKey = "VERSATILITY", percentFunc = function() return GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) + GetVersatilityBonus(CR_VERSATILITY_DAMAGE_DONE) end, ratingFunc = function() return GetCombatRating(CR_VERSATILITY_DAMAGE_DONE) end, color = C.versatility },
+        { label = "Versatility", statKey = "VERSATILITY", percentFunc = function() return GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) + GetVersatilityBonus(CR_VERSATILITY_DAMAGE_DONE) end, combatPercentFunc = function() return GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) end, ratingFunc = function() return GetCombatRating(CR_VERSATILITY_DAMAGE_DONE) end, color = C.versatility },
     }
 
     local statFormat = settings.secondaryStatFormat or "percent"
@@ -2792,7 +2792,17 @@ local function UpdateStatsPanel(panel, unit)
         -- Direct API + C-side SetFormattedText. Secret values pass through
         -- to the C printf without ever entering Lua arithmetic, so this
         -- works the same in combat / encounters / M+ / PvP as it does OOC.
-        local pctOk, pct = pcall(stat.percentFunc)
+        --
+        -- Versatility is the exception: its full percent is a Lua sum of two
+        -- APIs (rating bonus + non-rating bonus), and that "+" throws on secret
+        -- values once we are tainted in restricted content. When secrets are
+        -- restricted, fill from the single rating-bonus call only -- a lone
+        -- secret the C printf / SetValue can still consume.
+        local percentFunc = stat.percentFunc
+        if secretsOff and stat.combatPercentFunc then
+            percentFunc = stat.combatPercentFunc
+        end
+        local pctOk, pct = pcall(percentFunc)
         local ratingOk, rating = pcall(stat.ratingFunc)
         if statFormat == "percent" then
             if pctOk and pct then row.value:SetFormattedText("%.2f%%", pct) end
@@ -2878,6 +2888,15 @@ local function UpdateStatsPanel(panel, unit)
                     row.tooltip2 = ratingText
                 end
             elseif stat.statKey == "VERSATILITY" then
+                -- The rich tooltip needs the full bonus = rating bonus + non-rating
+                -- bonus, a Lua sum. If either component is secret (the policy probed
+                -- a different stat and missed this one), bail and keep the plain
+                -- STAT_VERSATILITY_TOOLTIP rather than formatting a 0.00% row from
+                -- the SafeGetStat zero-fallback.
+                if GetStatOrNil(GetCombatRatingBonus, CR_VERSATILITY_DAMAGE_DONE) == nil
+                    or GetStatOrNil(GetVersatilityBonus, CR_VERSATILITY_DAMAGE_DONE) == nil then
+                    return
+                end
                 local versatility = SafeGetStat(GetCombatRating, CR_VERSATILITY_DAMAGE_DONE)
                 local versatilityDamageBonus = SafeGetStat(GetCombatRatingBonus, CR_VERSATILITY_DAMAGE_DONE) + SafeGetStat(GetVersatilityBonus, CR_VERSATILITY_DAMAGE_DONE)
                 local versatilityDamageTakenReduction = SafeGetStat(GetCombatRatingBonus, CR_VERSATILITY_DAMAGE_TAKEN) + SafeGetStat(GetVersatilityBonus, CR_VERSATILITY_DAMAGE_TAKEN)
