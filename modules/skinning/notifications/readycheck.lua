@@ -100,6 +100,18 @@ local function EnsureTextureBackdrop(parent, owner)
 
     SetTextureBackdropLayout(parent, parts)
     SkinBase.SetFrameData(owner, TEXTURE_BACKDROP_KEY, parts)
+
+    -- Re-lay out whenever the effective scale changes. The 1px edge size is in
+    -- frame units, so a layout computed once at ADDON_LOADED goes sub-pixel
+    -- (edges drop out) when the final UI scale lands after login. The shared
+    -- backdrop paths get this via RefreshPixelBackdrop; owned textures must
+    -- register for the same scale-refresh pass explicitly.
+    local UIKit = ns.UIKit
+    if UIKit and UIKit.RegisterScaleRefresh then
+        UIKit.RegisterScaleRefresh(owner, TEXTURE_BACKDROP_KEY, function()
+            SetTextureBackdropLayout(parent, parts)
+        end)
+    end
     return parts
 end
 

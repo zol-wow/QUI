@@ -32,6 +32,10 @@ assertContains("if not SkinBase.GetFrameData(region, OWNED_TEXTURE_KEY) then",
     "decoration hiding must skip ready-check owned textures")
 assertContains('text:SetDrawLayer("OVERLAY", 7)',
     "button labels should be promoted above button skin textures")
+assertContains("RegisterScaleRefresh(",
+    "owned-texture border must re-lay out on scale refresh: a 1px edge size "
+    .. "frozen at ADDON_LOADED goes sub-pixel (edges drop out) once the final "
+    .. "UI scale lands")
 
 assertAbsent("SkinBase.CreateBackdrop(",
     "ready-check skin must not use child-frame backdrops over popup text")
