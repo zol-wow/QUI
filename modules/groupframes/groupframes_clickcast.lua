@@ -541,6 +541,23 @@ local function SetupFrameClickCast(frame)
         frame:HookScript("OnEnter", function(self)
             if not isEnabled then return end
             currentKeyboardFrame = self
+            -- TEMP DIAGNOSTIC (inert unless /run QUI_CC_DEBUG=true). Runs AFTER
+            -- the secure OnEnter pre-body, so GetBindingAction reflects whether the
+            -- snippet actually bound the key. Remove once the cold-boot keyboard
+            -- failure is localized.
+            if _G.QUI_CC_DEBUG then
+                local hdr = bindingHeader
+                local kc = (hdr and hdr:GetAttribute("clickcast-keycount")) or 0
+                local b1 = keyboardBindings[1]
+                local fullKey = b1 and (ModifiersToBindingPrefix(b1.modifiers) .. b1.key:upper())
+                local vbtn = b1 and GetVirtualButtonName(b1)
+                print(("|cff00ffffQUI-CC|r name=%s wrapped=%s keycount=%s type[%s]=%s bind[%s]=%s"):format(
+                    tostring(self:GetName()),
+                    secureWrappedFrames[self] and "Y" or "N",
+                    tostring(kc),
+                    tostring(vbtn), tostring(vbtn and self:GetAttribute("type-" .. vbtn)),
+                    tostring(fullKey), tostring(fullKey and GetBindingAction(fullKey, true))))
+            end
             -- On-demand recovery: if click-cast is configured but still unresolved
             -- (secure header stranded at keycount 0 -- spec/loadout data landed
             -- after the startup retry window, or frames laid out late), rebuild now.
@@ -552,7 +569,18 @@ local function SetupFrameClickCast(frame)
                 dataReadyRefreshScheduled = true
                 C_Timer.After(0, function()
                     dataReadyRefreshScheduled = false
-                    if not InCombatLockdown() then QUI_GFCC:RefreshBindings() end
+                    -- If the data landed mid-combat (player reaching for the
+                    -- keybind during a pull), the secure rebuild can't run now.
+                    -- Don't drop the recovery: leave a pending request so
+                    -- PLAYER_REGEN_ENABLED revives the keybind the instant combat
+                    -- ends — otherwise keyboard click-cast stays dead for the rest
+                    -- of the session unless the player happens to hover again out
+                    -- of combat. Mirrors the talent-event / spec-change handlers.
+                    if not InCombatLockdown() then
+                        QUI_GFCC:RefreshBindings()
+                    else
+                        QUI_GFCC.pendingRefresh = true
+                    end
                 end)
             end
         end)

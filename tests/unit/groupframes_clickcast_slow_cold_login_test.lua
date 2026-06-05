@@ -312,4 +312,43 @@ do
     print("OK: shared mouse fallback does not mask cold per-spec keyboard recovery")
 end
 
+---------------------------------------------------------------------------
+-- Scenario 5: DURABLE recovery across a combat window. Spec data lands while
+-- the player is IN COMBAT and they reach for the keybind (hover) mid-fight.
+-- The on-hover re-resolve can't run in combat, but it must not silently DROP
+-- the recovery -- it has to leave a pending request so PLAYER_REGEN_ENABLED
+-- revives the keybind the instant combat ends. Otherwise keyboard click-cast
+-- stays dead for the rest of the session unless the player happens to hover
+-- again out of combat (the "works sometimes / needs a /reload" symptom).
+---------------------------------------------------------------------------
+do
+    local eventFrame, child = loadModule(false)
+    eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
+
+    drain(100)  -- exhaust the bounded startup retry with spec never ready
+    assert(#afterQueue == 0, "startup retry should be bounded/exhausted")
+    assert(keycount() == 0, "precondition: keyboard still dead while spec unresolved")
+
+    -- Combat starts, THEN spec/loadout data lands. Player hovers a frame to use
+    -- the keybind during the pull.
+    inCombat = true
+    specReady = true
+    hover(child)
+    assert(#afterQueue >= 1, "hovering a still-dead frame scheduled no recovery")
+    flushAfter()  -- runs in combat: must not mutate secure attrs, must not drop
+
+    assert(keycount() == 0, "precondition: secure rebuild cannot happen mid-combat")
+
+    -- Combat ends. The dropped/deferred recovery must now fire.
+    inCombat = false
+    eventFrame.scripts.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
+    flushAfter()
+
+    assert(keycount() == 1, "header keycount = " .. tostring(keycount())
+        .. " -- combat-window recovery was dropped: keyboard click-cast stays dead "
+        .. "after combat ends (needs /reload)")
+    assertHoverBindsF(child)
+    print("OK: combat-window recovery is durable (revives on PLAYER_REGEN_ENABLED)")
+end
+
 print("OK: groupframes_clickcast_slow_cold_login_test")
