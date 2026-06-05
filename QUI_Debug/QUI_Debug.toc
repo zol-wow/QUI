@@ -3,7 +3,7 @@
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## Notes: Load-on-demand diagnostics and profiling tools for QUI
 ## Author: Zol
-## Version: 4.0.0-beta17
+## Version: 4.0.0-beta18
 ## Category: User Interface
 ## RequiredDeps: QUI
 ## LoadOnDemand: 1

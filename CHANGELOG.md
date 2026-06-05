@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta18 - 2026-06-04
+
+> 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta17 with three fixes for click-cast and skinning. No schema migrations: your beta17 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Keyboard click-casting survives spec/talent data that lands during combat.** If your specialization or talent data finished loading while you were already in combat — and you reached for a keyboard click-cast binding mid-fight — QUI couldn't rebuild the binding then (the game blocks that in combat) and could quietly give up, leaving keyboard click-casting inactive (mouse bindings still worked) until a `/reload`. QUI now remembers the pending setup and completes it the instant combat ends, so your keyboard bindings come back on their own.
+- **Reward pop-up alerts stay pinned to your Alert Anchor.** While certain Blizzard panels are open, the game briefly relocates the frame that pop-up alerts (collection rewards, achievements, and the like) anchor to. QUI's alerts could follow that temporary frame instead of your configured Alert Anchor and appear in the wrong spot. QUI now keeps those alerts attached to your Alert Anchor mover regardless.
+- **Encounter Journal monthly activities text now uses your QUI font.** The monthly activities panel rebuilds its activity rows, filters, and reward threshold text after QUI's journal skin runs, so those pieces could fall back to the game's default font. QUI now re-applies its text styling whenever that panel refreshes, so the whole panel reads in the QUI font.
+
 ## v4.0.0-beta17 - 2026-06-04
 
 > 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta16 with two fixes for click-cast and the Ready Check skin. No schema migrations: your beta16 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
