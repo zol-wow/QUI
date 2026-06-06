@@ -51,8 +51,8 @@ end
 local source = readAll("modules/cdm/cdm_spelldata.lua")
 local buildStart = assert(source:find("function CDMSpellData:BuildSpellListFromOwned", 1, true),
     "BuildSpellListFromOwned should exist")
-local buildEnd = assert(source:find("-- DORMANT SPELL CHECKING", buildStart, true),
-    "dormant section should follow BuildSpellListFromOwned")
+local buildEnd = assert(source:find("-- EXTRA SPELL TABLES", buildStart, true),
+    "extra-spell-tables section should follow BuildSpellListFromOwned")
 local sortPos = source:find("table.sort(result", buildStart, true)
 assert(not sortPos or sortPos > buildEnd,
     "BuildSpellListFromOwned should preserve saved entry order; row grouping belongs to CDMLayout")

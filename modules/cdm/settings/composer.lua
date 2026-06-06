@@ -1811,38 +1811,34 @@ local function GetOrCreateEntryCell(index)
         if entryID then
             GameTooltip:AddLine("ID: " .. tostring(entryID), 0.5, 0.5, 0.5)
         end
-        if self._isDormant then
-            GameTooltip:AddLine("Not Learned (Dormant)", 0.9, 0.6, 0.2)
-            GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
-        else
-            if type(self._entry) == "table" and self._entry._legacySpellbookSlot ~= nil then
-                GameTooltip:AddLine("Legacy data — may need review", 0.95, 0.6, 0.2)
-            end
-            if self._isUnknownToPlayer then
-                GameTooltip:AddLine("Not usable on your current class", 0.95, 0.5, 0.5)
-            elseif not IsEntryRegisteredInBlizzCDM(self._entry) then
-                GameTooltip:AddLine("Not added to /cdm", 0.95, 0.6, 0.2)
-            end
-            -- Source-spec attribution: read from explicit _sourceSpecID
-            -- (set by the v32 migration on each migrated entry) or fall
-            -- back to the per-spec storage key the aggregated reader
-            -- attached at render time.
-            local entry = self._entry
-            local srcSpec = type(entry) == "table"
-                and (entry._sourceSpecID or tonumber(entry._renderSpecKey))
-                or nil
-            if type(srcSpec) == "number" and GetSpecializationInfoByID then
-                local _, specName, _, _, _, classToken = GetSpecializationInfoByID(srcSpec)
-                if specName then
-                    local label = classToken and ("%s %s"):format(specName, classToken) or specName
-                    GameTooltip:AddLine(("Source: %s"):format(label), 0.6, 0.85, 1)
-                end
-            end
-            if self._dragTooltipText then
-                GameTooltip:AddLine(self._dragTooltipText, 0.5, 0.5, 0.5)
-            end
-            GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
+        if type(self._entry) == "table" and self._entry._legacySpellbookSlot ~= nil then
+            GameTooltip:AddLine("Legacy data — may need review", 0.95, 0.6, 0.2)
         end
+        if self._isUnknownToPlayer then
+            GameTooltip:AddLine("Dormant — not learned on this character", 0.9, 0.6, 0.2)
+            GameTooltip:AddLine("Hidden on the bar; kept in your list", 0.5, 0.5, 0.5)
+        elseif not IsEntryRegisteredInBlizzCDM(self._entry) then
+            GameTooltip:AddLine("Not added to /cdm", 0.95, 0.6, 0.2)
+        end
+        -- Source-spec attribution: read from explicit _sourceSpecID
+        -- (set by the v32 migration on each migrated entry) or fall
+        -- back to the per-spec storage key the aggregated reader
+        -- attached at render time.
+        local entry = self._entry
+        local srcSpec = type(entry) == "table"
+            and (entry._sourceSpecID or tonumber(entry._renderSpecKey))
+            or nil
+        if type(srcSpec) == "number" and GetSpecializationInfoByID then
+            local _, specName, _, _, _, classToken = GetSpecializationInfoByID(srcSpec)
+            if specName then
+                local label = classToken and ("%s %s"):format(specName, classToken) or specName
+                GameTooltip:AddLine(("Source: %s"):format(label), 0.6, 0.85, 1)
+            end
+        end
+        if self._dragTooltipText then
+            GameTooltip:AddLine(self._dragTooltipText, 0.5, 0.5, 0.5)
+        end
+        GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
         GameTooltip:Show()
     end)
     cell:SetScript("OnLeave", function(self)
@@ -2217,7 +2213,7 @@ local function ClearActiveContainerEntries()
     return true
 end
 
-local function ShowEntryContextMenu(anchorCell, entry, entryIndex, isDormant)
+local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
     if _G.QUI_EntryContextMenu then
         _G.QUI_EntryContextMenu:Hide()
     end
@@ -2231,150 +2227,125 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex, isDormant)
 
     -- Build menu items
     local items = {}
-    if isDormant then
-        local sid = entry.id or entry
-        local isKnown = spellData.IsSpellKnown and spellData:IsSpellKnown(sid)
-        if isKnown then
-            items[#items + 1] = { label = "Restore", color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
+    -- Settings
+    items[#items + 1] = { label = "Settings", color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
+        if expandedOverride == entry.id then
+            HideOverridePanel(true)
+        else
+            expandedOverride = entry.id
+            if not overridePanel then
+                BuildOverridePanel(entryListContent)
+            end
+            ShowOverridePanel(anchorCell, activeContainer, entry, entryIndex)
+        end
+    end }
+
+    -- Row move (cooldown containers with 2+ rows) — show one item per other row
+    if isCooldown then
+        local activeRowNums = {}
+        local rowCounts = {}
+        local rowMax = {}
+        local entries_all = db.ownedSpells or {}
+        for r = 1, 3 do
+            local rd = db["row" .. r]
+            if rd and rd.iconCount and rd.iconCount > 0 then
+                activeRowNums[#activeRowNums + 1] = r
+                rowMax[r] = rd.iconCount
+                rowCounts[r] = 0
+            end
+        end
+        -- Count entries per row
+        for _, e in ipairs(entries_all) do
+            if e then
+                local r = e.row or (activeRowNums[1] or 1)
+                if rowCounts[r] then
+                    rowCounts[r] = rowCounts[r] + 1
+                end
+            end
+        end
+        if #activeRowNums > 1 then
+            local curRow = entry.row or activeRowNums[1]
+            for _, rn in ipairs(activeRowNums) do
+                if rn ~= curRow then
+                    local isFull = rowMax[rn] and rowCounts[rn] and rowCounts[rn] >= rowMax[rn]
+                    local lbl = "Move to Row " .. rn
+                    if isFull then
+                        lbl = lbl .. "  (Full)"
+                    end
+                    items[#items + 1] = {
+                        label = lbl,
+                        color = isFull and { 0.4, 0.4, 0.4 } or { ACCENT_R, ACCENT_G, ACCENT_B },
+                        action = isFull and function()
+                            UIErrorsFrame:AddMessage("Row " .. rn .. " is full (" .. rowMax[rn] .. "/" .. rowMax[rn] .. ")", 1.0, 0.3, 0.3, 1.0, 3)
+                            UIErrorsFrame:SetFrameStrata("TOOLTIP")
+                        end or function()
+                            if InCombatLockdown() then return end
+                            spellData:SetEntryRow(activeContainer, entryIndex, rn)
+                            C_Timer.After(0.02, function()
+                                RefreshCDM()
+                                RefreshEntryList()
+                                RefreshPreview()
+                            end)
+                        end,
+                    }
+                end
+            end
+        end
+    end
+
+    -- Move to sibling container — items can cross the cooldown/aura
+    -- family boundary (kind is auto-rewritten in MoveEntryBetweenContainers);
+    -- spells/macros stay within their family.
+    local containerType = ResolveContainerType(activeContainer)
+    local SPELL_SIBLING_TYPES = {
+        cooldown = { cooldown = true },
+        aura     = { aura = true, auraBar = true },
+        auraBar  = { aura = true, auraBar = true },
+    }
+    local ITEM_SIBLING_TYPES = {
+        cooldown = { cooldown = true, aura = true, auraBar = true, customBar = true },
+        aura     = { cooldown = true, aura = true, auraBar = true, customBar = true },
+        auraBar  = { cooldown = true, aura = true, auraBar = true, customBar = true },
+        customBar = { cooldown = true, aura = true, auraBar = true, customBar = true },
+    }
+    local entryIsItem = entry and (entry.type == "item"
+        or entry.type == "trinket" or entry.type == "slot")
+    local siblings = entryIsItem
+        and (ITEM_SIBLING_TYPES[containerType] or {})
+        or (SPELL_SIBLING_TYPES[containerType] or {})
+    local allTabKeys = GetAllTabKeys()
+    for _, key in ipairs(allTabKeys) do
+        if key ~= activeContainer and siblings[ResolveContainerType(key)] then
+            items[#items + 1] = { label = "Move to " .. GetContainerLabel(key), color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
                 if InCombatLockdown() then return end
-                spellData:RestoreDormantEntry(activeContainer, sid)
+                spellData:MoveEntryBetweenContainers(activeContainer, key, entryIndex)
                 C_Timer.After(0.02, function()
+                    RefreshCDM()
                     RefreshEntryList()
                     RefreshAddList()
                     RefreshPreview()
                 end)
             end }
         end
-        items[#items + 1] = { label = "Remove", color = { 0.9, 0.3, 0.3 }, action = function()
-            if InCombatLockdown() then return end
-            spellData:RemoveDormantEntry(activeContainer, sid)
-            C_Timer.After(0.02, function()
-                RefreshEntryList()
-                RefreshAddList()
-                RefreshPreview()
-            end)
-        end }
-    else
-        -- Settings
-        items[#items + 1] = { label = "Settings", color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
-            if expandedOverride == entry.id then
-                HideOverridePanel(true)
-            else
-                expandedOverride = entry.id
-                if not overridePanel then
-                    BuildOverridePanel(entryListContent)
-                end
-                ShowOverridePanel(anchorCell, activeContainer, entry, entryIndex)
-            end
-        end }
-
-        -- Row move (cooldown containers with 2+ rows) — show one item per other row
-        if isCooldown then
-            local activeRowNums = {}
-            local rowCounts = {}
-            local rowMax = {}
-            local entries_all = db.ownedSpells or {}
-            for r = 1, 3 do
-                local rd = db["row" .. r]
-                if rd and rd.iconCount and rd.iconCount > 0 then
-                    activeRowNums[#activeRowNums + 1] = r
-                    rowMax[r] = rd.iconCount
-                    rowCounts[r] = 0
-                end
-            end
-            -- Count entries per row
-            for _, e in ipairs(entries_all) do
-                if e then
-                    local r = e.row or (activeRowNums[1] or 1)
-                    if rowCounts[r] then
-                        rowCounts[r] = rowCounts[r] + 1
-                    end
-                end
-            end
-            if #activeRowNums > 1 then
-                local curRow = entry.row or activeRowNums[1]
-                for _, rn in ipairs(activeRowNums) do
-                    if rn ~= curRow then
-                        local isFull = rowMax[rn] and rowCounts[rn] and rowCounts[rn] >= rowMax[rn]
-                        local lbl = "Move to Row " .. rn
-                        if isFull then
-                            lbl = lbl .. "  (Full)"
-                        end
-                        items[#items + 1] = {
-                            label = lbl,
-                            color = isFull and { 0.4, 0.4, 0.4 } or { ACCENT_R, ACCENT_G, ACCENT_B },
-                            action = isFull and function()
-                                UIErrorsFrame:AddMessage("Row " .. rn .. " is full (" .. rowMax[rn] .. "/" .. rowMax[rn] .. ")", 1.0, 0.3, 0.3, 1.0, 3)
-                                UIErrorsFrame:SetFrameStrata("TOOLTIP")
-                            end or function()
-                                if InCombatLockdown() then return end
-                                spellData:SetEntryRow(activeContainer, entryIndex, rn)
-                                C_Timer.After(0.02, function()
-                                    RefreshCDM()
-                                    RefreshEntryList()
-                                    RefreshPreview()
-                                end)
-                            end,
-                        }
-                    end
-                end
-            end
-        end
-
-        -- Move to sibling container — items can cross the cooldown/aura
-        -- family boundary (kind is auto-rewritten in MoveEntryBetweenContainers);
-        -- spells/macros stay within their family.
-        local containerType = ResolveContainerType(activeContainer)
-        local SPELL_SIBLING_TYPES = {
-            cooldown = { cooldown = true },
-            aura     = { aura = true, auraBar = true },
-            auraBar  = { aura = true, auraBar = true },
-        }
-        local ITEM_SIBLING_TYPES = {
-            cooldown = { cooldown = true, aura = true, auraBar = true, customBar = true },
-            aura     = { cooldown = true, aura = true, auraBar = true, customBar = true },
-            auraBar  = { cooldown = true, aura = true, auraBar = true, customBar = true },
-            customBar = { cooldown = true, aura = true, auraBar = true, customBar = true },
-        }
-        local entryIsItem = entry and (entry.type == "item"
-            or entry.type == "trinket" or entry.type == "slot")
-        local siblings = entryIsItem
-            and (ITEM_SIBLING_TYPES[containerType] or {})
-            or (SPELL_SIBLING_TYPES[containerType] or {})
-        local allTabKeys = GetAllTabKeys()
-        for _, key in ipairs(allTabKeys) do
-            if key ~= activeContainer and siblings[ResolveContainerType(key)] then
-                items[#items + 1] = { label = "Move to " .. GetContainerLabel(key), color = { ACCENT_R, ACCENT_G, ACCENT_B }, action = function()
-                    if InCombatLockdown() then return end
-                    spellData:MoveEntryBetweenContainers(activeContainer, key, entryIndex)
-                    C_Timer.After(0.02, function()
-                        RefreshCDM()
-                        RefreshEntryList()
-                        RefreshAddList()
-                        RefreshPreview()
-                    end)
-                end }
-            end
-        end
-
-        -- Remove
-        items[#items + 1] = { label = "Remove", color = { 0.9, 0.3, 0.3 }, action = function()
-            if InCombatLockdown() then return end
-            local removeIndex = entryIndex
-            local removeSpecKey = nil
-            if db.containerType == "customBar" and db.specSpecific and type(entry) == "table" then
-                removeIndex = entry._renderSpecIndex or entryIndex
-                removeSpecKey = entry._renderSpecKey
-            end
-            spellData:RemoveEntry(activeContainer, removeIndex, removeSpecKey)
-            C_Timer.After(0.02, function()
-                RefreshCDM()
-                RefreshEntryList()
-                RefreshAddList()
-                RefreshPreview()
-            end)
-        end }
     end
+
+    -- Remove
+    items[#items + 1] = { label = "Remove", color = { 0.9, 0.3, 0.3 }, action = function()
+        if InCombatLockdown() then return end
+        local removeIndex = entryIndex
+        local removeSpecKey = nil
+        if db.containerType == "customBar" and db.specSpecific and type(entry) == "table" then
+            removeIndex = entry._renderSpecIndex or entryIndex
+            removeSpecKey = entry._renderSpecKey
+        end
+        spellData:RemoveEntry(activeContainer, removeIndex, removeSpecKey)
+        C_Timer.After(0.02, function()
+            RefreshCDM()
+            RefreshEntryList()
+            RefreshAddList()
+            RefreshPreview()
+        end)
+    end }
 
     items[#items + 1] = { label = "Remove All Entries", color = { 1.0, 0.2, 0.2 }, action = function()
         if ClearActiveContainerEntries() then
@@ -2452,14 +2423,14 @@ RefreshEntryList = function()
     local db = GetContainerDB(activeContainer)
     if not db then return end
 
-    -- Self-heal dormancy before reading entries. The data layer's
-    -- SPELLS_CHANGED debounce can lag behind talent or spec swaps, so
-    -- the composer reconciles the visible container before rendering.
+    -- Fold any stale dormant-shelf records back into the list before
+    -- reading entries, so a container opened right after login/import
+    -- shows recovered spells without waiting for the data layer's
+    -- SPELLS_CHANGED debounce.
     RefreshActiveContainerDormancy()
 
     -- customBar containers store their active entry list under `entries`
     -- (mixed spell/item/slot/macro types), not the CDM-native `ownedSpells`.
-    -- Dormant cooldown spell adds still live in `dormantSpells`.
     local isCustomBar = (db.containerType == "customBar")
 
     local entries
@@ -2509,9 +2480,6 @@ RefreshEntryList = function()
         entries = db.ownedSpells
     end
     if type(entries) ~= "table" then entries = {} end
-
-    local dormant = db.dormantSpells
-    if type(dormant) ~= "table" then dormant = {} end
 
     local filterText = searchBox and searchBox:GetText() or ""
     local lowerFilter = string_lower(filterText)
@@ -2600,7 +2568,6 @@ RefreshEntryList = function()
         cell._entryIndex = (isCustomBar and db.specSpecific and type(entry) == "table" and entry._renderSpecIndex) or idx
         cell._entrySpecKey = (isCustomBar and db.specSpecific and type(entry) == "table") and entry._renderSpecKey or nil
         cell._rowNum = rowNum or nil
-        cell._isDormant = false
         cell._isUnknownToPlayer = not IsEntryUsableOnCurrentPlayer(entry)
         if isCooldown then
             cell._dragTooltipText = "Drag to reorder or move between rows"
@@ -2645,57 +2612,7 @@ RefreshEntryList = function()
             if button == "LeftButton" and dragState.active then
                 StopDrag()
             elseif button == "RightButton" and self._entry then
-                ShowEntryContextMenu(self, self._entry, self._entryIndex, false)
-            end
-        end)
-
-        PlaceCell(cell)
-    end
-
-    local function RenderDormantCell(spellID)
-        local entryName = ""
-        local info = Sources and Sources.QuerySpellInfo and Sources.QuerySpellInfo(spellID)
-        if info then entryName = info.name or "" end
-        if entryName == "" then entryName = "Spell #" .. tostring(spellID) end
-
-        if hasFilter and not string_find(string_lower(entryName), lowerFilter, 1, true) then
-            return
-        end
-
-        cellIndex = cellIndex + 1
-        local cell = GetOrCreateEntryCell(cellIndex)
-        cell:SetParent(entryListContent)
-
-        -- Dormant entries store as { id = spellID, type = "spell" } for context menu
-        cell._entry = { id = spellID, type = "spell" }
-        cell._entryIndex = nil
-        cell._entrySpecKey = nil
-        cell._rowNum = nil
-        cell._isDormant = true
-        cell._dragTooltipText = nil
-
-        local icon = "Interface\\Icons\\INV_Misc_QuestionMark"
-        info = Sources and Sources.QuerySpellInfo and Sources.QuerySpellInfo(spellID)
-        if info and info.iconID then icon = info.iconID end
-        cell._icon:SetTexture(icon)
-        cell._icon:SetDesaturated(true)
-        cell._icon:SetVertexColor(1, 1, 1)
-        cell._icon:Show()
-        cell:SetAlpha(0.6)
-        cell._isMissingFromCDM = false
-        local _rdcBdR, _rdcBdG, _rdcBdB = GetChromeBorder()
-        cell:SetBackdropBorderColor(_rdcBdR, _rdcBdG, _rdcBdB, 0.5)
-        if cell._warnBadge then cell._warnBadge:Hide() end
-        if cell._warnBadgeText then cell._warnBadgeText:Hide() end
-
-        -- No drag for dormant
-        cell:SetScript("OnDragStart", nil)
-        cell:SetScript("OnDragStop", nil)
-
-        -- Right-click: restore
-        cell:SetScript("OnClick", function(self, button)
-            if button == "RightButton" then
-                ShowEntryContextMenu(self, self._entry, nil, true)
+                ShowEntryContextMenu(self, self._entry, self._entryIndex)
             end
         end)
 
@@ -2788,30 +2705,33 @@ RefreshEntryList = function()
         local reverse = isCustomBar and (db.growDirection == "LEFT" or db.growDirection == "UP")
 
         -- For non-specSpecific customBar containers, split entries into
-        -- "usable on current character" and "cross-class" buckets. The
-        -- runtime path (cdm_icon_renderer.lua:BuildIcons) skips cross-class
-        -- entries entirely; surfacing them here under a dormant-style
-        -- header lets the user still see / right-click-remove every entry
-        -- they configured, even when they're logged in as a class that
-        -- can't cast the spell. The specSpecific path already labels
-        -- entries by source spec (_renderSpecKey), so leave it alone.
-        local splitCrossClass = isCustomBar and not db.specSpecific
-        local usableEntries, crossClassEntries
-        if splitCrossClass then
+        -- "usable on current character" and derived-dormant buckets.
+        -- Dormancy is computed per render from known-state — entries are
+        -- never relocated or removed because of it. The runtime path
+        -- (cdm_icon_renderer.lua:BuildIcons) skips these same entries at
+        -- display time; surfacing them here under a dormant header lets
+        -- the user still see / right-click-remove every entry they
+        -- configured — cross-class leftovers in a shared profile as well
+        -- as same-class talents not in the current loadout. The
+        -- specSpecific path already labels entries by source spec
+        -- (_renderSpecKey), so leave it alone.
+        local splitDormant = isCustomBar and not db.specSpecific
+        local usableEntries, dormantEntries
+        if splitDormant then
             usableEntries = {}
-            crossClassEntries = {}
+            dormantEntries = {}
             for i, entry in ipairs(entries) do
                 if entry then
                     if IsEntryUsableOnCurrentPlayer(entry) then
                         usableEntries[#usableEntries + 1] = { entry = entry, idx = i }
                     else
-                        crossClassEntries[#crossClassEntries + 1] = { entry = entry, idx = i }
+                        dormantEntries[#dormantEntries + 1] = { entry = entry, idx = i }
                     end
                 end
             end
         end
 
-        if splitCrossClass then
+        if splitDormant then
             if reverse then
                 for i = #usableEntries, 1, -1 do
                     local it = usableEntries[i]
@@ -2824,17 +2744,17 @@ RefreshEntryList = function()
             end
             FinishRow()
 
-            if #crossClassEntries > 0 then
+            if #dormantEntries > 0 then
                 RenderSectionHeader(
-                    "Dormant — Other Class  (" .. #crossClassEntries .. ")",
+                    "Dormant — Not Learned on This Character  (" .. #dormantEntries .. ")",
                     false)
                 if reverse then
-                    for i = #crossClassEntries, 1, -1 do
-                        local it = crossClassEntries[i]
+                    for i = #dormantEntries, 1, -1 do
+                        local it = dormantEntries[i]
                         RenderEntryCell(it.entry, it.idx)
                     end
                 else
-                    for _, it in ipairs(crossClassEntries) do
+                    for _, it in ipairs(dormantEntries) do
                         RenderEntryCell(it.entry, it.idx)
                     end
                 end
@@ -2854,19 +2774,6 @@ RefreshEntryList = function()
             FinishRow()
         end
     end
-
-    -- Dormant entries
-    local hasDormant = false
-    for spellID, _ in pairs(dormant) do
-        if type(spellID) == "number" then
-            if not hasDormant then
-                hasDormant = true
-                RenderSectionHeader("Dormant", false)
-            end
-            RenderDormantCell(spellID)
-        end
-    end
-    if hasDormant then FinishRow() end
 
     entryListContent:SetHeight(math_max(8, math_abs(sy) + 8))
     if entryListContent._updateScroll then
@@ -3565,7 +3472,7 @@ RefreshAddList = function()
                         elseif addType == "item" then
                             addResult = spellData:AddItem(activeContainer, addID, targetRow, itemKind)
                         else
-                            addResult = spellData:AddSpell(activeContainer, addID, kindFromTab, targetRow, entryRef.isKnown)
+                            addResult = spellData:AddSpell(activeContainer, addID, kindFromTab, targetRow)
                         end
 
                         C_Timer.After(0.02, function()

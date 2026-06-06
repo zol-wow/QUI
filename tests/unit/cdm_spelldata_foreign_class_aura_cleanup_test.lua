@@ -1,14 +1,15 @@
 -- tests/unit/cdm_spelldata_foreign_class_aura_cleanup_test.lua
 -- Run: lua tests/unit/cdm_spelldata_foreign_class_aura_cleanup_test.lua
+-- luacheck: globals InCombatLockdown GetTime IsSpellKnown IsPlayerSpell wipe CreateFrame
 --
--- Regression: a profile shared across classes (single AceDB "Default") let a
--- previous character's tracked-buff auras linger in a built-in AURA container
--- (buff / trackedBar) on a different class. CheckDormantSpells historically
--- skipped aura entries entirely (buff aura IDs aren't in the spellbook, so
--- IsSpellKnownByPlayer can't judge them), so foreign-class auras were never
--- cleaned. The fix uses the per-character Blizzard CDM catalog
--- (IsSpellInCDMCategory) as the class signal: an aura absent from THIS
--- character's aura family is foreign and must be shelved.
+-- A profile shared across classes (single AceDB "Default") lets a previous
+-- character's tracked-buff auras linger in a built-in AURA container
+-- (buff / trackedBar) on a different class. Owned lists are pure user
+-- intent and are never mutated for it — the foreign auras are hidden at
+-- render time instead: BuildSpellListFromOwned skips an aura entry that is
+-- absent from THIS character's CDM aura family (per-character Blizzard CDM
+-- catalog via IsSpellInCDMCategory), and only once that catalog has been
+-- walked, so early-load passes can't hide legitimate auras.
 
 local function noop() end
 
@@ -47,6 +48,11 @@ local trackedBarDB = {
     removedSpells = {},
 }
 
+-- The per-character Blizzard CDM catalog. On this Hunter only HUNTER_AURA
+-- is registered in the aura family; the DK auras are absent. The flag
+-- models the early-load window before the catalog has been walked.
+local catalogLoaded = false
+
 local ns = {
     Addon = {
         db = {
@@ -70,10 +76,9 @@ local ns = {
         QueryOverrideSpell = function(spellID) return spellID end,
         QueryBaseSpell = function() return nil end,
     },
-    -- The per-character Blizzard CDM catalog. On this Hunter only HUNTER_AURA
-    -- is registered in the aura family; the DK auras are absent.
     CDMComposer = {
         RebuildBlizzardCatalogMaps = function(spellToCD, _inCooldowns, inAuras)
+            if not catalogLoaded then return end
             spellToCD[HUNTER_AURA] = 9001
             inAuras[HUNTER_AURA] = true
         end,
@@ -86,25 +91,38 @@ local ns = {
 dofile("tests/helpers/load_cdm_spelldata_runtime.lua")(ns)
 assert(loadfile("modules/cdm/cdm_spelldata.lua"))("QUI", ns)
 
-ns.CDMSpellData:CheckDormantSpells("trackedBar")
-
-local owned = trackedBarDB.ownedSpells
-local ownedIDs = {}
-for _, entry in ipairs(owned) do
-    ownedIDs[entry.id] = true
+local function builtIDSet(containerKey)
+    local set = {}
+    for _, resolved in ipairs(ns.CDMSpellData:BuildSpellListFromOwned(containerKey)) do
+        set[resolved.spellID or resolved.id] = true
+    end
+    return set
 end
 
-assert(ownedIDs[HUNTER_AURA] == true,
-    "a same-class aura (in this character's CDM aura catalog) must be kept")
-assert(ownedIDs[DK_AURA_1] == nil,
-    "a foreign-class aura absent from this character's CDM aura catalog must be removed from ownedSpells")
-assert(ownedIDs[DK_AURA_2] == nil,
-    "all foreign-class auras must be removed, not just the first")
-assert(#owned == 1, "only the same-class aura should remain in the tracked-bar container")
+-- Phase A: catalog not walked yet (early load). No aura may be hidden —
+-- "absent from the catalog" is indistinguishable from "not loaded yet".
+local builtIDs = builtIDSet("trackedBar")
+assert(builtIDs[HUNTER_AURA], "same-class aura must render before the catalog is ready")
+assert(builtIDs[DK_AURA_1] and builtIDs[DK_AURA_2],
+    "no aura may be hidden before the catalog is ready")
 
--- Re-running must be stable: the surviving same-class aura stays put.
+-- Phase B: catalog walked. Foreign-class auras disappear from the built
+-- list — and ONLY from the built list; ownedSpells is pure user intent.
+catalogLoaded = true
+builtIDs = builtIDSet("trackedBar")
+assert(builtIDs[HUNTER_AURA],
+    "a same-class aura (in this character's CDM aura catalog) must render")
+assert(not builtIDs[DK_AURA_1],
+    "a foreign-class aura absent from this character's CDM aura catalog must be hidden")
+assert(not builtIDs[DK_AURA_2],
+    "all foreign-class auras must be hidden, not just the first")
+
+assert(#trackedBarDB.ownedSpells == 3,
+    "ownedSpells must never be mutated by the render-time aura filter")
 ns.CDMSpellData:CheckDormantSpells("trackedBar")
-assert(#trackedBarDB.ownedSpells == 1, "second pass must be a no-op for the same-class aura")
-assert(trackedBarDB.ownedSpells[1].id == HUNTER_AURA, "same-class aura must survive repeated passes")
+assert(#trackedBarDB.ownedSpells == 3,
+    "the reconcile pass must not remove foreign-class auras either")
+assert(next(trackedBarDB.dormantSpells) == nil,
+    "no shelf record may be written for foreign-class auras")
 
 print("OK: cdm_spelldata_foreign_class_aura_cleanup_test")

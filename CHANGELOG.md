@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## Unreleased
+
+### Fixed
+- **Cooldown Manager containers never automatically remove tracked spells anymore.** The beta25 fix narrowed the login window in which a tracked talent spell (interrupts like Quell, and other class-tree picks) could be judged "unknown" and silently moved out of a container — but the window could still be hit during talent/loadout swaps, when the game transiently unlearns and relearns talent spells. The model is now changed outright: your tracked lists are treated as pure user intent and are never modified by spell-known checks at all. A spell you can't currently use is simply not drawn on the bar (and comes back on its own as soon as the game reports it learned again), the composer lists it in a grayed **Dormant** section where it can still be removed by hand, and adding a spell the game momentarily reports as unknown now lands directly in your list instead of on a hidden shelf. Any spells the old behavior had already shelved are automatically restored into their containers at their saved position on first load — including spells stranded by this bug in earlier builds.
+
 ## v4.0.0-beta25 - 2026-06-05
 
 > 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta24 with a cold-login keyboard click-cast rework, a Cooldown Manager data-loss fix, and two skinning border fixes. No schema migrations: your beta24 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.

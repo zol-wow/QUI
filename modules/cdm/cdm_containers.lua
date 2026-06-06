@@ -549,8 +549,10 @@ local function SaveSpecProfile(specID)
             specData[key] = {
                 ownedSpells = CopyTable(containerDB.ownedSpells),
                 removedSpells = CopyTable(containerDB.removedSpells or {}),
-                dormantSpells = CopyTable(containerDB.dormantSpells or {}),
-                dormantSequence = containerDB._dormantSequence or 0,
+                -- dormantSpells is no longer persisted: the shelf is a
+                -- legacy recovery surface, always folded back into the
+                -- list and emptied by CheckAllDormantSpells. Restore paths
+                -- still read it from old saves.
             }
             if type(containerDB.ownedSpells) == "table" and #containerDB.ownedSpells > 0 then
                 hasAnySpells = true
@@ -609,8 +611,10 @@ local function SaveLoadoutProfile(loadoutID, specID)
             specData[key] = {
                 ownedSpells = CopyTable(containerDB.ownedSpells),
                 removedSpells = CopyTable(containerDB.removedSpells or {}),
-                dormantSpells = CopyTable(containerDB.dormantSpells or {}),
-                dormantSequence = containerDB._dormantSequence or 0,
+                -- dormantSpells is no longer persisted: the shelf is a
+                -- legacy recovery surface, always folded back into the
+                -- list and emptied by CheckAllDormantSpells. Restore paths
+                -- still read it from old saves.
             }
             if type(containerDB.ownedSpells) == "table" and #containerDB.ownedSpells > 0 then
                 hasAnySpells = true
@@ -744,8 +748,7 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
                     specData[key] = {
                         ownedSpells = CopyTable(containerDB.ownedSpells),
                         removedSpells = CopyTable(containerDB.removedSpells or {}),
-                        dormantSpells = CopyTable(containerDB.dormantSpells or {}),
-                        dormantSequence = containerDB._dormantSequence or 0,
+                        -- dormantSpells no longer persisted (see SaveSpecProfile).
                     }
                     if type(containerDB.ownedSpells) == "table" and #containerDB.ownedSpells > 0 then
                         hasAnySpells = true
@@ -786,11 +789,10 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
                 end
             end
         end
-        -- Validate restored spells belong to the current spec/class.
-        -- Saved profiles can contain spells from other specs or even other
-        -- classes (shared AceDB profile across characters). Run a full
-        -- dormant check synchronously so unrecognised spells are shelved
-        -- before the first RefreshAll renders them.
+        -- Fold any dormant-shelf records carried by an old saved profile
+        -- back into the restored lists before the first RefreshAll. Foreign
+        -- spec/class spells in a shared profile are NOT removed — the
+        -- render-time known filters simply skip them for this character.
         if ns.CDMSpellData then
             ns.CDMSpellData:CheckAllDormantSpells()
         end
@@ -1901,8 +1903,8 @@ local _editModeActive = false
 local _disabledMouseFrames = {}
 local _forceLayoutKey = nil  -- set temporarily to bypass edit mode check for one container
 local _containerMouseSyncPending = false
--- Combat-deferred CHALLENGE_MODE_START recovery flag. The key-start dormant
--- restore + reconcile + refresh cannot run during combat lockdown; when the
+-- Combat-deferred CHALLENGE_MODE_START recovery flag. The key-start
+-- reconcile + refresh cannot run during combat lockdown; when the
 -- player pulls before it fires, this records that recovery is owed so
 -- PLAYER_REGEN_ENABLED can drain it (drained at line ~5402). Without this, an
 -- in-combat key start dropped the recovery permanently (stale until /reload).
@@ -3281,9 +3283,11 @@ function ownedEngine:Initialize()
                 inInitSafeWindow = false
                 ns._inInitSafeWindow = pewPreviousInitSafeWindow
             elseif isLogin then
-                -- Fresh login (or character switch): run dormant spell cleanup
-                -- so cross-class/spec spells are removed before the first
-                -- meaningful RefreshAll fires from the deferred timer.
+                -- Fresh login (or character switch): fold any stale dormant
+                -- shelves and reconcile before the first meaningful
+                -- RefreshAll fires from the deferred timer. Cross-class/spec
+                -- spells are never removed — the render-time known filters
+                -- skip them for this character.
                 C_Timer.After(0.5, function()
                     -- Self-heal: a peaceful login fires no PLAYER_REGEN_ENABLED,
                     -- so if spec tracking deferred during the load window (spec
@@ -3512,23 +3516,23 @@ function ownedEngine:Initialize()
             end
 
             -- Drain a CHALLENGE_MODE_START recovery that was deferred because
-            -- the key started in combat. Mirrors the dormant-restore + reconcile
-            -- + refresh the CHALLENGE_MODE_START handler runs out of combat, so
-            -- an in-combat key start no longer needs a /reload to recover.
+            -- the key started in combat. Mirrors the reconcile + refresh the
+            -- CHALLENGE_MODE_START handler runs out of combat, so an
+            -- in-combat key start no longer needs a /reload to recover.
             if _challengeModeRecoveryPending and not InCombatLockdown() then
                 _challengeModeRecoveryPending = false
                 if ns.CDMSpellData then
-                    ns.CDMSpellData:CheckAllDormantSpells(true)
+                    ns.CDMSpellData:CheckAllDormantSpells()
                     ns.CDMSpellData:ReconcileAllContainers()
                 end
                 RefreshAll()
             end
         elseif event == "CHALLENGE_MODE_START" then
-            -- Restore dormant spells before refreshing — SPELLS_CHANGED
-            -- may have incorrectly shelved spells during the zone
-            -- transition when WoW APIs were temporarily stale.
-            -- restoreOnly=true: only rescue spells from dormant, don't
-            -- risk marking more spells dormant with still-settling APIs.
+            -- Reconcile + refresh after the key-start zone transition.
+            -- Entries are never shelved anymore, but the render-time known
+            -- filters may have hidden icons while WoW APIs were temporarily
+            -- stale during the transition — a fresh reconcile + refresh
+            -- re-evaluates them against settled data.
             -- If already in combat (the player pulled before this fires),
             -- defer to PLAYER_REGEN_ENABLED via _challengeModeRecoveryPending —
             -- otherwise the recovery is lost and the display stays stale until
@@ -3541,7 +3545,7 @@ function ownedEngine:Initialize()
                 end
                 _challengeModeRecoveryPending = false
                 if ns.CDMSpellData then
-                    ns.CDMSpellData:CheckAllDormantSpells(true)
+                    ns.CDMSpellData:CheckAllDormantSpells()
                     ns.CDMSpellData:ReconcileAllContainers()
                 end
                 RefreshAll()
@@ -3919,10 +3923,10 @@ ns.CDMContainers = {
     -- current spec. Called after profile import so foreign-class spells are
     -- replaced with the player's actual abilities. Custom (customBar)
     -- containers are skipped: they keep their list in `entries` (the
-    -- ownedSpells wipe is a no-op and SnapshotBlizzardCDM ignores them), so
-    -- clearing here only destroyed their dormantSpells recovery shelf; their
-    -- foreign imported entries are shelved non-destructively by the dormant
-    -- pass once spell data is ready.
+    -- ownedSpells wipe is a no-op and SnapshotBlizzardCDM ignores them);
+    -- their foreign imported entries simply don't render on this character
+    -- (render-time known filter) and stay available for manual removal in
+    -- the composer.
     ResnapshotForCurrentSpec = function()
         if not ns.CDMSpellData then return end
         local containerKeys = CDMContainers_API:GetAllContainerKeys()

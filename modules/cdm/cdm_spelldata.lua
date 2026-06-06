@@ -100,9 +100,9 @@ local CDMSpellData = {}
 CDMSpellData.SyncCooldownViewerCVar = SyncCooldownViewerCVarToMasterToggle
 
 -- Zone transition flag — set true on PLAYER_ENTERING_WORLD, cleared after
--- 2s. Suppresses SPELLS_CHANGED dormant checks while WoW APIs
--- (IsSpellKnown, C_CooldownViewer, spellbook) are returning
--- stale/incomplete data.
+-- 2s. Defers SPELLS_CHANGED reconciles while WoW APIs (IsSpellKnown,
+-- C_CooldownViewer, spellbook) are returning stale/incomplete data, so the
+-- render-time known filters don't churn icons off and back on.
 local _inZoneTransition = false
 -- Set true when a SPELLS_CHANGED is suppressed because _inZoneTransition is
 -- active. Drained when the zone-transition window closes (the 2s timer on
@@ -3220,6 +3220,24 @@ local function SnapshotUnsetBuiltinContainers()
     return snapshotted, allReady
 end
 
+-- The per-character Blizzard CDM catalog (_spellToCooldownID + family
+-- membership maps) is populated. Class-aware aura checks gate on the aura
+-- family specifically so cooldown-only early snapshots cannot false-positive
+-- every aura as "foreign" during early load.
+local function CDMCatalogReady(family)
+    if not next(_spellToCooldownID) then
+        if RebuildSpellToCooldownID then
+            RebuildSpellToCooldownID()
+        end
+    end
+    if family == "aura" or family == "auraBar" then
+        return next(_spellInCDMAuras) ~= nil
+    elseif family == "cooldown" then
+        return next(_spellInCDMCooldowns) ~= nil
+    end
+    return next(_spellToCooldownID) ~= nil
+end
+
 -- BuildSpellListFromOwned: Build runtime spell list from owned data
 function CDMSpellData:BuildSpellListFromOwned(containerKey)
     local db = GetContainerDB(containerKey)
@@ -3246,11 +3264,27 @@ function CDMSpellData:BuildSpellListFromOwned(containerKey)
             if entry.type == "spell" and removedSpells[entry.id] then
                 isRemoved = true
             end
-            -- Owned spells are explicitly configured by the user via /cdm.
-            -- No spellbook filter needed — the dormant system handles
-            -- spec-switching cleanup separately.
+            -- Display-time dormancy. Owned lists are pure user intent and
+            -- are never mutated by known-state probes (IsSpellKnown races
+            -- at cold login / loadout swaps used to delete tracked talent
+            -- spells). An entry whose spell this character can't currently
+            -- cast is simply not rendered this pass; it reappears on the
+            -- next reconcile once spell data loads or the talent returns.
+            -- Aura entries can't use the spellbook (buff IDs rarely live
+            -- there) — they're judged by the per-character Blizzard CDM
+            -- catalog instead, and only once that catalog has been walked,
+            -- so early-load passes can't hide legitimate auras.
+            local isDormant = false
+            if not isRemoved and entry.type == "spell" and type(entry.id) == "number" then
+                if IsAuraEntry(entry, containerKey) then
+                    isDormant = CDMCatalogReady("aura")
+                        and not self:IsSpellInCDMCategory(entry.id, "aura")
+                else
+                    isDormant = not IsSpellKnownByPlayer(entry.id)
+                end
+            end
 
-            if not isRemoved then
+            if not isRemoved and not isDormant then
                 local resolved = ResolveOwnedEntry(entry, containerKey, i)
                 if resolved then
                     resolved._assignedRow = entry.row  -- carry row assignment
@@ -3287,314 +3321,6 @@ function CDMSpellData:BuildSpellListFromOwned(containerKey)
     return result
 end
 
----------------------------------------------------------------------------
--- DORMANT SPELL CHECKING
--- Checks ownedSpells against currently known spells and updates dormantSpells.
--- Called on talent/spec changes. Dormant spells are skipped during display
--- but preserved in ownedSpells for when the player respecs back.
----------------------------------------------------------------------------
--- CheckDormantSpells: Talent-aware reconciliation.
--- Phase 1: Move unlearned spells from ownedSpells → dormantSpells, saving slot index.
--- Phase 2: Re-insert returning dormant spells at their saved position.
--- dormantSpells is a map: { [spellID] = { slot = originalSlotIndex, row = rowNum } }
--- Dormant records are never purged automatically (see the comment where the
--- old Phase 3 lived); users can remove them via the composer.
---
--- restoreOnly (boolean): when true, skip Phase 1 (marking spells dormant).
--- Only run Phase 2 (restore returning spells). Used by recovery handlers
--- (PLAYER_REGEN_ENABLED, CHALLENGE_MODE_START) that should rescue
--- incorrectly-dormanted spells without risking re-dormanting more.
-
--- The per-character Blizzard CDM catalog (_spellToCooldownID + family
--- membership maps) is populated. Class-aware aura cleanup gates on the aura
--- family specifically so cooldown-only early snapshots cannot false-positive
--- every aura as "foreign" during early load.
-local function CDMCatalogReady(family)
-    if not next(_spellToCooldownID) then
-        if RebuildSpellToCooldownID then
-            RebuildSpellToCooldownID()
-        end
-    end
-    if family == "aura" or family == "auraBar" then
-        return next(_spellInCDMAuras) ~= nil
-    elseif family == "cooldown" then
-        return next(_spellInCDMCooldowns) ~= nil
-    end
-    return next(_spellToCooldownID) ~= nil
-end
-
-local function GetDormancyActiveEntries(db)
-    if type(db) ~= "table" then return nil end
-    if db.containerType == "customBar" then
-        return db.entries
-    end
-    return db.ownedSpells
-end
-
-local CDM_COOLDOWN_CATEGORIES = { 0, 1 }
-local CDM_AURA_CATEGORIES = { 2, 3 }
-
-local function CooldownInfoMatchesSpellID(info, spellID)
-    if type(info) ~= "table" or type(spellID) ~= "number" then return false end
-    if info.spellID == spellID
-        or info.overrideSpellID == spellID
-        or info.overrideTooltipSpellID == spellID then
-        return true
-    end
-    if type(info.linkedSpellIDs) == "table" then
-        for _, linkedID in ipairs(info.linkedSpellIDs) do
-            if linkedID == spellID then return true end
-        end
-    end
-    return false
-end
-
-local function GetCooldownViewerKnownStateForSpell(spellID, family)
-    local catalog = ns.CDMCatalog
-    if type(spellID) ~= "number"
-        or not (catalog and catalog.GetCategorySet and catalog.GetCooldownInfo) then
-        return nil
-    end
-
-    local categories = (family == "aura" or family == "auraBar")
-        and CDM_AURA_CATEGORIES
-        or CDM_COOLDOWN_CATEGORIES
-    local sawMatch = false
-    for _, category in ipairs(categories) do
-        local cooldownIDs = catalog.GetCategorySet(category, true)
-        if type(cooldownIDs) == "table" then
-            for _, cooldownID in ipairs(cooldownIDs) do
-                local info = catalog.GetCooldownInfo(cooldownID)
-                if CooldownInfoMatchesSpellID(info, spellID) then
-                    sawMatch = true
-                    if info.isKnown == true then
-                        return true
-                    end
-                end
-            end
-        end
-    end
-    if sawMatch then return false end
-    return nil
-end
-
--- Sort returning dormant spells by saved slot, then by dormant sequence for
--- deterministic same-slot restores. Module-local (closes over nothing) so the
--- dormant pass does not allocate a fresh comparator closure each call.
-local function CompareDormantReturning(a, b)
-    if a.slot ~= b.slot then
-        return a.slot < b.slot
-    end
-    if a.seq ~= b.seq then
-        return a.seq < b.seq
-    end
-    return a.id < b.id
-end
-
-function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
-    -- Readiness gate for Phase 1 shelving. At cold login
-    -- IsSpellKnown/IsPlayerSpell return false for class-tree talents until the
-    -- trait system loads — C_ClassTalents.GetActiveConfigID() is nil until then —
-    -- so judging entries during that window wrongly shelves valid talent spells
-    -- (e.g. Evoker Quell 351338) out of custom containers. The cold-load grace
-    -- and zone-transition windows cover the same API staleness for reconciles
-    -- driven by the COOLDOWN_VIEWER_* debounce, which does not check them itself.
-    -- Phase 2 (restore) is never gated: a spell testing KNOWN is affirmative
-    -- evidence regardless of load state.
-    local function CanJudgeSpellKnowledge()
-        if _inZoneTransition then return false end
-        if ns._cdmColdLoadActive then return false end
-        if C_ClassTalents and C_ClassTalents.GetActiveConfigID then
-            if C_ClassTalents.GetActiveConfigID() == nil then return false end
-        end
-        return true
-    end
-
-    local db = GetContainerDB(containerKey)
-    if not db then
-        return
-    end
-
-    local activeEntries = GetDormancyActiveEntries(db)
-    if type(activeEntries) ~= "table" then
-        return
-    end
-
-    local ownedSpells = NormalizeOwnedSpells(activeEntries)
-
-    -- Migrate legacy dormantSpells from array to map format
-    if type(db.dormantSpells) ~= "table" then
-        db.dormantSpells = {}
-    else
-        -- If it's an array (ipairs-style), convert to map
-        local first = db.dormantSpells[1]
-        if type(first) == "number" then
-            local migrated = {}
-            for _, sid in ipairs(db.dormantSpells) do
-                if type(sid) == "number" then
-                    migrated[sid] = 9999  -- no saved position from legacy data
-                end
-            end
-            db.dormantSpells = migrated
-        end
-    end
-
-    -- Phase 0 (aura restore): resurrect dormant aura entries that belong to
-    -- THIS character's CDM aura family. A buff aura ID is a passive presence
-    -- indicator, not a cast ability that "comes and goes" with talents, so a
-    -- same-class aura should never stay dormant. Foreign-class auras (another
-    -- class's tracked buffs left in a shared AceDB profile) are the exception:
-    -- they stay dormant until manually removed via the composer. Class is decided via the
-    -- per-character Blizzard CDM catalog. Before the catalog is populated we
-    -- can't tell foreign from own, so fall back to the legacy blanket restore
-    -- to avoid stranding legitimate auras during early load.
-    if IsBuiltinAuraContainerKey(containerKey)
-        and next(db.dormantSpells) then
-        local catalogReady = CDMCatalogReady("aura")
-        for sid, savedData in pairs(db.dormantSpells) do
-            local pickerKnown
-            if type(savedData) == "table" then
-                pickerKnown = savedData.pickerKnown
-            end
-            local shouldRestore = pickerKnown == false
-                and GetCooldownViewerKnownStateForSpell(sid, "aura") == true
-            if pickerKnown ~= false then
-                shouldRestore = (not catalogReady) or self:IsSpellInCDMCategory(sid, "aura")
-            end
-            if shouldRestore then
-                local restoredRow
-                if type(savedData) == "table" then
-                    restoredRow = savedData.row
-                end
-                activeEntries[#activeEntries + 1] = {
-                    type = "spell",
-                    id = sid,
-                    row = restoredRow,
-                    kind = "aura",
-                }
-                -- Setting an existing key to nil mid-traversal is permitted.
-                db.dormantSpells[sid] = nil
-            end
-        end
-    end
-
-    -- Phase 1: Move spells that don't belong to this character to dormant.
-    -- Skipped when restoreOnly is true — recovery handlers should only
-    -- rescue spells from dormant, not risk marking more spells dormant
-    -- while APIs may still be settling after a zone transition.
-    --
-    -- Cooldown entries are judged by the spellbook (IsSpellKnownByPlayer).
-    -- Aura entries can't be: buff/aura spell IDs are rarely in the spellbook
-    -- (the buff ID and the cast ability ID usually differ). They are judged
-    -- by the per-character Blizzard CDM catalog instead — an aura absent from
-    -- THIS character's aura family is foreign (e.g. another class's tracked
-    -- buff left behind in a shared AceDB profile) and is shelved. The catalog
-    -- gate means a legitimate same-class aura that simply isn't applied right
-    -- now is kept (the runtime resolver shows it inactive); only genuinely
-    -- foreign auras are removed, and only once the catalog has been walked.
-    -- Both judgments are skipped entirely while CanJudgeSpellKnowledge() is
-    -- false — shelving on unloaded data is how talent spells were lost at login.
-    if not restoreOnly and CanJudgeSpellKnowledge() then
-        local toRemove = {}  -- indices to remove (descending order)
-        local auraCatalogReady
-        for i, entry in ipairs(ownedSpells) do
-            if entry and entry.id and entry.type == "spell" then
-                local shouldShelve
-                if IsAuraEntry(entry, containerKey) then
-                    if auraCatalogReady == nil then
-                        auraCatalogReady = CDMCatalogReady("aura")
-                    end
-                    shouldShelve = auraCatalogReady
-                        and not self:IsSpellInCDMCategory(entry.id, "aura")
-                else
-                    shouldShelve = not IsSpellKnownByPlayer(entry.id)
-                end
-                if shouldShelve then
-                    -- Save slot position AND row assignment so both are restored
-                    db._dormantSequence = (db._dormantSequence or 0) + 1
-                    db.dormantSpells[entry.id] = {
-                        slot = i,
-                        row = entry.row,
-                        kind = entry.kind,
-                        seq = db._dormantSequence,
-                    }
-                    toRemove[#toRemove + 1] = i
-                end
-            end
-        end
-        -- Remove from active entries in reverse order to preserve indices
-        for j = #toRemove, 1, -1 do
-            table.remove(activeEntries, toRemove[j])
-        end
-    end
-
-    -- Phase 2: Re-insert returning dormant spells at saved positions
-    local returning = {}
-    for sid, savedData in pairs(db.dormantSpells) do
-        if IsSpellKnownByPlayer(sid) then
-            -- Support both legacy (number) and new (table) dormant format
-            local savedSlot, savedRow, savedSeq, savedKind
-            if type(savedData) == "table" then
-                savedSlot = savedData.slot or 9999
-                savedRow = savedData.row
-                savedSeq = savedData.seq or savedSlot
-                savedKind = savedData.kind
-            else
-                savedSlot = savedData or 9999
-                savedSeq = savedSlot
-            end
-            returning[#returning + 1] = {
-                id = sid,
-                slot = savedSlot,
-                row = savedRow,
-                seq = savedSeq,
-                kind = savedKind,
-            }
-        end
-    end
-    -- Sort by saved slot, then by dormant sequence for deterministic same-slot restores.
-    table.sort(returning, CompareDormantReturning)
-    for _, info in ipairs(returning) do
-        db.dormantSpells[info.id] = nil  -- remove from dormant
-        local insertAt = math.min(info.slot, #activeEntries + 1)
-        local restored = { type = "spell", id = info.id, row = info.row }
-        if info.kind == "aura" or info.kind == "cooldown" then
-            restored.kind = info.kind
-        else
-            restored.kind = ResolveEntryKind(restored, containerKey)
-        end
-        table.insert(activeEntries, insertAt, restored)
-    end
-
-    -- There is intentionally NO purge phase. A dormant record whose spell ID
-    -- is missing from the catalog/spellbook scan is indistinguishable from
-    -- "data not loaded yet" (login races; GetCooldownViewerCooldownInfo is
-    -- documented MayReturnNothing), and purging on that signal permanently
-    -- deleted users' tracked talent spells. A dormant record for a genuinely
-    -- removed spell ID is inert — Phase 2 requires IsSpellKnownByPlayer to go
-    -- true, which never happens for a dead ID — and the composer's dormant
-    -- list lets users remove stale records manually (RemoveDormantEntry).
-
-    -- Summary
-    local finalOwned = type(activeEntries) == "table" and #activeEntries or 0
-    local finalDormant = 0
-    if type(db.dormantSpells) == "table" then
-        for _ in pairs(db.dormantSpells) do finalDormant = finalDormant + 1 end
-    end
-end
-
--- CheckAllDormantSpells: Run dormant check on all container keys.
--- restoreOnly: when true, only Phase 2 (restore) runs — no new dormanting.
--- Used by recovery handlers.
-function CDMSpellData:CheckAllDormantSpells(restoreOnly)
-    local containerKeys = GetBuiltinContainerKeys()
-    if ns.CDMContainers and ns.CDMContainers.GetAllContainerKeys then
-        containerKeys = ns.CDMContainers.GetAllContainerKeys()
-    end
-    for _, key in ipairs(containerKeys) do
-        self:CheckDormantSpells(key, restoreOnly)
-    end
-end
 
 ---------------------------------------------------------------------------
 -- EXTRA SPELL TABLES (racials, health items)
@@ -3654,10 +3380,11 @@ end
 ---------------------------------------------------------------------------
 
 
--- Shared reconcile tail. CheckAllDormantSpells shelves/restores spells for
--- the active character, ReconcileAllContainers rebuilds the spellID maps, and
--- FireChangeCallback refreshes display after any dormant cleanup. Callers must
--- invoke this inside their own combat-lockdown guard.
+-- Shared reconcile tail. CheckAllDormantSpells folds any stale dormant
+-- shelves back into their lists, ReconcileAllContainers rebuilds the spellID
+-- maps, and FireChangeCallback refreshes display — which re-evaluates the
+-- render-time known filters against fresh spell data. Callers must invoke
+-- this inside their own combat-lockdown guard.
 local function RunReconcileSequence()
     CDMSpellData:CheckAllDormantSpells()
     CDMSpellData:ReconcileAllContainers()
@@ -3681,7 +3408,8 @@ function CDMSpellData:RunColdLoadReconcile()
             return
         end
         -- Cold-load ordering contract: the catalog must be fresh before the
-        -- dormant check, so rebuild explicitly here ahead of the shared tail.
+        -- render-time aura known checks, so rebuild explicitly here ahead of
+        -- the shared tail.
         if RebuildSpellToCooldownID then
             RebuildSpellToCooldownID()
         end
@@ -3705,9 +3433,9 @@ function CDMSpellData:ReconcileAllContainers()
         return
     end
 
-    -- Rebuild spellID maps. No spell is auto-added at the per-container level;
-    -- the user owns the curated list via the Composer and CheckAllDormantSpells
-    -- handles spec-switch cleanup separately.
+    -- Rebuild spellID maps. No spell is auto-added or auto-removed at the
+    -- per-container level; the user owns the curated list via the Composer
+    -- and unknown spells are hidden at render time only.
     RebuildSpellToCooldownID()
 end
 
@@ -3940,6 +3668,119 @@ local function GetMutableEntryList(db, containerKey, createIfMissing, specKey)
     return db[field]
 end
 
+---------------------------------------------------------------------------
+-- DORMANT SHELF FOLD-BACK
+-- The dormant *storage* model is gone. Tracked lists (entries/ownedSpells)
+-- are pure user intent and are never mutated by known-state probes:
+-- IsSpellKnown/IsPlayerSpell race at cold login and during loadout swaps
+-- (the trait system transiently unlearns/relearns talent spells while
+-- C_ClassTalents.GetActiveConfigID() stays non-nil), and every readiness
+-- gate bolted onto the old shelving pass just narrowed the window without
+-- closing it — tracked talent spells (e.g. Evoker Quell 351338) kept
+-- getting moved out of containers. "Dormant" is now derived state:
+-- BuildSpellListFromOwned and the custom-bar build filter skip unknown
+-- spells at render time (self-healing — a wrong answer hides an icon for
+-- one pass), and the composer surfaces them in a derived Dormant section.
+--
+-- What remains here is recovery: any dormantSpells record left behind by
+-- the old model — or resurrected from an old saved spec/loadout profile —
+-- is folded back into the container's live list at its saved slot, then
+-- the shelf is cleared. Runs on the normal reconcile cadence, so stale
+-- shelf data from any source self-heals. Records whose spell the user
+-- already re-added are dropped (the entry in the list wins).
+---------------------------------------------------------------------------
+local function CompareShelfReturning(a, b)
+    if a.slot ~= b.slot then
+        return a.slot < b.slot
+    end
+    if a.seq ~= b.seq then
+        return a.seq < b.seq
+    end
+    return a.id < b.id
+end
+
+function CDMSpellData:CheckDormantSpells(containerKey)
+    local db = GetContainerDB(containerKey)
+    if not db then return end
+
+    local shelf = db.dormantSpells
+    if type(shelf) ~= "table" or next(shelf) == nil then return end
+
+    -- Builtin containers with ownedSpells == nil haven't snapshotted yet —
+    -- creating the list here would suppress SnapshotBlizzardCDM. Leave the
+    -- shelf alone; it folds once the list exists. Custom containers have no
+    -- snapshot semantics, so creating their (possibly per-spec) list is safe.
+    local createIfMissing = (db.containerType == "customBar")
+    local list = GetMutableEntryList(db, containerKey, createIfMissing)
+    if type(list) ~= "table" then return end
+
+    -- Tolerate every historical shelf shape: array of spellIDs, map of
+    -- spellID → slot number, map of spellID → { slot, row, kind, seq }.
+    local returning = {}
+    if type(shelf[1]) == "number" then
+        for _, sid in ipairs(shelf) do
+            if type(sid) == "number" then
+                returning[#returning + 1] = { id = sid, slot = 9999, seq = 9999 }
+            end
+        end
+    else
+        for sid, saved in pairs(shelf) do
+            if type(sid) == "number" then
+                if type(saved) == "table" then
+                    local slot = saved.slot or 9999
+                    returning[#returning + 1] = {
+                        id = sid,
+                        slot = slot,
+                        row = saved.row,
+                        kind = saved.kind,
+                        seq = saved.seq or slot,
+                    }
+                elseif type(saved) == "number" then
+                    returning[#returning + 1] = { id = sid, slot = saved, seq = saved }
+                end
+            end
+        end
+    end
+    table.sort(returning, CompareShelfReturning)
+
+    local present = {}
+    for _, entry in ipairs(list) do
+        local norm = NormalizeOwnedEntry(entry)
+        if type(norm) == "table" and norm.type == "spell" and type(norm.id) == "number" then
+            present[norm.id] = true
+        end
+    end
+
+    for _, info in ipairs(returning) do
+        if not present[info.id] then
+            present[info.id] = true
+            local insertAt = math.min(info.slot, #list + 1)
+            local restored = { type = "spell", id = info.id, row = info.row }
+            if info.kind == "aura" or info.kind == "cooldown" then
+                restored.kind = info.kind
+            else
+                restored.kind = ResolveEntryKind(restored, containerKey)
+            end
+            table.insert(list, insertAt, restored)
+        end
+    end
+
+    db.dormantSpells = {}
+    db._dormantSequence = nil
+end
+
+-- Fold any stale dormant shelves back into their lists, across all
+-- container keys. Part of the standard reconcile sequence.
+function CDMSpellData:CheckAllDormantSpells()
+    local containerKeys = GetBuiltinContainerKeys()
+    if ns.CDMContainers and ns.CDMContainers.GetAllContainerKeys then
+        containerKeys = ns.CDMContainers.GetAllContainerKeys()
+    end
+    for _, key in ipairs(containerKeys) do
+        self:CheckDormantSpells(key)
+    end
+end
+
 -- Public: read the entry list for a given spec (defaults to current).
 -- Used by cdm_icons BuildIcons to render specSpecific containers.
 function CDMSpellData:GetSpecEntries(containerKey, specKey)
@@ -3999,7 +3840,9 @@ function CDMSpellData:AddEntry(containerKey, entry)
     if entry.kind == nil then
         entry.kind = ResolveEntryKind(entry, containerKey)
     end
-    local pickerKnown = entry.isKnown
+    -- Strip the picker's transient known-state hint. Known-state is derived
+    -- display state — it is never persisted and never routes an add anywhere
+    -- but the list.
     entry.isKnown = nil
 
     -- Within-container dedup — prevent adding duplicates. customBar
@@ -4020,35 +3863,11 @@ function CDMSpellData:AddEntry(containerKey, entry)
         end
     end
 
+    -- A stale shelf record for this spell must not survive the add — the
+    -- fold-back pass would otherwise re-insert a duplicate at its saved slot.
     if entry.type == "spell" and type(entry.id) == "number"
-        and type(db.dormantSpells) == "table" and db.dormantSpells[entry.id] then
-        return false
-    end
-
-    local forceDormantFromPicker = pickerKnown == false
-    if entry.type == "spell" and type(entry.id) == "number"
-        and (forceDormantFromPicker or not IsAuraEntry(entry, containerKey)) then
-        local isKnown
-        if pickerKnown ~= nil then
-            isKnown = (pickerKnown == true)
-        else
-            isKnown = IsSpellKnownByPlayer(entry.id)
-        end
-        if not isKnown then
-            if type(db.dormantSpells) ~= "table" then
-                db.dormantSpells = {}
-            end
-            db._dormantSequence = (db._dormantSequence or 0) + 1
-            db.dormantSpells[entry.id] = {
-                slot = #list + 1,
-                row = entry.row,
-                kind = entry.kind,
-                pickerKnown = pickerKnown,
-                seq = db._dormantSequence,
-            }
-            FireChangeCallback()
-            return true
-        end
+        and type(db.dormantSpells) == "table" then
+        db.dormantSpells[entry.id] = nil
     end
 
     list[#list + 1] = entry
@@ -4144,48 +3963,6 @@ function CDMSpellData:MoveEntryBetweenContainers(fromKey, toKey, index)
     return true
 end
 
-function CDMSpellData:RestoreDormantEntry(containerKey, spellID)
-    if CombatGuard() then return false end
-    local db = GetContainerDB(containerKey)
-    if not db then return false end
-    if type(db.dormantSpells) ~= "table" then return false end
-    local savedData = db.dormantSpells[spellID]
-    if not savedData then return false end
-    local list = GetMutableEntryList(db, containerKey, true)
-    if type(list) ~= "table" then return false end
-    db.dormantSpells[spellID] = nil
-    -- Support both legacy (number) and new (table) dormant format
-    local savedSlot, savedRow, savedKind
-    if type(savedData) == "table" then
-        savedSlot = savedData.slot or 9999
-        savedRow = savedData.row
-        savedKind = savedData.kind
-    else
-        savedSlot = savedData or 9999
-    end
-    local insertAt = math.min(savedSlot, #list + 1)
-    local restored = { type = "spell", id = spellID, row = savedRow }
-    if savedKind == "aura" or savedKind == "cooldown" then
-        restored.kind = savedKind
-    else
-        restored.kind = ResolveEntryKind(restored, containerKey)
-    end
-    table.insert(list, insertAt, restored)
-    FireChangeCallback()
-    return true
-end
-
-function CDMSpellData:RemoveDormantEntry(containerKey, spellID)
-    if CombatGuard() then return false end
-    local db = GetContainerDB(containerKey)
-    if not db then return false end
-    if type(db.dormantSpells) == "table" then
-        db.dormantSpells[spellID] = nil
-    end
-    FireChangeCallback()
-    return true
-end
-
 function CDMSpellData:IsSpellKnown(spellID)
     return IsSpellKnownByPlayer(spellID)
 end
@@ -4237,8 +4014,8 @@ end
 -- Convenience wrappers. Optional `kind` arg overrides the runtime
 -- classifier — pass it from the Composer when the picker tab dictates
 -- (Passives/Buffs → aura; all_cooldowns/items → cooldown).
-function CDMSpellData:AddSpell(containerKey, spellID, kind, row, isKnown)
-    return self:AddEntry(containerKey, { type = "spell", id = spellID, kind = kind, row = row, isKnown = isKnown })
+function CDMSpellData:AddSpell(containerKey, spellID, kind, row)
+    return self:AddEntry(containerKey, { type = "spell", id = spellID, kind = kind, row = row })
 end
 
 function CDMSpellData:AddItem(containerKey, itemID, row, kind)
@@ -4909,15 +4686,15 @@ function CDMSpellData:Initialize()
             -- learned cooldowns cache here so stale data is not returned.
             InvalidateLearnedCooldownsCache()
         elseif event == "SPELLS_CHANGED" then
-            -- Talent/spell changes: update dormant spell lists and invalidate cache.
-            -- Cache invalidation is immediate so stale data is never returned.
+            -- Talent/spell changes: reconcile and invalidate cache. Cache
+            -- invalidation is immediate so stale data is never returned.
             InvalidateLearnedCooldownsCache()
-            -- Skip dormant checks during zone transitions — WoW APIs
+            -- Defer the reconcile during zone transitions — WoW APIs
             -- (IsSpellKnown, IsPlayerSpell, CDM viewer) are temporarily
-            -- stale after PLAYER_ENTERING_WORLD, causing override spells
-            -- (e.g. Ice Cold 414658 replacing Ice Block 45438) to be
-            -- incorrectly marked dormant. PLAYER_ENTERING_WORLD already
-            -- holds these checks until APIs stabilise.
+            -- stale after PLAYER_ENTERING_WORLD, so the render-time known
+            -- filters would churn icons off and back on (e.g. override
+            -- spells like Ice Cold 414658 replacing Ice Block 45438).
+            -- PLAYER_ENTERING_WORLD already holds these until APIs settle.
             if _inZoneTransition then
                 -- Record that a reconcile is owed: the 2s PLAYER_ENTERING_WORLD
                 -- timer drains this once the APIs settle, so this SPELLS_CHANGED
