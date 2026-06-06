@@ -1568,7 +1568,15 @@ local function SetTextureColor(texture, file, r, g, b, a)
         local colorA = a == nil and 1 or a
         if file == DEFAULT_BACKDROP_TEXTURE and texture.SetColorTexture then
             texture:SetColorTexture(r or 1, g or 1, b or 1, colorA)
+            -- Same treatment ApplyColorTexture gives the border-line path: with
+            -- the engine's default texel snapping bias, a 1-physical-pixel solid
+            -- quad rasterizes to nothing at certain fractional screen offsets
+            -- (CharacterFrame close-button border vanished on the Rep/Currency
+            -- tabs purely because the button sits at a different screen position
+            -- there). Re-apply after every SetColorTexture.
+            UIKit.DisablePixelSnap(texture)
         else
+            -- File-based (LSM) edges keep engine-default snapping on purpose.
             texture:SetVertexColor(r or 1, g or 1, b or 1, colorA)
         end
     end
