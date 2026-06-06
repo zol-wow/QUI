@@ -307,6 +307,21 @@ local function GetContainerDB(containerKey)
     return getter and getter(containerKey) or nil
 end
 
+local function GetPreviewEntries(containerKey, containerDB)
+    local getter = _G.QUI_GetCDMPreviewEntries
+    if getter then
+        local entries = getter(containerKey, containerDB)
+        if type(entries) == "table" then
+            return entries
+        end
+    end
+    return containerDB and (
+        containerDB.containerType == "customBar"
+            and containerDB.entries
+            or containerDB.ownedSpells
+    ) or nil
+end
+
 local function ResolveContainerType(containerDB)
     -- Resolution mirrors composer.lua's existing ResolveContainerType helper.
     if not containerDB then return "cooldown" end
@@ -329,9 +344,7 @@ end
 -- Icon refresh path
 ---------------------------------------------------------------------------
 local function RefreshIcons(containerKey, containerDB)
-    local entries = containerDB.containerType == "customBar"
-        and containerDB.entries
-        or containerDB.ownedSpells
+    local entries = GetPreviewEntries(containerKey, containerDB)
     if type(entries) ~= "table" then return end
 
     -- Acquire / re-use icons one-to-one with entries
@@ -400,9 +413,7 @@ end
 -- Bar refresh path
 ---------------------------------------------------------------------------
 local function RefreshBars(_containerKey, containerDB)
-    local entries = containerDB.containerType == "customBar"
-        and containerDB.entries
-        or containerDB.ownedSpells
+    local entries = GetPreviewEntries(_containerKey, containerDB)
     if type(entries) ~= "table" then return end
 
     local barWidth = (containerDB.barWidth or 215) * state.scale * 0.5
@@ -472,7 +483,7 @@ local function RefreshBars(_containerKey, containerDB)
 
     -- Layout the stack (vertical, centered, optional growUp).
     if _G.QUI_LayoutCDMPreviewBars then
-        _G.QUI_LayoutCDMPreviewBars(state.previewBars, containerDB, state.scale)
+        _G.QUI_LayoutCDMPreviewBars(state.previewBars, containerDB, state.scale, state.containerKey)
     end
 end
 

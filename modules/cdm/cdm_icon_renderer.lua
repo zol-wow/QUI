@@ -3913,17 +3913,18 @@ end
 -- Mirrors the composer's IsEntryUsableOnCurrentPlayer predicate so the
 -- two views agree on which entries are "for this character":
 --   * non-spell types (item/macro/slot)     → always pass (not class-bound)
---   * aura-kind spell entries               → always pass (buff IDs aren't
---                                              in the spellbook; runtime
---                                              aura resolution decides)
---   * cooldown-kind spell entries           → IsSpellKnown gate
+--   * aura-kind spell entries               → per-character CDM aura catalog
+--   * cooldown-kind spell entries           → spell knownness gate
 ---------------------------------------------------------------------------
-local function IsCustomBarEntryUsableOnCurrentClass(entry)
+local function IsCustomBarEntryUsableOnCurrentClass(entry, viewerType)
     if type(entry) ~= "table" then return true end
     if entry.type ~= "spell" then return true end
     if type(entry.id) ~= "number" then return true end
-    if entry.kind == "aura" then return true end
     local spellData = ns.CDMSpellData
+    if spellData and type(spellData.IsEntryDormantForContainer) == "function" then
+        return spellData:IsEntryDormantForContainer(viewerType, entry) ~= true
+    end
+    if entry.kind == "aura" then return true end
     if not spellData or type(spellData.IsSpellKnown) ~= "function" then
         return true
     end
@@ -4205,7 +4206,7 @@ function CDMIcons:BuildIcons(viewerType, container)
                 if type(entryList) == "table" then
                     for idx, entry in ipairs(entryList) do
                         if entry and entry.enabled ~= false
-                            and IsCustomBarEntryUsableOnCurrentClass(entry) then
+                            and IsCustomBarEntryUsableOnCurrentClass(entry, viewerType) then
                             local spellEntry = BuildSpellEntryFromCustom(entry, idx, viewerType)
                             if spellEntry then
                                 local icon = Factory:AcquireIcon(container, spellEntry)

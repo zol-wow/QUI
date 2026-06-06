@@ -95,6 +95,7 @@ local GRID_CELL_STRIDE = GRID_CELL_SIZE + GRID_GAP  -- 38
 local SECTION_HEADER_HEIGHT = 20
 local FORM_ROW = 36
 local TAB_HEIGHT = 26
+local BLIZZARD_CDM_ENTRY_SOURCE = "blizzardCDM"
 
 local CONTAINER_LABELS = {
     essential   = "Essential Cooldowns",
@@ -481,33 +482,52 @@ local function GetEntryName(entry)
     return "Unknown"
 end
 
+local function IsEntryDormantOnCurrentPlayer(entry, containerKey)
+    if type(entry) ~= "table" then return false end
+    if entry.type ~= "spell" then return false end
+    if type(entry.id) ~= "number" then return false end
+    local spellData = ns.CDMSpellData
+    if spellData and type(spellData.IsEntryDormantForContainer) == "function" then
+        return spellData:IsEntryDormantForContainer(containerKey or activeContainer, entry) == true
+    end
+    if not spellData or type(spellData.IsSpellKnown) ~= "function" then return false end
+    if entry.kind == "aura" then return false end
+    if (containerKey or activeContainer) == "buff" or (containerKey or activeContainer) == "trackedBar" then
+        return false
+    end
+    return spellData:IsSpellKnown(entry.id) ~= true
+end
+
 -- True if the entry is castable / usable by the player currently logged in.
--- Items, slots, macros are always considered "usable" here — the cross-class
--- mismatch concept only applies to spells. Non-spell types fall back to the
--- runtime hideNonUsable filter for their own usability rules.
---
--- Spell knownness is delegated to CDMSpellData:IsSpellKnown so this check
--- inherits the override-chain and CDM-viewer fallbacks needed to recognize
--- talent / hero-talent / alternate-ID variants that IsPlayerSpell and
--- IsSpellKnownOrOverridesKnown alone miss (e.g., a spell added on one spec
--- whose stored ID isn't the active spec's variant).
-local function IsEntryUsableOnCurrentPlayer(entry)
+-- Items, slots, macros are always considered usable here. Spell dormancy is
+-- delegated to CDMSpellData so cooldown entries use spell knownness while
+-- aura entries use the same per-character CDM aura catalog gate as runtime.
+local function IsEntryUsableOnCurrentPlayer(entry, containerKey)
     if type(entry) ~= "table" then return true end
     if entry.type ~= "spell" then return true end
     if type(entry.id) ~= "number" then return true end
-    -- Aura entries: "usable on this class" doesn't apply. Auras reflect
-    -- a buff that may or may not be applied to the player; the buff
-    -- aura ID is rarely in the spellbook (it differs from the cast
-    -- ability ID), so IsSpellKnown reliably returns false for it.
-    -- Treat aura entries as always usable — the runtime path checks
-    -- whether the buff is actually present at display time.
-    if entry.kind == "aura" then return true end
-    if activeContainer == "buff" or activeContainer == "trackedBar" then
-        return true
+    return not IsEntryDormantOnCurrentPlayer(entry, containerKey)
+end
+
+local function EntryCountsForCooldownRowCapacity(entry)
+    return IsEntryUsableOnCurrentPlayer(entry)
+end
+
+local function GetPreviewEntries(containerKey, db)
+    local containerDB = db or (GetContainerDB and GetContainerDB(containerKey))
+    if type(containerDB) ~= "table" then return nil end
+
+    local isCustomBar = (containerDB.containerType == "customBar")
+    local entries = isCustomBar and containerDB.entries or containerDB.ownedSpells
+    if type(entries) ~= "table" then return nil end
+
+    local activeEntries = {}
+    for _, entry in ipairs(entries) do
+        if IsEntryUsableOnCurrentPlayer(entry, containerKey) then
+            activeEntries[#activeEntries + 1] = entry
+        end
     end
-    local spellData = ns.CDMSpellData
-    if not spellData or type(spellData.IsSpellKnown) ~= "function" then return true end
-    return spellData:IsSpellKnown(entry.id) == true
+    return activeEntries
 end
 
 ---------------------------------------------------------------------------
@@ -1061,7 +1081,7 @@ local function LayoutPreviewIconsImpl(icons, containerKey, scale)
     if not db then return end
 
     local isCustomBar = (db.containerType == "customBar")
-    local entries = isCustomBar and db.entries or db.ownedSpells
+    local entries = GetPreviewEntries(containerKey, db)
     if type(entries) ~= "table" then return end
 
     local containerType = ResolveContainerType(containerKey) or "cooldown"
@@ -1154,7 +1174,7 @@ local function StylePreviewIconsImpl(icons, containerKey, scale)
     if not db then return end
 
     local isCustomBar = (db.containerType == "customBar")
-    local entries = isCustomBar and db.entries or db.ownedSpells
+    local entries = GetPreviewEntries(containerKey, db)
     if type(entries) ~= "table" then return end
 
     local containerType = ResolveContainerType(containerKey) or "cooldown"
@@ -1208,11 +1228,9 @@ end
 -- LayoutPreviewBarsImpl — vertically stacks the driver's acquired bar
 -- frames. Per-bar styling (color, fill, text) is handled by CDMBars
 -- .ConfigureBar (driver-side) and the cycle script.
-local function LayoutPreviewBarsImpl(bars, containerDB, scale)
+local function LayoutPreviewBarsImpl(bars, containerDB, scale, containerKey)
     if type(bars) ~= "table" or type(containerDB) ~= "table" then return end
-    local entries = containerDB.containerType == "customBar"
-        and containerDB.entries
-        or containerDB.ownedSpells
+    local entries = GetPreviewEntries(containerKey or activeContainer, containerDB)
     if type(entries) ~= "table" then return end
 
     scale = scale or previewScale or 1.5
@@ -1261,6 +1279,7 @@ _G.QUI_LayoutCDMPreviewIcons = LayoutPreviewIconsImpl
 _G.QUI_LayoutCDMPreviewBars = LayoutPreviewBarsImpl
 _G.QUI_StyleCDMPreviewIcons = StylePreviewIconsImpl
 _G.QUI_GetCDMContainerDB = GetContainerDB
+_G.QUI_GetCDMPreviewEntries = GetPreviewEntries
 _G.QUI_GetCDMEntryName = GetEntryName
 
 RefreshPreview = function()
@@ -1721,15 +1740,15 @@ end
 -- True if the entry is currently in the user's Blizzard /cdm for the
 -- container family the composer is editing. Family-grouped: cooldown
 -- family covers essential+utility, aura family covers buff-icon+buff-bar.
--- Non-spell entries (items/macros/slots) and unknown families return true
--- so they aren't flagged. Spells that aren't in any Blizzard /cdm category
--- at all (i.e. added via QUI's All Cooldowns / Other Auras / Active Buffs /
--- Spell ID / Items tabs) also return true — Blizzard's /cdm has no slot
--- for them, so "missing from /cdm" is meaningless for those entries.
+-- Non-spell entries, unknown families, and user-managed spell entries return
+-- true so they are not flagged. The warning is meaningful only for entries
+-- that originated from Blizzard CDM and later disappeared from the user's
+-- tracked viewer set.
 IsEntryRegisteredInBlizzCDM = function(entry)
     if not entry then return true end
     local etype = entry.type or ResolveEntryType(entry)
     if etype ~= "spell" then return true end
+    if entry.source ~= BLIZZARD_CDM_ENTRY_SOURCE then return true end
     local id = tonumber(entry.id) or tonumber(entry.spellID)
     if not id then return true end
     local spellData = GetCDMSpellData()
@@ -2133,7 +2152,8 @@ StopDrag = function()
             local count = 0
             local spells = db.ownedSpells or {}
             for _, e in ipairs(spells) do
-                if e and (e.row or firstActiveRow) == targetRow then
+                if e and EntryCountsForCooldownRowCapacity(e)
+                    and (e.row or firstActiveRow) == targetRow then
                     count = count + 1
                 end
             end
@@ -2256,7 +2276,7 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
         end
         -- Count entries per row
         for _, e in ipairs(entries_all) do
-            if e then
+            if e and EntryCountsForCooldownRowCapacity(e) then
                 local r = e.row or (activeRowNums[1] or 1)
                 if rowCounts[r] then
                     rowCounts[r] = rowCounts[r] + 1
@@ -2636,18 +2656,23 @@ RefreshEntryList = function()
 
     local rowEntries = {}
     local overflowEntries = {}
+    local cooldownDormantEntries = {}
     if isCooldown and #activeRowNums > 0 then
         for i, entry in ipairs(entries) do
             if entry then
-                local r = entry.row
-                r = FindCooldownRowWithRoom(activeRowNums, rowCounts, rowMax, r)
+                if EntryCountsForCooldownRowCapacity(entry) then
+                    local r = entry.row
+                    r = FindCooldownRowWithRoom(activeRowNums, rowCounts, rowMax, r)
 
-                if r and rowCounts[r] and rowCounts[r] < rowMax[r] then
-                    if not rowEntries[r] then rowEntries[r] = {} end
-                    rowEntries[r][#rowEntries[r] + 1] = { entry = entry, idx = i }
-                    rowCounts[r] = rowCounts[r] + 1
+                    if r and rowCounts[r] and rowCounts[r] < rowMax[r] then
+                        if not rowEntries[r] then rowEntries[r] = {} end
+                        rowEntries[r][#rowEntries[r] + 1] = { entry = entry, idx = i }
+                        rowCounts[r] = rowCounts[r] + 1
+                    else
+                        overflowEntries[#overflowEntries + 1] = { entry = entry, idx = i }
+                    end
                 else
-                    overflowEntries[#overflowEntries + 1] = { entry = entry, idx = i }
+                    cooldownDormantEntries[#cooldownDormantEntries + 1] = { entry = entry, idx = i }
                 end
             end
         end
@@ -2696,6 +2721,15 @@ RefreshEntryList = function()
             end
             FinishRow()
         end
+        if #cooldownDormantEntries > 0 then
+            RenderSectionHeader(
+                "Dormant — Not Learned on This Character  (" .. #cooldownDormantEntries .. ")",
+                false)
+            for _, item in ipairs(cooldownDormantEntries) do
+                RenderEntryCell(item.entry, item.idx)
+            end
+            FinishRow()
+        end
     else
         -- customBar entries render at the bar's anchor corner from index 1
         -- outward. For LEFT/UP growth the first entry ends up at the far
@@ -2704,8 +2738,8 @@ RefreshEntryList = function()
         -- each cell's true entryIndex for drag/remove.
         local reverse = isCustomBar and (db.growDirection == "LEFT" or db.growDirection == "UP")
 
-        -- For non-specSpecific customBar containers, split entries into
-        -- "usable on current character" and derived-dormant buckets.
+        -- For non-specSpecific custom bars and built-in non-row containers,
+        -- split entries into "usable on current character" and derived-dormant buckets.
         -- Dormancy is computed per render from known-state — entries are
         -- never relocated or removed because of it. The runtime path
         -- (cdm_icon_renderer.lua:BuildIcons) skips these same entries at
@@ -2715,7 +2749,7 @@ RefreshEntryList = function()
         -- as same-class talents not in the current loadout. The
         -- specSpecific path already labels entries by source spec
         -- (_renderSpecKey), so leave it alone.
-        local splitDormant = isCustomBar and not db.specSpecific
+        local splitDormant = not (isCustomBar and db.specSpecific)
         local usableEntries, dormantEntries
         if splitDormant then
             usableEntries = {}
@@ -3329,7 +3363,7 @@ RefreshAddList = function()
             cell._isMissingFromCDM = (effType == "spell")
                 and (not cell._isUnlearned)
                 and effID
-                and not IsEntryRegisteredInBlizzCDM({ type = "spell", id = effID })
+                and not IsEntryRegisteredInBlizzCDM({ type = "spell", id = effID, source = entry.source })
                 or false
 
             cell._icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
@@ -3391,7 +3425,8 @@ RefreshAddList = function()
                                     if not firstActiveRow then firstActiveRow = r end
                                     local count = 0
                                     for _, e in ipairs(spells) do
-                                        if e and (e.row or firstActiveRow) == r then
+                                        if e and EntryCountsForCooldownRowCapacity(e)
+                                            and (e.row or firstActiveRow) == r then
                                             count = count + 1
                                         end
                                     end
@@ -3463,6 +3498,7 @@ RefreshAddList = function()
                             and ns.CDMShared.ResolveKindForItemsTab
                             and ns.CDMShared.ResolveKindForItemsTab(activeContainer)
                             or "cooldown"
+                        local entrySource = entryRef.source
                         local addResult
                         if addType == "slot" and entryRef._slotID then
                             if containerDB.removedSpells then
@@ -3472,7 +3508,7 @@ RefreshAddList = function()
                         elseif addType == "item" then
                             addResult = spellData:AddItem(activeContainer, addID, targetRow, itemKind)
                         else
-                            addResult = spellData:AddSpell(activeContainer, addID, kindFromTab, targetRow)
+                            addResult = spellData:AddSpell(activeContainer, addID, kindFromTab, targetRow, entrySource)
                         end
 
                         C_Timer.After(0.02, function()

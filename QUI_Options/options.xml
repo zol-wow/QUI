@@ -34,6 +34,7 @@
     <Script file="..\QUI\core\settings\pins_ui.lua"/>
     <Script file="..\QUI\core\settings\content\anchoring_shared_content.lua"/>
     <Script file="..\QUI\core\settings\content\welcome_page.lua"/>
+    <Script file="tiles\help_content.lua"/>
     <Script file="..\QUI\core\settings\content\help_page.lua"/>
     <Script file="..\QUI\core\settings\content\troubleshooting_page.lua"/>
     <Script file="..\QUI\core\settings\content\profiles_content.lua"/>
@@ -105,7 +106,6 @@
     <Script file="..\QUI\core\settings\content\modules_visual_onboarding.lua"/>
     <Script file="..\QUI\core\settings\content\modules_nonvisual_onboarding.lua"/>
     <Script file="..\QUI\core\settings\content\modules_page.lua"/>
-    <Script file="tiles\help_content.lua"/>
     <Script file="init.lua"/>
     <Script file="tiles\related.lua"/>
     <Script file="tiles\minimap.lua"/>

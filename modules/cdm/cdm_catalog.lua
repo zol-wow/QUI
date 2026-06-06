@@ -44,6 +44,7 @@ local KIND_FOR_CATEGORY = {
 local COOLDOWN_CATEGORIES = { 0, 1 }
 local AURA_CATEGORIES = { 2, 3 }
 local ALL_RENDERED_CATEGORIES = { 0, 1, 2, 3 }
+local BLIZZARD_CDM_ENTRY_SOURCE = "blizzardCDM"
 
 function CDMCatalog.GetCategoryForKind(kind)
     return CATEGORY_FOR_KIND[kind]
@@ -274,7 +275,11 @@ function CDMCatalog.SeedFromBlizzard(containerKind)
             local sid = SelectPreferredSpellID(info, isAuraCategory)
             if sid and not seen[sid] then
                 seen[sid] = true
-                entries[#entries + 1] = { type = "spell", id = sid }
+                entries[#entries + 1] = {
+                    type = "spell",
+                    id = sid,
+                    source = BLIZZARD_CDM_ENTRY_SOURCE,
+                }
             end
         end
     end
@@ -455,6 +460,7 @@ function CDMCatalog.GetAvailableSpellsForContainer(containerKey, containerType, 
                                 name = name or "",
                                 icon = icon or 0,
                                 isKnown = cdInfo.isKnown,
+                                source = BLIZZARD_CDM_ENTRY_SOURCE,
                             }
                         end
                     end

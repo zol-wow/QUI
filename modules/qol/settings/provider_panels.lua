@@ -1305,15 +1305,17 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         -- Initialize defaults
         if sr.width == nil then sr.width = 250 end
-        if sr.vigorHeight == nil then sr.vigorHeight = 12 end
-        if sr.secondWindHeight == nil then sr.secondWindHeight = 6 end
-        if sr.barTexture == nil then sr.barTexture = "Solid" end
+        if sr.vigorHeight == nil then sr.vigorHeight = 20 end
+        if sr.secondWindHeight == nil then sr.secondWindHeight = 20 end
+        if sr.barTexture == nil then sr.barTexture = "Quazii v4" end
         if sr.showSegments == nil then sr.showSegments = true end
         if sr.showSpeed == nil then sr.showSpeed = true end
         if sr.showVigorText == nil then sr.showVigorText = true end
-        if sr.secondWindMode == nil then sr.secondWindMode = "PIPS" end
-        if sr.visibility == nil then sr.visibility = "AUTO" end
-        if sr.fadeDelay == nil then sr.fadeDelay = 3 end
+        if sr.secondWindMode == nil then sr.secondWindMode = "MINIBAR" end
+        if sr.secondWindScale == nil then sr.secondWindScale = 2.1 end
+        if sr.segmentThickness == nil then sr.segmentThickness = 1 end
+        if sr.visibility == nil then sr.visibility = "FLYING_ONLY" end
+        if sr.fadeDelay == nil then sr.fadeDelay = 1 end
         if sr.speedFormat == nil then sr.speedFormat = "PERCENT" end
         if sr.vigorTextFormat == nil then sr.vigorTextFormat = "FRACTION" end
         if sr.useClassColorVigor == nil then sr.useClassColorVigor = false end
@@ -1343,36 +1345,50 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         s1.AddRow(row(s1.frame, "Fade Speed (sec)", fadeDurW), row(s1.frame, "Hide When FarmHud Is Active", hideFarmW))
         L.closeSection(s1)
 
-        -- BAR SIZE
-        L.headerAt("Bar Size")
+        -- BAR (shared by both bars)
+        L.headerAt("Bar")
         local s2 = L.sectionAt()
         local widthW = GUI:CreateFormSlider(s2.frame, nil, 100, 500, 1, "width", sr, Refresh,
             { description = "Pixel width of the skyriding bar." })
-        local vigorHW = GUI:CreateFormSlider(s2.frame, nil, 4, 30, 1, "vigorHeight", sr, Refresh,
-            { description = "Pixel height of the main vigor bar." })
-        s2.AddRow(row(s2.frame, "Width", widthW), row(s2.frame, "Vigor Height", vigorHW))
-
-        local swHW = GUI:CreateFormSlider(s2.frame, nil, 2, 20, 1, "secondWindHeight", sr, Refresh,
-            { description = "Pixel height of the Second Wind bar shown below the main vigor bar." })
         local barTexW = GUI:CreateFormDropdown(s2.frame, nil, U.GetTextureList(), "barTexture", sr, Refresh,
             { description = "Statusbar texture used for both skyriding bars. Supports any extra media packages you have available." })
-        s2.AddRow(row(s2.frame, "Second Wind Height", swHW), row(s2.frame, "Bar Texture", barTexW))
+        s2.AddRow(row(s2.frame, "Width", widthW), row(s2.frame, "Bar Texture", barTexW))
+
+        local segColorW = GUI:CreateFormColorPicker(s2.frame, nil, "segmentColor", sr, Refresh, nil,
+            { description = "Color of the vertical segment markers between charges, on both bars." })
+        local segThickW = GUI:CreateFormSlider(s2.frame, nil, 1, 5, 1, "segmentThickness", sr, Refresh,
+            { description = "Pixel thickness of the segment markers, on both bars." })
+        s2.AddRow(row(s2.frame, "Segment Marker Color", segColorW), row(s2.frame, "Segment Thickness", segThickW))
         L.closeSection(s2)
 
-        -- FILL COLORS
-        L.headerAt("Fill Colors")
+        -- VIGOR
+        L.headerAt("Vigor")
         local s3 = L.sectionAt()
+        local vigorHW = GUI:CreateFormSlider(s3.frame, nil, 4, 30, 1, "vigorHeight", sr, Refresh,
+            { description = "Pixel height of the main vigor bar." })
+        local bgColorW = GUI:CreateFormColorPicker(s3.frame, nil, "backgroundColor", sr, Refresh, nil,
+            { description = "Background color behind the vigor bar." })
+        s3.AddRow(row(s3.frame, "Vigor Height", vigorHW), row(s3.frame, "Background Color", bgColorW))
+
         local classVigorW = GUI:CreateFormCheckbox(s3.frame, nil, "useClassColorVigor", sr, Refresh,
-            { description = "Color the vigor bar by your class instead of the Vigor Fill Color swatch below." })
+            { description = "Color the vigor bar by your class instead of the Fill Color swatch." })
         local vigorFillW = GUI:CreateFormColorPicker(s3.frame, nil, "barColor", sr, Refresh, nil,
             { description = "Fill color of the vigor bar when Use Class Color is off." })
-        s3.AddRow(row(s3.frame, "Use Class Color for Vigor", classVigorW), row(s3.frame, "Vigor Fill Color", vigorFillW))
+        s3.AddRow(row(s3.frame, "Use Class Color", classVigorW), row(s3.frame, "Fill Color", vigorFillW))
 
-        local classSWW = GUI:CreateFormCheckbox(s3.frame, nil, "useClassColorSecondWind", sr, Refresh,
-            { description = "Color the Second Wind bar by your class instead of the Second Wind Color swatch below." })
-        local swColorW = GUI:CreateFormColorPicker(s3.frame, nil, "secondWindColor", sr, Refresh, nil,
-            { description = "Fill color of the Second Wind bar when Use Class Color is off." })
-        s3.AddRow(row(s3.frame, "Use Class Color for Second Wind", classSWW), row(s3.frame, "Second Wind Color", swColorW))
+        local showSegW = GUI:CreateFormCheckbox(s3.frame, nil, "showSegments", sr, Refresh,
+            { description = "Show the vertical markers between vigor charges on the vigor bar." })
+        local rechargeColorW = GUI:CreateFormColorPicker(s3.frame, nil, "rechargeColor", sr, Refresh, nil,
+            { description = "Color of the charging-segment highlight as a vigor charge recovers." })
+        s3.AddRow(row(s3.frame, "Show Segment Markers", showSegW), row(s3.frame, "Recharge Animation Color", rechargeColorW))
+
+        local showVigorW = GUI:CreateFormCheckbox(s3.frame, nil, "showVigorText", sr, Refresh,
+            { description = "Show numeric vigor count on the bar." })
+        local vigorFmtW = GUI:CreateFormDropdown(s3.frame, nil, {
+            {value = "FRACTION", text = "Fraction (4/6)"}, {value = "CURRENT", text = "Current Only (4)"},
+        }, "vigorTextFormat", sr, Refresh,
+            { description = "How vigor is displayed: as a fraction (current/max) or just the current value." })
+        s3.AddRow(row(s3.frame, "Show Vigor Count", showVigorW), row(s3.frame, "Vigor Format", vigorFmtW))
 
         local thrillToggleW = GUI:CreateFormCheckbox(s3.frame, nil, "useThrillOfTheSkiesColor", sr, Refresh,
             { description = "Swap the vigor bar color while Thrill of the Skies is active so the buff state is obvious." })
@@ -1381,33 +1397,36 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         s3.AddRow(row(s3.frame, "Change Color with Thrill of the Skies", thrillToggleW), row(s3.frame, "Thrill of the Skies Color", thrillColorW))
         L.closeSection(s3)
 
-        -- BACKGROUND & EFFECTS
-        L.headerAt("Background & Effects")
+        -- SECOND WIND
+        L.headerAt("Second Wind")
         local s4 = L.sectionAt()
-        local bgColorW = GUI:CreateFormColorPicker(s4.frame, nil, "backgroundColor", sr, Refresh, nil,
-            { description = "Background color behind the vigor bar." })
-        local swBgColorW = GUI:CreateFormColorPicker(s4.frame, nil, "secondWindBackgroundColor", sr, Refresh, nil,
-            { description = "Background color behind the Second Wind bar." })
-        s4.AddRow(row(s4.frame, "Background Color", bgColorW), row(s4.frame, "Second Wind Background", swBgColorW))
+        local swModeW = GUI:CreateFormDropdown(s4.frame, nil, {
+            {value = "MINIBAR", text = "Mini Bar"},
+            {value = "PIPS", text = "Pips"},
+            {value = "TEXT", text = "Text (SW: 2/3)"},
+            {value = "HIDDEN", text = "Hidden"},
+        }, "secondWindMode", sr, Refresh,
+            { description = "How Second Wind charges are shown: a mini bar below the vigor bar, pips above it, a text readout below it, or hidden entirely." })
+        local swScaleW = GUI:CreateFormSlider(s4.frame, nil, 0.5, 4, 0.1, "secondWindScale", sr, Refresh,
+            { description = "Size of the Second Wind pips (Pips mode only)." })
+        s4.AddRow(row(s4.frame, "Display Mode", swModeW), row(s4.frame, "Pips Size", swScaleW))
 
-        local segColorW = GUI:CreateFormColorPicker(s4.frame, nil, "segmentColor", sr, Refresh, nil,
-            { description = "Color of the vertical segment markers between vigor charges." })
-        local rechargeColorW = GUI:CreateFormColorPicker(s4.frame, nil, "rechargeColor", sr, Refresh, nil,
-            { description = "Color of the charging-segment highlight as a vigor charge recovers." })
-        s4.AddRow(row(s4.frame, "Segment Marker Color", segColorW), row(s4.frame, "Recharge Animation Color", rechargeColorW))
+        local swHW = GUI:CreateFormSlider(s4.frame, nil, 2, 20, 1, "secondWindHeight", sr, Refresh,
+            { description = "Pixel height of the Second Wind bar (Mini Bar mode only)." })
+        local swBgColorW = GUI:CreateFormColorPicker(s4.frame, nil, "secondWindBackgroundColor", sr, Refresh, nil,
+            { description = "Background color behind the Second Wind bar (Mini Bar mode only)." })
+        s4.AddRow(row(s4.frame, "Height", swHW), row(s4.frame, "Background Color", swBgColorW))
+
+        local classSWW = GUI:CreateFormCheckbox(s4.frame, nil, "useClassColorSecondWind", sr, Refresh,
+            { description = "Color the Second Wind display by your class instead of the Second Wind Color swatch." })
+        local swColorW = GUI:CreateFormColorPicker(s4.frame, nil, "secondWindColor", sr, Refresh, nil,
+            { description = "Color of the Second Wind display when Use Class Color is off." })
+        s4.AddRow(row(s4.frame, "Use Class Color", classSWW), row(s4.frame, "Second Wind Color", swColorW))
         L.closeSection(s4)
 
         -- TEXT DISPLAY
         L.headerAt("Text Display")
         local s5 = L.sectionAt()
-        local showVigorW = GUI:CreateFormCheckbox(s5.frame, nil, "showVigorText", sr, Refresh,
-            { description = "Show numeric vigor count on the bar." })
-        local vigorFmtW = GUI:CreateFormDropdown(s5.frame, nil, {
-            {value = "FRACTION", text = "Fraction (4/6)"}, {value = "CURRENT", text = "Current Only (4)"},
-        }, "vigorTextFormat", sr, Refresh,
-            { description = "How vigor is displayed: as a fraction (current/max) or just the current value." })
-        s5.AddRow(row(s5.frame, "Show Vigor Count", showVigorW), row(s5.frame, "Vigor Format", vigorFmtW))
-
         local showSpeedW = GUI:CreateFormCheckbox(s5.frame, nil, "showSpeed", sr, Refresh,
             { description = "Show your current flight speed next to the vigor bar." })
         local speedFmtW = GUI:CreateFormDropdown(s5.frame, nil, {

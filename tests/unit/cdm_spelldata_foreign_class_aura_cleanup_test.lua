@@ -37,12 +37,14 @@ local HUNTER_AURA = 257284
 -- Death Knight auras that leaked in via the shared profile.
 local DK_AURA_1 = 48707  -- Anti-Magic Shell
 local DK_AURA_2 = 48792  -- Icebound Fortitude
+local MANUAL_AURA = 123456
 
 local trackedBarDB = {
     ownedSpells = {
-        { type = "spell", id = HUNTER_AURA, kind = "aura" },
-        { type = "spell", id = DK_AURA_1,  kind = "aura" },
-        { type = "spell", id = DK_AURA_2,  kind = "aura" },
+        { type = "spell", id = HUNTER_AURA, kind = "aura", source = "blizzardCDM" },
+        { type = "spell", id = DK_AURA_1,  kind = "aura", source = "blizzardCDM" },
+        { type = "spell", id = DK_AURA_2,  kind = "aura", source = "blizzardCDM" },
+        { type = "spell", id = MANUAL_AURA, kind = "aura" },
     },
     dormantSpells = {},
     removedSpells = {},
@@ -105,6 +107,12 @@ local builtIDs = builtIDSet("trackedBar")
 assert(builtIDs[HUNTER_AURA], "same-class aura must render before the catalog is ready")
 assert(builtIDs[DK_AURA_1] and builtIDs[DK_AURA_2],
     "no aura may be hidden before the catalog is ready")
+assert(builtIDs[MANUAL_AURA],
+    "manual aura spell IDs must render before the catalog is ready")
+assert(ns.CDMSpellData:IsEntryDormantForContainer("trackedBar", trackedBarDB.ownedSpells[2]) == false,
+    "composer dormancy checks must not mark auras dormant before the catalog is ready")
+assert(ns.CDMSpellData:IsEntryDormantForContainer("trackedBar", trackedBarDB.ownedSpells[4]) == false,
+    "manual aura spell IDs must not be catalog-gated before the catalog is ready")
 
 -- Phase B: catalog walked. Foreign-class auras disappear from the built
 -- list — and ONLY from the built list; ownedSpells is pure user intent.
@@ -116,11 +124,21 @@ assert(not builtIDs[DK_AURA_1],
     "a foreign-class aura absent from this character's CDM aura catalog must be hidden")
 assert(not builtIDs[DK_AURA_2],
     "all foreign-class auras must be hidden, not just the first")
+assert(builtIDs[MANUAL_AURA],
+    "manual aura spell IDs absent from Blizzard CDM must stay active")
+assert(ns.CDMSpellData:IsEntryDormantForContainer("trackedBar", trackedBarDB.ownedSpells[1]) == false,
+    "composer dormancy checks must keep same-class auras active")
+assert(ns.CDMSpellData:IsEntryDormantForContainer("trackedBar", trackedBarDB.ownedSpells[2]) == true,
+    "composer dormancy checks must expose foreign-class auras as dormant")
+assert(ns.CDMSpellData:IsEntryDormantForContainer("trackedBar", trackedBarDB.ownedSpells[3]) == true,
+    "all foreign-class auras must be exposed as dormant")
+assert(ns.CDMSpellData:IsEntryDormantForContainer("trackedBar", trackedBarDB.ownedSpells[4]) == false,
+    "composer dormancy checks must not expose manual aura spell IDs as dormant")
 
-assert(#trackedBarDB.ownedSpells == 3,
+assert(#trackedBarDB.ownedSpells == 4,
     "ownedSpells must never be mutated by the render-time aura filter")
 ns.CDMSpellData:CheckDormantSpells("trackedBar")
-assert(#trackedBarDB.ownedSpells == 3,
+assert(#trackedBarDB.ownedSpells == 4,
     "the reconcile pass must not remove foreign-class auras either")
 assert(next(trackedBarDB.dormantSpells) == nil,
     "no shelf record may be written for foreign-class auras")

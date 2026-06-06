@@ -668,6 +668,8 @@ do
         and type(Registry.RegisterFeature) == "function"
         and type(Schema.Feature) == "function" then
         for _, frameKey in ipairs({
+            "leaveVehicle",
+            "equipmentDurability",
             "topCenterWidgets",
             "belowMinimapWidgets",
             "rangeCheck",

@@ -11,6 +11,15 @@ end
 
 local containers = readAll("modules/cdm/cdm_containers.lua")
 
+local function functionBody(marker)
+    local s = assert(
+        containers:find(marker, 1, true),
+        "expected to find " .. marker
+    )
+    local e = containers:find("\nlocal function ", s + 1, true) or #containers
+    return containers:sub(s, e)
+end
+
 assert(
     containers:find("GetCurrentCharacterKey", 1, true),
     "CDM spec tracking should derive a current character key"
@@ -93,6 +102,143 @@ assert(
     containers:find("GetEffectiveLoadoutID", 1, true),
     "GetEffectiveLoadoutID single-chokepoint resolver must exist (LDST-04)"
 )
+
+assert(
+    containers:find("GetEffectiveLoadoutIDForSpec", 1, true),
+    "an explicit spec/loadout resolver must exist so outgoing spec saves do not use the incoming spec's loadout"
+)
+
+do
+    local saveCurrent = functionBody("local function SaveCurrentSpecProfile")
+    assert(
+        saveCurrent:find("SaveSpecProfileToLoadout(_previousSpecID", 1, true),
+        "SaveCurrentSpecProfile must save the outgoing spec into an explicit outgoing loadout slot"
+    )
+    assert(
+        saveCurrent:find("_previousLoadoutID", 1, true),
+        "SaveCurrentSpecProfile must use _previousLoadoutID when saving the outgoing spec on PLAYER_SPECIALIZATION_CHANGED"
+    )
+    assert(
+        not saveCurrent:find("SaveSpecProfile(_previousSpecID)", 1, true),
+        "SaveCurrentSpecProfile must not call SaveSpecProfile(_previousSpecID), which resolves the already-incoming current loadout"
+    )
+end
+
+do
+    local specBranchStart = assert(
+        containers:find('event == "PLAYER_SPECIALIZATION_CHANGED"', 1, true),
+        "PLAYER_SPECIALIZATION_CHANGED branch should exist"
+    )
+    local specBranchEnd = assert(
+        containers:find('elseif event == "TRAIT_CONFIG_UPDATED"', specBranchStart, true),
+        "PLAYER_SPECIALIZATION_CHANGED branch should end before the trait config branch"
+    )
+    local specBranch = containers:sub(specBranchStart, specBranchEnd)
+    assert(
+        specBranch:find("_previousLoadoutID = GetEffectiveLoadoutIDForSpec(newSpecID)", 1, true),
+        "after loading the incoming spec, PLAYER_SPECIALIZATION_CHANGED must stamp the matching incoming loadout as the next outgoing slot"
+    )
+end
+
+assert(
+    containers:find("RegisterClassTalentSwitchCallbacks", 1, true),
+    "CDM must register ClassTalents switch callbacks so it can capture pre-switch target intent"
+)
+
+for _, eventName in ipairs({
+    "CLASS_TALENTS_SWITCH_TO_SPECIALIZATION_BY_NAME",
+    "CLASS_TALENTS_SWITCH_TO_SPECIALIZATION_BY_INDEX",
+    "CLASS_TALENTS_SWITCH_TO_LOADOUT_BY_NAME",
+    "CLASS_TALENTS_SWITCH_TO_LOADOUT_BY_INDEX",
+}) do
+    assert(
+        containers:find('RegisterEventCallback("' .. eventName .. '"', 1, true),
+        "CDM must listen for " .. eventName .. " callback intent"
+    )
+end
+
+assert(
+    containers:find("ResolveSpecIDByName", 1, true),
+    "spec-name callback payloads must be resolved to spec IDs before PLAYER_SPECIALIZATION_CHANGED settles"
+)
+
+assert(
+    containers:find("ResolveLoadoutIDByName", 1, true),
+    "loadout-name callback payloads must be resolved against the current live spec"
+)
+
+do
+    local effLoadout = functionBody("local function GetEffectiveLoadoutIDForSpec")
+    assert(
+        effLoadout:find("GetPendingClassTalentLoadoutIDForSpec(specID)", 1, true),
+        "effective loadout resolution must prefer a captured ClassTalents loadout target for that spec"
+    )
+end
+
+do
+    local specBranchStart = assert(
+        containers:find('event == "PLAYER_SPECIALIZATION_CHANGED"', 1, true),
+        "PLAYER_SPECIALIZATION_CHANGED branch should exist"
+    )
+    local specBranchEnd = assert(
+        containers:find('elseif event == "TRAIT_CONFIG_UPDATED"', specBranchStart, true),
+        "PLAYER_SPECIALIZATION_CHANGED branch should end before the trait config branch"
+    )
+    local specBranch = containers:sub(specBranchStart, specBranchEnd)
+    assert(
+        specBranch:find("ConsumePendingClassTalentSpecSwitchID() or GetCurrentSpecID()", 1, true),
+        "spec-change handling must prefer the captured ClassTalents target spec over post-switch live API timing"
+    )
+end
+
+do
+    local traitBranchStart = assert(
+        containers:find('event == "TRAIT_CONFIG_UPDATED" or event == "ACTIVE_COMBAT_CONFIG_CHANGED"', 1, true),
+        "trait/loadout branch should exist"
+    )
+    local traitBranchEnd = assert(
+        containers:find('elseif event == "TRAIT_CONFIG_LIST_UPDATED"', traitBranchStart, true),
+        "trait/loadout branch should end before TRAIT_CONFIG_LIST_UPDATED"
+    )
+    local traitBranch = containers:sub(traitBranchStart, traitBranchEnd)
+    assert(
+        traitBranch:find("ConsumePendingClassTalentLoadoutIDForSpec(specID)", 1, true),
+        "loadout change handling must prefer captured ClassTalents loadout intent before falling back to saved-config API timing"
+    )
+end
+
+assert(
+    containers:find('eventFrame:RegisterEvent("SPECIALIZATION_CHANGE_CAST_FAILED")', 1, true),
+    "CDM must listen for SPECIALIZATION_CHANGE_CAST_FAILED so canceled spec swaps do not leave stale target intent"
+)
+
+do
+    local failedBranchStart = assert(
+        containers:find('event == "SPECIALIZATION_CHANGE_CAST_FAILED"', 1, true),
+        "SPECIALIZATION_CHANGE_CAST_FAILED branch should exist"
+    )
+    local failedBranchEnd = assert(
+        containers:find('elseif event == "TRAIT_CONFIG_LIST_UPDATED"', failedBranchStart, true),
+        "SPECIALIZATION_CHANGE_CAST_FAILED branch should end before TRAIT_CONFIG_LIST_UPDATED"
+    )
+    local failedBranch = containers:sub(failedBranchStart, failedBranchEnd)
+    assert(
+        failedBranch:find("ClearPendingClassTalentSwitchIntent()", 1, true),
+        "SPECIALIZATION_CHANGE_CAST_FAILED must clear pending ClassTalents switch intent"
+    )
+end
+
+do
+    local loadSpec = functionBody("local function LoadOrSnapshotSpecProfile")
+    assert(
+        loadSpec:find("local profileSpecID = db._lastSpecID", 1, true),
+        "LoadOrSnapshotSpecProfile must read the live profile's stamped spec before seeding a missing scoped profile"
+    )
+    assert(
+        loadSpec:find("profileSpecID == specID", 1, true),
+        "missing scoped profiles must only seed from live container state when the live profile is stamped for the target spec"
+    )
+end
 
 assert(
     containers:find("GetSpecLoadoutProfileStore", 1, true),

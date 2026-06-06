@@ -116,6 +116,7 @@ local _spellsChangedDuringZoneTransition = false
 local COLD_LOAD_SNAPSHOT_RETRY_DELAY = 0.5
 local COLD_LOAD_SNAPSHOT_RETRY_MAX_ATTEMPTS = 20
 local COLD_LOAD_SNAPSHOT_RETRY_SLOW_DELAY = 2.0
+local BLIZZARD_CDM_ENTRY_SOURCE = "blizzardCDM"
 
 local function IsBuiltinContainerKey(containerKey)
     if Shared and Shared.IsBuiltinContainerKey then
@@ -3238,6 +3239,35 @@ local function CDMCatalogReady(family)
     return next(_spellToCooldownID) ~= nil
 end
 
+local function IsSpellInCDMCategoryInternal(spellID, family)
+    local id = tonumber(spellID)
+    if not id then return false end
+    if not next(_spellToCooldownID) then
+        RebuildSpellToCooldownID()
+    end
+    if family == "cooldown" then
+        return _spellInCDMCooldowns[id] == true
+    elseif family == "aura" or family == "auraBar" then
+        return _spellInCDMAuras[id] == true
+    end
+    return _spellToCooldownID[id] ~= nil
+end
+
+local function IsEntryDormantForContainerInternal(containerKey, entry)
+    local normalized = NormalizeOwnedEntry(entry)
+    if not normalized or normalized.type ~= "spell" or type(normalized.id) ~= "number" then
+        return false
+    end
+    if IsAuraEntry(normalized, containerKey) then
+        if normalized.source ~= BLIZZARD_CDM_ENTRY_SOURCE then
+            return false
+        end
+        return CDMCatalogReady("aura")
+            and not IsSpellInCDMCategoryInternal(normalized.id, "aura")
+    end
+    return not IsSpellKnownByPlayer(normalized.id)
+end
+
 -- BuildSpellListFromOwned: Build runtime spell list from owned data
 function CDMSpellData:BuildSpellListFromOwned(containerKey)
     local db = GetContainerDB(containerKey)
@@ -3271,18 +3301,11 @@ function CDMSpellData:BuildSpellListFromOwned(containerKey)
             -- cast is simply not rendered this pass; it reappears on the
             -- next reconcile once spell data loads or the talent returns.
             -- Aura entries can't use the spellbook (buff IDs rarely live
-            -- there) — they're judged by the per-character Blizzard CDM
-            -- catalog instead, and only once that catalog has been walked,
-            -- so early-load passes can't hide legitimate auras.
-            local isDormant = false
-            if not isRemoved and entry.type == "spell" and type(entry.id) == "number" then
-                if IsAuraEntry(entry, containerKey) then
-                    isDormant = CDMCatalogReady("aura")
-                        and not self:IsSpellInCDMCategory(entry.id, "aura")
-                else
-                    isDormant = not IsSpellKnownByPlayer(entry.id)
-                end
-            end
+            -- there). Only entries proven to come from Blizzard CDM are
+            -- judged by the per-character CDM aura catalog; manual aura
+            -- spell IDs remain user-managed even if absent from /cdm.
+            local isDormant = not isRemoved
+                and IsEntryDormantForContainerInternal(containerKey, entry)
 
             if not isRemoved and not isDormant then
                 local resolved = ResolveOwnedEntry(entry, containerKey, i)
@@ -3967,6 +3990,10 @@ function CDMSpellData:IsSpellKnown(spellID)
     return IsSpellKnownByPlayer(spellID)
 end
 
+function CDMSpellData:IsEntryDormantForContainer(containerKey, entry)
+    return IsEntryDormantForContainerInternal(containerKey, entry)
+end
+
 -- True if the spellID is registered in /cdm under the given container
 -- family — "cooldown" checks cats 0+1 (essential/utility), "aura" /
 -- "auraBar" check cats 2+3 (buff icon/buff bar). Used by the composer
@@ -3981,17 +4008,7 @@ end
 -- false-positive that case. Lazily builds the maps the same way
 -- BuildSpellListFromOwned does.
 function CDMSpellData:IsSpellInCDMCategory(spellID, family)
-    local id = tonumber(spellID)
-    if not id then return false end
-    if not next(_spellToCooldownID) then
-        RebuildSpellToCooldownID()
-    end
-    if family == "cooldown" then
-        return _spellInCDMCooldowns[id] == true
-    elseif family == "aura" or family == "auraBar" then
-        return _spellInCDMAuras[id] == true
-    end
-    return _spellToCooldownID[id] ~= nil
+    return IsSpellInCDMCategoryInternal(spellID, family)
 end
 
 function CDMSpellData:ResnapshotFromBlizzard(containerKey)
@@ -4014,8 +4031,14 @@ end
 -- Convenience wrappers. Optional `kind` arg overrides the runtime
 -- classifier — pass it from the Composer when the picker tab dictates
 -- (Passives/Buffs → aura; all_cooldowns/items → cooldown).
-function CDMSpellData:AddSpell(containerKey, spellID, kind, row)
-    return self:AddEntry(containerKey, { type = "spell", id = spellID, kind = kind, row = row })
+function CDMSpellData:AddSpell(containerKey, spellID, kind, row, source)
+    return self:AddEntry(containerKey, {
+        type = "spell",
+        id = spellID,
+        kind = kind,
+        row = row,
+        source = source,
+    })
 end
 
 function CDMSpellData:AddItem(containerKey, itemID, row, kind)

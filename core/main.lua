@@ -804,6 +804,8 @@ function QUICore:HookEditMode()
             -- toggle them through Blizzard's Edit Mode normally.
             -- Objective tracker
             "ObjectiveTrackerFrame",
+            -- Equipment durability
+            "DurabilityFrame",
             -- Cast bar
             "PlayerCastingBarFrame",
             -- Tooltip

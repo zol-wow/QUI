@@ -2749,6 +2749,34 @@ do
             { key = "extraActionButton", label = "Extra Ability",   frame = "ExtraActionBarFrame", holder = "QUI_extraActionButtonHolder", order = 5 },
             { key = "zoneAbility",     label = "Zone Ability",      frame = "ZoneAbilityFrame",    holder = "QUI_zoneAbilityHolder",      order = 6 },
             { key = "bonusRollFrame",  label = "Bonus Roll",        frame = "BonusRollFrame",      order = 16, minWidth = 200, minHeight = 80 },
+            {
+                key = "equipmentDurability",
+                label = "Equipment Durability",
+                frame = "DurabilityFrame",
+                order = 17,
+                minWidth = 60,
+                minHeight = 75,
+                previewOn = function()
+                    local frame = _G.DurabilityFrame
+                    if not frame then return end
+                    frame.isInEditMode = true
+                    if frame.UpdateShownState then
+                        frame:UpdateShownState()
+                    else
+                        frame:Show()
+                    end
+                end,
+                previewOff = function()
+                    local frame = _G.DurabilityFrame
+                    if not frame then return end
+                    frame.isInEditMode = false
+                    if frame.UpdateShownState then
+                        frame:UpdateShownState()
+                    else
+                        frame:Hide()
+                    end
+                end,
+            },
         }
 
         for _, info in ipairs(DISPLAY_ELEMENTS) do
@@ -3093,11 +3121,15 @@ do
                     -- Include Second Wind display area
                     local db = ModuleDB("skyriding")
                     if db then
-                        local swMode = db.secondWindMode or "PIPS"
+                        local swMode = db.secondWindMode or "MINIBAR"
                         if swMode == "MINIBAR" then
-                            h = h + 2 + (db.secondWindHeight or 6)
+                            h = h + 2 + (db.secondWindHeight or 20)
                         elseif swMode == "PIPS" then
-                            h = h + 10
+                            -- gap (3) + pip size (6 * scale) above the bar
+                            h = h + 3 + 6 * (db.secondWindScale or 2.1)
+                        elseif swMode == "TEXT" then
+                            -- gap (2) + fixed font height (10) below the bar
+                            h = h + 12
                         end
                     end
                     return w, h
@@ -3105,12 +3137,15 @@ do
                 getCenterOffset = function()
                     local db = ModuleDB("skyriding")
                     if not db then return 0, 0 end
-                    local swMode = db.secondWindMode or "PIPS"
+                    local swMode = db.secondWindMode or "MINIBAR"
                     if swMode == "MINIBAR" then
-                        local extra = 2 + (db.secondWindHeight or 6)
+                        local extra = 2 + (db.secondWindHeight or 20)
                         return 0, -(extra / 2)  -- Shift down (minibar below)
                     elseif swMode == "PIPS" then
-                        return 0, 5  -- Shift up (pips above)
+                        local extra = 3 + 6 * (db.secondWindScale or 2.1)
+                        return 0, extra / 2  -- Shift up (pips above)
+                    elseif swMode == "TEXT" then
+                        return 0, -6  -- Shift down (text below)
                     end
                     return 0, 0
                 end,

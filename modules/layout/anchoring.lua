@@ -1640,6 +1640,7 @@ local FRAME_RESOLVERS = {
         return _G["ZoneAbilityFrame"]
     end,
     leaveVehicle = function() return _G["MainMenuBarVehicleLeaveButton"] end,
+    equipmentDurability = function() return _G["DurabilityFrame"] end,
     -- QoL
     brezCounter = function() return _G["QUI_BrezCounter"] end,
     atonementCounter = function() return _G["QUI_AtonementCounter"] end,
@@ -1878,6 +1879,7 @@ local FRAME_ANCHOR_INFO = {
     extraActionButton = { displayName = "Extra Action Button", category = "Action Bars",       order = 13 },
     zoneAbility     = { displayName = "Zone Ability Button",   category = "Action Bars",       order = 14 },
     leaveVehicle    = { displayName = "Leave Vehicle Button", category = "Action Bars",       order = 15 },
+    equipmentDurability = { displayName = "Equipment Durability", category = "Display",        order = 10 },
     brezCounter     = { displayName = "Brez Counter",          category = "QoL",               order = 1 },
     atonementCounter = { displayName = "Atonement Counter",    category = "QoL",               order = 2 },
     combatTimer     = { displayName = "Combat Timer",          category = "QoL",               order = 3 },

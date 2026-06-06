@@ -3607,9 +3607,178 @@ end
 
 -- Purge cross-class spell corruption from _specProfiles.
 -- For each spec belonging to the current character's class, removes spells
--- that IsSpellKnownByPlayer says aren't learned (cross-class contamination).
+-- that this character does not know (cross-class contamination).
 -- Specs belonging to other classes are left untouched — run the command on
 -- each character to clean their own specs.
+local function CDMDebugIsSpellKnownByPlayer(spellID)
+    if type(spellID) ~= "number" then return false end
+
+    local spellData = ns.CDMSpellData
+    if spellData and type(spellData.IsSpellKnown) == "function" then
+        local ok, isKnown = pcall(spellData.IsSpellKnown, spellData, spellID)
+        if ok and isKnown then
+            return true
+        end
+    end
+
+    if C_SpellBook and type(C_SpellBook.IsSpellKnown) == "function" then
+        local ok, isKnown = pcall(C_SpellBook.IsSpellKnown, spellID)
+        if ok and isKnown then
+            return true
+        end
+    end
+
+    return false
+end
+
+local CDM_DEBUG_BUILTIN_CONTAINER_KEYS = {
+    essential = true,
+    utility = true,
+    buff = true,
+    trackedBar = true,
+}
+
+local function CDMDebugCountSet(set)
+    local count = 0
+    if type(set) == "table" then
+        for _ in pairs(set) do
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function CDMDebugGetCurrentProfileName(addonDB)
+    if addonDB and type(addonDB.GetCurrentProfile) == "function" then
+        local ok, profileName = pcall(addonDB.GetCurrentProfile, addonDB)
+        if ok and type(profileName) == "string" and profileName ~= "" then
+            return profileName
+        end
+    end
+    return "Default"
+end
+
+local function CDMDebugGetCurrentSpecID()
+    if GetSpecialization and GetSpecializationInfo then
+        local specIndex = GetSpecialization()
+        if specIndex then
+            local specID = GetSpecializationInfo(specIndex)
+            if type(specID) == "number" and specID ~= 0 then
+                return specID
+            end
+        end
+    end
+    return nil
+end
+
+local function CDMDebugNormalizeLoadoutID(loadoutID)
+    if loadoutID == nil or loadoutID == -2 then return 0 end
+    if type(loadoutID) == "number" and loadoutID > 0 then return loadoutID end
+    return 0
+end
+
+local function CDMDebugGetCurrentLoadoutID(profileDB, charDB, specID)
+    if not profileDB or not profileDB.perLoadoutSpec then return 0 end
+    if type(specID) ~= "number" or specID == 0 then return 0 end
+
+    local savedID
+    if C_ClassTalents and type(C_ClassTalents.GetLastSelectedSavedConfigID) == "function" then
+        local ok, result = pcall(C_ClassTalents.GetLastSelectedSavedConfigID, specID)
+        if ok then
+            savedID = result
+        end
+    end
+    if savedID ~= nil then
+        return CDMDebugNormalizeLoadoutID(savedID)
+    end
+
+    local cache = charDB and charDB._lastLoadoutConfigID
+    local cachedID = type(cache) == "table" and cache[specID]
+    return CDMDebugNormalizeLoadoutID(cachedID)
+end
+
+local function CDMDebugCollectCurrentSpecCDMSpells()
+    local knownSpells = {}
+    local catalog = ns.CDMCatalog
+    if catalog and type(catalog.CollectKnownCDMSpellIDs) == "function" then
+        local ok = pcall(catalog.CollectKnownCDMSpellIDs, knownSpells)
+        if ok and next(knownSpells) then
+            return knownSpells
+        end
+    end
+
+    local composer = ns.CDMComposer
+    if composer and type(composer.CollectKnownCDMSpellIDs) == "function" then
+        pcall(composer.CollectKnownCDMSpellIDs, knownSpells)
+    end
+    return knownSpells
+end
+
+local function CDMDebugShouldKeepCurrentSpecEntry(entry, allowedSpells, containerKey)
+    if not entry or entry.type ~= "spell" or type(entry.id) ~= "number" then
+        return true
+    end
+    if allowedSpells[entry.id] then
+        return true
+    end
+
+    if (containerKey == "buff" or containerKey == "trackedBar")
+       and entry.kind == "aura"
+       and entry.source ~= "blizzardCDM" then
+        return true
+    end
+
+    return false
+end
+
+local function CDMDebugCleanContainerByAllowedSpells(cData, allowedSpells, label, containerKey, reasonLabel, P)
+    if type(cData) ~= "table" then return 0 end
+    local cleanedCount = 0
+
+    if type(cData.ownedSpells) == "table" then
+        local cleaned = {}
+        local removed = 0
+        for _, entry in ipairs(cData.ownedSpells) do
+            if CDMDebugShouldKeepCurrentSpecEntry(entry, allowedSpells, containerKey) then
+                cleaned[#cleaned + 1] = entry
+            else
+                removed = removed + 1
+                local spellName = Sources and Sources.QuerySpellName and Sources.QuerySpellName(entry.id) or "?"
+                print(P, "  Removed", spellName .. "(" .. entry.id .. ") from", label, containerKey, reasonLabel)
+            end
+        end
+        if removed > 0 then
+            cData.ownedSpells = cleaned
+            cleanedCount = cleanedCount + removed
+        end
+    end
+
+    if type(cData.dormantSpells) == "table" then
+        for sid in pairs(cData.dormantSpells) do
+            if type(sid) == "number" and not allowedSpells[sid] then
+                cData.dormantSpells[sid] = nil
+                cleanedCount = cleanedCount + 1
+                local spellName = Sources and Sources.QuerySpellName and Sources.QuerySpellName(sid) or "?"
+                print(P, "  Removed", spellName .. "(" .. sid .. ") from", label, containerKey, "dormant", reasonLabel)
+            end
+        end
+    end
+
+    return cleanedCount
+end
+
+local function CDMDebugCleanContainerMapByAllowedSpells(containerMap, allowedSpells, label, reasonLabel, P)
+    if type(containerMap) ~= "table" then return 0 end
+    local cleanedCount = 0
+    for containerKey, cData in pairs(containerMap) do
+        if CDM_DEBUG_BUILTIN_CONTAINER_KEYS[containerKey] then
+            cleanedCount = cleanedCount
+                + CDMDebugCleanContainerByAllowedSpells(cData, allowedSpells, label, containerKey, reasonLabel, P)
+        end
+    end
+    return cleanedCount
+end
+
 local function RunCDMDebugClean()
     local P = "|cff34D399[CDM-Clean]|r"
 
@@ -3618,9 +3787,11 @@ local function RunCDMDebugClean()
         return
     end
 
-    local db = ns.Addon and ns.Addon.db and ns.Addon.db.profile and ns.Addon.db.profile.ncdm
-    if not db or not db._specProfiles then
-        print(P, "No spec profiles to clean.")
+    local addonDB = ns.Addon and ns.Addon.db
+    local profileDB = addonDB and addonDB.profile and addonDB.profile.ncdm
+    local charDB = addonDB and addonDB.char and addonDB.char.ncdm
+    if not profileDB then
+        print(P, "No CDM profile to clean.")
         return
     end
 
@@ -3657,100 +3828,135 @@ local okI = true; local ii = C_SpellBook.GetSpellBookItemInfo(offset + i, Enum.S
     local totalCleaned = 0
     local profilesChecked = 0
 
-    for specID, specData in pairs(db._specProfiles) do
-        local specLabel = tostring(specID)
-        local specClass
-        if GetSpecializationInfoByID then
-            local _, specName, _, _, _, classFile = GetSpecializationInfoByID(specID)
-            if specName then specLabel = specID .. " (" .. specName .. ")" end
-            specClass = classFile
-        end
+    if type(profileDB._specProfiles) == "table" and next(profileDB._specProfiles) then
+        for specID, specData in pairs(profileDB._specProfiles) do
+            local specLabel = tostring(specID)
+            local specClass
+            if GetSpecializationInfoByID then
+                local _, specName, _, _, _, classFile = GetSpecializationInfoByID(specID)
+                if specName then specLabel = specID .. " (" .. specName .. ")" end
+                specClass = classFile
+            end
 
-        if specClass == playerClass then
-            -- This spec belongs to our class — surgically remove foreign spells
-            profilesChecked = profilesChecked + 1
-            local specCleaned = 0
-            for containerKey, cData in pairs(specData) do
-                if type(cData) == "table" and type(cData.ownedSpells) == "table" then
-                    local cleaned = {}
-                    local removed = 0
-                    for _, entry in ipairs(cData.ownedSpells) do
-                        if entry and entry.id and entry.type == "spell" then
-                            if knownSpells[entry.id] or IsSpellKnownByPlayer(entry.id) then
-                                cleaned[#cleaned + 1] = entry
+            if specClass == playerClass then
+                -- This spec belongs to our class — surgically remove foreign spells
+                profilesChecked = profilesChecked + 1
+                local specCleaned = 0
+                for containerKey, cData in pairs(specData) do
+                    if type(cData) == "table" and type(cData.ownedSpells) == "table" then
+                        local cleaned = {}
+                        local removed = 0
+                        for _, entry in ipairs(cData.ownedSpells) do
+                            if entry and entry.id and entry.type == "spell" then
+                                if knownSpells[entry.id] or CDMDebugIsSpellKnownByPlayer(entry.id) then
+                                    cleaned[#cleaned + 1] = entry
+                                else
+                                    removed = removed + 1
+                                    local spellName = Sources and Sources.QuerySpellName and Sources.QuerySpellName(entry.id) or "?"
+                                    print(P, "  Removed", spellName .. "(" .. entry.id .. ") from", specLabel, containerKey)
+                                end
                             else
+                                cleaned[#cleaned + 1] = entry
+                            end
+                        end
+                        if removed > 0 then
+                            cData.ownedSpells = cleaned
+                            specCleaned = specCleaned + removed
+                        end
+                        if type(cData.dormantSpells) == "table" then
+                            for sid in pairs(cData.dormantSpells) do
+                                if type(sid) == "number" and not knownSpells[sid] and not CDMDebugIsSpellKnownByPlayer(sid) then
+                                    cData.dormantSpells[sid] = nil
+                                    specCleaned = specCleaned + 1
+                                end
+                            end
+                        end
+                    end
+                end
+                if specCleaned > 0 then
+                    totalCleaned = totalCleaned + specCleaned
+                    print(P, specLabel .. ": cleaned", specCleaned, "foreign spells")
+                else
+                    print(P, specLabel .. ": clean")
+                end
+            elseif specClass and specClass ~= playerClass then
+                -- Different class — surgically remove any of OUR spells that
+                -- leaked into their profile, preserving their legitimate spells.
+                local specCleaned = 0
+                for containerKey, cData in pairs(specData) do
+                    if type(cData) == "table" and type(cData.ownedSpells) == "table" then
+                        local cleaned = {}
+                        local removed = 0
+                        for _, entry in ipairs(cData.ownedSpells) do
+                            if entry and entry.id and entry.type == "spell"
+                               and (knownSpells[entry.id] or CDMDebugIsSpellKnownByPlayer(entry.id)) then
                                 removed = removed + 1
                                 local spellName = Sources and Sources.QuerySpellName and Sources.QuerySpellName(entry.id) or "?"
                                 print(P, "  Removed", spellName .. "(" .. entry.id .. ") from", specLabel, containerKey)
-                            end
-                        else
-                            cleaned[#cleaned + 1] = entry
-                        end
-                    end
-                    if removed > 0 then
-                        cData.ownedSpells = cleaned
-                        specCleaned = specCleaned + removed
-                    end
-                    if type(cData.dormantSpells) == "table" then
-                        for sid in pairs(cData.dormantSpells) do
-                            if type(sid) == "number" and not knownSpells[sid] and not IsSpellKnownByPlayer(sid) then
-                                cData.dormantSpells[sid] = nil
-                                specCleaned = specCleaned + 1
+                            else
+                                cleaned[#cleaned + 1] = entry
                             end
                         end
-                    end
-                end
-            end
-            if specCleaned > 0 then
-                totalCleaned = totalCleaned + specCleaned
-                print(P, specLabel .. ": cleaned", specCleaned, "foreign spells")
-            else
-                print(P, specLabel .. ": clean")
-            end
-        elseif specClass and specClass ~= playerClass then
-            -- Different class — surgically remove any of OUR spells that
-            -- leaked into their profile, preserving their legitimate spells.
-            local specCleaned = 0
-            for containerKey, cData in pairs(specData) do
-                if type(cData) == "table" and type(cData.ownedSpells) == "table" then
-                    local cleaned = {}
-                    local removed = 0
-                    for _, entry in ipairs(cData.ownedSpells) do
-                        if entry and entry.id and entry.type == "spell"
-                           and (knownSpells[entry.id] or IsSpellKnownByPlayer(entry.id)) then
-                            removed = removed + 1
-                            local spellName = Sources and Sources.QuerySpellName and Sources.QuerySpellName(entry.id) or "?"
-                            print(P, "  Removed", spellName .. "(" .. entry.id .. ") from", specLabel, containerKey)
-                        else
-                            cleaned[#cleaned + 1] = entry
+                        if removed > 0 then
+                            cData.ownedSpells = cleaned
+                            specCleaned = specCleaned + removed
                         end
-                    end
-                    if removed > 0 then
-                        cData.ownedSpells = cleaned
-                        specCleaned = specCleaned + removed
-                    end
-                    if type(cData.dormantSpells) == "table" then
-                        for sid in pairs(cData.dormantSpells) do
-                            if type(sid) == "number" and (knownSpells[sid] or IsSpellKnownByPlayer(sid)) then
-                                cData.dormantSpells[sid] = nil
-                                specCleaned = specCleaned + 1
+                        if type(cData.dormantSpells) == "table" then
+                            for sid in pairs(cData.dormantSpells) do
+                                if type(sid) == "number" and (knownSpells[sid] or CDMDebugIsSpellKnownByPlayer(sid)) then
+                                    cData.dormantSpells[sid] = nil
+                                    specCleaned = specCleaned + 1
+                                end
                             end
                         end
                     end
                 end
-            end
-            if specCleaned > 0 then
-                totalCleaned = totalCleaned + specCleaned
-                print(P, specLabel .. ": cleaned", specCleaned, "foreign spells")
+                if specCleaned > 0 then
+                    totalCleaned = totalCleaned + specCleaned
+                    print(P, specLabel .. ": cleaned", specCleaned, "foreign spells")
+                else
+                    print(P, specLabel .. ": clean")
+                end
             else
-                print(P, specLabel .. ": clean")
+                print(P, specLabel .. ": skipped (unknown spec)")
             end
-        else
-            print(P, specLabel .. ": skipped (unknown spec)")
         end
+    else
+        print(P, "_specProfiles: empty/nil")
     end
 
-    print(P, "Done.", profilesChecked, "profiles checked,", totalCleaned, "foreign spells removed.")
+    local currentSpecID = CDMDebugGetCurrentSpecID()
+    local currentSpecSpells = CDMDebugCollectCurrentSpecCDMSpells()
+    local currentSpecSpellCount = CDMDebugCountSet(currentSpecSpells)
+    if currentSpecID and currentSpecSpellCount > 0 then
+        local profileName = CDMDebugGetCurrentProfileName(addonDB)
+        local loadoutID = CDMDebugGetCurrentLoadoutID(profileDB, charDB, currentSpecID)
+        local byProfile = charDB and charDB._specProfilesByProfile and charDB._specProfilesByProfile[profileName]
+        local scopedSlot = byProfile and byProfile[currentSpecID] and byProfile[currentSpecID][loadoutID]
+        if type(scopedSlot) == "table" then
+            profilesChecked = profilesChecked + 1
+            local label = "current spec scoped " .. tostring(currentSpecID) .. "/" .. tostring(loadoutID)
+            local scopedCleaned = CDMDebugCleanContainerMapByAllowedSpells(
+                scopedSlot, currentSpecSpells, label, "missing from current spec CDM", P)
+            totalCleaned = totalCleaned + scopedCleaned
+            print(P, label .. ": cleaned", scopedCleaned, "entries")
+        else
+            print(P, "current spec scoped " .. tostring(currentSpecID) .. "/" .. tostring(loadoutID) .. ": empty/nil")
+        end
+
+        local liveCleaned = CDMDebugCleanContainerMapByAllowedSpells(
+            profileDB, currentSpecSpells, "current live profile", "missing from current spec CDM", P)
+        if liveCleaned > 0 then
+            totalCleaned = totalCleaned + liveCleaned
+            print(P, "current live profile: cleaned", liveCleaned, "entries")
+        else
+            print(P, "current live profile: clean")
+        end
+    else
+        print(P, "current spec CDM catalog unavailable; skipped current scoped cleanup.")
+    end
+
+    print(P, "Done.", profilesChecked, "profiles checked,", totalCleaned, "entries removed.")
     print(P, "Run /cdmdebug profile to verify. Run this on each character to clean their specs.")
 end
 

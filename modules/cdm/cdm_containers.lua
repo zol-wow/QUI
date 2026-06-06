@@ -11,6 +11,8 @@
     at ADDON_LOADED (safe window for combat /reload support).
 ]]
 
+-- luacheck: globals RegisterEventCallback
+
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local QUICore = ns.Addon
@@ -173,6 +175,10 @@ local pendingLoadoutRefresh = false  -- combat-deferred save/load flag; drained 
 local loadoutTrackingToken = 0       -- abort-on-supersede token (parallels specTrackingRetryToken at line 130)
 local loadoutDebounceTimer = nil     -- C_Timer.NewTimer handle; :Cancel() on new event; NOT C_Timer.After
 local NO_SAVED_LOADOUT_ID = -2       -- Constants.TraitConsts.STARTER_BUILD_TRAIT_CONFIG_ID; nil and -2 both resolve to slot 0
+local pendingClassTalentSwitchSpecID = nil
+local pendingClassTalentSwitchLoadoutSpecID = nil
+local pendingClassTalentSwitchLoadoutID = nil
+local classTalentSwitchCallbacksRegistered = false
 
 -- Phase 2 / D-06: Live-refresh subscribers (settings label hook).
 -- Subscribers register via ns.CDMContainers.RegisterLoadoutChangeCallback
@@ -206,6 +212,125 @@ local function GetCurrentSpecID()
         return specID
     end
     return nil
+end
+
+local function NormalizeLoadoutID(loadoutID)
+    if loadoutID == nil then return nil end
+    if loadoutID == NO_SAVED_LOADOUT_ID then return 0 end
+    return loadoutID
+end
+
+local function GetPlayerClassID()
+    if not UnitClass then return nil end
+    local _, _, classID = UnitClass("player")
+    return classID
+end
+
+local function ResolveSpecIDByIndex(specIndex)
+    if type(specIndex) ~= "number" then
+        specIndex = tonumber(specIndex)
+    end
+    if not specIndex or specIndex <= 0 then return nil end
+    if not GetSpecializationInfo then return nil end
+
+    local classID = GetPlayerClassID()
+    local specID = GetSpecializationInfo(specIndex, false, false, nil, nil, nil, classID)
+    if type(specID) == "number" and specID ~= 0 then
+        return specID
+    end
+    return nil
+end
+
+local function ResolveSpecIDByName(specName)
+    if type(specName) ~= "string" or specName == "" then return nil end
+    if not (C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID and GetSpecializationInfo) then
+        return nil
+    end
+
+    local classID = GetPlayerClassID()
+    if not classID then return nil end
+
+    local specCount = C_SpecializationInfo.GetNumSpecializationsForClassID(classID)
+    for specIndex = 1, specCount do
+        local specID, name = GetSpecializationInfo(specIndex, false, false, nil, nil, nil, classID)
+        if name == specName and type(specID) == "number" and specID ~= 0 then
+            return specID
+        end
+    end
+    return nil
+end
+
+local function ResolveLoadoutIDByIndex(specID, loadoutIndex)
+    if type(loadoutIndex) ~= "number" then
+        loadoutIndex = tonumber(loadoutIndex)
+    end
+    if not specID or specID == 0 or not loadoutIndex or loadoutIndex <= 0 then return nil end
+    if not (C_ClassTalents and C_ClassTalents.GetConfigIDsBySpecID) then return nil end
+
+    local configIDs = C_ClassTalents.GetConfigIDsBySpecID(specID)
+    local configID = type(configIDs) == "table" and configIDs[loadoutIndex]
+    return NormalizeLoadoutID(configID)
+end
+
+local function ResolveLoadoutIDByName(specID, loadoutName)
+    if type(loadoutName) ~= "string" or loadoutName == "" then return nil end
+    if not specID or specID == 0 then return nil end
+    if not (C_ClassTalents and C_ClassTalents.GetConfigIDsBySpecID and C_Traits and C_Traits.GetConfigInfo) then
+        return nil
+    end
+
+    local configIDs = C_ClassTalents.GetConfigIDsBySpecID(specID)
+    if type(configIDs) ~= "table" then return nil end
+
+    for _, configID in ipairs(configIDs) do
+        local configInfo = C_Traits.GetConfigInfo(configID)
+        if configInfo and configInfo.name == loadoutName then
+            return NormalizeLoadoutID(configID)
+        end
+    end
+    return nil
+end
+
+local function SetPendingClassTalentSpecSwitch(specID)
+    if type(specID) == "number" and specID ~= 0 then
+        pendingClassTalentSwitchSpecID = specID
+    end
+end
+
+local function ConsumePendingClassTalentSpecSwitchID()
+    local specID = pendingClassTalentSwitchSpecID
+    pendingClassTalentSwitchSpecID = nil
+    return specID
+end
+
+local function SetPendingClassTalentLoadoutSwitch(specID, loadoutID)
+    if type(specID) == "number" and specID ~= 0 and loadoutID ~= nil then
+        pendingClassTalentSwitchLoadoutSpecID = specID
+        pendingClassTalentSwitchLoadoutID = loadoutID
+    end
+end
+
+local function GetPendingClassTalentLoadoutIDForSpec(specID)
+    if pendingClassTalentSwitchLoadoutSpecID == specID then
+        return pendingClassTalentSwitchLoadoutID
+    end
+    return nil
+end
+
+local function ConsumePendingClassTalentLoadoutIDForSpec(specID)
+    if pendingClassTalentSwitchLoadoutSpecID ~= specID then
+        return nil
+    end
+    local loadoutID = pendingClassTalentSwitchLoadoutID
+    pendingClassTalentSwitchLoadoutSpecID = nil
+    pendingClassTalentSwitchLoadoutID = nil
+    return loadoutID
+end
+
+local function ClearPendingClassTalentSwitchIntent()
+    pendingClassTalentSwitchSpecID = nil
+    pendingClassTalentSwitchLoadoutSpecID = nil
+    pendingClassTalentSwitchLoadoutID = nil
 end
 
 local function GetCurrentCharacterKey()
@@ -295,7 +420,7 @@ local LEGACY_CONTAINER_KEYS = {
     trackedBar = true,
 }
 
--- Resolve the current effective loadout ID for storage keying (D-06).
+-- Resolve an effective loadout ID for storage keying (D-06).
 -- Returns 0 (sentinel) when:
 --   * perLoadoutSpec toggle is OFF
 --   * GetLastSelectedSavedConfigID returns nil (e.g., login before TRAIT_CONFIG_LIST_UPDATED fires)
@@ -303,11 +428,15 @@ local LEGACY_CONTAINER_KEYS = {
 -- Returns the saved configID otherwise.
 -- NEVER calls GetActiveConfigID itself — that is forbidden by LDST-04 (creates
 -- orphaned keys from ephemeral staging configs that change each session).
-local function GetEffectiveLoadoutID()
+local function GetEffectiveLoadoutIDForSpec(specID)
     local profileDB = GetDB()
     if not profileDB or not profileDB.perLoadoutSpec then return 0 end
-    local specID = GetCurrentSpecID()
     if not specID or specID == 0 then return 0 end
+
+    local pendingLoadoutID = GetPendingClassTalentLoadoutIDForSpec(specID)
+    if pendingLoadoutID ~= nil then
+        return pendingLoadoutID
+    end
 
     local savedID
     if C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
@@ -330,8 +459,37 @@ local function GetEffectiveLoadoutID()
         return 0
     end
 
-    if savedID == NO_SAVED_LOADOUT_ID then return 0 end
-    return savedID
+    return NormalizeLoadoutID(savedID)
+end
+
+-- Resolve the current effective loadout ID for storage keying.
+local function GetEffectiveLoadoutID()
+    return GetEffectiveLoadoutIDForSpec(GetCurrentSpecID())
+end
+
+local function RegisterClassTalentSwitchCallbacks()
+    if classTalentSwitchCallbacksRegistered or type(RegisterEventCallback) ~= "function" then
+        return
+    end
+    classTalentSwitchCallbacksRegistered = true
+
+    RegisterEventCallback("CLASS_TALENTS_SWITCH_TO_SPECIALIZATION_BY_NAME", function(_, specName)
+        SetPendingClassTalentSpecSwitch(ResolveSpecIDByName(specName))
+    end)
+
+    RegisterEventCallback("CLASS_TALENTS_SWITCH_TO_SPECIALIZATION_BY_INDEX", function(_, specIndex)
+        SetPendingClassTalentSpecSwitch(ResolveSpecIDByIndex(specIndex))
+    end)
+
+    RegisterEventCallback("CLASS_TALENTS_SWITCH_TO_LOADOUT_BY_NAME", function(_, loadoutName)
+        local specID = GetCurrentSpecID()
+        SetPendingClassTalentLoadoutSwitch(specID, ResolveLoadoutIDByName(specID, loadoutName))
+    end)
+
+    RegisterEventCallback("CLASS_TALENTS_SWITCH_TO_LOADOUT_BY_INDEX", function(_, loadoutIndex)
+        local specID = GetCurrentSpecID()
+        SetPendingClassTalentLoadoutSwitch(specID, ResolveLoadoutIDByIndex(specID, loadoutIndex))
+    end)
 end
 
 -- Access the 4-dim loadout-scoped store slot for a (specID, loadoutID) pair.
@@ -528,12 +686,14 @@ local function FinalizeSpecTracking()
     RefreshAll()
 end
 
-local function SaveSpecProfile(specID)
+local function SaveSpecProfileToLoadout(specID, loadoutID)
     if not specID or specID == 0 then
         return
     end
+    if loadoutID == nil then
+        return
+    end
 
-    local loadoutID = GetEffectiveLoadoutID()
     local store = GetSpecLoadoutProfileStore(specID, loadoutID, true)
     if not store then
         return
@@ -578,12 +738,20 @@ local function SaveSpecProfile(specID)
     end
 end
 
+local function SaveSpecProfile(specID)
+    SaveSpecProfileToLoadout(specID, GetEffectiveLoadoutIDForSpec(specID))
+end
+
 local function SaveCurrentSpecProfile()
     -- Use _previousSpecID, not GetCurrentSpecID(). By the time
     -- PLAYER_SPECIALIZATION_CHANGED fires the current spec is already
     -- the NEW spec — saving under GetCurrentSpecID() would store the
     -- outgoing spec's data under the incoming spec's key.
-    SaveSpecProfile(_previousSpecID)
+    local loadoutID = _previousLoadoutID
+    if loadoutID == nil then
+        loadoutID = GetEffectiveLoadoutIDForSpec(_previousSpecID)
+    end
+    SaveSpecProfileToLoadout(_previousSpecID, loadoutID)
 end
 
 -- Save the current live container state into the (specID, loadoutID) slot.
@@ -595,40 +763,7 @@ end
 -- saved-loadout the user just switched to).
 local function SaveLoadoutProfile(loadoutID, specID)
     if not specTrackingReady then return end  -- LDEV-05
-    if not specID or specID == 0 then return end
-    if loadoutID == nil then return end
-
-    local store = GetSpecLoadoutProfileStore(specID, loadoutID, true)
-    if not store then return end
-
-    local specData = {}
-    local containerKeys = CDMContainers_API:GetAllContainerKeys()
-    local hasAnySpells = false
-
-    for _, key in ipairs(containerKeys) do
-        local containerDB = GetTrackerSettings(key)
-        if containerDB and containerDB.ownedSpells ~= nil then
-            specData[key] = {
-                ownedSpells = CopyTable(containerDB.ownedSpells),
-                removedSpells = CopyTable(containerDB.removedSpells or {}),
-                -- dormantSpells is no longer persisted: the shelf is a
-                -- legacy recovery surface, always folded back into the
-                -- list and emptied by CheckAllDormantSpells. Restore paths
-                -- still read it from old saves.
-            }
-            if type(containerDB.ownedSpells) == "table" and #containerDB.ownedSpells > 0 then
-                hasAnySpells = true
-            end
-        end
-    end
-
-    if hasAnySpells then
-        -- store IS store[specID][loadoutID]. Write per-container map directly.
-        for k, v in pairs(specData) do
-            store[k] = v
-        end
-        StampActiveProfileSpecOwner(specID)
-    end
+    SaveSpecProfileToLoadout(specID, loadoutID)
 end
 
 -- Load saved containers from the (specID, loadoutID) slot into live state.
@@ -733,13 +868,16 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
 
     -- Upgrade path for the active character/profile: if no scoped spec store
     -- exists yet, seed it from the current live container state only when the
-    -- shared profile state was last written by this character (or predates the
-    -- character stamp entirely). If another character wrote the shared state,
-    -- ignore it and snapshot clean data for this character instead.
+    -- shared profile state is stamped for this character and this exact spec.
+    -- Legacy unstamped profiles may seed on same-spec login; during a spec
+    -- switch, _previousSpecID is the outgoing spec, so missing incoming
+    -- profiles must fall through to a fresh snapshot.
     if not savedProfile then
         local currentCharKey = GetCurrentCharacterKey()
         local profileCharKey = db._lastSpecCharKey
-        if (not profileCharKey) or profileCharKey == currentCharKey then
+        local profileSpecID = db._lastSpecID
+        local profileSpecMatches = profileSpecID == specID or (not profileSpecID and _previousSpecID == specID)
+        if profileSpecMatches and ((not profileCharKey) or profileCharKey == currentCharKey) then
             local specData = {}
             local hasAnySpells = false
             for _, key in ipairs(containerKeys) do
@@ -3242,12 +3380,14 @@ function ownedEngine:Initialize()
     eventFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
     eventFrame:RegisterEvent("ACTIVE_COMBAT_CONFIG_CHANGED")
     eventFrame:RegisterEvent("TRAIT_CONFIG_LIST_UPDATED")
+    eventFrame:RegisterEvent("SPECIALIZATION_CHANGE_CAST_FAILED")
     eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     eventFrame:RegisterEvent("CHALLENGE_MODE_START")
     eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
     eventFrame:RegisterEvent("CINEMATIC_STOP")
     eventFrame:RegisterEvent("STOP_MOVIE")
     eventFrame:RegisterEvent("ADDON_LOADED")
+    RegisterClassTalentSwitchCallbacks()
 
     eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
         if not IsCDMRuntimeEnabled() then
@@ -3325,7 +3465,7 @@ function ownedEngine:Initialize()
                 C_Timer.After(0.3, RefreshAll)
             end
         elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
-            local newSpecID = GetCurrentSpecID()
+            local newSpecID = ConsumePendingClassTalentSpecSwitchID() or GetCurrentSpecID()
             -- Guard: Blizzard can fire this event multiple times for a single
             -- spec change. Skip the duplicate if we already processed it.
             if not newSpecID or newSpecID ~= _previousSpecID then
@@ -3346,6 +3486,7 @@ function ownedEngine:Initialize()
                 specTrackingRetryToken = specTrackingRetryToken + 1
                 local readyNow = LoadOrSnapshotSpecProfile(newSpecID, 1, specTrackingRetryToken)
                 _previousSpecID = newSpecID
+                _previousLoadoutID = GetEffectiveLoadoutIDForSpec(newSpecID)
                 -- Persist for cross-session detection.
                 local specDB = GetSpecStateDB(true)
                 if specDB then
@@ -3384,8 +3525,8 @@ function ownedEngine:Initialize()
                 -- Re-resolve the saved-loadout ID fresh inside the callback.
                 -- NEVER use the event payload's configID for the storage key
                 -- (it's the active staging config, not the persistent saved one).
-                local newConfigID = nil
-                if C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
+                local newConfigID = ConsumePendingClassTalentLoadoutIDForSpec(specID)
+                if newConfigID == nil and C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
                     newConfigID = C_ClassTalents.GetLastSelectedSavedConfigID(specID)
                 end
 
@@ -3418,6 +3559,8 @@ function ownedEngine:Initialize()
                 LoadLoadoutProfile(newConfigID, specID, myToken)
                 FireLoadoutChangeCallbacks()  -- Phase 2 / D-06
             end)
+        elseif event == "SPECIALIZATION_CHANGE_CAST_FAILED" then
+            ClearPendingClassTalentSwitchIntent()
         elseif event == "TRAIT_CONFIG_LIST_UPDATED" then
             loadoutListReady = true
 

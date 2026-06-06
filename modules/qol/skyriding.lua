@@ -270,7 +270,7 @@ local function GetRechargeOverlayColor(settings)
         return thrillColor[1], thrillColor[2], thrillColor[3], (thrillColor[4] or 1) * 0.6
     end
 
-    local color = settings.rechargeColor or {0.4, 0.9, 1.0, 0.6}
+    local color = settings.rechargeColor or {0.4, 0.9, 1.0, 1}
     return color[1], color[2], color[3], color[4] or 0.6
 end
 
@@ -307,7 +307,7 @@ local function CreateSkyridingFrame()
 
     local settings = GetSettings()
     local width = settings and settings.width or 250
-    local height = settings and settings.vigorHeight or 12
+    local height = settings and settings.vigorHeight or 20
 
     -- Main container frame
     skyridingFrame = CreateFrame("Frame", "QUI_Skyriding", UIParent)
@@ -601,7 +601,7 @@ local function UpdateSecondWind()
     local settings = GetSettings()
     if not settings or not skyridingFrame then return end
 
-    local mode = settings.secondWindMode or "PIPS"
+    local mode = settings.secondWindMode or "MINIBAR"
     local current, max, _, _, _ = GetSecondWindInfo()  -- Ignore cooldown data here (used in recharge func)
 
     -- Second Wind color (with class color support)
@@ -633,7 +633,7 @@ local function UpdateSecondWind()
     if max == 0 then return end
 
     if mode == "PIPS" then
-        local scale = settings.secondWindScale or 1.0
+        local scale = settings.secondWindScale or 2.1
         local basePipSize = 6
         local baseGap = 4
         local baseGlowSize = 14
@@ -682,7 +682,7 @@ local function UpdateSecondWind()
         secondWindText:Show()
 
     elseif mode == "MINIBAR" then
-        local swHeight = settings.secondWindHeight or 6
+        local swHeight = settings.secondWindHeight or 20
 
         secondWindMiniBar:ClearAllPoints()
         secondWindMiniBar:SetPoint("TOPLEFT", skyridingFrame, "BOTTOMLEFT", 0, -2)
@@ -854,7 +854,7 @@ local function UpdateSecondWindRecharge(settings)
     if not settings or not secondWindMiniBar or not swRechargeOverlay then return end
 
     -- Only show for MINIBAR mode
-    local mode = settings.secondWindMode or "PIPS"
+    local mode = settings.secondWindMode or "MINIBAR"
     if mode ~= "MINIBAR" then
         swRechargeOverlay:Hide()
         return
@@ -954,9 +954,9 @@ local function UpdateAbilityIcon()
     end
 
     -- Calculate icon height to span both bars and center vertically
-    local vigorHeight = settings.vigorHeight or 12
-    local swHeight = settings.secondWindHeight or 6
-    local swMode = settings.secondWindMode or "PIPS"
+    local vigorHeight = settings.vigorHeight or 20
+    local swHeight = settings.secondWindHeight or 20
+    local swMode = settings.secondWindMode or "MINIBAR"
     local _, swMax = GetSecondWindInfo()
 
     local totalHeight = vigorHeight
@@ -1015,8 +1015,8 @@ local function UpdateVisibility()
     isGliding = gliding
     canGlide = canGlideNow
 
-    local visibility = settings.visibility or "AUTO"
-    local fadeDelay = settings.fadeDelay or 3
+    local visibility = settings.visibility or "FLYING_ONLY"
+    local fadeDelay = settings.fadeDelay or 1
 
     -- Hide when in combat with secret values (API limitation)
     if inCombat and canGlideNow then
@@ -1082,9 +1082,9 @@ local function ApplySettings()
     end
 
     local width = settings.width or 250
-    local height = settings.vigorHeight or 12
+    local height = settings.vigorHeight or 20
     local offsetX = settings.offsetX or 0
-    local offsetY = settings.offsetY or -150
+    local offsetY = settings.offsetY or 135
     local locked = settings.locked ~= false
 
     -- Keep existing slider semantics (width/height are UI units, not physical pixels).
@@ -1127,7 +1127,7 @@ local function ApplySettings()
     skyridingFrame:EnableMouse(not locked)
 
     -- Bar texture
-    local textureName = settings.barTexture or "Solid"
+    local textureName = settings.barTexture or "Quazii v4"
     local texturePath = LSM:Fetch("statusbar", textureName) or "Interface\\Buttons\\WHITE8x8"
     vigorBar:SetStatusBarTexture(texturePath)
     if secondWindMiniBar then
@@ -1141,7 +1141,7 @@ local function ApplySettings()
     vigorBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4] or 1)
 
     -- Background color
-    local bgColor = settings.backgroundColor or {0.1, 0.1, 0.1, 0.8}
+    local bgColor = settings.backgroundColor or {0.102, 0.102, 0.102, 0.353}
     vigorBackground:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 0.8)
 
     -- Second Wind background color (separate setting)
@@ -1207,7 +1207,7 @@ local function OnUpdate(self, delta)
         local prevGroundedTime = groundedTime
         groundedTime = groundedTime + UPDATE_THROTTLE
         -- Re-evaluate visibility once grounded time crosses the fade delay threshold
-        local fadeDelay = settings.fadeDelay or 3
+        local fadeDelay = settings.fadeDelay or 1
         if prevGroundedTime < fadeDelay and groundedTime >= fadeDelay then
             _visibilityDirty = true
         end
