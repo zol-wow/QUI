@@ -9,8 +9,8 @@ jobs:
     name: Analyzer self-test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: leafo/gh-actions-lua@v10
+      - uses: actions/checkout@v6
+      - uses: leafo/gh-actions-lua@v13
         with:
           luaVersion: "5.1"
       - name: Run analyzer self-test
@@ -21,8 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: self-test
     steps:
-      - uses: actions/checkout@v4
-      - uses: leafo/gh-actions-lua@v10
+      - uses: actions/checkout@v6
+      - uses: leafo/gh-actions-lua@v13
         with:
           luaVersion: "5.1"
       - name: Regenerate api-index
@@ -40,8 +40,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: self-test
     steps:
-      - uses: actions/checkout@v4
-      - uses: leafo/gh-actions-lua@v10
+      - uses: actions/checkout@v6
+      - uses: leafo/gh-actions-lua@v13
         with:
           luaVersion: "5.1"
       - name: Strict-mode analyzer
@@ -54,14 +54,14 @@ jobs:
     if: always()
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: leafo/gh-actions-lua@v10
+      - uses: actions/checkout@v6
+      - uses: leafo/gh-actions-lua@v13
         with:
           luaVersion: "5.1"
       - name: Generate JSON report
         run: lua tools/test_taint.lua --report json > taint-report.json || true
       - name: Upload report artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: taint-report
           path: taint-report.json
