@@ -59,6 +59,8 @@ function UnitIsPlayer() return true end
 function GetSpecialization() return 1 end
 function GetSpecializationInfo() return 102 end -- Balance specID (arbitrary)
 SecureHandlerWrapScript = noop
+RegisterStateDriver = noop
+UnregisterStateDriver = noop
 GameTooltip = { GetOwner = function() return nil end, AddLine = noop, AddDoubleLine = noop, Show = noop }
 _G.wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
 

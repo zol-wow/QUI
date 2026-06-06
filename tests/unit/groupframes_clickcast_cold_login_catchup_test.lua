@@ -84,6 +84,8 @@ function UnitIsConnected() return true end
 function UnitIsPlayer() return true end
 function GetSpecialization() return 1 end
 function GetSpecializationInfo() return specReady and 102 or nil end  -- nil => spec data not ready
+function RegisterStateDriver() end
+function UnregisterStateDriver() end
 function SecureHandlerWrapScript(frame, script, header, preBody)
     frame.secureWraps[script] = { header = header, preBody = preBody }
 end
@@ -181,7 +183,6 @@ eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
 
 -- The catch-up fires while the spec is still unresolved -> empty resolve.
 flushAfter()
-local hdr = assert(_G.QUI_ClickCastHeader, "binding header should exist after the first catch-up")
 
 -- Spec data lands a moment later; drain the remaining scheduled retries.
 specReady = true
@@ -190,17 +191,19 @@ for _ = 1, 12 do
     flushAfter()
 end
 
--- Keyboard click-cast must now be applied (header + frame in sync, hover binds).
-assert(hdr:GetAttribute("clickcast-keycount") == 1,
-    "BUG: header keycount = " .. tostring(hdr:GetAttribute("clickcast-keycount"))
-    .. " -- startup catch-up did not re-resolve after spec data became ready")
-
-local wrap = assert(child.secureWraps.OnEnter,
-    "BUG: frame was never keyboard-wrapped after spec data became ready")
-child.overrideBindings = {}
+-- Keyboard click-cast must now be applied: key F published to the global caster
+-- with an @mouseover macro, and its mouseoverstate driver binds it on @mouseover.
+local caster = assert(_G.QUI_ClickCastCaster,
+    "BUG: caster button missing after spec data became ready")
+assert((caster:GetAttribute("cc-keycount") or 0) == 1,
+    "BUG: key F not published to the caster after cold login -- keyboard click-cast still dead")
+local mt = caster:GetAttribute("macrotext-keyf")
+assert(mt and mt:find("@mouseover", 1, true),
+    "BUG: caster macro for F missing @mouseover cast after cold login")
+-- The state driver binds F to the caster while a unit is under the cursor.
 local loader = loadstring or load
-assert(loader("local self, owner = ...\n" .. wrap.preBody))(child, wrap.header)
-assert(wrap.header.overrideBindings.F and wrap.header.overrideBindings.F.button == "keyf",
-    "BUG: hovering binds nothing -- keyboard click-cast still dead after cold login")
+assert(loader("local self, newstate = ...\n" .. caster:GetAttribute("_onstate-mouseoverstate")))(caster, "on")
+assert(caster.overrideBindings.F and caster.overrideBindings.F.button == "keyf",
+    "BUG: @mouseover did not bind F to the caster after cold login")
 
 print("OK: groupframes_clickcast_cold_login_catchup_test")

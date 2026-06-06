@@ -47,14 +47,13 @@ local registeredFrames = Helpers.CreateStateTable()
 local hookedFrames = Helpers.CreateStateTable() -- Tracks frames with OnEnter/OnLeave hooks (permanent)
 local secureWrappedFrames = Helpers.CreateStateTable() -- Tracks frames with secure WrapScript (permanent)
 local activeBindings = {} -- Resolved mouse bindings for current spec
-local keyboardBindings = {} -- Resolved keyboard bindings for current spec
--- Keyboard keys click-cast currently owns (WoW binding-key string -> true), e.g.
--- ["C"]=true, ["SHIFT-Q"]=true. The action bar checks this to YIELD those keys
--- instead of fighting over them with override-binding priority (see OwnsKeyboardKey).
-local ownedKeyboardKeys = {}
--- Per-owned-key fall-through target the action bar handed us so the key still
--- fires its action-bar action when NO frame is hovered: [bindingKey]={button,vBtn}.
-local restingTargets = {}
+local keyboardBindings = {} -- Resolved SCROLL-WHEEL bindings (per-frame, hover-only)
+-- Resolved KEYBOARD-KEY bindings. These are bound ONCE at setup to a single
+-- hidden caster button instead of re-bound on every hover — the per-hover
+-- SetBindingClick was being silently dropped on a tainted cold-boot secure
+-- context (worked after /reload). @mouseover in the caster macro handles
+-- targeting the hovered unit.
+local globalKeyBindings = {}
 local smartResSwapped = setmetatable({}, { __mode = "k" }) -- Per-frame: true when OnEnter swapped to res
 local isEnabled = false
 local currentKeyboardFrame = nil
@@ -64,6 +63,7 @@ local currentKeyboardFrame = nil
 -- both this flag and IsUnresolvedButConfigured, which is defined later.
 local dataReadyRefreshScheduled = false
 local IsUnresolvedButConfigured  -- forward-declared; body assigned after HasConfiguredBindings
+local HasConfiguredBindings      -- forward-declared; used by ApplyGlobalKeyboardBindings (defined above its body)
 
 ---------------------------------------------------------------------------
 -- PING MACROS: /ping [@mouseover] <type> for each ping action type
@@ -201,13 +201,11 @@ end
 
 -- WrapScript pre-body for OnEnter.
 -- `self` = the hovered frame, `owner` = the header (SecureHandlerBaseTemplate).
--- The header owns the override bindings; `currentHoverFrame` (a variable in the
--- header's shared managed environment, like a clickcast header's mouseover
--- tracker) records which frame is the active hover so OnLeave/OnHide clear ONLY
--- for that frame. Without it, ANY frame's leave/hide would clear the whole
--- header, wiping the binding the currently-hovered frame just set — frame layout
--- churn on a cold login fires spurious leaves/hides and the key falls back to a
--- lower binding (e.g. an action-bar keybind on the same key) until /reload.
+-- Per-frame SCROLL-WHEEL bindings (keyboard keys use the global caster). The
+-- header owns the override bindings; `currentHoverFrame` (a variable in the
+-- header's shared managed environment) records the active hover so OnLeave/OnHide
+-- clear ONLY for that frame — without it, any frame's leave/hide would wipe the
+-- scroll binding the currently-hovered frame just set during cold-login churn.
 local ENTER_SNIPPET = [[
     owner:ClearBindings()
     local count = owner:GetAttribute("clickcast-keycount") or 0
@@ -220,43 +218,21 @@ local ENTER_SNIPPET = [[
     -- frame); OnLeave/OnHide only clear while this stays the active frame.
     currentHoverFrame = self
 
-    local dbgBound = 0
     for i = 1, count do
         local key = owner:GetAttribute("clickcast-key" .. i)
         local vBtn = owner:GetAttribute("clickcast-vbtn" .. i)
         if key and vBtn then
             owner:SetBindingClick(true, key, frameName, vBtn)
-            dbgBound = dbgBound + 1
         end
     end
-    self:SetAttribute("cc-dbg-enterbound", dbgBound)
-]]
-
--- Shared restore body (owner = header): re-apply each owned key's action-bar
--- fall-through so leaving a frame returns the key to its normal bar action. Keys
--- without a resting target (click-cast-only keys) are left unbound.
-local RESTING_RESTORE_OWNER = [[
-        local count = owner:GetAttribute("clickcast-keycount") or 0
-        for i = 1, count do
-            local key = owner:GetAttribute("clickcast-key" .. i)
-            if key then
-                local rbtn = owner:GetAttribute("clickcast-rest-" .. key)
-                local rvbtn = owner:GetAttribute("clickcast-restv-" .. key)
-                if rbtn and rvbtn then
-                    owner:SetBindingClick(false, key, rbtn, rvbtn)
-                end
-            end
-        end
 ]]
 
 -- WrapScript pre-body for OnLeave. Guard on currentHoverFrame so a stale leave
--- from a frame we've already moved off of can't clear the active binding; then
--- restore the action-bar fall-through for owned keys.
+-- from a frame we've already moved off of can't clear the active scroll binding.
 local LEAVE_SNIPPET = [[
     if currentHoverFrame == self then
         owner:ClearBindings()
         currentHoverFrame = nil
-]] .. RESTING_RESTORE_OWNER .. [[
     end
 ]]
 
@@ -291,25 +267,6 @@ local REFRESH_HEADER_BINDINGS_SNIPPET = [[
         local vBtn = self:GetAttribute("clickcast-vbtn" .. i)
         if key and vBtn then
             self:SetBindingClick(true, key, frameName, vBtn)
-        end
-    end
-]]
-
--- Execute snippet (self = header): set the default "no frame hovered" state —
--- each owned key falls through to its action-bar action. Run out of combat after
--- bindings resolve or a resting target changes.
-local SET_RESTING_SNIPPET = [[
-    self:ClearBindings()
-    currentHoverFrame = nil
-    local count = self:GetAttribute("clickcast-keycount") or 0
-    for i = 1, count do
-        local key = self:GetAttribute("clickcast-key" .. i)
-        if key then
-            local rbtn = self:GetAttribute("clickcast-rest-" .. key)
-            local rvbtn = self:GetAttribute("clickcast-restv-" .. key)
-            if rbtn and rvbtn then
-                self:SetBindingClick(false, key, rbtn, rvbtn)
-            end
         end
     end
 ]]
@@ -351,41 +308,26 @@ local function RefreshHeaderOverrideBindings()
     end
 end
 
--- Push the default "no frame hovered" state: each owned key falls through to its
--- action-bar action. Skipped while a frame is actively hovered (the next OnLeave
--- restores resting from the header attrs), and never in combat.
-local function ApplyRestingState()
-    if InCombatLockdown() then return end
-    if currentKeyboardFrame then return end
-    local header = bindingHeader
-    if header and header.Execute then
-        header:Execute(SET_RESTING_SNIPPET)
-    end
-end
-
 -- Build virtual button name from a binding's modifiers + key.
 local function GetVirtualButtonName(binding)
     return "key" .. (binding.modifiers or ""):gsub("%-", "") .. binding.key:lower()
 end
 
--- Update the header's key-mapping attributes (shared across all frames).
+-- Update the header's key-mapping attributes for the per-frame (SCROLL-WHEEL)
+-- override path. Keyboard keys no longer go through here — they bind once to the
+-- caster button (see ApplyGlobalKeyboardBindings).
 local function UpdateHeaderKeyAttributes()
     local header = GetBindingHeader()
     if InCombatLockdown() then return end
 
-    -- Clear old attributes (indexed key/vbtn + per-key resting target)
+    -- Clear old attributes
     local oldCount = header:GetAttribute("clickcast-keycount") or 0
     for i = 1, oldCount do
         header:SetAttribute("clickcast-key" .. i, nil)
         header:SetAttribute("clickcast-vbtn" .. i, nil)
     end
-    for key in pairs(ownedKeyboardKeys) do
-        header:SetAttribute("clickcast-rest-" .. key, nil)
-        header:SetAttribute("clickcast-restv-" .. key, nil)
-    end
-    wipe(ownedKeyboardKeys)
 
-    -- Set new attributes
+    -- Set new attributes (keyboardBindings now holds only scroll-wheel bindings)
     header:SetAttribute("clickcast-keycount", #keyboardBindings)
 
     for i, binding in ipairs(keyboardBindings) do
@@ -394,18 +336,6 @@ local function UpdateHeaderKeyAttributes()
         local vBtn = GetVirtualButtonName(binding)
         header:SetAttribute("clickcast-key" .. i, fullKey)
         header:SetAttribute("clickcast-vbtn" .. i, vBtn)
-        ownedKeyboardKeys[fullKey] = true
-        -- Re-apply any known action-bar fall-through target for this key.
-        local rest = restingTargets[fullKey]
-        if rest then
-            header:SetAttribute("clickcast-rest-" .. fullKey, rest.button)
-            header:SetAttribute("clickcast-restv-" .. fullKey, rest.vBtn)
-        end
-    end
-
-    -- Drop stale resting targets for keys we no longer own.
-    for key in pairs(restingTargets) do
-        if not ownedKeyboardKeys[key] then restingTargets[key] = nil end
     end
 end
 
@@ -514,6 +444,7 @@ end
 local function ResolveBindings()
     wipe(activeBindings)
     wipe(keyboardBindings)
+    wipe(globalKeyBindings)
 
     local db = GetDB()
     if not db or not db.clickCast or not db.clickCast.enabled then return end
@@ -530,8 +461,8 @@ local function ResolveBindings()
         local spellName = (actionType == "spell") and ResolveSpellName(binding) or binding.spell
 
         if binding.key and hasAction then
-            -- Keyboard binding
-            table_insert(keyboardBindings, {
+            -- Keyboard key: bound once to the global caster button (not per-hover).
+            table_insert(globalKeyBindings, {
                 key = binding.key,
                 modifiers = binding.modifiers or "",
                 spell = spellName,
@@ -541,7 +472,8 @@ local function ResolveBindings()
         elseif binding.button and hasAction then
             local scrollKey = SCROLL_WHEEL_KEYS[binding.button]
             if scrollKey then
-                -- Scroll wheel uses override bindings (same path as keyboard keys)
+                -- Scroll wheel must be hover-only (a global mousewheel bind would
+                -- eat scrolling everywhere), so it keeps the per-frame override path.
                 table_insert(keyboardBindings, {
                     key = scrollKey,
                     modifiers = binding.modifiers or "",
@@ -560,6 +492,123 @@ local function ResolveBindings()
                 })
             end
         end
+    end
+end
+
+---------------------------------------------------------------------------
+-- GLOBAL KEYBOARD CASTER (hover-intercept model)
+-- Keyboard keys are NOT owned by click-cast. The action bar keeps its normal
+-- keybind, so off-frame the key fires your real action-bar ability. A secure
+-- `mouseoverstate` state driver binds the key (priority override) to a hidden
+-- caster button ONLY while a unit is under the cursor (@mouseover), and clears
+-- it otherwise — so click-cast intercepts on hover and the action bar takes back
+-- over off-hover. The driver + key list are set up ONCE (state-driver execution
+-- runs in a clean secure path, dodging the cold-boot taint that killed the old
+-- per-hover SetBindingClick); @mouseover in the macro targets the hovered unit.
+---------------------------------------------------------------------------
+local casterButton
+local casterVBtns = {} -- virtual buttons set last apply, cleared on re-apply
+
+-- _onstate-mouseoverstate (self = caster): bind every owned key to the caster
+-- while @mouseover exists; clear them when it doesn't (action bar resumes).
+local CASTER_MOUSEOVER_SNIPPET = [[
+    self:ClearBindings()
+    if newstate ~= "on" then return end
+    local count = self:GetAttribute("cc-keycount") or 0
+    for i = 1, count do
+        local key = self:GetAttribute("cc-key" .. i)
+        local vbtn = self:GetAttribute("cc-vbtn" .. i)
+        if key and vbtn then
+            self:SetBindingClick(true, key, self, vbtn)
+        end
+    end
+]]
+
+local function GetCasterButton()
+    if not casterButton then
+        casterButton = CreateFrame("Button", "QUI_ClickCastCaster", UIParent,
+            "SecureActionButtonTemplate,SecureHandlerStateTemplate")
+        casterButton:RegisterForClicks("AnyDown", "AnyUp")
+        casterButton:Hide()
+        casterButton:SetAttribute("_onstate-mouseoverstate", CASTER_MOUSEOVER_SNIPPET)
+        RegisterStateDriver(casterButton, "mouseoverstate", "[@mouseover,exists] on; off")
+    end
+    return casterButton
+end
+
+-- Macro for a keyboard binding on the caster. The caster is only bound while a
+-- unit is under the cursor, so this is a pure @mouseover cast (off-frame, the
+-- action bar's own keybind runs instead — not this).
+local function BuildCasterMacro(binding)
+    local actionType = binding.actionType or "spell"
+    if actionType == "spell" then
+        local s = binding.spell
+        return "/cast [@mouseover,help,nodead] " .. s
+            .. "; [@mouseover,harm,nodead] " .. s
+            .. "; [@mouseover] " .. s
+    elseif actionType == "macro" then
+        return binding.macro or ""
+    elseif actionType == "target" then
+        return "/target [@mouseover]"
+    elseif actionType == "focus" then
+        return "/focus [@mouseover]"
+    elseif actionType == "assist" then
+        return "/assist [@mouseover]"
+    elseif actionType:match("^ping") then
+        return PING_MACROS[actionType] or "/ping [@mouseover]"
+    end
+    return nil -- e.g. "menu": handled via togglemenu type attr, no macro
+end
+
+-- Publish the current keyboard keys (key list + per-key macros) to the caster so
+-- the state driver can bind them on @mouseover. Set at setup / on binding change,
+-- out of combat. The driver itself is registered once in GetCasterButton.
+local function ApplyGlobalKeyboardBindings()
+    if InCombatLockdown() then return end
+    -- Don't wipe a good binding on a TRANSIENT empty resolve (spec/loadout data
+    -- momentarily unavailable, e.g. a re-entrant Initialize): keep the last-good
+    -- key list and let the recovery re-resolve.
+    if #globalKeyBindings == 0 and HasConfiguredBindings() then return end
+    local btn = GetCasterButton()
+
+    -- Clear stale per-key attributes from the previous apply.
+    for vBtn in pairs(casterVBtns) do
+        btn:SetAttribute("type-" .. vBtn, nil)
+        btn:SetAttribute("macrotext-" .. vBtn, nil)
+        btn:SetAttribute("unit-" .. vBtn, nil)
+    end
+    local oldCount = btn:GetAttribute("cc-keycount") or 0
+    for i = 1, oldCount do
+        btn:SetAttribute("cc-key" .. i, nil)
+        btn:SetAttribute("cc-vbtn" .. i, nil)
+    end
+    wipe(casterVBtns)
+
+    btn:SetAttribute("cc-keycount", #globalKeyBindings)
+    for i, b in ipairs(globalKeyBindings) do
+        local vBtn = GetVirtualButtonName(b)
+        local fullKey = ModifiersToBindingPrefix(b.modifiers) .. b.key:upper()
+        casterVBtns[vBtn] = true
+        btn:SetAttribute("cc-key" .. i, fullKey)
+        btn:SetAttribute("cc-vbtn" .. i, vBtn)
+        if (b.actionType or "spell") == "menu" then
+            btn:SetAttribute("type-" .. vBtn, "togglemenu")
+            btn:SetAttribute("unit-" .. vBtn, "mouseover")
+        else
+            local mt = BuildCasterMacro(b)
+            if mt then
+                btn:SetAttribute("type-" .. vBtn, "macro")
+                btn:SetAttribute("macrotext-" .. vBtn, mt)
+            end
+        end
+    end
+end
+
+local function ClearGlobalKeyboardBindings()
+    if InCombatLockdown() then return end
+    if casterButton then
+        casterButton:SetAttribute("cc-keycount", 0)
+        if casterButton.Execute then casterButton:Execute("self:ClearBindings()") end
     end
 end
 
@@ -635,30 +684,6 @@ local function SetupFrameClickCast(frame)
         frame:HookScript("OnEnter", function(self)
             if not isEnabled then return end
             currentKeyboardFrame = self
-            -- TEMP DIAGNOSTIC (inert unless /run QUI_CC_DEBUG=true). Runs AFTER
-            -- the secure OnEnter pre-body, so GetBindingAction reflects whether the
-            -- snippet actually bound the key. Remove once the cold-boot keyboard
-            -- failure is localized.
-            if _G.QUI_CC_DEBUG then
-                local hdr = bindingHeader
-                local kc = (hdr and hdr:GetAttribute("clickcast-keycount")) or 0
-                print(("|cff00ffffQUI-CC|r name=%s wrapped=%s keycount=%s enterbound=%s"):format(
-                    tostring(self:GetName()), secureWrappedFrames[self] and "Y" or "N", tostring(kc),
-                    tostring(self:GetAttribute("cc-dbg-enterbound"))))
-                -- Per key: ovr = override-aware action (what actually fires when you
-                -- press it now), base = saved binding-set action. ovr containing this
-                -- frame's name => click-cast won; ovr containing a Bar button =>
-                -- action bar shadowed it (the conflict). Compare across all keys to
-                -- see which conflict and which don't.
-                for i, b in ipairs(keyboardBindings) do
-                    local fullKey = ModifiersToBindingPrefix(b.modifiers) .. b.key:upper()
-                    local vbtn = GetVirtualButtonName(b)
-                    print(("|cff00ffffQUI-CC|r  [%d] key=%s vbtn=%s ovr=%s base=%s"):format(
-                        i, fullKey, vbtn,
-                        tostring(GetBindingAction(fullKey, true)),
-                        tostring(GetBindingAction(fullKey, false))))
-                end
-            end
             -- On-demand recovery: if click-cast is configured but still unresolved
             -- (secure header stranded at keycount 0 -- spec/loadout data landed
             -- after the startup retry window, or frames laid out late), rebuild now.
@@ -870,6 +895,7 @@ function QUI_GFCC:Initialize()
 
     ResolveBindings()
     UpdateHeaderKeyAttributes()
+    ApplyGlobalKeyboardBindings()
     isEnabled = true
 end
 
@@ -951,8 +977,10 @@ function QUI_GFCC:RefreshBindings()
         -- Disable: clear bindings and mark as disabled
         wipe(activeBindings)
         wipe(keyboardBindings)
+        wipe(globalKeyBindings)
         UpdateHeaderKeyAttributes()
         ClearHeaderOverrideBindings()
+        ClearGlobalKeyboardBindings()
         currentKeyboardFrame = nil
         isEnabled = false
         return
@@ -961,37 +989,11 @@ function QUI_GFCC:RefreshBindings()
     -- Enable/refresh: resolve bindings and re-apply
     isEnabled = true
     ResolveBindings()
-    UpdateHeaderKeyAttributes()
-    self:RegisterAllFrames()
+    UpdateHeaderKeyAttributes()          -- scroll-wheel per-frame attrs
+    ApplyGlobalKeyboardBindings()        -- keyboard keys bound ONCE to the caster
+    self:RegisterAllFrames()             -- per-frame wrap (scroll only)
     self:RegisterUnitFrames()
     RefreshHeaderOverrideBindings()
-    -- Coordinate with the action bar: re-evaluate its keybinds so it yields any
-    -- keys we now own and hands back their fall-through targets (via
-    -- SetKeyRestingTarget), then apply the resting (off-frame) state.
-    if _G.ApplyAllOverrideBindings then _G.ApplyAllOverrideBindings() end
-    ApplyRestingState()
-end
-
--- True if `bindingKey` (a WoW binding string like "C" or "SHIFT-Q") is a key
--- click-cast currently owns for keyboard hovercasting. The action bar calls this
--- to YIELD those keys (it won't set its own override on them) instead of fighting
--- click-cast's hover binding via override-binding priority.
-function QUI_GFCC:OwnsKeyboardKey(bindingKey)
-    if not isEnabled then return false end
-    return ownedKeyboardKeys[bindingKey] == true
-end
-
--- Called by the action bar when it yields a key to click-cast: records the
--- fall-through action (what the key fires when NO frame is hovered) and applies
--- it as the resting state. No-op for keys click-cast doesn't own.
-function QUI_GFCC:SetKeyRestingTarget(bindingKey, buttonName, vBtn)
-    if not ownedKeyboardKeys[bindingKey] or not buttonName or not vBtn then return end
-    restingTargets[bindingKey] = { button = buttonName, vBtn = vBtn }
-    if InCombatLockdown() then return end
-    local header = GetBindingHeader()
-    header:SetAttribute("clickcast-rest-" .. bindingKey, buttonName)
-    header:SetAttribute("clickcast-restv-" .. bindingKey, vBtn)
-    ApplyRestingState()
 end
 
 function QUI_GFCC:IsEnabled()
@@ -1190,7 +1192,7 @@ local startupRefreshAttempts = 0
 -- True when the character has click-cast bindings configured somewhere (shared /
 -- per-spec / per-loadout). Lets the catch-up tell "data not ready yet" (retry)
 -- apart from "nothing to apply" (stop).
-local function HasConfiguredBindings()
+function HasConfiguredBindings()
     local db = GetDB()
     if not db or not db.clickCast then return false end
     local cc = db.clickCast
@@ -1213,14 +1215,15 @@ local function HasConfiguredBindings()
 end
 
 -- True when click-cast is on and configured but nothing has resolved yet
--- (both binding tables empty) -- i.e. the secure header is stranded at keycount
--- 0 while spec/loadout data is still landing. Shared by the startup retry guard
--- and the data-ready event handlers so they agree on "still dead". Checking both
--- tables means a legitimately mouse-only or keyboard-only resolve counts as done.
+-- (all three binding tables empty) -- i.e. spec/loadout data is still landing.
+-- Shared by the startup retry guard and the data-ready event handlers so they
+-- agree on "still dead". Must check globalKeyBindings (keyboard keys) too, or a
+-- resolved keyboard-only config would look perpetually unresolved.
 IsUnresolvedButConfigured = function()
     local db = GetDB()
     if not db or not db.clickCast or not db.clickCast.enabled then return false end
-    return #activeBindings == 0 and #keyboardBindings == 0 and HasConfiguredBindings()
+    return #activeBindings == 0 and #keyboardBindings == 0 and #globalKeyBindings == 0
+        and HasConfiguredBindings()
 end
 
 local function RunStartupRefresh()

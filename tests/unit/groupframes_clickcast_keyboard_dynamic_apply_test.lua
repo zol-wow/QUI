@@ -85,6 +85,8 @@ function UnitIsConnected() return true end
 function UnitIsPlayer() return true end
 function GetSpecialization() return 1 end
 function GetSpecializationInfo() return 102 end
+function RegisterStateDriver() end
+function UnregisterStateDriver() end
 function SecureHandlerWrapScript(frame, script, header, preBody)
     frame.secureWraps[script] = { header = header, preBody = preBody }
 end
@@ -148,27 +150,29 @@ local GFCC = assert(ns.QUI_GroupFrameClickCast)
 GFCC:Initialize()
 GFCC:RegisterAllFrames()
 
-local wrap = assert(child.secureWraps.OnEnter, "keyboard binding should wrap OnEnter")
-RunSnippet(wrap.preBody, child, wrap.header)
-if child.hooks.OnEnter then
-    for _, hook in ipairs(child.hooks.OnEnter) do hook(child) end
-end
-
-assert(wrap.header.overrideBindings.F and wrap.header.overrideBindings.F.button == "keyf",
-    "initial hover should bind F to the key virtual button")
-assert(child.attributes["type-keyf"] == "macro", "initial key virtual button should be configured")
+-- Keyboard keys are PUBLISHED to the global caster (its mouseoverstate driver
+-- binds them on @mouseover), not bound per-frame.
+local caster = assert(_G.QUI_ClickCastCaster, "caster button should exist for keyboard binding")
+assert(caster:GetAttribute("cc-key1") == "F", "key F should be published to the caster")
+assert(caster:GetAttribute("type-keyf") == "macro", "caster key virtual button should be configured")
 
 inCombat = false
 assert(GFCC:RemoveBinding(1))
 assert(GFCC:AddBinding({ key = "G", modifiers = "", actionType = "spell",
     spell = "Regrowth", spellID = 8936 }))
 
-assert(not wrap.header.overrideBindings.F,
-    "BUG: stale F override binding should be cleared after changing key bindings")
-assert(wrap.header.overrideBindings.G and wrap.header.overrideBindings.G.button == "keyg",
-    "BUG: active hovered frame should bind new G key without /reload or re-hover")
-assert(child.attributes["type-keyg"] == "macro", "new key virtual button should be configured")
-assert(child.attributes["macrotext-keyg"]:find("Regrowth", 1, true),
-    "new key virtual button should cast Regrowth")
+assert(caster:GetAttribute("cc-key1") == "G",
+    "BUG: caster should now publish the new G key after changing key bindings")
+assert(caster:GetAttribute("type-keyf") == nil,
+    "BUG: stale F virtual button should be cleared from the caster after rebind")
+assert(caster:GetAttribute("type-keyg") == "macro", "new caster key virtual button should be configured")
+assert(caster:GetAttribute("macrotext-keyg"):find("Regrowth", 1, true),
+    "new caster key virtual button should cast Regrowth")
+-- And the driver binds the current key (G) on @mouseover.
+local loader = loadstring or load
+assert(loader("local self, newstate = ...\n" .. caster:GetAttribute("_onstate-mouseoverstate")))(caster, "on")
+assert(caster.overrideBindings.G and caster.overrideBindings.G.button == "keyg",
+    "BUG: @mouseover should bind the new G key without /reload")
+assert(not caster.overrideBindings.F, "BUG: stale F binding should be gone after rebind")
 
 print("OK: groupframes_clickcast_keyboard_dynamic_apply_test")

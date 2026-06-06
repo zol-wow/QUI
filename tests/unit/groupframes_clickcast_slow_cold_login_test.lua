@@ -87,6 +87,8 @@ function UnitIsConnected() return true end
 function UnitIsPlayer() return true end
 function GetSpecialization() return 1 end
 function GetSpecializationInfo() return specReady and 102 or 0 end  -- 0 => spec data not ready
+function RegisterStateDriver() end
+function UnregisterStateDriver() end
 function SecureHandlerWrapScript(frame, script, header, preBody)
     frame.secureWraps[script] = { header = header, preBody = preBody }
 end
@@ -163,6 +165,7 @@ local function loadModule(initialSpecReady, clickCast)
     createdFrames = {}
     afterQueue = {}
     _G.QUI_ClickCastHeader = nil
+    _G.QUI_ClickCastCaster = nil
     _G.QUI.db.char.clickCast = DeepCopy(clickCast or BASE_CLICKCAST)
 
     local child = NewFrame("Button", "QUI_TestUnit1", nil, "SecureUnitButtonTemplate")
@@ -187,9 +190,23 @@ local function loadModule(initialSpecReady, clickCast)
     return eventFrame, child, partyHeader
 end
 
-local function keycount()
-    local hdr = _G.QUI_ClickCastHeader
-    return hdr and hdr:GetAttribute("clickcast-keycount") or nil
+-- Keyboard keys are PUBLISHED to the global caster (QUI_ClickCastCaster); a
+-- mouseoverstate state driver binds them only while @mouseover exists. This
+-- reports how many keys are published (resolved + applied), i.e. ready to bind.
+local function casterKeyCount()
+    local c = _G.QUI_ClickCastCaster
+    return (c and c:GetAttribute("cc-keycount")) or 0
+end
+
+-- Run the caster's mouseoverstate state-driver snippet with newstate "on"/"off"
+-- (simulates a unit coming under / leaving the cursor).
+local function runCasterState(state)
+    local c = _G.QUI_ClickCastCaster
+    if not c then return end
+    local snippet = c:GetAttribute("_onstate-mouseoverstate")
+    if not snippet then return end
+    local loader = loadstring or load
+    assert(loader("local self, newstate = ...\n" .. snippet))(c, state)
 end
 
 local function drain(maxTicks)
@@ -204,88 +221,67 @@ local function hover(frame)
     for _, h in ipairs(frame.hooks.OnEnter or {}) do h(frame) end
 end
 
--- Assert that hovering binds key "F" via the secure OnEnter pre-body (i.e. the
--- keyboard side is genuinely wired up, not just keycount set).
-local function assertHoverBindsF(child)
-    local wrap = assert(child.secureWraps.OnEnter,
-        "frame was never keyboard-wrapped -- secure OnEnter missing")
-    child.overrideBindings = {}
-    local loader = loadstring or load
-    assert(loader("local self, owner = ...\n" .. wrap.preBody))(child, wrap.header)
-    assert(wrap.header.overrideBindings.F and wrap.header.overrideBindings.F.button == "keyf",
-        "hovering binds nothing -- keyboard click-cast still dead")
-end
-
--- Run a frame's secure WrapScript pre-body (self = frame, owner = header).
-local function runWrap(frame, scriptName)
-    local wrap = assert(frame.secureWraps[scriptName],
-        tostring(frame.name) .. " missing secure " .. scriptName)
-    local loader = loadstring or load
-    assert(loader("local self, owner = ...\n" .. wrap.preBody))(frame, wrap.header)
-end
-
--- What frame name a binding key currently routes to (header- or frame-owned).
-local function boundTo(key)
-    local hdr = _G.QUI_ClickCastHeader
-    if hdr and hdr.overrideBindings[key] then return hdr.overrideBindings[key].target end
-    for _, f in ipairs(createdFrames) do
-        if f.overrideBindings and f.overrideBindings[key] then
-            return f.overrideBindings[key].target
-        end
-    end
-    return nil
+-- Assert key "F" hovercasts: the state driver binds it to the caster (with an
+-- @mouseover macro) while a unit is under the cursor, and releases it otherwise
+-- so the action bar's own keybind fires off-frame.
+local function assertCasterBindsF()
+    local c = assert(_G.QUI_ClickCastCaster, "caster button was never created")
+    local mt = c:GetAttribute("macrotext-keyf")
+    assert(mt and mt:find("@mouseover", 1, true), "caster macro for F missing @mouseover cast")
+    runCasterState("on")
+    local b = c.overrideBindings and c.overrideBindings.F
+    assert(b and b.button == "keyf", "@mouseover did not bind F to the caster -- click-cast dead")
+    runCasterState("off")
+    assert(not (c.overrideBindings and c.overrideBindings.F),
+        "off @mouseover the caster must release F so the action bar keybind fires")
 end
 
 ---------------------------------------------------------------------------
 -- Scenario 1: spec data lands AFTER the startup retry is exhausted, and the
 -- client fires PLAYER_TALENT_UPDATE. The proactive data-ready handler must
--- re-resolve and revive keyboard binds.
+-- re-resolve and (re)bind the key to the caster.
 ---------------------------------------------------------------------------
 do
-    local _, child = nil, nil
-    local eventFrame; eventFrame, child = loadModule(false)
+    local eventFrame = loadModule(false)
     eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
 
     drain(100)  -- exhaust the bounded startup retry with spec never ready
     assert(#afterQueue == 0, "startup retry should be bounded/exhausted")
-    assert(keycount() == 0, "precondition: keyboard still dead while spec unresolved")
+    assert(casterKeyCount() == 0, "precondition: keyboard still dead while spec unresolved")
 
     specReady = true
     eventFrame.scripts.OnEvent(eventFrame, "PLAYER_TALENT_UPDATE")
     assert(#afterQueue >= 1, "PLAYER_TALENT_UPDATE should schedule a re-resolve")
     flushAfter()
 
-    assert(keycount() == 1, "header keycount = " .. tostring(keycount())
+    assert(casterKeyCount() == 1, "caster keycount = " .. casterKeyCount()
         .. " -- data-ready signal failed to revive keyboard click-cast")
-    assertHoverBindsF(child)
+    assertCasterBindsF()
     print("OK: PLAYER_TALENT_UPDATE revives keyboard binds after retry exhaustion")
 end
 
 ---------------------------------------------------------------------------
 -- Scenario 2: spec data lands after the retry is exhausted and NO data-ready
--- event fires (e.g. it never fired, or frames laid out late). When the user
--- HOVERS the frame, the on-hover trigger must re-resolve on demand and revive
--- keyboard binds (worst case: live on the next hover, not "dead until /reload").
+-- event fires. When the user HOVERS a frame, the on-hover trigger must
+-- re-resolve on demand and bind the key to the caster.
 ---------------------------------------------------------------------------
 do
     local eventFrame, child = loadModule(false)
     eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
 
-    drain(100)  -- exhaust the bounded startup retry with spec never ready
+    drain(100)
     assert(#afterQueue == 0, "startup retry should be bounded/exhausted")
-    assert(keycount() == 0, "precondition: keyboard still dead while spec unresolved")
+    assert(casterKeyCount() == 0, "precondition: keyboard still dead while spec unresolved")
     assert(child.hooks.OnEnter and #child.hooks.OnEnter > 0,
         "precondition: insecure OnEnter hook installed during registration")
 
-    -- Data lands; no event fires. The player hovers the frame.
     specReady = true
     hover(child)
     assert(#afterQueue >= 1, "BUG: hovering a still-dead frame scheduled no recovery re-resolve")
     flushAfter()
 
-    assert(keycount() == 1, "header keycount = " .. tostring(keycount())
-        .. " -- on-hover trigger failed to revive keyboard click-cast")
-    assertHoverBindsF(child)
+    assert(casterKeyCount() == 1, "on-hover trigger failed to revive keyboard click-cast")
+    assertCasterBindsF()
     print("OK: on-hover trigger revives keyboard binds on demand")
 
     -----------------------------------------------------------------------
@@ -300,10 +296,10 @@ do
 end
 
 ---------------------------------------------------------------------------
--- Scenario 4: generated docs say GetSpecializationInfo returns specId 0 when
--- the active spec is not resolved. If a legacy/shared mouse binding resolves
--- during that cold window, the old "both resolved tables are empty" guard
--- treats startup as successful and never retries the per-spec keyboard table.
+-- Scenario 4: GetSpecializationInfo returns specId 0 while the active spec is
+-- unresolved. A shared/legacy mouse binding present during that cold window must
+-- NOT make the recovery guard treat startup as done -- the per-spec keyboard key
+-- still has to bind once data lands.
 ---------------------------------------------------------------------------
 do
     local clickCast = DeepCopy(BASE_CLICKCAST)
@@ -317,7 +313,7 @@ do
 
     drain(100)
     assert(#afterQueue == 0, "startup retry should be bounded/exhausted")
-    assert(keycount() == 0,
+    assert(casterKeyCount() == 0,
         "precondition: shared mouse fallback must not count as keyboard readiness")
 
     specReady = true
@@ -326,119 +322,68 @@ do
         "BUG: shared mouse fallback masked unresolved per-spec keyboard bindings")
     flushAfter()
 
-    assert(keycount() == 1, "header keycount = " .. tostring(keycount())
-        .. " -- per-spec keyboard bindings were not revived after spec data arrived")
-    assertHoverBindsF(child)
+    assert(casterKeyCount() == 1,
+        "per-spec keyboard bindings were not revived after spec data arrived")
+    assertCasterBindsF()
     print("OK: shared mouse fallback does not mask cold per-spec keyboard recovery")
 end
 
 ---------------------------------------------------------------------------
 -- Scenario 5: DURABLE recovery across a combat window. Spec data lands while
--- the player is IN COMBAT and they reach for the keybind (hover) mid-fight.
--- The on-hover re-resolve can't run in combat, but it must not silently DROP
--- the recovery -- it has to leave a pending request so PLAYER_REGEN_ENABLED
--- revives the keybind the instant combat ends. Otherwise keyboard click-cast
--- stays dead for the rest of the session unless the player happens to hover
--- again out of combat (the "works sometimes / needs a /reload" symptom).
+-- IN COMBAT and the player hovers to use the keybind mid-fight. The on-hover
+-- re-resolve can't run in combat, but it must leave a pending request so
+-- PLAYER_REGEN_ENABLED binds the caster the instant combat ends.
 ---------------------------------------------------------------------------
 do
     local eventFrame, child = loadModule(false)
     eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
 
-    drain(100)  -- exhaust the bounded startup retry with spec never ready
+    drain(100)
     assert(#afterQueue == 0, "startup retry should be bounded/exhausted")
-    assert(keycount() == 0, "precondition: keyboard still dead while spec unresolved")
+    assert(casterKeyCount() == 0, "precondition: keyboard still dead while spec unresolved")
 
-    -- Combat starts, THEN spec/loadout data lands. Player hovers a frame to use
-    -- the keybind during the pull.
     inCombat = true
     specReady = true
     hover(child)
     assert(#afterQueue >= 1, "hovering a still-dead frame scheduled no recovery")
     flushAfter()  -- runs in combat: must not mutate secure attrs, must not drop
 
-    assert(keycount() == 0, "precondition: secure rebuild cannot happen mid-combat")
+    assert(casterKeyCount() == 0, "precondition: secure rebuild cannot happen mid-combat")
 
-    -- Combat ends. The dropped/deferred recovery must now fire.
     inCombat = false
     eventFrame.scripts.OnEvent(eventFrame, "PLAYER_REGEN_ENABLED")
     flushAfter()
 
-    assert(keycount() == 1, "header keycount = " .. tostring(keycount())
-        .. " -- combat-window recovery was dropped: keyboard click-cast stays dead "
-        .. "after combat ends (needs /reload)")
-    assertHoverBindsF(child)
+    assert(casterKeyCount() == 1, "caster keycount = " .. casterKeyCount()
+        .. " -- combat-window recovery was dropped (needs /reload)")
+    assertCasterBindsF()
     print("OK: combat-window recovery is durable (revives on PLAYER_REGEN_ENABLED)")
 end
 
 ---------------------------------------------------------------------------
--- Scenario 6: shared-header clobbering. All frames route their override
--- bindings through ONE header. A stale OnLeave/OnHide from a frame you've
--- already moved off of must NOT wipe the binding the currently-hovered frame
--- just set. Before the guard, owner:ClearBindings() on ANY leave cleared
--- everything, dropping the key back to whatever lower binding existed (e.g. an
--- action-bar keybind on the same key) -- the cold-boot "works after /reload"
--- symptom, since frame layout churn fires spurious leaves/hides.
+-- Scenario 6: state-driver hovercast — the action bar keeps its own keybind, and
+-- click-cast only intercepts the key while a unit is under the cursor. So off a
+-- frame the real action-bar ability fires (the caster has RELEASED the key); on a
+-- frame the @mouseover cast fires. No /click chaining, no unconditional clause.
 ---------------------------------------------------------------------------
 do
-    _G.currentHoverFrame = nil
-    local eventFrame, child, partyHeader = loadModule(true)  -- spec ready on login
-    local child2 = NewFrame("Button", "QUI_TestUnit2", nil, "SecureUnitButtonTemplate")
-    partyHeader.attributes["child2"] = child2
-
-    eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
-    drain(100)
-    assert(keycount() == 1, "precondition: resolved")
-    assert(child.secureWraps.OnEnter and child2.secureWraps.OnEnter,
-        "precondition: both party frames keyboard-wrapped")
-
-    -- Hover child1, move to child2 (both OnEnter fire), then child1's stale
-    -- OnLeave fires after we've already moved on.
-    runWrap(child, "OnEnter")
-    runWrap(child2, "OnEnter")
-    runWrap(child, "OnLeave")
-
-    assert(boundTo("F") == "QUI_TestUnit2",
-        "BUG: a stale frame's OnLeave wiped the hovered frame's keyboard binding "
-        .. "(shared-header clobbering); F bound to " .. tostring(boundTo("F")))
-    print("OK: stale OnLeave does not clobber the active frame's keyboard binding")
-end
-
----------------------------------------------------------------------------
--- Scenario 7: action-bar fall-through. A click-cast key that's ALSO an
--- action-bar key (the bar yields it via SetKeyRestingTarget) casts the hovered
--- frame on hover and fires its action-bar action when NOT hovering -- click-cast
--- OWNS the key, so there's no override-priority fight (the cold-boot bug where
--- the action bar's binding shadowed click-cast).
----------------------------------------------------------------------------
-do
-    _G.currentHoverFrame = nil
-    local eventFrame, child = loadModule(true)  -- spec ready on login
+    local eventFrame = loadModule(true)  -- spec ready on login
     eventFrame.scripts.OnEvent(eventFrame, "PLAYER_ENTERING_WORLD")
     drain(100)
 
-    local CC = ns.QUI_GroupFrameClickCast
-    assert(CC:OwnsKeyboardKey("F"), "click-cast should own its resolved key F")
-    assert(not CC:OwnsKeyboardKey("X"), "click-cast must not claim unrelated keys")
+    assertCasterBindsF()  -- binds F on @mouseover, releases it off @mouseover
 
-    -- Action bar yields F and hands click-cast the fall-through target.
-    CC:SetKeyRestingTarget("F", "QUI_Bar1Button6", "Keybind")
-    assert(boundTo("F") == "QUI_Bar1Button6",
-        "off-frame F should fall through to the action bar; got " .. tostring(boundTo("F")))
+    local mt = _G.QUI_ClickCastCaster:GetAttribute("macrotext-keyf")
+    assert(mt:find("@mouseover", 1, true), "caster macro should be an @mouseover cast")
+    assert(not mt:find("/click", 1, true),
+        "must not chain /click into the bar (nested protected action, combat-unsafe)")
 
-    -- Hover -> click-cast on the hovered frame.
-    runWrap(child, "OnEnter")
-    assert(boundTo("F") == "QUI_TestUnit1",
-        "hovering should bind F to the frame; got " .. tostring(boundTo("F")))
-
-    -- Leave -> restore the action-bar fall-through.
-    runWrap(child, "OnLeave")
-    assert(boundTo("F") == "QUI_Bar1Button6",
-        "leaving should restore the action-bar fall-through; got " .. tostring(boundTo("F")))
-
-    -- A click-cast key with NO resting target (not on a bar) stays unbound off-frame.
-    assert(not CC:OwnsKeyboardKey("X"), "sanity")
-    print("OK: click-cast key falls through to action bar off-frame, casts frame on hover")
+    -- Off @mouseover, F must NOT be bound on the caster, so the action bar's own
+    -- keybind for F is what fires.
+    runCasterState("off")
+    assert(not (_G.QUI_ClickCastCaster.overrideBindings or {}).F,
+        "off @mouseover the caster must leave F free for the action bar keybind")
+    print("OK: caster hovercasts on @mouseover, releases off it so the action bar keybind fires")
 end
 
 print("OK: groupframes_clickcast_slow_cold_login_test")

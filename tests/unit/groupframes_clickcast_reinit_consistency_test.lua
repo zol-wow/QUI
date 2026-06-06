@@ -80,6 +80,8 @@ function UnitIsConnected() return true end
 function UnitIsPlayer() return true end
 function GetSpecialization() return 1 end
 function GetSpecializationInfo() return specReady and 102 or nil end
+function RegisterStateDriver() end
+function UnregisterStateDriver() end
 function SecureHandlerWrapScript(frame, script, header, preBody)
     frame.secureWraps[script] = { header = header, preBody = preBody }
 end
@@ -145,21 +147,18 @@ local GFCC = assert(ns.QUI_GroupFrameClickCast)
 specReady = true
 GFCC:Initialize()
 GFCC:RegisterAllFrames()
-local hdr = assert(_G.QUI_ClickCastHeader, "binding header should exist")
-assert(hdr:GetAttribute("clickcast-keycount") == 1, "precondition: header should advertise 1 key")
-assert(child.secureWraps.OnEnter, "precondition: frame should be keyboard-wrapped")
-assert(child.attributes["type-keyf"] ~= nil, "precondition: frame should carry the key virtual button")
+-- Keyboard key F is published once to the global caster button.
+local caster = assert(_G.QUI_ClickCastCaster, "caster button should exist")
+assert(caster:GetAttribute("cc-key1") == "F", "precondition: caster should publish key F")
 
--- A re-entrant Initialize() while spec data is momentarily unavailable.
+-- A re-entrant Initialize() while spec data is momentarily unavailable must NOT
+-- wipe the good caster key list -- a transient empty resolve keeps last-good and
+-- lets the recovery re-resolve, rather than silently killing keyboard click-cast.
 specReady = false
 GFCC:Initialize()
 
--- The header and the frame must not disagree: we must never end up with the
--- header reporting zero keys while the frame is still keyboard-configured.
-local keycount = hdr:GetAttribute("clickcast-keycount")
-local frameStillKeyed = child.attributes["type-keyf"] ~= nil
-assert(not (keycount == 0 and frameStillKeyed),
-    "BUG: re-entrant Initialize zeroed the header (keycount=" .. tostring(keycount)
-    .. ") while the frame stayed keyboard-configured -- silent keyboard click-cast death")
+assert(caster:GetAttribute("cc-key1") == "F",
+    "BUG: re-entrant Initialize with spec data unavailable wiped the caster keyboard "
+    .. "key list -- silent keyboard click-cast death")
 
 print("OK: groupframes_clickcast_reinit_consistency_test")
