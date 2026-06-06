@@ -6,15 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta25 - 2026-06-05
+
+> 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta24 with a cold-login keyboard click-cast rework, a Cooldown Manager data-loss fix, and two skinning border fixes. No schema migrations: your beta24 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Custom Cooldown Manager containers could randomly lose tracked spells at login.** Talent-granted spells (interrupts like Quell, and other class-tree picks) could be judged "unknown" during the brief window before the game finishes loading talent data, get shelved out of the container, and then have their recovery record destroyed — making the loss permanent and forcing a manual re-add. Three fixes: the dormancy check now waits until talent data is actually loaded before shelving anything; shelved spells are never automatically purged anymore (a shelved spell now always returns on its own once it's known again); and spec/loadout profile loads — and profile imports — no longer touch custom containers' shelved-spell state.
+- **Keyboard click-cast no longer comes up dead after a cold login.** On a fresh game start (not a `/reload`) the game could silently drop the keyboard bindings click-cast set up while you hover a unit frame — mouse click-casting worked, but keyboard keys did nothing until a `/reload`. The binding model is reworked: keyboard click-cast keys are now published once at setup and routed through a single secure caster that is only active while your cursor is over a unit frame, so the keys reliably cast on hover and fall straight back to their normal action-bar behavior when you aren't hovering anyone. Scroll-wheel click-casts are unaffected and keep their existing behavior.
+- **The ready-check popup's border no longer disappears after login.** The popup's 1px border was laid out before the final UI scale was applied; once the real scale landed the edges could land between pixels and drop out. The border now recomputes whenever the UI scale settles or changes.
+- **Skinned 1px borders no longer vanish at certain screen positions.** A 1-pixel solid border line could fail to draw at all depending on where the frame sits on screen — most visibly the Character window's close button losing its border box on the Reputation and Currency tabs while looking fine on the Character tab. The skinning engine now exempts these hairline borders from the game's pixel-grid snapping, the same treatment the other border styles already had.
+
 ## v4.0.0-beta24 - 2026-06-05
 
 > 🧪 **QUI 4 beta — feature preview build.** Follow-up to beta23 laying the groundwork for a QUI-owned chat display. Everything new in this build ships **off by default** — your chat works exactly as in beta23 unless you opt in. No schema migrations: your beta23 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
 
 ### Added
 - **Custom chat display (early preview, opt-in).** First phase of the chat takeover: QUI can now capture chat messages directly from the game's events and render them in its own message view, instead of restyling Blizzard's window. The capture path respects Blizzard's chat filters, and you can flip between the custom view and stock Blizzard chat losslessly at any time. There is no options toggle yet — the feature sits behind the `chat.displayMode` profile setting and defaults to the Blizzard display, so nothing changes until a later build exposes it. Shipping it dark lets the plumbing soak in real sessions first.
-
-### Fixed
-- **Custom Cooldown Manager containers could randomly lose tracked spells at login.** Talent-granted spells (interrupts like Quell, and other class-tree picks) could be judged "unknown" during the brief window before the game finishes loading talent data, get shelved out of the container, and then have their recovery record destroyed — making the loss permanent and forcing a manual re-add. Three fixes: the dormancy check now waits until talent data is actually loaded before shelving anything; shelved spells are never automatically purged anymore (a shelved spell now always returns on its own once it's known again); and spec/loadout profile loads — and profile imports — no longer touch custom containers' shelved-spell state.
 
 ## v4.0.0-beta23 - 2026-06-05
 

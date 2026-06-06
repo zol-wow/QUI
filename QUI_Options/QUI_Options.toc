@@ -3,7 +3,7 @@
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## Notes: Load-on-demand configuration UI for QUI
 ## Author: Zol
-## Version: 4.0.0-beta24
+## Version: 4.0.0-beta25
 ## Category: User Interface
 ## RequiredDeps: QUI
 ## LoadOnDemand: 1
