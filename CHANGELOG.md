@@ -6,10 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
-## Unreleased
+## v4.0.0-beta26 - 2026-06-06
+
+> 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta25 with a ground-up rework of how Cooldown Manager containers treat spells the game reports as unknown, a keyboard click-cast hover fix, a new durability mover, and refreshed skyriding defaults. No schema migrations: your beta25 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
 
 ### Fixed
 - **Cooldown Manager containers never automatically remove tracked spells anymore.** The beta25 fix narrowed the login window in which a tracked talent spell (interrupts like Quell, and other class-tree picks) could be judged "unknown" and silently moved out of a container — but the window could still be hit during talent/loadout swaps, when the game transiently unlearns and relearns talent spells. The model is now changed outright: your tracked lists are treated as pure user intent and are never modified by spell-known checks at all. A spell you can't currently use is simply not drawn on the bar (and comes back on its own as soon as the game reports it learned again), the composer lists it in a grayed **Dormant** section where it can still be removed by hand, and adding a spell the game momentarily reports as unknown now lands directly in your list instead of on a hidden shelf. Any spells the old behavior had already shelved are automatically restored into their containers at their saved position on first load — including spells stranded by this bug in earlier builds.
+- **Keyboard click-cast keys no longer take over while you hover a nameplate or a world unit.** beta25 routed keyboard click-cast through a secure caster that activates while your cursor is over a unit — but the game's hover condition can't tell your unit frames apart from enemy nameplates or characters standing in the world, so keyboard click-cast keys could swallow their normal action-bar action anywhere your cursor crossed a unit. The caster now checks whether the cursor is genuinely over one of your registered unit frames, and bindings engage and release the instant your cursor enters or leaves a frame instead of on a fraction-of-a-second polling delay.
+- **Spec-tracked Cooldown Manager profiles keep up with rapid loadout swaps.** Switching talent loadouts in quick succession could leave a pending spec-profile switch unresolved, so containers could keep showing the previous spec's tracking until the next clean switch. The switch now resolves directly from the game's talent-system callbacks, so it lands even during loadout churn.
+
+### Added
+- **The equipment durability indicator now has a Layout Mode mover.** The armored-figure durability display can be repositioned like any other QUI element — with a show/hide preview while you place it — instead of being stuck at the game's default spot.
+
+### Changed
+- **Refreshed skyriding bar defaults.** Fresh installs — and any skyriding settings you haven't customized — now default to Second Wind drawn as a minibar under the vigor bar (instead of pips), taller bars, showing the bar only while flying with a quicker fade, and a higher on-screen position. The layout-mode preview now matches the real sizing for each display mode. Anything you've customized is untouched.
+- **The Profiles page and pinned settings now use the dual-column layout.** Switch/Copy/Delete/Create are merged into a single Manage Profiles card with paired rows, the Create button sits inline next to the new-profile name box, and pinned settings render two per row with compact value chips and Jump/Unpin buttons. The Click-Cast settings page also moves onto the shared card layout.
+- **Debug instrumentation is now fully dormant in normal sessions.** QUI's internal counters, memory probes, and profiler hooks only switch on when the separate QUI_Debug developer addon is loaded, so regular sessions no longer pay any overhead for them.
 
 ## v4.0.0-beta25 - 2026-06-05
 
