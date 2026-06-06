@@ -465,6 +465,17 @@ local function StampActiveProfileSpecOwner(specID)
     db._lastSpecCharKey = GetCurrentCharacterKey()
 end
 
+-- Custom (customBar) containers keep their curated list in `entries`. The
+-- spec/loadout profile machinery neither saves them (SaveSpecProfile keys on
+-- ownedSpells ~= nil, which customs never set) nor restores them — so it must
+-- never clear or overwrite their state either. Wiping a custom container's
+-- dormantSpells here destroyed the recovery record of any spell the dormant
+-- pass had shelved (e.g. a talent interrupt shelved by a login-timing race),
+-- making the loss permanent.
+local function IsSpecManagedContainer(containerDB)
+    return containerDB ~= nil and containerDB.containerType ~= "customBar"
+end
+
 local function ClearContainerSpecState(containerDB)
     if not containerDB then
         return
@@ -652,7 +663,7 @@ local function LoadLoadoutProfile(loadoutID, specID, myToken)
     -- Restore each container's spell lists from the saved slot.
     for _, key in ipairs(containerKeys) do
         local containerDB = GetTrackerSettings(key)
-        if containerDB then
+        if IsSpecManagedContainer(containerDB) then
             local savedContainer = store[key]
             if savedContainer then
                 containerDB.ownedSpells   = CopyTable(savedContainer.ownedSpells)
@@ -759,7 +770,7 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
         -- Restore each container's ownedSpells, removedSpells, and dormantSpells from saved profile
         for _, key in ipairs(containerKeys) do
             local containerDB = GetTrackerSettings(key)
-            if containerDB then
+            if IsSpecManagedContainer(containerDB) then
                 local savedContainer = savedProfile[key]
                 if savedContainer then
                     containerDB.ownedSpells = CopyTable(savedContainer.ownedSpells)
@@ -790,7 +801,7 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
         if ns.CDMSpellData then
             for _, key in ipairs(containerKeys) do
                 local containerDB = GetTrackerSettings(key)
-                if containerDB then
+                if IsSpecManagedContainer(containerDB) then
                     -- Clear all spec-scoped state so a first-time snapshot never
                     -- inherits removals/dormant entries from a different class/spec.
                     ClearContainerSpecState(containerDB)
@@ -3904,19 +3915,26 @@ ns.CDMContainers = {
     end,
     -- Clear imported ownedSpells and re-snapshot from Blizzard CDM for the
     -- current spec. Called after profile import so foreign-class spells are
-    -- replaced with the player's actual abilities.
+    -- replaced with the player's actual abilities. Custom (customBar)
+    -- containers are skipped: they keep their list in `entries` (the
+    -- ownedSpells wipe is a no-op and SnapshotBlizzardCDM ignores them), so
+    -- clearing here only destroyed their dormantSpells recovery shelf; their
+    -- foreign imported entries are shelved non-destructively by the dormant
+    -- pass once spell data is ready.
     ResnapshotForCurrentSpec = function()
         if not ns.CDMSpellData then return end
         local containerKeys = CDMContainers_API:GetAllContainerKeys()
         for _, key in ipairs(containerKeys) do
             local containerDB = GetTrackerSettings(key)
-            if containerDB then
+            if IsSpecManagedContainer(containerDB) then
                 containerDB.ownedSpells = nil
                 containerDB.dormantSpells = nil
             end
         end
         for _, key in ipairs(containerKeys) do
-            ns.CDMSpellData:SnapshotBlizzardCDM(key)
+            if IsSpecManagedContainer(GetTrackerSettings(key)) then
+                ns.CDMSpellData:SnapshotBlizzardCDM(key)
+            end
         end
     end,
 

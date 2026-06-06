@@ -13,6 +13,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 - **Custom chat display (early preview, opt-in).** First phase of the chat takeover: QUI can now capture chat messages directly from the game's events and render them in its own message view, instead of restyling Blizzard's window. The capture path respects Blizzard's chat filters, and you can flip between the custom view and stock Blizzard chat losslessly at any time. There is no options toggle yet — the feature sits behind the `chat.displayMode` profile setting and defaults to the Blizzard display, so nothing changes until a later build exposes it. Shipping it dark lets the plumbing soak in real sessions first.
 
+### Fixed
+- **Custom Cooldown Manager containers could randomly lose tracked spells at login.** Talent-granted spells (interrupts like Quell, and other class-tree picks) could be judged "unknown" during the brief window before the game finishes loading talent data, get shelved out of the container, and then have their recovery record destroyed — making the loss permanent and forcing a manual re-add. Three fixes: the dormancy check now waits until talent data is actually loaded before shelving anything; shelved spells are never automatically purged anymore (a shelved spell now always returns on its own once it's known again); and spec/loadout profile loads — and profile imports — no longer touch custom containers' shelved-spell state.
+
 ## v4.0.0-beta23 - 2026-06-05
 
 > 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta22 with a keyboard click-cast keybind fix and main-chat polish. No schema migrations: your beta22 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.

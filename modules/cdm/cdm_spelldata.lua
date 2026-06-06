@@ -100,9 +100,9 @@ local CDMSpellData = {}
 CDMSpellData.SyncCooldownViewerCVar = SyncCooldownViewerCVarToMasterToggle
 
 -- Zone transition flag — set true on PLAYER_ENTERING_WORLD, cleared after
--- 2s. Suppresses SPELLS_CHANGED dormant checks and Phase 3 permanent
--- deletion while WoW APIs (IsSpellKnown, C_CooldownViewer, spellbook) are
--- returning stale/incomplete data.
+-- 2s. Suppresses SPELLS_CHANGED dormant checks while WoW APIs
+-- (IsSpellKnown, C_CooldownViewer, spellbook) are returning
+-- stale/incomplete data.
 local _inZoneTransition = false
 -- Set true when a SPELLS_CHANGED is suppressed because _inZoneTransition is
 -- active. Drained when the zone-transition window closes (the 2s timer on
@@ -3293,16 +3293,17 @@ end
 -- Called on talent/spec changes. Dormant spells are skipped during display
 -- but preserved in ownedSpells for when the player respecs back.
 ---------------------------------------------------------------------------
--- CheckDormantSpells: Three-phase talent-aware reconciliation.
+-- CheckDormantSpells: Talent-aware reconciliation.
 -- Phase 1: Move unlearned spells from ownedSpells → dormantSpells, saving slot index.
 -- Phase 2: Re-insert returning dormant spells at their saved position.
--- Phase 3: Clean obsolete dormant entries for spells removed from game.
 -- dormantSpells is a map: { [spellID] = { slot = originalSlotIndex, row = rowNum } }
+-- Dormant records are never purged automatically (see the comment where the
+-- old Phase 3 lived); users can remove them via the composer.
 --
--- restoreOnly (boolean): when true, skip Phase 1 (marking spells dormant) and
--- Phase 3 (permanent deletion). Only run Phase 2 (restore returning spells).
--- Used by recovery handlers (PLAYER_REGEN_ENABLED, CHALLENGE_MODE_START) that
--- should rescue incorrectly-dormanted spells without risking re-dormanting more.
+-- restoreOnly (boolean): when true, skip Phase 1 (marking spells dormant).
+-- Only run Phase 2 (restore returning spells). Used by recovery handlers
+-- (PLAYER_REGEN_ENABLED, CHALLENGE_MODE_START) that should rescue
+-- incorrectly-dormanted spells without risking re-dormanting more.
 
 -- The per-character Blizzard CDM catalog (_spellToCooldownID + family
 -- membership maps) is populated. Class-aware aura cleanup gates on the aura
@@ -3391,6 +3392,24 @@ local function CompareDormantReturning(a, b)
 end
 
 function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
+    -- Readiness gate for Phase 1 shelving. At cold login
+    -- IsSpellKnown/IsPlayerSpell return false for class-tree talents until the
+    -- trait system loads — C_ClassTalents.GetActiveConfigID() is nil until then —
+    -- so judging entries during that window wrongly shelves valid talent spells
+    -- (e.g. Evoker Quell 351338) out of custom containers. The cold-load grace
+    -- and zone-transition windows cover the same API staleness for reconciles
+    -- driven by the COOLDOWN_VIEWER_* debounce, which does not check them itself.
+    -- Phase 2 (restore) is never gated: a spell testing KNOWN is affirmative
+    -- evidence regardless of load state.
+    local function CanJudgeSpellKnowledge()
+        if _inZoneTransition then return false end
+        if ns._cdmColdLoadActive then return false end
+        if C_ClassTalents and C_ClassTalents.GetActiveConfigID then
+            if C_ClassTalents.GetActiveConfigID() == nil then return false end
+        end
+        return true
+    end
+
     local db = GetContainerDB(containerKey)
     if not db then
         return
@@ -3425,7 +3444,7 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
     -- indicator, not a cast ability that "comes and goes" with talents, so a
     -- same-class aura should never stay dormant. Foreign-class auras (another
     -- class's tracked buffs left in a shared AceDB profile) are the exception:
-    -- they stay dormant and get pruned by Phase 3. Class is decided via the
+    -- they stay dormant until manually removed via the composer. Class is decided via the
     -- per-character Blizzard CDM catalog. Before the catalog is populated we
     -- can't tell foreign from own, so fall back to the legacy blanket restore
     -- to avoid stranding legitimate auras during early load.
@@ -3473,7 +3492,9 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
     -- gate means a legitimate same-class aura that simply isn't applied right
     -- now is kept (the runtime resolver shows it inactive); only genuinely
     -- foreign auras are removed, and only once the catalog has been walked.
-    if not restoreOnly then
+    -- Both judgments are skipped entirely while CanJudgeSpellKnowledge() is
+    -- false — shelving on unloaded data is how talent spells were lost at login.
+    if not restoreOnly and CanJudgeSpellKnowledge() then
         local toRemove = {}  -- indices to remove (descending order)
         local auraCatalogReady
         for i, entry in ipairs(ownedSpells) do
@@ -3545,42 +3566,14 @@ function CDMSpellData:CheckDormantSpells(containerKey, restoreOnly)
         table.insert(activeEntries, insertAt, restored)
     end
 
-    -- Phase 3: Clean obsolete dormant spells no longer in the CDM system.
-    -- Skip during zone transitions — spellbook + composer APIs return
-    -- incomplete data while transitioning, which would permanently delete
-    -- valid dormant spells with no recovery path.
-    if not restoreOnly and not _inZoneTransition then
-        local allCDMSpells = {}
-        local composer = ns.CDMComposer
-        if composer and composer.CollectKnownCDMSpellIDs then
-            composer.CollectKnownCDMSpellIDs(allCDMSpells)
-        end
-        if C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines then
-local okT = true; local numTabs = C_SpellBook.GetNumSpellBookSkillLines()
-            if numTabs then
-                for tab = 1, numTabs do
-local okL = true; local sli = C_SpellBook.GetSpellBookSkillLineInfo(tab)
-                    if sli then
-                        local offset = sli.itemIndexOffset or 0
-                        for i = 1, (sli.numSpellBookItems or 0) do
-local okI = true; local ii = C_SpellBook.GetSpellBookItemInfo(offset + i, Enum.SpellBookSpellBank.Player)
-                            if ii and ii.spellID then allCDMSpells[ii.spellID] = true end
-                        end
-                    end
-                end
-            end
-        end
-        -- Don't permanently delete unless we collected at least one
-        -- "still existing" spellID. Without that signal we can't tell
-        -- "spell rotated out" from "API returned no data this frame."
-        if next(allCDMSpells) then
-            for sid in pairs(db.dormantSpells) do
-                if not allCDMSpells[sid] then
-                    db.dormantSpells[sid] = nil
-                end
-            end
-        end
-    end
+    -- There is intentionally NO purge phase. A dormant record whose spell ID
+    -- is missing from the catalog/spellbook scan is indistinguishable from
+    -- "data not loaded yet" (login races; GetCooldownViewerCooldownInfo is
+    -- documented MayReturnNothing), and purging on that signal permanently
+    -- deleted users' tracked talent spells. A dormant record for a genuinely
+    -- removed spell ID is inert — Phase 2 requires IsSpellKnownByPlayer to go
+    -- true, which never happens for a dead ID — and the composer's dormant
+    -- list lets users remove stale records manually (RemoveDormantEntry).
 
     -- Summary
     local finalOwned = type(activeEntries) == "table" and #activeEntries or 0
@@ -3591,8 +3584,8 @@ local okI = true; local ii = C_SpellBook.GetSpellBookItemInfo(offset + i, Enum.S
 end
 
 -- CheckAllDormantSpells: Run dormant check on all container keys.
--- restoreOnly: when true, only Phase 2 (restore) runs — no new dormanting
--- or permanent deletion. Used by recovery handlers.
+-- restoreOnly: when true, only Phase 2 (restore) runs — no new dormanting.
+-- Used by recovery handlers.
 function CDMSpellData:CheckAllDormantSpells(restoreOnly)
     local containerKeys = GetBuiltinContainerKeys()
     if ns.CDMContainers and ns.CDMContainers.GetAllContainerKeys then
