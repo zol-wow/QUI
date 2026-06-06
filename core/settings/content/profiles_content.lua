@@ -98,7 +98,7 @@ local function BuildSpecProfilesContent(content)
     end
 
     ---------------------------------------------------------------------------
-    -- Current Profile
+    -- Current Profile — active/reset paired, movers/factory paired.
     ---------------------------------------------------------------------------
     Shared.CreateAccentDotLabel(content, "Current Profile", y); y = y - 22
 
@@ -115,7 +115,6 @@ local function BuildSpecProfilesContent(content)
     currentProfileName:SetPoint("RIGHT", activeCell, "RIGHT", 0, 0)
     currentProfileName:SetText("Loading...")
     currentProfileName:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
-    currentCard.AddRow(activeCell)
 
     local function ResetButtonCell(label, onClick)
         local cell = CreateFrame("Frame", nil, currentCard.frame)
@@ -139,7 +138,6 @@ local function BuildSpecProfilesContent(content)
             end,
         })
     end)
-    currentCard.AddRow(resetProfileCell)
 
     local resetMoversCell = ResetButtonCell("Reset All Positions", function()
         GUI:ShowConfirmation({
@@ -174,7 +172,6 @@ local function BuildSpecProfilesContent(content)
             end,
         })
     end)
-    currentCard.AddRow(resetMoversCell)
 
     -- Factory Reset — label styled destructive, uses red button text.
     local factoryCell = CreateFrame("Frame", nil, currentCard.frame)
@@ -197,19 +194,21 @@ local function BuildSpecProfilesContent(content)
     end)
     factoryBtn:SetPoint("RIGHT", factoryCell, "RIGHT", 0, 0)
     if factoryBtn.text then factoryBtn.text:SetTextColor(errText[1], errText[2], errText[3], errText[4]) end
-    currentCard.AddRow(factoryCell)
 
+    currentCard.AddRow(activeCell, resetProfileCell)
+    currentCard.AddRow(resetMoversCell, factoryCell)
     currentCard.Finalize()
     y = y - currentCard.frame:GetHeight() - SECTION_GAP
 
     ---------------------------------------------------------------------------
-    -- Switch Profile
+    -- Manage Profiles — switch/copy and delete/create in paired rows.
     ---------------------------------------------------------------------------
-    Shared.CreateAccentDotLabel(content, "Switch Profile", y); y = y - 22
+    Shared.CreateAccentDotLabel(content, "Manage Profiles", y); y = y - 22
 
-    local switchCard = Shared.CreateSettingsCardGroup(content, y)
+    local manageCard = Shared.CreateSettingsCardGroup(content, y)
+
     local profileWrapper = { selected = "" }
-    profileDropdown = GUI:CreateFormDropdown(switchCard.frame, nil, GetProfileList(true), "selected", profileWrapper, function(value)
+    profileDropdown = GUI:CreateFormDropdown(manageCard.frame, nil, GetProfileList(true), "selected", profileWrapper, function(value)
         local core = GetCore(); local freshDB = core and core.db
         if freshDB and value and value ~= "" then
             local current = freshDB:GetCurrentProfile()
@@ -249,55 +248,9 @@ local function BuildSpecProfilesContent(content)
         end
     end, { description = "Switch to a different profile. Entries tagged (Preset) are installed from QUI's bundled presets on first pick." })
     table.insert(profileDropdowns_withPresets, profileDropdown)
-    switchCard.AddRow(Shared.BuildSettingRow(switchCard.frame, "Profile", profileDropdown))
-    switchCard.Finalize()
 
-    local initCore = GetCore(); local initDB = initCore and initCore.db
-    local initProfile = initDB and initDB:GetCurrentProfile() or "Default"
-    profileWrapper.selected = initProfile
-    if profileDropdown.SetValue then profileDropdown:SetValue(initProfile, true) end
-
-    y = y - switchCard.frame:GetHeight() - SECTION_GAP
-
-    ---------------------------------------------------------------------------
-    -- Create New Profile — editbox + create action in paired row.
-    ---------------------------------------------------------------------------
-    Shared.CreateAccentDotLabel(content, "Create New Profile", y); y = y - 22
-
-    local createCard = Shared.CreateSettingsCardGroup(content, y)
-    local newProfileInput = GUI:CreateFormEditBox(createCard.frame, nil, nil, nil, nil, {
-        width = 200, commitOnEnter = false, commitOnFocusLost = false,
-        onEscapePressed = function(self) self:ClearFocus() end,
-    }, { description = "Name for a new profile. Click Create to add it and switch to it immediately." })
-    createCard.AddRow(Shared.BuildSettingRow(createCard.frame, "Profile Name", newProfileInput))
-
-    local createCell = CreateFrame("Frame", nil, createCard.frame)
-    createCell:SetHeight(28)
-    local createBtn = GUI:CreateButton(createCell, "Create", 100, 22, function()
-        local core = GetCore(); local dbRef = core and core.db
-        local newName = newProfileInput.editBox and newProfileInput.editBox:GetText()
-        if newName and newName ~= "" and dbRef then
-            dbRef:SetProfile(newName)
-            if currentProfileName then currentProfileName:SetText(newName) end
-            if profileDropdown and profileDropdown.SetValue then profileDropdown:SetValue(newName, true) end
-            newProfileInput.editBox:SetText("")
-            print("|cff60A5FAQUI:|r Created new profile: " .. newName)
-            RefreshProfileDropdowns()
-        end
-    end)
-    createBtn:SetPoint("RIGHT", createCell, "RIGHT", 0, 0)
-    createCard.AddRow(createCell)
-    createCard.Finalize()
-    y = y - createCard.frame:GetHeight() - SECTION_GAP
-
-    ---------------------------------------------------------------------------
-    -- Copy From Profile
-    ---------------------------------------------------------------------------
-    Shared.CreateAccentDotLabel(content, "Copy From Profile", y); y = y - 22
-
-    local copyCard = Shared.CreateSettingsCardGroup(content, y)
     local copyWrapper = { selected = "" }
-    local copyDropdown = GUI:CreateFormDropdown(copyCard.frame, nil, GetProfileList(), "selected", copyWrapper, function(value)
+    local copyDropdown = GUI:CreateFormDropdown(manageCard.frame, nil, GetProfileList(), "selected", copyWrapper, function(value)
         local core = GetCore(); local dbRef = core and core.db
         if dbRef and value and value ~= "" then
             dbRef:CopyProfile(value)
@@ -307,18 +260,9 @@ local function BuildSpecProfilesContent(content)
         end
     end, { description = "Copy every setting from the selected profile into the current profile. Replaces all matching keys in this profile." })
     table.insert(profileDropdowns_filtered, copyDropdown)
-    copyCard.AddRow(Shared.BuildSettingRow(copyCard.frame, "Copy From", copyDropdown))
-    copyCard.Finalize()
-    y = y - copyCard.frame:GetHeight() - SECTION_GAP
 
-    ---------------------------------------------------------------------------
-    -- Delete Profile
-    ---------------------------------------------------------------------------
-    Shared.CreateAccentDotLabel(content, "Delete Profile", y); y = y - 22
-
-    local deleteCard = Shared.CreateSettingsCardGroup(content, y)
     local deleteWrapper = { selected = "" }
-    local deleteDropdown = GUI:CreateFormDropdown(deleteCard.frame, nil, GetProfileList(), "selected", deleteWrapper, function(value)
+    local deleteDropdown = GUI:CreateFormDropdown(manageCard.frame, nil, GetProfileList(), "selected", deleteWrapper, function(value)
         local core = GetCore(); local dbRef = core and core.db
         if dbRef and value and value ~= "" then
             if value == dbRef:GetCurrentProfile() then
@@ -340,12 +284,52 @@ local function BuildSpecProfilesContent(content)
         end
     end, { description = "Select a profile to delete. The currently active profile can't be deleted — switch to another profile first." })
     table.insert(profileDropdowns_filtered, deleteDropdown)
-    deleteCard.AddRow(Shared.BuildSettingRow(deleteCard.frame, "Delete Profile", deleteDropdown))
-    deleteCard.Finalize()
-    y = y - deleteCard.frame:GetHeight() - SECTION_GAP
+
+    -- New-profile cell: BuildSettingRow supplies the label, pin attachment,
+    -- tooltip, and search capture; the bare editbox is then re-anchored to
+    -- make room for an inline Create button (two-point anchoring overrides
+    -- the widget container's fixed default width).
+    local newProfileInput = GUI:CreateFormEditBox(manageCard.frame, nil, nil, nil, nil, {
+        commitOnEnter = false, commitOnFocusLost = false,
+        onEscapePressed = function(self) self:ClearFocus() end,
+    }, { description = "Name for a new profile. Click Create to add it and switch to it immediately." })
+    local createCell = Shared.BuildSettingRow(manageCard.frame, "New Profile", newProfileInput)
+    local createBtn = GUI:CreateButton(createCell, "Create", 70, 22, function()
+        local core = GetCore(); local dbRef = core and core.db
+        local newName = newProfileInput.editBox and newProfileInput.editBox:GetText()
+        if newName and newName ~= "" and dbRef then
+            dbRef:SetProfile(newName)
+            if currentProfileName then currentProfileName:SetText(newName) end
+            if profileDropdown and profileDropdown.SetValue then profileDropdown:SetValue(newName, true) end
+            newProfileInput.editBox:SetText("")
+            print("|cff60A5FAQUI:|r Created new profile: " .. newName)
+            RefreshProfileDropdowns()
+        end
+    end)
+    createBtn:SetPoint("RIGHT", createCell, "RIGHT", 0, 0)
+    newProfileInput:ClearAllPoints()
+    newProfileInput:SetPoint("LEFT", createCell, "LEFT", 84, 0)
+    newProfileInput:SetPoint("RIGHT", createBtn, "LEFT", -8, 0)
+
+    manageCard.AddRow(
+        Shared.BuildSettingRow(manageCard.frame, "Switch Profile", profileDropdown),
+        Shared.BuildSettingRow(manageCard.frame, "Copy From", copyDropdown)
+    )
+    manageCard.AddRow(
+        Shared.BuildSettingRow(manageCard.frame, "Delete Profile", deleteDropdown),
+        createCell
+    )
+    manageCard.Finalize()
+
+    local initCore = GetCore(); local initDB = initCore and initCore.db
+    local initProfile = initDB and initDB:GetCurrentProfile() or "Default"
+    profileWrapper.selected = initProfile
+    if profileDropdown.SetValue then profileDropdown:SetValue(initProfile, true) end
+
+    y = y - manageCard.frame:GetHeight() - SECTION_GAP
 
     ---------------------------------------------------------------------------
-    -- Spec Auto-Switch
+    -- Spec Auto-Switch — enable row full-width, spec dropdowns paired two-up.
     ---------------------------------------------------------------------------
     Shared.CreateAccentDotLabel(content, "Spec Auto-Switch", y); y = y - 22
 
@@ -366,6 +350,7 @@ local function BuildSpecProfilesContent(content)
         end, { description = "Automatically switch to a mapped profile whenever you change specialization. Map each spec to a profile below." })
         specCard.AddRow(Shared.BuildSettingRow(specCard.frame, "Enable Spec Profiles", enableW))
 
+        local specCells = {}
         local currentSpec = GetSpecialization()
         for i = 1, numSpecs do
             local specID, specName = GetSpecializationInfo(i)
@@ -381,8 +366,11 @@ local function BuildSpecProfilesContent(content)
                     end
                 end, { description = "Profile to activate whenever you swap into the " .. specName .. " specialization." })
                 table.insert(profileDropdowns_all, specDropdown)
-                specCard.AddRow(Shared.BuildSettingRow(specCard.frame, displayName, specDropdown))
+                specCells[#specCells + 1] = Shared.BuildSettingRow(specCard.frame, displayName, specDropdown)
             end
+        end
+        for i = 1, #specCells, 2 do
+            specCard.AddRow(specCells[i], specCells[i + 1])
         end
 
         specCard.Finalize()

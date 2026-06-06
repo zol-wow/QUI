@@ -878,9 +878,9 @@ local function CreateSearchBox(parent, width, onChanged)
     return frame
 end
 
-local function CreateValuePreview(parent, item)
+local function CreateValuePreview(parent, item, width)
     local frame = CreateFrame("Frame", nil, parent)
-    frame:SetSize(132, 18)
+    frame:SetSize(width or 132, 18)
 
     if item.kind == "color" and type(item.value) == "table" then
         local swatch = CreateFrame("Frame", nil, frame, "BackdropTemplate")
@@ -1188,25 +1188,24 @@ local function BuildPinnedGlobalsRows(state)
         return
     end
 
-    for index, item in ipairs(filtered) do
-        local row = CreateFrame("Frame", nil, state.rowsHost)
-        row:SetPoint("TOPLEFT", state.rowsHost, "TOPLEFT", 0, y)
-        row:SetPoint("TOPRIGHT", state.rowsHost, "TOPRIGHT", 0, y)
-        row:SetHeight(44)
+    -- One pinned item rendered as a half-width cell: accent bar, stacked
+    -- label + breadcrumb (truncating), value chip, compact Jump/Unpin.
+    local function BuildPinCell(row, item)
+        local cell = CreateFrame("Frame", nil, row)
+        cell._quiPinCell = true
+        cell._quiPinStale = item.disabled or nil
 
-        local bg = row:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints(row)
+        -- Stale tint draws above the row's alternating tint (cell regions
+        -- render over the parent row's regions).
         if item.disabled then
-            bg:SetColorTexture(GetStaleColor()[1], GetStaleColor()[2], GetStaleColor()[3], 0.07)
-        elseif (index % 2) == 0 then
-            bg:SetColorTexture(1, 1, 1, 0.025)
-        else
-            bg:SetColorTexture(0, 0, 0, 0)
+            local staleBg = cell:CreateTexture(nil, "BACKGROUND", nil, 1)
+            staleBg:SetAllPoints(cell)
+            staleBg:SetColorTexture(GetStaleColor()[1], GetStaleColor()[2], GetStaleColor()[3], 0.07)
         end
 
-        local accentBar = row:CreateTexture(nil, "ARTWORK")
-        accentBar:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -4)
-        accentBar:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 4)
+        local accentBar = cell:CreateTexture(nil, "ARTWORK")
+        accentBar:SetPoint("TOPLEFT", cell, "TOPLEFT", 0, -4)
+        accentBar:SetPoint("BOTTOMLEFT", cell, "BOTTOMLEFT", 0, 4)
         accentBar:SetWidth(2)
         if item.disabled then
             accentBar:SetColorTexture(GetStaleColor()[1], GetStaleColor()[2], GetStaleColor()[3], 1)
@@ -1215,36 +1214,75 @@ local function BuildPinnedGlobalsRows(state)
             accentBar:SetColorTexture(accent[1], accent[2], accent[3], 1)
         end
 
-        local label = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        SetFont(label, 11, item.disabled and GetStaleColor() or GetTextColor())
-        label:SetPoint("TOPLEFT", row, "TOPLEFT", 12, -6)
-        label:SetPoint("RIGHT", row, "RIGHT", -278, 0)
-        label:SetJustifyH("LEFT")
-        label:SetText(item.label or item.path)
-
-        local crumb = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        SetFont(crumb, 9, GetMutedColor())
-        crumb:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -2)
-        crumb:SetPoint("RIGHT", row, "RIGHT", -278, 0)
-        crumb:SetJustifyH("LEFT")
-        crumb:SetText(item.disabled and (BuildBreadcrumb(item) .. "  |  stale") or BuildBreadcrumb(item))
-
-        local valuePreview = CreateValuePreview(row, item)
-        valuePreview:SetPoint("RIGHT", row, "RIGHT", -146, 0)
-
-        local jumpBtn = gui:CreateButton(row, "Jump", 52, 20, function()
-            Pins:NavigateToPinned(item.path)
-        end)
-        jumpBtn:SetPoint("RIGHT", row, "RIGHT", -74, 0)
-
-        local unpinBtn = gui:CreateButton(row, item.disabled and "Remove" or "Unpin", 62, 20, function()
+        local unpinBtn = gui:CreateButton(cell, item.disabled and "Remove" or "Unpin", 52, 20, function()
             if item.disabled then
                 Pins:DropPath(item.path)
             else
                 Pins:Unpin(item.path)
             end
         end)
-        unpinBtn:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        unpinBtn:SetPoint("RIGHT", cell, "RIGHT", 0, 0)
+
+        local jumpBtn = gui:CreateButton(cell, "Jump", 40, 20, function()
+            Pins:NavigateToPinned(item.path)
+        end)
+        jumpBtn:SetPoint("RIGHT", unpinBtn, "LEFT", -4, 0)
+
+        local valuePreview = CreateValuePreview(cell, item, 70)
+        valuePreview:SetPoint("RIGHT", jumpBtn, "LEFT", -6, 0)
+
+        local label = cell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        SetFont(label, 11, item.disabled and GetStaleColor() or GetTextColor())
+        label:SetPoint("TOPLEFT", cell, "TOPLEFT", 10, -6)
+        label:SetPoint("RIGHT", valuePreview, "LEFT", -6, 0)
+        label:SetJustifyH("LEFT")
+        label:SetWordWrap(false)
+        label:SetText(item.label or item.path)
+
+        local crumb = cell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        SetFont(crumb, 9, GetMutedColor())
+        crumb:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -2)
+        crumb:SetPoint("RIGHT", valuePreview, "LEFT", -6, 0)
+        crumb:SetJustifyH("LEFT")
+        crumb:SetWordWrap(false)
+        crumb:SetText(item.disabled and (BuildBreadcrumb(item) .. "  |  stale") or BuildBreadcrumb(item))
+
+        return cell
+    end
+
+    local rowIndex = 0
+    for i = 1, #filtered, 2 do
+        rowIndex = rowIndex + 1
+        local row = CreateFrame("Frame", nil, state.rowsHost)
+        row:SetPoint("TOPLEFT", state.rowsHost, "TOPLEFT", 0, y)
+        row:SetPoint("TOPRIGHT", state.rowsHost, "TOPRIGHT", 0, y)
+        row:SetHeight(44)
+
+        -- Alternating row tint, full row width (matches the card-group rhythm).
+        if (rowIndex % 2) == 0 then
+            local bg = row:CreateTexture(nil, "BACKGROUND", nil, 0)
+            bg:SetAllPoints(row)
+            bg:SetColorTexture(1, 1, 1, 0.025)
+        end
+
+        local leftCell = BuildPinCell(row, filtered[i])
+        leftCell:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+        leftCell:SetPoint("BOTTOMRIGHT", row, "BOTTOM", -8, 0)
+
+        local rightItem = filtered[i + 1]
+        if rightItem then
+            local rightCell = BuildPinCell(row, rightItem)
+            rightCell:SetPoint("TOPLEFT", row, "TOP", 8, 0)
+            rightCell:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+
+            -- 1px center divider between the two columns (matches card groups).
+            local cdiv = row:CreateTexture(nil, "ARTWORK")
+            cdiv:SetPoint("TOP", row, "TOP", 0, -6)
+            cdiv:SetPoint("BOTTOM", row, "BOTTOM", 0, 6)
+            cdiv:SetWidth(1)
+            cdiv:SetColorTexture(1, 1, 1, 0.05)
+            row._centerDivider = cdiv
+        end
 
         y = y - 46
     end
