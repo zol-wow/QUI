@@ -58,6 +58,10 @@ local function NewFrame(frameType, name, parent, template)
                 return function(self, label, ref) self.frameRefs[label] = ref end
             elseif key == "GetFrameRef" then
                 return function(self, label) return self.frameRefs[label] end
+            elseif key == "IsVisible" then
+                return function(self) return self.visible ~= false end
+            elseif key == "IsUnderMouse" then
+                return function(self) return self.underMouse == true end
             elseif key == "Execute" then
                 return function(self, snippet)
                     local loader = loadstring or load
@@ -168,7 +172,10 @@ assert(caster:GetAttribute("type-keyf") == nil,
 assert(caster:GetAttribute("type-keyg") == "macro", "new caster key virtual button should be configured")
 assert(caster:GetAttribute("macrotext-keyg"):find("Regrowth", 1, true),
     "new caster key virtual button should cast Regrowth")
--- And the driver binds the current key (G) on @mouseover.
+-- And the driver binds the current key (G) on @mouseover while the cursor is
+-- over a registered frame (the frame-hover gate scopes keyboard click-cast to
+-- click-cast frames; bare @mouseover -- nameplates/world -- must not bind).
+child.underMouse = true
 local loader = loadstring or load
 assert(loader("local self, newstate = ...\n" .. caster:GetAttribute("_onstate-mouseoverstate")))(caster, "on")
 assert(caster.overrideBindings.G and caster.overrideBindings.G.button == "keyg",

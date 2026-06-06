@@ -56,6 +56,10 @@ local function NewFrame(frameType, name, parent, template)
                 return function(self, label, ref) self.frameRefs[label] = ref end
             elseif key == "GetFrameRef" then
                 return function(self, label) return self.frameRefs[label] end
+            elseif key == "IsVisible" then
+                return function(self) return self.visible ~= false end
+            elseif key == "IsUnderMouse" then
+                return function(self) return self.underMouse == true end
             elseif key == "Execute" then
                 return function(self, snippet)
                     local loader = loadstring or load
@@ -200,7 +204,10 @@ assert((caster:GetAttribute("cc-keycount") or 0) == 1,
 local mt = caster:GetAttribute("macrotext-keyf")
 assert(mt and mt:find("@mouseover", 1, true),
     "BUG: caster macro for F missing @mouseover cast after cold login")
--- The state driver binds F to the caster while a unit is under the cursor.
+-- The state driver binds F to the caster while a unit is under the cursor AND
+-- the cursor is over a registered frame (the frame-hover gate keeps nameplate /
+-- world mouseover from stealing the key off the action bar).
+child.underMouse = true
 local loader = loadstring or load
 assert(loader("local self, newstate = ...\n" .. caster:GetAttribute("_onstate-mouseoverstate")))(caster, "on")
 assert(caster.overrideBindings.F and caster.overrideBindings.F.button == "keyf",

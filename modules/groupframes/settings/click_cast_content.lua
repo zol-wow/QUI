@@ -316,65 +316,119 @@ local function SetGeneralSearchContext(sectionName)
     })
 end
 
-local function BuildClickCastGeneral(content, cc, refreshClickCast, startY, state)
-    local y = startY or -10
+---------------------------------------------------------------------------
+-- V3 layout helpers (standard dual-column card pattern, matches other tabs)
+---------------------------------------------------------------------------
+local HEADER_GAP = 26
+local SECTION_GAP = 14
 
-    local enableCheck = GUI:CreateFormCheckbox(content, "Enable Click-Casting", "enabled", cc, refreshClickCast,
-        { description = "Master toggle for QUI's click-cast system. When on, clicks and key presses on raid/party/unit frames fire the bindings configured below instead of just targeting." })
-    enableCheck:SetPoint("TOPLEFT", PAD, y)
-    enableCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    y = y - FORM_ROW
+local function MakeLayout(content)
+    local y = -10
+    local L = {}
+    function L.headerAt(text)
+        local h = Shared.CreateAccentDotLabel(content, text, y)
+        h:ClearAllPoints()
+        h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+        h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+        y = y - HEADER_GAP
+    end
+    function L.sectionAt()
+        local c = Shared.CreateSettingsCardGroup(content, y)
+        c.frame:ClearAllPoints()
+        c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+        c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+        return c
+    end
+    function L.closeSection(c)
+        c.Finalize()
+        y = y - c.frame:GetHeight() - SECTION_GAP
+    end
+    function L.intro(text)
+        local frame = CreateFrame("Frame", nil, content)
+        frame:ClearAllPoints()
+        frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+        frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+        local lbl = GUI:CreateLabel(frame, text, 11, C.textMuted)
+        lbl:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+        lbl:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+        lbl:SetJustifyH("LEFT")
+        lbl:SetWordWrap(true)
+        local approxHeight = math.max(18, math.ceil(#text / 90) * 15)
+        frame:SetHeight(approxHeight)
+        y = y - approxHeight - 8
+        return lbl, frame
+    end
+    function L.placeCustom(frame, height)
+        frame:SetParent(content)
+        frame:ClearAllPoints()
+        frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
+        frame:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+        frame:SetHeight(height)
+        y = y - height - SECTION_GAP
+    end
+    function L.offset()
+        return y
+    end
+    return L
+end
 
-    local cliqueNote = GUI:CreateLabel(content, "Note: If Clique addon is loaded, QUI click-casting is disabled by default to avoid conflicts.", 11, C.textMuted)
-    cliqueNote:SetPoint("TOPLEFT", PAD, y)
-    cliqueNote:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    cliqueNote:SetJustifyH("LEFT")
-    y = y - 30
+local function row(parent, label, widget, desc)
+    return Shared.BuildSettingRow(parent, label, widget, desc)
+end
 
-    local perSpecCheck = GUI:CreateFormCheckbox(content, "Per-Spec Bindings", "perSpec", cc, refreshClickCast,
-        { description = "Maintain a separate list of click-cast bindings for each specialization. Bindings you add swap automatically when you change spec." })
-    perSpecCheck:SetPoint("TOPLEFT", PAD, y)
-    perSpecCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    y = y - FORM_ROW
-
-    local perLoadoutCheck = GUI:CreateFormCheckbox(content, "Per-Loadout Bindings (separate bindings per talent loadout)", "perLoadout", cc, refreshClickCast,
-        { description = "Also split bindings per talent loadout within each spec, so each saved loadout can have its own click-cast layout. Requires Per-Spec Bindings." })
-    perLoadoutCheck:SetPoint("TOPLEFT", PAD + 16, y)
-    perLoadoutCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    -- Only visible/enabled when perSpec is on
-    local function UpdatePerLoadoutVisibility()
-        if cc.perSpec then
-            perLoadoutCheck:Show()
+-- Pair an iterable list of cells 2-per-row, with a trailing unpaired cell.
+local function pairCells(card, cells)
+    local i = 1
+    while i <= #cells do
+        local left = cells[i]
+        local right = cells[i + 1]
+        if right then
+            card.AddRow(left, right)
+            i = i + 2
         else
-            perLoadoutCheck:Hide()
+            card.AddRow(left)
+            i = i + 1
         end
     end
-    UpdatePerLoadoutVisibility()
-    if not cc.perSpec then
-        y = y  -- Don't consume space when hidden
-    else
-        y = y - FORM_ROW
-    end
+end
 
-    local smartResCheck = GUI:CreateFormCheckbox(content, "Smart Resurrection (auto-swap to res on dead targets)", "smartRes", cc, RefreshGF,
+local function BuildClickCastGeneral(L, cc, refreshClickCast, state)
+    L.headerAt("Settings")
+    L.intro("Note: If Clique addon is loaded, QUI click-casting is disabled by default to avoid conflicts.")
+
+    local s = L.sectionAt()
+    local enableW = GUI:CreateFormCheckbox(s.frame, nil, "enabled", cc, refreshClickCast,
+        { description = "Master toggle for QUI's click-cast system. When on, clicks and key presses on raid/party/unit frames fire the bindings configured below instead of just targeting." })
+    local perSpecW = GUI:CreateFormCheckbox(s.frame, nil, "perSpec", cc, refreshClickCast,
+        { description = "Maintain a separate list of click-cast bindings for each specialization. Bindings you add swap automatically when you change spec." })
+    local perLoadoutW = GUI:CreateFormCheckbox(s.frame, nil, "perLoadout", cc, refreshClickCast,
+        { description = "Also split bindings per talent loadout within each spec, so each saved loadout can have its own click-cast layout. Requires Per-Spec Bindings." })
+    local smartResW = GUI:CreateFormCheckbox(s.frame, nil, "smartRes", cc, RefreshGF,
         { description = "When hovering a dead unit, any spell binding is temporarily replaced by your class's resurrection spell if you know one. Restores the original spell when the unit is alive." })
-    smartResCheck:SetPoint("TOPLEFT", PAD, y)
-    smartResCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    y = y - FORM_ROW
-
-    local tooltipCheck = GUI:CreateFormCheckbox(content, "Show Binding Tooltip on Hover", "showTooltip", cc, RefreshGF,
+    local tooltipW = GUI:CreateFormCheckbox(s.frame, nil, "showTooltip", cc, RefreshGF,
         { description = "Append a summary of your current click-cast bindings to the unit tooltip whenever you hover a group frame, so you can see at a glance which click does what." })
-    tooltipCheck:SetPoint("TOPLEFT", PAD, y)
-    tooltipCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    y = y - FORM_ROW
+
+    local perLoadoutCell = row(s.frame, "Per-Loadout Bindings", perLoadoutW)
+    pairCells(s, {
+        row(s.frame, "Enable Click-Casting", enableW),
+        row(s.frame, "Per-Spec Bindings", perSpecW),
+        perLoadoutCell,
+        row(s.frame, "Smart Resurrection", smartResW),
+        row(s.frame, "Show Binding Tooltip on Hover", tooltipW),
+    })
+    L.closeSection(s)
+
+    -- Per-loadout only applies when per-spec is on: standard dependent-row
+    -- treatment (grayed + non-interactive instead of hidden, so the card
+    -- pairing never reflows).
+    local function UpdatePerLoadoutVisibility()
+        perLoadoutCell:SetEnabled(cc.perSpec and true or false)
+    end
+    UpdatePerLoadoutVisibility()
 
     -- Unit Frame click-cast toggles
     if not cc.unitFrames then cc.unitFrames = {} end
-    local ufLabel = GUI:CreateLabel(content, "Also apply click-casting to unit frames:", 11, C.textMuted)
-    ufLabel:SetPoint("TOPLEFT", PAD, y)
-    ufLabel:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    ufLabel:SetJustifyH("LEFT")
-    y = y - 22
+    L.intro("Also apply click-casting to unit frames:")
 
     local ufFrames = {
         { key = "player",       label = "Player",           description = "Let click-cast bindings fire when you click the player unit frame, not just group or nameplate frames." },
@@ -385,34 +439,27 @@ local function BuildClickCastGeneral(content, cc, refreshClickCast, startY, stat
         { key = "boss",         label = "Boss",             description = "Let click-cast bindings fire when you click boss unit frames during encounters." },
     }
 
+    local uf = L.sectionAt()
+    local ufCells = {}
     for _, info in ipairs(ufFrames) do
-        local ufCheck = GUI:CreateFormCheckbox(content, info.label, info.key, cc.unitFrames, refreshClickCast,
+        local ufCheck = GUI:CreateFormCheckbox(uf.frame, nil, info.key, cc.unitFrames, refreshClickCast,
             { description = info.description })
-        ufCheck:SetPoint("TOPLEFT", PAD, y)
-        ufCheck:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-        y = y - FORM_ROW
+        ufCells[#ufCells + 1] = row(uf.frame, info.label, ufCheck)
     end
+    pairCells(uf, ufCells)
+    L.closeSection(uf)
 
     if state then
-        state.perSpecCheck = perSpecCheck
-        state.perLoadoutCheck = perLoadoutCheck
+        state.perSpecCheck = perSpecW
+        state.perLoadoutCheck = perLoadoutW
         state.UpdatePerLoadoutVisibility = UpdatePerLoadoutVisibility
     end
-    content:SetHeight(math.abs(y) + 10)
-    return y
 end
 
 -- Section 2: Global Ping Keybinds
-local function BuildClickCastPings(content, startY, state)
-    local y = startY or -10
-
-    Shared.CreateAccentDotLabel(content, "Global Ping Keybinds", y); y = y - 30
-
-    local pingNote = GUI:CreateLabel(content, "These keybinds work everywhere: nameplates, world mouseover, or current target. Pings the unit you're looking at.", 11, C.textMuted)
-    pingNote:SetPoint("TOPLEFT", PAD, y)
-    pingNote:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    pingNote:SetJustifyH("LEFT")
-    y = y - 30
+local function BuildClickCastPings(L, state)
+    L.headerAt("Global Ping Keybinds")
+    L.intro("These keybinds work everywhere: nameplates, world mouseover, or current target. Pings the unit you're looking at.")
 
     -- Bind directly to Blizzard's native ping binding actions — these
     -- call C_Ping.TogglePingListener / C_Ping.SendMacroPing in secure
@@ -433,24 +480,18 @@ local function BuildClickCastPings(content, startY, state)
     -- bindings is sufficient.
     local suspendedPingBindings = {}
     local isPingSuspended = false
-    local PING_ROW_HEIGHT = 28
     local PING_BUTTON_HEIGHT = 24
+    local PING_CAPTURE_WIDTH = 130
+    local PING_CLEAR_WIDTH = 44
 
-    local function CreatePingKeybindRow(parent, entry, yPos)
-        local row = CreateFrame("Frame", nil, parent)
-        row:SetHeight(PING_ROW_HEIGHT)
-        row:SetPoint("TOPLEFT", PAD, yPos)
-        row:SetPoint("RIGHT", parent, "RIGHT", -PAD, 0)
+    local function CreatePingKeybindCell(parent, entry)
+        -- Capture + clear buttons grouped as the right-hand control of a
+        -- standard setting cell (label provided by BuildSettingRow).
+        local widget = CreateFrame("Frame", nil, parent)
+        widget:SetSize(PING_CAPTURE_WIDTH + PING_CLEAR_WIDTH + 6, PING_BUTTON_HEIGHT)
 
-        local label = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        label:SetPoint("LEFT", 0, 0)
-        label:SetWidth(180)
-        label:SetJustifyH("LEFT")
-        label:SetText(entry.label)
-        label:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-
-        local captureBtn = CreateClickCastButton(row, "", 160, PING_BUTTON_HEIGHT)
-        captureBtn:SetPoint("LEFT", label, "RIGHT", 8, 0)
+        local captureBtn = CreateClickCastButton(widget, "", PING_CAPTURE_WIDTH, PING_BUTTON_HEIGHT)
+        captureBtn:SetPoint("LEFT", widget, "LEFT", 0, 0)
         SetButtonFill(captureBtn, 0.08, 0.08, 0.08, 1)
         SetButtonBorder(captureBtn, 0.35, 0.35, 0.35, 1)
 
@@ -472,7 +513,7 @@ local function BuildClickCastPings(content, startY, state)
         table.insert(pingRowUpdaters, UpdateKeyText)
         UpdateKeyText()
 
-        local clearBtn = CreateClickCastButton(row, "Clear", 50, PING_BUTTON_HEIGHT, function()
+        local clearBtn = CreateClickCastButton(widget, "Clear", PING_CLEAR_WIDTH, PING_BUTTON_HEIGHT, function()
             local key1, key2 = GetBindingKey(entry.binding)
             if key1 then SetBinding(key1) end
             if key2 then SetBinding(key2) end
@@ -625,13 +666,16 @@ local function BuildClickCastPings(content, startY, state)
             end
         end)
 
-        return row
+        return row(parent, entry.label, widget)
     end
 
+    local s = L.sectionAt()
+    local pingCells = {}
     for _, entry in ipairs(PING_KEYBIND_ENTRIES) do
-        CreatePingKeybindRow(content, entry, y)
-        y = y - 30
+        pingCells[#pingCells + 1] = CreatePingKeybindCell(s.frame, entry)
     end
+    pairCells(s, pingCells)
+    L.closeSection(s)
 
     -- Wire up cross-row refresh (called when a binding is set/cleared to update all rows)
     refreshAllPingRows = function()
@@ -653,15 +697,10 @@ local function BuildClickCastPings(content, startY, state)
             return saved
         end
     end
-
-    content:SetHeight(math.abs(y) + 10)
-    return y
 end
 
 -- Section 3: Manage Bindings (current list + add form)
-local function BuildClickCastBindings(content, cc, refreshClickCast, startY, state)
-    local y = startY or -10
-
+local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     local GFCC = ns.QUI_GroupFrameClickCast
 
     local ACTION_TYPE_OPTIONS = {
@@ -720,10 +759,22 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
         ping_onmyway = "Ping: On My Way",
     }
 
+    L.headerAt("Bindings")
+
+    -- Dynamic block: spec label + current-bindings list + add form. The
+    -- add form anchors to the list bottom so it flows down as bindings are
+    -- added/removed; RefreshBindingList re-measures the block and the
+    -- page content height.
+    local fixedTop = math.abs(L.offset())
+    local bindingsBlock = CreateFrame("Frame", nil, content)
+    L.placeCustom(bindingsBlock, 100) -- provisional; RefreshBindingList re-measures
+
+    local by = 0
+
     -- Spec context label
-    local specLabel = GUI:CreateLabel(content, "", 11, C.accent)
-    specLabel:SetPoint("TOPLEFT", PAD, y)
-    specLabel:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    local specLabel = GUI:CreateLabel(bindingsBlock, "", 11, C.accent)
+    specLabel:SetPoint("TOPLEFT", 0, by)
+    specLabel:SetPoint("RIGHT", bindingsBlock, "RIGHT", 0, 0)
     specLabel:SetJustifyH("LEFT")
     specLabel:Hide()
 
@@ -771,21 +822,22 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
         specLabel:Hide()
     end
     UpdateSpecLabel()
-    if specLabel:IsShown() then y = y - 20 end
+    if specLabel:IsShown() then by = by - 20 end
 
     -- Current bindings list
-    Shared.CreateAccentDotLabel(content, "Current Bindings", y); y = y - 30
+    Shared.CreateAccentDotLabel(bindingsBlock, "Current Bindings", by); by = by - 30
 
-    local bindingListFrame = CreateFrame("Frame", nil, content)
-    bindingListFrame:SetPoint("TOPLEFT", PAD, y)
+    local bindingListFrame = CreateFrame("Frame", nil, bindingsBlock)
+    bindingListFrame:SetPoint("TOPLEFT", 0, by)
     bindingListFrame:SetSize(400, 20)
+    local listTopOffset = math.abs(by)
 
     local RefreshBindingList
 
     -- Add binding form
-    local addContainer = CreateFrame("Frame", nil, content)
+    local addContainer = CreateFrame("Frame", nil, bindingsBlock)
     addContainer:SetPoint("TOPLEFT", bindingListFrame, "BOTTOMLEFT", 0, -10)
-    addContainer:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+    addContainer:SetPoint("RIGHT", bindingsBlock, "RIGHT", 0, 0)
     addContainer:SetHeight(400)
     addContainer:EnableMouse(false)
 
@@ -811,6 +863,7 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
     local spellInput, macroInput, actionDrop
     local spellInputContainer, macroInputContainer
     local mouseButtonContainer, keyCaptureContainer
+    local triggerCell
 
     local function HandleCursorDrop()
         local cursorType, id1, id2, _, id4 = GetCursorInfo()
@@ -879,41 +932,32 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
     end)
     ay = ay - 78
 
+    -- Form card: standard dual-column rows for the add-binding dropdowns.
+    local formCard = Shared.CreateSettingsCardGroup(addContainer, ay)
+
     -- Binding type dropdown
-    local bindingTypeDrop = GUI:CreateFormDropdown(addContainer, "Binding Type", BINDING_TYPE_OPTIONS, "bindingType", addState, function(val)
+    local bindingTypeDrop = GUI:CreateFormDropdown(formCard.frame, nil, BINDING_TYPE_OPTIONS, "bindingType", addState, function(val)
         addState.bindingType = val
         if mouseButtonContainer then mouseButtonContainer:SetShown(val == "mouse") end
         if keyCaptureContainer then keyCaptureContainer:SetShown(val == "key") end
+        if triggerCell and triggerCell._label then
+            triggerCell._label:SetText(val == "key" and "Key" or "Mouse Button")
+        end
     end, { description = "Whether this binding fires on a mouse button (including scroll) or on a keyboard key pressed while hovering a unit frame." })
-    bindingTypeDrop:SetPoint("TOPLEFT", 0, ay)
-    bindingTypeDrop:SetPoint("RIGHT", addContainer, "RIGHT", 0, 0)
-    ay = ay - FORM_ROW
 
-    -- Mouse button dropdown
-    mouseButtonContainer = CreateFrame("Frame", nil, addContainer)
-    mouseButtonContainer:SetHeight(FORM_ROW)
-    mouseButtonContainer:SetPoint("TOPLEFT", 0, ay)
-    mouseButtonContainer:SetPoint("RIGHT", addContainer, "RIGHT", 0, 0)
-
-    local buttonDrop = GUI:CreateFormDropdown(mouseButtonContainer, "Mouse Button", BUTTON_OPTIONS, "button", addState, nil,
+    -- Trigger control: the mouse-button dropdown is the cell widget (so it
+    -- keeps its search registration); the key-capture button overlays it
+    -- and the Binding Type dropdown swaps which is shown.
+    local buttonDrop = GUI:CreateFormDropdown(formCard.frame, nil, BUTTON_OPTIONS, "button", addState, nil,
         { description = "Mouse button or scroll direction this binding fires on when hovering a unit frame. Combine with a modifier below to layer multiple actions onto the same button." })
-    buttonDrop:SetPoint("TOPLEFT", 0, 0)
-    buttonDrop:SetPoint("RIGHT", mouseButtonContainer, "RIGHT", 0, 0)
+    mouseButtonContainer = buttonDrop
 
-    -- Keyboard key capture
-    keyCaptureContainer = CreateFrame("Frame", nil, addContainer)
-    keyCaptureContainer:SetHeight(FORM_ROW)
-    keyCaptureContainer:SetPoint("TOPLEFT", 0, ay)
-    keyCaptureContainer:SetPoint("RIGHT", addContainer, "RIGHT", 0, 0)
+    -- Keyboard key capture (reparented over the dropdown once the cell is built)
+    keyCaptureContainer = CreateFrame("Frame", nil, formCard.frame)
     keyCaptureContainer:Hide()
 
-    local keyLabel = keyCaptureContainer:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    keyLabel:SetPoint("LEFT", 0, 0)
-    keyLabel:SetText("Key")
-    keyLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-
     local keyCaptureBtn = CreateClickCastButton(keyCaptureContainer, "Click to bind a key", 1, 26)
-    keyCaptureBtn:SetPoint("LEFT", keyCaptureContainer, "LEFT", 180, 0)
+    keyCaptureBtn:SetPoint("LEFT", keyCaptureContainer, "LEFT", 0, 0)
     keyCaptureBtn:SetPoint("RIGHT", keyCaptureContainer, "RIGHT", 0, 0)
     SetHeightPx(keyCaptureBtn, 26)
     SetButtonFill(keyCaptureBtn, 0.08, 0.08, 0.08, 1)
@@ -975,24 +1019,25 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
             SetButtonHover(self, false)
         end
     end)
-    ay = ay - FORM_ROW
 
     -- Modifier dropdown
-    local modDrop = GUI:CreateFormDropdown(addContainer, "Modifier", MOD_OPTIONS, "modifiers", addState, nil,
+    local modDrop = GUI:CreateFormDropdown(formCard.frame, nil, MOD_OPTIONS, "modifiers", addState, nil,
         { description = "Modifier key(s) that must be held for this binding to fire. Use None for the unmodified click or key — different modifiers let you stack multiple actions on the same button." })
-    modDrop:SetPoint("TOPLEFT", 0, ay)
-    modDrop:SetPoint("RIGHT", addContainer, "RIGHT", 0, 0)
-    ay = ay - FORM_ROW
 
     -- Action type dropdown
-    actionDrop = GUI:CreateFormDropdown(addContainer, "Action Type", ACTION_TYPE_OPTIONS, "actionType", addState, function(val)
+    actionDrop = GUI:CreateFormDropdown(formCard.frame, nil, ACTION_TYPE_OPTIONS, "actionType", addState, function(val)
         addState.actionType = val
         if spellInputContainer then spellInputContainer:SetShown(val == "spell") end
         if macroInputContainer then macroInputContainer:SetShown(val == "macro") end
     end, { description = "What this binding does: cast a spell or macro, change target/focus/assist, open the unit menu, or send a ping. Spell and Macro reveal an input below for the spell name or macro body." })
-    actionDrop:SetPoint("TOPLEFT", 0, ay)
-    actionDrop:SetPoint("RIGHT", addContainer, "RIGHT", 0, 0)
-    ay = ay - FORM_ROW
+
+    triggerCell = row(formCard.frame, "Mouse Button", buttonDrop)
+    keyCaptureContainer:SetParent(triggerCell)
+    keyCaptureContainer:SetAllPoints(buttonDrop)
+    formCard.AddRow(row(formCard.frame, "Binding Type", bindingTypeDrop), triggerCell)
+    formCard.AddRow(row(formCard.frame, "Modifier", modDrop), row(formCard.frame, "Action Type", actionDrop))
+    formCard.Finalize()
+    ay = ay - formCard.frame:GetHeight() - 8
 
     -- Spell name editbox with autocomplete + browse
     spellInputContainer = CreateFrame("Frame", nil, addContainer)
@@ -1632,8 +1677,9 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
         end
         local listHeight = math.max(20, math.abs(listY))
         bindingListFrame:SetHeight(listHeight)
-        local fixedTop = math.abs(y)
-        local totalHeight = fixedTop + listHeight + 10 + addContainer:GetHeight() + 30
+        local blockHeight = listTopOffset + listHeight + 10 + addContainer:GetHeight()
+        bindingsBlock:SetHeight(blockHeight)
+        local totalHeight = fixedTop + blockHeight + 30
         content:SetHeight(totalHeight)
 
         -- Propagate new height to the collapsible section so it resizes.
@@ -1719,35 +1765,10 @@ local function BuildClickCastBindings(content, cc, refreshClickCast, startY, sta
         state.browsePopup = browsePopup
         state.acMenu = acMenu
     end
-
-    return y
 end
 
 ---------------------------------------------------------------------------
--- Combined builder for group frame designer widget bar (calls all 3 sections)
-
-local SECTION_GAP = 14
-
--- Places a sub-section inside `content` starting at `y`: accent-dot header
--- (when title is given), then a body frame positioned below. Builder is
--- invoked on the body with the shared builder signature. Returns the new
--- y offset after the section.
-local function PlaceClickCastSection(content, y, title, builder)
-    if title and title ~= "" then
-        Shared.CreateAccentDotLabel(content, title, y); y = y - 22
-    end
-
-    local body = CreateFrame("Frame", nil, content)
-    body:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-    body:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-    body:SetHeight(1)
-
-    builder(body)
-
-    local bodyH = body:GetHeight() or 0
-    if bodyH < 10 then bodyH = 10 end
-    return y - bodyH - SECTION_GAP
-end
+-- Combined builder for the click-cast page (calls all 3 sections)
 
 local function BuildClickCastContent(content)
     GUI:SetSearchContext({tabIndex = 7, tabName = "Click-Cast", subTabIndex = 1, subTabName = "Click-Cast"})
@@ -1775,24 +1796,15 @@ local function BuildClickCastContent(content)
 
     local state = {}
     content._quiClickCastState = state
-    local y = -10
 
-    y = PlaceClickCastSection(content, y, "Settings", function(body)
-        SetGeneralSearchContext("Click-Cast")
-        BuildClickCastGeneral(body, cc, refreshClickCast, -10, state)
-    end)
+    local L = MakeLayout(content)
 
-    -- Ping section: builder emits its own accent-dot header, so skip the
-    -- wrapper label here (title = nil).
-    y = PlaceClickCastSection(content, y, nil, function(body)
-        BuildClickCastPings(body, -10, state)
-    end)
-
-    y = PlaceClickCastSection(content, y, "Bindings", function(body)
-        BuildClickCastBindings(body, cc, refreshClickCast, -10, state)
-    end)
-
-    content:SetHeight(math.abs(y) + 20)
+    SetGeneralSearchContext("Click-Cast")
+    BuildClickCastGeneral(L, cc, refreshClickCast, state)
+    BuildClickCastPings(L, state)
+    BuildClickCastBindings(L, content, cc, refreshClickCast, state)
+    -- No trailing SetHeight here: BuildClickCastBindings' RefreshBindingList
+    -- owns the final content height (the bindings list grows at runtime).
 
     -- Wire cross-section: per-spec toggle refreshes binding list + perLoadout visibility
     if state.perSpecCheck and state.RefreshBindingList then

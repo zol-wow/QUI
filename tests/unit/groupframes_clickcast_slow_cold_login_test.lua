@@ -59,6 +59,10 @@ local function NewFrame(frameType, name, parent, template)
                 return function(self, label, ref) self.frameRefs[label] = ref end
             elseif key == "GetFrameRef" then
                 return function(self, label) return self.frameRefs[label] end
+            elseif key == "IsVisible" then
+                return function(self) return self.visible ~= false end
+            elseif key == "IsUnderMouse" then
+                return function(self) return self.underMouse == true end
             elseif key == "Execute" then
                 return function(self, snippet)
                     local loader = loadstring or load
@@ -222,18 +226,23 @@ local function hover(frame)
 end
 
 -- Assert key "F" hovercasts: the state driver binds it to the caster (with an
--- @mouseover macro) while a unit is under the cursor, and releases it otherwise
--- so the action bar's own keybind fires off-frame.
+-- @mouseover macro) while a unit is under the cursor AND the cursor is over a
+-- registered click-cast frame, and releases it otherwise so the action bar's
+-- own keybind fires off-frame (including over nameplates / world units).
 local function assertCasterBindsF()
     local c = assert(_G.QUI_ClickCastCaster, "caster button was never created")
     local mt = c:GetAttribute("macrotext-keyf")
     assert(mt and mt:find("@mouseover", 1, true), "caster macro for F missing @mouseover cast")
+    local hoverFrame = c.frameRefs and c.frameRefs["cc-frame1"]
+    assert(hoverFrame, "registered frames were never published to the caster's frame-hover gate")
+    hoverFrame.underMouse = true
     runCasterState("on")
     local b = c.overrideBindings and c.overrideBindings.F
     assert(b and b.button == "keyf", "@mouseover did not bind F to the caster -- click-cast dead")
     runCasterState("off")
     assert(not (c.overrideBindings and c.overrideBindings.F),
         "off @mouseover the caster must release F so the action bar keybind fires")
+    hoverFrame.underMouse = nil
 end
 
 ---------------------------------------------------------------------------

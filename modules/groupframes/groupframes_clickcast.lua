@@ -201,22 +201,43 @@ end
 
 -- WrapScript pre-body for OnEnter.
 -- `self` = the hovered frame, `owner` = the header (SecureHandlerBaseTemplate).
--- Per-frame SCROLL-WHEEL bindings (keyboard keys use the global caster). The
--- header owns the override bindings; `currentHoverFrame` (a variable in the
--- header's shared managed environment) records the active hover so OnLeave/OnHide
--- clear ONLY for that frame — without it, any frame's leave/hide would wipe the
--- scroll binding the currently-hovered frame just set during cold-login churn.
+-- Two binding sets: per-frame SCROLL-WHEEL keys (header-owned, routed to the
+-- frame's virtual buttons) and KEYBOARD keys (caster-owned, via the header's
+-- "cc-caster" frame ref). The keyboard bind here is the instant path — the
+-- caster's mouseoverstate driver can't see direct unit->frame transitions
+-- (its state stays "on", so it never re-fires) and runs on a 0.2s tick.
+-- `currentHoverFrame` (a variable in the header's shared managed environment)
+-- records the active hover so OnLeave/OnHide clear ONLY for that frame —
+-- without it, any frame's leave/hide would wipe the binding the
+-- currently-hovered frame just set during cold-login churn.
 local ENTER_SNIPPET = [[
     owner:ClearBindings()
+    local caster = owner:GetFrameRef("cc-caster")
+    if caster then caster:ClearBindings() end
+
+    -- Claim the hover context (the clears above hand off the previous frame);
+    -- OnLeave/OnHide only clear while this stays the active frame.
+    currentHoverFrame = self
+
+    -- Keyboard keys -> the global caster (only while this frame is a live
+    -- click-cast registration; the wraps themselves are permanent).
+    if caster and self:GetAttribute("clickcast-active") == 1 then
+        local kcount = caster:GetAttribute("cc-keycount") or 0
+        for i = 1, kcount do
+            local key = caster:GetAttribute("cc-key" .. i)
+            local vbtn = caster:GetAttribute("cc-vbtn" .. i)
+            if key and vbtn then
+                caster:SetBindingClick(true, key, caster, vbtn)
+            end
+        end
+    end
+
+    -- Scroll-wheel keys -> this frame's virtual buttons (needs a frame name).
     local count = owner:GetAttribute("clickcast-keycount") or 0
     if count == 0 then return end
 
     local frameName = self:GetName()
     if not frameName then return end
-
-    -- Claim the hover context (owner:ClearBindings above hands off the previous
-    -- frame); OnLeave/OnHide only clear while this stays the active frame.
-    currentHoverFrame = self
 
     for i = 1, count do
         local key = owner:GetAttribute("clickcast-key" .. i)
@@ -228,10 +249,15 @@ local ENTER_SNIPPET = [[
 ]]
 
 -- WrapScript pre-body for OnLeave. Guard on currentHoverFrame so a stale leave
--- from a frame we've already moved off of can't clear the active scroll binding.
+-- from a frame we've already moved off of can't clear the active bindings.
+-- Releasing the caster here is what returns the keyboard keys to the action
+-- bar on a direct frame->unit (e.g. nameplate) transition, where the
+-- mouseoverstate driver stays "on" and never fires.
 local LEAVE_SNIPPET = [[
     if currentHoverFrame == self then
         owner:ClearBindings()
+        local caster = owner:GetFrameRef("cc-caster")
+        if caster then caster:ClearBindings() end
         currentHoverFrame = nil
     end
 ]]
@@ -244,20 +270,38 @@ local HIDE_SNIPPET = LEAVE_SNIPPET
 
 local CLEAR_HEADER_BINDINGS_SNIPPET = [[
     self:ClearBindings()
+    local caster = self:GetFrameRef("cc-caster")
+    if caster then caster:ClearBindings() end
     currentHoverFrame = nil
 ]]
 
+-- Re-arm the bindings for the frame currently under the cursor (run via
+-- header:Execute after out-of-combat re-registration, so `self` = header).
+-- Mirrors ENTER_SNIPPET for both binding sets.
 local REFRESH_HEADER_BINDINGS_SNIPPET = [[
     self:ClearBindings()
+    local caster = self:GetFrameRef("cc-caster")
+    if caster then caster:ClearBindings() end
 
     local frame = self:GetFrameRef("clickcast-hover-frame")
     if not frame then return end
 
-    local frameName = frame:GetName()
-    if not frameName then return end
-
     -- Keep the hover tracker in sync so this frame's OnLeave clears correctly.
     currentHoverFrame = frame
+
+    if caster and frame:GetAttribute("clickcast-active") == 1 then
+        local kcount = caster:GetAttribute("cc-keycount") or 0
+        for i = 1, kcount do
+            local key = caster:GetAttribute("cc-key" .. i)
+            local vbtn = caster:GetAttribute("cc-vbtn" .. i)
+            if key and vbtn then
+                caster:SetBindingClick(true, key, caster, vbtn)
+            end
+        end
+    end
+
+    local frameName = frame:GetName()
+    if not frameName then return end
 
     local count = self:GetAttribute("clickcast-keycount") or 0
     if count == 0 then return end
@@ -510,10 +554,26 @@ local casterButton
 local casterVBtns = {} -- virtual buttons set last apply, cleared on re-apply
 
 -- _onstate-mouseoverstate (self = caster): bind every owned key to the caster
--- while @mouseover exists; clear them when it doesn't (action bar resumes).
+-- while @mouseover exists AND the cursor is over a registered click-cast
+-- frame; clear them otherwise (action bar resumes). [@mouseover,exists] alone
+-- is also true over nameplates and 3D world units — no macro conditional can
+-- tell those apart from frame hover, so the snippet checks the registered
+-- frames (published as cc-frame<i> refs) geometrically via IsUnderMouse.
 local CASTER_MOUSEOVER_SNIPPET = [[
     self:ClearBindings()
     if newstate ~= "on" then return end
+
+    local overFrame = false
+    local fcount = self:GetAttribute("cc-framecount") or 0
+    for i = 1, fcount do
+        local f = self:GetFrameRef("cc-frame" .. i)
+        if f and f:IsVisible() and f:IsUnderMouse() then
+            overFrame = true
+            break
+        end
+    end
+    if not overFrame then return end
+
     local count = self:GetAttribute("cc-keycount") or 0
     for i = 1, count do
         local key = self:GetAttribute("cc-key" .. i)
@@ -532,6 +592,10 @@ local function GetCasterButton()
         casterButton:Hide()
         casterButton:SetAttribute("_onstate-mouseoverstate", CASTER_MOUSEOVER_SNIPPET)
         RegisterStateDriver(casterButton, "mouseoverstate", "[@mouseover,exists] on; off")
+        -- The hover wraps reach the caster through the header to bind/clear
+        -- keyboard keys on enter/leave (instant, and the only signal for
+        -- direct unit<->frame transitions the state driver never re-fires on).
+        GetBindingHeader():SetFrameRef("cc-caster", casterButton)
     end
     return casterButton
 end
@@ -612,6 +676,33 @@ local function ClearGlobalKeyboardBindings()
     end
 end
 
+-- Registered frames are mirrored onto the caster as frame refs so the
+-- mouseoverstate snippet can tell "over a click-cast frame" from "over a
+-- nameplate / world unit". Grown incrementally as frames register; reset by
+-- RefreshBindings alongside the registeredFrames wipe so frames that don't
+-- re-register (e.g. a unit-frame type toggled off) drop out of the gate.
+local casterFrameRefIndex = setmetatable({}, { __mode = "k" })
+local casterFrameRefCount = 0
+
+local function PublishCasterFrameRef(frame)
+    if InCombatLockdown() then return end
+    if casterFrameRefIndex[frame] then return end
+    local btn = GetCasterButton()
+    casterFrameRefCount = casterFrameRefCount + 1
+    casterFrameRefIndex[frame] = casterFrameRefCount
+    btn:SetFrameRef("cc-frame" .. casterFrameRefCount, frame)
+    btn:SetAttribute("cc-framecount", casterFrameRefCount)
+end
+
+local function ResetCasterFrameRefs()
+    wipe(casterFrameRefIndex)
+    casterFrameRefCount = 0
+    if casterButton and not InCombatLockdown() then
+        -- Stale cc-frame<i> refs above the count are never read.
+        casterButton:SetAttribute("cc-framecount", 0)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- BUTTON NUMBER HELPER
 ---------------------------------------------------------------------------
@@ -664,16 +755,30 @@ local function SetupFrameClickCast(frame)
         end
     end
 
-    -- Set up keyboard bindings (includes scroll wheel):
-    -- wrap with secure handlers + set virtual button attributes
-    if #keyboardBindings > 0 then
+    -- Hover wraps serve both override paths: scroll wheel (per-frame virtual
+    -- buttons) and keyboard keys (instant caster bind/clear on enter/leave).
+    if #keyboardBindings > 0 or #globalKeyBindings > 0 then
         WrapFrameSecureHandlers(frame)
+    end
+    if #keyboardBindings > 0 then
         SetFrameKeyAttributes(frame)
         -- Enable mouse wheel on the frame so scroll bindings generate events
         frame:EnableMouseWheel(true)
     end
 
+    -- Live-registration marker, read by the secure hover snippets (the wraps
+    -- are permanent; this is what un-gates them per registration cycle).
+    frame:SetAttribute("clickcast-active", 1)
+
     registeredFrames[frame] = true
+
+    -- Publish the frame to the caster's frame-hover gate. Skipped while the
+    -- caster doesn't exist and no keyboard keys resolved (mouse/scroll-only
+    -- users never need the caster); a later keyboard resolve re-registers
+    -- every frame through RefreshBindings, which lands here again.
+    if casterButton or #globalKeyBindings > 0 then
+        PublishCasterFrameRef(frame)
+    end
 
     -- Only add script hooks once per frame — HookScript is additive and
     -- cannot be removed, so re-hooking on every RefreshBindings would
@@ -842,6 +947,10 @@ local function ClearFrameClickCast(frame)
     -- Clear keyboard virtual-button attributes
     ClearFrameKeyAttributes(frame)
 
+    -- Drop out of the secure hover snippets (wraps are permanent; this gate
+    -- is what stops a cleared frame from re-binding the caster on hover).
+    frame:SetAttribute("clickcast-active", nil)
+
     -- Restore default target/menu behavior
     frame:SetAttribute("type1", "target")
     frame:SetAttribute("type2", "togglemenu")
@@ -972,6 +1081,9 @@ function QUI_GFCC:RefreshBindings()
         ClearFrameClickCast(frame)
     end
     wipe(registeredFrames)
+    -- Re-registration below rebuilds the caster's frame-hover gate from
+    -- scratch, so frames that don't come back drop out of it.
+    ResetCasterFrameRefs()
 
     if not enabled then
         -- Disable: clear bindings and mark as disabled
