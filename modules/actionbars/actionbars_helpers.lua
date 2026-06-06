@@ -39,16 +39,23 @@ function GetFadeSettings()
 end
 
 effectiveSettingsCache = {}
-effectiveSettingsCacheStats = { hits = 0, builds = 0, invalidations = 0 }
+local effectiveSettingsCacheStats -- debug counters; nil until QUI_Debug activates instrumentation
 
-do local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "AB_settingsCacheHits", counter = true, fn = function() return effectiveSettingsCacheStats.hits end }
-    mp[#mp + 1] = { name = "AB_settingsCacheBuilds", counter = true, fn = function() return effectiveSettingsCacheStats.builds end }
+local function SetupDebugInstrumentation()
+    effectiveSettingsCacheStats = { hits = 0, builds = 0, invalidations = 0 }
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "AB_settingsCacheHits",         counter = true, fn = function() return effectiveSettingsCacheStats.hits end }
+    mp[#mp + 1] = { name = "AB_settingsCacheBuilds",        counter = true, fn = function() return effectiveSettingsCacheStats.builds end }
     mp[#mp + 1] = { name = "AB_settingsCacheInvalidations", counter = true, fn = function() return effectiveSettingsCacheStats.invalidations end }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
 function InvalidateEffectiveSettingsCache(barKey)
-    effectiveSettingsCacheStats.invalidations = effectiveSettingsCacheStats.invalidations + 1
+    if effectiveSettingsCacheStats then effectiveSettingsCacheStats.invalidations = effectiveSettingsCacheStats.invalidations + 1 end
     if barKey then
         effectiveSettingsCache[barKey] = nil
         return
@@ -71,11 +78,11 @@ function GetEffectiveSettings(barKey)
 
     local cached = effectiveSettingsCache[barKey]
     if cached and cached.global == global and cached.bar == barSettings then
-        effectiveSettingsCacheStats.hits = effectiveSettingsCacheStats.hits + 1
+        if effectiveSettingsCacheStats then effectiveSettingsCacheStats.hits = effectiveSettingsCacheStats.hits + 1 end
         return cached.effective
     end
 
-    effectiveSettingsCacheStats.builds = effectiveSettingsCacheStats.builds + 1
+    if effectiveSettingsCacheStats then effectiveSettingsCacheStats.builds = effectiveSettingsCacheStats.builds + 1 end
     local effective = {}
     for key, value in pairs(global) do
         effective[key] = value

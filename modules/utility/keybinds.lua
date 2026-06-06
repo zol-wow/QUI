@@ -2,7 +2,7 @@
 -- Displays action bar keybinds on Essential and Utility cooldown viewer icons
 -- Also handles Rotation Helper overlay (C_AssistedCombat integration)
 
-local _, QUI = ...
+local _, QUI = ... -- QUI = private addon namespace (the table other files call "ns"), not the AceAddon global
 local LSM = QUI.LSM
 
 local GetCore = QUI.Helpers.GetCore
@@ -60,12 +60,18 @@ local currentRotationBaseSpellID = nil  -- original base spell from Blizzard
 -- Position-based keybind cache (remembers keybinds by icon to handle procs)
 local iconKeybindCache = {}
 
-do local mp = QUI._memprobes or {}; QUI._memprobes = mp
+local function SetupDebugInstrumentation()
+    local mp = QUI._memprobes or {}; QUI._memprobes = mp
     mp[#mp + 1] = { name = "KB_spellToKeybind",     tbl = spellToKeybind }
     mp[#mp + 1] = { name = "KB_spellNameToKeybind", tbl = spellNameToKeybind }
     mp[#mp + 1] = { name = "KB_itemToKeybind",      tbl = itemToKeybind }
     mp[#mp + 1] = { name = "KB_macroNameToIndex",   tbl = macroNameToIndex }
     mp[#mp + 1] = { name = "KB_iconKeybindCache",   tbl = iconKeybindCache }
+end
+if QUI.DebugRegister then -- gate contract: core/debug_gate.lua
+    QUI.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
 -- TAINT SAFETY: Store per-icon state in local weak-keyed tables instead of

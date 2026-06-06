@@ -13,6 +13,16 @@ ns.CDMIconRefreshWalker = CDMIconRefreshWalker
 local pairs = pairs
 local ipairs = ipairs
 
+local measureFn -- profiler hook; bound at debug activation (nil otherwise)
+local function SetupDebugInstrumentation()
+    measureFn = ns.MemAuditProfilerMeasure
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end
+
 local function getIconPools(callbacks)
     return (callbacks.getIconPools and callbacks.getIconPools()) or {}
 end
@@ -28,7 +38,7 @@ function CDMIconRefreshWalker.Create(callbacks)
 
     function controller:RefreshAll(context)
         local refreshed = 0
-        local measure = ns.MemAuditProfilerMeasure
+        local measure = measureFn
         for _, pool in pairs(getIconPools(callbacks)) do
             for _, icon in ipairs(pool) do
                 if callbacks.refreshAllIcon then
@@ -47,7 +57,7 @@ function CDMIconRefreshWalker.Create(callbacks)
     function controller:RefreshCooldownOnly(context)
         context = context or {}
         local refreshed = 0
-        local measure = ns.MemAuditProfilerMeasure
+        local measure = measureFn
         for _, pool in pairs(getIconPools(callbacks)) do
             for _, icon in ipairs(pool) do
                 local entry = icon and icon._spellEntry
@@ -102,7 +112,7 @@ function CDMIconRefreshWalker.Create(callbacks)
         if not pool then return 0 end
 
         local refreshed = 0
-        local measure = ns.MemAuditProfilerMeasure
+        local measure = measureFn
         for _, icon in ipairs(pool) do
             if callbacks.refreshTypeIcon then
                 if measure then
@@ -122,7 +132,7 @@ function CDMIconRefreshWalker.Create(callbacks)
         if not pool then return 0 end
 
         local refreshed = 0
-        local measure = ns.MemAuditProfilerMeasure
+        local measure = measureFn
         for _, icon in ipairs(pool) do
             local entry = icon and icon._spellEntry
             if entry then

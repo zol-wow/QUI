@@ -57,10 +57,7 @@ local ANCHOR_INSET = {
 local iconPool = {}
 local POOL_SIZE = 60
 local spellNameCache = {}
-do local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "GF_Pin_iconPool", tbl = iconPool }
-    mp[#mp + 1] = { name = "GF_Pin_spellNameCache", tbl = spellNameCache }
-end
+-- memprobes registered in SetupDebugInstrumentation (debug gate)
 
 local DEFAULT_SQUARE_COLOR = { 0.5, 0.5, 0.5, 1 }
 local DEFAULT_INSET = { 0, 0 }
@@ -711,5 +708,16 @@ function QUI_GFP:RefreshFrame(frame)
     UpdateFramePinnedAuras(frame)
 end
 
-ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_PinnedAuras", frame = eventFrame }
+local function SetupDebugInstrumentation()
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "GF_Pin_iconPool", tbl = iconPool }
+    mp[#mp + 1] = { name = "GF_Pin_spellNameCache", tbl = spellNameCache }
+    -- Perf profiler opt-in (no-op until /qui perf → Modules toggle)
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_PinnedAuras", frame = eventFrame }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end

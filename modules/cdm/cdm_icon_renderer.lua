@@ -53,30 +53,14 @@ local IsAuraEntry = Resolvers.IsAuraEntry
 local ResolveAuraActiveState = Resolvers.ResolveAuraActiveState
 local GetChargeMetadataDB = RuntimeQueries.GetChargeMetadataDB
 
-local durationBindingStats = { keyBuilds = 0, keyCacheHits = 0, resolvedStateReuses = 0 }
-local fullUpdateScheduleStats = {
-    total = 0,
-    request = 0,
-    mirrorFallback = 0,
-    runtime = 0,
-    deferred = 0,
-    hotfix = 0,
-    other = 0,
-}
-
-do
-    local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "CDM_durationBindingKeys", counter = true, fn = function() return durationBindingStats.keyBuilds end }
-    mp[#mp + 1] = { name = "CDM_durationBindingKeyCacheHits", counter = true, fn = function() return durationBindingStats.keyCacheHits end }
-    mp[#mp + 1] = { name = "CDM_applyResolvedStateReuses", counter = true, fn = function() return durationBindingStats.resolvedStateReuses end }
-    mp[#mp + 1] = { name = "CDM_fullUpdateSchedules", counter = true, fn = function() return fullUpdateScheduleStats.total end }
-    mp[#mp + 1] = { name = "CDM_fullUpdateScheduleRequest", counter = true, fn = function() return fullUpdateScheduleStats.request end }
-    mp[#mp + 1] = { name = "CDM_fullUpdateScheduleMirrorFallback", counter = true, fn = function() return fullUpdateScheduleStats.mirrorFallback end }
-    mp[#mp + 1] = { name = "CDM_fullUpdateScheduleRuntime", counter = true, fn = function() return fullUpdateScheduleStats.runtime end }
-    mp[#mp + 1] = { name = "CDM_fullUpdateScheduleDeferred", counter = true, fn = function() return fullUpdateScheduleStats.deferred end }
-    mp[#mp + 1] = { name = "CDM_fullUpdateScheduleHotfix", counter = true, fn = function() return fullUpdateScheduleStats.hotfix end }
-    mp[#mp + 1] = { name = "CDM_fullUpdateScheduleOther", counter = true, fn = function() return fullUpdateScheduleStats.other end }
-end
+local durationBindingStats -- debug counters; nil until QUI_Debug activates instrumentation
+local fullUpdateScheduleStats -- debug counters; nil until QUI_Debug activates instrumentation
+local measureFn -- profiler hook; bound at debug activation (nil otherwise)
+-- Per-event profiling flag lives on _resolverRuntimePolicy (no headroom for a
+-- new main-chunk local — this file is at Lua 5.1's 200-local limit); set true
+-- at debug activation.
+-- SetupDebugInstrumentation is defined at the bottom of the file (it captures
+-- cdEventFrame for QUI_PerfRegistry).
 
 local function GetBuiltinContainerType(containerKey)
     return Shared and Shared.GetBuiltinContainerType
@@ -273,6 +257,7 @@ local function CreateIconRefreshBatch()
             ns._memprobes = mp
             return mp
         end,
+        debugRegister = ns.DebugRegister,
         isEditModeActive = function()
             return Helpers.IsEditModeActive()
         end,
@@ -1061,16 +1046,16 @@ local function BuildDurationBindingKey(mode, sourceID)
         end
         local key = typeCache[sourceID]
         if key then
-            durationBindingStats.keyCacheHits = durationBindingStats.keyCacheHits + 1
+            if durationBindingStats then durationBindingStats.keyCacheHits = durationBindingStats.keyCacheHits + 1 end
             return key
         end
         key = mode .. ":" .. tostring(sourceID)
         typeCache[sourceID] = key
-        durationBindingStats.keyBuilds = durationBindingStats.keyBuilds + 1
+        if durationBindingStats then durationBindingStats.keyBuilds = durationBindingStats.keyBuilds + 1 end
         return key
     end
 
-    durationBindingStats.keyBuilds = durationBindingStats.keyBuilds + 1
+    if durationBindingStats then durationBindingStats.keyBuilds = durationBindingStats.keyBuilds + 1 end
     return mode .. ":" .. tostring(sourceID)
 end
 
@@ -1465,11 +1450,11 @@ ApplyResolvedCooldown = function(icon, preResolvedState)
     local entry = icon._spellEntry
     local useBuffSwipe = _resolverRuntimePolicy.ShouldUseBuffSwipeForIcon(icon, entry)
     local skipAuraPhase = _resolverRuntimePolicy.ShouldSkipAuraPhaseForCooldownIcon(icon, entry)
-    local measure = ns.MemAuditProfilerMeasure
+    local measure = measureFn
     local stateContext
     local resolvedState = preResolvedState
     if resolvedState then
-        durationBindingStats.resolvedStateReuses = durationBindingStats.resolvedStateReuses + 1
+        if durationBindingStats then durationBindingStats.resolvedStateReuses = durationBindingStats.resolvedStateReuses + 1 end
     else
         if measure then
             stateContext = measure(
@@ -2193,8 +2178,8 @@ local function GetMacroTooltipSpell(body)
 end
 
 -- Session cache: spellID → macroName or false. Invalidated on UPDATE_MACROS.
+-- CDM_macroCache memprobe registered in SetupDebugInstrumentation (debug gate)
 local _macroCache = {}
-do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "CDM_macroCache", tbl = _macroCache } end
 
 local function InvalidateMacroCache()
     wipe(_macroCache)
@@ -5515,6 +5500,7 @@ end
 updateScheduler = CreateIconUpdateScheduler()
 
 local function NoteFullUpdateSchedule(reason)
+    if not fullUpdateScheduleStats then return end
     fullUpdateScheduleStats.total = fullUpdateScheduleStats.total + 1
     if reason == "request" then
         fullUpdateScheduleStats.request = fullUpdateScheduleStats.request + 1
@@ -5632,7 +5618,7 @@ end
 -- CDMIconRuntimeRefresh; CDMIcons supplies renderer mutations as callbacks.
 
 cdEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
-    local profileStart = debugprofilestop and debugprofilestop()
+    local profileStart = _resolverRuntimePolicy.eventProfilingActive and debugprofilestop and debugprofilestop()
     -- arg4 is forwarded for the event trace only — SPELL_UPDATE_COOLDOWN
     -- carries (spellID, baseSpellID, category, startRecoveryCategory) per
     -- SpellBookDocumentation.lua:859. The runtime refresh path stays on
@@ -5641,10 +5627,15 @@ cdEventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3, arg4)
     CDMIcons.EventTracePrint("frame-pre", event, arg1, arg2, arg3, arg4)
     _resolverRuntimePolicy.HandleRuntimeRefresh(event, arg1, arg2, arg3, self)
     CDMIcons.EventTracePrint("frame-post", event, arg1, arg2, arg3, arg4)
-    if profileStart and debugprofilestop then
-        CDMIcons.RecordEventProfile(event, debugprofilestop() - profileStart)
-    else
-        CDMIcons.RecordEventProfile(event, 0)
+    -- Re-check the flag, not just profileStart: keeps the inactive path free
+    -- of RecordEventProfile work; profileStart alone is falsy when
+    -- debugprofilestop is unavailable (call counts still recorded then).
+    if _resolverRuntimePolicy.eventProfilingActive then
+        if profileStart and debugprofilestop then
+            CDMIcons.RecordEventProfile(event, debugprofilestop() - profileStart)
+        else
+            CDMIcons.RecordEventProfile(event, 0)
+        end
     end
 end)
 
@@ -5653,8 +5644,39 @@ end)
 -- CooldownManager settings callback because that path is unrelated to the
 -- composer's owned catalog.
 
-ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_Icons", frame = cdEventFrame }
+local function SetupDebugInstrumentation()
+    durationBindingStats = { keyBuilds = 0, keyCacheHits = 0, resolvedStateReuses = 0 }
+    fullUpdateScheduleStats = {
+        total = 0,
+        request = 0,
+        mirrorFallback = 0,
+        runtime = 0,
+        deferred = 0,
+        hotfix = 0,
+        other = 0,
+    }
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "CDM_macroCache", tbl = _macroCache }
+    mp[#mp + 1] = { name = "CDM_durationBindingKeys", counter = true, fn = function() return durationBindingStats.keyBuilds end }
+    mp[#mp + 1] = { name = "CDM_durationBindingKeyCacheHits", counter = true, fn = function() return durationBindingStats.keyCacheHits end }
+    mp[#mp + 1] = { name = "CDM_applyResolvedStateReuses", counter = true, fn = function() return durationBindingStats.resolvedStateReuses end }
+    mp[#mp + 1] = { name = "CDM_fullUpdateSchedules", counter = true, fn = function() return fullUpdateScheduleStats.total end }
+    mp[#mp + 1] = { name = "CDM_fullUpdateScheduleRequest", counter = true, fn = function() return fullUpdateScheduleStats.request end }
+    mp[#mp + 1] = { name = "CDM_fullUpdateScheduleMirrorFallback", counter = true, fn = function() return fullUpdateScheduleStats.mirrorFallback end }
+    mp[#mp + 1] = { name = "CDM_fullUpdateScheduleRuntime", counter = true, fn = function() return fullUpdateScheduleStats.runtime end }
+    mp[#mp + 1] = { name = "CDM_fullUpdateScheduleDeferred", counter = true, fn = function() return fullUpdateScheduleStats.deferred end }
+    mp[#mp + 1] = { name = "CDM_fullUpdateScheduleHotfix", counter = true, fn = function() return fullUpdateScheduleStats.hotfix end }
+    mp[#mp + 1] = { name = "CDM_fullUpdateScheduleOther", counter = true, fn = function() return fullUpdateScheduleStats.other end }
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_Icons", frame = cdEventFrame }
+    measureFn = ns.MemAuditProfilerMeasure
+    _resolverRuntimePolicy.eventProfilingActive = true
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end
 
 -- Exporters for /qui cdm_cache reset / status.
 function CDMIcons:ClearTextureCycleCache()
@@ -5671,6 +5693,7 @@ end
 
 do
     local mirrorController = ns.CDMIconMirrorIndex and ns.CDMIconMirrorIndex.Create({
+        debugRegister = ns.DebugRegister,
         isRuntimeEnabled = function()
             return CDMIcons:IsRuntimeEnabled()
         end,

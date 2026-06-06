@@ -1400,8 +1400,15 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     end
 end)
 
-ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDMBuffLayout", frame = eventFrame }
+local function SetupDebugInstrumentation()
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDMBuffLayout", frame = eventFrame }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end
 
 ---------------------------------------------------------------------------
 -- OWNED ENGINE API

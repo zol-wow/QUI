@@ -39,6 +39,9 @@ end
 function CDMIconRefreshBatch.Create(callbacks)
     callbacks = callbacks or {}
 
+    -- Flag (not a nil stats table) because controller.stats is public surface
+    -- via GetStats(); false until the injected debugRegister activates stats.
+    local statsActive = false
     local controller = {
         stats = createStats(),
         ncdm = nil,
@@ -106,10 +109,12 @@ function CDMIconRefreshBatch.Create(callbacks)
     end
 
     function controller:Begin(reason)
-        if reason and controller.stats[reason] ~= nil then
-            controller.stats[reason] = controller.stats[reason] + 1
-        else
-            controller.stats.other = controller.stats.other + 1
+        if statsActive then
+            if reason and controller.stats[reason] ~= nil then
+                controller.stats[reason] = controller.stats[reason] + 1
+            else
+                controller.stats.other = controller.stats.other + 1
+            end
         end
         if callbacks.beginRuntimeQueryBatch then
             callbacks.beginRuntimeQueryBatch()
@@ -142,6 +147,14 @@ function CDMIconRefreshBatch.Create(callbacks)
         return controller.stats
     end
 
-    registerMemProbes()
+    local function activateStats()
+        statsActive = true
+        registerMemProbes()
+    end
+    if callbacks.debugRegister then
+        callbacks.debugRegister(activateStats)
+    else
+        activateStats() -- no gate injected (tests): eager, preserves existing behavior
+    end
     return controller
 end

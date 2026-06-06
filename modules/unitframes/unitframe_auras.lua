@@ -74,7 +74,15 @@ local DEBUFF_CLASSIFICATION_MAP = {
 ---------------------------------------------------------------------------
 local AURA_THROTTLE = 0.15  -- Update every 150ms max
 local lastAuraUpdate = {}
-do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "UFA_lastAuraUpdate", tbl = lastAuraUpdate } end
+local function SetupDebugInstrumentation()
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "UFA_lastAuraUpdate", tbl = lastAuraUpdate }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end
 
 -- Expose for QUI_RefreshAuras in unitframes.lua
 QUI_UF._lastAuraUpdate = lastAuraUpdate

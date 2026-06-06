@@ -17,26 +17,33 @@ env.SetChunkEnv(1, env)
 -- 200 file-scope local variable limit.  Public functions are stored as
 -- ActionBarsOwned fields.
 
-_abCooldownStats = {
-    events = 0,
-    batches = 0,
-    buttons = 0,
-    actionCooldownQueries = 0,
-    actionCooldownHits = 0,
-    actionCooldownActiveHits = 0,
-    actionCooldownInactiveSkips = 0,
-    actionDurationQueries = 0,
-    actionDurationHits = 0,
-    actionDurationActiveHits = 0,
-    chargeInfoQueries = 0,
-    chargeInfoSkips = 0,
-    chargeInfoActive = 0,
-    chargeDurationQueries = 0,
-    chargeDurationActive = 0,
-    lossOfControlInfoQueries = 0,
-    lossOfControlDurationQueries = 0,
-}
-do local mp = ns._memprobes or {}; ns._memprobes = mp
+-- Local upvalue for do-block increment guards (luacheck-clean).
+-- Also written to the same-named GLOBAL so actionbars_events.lua can
+-- increment _abCooldownStats.events without a cross-file require.
+-- Nil until QUI_Debug activates instrumentation (debug gate).
+local _abCooldownStats -- debug counters
+local function SetupDebugInstrumentation()
+    _abCooldownStats = {
+        events = 0,
+        batches = 0,
+        buttons = 0,
+        actionCooldownQueries = 0,
+        actionCooldownHits = 0,
+        actionCooldownActiveHits = 0,
+        actionCooldownInactiveSkips = 0,
+        actionDurationQueries = 0,
+        actionDurationHits = 0,
+        actionDurationActiveHits = 0,
+        chargeInfoQueries = 0,
+        chargeInfoSkips = 0,
+        chargeInfoActive = 0,
+        chargeDurationQueries = 0,
+        chargeDurationActive = 0,
+        lossOfControlInfoQueries = 0,
+        lossOfControlDurationQueries = 0,
+    }
+    _G._abCooldownStats = _abCooldownStats -- global alias for actionbars_events.lua (loads after this file per actionbars.xml; picks the alias up in its own gated setup)
+    local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "AB_cooldownEvents",  counter = true, fn = function() return _abCooldownStats.events  end }
     mp[#mp + 1] = { name = "AB_cooldownBatches", counter = true, fn = function() return _abCooldownStats.batches end }
     mp[#mp + 1] = { name = "AB_cooldownButtons", counter = true, fn = function() return _abCooldownStats.buttons end }
@@ -54,6 +61,14 @@ do local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "AB_chargeDurationActive", counter = true, fn = function() return _abCooldownStats.chargeDurationActive end }
     mp[#mp + 1] = { name = "AB_lossOfControlInfoQueries", counter = true, fn = function() return _abCooldownStats.lossOfControlInfoQueries end }
     mp[#mp + 1] = { name = "AB_lossOfControlDurationQueries", counter = true, fn = function() return _abCooldownStats.lossOfControlDurationQueries end }
+    -- AB_chargeCapabilityCache probe is registered inside the do-block below
+    -- (after the gate registration below it) because _buttonChargeAction is
+    -- declared there; the probe fn closes over it safely at that point.
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
 do
@@ -138,7 +153,11 @@ do
     local _batchChargeMayHaveCharges = {}
     local _batchChargeDurationSeen = {}
     local _batchChargeDurationObject = {}
-    do local mp = ns._memprobes or {}; ns._memprobes = mp
+    -- AB_chargeCapabilityCache probe: registered here because _buttonChargeAction
+    -- is declared in this do-block, via its own gate registration (the file's
+    -- main SetupDebugInstrumentation can't see this local).
+    local function SetupChargeCacheProbe()
+        local mp = ns._memprobes or {}; ns._memprobes = mp
         mp[#mp + 1] = {
             name = "AB_chargeCapabilityCache",
             fn = function()
@@ -147,6 +166,11 @@ do
                 return count, 0
             end,
         }
+    end
+    if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+        ns.DebugRegister(SetupChargeCacheProbe)
+    else
+        SetupChargeCacheProbe() -- standalone test harness: no gate, run eagerly
     end
 
     local function ResetButtonCooldownRuntimeCache(button)
@@ -228,11 +252,11 @@ do
         if actionCanBeCached
             and _cooldownBatchActive
             and _batchCooldownInfoSeen[action] == _cooldownBatchToken then
-            _abCooldownStats.actionCooldownHits = _abCooldownStats.actionCooldownHits + 1
+            if _abCooldownStats then _abCooldownStats.actionCooldownHits = _abCooldownStats.actionCooldownHits + 1 end
             return _batchCooldownInfo[action] or DEFAULT_CD_INFO
         end
 
-        _abCooldownStats.actionCooldownQueries = _abCooldownStats.actionCooldownQueries + 1
+        if _abCooldownStats then _abCooldownStats.actionCooldownQueries = _abCooldownStats.actionCooldownQueries + 1 end
         local cdInfo = C_ActionBar.GetActionCooldown(action) or DEFAULT_CD_INFO
         if actionCanBeCached and _cooldownBatchActive then
             _batchCooldownInfoSeen[action] = _cooldownBatchToken
@@ -247,11 +271,11 @@ do
         if actionCanBeCached
             and _cooldownBatchActive
             and _batchCooldownDurationSeen[action] == _cooldownBatchToken then
-            _abCooldownStats.actionDurationHits = _abCooldownStats.actionDurationHits + 1
+            if _abCooldownStats then _abCooldownStats.actionDurationHits = _abCooldownStats.actionDurationHits + 1 end
             return _batchCooldownDurationObject[action]
         end
 
-        _abCooldownStats.actionDurationQueries = _abCooldownStats.actionDurationQueries + 1
+        if _abCooldownStats then _abCooldownStats.actionDurationQueries = _abCooldownStats.actionDurationQueries + 1 end
         local durationObject = C_ActionBar.GetActionCooldownDuration(action)
         if actionCanBeCached and _cooldownBatchActive then
             _batchCooldownDurationSeen[action] = _cooldownBatchToken
@@ -267,10 +291,12 @@ do
             if type(expiresAt) == "number" and GetTime() < expiresAt - 0.05 then
                 local durationObject = _buttonCooldownDurationObject[button]
                 if durationObject then
-                    _abCooldownStats.actionCooldownHits = _abCooldownStats.actionCooldownHits + 1
-                    _abCooldownStats.actionCooldownActiveHits = _abCooldownStats.actionCooldownActiveHits + 1
-                    _abCooldownStats.actionDurationHits = _abCooldownStats.actionDurationHits + 1
-                    _abCooldownStats.actionDurationActiveHits = _abCooldownStats.actionDurationActiveHits + 1
+                    if _abCooldownStats then
+                        _abCooldownStats.actionCooldownHits = _abCooldownStats.actionCooldownHits + 1
+                        _abCooldownStats.actionCooldownActiveHits = _abCooldownStats.actionCooldownActiveHits + 1
+                        _abCooldownStats.actionDurationHits = _abCooldownStats.actionDurationHits + 1
+                        _abCooldownStats.actionDurationActiveHits = _abCooldownStats.actionDurationActiveHits + 1
+                    end
                     return _buttonCooldownInfo[button] or DEFAULT_CD_INFO, durationObject, true
                 end
             end
@@ -278,8 +304,10 @@ do
             local inactiveAt = _buttonCooldownInactiveAt[button]
             if type(inactiveAt) == "number"
                 and GetTime() - inactiveAt < INACTIVE_COOLDOWN_CACHE_TTL then
-                _abCooldownStats.actionCooldownHits = _abCooldownStats.actionCooldownHits + 1
-                _abCooldownStats.actionCooldownInactiveSkips = _abCooldownStats.actionCooldownInactiveSkips + 1
+                if _abCooldownStats then
+                    _abCooldownStats.actionCooldownHits = _abCooldownStats.actionCooldownHits + 1
+                    _abCooldownStats.actionCooldownInactiveSkips = _abCooldownStats.actionCooldownInactiveSkips + 1
+                end
                 return DEFAULT_CD_INFO, nil, false
             end
         end
@@ -339,7 +367,7 @@ do
             and _cooldownBatchActive
             and _batchChargeInfoSeen[action] == _cooldownBatchToken then
             if _batchChargeMayHaveCharges[action] == false then
-                _abCooldownStats.chargeInfoSkips = _abCooldownStats.chargeInfoSkips + 1
+                if _abCooldownStats then _abCooldownStats.chargeInfoSkips = _abCooldownStats.chargeInfoSkips + 1 end
             end
             return _batchChargeActive[action] or nil
         end
@@ -347,11 +375,11 @@ do
         if actionCanBeCached
             and _buttonChargeAction[button] == action
             and _buttonMayHaveCharges[button] == false then
-            _abCooldownStats.chargeInfoSkips = _abCooldownStats.chargeInfoSkips + 1
+            if _abCooldownStats then _abCooldownStats.chargeInfoSkips = _abCooldownStats.chargeInfoSkips + 1 end
             return nil
         end
 
-        _abCooldownStats.chargeInfoQueries = _abCooldownStats.chargeInfoQueries + 1
+        if _abCooldownStats then _abCooldownStats.chargeInfoQueries = _abCooldownStats.chargeInfoQueries + 1 end
         local chargeInfo = C_ActionBar.GetActionCharges(action)
         local mayHaveCharges = ChargeInfoMayHaveCharges(chargeInfo)
         if actionCanBeCached then
@@ -364,7 +392,7 @@ do
         end
         local chargeActive = chargeInfo and DecodePotentialSecretBoolean(chargeInfo.isActive)
         if mayHaveCharges and chargeActive == true then
-            _abCooldownStats.chargeInfoActive = _abCooldownStats.chargeInfoActive + 1
+            if _abCooldownStats then _abCooldownStats.chargeInfoActive = _abCooldownStats.chargeInfoActive + 1 end
             if actionCanBeCached and _cooldownBatchActive then
                 _batchChargeActive[action] = true
             end
@@ -385,14 +413,14 @@ do
             return _batchChargeDurationObject[action]
         end
 
-        _abCooldownStats.chargeDurationQueries = _abCooldownStats.chargeDurationQueries + 1
+        if _abCooldownStats then _abCooldownStats.chargeDurationQueries = _abCooldownStats.chargeDurationQueries + 1 end
         local durationObject = C_ActionBar.GetActionChargeDuration(action)
         if actionCanBeCached and _cooldownBatchActive then
             _batchChargeDurationSeen[action] = _cooldownBatchToken
             _batchChargeDurationObject[action] = durationObject
         end
         if durationObject then
-            _abCooldownStats.chargeDurationActive = _abCooldownStats.chargeDurationActive + 1
+            if _abCooldownStats then _abCooldownStats.chargeDurationActive = _abCooldownStats.chargeDurationActive + 1 end
         end
         return durationObject
     end
@@ -402,7 +430,7 @@ do
         -- saved Lua op compounds to measurable ms/sec in raid combat.
         -- `button.action` is always set by SafeSyncAction/state driver,
         -- so the GetAttribute fallback is dead code and has been removed.
-        _abCooldownStats.buttons = _abCooldownStats.buttons + 1
+        if _abCooldownStats then _abCooldownStats.buttons = _abCooldownStats.buttons + 1 end
         local action = button.action
         if not action or action == 0 then return end
 
@@ -432,7 +460,7 @@ do
 
             -- Button is on cooldown and/or recharging a charge — LoC is the
             -- remaining query.
-            _abCooldownStats.lossOfControlInfoQueries = _abCooldownStats.lossOfControlInfoQueries + 1
+            if _abCooldownStats then _abCooldownStats.lossOfControlInfoQueries = _abCooldownStats.lossOfControlInfoQueries + 1 end
             local locInfo = C_ActionBar.GetActionLossOfControlCooldownInfo(action) or DEFAULT_LOC_INFO
 
             local locActive = DecodePotentialSecretBoolean(locInfo.isActive)
@@ -457,7 +485,7 @@ do
 
             -- Loss of control cooldown (lazy-create frame)
             if showLoC then
-                _abCooldownStats.lossOfControlDurationQueries = _abCooldownStats.lossOfControlDurationQueries + 1
+                if _abCooldownStats then _abCooldownStats.lossOfControlDurationQueries = _abCooldownStats.lossOfControlDurationQueries + 1 end
                 SetOrClearCooldown(GetOrCreateLoCCooldown(button), true, C_ActionBar.GetActionLossOfControlCooldownDuration(action))
             elseif button.lossOfControlCooldown then
                 button.lossOfControlCooldown:Clear()
@@ -477,7 +505,7 @@ do
         local now = GetTime()
         if now == _lastCdUpdateTime then return end
         _lastCdUpdateTime = now
-        _abCooldownStats.batches = _abCooldownStats.batches + 1
+        if _abCooldownStats then _abCooldownStats.batches = _abCooldownStats.batches + 1 end
 
         -- Fast path: iterate only buttons with actions (LibActionButton
         -- pattern). Typical raid: ~30-50 active of 96 total.
@@ -515,4 +543,3 @@ do
     end
 
 end -- do block (cooldown ownership)
-

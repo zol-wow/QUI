@@ -178,9 +178,15 @@ local barTimerAnim = barTimerGroup:CreateAnimation()
 barTimerAnim:SetDuration(0.1)  -- 100ms = ~10 FPS
 barTimerGroup:SetLooping("REPEAT")
 
-do local mp = ns._memprobes or {}; ns._memprobes = mp
+local function SetupDebugInstrumentation()
+    local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "CDM_barPool",      tbl = barPool }
     mp[#mp + 1] = { name = "CDM_barRecycle",   tbl = recyclePool }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
 -- Stored refs for periodic re-layout after ticker updates _active state

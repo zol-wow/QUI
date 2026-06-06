@@ -47,7 +47,9 @@ function CDMIconMirrorIndex.Create(callbacks)
         refreshDelay = 0,
     }
 
-    do
+    local mirrorStatsActive = false -- false until QUI_Debug activates instrumentation (debug gate)
+    local function activateStats()
+        mirrorStatsActive = true
         local mp = ns._memprobes or {}; ns._memprobes = mp
         mp[#mp + 1] = {
             name = "CDM_mirrorRefreshUnscopedSkips",
@@ -56,6 +58,11 @@ function CDMIconMirrorIndex.Create(callbacks)
                 return controller.stats.fallback or 0
             end,
         }
+    end
+    if callbacks.debugRegister then
+        callbacks.debugRegister(activateStats)
+    else
+        activateStats() -- no gate injected (tests): eager, preserves existing behavior
     end
 
     local function getIconSet(category, cooldownID, create)
@@ -179,7 +186,7 @@ function CDMIconMirrorIndex.Create(callbacks)
         if batchKeys == 0 then return end
 
         local stats = controller.stats
-        if batchKeys > stats.maxBatch then
+        if mirrorStatsActive and batchKeys > stats.maxBatch then
             stats.maxBatch = batchKeys
         end
 
@@ -229,7 +236,7 @@ function CDMIconMirrorIndex.Create(callbacks)
             end
         end
 
-        stats.targeted = stats.targeted + effectiveKeys
+        if mirrorStatsActive then stats.targeted = stats.targeted + effectiveKeys end
 
         if batchStarted then
             if callbacks.setStackTextWrites then
@@ -259,7 +266,7 @@ function CDMIconMirrorIndex.Create(callbacks)
         if callbacks.isRuntimeEnabled and not callbacks.isRuntimeEnabled() then return end
 
         if not (cooldownID and category) then
-            controller.stats.fallback = controller.stats.fallback + 1
+            if mirrorStatsActive then controller.stats.fallback = controller.stats.fallback + 1 end
             return
         end
 

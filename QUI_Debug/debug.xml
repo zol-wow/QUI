@@ -6,4 +6,6 @@
     <Script file="combat_end_profiler.lua"/>
     <Script file="aura_probe.lua"/>
     <Script file="cdm_debug.lua"/>
+    <!-- activate.lua must stay LAST: drains the main addon's debug-instrumentation gate -->
+    <Script file="activate.lua"/>
 </Ui>

@@ -815,8 +815,15 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
     end
 end)
 
-ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "SpellScanner_Events", frame = eventFrame }
+local function SetupDebugInstrumentation()
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "SpellScanner_Events", frame = eventFrame }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end
 
 -- Cleanup ticker starts on-demand when buffs are tracked (see EnsureCleanupTicker)
 

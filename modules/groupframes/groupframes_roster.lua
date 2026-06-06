@@ -86,12 +86,6 @@ local THROTTLE_INTERVAL = 0.1
 local UpdateSelectiveEvents
 local gruCoalesceFrame = CreateFrame("Frame")
 gruCoalesceFrame:Hide()
-do
-    local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "GF_powerThrottle", tbl = powerThrottle }
-    mp[#mp + 1] = { name = "GF_absorbThrottle", tbl = absorbThrottle }
-    mp[#mp + 1] = { name = "GF_healPredThrottle", tbl = healPredThrottle }
-end
 
 local function IsCliqueLoaded()
     if _G.C_AddOns and _G.C_AddOns.IsAddOnLoaded then
@@ -897,9 +891,20 @@ function _state.SetUnitEventActive(event, active)
     end
 end
 
--- Perf profiler opt-in (no-op until /qui perf → Modules toggle)
-ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GroupFrames", frame = eventFrame }
+local function SetupDebugInstrumentation()
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "GF_powerThrottle", tbl = powerThrottle }
+    mp[#mp + 1] = { name = "GF_absorbThrottle", tbl = absorbThrottle }
+    mp[#mp + 1] = { name = "GF_healPredThrottle", tbl = healPredThrottle }
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GroupFrames", frame = eventFrame }
+end
+
+if ns.DebugRegister then
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation()
+end
 
 ---------------------------------------------------------------------------
 -- EVENT REGISTRATION

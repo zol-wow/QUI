@@ -264,12 +264,8 @@ local activeGlowIcons = {}  -- [icon] = true
 local spellIdToGlowIcons = {}  -- [spellID] = {icon, ...}
 local procOnUsableGlowIcons = {}
 local procOnUsableGlowMapReady = false
-do local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "CDM_overlayedSpells",       tbl = overlayedSpells }
-    mp[#mp + 1] = { name = "CDM_glowSpellMap",          tbl = spellIdToGlowIcons }
-    mp[#mp + 1] = { name = "CDM_procOnUsableGlowIcons", tbl = procOnUsableGlowIcons }
-    mp[#mp + 1] = { name = "CDM_activeGlows",           tbl = activeGlowIcons }
-end
+-- SetupDebugInstrumentation is defined at the bottom of the file (it captures
+-- eventFrame for QUI_PerfRegistry).
 
 local function AddGlowMapID(spellID, icon)
     if not spellID then return end
@@ -954,8 +950,20 @@ eventFrame:SetScript("OnEvent", function(_, event, spellID)
     ScanAllGlows()
 end)
 
-ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_Glows", frame = eventFrame }
+local function SetupDebugInstrumentation()
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "CDM_overlayedSpells",       tbl = overlayedSpells }
+    mp[#mp + 1] = { name = "CDM_glowSpellMap",          tbl = spellIdToGlowIcons }
+    mp[#mp + 1] = { name = "CDM_procOnUsableGlowIcons", tbl = procOnUsableGlowIcons }
+    mp[#mp + 1] = { name = "CDM_activeGlows",           tbl = activeGlowIcons }
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_Glows", frame = eventFrame }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end
 
 local function DisableRuntime()
     eventFrame:UnregisterAllEvents()

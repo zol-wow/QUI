@@ -118,7 +118,8 @@ local COLORS = {
 local frameState, GetFrameState = Helpers.CreateStateTable()
 local _fontCache = {}
 local _backdropCache = {}
-do
+
+local function SetupDebugInstrumentation()
     local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "GF_fontCache", tbl = _fontCache }
     mp[#mp + 1] = { name = "GF_backdropCache", tbl = _backdropCache }
@@ -127,6 +128,12 @@ do
     mp[#mp + 1] = { name = "GF_unitFrameMap", fn = function() local count, deep = 0, 0; for _, list in pairs(QUI_GF.unitFrameMap) do count = count + 1; if type(list) == "table" then deep = deep + #list end end; return count, deep end }
     mp[#mp + 1] = { name = "GF_unitEventFrames", fn = function() local n = 0; for _ in pairs(_state.unitEventFrames) do n = n + 1 end; return n, 0 end }
     mp[#mp + 1] = { name = "GF_allFrames", fn = function() return #QUI_GF.allFrames, 0 end }
+end
+
+if ns.DebugRegister then
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation()
 end
 
 local RAID_SECTION_ROLE_ORDER = { "TANK", "HEALER", "DAMAGER", "NONE" }

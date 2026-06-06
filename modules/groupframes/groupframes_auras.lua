@@ -93,47 +93,49 @@ local framePrevBuffCount = Helpers.CreateStateTable()
 -- Full scans rebuild the entire structure; UNIT_AURA deltas patch it
 -- incrementally and re-run the rebuilders for any side that changed.
 local unitAuraCache = {}
-local auraStats = {
-    fullScans = 0,
-    slotScans = 0,
-    legacyScans = 0,
-    deltaApplied = 0,
-    deltaFallback = 0,
-    fastUpdates = 0,
-    fullUpdateEvents = 0,
-    deltaAddedAuras = 0,
-    deltaRemovedAuras = 0,
-    deltaUpdatedIDs = 0,
-    deltaUpdatedSkipped = 0,
-    deltaFreshFetches = 0,
-    deltaMixedDeltas = 0,
-    mixedIconRefreshes = 0,
-    panelBuffRebuilds = 0,
-    panelDebuffRebuilds = 0,
-    panelBuffIncrementalAttempts = 0,
-    panelBuffIncremental = 0,
-    panelBuffIncrementalDirtySkip = 0,
-    panelBuffIncrementalFilterSkip = 0,
-    panelBuffIncrementalChanged = 0,
-    panelBuffIncrementalNoop = 0,
-    defensiveSetChanges = 0,
-    curatedMatchRefreshes = 0,
-    indicatorMatchChanges = 0,
-    pinnedMatchChanges = 0,
-    indicatorFrameRefreshes = 0,
-    indicatorFrameSkips = 0,
-    pinnedFrameRefreshes = 0,
-    pinnedFrameSkips = 0,
-    panelFrameRefreshes = 0,
-    panelFrameSkips = 0,
-    panelFrameDisplaySkips = 0,
-    panelNoDisplay = 0,
-    panelIconUpdates = 0,
-    panelIconSkips = 0,
-    noConsumerSkips = 0,
-    framesRefreshed = 0,
-}
-do local mp = ns._memprobes or {}; ns._memprobes = mp
+local auraStats -- debug counters; nil until QUI_Debug activates instrumentation
+local function SetupDebugInstrumentation()
+    auraStats = {
+        fullScans = 0,
+        slotScans = 0,
+        legacyScans = 0,
+        deltaApplied = 0,
+        deltaFallback = 0,
+        fastUpdates = 0,
+        fullUpdateEvents = 0,
+        deltaAddedAuras = 0,
+        deltaRemovedAuras = 0,
+        deltaUpdatedIDs = 0,
+        deltaUpdatedSkipped = 0,
+        deltaFreshFetches = 0,
+        deltaMixedDeltas = 0,
+        mixedIconRefreshes = 0,
+        panelBuffRebuilds = 0,
+        panelDebuffRebuilds = 0,
+        panelBuffIncrementalAttempts = 0,
+        panelBuffIncremental = 0,
+        panelBuffIncrementalDirtySkip = 0,
+        panelBuffIncrementalFilterSkip = 0,
+        panelBuffIncrementalChanged = 0,
+        panelBuffIncrementalNoop = 0,
+        defensiveSetChanges = 0,
+        curatedMatchRefreshes = 0,
+        indicatorMatchChanges = 0,
+        pinnedMatchChanges = 0,
+        indicatorFrameRefreshes = 0,
+        indicatorFrameSkips = 0,
+        pinnedFrameRefreshes = 0,
+        pinnedFrameSkips = 0,
+        panelFrameRefreshes = 0,
+        panelFrameSkips = 0,
+        panelFrameDisplaySkips = 0,
+        panelNoDisplay = 0,
+        panelIconUpdates = 0,
+        panelIconSkips = 0,
+        noConsumerSkips = 0,
+        framesRefreshed = 0,
+    }
+    local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "GF_unitAuraCache", tbl = unitAuraCache }
     mp[#mp + 1] = { name = "GF_auraFullScans", fn = function() return auraStats.fullScans end, counter = true }
     mp[#mp + 1] = { name = "GF_auraSlotScans", fn = function() return auraStats.slotScans end, counter = true }
@@ -173,6 +175,12 @@ do local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "GF_auraPanelIconSkips", fn = function() return auraStats.panelIconSkips end, counter = true }
     mp[#mp + 1] = { name = "GF_auraNoConsumerSkips", fn = function() return auraStats.noConsumerSkips end, counter = true }
     mp[#mp + 1] = { name = "GF_auraFramesRefreshed", fn = function() return auraStats.framesRefreshed end, counter = true }
+    QUI_GFA.auraStats = auraStats -- debug export tracks the live table (nil until activation)
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
 local DISPEL_FILTER = "HARMFUL|RAID_PLAYER_DISPELLABLE"
@@ -665,11 +673,11 @@ local function ScanUnitAuras(unit)
     local cache = EnsureAuraCache(unit)
     ResetAuraCache(cache)
 
-    auraStats.fullScans = auraStats.fullScans + 1
+    if auraStats then auraStats.fullScans = auraStats.fullScans + 1 end
     if ScanUnitAurasBySlot(unit, cache) then
-        auraStats.slotScans = auraStats.slotScans + 1
+        if auraStats then auraStats.slotScans = auraStats.slotScans + 1 end
     elseif ScanUnitAurasLegacy(unit, cache) then
-        auraStats.legacyScans = auraStats.legacyScans + 1
+        if auraStats then auraStats.legacyScans = auraStats.legacyScans + 1 end
     else
         return cache
     end
@@ -703,11 +711,16 @@ local function ApplyAuraDelta(unit, updateInfo)
     local nRemoved = updateInfo.removedAuraInstanceIDs and #updateInfo.removedAuraInstanceIDs or 0
     local nUpdated = updateInfo.updatedAuraInstanceIDs and #updateInfo.updatedAuraInstanceIDs or 0
 
-    auraStats.deltaAddedAuras = auraStats.deltaAddedAuras + nAdded
-    auraStats.deltaRemovedAuras = auraStats.deltaRemovedAuras + nRemoved
-    auraStats.deltaUpdatedIDs = auraStats.deltaUpdatedIDs + nUpdated
-    if nUpdated > 0 and (nAdded > 0 or nRemoved > 0) then
-        auraStats.deltaMixedDeltas = auraStats.deltaMixedDeltas + 1
+    -- The mixed-delta condition is intentionally repeated in the functional
+    -- skipUpdatedFetches expression below; the guard body is stats-only and
+    -- must never absorb functional logic.
+    if auraStats then
+        auraStats.deltaAddedAuras = auraStats.deltaAddedAuras + nAdded
+        auraStats.deltaRemovedAuras = auraStats.deltaRemovedAuras + nRemoved
+        auraStats.deltaUpdatedIDs = auraStats.deltaUpdatedIDs + nUpdated
+        if nUpdated > 0 and (nAdded > 0 or nRemoved > 0) then
+            auraStats.deltaMixedDeltas = auraStats.deltaMixedDeltas + 1
+        end
     end
     local skipUpdatedFetches = nUpdated > 0
         and (nAdded > 0 or nRemoved > 0)
@@ -735,7 +748,7 @@ local function ApplyAuraDelta(unit, updateInfo)
 
     if updateInfo.updatedAuraInstanceIDs and #updateInfo.updatedAuraInstanceIDs > 0 then
         if skipUpdatedFetches then
-            auraStats.deltaUpdatedSkipped = auraStats.deltaUpdatedSkipped + nUpdated
+            if auraStats then auraStats.deltaUpdatedSkipped = auraStats.deltaUpdatedSkipped + nUpdated end
         else
             if not GetAuraByInstanceID then
                 return false
@@ -751,7 +764,7 @@ local function ApplyAuraDelta(unit, updateInfo)
                 end
 
                 if bucketName then
-                    auraStats.deltaFreshFetches = auraStats.deltaFreshFetches + 1
+                    if auraStats then auraStats.deltaFreshFetches = auraStats.deltaFreshFetches + 1 end
                     local freshAura = GetAuraByInstanceID(unit, instID)
                     if not freshAura then
                         return false
@@ -798,7 +811,7 @@ local function ApplyAuraDelta(unit, updateInfo)
             cache.panelBuffsDirty = true
             cache.panelBuffsChanged = true
         elseif ApplyBuffPanelDelta then
-            auraStats.panelBuffIncrementalAttempts = auraStats.panelBuffIncrementalAttempts + 1
+            if auraStats then auraStats.panelBuffIncrementalAttempts = auraStats.panelBuffIncrementalAttempts + 1 end
             if not ApplyBuffPanelDelta(unit, cache, updateInfo) then
                 cache.panelBuffsDirty = true
             end
@@ -814,7 +827,7 @@ local function ApplyAuraDelta(unit, updateInfo)
         cache.panelDebuffsChanged = true
     end
     if cache.defensiveSetChanged then
-        auraStats.defensiveSetChanges = auraStats.defensiveSetChanges + 1
+        if auraStats then auraStats.defensiveSetChanges = auraStats.defensiveSetChanges + 1 end
     end
 
     if (cache.panelBuffsDirty or cache.panelDebuffsDirty) and RebuildPanelSubsetsAndSort then
@@ -840,7 +853,7 @@ end
 
 -- Expose cache for other modules (dispel overlay, defensive indicator)
 QUI_GFA.unitAuraCache = unitAuraCache
-QUI_GFA.auraStats = auraStats
+-- QUI_GFA.auraStats is exported by SetupDebugInstrumentation (debug gate)
 QUI_GFA.ScanUnitAuras = ScanUnitAuras
 QUI_GFA.ApplyAuraDelta = ApplyAuraDelta
 QUI_GFA.PruneAuraCache = PruneAuraCache
@@ -1634,7 +1647,7 @@ end
 
 RefreshCuratedCacheMatches = function(unit, cache)
     if not cache then return end
-    auraStats.curatedMatchRefreshes = auraStats.curatedMatchRefreshes + 1
+    if auraStats then auraStats.curatedMatchRefreshes = auraStats.curatedMatchRefreshes + 1 end
     local forceRefresh = cache.curatedForceRefresh == true
     cache.curatedForceRefresh = nil
 
@@ -1643,7 +1656,7 @@ RefreshCuratedCacheMatches = function(unit, cache)
     if GFI and GFI.PopulateCacheMatches then
         indicatorChanged = GFI:PopulateCacheMatches(unit, cache) == true
         if indicatorChanged then
-            auraStats.indicatorMatchChanges = auraStats.indicatorMatchChanges + 1
+            if auraStats then auraStats.indicatorMatchChanges = auraStats.indicatorMatchChanges + 1 end
         end
     end
     cache.indicatorMatchesChanged = indicatorChanged or forceRefresh
@@ -1653,7 +1666,7 @@ RefreshCuratedCacheMatches = function(unit, cache)
     if GFP and GFP.PopulateCacheMatches then
         pinnedChanged = GFP:PopulateCacheMatches(unit, cache) == true
         if pinnedChanged then
-            auraStats.pinnedMatchChanges = auraStats.pinnedMatchChanges + 1
+            if auraStats then auraStats.pinnedMatchChanges = auraStats.pinnedMatchChanges + 1 end
         end
     end
     cache.pinnedMatchesChanged = pinnedChanged or forceRefresh
@@ -1662,11 +1675,11 @@ end
 ApplyBuffPanelDelta = function(unit, cache, updateInfo)
     if not cache or not updateInfo then return false end
     if cache.panelBuffsDirty then
-        auraStats.panelBuffIncrementalDirtySkip = auraStats.panelBuffIncrementalDirtySkip + 1
+        if auraStats then auraStats.panelBuffIncrementalDirtySkip = auraStats.panelBuffIncrementalDirtySkip + 1 end
         return false
     end
     if cachedFilterVersion ~= layoutVersion then
-        auraStats.panelBuffIncrementalFilterSkip = auraStats.panelBuffIncrementalFilterSkip + 1
+        if auraStats then auraStats.panelBuffIncrementalFilterSkip = auraStats.panelBuffIncrementalFilterSkip + 1 end
         return false
     end
 
@@ -1699,11 +1712,13 @@ ApplyBuffPanelDelta = function(unit, cache, updateInfo)
 
     cache.panelBuffsDirty = false
     cache.panelBuffsChanged = changed
-    auraStats.panelBuffIncremental = auraStats.panelBuffIncremental + 1
-    if changed then
-        auraStats.panelBuffIncrementalChanged = auraStats.panelBuffIncrementalChanged + 1
-    else
-        auraStats.panelBuffIncrementalNoop = auraStats.panelBuffIncrementalNoop + 1
+    if auraStats then
+        auraStats.panelBuffIncremental = auraStats.panelBuffIncremental + 1
+        if changed then
+            auraStats.panelBuffIncrementalChanged = auraStats.panelBuffIncrementalChanged + 1
+        else
+            auraStats.panelBuffIncrementalNoop = auraStats.panelBuffIncrementalNoop + 1
+        end
     end
     return true
 end
@@ -1773,7 +1788,7 @@ RebuildPanelSubsetsAndSort = function(unit, cache)
 
     if rebuildBuffs then
         cache.panelBuffsChanged = true
-        auraStats.panelBuffRebuilds = auraStats.panelBuffRebuilds + 1
+        if auraStats then auraStats.panelBuffRebuilds = auraStats.panelBuffRebuilds + 1 end
         local panelBuffs = cache.panelBuffs
         local panelBuffsSorted = cache.panelBuffsSorted
         wipe(panelBuffs)
@@ -1798,7 +1813,7 @@ RebuildPanelSubsetsAndSort = function(unit, cache)
 
     if rebuildDebuffs then
         cache.panelDebuffsChanged = true
-        auraStats.panelDebuffRebuilds = auraStats.panelDebuffRebuilds + 1
+        if auraStats then auraStats.panelDebuffRebuilds = auraStats.panelDebuffRebuilds + 1 end
         local panelDebuffs = cache.panelDebuffs
         local panelDebuffsSorted = cache.panelDebuffsSorted
         wipe(panelDebuffs)
@@ -2035,7 +2050,7 @@ local function UpdateFrameAuras(frame, forceIconRefresh)
     end
 
     if not panelBuffsEnabled and not panelDebuffsEnabled then
-        auraStats.panelNoDisplay = auraStats.panelNoDisplay + 1
+        if auraStats then auraStats.panelNoDisplay = auraStats.panelNoDisplay + 1 end
         if frame.debuffIcons then
             for _, icon in ipairs(frame.debuffIcons) do
                 ClearAuraIcon(icon)
@@ -2109,9 +2124,9 @@ local function UpdateFrameAuras(frame, forceIconRefresh)
                 if not forceIconRefresh and not needsLayout and icon:IsShown()
                     and state and state.auraInstanceID == auraData.auraInstanceID
                 then
-                    auraStats.panelIconSkips = auraStats.panelIconSkips + 1
+                    if auraStats then auraStats.panelIconSkips = auraStats.panelIconSkips + 1 end
                 else
-                    auraStats.panelIconUpdates = auraStats.panelIconUpdates + 1
+                    if auraStats then auraStats.panelIconUpdates = auraStats.panelIconUpdates + 1 end
                     icon._durationTextSettingKey = "showDebuffDurationText"
                     icon._durationUseTimeColorKey = "debuffDurationUseTimeColor"
                     icon._durationColorKey = "debuffDurationColor"
@@ -2225,9 +2240,9 @@ local function UpdateFrameAuras(frame, forceIconRefresh)
                 if not forceIconRefresh and not needsLayout and bIcon:IsShown()
                     and state and state.auraInstanceID == auraData.auraInstanceID
                 then
-                    auraStats.panelIconSkips = auraStats.panelIconSkips + 1
+                    if auraStats then auraStats.panelIconSkips = auraStats.panelIconSkips + 1 end
                 else
-                    auraStats.panelIconUpdates = auraStats.panelIconUpdates + 1
+                    if auraStats then auraStats.panelIconUpdates = auraStats.panelIconUpdates + 1 end
                     bIcon._durationTextSettingKey = "showBuffDurationText"
                     bIcon._durationUseTimeColorKey = "buffDurationUseTimeColor"
                     bIcon._durationColorKey = "buffDurationColor"
@@ -2361,7 +2376,7 @@ if ns.AuraEvents then
         local nFrames = #frames
         if nFrames == 0 then return end
         if not AnyVisibleFrameHasActiveAuraConsumers(frames, nFrames) then
-            auraStats.noConsumerSkips = auraStats.noConsumerSkips + 1
+            if auraStats then auraStats.noConsumerSkips = auraStats.noConsumerSkips + 1 end
             return
         end
 
@@ -2380,7 +2395,7 @@ if ns.AuraEvents then
             local updated = updateInfo.updatedAuraInstanceIDs
             local nUpdated = #updated
             if nUpdated == 0 then return end
-            auraStats.fastUpdates = auraStats.fastUpdates + 1
+            if auraStats then auraStats.fastUpdates = auraStats.fastUpdates + 1 end
 
             RefreshUpdatedAuraIcons(frames, nFrames, unit, updated)
             local GFI = ns.QUI_GroupFrameIndicators
@@ -2399,13 +2414,13 @@ if ns.AuraEvents then
             triedDelta = true
             cacheUpdated = ApplyAuraDelta(unit, updateInfo)
         elseif type(updateInfo) == "table" and updateInfo.isFullUpdate then
-            auraStats.fullUpdateEvents = auraStats.fullUpdateEvents + 1
+            if auraStats then auraStats.fullUpdateEvents = auraStats.fullUpdateEvents + 1 end
         end
         if cacheUpdated then
-            auraStats.deltaApplied = auraStats.deltaApplied + 1
+            if auraStats then auraStats.deltaApplied = auraStats.deltaApplied + 1 end
         else
             if triedDelta then
-                auraStats.deltaFallback = auraStats.deltaFallback + 1
+                if auraStats then auraStats.deltaFallback = auraStats.deltaFallback + 1 end
             end
             ScanUnitAuras(unit)
         end
@@ -2425,35 +2440,37 @@ if ns.AuraEvents then
         for f = 1, nFrames do
             local frame = frames[f]
             if frame:IsShown() then
-                auraStats.framesRefreshed = auraStats.framesRefreshed + 1
+                if auraStats then auraStats.framesRefreshed = auraStats.framesRefreshed + 1 end
                 if GF.UpdateDispelOverlay then GF:UpdateDispelOverlay(frame) end
                 if GF.UpdateDefensiveIndicator then GF:UpdateDefensiveIndicator(frame) end
                 if GFI and GFI.RefreshFrame then
                     if refreshIndicators then
-                        auraStats.indicatorFrameRefreshes = auraStats.indicatorFrameRefreshes + 1
+                        if auraStats then auraStats.indicatorFrameRefreshes = auraStats.indicatorFrameRefreshes + 1 end
                         GFI:RefreshFrame(frame)
                     else
-                        auraStats.indicatorFrameSkips = auraStats.indicatorFrameSkips + 1
+                        if auraStats then auraStats.indicatorFrameSkips = auraStats.indicatorFrameSkips + 1 end
                     end
                 end
                 if GFP and GFP.RefreshFrame then
                     if refreshPinned then
-                        auraStats.pinnedFrameRefreshes = auraStats.pinnedFrameRefreshes + 1
+                        if auraStats then auraStats.pinnedFrameRefreshes = auraStats.pinnedFrameRefreshes + 1 end
                         GFP:RefreshFrame(frame)
                     else
-                        auraStats.pinnedFrameSkips = auraStats.pinnedFrameSkips + 1
+                        if auraStats then auraStats.pinnedFrameSkips = auraStats.pinnedFrameSkips + 1 end
                     end
                 end
                 if refreshPanelAuras then
                     if PanelRefreshNeededForFrame(frame, cache) then
-                        auraStats.panelFrameRefreshes = auraStats.panelFrameRefreshes + 1
+                        if auraStats then auraStats.panelFrameRefreshes = auraStats.panelFrameRefreshes + 1 end
                         UpdateFrameAuras(frame, not cacheUpdated)
                     else
-                        auraStats.panelFrameSkips = auraStats.panelFrameSkips + 1
-                        auraStats.panelFrameDisplaySkips = auraStats.panelFrameDisplaySkips + 1
+                        if auraStats then
+                            auraStats.panelFrameSkips = auraStats.panelFrameSkips + 1
+                            auraStats.panelFrameDisplaySkips = auraStats.panelFrameDisplaySkips + 1
+                        end
                     end
                 else
-                    auraStats.panelFrameSkips = auraStats.panelFrameSkips + 1
+                    if auraStats then auraStats.panelFrameSkips = auraStats.panelFrameSkips + 1 end
                 end
             end
         end
@@ -2463,7 +2480,7 @@ if ns.AuraEvents then
         then
             local updated = updateInfo.updatedAuraInstanceIDs
             if RefreshUpdatedAuraIcons(frames, nFrames, unit, updateInfo.updatedAuraInstanceIDs) then
-                auraStats.mixedIconRefreshes = auraStats.mixedIconRefreshes + 1
+                if auraStats then auraStats.mixedIconRefreshes = auraStats.mixedIconRefreshes + 1 end
             end
             if GFI and GFI.RefreshUpdatedBars then
                 GFI:RefreshUpdatedBars(frames, nFrames, unit, updated)

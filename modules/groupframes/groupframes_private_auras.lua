@@ -67,10 +67,7 @@ local unitPrivateDispelState = {}
 local containerPool = {}
 local POOL_SIZE = 80
 
-do local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "GFPA_unitDispelState", tbl = unitPrivateDispelState }
-    mp[#mp + 1] = { name = "GFPA_containerPool",   tbl = containerPool }
-end
+-- memprobes registered in SetupDebugInstrumentation (debug gate)
 
 -- Deferred work
 local reanchorTimer = nil
@@ -653,5 +650,16 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     end
 end)
 
-ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_PrivateAuras", frame = eventFrame }
+local function SetupDebugInstrumentation()
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "GFPA_unitDispelState", tbl = unitPrivateDispelState }
+    mp[#mp + 1] = { name = "GFPA_containerPool",   tbl = containerPool }
+    -- Perf profiler opt-in (no-op until /qui perf → Modules toggle)
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_PrivateAuras", frame = eventFrame }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end

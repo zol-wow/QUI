@@ -80,13 +80,20 @@ spellIdToButtons = {}
 flyoutButtons = {}  -- buttons with flyout actions (checked as fallback)
 spellIdButtonListPool = {}
 spellIdMapDirty = true
-spellIdMapStats = { rebuilds = 0, dirtyMarks = 0, ensures = 0 }
-do local mp = ns._memprobes or {}; ns._memprobes = mp
+local spellIdMapStats -- debug counters; nil until QUI_Debug activates instrumentation
+local function SetupDebugInstrumentation()
+    spellIdMapStats = { rebuilds = 0, dirtyMarks = 0, ensures = 0 }
+    local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "AB_spellIdToButtons", tbl = spellIdToButtons }
     mp[#mp + 1] = { name = "AB_flyoutButtons",    tbl = flyoutButtons }
     mp[#mp + 1] = { name = "AB_spellIdListPool",  tbl = spellIdButtonListPool }
     mp[#mp + 1] = { name = "AB_spellIdMapRebuilds", counter = true, fn = function() return spellIdMapStats.rebuilds end }
     mp[#mp + 1] = { name = "AB_spellIdMapDirtyMarks", counter = true, fn = function() return spellIdMapStats.dirtyMarks end }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
 function AcquireSpellButtonList()
@@ -136,18 +143,18 @@ function RebuildSpellIdMap()
         end
     end
     spellIdMapDirty = false
-    spellIdMapStats.rebuilds = spellIdMapStats.rebuilds + 1
+    if spellIdMapStats then spellIdMapStats.rebuilds = spellIdMapStats.rebuilds + 1 end
 end
 
 MarkSpellIdMapDirty = function()
     if not spellIdMapDirty then
-        spellIdMapStats.dirtyMarks = spellIdMapStats.dirtyMarks + 1
+        if spellIdMapStats then spellIdMapStats.dirtyMarks = spellIdMapStats.dirtyMarks + 1 end
     end
     spellIdMapDirty = true
 end
 
 function EnsureSpellIdMap()
-    spellIdMapStats.ensures = spellIdMapStats.ensures + 1
+    if spellIdMapStats then spellIdMapStats.ensures = spellIdMapStats.ensures + 1 end
     if spellIdMapDirty then
         RebuildSpellIdMap()
     end

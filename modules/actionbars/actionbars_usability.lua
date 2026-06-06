@@ -6,11 +6,18 @@ env.SetChunkEnv(1, env)
 
 do
 
-_abUsabilityStats = { activeScans = 0, fallbackScans = 0, buttons = 0 }
-do local mp = ns._memprobes or {}; ns._memprobes = mp
+local _abUsabilityStats -- debug counters; nil until QUI_Debug activates instrumentation
+local function SetupDebugInstrumentation()
+    _abUsabilityStats = { activeScans = 0, fallbackScans = 0, buttons = 0 }
+    local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "AB_usabilityActiveScans", counter = true, fn = function() return _abUsabilityStats.activeScans end }
     mp[#mp + 1] = { name = "AB_usabilityFallbackScans", counter = true, fn = function() return _abUsabilityStats.fallbackScans end }
     mp[#mp + 1] = { name = "AB_usabilityButtons", counter = true, fn = function() return _abUsabilityStats.buttons end }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
 -- Get or create a QUI-owned tint overlay for range/usability coloring.
@@ -130,14 +137,14 @@ function UpdateAllButtonUsability()
 
     local activeStandardButtons = ActionBarsOwned._activeStandardButtons
     if activeStandardButtons and next(activeStandardButtons) ~= nil then
-        _abUsabilityStats.activeScans = _abUsabilityStats.activeScans + 1
+        if _abUsabilityStats then _abUsabilityStats.activeScans = _abUsabilityStats.activeScans + 1 end
         for button in pairs(activeStandardButtons) do
             local barKey = button._quiBarKey or GetBarKeyFromButton(button)
             local fadeState = ActionBarsOwned.fadeState and ActionBarsOwned.fadeState[barKey]
             if (not fadeState or fadeState.currentAlpha > 0)
                 and (not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(button, barKey))
                 and (not button.IsVisible or button:IsVisible()) then
-                _abUsabilityStats.buttons = _abUsabilityStats.buttons + 1
+                if _abUsabilityStats then _abUsabilityStats.buttons = _abUsabilityStats.buttons + 1 end
                 UpdateButtonUsability(button, globalSettings)
             elseif IsButtonInsideVisibleLayout and not IsButtonInsideVisibleLayout(button, barKey) then
                 ActionBarsOwned._activeButtons[button] = nil
@@ -148,14 +155,14 @@ function UpdateAllButtonUsability()
     end
 
     -- Fallback before the first visual pass has populated _activeButtons.
-    _abUsabilityStats.fallbackScans = _abUsabilityStats.fallbackScans + 1
+    if _abUsabilityStats then _abUsabilityStats.fallbackScans = _abUsabilityStats.fallbackScans + 1 end
     for _, barKey in ipairs(STANDARD_BAR_KEYS) do
         local fadeState = ActionBarsOwned.fadeState and ActionBarsOwned.fadeState[barKey]
         if not fadeState or fadeState.currentAlpha > 0 then
             for _, button in ipairs(GetBarButtons(barKey)) do
                 if (not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(button, barKey))
                     and (not button.IsVisible or button:IsVisible()) then
-                    _abUsabilityStats.buttons = _abUsabilityStats.buttons + 1
+                    if _abUsabilityStats then _abUsabilityStats.buttons = _abUsabilityStats.buttons + 1 end
                     UpdateButtonUsability(button, globalSettings)
                 end
             end

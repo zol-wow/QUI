@@ -140,7 +140,7 @@ AuraEvents._RecountSubscribers = RecountSubscribers
 ---------------------------------------------------------------------------
 -- Per-unit scratch tables for merging (pre-allocated, reused via wipe)
 local mergedInfoPool = {}  -- [unit] = { addedAuras = {}, removed... = {}, updated... = {} }
-do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "AuraEvt_mergedInfoPool", tbl = mergedInfoPool } end
+-- AuraEvt_mergedInfoPool memprobe anchor
 
 local function GetMergedInfo(unit)
     local m = mergedInfoPool[unit]
@@ -260,6 +260,15 @@ end)
 -- Perf profiler opt-in: coalesceFrame.OnUpdate runs the aura subscriber fan-out
 -- (group frames, CDM, raidbuffs, atonement, private auras, etc). Wrapping it
 -- measures total aura dispatch cost as one "AuraDispatch" line.
-ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "AuraDispatch", frame = coalesceFrame, scriptType = "OnUpdate" }
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "AuraRouter", frame = eventFrame }
+local function SetupDebugInstrumentation()
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "AuraEvt_mergedInfoPool", tbl = mergedInfoPool } -- AuraEvt_mergedInfoPool memprobe anchor
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "AuraDispatch", frame = coalesceFrame, scriptType = "OnUpdate" }
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "AuraRouter", frame = eventFrame }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end

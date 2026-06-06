@@ -861,7 +861,15 @@ end
 
 -- Tracks which widget frames have been hooked for OnShow re-suppression
 local suppressionHookedFrames = {}
-do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "Prey_suppressionHooked", tbl = suppressionHookedFrames } end
+local function SetupDebugInstrumentation()
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "Prey_suppressionHooked", tbl = suppressionHookedFrames }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end
 
 -- Determines if a child frame should be forcibly hidden (models, animations, glow)
 local function ShouldHardSuppress(target)

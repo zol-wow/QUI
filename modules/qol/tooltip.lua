@@ -27,6 +27,7 @@ local TooltipEngine = {}
 ---------------------------------------------------------------------------
 -- Tooltip Debug Sampler
 ---------------------------------------------------------------------------
+local _dbgCounters, _dbgSlowLog -- forward refs for SetupDebugInstrumentation (defined after mount caches)
 local TooltipDebug = ns.QUI_TooltipDebug
 if not TooltipDebug then
     local debugCounters = {}
@@ -47,11 +48,9 @@ if not TooltipDebug then
         lastReportTime = nil,
     }
     ns.QUI_TooltipDebug = TooltipDebug
-
-    do local mp = ns._memprobes or {}; ns._memprobes = mp
-        mp[#mp + 1] = { name = "Tooltip_debugCounters", tbl = debugCounters }
-        mp[#mp + 1] = { name = "Tooltip_debugSlowLog", tbl = debugSlowLog }
-    end
+    -- Tooltip_debugCounters / Tooltip_debugSlowLog memprobe anchor
+    _dbgCounters = debugCounters
+    _dbgSlowLog  = debugSlowLog
 
     local function DebugNowMS()
         if debugprofilestop then
@@ -642,9 +641,20 @@ local MOUNT_SCAN_AURAS_PER_PASS = 12
 
 local ScheduleDeferredUnitInfo
 
-do local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "Tooltip_mountNameCache", tbl = mountNameCache }
+local function SetupDebugInstrumentation()
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    -- Tooltip_debugCounters / Tooltip_debugSlowLog memprobe anchor.
+    -- nil if ns.QUI_TooltipDebug pre-existed at load (creation block skipped;
+    -- that instance registered its own probes).
+    if _dbgCounters   then mp[#mp + 1] = { name = "Tooltip_debugCounters", tbl = _dbgCounters } end
+    if _dbgSlowLog    then mp[#mp + 1] = { name = "Tooltip_debugSlowLog",  tbl = _dbgSlowLog  } end
+    mp[#mp + 1] = { name = "Tooltip_mountNameCache",  tbl = mountNameCache }
     mp[#mp + 1] = { name = "Tooltip_mountSpellCache", tbl = mountSpellNameCache }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
 local function RefreshTooltipLayout(tooltip)

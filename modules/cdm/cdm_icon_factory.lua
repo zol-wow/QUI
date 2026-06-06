@@ -55,7 +55,10 @@ local iconPools = {
 }
 -- Pools for custom containers are created dynamically via EnsurePool().
 local recyclePool = {}
-do local mp = ns._memprobes or {}; ns._memprobes = mp
+local iconCounter = 0
+
+local function SetupDebugInstrumentation()
+    local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "CDM_iconRecyclePool", tbl = recyclePool }
     -- iconPools is a multi-key map of arrays; count across every sub-pool
     -- (incl. dynamically created Composer pools) so retention growth surfaces.
@@ -70,7 +73,11 @@ do local mp = ns._memprobes or {}; ns._memprobes = mp
         return count, deep
     end }
 end
-local iconCounter = 0
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end
 
 local function CreateIconPool()
     return {}

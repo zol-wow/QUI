@@ -55,25 +55,26 @@ local runtimeQueryOwner
 local runtimeQueryOwnerStack = {}
 local runtimeQueryOwnerStackDepth = 0
 local stableOverrideCache = {}
-local runtimeQueryStats = {
-    batches = 0,
-    cooldownSource = 0,
-    cooldownHits = 0,
-    chargeSource = 0,
-    chargeHits = 0,
-    durationSource = 0,
-    durationHits = 0,
-    chargeDurationSource = 0,
-    chargeDurationHits = 0,
-    overrideSource = 0,
-    overrideHits = 0,
-    displayCountSource = 0,
-    displayCountHits = 0,
-    spellCountSource = 0,
-    spellCountHits = 0,
-}
+local runtimeQueryStats -- debug counters; nil until QUI_Debug activates instrumentation
 
-do
+local function SetupDebugInstrumentation()
+    runtimeQueryStats = {
+        batches = 0,
+        cooldownSource = 0,
+        cooldownHits = 0,
+        chargeSource = 0,
+        chargeHits = 0,
+        durationSource = 0,
+        durationHits = 0,
+        chargeDurationSource = 0,
+        chargeDurationHits = 0,
+        overrideSource = 0,
+        overrideHits = 0,
+        displayCountSource = 0,
+        displayCountHits = 0,
+        spellCountSource = 0,
+        spellCountHits = 0,
+    }
     local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "CDM_queryCacheBatches", counter = true, fn = function() return runtimeQueryStats.batches end }
     mp[#mp + 1] = { name = "CDM_queryCacheSource", counter = true, fn = function()
@@ -101,6 +102,11 @@ do
     mp[#mp + 1] = { name = "CDM_queryCacheOverrideSource", counter = true, fn = function() return runtimeQueryStats.overrideSource end }
     mp[#mp + 1] = { name = "CDM_queryCacheDisplayCountSource", counter = true, fn = function() return runtimeQueryStats.displayCountSource end }
     mp[#mp + 1] = { name = "CDM_queryCacheSpellCountSource", counter = true, fn = function() return runtimeQueryStats.spellCountSource end }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
 local function AdvanceRuntimeQueryEpoch()
@@ -139,7 +145,7 @@ end
 function CDMRuntimeQueries.BeginRuntimeQueryBatch()
     if runtimeQueryBatchDepth == 0 then
         AdvanceRuntimeQueryEpoch()
-        runtimeQueryStats.batches = runtimeQueryStats.batches + 1
+        if runtimeQueryStats then runtimeQueryStats.batches = runtimeQueryStats.batches + 1 end
     end
     runtimeQueryBatchDepth = runtimeQueryBatchDepth + 1
 end
@@ -199,7 +205,7 @@ local function ReadRuntimeCache(cacheName, _owner, key, hitStat)
     if not cache then return nil, false end
     local slot = cache[key]
     if slot and slot.epoch == runtimeQueryEpoch then
-        runtimeQueryStats[hitStat] = runtimeQueryStats[hitStat] + 1
+        if runtimeQueryStats then runtimeQueryStats[hitStat] = runtimeQueryStats[hitStat] + 1 end
         return slot.value, true
     end
     return nil, false
@@ -207,7 +213,7 @@ end
 
 local function StoreRuntimeCache(cacheName, _owner, key, value, sourceStat)
     if runtimeQueryBatchDepth <= 0 then return value end
-    runtimeQueryStats[sourceStat] = runtimeQueryStats[sourceStat] + 1
+    if runtimeQueryStats then runtimeQueryStats[sourceStat] = runtimeQueryStats[sourceStat] + 1 end
     if IsSecretValue(key) then return value end
     local cache = batchSharedCache[cacheName]
     if not cache then return value end
@@ -303,7 +309,7 @@ function CDMRuntimeQueries.QueryOverrideSpell(spellID)
     if IsSecretValue(spellID) or spellID == nil then return nil end
     local stable = stableOverrideCache[spellID]
     if stable ~= nil then
-        runtimeQueryStats.overrideHits = runtimeQueryStats.overrideHits + 1
+        if runtimeQueryStats then runtimeQueryStats.overrideHits = runtimeQueryStats.overrideHits + 1 end
         if stable == NIL_SENTINEL then
             return nil
         end
@@ -319,7 +325,7 @@ function CDMRuntimeQueries.QueryOverrideSpell(spellID)
     end
     stableOverrideCache[spellID] = overrideID == nil and NIL_SENTINEL or overrideID
     if runtimeQueryBatchDepth > 0 then
-        runtimeQueryStats.overrideSource = runtimeQueryStats.overrideSource + 1
+        if runtimeQueryStats then runtimeQueryStats.overrideSource = runtimeQueryStats.overrideSource + 1 end
     end
     return overrideID
 end

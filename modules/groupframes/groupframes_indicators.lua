@@ -43,11 +43,7 @@ local POOL_SIZE = 60
 local iconPool = {}
 local barPool = {}
 local spellNameCache = {}
-do local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "GF_Ind_iconPool", tbl = iconPool }
-    mp[#mp + 1] = { name = "GF_Ind_barPool", tbl = barPool }
-    mp[#mp + 1] = { name = "GF_Ind_spellNameCache", tbl = spellNameCache }
-end
+-- memprobes registered in SetupDebugInstrumentation (debug gate)
 
 local _scratchIconPayloads = {}
 local _scratchBarPayloads = {}
@@ -1498,7 +1494,19 @@ function QUI_GFI:RefreshUpdatedBars(frames, nFrames, unit, updatedAuraInstanceID
     return rebound
 end
 
-ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_Indicators", frame = eventFrame }
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_IndicatorBars", frame = barTimerFrame, scriptType = "OnUpdate" }
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_HealthTintAnims", frame = healthTintAnimationFrame, scriptType = "OnUpdate" }
+local function SetupDebugInstrumentation()
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "GF_Ind_iconPool", tbl = iconPool }
+    mp[#mp + 1] = { name = "GF_Ind_barPool", tbl = barPool }
+    mp[#mp + 1] = { name = "GF_Ind_spellNameCache", tbl = spellNameCache }
+    -- Perf profiler opt-in (no-op until /qui perf → Modules toggle)
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_Indicators", frame = eventFrame }
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_IndicatorBars", frame = barTimerFrame, scriptType = "OnUpdate" }
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "GF_HealthTintAnims", frame = healthTintAnimationFrame, scriptType = "OnUpdate" }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end

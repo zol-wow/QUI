@@ -2,7 +2,7 @@
 -- Displays a standalone icon showing Blizzard's next recommended ability
 -- Uses C_AssistedCombat API (Starter Build / Rotation Helper)
 
-local ADDON_NAME, QUI = ...
+local ADDON_NAME, QUI = ... -- QUI = private addon namespace (the table other files call "ns"), not the AceAddon global
 local LSM = QUI.LSM
 
 local GetCore = QUI.Helpers.GetCore
@@ -661,8 +661,15 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     end
 end)
 
-QUI.QUI_PerfRegistry = QUI.QUI_PerfRegistry or {}
-QUI.QUI_PerfRegistry[#QUI.QUI_PerfRegistry + 1] = { name = "RotationAssist", frame = eventFrame }
+local function SetupDebugInstrumentation()
+    QUI.QUI_PerfRegistry = QUI.QUI_PerfRegistry or {}
+    QUI.QUI_PerfRegistry[#QUI.QUI_PerfRegistry + 1] = { name = "RotationAssist", frame = eventFrame }
+end
+if QUI.DebugRegister then -- gate contract: core/debug_gate.lua
+    QUI.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end
 
 --------------------------------------------------------------------------------
 -- Global Refresh Function

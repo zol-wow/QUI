@@ -13,24 +13,10 @@ ns.CDMResolvers = CDMResolvers
 local Scheduler = ns.CDMScheduler
 local Sources = ns.CDMSources
 
-local resolverStats = {
-    mirrorAuraQueries = 0,
-    mirrorAuraSkips = 0,
-    mirrorStateCacheHits = 0,
-    itemDurationIconReuses = 0,
-}
-
-do
-    local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "CDM_resolverMirrorAuraQueries", counter = true, fn = function() return resolverStats.mirrorAuraQueries end }
-    mp[#mp + 1] = { name = "CDM_resolverMirrorAuraSkips", counter = true, fn = function() return resolverStats.mirrorAuraSkips end }
-    mp[#mp + 1] = { name = "CDM_resolverMirrorStateCacheHits", counter = true, fn = function() return resolverStats.mirrorStateCacheHits end }
-    mp[#mp + 1] = { name = "CDM_itemDurationIconReuses", counter = true, fn = function() return resolverStats.itemDurationIconReuses end }
-end
-
+local resolverStats -- debug counters; nil until QUI_Debug activates instrumentation
+local markFn -- profiler hook; bound at debug activation (nil otherwise)
 local function MemAuditProfilerMark(name)
-    local mark = ns.MemAuditProfilerMark
-    if mark then mark(name) end
+    if markFn then markFn(name) end
 end
 
 ---------------------------------------------------------------------------
@@ -210,9 +196,6 @@ _runtimeFrame:SetScript("OnEvent", function(_, evt, arg1, arg2, arg3, arg4)
     end
 end)
 
-ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_RuntimeEvents", frame = _runtimeFrame }
-
 local WoW_IsSecretValue = issecretvalue
 local ResolverIsSecretValue
 
@@ -370,8 +353,30 @@ end
 -- swap / spec change), so we keep it across ticks.  Wiped on SPELLS_CHANGED
 -- and PLAYER_SPECIALIZATION_CHANGED to pick up new icons.
 local _textureCycleCache = {}
-do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "CDM_textureCycleCache", tbl = _textureCycleCache } end
 CDMResolvers._textureCycleCache = _textureCycleCache
+
+local function SetupDebugInstrumentation()
+    resolverStats = {
+        mirrorAuraQueries = 0,
+        mirrorAuraSkips = 0,
+        mirrorStateCacheHits = 0,
+        itemDurationIconReuses = 0,
+    }
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "CDM_resolverMirrorAuraQueries", counter = true, fn = function() return resolverStats.mirrorAuraQueries end }
+    mp[#mp + 1] = { name = "CDM_resolverMirrorAuraSkips", counter = true, fn = function() return resolverStats.mirrorAuraSkips end }
+    mp[#mp + 1] = { name = "CDM_resolverMirrorStateCacheHits", counter = true, fn = function() return resolverStats.mirrorStateCacheHits end }
+    mp[#mp + 1] = { name = "CDM_itemDurationIconReuses", counter = true, fn = function() return resolverStats.itemDurationIconReuses end }
+    mp[#mp + 1] = { name = "CDM_textureCycleCache", tbl = _textureCycleCache }
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_RuntimeEvents", frame = _runtimeFrame }
+    markFn = ns.MemAuditProfilerMark
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end
 
 function CDMResolvers.GetSpellTexture(spellID)
     if not spellID then return nil end
@@ -2224,7 +2229,7 @@ local function ResolveMirrorRenderPayloadForEntry(
     if CachedMirrorStateAcceptedForEntry(
         cachedMirrorState, entry, explicitCooldownID, explicitCat,
         viewerCategory, strictAuraBinding) then
-        resolverStats.mirrorStateCacheHits = resolverStats.mirrorStateCacheHits + 1
+        if resolverStats then resolverStats.mirrorStateCacheHits = resolverStats.mirrorStateCacheHits + 1 end
         return BuildMirrorRenderPayload(
             cachedMirrorState, explicitCooldownID, explicitCat, fallbackSpellID,
             nil, nil, nil, cachedMirrorSourceID)
@@ -2307,7 +2312,7 @@ local function GetIconItemDurationObject(icon, sourceID, startTime, duration)
 
     local durObj = state.durObj or icon._lastDurObj
     if durObj then
-        resolverStats.itemDurationIconReuses = resolverStats.itemDurationIconReuses + 1
+        if resolverStats then resolverStats.itemDurationIconReuses = resolverStats.itemDurationIconReuses + 1 end
         return durObj
     end
     return nil
@@ -3123,7 +3128,7 @@ local function ResolveCooldownStateCore(context)
     if mirrorPayload then
         if mirrorPayload.mode ~= "aura" and context.skipAuraPhase ~= true then
             if MirrorPayloadMayHaveAuraOverlay(mirrorPayload) then
-                resolverStats.mirrorAuraQueries = resolverStats.mirrorAuraQueries + 1
+                if resolverStats then resolverStats.mirrorAuraQueries = resolverStats.mirrorAuraQueries + 1 end
                 local aura = ResolveAuraRuntimeStateForContext(context, entry, sid, entryIsAura)
                 MemAuditProfilerMark("CDM_rsMirrorAura")
                 if ApplyAuraStateToCooldownState(state, aura, sid) then
@@ -3131,7 +3136,7 @@ local function ResolveCooldownStateCore(context)
                     return FinalizeCooldownStateActivity(state, context, entry, sid, entryIsAura, itemBackedEntry)
                 end
             else
-                resolverStats.mirrorAuraSkips = resolverStats.mirrorAuraSkips + 1
+                if resolverStats then resolverStats.mirrorAuraSkips = resolverStats.mirrorAuraSkips + 1 end
                 MemAuditProfilerMark("CDM_rsMirrorAuraSkip")
             end
         end

@@ -198,7 +198,6 @@ end
 ---------------------------------------------------------------------------
 -- Weapon enchant cached total duration per slot
 local enchantCachedDuration = {}
-do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "BB_enchantCache", tbl = enchantCachedDuration } end
 
 -- Sorted icon lists (kept as empty tables for legacy references)
 local buffSortedIcons = {}
@@ -285,34 +284,10 @@ local function GetDurationObjectRemaining(durationObj)
 end
 
 local trackedDurationChildren = {}
-local buffBorderStats = {
-    unitAuraScans = 0,
-    fastAuraUpdates = 0,
-    buffUpdates = 0,
-    debuffUpdates = 0,
-    headerAuraEvents = 0,
-    busAuraEvents = 0,
-    auraChildMapWrites = 0,
-    auraChildMapClears = 0,
-}
-do local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "BB_durationTrack", tbl = trackedDurationChildren }
-    mp[#mp + 1] = { name = "BB_unitAuraScans", counter = true, fn = function() return buffBorderStats.unitAuraScans end }
-    mp[#mp + 1] = { name = "BB_fastAuraUpdates", counter = true, fn = function() return buffBorderStats.fastAuraUpdates end }
-    mp[#mp + 1] = { name = "BB_buffUpdates", counter = true, fn = function() return buffBorderStats.buffUpdates end }
-    mp[#mp + 1] = { name = "BB_debuffUpdates", counter = true, fn = function() return buffBorderStats.debuffUpdates end }
-    mp[#mp + 1] = { name = "BB_headerAuraEvents", counter = true, fn = function() return buffBorderStats.headerAuraEvents end }
-    mp[#mp + 1] = { name = "BB_busAuraEvents", counter = true, fn = function() return buffBorderStats.busAuraEvents end }
-    mp[#mp + 1] = { name = "BB_auraChildMapWrites", counter = true, fn = function() return buffBorderStats.auraChildMapWrites end }
-    mp[#mp + 1] = { name = "BB_auraChildMapClears", counter = true, fn = function() return buffBorderStats.auraChildMapClears end }
-end
+local buffBorderStats -- debug counters; nil until QUI_Debug activates instrumentation (populated by SetupDebugInstrumentation at the bottom of this file)
 
 local buffAuraChildrenByID = {}
 local debuffAuraChildrenByID = {}
-do local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "BB_buffAuraChildrenByID", tbl = buffAuraChildrenByID }
-    mp[#mp + 1] = { name = "BB_debuffAuraChildrenByID", tbl = debuffAuraChildrenByID }
-end
 
 local function ClearAuraChildMapEntry(child)
     if not child then return end
@@ -321,7 +296,7 @@ local function ClearAuraChildMapEntry(child)
     local key = child._quiAuraChildMapKey
     if map and key ~= nil then
         map[key] = nil
-        buffBorderStats.auraChildMapClears = buffBorderStats.auraChildMapClears + 1
+        if buffBorderStats then buffBorderStats.auraChildMapClears = buffBorderStats.auraChildMapClears + 1 end
     end
 
     child._quiAuraChildMap = nil
@@ -343,13 +318,13 @@ local function SetAuraChildMapEntry(child, auraChildMap, auraInstanceID)
 
     if oldMap and oldKey ~= nil then
         oldMap[oldKey] = nil
-        buffBorderStats.auraChildMapClears = buffBorderStats.auraChildMapClears + 1
+        if buffBorderStats then buffBorderStats.auraChildMapClears = buffBorderStats.auraChildMapClears + 1 end
     end
 
     auraChildMap[auraInstanceID] = child
     child._quiAuraChildMap = auraChildMap
     child._quiAuraChildMapKey = auraInstanceID
-    buffBorderStats.auraChildMapWrites = buffBorderStats.auraChildMapWrites + 1
+    if buffBorderStats then buffBorderStats.auraChildMapWrites = buffBorderStats.auraChildMapWrites + 1 end
 end
 
 local function ClearStaleHeaderAuraChildMapEntries(header, firstIndex)
@@ -620,7 +595,7 @@ local function StyleHeaderChildren(header, settings, isBuff)
     -- BuildAuraFilter / GetSortConfig, both keyed off `settings`.
     local filter = BuildAuraFilter(settings, isBuff)
     local enumRule, _, _, enumDir = GetSortConfig(settings, isBuff)
-    buffBorderStats.unitAuraScans = buffBorderStats.unitAuraScans + 1
+    if buffBorderStats then buffBorderStats.unitAuraScans = buffBorderStats.unitAuraScans + 1 end
     local auras = C_UnitAuras.GetUnitAuras("player", filter, 40, enumRule, enumDir)
 
     for i = 1, 40 do
@@ -987,7 +962,7 @@ local function RefreshPureAuraUpdate(updateInfo)
 
     if unresolved then return false end
     if refreshed > 0 then
-        buffBorderStats.fastAuraUpdates = buffBorderStats.fastAuraUpdates + 1
+        if buffBorderStats then buffBorderStats.fastAuraUpdates = buffBorderStats.fastAuraUpdates + 1 end
     end
     return true
 end
@@ -1623,7 +1598,7 @@ UpdateBuffIcons = function()
         return
     end
     buffContainer:SetAlpha(1)
-    buffBorderStats.buffUpdates = buffBorderStats.buffUpdates + 1
+    if buffBorderStats then buffBorderStats.buffUpdates = buffBorderStats.buffUpdates + 1 end
     StyleHeaderChildren(buffContainer, settings, true)
 end
 
@@ -1652,7 +1627,7 @@ UpdateDebuffIcons = function()
         return
     end
     debuffContainer:SetAlpha(1)
-    buffBorderStats.debuffUpdates = buffBorderStats.debuffUpdates + 1
+    if buffBorderStats then buffBorderStats.debuffUpdates = buffBorderStats.debuffUpdates + 1 end
     StyleHeaderChildren(debuffContainer, settings, false)
     RefreshPrivateAuraAnchors()
     LayoutPrivateAuraSlots()
@@ -1908,7 +1883,7 @@ Init = function()
         if previewActive then return end
         local s = GetSettings()
         if not s or not s.enableBuffs or s.hideBuffFrame then return end
-        buffBorderStats.headerAuraEvents = buffBorderStats.headerAuraEvents + 1
+        if buffBorderStats then buffBorderStats.headerAuraEvents = buffBorderStats.headerAuraEvents + 1 end
         if ns.AuraEvents then return end
         ScheduleBuffUpdate()
     end)
@@ -1918,7 +1893,7 @@ Init = function()
         if previewActive then return end
         local s = GetSettings()
         if not s or not s.enableDebuffs or s.hideDebuffFrame then return end
-        buffBorderStats.headerAuraEvents = buffBorderStats.headerAuraEvents + 1
+        if buffBorderStats then buffBorderStats.headerAuraEvents = buffBorderStats.headerAuraEvents + 1 end
         if ns.AuraEvents then return end
         ScheduleDebuffUpdate()
     end)
@@ -1940,7 +1915,7 @@ end
 ---------------------------------------------------------------------------
 if ns.AuraEvents then
     ns.AuraEvents:Subscribe("player", function(unit, updateInfo)
-        buffBorderStats.busAuraEvents = buffBorderStats.busAuraEvents + 1
+        if buffBorderStats then buffBorderStats.busAuraEvents = buffBorderStats.busAuraEvents + 1 end
         if RefreshPureAuraUpdate(updateInfo) then return end
         ScheduleBuffUpdate()
         ScheduleDebuffUpdate()
@@ -1966,12 +1941,44 @@ paRegenFrame:SetScript("OnEvent", function()
     TryDeferredFullRefresh()
 end)
 
-ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "BuffBorders_CombatEnd",     frame = paRegenFrame }
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "BuffBorders_DurationTick",  frame = sharedDurationTimer, scriptType = "OnUpdate" }
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "BuffBorders_BuffCoalesce",  frame = buffCoalesceFrame,   scriptType = "OnUpdate" }
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "BuffBorders_DebuffCoalesce",frame = debuffCoalesceFrame, scriptType = "OnUpdate" }
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "BuffBorders_EnchantEvent",  frame = enchantEventFrame }
+-- SetupDebugInstrumentation is defined here so all the frames and tables it references
+-- are already declared above. buffBorderStats itself is declared up near trackedDurationChildren.
+local function SetupDebugInstrumentation()
+    buffBorderStats = {
+        unitAuraScans = 0,
+        fastAuraUpdates = 0,
+        buffUpdates = 0,
+        debuffUpdates = 0,
+        headerAuraEvents = 0,
+        busAuraEvents = 0,
+        auraChildMapWrites = 0,
+        auraChildMapClears = 0,
+    }
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "BB_enchantCache", tbl = enchantCachedDuration }
+    mp[#mp + 1] = { name = "BB_durationTrack", tbl = trackedDurationChildren }
+    mp[#mp + 1] = { name = "BB_unitAuraScans", counter = true, fn = function() return buffBorderStats.unitAuraScans end }
+    mp[#mp + 1] = { name = "BB_fastAuraUpdates", counter = true, fn = function() return buffBorderStats.fastAuraUpdates end }
+    mp[#mp + 1] = { name = "BB_buffUpdates", counter = true, fn = function() return buffBorderStats.buffUpdates end }
+    mp[#mp + 1] = { name = "BB_debuffUpdates", counter = true, fn = function() return buffBorderStats.debuffUpdates end }
+    mp[#mp + 1] = { name = "BB_headerAuraEvents", counter = true, fn = function() return buffBorderStats.headerAuraEvents end }
+    mp[#mp + 1] = { name = "BB_busAuraEvents", counter = true, fn = function() return buffBorderStats.busAuraEvents end }
+    mp[#mp + 1] = { name = "BB_auraChildMapWrites", counter = true, fn = function() return buffBorderStats.auraChildMapWrites end }
+    mp[#mp + 1] = { name = "BB_auraChildMapClears", counter = true, fn = function() return buffBorderStats.auraChildMapClears end }
+    mp[#mp + 1] = { name = "BB_buffAuraChildrenByID", tbl = buffAuraChildrenByID }
+    mp[#mp + 1] = { name = "BB_debuffAuraChildrenByID", tbl = debuffAuraChildrenByID }
+    local reg = ns.QUI_PerfRegistry or {}; ns.QUI_PerfRegistry = reg
+    reg[#reg + 1] = { name = "BuffBorders_CombatEnd",     frame = paRegenFrame }
+    reg[#reg + 1] = { name = "BuffBorders_DurationTick",  frame = sharedDurationTimer, scriptType = "OnUpdate" }
+    reg[#reg + 1] = { name = "BuffBorders_BuffCoalesce",  frame = buffCoalesceFrame,   scriptType = "OnUpdate" }
+    reg[#reg + 1] = { name = "BuffBorders_DebuffCoalesce",frame = debuffCoalesceFrame, scriptType = "OnUpdate" }
+    reg[#reg + 1] = { name = "BuffBorders_EnchantEvent",  frame = enchantEventFrame }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end
 
 -- Primary initialization is called from core/main.lua during the ADDON_LOADED
 -- safe window. Keep this retry for unusual load orders and for combat-end

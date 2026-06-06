@@ -253,7 +253,8 @@ ActionBarsOwned._activeButtons = ActionBarsOwned._activeButtons
 ActionBarsOwned._activeStandardButtons = ActionBarsOwned._activeStandardButtons
     or setmetatable({}, { __mode = "k" })
 
-do local mp = ns._memprobes or {}; ns._memprobes = mp
+local function SetupDebugInstrumentation()
+    local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = {
         name = "AB_activeButtons",
         fn = function()
@@ -270,6 +271,11 @@ do local mp = ns._memprobes or {}; ns._memprobes = mp
             return count, 0
         end,
     }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
 env.__declared.UpdateButtonProfessionQuality = true

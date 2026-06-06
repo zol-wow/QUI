@@ -123,32 +123,15 @@ local CleanBool
 -- hook family and, when the debug profiler is active, attribute their
 -- allocation to named CDM_mirrorHook_* scopes. Behavior-neutral and zero-cost
 -- when memaudit is not loaded.
-local mirrorHookStats = { scfdo = 0, setter = 0, clear = 0, text = 0, show = 0 }
+local mirrorHookStats -- debug counters; nil until QUI_Debug activates instrumentation
+-- measureFn stored as CDMBlizzMirror._measureFn (table field) to avoid a new
+-- main-chunk local on a file already at Lua 5.1's 200-local limit; bound at
+-- debug activation (nil otherwise).
 local function _runMirrorHook(statKey, scopeName, fn, ...)
-    mirrorHookStats[statKey] = mirrorHookStats[statKey] + 1
-    local measure = ns.MemAuditProfilerMeasure
+    if mirrorHookStats then mirrorHookStats[statKey] = mirrorHookStats[statKey] + 1 end
+    local measure = CDMBlizzMirror._measureFn
     if measure then return measure(scopeName, fn, ...) end
     return fn(...)
-end
-
-do
-    local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "CDM_blizzMirror_state",         tbl = _mirrorState }
-    mp[#mp + 1] = { name = "CDM_mirrorHookSCFDO",  counter = true, fn = function() return mirrorHookStats.scfdo end }
-    mp[#mp + 1] = { name = "CDM_mirrorHookSetter", counter = true, fn = function() return mirrorHookStats.setter end }
-    mp[#mp + 1] = { name = "CDM_mirrorHookClear",  counter = true, fn = function() return mirrorHookStats.clear end }
-    mp[#mp + 1] = { name = "CDM_mirrorHookText",   counter = true, fn = function() return mirrorHookStats.text end }
-    mp[#mp + 1] = { name = "CDM_mirrorHookShow",   counter = true, fn = function() return mirrorHookStats.show end }
-    mp[#mp + 1] = { name = "CDM_blizzMirror_packedState",   tbl = _packedStateByInstanceKey }
-    mp[#mp + 1] = { name = "CDM_blizzMirror_essentialMap",  tbl = _cdIDByCatSpell.essential }
-    mp[#mp + 1] = { name = "CDM_blizzMirror_utilityMap",    tbl = _cdIDByCatSpell.utility }
-    mp[#mp + 1] = { name = "CDM_blizzMirror_buffMap",       tbl = _cdIDByCatSpell.buff }
-    mp[#mp + 1] = { name = "CDM_blizzMirror_trackedBarMap", tbl = _cdIDByCatSpell.trackedBar }
-    mp[#mp + 1] = { name = "CDM_blizzMirror_buffDirectMap", tbl = _directCDIDByCatSpell.buff }
-    mp[#mp + 1] = { name = "CDM_blizzMirror_trackedBarDirectMap", tbl = _directCDIDByCatSpell.trackedBar }
-    mp[#mp + 1] = { name = "CDM_blizzMirror_spellNameIndex", tbl = _spellNameToCDID }
-    mp[#mp + 1] = { name = "CDM_blizzMirror_totemSpellIDIndex", tbl = _totemSpellIDToCDID }
-    mp[#mp + 1] = { name = "CDM_blizzMirror_totemActive",   tbl = _totemActiveCDID }
 end
 
 ---------------------------------------------------------------------------
@@ -2730,21 +2713,21 @@ local function HookTextOwner(child, source, owner, readOwner)
     end
     if owner.Show then
         hooksecurefunc(owner, "Show", function()
-            mirrorHookStats.show = mirrorHookStats.show + 1
+            if mirrorHookStats then mirrorHookStats.show = mirrorHookStats.show + 1 end
             CDMBlizzMirror._knownShownByFrame[owner] = true
             CaptureTextFromPreferredOwner(child, source, owner, readOwner)
         end)
     end
     if owner.Hide then
         hooksecurefunc(owner, "Hide", function()
-            mirrorHookStats.show = mirrorHookStats.show + 1
+            if mirrorHookStats then mirrorHookStats.show = mirrorHookStats.show + 1 end
             CDMBlizzMirror._knownShownByFrame[owner] = false
             ClearChildStackText()
         end)
     end
     if owner.SetShown then
         hooksecurefunc(owner, "SetShown", function(_, shown)
-            mirrorHookStats.show = mirrorHookStats.show + 1
+            if mirrorHookStats then mirrorHookStats.show = mirrorHookStats.show + 1 end
             local decodedShown = CDMBlizzMirror._RememberKnownShown(owner, shown)
             if decodedShown == false then
                 CDMBlizzMirror._knownShownByFrame[owner] = false
@@ -3406,7 +3389,7 @@ function BindChildHooks(child, cooldownID, viewerCategoryNum)
 
     if cooldownFrame and cooldownFrame.Clear then
         hooksecurefunc(cooldownFrame, "Clear", function(self)
-            mirrorHookStats.clear = mirrorHookStats.clear + 1
+            if mirrorHookStats then mirrorHookStats.clear = mirrorHookStats.clear + 1 end
             local cdID, owner = _ownerCooldownID(self)
             if not cdID then return end
             local s = EnsureState(cdID, owner)
@@ -3885,7 +3868,7 @@ end
 -- Memaudit instrumentation: dynamic OnUpdate, same pattern as CDM_RuntimeTick.
 local _AlphaEnforcerOnUpdateImpl = AlphaEnforcerOnUpdate
 AlphaEnforcerOnUpdate = function(...)
-    local measure = ns.MemAuditProfilerMeasure
+    local measure = CDMBlizzMirror._measureFn
     if measure then return measure("CDM_AlphaEnforcer", _AlphaEnforcerOnUpdateImpl, ...) end
     return _AlphaEnforcerOnUpdateImpl(...)
 end
@@ -4880,8 +4863,39 @@ _eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
     CDMBlizzMirror.SyncSuppressionToMaster()
 end)
 
-ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_BlizzMirrorEvents", frame = _eventFrame }
+do -- DO NOT unwrap: SetupDebugInstrumentation must stay off the main chunk's
+   -- local slots — this file is at Lua 5.1's 200-local limit (no headroom for
+   -- new main-chunk locals; use CDMBlizzMirror table fields instead, see the
+   -- _measureFn note near _runMirrorHook)
+local function SetupDebugInstrumentation()
+    mirrorHookStats = { scfdo = 0, setter = 0, clear = 0, text = 0, show = 0 }
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "CDM_blizzMirror_state",         tbl = _mirrorState }
+    mp[#mp + 1] = { name = "CDM_mirrorHookSCFDO",  counter = true, fn = function() return mirrorHookStats.scfdo end }
+    mp[#mp + 1] = { name = "CDM_mirrorHookSetter", counter = true, fn = function() return mirrorHookStats.setter end }
+    mp[#mp + 1] = { name = "CDM_mirrorHookClear",  counter = true, fn = function() return mirrorHookStats.clear end }
+    mp[#mp + 1] = { name = "CDM_mirrorHookText",   counter = true, fn = function() return mirrorHookStats.text end }
+    mp[#mp + 1] = { name = "CDM_mirrorHookShow",   counter = true, fn = function() return mirrorHookStats.show end }
+    mp[#mp + 1] = { name = "CDM_blizzMirror_packedState",   tbl = _packedStateByInstanceKey }
+    mp[#mp + 1] = { name = "CDM_blizzMirror_essentialMap",  tbl = _cdIDByCatSpell.essential }
+    mp[#mp + 1] = { name = "CDM_blizzMirror_utilityMap",    tbl = _cdIDByCatSpell.utility }
+    mp[#mp + 1] = { name = "CDM_blizzMirror_buffMap",       tbl = _cdIDByCatSpell.buff }
+    mp[#mp + 1] = { name = "CDM_blizzMirror_trackedBarMap", tbl = _cdIDByCatSpell.trackedBar }
+    mp[#mp + 1] = { name = "CDM_blizzMirror_buffDirectMap", tbl = _directCDIDByCatSpell.buff }
+    mp[#mp + 1] = { name = "CDM_blizzMirror_trackedBarDirectMap", tbl = _directCDIDByCatSpell.trackedBar }
+    mp[#mp + 1] = { name = "CDM_blizzMirror_spellNameIndex", tbl = _spellNameToCDID }
+    mp[#mp + 1] = { name = "CDM_blizzMirror_totemSpellIDIndex", tbl = _totemSpellIDToCDID }
+    mp[#mp + 1] = { name = "CDM_blizzMirror_totemActive",   tbl = _totemActiveCDID }
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_BlizzMirrorEvents", frame = _eventFrame }
+    CDMBlizzMirror._measureFn = ns.MemAuditProfilerMeasure
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end
+end -- scoped block (200-local limit)
 
 ---------------------------------------------------------------------------
 -- DEBUG IMPORT BINDING (rebound by cdm_debug.lua's BindAll())

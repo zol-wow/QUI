@@ -243,6 +243,7 @@ Enum.PowerType.RenewingMistCharges = 104 -- Mistweaver Monk Renewing Mist charge
 -- Track stacks manually via UNIT_SPELLCAST_SUCCEEDED: generators set to max,
 -- spenders decrement.
 ---------------------------------------------------------------------------
+local _rbSeenGUID -- forward ref for SetupDebugInstrumentation (seenGUID is do-block scoped)
 local WhirlwindTracker = {}
 do
     local IW_MAX_STACKS = 4
@@ -276,8 +277,7 @@ do
     local expiresAt = nil
     local seenGUID  = {}
     local pendingToken = 0
-
-    do local mp = ns._memprobes or {}; ns._memprobes = mp; mp[#mp + 1] = { name = "RB_WW_seenGUID", tbl = seenGUID } end
+    _rbSeenGUID = seenGUID -- RB_WW_seenGUID memprobe anchor
 
     function WhirlwindTracker:GetStacks()
         -- Expire stale stacks
@@ -387,6 +387,16 @@ do
     end)
     wwFrame:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
     wwFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+end
+
+local function SetupDebugInstrumentation()
+    local mp = ns._memprobes or {}; ns._memprobes = mp
+    mp[#mp + 1] = { name = "RB_WW_seenGUID", tbl = _rbSeenGUID } -- RB_WW_seenGUID memprobe anchor
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
 ---------------------------------------------------------------------------

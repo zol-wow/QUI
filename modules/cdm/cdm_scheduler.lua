@@ -130,14 +130,25 @@ local function RuntimeUpdateOnUpdate(self, elapsed)
 end
 
 -- Memaudit instrumentation: this OnUpdate is dynamically attached/detached
--- (line ~156 attaches, line 102 above detaches per tick), so QUI_PerfRegistry
--- frame wrapping would be clobbered. Reassign the local with a wrapped
--- version so the SetScript call below picks up the measured form.
+-- (ScheduleRuntimeUpdate attaches, RuntimeUpdateOnUpdate/CancelRuntimeUpdate
+-- detach), so QUI_PerfRegistry frame wrapping would be clobbered. Reassign
+-- the local with a wrapped version so the SetScript call below picks up the
+-- measured form.
+local measureFn -- profiler hook; bound at debug activation (nil otherwise)
 local _RuntimeUpdateOnUpdateImpl = RuntimeUpdateOnUpdate
 RuntimeUpdateOnUpdate = function(...)
-    local measure = ns.MemAuditProfilerMeasure
+    local measure = measureFn
     if measure then return measure("CDM_RuntimeTick", _RuntimeUpdateOnUpdateImpl, ...) end
     return _RuntimeUpdateOnUpdateImpl(...)
+end
+
+local function SetupDebugInstrumentation()
+    measureFn = ns.MemAuditProfilerMeasure
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
 function CDMScheduler.SetRuntimeUpdateHandler(config)

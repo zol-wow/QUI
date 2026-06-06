@@ -95,4 +95,25 @@ assertAbsentText(
     'input == "devtools"',
     "/qui devtools must not be a second path for loading the debug companion")
 
+-- Debug-instrumentation gate: QUI_Debug must activate the main addon's
+-- queued instrumentation, and must do so AFTER every other debug file so
+-- activation closures can bind ns.MemAuditProfilerMeasure/Mark (defined by
+-- memaudit.lua) and land probes in the ns._memprobes array memaudit keeps
+-- alive.
+assertContains(
+    "QUI_Debug/activate.lua",
+    "ns.DebugActivate()",
+    "debug companion must activate the main addon's instrumentation gate")
+
+local debugXml = readFile("QUI_Debug/debug.xml")
+local activatePos = debugXml:find('<Script file="activate.lua"/>', 1, true)
+assert(activatePos, "debug.xml must load activate.lua")
+local lastScriptPos = 0
+for pos in debugXml:gmatch('()<Script file=') do
+    lastScriptPos = pos
+end
+local lastScriptLine = debugXml:sub(lastScriptPos, lastScriptPos + 60)
+assert(lastScriptLine:find('file="activate.lua"', 1, true),
+    "activate.lua must be the LAST script in debug.xml, found last: " .. lastScriptLine)
+
 print("OK: debug_addon_split_test")

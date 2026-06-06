@@ -4,6 +4,11 @@ env.ADDON_NAME = ADDON_NAME
 env.ns = ns
 env.SetChunkEnv(1, env)
 
+-- Local alias for _abCooldownStats (defined as a GLOBAL by actionbars_cooldowns.lua).
+-- Assigned in SetupDebugInstrumentation at the bottom of this file; nil until QUI_Debug
+-- activates instrumentation (debug gate).
+local _abCooldownStats
+
 ---------------------------------------------------------------------------
 -- EVENT COALESCING (elapsed-time gated Show/Hide)
 ---------------------------------------------------------------------------
@@ -138,10 +143,17 @@ if ns.QUI_ENABLE_ACTIONBAR_SPLIT_PERF_PROBES == true or _G.QUI_ENABLE_ACTIONBAR_
     ActionBarsOwned.UpdateAllCooldowns     = function() cdProbeFrame:GetScript("OnEvent")()    end
     ActionBarsOwned.UpdateAllButtonVisuals = function() visProbeFrame:GetScript("OnEvent")()   end
     ActionBarsOwned.UpdateAllButtonStates  = function() stateProbeFrame:GetScript("OnEvent")() end
-    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "AB_Cooldowns", frame = cdProbeFrame,    scriptType = "OnEvent" }
-    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "AB_States",    frame = stateProbeFrame, scriptType = "OnEvent" }
-    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "AB_Visuals",   frame = visProbeFrame,   scriptType = "OnEvent" }
+    local function SetupSplitPerfProbeRegistry()
+        ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+        ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "AB_Cooldowns", frame = cdProbeFrame,    scriptType = "OnEvent" }
+        ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "AB_States",    frame = stateProbeFrame, scriptType = "OnEvent" }
+        ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "AB_Visuals",   frame = visProbeFrame,   scriptType = "OnEvent" }
+    end
+    if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+        ns.DebugRegister(SetupSplitPerfProbeRegistry)
+    else
+        SetupSplitPerfProbeRegistry() -- standalone test harness: no gate, run eagerly
+    end
 end
 
 function ScheduleABCooldownUpdate(immediate)
@@ -514,7 +526,7 @@ function OnOwnedEvent(self, event, ...)
         -- Per-button OnEvent is suppressed (addon-created frames are
         -- tainted).  DurationObject path is secret-safe.
         -- Coalesced: fires 20+/sec in combat, throttled to ~30Hz.
-        _abCooldownStats.events = _abCooldownStats.events + 1
+        if _abCooldownStats then _abCooldownStats.events = _abCooldownStats.events + 1 end
         ScheduleABCooldownUpdate()
 
     elseif event == "ACTIONBAR_UPDATE_STATE" then
@@ -724,6 +736,19 @@ end
 -- Event handler is set here; events are registered in Initialize().
 ownedEventFrame:SetScript("OnEvent", OnOwnedEvent)
 
-ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "ActionBars", frame = ownedEventFrame }
+local function SetupDebugInstrumentation()
+    -- Pick up the global published by actionbars_cooldowns.lua's setup closure.
+    -- Ordering: the debug gate drains FIFO in registration (= file load) order,
+    -- and actionbars.xml loads cooldowns before this file, so the global is
+    -- already set here. If that ordering breaks, this stays nil and the
+    -- events counter silently stops counting.
+    _abCooldownStats = _G._abCooldownStats
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "ActionBars", frame = ownedEventFrame }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end
 

@@ -321,6 +321,21 @@ files["modules/actionbars/actionbars_usability.lua"] = {
 files["modules/actionbars/actionbars_editmode.lua"] = {
     ignore = { "111", "112", "113" },
 }
+files["modules/actionbars/actionbars.lua"] = {
+    ignore = { "111", "112", "113", "121" },
+}
+files["modules/actionbars/actionbars_cooldowns.lua"] = {
+    ignore = { "111", "112", "113" },
+}
+files["modules/actionbars/actionbars_events.lua"] = {
+    ignore = { "111", "112", "113" },
+}
+files["modules/actionbars/actionbars_glow.lua"] = {
+    ignore = { "111", "112", "113" },
+}
+files["modules/actionbars/actionbars_helpers.lua"] = {
+    ignore = { "111", "112", "113" },
+}
 
 files["modules/dungeon/party_keystones.lua"] = {
     ignore = { "113" },

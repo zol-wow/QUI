@@ -5041,8 +5041,13 @@ function CDMSpellData:Initialize()
         end
     end)
 
-    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_SpellData", frame = eventFrame }
+    -- Tolerant form (unlike cdm_containers.lua's plain ns.DebugRegister):
+    -- cdm_spelldata_aura_boundary_test.lua calls Initialize() with a bare ns
+    -- that has no gate.
+    local reg = ns.DebugRegister; if reg then reg(function()
+        ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+        ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_SpellData", frame = eventFrame }
+    end) end -- gate contract: core/debug_gate.lua — runs immediately if QUI_Debug already active
 end
 
 ---------------------------------------------------------------------------

@@ -26,22 +26,24 @@ end
 local UPDATE_COOLDOWN = "cooldown"
 local UPDATE_FULL = "full"
 
-local runtimeRefreshStats = {
-    catalogScopeRefreshes = 0,
-    catalogScopeQueued = 0,
-    castStartCooldownSkips = 0,
-    castStartCooldownFallbacks = 0,
-    castSucceededCooldownSkips = 0,
-    chargeCooldownSkips = 0,
-    deferredFullRefreshes = 0,
-    deferredFullDrains = 0,
-    hotfixDeferredFulls = 0,
-    spellsChangedScoped = 0,
-    unitSpellcastCooldownSkips = 0,
-    unitSpellcastCooldownFallbacks = 0,
-}
+local runtimeRefreshStats -- debug counters; nil until QUI_Debug activates instrumentation
+local measureFn -- profiler hook; bound at debug activation (nil otherwise)
 
-do
+local function SetupDebugInstrumentation()
+    runtimeRefreshStats = {
+        catalogScopeRefreshes = 0,
+        catalogScopeQueued = 0,
+        castStartCooldownSkips = 0,
+        castStartCooldownFallbacks = 0,
+        castSucceededCooldownSkips = 0,
+        chargeCooldownSkips = 0,
+        deferredFullRefreshes = 0,
+        deferredFullDrains = 0,
+        hotfixDeferredFulls = 0,
+        spellsChangedScoped = 0,
+        unitSpellcastCooldownSkips = 0,
+        unitSpellcastCooldownFallbacks = 0,
+    }
     local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "CDM_catalogScopeRefreshes", counter = true, fn = function() return runtimeRefreshStats.catalogScopeRefreshes end }
     mp[#mp + 1] = { name = "CDM_catalogScopeQueued", counter = true, fn = function() return runtimeRefreshStats.catalogScopeQueued end }
@@ -55,6 +57,12 @@ do
     mp[#mp + 1] = { name = "CDM_spellsChangedScoped", counter = true, fn = function() return runtimeRefreshStats.spellsChangedScoped end }
     mp[#mp + 1] = { name = "CDM_unitSpellcastCooldownSkips", counter = true, fn = function() return runtimeRefreshStats.unitSpellcastCooldownSkips end }
     mp[#mp + 1] = { name = "CDM_unitSpellcastCooldownFallbacks", counter = true, fn = function() return runtimeRefreshStats.unitSpellcastCooldownFallbacks end }
+    measureFn = ns.MemAuditProfilerMeasure
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
 local function isRuntimeEnabled(callbacks)
@@ -441,7 +449,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
 
     function controller:ApplyCatalogScope(options)
         options = options or {}
-        runtimeRefreshStats.catalogScopeRefreshes = runtimeRefreshStats.catalogScopeRefreshes + 1
+        if runtimeRefreshStats then runtimeRefreshStats.catalogScopeRefreshes = runtimeRefreshStats.catalogScopeRefreshes + 1 end
         local refreshed = controller:ApplySpellScope(controller.spellScopeRefreshOptionsScratch) == true
         if options.includeItems then
             refreshed = controller:ApplyItemScope(controller.itemScopeRefreshOptionsScratch) == true or refreshed
@@ -821,7 +829,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
     -- spellQueueOnUpdate upvalue pick up the wrapped version.
     local _drainSpellQueueImpl = drainSpellQueue
     drainSpellQueue = function(...)
-        local measure = ns.MemAuditProfilerMeasure
+        local measure = measureFn
         if measure then return measure("CDM_drainSpellQueue", _drainSpellQueueImpl, ...) end
         return _drainSpellQueueImpl(...)
     end
@@ -858,7 +866,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
 
     local _drainUsabilityQueueImpl = drainUsabilityQueue
     drainUsabilityQueue = function(...)
-        local measure = ns.MemAuditProfilerMeasure
+        local measure = measureFn
         if measure then return measure("CDM_drainUsabilityQueue", _drainUsabilityQueueImpl, ...) end
         return _drainUsabilityQueueImpl(...)
     end
@@ -893,7 +901,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
 
     local _drainItemQueueImpl = drainItemQueue
     drainItemQueue = function(...)
-        local measure = ns.MemAuditProfilerMeasure
+        local measure = measureFn
         if measure then return measure("CDM_drainItemQueue", _drainItemQueueImpl, ...) end
         return _drainItemQueueImpl(...)
     end
@@ -932,7 +940,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
 
     local _drainCatalogQueueImpl = drainCatalogQueue
     drainCatalogQueue = function(...)
-        local measure = ns.MemAuditProfilerMeasure
+        local measure = measureFn
         if measure then return measure("CDM_drainCatalogQueue", _drainCatalogQueueImpl, ...) end
         return _drainCatalogQueueImpl(...)
     end
@@ -956,13 +964,13 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             state.includeItems = true
         end
         if state.scheduled then return end
-        runtimeRefreshStats.catalogScopeQueued = runtimeRefreshStats.catalogScopeQueued + 1
+        if runtimeRefreshStats then runtimeRefreshStats.catalogScopeQueued = runtimeRefreshStats.catalogScopeQueued + 1 end
         armQueue(state, catalogQueueOnUpdate)
     end
 
     function controller:DeferFullRefresh()
         if not controller.deferredFullRefresh then
-            runtimeRefreshStats.deferredFullRefreshes = runtimeRefreshStats.deferredFullRefreshes + 1
+            if runtimeRefreshStats then runtimeRefreshStats.deferredFullRefreshes = runtimeRefreshStats.deferredFullRefreshes + 1 end
         end
         controller.deferredFullRefresh = true
     end
@@ -970,7 +978,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
     function controller:DrainDeferredFullRefresh()
         if not controller.deferredFullRefresh then return false end
         controller.deferredFullRefresh = false
-        runtimeRefreshStats.deferredFullDrains = runtimeRefreshStats.deferredFullDrains + 1
+        if runtimeRefreshStats then runtimeRefreshStats.deferredFullDrains = runtimeRefreshStats.deferredFullDrains + 1 end
         if callbacks.scheduleUpdate then
             callbacks.scheduleUpdate(true, UPDATE_FULL, "deferred")
         end
@@ -1045,10 +1053,10 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 and arg1 == "player"
             if isPlayerUnit then
                 if normalizeSpellIdentifier(callbacks, arg3) ~= nil then
-                    runtimeRefreshStats.unitSpellcastCooldownSkips = runtimeRefreshStats.unitSpellcastCooldownSkips + 1
+                    if runtimeRefreshStats then runtimeRefreshStats.unitSpellcastCooldownSkips = runtimeRefreshStats.unitSpellcastCooldownSkips + 1 end
                     controller:QueueResolvedCooldownForSpellID(arg3, nil)
                 elseif callbacks.scheduleUpdate then
-                    runtimeRefreshStats.unitSpellcastCooldownFallbacks = runtimeRefreshStats.unitSpellcastCooldownFallbacks + 1
+                    if runtimeRefreshStats then runtimeRefreshStats.unitSpellcastCooldownFallbacks = runtimeRefreshStats.unitSpellcastCooldownFallbacks + 1 end
                     callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "unit_spellcast")
                 end
             end
@@ -1101,13 +1109,13 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             if callbacks.clearStableCaches then
                 callbacks.clearStableCaches()
             end
-            runtimeRefreshStats.spellsChangedScoped = runtimeRefreshStats.spellsChangedScoped + 1
+            if runtimeRefreshStats then runtimeRefreshStats.spellsChangedScoped = runtimeRefreshStats.spellsChangedScoped + 1 end
             controller:QueueCatalogScopeRefresh({ includeItems = true })
             return
         end
         if event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" then
             if inCombat() then
-                runtimeRefreshStats.hotfixDeferredFulls = runtimeRefreshStats.hotfixDeferredFulls + 1
+                if runtimeRefreshStats then runtimeRefreshStats.hotfixDeferredFulls = runtimeRefreshStats.hotfixDeferredFulls + 1 end
                 controller:DeferFullRefresh()
                 return
             end
@@ -1176,10 +1184,10 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             -- churn.
         elseif kind == "cast_start" then
             if normalizeSpellIdentifier(callbacks, spellID) ~= nil then
-                runtimeRefreshStats.castStartCooldownSkips = runtimeRefreshStats.castStartCooldownSkips + 1
+                if runtimeRefreshStats then runtimeRefreshStats.castStartCooldownSkips = runtimeRefreshStats.castStartCooldownSkips + 1 end
                 controller:QueueResolvedCooldownForSpellID(spellID, baseSpellID)
             elseif callbacks.scheduleUpdate then
-                runtimeRefreshStats.castStartCooldownFallbacks = runtimeRefreshStats.castStartCooldownFallbacks + 1
+                if runtimeRefreshStats then runtimeRefreshStats.castStartCooldownFallbacks = runtimeRefreshStats.castStartCooldownFallbacks + 1 end
                 callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "cast_start")
             end
         elseif kind == "cast_succeeded" then
@@ -1196,7 +1204,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             if callbacks.requestStackTextUpdate then
                 callbacks.requestStackTextUpdate()
             end
-            runtimeRefreshStats.castSucceededCooldownSkips = runtimeRefreshStats.castSucceededCooldownSkips + 1
+            if runtimeRefreshStats then runtimeRefreshStats.castSucceededCooldownSkips = runtimeRefreshStats.castSucceededCooldownSkips + 1 end
             local highlighter = callbacks.getHighlighter and callbacks.getHighlighter()
             if highlighter and highlighter.OnPlayerCastSucceeded then
                 highlighter.OnPlayerCastSucceeded(spellID)
@@ -1211,7 +1219,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             callbacks.requestStackTextUpdate()
         end
         if normalizeSpellIdentifier(callbacks, spellID) ~= nil then
-            runtimeRefreshStats.chargeCooldownSkips = runtimeRefreshStats.chargeCooldownSkips + 1
+            if runtimeRefreshStats then runtimeRefreshStats.chargeCooldownSkips = runtimeRefreshStats.chargeCooldownSkips + 1 end
             controller:QueueResolvedCooldownForSpellID(spellID, nil)
         else
             if callbacks.scheduleUpdate then

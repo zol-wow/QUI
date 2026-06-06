@@ -526,8 +526,15 @@ protectedLayoutEventFrame:SetScript("OnEvent", function()
     ScheduleBackdropUpdate()
 end)
 
-ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "ObjTracker_ProtectedLayout", frame = protectedLayoutEventFrame }
+local function SetupDebugInstrumentation()
+    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "ObjTracker_ProtectedLayout", frame = protectedLayoutEventFrame }
+end
+if ns.DebugRegister then -- gate contract: core/debug_gate.lua
+    ns.DebugRegister(SetupDebugInstrumentation)
+else
+    SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
+end
 
 local function ApplyLayoutSettingsSafely(settings)
     if type(InCombatLockdown) == "function" and InCombatLockdown() then

@@ -3563,8 +3563,10 @@ function ownedEngine:Initialize()
         end
     end)
 
-    ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
-    ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_Containers", frame = eventFrame }
+    ns.DebugRegister(function()
+        ns.QUI_PerfRegistry = ns.QUI_PerfRegistry or {}
+        ns.QUI_PerfRegistry[#ns.QUI_PerfRegistry + 1] = { name = "CDM_Containers", frame = eventFrame }
+    end) -- gate contract: core/debug_gate.lua — runs immediately if QUI_Debug already active
 end
 
 function ownedEngine:DisableRuntime()
