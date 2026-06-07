@@ -1408,6 +1408,16 @@ local function ShouldChatBeVisible()
 end
 
 local function OnChatFadeUpdate(self, elapsed)
+    -- If the takeover's Blizzard-frame suppression activated mid-fade, stop:
+    -- the suppression anchor owns chat visibility; don't fade back over it.
+    local Suppress = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.BlizzardSuppress
+    if Suppress and Suppress.IsActive and Suppress.IsActive() then
+        ChatVisibility.isFading = false
+        ChatVisibility.currentlyHidden = (ReadNumber(ChatVisibility.fadeTargetAlpha, 1) < 1)
+        ChatVisibility.fadeTargets = nil
+        self:SetScript("OnUpdate", nil)
+        return
+    end
     local targetAlpha = ReadNumber(ChatVisibility.fadeTargetAlpha, 1)
     local vis = GetChatVisibilitySettings()
     local duration = (vis and vis.fadeDuration) or 0.2
@@ -1436,6 +1446,11 @@ local function OnChatFadeUpdate(self, elapsed)
 end
 
 local function StartChatFade(targetAlpha)
+    -- The chat takeover's Blizzard-frame suppression owns chat alpha while
+    -- active — skip visibility fades so the two systems don't fight.
+    local Suppress = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.BlizzardSuppress
+    if Suppress and Suppress.IsActive and Suppress.IsActive() then return end
+
     local frames = GetChatFrames()
     if #frames == 0 then return end
 

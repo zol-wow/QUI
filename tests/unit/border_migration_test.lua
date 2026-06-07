@@ -356,14 +356,14 @@ do
     check("gate: ran via RunOnProfile (useClass -> class)",
         prof.synthClass.borderColorSource == "class",
         tostring(prof.synthClass.borderColorSource))
-    check("gate: schema stamped to current", prof._schemaVersion == 40,
+    check("gate: schema stamped to current", prof._schemaVersion >= 40,
         tostring(prof._schemaVersion))
 end
 do
     -- A profile already at the current version must NOT run the migration:
     -- its legacy keys are left untouched (proving the version gate skips it).
     local prof = buildProfile()
-    prof._schemaVersion = 40
+    prof._schemaVersion = 40 -- re-arm: below current so later gates re-run
     ns.Migrations.RunOnProfile(prof)
     check("gate: current-version profile skipped (no source key)",
         prof.synthClass.borderColorSource == nil

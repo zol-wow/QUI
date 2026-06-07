@@ -2889,11 +2889,117 @@ do
             ScheduleBonusRollAnchor()
         end
 
-        -- Chat frame — child overlay so the handle matches the Blizzard
-        -- frame exactly (SetAllPoints) and drag moves ChatFrame1 directly.
+        -- Chat frame — child overlay on the QUI custom display container.
+        -- The takeover suppresses ChatFrame1; QUI_CustomChatFrame IS the chat.
         local function ChatDB()
             local core = Helpers.GetCore()
             return core and core.db and core.db.profile and core.db.profile.chat
+        end
+
+        local function GetChatContainer()
+            -- Resolve lazily: the Display module may not have created the
+            -- container yet at registration time.
+            local D = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.DisplayLayer
+            if D and D.GetContainer then
+                return D.GetContainer()
+            end
+            return _G.QUI_CustomChatFrame
+        end
+
+        -- Shared mover-overlay dressing for QUI chat windows: tab-row inset
+        -- plus four-corner resize grips. Parameterized so the primary window
+        -- (chatFrame1 element) and the dynamic windows 2+ elements get
+        -- identical behavior; per-overlay grip caching keeps it idempotent.
+        local function SetupChatWindowOverlay(overlay, frame, getFrame, persist, getTabBar)
+            local extraTop = 0
+            local tabBar = getTabBar and getTabBar()
+            if tabBar and tabBar.GetHeight
+                and (not tabBar.IsShown or tabBar:IsShown()) then
+                local h = tabBar:GetHeight()
+                if type(h) == "number" and h > 0 then
+                    extraTop = h
+                end
+            end
+
+            overlay:ClearAllPoints()
+            overlay:SetPoint("TOPLEFT",     frame, "TOPLEFT",     -4,  4 + extraTop)
+            overlay:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT",  4, -4)
+
+            -- Four-corner resize grips — drag any corner to resize the
+            -- QUI chat window container.
+            if not overlay._chatResizeGrips then
+                RefreshAccentColor()
+                overlay._chatResizeGrips = {}
+                local CORNERS = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" }
+                for _, corner in ipairs(CORNERS) do
+                    local grip = CreateFrame("Button", nil, overlay)
+                    grip:SetSize(20, 20)
+                    grip:SetFrameLevel(overlay:GetFrameLevel() + 10)
+                    grip:EnableMouse(true)
+
+                    local insetX = (corner == "TOPLEFT" or corner == "BOTTOMLEFT") and 2 or -2
+                    local insetY = (corner == "TOPLEFT" or corner == "TOPRIGHT") and -2 or 2
+                    grip:ClearAllPoints()
+                    grip:SetPoint(corner, overlay, corner, insetX, insetY)
+
+                    local barH = grip:CreateTexture(nil, "OVERLAY")
+                    barH:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.9)
+                    barH:SetSize(18, 3)
+                    barH:SetPoint(corner, 0, 0)
+
+                    local barV = grip:CreateTexture(nil, "OVERLAY")
+                    barV:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.9)
+                    barV:SetSize(3, 18)
+                    barV:SetPoint(corner, 0, 0)
+
+                    local hl = grip:CreateTexture(nil, "HIGHLIGHT")
+                    hl:SetColorTexture(1, 1, 1, 0.35)
+                    hl:SetAllPoints()
+                    hl:SetBlendMode("ADD")
+
+                    local tooltipAnchor = (corner == "TOPLEFT" or corner == "BOTTOMLEFT")
+                        and "ANCHOR_BOTTOMLEFT" or "ANCHOR_BOTTOMRIGHT"
+                    grip:SetScript("OnEnter", function(self)
+                        if GameTooltip then
+                            GameTooltip:SetOwner(self, tooltipAnchor)
+                            GameTooltip:SetText("Drag to resize chat frame")
+                            GameTooltip:Show()
+                        end
+                    end)
+                    grip:SetScript("OnLeave", function()
+                        if GameTooltip then GameTooltip:Hide() end
+                    end)
+                    grip:SetScript("OnMouseDown", function(_, button)
+                        if button ~= "LeftButton" then return end
+                        if InCombatLockdown and InCombatLockdown() then return end
+                        local f = getFrame()
+                        if not f then return end
+                        f:StartSizing(corner)
+                    end)
+                    grip:SetScript("OnMouseUp", function(_, button)
+                        if button ~= "LeftButton" then return end
+                        local f = getFrame()
+                        if f then
+                            f:StopMovingOrSizing()
+                            -- Persist via the shared export — same logic as
+                            -- display_layer's own drag/grip handlers.
+                            persist()
+                        end
+                        -- Sync Layout Mode drawer size sliders to the new dims.
+                        local U = ns.QUI_LayoutMode_Utils
+                        if U and U.RefreshActiveSizeSliders then
+                            U.RefreshActiveSizeSliders()
+                        end
+                    end)
+
+                    overlay._chatResizeGrips[corner] = grip
+                end
+            end
+        end
+
+        local function PersistPrimaryChatGeometry()
+            local D = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.DisplayLayer
+            if D and D.PersistGeometry then D.PersistGeometry() end
         end
 
         um:RegisterElement({
@@ -2912,7 +3018,7 @@ do
                 if _G.QUI_RefreshChat then _G.QUI_RefreshChat() end
             end,
             setGameplayHidden = function(hide)
-                local f = _G.ChatFrame1
+                local f = GetChatContainer()
                 if not f then return end
                 if hide then
                     f:SetAlpha(0)
@@ -2923,119 +3029,231 @@ do
                 end
             end,
             getFrame = function()
-                return _G.ChatFrame1
+                return GetChatContainer()
             end,
-            -- ChatFrame1 is detached from Edit Mode (chat_frame1.lua), so QUI
-            -- owns its position. Persist layout-mode drags into
-            -- profile.chat.framePosition; it is re-applied on login.
-            savePosition = function(_key, point, relPoint, offsetX, offsetY)
-                local sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
-                if sizing and sizing.StorePosition then
-                    sizing.StorePosition(point, relPoint, offsetX, offsetY)
-                end
+            -- The display layer owns geometry (customDisplay.windows[1]);
+            -- PersistGeometry writes the container's live rect there.
+            -- Route layout-mode drags through it, exactly like the
+            -- corner-grip handlers below, so both paths persist to the
+            -- same location that Refresh reads from.
+            savePosition = function()
+                PersistPrimaryChatGeometry()
             end,
-            -- Extend overlay to cover tab bar above + glass backdrop + editbox below
+            -- Small symmetric inset: the container is its own top-level frame
+            -- with an internal drag strip. The custom tab row sits above the
+            -- container, so include its height in the mover's top edge.
             setupOverlay = function(overlay, frame)
-                overlay:ClearAllPoints()
-                overlay:SetPoint("TOPLEFT", frame, "TOPLEFT", -8, 32)
-                overlay:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 8, -32)
-
-                -- Four-corner resize grips — drag any corner to resize ChatFrame1.
-                if not overlay._chatResizeGrips then
-                    RefreshAccentColor()
-                    overlay._chatResizeGrips = {}
-                    local CORNERS = { "TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT" }
-                    for _, corner in ipairs(CORNERS) do
-                        local grip = CreateFrame("Button", nil, overlay)
-                        grip:SetSize(20, 20)
-                        grip:SetFrameLevel(overlay:GetFrameLevel() + 10)
-                        grip:EnableMouse(true)
-
-                        local insetX = (corner == "TOPLEFT" or corner == "BOTTOMLEFT") and 2 or -2
-                        local insetY = (corner == "TOPLEFT" or corner == "TOPRIGHT") and -2 or 2
-                        grip:ClearAllPoints()
-                        grip:SetPoint(corner, overlay, corner, insetX, insetY)
-
-                        local barH = grip:CreateTexture(nil, "OVERLAY")
-                        barH:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.9)
-                        barH:SetSize(18, 3)
-                        barH:SetPoint(corner, 0, 0)
-
-                        local barV = grip:CreateTexture(nil, "OVERLAY")
-                        barV:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.9)
-                        barV:SetSize(3, 18)
-                        barV:SetPoint(corner, 0, 0)
-
-                        local hl = grip:CreateTexture(nil, "HIGHLIGHT")
-                        hl:SetColorTexture(1, 1, 1, 0.35)
-                        hl:SetAllPoints()
-                        hl:SetBlendMode("ADD")
-
-                        local tooltipAnchor = (corner == "TOPLEFT" or corner == "BOTTOMLEFT")
-                            and "ANCHOR_BOTTOMLEFT" or "ANCHOR_BOTTOMRIGHT"
-                        grip:SetScript("OnEnter", function(self)
-                            if GameTooltip then
-                                GameTooltip:SetOwner(self, tooltipAnchor)
-                                GameTooltip:SetText("Drag to resize chat frame")
-                                GameTooltip:Show()
-                            end
-                        end)
-                        grip:SetScript("OnLeave", function()
-                            if GameTooltip then GameTooltip:Hide() end
-                        end)
-                        grip:SetScript("OnMouseDown", function(_, button)
-                            if button ~= "LeftButton" then return end
-                            if InCombatLockdown and InCombatLockdown() then return end
-                            local f = _G.ChatFrame1
-                            if not f then return end
-                            if f.SetResizable then f:SetResizable(true) end
-                            f:StartSizing(corner)
-                        end)
-                        grip:SetScript("OnMouseUp", function(_, button)
-                            if button ~= "LeftButton" then return end
-                            local f = _G.ChatFrame1
-                            if f then
-                                f:StopMovingOrSizing()
-                                local sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
-                                if sizing and sizing.PersistCurrentSize then
-                                    sizing.PersistCurrentSize(f)
-                                elseif _G.FCF_SavePositionAndDimensions then
-                                    _G.FCF_SavePositionAndDimensions(f)
-                                end
-                                -- A corner resize re-anchors the frame; persist
-                                -- the new position too (QUI owns it post-detach).
-                                if sizing and sizing.PersistCurrentPosition then
-                                    sizing.PersistCurrentPosition(f)
-                                end
-                            end
-                            if _G.QUI_RefreshChatSizeSliders then
-                                _G.QUI_RefreshChatSizeSliders()
-                            end
-                            -- QUI_RefreshChatSizeSliders only updates the full
-                            -- /qui settings page sliders; the Layout Mode drawer
-                            -- uses its own BuildSizeCollapsible sliders, so sync
-                            -- those to the dragged size too.
-                            local U = ns.QUI_LayoutMode_Utils
-                            if U and U.RefreshActiveSizeSliders then
-                                U.RefreshActiveSizeSliders()
-                            end
-                        end)
-
-                        overlay._chatResizeGrips[corner] = grip
-                    end
-                end
+                SetupChatWindowOverlay(overlay, frame,
+                    GetChatContainer,
+                    PersistPrimaryChatGeometry,
+                    function() return _G.QUI_CustomChatTabBar end)
             end,
             onOpen = function()
-                -- Override the framework's default clamp so the chat frame
-                -- can be dragged past the screen edge in Layout Mode.
+                -- Allow dragging past the screen edge while Layout Mode is open.
+                -- onClose restores clamping (framework fires it on every close).
                 C_Timer.After(0, function()
-                    local f = _G.ChatFrame1
-                    if not f then return end
-                    if f.SetResizable then f:SetResizable(true) end
-                    if f.SetClampedToScreen then f:SetClampedToScreen(false) end
+                    local f = GetChatContainer()
+                    if f and f.SetClampedToScreen then f:SetClampedToScreen(false) end
                 end)
             end,
+            onClose = function()
+                local f = GetChatContainer()
+                if f and f.SetClampedToScreen then f:SetClampedToScreen(true) end
+            end,
         })
+
+        -- Shared Layout Mode settings-drawer feature for chat windows 2+.
+        -- Registered once; each window's sync points its dynamic key at it
+        -- via Registry:RegisterLookupKey, and the render dispatches by
+        -- options.providerKey — one feature serves all windows. Mirrors the
+        -- damage meter per-window mover pattern (damage_meter.lua,
+        -- damageMeterWindowLayout). Position rides the shared frameAnchoring
+        -- DB keyed "chatWindow<N>"; size goes through the container +
+        -- Display.PersistGeometry, the same store the corner grips write.
+        local CHAT_WINDOW_LAYOUT_FEATURE_ID = "chatWindowLayout"
+        do
+            local Settings       = ns.Settings
+            local Registry       = Settings and Settings.Registry
+            local Schema         = Settings and Settings.Schema
+            local RenderAdapters = Settings and Settings.RenderAdapters
+            if Registry and Schema and RenderAdapters
+                and type(Registry.RegisterFeature) == "function"
+                and type(Schema.Feature) == "function"
+                and type(RenderAdapters.RenderPositionOnly) == "function" then
+                Registry:RegisterFeature(Schema.Feature({
+                    id     = CHAT_WINDOW_LAYOUT_FEATURE_ID,
+                    render = {
+                        layout = function(host, options)
+                            local providerKey = options and options.providerKey
+                            if type(providerKey) ~= "string" or providerKey == "" then
+                                return 80
+                            end
+
+                            local U = ns.QUI_LayoutMode_Utils
+                            local windowID = tonumber(providerKey:match("^chatWindow(%d+)$"))
+                            local D = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.DisplayLayer
+                            local container = windowID and D and D.GetContainer
+                                and D.GetContainer(windowID)
+
+                            -- Without a live container or the size helper,
+                            -- fall back to position-only controls.
+                            if not container or not U
+                                or type(U.BuildPositionCollapsible) ~= "function"
+                                or type(U.BuildSizeCollapsible) ~= "function"
+                                or type(U.StandardRelayout) ~= "function" then
+                                return RenderAdapters.RenderPositionOnly(host, providerKey)
+                            end
+
+                            -- GetWidth/GetHeight are SecretWhenAnchoringSecret;
+                            -- this chain is QUI-owned → UIParent so secrets
+                            -- can't occur, but guard like chat_features'
+                            -- ChatGetSize does for the primary window.
+                            local function getSize()
+                                local w, h = container:GetWidth(), container:GetHeight()
+                                if type(w) ~= "number" then w = 220 end
+                                if type(h) ~= "number" then h = 100 end
+                                return math.floor(w + 0.5), math.floor(h + 0.5)
+                            end
+
+                            local function setSize(w, h)
+                                if type(w) ~= "number" or type(h) ~= "number" then return end
+                                -- Same bounds as display_layer's SetResizeBounds
+                                -- minimums; upper limits mirror the primary
+                                -- chat window's size sliders.
+                                w = math.max(220, math.min(1400, math.floor(w + 0.5)))
+                                h = math.max(100, math.min(900, math.floor(h + 0.5)))
+                                container:SetSize(w, h)
+                                if D.PersistGeometry then D.PersistGeometry(windowID) end
+                            end
+
+                            local prevPosOnly = U._layoutModePositionOnly
+                            U._layoutModePositionOnly = false
+                            local sections = {}
+                            local function relayout() U.StandardRelayout(host, sections) end
+                            local ok, err = xpcall(function()
+                                U.BuildPositionCollapsible(host, providerKey, nil, sections, relayout)
+                                U.BuildSizeCollapsible(host, {
+                                    getSize = getSize,
+                                    setSize = setSize,
+                                    minW = 220, maxW = 1400,
+                                    minH = 100, maxH = 900,
+                                    widthDescription  = "Chat window width in pixels.",
+                                    heightDescription = "Chat window height in pixels.",
+                                }, sections, relayout)
+                                relayout()
+                            end, function(msg) return msg end)
+                            U._layoutModePositionOnly = prevPosOnly
+                            if not ok and geterrorhandler then geterrorhandler()(err) end
+                            return host:GetHeight()
+                        end,
+                    },
+                }))
+            end
+        end
+
+        -- Windows 2+ of the multi-window chat display: one mover element per
+        -- additional window, re-derived from the live window count on every
+        -- sync. Window ids SHIFT on deletion, so stale defs are dropped and
+        -- fresh ones registered with current captures — UnregisterElement/
+        -- RegisterElement both handle a live Layout Mode (handles torn down /
+        -- created immediately). display_layer pings this on every window
+        -- lifecycle change (create/delete/ensure/refresh); the call below
+        -- covers windows that existed before this method was installed.
+        local registeredChatWindowKeys = {}
+        function um:SyncChatWindowElements()
+            local D = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.DisplayLayer
+            local count = (D and D.GetWindowCount and D.GetWindowCount()) or 0
+            for key in pairs(registeredChatWindowKeys) do
+                um:UnregisterElement(key)
+                registeredChatWindowKeys[key] = nil
+            end
+            if not (D and D.GetContainer) then return end
+            for i = 2, count do
+                local windowID = i
+                local key = "chatWindow" .. windowID
+                local function getFrame()
+                    return D.GetContainer(windowID)
+                end
+                local function persist()
+                    if D.PersistGeometry then D.PersistGeometry(windowID) end
+                end
+                um:RegisterElement({
+                    key = key,
+                    label = "Chat Window " .. windowID,
+                    group = "Display",
+                    order = 7 + windowID, -- after the primary chat element (order 7)
+                    isOwned = true,
+                    -- No setEnabled: extra windows are created/removed via the
+                    -- chat settings, not toggled here (no drawer checkbox).
+                    isEnabled = function()
+                        local db = ChatDB()
+                        return db and db.enabled ~= false
+                    end,
+                    setGameplayHidden = function(hide)
+                        local f = getFrame()
+                        if not f then return end
+                        if hide then
+                            f:SetAlpha(0)
+                            f:EnableMouse(false)
+                        else
+                            f:SetAlpha(1)
+                            f:EnableMouse(true)
+                        end
+                    end,
+                    getFrame = getFrame,
+                    savePosition = function()
+                        persist()
+                    end,
+                    setupOverlay = function(overlay, frame)
+                        SetupChatWindowOverlay(overlay, frame, getFrame, persist,
+                            function()
+                                local TabUI = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabUI
+                                return TabUI and TabUI.GetBar and TabUI.GetBar(windowID)
+                            end)
+                    end,
+                    onOpen = function()
+                        -- Allow dragging past the screen edge while Layout Mode
+                        -- is open; onClose restores clamping.
+                        C_Timer.After(0, function()
+                            local f = getFrame()
+                            if f and f.SetClampedToScreen then f:SetClampedToScreen(false) end
+                        end)
+                    end,
+                    onClose = function()
+                        local f = getFrame()
+                        if f and f.SetClampedToScreen then f:SetClampedToScreen(true) end
+                    end,
+                })
+                registeredChatWindowKeys[key] = true
+
+                -- Anchor-target registry: lets other QUI elements anchor TO
+                -- this window and makes QUI_ApplyFrameAnchor recognize the
+                -- key on reload (same wiring as damage meter windows).
+                if _G.QUI_RegisterFrameResolver then
+                    _G.QUI_RegisterFrameResolver(key, {
+                        resolver    = getFrame,
+                        displayName = "Chat Window " .. windowID,
+                        category    = "Display",
+                        order       = 7 + windowID,
+                    })
+                end
+
+                -- Surface the mover in the Layout Mode settings drawer:
+                -- point this dynamic key at the shared feature.
+                local Registry = ns.Settings and ns.Settings.Registry
+                if Registry and type(Registry.RegisterLookupKey) == "function" then
+                    Registry:RegisterLookupKey(CHAT_WINDOW_LAYOUT_FEATURE_ID, key)
+                end
+
+                -- Apply a saved frameAnchoring entry if the user anchored
+                -- this window (no-op otherwise — display_layer's saved
+                -- geometry already positioned it).
+                if _G.QUI_ApplyFrameAnchor then
+                    _G.QUI_ApplyFrameAnchor(key)
+                end
+            end
+        end
+        um:SyncChatWindowElements()
     end
 
     C_Timer.After(2, RegisterDisplayElements)

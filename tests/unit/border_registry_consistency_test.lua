@@ -36,7 +36,7 @@ local EXPECTED_KEYS = {
     "portrait", "skyriding", "xpTracker", "preyTracker", "atonement",
     "combatTimer", "brezCounter", "actionTracker", "actionTrackerIcon",
     "rotationAssist", "cdmContainers", "cdmBuffContainers", "mplusTimer",
-    "readyCheck", "alerts", "chat", "chatTabs", "tooltip", "damageMeter",
+    "readyCheck", "alerts", "chat", "tooltip", "damageMeter",
 }
 local expectedLookup = {}
 for _, k in ipairs(EXPECTED_KEYS) do expectedLookup[k] = true end

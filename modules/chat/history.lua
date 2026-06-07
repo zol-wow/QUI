@@ -4,6 +4,10 @@
 -- them on next login with session separators. Time-based retention with
 -- per-channel overrides. Opt-in whisper storage. Per-channel exclude list.
 --
+-- Single-path ownership: the store subscriber (installed at ADDON_LOADED)
+-- owns ALL capture. Capture starts at ADDON_LOADED so entries exist before
+-- PLAYER_ENTERING_WORLD; no AddMessage hook path exists.
+--
 -- Storage layout:
 --   Settings : db.profile.chat.history       (toggles, retention sliders)
 --   Entries  : QUI_ChatHistory (per-character SV file via Storage)
@@ -12,15 +16,6 @@
 -- file (declared in QUI.toc as `SavedVariablesPerCharacter`). The earlier
 -- AceDB-backed slot (`db.char.chat.history.entries`) is migrated once on
 -- first load via Storage.MigrateFromAceDB.
---
--- Chat-type detection:
---   Blizzard's chat code calls `frame:AddMessage(msg, r, g, b, info.id)`
---   where `info.id` is the integer ChatTypeInfo[<key>].id. We capture that
---   5th positional arg and reverse it back to the chatTypeKey ("WHISPER",
---   "GUILD", "CHANNEL5", etc.) via a one-shot map built from ChatTypeInfo.
---   The key is stamped on each entry as `c` for per-channel retention,
---   gates the storeWhispers filter, and feeds the channel-exclusion gate
---   (CHANNEL%d+ keys are resolved to channel names via GetChannelName).
 --
 -- Persistence model:
 --   Captures append to Storage's plain `current` SV array. Older entries are
@@ -37,13 +32,6 @@ local I = assert(ns.QUI and ns.QUI.Chat and ns.QUI.Chat._internals,
 ns.QUI.Chat.History = ns.QUI.Chat.History or {}
 local History = ns.QUI.Chat.History
 
-local Helpers = ns.Helpers
--- _G.QUI is the AceAddon (provides .db, set by QUICore:OnInitialize).
--- NOT to be confused with ns.QUI, which is the chat module's namespace
--- bucket — that one has no .db. Capturing the wrong one breaks any
--- code path that needs db.profile / db.char access.
-local QUI = _G.QUI
-
 local LOGIN_REPLAY_LIMIT = 500
 
 -- Forward declaration. ApplyEnabled is referenced by the _afterRefresh
@@ -51,80 +39,16 @@ local LOGIN_REPLAY_LIMIT = 500
 -- closures would capture nil. Same pattern other chat modifiers use.
 local ApplyEnabled
 
--- File-local re-pump flag. When true, the AddMessage hook drops captures
+-- File-local re-pump flag. When true, the store subscriber drops captures
 -- so we don't recursively store messages we are replaying.
 History._repumping = false
 
+-- Latch: store subscriber installed at most once per session.
+local storeSubscribed = false
+
 -- ---------------------------------------------------------------------------
--- Capture: hooksecurefunc on each managed ChatFrame's AddMessage
+-- Capture: store subscriber (single-path)
 -- ---------------------------------------------------------------------------
-
--- Weak-keyed: don't pin frames if Blizzard ever recycles them.
-local hookedFrames = setmetatable({}, { __mode = "k" })
-
--- Reverse map: ChatTypeInfo[key].id (integer) → key (string). Built lazily
--- on first lookup because ChatTypeInfo may not be fully populated at file
--- load. The forward direction (key → info table with .id) is what Blizzard
--- exposes; we want the inverse for incoming AddMessage calls that supply
--- the integer id as the 5th positional arg. Only commit the cache once
--- ChatTypeInfo is actually populated — building empty would silently
--- bypass the whisper-storage gate for the rest of the session.
-local idToKey
-local function resolveChatTypeKey(chatTypeID)
-    if not chatTypeID then return nil end
-    if not idToKey and type(ChatTypeInfo) == "table" then
-        local m = {}
-        for k, v in pairs(ChatTypeInfo) do
-            if type(v) == "table" and v.id then
-                m[v.id] = k
-            end
-        end
-        if next(m) then idToKey = m end
-    end
-    return idToKey and idToKey[chatTypeID] or nil
-end
-
-local EVENT_TYPE_TO_BASE_KEY = {
-    PARTY_LEADER = "PARTY",
-    RAID_LEADER = "RAID",
-    RAID_WARNING = "RAID",
-    INSTANCE_CHAT_LEADER = "INSTANCE_CHAT",
-    GUILD_ACHIEVEMENT = "GUILD",
-    GUILD_ITEM_LOOTED = "GUILD",
-    WHISPER_INFORM = "WHISPER",
-    BN_WHISPER_INFORM = "BN_WHISPER",
-}
-
-local function readPackedNeverSecret(eventArgs, index)
-    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(eventArgs) then return nil end
-    if type(eventArgs) ~= "table" then return nil end
-    local value = eventArgs[index]
-    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value) then return nil end
-    return value
-end
-
-local function resolveChatTypeKeyFromEvent(event, eventArgs)
-    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(event) then return nil end
-    if type(event) ~= "string" then return nil end
-
-    local eventType = event:match("^CHAT_MSG_(.+)$")
-    if not eventType then return nil end
-
-    if eventType == "CHANNEL" or eventType == "COMMUNITIES_CHANNEL" then
-        -- ChatInfoDocumentation marks channelIndex (payload arg 8) NeverSecret.
-        local slot = tonumber(readPackedNeverSecret(eventArgs, 8))
-        if slot and slot > 0 then
-            return "CHANNEL" .. slot
-        end
-        return "CHANNEL"
-    end
-
-    local categoryList = _G.CHAT_INVERTED_CATEGORY_LIST
-    if type(categoryList) == "table" and categoryList[eventType] then
-        return categoryList[eventType]
-    end
-    return EVENT_TYPE_TO_BASE_KEY[eventType] or eventType
-end
 
 -- Whisper-family chatTypeKeys. Used by the storeWhispers gate to drop
 -- whisper messages without falling back on locale-fragile text sniffing.
@@ -146,82 +70,37 @@ local function isExcludedChannel(chatTypeKey, excludedSet)
     return excludedSet[channelName] == true
 end
 
-local function captureToHistory(frame, msg, r, g, b, chatTypeID, accessID, typeID, event, eventArgs, ...)
+-- Store subscriber owns ALL capture (pre-PEW and steady state). Capture
+-- starts at ADDON_LOADED so entries exist before PLAYER_ENTERING_WORLD;
+-- no AddMessage hook path exists. f=1: frame-agnostic; entries record the
+-- default-frame slot.
+local function captureFromStore(entry)
     if History._repumping then return end
-
-    -- Secret guards must precede type(msg) and the msg == "" compare —
-    -- both push msg as an operand and taint execution, which propagates
-    -- back through AddMessage into Blizzard's HistoryKeeper. Same
-    -- IsSecretValue-first ordering as copy.lua:135.
-    if Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(msg) then return end
-    if Helpers and Helpers.HasSecretValue and Helpers.HasSecretValue(r, g, b) then return end
-
-    if type(msg) ~= "string" or msg == "" then return end
-
+    if entry.s then return end -- secrets are never persisted
+    if type(entry.m) ~= "string" or entry.m == "" then return end -- future producers
+    local e = entry.e
+    if e == "ADDMESSAGE" or e == "BACKFILL" or e == "HISTORY" then return end
     local settings = I.GetSettings and I.GetSettings()
     if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
     local s = settings and settings.history
     if not s or not s.enabled then return end
-
-    local frameID
-    local nWindows = _G.NUM_CHAT_WINDOWS or 50
-    for i = 1, nWindows do
-        if _G["ChatFrame" .. i] == frame then
-            frameID = i
-            break
-        end
-    end
-    if not frameID then return end
-
-    local chatTypeKey
-    if not (Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(chatTypeID)) then
-        chatTypeKey = resolveChatTypeKey(chatTypeID)
-    end
-    if not chatTypeKey then
-        chatTypeKey = resolveChatTypeKeyFromEvent(event, eventArgs)
-    end
-
-    if not s.storeWhispers and chatTypeKey and WHISPER_KEYS[chatTypeKey] then
-        return
-    end
-
-    if isExcludedChannel(chatTypeKey, s.excludedChannels) then
-        return
-    end
-
+    local chatTypeKey = entry.k
+    if not s.storeWhispers and chatTypeKey and WHISPER_KEYS[chatTypeKey] then return end
+    if isExcludedChannel(chatTypeKey, s.excludedChannels) then return end
     local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
     if not Storage then return end
-
     Storage.AppendLive({
-        t = (GetServerTime and GetServerTime()) or time(),
-        f = frameID,
-        m = msg,
-        r = r, g = g, b = b,
+        t = entry.t or ((GetServerTime and GetServerTime()) or time()),
+        f = 1,
+        m = entry.m,
+        r = entry.r, g = entry.g, b = entry.b,
         c = chatTypeKey,
     })
 end
 
-local function hookFrame(frame)
-    if not frame or hookedFrames[frame] then return end
-    hookedFrames[frame] = true
-    hooksecurefunc(frame, "AddMessage", captureToHistory)
-end
-
-local function hookAllManagedFrames()
-    local nWindows = _G.NUM_CHAT_WINDOWS or 10
-    for i = 1, nWindows do
-        local f = _G["ChatFrame" .. i]
-        -- Skip combat log frame. Belt-and-suspenders: `frame.isCombatLog`
-        -- is the modern flag (robust to user-relocated combat log) but it's
-        -- set by Blizzard_CombatLog, a load-on-demand addon — at QUI's
-        -- ADDON_LOADED the flag may not be set yet. The `_G.ChatFrame2`
-        -- identity check is the unconditional fallback for the standard
-        -- combat-log slot.
-        if f and not f.isCombatLog and f ~= _G.ChatFrame2 then
-            hookFrame(f)
-        end
-    end
-end
+-- Export for the test harness (the real subscriber installs on ADDON_LOADED,
+-- not directly reachable from Lua unit tests).
+History._CaptureFromStore = captureFromStore
 
 -- ---------------------------------------------------------------------------
 -- Pruning
@@ -253,7 +132,7 @@ end
 -- The body is wrapped in pcall + a guaranteed flag-reset so any error inside
 -- (frame:AddMessage on a weird frame, table.sort on a malformed entry, etc.)
 -- can't leave History._repumping stuck at true — that would silently kill
--- captureToHistory for the rest of the session.
+-- the store-subscriber capture for the rest of the session.
 local function repump()
     History._repumping = true
 
@@ -274,35 +153,27 @@ local function repump()
         local entries = Storage.GetRecentEntries and Storage.GetRecentEntries(replayLimit) or {}
         if #entries == 0 then return end
 
-        -- Group by frame, replay.
-        local byFrame = {}
-        for i = 1, #entries do
-            local e = entries[i]
-            if e.f then
-                byFrame[e.f] = byFrame[e.f] or {}
-                local list = byFrame[e.f]
-                list[#list + 1] = e
-            end
-        end
-
         local sepBefore = "──── Previous session ────"
         local sepAfter  = "──── Resumed ────"
         local sepR, sepG, sepB = 0.5, 0.5, 0.5
 
-        for frameID, list in pairs(byFrame) do
-            local frame = _G["ChatFrame" .. frameID]
-            if frame then
-                if s.showSeparators then
-                    frame:AddMessage(sepBefore, sepR, sepG, sepB)
-                end
-                for i = 1, #list do
-                    local e = list[i]
-                    frame:AddMessage(e.m or "", e.r or 1, e.g or 1, e.b or 1)
-                end
-                if s.showSeparators then
-                    frame:AddMessage(sepAfter, sepR, sepG, sepB)
-                end
+        -- Chat enabled = the QUI display owns rendering; repump goes to the
+        -- store. (Repump never runs with chat disabled — gated above.)
+        -- e="HISTORY" excludes them from sounds/recapture; k="SYSTEM"
+        -- routes them like other un-classifiable rendered lines.
+        -- History._repumping is still true here (we are inside the pcall).
+        local StoreMod = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.MessageStore
+        if StoreMod and StoreMod.Append then
+            local function pump(m, pr, pg, pb)
+                StoreMod.Append({ m = m, r = pr, g = pg, b = pb, e = "HISTORY", k = "SYSTEM",
+                    t = (GetServerTime and GetServerTime()) or time() })
             end
+            if s.showSeparators then pump(sepBefore, sepR, sepG, sepB) end
+            for i = 1, #entries do
+                local e = entries[i]
+                pump(e.m or "", e.r or 1, e.g or 1, e.b or 1)
+            end
+            if s.showSeparators then pump(sepAfter, sepR, sepG, sepB) end
         end
     end)
 
@@ -312,6 +183,11 @@ local function repump()
         geterrorhandler()(err)
     end
 end
+
+-- Export for the test harness: repump() is local; the PLAYER_LOGIN C_Timer
+-- path is not directly reachable in unit tests without mocking the event
+-- loop. Tests call History._Repump() directly.
+History._Repump = repump
 
 -- ---------------------------------------------------------------------------
 -- Public API: Clear history
@@ -379,7 +255,14 @@ addonFrame:SetScript("OnEvent", function(self, event, name)
     if event == "ADDON_LOADED" and name == ADDON_NAME then
         local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
         if Storage and Storage.Init then Storage.Init() end
-        hookAllManagedFrames()
+        -- Subscribe once so captureFromStore receives every new store entry.
+        if not storeSubscribed then
+            local MsgStore = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.MessageStore
+            if MsgStore and MsgStore.OnAppend then
+                storeSubscribed = true
+                MsgStore.OnAppend(captureFromStore)
+            end
+        end
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_LOGIN" then
         local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
@@ -396,18 +279,6 @@ addonFrame:SetScript("OnEvent", function(self, event, name)
         pruneAndPersist()
     end
 end)
-
--- New permanent windows opened mid-session also need capture hooks.
--- Idempotent via hookedFrames weak table (re-hooking is a no-op).
-if hooksecurefunc and _G.FCF_OpenNewWindow then
-    hooksecurefunc("FCF_OpenNewWindow", function(...)
-        if C_Timer and C_Timer.After then
-            C_Timer.After(0.1, hookAllManagedFrames)
-        else
-            hookAllManagedFrames()
-        end
-    end)
-end
 
 -- ---------------------------------------------------------------------------
 -- Cleanup on chat-window close

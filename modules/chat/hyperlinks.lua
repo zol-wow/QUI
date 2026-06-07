@@ -5,9 +5,10 @@
 --      clickable waypoint link that fires C_Map.SetUserWaypoint on click.
 --   2. Friendly URL labels — lookup table consulted by chat.lua's URL
 --      detection to swap raw URLs for human-readable labels (Wowhead, etc).
---   3. Player-name interaction — class_colors.lua wraps colored names with
---      this module's player protocol when enabled; clicks open a
---      quick-action dropdown (Whisper / Invite / Add Friend / Ignore).
+--   3. Player-name CLICK handling — kept for player-protocol links persisted
+--      in old sessions' history (the producer, the rendered-path name
+--      wrapper, was deleted with the takeover); clicks open a quick-action
+--      dropdown (Whisper / Invite / Add Friend / Ignore).
 --
 -- All three click pathways funnel through a single SetItemRef hook that
 -- dispatches based on protocol prefix, isolated from chat.lua's URL handler.
@@ -18,17 +19,10 @@ local ADDON_NAME, ns = ...
 local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
     "QUI Chat: hyperlinks.lua loaded before chat.lua. Check chat.xml — chat.lua must precede hyperlinks.lua.")
 
-local Pipeline = assert(ns.QUI.Chat.Pipeline,
-    "QUI Chat: hyperlinks.lua loaded before pipeline.lua. Check chat.xml — pipeline.lua must precede hyperlinks.lua.")
-
 ns.QUI.Chat.Hyperlinks = ns.QUI.Chat.Hyperlinks or {}
 local HL = ns.QUI.Chat.Hyperlinks
 
 local Helpers = ns.Helpers
-
--- Forward declaration so closures (event handler, after-refresh) can capture
--- ApplyEnabled before the function body is assigned later in the file.
-local ApplyEnabled
 
 local function IsSecret(value)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
@@ -52,18 +46,20 @@ local function wrapCoord(x, y, originalText)
         x, y, originalText or string.format("(%s, %s)", x, y))
 end
 
-local function coordsModifier(msg, info, event)
-    if IsSecret(msg) or IsChatMessagingLockedDown() then
-        return msg, info
-    end
-    if type(msg) ~= "string" or msg == "" then return msg, info end
+-- Capture-path export: pure text transform, self-gated on the coordinates
+-- toggle per call (no registration plumbing). Runs in message_capture's
+-- transform chain after redundant-text collapse, before keyword highlight —
+-- the same relative order the old rendered pipeline used.
+function HL.TryLinkifyCoordsForCapture(msg)
+    if IsSecret(msg) or IsChatMessagingLockedDown() then return msg end
+    if type(msg) ~= "string" or msg == "" then return msg end
 
     local settings = I.GetSettings and I.GetSettings()
     local s = (I.IsChatEnabled and I.IsChatEnabled(settings)) and settings.hyperlinks
-    if not s or not s.coordinates then return msg, info end
+    if not s or not s.coordinates then return msg end
 
     -- Skip if msg already contains our addon protocol (don't double-wrap).
-    if msg:find("addon:quaziiuichat:waypoint:", 1, true) then return msg, info end
+    if msg:find("addon:quaziiuichat:waypoint:", 1, true) then return msg end
 
     msg = msg:gsub(COORD_PATTERN_PAREN, function(x, y)
         return wrapCoord(x, y, "(" .. x .. ", " .. y .. ")")
@@ -72,7 +68,7 @@ local function coordsModifier(msg, info, event)
         return wrapCoord(x, y, "[" .. x .. ", " .. y .. "]")
     end)
 
-    return msg, info
+    return msg
 end
 
 -- ---------------------------------------------------------------------------
@@ -397,50 +393,5 @@ function HL.ShowPlayerMenu(name, realm)
     ToggleDropDownMenu(1, nil, playerMenu, "cursor", 0, 0)
 end
 
--- ---------------------------------------------------------------------------
--- Registration / live-toggle
--- ---------------------------------------------------------------------------
--- Coords modifier registers/unregisters with the pipeline based on the
--- coordinates toggle. friendlyURLs and interactiveNames are read on-demand
--- by their respective code paths (chat.lua URL handler, class_colors wrap)
--- so no toggle plumbing is needed for those.
-
-local REGISTERED = false
-
-function ApplyEnabled()
-    local settings = I.GetSettings and I.GetSettings()
-    local s = (I.IsChatEnabled and I.IsChatEnabled(settings)) and settings.hyperlinks
-    if not s then
-        if REGISTERED then
-            Pipeline.Unregister("hyperlinks_coords")
-            REGISTERED = false
-        end
-        return
-    end
-
-    if s.coordinates and not REGISTERED then
-        Pipeline.Register("hyperlinks_coords", 250, coordsModifier)
-        REGISTERED = true
-    elseif not s.coordinates and REGISTERED then
-        Pipeline.Unregister("hyperlinks_coords")
-        REGISTERED = false
-    end
-end
-
--- Initial application. Defensive no-op if QUI.db isn't ready at file-load
--- time (returns early because settings is nil); PLAYER_LOGIN guarantees the
--- actual activation once AceDB has been constructed in OnInitialize.
-ApplyEnabled()
-
-local loginFrame = CreateFrame("Frame")
-loginFrame:RegisterEvent("PLAYER_LOGIN")
-loginFrame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_LOGIN" then
-        ApplyEnabled()
-    end
-end)
-
--- Register ApplyEnabled with the chat module's centralized after-refresh
--- hook list so it runs after every chat refresh (settings change, profile
--- switch, profile import, etc.).
-table.insert(ns.QUI.Chat._afterRefresh, ApplyEnabled)
+-- (No registration plumbing: TryLinkifyCoordsForCapture self-gates per call;
+-- friendlyURLs and interactiveNames are read on-demand by their consumers.)

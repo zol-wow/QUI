@@ -297,6 +297,44 @@ local function GetSafeFrameHeight(frame, fallback)
     return height
 end
 
+-- Takeover anchor: while the Blizzard frames are suppressed (reparented to the
+-- hidden anchor), frame 1's bar follows the custom display container (the bar
+-- itself is parented to UIParent, so it stays visible either way — only the
+-- anchor moves).
+local function GetBarAnchorFrame(chatFrame, frameID)
+    if frameID == 1 then
+        local Suppress = ns.QUI.Chat.BlizzardSuppress
+        if Suppress and Suppress.IsActive and Suppress.IsActive() then
+            local Display = ns.QUI.Chat.DisplayLayer
+            local c = Display and Display.GetContainer and Display.GetContainer()
+            if c and c.IsShown and c:IsShown() then
+                return c
+            end
+        end
+    end
+    return chatFrame
+end
+BB._GetBarAnchorFrame = GetBarAnchorFrame -- exposed for unit tests
+
+-- Visibility teardown only applies when the bar is actually anchored to the
+-- Blizzard frame — a suppressed frame-1 (intentionally hidden) re-anchors to
+-- the custom display instead (the old visibility check tore the bar down
+-- before the anchor chooser could move it).
+local function ShouldSkipVisibilityTeardown(chatFrame, frameID)
+    return GetBarAnchorFrame(chatFrame, frameID) ~= chatFrame
+end
+BB._ShouldSkipVisibilityTeardown = ShouldSkipVisibilityTeardown -- for unit tests
+
+-- Public reconcile for the display-fallback path: suppression flips change
+-- the frame-1 bar's anchor target, and DisplayFallback.Apply runs AFTER the
+-- _afterRefresh chain — re-reconcile here so the bar moves immediately
+-- instead of one refresh late.
+function BB.Reapply()
+    if ApplyEnabled then
+        ApplyEnabled()
+    end
+end
+
 local function buildBar(chatFrame, frameID, config)
     local hasSecureButtons = hasCustomMacroButtons(config)
     if hasSecureButtons and isInCombat() then
@@ -319,38 +357,43 @@ local function buildBar(chatFrame, frameID, config)
 
     bar:ClearAllPoints()
 
+    local anchorFrame = GetBarAnchorFrame(chatFrame, frameID)
+
     local ox = tonumber(config.offsetX) or 0
     local oy = tonumber(config.offsetY) or 0
     local buttonSpacing = tonumber(config.buttonSpacing) or 2
     if buttonSpacing < 0 then buttonSpacing = 0 end
 
     local position = config.position or "outside_left"
-    local chatHeight = GetSafeFrameHeight(chatFrame, 100)
+    local chatHeight = GetSafeFrameHeight(anchorFrame, 100)
     if position == "outside_left" then
         bar:SetSize(70, math.max(chatHeight, 20))
-        bar:SetPoint("TOPRIGHT",    chatFrame, "TOPLEFT",    ox, oy)
-        bar:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMLEFT", ox, oy)
+        bar:SetPoint("TOPRIGHT",    anchorFrame, "TOPLEFT",    ox, oy)
+        bar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMLEFT", ox, oy)
     elseif position == "outside_right" then
         bar:SetSize(70, math.max(chatHeight, 20))
-        bar:SetPoint("TOPLEFT",    chatFrame, "TOPRIGHT",    ox, oy)
-        bar:SetPoint("BOTTOMLEFT", chatFrame, "BOTTOMRIGHT", ox, oy)
+        bar:SetPoint("TOPLEFT",    anchorFrame, "TOPRIGHT",    ox, oy)
+        bar:SetPoint("BOTTOMLEFT", anchorFrame, "BOTTOMRIGHT", ox, oy)
     elseif position == "inside_left" then
         bar:SetSize(70, math.max(chatHeight - 24, 20))
-        bar:SetPoint("TOPLEFT",    chatFrame, "TOPLEFT",    4 + ox, -24 + oy)
-        bar:SetPoint("BOTTOMLEFT", chatFrame, "BOTTOMLEFT", 4 + ox,   4 + oy)
+        bar:SetPoint("TOPLEFT",    anchorFrame, "TOPLEFT",    4 + ox, -24 + oy)
+        bar:SetPoint("BOTTOMLEFT", anchorFrame, "BOTTOMLEFT", 4 + ox,   4 + oy)
     elseif position == "inside_right" then
         bar:SetSize(70, math.max(chatHeight - 24, 20))
-        bar:SetPoint("TOPRIGHT",    chatFrame, "TOPRIGHT",    -4 + ox, -24 + oy)
-        bar:SetPoint("BOTTOMRIGHT", chatFrame, "BOTTOMRIGHT", -4 + ox,   4 + oy)
+        bar:SetPoint("TOPRIGHT",    anchorFrame, "TOPRIGHT",    -4 + ox, -24 + oy)
+        bar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", -4 + ox,   4 + oy)
     elseif position == "inside_tabs" then
         bar:SetSize(180, 22)
         -- Anchor to the configured frame's own tab. Visibility reconciliation
         -- below keeps inactive docked frames from leaving their bars behind.
+        -- When suppressed the tab is reparented to the hidden anchor, so skip
+        -- the tab anchor while suppression is active.
         local tab = _G["ChatFrame" .. tostring(frameID) .. "Tab"]
-        if tab and tab:IsShown() then
+        local suppressed = anchorFrame ~= chatFrame
+        if tab and tab:IsShown() and not suppressed then
             bar:SetPoint("LEFT", tab, "RIGHT", 8 + ox, oy)
         else
-            bar:SetPoint("TOPLEFT", chatFrame, "TOPLEFT", ox, 8 + oy)
+            bar:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", ox, 8 + oy)
         end
     elseif position == "hidden" then
         bar:Hide()
@@ -453,7 +496,8 @@ local function reconcileFrame(chatFrame, frameID)
         return
     end
 
-    if not isChatFrameVisible(chatFrame) then
+    if not isChatFrameVisible(chatFrame)
+        and not ShouldSkipVisibilityTeardown(chatFrame, frameID) then
         teardownBar(chatFrame)
         return
     end

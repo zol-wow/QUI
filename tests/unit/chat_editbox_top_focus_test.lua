@@ -3,11 +3,14 @@
 
 local function noop() end
 
-function InCombatLockdown() return false end
-function GetChatWindowInfo() return "General" end
-function FCF_Tab_OnClick() end
+function _G.InCombatLockdown() return false end
+function _G.GetChatWindowInfo() return "General" end
+local stockTabClicks = 0
+function _G.FCF_Tab_OnClick()
+    stockTabClicks = stockTabClicks + 1
+end
 
-C_Timer = {
+_G.C_Timer = {
     After = function(_, callback) callback() end,
 }
 
@@ -19,7 +22,10 @@ local function createFrame()
         width = 420,
     }
 
-    function frame:RegisterEvent() end
+    function frame:RegisterEvent(event)
+        self.events = self.events or {}
+        self.events[event] = true
+    end
     function frame:SetScript(script, callback) self.scripts = self.scripts or {}; self.scripts[script] = callback end
     function frame:HookScript(script, callback)
         self.hooks[script] = self.hooks[script] or {}
@@ -45,22 +51,32 @@ local function createFrame()
     function frame:HasFocus() return self.focused end
     function frame:GetRegions() end
     function frame:SetTextInsets(left, right, top, bottom) self.insets = { left, right, top, bottom } end
+    function frame:GetParent() return self.parent end
+    function frame:SetParent(p) self.parent = p end
 
     return frame
 end
 
-function CreateFrame()
-    return createFrame()
+local createdFrames = {}
+function _G.CreateFrame(_, name, parent)
+    local f = createFrame()
+    f.parent = parent
+    createdFrames[#createdFrames + 1] = f
+    return f
 end
 
 local settings = {
     enabled = true,
+    defaultTab = 2,
+    defaultTabPerSpec = false,
     glass = { enabled = true },
     editBox = {
         enabled = true,
         positionTop = true,
     },
 }
+_G.ChatFrame2 = {}
+_G.ChatFrame2Tab = {}
 
 local editBox = createFrame()
 editBox.focused = false
@@ -90,6 +106,12 @@ local ns = {
                 IsChatEnabled = function(s) return s and s.enabled ~= false end,
                 ApplySurfaceStyle = noop,
             },
+            TabUI = {
+                ActivateFrameID = function(windowID, frameID)
+                    settings._activatedDefaultTab = frameID
+                    return true
+                end,
+            },
         },
     },
 }
@@ -97,6 +119,21 @@ local ns = {
 assert(loadfile("modules/chat/editbox_basics.lua"))("QUI", ns)
 
 local EditBoxBasics = ns.QUI.Chat.EditBoxBasics
+
+local defaultEventFrame
+for _, frame in ipairs(createdFrames) do
+    if frame.events and frame.events.PLAYER_ENTERING_WORLD then
+        defaultEventFrame = frame
+        break
+    end
+end
+assert(defaultEventFrame, "default-tab event frame registered")
+defaultEventFrame.scripts.OnEvent(defaultEventFrame, "PLAYER_ENTERING_WORLD", true, false)
+assert(settings._activatedDefaultTab == 2,
+    "default tab index must activate the matching QUI tab")
+assert(stockTabClicks == 0,
+    "default tab activation must not click or sync stock chat frame tabs")
+
 EditBoxBasics.StyleEditBox(chatFrame)
 
 local backdrop = ns.QUI.Chat._internals.editBoxBackdrops[chatFrame]
@@ -129,5 +166,42 @@ settings.editBox.positionTop = true
 EditBoxBasics.StyleEditBox(chatFrame)
 assert(backdrop.shown == false, "top edit box should ignore stale focus after bottom-mode blur")
 assert(editBox.alpha == 0, "top edit box should hide stale draft text after bottom-mode blur")
+
+-- Live-disabling the editBox sub-option: the settings bail inside StyleEditBox
+-- must clean up prior styling (gate lives in ONE place — callers never
+-- duplicate it), so the stock editbox returns without a /reload.
+settings.editBox.positionTop = false
+EditBoxBasics.StyleEditBox(chatFrame)
+assert(backdrop.shown == true, "bottom edit box backdrop shown before the disable flip")
+settings.editBox.enabled = false
+EditBoxBasics.StyleEditBox(chatFrame)
+assert(backdrop.shown == false, "gated-off styling must hide the QUI backdrop")
+assert(editBox.mouseEnabled == true, "gated-off editbox regains mouse input")
+assert(editBox.alpha == 1, "gated-off editbox text visible again")
+settings.editBox.enabled = true
+
+-- Turning off the chat background must not expose the stock input box chrome.
+-- The input box has its own background setting; keep its takeover styling live.
+EditBoxBasics.StyleEditBox(chatFrame)
+assert(backdrop.shown == true, "re-enabling restores the backdrop")
+settings.glass.enabled = false
+EditBoxBasics.StyleEditBox(chatFrame)
+assert(backdrop.shown == true, "chat background off must not remove the input box takeover backdrop")
+settings.glass.enabled = true
+
+-- STOCK RESTORE (review finding): a live disable flip must hand back a fully
+-- stock editbox — anchors back on the chat frame per the Blizzard template
+-- (TOPLEFT -> chatFrame BOTTOMLEFT -5,-2) and the styled latch cleared so a
+-- re-enable re-strips.
+editBox.points = {}
+EditBoxBasics.RemoveEditBoxStyle(chatFrame)
+local sawStock = false
+for _, p in ipairs(editBox.points or {}) do
+    if p[1] == "TOPLEFT" and p[2] == chatFrame and p[3] == "BOTTOMLEFT"
+        and p[4] == -5 and p[5] == -2 then
+        sawStock = true
+    end
+end
+assert(sawStock, "RemoveEditBoxStyle must restore the stock TOPLEFT anchor")
 
 print("OK: chat_editbox_top_focus_test")

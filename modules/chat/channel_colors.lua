@@ -8,7 +8,7 @@
 --   - Custom keys: channel name as joined ("Trade", "LookingForGroup").
 --
 -- Colors are applied at RENDER TIME: this module is a pure data store plus a
--- `ColorFor(event, eventArgs)` resolver that chat.lua's rendered-message
+-- `ColorFor(event, eventArgs)` resolver that the custom display's render
 -- transform consults to override a line's r,g,b. It NEVER calls ChangeChatColor
 -- or writes Blizzard's ChatTypeInfo table -- doing so taints chat dispatch and
 -- poisons ChatHistory_GetAccessID (a secret-string crash on the first secret
@@ -196,5 +196,7 @@ function ChannelColors.ColorFor(event, eventArgs)
     return nil
 end
 
--- Register the resolver so chat.lua's rendered-message transform can apply it.
+-- Register the resolver for the QUI display's render path (display_layer's
+-- RenderEntry re-resolves per render so live override edits recolor rebuilds;
+-- capture also bakes the effective color via Format.ColorForTypeKey).
 ns.QUI.Chat._lineColorResolver = ChannelColors.ColorFor

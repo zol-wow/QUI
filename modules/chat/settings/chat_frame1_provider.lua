@@ -112,7 +112,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
     -- NotifyProviderFor({ structural = true }), but RegisterAfterLoad's outer
     -- closure runs once per session, so frame-selection survives the rebuild.
     ---------------------------------------------------------------------------
-    local selectedTabFilterFrame = 1
+    local selectedCustomDisplayTabIndex = 1
+    local selectedWindowIndex = 1
     local selectedButtonBarFrame = 1
 
     local function MarkTransientOptionsBinding(tableRef)
@@ -200,13 +201,13 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         local sectionPresets = {
             general = {
-                "chatModule", "frameSize", "introMessage", "defaultTab",
+                "chatModule", "customDisplay", "introMessage", "defaultTab",
                 "chatBackground", "inputBoxBackground", "chatBorder", "messageFade",
                 "urlDetection", "chatHyperlinks",
                 "channelColors",
-                "uiCleanup", "copyButton",
+                "copyButton",
             },
-            filters = { "tabFilters" },
+            filters = { "customDisplayTabs", "whisperTabs" },
             buttonBar = { "buttonBar" },
             alerts = {
                 "timestamps", "messageModifiers", "keywordAlert",
@@ -275,80 +276,459 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             return container
         end
 
-        -- Frame Size drives ChatFrame1 through ChatFrame1Sizing so the live
-        -- frame is only resized after the chat module has detached it from
-        -- Edit Mode. The proxy table lets CreateFormSlider read/write live
-        -- frame dimensions.
-        local sizeProxy = MarkTransientOptionsBinding(setmetatable({}, {
-            __index = function(_, k)
-                local f = _G.ChatFrame1
-                if not f then return 0 end
-                if k == "width" then return math.floor(SafeFrameNumber(f:GetWidth(), 0) + 0.5) end
-                if k == "height" then return math.floor(SafeFrameNumber(f:GetHeight(), 0) + 0.5) end
-                return 0
-            end,
-            __newindex = function(_, k, v)
-                local f = _G.ChatFrame1
-                if not f or type(v) ~= "number" then return end
-                if IsChatLayoutLockedDown() then return end
-                local w, h = SafeFrameNumber(f:GetWidth(), 0), SafeFrameNumber(f:GetHeight(), 0)
-                if k == "width" then w = v end
-                if k == "height" then h = v end
-                local sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
-                if sizing and sizing.SetSize then
-                    sizing.SetSize(w, h)
-                end
-            end,
-        }))
-
-        -- Master enable toggle. Disabling tears down all chat customization
-        -- (glass, tabs, edit box, copy buttons, fade, message filters); the
-        -- per-feature toggles below remain visible but no-op until re-enabled.
-        --
-        -- Toggling the master switch also changes whether QUI owns ChatFrame1:
-        -- disabling hands it back to Blizzard's Edit Mode, enabling re-takes it.
-        -- Neither the reattach nor the early detach can be performed live without
-        -- tainting chat dispatch, so we offer a reload to fully apply the change
-        -- (matching the master toggles of QUI's other modules).
-        local function ShowChatModuleReloadPrompt()
-            local Q = _G.QUI
-            local G = Q and Q.GUI
-            if G and G.ShowConfirmation then
-                G:ShowConfirmation({
-                    title      = "Reload UI?",
-                    message    = "Enabling or disabling the chat module requires a UI reload to take effect.",
-                    acceptText = "Reload",
-                    cancelText = "Later",
-                    onAccept   = function()
-                        if Q and Q.SafeReload then Q:SafeReload() end
-                    end,
-                })
-            end
-        end
+        -- Master enable toggle. The flip is live: enabling activates the QUI
+        -- display and suppresses the stock frames; disabling hands everything
+        -- back without a reload.
         CreateChatSection("chatModule", "Chat Module", FORM_ROW + 8, function(card)
-            local w = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat, function()
-                Refresh()
-                ShowChatModuleReloadPrompt()
-            end, { description = "Master switch for QUI's chat customization. When off, all chat frames revert to Blizzard defaults and the per-feature toggles below have no effect. A UI reload is offered to hand ChatFrame1 back to (or retake it from) Blizzard's Edit Mode." })
+            local w = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat, Refresh,
+                { description = "QUI's chat takeover. Enabled: chat is captured and rendered in QUI's own display. Disabled: QUI leaves chat completely stock." })
             card.AddRow(row(card.frame, "Enable Chat Module", w))
         end)
 
-        local widthSlider, heightSlider
-        CreateChatSection("frameSize", "Frame Size", 2 * FORM_ROW + 8, function(card)
-            widthSlider = GUI:CreateFormSlider(card.frame, nil, 296, 1400, 1, "width", sizeProxy, nil, { description = "Pixel width of ChatFrame1. Blizzard persists this across logout." })
-            heightSlider = GUI:CreateFormSlider(card.frame, nil, 120, 900, 1, "height", sizeProxy, nil, { description = "Pixel height of ChatFrame1. Blizzard persists this across logout." })
-            card.AddRow(row(card.frame, "Width", widthSlider), row(card.frame, "Height", heightSlider))
+        -- Chat Display
+        CreateChatSection("customDisplay", "Chat Display", FORM_ROW * 3 + 8, function(card)
+            local ml = GUI:CreateFormSlider(card.frame, nil, 200, 5000, 100, "maxLines", chat.customDisplay, Refresh, {
+                description = "Scrollback cap for the custom display (messages kept in RAM).",
+            })
+            card.AddRow(row(card.frame, "Scrollback Lines", ml))
+
+            -- Window management. Windows live at chat.customDisplay.windows
+            -- (ARRAY); window 1 is the primary (editbox fallback owner) and
+            -- can never be deleted. The selector lives HERE, next to the
+            -- Add/Delete buttons it drives — the Chat Tabs page (a different
+            -- settings surface) has its own "Editing window" copy of the same
+            -- selection; both write the shared selectedWindowIndex upvalue.
+            local Display = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.DisplayLayer
+            local TabManager = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabManager
+            local windowsCfg = (TabManager and TabManager.GetWindowsConfig and TabManager.GetWindowsConfig()) or {}
+            if selectedWindowIndex < 1 or selectedWindowIndex > #windowsCfg then
+                selectedWindowIndex = 1
+            end
+
+            local winOpts = {}
+            for i = 1, math.max(1, #windowsCfg) do
+                winOpts[#winOpts + 1] = { value = i, text = (i == 1) and "Window 1 (primary)" or ("Window " .. i) }
+            end
+            local winSelTable = MarkTransientOptionsBinding({ _selected = selectedWindowIndex })
+            local winSelector
+            winSelector = GUI:CreateFormDropdown(card.frame, nil, winOpts, "_selected", winSelTable, function()
+                local newValue = winSelTable._selected or 1
+                -- Idempotency guard: CreateFormDropdown's SetValue fires
+                -- onChange on every click without checking value-changed.
+                if newValue == selectedWindowIndex then return end
+                selectedWindowIndex = newValue
+                selectedCustomDisplayTabIndex = 1
+                -- Structural: Delete Window's enabled state and the Chat Tabs
+                -- editor both depend on the selection.
+                NotifyProviderFor(winSelector, { structural = true })
+            end, { description = "Which window Delete Window removes — and which window's tabs the Chat Tabs page edits." })
+            card.AddRow(row(card.frame, "Selected window", winSelector))
+
+            local addWinBtn, delWinBtn
+            addWinBtn = GUI:CreateButton(card.frame, "Add Window", 110, 22, function()
+                if Display and Display.CreateNewWindow then
+                    local id = Display.CreateNewWindow()
+                    if id then selectedWindowIndex = id end
+                end
+                Refresh()
+                NotifyProviderFor(addWinBtn, { structural = true })
+            end)
+            GUI:AttachTooltip(addWinBtn,
+                "Create another chat window with its own tabs, position, and size. Drag it in Layout mode.",
+                "Add Chat Window")
+            delWinBtn = GUI:CreateButton(card.frame, "Delete Window", 110, 22, function()
+                if selectedWindowIndex <= 1 then return end
+                if Display and Display.DeleteWindow then
+                    Display.DeleteWindow(selectedWindowIndex)
+                end
+                selectedWindowIndex = 1
+                Refresh()
+                NotifyProviderFor(delWinBtn, { structural = true })
+            end)
+            SetControlEnabled(addWinBtn, (chat.enabled ~= false))
+            SetControlEnabled(delWinBtn, (chat.enabled ~= false) and selectedWindowIndex > 1)
+            GUI:AttachTooltip(delWinBtn,
+                "Remove the selected chat window and its tabs. Window 1 cannot be deleted; open whisper tabs move to window 1.",
+                "Delete Chat Window")
+            card.AddRow(row(card.frame, "Add window", addWinBtn), row(card.frame, "Delete selected window", delWinBtn))
         end)
 
-        -- Expose a refresh hook so the corner-grip drag can sync slider positions.
-        _G.QUI_RefreshChatSizeSliders = function()
-            if widthSlider and widthSlider.SetValue then
-                widthSlider:SetValue(sizeProxy.width)
+        -- Custom Display Tabs (Phase 5)
+        -- User-defined tabs on the QUI custom display. Each tab stores a
+        -- SET-shaped entry: { name, groups = {KEY=true}, channels = {Name=true},
+        -- invert = false } that feeds TabManager.BuildFilter directly.
+        -- The array lives at db.profile.chat.customDisplay.windows[i].tabs.
+        --
+        -- Structural rebuilds (Add/Delete via NotifyProviderFor) re-enter this
+        -- block so every generator closure always reads the live array length.
+        if ShouldRenderSection("customDisplayTabs") then
+        CreateChatCustomSection("customDisplayTabs", "Chat Tabs", function(body)
+            if not chat.customDisplay then chat.customDisplay = {} end
+            local TabManager = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabManager
+            local windowsCfg = (TabManager and TabManager.GetWindowsConfig and TabManager.GetWindowsConfig()) or {}
+            if selectedWindowIndex < 1 or selectedWindowIndex > #windowsCfg then
+                selectedWindowIndex = 1
             end
-            if heightSlider and heightSlider.SetValue then
-                heightSlider:SetValue(sizeProxy.height)
+            local tabs = (TabManager and TabManager.GetWindowTabs and TabManager.GetWindowTabs(selectedWindowIndex)) or {}
+            if type(tabs) ~= "table" then
+                tabs = {}
             end
+
+            if #tabs == 0 then
+                selectedCustomDisplayTabIndex = 0
+            elseif selectedCustomDisplayTabIndex < 1 or selectedCustomDisplayTabIndex > #tabs then
+                selectedCustomDisplayTabIndex = 1
+            end
+
+            local refreshList = {}
+            local sy = -4
+            local GAP = 8
+
+            -- Standard chat groups for the groups card.
+            local TabFilters = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabFilters
+            local rawGroups = (TabFilters and TabFilters.GetStandardGroups and TabFilters.GetStandardGroups()) or {
+                "SAY", "EMOTE", "YELL",
+                "GUILD", "OFFICER", "GUILD_ACHIEVEMENT", "ACHIEVEMENT",
+                "WHISPER", "WHISPER_INFORM", "BN_WHISPER", "BN_WHISPER_INFORM",
+                "AFK", "DND",
+                "PARTY", "PARTY_LEADER",
+                "RAID", "RAID_LEADER", "RAID_WARNING",
+                "INSTANCE_CHAT", "INSTANCE_CHAT_LEADER",
+                "SYSTEM", "ERRORS", "IGNORED", "CHANNEL", "TARGETICONS",
+                "BN_INLINE_TOAST_ALERT", "PING",
+            }
+            local CDTAB_GROUPS = {}
+            for i = 1, #rawGroups do
+                if rawGroups[i] ~= "CHANNEL" then
+                    CDTAB_GROUPS[#CDTAB_GROUPS + 1] = rawGroups[i]
+                end
+            end
+
+            -- Returns the currently selected tab entry (or nil when no tabs).
+            local function curTab()
+                return tabs[selectedCustomDisplayTabIndex]
+            end
+
+            -- Set-shaped binding that writes nil (not false) so an empty
+            -- selection reads as "no constraint" rather than an all-blocking
+            -- whitelist. Used for both groups and channels on custom tabs.
+            local function makeSetBinding(getSet)
+                return MarkTransientOptionsBinding(setmetatable({}, {
+                    __index = function(_, k)
+                        local s = getSet()
+                        return s and s[k] or false
+                    end,
+                    __newindex = function(_, k, v)
+                        local s = getSet()
+                        if not s then return end
+                        s[k] = v and true or nil
+                    end,
+                }))
+            end
+
+            -- Dynamic tab-name options for the selector dropdown.
+            -- Only called when #tabs > 0 (the dropdown is inside the
+            -- `if #tabs > 0` guard below), so no placeholder is needed.
+            local function tabOptions()
+                local opts = {}
+                for i = 1, #tabs do
+                    local t = tabs[i]
+                    local label = (type(t) == "table" and type(t.name) == "string" and t.name ~= "")
+                        and t.name or ("Custom " .. i)
+                    opts[#opts + 1] = { value = i, text = label }
+                end
+                return opts
+            end
+
+            -- Selector + Add/Delete card. Add is always visible; selector and
+            -- delete render once there is at least one tab.
+            local selectorCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+
+            -- Window selector: shown when more than one window exists.
+            if #windowsCfg > 1 then
+                local function windowOptions()
+                    local opts = {}
+                    for i = 1, #windowsCfg do
+                        opts[#opts + 1] = { value = i, text = (i == 1) and "Window 1 (primary)" or ("Window " .. i) }
+                    end
+                    return opts
+                end
+                local winSelTable = MarkTransientOptionsBinding({ _selected = selectedWindowIndex })
+                local winSelector
+                winSelector = GUI:CreateFormDropdown(selectorCard.frame, nil, windowOptions(), "_selected", winSelTable, function()
+                    local newValue = winSelTable._selected or 1
+                    if newValue == selectedWindowIndex then return end
+                    selectedWindowIndex = newValue
+                    selectedCustomDisplayTabIndex = 1
+                    NotifyProviderFor(winSelector, { structural = true })
+                end, { description = "Pick which chat window's tabs to edit." })
+                selectorCard.AddRow(row(selectorCard.frame, "Editing window", winSelector))
+            end
+
+            -- Add / Delete buttons are always present.
+            local addBtn, deleteBtn
+            addBtn = GUI:CreateButton(selectorCard.frame, "Add Tab", 100, 22, function()
+                local newIdx = #tabs + 1
+                tabs[newIdx] = {
+                    name     = "Custom " .. newIdx,
+                    groups   = {},
+                    channels = {},
+                    invert   = false,
+                }
+                selectedCustomDisplayTabIndex = newIdx
+                Refresh()
+                NotifyProviderFor(addBtn, { structural = true })
+            end)
+            GUI:AttachTooltip(addBtn,
+                "Add a new chat tab to the QUI custom display. Rename and configure its message groups and channels below.",
+                "Add Chat Tab")
+
+            if #tabs > 0 then
+                local selectorTable = MarkTransientOptionsBinding({ _selected = selectedCustomDisplayTabIndex })
+                local frameSelector
+                frameSelector = GUI:CreateFormDropdown(selectorCard.frame, nil, tabOptions(), "_selected", selectorTable, function()
+                    local newValue = selectorTable._selected or 1
+                    -- Idempotency guard: CreateFormDropdown's SetValue fires
+                    -- onChange on every click without checking value-changed.
+                    if newValue == selectedCustomDisplayTabIndex then return end
+                    selectedCustomDisplayTabIndex = newValue
+                    for i = 1, #refreshList do
+                        pcall(refreshList[i])
+                    end
+                end, { description = "Pick which custom tab to edit. Each tab stores its own name, group filter, and channel filter." })
+                selectorCard.AddRow(row(selectorCard.frame, "Editing tab", frameSelector))
+
+                deleteBtn = GUI:CreateButton(selectorCard.frame, "Delete Tab", 100, 22, function()
+                    if #tabs <= 1 then return end
+                    table.remove(tabs, selectedCustomDisplayTabIndex)
+                    if selectedCustomDisplayTabIndex > #tabs then selectedCustomDisplayTabIndex = math.max(1, #tabs) end
+                    Refresh()
+                    NotifyProviderFor(deleteBtn, { structural = true })
+                end)
+                SetControlEnabled(deleteBtn, #tabs > 1)
+                GUI:AttachTooltip(deleteBtn,
+                    "Remove the currently selected chat tab. The final tab cannot be deleted.",
+                    "Delete Chat Tab")
+                selectorCard.AddRow(row(selectorCard.frame, "Add tab", addBtn), row(selectorCard.frame, "Delete selected tab", deleteBtn))
+
+                local moveUpBtn, moveDownBtn
+                local function moveTab(delta)
+                    local i = selectedCustomDisplayTabIndex
+                    local j = i + delta
+                    if not tabs[i] or not tabs[j] then return end
+                    tabs[i], tabs[j] = tabs[j], tabs[i]
+                    selectedCustomDisplayTabIndex = j  -- selection follows the moved tab
+                    Refresh()
+                    NotifyProviderFor(moveUpBtn, { structural = true })
+                end
+                moveUpBtn = GUI:CreateButton(selectorCard.frame, "Move Up", 100, 22, function()
+                    moveTab(-1)
+                end)
+                GUI:AttachTooltip(moveUpBtn,
+                    "Move the selected custom tab one position earlier in the tab bar.",
+                    "Move Tab Up")
+                moveDownBtn = GUI:CreateButton(selectorCard.frame, "Move Down", 100, 22, function()
+                    moveTab(1)
+                end)
+                GUI:AttachTooltip(moveDownBtn,
+                    "Move the selected custom tab one position later in the tab bar.",
+                    "Move Tab Down")
+                selectorCard.AddRow(row(selectorCard.frame, "Move tab up", moveUpBtn), row(selectorCard.frame, "Move tab down", moveDownBtn))
+            else
+                selectorCard.AddRow(row(selectorCard.frame, "Add a new custom tab", addBtn))
+            end
+
+            selectorCard.Finalize()
+            sy = sy - selectorCard.frame:GetHeight() - GAP
+
+            -- The remainder (name, groups, channels) only renders when a tab
+            -- exists and is selected.
+            local ct = curTab()
+            if ct then
+                -- Name input card. Bound via a dynamic proxy that routes reads
+                -- and writes to the CURRENT selection (curTab()) rather than
+                -- the tab captured at build time — after a soft selector change
+                -- the widget must display/write the new tab's name, not the old one.
+                local nameBinding = MarkTransientOptionsBinding(setmetatable({}, {
+                    __index = function(_, k)
+                        local t = curTab()
+                        return t and t[k] or ""
+                    end,
+                    __newindex = function(_, k, v)
+                        local t = curTab()
+                        if t then t[k] = v end
+                    end,
+                }))
+                local nameCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+                local nameEdit = GUI:CreateFormEditBox(nameCard.frame, nil, "name", nameBinding, function()
+                    -- Refresh rebuilds the tab-bar (and everything else) via
+                    -- Fallback.Apply; the explicit TabUI.Rebuild() call is
+                    -- redundant here since Refresh already triggers it.
+                    Refresh()
+                end, {
+                    maxLetters = 64, live = false,
+                    onEditFocusGained = function(self) self:HighlightText() end,
+                }, { description = "Display name for this chat tab. Shown in the tab bar of the QUI custom chat display." })
+                refreshList[#refreshList + 1] = function() if nameEdit.Refresh then nameEdit:Refresh() end end
+                nameCard.AddRow(row(nameCard.frame, "Tab name", nameEdit))
+                nameCard.Finalize()
+                sy = sy - nameCard.frame:GetHeight() - GAP
+
+                -- Message groups card: two-column checkboxes bound via
+                -- makeSetBinding writing nil-not-false into ct.groups.
+                ns.QUI_Options.CreateAccentDotLabel(body, "Message groups", sy)
+                sy = sy - 30
+
+                local groupsBinding = makeSetBinding(function()
+                    local t = curTab()
+                    if not t then return nil end
+                    if type(t.groups) ~= "table" then t.groups = {} end
+                    return t.groups
+                end)
+                local groupsCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+                local function makeGroupCheckbox(groupKey)
+                    local cb = GUI:CreateFormCheckbox(groupsCard.frame, nil, groupKey, groupsBinding, Refresh,
+                        { description = "Include " .. groupKey .. " messages on this custom tab. Leave all unchecked to show all groups." })
+                    refreshList[#refreshList + 1] = function() if cb.Refresh then cb:Refresh() end end
+                    return cb
+                end
+                for i = 1, #CDTAB_GROUPS, 2 do
+                    local k1, k2 = CDTAB_GROUPS[i], CDTAB_GROUPS[i + 1]
+                    local cellL = row(groupsCard.frame, k1, makeGroupCheckbox(k1))
+                    local cellR
+                    if k2 then
+                        cellR = row(groupsCard.frame, k2, makeGroupCheckbox(k2))
+                    end
+                    groupsCard.AddRow(cellL, cellR)
+                end
+                groupsCard.Finalize()
+                sy = sy - groupsCard.frame:GetHeight() - GAP
+
+                -- Channels card: union of live joined channels and the tab's
+                -- stored channel names so a stored-but-not-joined channel name
+                -- does not silently disappear from the UI.
+                ns.QUI_Options.CreateAccentDotLabel(body, "Channels (current join list)", sy)
+                sy = sy - 30
+
+                -- Collect live channel names.
+                local liveChannels = {}
+                if type(GetChannelList) == "function" then
+                    local data = { GetChannelList() }
+                    local ci = 1
+                    while ci + 1 <= #data do
+                        local cname = data[ci + 1]
+                        local isHeader = data[ci + 2]
+                        if type(cname) == "string" and cname ~= "" and not isHeader then
+                            liveChannels[#liveChannels + 1] = cname
+                        end
+                        ci = ci + 3
+                    end
+                end
+
+                -- Union live channels with EVERY tab's stored names so soft selector
+                -- changes never hide a stored-but-unjoined channel row.
+                -- Rows are built once at structural-build time; re-rendering them
+                -- on a soft selector change would require a full structural rebuild.
+                -- Computing the union over all tabs' stored names is cheaper and
+                -- ensures every channel reachable from any tab is always visible.
+                local channelSeen = {}
+                local allChannels = {}
+                for _, n in ipairs(liveChannels) do
+                    if not channelSeen[n] then
+                        channelSeen[n] = true
+                        allChannels[#allChannels + 1] = n
+                    end
+                end
+                for t = 1, #tabs do
+                    local chs = type(tabs[t]) == "table" and tabs[t].channels
+                    if type(chs) == "table" then
+                        for name in pairs(chs) do
+                            if not channelSeen[name] then
+                                channelSeen[name] = true
+                                allChannels[#allChannels + 1] = name
+                            end
+                        end
+                    end
+                end
+                table.sort(allChannels)
+
+                if #allChannels == 0 then
+                    local noChan = GUI:CreateLabel(body, "    (Not currently in any custom channels.)", 10, {0.5, 0.5, 0.5, 1})
+                    noChan:SetPoint("TOPLEFT", 8, sy)
+                    noChan:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+                    noChan:SetJustifyH("LEFT")
+                    sy = sy - 18
+                else
+                    local channelsBinding = makeSetBinding(function()
+                        local t = curTab()
+                        if not t then return nil end
+                        if type(t.channels) ~= "table" then t.channels = {} end
+                        return t.channels
+                    end)
+                    local channelsCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
+                    local function makeChannelCheckbox(channelName)
+                        local cb = GUI:CreateFormCheckbox(channelsCard.frame, nil, channelName, channelsBinding, Refresh,
+                            { description = "Include messages from channel '" .. channelName .. "' on this custom tab." })
+                        refreshList[#refreshList + 1] = function() if cb.Refresh then cb:Refresh() end end
+                        return cb
+                    end
+                    for i = 1, #allChannels, 2 do
+                        local n1, n2 = allChannels[i], allChannels[i + 1]
+                        local cellL = row(channelsCard.frame, n1, makeChannelCheckbox(n1))
+                        local cellR
+                        if n2 then
+                            cellR = row(channelsCard.frame, n2, makeChannelCheckbox(n2))
+                        end
+                        channelsCard.AddRow(cellL, cellR)
+                    end
+                    channelsCard.Finalize()
+                    sy = sy - channelsCard.frame:GetHeight() - GAP
+                end
+            end
+
+            return math.abs(sy) + 4
+        end, 200)
         end
+
+        -- Whisper Tabs
+        -- Behavior toggles for runtime conversation tabs (whisper-to-person
+        -- tabs that are opened on demand and never persisted). The toggles
+        -- themselves are stored at chat.customDisplay.whisperTabs.
+        CreateChatSection("whisperTabs", "Whisper Tabs", FORM_ROW * 4 + 8, function(card)
+            if not chat.customDisplay.whisperTabs then
+                chat.customDisplay.whisperTabs = {
+                    translatePopout = true, autoIncoming = false,
+                    autoOutgoing = false, targetWindow = 1,
+                }
+            end
+            local wt = chat.customDisplay.whisperTabs
+
+            local translate = GUI:CreateFormCheckbox(card.frame, nil, "translatePopout", wt, Refresh, {
+                description = "When Blizzard would open a whisper in a new window (right-click popout, or the 'open whispers in a new window' setting), open a QUI conversation tab instead.",
+            })
+            card.AddRow(row(card.frame, "Popout opens conversation tab", translate))
+
+            local incoming = GUI:CreateFormCheckbox(card.frame, nil, "autoIncoming", wt, Refresh, {
+                description = "First whisper FROM someone automatically opens a conversation tab for them (the tab flashes; it does not steal focus). Tabs last until closed or /reload.",
+            })
+            card.AddRow(row(card.frame, "Auto-tab on incoming whisper", incoming))
+
+            local outgoing = GUI:CreateFormCheckbox(card.frame, nil, "autoOutgoing", wt, Refresh, {
+                description = "Whispering someone automatically opens a conversation tab for them.",
+            })
+            card.AddRow(row(card.frame, "Auto-tab on outgoing whisper", outgoing))
+
+            local TabManager = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabManager
+            local windowsCfg = (TabManager and TabManager.GetWindowsConfig and TabManager.GetWindowsConfig()) or {}
+            local winOpts = {}
+            for i = 1, math.max(1, #windowsCfg) do
+                winOpts[#winOpts + 1] = { value = i, text = (i == 1) and "Window 1 (primary)" or ("Window " .. i) }
+            end
+            local target = GUI:CreateFormDropdown(card.frame, nil, winOpts, "targetWindow", wt, Refresh, {
+                description = "Which chat window auto-created conversation tabs open in.",
+            })
+            card.AddRow(row(card.frame, "Auto-tabs open in", target))
+        end)
 
         -- Intro Message
         CreateChatSection("introMessage", "Intro Message", 2 * FORM_ROW + 8, function(card)
@@ -362,22 +742,36 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         -- that does not fit the V3 paired-row pattern. The block lives just
         -- below an accent-dot header but outside any card chrome.
         CreateChatCustomSection("defaultTab", "Default Tab", function(body)
-            -- Build tab options dynamically from currently-active chat windows.
-            -- See IsChatWindowSlotActive above — name persistence across
-            -- FCF_Close means we can't use `name ~= ""` as the active filter.
-            local tabOptions = {}
-            for i = 1, NUM_CHAT_WINDOWS do
-                local f = _G["ChatFrame" .. i]
-                local name = GetChatWindowInfo(i)
-                if IsChatWindowSlotActive(i, f) and type(name) == "string" and name ~= "" then
-                    tabOptions[#tabOptions + 1] = {
+            local function BuildTabOptions()
+                -- Default-tab activation targets window 1 (the primary window
+                -- that is always present and owns the editbox fallback). Read
+                -- its tab list via GetWindowTabs so we respect the multi-window
+                -- storage layout instead of the legacy flat customDisplay.tabs.
+                local TabManager = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabManager
+                local tabs = (TabManager and TabManager.GetWindowTabs and TabManager.GetWindowTabs(1))
+                    or {}
+                local opts = {}
+                for i = 1, #tabs do
+                    local t = tabs[i]
+                    local name = (type(t) == "table" and type(t.name) == "string" and t.name ~= "")
+                        and t.name or ("Tab " .. i)
+                    opts[#opts + 1] = {
                         value = i,
                         text = i .. ". " .. name,
                     }
                 end
+                if #opts == 0 then
+                    opts[1] = { value = 1, text = "1. General" }
+                end
+                return opts
             end
-            if #tabOptions == 0 then
-                tabOptions[1] = { value = 1, text = "1. General" }
+
+            local function NormalizeDefaultTabValue(value, tabOptions)
+                local idx = tonumber(value)
+                if not idx or idx < 1 or idx > #tabOptions then
+                    return 1
+                end
+                return idx
             end
 
             if not chat.defaultTabBySpec then chat.defaultTabBySpec = {} end
@@ -399,6 +793,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 container:SetHeight(1)
 
                 local sy = -4
+                local tabOptions = BuildTabOptions()
 
                 if chat.defaultTabPerSpec then
                     -- Per-spec mode: all spec dropdowns tiled on one row
@@ -407,9 +802,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     for s = 1, numSpecs do
                         local specID, specName = GetSpecializationInfo(s)
                         if specID and specName then
-                            if not chat.defaultTabBySpec[specID] then
-                                chat.defaultTabBySpec[specID] = 1
-                            end
+                            chat.defaultTabBySpec[specID] = NormalizeDefaultTabValue(chat.defaultTabBySpec[specID], tabOptions)
                             specs[#specs + 1] = { id = specID, name = specName }
                         end
                     end
@@ -472,6 +865,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     info:SetJustifyH("LEFT")
                     sy = sy - 20
                 else
+                    chat.defaultTab = NormalizeDefaultTabValue(chat.defaultTab, tabOptions)
                     local dd = GUI:CreateFormDropdown(container, "Default Tab", tabOptions, "defaultTab", chat, Refresh, { description = "Chat tab to make active on login and reload." })
                     dd:SetPoint("TOPLEFT", 0, sy)
                     dd:SetPoint("RIGHT", container, "RIGHT", 0, 0)
@@ -515,8 +909,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 local bgEnableCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat.glass, function()
                     Refresh()
                     UpdateChatBackgroundStates()
-                end, { description = "Draw an opaque background behind the chat frame so text stays readable over busy scenery." })
-                bgAlphaSlider = GUI:CreateFormSlider(card.frame, nil, 0, 1.0, 0.05, "bgAlpha", chat.glass, Refresh, { description = "Opacity of the chat background (0 is invisible, 1 is fully opaque)." })
+                end, { description = "Draw an opaque background behind the QUI chat display and input box so text stays readable over busy scenery." })
+                bgAlphaSlider = GUI:CreateFormSlider(card.frame, nil, 0, 1.0, 0.05, "bgAlpha", chat.glass, Refresh, { description = "Opacity of the QUI chat display background (0 is invisible, 1 is fully opaque)." })
                 card.AddRow(row(card.frame, "Chat Background Texture", bgEnableCheckbox), row(card.frame, "Background Opacity", bgAlphaSlider))
                 bgColorPicker = GUI:CreateFormColorPicker(card.frame, nil, "bgColor", chat.glass, Refresh, nil, { description = "Color of the chat background." })
                 card.AddRow(row(card.frame, "Background Color", bgColorPicker))
@@ -621,8 +1015,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 local fadeCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat.fade, function()
                     Refresh()
                     UpdateFadeStates()
-                end, { description = "Fade old chat messages out after no new messages have arrived for the delay below." })
-                fadeDelaySlider = GUI:CreateFormSlider(card.frame, nil, 1, 120, 1, "delay", chat.fade, Refresh, { description = "Seconds of inactivity before chat messages start fading." })
+                end, { description = "Fade messages out of the QUI display after no new messages have arrived for the delay below." })
+                fadeDelaySlider = GUI:CreateFormSlider(card.frame, nil, 1, 120, 1, "delay", chat.fade, Refresh, { description = "Seconds of inactivity before messages start fading in the QUI display." })
                 card.AddRow(row(card.frame, "Fade Messages After Inactivity", fadeCheckbox), row(card.frame, "Fade Delay (seconds)", fadeDelaySlider))
                 UpdateFadeStates()
             end)
@@ -638,320 +1032,15 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         -- Chat Hyperlinks (Phase D)
         if not chat.hyperlinks then
-            chat.hyperlinks = { coordinates = true, friendlyURLs = false, interactiveNames = true }
+            chat.hyperlinks = { coordinates = true, friendlyURLs = false }
         end
-        CreateChatSection("chatHyperlinks", "Chat Hyperlinks", 3 * FORM_ROW + 8, function(card)
+        CreateChatSection("chatHyperlinks", "Chat Hyperlinks", 2 * FORM_ROW + 8, function(card)
             local coordW = GUI:CreateFormCheckbox(card.frame, nil, "coordinates", chat.hyperlinks, Refresh,
                 { description = "Detects (x, y) coordinate patterns in chat and makes them clickable waypoints." })
             local urlW = GUI:CreateFormCheckbox(card.frame, nil, "friendlyURLs", chat.hyperlinks, Refresh,
                 { description = "Replace common WoW-community URLs with readable labels — e.g., wowhead.com -> [Wowhead]." })
             card.AddRow(row(card.frame, "Coordinate links", coordW), row(card.frame, "Friendly URL labels", urlW))
-            local namesW = GUI:CreateFormCheckbox(card.frame, nil, "interactiveNames", chat.hyperlinks, Refresh,
-                { description = "Click a class-colored player name in chat to open quick-action menu (Whisper, Invite, Add Friend, Ignore)." })
-            card.AddRow(row(card.frame, "Interactive player names", namesW))
         end)
-
-        if ShouldRenderSection("tabFilters") then
-        -- Tab Filters (Phase E)
-        -- Per-tab content filtering. Inclusion-only: select which message
-        -- groups and channels appear on each chat frame. ChatFrame1 only in
-        -- this first iteration; multi-frame editing is intentionally deferred
-        -- to a follow-up phase (would add 24+ * NUM_CHAT_WINDOWS widgets).
-        --
-        -- Storage: db.profile.chat.tabs[<frameID>] = { customized, groups, channels }
-        -- The reconcile + tab indicator live in modules/chat/tab_filters.lua.
-        --
-        -- Standard chat groups exposed below mirror Blizzard's chat-options
-        -- grouping (matches the keys ChatFrame_AddMessageGroup expects).
-        local TabFilters = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabFilters
-        local CHAT_GROUPS = (TabFilters and TabFilters.GetStandardGroups and TabFilters.GetStandardGroups()) or {
-            "SAY", "EMOTE", "YELL",
-            "GUILD", "OFFICER", "GUILD_ACHIEVEMENT", "ACHIEVEMENT",
-            "WHISPER", "WHISPER_INFORM", "BN_WHISPER", "BN_WHISPER_INFORM",
-            "AFK", "DND",
-            "PARTY", "PARTY_LEADER",
-            "RAID", "RAID_LEADER", "RAID_WARNING",
-            "INSTANCE_CHAT", "INSTANCE_CHAT_LEADER",
-            "SYSTEM", "ERRORS", "IGNORED", "CHANNEL", "TARGETICONS",
-            "BN_INLINE_TOAST_ALERT", "PING",
-        }
-
-        if not chat.tabs then chat.tabs = {} end
-
-        local function copyStringList(list)
-            local out = {}
-            if type(list) == "table" then
-                for i = 1, #list do
-                    if type(list[i]) == "string" then
-                        out[#out + 1] = list[i]
-                    end
-                end
-            end
-            return out
-        end
-
-        local function seedEntryFromCurrentFrame(entry, frameID)
-            if not entry then return end
-            local frame = _G["ChatFrame" .. tostring(frameID or 1)]
-            if not frame then return end
-            if type(entry.groups) ~= "table" or #entry.groups == 0 then
-                entry.groups = copyStringList(frame.messageTypeList)
-            end
-            if type(entry.channels) ~= "table" or #entry.channels == 0 then
-                entry.channels = copyStringList(frame.channelList)
-            end
-        end
-
-        -- Helper: bidirectional set <-> array proxy.
-        -- Each tile invocation rebuilds these proxies fresh so they always
-        -- read the current chat.tabs[frameID].groups / .channels arrays.
-        local function makeArraySetProxy(getList, setList)
-            return MarkTransientOptionsBinding(setmetatable({}, {
-                __index = function(_, entryKey)
-                    local list = getList()
-                    if not list then return false end
-                    for i = 1, #list do
-                        if list[i] == entryKey then return true end
-                    end
-                    return false
-                end,
-                __newindex = function(_, entryKey, value)
-                    local list = getList() or {}
-                    if value then
-                        for i = 1, #list do
-                            if list[i] == entryKey then return end
-                        end
-                        list[#list + 1] = entryKey
-                    else
-                        for i = 1, #list do
-                            if list[i] == entryKey then
-                                table.remove(list, i)
-                                break
-                            end
-                        end
-                    end
-                    setList(list)
-                end,
-            }))
-        end
-
-        local function getChannelNamesNow()
-            -- GetChannelList returns id1, name1, header1, id2, name2, header2, ...
-            -- Filter out headers (categorical separators with empty/nil names).
-            local out = {}
-            if type(GetChannelList) == "function" then
-                local data = { GetChannelList() }
-                local i = 1
-                while i + 1 <= #data do
-                    local name = data[i + 1]
-                    local isHeader = data[i + 2]
-                    if type(name) == "string" and name ~= "" and not isHeader then
-                        out[#out + 1] = name
-                    end
-                    i = i + 3
-                end
-            end
-            return out
-        end
-
-        -- Build the per-frame tab-filter UI as a stack of CreateSettingsCardGroup
-        -- cards (one per logical group of settings). Each card pairs its rows
-        -- into the standard QUI dual-column layout (left/right cell + center
-        -- divider + alternating row bg). Soft-refresh on frame-selector change
-        -- re-binds proxies via each widget's :Refresh() rather than recreating
-        -- widgets — WoW frames can't be GC'd, and structural rebuilds leak
-        -- ~25MB of orphan widgets per change.
-        CreateChatCustomSection("tabFilters", "Tab Filters", function(body)
-            local frameOptions = buildFrameOptions()
-            -- Validate selection still exists (e.g. frame deleted between sessions).
-            local validSelection = false
-            for _, opt in ipairs(frameOptions) do
-                if opt.value == selectedTabFilterFrame then validSelection = true; break end
-            end
-            if not validSelection then selectedTabFilterFrame = frameOptions[1].value end
-
-            local selectorTable = MarkTransientOptionsBinding({ _selected = selectedTabFilterFrame })
-
-            local refreshList = {}
-            local sy = -4
-            local GAP = 8
-
-            -- Dynamic entry lookup. Reading a fresh reference every access
-            -- means proxies/handlers see the current frame's data even after
-            -- selectedTabFilterFrame changes out from under them.
-            local function getCurEntry()
-                local fid = selectedTabFilterFrame
-                chat.tabs[fid] = chat.tabs[fid] or { customized = false, groups = {}, channels = {} }
-                local e = chat.tabs[fid]
-                if type(e.groups) ~= "table" then e.groups = {} end
-                if type(e.channels) ~= "table" then e.channels = {} end
-                return e
-            end
-
-            local dependentControls = {}
-            local dependentRegions = {}
-            local function TrackFilterControl(control)
-                dependentControls[#dependentControls + 1] = control
-                return control
-            end
-            local function TrackFilterRegion(region)
-                dependentRegions[#dependentRegions + 1] = region
-                return region
-            end
-            local function UpdateTabFilterDependentStates()
-                local enabled = getCurEntry().customized == true
-                for i = 1, #dependentControls do
-                    SetControlEnabled(dependentControls[i], enabled)
-                end
-                for i = 1, #dependentRegions do
-                    local region = dependentRegions[i]
-                    if region and type(region.SetAlpha) == "function" then
-                        region:SetAlpha(enabled and 1 or 0.45)
-                    end
-                end
-            end
-
-            -- Selector card (Editing tab dropdown).
-            local selectorCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
-            local frameSelector
-            frameSelector = GUI:CreateFormDropdown(selectorCard.frame, nil, frameOptions, "_selected", selectorTable, function()
-                local newValue = selectorTable._selected or 1
-                -- Idempotency guard: CreateFormDropdown's SetValue fires onChange
-                -- on every click without checking value-changed.
-                if newValue == selectedTabFilterFrame then return end
-                selectedTabFilterFrame = newValue
-                for i = 1, #refreshList do
-                    pcall(refreshList[i])
-                end
-            end, { description = "Pick which chat frame's tab filters to edit. Each frame stores its own filter set in db.profile.chat.tabs[<frameID>]; this dropdown only changes which one the controls below are bound to." })
-            selectorCard.AddRow(row(selectorCard.frame, "Editing tab", frameSelector))
-            selectorCard.Finalize()
-            sy = sy - selectorCard.frame:GetHeight() - GAP
-
-            -- Customized toggle card. The proxy triggers reconcile + indicator
-            -- update via the chat module's _afterRefresh chain (Refresh ->
-            -- tab_filters ApplyEnabled). When toggled OFF the stored entry is
-            -- preserved so re-enabling restores the user's selection.
-            local customizedProxy = MarkTransientOptionsBinding(setmetatable({}, {
-                __index = function() return getCurEntry().customized and true or false end,
-                __newindex = function(_, _, v)
-                    local e = getCurEntry()
-                    local wasCustomized = e.customized
-                    e.customized = v and true or false
-                    if e.customized and not wasCustomized then
-                        seedEntryFromCurrentFrame(e, selectedTabFilterFrame)
-                    end
-                    if v and ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabFilters then
-                        ns.QUI.Chat.TabFilters.SaveTabConfig(selectedTabFilterFrame, e.groups, e.channels)
-                    end
-                end,
-            }))
-
-            local toggleCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
-            local customizedCheckbox = GUI:CreateFormCheckbox(toggleCard.frame, nil, "_customized", customizedProxy, function()
-                Refresh()
-                UpdateTabFilterDependentStates()
-            end, { description = "When on, this tab shows ONLY the message groups and channels selected below. Inclusion-only — to silence a group, deselect it. When off, Blizzard's defaults apply unchanged." })
-            toggleCard.AddRow(row(toggleCard.frame, "Customize this tab's filters", customizedCheckbox))
-            toggleCard.Finalize()
-            sy = sy - toggleCard.frame:GetHeight() - GAP
-            refreshList[#refreshList + 1] = function() if customizedCheckbox.Refresh then customizedCheckbox:Refresh() end end
-
-            -- Message groups subheader + paired card.
-            TrackFilterRegion(ns.QUI_Options.CreateAccentDotLabel(body, "Message groups", sy))
-            sy = sy - 30
-
-            local groupsProxy = makeArraySetProxy(
-                function() return getCurEntry().groups end,
-                function(list) getCurEntry().groups = list end
-            )
-            local groupsCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
-            local function makeGroupCheckbox(groupKey)
-                local cb = TrackFilterControl(GUI:CreateFormCheckbox(groupsCard.frame, nil, groupKey, groupsProxy, function()
-                    local e = getCurEntry()
-                    if e.customized and ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabFilters then
-                        ns.QUI.Chat.TabFilters.SaveTabConfig(selectedTabFilterFrame, e.groups, e.channels)
-                    end
-                    Refresh()
-                end, { description = "Show " .. groupKey .. " messages on this tab. Only takes effect while 'Customize this tab's filters' is on." }))
-                refreshList[#refreshList + 1] = function() if cb.Refresh then cb:Refresh() end end
-                return cb
-            end
-            for i = 1, #CHAT_GROUPS, 2 do
-                local k1, k2 = CHAT_GROUPS[i], CHAT_GROUPS[i + 1]
-                local cellL = row(groupsCard.frame, k1, makeGroupCheckbox(k1))
-                local cellR
-                if k2 then
-                    cellR = row(groupsCard.frame, k2, makeGroupCheckbox(k2))
-                end
-                groupsCard.AddRow(cellL, cellR)
-            end
-            groupsCard.Finalize()
-            sy = sy - groupsCard.frame:GetHeight() - GAP
-
-            -- Channels subheader + paired card (or "no channels" note).
-            TrackFilterRegion(ns.QUI_Options.CreateAccentDotLabel(body, "Channels (current join list)", sy))
-            sy = sy - 30
-
-            local channels = getChannelNamesNow()
-            if #channels == 0 then
-                local noChan = TrackFilterRegion(GUI:CreateLabel(body, "    (Not currently in any custom channels.)", 10, {0.5, 0.5, 0.5, 1}))
-                noChan:SetPoint("TOPLEFT", 8, sy)
-                noChan:SetPoint("RIGHT", body, "RIGHT", 0, 0)
-                noChan:SetJustifyH("LEFT")
-                sy = sy - 18
-            else
-                local channelsProxy = makeArraySetProxy(
-                    function() return getCurEntry().channels end,
-                    function(list) getCurEntry().channels = list end
-                )
-                local channelsCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
-                local function makeChannelCheckbox(channelName)
-                    local cb = TrackFilterControl(GUI:CreateFormCheckbox(channelsCard.frame, nil, channelName, channelsProxy, function()
-                        local e = getCurEntry()
-                        if e.customized and ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabFilters then
-                            ns.QUI.Chat.TabFilters.SaveTabConfig(selectedTabFilterFrame, e.groups, e.channels)
-                        end
-                        Refresh()
-                    end, { description = "Show messages from channel '" .. channelName .. "' on this tab." }))
-                    refreshList[#refreshList + 1] = function() if cb.Refresh then cb:Refresh() end end
-                    return cb
-                end
-                for i = 1, #channels, 2 do
-                    local n1, n2 = channels[i], channels[i + 1]
-                    local cellL = row(channelsCard.frame, n1, makeChannelCheckbox(n1))
-                    local cellR
-                    if n2 then
-                        cellR = row(channelsCard.frame, n2, makeChannelCheckbox(n2))
-                    end
-                    channelsCard.AddRow(cellL, cellR)
-                end
-                channelsCard.Finalize()
-                sy = sy - channelsCard.frame:GetHeight() - GAP
-            end
-
-            -- Reset card.
-            local resetCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
-            local resetBtn
-            resetBtn = TrackFilterControl(GUI:CreateButton(resetCard.frame, "Reset to Blizzard defaults", 200, 24, function()
-                if ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabFilters then
-                    ns.QUI.Chat.TabFilters.ResetTab(selectedTabFilterFrame)
-                end
-                NotifyProviderFor(resetBtn, { structural = true })
-            end))
-            GUI:AttachTooltip(resetBtn,
-                "Reset this tab's message-type filters to Blizzard's defaults. Per-channel overrides on other tabs are not touched.",
-                "Reset filters")
-            resetCard.AddRow(row(resetCard.frame, "Reset filters", resetBtn))
-            resetCard.Finalize()
-            sy = sy - resetCard.frame:GetHeight() - GAP
-
-            refreshList[#refreshList + 1] = UpdateTabFilterDependentStates
-            UpdateTabFilterDependentStates()
-
-            return math.abs(sy) + 4
-        end, 800)
-        end
 
         if ShouldRenderSection("buttonBar") then
         -- Button Bar (Phase F)
@@ -1420,8 +1509,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local histLocal = (type(chat.history) == "table") and chat.history or nil
             local storedSet = (histLocal and type(histLocal.excludedChannels) == "table")
                               and histLocal.excludedChannels or {}
-            -- Inline channel-list walk (the tabFilters section's getChannelNamesNow
-            -- is scoped inside its ShouldRenderSection block and not reachable here).
+            -- Inline channel-list walk for the history exclusion controls.
             -- GetChannelList returns id1, name1, header1, ... — skip header rows.
             local joinedSet = {}
             if type(GetChannelList) == "function" then
@@ -1510,10 +1598,6 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             end
 
             -- Main settings card: paired rows of master toggle + sliders/toggles.
-            local copySourceOptions = {
-                { value = "live",      text = "Live (current scrollback)" },
-                { value = "persisted", text = "Persisted (full saved history)" },
-            }
             local mainCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
             local historyEnabledCheckbox = GUI:CreateFormCheckbox(mainCard.frame, nil, "enabled", hist, function()
                 Refresh()
@@ -1527,8 +1611,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             mainCard.AddRow(row(mainCard.frame, "Max stored messages", maxEntriesSlider), row(mainCard.frame, "Store whispers", storeWhispersCheckbox))
 
             local separatorsCheckbox = TrackPersistentHistoryControl(GUI:CreateFormCheckbox(mainCard.frame, nil, "showSeparators", hist, Refresh, { description = "Insert '──── Previous session ────' and '──── Resumed ────' markers around the restored block on login." }))
-            local copySourceDropdown = TrackPersistentHistoryControl(GUI:CreateFormDropdown(mainCard.frame, nil, copySourceOptions, "copyHistorySource", chat, Refresh, { description = "Which message set the chat-frame copy popup pulls from. 'Live' shows what's currently in the chat tab's visible scrollback. 'Persisted' shows the full saved history including entries scrolled out of view or restored from a previous session." }))
-            mainCard.AddRow(row(mainCard.frame, "Show session separators", separatorsCheckbox), row(mainCard.frame, "Copy popup source", copySourceDropdown))
+            mainCard.AddRow(row(mainCard.frame, "Show session separators", separatorsCheckbox))
             mainCard.Finalize()
             sy = sy - mainCard.frame:GetHeight() - GAP
 
@@ -1933,43 +2016,15 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             return computedHeight
         end, 4 * FORM_ROW + 8)
 
-        -- UI Cleanup
-        CreateChatSection("uiCleanup", "UI Cleanup", 2 * FORM_ROW + 8, function(card)
-            local w = GUI:CreateFormCheckbox(card.frame, nil, "hideButtons", chat, Refresh, { description = "Hide the social and channel buttons on each chat frame. The scrollbar stays visible." })
-            card.AddRow(row(card.frame, "Hide Chat Buttons", w))
-        end)
-
         -- Copy Button
-        CreateChatSection("copyButton", "Copy Button", 4 * FORM_ROW + 8, function(card)
+        CreateChatSection("copyButton", "Copy Button", 2 * FORM_ROW + 8, function(card)
             local copyButtonOptions = {
-                {value = "always", text = "Fade When Idle"},
-                {value = "hover", text = "Hide When Idle"},
+                {value = "always", text = "Always Visible"},
+                {value = "hover", text = "Show on Hover"},
                 {value = "disabled", text = "Disabled"},
             }
-            local copySourceOptions = {
-                {value = "live", text = "Current Scrollback"},
-                {value = "persisted", text = "Persisted History"},
-            }
-            local scrollbackOptions = {
-                {value = 0, text = "Client Default"},
-                {value = 500, text = "500 Lines"},
-                {value = 1000, text = "1,000 Lines"},
-                {value = 2500, text = "2,500 Lines"},
-                {value = 5000, text = "5,000 Lines"},
-            }
-            local copySourceDropdown
-            local function UpdateCopyButtonStates()
-                SetControlEnabled(copySourceDropdown, chat.copyButtonMode ~= "disabled")
-            end
-            local copyButtonDropdown = GUI:CreateFormDropdown(card.frame, nil, copyButtonOptions, "copyButtonMode", chat, function()
-                Refresh()
-                UpdateCopyButtonStates()
-            end, { description = "Controls whether the copy glyph stays faintly visible, hides when idle, or is disabled." })
-            copySourceDropdown = GUI:CreateFormDropdown(card.frame, nil, copySourceOptions, "copyHistorySource", chat, Refresh, { description = "Choose whether the copy popup reads the current live scrollback or the persisted history buffer. Persisted history must be enabled above." })
-            card.AddRow(row(card.frame, "Copy Button", copyButtonDropdown), row(card.frame, "Copy Source", copySourceDropdown))
-            local scrollbackDropdown = GUI:CreateFormDropdown(card.frame, nil, scrollbackOptions, "scrollbackLines", chat, Refresh, { description = "Sets the live chat frame scrollback cap. Changing this can clear the current visible buffer once per frame." })
-            card.AddRow(row(card.frame, "Scrollback Lines", scrollbackDropdown))
-            UpdateCopyButtonStates()
+            local copyButtonDropdown = GUI:CreateFormDropdown(card.frame, nil, copyButtonOptions, "copyButtonMode", chat, Refresh, { description = "Controls whether the copy button on the QUI display stays visible, appears only on hover, or is hidden. The copy window always reads the display's full scrollback." })
+            card.AddRow(row(card.frame, "Copy Button", copyButtonDropdown))
         end)
 
         -- New Message Sound

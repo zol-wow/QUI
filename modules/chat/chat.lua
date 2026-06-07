@@ -1,11 +1,11 @@
 ---------------------------------------------------------------------------
 -- QUI Chat Module
--- Glass-style chat frame customization with URL detection and copy support
+-- Core internals for the chat takeover: settings access, timestamps, URL
+-- detection, refresh orchestration. The QUI display owns all rendering.
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local QUI = ns.QUI or {}
 ns.QUI = QUI
-local QUICore = ns.Addon
 local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 
@@ -15,8 +15,8 @@ local UIKit = ns.UIKit
 
 -- Weak-keyed tables to store per-frame state WITHOUT writing properties to Blizzard frames
 -- (avoids taint from `chatFrame.__quiXxx = value` writes). Surfaced on
--- ns.QUI.Chat._internals so sibling files (skinning.lua, cleanup.lua, copy.lua,
--- sounds.lua, editbox_basics.lua, editbox_history.lua) can share the same instances.
+-- ns.QUI.Chat._internals so sibling files (copy.lua, editbox_basics.lua,
+-- editbox_history.lua) can share the same instances.
 ns.QUI.Chat = ns.QUI.Chat or {}
 ns.QUI.Chat._internals = ns.QUI.Chat._internals or {}
 local I = ns.QUI.Chat._internals
@@ -25,7 +25,7 @@ local I = ns.QUI.Chat._internals
 ns.QUI.Chat._afterRefresh = ns.QUI.Chat._afterRefresh or {}
 
 -- Shared color palette. Single source of truth for the chat module —
--- skinning.lua's tab accent and copy.lua's popup styling read from here.
+-- copy.lua's popup styling and the custom display's chrome read from here.
 -- Local fallback palette. The accent here is only used when the options
 -- framework hasn't loaded yet (or fails to load) — otherwise consumers
 -- resolve the live theme accent through I.GetAccent below, so changing
@@ -67,21 +67,8 @@ function I.GetThemeColors()
     }
 end
 
--- skinnedFrames tracks which chat frames have been styled. Regular (non-weak)
--- table because the "already skinned" semantic must persist for the lifetime of
--- the addon. Promoted to _internals so skinning.lua's SkinChatFrame and
--- chat.lua's RefreshAll share the same instance.
-I.skinnedFrames = I.skinnedFrames or {}
-
-I.chatBackdrops       = I.chatBackdrops       or Helpers.CreateStateTable()
 I.editBoxBackdrops    = I.editBoxBackdrops    or Helpers.CreateStateTable()
 I.editBoxState        = I.editBoxState        or Helpers.CreateStateTable()
-I.tabBackdrops        = I.tabBackdrops        or Helpers.CreateStateTable()
-I._chatButtonsHidden  = I._chatButtonsHidden  or Helpers.CreateStateTable()
-I.copyButtonHookState = I.copyButtonHookState or Helpers.CreateStateTable()
-if not I.scrollbackState or not I.GetScrollbackState then
-    I.scrollbackState, I.GetScrollbackState = Helpers.CreateStateTable()
-end
 if not I.surfaceState then
     I.surfaceState, I.GetSurfaceState = Helpers.CreateStateTable() -- backdrop/popup frame -> { bg, border }
 end
@@ -93,10 +80,7 @@ function I.IsChatMessagingLockedDown()
         or false
 end
 
-local skinnedFrames   = I.skinnedFrames
-local tabBackdrops    = I.tabBackdrops
 local GetSurfaceState = I.GetSurfaceState
-local GetScrollbackState = I.GetScrollbackState
 
 -- URL detection patterns (standard protocol, www formats, and known invite
 -- domains that are commonly posted without a scheme).
@@ -148,12 +132,8 @@ local function IsChatEnabled(settings)
     return settings and settings.enabled ~= false
 end
 
-local SCROLLBACK_MAX_LINES = 5000
 local BLIZZARD_TIMESTAMP_SETTING = "showTimestamps"
 local BLIZZARD_TIMESTAMP_NONE = "none"
-local blizzardTimestampFormat
-local blizzardTimestampSetting
-local timestampOverrideActive = false
 
 local function GetBlizzardTimestampSetting()
     if Settings and Settings.GetValue then
@@ -219,61 +199,20 @@ local function SaveBlizzardTimestampSetting(settings, value)
     end
 end
 
-local function GetBlizzardTimestampFormat()
-    if _G.CHAT_TIMESTAMP_FORMAT ~= nil then
-        return _G.CHAT_TIMESTAMP_FORMAT
-    end
-
-    local value = GetBlizzardTimestampSetting()
-    if not IsBlizzardTimestampValueOff(value) and type(value) == "string" and value:find("%%", 1, true) then
-        return value
-    end
-    return nil
-end
-
-local function ShouldUseQUITimestamps(settings)
-    return IsChatEnabled(settings)
-        and settings.timestamps
-        and settings.timestamps.enabled
-end
-
+-- Legacy CVar healing ONLY. Older builds forced the Blizzard timestamp CVar
+-- to "none" while QUI timestamps were enabled (avoiding double stamps on the
+-- rendered Blizzard frames) and saved the user's original value in the
+-- profile. The takeover never renders through Blizzard frames, so the
+-- override is gone — but a profile still carrying a saved value must get its
+-- CVar restored, once. Idempotent; clears the saved key after healing.
 local function ApplyTimestampMode(settings)
     settings = settings or GetSettings()
-
-    if ShouldUseQUITimestamps(settings) then
-        local nativeSetting = GetBlizzardTimestampSetting()
-        local nativeFormat = GetBlizzardTimestampFormat()
-        local savedSetting = GetSavedBlizzardTimestampSetting(settings)
-        if not timestampOverrideActive then
-            blizzardTimestampSetting = savedSetting or nativeSetting
-            blizzardTimestampFormat = nativeFormat
-            timestampOverrideActive = true
-        elseif not IsBlizzardTimestampValueOff(nativeSetting) then
-            blizzardTimestampSetting = nativeSetting
-            blizzardTimestampFormat = nativeFormat
-        elseif nativeFormat ~= nil then
-            blizzardTimestampFormat = nativeFormat
-        end
-        _G.CHAT_TIMESTAMP_FORMAT = nil
-        if not IsBlizzardTimestampValueOff(nativeSetting) then
-            SaveBlizzardTimestampSetting(settings, nativeSetting)
-            SetBlizzardTimestampSetting(BLIZZARD_TIMESTAMP_NONE)
-        end
-        return
-    end
-
-    if timestampOverrideActive then
-        local restoreSetting = blizzardTimestampSetting or GetSavedBlizzardTimestampSetting(settings)
-        if restoreSetting ~= nil and IsBlizzardTimestampCVarOff() then
-            SetBlizzardTimestampSetting(restoreSetting)
-        end
-        if _G.CHAT_TIMESTAMP_FORMAT == nil then
-            _G.CHAT_TIMESTAMP_FORMAT = blizzardTimestampFormat
+    local saved = GetSavedBlizzardTimestampSetting(settings)
+    if saved ~= nil then
+        if IsBlizzardTimestampCVarOff() then
+            SetBlizzardTimestampSetting(saved)
         end
         SaveBlizzardTimestampSetting(settings, nil)
-        blizzardTimestampSetting = nil
-        blizzardTimestampFormat = nil
-        timestampOverrideActive = false
     end
 end
 
@@ -325,6 +264,7 @@ local function GetChatSurfaceColors(settings)
     settings = settings or GetSettings()
 
     local glass = settings and settings.glass
+    local backgroundEnabled = not glass or glass.enabled ~= false
     local alpha = glass and glass.bgAlpha
     if alpha == nil then
         -- Fall back to glass.bgColor[4] if present, else a sensible default.
@@ -357,79 +297,8 @@ local function GetChatSurfaceColors(settings)
         brR, brG, brB = Helpers.GetSkinBorderColor(settings, "chat")
     end
 
-    return {bgR, bgG, bgB, alpha},
+    return {bgR, bgG, bgB, backgroundEnabled and alpha or 0},
            {brR, brG, brB, 0.55}
-end
-
-local function EnsureChatTabBorderSettings(settings)
-    if type(settings) ~= "table" then return nil end
-    if settings.chatTabBorderColorSource == nil then
-        -- Preserve the current selected-tab look: chat tabs used the live
-        -- accent before the shared Border Coloring row existed.
-        settings.chatTabBorderColorSource = "theme"
-    end
-    if type(settings.chatTabBorderColor) ~= "table" then
-        settings.chatTabBorderColor = {0, 0, 0, 1}
-    end
-    return settings
-end
-
-local function GetChatTabBorderColor(settings)
-    settings = EnsureChatTabBorderSettings(settings or GetSettings())
-
-    local accent = I.GetAccent and I.GetAccent() or I.QUI_COLORS.accent
-    local r, g, b, a = accent[1] or 1, accent[2] or 1, accent[3] or 1, accent[4] or 1
-    if Helpers and Helpers.GetSkinBorderColor then
-        r, g, b, a = Helpers.GetSkinBorderColor(settings, "chatTab")
-    end
-    return r, g, b, a
-end
-
-local function NormalizeScrollbackLines(settings)
-    local lines = tonumber(settings and settings.scrollbackLines) or 0
-    if lines <= 0 then return 0 end
-    if lines > SCROLLBACK_MAX_LINES then lines = SCROLLBACK_MAX_LINES end
-    return math.floor(lines + 0.5)
-end
-
-local function ReadCurrentMaxLines(chatFrame)
-    if not chatFrame or not chatFrame.GetMaxLines then return nil end
-    local ok, value = pcall(chatFrame.GetMaxLines, chatFrame)
-    if not ok then return nil end
-    if Helpers.IsSecretValue and Helpers.IsSecretValue(value) then return nil end
-    return tonumber(value)
-end
-
-local function ApplyScrollbackLines(chatFrame, settings)
-    if not chatFrame or not chatFrame.SetMaxLines then return end
-
-    settings = settings or GetSettings()
-    local state = GetScrollbackState(chatFrame)
-    local current = ReadCurrentMaxLines(chatFrame)
-    if current and not state.originalLines then
-        state.originalLines = current
-    end
-
-    local configured = NormalizeScrollbackLines(settings)
-    local target = configured
-    if configured == 0 then
-        target = state.originalLines or 0
-    end
-
-    if target <= 0 then
-        state.appliedLines = nil
-        return
-    end
-
-    if state.appliedLines == target or current == target then
-        state.appliedLines = target
-        return
-    end
-
-    local ok = pcall(chatFrame.SetMaxLines, chatFrame, target)
-    if ok then
-        state.appliedLines = target
-    end
 end
 
 -- Expose helpers for sibling files. Functions are stored on _internals once their
@@ -440,8 +309,18 @@ I.IsTemporaryChatFrame= IsTemporaryChatFrame
 I.GetTabChatFrame     = GetTabChatFrame
 I.ApplySurfaceStyle   = ApplySurfaceStyle
 I.GetChatSurfaceColors= GetChatSurfaceColors
-I.GetChatTabBorderColor = GetChatTabBorderColor
-I.ApplyScrollbackLines= ApplyScrollbackLines
+
+-- In-game structural mutations of chat settings data (window add/delete via
+-- the tab context menu, tab moves/reorders) must bump the chat settings
+-- provider revision: options surfaces only rebuild-on-show when the revision
+-- changed, so without this an open or cached panel keeps listing windows and
+-- tabs that no longer exist.
+function I.NotifyChatSettingsChanged()
+    local RA = ns.Settings and ns.Settings.RenderAdapters
+    if RA and type(RA.NotifyProviderChanged) == "function" then
+        RA.NotifyProviderChanged("chatFrame1", { structural = true })
+    end
+end
 
 ---------------------------------------------------------------------------
 -- Timestamp - Prepend time to messages
@@ -470,7 +349,6 @@ local function AddTimestamp(text)
     if not settings or not settings.timestamps or not settings.timestamps.enabled then
         return text, false
     end
-    ApplyTimestampMode(settings)
 
     if IsSecret(text) then
         local fmt = settings.timestamps.format == "12h" and "%I:%M %p" or "%H:%M"
@@ -571,473 +449,22 @@ local function MakeURLsClickable(text)
     end
 end
 
+-- Exposed for the custom display's capture path (message_capture.lua):
+-- both are pure text decorators that self-gate on settings.
+I.AddTimestamp     = AddTimestamp
 I.MakeURLsClickable = MakeURLsClickable
-
--- Rendered Message Transforms
--- Normal conversational chat events eventually call Blizzard's
--- ChatHistory_GetAccessID, which lowercases chat-type tokens while building
--- history keys. Running addon string modifiers in the pre-dispatch message
--- filter can taint that path when any chat payload is secret. Apply display
--- transforms only after Blizzard has added the rendered line.
----------------------------------------------------------------------------
-local renderedTransformsInstalled = false
-local renderedTransformFrames = setmetatable({}, { __mode = "k" })
-local renderedTransformState = setmetatable({}, { __mode = "k" })
-
-local RENDERED_DECORATION_EVENTS = {
-    CHAT_MSG_SAY = true,
-    CHAT_MSG_YELL = true,
-    CHAT_MSG_GUILD = true,
-    CHAT_MSG_OFFICER = true,
-    CHAT_MSG_PARTY = true,
-    CHAT_MSG_PARTY_LEADER = true,
-    CHAT_MSG_RAID = true,
-    CHAT_MSG_RAID_LEADER = true,
-    CHAT_MSG_RAID_WARNING = true,
-    CHAT_MSG_INSTANCE_CHAT = true,
-    CHAT_MSG_INSTANCE_CHAT_LEADER = true,
-    CHAT_MSG_BN_INLINE_TOAST_ALERT = true,
-    CHAT_MSG_BN_INLINE_TOAST_BROADCAST = true,
-    CHAT_MSG_BN_INLINE_TOAST_BROADCAST_INFORM = true,
-    CHAT_MSG_CHANNEL = true,
-    CHAT_MSG_PING = true,
-    CHAT_MSG_EMOTE = true,
-    CHAT_MSG_TEXT_EMOTE = true,
-    CHAT_MSG_SYSTEM = true,
-    CHAT_MSG_MONSTER_SAY = true,
-    CHAT_MSG_MONSTER_YELL = true,
-    CHAT_MSG_MONSTER_EMOTE = true,
-    CHAT_MSG_MONSTER_WHISPER = true,
-    CHAT_MSG_MONSTER_PARTY = true,
-    CHAT_MSG_LOOT = true,
-    CHAT_MSG_MONEY = true,
-    CHAT_MSG_COMBAT_XP_GAIN = true,
-    CHAT_MSG_COMBAT_HONOR_GAIN = true,
-    CHAT_MSG_COMBAT_FACTION_CHANGE = true,
-    CHAT_MSG_SKILL = true,
-    CHAT_MSG_TRADESKILLS = true,
-    CHAT_MSG_OPENING = true,
-    CHAT_MSG_ACHIEVEMENT = true,
-    CHAT_MSG_GUILD_ACHIEVEMENT = true,
-    CHAT_MSG_COMMUNITIES_CHANNEL = true,
-}
-
-local function GetRenderedState(frame)
-    local state = renderedTransformState[frame]
-    if not state then
-        state = { lineKeys = {} }
-        renderedTransformState[frame] = state
-    end
-    return state
-end
-
-local function ReadPackedArg(eventArgs, index)
-    if IsSecret(eventArgs) or type(eventArgs) ~= "table" then return nil end
-    local value = eventArgs[index]
-    if IsSecret(value) then return nil end
-    return value
-end
-
-local function NormalizeRenderedEvent(event)
-    if IsSecret(event) or type(event) ~= "string" or event == "" then return nil end
-    return event
-end
-
-local function GetRenderedLineKey(event, eventArgs)
-    event = NormalizeRenderedEvent(event)
-    if not event then return nil end
-    local lineID = ReadPackedArg(eventArgs, 11)
-    if lineID == nil then return nil end
-    local valueType = type(lineID)
-    if valueType ~= "number" and valueType ~= "string" then return nil end
-    return event .. ":" .. tostring(lineID)
-end
-
-local function HasQUITimestampPrefix(message)
-    if IsSecret(message) or type(message) ~= "string" then return false end
-    return message:match("^|cff%x%x%x%x%x%x%[%d%d?:%d%d%s?[AP]?[M]?%]|r%s") ~= nil
-        or message:match("^%[%d%d?:%d%d%s?[AP]?[M]?%]%s") ~= nil
-end
-
-local function ShouldTryURLLinkify(message)
-    if IsSecret(message) or type(message) ~= "string" then return false end
-    if message:find("addon:quaziiuichat:url:", 1, true) then return false end
-    return message:find("://", 1, true) ~= nil
-        or message:find("www.", 1, true) ~= nil
-        or message:find("discord.", 1, true) ~= nil
-end
-
-local function BuildRenderedInfo(event, eventArgs)
-    local info = {
-        event = NormalizeRenderedEvent(event),
-        rendered = true,
-        author = ReadPackedArg(eventArgs, 2),
-        language = ReadPackedArg(eventArgs, 3),
-        flags = ReadPackedArg(eventArgs, 6),
-        channelNumber = ReadPackedArg(eventArgs, 7),
-        channelName = ReadPackedArg(eventArgs, 9),
-        lineID = ReadPackedArg(eventArgs, 11),
-        guid = ReadPackedArg(eventArgs, 12),
-    }
-    return info
-end
-
-local function ShouldRunRenderedPipeline(event)
-    event = NormalizeRenderedEvent(event)
-    if not event then return false end
-    local Pipeline = ns.QUI.Chat and ns.QUI.Chat.Pipeline
-    return Pipeline
-        and Pipeline.ShouldRunForEvent
-        and Pipeline.ShouldRunForEvent(event)
-        and Pipeline._modifiers
-        and #Pipeline._modifiers > 0
-end
-
-local function ShouldTransformRenderedMessage(frame, message, r, g, b, infoID, accessID, typeID, event, eventArgs)
-    if not frame then return false end
-    if IsSecret(message) then return false end
-    if type(message) ~= "string" or message == "" then return false end
-
-    local state = GetRenderedState(frame)
-    local lineKey = GetRenderedLineKey(event, eventArgs)
-    if lineKey and state.lineKeys[lineKey] then
-        return false
-    end
-
-    local function markSeenAndSkip()
-        if lineKey then
-            state.lineKeys[lineKey] = true
-        end
-        return false
-    end
-
-    local settings = GetSettings()
-    if not IsChatEnabled(settings) then return markSeenAndSkip() end
-
-    if I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown() then
-        return markSeenAndSkip()
-    end
-
-    local cleanEvent = NormalizeRenderedEvent(event)
-    if not cleanEvent then return markSeenAndSkip() end
-
-    local canDecorate = RENDERED_DECORATION_EVENTS[cleanEvent] == true
-    if canDecorate then
-        if settings.timestamps and settings.timestamps.enabled and not HasQUITimestampPrefix(message) then
-            return true
-        end
-        if settings.urls and settings.urls.enabled and ShouldTryURLLinkify(message) then
-            return true
-        end
-    end
-
-    if ShouldRunRenderedPipeline(cleanEvent) then
-        return true
-    end
-
-    -- A line with a per-channel color override must be transformed even when it
-    -- has no timestamp/URL/pipeline work (this is what pulls whispers in).
-    local resolver = ns.QUI.Chat and ns.QUI.Chat._lineColorResolver
-    if resolver and resolver(cleanEvent, eventArgs) then
-        return true
-    end
-
-    return markSeenAndSkip()
-end
-
-local function TransformRenderedMessage(frame, message, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...)
-    local state = GetRenderedState(frame)
-    local lineKey = GetRenderedLineKey(event, eventArgs)
-    if lineKey and state.lineKeys[lineKey] then
-        return message, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...
-    end
-
-    local settings = GetSettings()
-    local modified = message
-    local cleanEvent = NormalizeRenderedEvent(event)
-    local canDecorate = cleanEvent and RENDERED_DECORATION_EVENTS[cleanEvent] == true
-
-    if canDecorate and settings and settings.timestamps and settings.timestamps.enabled and not HasQUITimestampPrefix(modified) then
-        local nextMessage, didChange = AddTimestamp(modified)
-        if didChange and not IsSecret(nextMessage) then
-            modified = nextMessage
-        end
-    end
-
-    if canDecorate and settings and settings.urls and settings.urls.enabled and ShouldTryURLLinkify(modified) then
-        local nextMessage, didChange = MakeURLsClickable(modified)
-        if didChange and not IsSecret(nextMessage) then
-            modified = nextMessage
-        end
-    end
-
-    local Pipeline = ns.QUI.Chat and ns.QUI.Chat.Pipeline
-    if cleanEvent and ShouldRunRenderedPipeline(cleanEvent) and Pipeline and Pipeline.Run then
-        local newMessage = Pipeline.Run(modified, BuildRenderedInfo(cleanEvent, eventArgs), cleanEvent)
-        if newMessage ~= nil and not IsSecret(newMessage) and type(newMessage) == "string" then
-            modified = newMessage
-        end
-    end
-
-    -- Per-channel color override: substitute the line's r,g,b (reproduces native
-    -- ChatTypeInfo tinting without ever writing that global). See channel_colors.lua.
-    local colorResolver = ns.QUI.Chat and ns.QUI.Chat._lineColorResolver
-    if colorResolver then
-        local cr, cg, cb = colorResolver(cleanEvent, eventArgs)
-        if cr ~= nil and not IsSecret(cr) then
-            r, g, b = cr, cg, cb
-        end
-    end
-
-    if lineKey then
-        state.lineKeys[lineKey] = true
-    end
-
-    return modified, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...
-end
-
-local function MarkRenderedLineSeen(frame, event, eventArgs)
-    if not frame then return end
-    local lineKey = GetRenderedLineKey(event, eventArgs)
-    if lineKey then
-        GetRenderedState(frame).lineKeys[lineKey] = true
-    end
-end
-
-local function MarkExistingRenderedLines(frame)
-    if not frame or not frame.GetNumMessages or not frame.GetMessageInfo then return end
-    local okCount, count = pcall(frame.GetNumMessages, frame)
-    if not okCount or type(count) ~= "number" then return end
-
-    local state = GetRenderedState(frame)
-    for i = 1, count do
-        local ok, _, _, _, _, _, _, _, event, eventArgs = pcall(frame.GetMessageInfo, frame, i)
-        if ok then
-            local lineKey = GetRenderedLineKey(event, eventArgs)
-            if lineKey then
-                state.lineKeys[lineKey] = true
-            end
-        end
-    end
-end
-
-local function HookRenderedMessageFrame(frame)
-    if not frame or renderedTransformFrames[frame] then return end
-    if not frame.TransformMessages then return end
-    if not hooksecurefunc then return end
-
-    renderedTransformFrames[frame] = true
-    MarkExistingRenderedLines(frame)
-
-    hooksecurefunc(frame, "AddMessage", function(chatFrame, _, _, _, _, _, _, _, event, eventArgs)
-        if I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown() then
-            MarkRenderedLineSeen(chatFrame, event, eventArgs)
-            return
-        end
-        if not chatFrame or not chatFrame.TransformMessages then return end
-        chatFrame:TransformMessages(
-            function(...) return ShouldTransformRenderedMessage(chatFrame, ...) end,
-            function(...) return TransformRenderedMessage(chatFrame, ...) end
-        )
-    end)
-end
-
-local function HookAllRenderedMessageFrames()
-    local nWindows = _G.NUM_CHAT_WINDOWS or 10
-    for i = 1, nWindows do
-        HookRenderedMessageFrame(_G["ChatFrame" .. i])
-    end
-end
-
-local function InstallRenderedMessageTransforms()
-    if renderedTransformsInstalled then return end
-    renderedTransformsInstalled = true
-
-    HookAllRenderedMessageFrames()
-
-    if hooksecurefunc and _G.FCF_OpenNewWindow then
-        hooksecurefunc("FCF_OpenNewWindow", function()
-            if C_Timer and C_Timer.After then
-                C_Timer.After(0.1, HookAllRenderedMessageFrames)
-            else
-                HookAllRenderedMessageFrames()
-            end
-        end)
-    end
-
-    if hooksecurefunc and _G.FCF_OpenTemporaryWindow then
-        hooksecurefunc("FCF_OpenTemporaryWindow", function()
-            if C_Timer and C_Timer.After then
-                C_Timer.After(0.1, HookAllRenderedMessageFrames)
-            else
-                HookAllRenderedMessageFrames()
-            end
-        end)
-    end
-end
-
----------------------------------------------------------------------------
--- Refresh tab colors (used by tab-click hook to update selection state)
----------------------------------------------------------------------------
-local function RefreshAllTabColors()
-    if ns.QUI.Chat.Skinning and ns.QUI.Chat.Skinning.StyleAllTabs then
-        ns.QUI.Chat.Skinning.StyleAllTabs()
-        return
-    end
-
-    for i = 1, NUM_CHAT_WINDOWS do
-        local tab = _G["ChatFrame" .. i .. "Tab"]
-        if tab and tabBackdrops[tab] then
-            ns.QUI.Chat.Skinning.UpdateTabColors(tab)
-        end
-    end
-end
-
----------------------------------------------------------------------------
--- Hook new chat window creation
----------------------------------------------------------------------------
-local function HookNewChatWindows()
-    -- Hook temporary windows (whispers, etc.)
-    hooksecurefunc("FCF_OpenTemporaryWindow", function(...)
-        C_Timer.After(0.1, function()
-            ns.QUI.Chat.Skinning.SkinAll()
-            ns.QUI.Chat.Skinning.StyleAllTabs()
-        end)
-    end)
-
-    -- Hook new permanent windows
-    if FCF_OpenNewWindow then
-        hooksecurefunc("FCF_OpenNewWindow", function(...)
-            C_Timer.After(0.1, function()
-                ns.QUI.Chat.Skinning.SkinAll()
-                ns.QUI.Chat.Skinning.StyleAllTabs()
-            end)
-        end)
-    end
-
-    -- Blizzard's FCFTab_UpdateColors resets the tab's FontString color and the
-    -- glow's vertex color from Blizzard's selectedColorTable on every call —
-    -- not just on user clicks but also on dock changes, alert flashes, and
-    -- chat type registration. Re-apply our theme-driven colors after each
-    -- pass so accent/dim text and the reskinned glow color survive.
-    if FCFTab_UpdateColors then
-        hooksecurefunc("FCFTab_UpdateColors", function(tab)
-            if tab and tabBackdrops[tab] then
-                ns.QUI.Chat.Skinning.UpdateTabColors(tab)
-            end
-        end)
-    end
-
-    -- Hook tab clicks to update selection state colors AND editbox backdrop
-    hooksecurefunc("FCF_Tab_OnClick", function(self)
-        if (type(InCombatLockdown) == "function" and InCombatLockdown())
-            or (I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown()) then
-            return
-        end
-
-        local tabID = self:GetID()
-        C_Timer.After(0.05, function()
-            if (type(InCombatLockdown) == "function" and InCombatLockdown())
-                or (I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown()) then
-                return
-            end
-
-            RefreshAllTabColors()
-
-            local chatFrame = _G["ChatFrame" .. tabID]
-            local settings = GetSettings()
-
-            if chatFrame and IsChatEnabled(settings) and settings.editBox and settings.editBox.positionTop then
-                -- Use ChatFrame1's backdrop as the SINGLE shared backdrop for top position mode
-                -- Parent to UIParent so it stays visible when ChatFrame1 is hidden
-                -- (WoW hides ChatFrame1 when other tabs are selected)
-                local sharedBackdrop = I.editBoxBackdrops[ChatFrame1]
-                if sharedBackdrop then
-                    sharedBackdrop:SetParent(UIParent)
-                    sharedBackdrop:ClearAllPoints()
-                    sharedBackdrop:SetFrameLevel(ChatFrame1:GetFrameLevel() + 10)
-                    sharedBackdrop:SetPoint("BOTTOMLEFT", ChatFrame1, "TOPLEFT", 0, 0)
-                    sharedBackdrop:SetPoint("BOTTOMRIGHT", ChatFrame1, "TOPRIGHT", 0, 0)
-                    sharedBackdrop:SetHeight(24)
-                    ApplySurfaceStyle(sharedBackdrop, {0, 0, 0, 1}, {0, 0, 0, 1}, 1)
-
-                    -- Update editbox state reference (stored in local table, NOT on frame)
-                    local ebState = I.editBoxState[ChatFrame1EditBox]
-                    if ebState then
-                        ebState.backdropRef = sharedBackdrop
-                    end
-
-                    -- If editbox has focus, show the backdrop
-                    if ebState and ebState.hasFocus then
-                        sharedBackdrop:Show()
-                    end
-                end
-            end
-        end)
-    end)
-end
-
 ---------------------------------------------------------------------------
 -- Refresh all chat styling (called from options)
 ---------------------------------------------------------------------------
 local function RefreshAll()
     local settings = GetSettings()
-    local chatEnabled = IsChatEnabled(settings)
     ApplyTimestampMode(settings)
 
-    -- Handle each skinned frame
-    for chatFrame in pairs(skinnedFrames) do
-        -- Handle glass backdrop
-        if not chatEnabled or not settings.glass or not settings.glass.enabled then
-            ns.QUI.Chat.Skinning.RemoveBackdrop(chatFrame)
-        end
-
-        -- Handle button visibility
-        if not chatEnabled or not settings.hideButtons then
-            ns.QUI.Chat.Cleanup.ShowButtons(chatFrame)
-        else
-            ns.QUI.Chat.Cleanup.HideButtons(chatFrame)
-        end
-
-        -- Handle editbox styling
-        if not chatEnabled or not settings.editBox or not settings.editBox.enabled then
-            ns.QUI.Chat.EditBoxBasics.RemoveEditBoxStyle(chatFrame)
-        else
-            -- Show editbox backdrop if it exists (for bottom position mode)
-            -- Top position mode handles visibility via OnShow/OnHide hooks
-            if I.editBoxBackdrops[chatFrame] and not settings.editBox.positionTop then
-                I.editBoxBackdrops[chatFrame]:Show()
-            end
-        end
-
-        -- Handle message fade (native API)
-        ns.QUI.Chat.Skinning.SetupFade(chatFrame)
-
-        if not chatEnabled and ns.QUI.Chat.Skinning.RemovePadding then
-            ns.QUI.Chat.Skinning.RemovePadding(chatFrame)
-        end
-
-        -- Handle copy button based on mode
-        if not chatEnabled then
-            ns.QUI.Chat.Copy.HideButton(chatFrame)
-        else
-            ns.QUI.Chat.Copy.ApplyButtonMode(chatFrame)
-        end
-    end
-
-    -- Re-apply all styling if enabled
-    if chatEnabled then
-        ns.QUI.Chat.Skinning.SkinAll()
-        ns.QUI.Chat.Skinning.StyleAllTabs()
-    elseif ns.QUI.Chat.Skinning.RemoveAllTabStyles then
-        ns.QUI.Chat.Skinning.RemoveAllTabStyles()
-    end
-
-    -- Update new message sound registration (works even when chat module disabled)
+    -- Update new message sound registration.
     ns.QUI.Chat.Sounds.Setup()
 
-    -- Modifier after-refresh hooks (e.g., class_colors, channel_shorten).
-    -- Each modifier registers its ApplyEnabled here. pcall isolates failures.
+    -- Modifier after-refresh hooks. Each modifier registers its ApplyEnabled here.
+    -- pcall isolates failures.
     local hooks = ns.QUI.Chat._afterRefresh
     if hooks then
         for i = 1, #hooks do
@@ -1048,9 +475,9 @@ local function RefreshAll()
         end
     end
 
-    -- Re-apply custom display mode (handles displayMode flips + setting
+    -- Re-apply the chat takeover (handles enable/disable flips + setting
     -- changes from options / profile import without a /reload). Cheap when
-    -- the mode hasn't changed (full rebuild only on transitions).
+    -- the state hasn't changed (full rebuild only on transitions).
     if ns.QUI.Chat.DisplayFallback then
         ns.QUI.Chat.DisplayFallback.Apply()
     end
@@ -1059,11 +486,10 @@ end
 ---------------------------------------------------------------------------
 -- Initialize
 ---------------------------------------------------------------------------
--- StyleEditBox (editbox_basics.lua) and ApplyMessagePadding (skinning.lua)
--- bail early when InCombatLockdown() or chat messaging lockdown is active.
--- If we /reload mid-combat or mid-key, the editbox strip stays unstyled
--- (no QUI backdrop, focus hooks, or texture stripping) until lockdown ends.
--- Track a pending flag and reapply when both lockdowns clear.
+-- editbox_basics.lua bails early when InCombatLockdown() or chat messaging
+-- lockdown is active. If we /reload mid-combat or mid-key, the editbox strip
+-- stays unstyled until lockdown ends. Track a pending flag and reapply when
+-- both lockdowns clear.
 local pendingCombatReskin = false
 
 local function IsAnyChatLayoutLocked()
@@ -1071,184 +497,17 @@ local function IsAnyChatLayoutLocked()
         or (I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown())
 end
 
-local function FlushPendingCombatReskin()
-    if not pendingCombatReskin then return end
-    if IsAnyChatLayoutLocked() then return end
-    pendingCombatReskin = false
-    ns.QUI.Chat.Skinning.SkinAll()
-    ns.QUI.Chat.Skinning.StyleAllTabs()
-end
-
----------------------------------------------------------------------------
--- ChatFrame1 size restore (login)
---
--- QUI stores ChatFrame1's width/height in profile.chat.frameSize whenever the
--- user resizes it (the Layout Mode resize grips / the size sliders). Blizzard
--- does not persist a custom size on its preset Edit Mode layouts -- they
--- regenerate from code on load -- so on /reload the frame reverts unless QUI
--- re-asserts the stored size after Blizzard's login layout restore lands.
---
--- TAINT: ChatFrame1 is an EditModeSystem frame. We use ONLY a plain SetSize.
--- SetSize is not one of Blizzard's Edit-Mode-overridden setters (unlike SetPoint
--- / ClearAllPoints / SetParent), so it does not re-enter the secure
--- EditModeManager chain. We never reparent or reposition the frame from this
--- runtime path -- those writes were what tainted ChatFrame1's chat-event
--- dispatch and tripped Blizzard's secret-string guard on channel notices.
-local CHAT_SIZE_MIN_W, CHAT_SIZE_MAX_W = 296, 1400
-local CHAT_SIZE_MIN_H, CHAT_SIZE_MAX_H = 120, 900
-local chatSizeRestorePending = false
-
-local function ReadLiveFrameNumber(value)
-    if Helpers.IsSecretValue and Helpers.IsSecretValue(value) then return nil end
-    return tonumber(value)
-end
-
-local function ApplyStoredChatSize()
-    local settings = GetSettings()
-    if not IsChatEnabled(settings) then return end
-    local stored = settings and settings.frameSize
-    if type(stored) ~= "table" then return end
-    local w, h = tonumber(stored.w), tonumber(stored.h)
-    if not w or not h then return end
-    if w < CHAT_SIZE_MIN_W or w > CHAT_SIZE_MAX_W then return end
-    if h < CHAT_SIZE_MIN_H or h > CHAT_SIZE_MAX_H then return end
-    -- Defer if we logged in under combat / chat-messaging lockdown; the event
-    -- handler retries on the lockdown-end events it already listens for.
-    if IsAnyChatLayoutLocked() then
-        chatSizeRestorePending = true
-        return
-    end
-    local frame = _G.ChatFrame1
-    if not frame or type(frame.SetSize) ~= "function" then return end
-    chatSizeRestorePending = false
-    -- No-op when the live frame already matches (skip a redundant secure write).
-    local cw = (type(frame.GetWidth) == "function") and ReadLiveFrameNumber(frame:GetWidth()) or nil
-    local ch = (type(frame.GetHeight) == "function") and ReadLiveFrameNumber(frame:GetHeight()) or nil
-    if cw and ch and math.floor(cw + 0.5) == w and math.floor(ch + 0.5) == h then
-        return
-    end
-    frame:SetSize(w, h)
-end
-
----------------------------------------------------------------------------
--- Suppress Blizzard's Edit Mode selection chrome on ChatFrame1 (the blue
--- selection box + the resize handle) while Blizzard's Edit Mode is open. QUI
--- skins and owns the chat frame, so the overlay is visual noise.
---
--- TAINT: we touch ONLY the .Selection / .EditModeResizeButton CHILD overlays'
--- alpha. ChatFrame1's own Edit Mode secure state (ClearHighlight, magnetism
--- (un)registration, the HighlightSystem/SelectSystem hooks) is never touched --
--- poking it taints the frame's chat-event dispatch and crashes on secret
--- channel bodies, which is why core/main.lua deliberately leaves ChatFrame1 out
--- of its selection-suppression list. SetAlpha on a child overlay is taint-free
--- (matches the group-frame / CDM precedent). Never Hide() the overlay: Blizzard's
--- magnetic-snap loop reads Selection:GetRect(), which returns nil while hidden
--- and errors.
-local chatSelectionEditModeActive = false
-local chatSelectionSuppressionHooked = false
-local chatSelectionWatcher
-
-local function ZeroChatSelectionAlpha()
-    local frame = _G.ChatFrame1
-    if not frame then return end
-    local selection = frame.Selection
-    if selection and type(selection.SetAlpha) == "function" then
-        selection:SetAlpha(0)
-    end
-    local resizeButton = frame.EditModeResizeButton
-    if resizeButton and type(resizeButton.SetAlpha) == "function" then
-        resizeButton:SetAlpha(0)
-    end
-end
-
-local function ChatSelectionOverlayVisible()
-    local frame = _G.ChatFrame1
-    if not frame then return false end
-    local selection = frame.Selection
-    if selection and type(selection.GetAlpha) == "function" and selection:GetAlpha() > 0 then
-        return true
-    end
-    local resizeButton = frame.EditModeResizeButton
-    if resizeButton and type(resizeButton.GetAlpha) == "function" and resizeButton:GetAlpha() > 0 then
-        return true
-    end
-    return false
-end
-
-local function OnBlizzardEditModeEnter()
-    -- Honor the master toggle live: a disabled chat module hands ChatFrame1 back
-    -- to Blizzard, so its normal Edit Mode selection should show.
-    if not IsChatEnabled(GetSettings()) then return end
-    chatSelectionEditModeActive = true
-    -- Blizzard's ShowSystemSelections runs (via secureexecuterange) after
-    -- EnterEditMode, so zero the alpha now and again on the next frame.
-    ZeroChatSelectionAlpha()
-    C_Timer.After(0, ZeroChatSelectionAlpha)
-    -- Make the (now-invisible) Blizzard resize grip inert so a stray drag can't
-    -- resize the chat outside QUI's own resize controls (QUI wouldn't persist
-    -- it). Edit Mode is combat-exclusive, so this protected EnableMouse call is
-    -- always out of combat; once is enough (Blizzard never re-enables it). Child
-    -- overlay only -- never ChatFrame1 itself.
-    local frame = _G.ChatFrame1
-    local resizeButton = frame and frame.EditModeResizeButton
-    if resizeButton and type(resizeButton.EnableMouse) == "function" then
-        resizeButton:EnableMouse(false)
-    end
-    if not chatSelectionWatcher then
-        chatSelectionWatcher = CreateFrame("Frame", nil, UIParent)
-        chatSelectionWatcher:SetScript("OnUpdate", function()
-            -- Re-zero whenever Blizzard re-shows the overlay on a select/click
-            -- cycle. Only runs while Edit Mode is open (hidden on exit).
-            if not chatSelectionEditModeActive then return end
-            if ChatSelectionOverlayVisible() then
-                ZeroChatSelectionAlpha()
-            end
-        end)
-    elseif type(chatSelectionWatcher.Show) == "function" then
-        chatSelectionWatcher:Show()
-    end
-end
-
-local function OnBlizzardEditModeExit()
-    chatSelectionEditModeActive = false
-    if chatSelectionWatcher and type(chatSelectionWatcher.Hide) == "function" then
-        chatSelectionWatcher:Hide()
-    end
-end
-
-local function InstallChatSelectionSuppression()
-    if chatSelectionSuppressionHooked then return end
-    if not (EditModeManagerFrame and type(EditModeManagerFrame.EnterEditMode) == "function") then
-        return
-    end
-    chatSelectionSuppressionHooked = true
-    hooksecurefunc(EditModeManagerFrame, "EnterEditMode", OnBlizzardEditModeEnter)
-    if type(EditModeManagerFrame.ExitEditMode) == "function" then
-        hooksecurefunc(EditModeManagerFrame, "ExitEditMode", OnBlizzardEditModeExit)
-    end
-end
-
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("CVAR_UPDATE")
--- One-shot: re-assert the QUI-stored ChatFrame1 size after Blizzard's login
--- Edit Mode layout restore lands (see ApplyStoredChatSize). Unregistered after
--- the first fire so later zone changes don't fight a Blizzard custom-layout size.
-eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
--- Lockdown-end events. PLAYER_REGEN_ENABLED covers plain combat; the remainder
--- cover chat messaging lockdown sources that persist past combat exit.
+-- Lockdown-end event: retry editbox styling deferred during mid-combat /reload.
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-eventFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
-eventFrame:RegisterEvent("CHALLENGE_MODE_RESET")
-eventFrame:RegisterEvent("ENCOUNTER_END")
-eventFrame:RegisterEvent("PVP_MATCH_COMPLETE")
-eventFrame:RegisterEvent("PVP_MATCH_INACTIVE")
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
         self:UnregisterEvent("ADDON_LOADED")
 
-        -- Setup new message sound (works independently of chat skinning)
+        -- Setup new message sound.
         ns.QUI.Chat.Sounds.Setup()
 
         -- Always install hooks so the GUI master toggle (chat.enabled)
@@ -1256,26 +515,23 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         -- the runtime branches that do real work re-check the master toggle, so
         -- registering when the module is currently disabled is inert.
         ns.QUI.Chat.Copy.SetupURLClick()
-        InstallRenderedMessageTransforms()
 
         -- Hook chat frame opening to ensure edit box gets history initialization
-        hooksecurefunc("ChatFrame_OpenChat", function(text, chatFrame)
+        hooksecurefunc("ChatFrame_OpenChat", function(_, chatFrame)
             C_Timer.After(0.1, function()
                 ns.QUI.Chat.EditBoxHistory.InitializeForFrame(chatFrame)
             end)
         end)
 
-        -- Hook Blizzard's Edit Mode so the chat selection chrome is suppressed
-        -- (alpha-only; never touches ChatFrame1's secure Edit Mode state).
-        InstallChatSelectionSuppression()
-
-        -- Hook for new chat windows (handler re-checks the master toggle internally)
-        HookNewChatWindows()
-
-        -- Skin existing chat frames + tabs (both gate on the master toggle)
-        ns.QUI.Chat.Skinning.SkinAll()
-        ns.QUI.Chat.Skinning.StyleAllTabs()
         ApplyTimestampMode()
+
+        -- Start the custom display from the addon-load safe window: capture
+        -- now catches the login burst (MOTD, system welcome). AceDB is
+        -- initialized before ADDON_LOADED. Idempotent — the PLAYER_LOGIN
+        -- re-apply stays as a safety net.
+        if ns.QUI.Chat.DisplayFallback then
+            ns.QUI.Chat.DisplayFallback.Apply()
+        end
 
         -- If we loaded under any chat layout lockdown, the per-frame editbox
         -- styling bailed. Mark for retry on the next lockdown-end event.
@@ -1285,31 +541,18 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     elseif event == "PLAYER_LOGIN" or event == "CVAR_UPDATE" then
         ApplyTimestampMode()
         if event == "PLAYER_LOGIN" then
-            -- Custom display (chat.displayMode): start capture + show the custom
-            -- frame when opted in. Idempotent; profile/options changes re-apply via RefreshAll.
+            -- Chat takeover: start capture + show the QUI display when enabled.
+            -- Idempotent; profile/options changes re-apply via RefreshAll.
             if ns.QUI.Chat.DisplayFallback then
                 ns.QUI.Chat.DisplayFallback.Apply()
             end
         end
-    elseif event == "PLAYER_ENTERING_WORLD" then
-        -- Idempotent fallback in case EditModeManagerFrame wasn't ready at
-        -- ADDON_LOADED (no-op once already hooked).
-        InstallChatSelectionSuppression()
-        -- Re-apply QUI's stored chat size after this frame's Edit Mode layout
-        -- restore lands (plain SetSize only -- see ApplyStoredChatSize). One-shot:
-        -- if we entered under lockdown it sets a pending flag and the lockdown-end
-        -- branch below retries.
-        self:UnregisterEvent("PLAYER_ENTERING_WORLD")
-        C_Timer.After(0, ApplyStoredChatSize)
-    elseif event == "PLAYER_REGEN_ENABLED"
-        or event == "CHALLENGE_MODE_COMPLETED"
-        or event == "CHALLENGE_MODE_RESET"
-        or event == "ENCOUNTER_END"
-        or event == "PVP_MATCH_COMPLETE"
-        or event == "PVP_MATCH_INACTIVE" then
-        FlushPendingCombatReskin()
-        if chatSizeRestorePending then
-            ApplyStoredChatSize()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        if pendingCombatReskin and not IsAnyChatLayoutLocked() then
+            pendingCombatReskin = false
+            -- editbox_basics.lua re-styles on its own next StyleEditBox call;
+            -- a RefreshAll ensures it runs.
+            RefreshAll()
         end
     end
 end)
@@ -1320,9 +563,6 @@ end)
 _G.QUI_RefreshChat = RefreshAll
 
 QUI.Chat.Refresh   = RefreshAll
--- QUI.Chat.SkinFrame / SkinAll aliases are assigned at the bottom of skinning.lua
--- (skinning.lua loads after chat.lua per chat.xml, so Skinning.* is not yet
--- defined here).
 
 if ns.Registry then
     ns.Registry:Register("chat", {
@@ -1340,15 +580,6 @@ if Helpers and Helpers.BorderRegistry then
         category = "Skinning",
         prefix   = "chat",
         db       = function(p) return p.chat end,
-        refresh  = function() if _G.QUI_RefreshChat then _G.QUI_RefreshChat() end end,
-        legacy   = {},
-    })
-    Helpers.BorderRegistry.Register({
-        key      = "chatTabs",
-        label    = "Chat Tabs",
-        category = "Skinning",
-        prefix   = "chatTab",
-        db       = function(p) return EnsureChatTabBorderSettings(p and p.chat) end,
         refresh  = function() if _G.QUI_RefreshChat then _G.QUI_RefreshChat() end end,
         legacy   = {},
     })

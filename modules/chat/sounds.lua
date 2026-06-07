@@ -1,13 +1,17 @@
 ---------------------------------------------------------------------------
 -- QUI Chat Module — Sounds
--- Per-channel new-message sound alerts (LSM-aware), driven from rendered
--- ChatFrame:AddMessage hooks so addon code does not participate in the
--- protected chat-event dispatch path.
+-- Per-channel new-message sound alerts (LSM-aware).
+--
+-- Single-path ownership: the store subscriber (installed in Setup) owns ALL
+-- windows, including the pre-PEW login window. Capture starts at
+-- ADDON_LOADED so store entries exist before PLAYER_ENTERING_WORLD; no
+-- AddMessage hook path exists. TryPlayForEvent is called directly from the
+-- store subscriber.
 --
 -- Extracted from chat.lua during Phase 0 refactor.
 ---------------------------------------------------------------------------
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local Helpers = ns.Helpers
 
 -- Defensive: assert _internals exists before reading state through it.
@@ -39,12 +43,6 @@ local SOUND_CHANNEL_EVENTS = {
     },
 }
 
-local hookedFrames = setmetatable({}, { __mode = "k" })
-local newWindowHooksInstalled = false
-local recentLineKeys = {}
-local recentLineOrder = {}
-local RECENT_LINE_LIMIT = 128
-
 local function IsSecret(value)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
 end
@@ -74,56 +72,11 @@ local function PlayConfiguredMessageSound(entry)
     end
 end
 
-local function GetRenderedLineKey(event, eventArgs)
-    if IsSecret(event) or type(event) ~= "string" or event == "" then return nil end
-    if type(eventArgs) ~= "table" then return nil end
-
-    -- ChatInfoDocumentation marks payload arg 11, lineID, as NeverSecret for
-    -- chat-message events including CHAT_MSG_CHANNEL.
-    local lineID = eventArgs[11]
-    local lineIDType = type(lineID)
-    if lineIDType ~= "number" and lineIDType ~= "string" then return nil end
-    return event .. ":" .. tostring(lineID)
-end
-
-local function IsDuplicateRenderedLine(event, eventArgs)
-    local key = GetRenderedLineKey(event, eventArgs)
-    if not key then return false end
-    if recentLineKeys[key] then return true end
-
-    recentLineKeys[key] = true
-    recentLineOrder[#recentLineOrder + 1] = key
-    if #recentLineOrder > RECENT_LINE_LIMIT then
-        local oldKey = table.remove(recentLineOrder, 1)
-        if oldKey then
-            recentLineKeys[oldKey] = nil
-        end
-    end
-    return false
-end
-
-local function GetRenderedSenderGUID(eventArgs)
-    if IsSecret(eventArgs) or type(eventArgs) ~= "table" then return nil end
-    local guid = eventArgs[12]
-    if IsSecret(guid) or type(guid) ~= "string" or guid == "" then return nil end
-    return guid
-end
-
 local function GetReadablePlayerGUID()
     if not UnitGUID then return nil end
     local guid = UnitGUID("player")
     if IsSecret(guid) or type(guid) ~= "string" or guid == "" then return nil end
     return guid
-end
-
-local function IsSelfRenderedMessage(eventArgs)
-    local senderGUID = GetRenderedSenderGUID(eventArgs)
-    if not senderGUID then return false end
-
-    local playerGUID = GetReadablePlayerGUID()
-    if not playerGUID then return false end
-
-    return senderGUID == playerGUID
 end
 
 local function FindConfiguredSoundEntry(event, entries)
@@ -143,7 +96,9 @@ local function FindConfiguredSoundEntry(event, entries)
     return nil
 end
 
-local function PlayNewMessageSound(event, eventArgs)
+-- Core: the store subscriber passes the already-resolved senderGUID
+-- (entry.gid) so this never needs to unpack event payloads.
+local function TryPlayForEvent(event, senderGUID)
     if IsChatMessagingLockedDown() then
         return
     end
@@ -159,54 +114,33 @@ local function PlayNewMessageSound(event, eventArgs)
 
     local entry = FindConfiguredSoundEntry(event, entries)
     if not entry then return end
-    if IsSelfRenderedMessage(eventArgs) then return end
-    if IsDuplicateRenderedLine(event, eventArgs) then return end
+
+    -- Self-message check: if we have a readable senderGUID, compare to the
+    -- player GUID. If senderGUID is nil (secret or absent) we cannot self-
+    -- suppress — play the sound.
+    if senderGUID then
+        local playerGUID = GetReadablePlayerGUID()
+        if playerGUID and senderGUID == playerGUID then return end
+    end
 
     PlayConfiguredMessageSound(entry)
 end
 
-local function HookSoundFrame(frame)
-    if not frame or hookedFrames[frame] then return end
-    if not frame.AddMessage then return end
-    if not hooksecurefunc then return end
-
-    hookedFrames[frame] = true
-    hooksecurefunc(frame, "AddMessage", function(_, _, _, _, _, _, _, _, event, eventArgs)
-        PlayNewMessageSound(event, eventArgs)
+local storeSubscribed = false
+local function InstallStoreSubscriber()
+    local Store = ns.QUI.Chat.MessageStore
+    if storeSubscribed or not (Store and Store.OnAppend) then return end
+    storeSubscribed = true
+    Store.OnAppend(function(entry)
+        if entry.s then return end -- secrets carry no playable classification
+        local e = entry.e
+        if e == "ADDMESSAGE" or e == "BACKFILL" or e == "HISTORY" then return end
+        TryPlayForEvent(e, entry.gid)
     end)
 end
 
-local function HookAllSoundFrames()
-    local nWindows = _G.NUM_CHAT_WINDOWS or 10
-    for i = 1, nWindows do
-        HookSoundFrame(_G["ChatFrame" .. i])
-    end
-end
-
-local function ScheduleHookAllSoundFrames()
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0.1, HookAllSoundFrames)
-    else
-        HookAllSoundFrames()
-    end
-end
-
-local function InstallSoundHooks()
-    HookAllSoundFrames()
-
-    if newWindowHooksInstalled or not hooksecurefunc then return end
-    newWindowHooksInstalled = true
-
-    if _G.FCF_OpenNewWindow then
-        hooksecurefunc("FCF_OpenNewWindow", ScheduleHookAllSoundFrames)
-    end
-    if _G.FCF_OpenTemporaryWindow then
-        hooksecurefunc("FCF_OpenTemporaryWindow", ScheduleHookAllSoundFrames)
-    end
-end
-
 local function SetupNewMessageSound()
-    InstallSoundHooks()
+    InstallStoreSubscriber()
 end
 
 Sounds.Setup = SetupNewMessageSound

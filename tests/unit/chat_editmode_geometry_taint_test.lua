@@ -9,7 +9,8 @@
 --
 -- Covered vectors:
 --   0. chat.xml does not load chat_frame1.lua on the runtime path
---   1. options.xml keeps chat_frame1.lua load-on-demand only
+--   1. options.xml does not load it either (the helper is DELETED — the
+--      takeover suppresses ChatFrame1 and never sizes/positions it)
 --   2. chat.lua does not call ChatFrame1Sizing.DetachFromEditMode/SyncToStored
 --   3. shared anchoring still uses *Base setters for any system frame it owns
 
@@ -34,8 +35,8 @@ hasnot(chatXML, [[<Script file="settings/chat_frame1.lua"/>]],
     "chat.xml must not load the ChatFrame1 sizing/detach helper on the runtime path")
 
 local optionsXML = readAll("QUI_Options/options.xml")
-has(optionsXML, [[<Script file="..\QUI\modules\chat\settings\chat_frame1.lua"/>]],
-    "options.xml should load chat_frame1.lua only for load-on-demand settings")
+hasnot(optionsXML, [[chat_frame1.lua"/>]],
+    "options.xml must not load the deleted ChatFrame1 sizing/detach helper")
 
 local chatRuntime = readAll("modules/chat/chat.lua")
 hasnot(chatRuntime, "DetachFromEditMode",
@@ -54,19 +55,11 @@ has(utils, "function Helpers.BaseSetPoint(frame, ...)",
 has(utils, "frame.SetPointBase or frame.SetPoint",
     "BaseSetPoint must prefer the saved SetPointBase override-bypass")
 
--- 2. The options-only helper still avoids the overridden frame:SetPoint /
---    frame:ClearAllPoints directly if a manual settings path uses it.
-local chat = readAll("modules/chat/settings/chat_frame1.lua")
-has(chat, "Helpers.BaseClearAllPoints(frame)",
-    "ApplyStoredPosition must clear points via the override-bypass helper")
-has(chat, "Helpers.BaseSetPoint(frame, pos.point, UIParent, pos.relPoint or pos.point, x, y)",
-    "ApplyStoredPosition must set the stored point via the override-bypass helper")
-hasnot(chat, "frame:SetPoint(pos.point",
-    "ApplyStoredPosition must not call the overridden frame:SetPoint (re-enters Edit Mode -> taints chat dispatch)")
-hasnot(chat, "frame:ClearAllPoints()",
-    "ApplyStoredPosition must not call the overridden frame:ClearAllPoints (re-enters Edit Mode -> taints chat dispatch)")
-
+-- 2. The sizing/detach helper is DELETED — nothing may resurrect ChatFrame1
+--    geometry mutation in the provider.
 local chatProvider = readAll("modules/chat/settings/chat_frame1_provider.lua")
+hasnot(chatProvider, "ChatFrame1Sizing",
+    "the deleted ChatFrame1 sizing helper must not be referenced by the provider")
 hasnot(chatProvider, "FCF_SetWindowSize",
     "ChatFrame1 size controls must never fall back to FCF_SetWindowSize")
 

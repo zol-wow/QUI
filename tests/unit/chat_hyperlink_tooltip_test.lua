@@ -8,7 +8,6 @@ local settings = {
     hyperlinks = {
         coordinates = false,
         friendlyURLs = false,
-        interactiveNames = true,
     },
 }
 

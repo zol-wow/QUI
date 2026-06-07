@@ -92,4 +92,8 @@ settings.glass.bgColor = { 0.11, 0.12, 0.13 }
 bg = getColors(settings)
 assert(bg[1] == 0.11 and bg[2] == 0.12 and bg[3] == 0.13, "non-black glass.bgColor remains an explicit override")
 
+settings.glass.enabled = false
+bg = getColors(settings)
+assert(bg[4] == 0, "disabled chat background should make the custom display fill transparent")
+
 print("OK: chat_surface_color_override_test")

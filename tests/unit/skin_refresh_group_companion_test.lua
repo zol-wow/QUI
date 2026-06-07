@@ -25,7 +25,7 @@ local EXPECTED = {
     { "modules/resourcebars/resourcebars.lua", "resourceBarsSkin" },
     { "modules/cdm/cdm_bar_renderer.lua",   "cdmBarsSkin" },
     -- Earlier same-pattern fixes (positive controls):
-    { "modules/chat/skinning.lua",          "chatSurfaceSkin" },
+    { "modules/chat/display_fallback.lua",  "chatCustomDisplaySkin" },
     { "modules/chat/button_bar.lua",        "chatButtonBarSkin" },
     { "modules/groupframes/raidbuffs.lua",  "raidbuffsSkin" },
 }

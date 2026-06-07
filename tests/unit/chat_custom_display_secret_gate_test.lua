@@ -4,8 +4,8 @@
 -- operators applied, through the real capture -> store -> display chain.
 -- The sentinel explodes on ANY metamethod; reaching print("OK") proves
 -- opacity end-to-end. Also proves: interleaved normal messages still render,
--- a rebuild (tab switch) re-passes the secret untouched, and the
--- custom/blizzard toggle round-trip replays the retained store.
+-- a rebuild (tab switch) re-passes matching secrets untouched, and the
+-- enable/disable toggle round-trip replays the retained store.
 
 local function explode() error("OPERATOR APPLIED TO SECRET", 2) end
 local secret = setmetatable({}, {
@@ -20,6 +20,7 @@ local smfAdded = {}
 local function makeFrame(ftype)
     local f = { ftype = ftype, shown = true }
     local function noop() end
+    f.GetName = function(self) return self.name end
     f.SetSize = noop; f.SetHeight = noop; f.SetPoint = noop; f.ClearAllPoints = noop
     f.GetPoint = function() return "BOTTOMLEFT", nil, "BOTTOMLEFT", 35, 40 end
     f.GetWidth = function() return 430 end; f.GetHeight = function() return 190 end
@@ -31,6 +32,8 @@ local function makeFrame(ftype)
     f.SetFrameStrata = noop; f.SetFontObject = noop; f.SetJustifyH = noop
     f.SetFading = noop; f.SetMaxLines = noop; f.SetHyperlinksEnabled = noop
     f.ScrollUp = noop; f.ScrollDown = noop; f.ScrollToBottom = noop
+    f.HookScript = function(s, k, v) s["_hook_" .. k] = v end
+    f.EnableMouseWheel = noop
     f.Clear = function() smfAdded = {} end
     f.AddMessage = function(_, m, r, g, b) smfAdded[#smfAdded + 1] = { m = m, r = r, g = g, b = b } end
     f.RegisterEvent = noop; f.UnregisterAllEvents = noop
@@ -40,6 +43,11 @@ end
 local captureFrame
 function _G.CreateFrame(ftype, name)
     local f = makeFrame(ftype)
+    f.name = name
+    if name then _G[name] = f end
+    -- The capture frame is the first unnamed Frame; drag handles and resize
+    -- grips also have name == nil but come later (display_layer loads after
+    -- message_capture in chat.xml order).
     if not captureFrame and ftype == "Frame" and name == nil then captureFrame = f end
     return f
 end
@@ -63,10 +71,18 @@ _G.ChatFrameUtil = { ProcessMessageEventFilters = function(_, _, ...) return fal
 function _G.hooksecurefunc() end
 function _G.debugstack() return "" end
 
-local settings = { enabled = true, displayMode = "custom",
-    customDisplay = { width = 430, height = 190,
-        position = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 35, y = 40 },
-        maxLines = 500, bgAlpha = 0.25 } }
+-- One window: secret-gate is a single-window discipline test.
+-- windows[1] carries the legacy geometry fields display_layer reads from
+-- the config entry; maxLines lives at customDisplay.maxLines.
+local settings = { enabled = true,
+    customDisplay = {
+        maxLines = 500,
+        windows = {
+            { width = 430, height = 190,
+              position = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 35, y = 40 },
+              tabs = {} },
+        },
+    } }
 local ns = {
     Helpers = {
         IsSecretValue = function(v) return v == secret end,
@@ -80,13 +96,21 @@ local ns = {
     } } },
 }
 
--- Load the REAL chain in chat.xml order
+-- Load the REAL chain in chat.xml order.
+-- TabManager must exist before display_layer so GetWindowsConfig resolves.
 assert(loadfile("modules/chat/message_store.lua"))("QUI", ns)
 assert(loadfile("modules/chat/message_format.lua"))("QUI", ns)
 assert(loadfile("modules/chat/message_capture.lua"))("QUI", ns)
+-- Stub TabManager so display_layer.EnsureCreated can read the window config.
+-- The real tab_manager is loaded afterward and replaces this stub.
+ns.QUI.Chat.TabManager = {
+    GetWindowsConfig = function() return settings.customDisplay.windows end,
+}
 assert(loadfile("modules/chat/display_layer.lua"))("QUI", ns)
 assert(loadfile("modules/chat/tab_manager.lua"))("QUI", ns)
 assert(loadfile("modules/chat/display_fallback.lua"))("QUI", ns)
+
+-- Real two-arg Rebuild is now in place; no shim needed (Task 3).
 
 ns.QUI.Chat.DisplayFallback.Apply()
 assert(captureFrame and captureFrame._OnEvent, "capture frame wired")
@@ -106,20 +130,27 @@ assert(smfAdded[2].r == 1 and smfAdded[2].g == 0.28 and smfAdded[2].b == 0,
 captureFrame._OnEvent(captureFrame, "CHAT_MSG_SAY", "after", "Ann")
 assert(#smfAdded == 3, "dispatch alive after secret")
 
--- 4. Tab-switch rebuild re-passes the secret untouched
-ns.QUI.Chat.TabManager.SetActiveTab({ groups = { SAY = true }, invert = false })
+-- 4. Tab-switch rebuild filters by event metadata and re-passes matching
+-- secrets untouched.
+ns.QUI.Chat.TabManager.SetActiveTab(1, { groups = { RAID_WARNING = true }, invert = false })
 local secretSeen = false
 for _, line in ipairs(smfAdded) do
     if rawequal(line.m, secret) then secretSeen = true end
 end
-assert(secretSeen, "secret survives filtered rebuild")
+assert(secretSeen, "secret survives matching filtered rebuild")
+ns.QUI.Chat.TabManager.SetActiveTab(1, { groups = { SAY = true }, invert = false })
+secretSeen = false
+for _, line in ipairs(smfAdded) do
+    if rawequal(line.m, secret) then secretSeen = true end
+end
+assert(not secretSeen, "secret blocked when its metadata does not match the active tab")
 
--- 5. Lossless toggle: blizzard mode hides, store intact; back to custom replays all
-settings.displayMode = "blizzard"
+-- 5. Lossless toggle: disabling hides, store intact; re-enabling replays all
+settings.enabled = false
 ns.QUI.Chat.DisplayFallback.Apply()
 assert(ns.QUI.Chat.MessageStore.Size() == 3, "store retained on toggle-off")
-settings.displayMode = "custom"
-ns.QUI.Chat.TabManager.SetActiveTab(nil)
+settings.enabled = true
+ns.QUI.Chat.TabManager.SetActiveTab(1, nil)
 ns.QUI.Chat.DisplayFallback.Apply()
 assert(#smfAdded == 3, "full replay after toggle round-trip, got " .. #smfAdded)
 local replaySecret = false

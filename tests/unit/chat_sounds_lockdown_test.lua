@@ -1,9 +1,10 @@
 -- tests/unit/chat_sounds_lockdown_test.lua
 -- Run: lua tests/unit/chat_sounds_lockdown_test.lua
--- luacheck: globals CreateFrame PlaySoundFile hooksecurefunc C_Timer NUM_CHAT_WINDOWS ChatFrame1 ChatFrame2 UnitGUID
-
-local function noop() end
-local unpack = unpack
+-- Single-path contract: sounds install NO AddMessage hooks and NO
+-- pre-dispatch CHAT_MSG_* handlers — only the store subscriber. Lockdown is
+-- checked FIRST (before settings/GUID work): a locked-down append plays
+-- nothing and never queries UnitGUID.
+-- luacheck: globals CreateFrame PlaySoundFile hooksecurefunc UnitGUID
 
 local settings = {
     enabled = true,
@@ -20,15 +21,11 @@ function CreateFrame()
     local frame = {}
     function frame:RegisterEvent(event) eventRegistrations[event] = true end
     function frame:UnregisterEvent(event) eventRegistrations[event] = nil end
-    function frame:SetScript(script, handler)
-        if script == "OnEvent" then frame.OnEvent = handler end
-    end
+    function frame:SetScript() end
     return frame
 end
 
-local hasSecretChecks = 0
 local soundsPlayed = 0
-local soundHooks = 0
 local unitGUIDCalls = 0
 local locked = true
 local secret = { __secret = true }
@@ -43,47 +40,23 @@ function UnitGUID(unit)
     return "Player-0001"
 end
 
-function hooksecurefunc(target, method, func)
-    assert(type(target) == "table", "sounds must hook rendered chat frames, not global chat events")
-    assert(method == "AddMessage", "sounds must hook AddMessage")
-    local original = target[method] or noop
-    target[method] = function(self, ...)
-        local results = { original(self, ...) }
-        func(self, ...)
-        return unpack(results)
-    end
-    soundHooks = soundHooks + 1
+function hooksecurefunc()
+    error("sounds must not install ANY secure hooks (single store path)")
 end
 
-C_Timer = {
-    After = function(_, callback) callback() end,
-}
-
-local function newChatFrame()
-    local frame = { messages = {} }
-    function frame:AddMessage(...)
-        self.messages[#self.messages + 1] = {...}
-    end
-    return frame
-end
-
-NUM_CHAT_WINDOWS = 2
-ChatFrame1 = newChatFrame()
-ChatFrame2 = newChatFrame()
-
+local subscriber
 local ns = {
     Helpers = {
         IsSecretValue = function(value) return value == secret end,
-        HasSecretValue = function()
-            hasSecretChecks = hasSecretChecks + 1
-            return true
-        end,
     },
     LSM = {
         Fetch = function(_, _, name) return name end,
     },
     QUI = {
         Chat = {
+            MessageStore = {
+                OnAppend = function(fn) subscriber = fn end,
+            },
             _internals = {
                 GetSettings = function() return settings end,
                 IsChatEnabled = function(s) return s and s.enabled ~= false end,
@@ -96,57 +69,27 @@ local ns = {
 assert(loadfile("modules/chat/sounds.lua"))("QUI", ns)
 ns.QUI.Chat.Sounds.Setup()
 
-assert(not eventRegistrations.CHAT_MSG_PARTY, "chat sounds must not register pre-dispatch CHAT_MSG_* handlers")
-assert(soundHooks == 2, "chat sounds should hook rendered AddMessage on chat frames")
+assert(not next(eventRegistrations), "chat sounds must not register pre-dispatch CHAT_MSG_* handlers")
+assert(type(subscriber) == "function", "store subscriber installed")
 
-ChatFrame1:AddMessage(
-    "secret text",
-    1, 1, 1,
-    1, 0, 0,
-    "CHAT_MSG_PARTY",
-    { [11] = 1001 }
-)
-
-assert(hasSecretChecks == 0, "chat sounds must not inspect party payloads during chat messaging lockdown")
+-- Lockdown active: no sound, and lockdown is checked BEFORE any GUID work
+subscriber({ e = "CHAT_MSG_PARTY", gid = "Player-0002", s = false })
 assert(soundsPlayed == 0, "chat sounds must not play while chat messaging lockdown is active")
+assert(unitGUIDCalls == 0, "lockdown must short-circuit before any UnitGUID query")
 
+-- Unlocked: plays from the store path
 locked = false
-ChatFrame1:AddMessage(
-    "plain text",
-    1, 1, 1,
-    1, 0, 0,
-    "CHAT_MSG_PARTY",
-    { [11] = 1002, [12] = "Player-0002" }
-)
-assert(soundsPlayed == 1, "chat sounds should play from rendered AddMessage when unlocked")
+subscriber({ e = "CHAT_MSG_PARTY", gid = "Player-0002", s = false })
+assert(soundsPlayed == 1, "chat sounds should play from the store path when unlocked")
 
-ChatFrame2:AddMessage(
-    "same line rendered in another tab",
-    1, 1, 1,
-    1, 0, 0,
-    "CHAT_MSG_PARTY",
-    { [11] = 1002, [12] = "Player-0002" }
-)
-assert(soundsPlayed == 1, "chat sounds should dedupe a line rendered into multiple chat frames")
-
-ChatFrame1:AddMessage(
-    "own party text",
-    1, 1, 1,
-    1, 0, 0,
-    "CHAT_MSG_PARTY",
-    { [11] = 1003, [12] = "Player-0001" }
-)
+-- Own message: readable GUIDs match → suppressed
+subscriber({ e = "CHAT_MSG_PARTY", gid = "Player-0001", s = false })
 assert(soundsPlayed == 1, "chat sounds must suppress own party messages when both GUIDs are readable")
 
-local unitGUIDCallsBeforeSecretGuid = unitGUIDCalls
-ChatFrame1:AddMessage(
-    "secret sender text",
-    1, 1, 1,
-    1, 0, 0,
-    "CHAT_MSG_PARTY",
-    { [11] = 1004, [12] = secret }
-)
-assert(unitGUIDCalls == unitGUIDCallsBeforeSecretGuid, "secret sender GUID must not be compared to UnitGUID")
-assert(soundsPlayed == 2, "chat sounds should not suppress when sender GUID is secret")
+-- Absent sender GUID (capture strips secrets to nil): cannot self-suppress → play
+local unitGUIDCallsBefore = unitGUIDCalls
+subscriber({ e = "CHAT_MSG_PARTY", s = false })
+assert(unitGUIDCalls == unitGUIDCallsBefore, "nil sender GUID must not be compared to UnitGUID")
+assert(soundsPlayed == 2, "chat sounds should not suppress when sender GUID is absent")
 
 print("OK: chat_sounds_lockdown_test")

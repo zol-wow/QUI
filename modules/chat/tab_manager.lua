@@ -1,11 +1,12 @@
 -- modules/chat/tab_manager.lua
--- Phase 1 tab state for the custom display: builds filter closures from the
--- existing settings.chat.tabs shape ({ groups = {KEY=true}, channels =
--- {Name=true}, invert = bool }) and drives DisplayLayer.Rebuild on switch.
--- Visual tab buttons are Phase 2 (tab_ui.lua); Phase 1 exposes the filter
--- machinery only.
+-- Window-scoped tab state for the custom display: builds filter closures from
+-- QUI's saved chat windows (customDisplay.windows[]) and drives
+-- DisplayLayer.Rebuild(windowID, filterFn) on tab switch. Each window carries
+-- its own active filter; conversation tabs get a dedicated closure that shows
+-- only their tagged entries. Visual tab buttons are Phase 2 (tab_ui.lua).
 --
--- Secret entries are NEVER classified — they always pass.
+-- Secret message bodies are never inspected; filters only use event/channel
+-- metadata captured separately from the message body.
 local ADDON_NAME, ns = ...
 
 local _I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
@@ -14,34 +15,60 @@ local _I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
 ns.QUI.Chat.TabManager = ns.QUI.Chat.TabManager or {}
 local TabManager = ns.QUI.Chat.TabManager
 
-local activeFilter
+local activeFilters = {} -- dense array: windowID -> active filter closure
 
-local function HasAny(t)
-    return type(t) == "table" and next(t) ~= nil
+local function NormalizeSet(t)
+    if type(t) ~= "table" then return nil end
+    local out
+    for k, v in pairs(t) do
+        local key
+        if type(k) == "string" and v then
+            key = k
+        elseif type(k) == "number" and type(v) == "string" and v ~= "" then
+            key = v
+        end
+        if key then
+            out = out or {}
+            out[key] = true
+        end
+    end
+    return out
 end
+
+local EVENT_GROUP_ALIAS = {
+    RAID_BOSS_EMOTE = "MONSTER_BOSS_EMOTE",
+    QUEST_BOSS_EMOTE = "MONSTER_BOSS_EMOTE",
+    RAID_BOSS_WHISPER = "MONSTER_BOSS_WHISPER",
+}
 
 -- Returns a filter closure, or nil when tabData expresses no constraint
 -- (nil filter = show everything; cheaper than an always-true closure).
 --
--- SHAPE NOTE: expects SET-shaped constraints ({ SAY = true, Trade = true }).
--- The persisted settings.chat.tabs entries (written by tab_filters.lua)
--- store ARRAYS ({ "SAY", "Trade" }) and have no `invert` key — any future
--- caller wiring stored tabs into SetActiveTab MUST adapt array -> set first,
--- or every lookup silently misses. No Phase 1 caller does this yet.
 function TabManager.BuildFilter(tabData)
     if type(tabData) ~= "table" then return nil end
-    local groups = HasAny(tabData.groups) and tabData.groups or nil
-    local channels = HasAny(tabData.channels) and tabData.channels or nil
+    local groups = NormalizeSet(tabData.groups)
+    local channels = NormalizeSet(tabData.channels)
     if not groups and not channels then return nil end
     local invert = tabData.invert and true or false
 
-    -- An entry is "listed" if EITHER its typeKey or its channel name is
-    -- constrained — whitelisting the CHANNEL group passes all channels.
+    -- Named channel traffic is routed by channelBaseName first. A tab that
+    -- lists General must not inherit Trade just because CHANNEL is present in
+    -- its message groups.
     return function(entry)
-        if entry.s then return true end -- secrets always pass
         local listed = false
-        if groups and entry.k and groups[entry.k] then listed = true end
-        if not listed and channels and entry.ch and channels[entry.ch] then listed = true end
+        local channelName = entry.ch
+        if type(channelName) == "string" and channelName ~= "" then
+            listed = channels and channels[channelName] or false
+        else
+            if groups and entry.k and groups[entry.k] then listed = true end
+            -- Normalize typeKey -> message group (PARTY_LEADER lives in group
+            -- PARTY): the stored/derived sets use GROUP names.
+            if not listed and groups and entry.e then
+                local grp = _G.ChatTypeGroupInverted and _G.ChatTypeGroupInverted[entry.e]
+                if not grp then grp = EVENT_GROUP_ALIAS[entry.e] end
+                if grp and groups[grp] then listed = true end
+            end
+        end
         if invert then
             return not listed
         end
@@ -49,14 +76,192 @@ function TabManager.BuildFilter(tabData)
     end
 end
 
-function TabManager.SetActiveTab(tabData)
-    activeFilter = TabManager.BuildFilter(tabData)
-    local Display = ns.QUI.Chat.DisplayLayer
-    if Display and Display.Rebuild then
-        Display.Rebuild(activeFilter)
+-- Conversation-exclusion wrapper: while a conversation tab for entry.w is
+-- open ANYWHERE, that conversation's lines render only in its own tab.
+-- ConversationManager is a runtime lookup (nil-safe before its file loads;
+-- conversation state is session-only so this can never go stale across
+-- /reload). entry.w is nil for non-whisper traffic — one field test.
+local function WrapWithConversationExclusion(baseFilter)
+    return function(entry)
+        if entry.w then
+            local Conv = ns.QUI.Chat.ConversationManager
+            if Conv and Conv.IsOpen and Conv.IsOpen(entry.w) then
+                return false
+            end
+        end
+        if not baseFilter then return true end
+        return baseFilter(entry)
     end
 end
 
-function TabManager.GetActiveFilter()
-    return activeFilter
+-- Saved-tab filter for display/unread use. Unlike BuildFilter this never
+-- returns nil: even a no-constraint tab must exclude open conversations.
+function TabManager.BuildTabFilter(tabData)
+    return WrapWithConversationExclusion(TabManager.BuildFilter(tabData))
+end
+
+-- A conversation tab shows exactly its conversation's tagged entries.
+function TabManager.BuildConversationFilter(key)
+    return function(entry)
+        return entry.w == key
+    end
+end
+
+function TabManager.SetActiveTab(windowID, tabData)
+    windowID = tonumber(windowID) or 1
+    activeFilters[windowID] = TabManager.BuildTabFilter(tabData)
+    local Display = ns.QUI.Chat.DisplayLayer
+    if Display and Display.Rebuild then
+        Display.Rebuild(windowID, activeFilters[windowID])
+    end
+end
+
+function TabManager.SetActiveConversation(windowID, key)
+    windowID = tonumber(windowID) or 1
+    activeFilters[windowID] = TabManager.BuildConversationFilter(key)
+    local Display = ns.QUI.Chat.DisplayLayer
+    if Display and Display.Rebuild then
+        Display.Rebuild(windowID, activeFilters[windowID])
+    end
+end
+
+function TabManager.GetActiveFilter(windowID)
+    return activeFilters[tonumber(windowID) or 1]
+end
+
+-- Re-run every window's active filter (conversation open/close moves lines
+-- between tabs; cost = one tab switch per window). Iterates the filter
+-- slots only — windows that never activated a tab have nothing to reapply,
+-- and this must stay free of GetWindowsConfig's seeding side-effect.
+function TabManager.ReapplyAll()
+    local Display = ns.QUI.Chat.DisplayLayer
+    if not (Display and Display.Rebuild) then return end
+    for id = 1, #activeFilters do
+        Display.Rebuild(id, activeFilters[id])
+    end
+end
+
+-- Display.DeleteWindow shifts window IDs down; keep filter slots aligned.
+function TabManager.OnWindowDeleted(windowID)
+    table.remove(activeFilters, tonumber(windowID) or 0)
+end
+
+local function SetFromReturns(...)
+    local out = {}
+    for i = 1, select("#", ...) do
+        local v = select(i, ...)
+        if type(v) == "string" and v ~= "" then
+            out[v] = true
+        end
+    end
+    return out
+end
+
+local function ChannelSetFromReturns(...)
+    local out = {}
+    for i = 1, select("#", ...), 2 do
+        local v = select(i, ...)
+        if type(v) == "string" and v ~= "" then
+            out[v] = true
+        end
+    end
+    return out
+end
+
+local function ShouldSeedWindow(frameID)
+    local frame = _G["ChatFrame" .. tostring(frameID)]
+    if not frame then return nil end
+    if frame and (frame.isCombatLog or frame.privateMessageList or frame.isTemporary) then
+        return nil
+    end
+
+    local isTemp = _I.IsTemporaryChatFrame and _I.IsTemporaryChatFrame(frame)
+    if isTemp then return nil end
+
+    if type(_G.GetChatWindowInfo) ~= "function" then return nil end
+    local name, _, _, _, _, _, shown, _, docked = _G.GetChatWindowInfo(frameID)
+    if type(name) ~= "string" or name == "" then return nil end
+    if not (shown or docked) then return nil end
+    return name
+end
+
+-- Canonical empty-tab shape (window seeding, "Add window", settings Add Tab).
+function TabManager.NewDefaultTab(name)
+    return { name = name or "Tab 1", groups = {}, channels = {}, invert = false }
+end
+
+-- Fill `tabs` (empty array) with entries mirroring the user's Blizzard chat
+-- windows — same rule as the old flat seed: combat log, private message
+-- lists, temporary and hidden windows are skipped.
+local function SeedTabsInto(tabs)
+    local maxWindows = _G.NUM_CHAT_WINDOWS or 10
+    for i = 1, maxWindows do
+        local name = ShouldSeedWindow(i)
+        if name then
+            local groups = {}
+            local channels = {}
+            if type(_G.GetChatWindowMessages) == "function" then
+                groups = SetFromReturns(_G.GetChatWindowMessages(i))
+            end
+            if type(_G.GetChatWindowChannels) == "function" then
+                channels = ChannelSetFromReturns(_G.GetChatWindowChannels(i))
+            end
+            tabs[#tabs + 1] = {
+                name = name,
+                groups = groups,
+                channels = channels,
+                invert = false,
+            }
+        end
+    end
+    if #tabs == 0 then
+        tabs[1] = { name = "General", groups = {}, channels = {}, invert = false }
+    end
+end
+
+local function SeedWindows(settings)
+    settings.customDisplay = settings.customDisplay or {}
+    local cd = settings.customDisplay
+    if type(cd.windows) ~= "table" then cd.windows = {} end
+    if #cd.windows == 0 then
+        cd.windows[1] = {
+            width = 430,
+            height = 190,
+            position = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 35, y = 40 },
+            tabs = {},
+        }
+    end
+    for i = 1, #cd.windows do
+        if type(cd.windows[i].tabs) ~= "table" then cd.windows[i].tabs = {} end
+    end
+    -- Window 1 inherits the Blizzard-derived tab seed once (same one-shot
+    -- rule the old flat customDisplay.tabs used).
+    if #cd.windows[1].tabs == 0 then
+        SeedTabsInto(cd.windows[1].tabs)
+    end
+    return cd.windows
+end
+
+-- customDisplay.windows is an ARRAY of { width, height, position, tabs }
+-- where tabs is an ARRAY of SET-shaped entries ({ name, groups = {KEY=true},
+-- channels = {Name=true}, invert }).
+function TabManager.GetWindowsConfig()
+    local settings = _I.GetSettings and _I.GetSettings()
+    if type(settings) == "table" then
+        return SeedWindows(settings)
+    end
+    return {}
+end
+
+function TabManager.GetWindowTabs(windowID)
+    local w = TabManager.GetWindowsConfig()[tonumber(windowID) or 1]
+    if type(w) == "table" and type(w.tabs) == "table" then return w.tabs end
+    return {}
+end
+
+function TabManager.GetWindowTab(windowID, index)
+    if type(index) ~= "number" then return nil end
+    local t = TabManager.GetWindowTabs(windowID)[index]
+    if type(t) == "table" then return t end
+    return nil
 end

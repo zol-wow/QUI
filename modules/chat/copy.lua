@@ -1,10 +1,13 @@
 ---------------------------------------------------------------------------
 -- QUI Chat Module — Copy
--- URL copy popup, full-history copy frame, per-frame copy button
--- (always/hover/disabled modes), URL click handler routing through
--- the EventRegistry SetItemRef callback.
+-- URL copy popup, full-history copy frame (custom display only), custom
+-- display copy button (always/hover/hidden modes), URL click handler
+-- routing through the EventRegistry SetItemRef callback.
 --
--- Extracted from chat.lua during Phase 0 refactor.
+-- Blizzard-frame copy-button machinery removed in Phase 11 Task 3.
+-- The copy frame is populated exclusively from the custom display's
+-- MessageStore; Blizzard ChatFrame live-line and persisted-history
+-- paths have been excised.
 ---------------------------------------------------------------------------
 
 local ADDON_NAME, ns = ...
@@ -23,26 +26,13 @@ local Copy = ns.QUI.Chat.Copy
 local tinsert = table.insert
 local tconcat = table.concat
 
-local COPY_BUTTON_SIZE = 24
-local COPY_BUTTON_RIGHT_INSET = 0
-local COPY_BUTTON_TOP_INSET = 0
-local COPY_BUTTON_IDLE_ALPHA = 0
-local COPY_BUTTON_ALWAYS_IDLE_ALPHA = 0.18
-local COPY_BUTTON_CHAT_ALPHA = 0.92
-local COPY_BUTTON_HOVER_ALPHA = 1
-local COPY_BUTTON_FADE_IN = 0.12
-local COPY_BUTTON_FADE_OUT = 0.2
-local COPY_GLYPH_STROKE = 2
-
--- Cap how many persisted lines the viewer renders. Storage keeps the full
--- retention buffer; the cap only bounds what hits the multi-line EditBox so
--- WoW's per-frame layout cost (O(total chars)) doesn't tank FPS in M+/raid
--- when the viewer falls back to persisted history under chat lockdown.
-local MAX_PERSISTED_VIEWER_LINES = 500
 -- Skip the on-open Select-All when the rendered text is large — the
 -- selection walk is another full-text pass on top of SetText. Users can
 -- still hit the Select All button on demand.
 local AUTO_HIGHLIGHT_MAX_CHARS = 8000
+local COPY_BUTTON_SIZE = 24
+local COPY_BUTTON_FRAME_LEVEL = 100
+local COPY_GLYPH_STROKE = 2
 
 ---------------------------------------------------------------------------
 -- Module-local state
@@ -56,6 +46,14 @@ local copyButtons = {}          -- Track copy buttons per chat frame
 -- options framework palette; accent is resolved live via I.GetAccent so a
 -- theme preset switch propagates to popup chrome on next Show.
 local QUI_COLORS = I.QUI_COLORS
+if type(QUI_COLORS) ~= "table" then
+    QUI_COLORS = {
+        bg      = {0.067, 0.094, 0.153, 0.97},
+        accent  = {0.204, 0.827, 0.600, 1},
+        text    = {0.953, 0.957, 0.965, 1},
+        textDim = {0.72,  0.72,  0.76,  1},
+    }
+end
 
 local function ResolveAccent()
     return (I.GetAccent and I.GetAccent()) or QUI_COLORS.accent
@@ -63,7 +61,8 @@ end
 
 local function ResolveTheme()
     if I.GetThemeColors then
-        return I.GetThemeColors()
+        local theme = I.GetThemeColors()
+        if theme then return theme end
     end
     local accent = ResolveAccent()
     return {
@@ -427,82 +426,105 @@ local function CleanMessage(message)
     return cleaned
 end
 
--- Extract all messages from a chat frame
-local function GetLiveChatLines(chatFrame)
+-- Lines for the CUSTOM display's copy popup: sourced from MessageStore
+-- (the display's source of truth), markup-stripped, secrets replaced with
+-- a placeholder (never touched).
+local function GetCustomDisplayLines()
+    local Store = ns.QUI.Chat.MessageStore
+    if not Store then return {} end
     local lines = {}
-    if I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown() then
-        return lines
-    end
-
-    local numMessages = chatFrame:GetNumMessages()
-
-    for i = 1, numMessages do
-        local message, r, g, b = chatFrame:GetMessageInfo(i)
-        if not IsMessageProtected(message) and type(message) == "string" then
-            local cleaned = CleanMessage(message)
-            if cleaned and cleaned ~= "" then
-                tinsert(lines, cleaned)
+    Store.ForEach(function(entry)
+        if entry.s then
+            lines[#lines + 1] = "??? (protected message)"
+        else
+            local cleaned = CleanMessage(entry.m)
+            if cleaned ~= "" then
+                lines[#lines + 1] = cleaned
             end
         end
-    end
-
+    end)
     return lines
 end
+Copy.GetCustomDisplayLines = GetCustomDisplayLines
 
-local function GetChatFrameID(chatFrame)
-    if chatFrame and chatFrame.GetID then
-        local frameID = chatFrame:GetID()
-        if type(frameID) == "number" then
-            return frameID
-        end
-    end
-
-    local frameName = chatFrame and chatFrame.GetName and chatFrame:GetName()
-    if type(frameName) == "string" then
-        return tonumber(frameName:match("^ChatFrame(%d+)$"))
-    end
-    return nil
+local function AddGlyphLine(parent, layer)
+    local line = parent:CreateTexture(nil, layer or "ARTWORK")
+    line:SetTexture("Interface\\Buttons\\WHITE8x8")
+    return line
 end
 
-local function GetPersistedChatLines(chatFrame)
-    local settings = I.GetSettings and I.GetSettings()
-    if not settings or not settings.history or not settings.history.enabled then
-        return {}
-    end
+local function CreateCopyGlyph(button)
+    if button._quiGlyphParts then return end
 
-    local frameID = GetChatFrameID(chatFrame)
-    if not frameID then return {} end
+    local parts = {}
+    local back = CreateFrame("Frame", nil, button)
+    back:SetSize(10, 12)
+    back:SetPoint("CENTER", -3, 3)
+    parts.backTop = AddGlyphLine(back)
+    parts.backBottom = AddGlyphLine(back)
+    parts.backLeft = AddGlyphLine(back)
+    parts.backRight = AddGlyphLine(back)
+    parts.backTop:SetPoint("TOPLEFT")
+    parts.backTop:SetPoint("TOPRIGHT")
+    parts.backTop:SetHeight(COPY_GLYPH_STROKE)
+    parts.backBottom:SetPoint("BOTTOMLEFT")
+    parts.backBottom:SetPoint("BOTTOMRIGHT")
+    parts.backBottom:SetHeight(COPY_GLYPH_STROKE)
+    parts.backLeft:SetPoint("TOPLEFT")
+    parts.backLeft:SetPoint("BOTTOMLEFT")
+    parts.backLeft:SetWidth(COPY_GLYPH_STROKE)
+    parts.backRight:SetPoint("TOPRIGHT")
+    parts.backRight:SetPoint("BOTTOMRIGHT")
+    parts.backRight:SetWidth(COPY_GLYPH_STROKE)
 
-    local history = ns.QUI.Chat and ns.QUI.Chat.History
-    if not history or not history.GetMessagesForFrame then return {} end
+    local front = CreateFrame("Frame", nil, button)
+    front:SetSize(12, 14)
+    front:SetPoint("CENTER", 2, -2)
+    parts.frontTop = AddGlyphLine(front)
+    parts.frontBottom = AddGlyphLine(front)
+    parts.frontLeft = AddGlyphLine(front)
+    parts.frontRight = AddGlyphLine(front)
+    parts.frontTop:SetPoint("TOPLEFT")
+    parts.frontTop:SetPoint("TOPRIGHT", -4, 0)
+    parts.frontTop:SetHeight(COPY_GLYPH_STROKE)
+    parts.frontBottom:SetPoint("BOTTOMLEFT")
+    parts.frontBottom:SetPoint("BOTTOMRIGHT")
+    parts.frontBottom:SetHeight(COPY_GLYPH_STROKE)
+    parts.frontLeft:SetPoint("TOPLEFT")
+    parts.frontLeft:SetPoint("BOTTOMLEFT")
+    parts.frontLeft:SetWidth(COPY_GLYPH_STROKE)
+    parts.frontRight:SetPoint("TOPRIGHT", 0, -4)
+    parts.frontRight:SetPoint("BOTTOMRIGHT")
+    parts.frontRight:SetWidth(COPY_GLYPH_STROKE)
+    parts.foldA = AddGlyphLine(front)
+    parts.foldB = AddGlyphLine(front)
+    parts.foldA:SetPoint("TOPRIGHT", 0, -4)
+    parts.foldA:SetSize(4, COPY_GLYPH_STROKE)
+    parts.foldB:SetPoint("TOPRIGHT", -4, 0)
+    parts.foldB:SetSize(COPY_GLYPH_STROKE, 4)
 
-    local messages = history.GetMessagesForFrame(frameID, MAX_PERSISTED_VIEWER_LINES)
-    local lines = {}
-    for i = 1, #messages do
-        local message = messages[i]
-        if not IsMessageProtected(message) and type(message) == "string" then
-            local cleaned = CleanMessage(message)
-            if cleaned and cleaned ~= "" then
-                tinsert(lines, cleaned)
-            end
-        end
-    end
-    return lines
+    button._quiGlyphParts = parts
 end
 
-local function GetConfiguredChatLines(chatFrame)
-    local settings = I.GetSettings and I.GetSettings()
-    local source = settings and settings.copyHistorySource or "live"
-
-    if source == "persisted" then
-        return GetPersistedChatLines(chatFrame), "persisted"
+local function RefreshCopyGlyph(button, hovered)
+    if not button then return end
+    local theme = ResolveTheme()
+    CreateCopyGlyph(button)
+    if button._hoverBg then
+        if hovered then
+            button._hoverBg:SetColorTexture(theme.accent[1], theme.accent[2], theme.accent[3], 0.18)
+            button._hoverBg:Show()
+        else
+            button._hoverBg:Hide()
+        end
     end
-
-    if I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown() then
-        return GetPersistedChatLines(chatFrame), "persisted"
+    for key, part in pairs(button._quiGlyphParts) do
+        if key:find("^back") then
+            ColorTexture(part, {theme.text[1], theme.text[2], theme.text[3], hovered and 0.72 or 0.55})
+        else
+            ColorTexture(part, {theme.accent[1], theme.accent[2], theme.accent[3], hovered and 1 or 0.95})
+        end
     end
-
-    return GetLiveChatLines(chatFrame), "live"
 end
 
 -- Create the chat copy frame (on demand)
@@ -613,26 +635,14 @@ local function CreateChatCopyFrame()
     return chatCopyFrame
 end
 
--- Show the chat copy frame with messages from a chat frame
-local function ShowChatCopyFrame(chatFrame)
+-- Open the chat-copy frame populated from the custom display store.
+function Copy.ShowCustomCopyFrame()
     local settings = I.GetSettings and I.GetSettings()
     if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
-
     local frame = CreateChatCopyFrame()
     RefreshPopupAccent(frame)
-    local lines, source = GetConfiguredChatLines(chatFrame)
-
-    local text
-    if #lines == 0 then
-        if source == "persisted" then
-            text = "(No copyable messages in persisted chat history)"
-        else
-            text = "(No copyable messages in chat history)"
-        end
-    else
-        text = tconcat(lines, "\n")
-    end
-
+    local lines = GetCustomDisplayLines()
+    local text = #lines > 0 and tconcat(lines, "\n") or "(No copyable messages in custom display)"
     frame.editBox:SetText(text)
     frame.editBox:SetWidth(math.max(1, frame.scrollFrame:GetWidth() - 10))
     frame:Show()
@@ -642,288 +652,88 @@ local function ShowChatCopyFrame(chatFrame)
     end
 end
 
----------------------------------------------------------------------------
--- Copy Button (per chat frame)
----------------------------------------------------------------------------
+local customCopyButton
 
-local function AddGlyphLine(parent, layer)
-    local line = parent:CreateTexture(nil, layer or "ARTWORK")
-    line:SetTexture("Interface\\Buttons\\WHITE8x8")
-    return line
-end
-
-local function CreateCopyGlyph(button)
-    if button._quiGlyphParts then return end
-
-    local parts = {}
-    local back = CreateFrame("Frame", nil, button)
-    back:SetSize(10, 12)
-    back:SetPoint("CENTER", -3, 3)
-    parts.backTop = AddGlyphLine(back)
-    parts.backBottom = AddGlyphLine(back)
-    parts.backLeft = AddGlyphLine(back)
-    parts.backRight = AddGlyphLine(back)
-    parts.backTop:SetPoint("TOPLEFT")
-    parts.backTop:SetPoint("TOPRIGHT")
-    parts.backTop:SetHeight(COPY_GLYPH_STROKE)
-    parts.backBottom:SetPoint("BOTTOMLEFT")
-    parts.backBottom:SetPoint("BOTTOMRIGHT")
-    parts.backBottom:SetHeight(COPY_GLYPH_STROKE)
-    parts.backLeft:SetPoint("TOPLEFT")
-    parts.backLeft:SetPoint("BOTTOMLEFT")
-    parts.backLeft:SetWidth(COPY_GLYPH_STROKE)
-    parts.backRight:SetPoint("TOPRIGHT")
-    parts.backRight:SetPoint("BOTTOMRIGHT")
-    parts.backRight:SetWidth(COPY_GLYPH_STROKE)
-
-    local front = CreateFrame("Frame", nil, button)
-    front:SetSize(12, 14)
-    front:SetPoint("CENTER", 2, -2)
-    parts.frontTop = AddGlyphLine(front)
-    parts.frontBottom = AddGlyphLine(front)
-    parts.frontLeft = AddGlyphLine(front)
-    parts.frontRight = AddGlyphLine(front)
-    parts.frontTop:SetPoint("TOPLEFT")
-    parts.frontTop:SetPoint("TOPRIGHT", -4, 0)
-    parts.frontTop:SetHeight(COPY_GLYPH_STROKE)
-    parts.frontBottom:SetPoint("BOTTOMLEFT")
-    parts.frontBottom:SetPoint("BOTTOMRIGHT")
-    parts.frontBottom:SetHeight(COPY_GLYPH_STROKE)
-    parts.frontLeft:SetPoint("TOPLEFT")
-    parts.frontLeft:SetPoint("BOTTOMLEFT")
-    parts.frontLeft:SetWidth(COPY_GLYPH_STROKE)
-    parts.frontRight:SetPoint("TOPRIGHT", 0, -4)
-    parts.frontRight:SetPoint("BOTTOMRIGHT")
-    parts.frontRight:SetWidth(COPY_GLYPH_STROKE)
-    parts.foldA = AddGlyphLine(front)
-    parts.foldB = AddGlyphLine(front)
-    parts.foldA:SetPoint("TOPRIGHT", 0, -4)
-    parts.foldA:SetSize(4, COPY_GLYPH_STROKE)
-    parts.foldB:SetPoint("TOPRIGHT", -4, 0)
-    parts.foldB:SetSize(COPY_GLYPH_STROKE, 4)
-
-    button._quiGlyphParts = parts
-end
-
-local function HideCopyButtonBorder(button)
-    if UIKit and UIKit.UpdateBorderLines then
-        UIKit.UpdateBorderLines(button, 0, 0, 0, 0, 0, true)
-    end
-end
-
-local function FadeCopyButton(button, alpha, duration)
-    if not button then return end
-    if UIFrameFadeRemoveFrame then UIFrameFadeRemoveFrame(button) end
-
-    if UIFrameFadeIn and UIFrameFadeOut and duration and duration > 0 then
-        local startAlpha = button:GetAlpha() or alpha
-        if alpha > startAlpha then
-            UIFrameFadeIn(button, duration, startAlpha, alpha)
-        elseif alpha < startAlpha then
-            UIFrameFadeOut(button, duration, startAlpha, alpha)
-        else
-            button:SetAlpha(alpha)
-        end
-    else
-        button:SetAlpha(alpha)
-    end
-end
-
-local function RefreshCopyButtonTheme(button, hovered, chatHovered)
-    if not button then return end
-    local theme = ResolveTheme()
-    CreateCopyGlyph(button)
-    HideCopyButtonBorder(button)
-
-    local active = hovered or chatHovered
-    if button._hoverBg then
-        if active then
-            button._hoverBg:SetColorTexture(theme.accent[1], theme.accent[2], theme.accent[3], hovered and 0.18 or 0.12)
-            button._hoverBg:Show()
-        else
-            button._hoverBg:Hide()
-        end
-    end
-
-    local parts = button._quiGlyphParts
-    for key, part in pairs(parts) do
-        if key:find("^back") then
-            ColorTexture(part, {theme.text[1], theme.text[2], theme.text[3], active and 0.72 or 0.55})
-        else
-            ColorTexture(part, {theme.accent[1], theme.accent[2], theme.accent[3], hovered and 1 or 0.95})
-        end
-    end
-end
-
-local function UpdateCopyButtonVisibility(button, chatFrame, immediate)
-    if not button or not chatFrame then return end
-
-    local settings = I.GetSettings()
-    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then
-        button:Hide()
-        return
-    end
-
+-- Apply the current copyButtonMode to the already-created button and its
+-- container. Called on first creation and on every subsequent EnsureCustomCopyButton
+-- call so live mode-switches take effect without a /reload.
+--
+-- "always"  — button always visible; container hover scripts cleared; mouse released.
+-- "hover"   — button hidden until container OnEnter; true OnLeave (cursor no longer
+--             over the container or any child) hides it again. EnableMouse(true) makes
+--             the container swallow panel-background clicks — acceptable (children keep
+--             priority; SMF/drag-strip interactions are unaffected).
+-- "hidden"/"disabled" — button hidden; hover scripts cleared; mouse released.
+local function ApplyCustomCopyButtonMode(container)
+    if not customCopyButton then return end
+    local settings = I.GetSettings and I.GetSettings()
     local mode = settings and settings.copyButtonMode or "always"
-    local buttonHovered = button.IsMouseOver and button:IsMouseOver()
-    local chatHovered = chatFrame.IsMouseOver and chatFrame:IsMouseOver()
-    local targetAlpha = (mode == "always") and COPY_BUTTON_ALWAYS_IDLE_ALPHA or COPY_BUTTON_IDLE_ALPHA
-
-    if buttonHovered then
-        targetAlpha = COPY_BUTTON_HOVER_ALPHA
-    elseif chatHovered then
-        targetAlpha = COPY_BUTTON_CHAT_ALPHA
-    end
-
-    RefreshCopyButtonTheme(button, buttonHovered, chatHovered)
-    FadeCopyButton(button, targetAlpha, immediate and 0 or (targetAlpha > 0 and COPY_BUTTON_FADE_IN or COPY_BUTTON_FADE_OUT))
-end
-
-local function LayoutCopyButton(button, chatFrame)
-    if not button or not chatFrame then return end
-
-    button:ClearAllPoints()
-    button:SetSize(COPY_BUTTON_SIZE, COPY_BUTTON_SIZE)
-    button:SetPoint("TOPRIGHT", chatFrame, "TOPRIGHT", -COPY_BUTTON_RIGHT_INSET, -COPY_BUTTON_TOP_INSET)
-end
-
--- Create or get the copy button for a chat frame
-local function GetOrCreateCopyButton(chatFrame)
-    local frameName = chatFrame:GetName()
-    if not frameName then return nil end
-
-    -- Return existing button
-    if copyButtons[chatFrame] then
-        LayoutCopyButton(copyButtons[chatFrame], chatFrame)
-        return copyButtons[chatFrame]
-    end
-
-    local button = CreateFrame("Button", frameName .. "QuaziiCopyButton", chatFrame)
-    LayoutCopyButton(button, chatFrame)
-    button:SetFrameLevel(chatFrame:GetFrameLevel() + 5)
-
-    button._hoverBg = button:CreateTexture(nil, "BACKGROUND")
-    button._hoverBg:SetAllPoints(button)
-    button._hoverBg:Hide()
-    CreateCopyGlyph(button)
-    RefreshCopyButtonTheme(button, false, false)
-
-    -- Hidden by default; chat-frame hover fades the glyph in.
-    button:SetAlpha(COPY_BUTTON_IDLE_ALPHA)
-
-    -- Hover effect on button itself
-    button:SetScript("OnEnter", function(self)
-        UpdateCopyButtonVisibility(self, chatFrame)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Copy Chat", 1, 1, 1)
-        GameTooltip:AddLine("Click to copy chat history", 0.8, 0.8, 0.8)
-        GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", function(self)
-        if C_Timer and C_Timer.After then
-            C_Timer.After(0, function()
-                UpdateCopyButtonVisibility(self, chatFrame)
-            end)
-        else
-            UpdateCopyButtonVisibility(self, chatFrame)
-        end
-        GameTooltip:Hide()
-    end)
-
-    -- Click handler
-    button:SetScript("OnClick", function()
-        ShowChatCopyFrame(chatFrame)
-    end)
-
-    copyButtons[chatFrame] = button
-    return button
-end
-
--- Setup hover mode for chat frame (show button on chat frame hover)
-local function SetupCopyButtonHoverMode(chatFrame)
-    -- Check flag first to prevent duplicate hooks (use local table, NOT frame property)
-    if I.copyButtonHookState[chatFrame] then return end
-    I.copyButtonHookState[chatFrame] = true
-
-    local button = copyButtons[chatFrame]
-    if not button then return end
-
-    -- Hook chat frame enter/leave for copy button fade.
-    chatFrame:HookScript("OnEnter", function()
-        local settings = I.GetSettings()
-        if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
-        local mode = settings and settings.copyButtonMode or "always"
-        if mode ~= "disabled" and button then
-            button:Show()
-            UpdateCopyButtonVisibility(button, chatFrame)
-        end
-    end)
-    chatFrame:HookScript("OnLeave", function()
-        local settings = I.GetSettings()
-        if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
-        local mode = settings and settings.copyButtonMode or "always"
-        if mode ~= "disabled" and button then
-            if C_Timer and C_Timer.After then
-                C_Timer.After(0, function()
-                    UpdateCopyButtonVisibility(button, chatFrame)
-                end)
-            else
-                UpdateCopyButtonVisibility(button, chatFrame)
+    if mode == "hidden" or mode == "disabled" then
+        customCopyButton:Hide()
+        container:SetScript("OnEnter", nil)
+        container:SetScript("OnLeave", nil)
+        container:EnableMouse(false)
+    elseif mode == "hover" then
+        customCopyButton:Hide()
+        -- OnLeave fires when entering a CHILD — only hide on a true exit.
+        container:EnableMouse(true)
+        container:SetScript("OnEnter", function()
+            customCopyButton:Show()
+        end)
+        container:SetScript("OnLeave", function(self)
+            if not (self.IsMouseOver and self:IsMouseOver()) then
+                customCopyButton:Hide()
             end
-        end
+        end)
+    else -- "always"
+        customCopyButton:Show()
+        container:SetScript("OnEnter", nil)
+        container:SetScript("OnLeave", nil)
+        container:EnableMouse(false)
+    end
+end
+
+function Copy.EnsureCustomCopyButton()
+    local Display = ns.QUI.Chat.DisplayLayer
+    local container = Display and Display.GetContainer and Display.GetContainer()
+    if not container then return end
+    if customCopyButton then
+        -- Button already exists — re-apply mode so live settings changes
+        -- (always/hover/hidden) take effect without a /reload.
+        ApplyCustomCopyButtonMode(container)
+        return
+    end
+    -- Lazy creation: skip first creation for hidden/disabled to avoid an
+    -- invisible orphan button on initial load when the feature is off.
+    local settings = I.GetSettings and I.GetSettings()
+    local mode = settings and settings.copyButtonMode or "always"
+    if mode == "hidden" or mode == "disabled" then return end
+    customCopyButton = CreateFrame("Button", "QUI_CustomChatCopyButton", container)
+    customCopyButton:SetSize(COPY_BUTTON_SIZE, COPY_BUTTON_SIZE)
+    customCopyButton:SetPoint("TOPRIGHT", container, "TOPRIGHT", -2, 2)
+    if customCopyButton.SetFrameLevel then
+        customCopyButton:SetFrameLevel(COPY_BUTTON_FRAME_LEVEL)
+    end
+    customCopyButton:EnableMouse(true)
+    customCopyButton._hoverBg = customCopyButton:CreateTexture(nil, "BACKGROUND")
+    customCopyButton._hoverBg:SetAllPoints(customCopyButton)
+    customCopyButton._hoverBg:Hide()
+    RefreshCopyGlyph(customCopyButton, false)
+    customCopyButton:SetScript("OnEnter", function(self)
+        RefreshCopyGlyph(self, true)
     end)
-end
-
--- Apply copy button mode for a chat frame
-local function ApplyCopyButtonMode(chatFrame)
-    local settings = I.GetSettings()
-    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then
-        HideCopyButton(chatFrame)
-        return
-    end
-
-    -- Backwards compatibility: migrate old boolean copyButton to new copyButtonMode
-    local mode = settings and settings.copyButtonMode
-    if not mode and settings then
-        -- Old format: copyButton was boolean
-        if settings.copyButton == false then
-            mode = "disabled"
-        else
-            mode = "always"
-        end
-    end
-    mode = mode or "always"
-
-    -- Mode: disabled - hide existing button, don't create new one
-    if mode == "disabled" then
-        if copyButtons[chatFrame] then
-            copyButtons[chatFrame]:Hide()
-        end
-        return
-    end
-
-    -- Mode: always or hover - create and show
-    local button = GetOrCreateCopyButton(chatFrame)
-    if not button then return end
-    button:Show()
-    if not I.copyButtonHookState[chatFrame] then
-        SetupCopyButtonHoverMode(chatFrame)
-    end
-    UpdateCopyButtonVisibility(button, chatFrame, true)
-end
-
--- Hide copy button
-local function HideCopyButton(chatFrame)
-    if copyButtons[chatFrame] then
-        copyButtons[chatFrame]:Hide()
-    end
+    customCopyButton:SetScript("OnLeave", function(self)
+        RefreshCopyGlyph(self, false)
+    end)
+    customCopyButton:SetScript("OnClick", function()
+        Copy.ShowCustomCopyFrame()
+    end)
+    -- Apply mode (always/hover) immediately after creation.
+    ApplyCustomCopyButtonMode(container)
 end
 
 ---------------------------------------------------------------------------
 -- Public surface
 ---------------------------------------------------------------------------
-Copy.ShowURLPopup    = ShowCopyPopup
-Copy.SetupURLClick   = SetupURLClickHandler
-Copy.ShowFullCopy    = ShowChatCopyFrame
-Copy.ApplyButtonMode = ApplyCopyButtonMode
-Copy.HideButton      = HideCopyButton
+Copy.ShowURLPopup  = ShowCopyPopup
+Copy.SetupURLClick = SetupURLClickHandler

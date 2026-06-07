@@ -79,6 +79,14 @@ local function ApplyColorTexture(texture, r, g, b, a)
     UIKit.DisablePixelSnap(texture)
 end
 
+local function ApplyBorderLineColor(edges, color)
+    if not edges or not color then return end
+    local r, g, b, a = color[1], color[2], color[3], color[4] or 1
+    for _, line in pairs(edges) do
+        ApplyColorTexture(line, r, g, b, a)
+    end
+end
+
 -- Shared edge-texture builder. Single implementation of "create the 4 edge
 -- textures (top/bottom/left/right) on a frame at a given draw layer" used by
 -- BOTH border paths:
@@ -647,6 +655,8 @@ function UIKit.UpdateBorderLines(frame, sizePixels, r, g, b, a, hide)
     local newR, newG, newB, newA = r or 0, g or 0, b or 0, a or 1
     local newHidden = hide or (newSize or 0) <= 0
     local color = state.color
+    local sameSize = state.sizePixels == newSize
+    local sameHidden = state.hidden == newHidden
     if state.sizePixels == newSize
         and state.hidden == newHidden
         and color
@@ -664,6 +674,12 @@ function UIKit.UpdateBorderLines(frame, sizePixels, r, g, b, a, hide)
     end
     color[1], color[2], color[3], color[4] = newR, newG, newB, newA
     state.hidden = newHidden
+
+    if sameSize and sameHidden then
+        ApplyBorderLineColor(state.edges, color)
+        return
+    end
+
     RefreshBorderLines(frame)
 end
 

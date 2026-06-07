@@ -4,21 +4,17 @@
 -- short forms. Uses Blizzard's GLOBALSTRINGS templates as the basis for
 -- locale-safe pattern construction.
 --
--- Applies after Blizzard has rendered the line, rather than through a
--- pre-dispatch chat filter, so addon string work cannot taint Blizzard's
--- chat-history bookkeeping.
+-- Runs on the custom display's capture path (TryCollapseForCapture), before
+-- timestamps are applied — pure string transform, no frame state.
 ---------------------------------------------------------------------------
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 
 local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
     "QUI Chat: redundant_text.lua loaded before chat.lua. Check chat.xml — chat.lua must precede redundant_text.lua.")
 
 ns.QUI.Chat.RedundantText = ns.QUI.Chat.RedundantText or {}
 local RT = ns.QUI.Chat.RedundantText
-
--- Forward declaration so SetScript closures can call ApplyEnabled.
-local ApplyEnabled
 
 -- ---------------------------------------------------------------------------
 -- Pattern construction from GLOBALSTRINGS
@@ -155,23 +151,6 @@ local function NormalizeEvent(event)
     return event
 end
 
-local function ReadPackedArg(eventArgs, index)
-    if IsSecret(eventArgs) or type(eventArgs) ~= "table" then return nil end
-    local value = eventArgs[index]
-    if IsSecret(value) then return nil end
-    return value
-end
-
-local function GetRenderedLineKey(event, eventArgs)
-    event = NormalizeEvent(event)
-    if not event then return nil end
-    local lineID = ReadPackedArg(eventArgs, 11)
-    if lineID == nil then return nil end
-    local valueType = type(lineID)
-    if valueType ~= "number" and valueType ~= "string" then return nil end
-    return event .. ":" .. tostring(lineID)
-end
-
 local function SplitRenderedPrefix(message)
     if IsSecret(message) or type(message) ~= "string" then return "", message end
 
@@ -220,21 +199,8 @@ local function tryCollapse(msg, event)
 end
 
 -- ---------------------------------------------------------------------------
--- Rendered-line hook installation
+-- Settings gate (shared by TryCollapseForCapture)
 -- ---------------------------------------------------------------------------
-
-local HOOKS_INSTALLED = false
-local hookedFrames = setmetatable({}, { __mode = "k" })
-local renderedState = setmetatable({}, { __mode = "k" })
-
-local function GetRenderedState(frame)
-    local state = renderedState[frame]
-    if not state then
-        state = { lineKeys = {} }
-        renderedState[frame] = state
-    end
-    return state
-end
 
 local function ShouldTryCollapse(event)
     event = NormalizeEvent(event)
@@ -253,149 +219,30 @@ local function ShouldTryCollapse(event)
     return true
 end
 
-local function shouldTransformMessage(frame, message, r, g, b, infoID, accessID, typeID, event, eventArgs)
-    if not frame then return false end
-    if IsSecret(message) then return false end
-    if type(message) ~= "string" or message == "" then return false end
-
-    local state = GetRenderedState(frame)
-    local lineKey = GetRenderedLineKey(event, eventArgs)
-    if lineKey and state.lineKeys[lineKey] then
-        return false
-    end
-
-    local function markSeenAndSkip()
-        if lineKey then
-            state.lineKeys[lineKey] = true
-        end
-        return false
-    end
-
-    if IsChatMessagingLockedDown() then return markSeenAndSkip() end
-    if not ShouldTryCollapse(event) then return markSeenAndSkip() end
-
-    return true
-end
-
-local function transformMessage(frame, message, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...)
-    local state = GetRenderedState(frame)
-    local lineKey = GetRenderedLineKey(event, eventArgs)
-    if lineKey and state.lineKeys[lineKey] then
-        return message, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...
-    end
-
-    local newMessage = tryCollapse(message, event)
-    if lineKey then
-        state.lineKeys[lineKey] = true
-    end
-
-    if newMessage and not IsSecret(newMessage) and type(newMessage) == "string" then
-        message = newMessage
-    end
-    return message, r, g, b, infoID, accessID, typeID, event, eventArgs, formatter, ...
-end
-
-local function onAddMessage(frame)
-    if not frame or not frame.TransformMessages then return end
-    frame:TransformMessages(
-        function(...) return shouldTransformMessage(frame, ...) end,
-        function(...) return transformMessage(frame, ...) end
-    )
-end
-
-local function markExistingRenderedLines(frame)
-    if not frame or not frame.GetNumMessages or not frame.GetMessageInfo then return end
-    local okCount, count = pcall(frame.GetNumMessages, frame)
-    if not okCount or type(count) ~= "number" then return end
-
-    local state = GetRenderedState(frame)
-    for i = 1, count do
-        local ok, _, _, _, _, _, _, _, event, eventArgs = pcall(frame.GetMessageInfo, frame, i)
-        if ok then
-            local lineKey = GetRenderedLineKey(event, eventArgs)
-            if lineKey then
-                state.lineKeys[lineKey] = true
-            end
-        end
-    end
-end
-
-local function hookFrame(frame)
-    if not frame or hookedFrames[frame] then return end
-    if not frame.TransformMessages then return end
-    if not hooksecurefunc then return end
-
-    hookedFrames[frame] = true
-    markExistingRenderedLines(frame)
-    hooksecurefunc(frame, "AddMessage", onAddMessage)
-end
-
-local function hookAllFrames()
-    local n = _G.NUM_CHAT_WINDOWS or 10
-    for i = 1, n do
-        hookFrame(_G["ChatFrame" .. i])
-    end
-end
-
-local function installRenderedHooks()
-    if HOOKS_INSTALLED then
-        hookAllFrames()
-        return
-    end
-
-    HOOKS_INSTALLED = true
-    hookAllFrames()
-
-    if hooksecurefunc and _G.FCF_OpenNewWindow then
-        hooksecurefunc("FCF_OpenNewWindow", function()
-            if C_Timer and C_Timer.After then
-                C_Timer.After(0.1, hookAllFrames)
-            else
-                hookAllFrames()
-            end
-        end)
-    end
-
-    if hooksecurefunc and _G.FCF_OpenTemporaryWindow then
-        hooksecurefunc("FCF_OpenTemporaryWindow", function()
-            if C_Timer and C_Timer.After then
-                C_Timer.After(0.1, hookAllFrames)
-            else
-                hookAllFrames()
-            end
-        end)
-    end
-end
-
 -- ---------------------------------------------------------------------------
--- ApplyEnabled (called from PLAYER_LOGIN, file-load, _afterRefresh)
+-- Capture-path export
 -- ---------------------------------------------------------------------------
 
-function ApplyEnabled()
-    local settings = I.GetSettings and I.GetSettings()
-    local enabled = (I.IsChatEnabled and I.IsChatEnabled(settings))
-        and settings.modifiers and settings.modifiers.redundantText
-        and settings.modifiers.redundantText.enabled
-
-    if enabled then
+-- Pure collapse for the custom display's capture path: no frame state, no
+-- lineKey dedup (capture sees each message exactly once). Returns the
+-- collapsed line, or the original when disabled/unmatched/secret.
+-- buildPatterns() is called defensively so the export works even before
+-- PLAYER_LOGIN fires (patterns are built lazily on first use).
+function RT.TryCollapseForCapture(message, event)
+    if IsSecret(message) or type(message) ~= "string" or message == "" then return message end
+    if not ShouldTryCollapse(event) then
+        -- ShouldTryCollapse checks enabled AND BUILT_PATTERNS; ensure patterns
+        -- are built in case settings.enabled is true but buildPatterns hasn't run.
+        local settings = I.GetSettings and I.GetSettings()
+        local s = (I.IsChatEnabled and I.IsChatEnabled(settings))
+            and settings and settings.modifiers and settings.modifiers.redundantText
+        if not s or not s.enabled then return message end
         buildPatterns()
-        installRenderedHooks()
+        if not ShouldTryCollapse(event) then return message end
     end
+    local collapsed = tryCollapse(message, event)
+    if collapsed and not IsSecret(collapsed) and type(collapsed) == "string" then
+        return collapsed
+    end
+    return message
 end
-
--- Initial call at file-load. Defensive no-op when QUI.db is nil.
-ApplyEnabled()
-
--- ---------------------------------------------------------------------------
--- PLAYER_LOGIN re-evaluation + after-refresh hook
--- ---------------------------------------------------------------------------
-
-local loginFrame = CreateFrame("Frame")
-loginFrame:RegisterEvent("PLAYER_LOGIN")
-loginFrame:SetScript("OnEvent", function(self, event)
-    if event == "PLAYER_LOGIN" then
-        ApplyEnabled()
-    end
-end)
-
-table.insert(ns.QUI.Chat._afterRefresh, ApplyEnabled)

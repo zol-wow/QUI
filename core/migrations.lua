@@ -236,10 +236,34 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --        on a current build this gate is a no-op stamp — its behavior is
 --        exercised by the unit test with synthetic registry entries.)
 --
+-- v41 = PurgeOrphanedChatKeys
+--       (chat takeover: the QUI display replaced the skinned-Blizzard-frame
+--        path outright — chat.enabled IS the takeover. TRANSLATES the old
+--        opt-in first: only displayMode == "custom" keeps the module
+--        enabled; "blizzard"/absent (the released default) sets
+--        chat.enabled = false so nobody is silently switched into the
+--        takeover. Then purges the profile
+--        keys nothing reads anymore: displayMode (the old blizzard/custom
+--        switch), hideButtons, the chatTab border-color pair, the
+--        ChatFrame1 frameSize/framePosition persistence that belonged to
+--        the deleted sizing helper, copyHistorySource + scrollbackLines
+--        (the copy window reads the QUI display's store now), and
+--        hyperlinks.interactiveNames (its producer was the deleted
+--        player-link wrapper). Pure deletion; no value translation.)
+--
+-- v42 = MigrateCustomDisplayWindows
+--       (multi-window chat: flat single-window keys width/height/position/
+--        tabs on customDisplay wrap into customDisplay.windows[1]. Geometry
+--        keys may be absent (AceDB strips defaults); only wraps when
+--        something flat is actually stored — a fully-default profile stays
+--        empty and the runtime seeder builds windows[1] from defaults.
+--        Idempotent: a profile already carrying windows[] only sheds any
+--        leftover flat keys.)
+--
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 40
+local CURRENT_SCHEMA_VERSION = 42
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -1440,6 +1464,72 @@ end
 if ns.Helpers then
     ns.Helpers.MigrateBorderColoringTable = MigrateBorderColoringTable
     ns.Helpers.MigrateBorderColoring = MigrateBorderColoring
+end
+
+-- v41: Purge chat keys orphaned by the chat takeover. The QUI display
+-- replaced the skinned-Blizzard-frame path outright (chat.enabled IS the
+-- takeover), so nothing reads these profile keys anymore. Pure deletion.
+local function PurgeOrphanedChatKeys(profile)
+    if type(profile) ~= "table" then return end
+    local chat = type(profile.chat) == "table" and profile.chat or nil
+
+    -- TRANSLATE the old opt-in switch before purging it (adversarial-review
+    -- High). chat.enabled alone now drives the takeover, but on released
+    -- builds it defaulted true while displayMode (default "blizzard") was
+    -- the real opt-in. Only an explicit displayMode == "custom" — a
+    -- non-default value, so it survived AceDB's defaults-strip — marks a
+    -- takeover opt-in. An explicit "blizzard", an absent key (stripped
+    -- default), or a profile with no chat table at all means the user was
+    -- on (skinned) Blizzard chat: hand them STOCK chat, opt-in via the
+    -- master toggle. Without this, every migrated default profile would be
+    -- silently flipped into the takeover.
+    if not (chat and chat.displayMode == "custom") then
+        if not chat then
+            profile.chat = {}
+            chat = profile.chat
+        end
+        chat.enabled = false
+    end
+
+    chat.displayMode = nil               -- the old blizzard/custom switch
+    chat.hideButtons = nil               -- Blizzard-frame button hiding
+    chat.chatTabBorderColor = nil        -- Blizzard tab border colors
+    chat.chatTabBorderColorSource = nil
+    chat.frameSize = nil                 -- ChatFrame1 size persistence
+    chat.framePosition = nil             -- ChatFrame1 position persistence
+    chat.copyHistorySource = nil         -- copy window reads the store now
+    chat.scrollbackLines = nil           -- Blizzard-frame scrollback cap
+    if type(chat.hyperlinks) == "table" then
+        chat.hyperlinks.interactiveNames = nil -- producer (player-link wrap) deleted
+    end
+end
+
+-- v42: customDisplay multi-window — wrap the flat single-window keys
+-- (width/height/position/tabs) into customDisplay.windows[1]. Geometry keys
+-- may be absent (AceDB strips defaults); only wrap when something flat is
+-- actually stored — a fully-default profile stays empty and the runtime
+-- seeder (tab_manager.GetWindowsConfig) builds windows[1] from defaults.
+-- Idempotent: a profile already carrying windows[] only sheds leftover
+-- flat keys.
+local function MigrateCustomDisplayWindows(profile)
+    if type(profile) ~= "table" then return end
+    local chat = type(profile.chat) == "table" and profile.chat or nil
+    local cd = chat and type(chat.customDisplay) == "table" and chat.customDisplay or nil
+    if not cd then return end
+    if type(cd.windows) == "table" and next(cd.windows) ~= nil then
+        cd.width, cd.height, cd.position, cd.tabs = nil, nil, nil, nil
+        return
+    end
+    local hasFlat = cd.width ~= nil or cd.height ~= nil or cd.position ~= nil
+        or (type(cd.tabs) == "table" and #cd.tabs > 0)
+    if not hasFlat then return end
+    cd.windows = { {
+        width = cd.width,
+        height = cd.height,
+        position = cd.position and CloneValue(cd.position) or nil,
+        tabs = (type(cd.tabs) == "table") and CloneValue(cd.tabs) or nil,
+    } }
+    cd.width, cd.height, cd.position, cd.tabs = nil, nil, nil, nil
 end
 
 local DEFAULT_SKY_BLUE_ACCENT = { 0.376, 0.647, 0.980, 1 }
@@ -4187,6 +4277,12 @@ function Migrations.RunOnProfile(profile)
     -- to the new "inherit" default. Fresh installs are stamped at the current
     -- version and skip this gate. No-op until later tasks populate the registry.
     if stored < 40 then MigrateBorderColoring(profile) end
+
+    -- v41: Purge chat keys orphaned by the chat takeover (pure deletion).
+    if stored < 41 then PurgeOrphanedChatKeys(profile) end
+
+    -- v42: wrap flat customDisplay into the multi-window array.
+    if stored < 42 then MigrateCustomDisplayWindows(profile) end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame

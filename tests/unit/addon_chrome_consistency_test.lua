@@ -287,38 +287,11 @@ do
     assertContains(src, "GetSkinBorderColor",
         "chat.lua: must reference GetSkinBorderColor for chat window border")
 
-    -- Semantic guard: class_colors after-refresh hook path must remain.
-    assertContains(src, "class_colors",
-        "chat.lua: class_colors after-refresh hook reference must not be removed — semantic class coloring")
-end
-
--- ===========================================================================
--- chat/skinning.lua  (Phase 3 batch a — tab chrome)
--- ===========================================================================
-do
-    local src = readFile("modules/chat/skinning.lua")
-
-    -- Hardcoded black bg literals for selected/inactive tab must be gone from
-    -- the UpdateTabColors function; RGB now sourced from depth tiers.
-    -- Check that the specific table-literal forms passed as the BG arg to
-    -- ApplySurfaceStyle are gone (they have been replaced with depth-tier locals).
-    assertAbsent(src, "{0, 0, 0, alpha %+ 0%.2}",
-        "skinning.lua: selected-tab bg {0,0,0,alpha+0.2} must use GetDepthColor(\"SUBPANEL\") RGB")
-    -- The bg-arg pattern now uses depth-tier RGB locals (selR/selG/selB for
-    -- selected, inactR/inactG/inactB for inactive). Assert the old raw black
-    -- bg literal pattern in the bg-arg position is absent.
-    assertAbsent(src, "tabBackdrops%[tab%], {0, 0, 0, alpha}",
-        "skinning.lua: inactive-tab bg arg to ApplySurfaceStyle must use GetDepthColor(\"PANEL\") RGB locals, not {0,0,0,alpha}")
-
-    -- GetDepthColor must now be referenced for tab chrome.
-    assertContains(src, "GetDepthColor",
-        "skinning.lua: must reference GetDepthColor for tab bg tiers")
-    assertContains(src, "GetChatTabBorderColor",
-        "skinning.lua: tab borders must source from the chatTab border-color settings")
-
-    -- Semantic guard: I.QUI_COLORS.textDim fallback for inactive-tab label must remain.
-    assertContains(src, "I.QUI_COLORS.textDim",
-        "skinning.lua: I.QUI_COLORS.textDim fallback for inactive tab label must not be removed — semantic dim text")
+    -- Semantic guard: sender class coloring lives in message_format.lua now
+    -- (the rendered-path class_colors modifier was excised with the takeover).
+    local fmt = readFile("modules/chat/message_format.lua")
+    assertContains(fmt, "RAID_CLASS_COLORS",
+        "message_format.lua: semantic RAID_CLASS_COLORS sender coloring must not be removed")
 end
 
 -- ===========================================================================
@@ -528,12 +501,8 @@ do
         "chat.lua: GetSkinBgColorWithOverride must still be the skin-default bg RGB source")
     assertContains(chatSrc, "GetSkinBgColor",
         "chat.lua: GetSkinBgColor fallback must still be present for older Helpers API")
-    assertContains(chatSrc, "GetChatTabBorderColor",
-        "chat.lua: must expose chat-tab border color resolution")
-    assertContains(chatSrc, 'key      = "chatTabs"',
-        "chat.lua: chat tabs must register separately in BorderRegistry")
-    assertContains(chatSrc, 'prefix   = "chatTab"',
-        "chat.lua: chat tab border registry entry must use the chatTab key prefix")
+    -- (chatTab border machinery was excised with the takeover: Blizzard tabs
+    -- are hidden; the QUI display's tab bar colors from theme text + accent.)
 end
 
 print("OK: addon_chrome_consistency_test")

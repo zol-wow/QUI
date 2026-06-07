@@ -21,6 +21,31 @@ local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
 ns.QUI.Chat.EditBoxBasics = ns.QUI.Chat.EditBoxBasics or {}
 local EditBoxBasics = ns.QUI.Chat.EditBoxBasics
 
+-- ChatFrame1's editbox follows the ACTIVE custom window: the backdrop (and
+-- therefore the editbox, which anchors to the backdrop) attaches to the
+-- last-active QUI window. Window 1 is the fallback when the active window's
+-- container is missing/hidden. Only frame 1 — other Blizzard frames keep
+-- their own editboxes untouched.
+local function GetAnchorFrame(chatFrame, frameID)
+    if frameID == 1 then
+        local settings = I.GetSettings and I.GetSettings()
+        if I.IsChatEnabled and I.IsChatEnabled(settings) then
+            local Display = ns.QUI.Chat.DisplayLayer
+            if Display and Display.GetContainer then
+                local active = Display.GetActiveWindow and Display.GetActiveWindow() or 1
+                local c = Display.GetContainer(active)
+                if not (c and c.IsShown and c:IsShown()) then
+                    c = Display.GetContainer(1)
+                end
+                if c and c.IsShown and c:IsShown() then
+                    return c
+                end
+            end
+        end
+    end
+    return chatFrame
+end
+
 -- Edit box textures to remove for clean styling
 local EDITBOX_TEXTURES = {
     "FocusLeft", "FocusMid", "FocusRight",
@@ -101,16 +126,26 @@ end
 ---------------------------------------------------------------------------
 -- Style edit box (chat input area)
 ---------------------------------------------------------------------------
+local RemoveEditBoxStyle -- forward-declared: the settings bails below clean up
+
 local function StyleEditBox(chatFrame)
     if not chatFrame or (chatFrame.IsForbidden and chatFrame:IsForbidden()) then return end
 
+    -- Settings gate lives HERE only — callers (display_fallback.Apply) never
+    -- duplicate it. A gated-off call removes prior styling so flipping the
+    -- editBox option off works live, without a /reload.
     local settings = I.GetSettings()
-    if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
-    if not settings or not settings.editBox or not settings.editBox.enabled then return end
-    if not settings.glass or not settings.glass.enabled then return end
+    if not (I.IsChatEnabled and I.IsChatEnabled(settings))
+        or not settings or not settings.editBox or not settings.editBox.enabled then
+        RemoveEditBoxStyle(chatFrame)
+        return
+    end
 
     local frameName = chatFrame:GetName()
     if not frameName then return end
+
+    -- Derive numeric frameID so GetAnchorFrame can gate on frame 1 only.
+    local frameID = tonumber(frameName:match("ChatFrame(%d+)"))
 
     -- Find edit box
     local editBox = chatFrame.editBox or _G[frameName .. "EditBox"]
@@ -171,13 +206,24 @@ local function StyleEditBox(chatFrame)
     local backdrop = I.editBoxBackdrops[chatFrame]
     local positionTop = settings.editBox.positionTop
 
+    -- When the custom display is active, frame 1's backdrop anchors to the
+    -- custom container instead of the Blizzard frame so the editbox sits
+    -- visually below the custom display. All other frames use chatFrame.
+    local anchor = GetAnchorFrame(chatFrame, frameID)
+
+    -- The backdrop must not follow ChatFrame1 into the suppression anchor —
+    -- keep it parented where it's anchored (QUI-owned frame; unrestricted).
+    if backdrop:GetParent() ~= anchor then
+        backdrop:SetParent(anchor)
+    end
+
     -- Position backdrop and editbox based on setting
     backdrop:ClearAllPoints()
     if positionTop then
         -- Position at TOP, overlaying tabs with opaque black background
         backdrop:SetFrameLevel(chatFrame:GetFrameLevel() + 10)
-        backdrop:SetPoint("BOTTOMLEFT", chatFrame, "TOPLEFT", 0, 0)
-        backdrop:SetPoint("BOTTOMRIGHT", chatFrame, "TOPRIGHT", 0, 0)
+        backdrop:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 0)
+        backdrop:SetPoint("BOTTOMRIGHT", anchor, "TOPRIGHT", 0, 0)
         backdrop:SetHeight(EDITBOX_BACKDROP_HEIGHT)
         I.ApplySurfaceStyle(backdrop, {0, 0, 0, 1}, {0, 0, 0, 1}, 1)
 
@@ -237,8 +283,8 @@ local function StyleEditBox(chatFrame)
     else
         -- Default: Position at BOTTOM
         backdrop:SetFrameLevel(math.max(1, editBox:GetFrameLevel() - 1))
-        backdrop:SetPoint("TOPLEFT", chatFrame, "BOTTOMLEFT", 0, -6)
-        backdrop:SetPoint("TOPRIGHT", chatFrame, "BOTTOMRIGHT", 0, -6)
+        backdrop:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -6)
+        backdrop:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -6)
         backdrop:SetHeight(EDITBOX_BACKDROP_HEIGHT)
 
         -- Apply user-configured opacity and color.
@@ -262,7 +308,7 @@ end
 ---------------------------------------------------------------------------
 -- Remove edit box styling (restore when disabled)
 ---------------------------------------------------------------------------
-local function RemoveEditBoxStyle(chatFrame)
+function RemoveEditBoxStyle(chatFrame)
     if not chatFrame then return end
     -- Hide backdrop stored in local table
     if I.editBoxBackdrops[chatFrame] then
@@ -275,6 +321,56 @@ local function RemoveEditBoxStyle(chatFrame)
     if editBox and editBox.EnableMouse then
         editBox:EnableMouse(true)
         SetEditBoxVisualShown(editBox, true)
+    end
+    if not editBox then return end
+
+    -- Stock restore: the live disable flip must hand back a fully stock
+    -- editbox (no /reload). Inverse of StyleEditBox's strip + reanchor.
+    -- Anchors per FloatingChatFrame.xml's ChatFrameEditBoxTemplate use:
+    -- TOPLEFT -> chatFrame BOTTOMLEFT (-5,-2), RIGHT -> ScrollBar RIGHT (8,0).
+    if editBox.ClearAllPoints and editBox.SetPoint then
+        editBox:ClearAllPoints()
+        editBox:SetPoint("TOPLEFT", chatFrame, "BOTTOMLEFT", -5, -2)
+        local scrollBar = chatFrame.ScrollBar
+        if scrollBar then
+            editBox:SetPoint("RIGHT", scrollBar, "RIGHT", 8, 0)
+        else
+            editBox:SetPoint("RIGHT", chatFrame, "RIGHT", 8, 0)
+        end
+    end
+
+    -- Un-strip the Blizzard chrome StyleEditBox hid/alpha'd, and clear the
+    -- styled latch so a re-enable re-strips.
+    local ebState = I.editBoxState[editBox]
+    if ebState and ebState.styled then
+        ebState.styled = false
+        local childSuffixes = {
+            "Left", "Mid", "Right",
+            "FocusLeft", "FocusMid", "FocusRight",
+        }
+        for _, suffix in ipairs(childSuffixes) do
+            local child = frameName and _G[frameName .. "EditBox" .. suffix]
+            if child and child.Show then
+                child:Show()
+            end
+        end
+        if editBox.focusLeft then editBox.focusLeft:SetAlpha(1) end
+        if editBox.focusMid then editBox.focusMid:SetAlpha(1) end
+        if editBox.focusRight then editBox.focusRight:SetAlpha(1) end
+        for _, name in ipairs(EDITBOX_TEXTURES) do
+            local tex = editBox[name]
+            if tex and tex.Show then
+                tex:Show()
+            end
+        end
+        if editBox.GetRegions then
+            local regions = { editBox:GetRegions() }
+            for _, region in ipairs(regions) do
+                if region and region.GetObjectType and region:GetObjectType() == "Texture" then
+                    region:SetAlpha(1)
+                end
+            end
+        end
     end
 end
 
@@ -295,20 +391,13 @@ end
 local function SelectDefaultTab(settings)
     if IsChatLayoutLockedDown() then return end
 
-    local tabIndex = GetDefaultTabIndex(settings)
-    if not tabIndex or tabIndex <= 1 then return end
+    local tabIndex = tonumber(GetDefaultTabIndex(settings))
+    if not tabIndex then return end
 
-    local chatFrame = _G["ChatFrame" .. tabIndex]
-    if not chatFrame then return end
-
-    local tab = _G["ChatFrame" .. tabIndex .. "Tab"]
-    if not tab then return end
-
-    -- Verify the tab exists and has a name (not a deleted/empty slot)
-    local name = GetChatWindowInfo(tabIndex)
-    if not name or name == "" then return end
-
-    FCF_Tab_OnClick(tab, "LeftButton")
+    local TabUI = ns.QUI.Chat.TabUI
+    if TabUI and TabUI.ActivateFrameID then
+        TabUI.ActivateFrameID(1, tabIndex) -- default tab applies to the primary window
+    end
 end
 
 local defaultTabFrame = CreateFrame("Frame")
@@ -331,7 +420,8 @@ end)
 ---------------------------------------------------------------------------
 -- Public interface
 ---------------------------------------------------------------------------
-EditBoxBasics.StyleEditBox       = StyleEditBox
-EditBoxBasics.RemoveEditBoxStyle = RemoveEditBoxStyle
-EditBoxBasics.ApplyDefaultTab    = SelectDefaultTab
+EditBoxBasics.StyleEditBox        = StyleEditBox
+EditBoxBasics.RemoveEditBoxStyle  = RemoveEditBoxStyle
+EditBoxBasics.ApplyDefaultTab     = SelectDefaultTab
 EditBoxBasics.MatchChatFrameWidth = MatchChatFrameWidth
+EditBoxBasics._GetAnchorFrame     = GetAnchorFrame

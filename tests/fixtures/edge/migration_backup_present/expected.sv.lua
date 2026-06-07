@@ -660,23 +660,20 @@ return {
           },
           chatBorderColorSource = "inherit",
           copyButtonMode = "always",
-          copyHistorySource = "live",
           customDisplay = {
             bgAlpha = 0.25,
-            height = 190,
             maxLines = 1000,
-            position = {
-              point = "BOTTOMLEFT",
-              relPoint = "BOTTOMLEFT",
-              x = 35,
-              y = 40
+            whisperTabs = {
+              autoIncoming = false,
+              autoOutgoing = false,
+              targetWindow = 1,
+              translatePopout = true
             },
-            width = 430
+            windows = {}
           },
           defaultTab = 1,
           defaultTabBySpec = {},
           defaultTabPerSpec = false,
-          displayMode = "blizzard",
           editBox = {
             bgAlpha = 0.25,
             bgColor = {
@@ -712,7 +709,6 @@ return {
             },
             enabled = true
           },
-          hideButtons = true,
           history = {
             enabled = true,
             excludedChannels = {},
@@ -724,8 +720,7 @@ return {
           },
           hyperlinks = {
             coordinates = true,
-            friendlyURLs = false,
-            interactiveNames = true
+            friendlyURLs = false
           },
           messageHistory = {
             enabled = true,
@@ -776,7 +771,6 @@ return {
               }
             }
           },
-          scrollbackLines = 0,
           showIntroMessage = true,
           tabs = {},
           timestamps = {
@@ -6386,7 +6380,10 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 40,
+        _schemaVersion = 42,
+        chat = {
+          enabled = false
+        },
         quiUnitFrames = {
           focus = {
             castbar = {

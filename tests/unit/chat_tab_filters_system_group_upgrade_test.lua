@@ -1,62 +1,24 @@
 -- tests/unit/chat_tab_filters_system_group_upgrade_test.lua
 -- Run: lua tests/unit/chat_tab_filters_system_group_upgrade_test.lua
+-- Storage-shape upgrade: a stored pre-version tab entry that whitelists
+-- SYSTEM gets the split-out groups (incl. PING) appended in place at
+-- ADDON_LOADED, and the entry is version-stamped. tab_filters no longer
+-- touches Blizzard windows or feeds runtime QUI tabs.
+-- luacheck: globals CreateFrame
 
-function InCombatLockdown() return false end
-
-function CreateFrame()
+local eventFrame
+function _G.CreateFrame()
     local frame = {}
     function frame:RegisterEvent() end
+    function frame:UnregisterEvent() end
     function frame:SetScript(script, handler)
         if script == "OnEvent" then
+            eventFrame = frame
             frame.OnEvent = handler
         end
     end
     return frame
 end
-
-local normalFrame = {
-    messageTypeList = { "SYSTEM" },
-    channelList = {},
-}
-function normalFrame:IsForbidden() return false end
-
-local calls = {}
-local function appendUnique(list, value)
-    for i = 1, #list do
-        if list[i] == value then return end
-    end
-    list[#list + 1] = value
-end
-
-local function removeValue(list, value)
-    for i = #list, 1, -1 do
-        if list[i] == value then
-            table.remove(list, i)
-        end
-    end
-end
-
-function ChatFrame_AddMessageGroup(frame, group)
-    calls[#calls + 1] = { op = "addGroup", frame = frame, value = group }
-    appendUnique(frame.messageTypeList, group)
-end
-
-function ChatFrame_RemoveMessageGroup(frame, group)
-    calls[#calls + 1] = { op = "removeGroup", frame = frame, value = group }
-    removeValue(frame.messageTypeList, group)
-end
-
-function ChatFrame_AddChannel(frame, channel)
-    calls[#calls + 1] = { op = "addChannel", frame = frame, value = channel }
-end
-
-function ChatFrame_RemoveChannel(frame, channel)
-    calls[#calls + 1] = { op = "removeChannel", frame = frame, value = channel }
-end
-
-NUM_CHAT_WINDOWS = 1
-_G.ChatFrame1 = normalFrame
-SlashCmdList = {}
 
 local settings = {
     enabled = true,
@@ -65,62 +27,59 @@ local settings = {
             customized = true,
             groups = { "SYSTEM" },
             channels = {},
+            -- no _groupsVersion: legacy entry
+        },
+        [3] = {
+            customized = true,
+            groups = { "PARTY" },
+            channels = {},
         },
     },
 }
 
 local ns = {
-    QUI = {
-        Chat = {
-            _afterRefresh = {},
-            _internals = {
-                GetSettings = function() return settings end,
-                IsChatEnabled = function(s) return s and s.enabled ~= false end,
-                IsChatMessagingLockedDown = function() return false end,
-                IsTemporaryChatFrame = function() return false end,
-            },
+    QUI = { Chat = {
+        _internals = {
+            GetSettings = function() return settings end,
+            IsChatEnabled = function(s) return s and s.enabled ~= false end,
         },
-    },
+    } },
 }
 
-local function hasGroup(list, group)
-    for i = 1, #list do
-        if list[i] == group then return true end
-    end
-    return false
-end
-
-local function sawCall(op, value)
-    for i = 1, #calls do
-        if calls[i].op == op and calls[i].value == value then return true end
-    end
-    return false
-end
-
 assert(loadfile("modules/chat/tab_filters.lua"))("QUI", ns)
+local TF = ns.QUI.Chat.TabFilters
 
-local groups = ns.QUI.Chat.TabFilters.GetStandardGroups()
-assert(hasGroup(groups, "PING"), "tab filter group choices must include PING")
-assert(hasGroup(groups, "BN_INLINE_TOAST_ALERT"), "tab filter group choices must include inline toast alerts")
+local function has(list, v)
+    for i = 1, #list do if list[i] == v then return true end end
+    return false
+end
 
-assert(hasGroup(settings.tabs[1].groups, "PING"),
-    "legacy SYSTEM tab filters should be upgraded to include ping messages")
-assert(hasGroup(settings.tabs[1].groups, "BN_INLINE_TOAST_ALERT"),
-    "legacy SYSTEM tab filters should be upgraded to include inline toast alerts")
-assert(sawCall("addGroup", "PING"), "upgraded ping group should be applied to the chat frame")
-assert(settings.tabs[1]._groupsVersion == ns.QUI.Chat.TabFilters.GROUPS_VERSION,
-    "upgraded tab filters should be version-stamped")
+assert(eventFrame and eventFrame.OnEvent, "event frame wired")
+eventFrame.OnEvent(eventFrame, "ADDON_LOADED", "QUI")
 
-calls = {}
-settings.tabs[1].groups = { "SYSTEM" }
-settings.tabs[1]._groupsVersion = ns.QUI.Chat.TabFilters.GROUPS_VERSION
-normalFrame.messageTypeList = { "SYSTEM", "PING" }
+local e1 = settings.tabs[1]
+for _, g in ipairs({ "ERRORS", "TARGETICONS", "BN_INLINE_TOAST_ALERT",
+                     "PET_BATTLE_COMBAT_LOG", "PET_BATTLE_INFO", "PING" }) do
+    assert(has(e1.groups, g),
+        "legacy SYSTEM tab filters should be upgraded to include " .. g)
+end
+assert(e1._groupsVersion == TF.GROUPS_VERSION, "entry version-stamped")
 
-ns.QUI.Chat.TabFilters.ReconcileFrame(normalFrame, 1)
+-- Non-SYSTEM entry: stamped but no groups injected
+local e3 = settings.tabs[3]
+assert(#e3.groups == 1 and e3.groups[1] == "PARTY", "non-SYSTEM entry untouched")
+assert(e3._groupsVersion == TF.GROUPS_VERSION, "non-SYSTEM entry stamped")
 
-assert(not hasGroup(settings.tabs[1].groups, "PING"),
-    "current-version configs should preserve an explicit ping deselection")
-assert(sawCall("removeGroup", "PING"),
-    "current-version configs should still be able to remove ping from a tab")
+-- Idempotent: second fire changes nothing
+local before = #e1.groups
+eventFrame.OnEvent(eventFrame, "PLAYER_LOGIN")
+assert(#e1.groups == before, "upgrade idempotent")
+
+-- Storage API: SaveTabConfig stamps; ResetTab clears
+TF.SaveTabConfig(2, { "GUILD" }, { "Trade" })
+assert(settings.tabs[2].customized == true, "SaveTabConfig stores")
+assert(settings.tabs[2]._groupsVersion == TF.GROUPS_VERSION, "SaveTabConfig stamps version")
+TF.ResetTab(2)
+assert(settings.tabs[2] == nil, "ResetTab clears the stored entry")
 
 print("OK: chat_tab_filters_system_group_upgrade_test")

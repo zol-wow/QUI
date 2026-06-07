@@ -1744,8 +1744,11 @@ local FRAME_RESOLVERS = {
         return nil
     end,
     chatFrame1 = function()
+        -- The QUI chat display IS the chat frame under the takeover.
+        -- ChatFrame1 itself is suppressed (hidden + neutered): never resolve
+        -- it for anchoring — SetPoint on it would taint chat dispatch.
         if IsModuleDisabled("chat") then return nil end
-        return _G["ChatFrame1"]
+        return _G["QUI_CustomChatFrame"]
     end,
     -- External (DandersFrames, AbilityTimeline)
     dandersParty = function()
@@ -2615,17 +2618,9 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         return
     end
 
-    -- ChatFrame1 must be detached from Edit Mode before we SetPoint it, or the
-    -- positioning taints the chat dispatch (secret-string crash). Detach is
-    -- combat/lockdown-guarded and idempotent; if it can't run yet, defer to the
-    -- post-combat anchor reapply rather than touch a still-managed frame.
-    if key == "chatFrame1" then
-        local sizing = ns.QUI and ns.QUI.ChatFrame1Sizing
-        if sizing and sizing.DetachFromEditMode and not sizing.DetachFromEditMode() then
-            pendingAnchoredFrameUpdateAfterCombat = true
-            return
-        end
-    end
+    -- chatFrame1 resolves to the QUI chat display (a QUI-owned frame);
+    -- SetPoint on it is taint-free. The old Edit-Mode detach gate died with
+    -- the takeover (ChatFrame1 itself is suppressed and never positioned).
 
     -- Never anchor UIParent-managed right-side frames from addon code.
     -- Keep them on Blizzard defaults to avoid protected layout taint.

@@ -1358,8 +1358,6 @@ local defaults = {
                 enabled = true,
                 color = {0.078, 0.608, 0.992, 1},  -- Clickable URL color (blue)
             },
-            -- UI cleanup
-            hideButtons = true,          -- Hide social/channel/scroll buttons
             -- Input box styling
             editBox = {
                 enabled = true,          -- Apply glass styling to input box
@@ -1429,7 +1427,6 @@ local defaults = {
             hyperlinks = {
                 coordinates = true,                   -- (x, y) and [x, y] become clickable waypoints
                 friendlyURLs = false,                 -- opinionated rendering; opt-in (Wowhead/Raidbots/Logs labels)
-                interactiveNames = true,              -- click class-colored names → quick-action menu
             },
             -- Per-tab content filtering (Phase E)
             -- Map: chatFrameID -> { customized = true, groups = {...}, channels = {...} }
@@ -1441,8 +1438,6 @@ local defaults = {
             buttonBars = {},
             -- Copy button mode: "always", "hover", "hidden", "disabled"
             copyButtonMode = "always",
-            copyHistorySource = "live",   -- "live" = current scrollback, "persisted" = saved history when enabled
-            scrollbackLines = 0,          -- 0 = client default; options expose 500-5000
             -- Default chat tab on login/reload (1 = General, 2-10 = other tabs)
             defaultTab = 1,
             defaultTabPerSpec = false,    -- Use spec-specific default tabs
@@ -1461,16 +1456,29 @@ local defaults = {
                     { channel = "guild_officer", sound = "None" },
                 },
             },
-            -- Custom chat display (staged takeover). "blizzard" = classic
-            -- skinned Blizzard frames (default); "custom" = QUI-owned display
-            -- fed by direct event capture, shown alongside Blizzard chat.
-            displayMode = "blizzard",
+            -- The QUI chat display — active whenever the chat module is
+            -- enabled (enabled = full takeover; disabled = stock Blizzard
+            -- chat, untouched).
             customDisplay = {
-                width = 430,
-                height = 190,
-                position = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 35, y = 40 },
-                maxLines = 1000,        -- scrollback cap (store + view)
-                bgAlpha = 0.25,         -- glass backdrop alpha
+                maxLines = 1000,        -- scrollback cap (store + every window's view)
+                bgAlpha = 0.25,         -- glass backdrop alpha (display-wide)
+                -- Multi-window: ARRAY of per-window entries, seeded on first
+                -- access (tab_manager.GetWindowsConfig). windows[i] = {
+                --   width, height, position = { point, relPoint, x, y },
+                --   tabs = ARRAY of SET-shaped entries { name,
+                --     groups = {KEY=true}, channels = {Name=true}, invert } }
+                -- Window 1 is the primary (editbox fallback owner; never
+                -- deletable). Empty until seeded.
+                windows = {},
+                -- Whisper conversation tabs. The tabs themselves are RUNTIME
+                -- state (session-only, never persisted) — only behavior
+                -- toggles live here.
+                whisperTabs = {
+                    translatePopout = true, -- Blizzard whisper popout -> QUI conversation tab
+                    autoIncoming = false,   -- spawn a tab on first incoming whisper
+                    autoOutgoing = false,   -- spawn a tab on first outgoing whisper
+                    targetWindow = 1,       -- window auto-created tabs land in (clamped at use)
+                },
             },
             -- Per-channel color overrides. Stored by name for custom channels
             -- (e.g. "Trade") and by chat-type key for built-ins (SAY, RAID,

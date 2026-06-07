@@ -511,8 +511,8 @@ EBH._SetAllowSecureCommands = function(v) allowSecureCommands = v end
 -- is the taint-safe way to observe AddHistoryLine), so they are installed only
 -- while enabled (see InitializeForFrame's IsEditBoxHistoryEnabled gate) and
 -- otherwise short-circuit via the same gate inside captureSlashCommand /
--- navigate; the chat master toggle prompts a reload, which drops them entirely
--- on the next load.
+-- navigate; toggling the chat module is live, so the inert hooks simply
+-- remain installed and short-circuit until re-enabled.
 local function ApplyEnabled()
     SyncPreSendCallback()
     ApplyAltArrowMode()
