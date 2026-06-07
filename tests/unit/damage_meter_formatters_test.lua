@@ -12,7 +12,7 @@ local function readAll(path)
     return d:gsub("\r\n", "\n")
 end
 
-local src = readAll("modules/damage_meter/damage_meter.lua")
+local src = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
 
 local function extract(funcName)
     local pat = "(local function " .. funcName .. ".-\nend\n)"

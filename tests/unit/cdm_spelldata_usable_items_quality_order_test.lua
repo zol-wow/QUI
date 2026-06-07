@@ -76,7 +76,7 @@ local ns = {
 }
 
 dofile("tests/helpers/load_cdm_spelldata_runtime.lua")(ns)
-assert(loadfile("modules/cdm/cdm_spelldata.lua"))("QUI", ns)
+assert(loadfile("QUI_CDM/cdm/cdm_spelldata.lua"))("QUI", ns)
 
 local items = ns.CDMSpellData:GetUsableItems()
 assert(#items == 3, "bag scan should return all usable item candidates")

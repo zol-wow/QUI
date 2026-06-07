@@ -13,9 +13,9 @@ local function readAll(path)
     return data:gsub("\r\n", "\n")
 end
 
-local coreSrc = readAll("modules/damage_meter/damage_meter.lua")
+local coreSrc = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
 local defaultsSrc = readAll("core/defaults.lua")
-local contentSrc = readAll("modules/damage_meter/settings/damage_meter_content.lua")
+local contentSrc = readAll("QUI_DamageMeter/damage_meter/settings/damage_meter_content.lua")
 local challengeStartPos = coreSrc:find("function WindowManager:ApplyChallengeModeStart", 1, true)
 assert(challengeStartPos, "WindowManager must expose ApplyChallengeModeStart")
 local challengeCompletedPos = coreSrc:find("function WindowManager:ApplyChallengeModeCompleted", challengeStartPos, true)

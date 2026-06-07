@@ -89,7 +89,7 @@ do
         },
     }
 
-    assert(loadfile("modules/cdm/cdm_bar_renderer.lua"))("QUI", ns)
+    assert(loadfile("QUI_CDM/cdm/cdm_bar_renderer.lua"))("QUI", ns)
 
     local barStates = setmetatable({}, { __mode = "k" })
     ns.CDMRuntimeStore = {
@@ -143,7 +143,7 @@ do
     -- Source-level verification: the coercion gate in the icon renderer must
     -- explicitly guard on item/trinket/slot entry types.  A spell entry never
     -- satisfies the gate, so the auraOnly coercion never fires for spell entries.
-    local file = io.open("modules/cdm/cdm_icon_renderer.lua", "r")
+    local file = io.open("QUI_CDM/cdm/cdm_icon_renderer.lua", "r")
     assert(file, "cdm_icon_renderer.lua not found")
     local source = file:read("*all")
     file:close()

@@ -54,7 +54,7 @@ local ns = {
     } },
 }
 
-assert(loadfile("modules/chat/channel_colors.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/channel_colors.lua"))("QUI", ns)
 local CC = assert(ns.QUI.Chat.ChannelColors, "ChannelColors should load")
 
 -- Drive every public mutation + any refresh hooks.

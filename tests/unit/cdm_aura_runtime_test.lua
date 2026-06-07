@@ -3,7 +3,7 @@
 
 local ns = {}
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_spelldata.lua", "cdm_aura_runtime.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_spelldata.lua", "cdm_aura_runtime.lua")("QUI", ns)
 
 local runtime = assert(ns.CDMAuraRuntime, "CDMAuraRuntime table was not exported")
 

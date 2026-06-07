@@ -53,7 +53,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/cdm/cdm_bar_renderer.lua"))("QUI", ns)
+assert(loadfile("QUI_CDM/cdm/cdm_bar_renderer.lua"))("QUI", ns)
 
 local bars = assert(ns.CDMBars, "CDMBars table was not exported")
 local pool = bars:GetActiveBars()

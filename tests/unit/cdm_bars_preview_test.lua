@@ -10,7 +10,7 @@ local function readAll(path)
     return data
 end
 
-local source = readAll("modules/cdm/cdm_bar_renderer.lua")
+local source = readAll("QUI_CDM/cdm/cdm_bar_renderer.lua")
 
 assert(source:find("function CDMBars.CreateForPreview", 1, true)
     or source:find("CDMBars.CreateForPreview = function", 1, true),

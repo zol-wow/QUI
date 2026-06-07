@@ -8,8 +8,8 @@ local function readFile(path)
     return text
 end
 
-local perBarSource = readFile("modules/actionbars/settings/action_bars_per_bar.lua")
-local actionBarsSource = readFile("modules/actionbars/actionbars_per_bar_builders.lua")
+local perBarSource = readFile("QUI_ActionBars/actionbars/settings/action_bars_per_bar.lua")
+local actionBarsSource = readFile("QUI_ActionBars/actionbars/actionbars_per_bar_builders.lua")
 
 local function assertContains(source, needle, message)
     assert(source:find(needle, 1, true), message .. " (missing `" .. needle .. "`)")

@@ -8,7 +8,7 @@ local function readAll(path)
     return data
 end
 
-local source = readAll("modules/cdm/settings/composer.lua")
+local source = readAll("QUI_CDM/cdm/settings/composer.lua")
 
 local addCellStart = assert(source:find("local function GetOrCreateAddCell", 1, true),
     "add cell factory should exist")

@@ -3289,7 +3289,7 @@ DebouncedReapplyOverrides = function()
 end
 
 -- Hook module refresh globals to reapply overrides after modules reposition frames.
--- These globals are defined by modules that load before this file in modules.xml.
+-- These globals are defined by modules that load before this file in QUI.toc.
 local function HookRefreshGlobal(name)
     local original = _G[name]
     if not original then return end

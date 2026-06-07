@@ -143,7 +143,7 @@ local ns = {
 }
 
 dofile("tests/helpers/load_cdm_icon_runtime.lua")(ns)
-assert(loadfile("modules/cdm/cdm_icon_renderer.lua"))("QUI", ns)
+assert(loadfile("QUI_CDM/cdm/cdm_icon_renderer.lua"))("QUI", ns)
 
 local icons = assert(ns.CDMIcons, "CDMIcons should be exported")
 local factory = assert(ns.CDMIconFactory, "CDMIconFactory should be exported")

@@ -21,8 +21,8 @@ local function sliceBetween(text, startMarker, stopMarker)
     return text:sub(startPos, stopPos and (stopPos - 1) or #text)
 end
 
-local spelldata = readAll("modules/cdm/cdm_spelldata.lua")
-local containers = readAll("modules/cdm/cdm_containers.lua")
+local spelldata = readAll("QUI_CDM/cdm/cdm_spelldata.lua")
+local containers = readAll("QUI_CDM/cdm/cdm_containers.lua")
 
 assert(not spelldata:find("MergeBlizzardTrackedEntries", 1, true),
     "cold-load repair must not append Blizzard tracked entries into the authoritative QUI CDM lists")

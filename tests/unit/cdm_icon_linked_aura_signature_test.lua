@@ -21,9 +21,9 @@ local function sliceBetween(text, startMarker, stopMarker)
     return text:sub(startPos, (stopPos or (#text + 1)) - 1)
 end
 
-local icons = readAll("modules/cdm/cdm_icon_renderer.lua")
-local containers = readAll("modules/cdm/cdm_containers.lua")
-local bars = readAll("modules/cdm/cdm_bar_renderer.lua")
+local icons = readAll("QUI_CDM/cdm/cdm_icon_renderer.lua")
+local containers = readAll("QUI_CDM/cdm/cdm_containers.lua")
+local bars = readAll("QUI_CDM/cdm/cdm_bar_renderer.lua")
 
 local entrySignature = sliceBetween(
     icons,

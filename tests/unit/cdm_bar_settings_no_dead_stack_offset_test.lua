@@ -8,7 +8,7 @@ local function readAll(path)
     return data:gsub("\r\n", "\n")
 end
 
-local source = readAll("modules/cdm/settings/containers_page.lua")
+local source = readAll("QUI_CDM/cdm/settings/containers_page.lua")
 local searchCache = readAll("QUI_Options/search_cache.lua")
 
 local barSpacingStart = assert(source:find('"Bar Spacing"', 1, true),

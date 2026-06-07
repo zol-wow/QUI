@@ -23,13 +23,13 @@ local function assertAbsentText(text, needle, reason)
 end
 
 assertAbsent(
-    "modules/modules.xml",
-    '<Include file="debug\\debug.xml"/>',
+    "QUI.toc",
+    "QUI_Debug",
     "main addon must not load the debug module package")
 
 assertAbsent(
-    "modules/cdm/cdm.xml",
-    '<Script file="cdm_debug.lua"/>',
+    "QUI.toc",
+    "cdm_debug.lua",
     "main CDM runtime must not load the CDM debug surface")
 
 assertContains(
@@ -48,8 +48,8 @@ assertContains(
     "debug companion must proxy into the main QUI namespace")
 
 assertContains(
-    "QUI_Debug/debug.xml",
-    '<Script file="cdm_debug.lua"/>',
+    "QUI_Debug/QUI_Debug.toc",
+    "cdm_debug.lua",
     "debug companion must own the CDM debug surface")
 
 assertContains(
@@ -105,15 +105,14 @@ assertContains(
     "ns.DebugActivate()",
     "debug companion must activate the main addon's instrumentation gate")
 
-local debugXml = readFile("QUI_Debug/debug.xml")
-local activatePos = debugXml:find('<Script file="activate.lua"/>', 1, true)
-assert(activatePos, "debug.xml must load activate.lua")
-local lastScriptPos = 0
-for pos in debugXml:gmatch('()<Script file=') do
-    lastScriptPos = pos
+local debugToc = readFile("QUI_Debug/QUI_Debug.toc")
+local lastEntry
+for line in debugToc:gmatch("[^\r\n]+") do
+    if not line:match("^%s*#") and line:match("%S") then
+        lastEntry = line:match("^%s*(.-)%s*$")
+    end
 end
-local lastScriptLine = debugXml:sub(lastScriptPos, lastScriptPos + 60)
-assert(lastScriptLine:find('file="activate.lua"', 1, true),
-    "activate.lua must be the LAST script in debug.xml, found last: " .. lastScriptLine)
+assert(lastEntry == "activate.lua",
+    "activate.lua must be the LAST file in QUI_Debug.toc, found last: " .. tostring(lastEntry))
 
 print("OK: debug_addon_split_test")

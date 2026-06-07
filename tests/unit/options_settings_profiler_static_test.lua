@@ -10,7 +10,7 @@ end
 
 local framework = readFile("QUI_Options/framework.lua")
 local fullSurface = readFile("core/settings/full_surface.lua")
-local skinBase = readFile("modules/skinning/base.lua")
+local skinBase = readFile("QUI_Skinning/skinning/base.lua")
 local uikit = readFile("core/uikit.lua")
 local init = readFile("init.lua")
 

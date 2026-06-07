@@ -1,7 +1,7 @@
 -- tests/unit/cdm_icon_renderer_secret_stack_static_test.lua
 -- Run: lua tests/unit/cdm_icon_renderer_secret_stack_static_test.lua
 
-local path = "modules/cdm/cdm_icon_renderer.lua"
+local path = "QUI_CDM/cdm/cdm_icon_renderer.lua"
 local handle = assert(io.open(path, "rb"))
 local source = handle:read("*a")
 handle:close()

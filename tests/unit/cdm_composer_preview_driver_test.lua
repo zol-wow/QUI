@@ -10,7 +10,7 @@ local function readAll(path)
     return data
 end
 
-local source = readAll("modules/cdm/settings/composer_preview_driver.lua")
+local source = readAll("QUI_CDM/cdm/settings/composer_preview_driver.lua")
 
 -- T4: file exists and exposes the public surface on ns.CDMComposerPreview
 assert(source:find("ns.CDMComposerPreview", 1, true),

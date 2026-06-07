@@ -16,7 +16,7 @@ local function assertAbsent(text, needle, reason)
     assert(not text:find(needle, 1, true), reason)
 end
 
-local source = readFile("modules/skinning/character_pane/character.lua")
+local source = readFile("QUI_Skinning/skinning/character_pane/character.lua")
 
 assertContains(
     source,

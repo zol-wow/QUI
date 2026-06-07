@@ -79,7 +79,7 @@ local ns = {
 
 _G.QUI = { db = { char = {} } }
 
-assert(loadfile("modules/chat/editbox_history.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/editbox_history.lua"))("QUI", ns)
 local EBH = ns.QUI.Chat.EditBoxHistory
 
 -- ---------------------------------------------------------------------------

@@ -24,7 +24,7 @@ local ns = {
     } } },
 }
 
-assert(loadfile("modules/chat/channel_colors.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/channel_colors.lua"))("QUI", ns)
 local CC = ns.QUI.Chat.ChannelColors
 
 local function eq(label, got, want)

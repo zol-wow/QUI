@@ -1,0 +1,28 @@
+## Interface: 120000, 120001, 120005, 120007
+## Title: |cFF30D1FFQUI|r Group Frames
+## Notes: QUI module. Requires the QUI core addon.
+## Author: Zol
+## Version: 4.0.0-beta26
+## Category: User Interface
+## Group: QUI
+## Dependencies: QUI
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+
+bootstrap.lua
+# == modules/groupframes/groupframes.xml ==
+groupframes\group_frames_icon_layout.lua
+groupframes\groupframes_template.xml
+groupframes\groupframes.lua
+groupframes\groupframes_health.lua
+groupframes\groupframes_power.lua
+groupframes\groupframes_name.lua
+groupframes\groupframes_layout.lua
+groupframes\groupframes_clickcast.lua
+groupframes\groupframes_roster.lua
+groupframes\groupframes_auras.lua
+groupframes\groupframes_indicators.lua
+groupframes\groupframes_pinned_auras.lua
+groupframes\groupframes_private_auras.lua
+groupframes\groupframes_blizzard.lua
+groupframes\groupframes_editmode.lua
+groupframes\raidbuffs.lua

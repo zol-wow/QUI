@@ -25,7 +25,7 @@ local ns = {
 }
 
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_sources.lua", "cdm_sources.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_sources.lua", "cdm_sources.lua")("QUI", ns)
 
 local sources = assert(ns.CDMSources, "CDMSources should be exported")
 

@@ -8,7 +8,7 @@ local function readAll(path)
     return data
 end
 
-local source = readAll("modules/cdm/settings/composer.lua")
+local source = readAll("QUI_CDM/cdm/settings/composer.lua")
 
 -- T10: composer.lua delegates to the driver
 assert(source:find("ns.CDMComposerPreview.Build", 1, true),

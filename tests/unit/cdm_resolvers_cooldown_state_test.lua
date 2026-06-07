@@ -641,8 +641,8 @@ function GetInventoryItemCooldown(unit, slotID)
 end
 
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_runtime_queries.lua", "cdm_runtime_queries.lua")("QUI", ns)
-loadChunk("modules/cdm/cdm_resolvers.lua", "cdm_resolvers.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_runtime_queries.lua", "cdm_runtime_queries.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_resolvers.lua", "cdm_resolvers.lua")("QUI", ns)
 
 local resolvers = assert(ns.CDMResolvers, "CDMResolvers should be exported")
 local resolve = assert(resolvers.ResolveCooldownState, "ResolveCooldownState should be exported")

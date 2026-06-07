@@ -11,7 +11,7 @@ local function readAll(path)
     return data
 end
 
-local source = readAll("modules/cdm/settings/composer.lua")
+local source = readAll("QUI_CDM/cdm/settings/composer.lua")
 
 -- Locate BuildAddTabs and the isBuiltIn aura/auraBar branches within it.
 local buildStart = assert(source:find("local function BuildAddTabs()", 1, true),

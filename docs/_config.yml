@@ -48,7 +48,6 @@ exclude:
   - skinning/
   - importstrings/
   - init.lua
-  - load.xml
   - Bindings.xml
   - CHANGELOG.md
   - LICENSE

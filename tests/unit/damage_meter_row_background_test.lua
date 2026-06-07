@@ -12,13 +12,13 @@ local defaultsSrc = readAll("core/defaults.lua")
 assert(defaultsSrc:find("showRowBackground%s*=%s*true", 1, false),
     "damage meter defaults must keep row backgrounds visible by default")
 
-local contentSrc = readAll("modules/damage_meter/settings/damage_meter_content.lua")
+local contentSrc = readAll("QUI_DamageMeter/damage_meter/settings/damage_meter_content.lua")
 assert(contentSrc:find("showRowBackground", 1, true),
     "damage meter settings must wire showRowBackground")
 assert(contentSrc:find("Show Row Background", 1, true),
     "damage meter settings must expose a Show Row Background control")
 
-local coreSrc = readAll("modules/damage_meter/damage_meter.lua")
+local coreSrc = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
 assert(coreSrc:find("local function ApplyRowBackgroundVisibility", 1, true),
     "damage meter runtime must centralize row background visibility")
 assert(coreSrc:find('ResolveAppearance(windowID, "showRowBackground") ~= false', 1, true),

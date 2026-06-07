@@ -172,7 +172,7 @@ local function loadTooltipSkinning()
         },
     }
 
-    assert(loadfile("modules/skinning/system/tooltips.lua"))("QUI", ns)
+    assert(loadfile("QUI_Skinning/skinning/system/tooltips.lua"))("QUI", ns)
     local refit = assert(ns.QUI_RefitTooltipChromeToContent, "refit function should be exported")
     local requestRefit = assert(ns.QUI_RequestTooltipChromeRefit, "request refit function should be exported")
     local styleFrames = getUpvalue(refit, "styleFrames")

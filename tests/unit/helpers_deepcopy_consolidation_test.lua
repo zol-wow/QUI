@@ -22,9 +22,9 @@ local files = {
     "core/profile_io.lua",
     "core/settings/pins.lua",
     "core/settings/pins_ui.lua",
-    "modules/dungeon/mplus_timer.lua",
-    "modules/groupframes/groupframes_clickcast.lua",
-    "modules/groupframes/settings/group_frames_schema.lua",
+    "QUI_QoL/dungeon/mplus_timer.lua",
+    "QUI_GroupFrames/groupframes/groupframes_clickcast.lua",
+    "QUI_GroupFrames/groupframes/settings/group_frames_schema.lua",
 }
 
 for _, path in ipairs(files) do

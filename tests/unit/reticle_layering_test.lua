@@ -137,7 +137,7 @@ local ns = {
     QUI = {},
 }
 
-assert(loadfile("modules/qol/reticle.lua"))("QUI", ns)
+assert(loadfile("QUI_QoL/qol/reticle.lua"))("QUI", ns)
 assert(eventFrame and eventFrame.scripts.OnEvent, "reticle should register an event handler")
 
 eventFrame.scripts.OnEvent(eventFrame, "ADDON_LOADED", "QUI")

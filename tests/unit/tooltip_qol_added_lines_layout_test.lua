@@ -8,7 +8,7 @@ local function readFile(path)
     return data
 end
 
-local source = readFile("modules/qol/tooltip.lua")
+local source = readFile("QUI_QoL/qol/tooltip.lua")
 
 assert(source:find("local function AddTooltipInfoLine", 1, true),
     "tooltip QoL additions should use a shared left-aligned wrapped line helper")

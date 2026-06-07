@@ -1,9 +1,0 @@
-<Ui xmlns="http://www.blizzard.com/wow/ui/"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/..\FrameXML\UI.xsd">
-    <Script file="keystone.lua"/>
-    <Script file="mplus_timer.lua"/>
-    <Script file="mplus_progress.lua"/>
-    <Script file="teleport.lua"/>
-    <Script file="party_keystones.lua"/>
-    <Script file="brez_counter.lua"/>
-</Ui>

@@ -18,7 +18,7 @@ local function readAll(path)
     return (data:gsub("\r\n", "\n"))
 end
 
-local src = readAll("modules/qol/skyriding.lua")
+local src = readAll("QUI_QoL/qol/skyriding.lua")
 
 local perTickHelpers = {
     "UpdateRechargeAnimation",

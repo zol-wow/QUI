@@ -134,7 +134,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/cdm/cdm_blizz_mirror.lua"))("QUI", ns)
+assert(loadfile("QUI_CDM/cdm/cdm_blizz_mirror.lua"))("QUI", ns)
 
 ns.CDMBlizzMirror.ForceRescan()
 queryCooldownAuraCalls = 0

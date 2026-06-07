@@ -22,7 +22,7 @@ local function readAll(path)
     return text
 end
 
-local containers = readAll("modules/cdm/cdm_containers.lua")
+local containers = readAll("QUI_CDM/cdm/cdm_containers.lua")
 
 -- The predicate must exist and key off the customBar containerType.
 assert(

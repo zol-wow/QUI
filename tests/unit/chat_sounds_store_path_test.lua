@@ -111,7 +111,7 @@ ns.QUI.Chat.MessageStore.OnAppend = function(fn)
     end
 end
 
-assert(loadfile("modules/chat/sounds.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/sounds.lua"))("QUI", ns)
 ns.QUI.Chat.Sounds.Setup()
 
 -- Verify a store subscriber was installed.

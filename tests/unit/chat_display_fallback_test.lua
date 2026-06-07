@@ -38,7 +38,7 @@ ns.QUI.Chat.TabManager = {
     end,
 }
 
-assert(loadfile("modules/chat/display_fallback.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/display_fallback.lua"))("QUI", ns)
 local FB = ns.QUI.Chat.DisplayFallback
 
 -- Disabled (default): nothing created, nothing shown
@@ -105,7 +105,7 @@ local registered
 ns.Registry = { Register = function(_, name, def) registered = { name = name, def = def } end }
 ns.QUI.Chat.TabUI = { Rebuild = function() calls[#calls + 1] = "tabs:rebuild" end }
 -- re-load the module so the registration runs with the Registry stub present
-assert(loadfile("modules/chat/display_fallback.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/display_fallback.lua"))("QUI", ns)
 assert(registered and registered.name == "chatCustomDisplaySkin", "skin entry registered")
 assert(registered.def.group == "skinning", "on the skinning group")
 

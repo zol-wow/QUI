@@ -55,7 +55,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/chat/chat.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/chat.lua"))("QUI", ns)
 
 local makeURLsClickable = ns.QUI.Chat._internals.MakeURLsClickable
 assert(type(makeURLsClickable) == "function", "chat internals should expose URL clickification helper")

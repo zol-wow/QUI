@@ -1,5 +1,5 @@
 -- tests/unit/cdm_structure_test.lua
--- Headless verification of CDM load-manifest structure. Run: lua tests/unit/cdm_structure_test.lua
+-- Headless verification of CDM load order in QUI.toc. Run: lua tests/unit/cdm_structure_test.lua
 
 local function readAll(path)
     local f = assert(io.open(path, "rb"))
@@ -13,7 +13,7 @@ local function indexOf(text, needle)
     return first
 end
 
-local xml = readAll("modules/cdm/cdm.xml")
+local xml = readAll("QUI_CDM/QUI_CDM.toc")
 
 local expectedOrder = {
     "cdm_shared.lua",
@@ -55,7 +55,7 @@ local expectedOrder = {
 
 local positions = {}
 for _, fileName in ipairs(expectedOrder) do
-    local pos = indexOf(xml, 'file="' .. fileName .. '"')
+    local pos = indexOf(xml, "cdm\\" .. fileName)
     assert(pos, fileName .. " should be loaded")
     positions[fileName] = pos
 end
@@ -73,23 +73,23 @@ local removedAggregateFiles = {
 }
 
 for _, fileName in ipairs(removedAggregateFiles) do
-    assert(not indexOf(xml, 'file="' .. fileName .. '"'),
+    assert(not indexOf(xml, "cdm\\" .. fileName),
         fileName .. " should not be registered after the layer split")
 end
 
-assert(not indexOf(xml, 'file="glows.lua"'), "glows.lua should remain consolidated")
-assert(not indexOf(xml, 'file="swipe.lua"'), "swipe.lua should remain consolidated")
-assert(not indexOf(xml, 'file="highlighter.lua"'), "highlighter.lua should remain consolidated")
+assert(not indexOf(xml, "cdm\\glows.lua"), "glows.lua should remain consolidated")
+assert(not indexOf(xml, "cdm\\swipe.lua"), "swipe.lua should remain consolidated")
+assert(not indexOf(xml, "cdm\\highlighter.lua"), "highlighter.lua should remain consolidated")
 
-local optionsXml = readAll("QUI_Options/options.xml")
+local optionsXml = readAll("QUI_Options/QUI_Options.toc")
 local expectedOptionsOrder = {
-    "..\\QUI\\modules\\cdm\\settings\\containers_page.lua",
-    "..\\QUI\\modules\\cdm\\settings\\composer_preview_driver.lua",
-    "..\\QUI\\modules\\cdm\\settings\\composer.lua",
+    "..\\QUI_CDM\\cdm\\settings\\containers_page.lua",
+    "..\\QUI_CDM\\cdm\\settings\\composer_preview_driver.lua",
+    "..\\QUI_CDM\\cdm\\settings\\composer.lua",
 }
 local optionPositions = {}
 for _, fileName in ipairs(expectedOptionsOrder) do
-    local pos = indexOf(optionsXml, 'file="' .. fileName .. '"')
+    local pos = indexOf(optionsXml, fileName)
     assert(pos, fileName .. " should load on demand")
     optionPositions[fileName] = pos
 end

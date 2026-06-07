@@ -14,11 +14,11 @@ local function readAll(path)
 end
 
 local files = {
-    "modules/qol/settings/provider_panels.lua",        -- petWarning, missingRaidBuffs, xpTracker, ...
-    "modules/dungeon/settings/mplus_timer_provider.lua",
-    "modules/dungeon/settings/mplus_progress_provider.lua",
-    "modules/utility/settings/ready_check_provider.lua",
-    "modules/minimap/settings/minimap_providers.lua",
+    "QUI_QoL/qol/settings/provider_panels.lua",        -- petWarning, missingRaidBuffs, xpTracker, ...
+    "QUI_QoL/dungeon/settings/mplus_timer_provider.lua",
+    "QUI_QoL/dungeon/settings/mplus_progress_provider.lua",
+    "QUI_QoL/utility/settings/ready_check_provider.lua",
+    "QUI_Minimap/minimap/settings/minimap_providers.lua",
 }
 
 for _, path in ipairs(files) do

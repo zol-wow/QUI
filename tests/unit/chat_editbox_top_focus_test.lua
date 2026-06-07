@@ -116,7 +116,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/chat/editbox_basics.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/editbox_basics.lua"))("QUI", ns)
 
 local EditBoxBasics = ns.QUI.Chat.EditBoxBasics
 

@@ -7,16 +7,16 @@ return {
         -- prefixes are classified strict (CI-blocking) instead of advisory.
         -- Add only after auditing — promoted findings must be either fixed
         -- or annotated with `-- @secret-safe: <reason>` to keep CI green.
-        "modules/cdm/",
-        "modules/chat/",
-        "modules/groupframes/",
-        "modules/actionbars/",
-		"modules/damage_meter/",
+        "QUI_CDM/cdm/",
+        "QUI_Chat/chat/",
+        "QUI_GroupFrames/groupframes/",
+        "QUI_ActionBars/actionbars/",
+        "QUI_DamageMeter/damage_meter/",
     },
     strict_unwrap_paths = {
         -- Safe* unwrap helpers are stricter in CDM: cooldown-secret values
         -- must stay opaque unless they are passed to approved C-side sinks.
-        "modules/cdm/",
+        "QUI_CDM/cdm/",
     },
     ignore_paths = {
         "libs/",

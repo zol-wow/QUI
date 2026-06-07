@@ -1,0 +1,37 @@
+## Interface: 120000, 120001, 120005, 120007
+## Title: |cFF30D1FFQUI|r Chat
+## Notes: QUI module. Requires the QUI core addon.
+## Author: Zol
+## Version: 4.0.0-beta26
+## Category: User Interface
+## Group: QUI
+## Dependencies: QUI
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+## SavedVariablesPerCharacter: QUI_ChatHistory
+## LoadSavedVariablesFirst: 1
+
+bootstrap.lua
+# == modules/chat/chat.xml ==
+chat\chat.lua
+chat\modifiers\keyword_alert.lua
+chat\modifiers\redundant_text.lua
+chat\history_storage.lua
+chat\history.lua
+chat\hyperlinks.lua
+chat\tab_filters.lua
+chat\button_bar.lua
+chat\copy.lua
+chat\sounds.lua
+chat\editbox_history.lua
+chat\editbox_basics.lua
+chat\channel_colors.lua
+chat\message_store.lua
+chat\message_format.lua
+chat\message_capture.lua
+chat\display_layer.lua
+chat\tab_manager.lua
+chat\conversation_manager.lua
+chat\tab_ui.lua
+chat\scrollbar_custom.lua
+chat\blizzard_suppress.lua
+chat\display_fallback.lua

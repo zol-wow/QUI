@@ -10,7 +10,7 @@ function issecretvalue(value)
     return value == secretStart or value == secretDuration
 end
 
-loadChunk("modules/cdm/cdm_frame_writes.lua", "cdm_frame_writes.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_frame_writes.lua", "cdm_frame_writes.lua")("QUI", ns)
 
 local renderers = assert(ns.CDMRenderers, "CDMRenderers table was not exported")
 

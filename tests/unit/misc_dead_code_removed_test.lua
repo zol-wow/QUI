@@ -5,7 +5,7 @@
 -- (.luacheckrc ignores W211, so these unused locals were never auto-flagged.)
 --   * core/utils.lua  local GetCore()        — superseded by Helpers.GetCore()
 --   * core/utils.lua  Helpers.FindAnchorFrame — zero callers anywhere
---   * modules/qol/crosshair.lua CreateOnUpdateThrottle import — never used
+--   * QUI_QoL/qol/crosshair.lua CreateOnUpdateThrottle import — never used
 
 local function readAll(path)
     local file = assert(io.open(path, "rb"))
@@ -15,7 +15,7 @@ local function readAll(path)
 end
 
 local utils = readAll("core/utils.lua")
-local crosshair = readAll("modules/qol/crosshair.lua")
+local crosshair = readAll("QUI_QoL/qol/crosshair.lua")
 
 assert(not utils:find("local function GetCore()", 1, true),
     "shadowed local GetCore() must be removed (callers use Helpers.GetCore)")

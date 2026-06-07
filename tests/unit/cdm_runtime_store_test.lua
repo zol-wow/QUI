@@ -34,7 +34,7 @@ local ns = {
 }
 
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_runtime_store.lua", "cdm_runtime_store.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_runtime_store.lua", "cdm_runtime_store.lua")("QUI", ns)
 
 local store = assert(ns.CDMRuntimeStore, "CDMRuntimeStore table was not exported")
 local durObj = { token = "duration" }

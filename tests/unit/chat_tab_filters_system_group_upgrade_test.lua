@@ -46,7 +46,7 @@ local ns = {
     } },
 }
 
-assert(loadfile("modules/chat/tab_filters.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/tab_filters.lua"))("QUI", ns)
 local TF = ns.QUI.Chat.TabFilters
 
 local function has(list, v)

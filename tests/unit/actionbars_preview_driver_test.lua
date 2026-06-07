@@ -10,7 +10,7 @@ local function readAll(path)
     return data
 end
 
-local source = readAll("modules/actionbars/settings/action_bars_preview_driver.lua")
+local source = readAll("QUI_ActionBars/actionbars/settings/action_bars_preview_driver.lua")
 
 -- T1: file exists and exposes the public surface on ns.QUI_ActionBarsPreviewDriver
 assert(source:find("ns.QUI_ActionBarsPreviewDriver", 1, true),
@@ -63,7 +63,7 @@ assert(source:find("BAR_OFFSETS%[barKey%]"),
     "driver IsPreviewable must read BAR_OFFSETS[barKey]")
 
 -- T2: live-mirror helpers removed from content.lua
-local content = readAll("modules/actionbars/settings/action_bars_content.lua")
+local content = readAll("QUI_ActionBars/actionbars/settings/action_bars_content.lua")
 for _, fn in ipairs({
     "GetPreviewSourceButton",
     "GetPreviewActionSlot",
@@ -99,7 +99,7 @@ assert(source:find("GetPreviewSourceButton", 1, true),
     "driver Refresh must look up the live source button")
 
 -- T3: content.lua RefreshPreview is now a one-liner that calls driver.Refresh
-content = readAll("modules/actionbars/settings/action_bars_content.lua")
+content = readAll("QUI_ActionBars/actionbars/settings/action_bars_content.lua")
 assert(content:find("ns.QUI_ActionBarsPreviewDriver.Build", 1, true),
     "content.lua BuildActionBarsPreview must call driver.Build")
 assert(content:find("ns.QUI_ActionBarsPreviewDriver.Refresh", 1, true),

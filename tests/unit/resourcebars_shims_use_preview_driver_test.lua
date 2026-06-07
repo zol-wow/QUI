@@ -9,7 +9,7 @@ local function readAll(path)
     return data
 end
 
-local rb = readAll("modules/resourcebars/resourcebars.lua")
+local rb = readAll("QUI_ResourceBars/resourcebars/resourcebars.lua")
 
 -- T9: globals delegate to the driver
 assert(rb:find("ns.QUI_ResourceBarsPreview.Build", 1, true),
@@ -33,13 +33,13 @@ assert(not rb:find("local function MockValueText", 1, true),
 assert(rb:find("ns.QUI_ResourceBars_Internal", 1, true),
     "ns.QUI_ResourceBars_Internal export must still be present (driver needs it)")
 
--- T10: options.xml registers the preview driver after its settings builders.
-local xml = readAll("QUI_Options/options.xml")
+-- T10: QUI_Options.toc registers the preview driver after its settings builders.
+local xml = readAll("QUI_Options/QUI_Options.toc")
 assert(xml:find("resource_bars_preview_driver.lua", 1, true),
-    "QUI_Options/options.xml must register resource_bars_preview_driver.lua")
+    "QUI_Options.toc must register resource_bars_preview_driver.lua")
 local rbPos     = xml:find("resource_bars_builders.lua", 1, true)
 local driverPos = xml:find("resource_bars_preview_driver.lua", 1, true)
 assert(rbPos and driverPos and rbPos < driverPos,
-    "QUI_Options/options.xml must load resource_bars_preview_driver.lua AFTER resource_bars_builders.lua")
+    "QUI_Options.toc must load resource_bars_preview_driver.lua AFTER resource_bars_builders.lua")
 
 print("OK: resourcebars_shims_use_preview_driver_test")

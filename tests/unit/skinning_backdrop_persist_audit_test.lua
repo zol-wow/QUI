@@ -68,7 +68,7 @@ end
 --     backdrop path already records _quiBg*/_quiBorder* (persists on rebuild);
 --   * the alt-power-bar mover overlay (never given a pixel backdrop).
 local ALLOW = {
-    ["modules/skinning/frames/instanceframes.lua"] = Set({
+    ["QUI_Skinning/skinning/frames/instanceframes.lua"] = Set({
         -- GroupFinder / PVP / BG button hover highlights (transient)
         "bd:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a)",
         "bd:SetBackdropBorderColor(unpack(sc))",
@@ -82,7 +82,7 @@ local ALLOW = {
         "sbBd:SetBackdropColor(bgr, bgg, bgb, bga)",
         "sbBd:SetBackdropBorderColor(sr, sg, sb, sa)",
     }),
-    ["modules/skinning/gameplay/keystone.lua"] = Set({
+    ["QUI_Skinning/skinning/gameplay/keystone.lua"] = Set({
         -- Start-button hover highlight (transient)
         "bd:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a)",
         "bd:SetBackdropBorderColor(unpack(sc))",
@@ -90,25 +90,25 @@ local ALLOW = {
         "ksBd:SetBackdropColor(bgr, bgg, bgb, bga)",
         "ksBd:SetBackdropBorderColor(sr, sg, sb, sa)",
     }),
-    ["modules/skinning/gameplay/powerbaralt.lua"] = Set({
+    ["QUI_Skinning/skinning/gameplay/powerbaralt.lua"] = Set({
         -- Mover overlay: not a pixel-backdrop frame
         "powerBarMover:SetBackdropColor(sr, sg, sb, 0.3)",
         "powerBarMover:SetBackdropBorderColor(sr, sg, sb, 1)",
     }),
     -- These must contain NO bare backdrop-color calls at all.
-    ["modules/skinning/frames/overrideactionbar.lua"] = Set({}),
-    ["modules/skinning/frames/statustracking.lua"] = Set({}),
-    ["modules/skinning/gameplay/mplus_timer.lua"] = Set({}),
+    ["QUI_Skinning/skinning/frames/overrideactionbar.lua"] = Set({}),
+    ["QUI_Skinning/skinning/frames/statustracking.lua"] = Set({}),
+    ["QUI_Skinning/skinning/gameplay/mplus_timer.lua"] = Set({}),
 }
 
 -- Files that MUST prove the fix is present (use the persisting helpers).
 local MUST_USE_HELPERS = {
-    "modules/skinning/frames/instanceframes.lua",
-    "modules/skinning/frames/overrideactionbar.lua",
-    "modules/skinning/gameplay/keystone.lua",
-    "modules/skinning/gameplay/powerbaralt.lua",
-    "modules/skinning/frames/statustracking.lua",
-    "modules/skinning/gameplay/mplus_timer.lua",
+    "QUI_Skinning/skinning/frames/instanceframes.lua",
+    "QUI_Skinning/skinning/frames/overrideactionbar.lua",
+    "QUI_Skinning/skinning/gameplay/keystone.lua",
+    "QUI_Skinning/skinning/gameplay/powerbaralt.lua",
+    "QUI_Skinning/skinning/frames/statustracking.lua",
+    "QUI_Skinning/skinning/gameplay/mplus_timer.lua",
 }
 
 local failures = 0

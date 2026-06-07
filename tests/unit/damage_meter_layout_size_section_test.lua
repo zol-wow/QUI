@@ -13,7 +13,7 @@ local function readAll(path)
     return d:gsub("\r\n", "\n")
 end
 
-local src = readAll("modules/damage_meter/damage_meter.lua")
+local src = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
 
 -- Size bounds live in named constants so the corner-drag grips and the numeric
 -- sliders share one source of truth.

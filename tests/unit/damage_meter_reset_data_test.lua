@@ -12,7 +12,7 @@ local function readAll(path)
     return data:gsub("\r\n", "\n")
 end
 
-local src = readAll("modules/damage_meter/damage_meter.lua")
+local src = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
 
 -- The action lives in the config menu.
 local menuStart = src:find("function Window:_OpenConfigMenu")

@@ -26,7 +26,7 @@ C_CooldownViewer = {
 
 local ns = {}
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_catalog.lua", "cdm_catalog.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_catalog.lua", "cdm_catalog.lua")("QUI", ns)
 
 local spellToCDID = {}
 local inCooldowns = {}

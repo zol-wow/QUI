@@ -100,7 +100,7 @@ local ns = {
 }
 
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_icon_renderer.lua", "cdm_icon_factory.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_factory.lua")("QUI", ns)
 
 local createdIcon, createdEntry
 local acquiredIcon, acquiredEntry, acquiredReused

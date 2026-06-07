@@ -72,14 +72,14 @@ local function discoverCdmLuaFiles()
     local isWindows = package.config:sub(1, 1) == "\\"
     local cmd
     if isWindows then
-        cmd = 'cmd /c "dir /s /b modules\\cdm\\*.lua 2>nul"'
+        cmd = 'cmd /c "dir /s /b QUI_CDM\\cdm\\*.lua 2>nul"'
     else
-        cmd = 'find "modules/cdm" -type f -name "*.lua"'
+        cmd = 'find "QUI_CDM/cdm" -type f -name "*.lua"'
     end
     local p = assert(io.popen(cmd, "r"))
     for line in p:lines() do
         line = line:gsub("\\", "/")
-        local rel = line:match("(modules/cdm/.*)$") or line
+        local rel = line:match("(QUI_CDM/cdm/.*)$") or line
         files[#files + 1] = rel
     end
     p:close()

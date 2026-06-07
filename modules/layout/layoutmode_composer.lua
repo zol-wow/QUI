@@ -21,7 +21,9 @@ local SUGGEST_CELL_STRIDE = SUGGEST_CELL_SIZE + SUGGEST_CELL_GAP
 local PREVIEW_SCALE = 2
 local UIKit = ns.UIKit
 local AuraDefaults = ns.QUI_GroupFramesAuraDefaults
-local IconLayout = ns.QUI_GroupFrameIconLayout
+-- QUI_GroupFrameIconLayout is populated by QUI_GroupFrames (login-class addon) after core
+-- loads; capture at call time rather than file scope to avoid capturing nil.
+local function GetIconLayout() return ns.QUI_GroupFrameIconLayout end
 
 ---------------------------------------------------------------------------
 -- PIXEL HELPERS (from groupframedesigner.lua)
@@ -3691,16 +3693,17 @@ local function CreateDesignerPreview(container, previewType, childRefs)
         local container = CreateFrame("Frame", nil, parentFrame)
         container:SetFrameLevel(parentFrame:GetFrameLevel() + 8)
         container:SetAllPoints(parentFrame)
-        local iconAnchor = IconLayout and IconLayout.GetIconAnchorForGrow
-            and IconLayout.GetIconAnchorForGrow(anchor, grow) or anchor
+        local il = GetIconLayout()
+        local iconAnchor = il and il.GetIconAnchorForGrow
+            and il.GetIconAnchorForGrow(anchor, grow) or anchor
         for i = 1, count do
             local icon = container:CreateTexture(nil, "OVERLAY")
             icon:SetSize(size, size)
             icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
             icon:SetTexture(icons[((i - 1) % #icons) + 1])
             local slotX, slotY = 0, 0
-            if IconLayout and IconLayout.CalculateSlotOffset then
-                slotX, slotY = IconLayout.CalculateSlotOffset(i, size, spacing, grow, count)
+            if il and il.CalculateSlotOffset then
+                slotX, slotY = il.CalculateSlotOffset(i, size, spacing, grow, count)
             else
                 slotX = (i - 1) * (size + spacing)
             end

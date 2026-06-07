@@ -16,7 +16,7 @@ local function assertAbsent(text, needle, reason)
     assert(not text:find(needle, 1, true), reason)
 end
 
-local source = readFile("modules/actionbars/buffborders.lua")
+local source = readFile("QUI_ActionBars/actionbars/buffborders.lua")
 
 assertContains(
     source,

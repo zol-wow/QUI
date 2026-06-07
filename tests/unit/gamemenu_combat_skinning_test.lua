@@ -197,7 +197,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/skinning/system/gamemenu.lua"))("QUI", ns)
+assert(loadfile("QUI_Skinning/skinning/system/gamemenu.lua"))("QUI", ns)
 
 local watcher = assert(unnamedFrames[1], "game menu watcher should be created")
 assert(type(watcher.scripts.OnUpdate) == "function", "game menu watcher should install OnUpdate")

@@ -9,7 +9,7 @@ local ns = {
 }
 
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-local chunk = loadChunk("modules/cdm/cdm_shared.lua", "cdm_shared.lua")
+local chunk = loadChunk("QUI_CDM/cdm/cdm_shared.lua", "cdm_shared.lua")
 chunk("QUI", ns)
 
 local Shared = assert(ns.CDMShared, "CDMShared not exported")

@@ -155,7 +155,7 @@ local ns = {
 -- Load history.lua
 -------------------------------------------------------------------------------
 
-assert(loadfile("modules/chat/history.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/history.lua"))("QUI", ns)
 
 local History = ns.QUI.Chat.History
 assert(History, "History table exported")

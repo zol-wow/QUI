@@ -8,7 +8,7 @@
 -- therefore not load or call the old ChatFrame1 detach/geometry helper.
 --
 -- Covered vectors:
---   0. chat.xml does not load chat_frame1.lua on the runtime path
+--   0. QUI.toc does not load chat_frame1.lua on the runtime path
 --   1. options.xml does not load it either (the helper is DELETED — the
 --      takeover suppresses ChatFrame1 and never sizes/positions it)
 --   2. chat.lua does not call ChatFrame1Sizing.DetachFromEditMode/SyncToStored
@@ -30,15 +30,15 @@ end
 -- 0. The runtime chat addon must not load the sizing/detach helper. It stays in
 --    the load-on-demand options addon only, so normal chat startup never calls
 --    protected ChatFrame1 geometry paths.
-local chatXML = readAll("modules/chat/chat.xml")
-hasnot(chatXML, [[<Script file="settings/chat_frame1.lua"/>]],
-    "chat.xml must not load the ChatFrame1 sizing/detach helper on the runtime path")
+local chatXML = readAll("QUI.toc")
+hasnot(chatXML, [[modules\chat\settings\chat_frame1.lua]],
+    "QUI.toc must not load the ChatFrame1 sizing/detach helper on the runtime path")
 
-local optionsXML = readAll("QUI_Options/options.xml")
-hasnot(optionsXML, [[chat_frame1.lua"/>]],
-    "options.xml must not load the deleted ChatFrame1 sizing/detach helper")
+local optionsXML = readAll("QUI_Options/QUI_Options.toc")
+hasnot(optionsXML, [[chat_frame1.lua]],
+    "QUI_Options.toc must not load the deleted ChatFrame1 sizing/detach helper")
 
-local chatRuntime = readAll("modules/chat/chat.lua")
+local chatRuntime = readAll("QUI_Chat/chat/chat.lua")
 hasnot(chatRuntime, "DetachFromEditMode",
     "runtime chat.lua must not call ChatFrame1Sizing.DetachFromEditMode")
 hasnot(chatRuntime, "SyncToStored",
@@ -57,7 +57,7 @@ has(utils, "frame.SetPointBase or frame.SetPoint",
 
 -- 2. The sizing/detach helper is DELETED — nothing may resurrect ChatFrame1
 --    geometry mutation in the provider.
-local chatProvider = readAll("modules/chat/settings/chat_frame1_provider.lua")
+local chatProvider = readAll("QUI_Chat/chat/settings/chat_frame1_provider.lua")
 hasnot(chatProvider, "ChatFrame1Sizing",
     "the deleted ChatFrame1 sizing helper must not be referenced by the provider")
 hasnot(chatProvider, "FCF_SetWindowSize",

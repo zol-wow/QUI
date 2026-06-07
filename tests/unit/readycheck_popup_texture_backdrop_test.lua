@@ -7,7 +7,7 @@
 -- regions owned by the popup frame and mark them so decoration hiding skips
 -- the skin's own fill and border.
 
-local path = "modules/skinning/notifications/readycheck.lua"
+local path = "QUI_Skinning/skinning/notifications/readycheck.lua"
 local file = assert(io.open(path, "rb"))
 local source = file:read("*a")
 file:close()

@@ -47,7 +47,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/qol/skyriding.lua"))("QUI", ns)
+assert(loadfile("QUI_QoL/qol/skyriding.lua"))("QUI", ns)
 
 local api = assert(ns.QUI.Skyriding, "skyriding API should be exported")
 

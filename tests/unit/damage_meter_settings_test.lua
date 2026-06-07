@@ -8,16 +8,16 @@ local function readAll(path)
 end
 
 -- Settings content file exists and references the three Phase 1 widgets
-local contentSrc = readAll("modules/damage_meter/settings/damage_meter_content.lua")
+local contentSrc = readAll("QUI_DamageMeter/damage_meter/settings/damage_meter_content.lua")
 assert(contentSrc:find("visibility", 1, true),     "settings must wire visibility")
 assert(contentSrc:find("barHeight", 1, true),      "settings must wire barHeight")
 assert(contentSrc:find("refreshRateCombat", 1, true),
     "settings must wire refreshRateCombat")
 
 -- Options loader picks it up on demand.
-local optionsXml = readAll("QUI_Options/options.xml")
-assert(optionsXml:find('..\\QUI\\modules\\damage_meter\\settings\\damage_meter_content.lua', 1, true),
-    "QUI_Options/options.xml must load the damage meter settings content file")
+local optionsXml = readAll("QUI_Options/QUI_Options.toc")
+assert(optionsXml:find('..\\QUI_DamageMeter\\damage_meter\\settings\\damage_meter_content.lua', 1, true),
+    "QUI_Options.toc must load the damage meter settings content file")
 
 -- T12 (Phase 2): Behavior section additions
 assert(contentSrc:find("refreshRateIdle", 1, true),
@@ -79,7 +79,7 @@ assert(contentSrc:find("ApplyBlizzardSuppression(false)", 1, true),
     "SetDamageMeterEnabled must call ApplyBlizzardSuppression(false) on disable to restore the CVar")
 
 -- DespawnAll is a real method on WindowManager (not just a string match above).
-local coreSrc2 = readAll("modules/damage_meter/damage_meter.lua")
+local coreSrc2 = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
 assert(coreSrc2:find("function WindowManager:DespawnAll", 1, true),
     "WindowManager:DespawnAll must be defined in damage_meter.lua")
 
@@ -99,7 +99,7 @@ assert(migSrc:find("if stored < 38 then DropDamageMeterMaxVisibleRows", 1, true)
 -- scroll-child Frame. The scrollFrame's parent is the window frame; the
 -- scrollContent is the scroll child. Rows are created as children of
 -- self.scrollContent.
-local coreSrc3 = readAll("modules/damage_meter/damage_meter.lua")
+local coreSrc3 = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
 assert(coreSrc3:find('CreateFrame("ScrollFrame"', 1, true),
     "Window:New must create a ScrollFrame for the row viewport")
 assert(coreSrc3:find("SetScrollChild(scrollContent)", 1, true),

@@ -24,14 +24,14 @@ local function readAll(path)
 end
 
 local function assertActionBarsEnvDoesNotLeakGlobals()
-    local source = readAll("modules/actionbars/actionbars_env.lua")
+    local source = readAll("QUI_ActionBars/actionbars/actionbars_env.lua")
     assert(source:find("nativeSetFenv(level + 1, targetEnv)", 1, true),
         "Lua 5.1 setfenv path must target the caller chunk, not the helper itself")
     assert(source:find('debug.getinfo(level + 1, "f")', 1, true),
         "Lua 5.2+ debug fallback must target the caller chunk")
 
     local envNs = {}
-    assert(loadfile("modules/actionbars/actionbars_env.lua"))("QUI", envNs)
+    assert(loadfile("QUI_ActionBars/actionbars/actionbars_env.lua"))("QUI", envNs)
 
     local loadChunk = loadstring or load
     _G.QUI_ActionBarsEnvLeakTest = nil
@@ -299,17 +299,17 @@ setmetatable(_G, {
     end,
 })
 
-assert(loadfile("modules/actionbars/actionbars_env.lua"))("QUI", ns)
-assert(loadfile("modules/actionbars/actionbars.lua"))("QUI", ns)
-assert(loadfile("modules/actionbars/actionbars_helpers.lua"))("QUI", ns)
-assert(loadfile("modules/actionbars/actionbars_layout.lua"))("QUI", ns)
-assert(loadfile("modules/actionbars/actionbars_builder.lua"))("QUI", ns)
-assert(loadfile("modules/actionbars/actionbars_petstance.lua"))("QUI", ns)
-assert(loadfile("modules/actionbars/actionbars_cooldowns.lua"))("QUI", ns)
-assert(loadfile("modules/actionbars/actionbars_glow.lua"))("QUI", ns)
-assert(loadfile("modules/actionbars/actionbars_events.lua"))("QUI", ns)
-assert(loadfile("modules/actionbars/actionbars_skinning.lua"))("QUI", ns)
-assert(loadfile("modules/actionbars/actionbars_usability.lua"))("QUI", ns)
+assert(loadfile("QUI_ActionBars/actionbars/actionbars_env.lua"))("QUI", ns)
+assert(loadfile("QUI_ActionBars/actionbars/actionbars.lua"))("QUI", ns)
+assert(loadfile("QUI_ActionBars/actionbars/actionbars_helpers.lua"))("QUI", ns)
+assert(loadfile("QUI_ActionBars/actionbars/actionbars_layout.lua"))("QUI", ns)
+assert(loadfile("QUI_ActionBars/actionbars/actionbars_builder.lua"))("QUI", ns)
+assert(loadfile("QUI_ActionBars/actionbars/actionbars_petstance.lua"))("QUI", ns)
+assert(loadfile("QUI_ActionBars/actionbars/actionbars_cooldowns.lua"))("QUI", ns)
+assert(loadfile("QUI_ActionBars/actionbars/actionbars_glow.lua"))("QUI", ns)
+assert(loadfile("QUI_ActionBars/actionbars/actionbars_events.lua"))("QUI", ns)
+assert(loadfile("QUI_ActionBars/actionbars/actionbars_skinning.lua"))("QUI", ns)
+assert(loadfile("QUI_ActionBars/actionbars/actionbars_usability.lua"))("QUI", ns)
 
 local actionBars = assert(ns.ActionBarsOwned, "ActionBarsOwned should be exported")
 

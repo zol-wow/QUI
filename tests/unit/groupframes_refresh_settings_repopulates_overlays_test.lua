@@ -9,7 +9,7 @@
 -- settings change until its next dedicated event. RefreshSettings must
 -- repopulate overlays (via RefreshAllFrames) after re-decorating.
 
-local path = "modules/groupframes/groupframes_roster.lua"
+local path = "QUI_GroupFrames/groupframes/groupframes_roster.lua"
 local file = assert(io.open(path, "rb"))
 local source = file:read("*a")
 file:close()
@@ -31,19 +31,19 @@ assert(scalingPos < refreshAllPos,
 -- Split regression: group frame click-casting must not depend on one early
 -- SecureGroupHeader child walk. Unitframes have their own delayed registration
 -- path, so groupframes need a local catch-up after layout/settings refresh.
-local xmlFile = assert(io.open("modules/groupframes/groupframes.xml", "rb"))
-local xml = xmlFile:read("*a")
-xmlFile:close()
-local layoutFile = assert(io.open("modules/groupframes/groupframes_layout.lua", "rb"))
+local tocFile = assert(io.open("QUI_GroupFrames/QUI_GroupFrames.toc", "rb"))
+local toc = tocFile:read("*a")
+tocFile:close()
+local layoutFile = assert(io.open("QUI_GroupFrames/groupframes/groupframes_layout.lua", "rb"))
 local layout = layoutFile:read("*a")
 layoutFile:close()
-local clickcastFile = assert(io.open("modules/groupframes/groupframes_clickcast.lua", "rb"))
+local clickcastFile = assert(io.open("QUI_GroupFrames/groupframes/groupframes_clickcast.lua", "rb"))
 local clickcast = clickcastFile:read("*a")
 clickcastFile:close()
 
-local clickcastPos = assert(xml:find('file="groupframes_clickcast.lua"', 1, true),
+local clickcastPos = assert(toc:find("groupframes\\groupframes_clickcast.lua", 1, true),
     "groupframes_clickcast.lua should be loaded")
-local rosterPos = assert(xml:find('file="groupframes_roster.lua"', 1, true),
+local rosterPos = assert(toc:find("groupframes\\groupframes_roster.lua", 1, true),
     "groupframes_roster.lua should be loaded")
 assert(clickcastPos < rosterPos,
     "click-cast must load before roster Initialize can register group children")

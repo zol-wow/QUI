@@ -106,7 +106,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/chat/chat.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/chat.lua"))("QUI", ns)
 
 assert(eventFrame and eventFrame.OnEvent, "chat module should install an ADDON_LOADED handler")
 eventFrame.OnEvent(eventFrame, "ADDON_LOADED", "QUI")

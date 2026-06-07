@@ -106,7 +106,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/minimap/minimap.lua"))("QUI", ns)
+assert(loadfile("QUI_Minimap/minimap/minimap.lua"))("QUI", ns)
 
 local function findUpvalue(func, wanted, seen)
     seen = seen or {}

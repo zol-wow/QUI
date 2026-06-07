@@ -10,7 +10,7 @@ local function readAll(path)
     return data
 end
 
-local source = readAll("modules/unitframes/settings/unit_frames_body_preview.lua")
+local source = readAll("QUI_UnitFrames/unitframes/settings/unit_frames_body_preview.lua")
 
 -- T1: file exists and exposes the public surface on ns.QUI_UnitFramesBodyPreview
 assert(source:find("ns.QUI_UnitFramesBodyPreview", 1, true),
@@ -47,7 +47,7 @@ assert(not source:find("MOCK_POWER_PCT", 1, true),
     "driver must not reference MOCK_POWER_PCT (pct flows in as a parameter)")
 
 -- T2: surface.lua no longer defines the format helpers or the pct constants
-local surface = readAll("modules/unitframes/settings/unit_frames_surface.lua")
+local surface = readAll("QUI_UnitFrames/unitframes/settings/unit_frames_surface.lua")
 assert(not surface:find("MOCK_HEALTH_PCT", 1, true),
     "surface.lua must no longer define MOCK_HEALTH_PCT (driver owns the cycle pct)")
 assert(not surface:find("MOCK_POWER_PCT", 1, true),

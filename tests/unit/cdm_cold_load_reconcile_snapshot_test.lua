@@ -22,8 +22,8 @@ local function sliceBetween(text, startMarker, stopMarker)
     return text:sub(startPos, (stopPos or (#text + 1)) - 1)
 end
 
-local spelldata = readAll("modules/cdm/cdm_spelldata.lua")
-local mirror = readAll("modules/cdm/cdm_blizz_mirror.lua")
+local spelldata = readAll("QUI_CDM/cdm/cdm_spelldata.lua")
+local mirror = readAll("QUI_CDM/cdm/cdm_blizz_mirror.lua")
 
 local coldReconcile = sliceBetween(
     spelldata,

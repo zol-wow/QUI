@@ -3,7 +3,7 @@
 
 local ns = {}
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_containers.lua", "cdm_layout.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_containers.lua", "cdm_layout.lua")("QUI", ns)
 
 local Layout = assert(ns.CDMLayout, "CDMLayout should load")
 
@@ -48,7 +48,7 @@ local function readAll(path)
     return data
 end
 
-local source = readAll("modules/cdm/cdm_spelldata.lua")
+local source = readAll("QUI_CDM/cdm/cdm_spelldata.lua")
 local buildStart = assert(source:find("function CDMSpellData:BuildSpellListFromOwned", 1, true),
     "BuildSpellListFromOwned should exist")
 local buildEnd = assert(source:find("-- EXTRA SPELL TABLES", buildStart, true),

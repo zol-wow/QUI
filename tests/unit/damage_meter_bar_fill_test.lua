@@ -18,7 +18,7 @@ local function readAll(path)
     return data:gsub("\r\n", "\n")
 end
 
-local src = readAll("modules/damage_meter/damage_meter.lua")
+local src = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
 
 local start_pos = src:find("local function ComputeBarFill")
 assert(start_pos, "could not locate ComputeBarFill block in damage_meter.lua")

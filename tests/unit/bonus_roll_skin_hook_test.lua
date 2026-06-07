@@ -18,7 +18,7 @@ local function readFile(path)
     return text
 end
 
-local source = readFile("modules/skinning/notifications/alerts.lua")
+local source = readFile("QUI_Skinning/skinning/notifications/alerts.lua")
 
 -- Must post-hook BOTH global setup functions.
 assert(source:find('hooksecurefunc("LootWonAlertFrame_SetUp"', 1, true),

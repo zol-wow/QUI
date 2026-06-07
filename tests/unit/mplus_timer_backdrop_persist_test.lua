@@ -4,7 +4,7 @@
 -- Regression guard for the "M+ timer window shows a white background when
 -- entering a key" bug.
 --
--- Root cause: modules/skinning/gameplay/mplus_timer.lua skins the timer window
+-- Root cause: QUI_Skinning/skinning/gameplay/mplus_timer.lua skins the timer window
 -- (root frame), the timer/forces bars, and the sleek bar with
 -- SkinBase.ApplyPixelBackdrop, which registers each frame for scale refreshes.
 -- Entering a key shows the timer and creates pixel borders, which queues a scale
@@ -117,7 +117,7 @@ CreateFrame = function() return NewBackdropFrame() end
 assert(loadfile("core/uikit.lua"))("QUI", ns)
 assert(type(ns.SkinBase) == "function" or type(ns.SkinBase) == "table", "SkinBase must load")
 local SkinBase = ns.SkinBase
-assert(loadfile("modules/skinning/gameplay/mplus_timer.lua"))("QUI", ns)
+assert(loadfile("QUI_Skinning/skinning/gameplay/mplus_timer.lua"))("QUI", ns)
 assert(type(_G.QUI_ApplyMPlusTimerSkin) == "function",
     "mplus_timer.lua must expose _G.QUI_ApplyMPlusTimerSkin")
 

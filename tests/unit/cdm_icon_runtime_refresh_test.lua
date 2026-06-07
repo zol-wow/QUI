@@ -135,7 +135,7 @@ local mirrorStates = {
 
 local ns = {}
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_icon_renderer.lua", "cdm_icon_runtime_refresh.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_runtime_refresh.lua")("QUI", ns)
 local module = assert(ns.CDMIconRuntimeRefresh, "runtime refresh module should be exported")
 
 local controller = module.Create({

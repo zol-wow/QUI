@@ -16,7 +16,7 @@ local loadSource = loadstring or load
 local function loadDriver()
     -- Fresh namespace per load so driver `state` is fully isolated.
     local ns = {}
-    local handle = assert(io.open("modules/cdm/settings/composer_preview_driver.lua", "rb"))
+    local handle = assert(io.open("QUI_CDM/cdm/settings/composer_preview_driver.lua", "rb"))
     local src = handle:read("*a")
     handle:close()
     src = src:gsub("\r\n", "\n")

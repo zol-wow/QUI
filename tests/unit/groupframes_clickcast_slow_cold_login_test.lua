@@ -180,7 +180,7 @@ local function loadModule(initialSpecReady, clickCast)
         raidGroupHeaders = {},
     }
 
-    assert(loadfile("modules/groupframes/groupframes_clickcast.lua"))("QUI", ns)
+    assert(loadfile("QUI_GroupFrames/groupframes/groupframes_clickcast.lua"))("QUI", ns)
     assert(ns.QUI_GroupFrameClickCast, "clickcast module should expose its API")
 
     local eventFrame

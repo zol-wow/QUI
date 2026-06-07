@@ -12,7 +12,7 @@ local function readFile(path)
     return text
 end
 
-local source = readFile("modules/skinning/notifications/alerts.lua")
+local source = readFile("QUI_Skinning/skinning/notifications/alerts.lua")
 
 assert(source:find("local function GetAlertAnchorRelativeFrame", 1, true),
     "alerts.lua must centralize AlertFrame holder redirection")

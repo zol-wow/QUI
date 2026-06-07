@@ -69,7 +69,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/cdm/cdm_bar_renderer.lua"))("QUI", ns)
+assert(loadfile("QUI_CDM/cdm/cdm_bar_renderer.lua"))("QUI", ns)
 ns.CDMRuntimeStore = {
     SetBarState = function(bar, state)
         bar._cdmRuntimeState = state

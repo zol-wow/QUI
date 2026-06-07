@@ -58,17 +58,37 @@ local function collect_scripts_from_xml(xml_path, out, seen)
     end
 end
 
--- QUI_Options/options.xml lives in a sibling LoD addon. Local option UI
--- scripts live under QUI_Options in this repo; references to the main addon
--- use "..\QUI\..." and are stripped to repo-relative paths for headless runs.
+-- The main addon lists its Lua files directly in QUI.toc (flat TOC loading).
+-- Comment lines (#) and directives (##) are skipped; the rare .xml entry
+-- (frame templates) is walked for any <Script> tags it may carry.
+local function collect_scripts_from_toc(toc_path, out, seen)
+    for _, line in ipairs(read_lines(toc_path)) do
+        line = line:gsub("\r", ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if line ~= "" and line:sub(1, 1) ~= "#" then
+            local entry = normalize_path(line)
+            if entry:lower():match("%.lua$") then
+                out[#out + 1] = entry
+            elseif entry:lower():match("%.xml$") then
+                collect_scripts_from_xml(entry, out, seen)
+            end
+        end
+    end
+end
+
+-- QUI_Options lists its files directly in QUI_Options.toc (flat TOC loading).
+-- Local option UI scripts live under QUI_Options in this repo; references to
+-- the main addon use "..\QUI\..." and are stripped to repo-relative paths for
+-- headless runs. bootstrap.lua is namespace wiring only and was never part of
+-- the old options.xml manifest; it is skipped so the collected script set
+-- stays identical.
 local function collect_qui_options_scripts(out, seen)
-    local xml_path = normalize_path("QUI_Options/options.xml")
-    if seen[xml_path] then
+    local toc_path = normalize_path("QUI_Options/QUI_Options.toc")
+    if seen[toc_path] then
         return
     end
-    seen[xml_path] = true
+    seen[toc_path] = true
 
-    local probe = io.open(xml_path, "r")
+    local probe = io.open(toc_path, "r")
     if not probe then
         return
     end
@@ -79,17 +99,17 @@ local function collect_qui_options_scripts(out, seen)
         emitted[existing] = true
     end
 
-    for _, line in ipairs(read_lines(xml_path)) do
-        local script_path = line:match('<Script file="([^"]+)"')
-        if script_path then
-            local normalized = normalize_path(script_path)
+    for _, line in ipairs(read_lines(toc_path)) do
+        line = line:gsub("\r", ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if line ~= "" and line:sub(1, 1) ~= "#" and line:lower():match("%.lua$") then
+            local normalized = normalize_path(line)
             local repo_path = normalized:match("^%.%./QUI/(.+)$")
             if repo_path then
                 repo_path = normalize_path(repo_path)
             else
-                repo_path = normalize_path(join_path(xml_path, normalized))
+                repo_path = normalize_path(join_path(toc_path, normalized))
             end
-            if not emitted[repo_path] then
+            if repo_path ~= "QUI_Options/bootstrap.lua" and not emitted[repo_path] then
                 emitted[repo_path] = true
                 out[#out + 1] = repo_path
             end
@@ -117,6 +137,7 @@ local function should_load_script(path)
         or path == "core/uikit.lua"
         or path == "core/settings_builders.lua"
         or path == "core/diagnostics_console.lua"
+        or path == "core/addon_manifest.lua"
         or path:match("^core/settings/") then
         return true
     end
@@ -964,6 +985,15 @@ ns.QUI_LayoutMode_Settings = {
     end,
 }
 
+-- Headless stub for AddonLoader: module_addons_content.lua calls
+-- IsModuleAddonEnabled (isEnabled) and SetModuleAddonEnabled (setEnabled)
+-- only at runtime; the registration loop only needs the namespace to exist.
+ns.AddonLoader = {
+    IsModuleAddonEnabled  = function() return true end,
+    IsModuleLoaded        = function() return false end,
+    SetModuleAddonEnabled = function() return "reload" end,
+}
+
 local function load_script(path)
     local chunk, load_err = loadfile(path)
     if not chunk then
@@ -977,7 +1007,7 @@ end
 
 local scripts = {}
 local script_xml_seen = {}
-collect_scripts_from_xml("load.xml", scripts, script_xml_seen)
+collect_scripts_from_toc("QUI.toc", scripts, script_xml_seen)
 collect_qui_options_scripts(scripts, script_xml_seen)
 
 local failures = {}

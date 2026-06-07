@@ -13,7 +13,7 @@ local function readAll(path)
     return d:gsub("\r\n", "\n")
 end
 
-local src = readAll("modules/damage_meter/damage_meter.lua")
+local src = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
 
 -- 1. The border color resolves through the appearance schema like every other
 --    color (per-window override precedence handled by ResolveAppearance).

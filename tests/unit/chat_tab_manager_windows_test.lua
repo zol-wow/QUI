@@ -32,7 +32,7 @@ local ns = {
 local rebuilds = {}
 ns.QUI.Chat.DisplayLayer = { Rebuild = function(id, fn) rebuilds[#rebuilds + 1] = { id = id, fn = fn } end }
 
-assert(loadfile("modules/chat/tab_manager.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/tab_manager.lua"))("QUI", ns)
 local TM = ns.QUI.Chat.TabManager
 
 -- Seeding: empty windows[] -> windows[1] with default geometry + seeded tabs

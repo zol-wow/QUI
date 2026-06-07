@@ -111,7 +111,7 @@ local ns = {
     } },
 }
 
-assert(loadfile("modules/chat/tab_ui.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/tab_ui.lua"))("QUI", ns)
 local TU = ns.QUI.Chat.TabUI
 
 -- Per-window instance accessor helpers (window 1)
@@ -384,7 +384,7 @@ local nsf = {
         },
     } },
 }
-assert(loadfile("modules/chat/tab_ui.lua"))("QUI", nsf)
+assert(loadfile("QUI_Chat/chat/tab_ui.lua"))("QUI", nsf)
 local TUsingle = nsf.QUI.Chat.TabUI
 assert(TUsingle._ReorderCustomTab(1, 2) == false,
     "(f) single custom tab -> _ReorderCustomTab returns false")

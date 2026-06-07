@@ -21,7 +21,7 @@ local function assertContains(text, needle, reason)
     assert(text:find(needle, 1, true), reason)
 end
 
-local source = readFile("modules/skinning/frames/auctionhouse.lua")
+local source = readFile("QUI_Skinning/skinning/frames/auctionhouse.lua")
 
 assertContains(
     source,

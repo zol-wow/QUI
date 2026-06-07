@@ -19,7 +19,7 @@ local function readAll(path)
     return (data:gsub("\r\n", "\n"))
 end
 
-local rb = readAll("modules/resourcebars/resourcebars.lua")
+local rb = readAll("QUI_ResourceBars/resourcebars/resourcebars.lua")
 
 -- Each locked-bar persistence callback must guard on the LIVE edit-mode flag.
 local lockedFns = {
@@ -47,7 +47,7 @@ assert(not rb:find("QUI_IsCDMEditModeHidden", 1, true),
     "resourcebars.lua must not reference the dead-stub QUI_IsCDMEditModeHidden (use QUI_IsCDMEditModeActive)")
 
 -- The backward-compat stub itself must be removed; the live flag stays defined.
-local cont = readAll("modules/cdm/cdm_containers.lua")
+local cont = readAll("QUI_CDM/cdm/cdm_containers.lua")
 assert(not cont:find("QUI_IsCDMEditModeHidden", 1, true),
     "cdm_containers.lua must no longer define the dead QUI_IsCDMEditModeHidden stub")
 assert(cont:find("_G.QUI_IsCDMEditModeActive = function()", 1, true),

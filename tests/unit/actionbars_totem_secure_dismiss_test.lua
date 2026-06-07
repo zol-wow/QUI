@@ -156,7 +156,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/actionbars/totems.lua"))("QUI", ns)
+assert(loadfile("QUI_ActionBars/actionbars/totems.lua"))("QUI", ns)
 
 local TotemBar = assert(ns.QUI_TotemBar, "totem bar module should export QUI_TotemBar")
 TotemBar:Refresh()

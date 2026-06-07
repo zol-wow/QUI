@@ -9,7 +9,7 @@ local function readAll(path)
     return data
 end
 
-local surface = readAll("modules/unitframes/settings/unit_frames_surface.lua")
+local surface = readAll("QUI_UnitFrames/unitframes/settings/unit_frames_surface.lua")
 
 -- T8: surface.lua delegates to the body preview driver for lifecycle
 assert(surface:find("ns.QUI_UnitFramesBodyPreview.Build", 1, true),
@@ -41,13 +41,13 @@ assert(not surface:find('FormatHealthText(', 1, true),
 assert(not surface:find('FormatPowerText(', 1, true),
     "RefreshMock must no longer call FormatPowerText (driver writes power text per tick)")
 
--- T9: the options XML registers the body preview driver, AFTER the castbar driver.
-local optionsXml = readAll("QUI_Options/options.xml")
+-- T9: the options TOC registers the body preview driver, AFTER the castbar driver.
+local optionsXml = readAll("QUI_Options/QUI_Options.toc")
 assert(optionsXml:find("unit_frames_body_preview.lua", 1, true),
-    "QUI_Options/options.xml must register unit_frames_body_preview.lua")
+    "QUI_Options.toc must register unit_frames_body_preview.lua")
 local castbarPos = optionsXml:find("unit_frames_castbar_preview.lua", 1, true)
 local bodyPos    = optionsXml:find("unit_frames_body_preview.lua", 1, true)
 assert(castbarPos and bodyPos and castbarPos < bodyPos,
-    "QUI_Options/options.xml must load unit_frames_body_preview.lua after unit_frames_castbar_preview.lua")
+    "QUI_Options.toc must load unit_frames_body_preview.lua after unit_frames_castbar_preview.lua")
 
 print("OK: unitframes_surface_uses_body_preview_test")

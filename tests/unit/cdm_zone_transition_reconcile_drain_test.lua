@@ -22,7 +22,7 @@ local function readAll(path)
     return text
 end
 
-local spelldata = readAll("modules/cdm/cdm_spelldata.lua")
+local spelldata = readAll("QUI_CDM/cdm/cdm_spelldata.lua")
 
 -- Slice an `elseif event == "<NAME>" then` branch from the runtime event
 -- handler: from its guard to `stopMarker` (the next branch, or a stable anchor

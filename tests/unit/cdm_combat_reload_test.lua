@@ -23,8 +23,8 @@ local function countPlain(text, needle)
     return count
 end
 
-local mirror = readAll("modules/cdm/cdm_blizz_mirror.lua")
-local containers = readAll("modules/cdm/cdm_containers.lua")
+local mirror = readAll("QUI_CDM/cdm/cdm_blizz_mirror.lua")
+local containers = readAll("QUI_CDM/cdm/cdm_containers.lua")
 
 local safeWindowGate = "if InCombatLockdown() and not (ns and ns._inInitSafeWindow) then"
 assert(

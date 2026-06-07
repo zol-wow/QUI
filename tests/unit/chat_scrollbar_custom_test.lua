@@ -104,7 +104,7 @@ local ns = {
     } },
 }
 
-assert(loadfile("modules/chat/scrollbar_custom.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/scrollbar_custom.lua"))("QUI", ns)
 local SB = ns.QUI.Chat.Scrollbar
 
 -- ── Window 1: initial attach ─────────────────────────────────────────────────

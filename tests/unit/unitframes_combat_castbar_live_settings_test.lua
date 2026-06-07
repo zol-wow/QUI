@@ -8,8 +8,8 @@ local function readAll(path)
     return data:gsub("\r\n", "\n")
 end
 
-local unitframes = readAll("modules/unitframes/unitframes.lua")
-local castbar = readAll("modules/unitframes/castbar.lua")
+local unitframes = readAll("QUI_UnitFrames/unitframes/unitframes.lua")
+local castbar = readAll("QUI_UnitFrames/unitframes/castbar.lua")
 
 assert(castbar:find("function QUI_Castbar:ApplyLiveCastbarSettings", 1, true),
     "castbar module should expose a live settings refresh that does not recreate frames")

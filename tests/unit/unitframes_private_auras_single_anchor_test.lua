@@ -17,7 +17,7 @@ local function readFile(path)
     return text
 end
 
-local src = readFile("modules/unitframes/unitframe_private_auras.lua")
+local src = readFile("QUI_UnitFrames/unitframes/unitframe_private_auras.lua")
 
 ---------------------------------------------------------------------------
 -- Bug 1: exactly ONE anchor per slot; textScale machinery fully removed.

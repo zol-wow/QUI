@@ -10,7 +10,7 @@ local function readAll(path)
     return data
 end
 
-local source = readAll("modules/cdm/cdm_icon_factory.lua")
+local source = readAll("QUI_CDM/cdm/cdm_icon_factory.lua")
 
 -- T1: bare construction helper must exist and be separate from CreateIcon
 local bareStart = assert(source:find("local function CreateIconBare(parent, spellEntry)", 1, true),

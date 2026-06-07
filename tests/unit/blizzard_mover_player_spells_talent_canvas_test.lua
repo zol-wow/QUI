@@ -13,7 +13,7 @@ local function blockForId(source, id)
     return source:match(pattern)
 end
 
-local frameRegistry = readFile("modules/qol/blizzard_mover_frames.lua")
+local frameRegistry = readFile("QUI_QoL/qol/blizzard_mover_frames.lua")
 local playerSpellsBlock = assert(blockForId(frameRegistry, "PlayerSpellsFrame"), "PlayerSpellsFrame registry entry should exist")
 
 assert(playerSpellsBlock:find('"TalentsFrame"', 1, true), "PlayerSpellsFrame should keep the talent tab as a drag surface")

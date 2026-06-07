@@ -129,10 +129,10 @@ do
 end
 
 -- ===========================================================================
--- modules/unitframes/settings/unit_frames_schema.lua
+-- QUI_UnitFrames/unitframes/settings/unit_frames_schema.lua
 -- ===========================================================================
 do
-    local src = readFile("modules/unitframes/settings/unit_frames_schema.lua")
+    local src = readFile("QUI_UnitFrames/unitframes/settings/unit_frames_schema.lua")
 
     -- The local DESCRIPTION_TEXT_COLOR constant must still exist (the
     -- table definition uses 0.5,0.5,0.5 — that's fine as it's a local const)
@@ -146,10 +146,10 @@ do
 end
 
 -- ===========================================================================
--- modules/actionbars/settings/action_bars_preview_driver.lua
+-- QUI_ActionBars/actionbars/settings/action_bars_preview_driver.lua
 -- ===========================================================================
 do
-    local src = readFile("modules/actionbars/settings/action_bars_preview_driver.lua")
+    local src = readFile("QUI_ActionBars/actionbars/settings/action_bars_preview_driver.lua")
 
     -- Hardcoded FRIZQT__ literal must be gone from GetPreviewFontSettings
     assertAbsent(src, '"Fonts\\\\FRIZQT',
@@ -186,10 +186,10 @@ do
 end
 
 -- ===========================================================================
--- modules/groupframes/settings/click_cast_content.lua
+-- QUI_GroupFrames/groupframes/settings/click_cast_content.lua
 -- ===========================================================================
 do
-    local src = readFile("modules/groupframes/settings/click_cast_content.lua")
+    local src = readFile("QUI_GroupFrames/groupframes/settings/click_cast_content.lua")
 
     assertContains(src, 'UIKit.RegisterScaleRefresh(content, "clickCastPixelFrames", RefreshClickCastPixelFrames)',
         "click_cast_content.lua: click-cast scale refresh should only refresh existing pixel frames")
@@ -203,10 +203,10 @@ do
 end
 
 -- ===========================================================================
--- modules/groupframes/settings/group_frames_aura_indicators_editor.lua
+-- QUI_GroupFrames/groupframes/settings/group_frames_aura_indicators_editor.lua
 -- ===========================================================================
 do
-    local src = readFile("modules/groupframes/settings/group_frames_aura_indicators_editor.lua")
+    local src = readFile("QUI_GroupFrames/groupframes/settings/group_frames_aura_indicators_editor.lua")
 
     assertContains(src, "local function RebuildAuraList(ctx)",
         "group_frames_aura_indicators_editor.lua: aura rebuild should live in a file-level helper")

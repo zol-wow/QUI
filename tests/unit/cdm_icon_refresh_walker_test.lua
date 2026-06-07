@@ -6,7 +6,7 @@ local ns = {}
 -- hooks bind at ns.DebugActivate(), not lazily per call.
 assert(loadfile("core/debug_gate.lua"))("QUI", ns)
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_icon_renderer.lua", "cdm_icon_refresh_walker.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_refresh_walker.lua")("QUI", ns)
 local module = assert(ns.CDMIconRefreshWalker, "icon refresh walker module should be exported")
 
 local fullA = { name = "full-a", _spellEntry = { viewerType = "essential" } }

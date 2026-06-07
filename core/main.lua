@@ -503,6 +503,11 @@ function QUICore:OnProfileChanged(event, db, profileKey)
             if RefreshGroupFrames then pcall(RefreshGroupFrames) end
         end)
     end
+
+    -- Profile may newly flag-enable a LoadOnDemand sub-addon — load it live.
+    if ns.AddonLoader then
+        ns.AddonLoader:LoadEnabledLODModules()
+    end
 end
 
 function QUICore:ShowProfileChangeNotification()
@@ -914,7 +919,7 @@ function QUICore:HookEditMode()
         hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function()
             -- Hide power bar edit overlays that persist after edit mode exits
             C_Timer.After(0.15, function()
-                for _, barName in ipairs({"QUIPrimaryPowerBar", "QUISecondaryPowerBar"}) do
+                for _, barName in ipairs({"QUIPowerBar", "QUISecondaryPowerBar"}) do
                     local bar = _G[barName]
                     if bar and bar.editOverlay and bar.editOverlay:IsShown() then
                         bar.editOverlay:Hide()

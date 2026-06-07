@@ -38,7 +38,7 @@ function _G.CreateFrame()
 end
 function _G.hooksecurefunc() end
 
-assert(loadfile("modules/chat/editbox_basics.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/editbox_basics.lua"))("QUI", ns)
 local EB = ns.QUI.Chat.EditBoxBasics
 assert(EB and EB._GetAnchorFrame, "anchor chooser exported for tests")
 

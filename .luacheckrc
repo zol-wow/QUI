@@ -68,7 +68,7 @@ read_globals = {
     -- Time, combat, addon lifecycle
     "GetTime", "InCombatLockdown", "UpdateAddOnMemoryUsage", "GetAddOnMemoryUsage",
     "IsAddOnLoaded", "LoadAddOn", "date",
-    "IsInGroup", "IsInRaid",
+    "IsInGroup", "IsInRaid", "IsLoggedIn",
 
     -- CVars, cursor, environment
     "GetCVar", "GetCVarBool", "SetCVar", "GetCursorPosition",
@@ -298,7 +298,7 @@ for _, code in ipairs(project_ignored_warning_codes) do
     ignore[#ignore + 1] = code
 end
 
-files["modules/actionbars/*_compat.lua"] = {
+files["QUI_ActionBars/actionbars/*_compat.lua"] = {
     ignore = { "112", "113" },
 }
 
@@ -311,33 +311,33 @@ files["modules/actionbars/*_compat.lua"] = {
 -- unit suite + taint analyzer instead. Scoped to the specific chunk-env files
 -- (the non-chunk-env actionbars files — buffborders/gse_compat/totems — keep
 -- full undefined-global checking). Extend this list when touching other
--- SetChunkEnv files in modules/actionbars/.
-files["modules/actionbars/actionbars_flyout.lua"] = {
+-- SetChunkEnv files in QUI_ActionBars/actionbars/.
+files["QUI_ActionBars/actionbars/actionbars_flyout.lua"] = {
     ignore = { "111", "112", "113" },
 }
-files["modules/actionbars/actionbars_usability.lua"] = {
+files["QUI_ActionBars/actionbars/actionbars_usability.lua"] = {
     ignore = { "111", "112", "113" },
 }
-files["modules/actionbars/actionbars_editmode.lua"] = {
+files["QUI_ActionBars/actionbars/actionbars_editmode.lua"] = {
     ignore = { "111", "112", "113" },
 }
-files["modules/actionbars/actionbars.lua"] = {
+files["QUI_ActionBars/actionbars/actionbars.lua"] = {
     ignore = { "111", "112", "113", "121" },
 }
-files["modules/actionbars/actionbars_cooldowns.lua"] = {
+files["QUI_ActionBars/actionbars/actionbars_cooldowns.lua"] = {
     ignore = { "111", "112", "113" },
 }
-files["modules/actionbars/actionbars_events.lua"] = {
+files["QUI_ActionBars/actionbars/actionbars_events.lua"] = {
     ignore = { "111", "112", "113" },
 }
-files["modules/actionbars/actionbars_glow.lua"] = {
+files["QUI_ActionBars/actionbars/actionbars_glow.lua"] = {
     ignore = { "111", "112", "113" },
 }
-files["modules/actionbars/actionbars_helpers.lua"] = {
+files["QUI_ActionBars/actionbars/actionbars_helpers.lua"] = {
     ignore = { "111", "112", "113" },
 }
 
-files["modules/dungeon/party_keystones.lua"] = {
+files["QUI_QoL/dungeon/party_keystones.lua"] = {
     ignore = { "113" },
 }
 

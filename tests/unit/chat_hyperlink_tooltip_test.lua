@@ -65,7 +65,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/chat/hyperlinks.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/hyperlinks.lua"))("QUI", ns)
 
 local enterCallbacks = callbacks["ChatFrame.OnHyperlinkEnter"]
 local leaveCallbacks = callbacks["ChatFrame.OnHyperlinkLeave"]

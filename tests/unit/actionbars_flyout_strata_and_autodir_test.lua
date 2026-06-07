@@ -23,7 +23,7 @@ end
 ---------------------------------------------------------------------------
 -- Bug 1: owned flyout locks its DIALOG strata against the secure reparent.
 ---------------------------------------------------------------------------
-local flyoutSrc = readFile("modules/actionbars/actionbars_flyout.lua")
+local flyoutSrc = readFile("QUI_ActionBars/actionbars/actionbars_flyout.lua")
 
 local ensureStart = assert(flyoutSrc:find("EnsureOwnedFlyoutFrame = function", 1, true),
     "EnsureOwnedFlyoutFrame must exist")
@@ -56,7 +56,7 @@ assert(not ensureBlock:find("ownedFlyout.Background = CreateFrame", 1, true),
 -- Bug 2: ApplyFlyoutDirection resolves AUTO to a concrete direction and keeps
 -- the container attribute and the Blizzard arrow in sync.
 ---------------------------------------------------------------------------
-local usabilitySrc = readFile("modules/actionbars/actionbars_usability.lua")
+local usabilitySrc = readFile("QUI_ActionBars/actionbars/actionbars_usability.lua")
 
 local applyStart = assert(usabilitySrc:find("ApplyFlyoutDirection = function", 1, true),
     "ApplyFlyoutDirection must exist")

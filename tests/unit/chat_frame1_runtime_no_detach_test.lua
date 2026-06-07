@@ -16,9 +16,9 @@ local function readAll(path)
     return d:gsub("\r\n", "\n")
 end
 
-local chatXML = readAll("modules/chat/chat.xml")
-assert(not chatXML:find([[<Script file="settings/chat_frame1.lua"/>]], 1, true),
-    "runtime chat.xml must not load ChatFrame1 sizing/detach helper")
+local chatXML = readAll("QUI.toc")
+assert(not chatXML:find([[modules\chat\settings\chat_frame1.lua]], 1, true),
+    "runtime QUI.toc must not load ChatFrame1 sizing/detach helper")
 
 local calls = {}
 local function record(name)
@@ -112,7 +112,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/chat/chat.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/chat.lua"))("QUI", ns)
 
 assert(eventFrame and eventFrame.OnEvent, "chat module should install an event handler")
 eventFrame.OnEvent(eventFrame, "ADDON_LOADED", "QUI")

@@ -71,7 +71,7 @@ return {
             facade = "CDMRenderers.ApplyNumericCooldown",
             method = "SetCooldown",
             allowedCallSites = {
-                ["modules/cdm/cdm_frame_writes.lua"] = true,
+                ["QUI_CDM/cdm/cdm_frame_writes.lua"] = true,
             },
             -- Out-of-combat preview-only exceptions. These sites drive
             -- the settings preview pane with cycle-script timing built
@@ -81,7 +81,7 @@ return {
             -- ApplyNumericCooldown facade. The facade count (== 1)
             -- assertion is intentionally not affected by these.
             previewExceptionSites = {
-                ["modules/cdm/settings/composer_preview_driver.lua"] = true,
+                ["QUI_CDM/cdm/settings/composer_preview_driver.lua"] = true,
             },
             policy = "clean item timing only; never secret-derived cooldown timing",
         },

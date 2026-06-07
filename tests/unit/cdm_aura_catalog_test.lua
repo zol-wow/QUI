@@ -7,7 +7,7 @@ end
 
 local ns = {}
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_spelldata.lua", "cdm_aura_catalog.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_spelldata.lua", "cdm_aura_catalog.lua")("QUI", ns)
 
 local catalog = assert(ns.CDMAuraCatalog, "CDMAuraCatalog table was not exported")
 

@@ -17,7 +17,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/utility/consumablemacros.lua"))("QUI", ns)
+assert(loadfile("QUI_QoL/utility/consumablemacros.lua"))("QUI", ns)
 
 local CM = assert(ns.ConsumableMacros, "ConsumableMacros should be exported on ns")
 assert(type(CM.GetSelectedItem) == "function", "GetSelectedItem should be a function")

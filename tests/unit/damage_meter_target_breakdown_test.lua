@@ -17,7 +17,7 @@ local function readAll(path)
     local d = f:read("*a"); f:close()
     return d:gsub("\r\n", "\n")
 end
-local src = readAll("modules/damage_meter/damage_meter.lua")
+local src = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
 local function extract(funcName)
     local chunk = src:match("(local function " .. funcName .. ".-\nend\n)")
     assert(chunk, "could not locate " .. funcName .. " in damage_meter.lua")

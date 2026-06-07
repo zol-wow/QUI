@@ -71,7 +71,7 @@ local ns = {
 }
 
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_frame_writes.lua", "cdm_effects.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_frame_writes.lua", "cdm_effects.lua")("QUI", ns)
 
 local function NewCooldownSpy()
     local calls = {}

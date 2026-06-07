@@ -133,7 +133,7 @@ local function loadModule()
         },
     }
 
-    assert(loadfile("modules/unitframes/unitframe_blizzard.lua"))("QUI", ns)
+    assert(loadfile("QUI_UnitFrames/unitframes/unitframe_blizzard.lua"))("QUI", ns)
     return ns.QUI_UnitFrames, createdFrames
 end
 

@@ -6,7 +6,7 @@ function GetTime() return now end
 
 local ns = {}
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_icon_renderer.lua", "cdm_icon_refresh_batch.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_icon_renderer.lua", "cdm_icon_refresh_batch.lua")("QUI", ns)
 local module = assert(ns.CDMIconRefreshBatch, "icon refresh batch module should be exported")
 
 local memprobes = {}

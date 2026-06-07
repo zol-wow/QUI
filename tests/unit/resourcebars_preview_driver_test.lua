@@ -10,7 +10,7 @@ local function readAll(path)
     return data
 end
 
-local source = readAll("modules/resourcebars/settings/resource_bars_preview_driver.lua")
+local source = readAll("QUI_ResourceBars/resourcebars/settings/resource_bars_preview_driver.lua")
 
 -- T1: file exists and exposes the public surface on ns.QUI_ResourceBarsPreview
 assert(source:find("ns.QUI_ResourceBarsPreview", 1, true),
@@ -33,7 +33,7 @@ assert(not source:find("RegisterEvent", 1, true),
     "driver must not register any game events (cycle is time-driven)")
 
 -- T2: resourcebars.lua publishes ns.QUI_ResourceBars_Internal with all 9 helpers
-local rb = readAll("modules/resourcebars/resourcebars.lua")
+local rb = readAll("QUI_ResourceBars/resourcebars/resourcebars.lua")
 assert(rb:find("ns.QUI_ResourceBars_Internal", 1, true),
     "resourcebars.lua must export ns.QUI_ResourceBars_Internal for the driver")
 local internalBlock = rb:match("ns%.QUI_ResourceBars_Internal%s*=%s*(%b{})")

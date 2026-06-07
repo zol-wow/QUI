@@ -16,8 +16,8 @@ local function assertAbsent(text, needle, reason)
     assert(not text:find(needle, 1, true), reason)
 end
 
-local characterSource = readFile("modules/skinning/character_pane/character.lua")
-local inspectSource = readFile("modules/skinning/character_pane/inspect.lua")
+local characterSource = readFile("QUI_Skinning/skinning/character_pane/character.lua")
+local inspectSource = readFile("QUI_Skinning/skinning/character_pane/inspect.lua")
 local legacyGuildGuardKey = "__qui_" .. "guild_nil_guard"
 local forbiddenValueHelper = "Helpers." .. "Sa" .. "feValue"
 local forbiddenNumberHelper = "Helpers." .. "Sa" .. "feToNumber"

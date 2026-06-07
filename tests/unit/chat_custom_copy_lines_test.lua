@@ -32,8 +32,8 @@ local ns = {
 }
 
 -- Real store feeds the copy source
-assert(loadfile("modules/chat/message_store.lua"))("QUI", ns)
-assert(loadfile("modules/chat/copy.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/message_store.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/copy.lua"))("QUI", ns)
 local Copy = ns.QUI.Chat.Copy
 local Store = ns.QUI.Chat.MessageStore
 

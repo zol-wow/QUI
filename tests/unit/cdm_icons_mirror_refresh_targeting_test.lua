@@ -231,7 +231,7 @@ do
         return originalBegin(...)
     end
 end
-assert(loadfile("modules/cdm/cdm_icon_renderer.lua"))("QUI", ns)
+assert(loadfile("QUI_CDM/cdm/cdm_icon_renderer.lua"))("QUI", ns)
 ns.CDMIconFactory._iconPools.essential = { matchingIcon, unrelatedIcon }
 ns.CDMIconFactory._iconPools.buff = { sameIDWrongCategoryIcon }
 

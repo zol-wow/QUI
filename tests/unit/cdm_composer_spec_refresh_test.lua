@@ -8,7 +8,7 @@ local function readAll(path)
     return data
 end
 
-local source = readAll("modules/cdm/settings/composer.lua")
+local source = readAll("QUI_CDM/cdm/settings/composer.lua")
 
 local previewStart = assert(source:find("RefreshPreview = function()", 1, true),
     "RefreshPreview should exist")

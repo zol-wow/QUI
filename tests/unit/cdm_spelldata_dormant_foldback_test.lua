@@ -131,7 +131,7 @@ local ns = {
 }
 
 dofile("tests/helpers/load_cdm_spelldata_runtime.lua")(ns)
-assert(loadfile("modules/cdm/cdm_spelldata.lua"))("QUI", ns)
+assert(loadfile("QUI_CDM/cdm/cdm_spelldata.lua"))("QUI", ns)
 
 -- Case 1: map-format shelf folds back at saved slots, unknown or not.
 -- Shelf: QUELL slot 1, HOVER slot 3, FIRE_BREATH stale duplicate.

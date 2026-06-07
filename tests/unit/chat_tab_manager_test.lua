@@ -57,7 +57,7 @@ local ns = {
 local rebuiltWindow, rebuiltWith = "UNSET", "UNSET"
 ns.QUI.Chat.DisplayLayer = { Rebuild = function(id, fn) rebuiltWindow, rebuiltWith = id, fn end }
 
-assert(loadfile("modules/chat/tab_manager.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/tab_manager.lua"))("QUI", ns)
 local TM = ns.QUI.Chat.TabManager
 
 -- Whitelist filter

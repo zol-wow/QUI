@@ -8,7 +8,7 @@ local function readAll(path)
     return data:gsub("\r\n", "\n")
 end
 
-local source = readAll("modules/cdm/cdm_icon_renderer.lua")
+local source = readAll("QUI_CDM/cdm/cdm_icon_renderer.lua")
 
 local configureStart = assert(source:find("local function ConfigureIcon(icon, rowConfig)", 1, true),
     "ConfigureIcon must exist")

@@ -22,7 +22,7 @@ local Helpers = ns.Helpers
 local BorderRegistry = Helpers.BorderRegistry
 
 -- Register the REAL CDM container border entries against the core registry.
-env.LoadAddonFile("modules/cdm/cdm_container_border_registry.lua", "QUI", ns)
+env.LoadAddonFile("QUI_CDM/cdm/cdm_container_border_registry.lua", "QUI", ns)
 
 local failures = 0
 local function check(name, ok, detail)
@@ -103,7 +103,7 @@ end
 ---------------------------------------------------------------------------
 -- 4. Bar renderer resolves the border via the per-container settings.
 ---------------------------------------------------------------------------
-local bars = readFile("modules/cdm/cdm_bar_renderer.lua")
+local bars = readFile("QUI_CDM/cdm/cdm_bar_renderer.lua")
 check("ConfigureBar resolves per-container border (settings passed)",
     bars:find('GetSkinBorderColor(settings, "")', 1, true) ~= nil)
 check("live skin refresh resolves border per bar",
@@ -118,7 +118,7 @@ check("bar config fingerprint folds in the border color",
 -- 5. Options page attaches a border-source control to the aura/auraBar sections.
 --    (Cooldown rows already attach one; expect at least three total now.)
 ---------------------------------------------------------------------------
-local cp = readFile("modules/cdm/settings/containers_page.lua")
+local cp = readFile("QUI_CDM/cdm/settings/containers_page.lua")
 local attachCount = 0
 for _ in cp:gmatch("QUI_BorderControl%.Attach") do attachCount = attachCount + 1 end
 check("aura + auraBar layout sections attach a border control (>= 3 total)",
@@ -127,7 +127,7 @@ check("aura + auraBar layout sections attach a border control (>= 3 total)",
 ---------------------------------------------------------------------------
 -- 6. Buff icons forward the per-container source into their rowConfig.
 ---------------------------------------------------------------------------
-local buffLayout = readFile("modules/cdm/cdm_buff_layout.lua")
+local buffLayout = readFile("QUI_CDM/cdm/cdm_buff_layout.lua")
 check("buff icon ApplyIconStyle forwards borderColorSource",
     buffLayout:find("borderColorSource = settings.borderColorSource", 1, true) ~= nil)
 

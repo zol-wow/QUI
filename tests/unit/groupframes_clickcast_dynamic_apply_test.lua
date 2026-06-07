@@ -122,7 +122,7 @@ ns.QUI_GroupFrames = {
 }
 
 -- ---- load module --------------------------------------------------------
-assert(loadfile("modules/groupframes/groupframes_clickcast.lua"))("QUI", ns)
+assert(loadfile("QUI_GroupFrames/groupframes/groupframes_clickcast.lua"))("QUI", ns)
 local GFCC = assert(ns.QUI_GroupFrameClickCast, "module should export QUI_GroupFrameClickCast")
 
 -- ---- 1. initial apply ---------------------------------------------------

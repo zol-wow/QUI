@@ -68,8 +68,8 @@ local ns = {
     } },
 }
 
-assert(loadfile("modules/chat/message_store.lua"))("QUI", ns) -- harmless; copy reads it lazily
-assert(loadfile("modules/chat/copy.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/message_store.lua"))("QUI", ns) -- harmless; copy reads it lazily
+assert(loadfile("QUI_Chat/chat/copy.lua"))("QUI", ns)
 local Copy = ns.QUI.Chat.Copy
 
 -- Hover mode: created hidden, container hover scripts installed

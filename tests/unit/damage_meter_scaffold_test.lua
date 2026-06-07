@@ -11,19 +11,14 @@ local function readAll(path)
 end
 
 -- T1: damage_meter.lua exists and publishes ns.QUI_DamageMeter
-local coreSrc = readAll("modules/damage_meter/damage_meter.lua")
+local coreSrc = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
 assert(coreSrc:find("ns.QUI_DamageMeter", 1, true),
     "core must publish ns.QUI_DamageMeter")
 
--- T1: damage_meter.xml exists and lists the core file
-local xmlSrc = readAll("modules/damage_meter/damage_meter.xml")
-assert(xmlSrc:find('Script file="damage_meter.lua"', 1, true),
-    "loader must <Script> damage_meter.lua")
-
--- T1: modules.xml includes our loader
-local modulesSrc = readAll("modules/modules.xml")
-assert(modulesSrc:find('Include file="damage_meter\\damage_meter.xml"', 1, true),
-    "modules.xml must Include damage_meter/damage_meter.xml")
+-- T1: QUI_DamageMeter.toc registers the module file
+local tocSrc = readAll("QUI_DamageMeter/QUI_DamageMeter.toc")
+assert(tocSrc:find("damage_meter\\damage_meter.lua", 1, true),
+    "QUI_DamageMeter.toc must load damage_meter/damage_meter.lua")
 
 -- T2: section markers + skeleton declarations
 for _, marker in ipairs({

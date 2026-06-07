@@ -23,7 +23,7 @@ local function readAll(path)
     return (data:gsub("\r\n", "\n"))
 end
 
-local castbar = readAll("modules/unitframes/castbar.lua")
+local castbar = readAll("QUI_UnitFrames/unitframes/castbar.lua")
 
 local s = assert(castbar:find("local function CastBar_OnUpdate(self, elapsed)", 1, true),
     "expected to find CastBar_OnUpdate handler")

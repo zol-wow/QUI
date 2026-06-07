@@ -25,10 +25,10 @@ local function assertAbsent(text, needle, reason)
     assert(not text:find(needle, 1, true), reason)
 end
 
-local character = readFile("modules/skinning/character_pane/character.lua")
+local character = readFile("QUI_Skinning/skinning/character_pane/character.lua")
 local uikit = readFile("core/uikit.lua")
-local tooltips = readFile("modules/skinning/system/tooltips.lua")
-local statusTracking = readFile("modules/skinning/frames/statustracking.lua")
+local tooltips = readFile("QUI_Skinning/skinning/system/tooltips.lua")
+local statusTracking = readFile("QUI_Skinning/skinning/frames/statustracking.lua")
 
 -- (1) Character-pane frame chrome unified onto the standard skin colors
 assertContains(character, "GetChromePalette",

@@ -53,7 +53,7 @@ assert(skinning, "Skinning should remain a sub-page under Appearance")
 assert(character.featureId == "characterPane", "Character should still render the characterPane feature")
 assert(characterIndex + 1 == skinningIndex, "Character should appear immediately to the left of Skinning")
 
-local characterContent = readFile("modules/skinning/character_pane/settings/character_pane_content.lua")
+local characterContent = readFile("QUI_Skinning/skinning/character_pane/settings/character_pane_content.lua")
 assert(
     characterContent:find('category = "appearance"', 1, true),
     "characterPane feature category should be appearance")

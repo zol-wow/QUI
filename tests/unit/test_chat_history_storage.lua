@@ -1,4 +1,4 @@
--- Headless tests for modules/chat/history_storage.lua.
+-- Headless tests for QUI_Chat/chat/history_storage.lua.
 -- Run from repo root: lua tests/unit/test_chat_history_storage.lua
 
 local env = dofile("tools/_addon_env.lua")
@@ -6,7 +6,7 @@ env.LoadLibs()
 
 local ns = { QUI = { Chat = {} } }
 local function loadStorage()
-    local chunk = assert(loadfile("modules/chat/history_storage.lua"))
+    local chunk = assert(loadfile("QUI_Chat/chat/history_storage.lua"))
     local function runner(...) return chunk(...) end
     runner("QUI", ns)
     return ns.QUI.Chat.HistoryStorage

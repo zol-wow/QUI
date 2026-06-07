@@ -18,7 +18,7 @@ end
 
 local ns = {}
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_scheduler.lua", "cdm_scheduler.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_scheduler.lua", "cdm_scheduler.lua")("QUI", ns)
 
 local scheduler = assert(ns.CDMScheduler, "CDMScheduler should be exported")
 local delayCalls = {}

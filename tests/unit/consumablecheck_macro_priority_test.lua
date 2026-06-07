@@ -185,7 +185,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/qol/consumablecheck.lua"))("QUI", ns)
+assert(loadfile("QUI_QoL/qol/consumablecheck.lua"))("QUI", ns)
 
 local check = assert(ns.ConsumableCheckTest, "consumable check test seam should be exported")
 assert(check.RuneIconFallback == "Interface\\Icons\\inv_10_enchanting_crystal_color2",

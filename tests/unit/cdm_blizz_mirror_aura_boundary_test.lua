@@ -123,7 +123,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/cdm/cdm_blizz_mirror.lua"))("QUI", ns)
+assert(loadfile("QUI_CDM/cdm/cdm_blizz_mirror.lua"))("QUI", ns)
 assert(type(eventScript) == "function", "mirror event script should be installed")
 assert(registeredUnitEvents.UNIT_AURA ~= true,
     "mirror should consume UNIT_AURA from cdm_spelldata instead of registering its own raw UNIT_AURA handler")

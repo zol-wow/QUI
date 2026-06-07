@@ -62,7 +62,7 @@ local ns = {
     -- Registry intentionally nil so the registration block is skipped.
 }
 
-assert(loadfile("modules/skinning/system/popups.lua"))("QUI", ns)
+assert(loadfile("QUI_Skinning/skinning/system/popups.lua"))("QUI", ns)
 
 assert(type(_G.QUI_RefreshSystemPopupSkins) == "function",
     "popups must expose QUI_RefreshSystemPopupSkins")

@@ -152,7 +152,7 @@ ns.SkinBase = {
     end,
 }
 
-assert(loadfile("modules/skinning/frames/worldmap.lua"))("QUI", ns)
+assert(loadfile("QUI_Skinning/skinning/frames/worldmap.lua"))("QUI", ns)
 assert(type(capturedCallback) == "function", "World map skinning must register an addon-loaded callback")
 
 capturedCallback()

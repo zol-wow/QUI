@@ -98,7 +98,7 @@ local ns = {
 }
 
 dofile("tests/helpers/load_cdm_spelldata_runtime.lua")(ns)
-assert(loadfile("modules/cdm/cdm_spelldata.lua"))("QUI", ns)
+assert(loadfile("QUI_CDM/cdm/cdm_spelldata.lua"))("QUI", ns)
 
 knownSpells[FIRE_BREATH] = true
 

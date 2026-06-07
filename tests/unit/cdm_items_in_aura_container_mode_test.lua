@@ -83,7 +83,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/cdm/cdm_bar_renderer.lua"))("QUI", ns)
+assert(loadfile("QUI_CDM/cdm/cdm_bar_renderer.lua"))("QUI", ns)
 
 -- Capture state writes from UpdateOwnedBarAura's downstream calls.
 local barStates = setmetatable({}, { __mode = "k" })

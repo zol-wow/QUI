@@ -23,7 +23,7 @@ local ns = {
 }
 
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_sources.lua", "cdm_sources.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_sources.lua", "cdm_sources.lua")("QUI", ns)
 
 local state = ns.CDMSources.QueryMirroredCooldownState(12345, "aliasCooldown")
 assert(state and state.spellID == 12345, "cooldown mirror categories should use exact viewer lookup")

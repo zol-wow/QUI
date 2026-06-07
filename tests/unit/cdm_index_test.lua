@@ -37,7 +37,7 @@ _G.EventRegistry = {
 local ns = {}
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
 
-local chunk = loadChunk("modules/cdm/cdm_index.lua", "cdm_index.lua")
+local chunk = loadChunk("QUI_CDM/cdm/cdm_index.lua", "cdm_index.lua")
 chunk("QUI", ns)
 
 ns.CDMSources = {

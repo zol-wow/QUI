@@ -49,7 +49,7 @@ local function countPlain(text, needle)
     return count
 end
 
-local mirror = readAll("modules/cdm/cdm_blizz_mirror.lua")
+local mirror = readAll("QUI_CDM/cdm/cdm_blizz_mirror.lua")
 
 local loginBranch = sliceBetween(
     mirror,

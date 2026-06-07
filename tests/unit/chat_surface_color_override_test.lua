@@ -73,7 +73,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/chat/chat.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/chat.lua"))("QUI", ns)
 
 local getColors = assert(ns.QUI.Chat._internals.GetChatSurfaceColors, "chat surface color helper must be exported")
 

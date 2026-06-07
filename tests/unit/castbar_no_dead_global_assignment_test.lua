@@ -15,8 +15,8 @@ local function readAll(path)
     return (data:gsub("\r\n", "\n"))
 end
 
-local castbar = readAll("modules/unitframes/castbar.lua")
-local unitframes = readAll("modules/unitframes/unitframes.lua")
+local castbar = readAll("QUI_UnitFrames/unitframes/castbar.lua")
+local unitframes = readAll("QUI_UnitFrames/unitframes/unitframes.lua")
 
 assert(not castbar:find("_G.QUI_Castbars = ", 1, true),
     "castbar.lua must not assign _G.QUI_Castbars (dead write overwritten by unitframes.lua)")

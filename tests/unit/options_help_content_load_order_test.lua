@@ -8,12 +8,11 @@ local function readFile(path)
     return text
 end
 
-local source = readFile("QUI_Options/options.xml")
+local source = readFile("QUI_Options/QUI_Options.toc")
 
 local function scriptPosition(path)
-    local needle = '<Script file="' .. path .. '"/>'
-    local pos = source:find(needle, 1, true)
-    assert(pos, "options.xml should load " .. path)
+    local pos = source:find(path, 1, true)
+    assert(pos, "QUI_Options.toc should load " .. path)
     return pos
 end
 

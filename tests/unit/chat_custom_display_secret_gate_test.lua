@@ -98,17 +98,17 @@ local ns = {
 
 -- Load the REAL chain in chat.xml order.
 -- TabManager must exist before display_layer so GetWindowsConfig resolves.
-assert(loadfile("modules/chat/message_store.lua"))("QUI", ns)
-assert(loadfile("modules/chat/message_format.lua"))("QUI", ns)
-assert(loadfile("modules/chat/message_capture.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/message_store.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/message_format.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/message_capture.lua"))("QUI", ns)
 -- Stub TabManager so display_layer.EnsureCreated can read the window config.
 -- The real tab_manager is loaded afterward and replaces this stub.
 ns.QUI.Chat.TabManager = {
     GetWindowsConfig = function() return settings.customDisplay.windows end,
 }
-assert(loadfile("modules/chat/display_layer.lua"))("QUI", ns)
-assert(loadfile("modules/chat/tab_manager.lua"))("QUI", ns)
-assert(loadfile("modules/chat/display_fallback.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/display_layer.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/tab_manager.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/display_fallback.lua"))("QUI", ns)
 
 -- Real two-arg Rebuild is now in place; no shim needed (Task 3).
 

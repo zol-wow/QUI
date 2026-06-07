@@ -87,7 +87,7 @@ local ns = {
     } },
 }
 
-assert(loadfile("modules/chat/message_format.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/message_format.lua"))("QUI", ns)
 local F = ns.QUI.Chat.MessageFormat
 
 local function eq(label, got, want)
@@ -366,7 +366,7 @@ do
         } } },
         -- deliberately no ChannelColors on ns2.QUI.Chat
     }
-    assert(loadfile("modules/chat/message_format.lua"))("QUI", ns2)
+    assert(loadfile("QUI_Chat/chat/message_format.lua"))("QUI", ns2)
     F2 = ns2.QUI.Chat.MessageFormat
 end
 -- "NOSUCH" has no ChatTypeInfo entry → white

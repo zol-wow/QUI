@@ -10,7 +10,7 @@ local function readAll(path)
     return text
 end
 
-local src = readAll("modules/chat/settings/chat_frame1_provider.lua")
+local src = readAll("QUI_Chat/chat/settings/chat_frame1_provider.lua")
 
 assert(src:find('"customDisplayTabs"', 1, true),
     "Filters preset must edit QUI chat tabs, not a separate stock-tab filter section")

@@ -161,7 +161,7 @@ local ns = {
 	},
 }
 
-assert(loadfile("modules/qol/blizzard_mover.lua"))("QUI", ns)
+assert(loadfile("QUI_QoL/qol/blizzard_mover.lua"))("QUI", ns)
 local mover = assert(ns.QUI_BlizzardMover, "mover module should load")
 mover.functions.InitDB()
 mover.functions.RegisterFrame({

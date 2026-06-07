@@ -100,7 +100,7 @@ ns.SkinBase = {
     end,
 }
 
-assert(loadfile("modules/skinning/frames/journals.lua"))("QUI", ns)
+assert(loadfile("QUI_Skinning/skinning/frames/journals.lua"))("QUI", ns)
 assert(type(callbacks.Blizzard_EncounterJournal) == "function", "Encounter Journal load hook must be registered")
 
 callbacks.Blizzard_EncounterJournal()

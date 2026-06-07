@@ -150,7 +150,7 @@ local function LoadCore()
     SHARED_NS = {}
     SHARED_NS.Addon = {}  -- profile_io.lua does `local QUICore = ns.Addon`
 
-    -- Load order matches modules.xml: utils first, then defaults, then
+    -- Load order matches QUI.toc: utils first, then defaults, then
     -- migration / compat / io machinery.
     LoadAddonFile("core/utils.lua",          "QUI", SHARED_NS)
     LoadAddonFile("core/border_registry.lua", "QUI", SHARED_NS)

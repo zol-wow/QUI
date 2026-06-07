@@ -18,19 +18,31 @@ local function readAll(path)
     return (data:gsub("\r\n", "\n"))
 end
 
--- Strip XML comments so the checks assert what is *loaded* (<Script>/<Include>
--- directives), not what is merely *mentioned* — documentation comments are free
--- to reference these files when explaining where they moved. Also normalize
--- backslash path separators (options.xml uses ..\QUI\..., core.xml uses /) so a
--- single forward-slash needle matches either manifest.
+-- Strip XML comments so the checks assert what is *loaded*, not what is merely
+-- *mentioned* — documentation comments are free to reference these files when
+-- explaining where they moved. Also normalize backslash path separators
+-- (QUI.toc and options.xml use backslashes) so a single forward-slash needle
+-- matches either manifest. TOC '#' comment lines are skipped below.
 local function loadManifest(path)
     local text = readAll(path):gsub("<!%-%-.-%-%->", "") -- drop XML comments
     return (text:gsub("\\", "/"))                         -- normalize separators
 end
 
-local loadXml    = loadManifest("load.xml")
-local coreXml    = loadManifest("core/core.xml")
-local optionsXml = loadManifest("QUI_Options/options.xml")
+-- Drop TOC comment lines ("# == section ==") so needles only match entries.
+local quiToc = {}
+for line in loadManifest("QUI.toc"):gmatch("[^\n]*") do
+    if not line:match("^%s*#") then
+        quiToc[#quiToc + 1] = line
+    end
+end
+quiToc = table.concat(quiToc, "\n")
+local optionsXml = {}
+for line in loadManifest("QUI_Options/QUI_Options.toc"):gmatch("[^\n]*") do
+    if not line:match("^%s*#") then
+        optionsXml[#optionsXml + 1] = line
+    end
+end
+optionsXml = table.concat(optionsXml, "\n")
 
 local failures = {}
 local function check(cond, msg)
@@ -38,14 +50,14 @@ local function check(cond, msg)
 end
 
 -- profile_io.lua: out of the main-addon login path, into QUI_Options.
-check(not coreXml:find("profile_io", 1, true),
-    "core/core.xml must NOT load profile_io.lua (it is options-only)")
+check(not quiToc:find("profile_io", 1, true),
+    "QUI.toc must NOT load profile_io.lua (it is options-only)")
 check(optionsXml:find("profile_io", 1, true) ~= nil,
-    "QUI_Options/options.xml must load core\\profile_io.lua")
+    "QUI_Options.toc must load core\\profile_io.lua")
 
 -- Bundled preset import strings: out of load.xml, into QUI_Options.
-check(not loadXml:find("importstrings", 1, true),
-    "load.xml must NOT load importstrings at login (preset strings are options-only)")
+check(not quiToc:find("importstrings", 1, true),
+    "QUI.toc must NOT load importstrings at login (preset strings are options-only)")
 for _, f in ipairs({
     "qui_editmode_base",
     "coco_profile",
@@ -66,12 +78,10 @@ for _, f in ipairs({
     "providers", "provider_panels", "model_kit", "fields", "surfaces",
     "surface_features", "nav", "sync", "renderer",
 }) do
-    -- core.xml references its own dir relatively ("settings/x.lua"); a bare
-    -- "settings/x.lua" needle is unique there. options.xml needs the "core/"
-    -- prefix so e.g. provider_panels doesn't collide with the module file
-    -- modules/qol/settings/provider_panels.lua.
-    check(not coreXml:find("settings/" .. f .. ".lua", 1, true),
-        "core/core.xml must NOT load settings/" .. f .. ".lua (options-only)")
+    -- Both manifests need the "core/" prefix so e.g. provider_panels doesn't
+    -- collide with the module file QUI_QoL/qol/settings/provider_panels.lua.
+    check(not quiToc:find("core/settings/" .. f .. ".lua", 1, true),
+        "QUI.toc must NOT load core/settings/" .. f .. ".lua (options-only)")
     check(optionsXml:find("core/settings/" .. f .. ".lua", 1, true) ~= nil,
         "QUI_Options/options.xml must load core/settings/" .. f .. ".lua")
 end
@@ -85,8 +95,8 @@ for _, f in ipairs({
     "util", "render_adapters", "registry", "schema", "provider_features",
     "pins", "pins_lifecycle",
 }) do
-    check(coreXml:find("settings/" .. f .. ".lua", 1, true) ~= nil,
-        "core/core.xml MUST keep settings/" .. f .. ".lua on the login path")
+    check(quiToc:find("core/settings/" .. f .. ".lua", 1, true) ~= nil,
+        "QUI.toc MUST keep core/settings/" .. f .. ".lua on the login path")
 end
 
 if #failures > 0 then

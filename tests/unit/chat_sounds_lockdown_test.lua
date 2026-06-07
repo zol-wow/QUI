@@ -66,7 +66,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/chat/sounds.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/sounds.lua"))("QUI", ns)
 ns.QUI.Chat.Sounds.Setup()
 
 assert(not next(eventRegistrations), "chat sounds must not register pre-dispatch CHAT_MSG_* handlers")

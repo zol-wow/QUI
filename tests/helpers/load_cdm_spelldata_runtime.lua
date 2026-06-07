@@ -8,7 +8,7 @@ return function(ns)
             Helpers = ns.Helpers,
             Addon = ns.Addon,
         }
-        loadChunk("modules/cdm/cdm_shared.lua", "cdm_shared.lua")("QUI", sharedNS)
+        loadChunk("QUI_CDM/cdm/cdm_shared.lua", "cdm_shared.lua")("QUI", sharedNS)
         for key, value in pairs(sharedNS.CDMShared or {}) do
             if existingShared[key] == nil then
                 existingShared[key] = value
@@ -18,10 +18,10 @@ return function(ns)
     end
 
     if not ns.CDMAuraCatalog then
-        loadChunk("modules/cdm/cdm_spelldata.lua", "cdm_aura_catalog.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_spelldata.lua", "cdm_aura_catalog.lua")("QUI", ns)
     end
     if not ns.CDMAuraRuntime then
-        loadChunk("modules/cdm/cdm_spelldata.lua", "cdm_aura_runtime.lua")("QUI", ns)
+        loadChunk("QUI_CDM/cdm/cdm_spelldata.lua", "cdm_aura_runtime.lua")("QUI", ns)
     end
 
     return ns

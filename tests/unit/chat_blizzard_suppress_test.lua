@@ -118,7 +118,7 @@ local ns = {
     } } },
 }
 
-assert(loadfile("modules/chat/blizzard_suppress.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/blizzard_suppress.lua"))("QUI", ns)
 local SP = ns.QUI.Chat.BlizzardSuppress
 
 -- Pre-PEW: Apply only arms the deferral; nothing moves yet

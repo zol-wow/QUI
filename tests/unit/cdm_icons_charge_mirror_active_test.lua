@@ -164,7 +164,7 @@ local ns = {
 }
 
 dofile("tests/helpers/load_cdm_icon_runtime.lua")(ns)
-assert(loadfile("modules/cdm/cdm_icon_renderer.lua"))("QUI", ns)
+assert(loadfile("QUI_CDM/cdm/cdm_icon_renderer.lua"))("QUI", ns)
 
 local appliedDuration
 local cleared = false

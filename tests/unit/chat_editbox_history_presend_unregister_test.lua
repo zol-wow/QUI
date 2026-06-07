@@ -72,7 +72,7 @@ local function loadModule(chatEnabled, historyEnabled)
     }
     _G.QUI = { db = { char = {} } }
     _G.EventRegistry = makeRegistry()
-    assert(loadfile("modules/chat/editbox_history.lua"))("QUI", ns)
+    assert(loadfile("QUI_Chat/chat/editbox_history.lua"))("QUI", ns)
     return ns, settings, _G.EventRegistry
 end
 

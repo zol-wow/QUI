@@ -14,20 +14,20 @@
 
 local EXPECTED = {
     -- Tier-1 fixes (2026-05-31):
-    { "modules/dungeon/party_keystones.lua", "keyTrackerSkin" },
-    { "modules/qol/combattimer.lua",        "combatTimerSkin" },
-    { "modules/unitframes/unitframes.lua",  "unitframesSkin" },
-    { "modules/groupframes/groupframes.lua","groupframesSkin" },
-    { "modules/qol/petwarning.lua",         "petWarningSkin" },
-    { "modules/qol/consumablecheck.lua",    "consumablesSkin" },
-    { "modules/minimap/minimap.lua",        "minimapSkin" },
-    { "modules/damage_meter/damage_meter.lua", "damageMeterSkin" },
-    { "modules/resourcebars/resourcebars.lua", "resourceBarsSkin" },
-    { "modules/cdm/cdm_bar_renderer.lua",   "cdmBarsSkin" },
+    { "QUI_QoL/dungeon/party_keystones.lua", "keyTrackerSkin" },
+    { "QUI_QoL/qol/combattimer.lua",        "combatTimerSkin" },
+    { "QUI_UnitFrames/unitframes/unitframes.lua",  "unitframesSkin" },
+    { "QUI_GroupFrames/groupframes/groupframes.lua","groupframesSkin" },
+    { "QUI_QoL/qol/petwarning.lua",         "petWarningSkin" },
+    { "QUI_QoL/qol/consumablecheck.lua",    "consumablesSkin" },
+    { "QUI_Minimap/minimap/minimap.lua",        "minimapSkin" },
+    { "QUI_DamageMeter/damage_meter/damage_meter.lua", "damageMeterSkin" },
+    { "QUI_ResourceBars/resourcebars/resourcebars.lua", "resourceBarsSkin" },
+    { "QUI_CDM/cdm/cdm_bar_renderer.lua",   "cdmBarsSkin" },
     -- Earlier same-pattern fixes (positive controls):
-    { "modules/chat/display_fallback.lua",  "chatCustomDisplaySkin" },
-    { "modules/chat/button_bar.lua",        "chatButtonBarSkin" },
-    { "modules/groupframes/raidbuffs.lua",  "raidbuffsSkin" },
+    { "QUI_Chat/chat/display_fallback.lua",  "chatCustomDisplaySkin" },
+    { "QUI_Chat/chat/button_bar.lua",        "chatButtonBarSkin" },
+    { "QUI_GroupFrames/groupframes/raidbuffs.lua",  "raidbuffsSkin" },
 }
 
 local function read(path)

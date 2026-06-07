@@ -22,7 +22,7 @@ end
 ---------------------------------------------------------------------------
 -- Auction House
 ---------------------------------------------------------------------------
-local ah = readFile("modules/skinning/frames/auctionhouse.lua")
+local ah = readFile("QUI_Skinning/skinning/frames/auctionhouse.lua")
 
 assertContains(ah, "SkinTabGroup(AuctionHouseFrame.Tabs, AuctionHouseFrame, { font = true })",
     "AH tabs must opt in to the global QUI font")
@@ -36,7 +36,7 @@ assertContains(ah, "SkinButton(commoditiesSell.PostButton, { font = true })",
 ---------------------------------------------------------------------------
 -- Crafting Orders
 ---------------------------------------------------------------------------
-local co = readFile("modules/skinning/frames/craftingorders.lua")
+local co = readFile("QUI_Skinning/skinning/frames/craftingorders.lua")
 
 assertContains(co, "SkinTabGroup(tabs, frame, { font = true })",
     "CO tabs must opt in to the global QUI font")

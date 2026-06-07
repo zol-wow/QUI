@@ -125,7 +125,7 @@ local ns = {
     } },
 }
 
-assert(loadfile("modules/chat/tab_ui.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/tab_ui.lua"))("QUI", ns)
 local TabUI = ns.QUI.Chat.TabUI
 
 TabUI.EnsureAttached()

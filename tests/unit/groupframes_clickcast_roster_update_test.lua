@@ -120,7 +120,7 @@ ns.QUI_GroupFrames = {
     raidGroupHeaders = {},
 }
 
-assert(loadfile("modules/groupframes/groupframes_clickcast.lua"))("QUI", ns)
+assert(loadfile("QUI_GroupFrames/groupframes/groupframes_clickcast.lua"))("QUI", ns)
 local GFCC = assert(ns.QUI_GroupFrameClickCast)
 
 -- Find the module's event frame (the one that listens for roster/zone events).

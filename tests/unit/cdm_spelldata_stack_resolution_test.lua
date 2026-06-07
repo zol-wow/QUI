@@ -60,7 +60,7 @@ local ns = {
 }
 
 dofile("tests/helpers/load_cdm_spelldata_runtime.lua")(ns)
-assert(loadfile("modules/cdm/cdm_spelldata.lua"))("QUI", ns)
+assert(loadfile("QUI_CDM/cdm/cdm_spelldata.lua"))("QUI", ns)
 local spellData = ns.CDMSpellData
 assert(spellData:GetAuraIDsForSpell(55090), "test catalog aura map should build through the public getter")
 

@@ -49,7 +49,7 @@ local ns = {
 }
 
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_resolvers.lua", "cdm_resolvers.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_resolvers.lua", "cdm_resolvers.lua")("QUI", ns)
 
 local runtimeFrame
 for _, frame in ipairs(frames) do

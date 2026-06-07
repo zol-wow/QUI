@@ -148,7 +148,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/skinning/system/tooltips.lua"))("QUI", ns)
+assert(loadfile("QUI_Skinning/skinning/system/tooltips.lua"))("QUI", ns)
 assert(eventFrame and eventFrame.scripts.OnEvent, "tooltip skinning must register an event handler")
 eventFrame.scripts.OnEvent(eventFrame, "ADDON_LOADED", "QUI")
 

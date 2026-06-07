@@ -24,7 +24,7 @@ local function readAll(path)
     return d:gsub("\r\n", "\n")
 end
 
-local src = readAll("modules/skinning/character_pane/character.lua")
+local src = readAll("QUI_Skinning/skinning/character_pane/character.lua")
 
 local function has(needle, msg)
     assert(src:find(needle, 1, true), msg)

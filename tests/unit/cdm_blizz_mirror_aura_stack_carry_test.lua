@@ -137,7 +137,7 @@ local ns = {
 }
 
 local loadChunk = dofile("tests/helpers/load_cdm_consolidated_chunk.lua")
-loadChunk("modules/cdm/cdm_sources.lua", "cdm_sources.lua")("QUI", ns)
+loadChunk("QUI_CDM/cdm/cdm_sources.lua", "cdm_sources.lua")("QUI", ns)
 ns.CDMSources = {
     QueryAuraFilteredOutByInstanceID = function(unit, auraInstanceID)
         return unit == "target" and auraInstanceID == 119 and false or nil
@@ -153,7 +153,7 @@ ns.CDMSources = {
         end
     end,
 }
-assert(loadfile("modules/cdm/cdm_blizz_mirror.lua"))("QUI", ns)
+assert(loadfile("QUI_CDM/cdm/cdm_blizz_mirror.lua"))("QUI", ns)
 
 ns.CDMBlizzMirror.ForceRescan()
 

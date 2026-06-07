@@ -10,7 +10,7 @@
 -- when a ready check started. READY_CHECK must be handled BEFORE the fast path,
 -- and the dead branch removed.
 
-local path = "modules/groupframes/groupframes_roster.lua"
+local path = "QUI_GroupFrames/groupframes/groupframes_roster.lua"
 local file = assert(io.open(path, "rb"))
 local source = file:read("*a")
 file:close()

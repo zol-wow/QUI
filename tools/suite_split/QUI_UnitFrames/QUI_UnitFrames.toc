@@ -1,0 +1,18 @@
+## Interface: 120000, 120001, 120005, 120007
+## Title: |cFF30D1FFQUI|r Unit Frames
+## Notes: QUI module. Requires the QUI core addon.
+## Author: Zol
+## Version: 4.0.0-beta26
+## Category: User Interface
+## Group: QUI
+## Dependencies: QUI
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+
+bootstrap.lua
+# == modules/unitframes/unitframes.xml ==
+unitframes\castbar.lua
+unitframes\unitframes.lua
+unitframes\unitframe_auras.lua
+unitframes\unitframe_private_auras.lua
+unitframes\unitframe_editmode.lua
+unitframes\unitframe_blizzard.lua

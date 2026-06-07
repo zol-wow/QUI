@@ -49,7 +49,7 @@ function eb:HasText() return self.text ~= "" end
 function eb:GetText() return self.text end
 _G.ChatFrame1EditBox = eb
 
-assert(loadfile("modules/chat/conversation_manager.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/conversation_manager.lua"))("QUI", ns)
 local Conv = ns.QUI.Chat.ConversationManager
 
 -- Key derivation

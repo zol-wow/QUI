@@ -9,11 +9,11 @@ local function readFile(path)
 end
 
 local actionBars = table.concat({
-    readFile("modules/actionbars/actionbars_skinning.lua"),
-    readFile("modules/actionbars/actionbars_per_bar_builders.lua"),
+    readFile("QUI_ActionBars/actionbars/actionbars_skinning.lua"),
+    readFile("QUI_ActionBars/actionbars/actionbars_per_bar_builders.lua"),
 }, "\n")
 local defaults = readFile("core/defaults.lua")
-local preview = readFile("modules/actionbars/settings/action_bars_preview_driver.lua")
+local preview = readFile("QUI_ActionBars/actionbars/settings/action_bars_preview_driver.lua")
 
 local function assertContains(text, needle, message)
     assert(text:find(needle, 1, true), message .. " (missing " .. needle .. ")")

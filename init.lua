@@ -46,6 +46,23 @@ function ns.RunAfterFirstFrame(callback, delay)
     return StartupRunAfterFirstFrame(callback, delay)
 end
 
+-- Run a callback once login is complete. Fires immediately when already
+-- logged in — LoadOnDemand sub-addons load after PLAYER_LOGIN and must not
+-- wait for an event that already fired.
+function ns.WhenLoggedIn(callback)
+    if type(callback) ~= "function" then return end
+    if IsLoggedIn and IsLoggedIn() then
+        callback()
+        return
+    end
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("PLAYER_LOGIN")
+    f:SetScript("OnEvent", function(self)
+        self:UnregisterEvent("PLAYER_LOGIN")
+        callback()
+    end)
+end
+
 -- Flush the after-first-frame queue once the first frame renders.
 if CreateFrame then
     local firstFrameFrame = CreateFrame("Frame")
@@ -56,8 +73,21 @@ if CreateFrame then
     end)
 end
 
--- Keybinding display names (must be global before Bindings.xml loads)
-BINDING_NAME_QUI_TOGGLE_OPTIONS = "Open QUI Options"
+-- Options-toggle keybind (Lua-managed; Bindings.xml removed). A hidden named
+-- button carries a CLICK binding; the key persists in QUI_DB global and is
+-- re-applied each login. Bind: /qui bindkey CTRL-O   Clear: /qui bindkey none
+local toggleOptionsButton = CreateFrame("Button", "QUI_ToggleOptionsButton", UIParent)
+toggleOptionsButton:Hide()
+toggleOptionsButton:SetScript("OnClick", function()
+    QUI:OpenOptions()
+end)
+
+local function ApplyToggleOptionsKeybind()
+    local key = QUI.db and QUI.db.global and QUI.db.global.toggleOptionsKey
+    if type(key) == "string" and key ~= "" and not InCombatLockdown() then
+        SetBindingClick(key, "QUI_ToggleOptionsButton")
+    end
+end
 ---@type table|AceAddon
 QUI = LibStub("AceAddon-3.0"):NewAddon("QUI", "AceConsole-3.0", "AceEvent-3.0")
 QUI._ns = ns
@@ -240,7 +270,10 @@ QUI._presetProfiles = {
 
 ---@type table
 QUI.defaults = {
-    global = {},
+    global = {
+        ---@type string
+        toggleOptionsKey = "",
+    },
     char = {
         ---@type table
         debug = {
@@ -422,6 +455,33 @@ function QUI:SlashCommandOpen(input)
             print("  usage: |cFFFFFF00/qui cdm_cache|r [status|reset]")
             return
         end
+    elseif input and input:match("^bindkey") then
+        -- /qui bindkey            → show current key
+        -- /qui bindkey CTRL-O     → bind (session binding, re-applied at login)
+        -- /qui bindkey none       → clear
+        local key = input:match("^bindkey%s+(%S+)")
+        local current = self.db.global.toggleOptionsKey or ""
+        if not key then
+            print("|cff60A5FAQUI:|r options keybind: " .. (current ~= "" and current or "none")
+                .. " — usage: |cFFFFFF00/qui bindkey CTRL-O|r or |cFFFFFF00/qui bindkey none|r")
+            return
+        end
+        if InCombatLockdown() then
+            print("|cff60A5FAQUI:|r cannot change keybinds in combat.")
+            return
+        end
+        if key:lower() == "none" or key:lower() == "off" then
+            if current ~= "" then SetBinding(current) end
+            self.db.global.toggleOptionsKey = ""
+            print("|cff60A5FAQUI:|r options keybind cleared.")
+            return
+        end
+        key = key:upper()
+        if current ~= "" and current ~= key then SetBinding(current) end
+        self.db.global.toggleOptionsKey = key
+        SetBindingClick(key, "QUI_ToggleOptionsButton")
+        print("|cff60A5FAQUI:|r options keybind set to " .. key .. ".")
+        return
     elseif input and input:match("^gse") then
         -- /qui gse          → dump current override state
         -- /qui gse debug    → toggle click-event logging
@@ -833,6 +893,9 @@ function QUI:PLAYER_ENTERING_WORLD(_, isInitialLogin, isReloadingUi)
         end
         self:DebugPrint("Debug Mode Enabled")
     end
+
+    -- Re-apply the Lua-managed options keybind (session bindings don't persist).
+    ApplyToggleOptionsKeybind()
 
     -- Auto-recover QUI frame backdrops after the first rendered frame.
     ns.RunAfterFirstFrame(RecoverQUIBackdrops, 0.5)

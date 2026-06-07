@@ -9,4 +9,11 @@
 ## LoadOnDemand: 1
 
 bootstrap.lua
-debug.xml
+performance.lua
+memaudit.lua
+editmode_diagnose.lua
+combat_end_profiler.lua
+aura_probe.lua
+cdm_debug.lua
+# activate.lua must stay LAST: drains the main addon's debug-instrumentation gate
+activate.lua

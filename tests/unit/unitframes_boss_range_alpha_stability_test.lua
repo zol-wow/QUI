@@ -8,7 +8,7 @@ local function readAll(path)
     return source
 end
 
-local source = readAll("modules/unitframes/unitframes.lua")
+local source = readAll("QUI_UnitFrames/unitframes/unitframes.lua")
 
 local startPos = assert(source:find("%-%- Boss Range Alpha"),
     "Boss Range Alpha section should exist")
@@ -29,7 +29,7 @@ assert(body:find("if inRange == nil then", 1, true),
 assert(body:find("bossRange.pending", 1, true),
     "boss range alpha should keep pending samples until a range change is stable")
 
-local auraSource = readAll("modules/unitframes/unitframe_auras.lua")
+local auraSource = readAll("QUI_UnitFrames/unitframes/unitframe_auras.lua")
 assert(auraSource:find("local bossEngageFrame", 1, true),
     "boss engage aura refresh should use one shared event frame")
 assert(auraSource:find("local bossEngageState", 1, true),
@@ -152,7 +152,7 @@ do
         },
     }
 
-    assert(loadfile("modules/unitframes/unitframe_auras.lua"))("QUI", ns)
+    assert(loadfile("QUI_UnitFrames/unitframes/unitframe_auras.lua"))("QUI", ns)
 
     for i = 1, 5 do
         local key = "boss" .. i

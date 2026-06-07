@@ -8,7 +8,7 @@
 -- destination's heal-absorb settings untouched despite promising to overwrite
 -- ALL visual settings.
 
-local path = "modules/groupframes/settings/group_frames_schema.lua"
+local path = "QUI_GroupFrames/groupframes/settings/group_frames_schema.lua"
 local file = assert(io.open(path, "rb"))
 local source = file:read("*a")
 file:close()

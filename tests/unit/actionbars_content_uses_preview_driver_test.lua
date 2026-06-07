@@ -9,7 +9,7 @@ local function readAll(path)
     return data
 end
 
-local content = readAll("modules/actionbars/settings/action_bars_content.lua")
+local content = readAll("QUI_ActionBars/actionbars/settings/action_bars_content.lua")
 
 -- T9: content.lua delegates to the driver for build + refresh + selected-bar
 assert(content:find("ns.QUI_ActionBarsPreviewDriver.Build", 1, true),
@@ -29,18 +29,18 @@ assert(not content:find("_accum < 0.25", 1, true),
     "content.lua must no longer poll at 0.25s")
 
 -- T9: actionbars_public.lua _G.QUI_RefreshActionBars chains the driver refresh
-local actionbars = readAll("modules/actionbars/actionbars_public.lua")
+local actionbars = readAll("QUI_ActionBars/actionbars/actionbars_public.lua")
 assert(actionbars:find("ns.QUI_ActionBarsPreviewDriver", 1, true),
     "actionbars_public.lua _G.QUI_RefreshActionBars must chain ns.QUI_ActionBarsPreviewDriver.Refresh")
 
--- T9: the options XML registers the driver file on demand.
-local optionsXml = readAll("QUI_Options/options.xml")
+-- T9: the options TOC registers the driver file on demand.
+local optionsXml = readAll("QUI_Options/QUI_Options.toc")
 assert(optionsXml:find("action_bars_preview_driver.lua", 1, true),
-    "QUI_Options/options.xml must register action_bars_preview_driver.lua")
+    "QUI_Options.toc must register action_bars_preview_driver.lua")
 -- And it must come BEFORE action_bars_content.lua so the driver is loaded first.
 local driverPos = optionsXml:find("action_bars_preview_driver.lua", 1, true)
 local contentPos = optionsXml:find("action_bars_content.lua", 1, true)
 assert(driverPos and contentPos and driverPos < contentPos,
-    "QUI_Options/options.xml must load action_bars_preview_driver.lua before action_bars_content.lua")
+    "QUI_Options.toc must load action_bars_preview_driver.lua before action_bars_content.lua")
 
 print("OK: actionbars_content_uses_preview_driver_test")

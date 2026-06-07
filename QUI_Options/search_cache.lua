@@ -2668,6 +2668,19 @@ ns.QUI_SearchCache = {
             ["tileId"] = "global",
         },
         {
+            ["featureId"] = "moduleAddon_QUI_ActionBars",
+            ["keywords"] = {
+                "ActionBars",
+                "Action bars, keybinds, and buff borders.",
+                "Module Addons",
+                "module",
+            },
+            ["label"] = "ActionBars",
+            ["navType"] = "moduleToggle",
+            ["subPageIndex"] = 3,
+            ["tileId"] = "global",
+        },
+        {
             ["featureId"] = "alertAnchor",
             ["keywords"] = {
                 "Alert Anchor",
@@ -2798,6 +2811,19 @@ ns.QUI_SearchCache = {
             ["tileId"] = "global",
         },
         {
+            ["featureId"] = "moduleAddon_QUI_CDM",
+            ["keywords"] = {
+                "CDM",
+                "Cooldown Manager bars and icons.",
+                "Module Addons",
+                "module",
+            },
+            ["label"] = "CDM",
+            ["navType"] = "moduleToggle",
+            ["subPageIndex"] = 3,
+            ["tileId"] = "global",
+        },
+        {
             ["featureId"] = "character",
             ["keywords"] = {
                 "Character Pane",
@@ -2806,6 +2832,19 @@ ns.QUI_SearchCache = {
                 "module",
             },
             ["label"] = "Character Pane",
+            ["navType"] = "moduleToggle",
+            ["subPageIndex"] = 3,
+            ["tileId"] = "global",
+        },
+        {
+            ["featureId"] = "moduleAddon_QUI_Chat",
+            ["keywords"] = {
+                "Chat",
+                "QUI chat display, windows, and whisper tabs.",
+                "Module Addons",
+                "module",
+            },
+            ["label"] = "Chat",
             ["navType"] = "moduleToggle",
             ["subPageIndex"] = 3,
             ["tileId"] = "global",
@@ -2993,6 +3032,19 @@ ns.QUI_SearchCache = {
             ["tileId"] = "global",
         },
         {
+            ["featureId"] = "moduleAddon_QUI_DamageMeter",
+            ["keywords"] = {
+                "DamageMeter",
+                "Built-in damage meter.",
+                "Module Addons",
+                "module",
+            },
+            ["label"] = "DamageMeter",
+            ["navType"] = "moduleToggle",
+            ["subPageIndex"] = 3,
+            ["tileId"] = "global",
+        },
+        {
             ["featureId"] = "datatext",
             ["keywords"] = {
                 "Datatext Panel",
@@ -3112,6 +3164,19 @@ ns.QUI_SearchCache = {
             ["tileId"] = "global",
         },
         {
+            ["featureId"] = "moduleAddon_QUI_GroupFrames",
+            ["keywords"] = {
+                "GroupFrames",
+                "Party and raid frames.",
+                "Module Addons",
+                "module",
+            },
+            ["label"] = "GroupFrames",
+            ["navType"] = "moduleToggle",
+            ["subPageIndex"] = 3,
+            ["tileId"] = "global",
+        },
+        {
             ["featureId"] = "lootFrame",
             ["keywords"] = {
                 "Loot Frame",
@@ -3182,6 +3247,19 @@ ns.QUI_SearchCache = {
                 "Minimap",
                 "Master toggle for the custom minimap treatment.",
                 "Display",
+                "module",
+            },
+            ["label"] = "Minimap",
+            ["navType"] = "moduleToggle",
+            ["subPageIndex"] = 3,
+            ["tileId"] = "global",
+        },
+        {
+            ["featureId"] = "moduleAddon_QUI_Minimap",
+            ["keywords"] = {
+                "Minimap",
+                "Minimap reskin and data panels.",
+                "Module Addons",
                 "module",
             },
             ["label"] = "Minimap",
@@ -3359,6 +3437,19 @@ ns.QUI_SearchCache = {
             ["tileId"] = "global",
         },
         {
+            ["featureId"] = "moduleAddon_QUI_QoL",
+            ["keywords"] = {
+                "QoL",
+                "Quality-of-life features, dungeon tools, and trackers.",
+                "Module Addons",
+                "module",
+            },
+            ["label"] = "QoL",
+            ["navType"] = "moduleToggle",
+            ["subPageIndex"] = 3,
+            ["tileId"] = "global",
+        },
+        {
             ["featureId"] = "quickSalvage",
             ["keywords"] = {
                 "Quick Salvage",
@@ -3415,6 +3506,19 @@ ns.QUI_SearchCache = {
             ["tileId"] = "global",
         },
         {
+            ["featureId"] = "moduleAddon_QUI_ResourceBars",
+            ["keywords"] = {
+                "ResourceBars",
+                "Personal resource and power bars.",
+                "Module Addons",
+                "module",
+            },
+            ["label"] = "ResourceBars",
+            ["navType"] = "moduleToggle",
+            ["subPageIndex"] = 3,
+            ["tileId"] = "global",
+        },
+        {
             ["featureId"] = "reticle",
             ["keywords"] = {
                 "Reticle",
@@ -3449,6 +3553,19 @@ ns.QUI_SearchCache = {
                 "module",
             },
             ["label"] = "Secondary Power",
+            ["navType"] = "moduleToggle",
+            ["subPageIndex"] = 3,
+            ["tileId"] = "global",
+        },
+        {
+            ["featureId"] = "moduleAddon_QUI_Skinning",
+            ["keywords"] = {
+                "Skinning",
+                "Blizzard UI reskin — character pane, popups, tooltips.",
+                "Module Addons",
+                "module",
+            },
+            ["label"] = "Skinning",
             ["navType"] = "moduleToggle",
             ["subPageIndex"] = 3,
             ["tileId"] = "global",
@@ -3605,6 +3722,19 @@ ns.QUI_SearchCache = {
                 "module",
             },
             ["label"] = "Unit Frames",
+            ["navType"] = "moduleToggle",
+            ["subPageIndex"] = 3,
+            ["tileId"] = "global",
+        },
+        {
+            ["featureId"] = "moduleAddon_QUI_UnitFrames",
+            ["keywords"] = {
+                "UnitFrames",
+                "Player, target, focus, and boss frames.",
+                "Module Addons",
+                "module",
+            },
+            ["label"] = "UnitFrames",
             ["navType"] = "moduleToggle",
             ["subPageIndex"] = 3,
             ["tileId"] = "global",

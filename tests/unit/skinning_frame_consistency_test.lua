@@ -17,13 +17,13 @@ local function assertAbsent(text, needle, reason)
 end
 
 -- The skinning engine was relocated into core/uikit.lua (loaded first, exposed as
--- both ns.UIKit and ns.SkinBase); modules/skinning/base.lua is now a thin stub.
+-- both ns.UIKit and ns.SkinBase); QUI_Skinning/skinning/base.lua is now a thin stub.
 -- The shared-widget SkinBase.* definitions this gate checks live in uikit.lua.
 local base = readFile("core/uikit.lua")
-local professions = readFile("modules/skinning/frames/professions.lua")
-local auctionHouse = readFile("modules/skinning/frames/auctionhouse.lua")
-local craftingOrders = readFile("modules/skinning/frames/craftingorders.lua")
-local instanceFrames = readFile("modules/skinning/frames/instanceframes.lua")
+local professions = readFile("QUI_Skinning/skinning/frames/professions.lua")
+local auctionHouse = readFile("QUI_Skinning/skinning/frames/auctionhouse.lua")
+local craftingOrders = readFile("QUI_Skinning/skinning/frames/craftingorders.lua")
+local instanceFrames = readFile("QUI_Skinning/skinning/frames/instanceframes.lua")
 
 -- SkinBase exposes the shared widget API
 for _, fn in ipairs({

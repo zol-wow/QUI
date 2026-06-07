@@ -55,7 +55,7 @@ local CDM_FILES = {
 
 local sources = {}
 for _, name in ipairs(CDM_FILES) do
-    sources[name] = readAll("modules/cdm/" .. name)
+    sources[name] = readAll("QUI_CDM/cdm/" .. name)
 end
 
 local resolvers = sources["cdm_resolvers.lua"]

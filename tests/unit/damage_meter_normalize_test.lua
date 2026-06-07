@@ -11,7 +11,7 @@ local function readAll(path)
     return data:gsub("\r\n", "\n")
 end
 
-local src = readAll("modules/damage_meter/damage_meter.lua")
+local src = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
 
 -- Find the function declaration and extract everything until Data._NormalizeSources
 local start_pos = src:find("local function NormalizeSources")
@@ -68,7 +68,7 @@ end
 
 -- Phase 5 fix: secret-value handling source-pattern check
 do
-    local src2 = readAll("modules/damage_meter/damage_meter.lua")
+    local src2 = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
     assert(src2:find("Helpers.IsSecretValue", 1, true),
         "NormalizeSources / formatters must consult Helpers.IsSecretValue")
     assert(src2:find("C_StringUtil", 1, true),

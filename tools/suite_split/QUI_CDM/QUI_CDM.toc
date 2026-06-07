@@ -1,0 +1,47 @@
+## Interface: 120000, 120001, 120005, 120007
+## Title: |cFF30D1FFQUI|r Cooldown Manager
+## Notes: QUI module. Requires the QUI core addon.
+## Author: Zol
+## Version: 4.0.0-beta26
+## Category: User Interface
+## Group: QUI
+## Dependencies: QUI
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+
+bootstrap.lua
+# == modules/cdm/cdm.xml ==
+cdm\cdm_shared.lua
+cdm\cdm_index.lua
+cdm\cdm_catalog.lua
+cdm\hud_visibility.lua
+cdm\cdm_scheduler.lua
+cdm\cdm_sources.lua
+cdm\cdm_runtime_store.lua
+cdm\cdm_runtime_queries.lua
+cdm\cdm_resolvers.lua
+cdm\cdm_frame_writes.lua
+cdm\cdm_effects.lua
+cdm\cdm_aura_catalog.lua
+cdm\cdm_aura_runtime.lua
+cdm\cdm_spelldata.lua
+cdm\cdm_blizz_mirror.lua
+cdm\cdm_icon_factory.lua
+cdm\cdm_icon_stack_text.lua
+cdm\cdm_icon_stack_policy.lua
+cdm\cdm_icon_mirror_index.lua
+cdm\cdm_icon_runtime_refresh.lua
+cdm\cdm_icon_update_scheduler.lua
+cdm\cdm_icon_refresh_batch.lua
+cdm\cdm_icon_refresh_walker.lua
+cdm\cdm_icon_item_visual_policy.lua
+cdm\cdm_icon_visibility_policy.lua
+cdm\cdm_icon_range_policy.lua
+cdm\cdm_icon_cooldown_policy.lua
+cdm\cdm_icon_custom_bar_policy.lua
+cdm\cdm_icon_renderer.lua
+cdm\cdm_bar_renderer.lua
+cdm\cdm_layout.lua
+cdm\cdm_buff_layout.lua
+cdm\cdm_containers.lua
+cdm\cdm_layout_mode.lua
+cdm\cdm_container_border_registry.lua

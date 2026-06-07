@@ -8,7 +8,7 @@ local function readFile(path)
     return text
 end
 
-local source = readFile("modules/actionbars/actionbars_extra_buttons.lua")
+local source = readFile("QUI_ActionBars/actionbars/actionbars_extra_buttons.lua")
 
 local function blockBetween(startText, endText)
     local startPos = assert(source:find(startText, 1, true), "missing block start: " .. startText)

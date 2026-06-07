@@ -8,11 +8,11 @@ local function readAll(path)
     return data
 end
 
-local source = readAll("modules/cdm/settings/composer.lua")
-local previewSource = readAll("modules/cdm/settings/composer_preview_driver.lua")
-local rendererSource = readAll("modules/cdm/cdm_icon_renderer.lua")
-local catalogSource = readAll("modules/cdm/cdm_catalog.lua")
-local spellDataSource = readAll("modules/cdm/cdm_spelldata.lua")
+local source = readAll("QUI_CDM/cdm/settings/composer.lua")
+local previewSource = readAll("QUI_CDM/cdm/settings/composer_preview_driver.lua")
+local rendererSource = readAll("QUI_CDM/cdm/cdm_icon_renderer.lua")
+local catalogSource = readAll("QUI_CDM/cdm/cdm_catalog.lua")
+local spellDataSource = readAll("QUI_CDM/cdm/cdm_spelldata.lua")
 
 local helperPos = assert(source:find("local function EntryCountsForCooldownRowCapacity", 1, true),
     "composer should centralize dormant-aware cooldown row capacity checks")

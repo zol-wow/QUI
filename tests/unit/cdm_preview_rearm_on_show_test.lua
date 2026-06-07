@@ -14,7 +14,7 @@ local function readAll(path)
     return (data:gsub("\r\n", "\n"))
 end
 
-local source = readAll("modules/cdm/settings/composer.lua")
+local source = readAll("QUI_CDM/cdm/settings/composer.lua")
 
 -- Isolate the BuildPreviewSection body: from its declaration up to the
 -- forward-declared `local RefreshPreview` that immediately follows it.

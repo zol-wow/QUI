@@ -143,7 +143,7 @@ local ns = {
     },
 }
 
-assert(loadfile("modules/resourcebars/settings/resource_bars_builders.lua"))("QUI", ns)
+assert(loadfile("QUI_ResourceBars/resourcebars/settings/resource_bars_builders.lua"))("QUI", ns)
 
 local builders = assert(ns.QUI_ResourceBarsSettingsBuilders, "resource bar builders should be exported")
 assert(type(builders.BuildPrimaryPowerSettings) == "function", "primary resource settings builder should exist")

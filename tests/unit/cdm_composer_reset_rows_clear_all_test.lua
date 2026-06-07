@@ -8,7 +8,7 @@ local function readAll(path)
     return data
 end
 
-local source = readAll("modules/cdm/settings/composer.lua")
+local source = readAll("QUI_CDM/cdm/settings/composer.lua")
 
 local seedWrapper = assert(source:find("function ns.CDMComposer.SeedFromBlizzard", 1, true),
     "composer SeedFromBlizzard wrapper should exist")

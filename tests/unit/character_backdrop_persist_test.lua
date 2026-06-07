@@ -4,7 +4,7 @@
 -- Regression guard for the "character-frame live recolor reverts on the next
 -- scale refresh" bug.
 --
--- Root cause: modules/skinning/frames/character.lua skins several frames with a
+-- Root cause: QUI_Skinning/skinning/frames/character.lua skins several frames with a
 -- LOCAL ApplyPixelBackdrop that persists color in a per-frame `state.bgColor` /
 -- `state.borderColor` (the 5th/6th args), and re-applies that state on every
 -- UIKit scale refresh via the local RefreshPixelBackdrop. The live-recolor
@@ -130,7 +130,7 @@ function InCombatLockdown() return false end
 -- Leave CharacterFrame/tabs nil so the module's auto-init is skipped; we drive
 -- the exposed API directly.
 
-assert(loadfile("modules/skinning/frames/character.lua"))("QUI", ns)
+assert(loadfile("QUI_Skinning/skinning/frames/character.lua"))("QUI", ns)
 
 local API = _G.QUI_CharacterFrameSkinning
 assert(type(API) == "table", "character.lua must expose _G.QUI_CharacterFrameSkinning")

@@ -16,7 +16,7 @@ local ns = {
     QUI = { Chat = { _internals = {} } },
 }
 
-assert(loadfile("modules/chat/message_store.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/message_store.lua"))("QUI", ns)
 local Store = ns.QUI.Chat.MessageStore
 
 -- Append + ForEach order (oldest -> newest)

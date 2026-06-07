@@ -1,0 +1,13 @@
+## Interface: 120000, 120001, 120005, 120007
+## Title: |cFF30D1FFQUI|r Resource Bars
+## Notes: QUI module. Requires the QUI core addon.
+## Author: Zol
+## Version: 4.0.0-beta26
+## Category: User Interface
+## Group: QUI
+## Dependencies: QUI
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+
+bootstrap.lua
+# == modules/resourcebars/resourcebars.xml ==
+resourcebars\resourcebars.lua

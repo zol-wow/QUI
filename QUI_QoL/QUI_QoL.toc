@@ -1,0 +1,47 @@
+## Interface: 120000, 120001, 120005, 120007
+## Title: |cFF30D1FFQUI|r Quality of Life
+## Notes: QUI module. Requires the QUI core addon.
+## Author: Zol
+## Version: 4.0.0-beta26
+## Category: User Interface
+## Group: QUI
+## Dependencies: QUI
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+## LoadOnDemand: 1
+
+bootstrap.lua
+# == modules/utility/utility.xml ==
+utility\keybinds.lua
+utility\consumablemacros.lua
+# == modules/combat/combat.xml ==
+combat\rotationassist.lua
+combat\combattext.lua
+# == modules/trackers/trackers.xml ==
+trackers\spellscanner.lua
+trackers\preytracker.lua
+trackers\atonement_counter.lua
+# == modules/qol/qol.xml ==
+qol\qol.lua
+qol\blizzard_mover.lua
+qol\blizzard_mover_frames.lua
+qol\quicksalvage.lua
+qol\petwarning.lua
+qol\consumablecheck.lua
+qol\tooltip_provider.lua
+qol\tooltip_inspect.lua
+qol\tooltip.lua
+qol\combattimer.lua
+qol\actiontracker.lua
+qol\crosshair.lua
+qol\rangecheck.lua
+qol\reticle.lua
+qol\skyriding.lua
+qol\xptracker.lua
+qol\focuscastalert.lua
+# == modules/dungeon/dungeon.xml ==
+dungeon\keystone.lua
+dungeon\mplus_timer.lua
+dungeon\mplus_progress.lua
+dungeon\teleport.lua
+dungeon\party_keystones.lua
+dungeon\brez_counter.lua

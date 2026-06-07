@@ -8,7 +8,7 @@ local function readAll(path)
     return data:gsub("\r\n", "\n")
 end
 
-local source = readAll("modules/cdm/settings/composer.lua")
+local source = readAll("QUI_CDM/cdm/settings/composer.lua")
 
 local rowsStart = assert(source:find("local function ReadPreviewConfigValue", 1, true),
     "preview row config helper must exist")

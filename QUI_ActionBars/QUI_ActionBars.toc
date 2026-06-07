@@ -1,0 +1,32 @@
+## Interface: 120000, 120001, 120005, 120007
+## Title: |cFF30D1FFQUI|r Action Bars
+## Notes: QUI module. Requires the QUI core addon.
+## Author: Zol
+## Version: 4.0.0-beta26
+## Category: User Interface
+## Group: QUI
+## Dependencies: QUI
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+
+bootstrap.lua
+# == modules/actionbars/actionbars.xml ==
+actionbars\actionbars_env.lua
+actionbars\actionbars.lua
+actionbars\actionbars_helpers.lua
+actionbars\actionbars_layout.lua
+actionbars\actionbars_editmode.lua
+actionbars\actionbars_builder.lua
+actionbars\actionbars_petstance.lua
+actionbars\actionbars_cooldowns.lua
+actionbars\actionbars_glow.lua
+actionbars\actionbars_events.lua
+actionbars\actionbars_extra_buttons.lua
+actionbars\actionbars_skinning.lua
+actionbars\actionbars_usability.lua
+actionbars\actionbars_mouseover.lua
+actionbars\actionbars_flyout.lua
+actionbars\actionbars_public.lua
+actionbars\actionbars_per_bar_builders.lua
+actionbars\gse_compat.lua
+actionbars\buffborders.lua
+actionbars\totems.lua

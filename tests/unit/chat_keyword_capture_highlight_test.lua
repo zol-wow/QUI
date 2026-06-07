@@ -54,7 +54,7 @@ local ns = {
     } },
 }
 
-assert(loadfile("modules/chat/modifiers/keyword_alert.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/modifiers/keyword_alert.lua"))("QUI", ns)
 local KA = ns.QUI.Chat.KeywordAlert
 assert(KA and KA.ProcessForCapture, "ProcessForCapture exported")
 

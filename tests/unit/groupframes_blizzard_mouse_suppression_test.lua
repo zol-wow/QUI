@@ -191,7 +191,7 @@ local function loadModule()
         },
     }
 
-    assert(loadfile("modules/groupframes/groupframes_blizzard.lua"))("QUI", ns)
+    assert(loadfile("QUI_GroupFrames/groupframes/groupframes_blizzard.lua"))("QUI", ns)
     return ns.QUI_GroupFrameBlizzard, function(value)
         inCombat = value and true or false
     end, createdFrames

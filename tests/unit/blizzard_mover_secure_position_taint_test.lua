@@ -96,7 +96,7 @@ local profile = {
 
 local ns = { Helpers = { GetProfile = function() return profile end } }
 
-assert(loadfile("modules/qol/blizzard_mover.lua"))("QUI", ns)
+assert(loadfile("QUI_QoL/qol/blizzard_mover.lua"))("QUI", ns)
 local mover = assert(ns.QUI_BlizzardMover, "Blizzard mover module should load")
 mover.functions.InitDB()
 

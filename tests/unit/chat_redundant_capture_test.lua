@@ -45,7 +45,7 @@ function _G.hooksecurefunc() end
 _G.LOOT_ITEM_SELF = "You receive loot: %s."
 _G.LOOT_ITEM_PUSHED_SELF = "You receive item: %s."
 
-assert(loadfile("modules/chat/modifiers/redundant_text.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/modifiers/redundant_text.lua"))("QUI", ns)
 local RT = ns.QUI.Chat.RedundantText
 assert(RT and RT.TryCollapseForCapture, "TryCollapseForCapture exported")
 

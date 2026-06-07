@@ -47,13 +47,21 @@ jobs:
         run: |
           set -euo pipefail
 
+          # All shipped sub-addon sibling folders (QUI_Debug is NOT listed here).
+          suite_folders=(
+            QUI_Options
+            QUI_ActionBars QUI_CDM QUI_Chat QUI_GroupFrames QUI_ResourceBars QUI_UnitFrames
+            QUI_Skinning QUI_Minimap QUI_QoL QUI_DamageMeter
+          )
+
           rm -rf build
-          mkdir -p build/QUI build/QUI_Options
+          mkdir -p build/QUI
+          for folder in "${suite_folders[@]}"; do
+            mkdir -p "build/$folder"
+          done
 
           main_root_files=(
             QUI.toc
-            Bindings.xml
-            load.xml
             init.lua
           )
           main_runtime_dirs=(
@@ -75,7 +83,10 @@ jobs:
             rsync -a --exclude='.DS_Store' "$dir/" "build/QUI/$dir/"
           done
 
-          rsync -a --exclude='.DS_Store' QUI_Options/ build/QUI_Options/
+          for folder in "${suite_folders[@]}"; do
+            rsync -a --exclude='.DS_Store' "$folder/" "build/$folder/"
+          done
+
           # re-add specific documentation files we want in the release
           cp README.md build/QUI/ 2>/dev/null || true
           cp CHANGELOG.md build/QUI/ 2>/dev/null || true
@@ -83,19 +94,36 @@ jobs:
 
           required_paths=(
             build/QUI/QUI.toc
-            build/QUI/Bindings.xml
-            build/QUI/load.xml
             build/QUI/init.lua
-            build/QUI/core/core.xml
-            build/QUI/modules/modules.xml
-            build/QUI/libs/libs.xml
+            build/QUI/core/defaults.lua
+            build/QUI/libs/LibStub/LibStub.lua
             build/QUI/importstrings/qui_editmode_base.lua
             build/QUI/assets/QUI.tga
             build/QUI_Options/QUI_Options.toc
             build/QUI_Options/bootstrap.lua
-            build/QUI_Options/options.xml
+            build/QUI_Options/init.lua
             build/QUI_Options/search_cache.lua
             build/QUI_Options/tiles/action_bars.lua
+            build/QUI_ActionBars/QUI_ActionBars.toc
+            build/QUI_ActionBars/bootstrap.lua
+            build/QUI_CDM/QUI_CDM.toc
+            build/QUI_CDM/bootstrap.lua
+            build/QUI_Chat/QUI_Chat.toc
+            build/QUI_Chat/bootstrap.lua
+            build/QUI_GroupFrames/QUI_GroupFrames.toc
+            build/QUI_GroupFrames/bootstrap.lua
+            build/QUI_ResourceBars/QUI_ResourceBars.toc
+            build/QUI_ResourceBars/bootstrap.lua
+            build/QUI_UnitFrames/QUI_UnitFrames.toc
+            build/QUI_UnitFrames/bootstrap.lua
+            build/QUI_Skinning/QUI_Skinning.toc
+            build/QUI_Skinning/bootstrap.lua
+            build/QUI_Minimap/QUI_Minimap.toc
+            build/QUI_Minimap/bootstrap.lua
+            build/QUI_QoL/QUI_QoL.toc
+            build/QUI_QoL/bootstrap.lua
+            build/QUI_DamageMeter/QUI_DamageMeter.toc
+            build/QUI_DamageMeter/bootstrap.lua
           )
 
           for required_path in "${required_paths[@]}"; do
@@ -126,10 +154,10 @@ jobs:
           # Stamp every shipped .toc's "## Version:" from the release tag so the
           # packaged addon always matches the tag (the tag is the single source
           # of truth) no matter what the committed .toc files happen to read.
-          # Only QUI + QUI_Options ship (QUI_Debug is in forbidden_paths above).
+          # QUI_Debug is in forbidden_paths and is excluded from this glob.
           toc_version="${{ steps.version.outputs.version }}"
           toc_version="${toc_version#v}"   # v4.0.0-beta9 -> 4.0.0-beta9
-          for toc in build/QUI/QUI.toc build/QUI_Options/QUI_Options.toc; do
+          for toc in build/QUI/QUI.toc build/*/QUI_*.toc; do
             sed -i "s/^## Version:.*/## Version: ${toc_version}/" "$toc"
             # Fail loudly if the substitution didn't land (e.g. the header
             # format changed) rather than silently shipping a stale version.
@@ -139,10 +167,10 @@ jobs:
             }
           done
 
-          # create the zip from inside build/ so the paths are QUI/... and QUI_Options/...
+          # create the zip from inside build/ so the paths are QUI/... QUI_Options/... etc.
           rm -f QUI-${{ steps.version.outputs.version }}.zip
           cd build
-          zip -r ../QUI-${{ steps.version.outputs.version }}.zip QUI QUI_Options
+          zip -r ../QUI-${{ steps.version.outputs.version }}.zip QUI "${suite_folders[@]}"
 
       - name: Extract changelog for release
         id: changelog

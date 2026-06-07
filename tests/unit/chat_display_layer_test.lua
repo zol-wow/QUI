@@ -118,8 +118,8 @@ ns.QUI.Chat.TabManager = {
     GetWindowsConfig = function() return settings.customDisplay.windows end,
 }
 
-assert(loadfile("modules/chat/message_store.lua"))("QUI", ns)
-assert(loadfile("modules/chat/display_layer.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/message_store.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/display_layer.lua"))("QUI", ns)
 local Store = ns.QUI.Chat.MessageStore
 local Display = ns.QUI.Chat.DisplayLayer
 

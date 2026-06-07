@@ -8,8 +8,8 @@ local function readAll(path)
     return text
 end
 
-local icons = readAll("modules/cdm/cdm_icon_renderer.lua")
-local factory = readAll("modules/cdm/cdm_icon_factory.lua")
+local icons = readAll("QUI_CDM/cdm/cdm_icon_renderer.lua")
+local factory = readAll("QUI_CDM/cdm/cdm_icon_factory.lua")
 
 assert(not icons:find("function CDMIcons:GetIconPool", 1, true),
     "CDMIcons should not expose icon pool lookup")

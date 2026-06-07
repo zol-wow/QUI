@@ -178,9 +178,9 @@ local ns = {
 }
 
 -- Real store + real format (already tested) so capture integrates with them.
-assert(loadfile("modules/chat/message_store.lua"))("QUI", ns)
-assert(loadfile("modules/chat/message_format.lua"))("QUI", ns)
-assert(loadfile("modules/chat/message_capture.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/message_store.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/message_format.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/message_capture.lua"))("QUI", ns)
 local Capture = ns.QUI.Chat.MessageCapture
 local Store = ns.QUI.Chat.MessageStore
 
@@ -481,12 +481,12 @@ hooked.AddMessage(_G.ChatFrame1, "event-driven", 1, 1, 1)
 assert(Store.Size() == before, "event-driven AddMessage skipped (MessageEventHandler marker)")
 
 -- Fallback hook: own HISTORY repump traffic skipped
-stack = "Interface/AddOns/QUI/modules/chat/history.lua:120"
+stack = "Interface/AddOns/QUI/chat/history.lua:120"
 hooked.AddMessage(_G.ChatFrame1, "repumped", 1, 1, 1)
 assert(Store.Size() == before, "history repump AddMessage skipped")
 
 -- Other own-addon prints DO flow (only the history repump is skipped)
-stack = "Interface/AddOns/QUI/modules/chat/hyperlinks.lua:125"
+stack = "Interface/AddOns/QUI/chat/hyperlinks.lua:125"
 hooked.AddMessage(_G.ChatFrame1, "qui feedback", 1, 1, 1)
 assert(Store.Size() == before + 1, "non-history own-addon AddMessage captured")
 before = Store.Size()

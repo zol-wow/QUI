@@ -1,0 +1,41 @@
+## Interface: 120000, 120001, 120005, 120007
+## Title: |cFF30D1FFQUI|r Skinning
+## Notes: QUI module. Requires the QUI core addon.
+## Author: Zol
+## Version: 4.0.0-beta26
+## Category: User Interface
+## Group: QUI
+## Dependencies: QUI
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+## LoadOnDemand: 1
+
+bootstrap.lua
+# == modules/skinning/character_pane/character.xml ==
+skinning\character_pane\character.lua
+skinning\character_pane\inspect.lua
+# == modules/skinning/skinning.xml ==
+skinning\base.lua
+skinning\gameplay\keystone.lua
+skinning\notifications\alerts.lua
+skinning\notifications\loot.lua
+skinning\gameplay\mplus_timer.lua
+skinning\frames\character.lua
+skinning\frames\statustracking.lua
+skinning\frames\inspect.lua
+skinning\gameplay\powerbaralt.lua
+skinning\notifications\readycheck.lua
+skinning\system\gamemenu.lua
+skinning\system\popups.lua
+skinning\frames\overrideactionbar.lua
+skinning\gameplay\objectivetracker.lua
+skinning\frames\instanceframes.lua
+skinning\frames\auctionhouse.lua
+skinning\frames\craftingorders.lua
+skinning\frames\professions.lua
+skinning\frames\interaction.lua
+skinning\frames\social.lua
+skinning\frames\journals.lua
+skinning\frames\achievement.lua
+skinning\frames\worldmap.lua
+skinning\frames\weeklyrewards.lua
+skinning\system\tooltips.lua

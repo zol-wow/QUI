@@ -34,7 +34,7 @@ ns.QUI.Chat.EditBoxBasics = {
     RemoveEditBoxStyle = function(frame) removeCalls[#removeCalls + 1] = frame end,
 }
 
-assert(loadfile("modules/chat/display_fallback.lua"))("QUI", ns)
+assert(loadfile("QUI_Chat/chat/display_fallback.lua"))("QUI", ns)
 local FB = ns.QUI.Chat.DisplayFallback
 
 -- Enabled: StyleEditBox runs against ChatFrame1 (the takeover's single input),

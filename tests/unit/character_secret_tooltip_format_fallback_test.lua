@@ -13,7 +13,7 @@ local function has(source, needle, message)
 end
 
 local uikit = readAll("core/uikit.lua")
-local character = readAll("modules/skinning/character_pane/character.lua")
+local character = readAll("QUI_Skinning/skinning/character_pane/character.lua")
 
 has(uikit, "local function TooltipTextHasPrintfPlaceholder(text)",
     "shared stat policy must detect printf-style tooltip format templates")
