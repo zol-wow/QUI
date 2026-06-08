@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta28 - 2026-06-08
+
+> 🧪 **QUI 4 beta — suite-split follow-up fixes.** A fast follow-up to beta27 that restores tooltip skinning and a few other features the suite split quietly broke, cleans up how the Cooldown Manager handles spells that hero talents turn passive, makes the Hero Talents window movable, and locks the resize handles on anchored chat and damage-meter windows. No schema migration — your beta27 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Tooltips are skinned again, and tooltips can follow the cursor again.** The beta27 suite split left several features that set themselves up at login from ever actually starting — so Blizzard's tooltips lost QUI's skin everywhere, and the "anchor tooltips to the cursor" option stopped working. Those features now initialize reliably after you log in, restoring tooltip skinning, cursor anchoring, loot-window skinning, the pet-happiness warning, the Mythic+ progress tooltip, and range checking.
+- **The Cooldown Manager handles cooldowns that a hero talent turns passive.** When a hero talent converts one of your tracked cooldowns into a passive, the icon used to sit on the bar doing nothing. It now goes dormant — hidden but kept — on its own, and comes back automatically once it's an active ability again, the same way spells you can't currently use already behave.
+- **Removing a tracked spell no longer carries over to your other hero talent build.** Both hero talent builds inside one loadout share the game's loadout id, so removing a spell from a tracked container in one build also removed it from the other. Removals are now scoped to the hero build you made them in.
+
+### Added
+- **The Hero Talents window can be moved.** QUI's Blizzard frame mover can now reposition the Hero Talents dialog, without the stream of "anchor family connection" errors moving it used to produce.
+
+### Changed
+- **Anchored chat and damage-meter windows lock their resize handles in Layout Mode.** A window pinned to another frame already refused to be dragged unless you held Shift; its resize grips now behave the same way. Grabbing a corner without Shift flashes the border instead of resizing, and holding Shift detaches the anchor and resizes it — exactly like Shift-dragging the window to move it.
+
 ## v4.0.0-beta27 - 2026-06-08
 
 > 🧪 **QUI 4 beta — suite split + opt-in QUI chat.** The biggest structural change since QUI 4: QUI now installs as a core addon plus a set of per-feature sub-addons you can enable or disable individually — and one of them is a brand-new, opt-in QUI-owned chat display. Plus a Cooldown Manager loadout-tracking fix at login, a first-open Options speed fix, and Korean/Chinese font support. This build upgrades your profile to schema v43 and **takes an automatic backup of your profile first** — your beta26 settings carry over untouched, and if you were on Blizzard chat you stay there unless you opt in. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
