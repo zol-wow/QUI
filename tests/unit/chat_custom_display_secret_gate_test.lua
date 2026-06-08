@@ -15,6 +15,22 @@ local secret = setmetatable({}, {
     __index = explode, __newindex = explode,
 })
 
+-- Model the C side: string.format ACCEPTS a secret value and PROPAGATES
+-- secrecy (the formatter never applies a Lua operator, so the explode
+-- metamethods never fire). The wrapper builds its prefix from non-secret
+-- parts and joins the secret body through string.format alone -- no pcall.
+-- Here the sentinel is a plain table real string.format can't render, so the
+-- mock stands in for propagation: any format touching the secret yields the
+-- secret, opaque and by identity, exactly as the prefix+body line stays
+-- secret in game. Prefix-only calls (no secret arg) delegate to the real one.
+local realStringFormat = string.format
+string.format = function(fmt, ...)
+    for i = 1, select("#", ...) do
+        if rawequal((select(i, ...)), secret) then return secret end
+    end
+    return realStringFormat(fmt, ...)
+end
+
 -- WoW mocks ------------------------------------------------------------------
 local smfAdded = {}
 local function makeFrame(ftype)

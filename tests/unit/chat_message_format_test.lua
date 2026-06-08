@@ -49,6 +49,7 @@ _G.CHAT_FILTERED = "Message to %s was filtered."
 _G.CHAT_RESTRICTED_TRIAL = "Trial accounts cannot use that."
 _G.CHAT_EMOTE_GET = "%s "
 _G.CHAT_MONSTER_EMOTE_GET = "%s "
+_G.CHAT_EMOTE_GET = "%s "
 _G.CHAT_RAID_BOSS_EMOTE_GET = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:0|t%s "
 _G.CHAT_MONSTER_SAY_GET = "%s says: "
 _G.ChatFrameUtil = {
@@ -67,6 +68,10 @@ _G.BN_INLINE_TOAST_FRIEND_PENDING = "You have %d pending friend requests."
 
 local function explode() error("operator applied to secret sentinel", 2) end
 local secret = setmetatable({}, { __tostring = explode, __concat = explode, __len = explode })
+-- Identity set of secret sentinels: the WrapSecretEventLine section below
+-- registers string.format RESULTS here too (in-game, format propagates
+-- secrecy onto everything it builds from a secret input).
+local secrets = { [secret] = true }
 
 -- ChannelColors override store (seeded for the rewire tests below).
 -- Mirrors the real ChannelColors.GetEffective(key) contract:
@@ -93,7 +98,7 @@ local settings = { modifiers = {
 } }
 
 local ns = {
-    Helpers = { IsSecretValue = function(v) return v == secret end },
+    Helpers = { IsSecretValue = function(v) return secrets[v] == true end },
     QUI = { Chat = {
         _internals = {
             GetSettings = function() return settings end,
@@ -465,5 +470,78 @@ r, g, b = F2.ColorForTypeKey("NOSUCH")
 eq("rewire: no ChannelColors module → white fallback r", r, 1)
 eq("rewire: no ChannelColors module → white fallback g", g, 1)
 eq("rewire: no ChannelColors module → white fallback b", b, 1)
+
+-- ======== WrapSecretEventLine: secret bodies across message types ========
+-- In-game, string.format accepts secret VALUES and PROPAGATES secrecy; only
+-- Lua operators (==, .., #, tostring) throw ("attempt to compare local
+-- 'prefix' (a secret string value...)" — the original 46x crash). A secret
+-- body is never used AS a format string. Per type: monster/emote build a GET
+-- prefix from a fixed template and join the raw body; special + boss-notice
+-- bodies (which ARE the template) pass through verbatim; raw types pass
+-- through. Assertions pin the contract BY IDENTITY — no comparisons, no drop
+-- to a different value than each type's grammar demands.
+do
+    local meta = getmetatable(secret)
+    local function sentinel()
+        local s = setmetatable({}, meta)
+        secrets[s] = true
+        return s
+    end
+
+    local secretSender = sentinel()
+    local monsterBody = sentinel()     -- MONSTER_*: GET prefix + raw body joined
+    local bossBody = sentinel()        -- RAID_BOSS_EMOTE notice: passes through
+    local achBody = sentinel()         -- ACHIEVEMENT (special): passes through
+    local playerEmoteBody = sentinel() -- EMOTE: GET join, linked non-secret sender
+    local prefixes = {}                -- propagated GET prefixes by fmt string
+    local joins = {}                   -- final "%s%s" joins keyed by body sentinel
+
+    local realFormat = string.format
+    string.format = function(fmt, ...)
+        local a1 = ...
+        if type(fmt) == "string" and fmt ~= "%s%s" and fmt:find("%%s")
+            and rawequal(a1, secretSender) then
+            prefixes[fmt] = prefixes[fmt] or sentinel() -- GET prefix: secret in, secret out
+            return prefixes[fmt]
+        elseif fmt == "%s%s" and (secrets[a1] or type(a1) == "string") then
+            local body = select(2, ...)
+            joins[body] = joins[body] or { prefix = a1, j = sentinel() }
+            return joins[body].j
+        end
+        return realFormat(fmt, ...)
+    end
+
+    -- 1. MONSTER_EMOTE, secret sender + body: GET prefix propagates secret,
+    --    the RAW body is joined to it. Never the bare body, never nil. (The
+    --    name lives in the GET prefix — the body is never used as a format.)
+    local got = F.WrapSecretEventLine("CHAT_MSG_MONSTER_EMOTE",
+        { text = monsterBody, rawSender = secretSender, lineID = 2538 })
+    assert(joins[monsterBody] and rawequal(got, joins[monsterBody].j)
+        and rawequal(joins[monsterBody].prefix, prefixes["%s "]),
+        "monster emote: GET prefix + raw body joined")
+
+    -- 2. Boss notice: body IS the template — can't format a secret body, so
+    --    pass the body through verbatim.
+    got = F.WrapSecretEventLine("RAID_BOSS_EMOTE",
+        { text = bossBody, rawSender = "Big Boss", sender = "Big Boss" })
+    assert(rawequal(got, bossBody), "boss notice: secret body passes through")
+
+    -- 3. Achievement (a SPECIAL_KIND): body is the template — passes through.
+    got = F.WrapSecretEventLine("CHAT_MSG_ACHIEVEMENT",
+        { text = achBody, rawSender = "Ann", sender = "Ann" })
+    assert(rawequal(got, achBody), "achievement: secret body passes through")
+
+    -- 4. Player EMOTE, non-secret sender: GET ("%s ") joined like Blizzard,
+    --    sender rendered as a player link inside the prefix.
+    got = F.WrapSecretEventLine("CHAT_MSG_EMOTE",
+        { text = playerEmoteBody, rawSender = "Bob-Realm", sender = "Bob-Realm",
+          decorated = "Bob" })
+    local j = joins[playerEmoteBody]
+    assert(j and rawequal(got, j.j), "player emote: GET prefix joined")
+    assert(type(j.prefix) == "string" and j.prefix:find("|Hplayer:", 1, true)
+        and j.prefix:find("Bob", 1, true), "player emote: linked sender in prefix")
+
+    string.format = realFormat
+end
 
 print("OK: chat_message_format_test")

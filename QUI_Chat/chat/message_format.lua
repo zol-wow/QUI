@@ -746,10 +746,11 @@ function Format.BuildEventLine(event, p)
     return FormatNormalLine(event, typeKey, p)
 end
 
--- Secret-body line: build the largest non-secret prefix we can (flags, links,
--- channel decoration, GET format) and join it to the secret body through
--- pcall'd string.format only — no Lua operator ever touches the payload.
--- p.rawSender may itself be secret; it flows only through FormatString.
+-- Secret-body line: build the largest prefix we can (flags, links, channel
+-- decoration, GET format) from FIXED templates and join it to the secret body
+-- with string.format — which accepts secret values and propagates secrecy, so
+-- no Lua operator ever touches the payload (event doc: playerName is
+-- Nilable=false without NeverSecret, so the sender may be secret too).
 function Format.WrapSecretEventLine(event, p)
     if type(p) ~= "table" then return nil end
     local text = p.text
@@ -757,52 +758,61 @@ function Format.WrapSecretEventLine(event, p)
     local typeKey = Format.EventToTypeKey(event)
     if not typeKey then return text end
 
+    -- Special + boss-notice lines build their output FROM the body — the body
+    -- is itself the format template (boss notices, achievements) or indexes a
+    -- globalstring by it. string.format takes secret VALUES, never a secret
+    -- format string, so a secret body here is unrenderable: pass it through
+    -- verbatim, exactly as the reference client does with secret payloads.
+    if BOSS_NOTICE_EVENTS[event] or SPECIAL_KIND[typeKey] then
+        return text
+    end
+
+    -- string.format accepts secret values and PROPAGATES secrecy; every format
+    -- string below is a fixed/Blizzard template (never the secret body), so no
+    -- Lua operator touches the payload and no pcall is needed. The prefix may
+    -- itself be secret (built from a secret sender) — truthiness only on it,
+    -- never a comparison.
     local prefix
     if IsMonsterOrRaidBossType(typeKey) then
-        local fmt = GetOutMessageFormatKey(typeKey)
-        local sender = p.rawSender
-        if IsSecret(sender) then
-            prefix = FormatString(fmt, sender)
-        elseif type(sender) == "string" and sender ~= "" then
-            prefix = FormatString(fmt, sender)
+        -- Monster chat: "<name> says/yells: " + body. The name lives in the
+        -- GET prefix, not the body, so the body never needs filling.
+        prefix = string.format(GetOutMessageFormatKey(typeKey), p.rawSender)
+    elseif typeKey == "EMOTE" then
+        -- Player emote joins the GET ("%s ") like Blizzard: linked sender when
+        -- renderable, raw (possibly secret) name otherwise.
+        local who = p.rawSender
+        if p.sender then
+            who = PFlag(p.flags, p.zoneID, p.chNum)
+                .. (BuildPlayerLink(typeKey, ChatCategory(typeKey), p, p.decorated or p.sender) or p.sender)
         end
-    elseif IsRawType(typeKey) or typeKey == "EMOTE" or typeKey == "TEXT_EMOTE" then
-        -- Raw types render bodies verbatim; emote grammar embeds the name in
-        -- the body itself — no prefix we could safely add to a secret body.
+        prefix = string.format(GetOutMessageFormatKey(typeKey), who)
+    elseif IsRawType(typeKey) or typeKey == "TEXT_EMOTE" then
+        -- Raw types render bodies verbatim; TEXT_EMOTE grammar embeds the name
+        -- in the body itself (the sender gsub can't run on a secret).
         return text
-    elseif not SPECIAL_KIND[typeKey] and not BOSS_NOTICE_EVENTS[event] then
+    else
         local chatGroup = ChatCategory(typeKey)
         local pflag = PFlag(p.flags, p.zoneID, p.chNum)
         local link
         if type(p.sender) == "string" and p.sender ~= "" then
-            local display = ("[%s]"):format(p.decorated or p.sender)
-            link = BuildPlayerLink(typeKey, chatGroup, p, display)
+            link = BuildPlayerLink(typeKey, chatGroup, p, ("[%s]"):format(p.decorated or p.sender))
         elseif IsSecret(p.rawSender) then
-            local shown = FormatString("[%s]", p.rawSender)
-            link = shown and FormatString("|Hplayer:%s|h%s|h", p.rawSender, shown) or nil
+            local shown = string.format("[%s]", p.rawSender)
+            link = string.format("|Hplayer:%s|h%s|h", p.rawSender, shown)
         end
         if link then
-            -- pflag..link via format (link may be secret); then the GET fmt.
-            local combined = FormatString("%s%s", pflag, link)
-            prefix = combined and FormatString(OutFormat(typeKey), combined) or nil
+            prefix = string.format(OutFormat(typeKey), string.format("%s%s", pflag, link))
         elseif TYPE_PREFIX[typeKey] then
             prefix = TYPE_PREFIX[typeKey]
         end
         if HasChannelContext(p, typeKey) then
             local deco = ChannelDecoration(p)
             if deco ~= "" then
-                if prefix then
-                    prefix = FormatString("%s%s", deco, prefix) or prefix
-                else
-                    prefix = deco
-                end
+                prefix = prefix and string.format("%s%s", deco, prefix) or deco
             end
         end
-    else
-        -- Secret special-event template: unrenderable — pass through.
-        return text
     end
 
-    if prefix == nil or prefix == "" then return text end
-    return FormatString("%s%s", prefix, text) or text
+    if not prefix then return text end
+    return string.format("%s%s", prefix, text)
 end

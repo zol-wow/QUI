@@ -124,6 +124,14 @@ local function BuildBlizzardMoverTab(tabContent)
         return row
     end
 
+    -- Self-heal: the mover registry is populated lazily (see InitRegistry's
+    -- deferred boot in blizzard_mover.lua). Ensure it's built before we read the
+    -- group list so opening this page never shows an empty toggle list, whatever
+    -- the load order was. InitRegistry is idempotent (guarded by registryInitialized).
+    if BM and BM.functions and BM.functions.InitRegistry then
+        BM.functions.InitRegistry()
+    end
+
     if BM and BM.functions and BM.functions.GetGroups then
         for _, group in ipairs(BM.functions.GetGroups()) do
             local entries = BM.functions.GetEntriesForGroup(group.id) or {}

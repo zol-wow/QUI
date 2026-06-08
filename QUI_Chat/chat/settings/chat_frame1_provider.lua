@@ -2029,7 +2029,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 {value = "hover", text = "Show on Hover"},
                 {value = "disabled", text = "Disabled"},
             }
-            local copyButtonDropdown = GUI:CreateFormDropdown(card.frame, nil, copyButtonOptions, "copyButtonMode", chat, Refresh, { description = "Controls whether the copy button on the QUI display stays visible, appears only on hover, or is hidden. The copy window always reads the display's full scrollback." })
+            local copyButtonDropdown = GUI:CreateFormDropdown(card.frame, nil, copyButtonOptions, "copyButtonMode", chat, Refresh, { description = "Controls whether each QUI chat window's copy button stays visible, appears only on hover, or is hidden. The copy window shows the messages from the window and tab it was opened on." })
             card.AddRow(row(card.frame, "Copy Button", copyButtonDropdown))
         end)
 

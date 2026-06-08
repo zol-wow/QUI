@@ -1377,10 +1377,25 @@ local function attachEventFrame()
 	if C_AddOns.IsAddOnLoaded("Blizzard_PlayerSpells") then installHeroTalentAnchorWorkaround() end
 end
 
-local function boot(core)
-	syncDbFromProfile()
+local function initRegistryAndHooks()
 	M.functions.InitRegistry()
 	M.functions.TryHookAll()
+end
+
+local function boot(core)
+	syncDbFromProfile()
+	-- _FrameRegistryData is set by blizzard_mover_frames.lua, the NEXT TOC entry.
+	-- As a LoadOnDemand sub-addon we load after core init, so RegisterPostInitialize
+	-- runs boot() synchronously mid-load — before that sibling file has loaded and
+	-- the panel data exists. InitRegistry() would bail on a nil pack and leave the
+	-- registry permanently empty. Defer one frame (the whole addon loads in a single
+	-- synchronous batch, so the data is guaranteed present next frame) when the data
+	-- isn't ready yet; take the fast path when it already is.
+	if M._FrameRegistryData then
+		initRegistryAndHooks()
+	else
+		C_Timer.After(0, initRegistryAndHooks)
+	end
 	attachEventFrame()
 	if core and core.db and core.db.RegisterCallback then
 		local sink = {}

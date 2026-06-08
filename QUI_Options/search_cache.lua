@@ -27853,7 +27853,7 @@ ns.QUI_SearchCache = {
         },
         {
             ["category"] = "chat",
-            ["description"] = "Controls whether the copy button on the QUI display stays visible, appears only on hover, or is hidden. The copy window always reads the display's full scrollback.",
+            ["description"] = "Controls whether each QUI chat window's copy button stays visible, appears only on hover, or is hidden. The copy window shows the messages from the window and tab it was opened on.",
             ["featureId"] = "chatFrame1",
             ["label"] = "Copy Button",
             ["providerKey"] = "chatFrame1",

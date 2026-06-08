@@ -23,6 +23,8 @@ local formattedSecretSenderName = {}
 local formattedSecretSenderLink = {}
 local formattedSecretSenderPrefix = {}
 local formattedSecretPartyAndSender = {}
+-- Generic propagation result: any format() touching a secret yields a secret.
+local formattedSecretPropagated = {}
 -- Prefixes match the parity formatter: full player links with
 -- lineID:chatType:chatTarget data, short type labels (channelShorten enabled
 -- in the settings mock below), letter-preset channel decoration.
@@ -56,6 +58,14 @@ string.format = function(fmt, ...)
         return formattedSecretSenderPrefix
     elseif fmt == "%s%s" and rawequal(a1, formattedSecretSenderPrefix) and rawequal(a2, secret) then
         return formattedSecretPartyAndSender
+    end
+    -- Propagation model: string.format with ANY secret (sentinel table) arg
+    -- returns a secret. In-game string.format accepts secret values and
+    -- propagates; here the sentinels are plain tables, so realStringFormat
+    -- would error — the wrapper no longer pcall-guards these (by design), so
+    -- the mock must model the propagation the C side performs.
+    for i = 1, select("#", ...) do
+        if type((select(i, ...))) == "table" then return formattedSecretPropagated end
     end
     return realStringFormat(fmt, ...)
 end

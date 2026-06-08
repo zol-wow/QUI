@@ -383,6 +383,8 @@ function Display.CreateNewWindow()
     if TabUI and TabUI.EnsureAttached then TabUI.EnsureAttached() end
     local Scrollbar = ns.QUI.Chat.Scrollbar
     if Scrollbar and Scrollbar.EnsureAttached then Scrollbar.EnsureAttached() end
+    local Copy = ns.QUI.Chat.Copy
+    if Copy and Copy.EnsureCustomCopyButton then Copy.EnsureCustomCopyButton() end
     SyncChatWindowMovers()
     -- A cached options panel must rebuild — its window lists changed.
     if I.NotifyChatSettingsChanged then I.NotifyChatSettingsChanged() end
@@ -422,6 +424,8 @@ function Display.DeleteWindow(id)
     if TabUI and TabUI.OnWindowDeleted then TabUI.OnWindowDeleted(id) end
     local Scrollbar = ns.QUI.Chat.Scrollbar
     if Scrollbar and Scrollbar.OnWindowDeleted then Scrollbar.OnWindowDeleted() end
+    local Copy = ns.QUI.Chat.Copy
+    if Copy and Copy.OnWindowDeleted then Copy.OnWindowDeleted() end
     SyncChatWindowMovers()
     -- A cached options panel must rebuild — its window lists changed (the
     -- context-menu "Close window" path never goes through the settings UI).
@@ -498,6 +502,22 @@ end
 function Display.GetMessageFrame(windowID)
     local win = windows[tonumber(windowID) or 1]
     return win and win.smf
+end
+
+-- Iterate the store through ONE window's active-tab filter, in store order —
+-- exactly the lines that window's SMF currently renders. The copy frame uses
+-- this so the copied text matches the visible window (not the whole store).
+-- Entries pass through untouched (may carry secret bodies); callers must honor
+-- entry.s and never apply a Lua operator to entry.m.
+function Display.ForEachVisible(windowID, fn)
+    if type(fn) ~= "function" then return end
+    local win = windows[tonumber(windowID) or 1]
+    if not win then return end
+    Store.ForEach(function(entry)
+        if PassesFilter(win, entry) then
+            fn(entry)
+        end
+    end)
 end
 
 function Display.GetWindowCount()

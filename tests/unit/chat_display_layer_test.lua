@@ -203,6 +203,22 @@ assert(#smf1.added == 1 and smf1.added[1] == "hello-say",
 assert(#smf2.added == 1 and smf2.added[1] == "hello-guild",
     "window 2 got only GUILD, got " .. #smf2.added)
 
+-- ForEachVisible: the copy source must mirror a window's filtered view exactly
+-- (store filtered by that window's active tab), not the whole store.
+do
+    local seen1, seen2 = {}, {}
+    Display.ForEachVisible(1, function(e) seen1[#seen1 + 1] = e.m end)
+    Display.ForEachVisible(2, function(e) seen2[#seen2 + 1] = e.m end)
+    assert(#seen1 == 1 and seen1[1] == "hello-say",
+        "ForEachVisible(1) yields only window 1's filtered set, got " .. #seen1)
+    assert(#seen2 == 1 and seen2[1] == "hello-guild",
+        "ForEachVisible(2) yields only window 2's filtered set, got " .. #seen2)
+    -- Unknown window id is a no-op, not an error.
+    local count = 0
+    Display.ForEachVisible(99, function() count = count + 1 end)
+    assert(count == 0, "ForEachVisible on an unknown window is a no-op")
+end
+
 -- Clear store and reset filters for subsequent tests
 Store.Clear()
 smf1.added, smf2.added = {}, {}

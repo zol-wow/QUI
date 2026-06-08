@@ -39,7 +39,8 @@ local COPY_GLYPH_STROKE = 2
 ---------------------------------------------------------------------------
 local urlPopup = nil            -- Copy popup frame (created on demand)
 local chatCopyFrame = nil       -- Chat history copy frame (created on demand)
-local copyButtons = {}          -- Track copy buttons per chat frame
+-- Per-window copy buttons live on their window's container (container._quiCopyButton)
+-- so they follow DisplayLayer's window pool without orphaning on delete/recreate.
 
 -- Shared color palette (defined in chat.lua, hoisted to _internals).
 -- bg/text values are chat-module-specific and intentionally diverge from the
@@ -426,14 +427,14 @@ local function CleanMessage(message)
     return cleaned
 end
 
--- Lines for the CUSTOM display's copy popup: sourced from MessageStore
--- (the display's source of truth), markup-stripped, secrets replaced with
--- a placeholder (never touched).
-local function GetCustomDisplayLines()
-    local Store = ns.QUI.Chat.MessageStore
-    if not Store then return {} end
+-- Lines for the CUSTOM display's copy popup. With a windowID, sourced from
+-- exactly that window's visible set (the store filtered by its active tab) so
+-- the copied text matches what's on screen; without one — or before the
+-- display exists — the whole store (back-compat with no-arg callers). Markup
+-- is stripped; secrets are replaced with a placeholder (never touched).
+local function GetCustomDisplayLines(windowID)
     local lines = {}
-    Store.ForEach(function(entry)
+    local function collect(entry)
         if entry.s then
             lines[#lines + 1] = "??? (protected message)"
         else
@@ -442,7 +443,14 @@ local function GetCustomDisplayLines()
                 lines[#lines + 1] = cleaned
             end
         end
-    end)
+    end
+    local Display = ns.QUI.Chat.DisplayLayer
+    if windowID and Display and Display.ForEachVisible then
+        Display.ForEachVisible(windowID, collect)
+    else
+        local Store = ns.QUI.Chat.MessageStore
+        if Store then Store.ForEach(collect) end
+    end
     return lines
 end
 Copy.GetCustomDisplayLines = GetCustomDisplayLines
@@ -635,13 +643,14 @@ local function CreateChatCopyFrame()
     return chatCopyFrame
 end
 
--- Open the chat-copy frame populated from the custom display store.
-function Copy.ShowCustomCopyFrame()
+-- Open the chat-copy frame populated from ONE window's visible set (the
+-- window the copy button was clicked on). windowID nil → whole store.
+function Copy.ShowCustomCopyFrame(windowID)
     local settings = I.GetSettings and I.GetSettings()
     if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
     local frame = CreateChatCopyFrame()
     RefreshPopupAccent(frame)
-    local lines = GetCustomDisplayLines()
+    local lines = GetCustomDisplayLines(windowID)
     local text = #lines > 0 and tconcat(lines, "\n") or "(No copyable messages in custom display)"
     frame.editBox:SetText(text)
     frame.editBox:SetWidth(math.max(1, frame.scrollFrame:GetWidth() - 10))
@@ -652,11 +661,9 @@ function Copy.ShowCustomCopyFrame()
     end
 end
 
-local customCopyButton
-
--- Apply the current copyButtonMode to the already-created button and its
--- container. Called on first creation and on every subsequent EnsureCustomCopyButton
--- call so live mode-switches take effect without a /reload.
+-- Apply the current copyButtonMode to ONE window's button + its container.
+-- Called on creation and on every subsequent EnsureCustomCopyButton call so
+-- live mode-switches take effect without a /reload.
 --
 -- "always"  — button always visible; container hover scripts cleared; mouse released.
 -- "hover"   — button hidden until container OnEnter; true OnLeave (cursor no longer
@@ -664,72 +671,101 @@ local customCopyButton
 --             the container swallow panel-background clicks — acceptable (children keep
 --             priority; SMF/drag-strip interactions are unaffected).
 -- "hidden"/"disabled" — button hidden; hover scripts cleared; mouse released.
-local function ApplyCustomCopyButtonMode(container)
-    if not customCopyButton then return end
+local function ApplyCustomCopyButtonMode(button, container)
+    if not (button and container) then return end
     local settings = I.GetSettings and I.GetSettings()
     local mode = settings and settings.copyButtonMode or "always"
     if mode == "hidden" or mode == "disabled" then
-        customCopyButton:Hide()
+        button:Hide()
         container:SetScript("OnEnter", nil)
         container:SetScript("OnLeave", nil)
         container:EnableMouse(false)
     elseif mode == "hover" then
-        customCopyButton:Hide()
+        button:Hide()
         -- OnLeave fires when entering a CHILD — only hide on a true exit.
         container:EnableMouse(true)
         container:SetScript("OnEnter", function()
-            customCopyButton:Show()
+            button:Show()
         end)
         container:SetScript("OnLeave", function(self)
             if not (self.IsMouseOver and self:IsMouseOver()) then
-                customCopyButton:Hide()
+                button:Hide()
             end
         end)
     else -- "always"
-        customCopyButton:Show()
+        button:Show()
         container:SetScript("OnEnter", nil)
         container:SetScript("OnLeave", nil)
         container:EnableMouse(false)
     end
 end
 
-function Copy.EnsureCustomCopyButton()
-    local Display = ns.QUI.Chat.DisplayLayer
-    local container = Display and Display.GetContainer and Display.GetContainer()
-    if not container then return end
-    if customCopyButton then
-        -- Button already exists — re-apply mode so live settings changes
-        -- (always/hover/hidden) take effect without a /reload.
-        ApplyCustomCopyButtonMode(container)
-        return
+-- Create one window's copy button, stored on its container so it follows the
+-- container through DisplayLayer's window pool (no orphan accumulation on
+-- delete/recreate). The OnClick reads the button's CURRENT windowID (refreshed
+-- on every EnsureCustomCopyButton) so the copy stays scoped to the right
+-- window even after id compaction shuffles ids.
+local function CreateCopyButton(windowID, container)
+    -- Window 1 keeps the legacy global name (parity with the old singleton);
+    -- windows 2+ stay anonymous, like the scrollbar/jump-bottom chrome.
+    local name = (windowID == 1) and "QUI_CustomChatCopyButton" or nil
+    local button = CreateFrame("Button", name, container)
+    button:SetSize(COPY_BUTTON_SIZE, COPY_BUTTON_SIZE)
+    button:SetPoint("TOPRIGHT", container, "TOPRIGHT", -2, 2)
+    if button.SetFrameLevel then
+        button:SetFrameLevel(COPY_BUTTON_FRAME_LEVEL)
     end
-    -- Lazy creation: skip first creation for hidden/disabled to avoid an
-    -- invisible orphan button on initial load when the feature is off.
-    local settings = I.GetSettings and I.GetSettings()
-    local mode = settings and settings.copyButtonMode or "always"
-    if mode == "hidden" or mode == "disabled" then return end
-    customCopyButton = CreateFrame("Button", "QUI_CustomChatCopyButton", container)
-    customCopyButton:SetSize(COPY_BUTTON_SIZE, COPY_BUTTON_SIZE)
-    customCopyButton:SetPoint("TOPRIGHT", container, "TOPRIGHT", -2, 2)
-    if customCopyButton.SetFrameLevel then
-        customCopyButton:SetFrameLevel(COPY_BUTTON_FRAME_LEVEL)
-    end
-    customCopyButton:EnableMouse(true)
-    customCopyButton._hoverBg = customCopyButton:CreateTexture(nil, "BACKGROUND")
-    customCopyButton._hoverBg:SetAllPoints(customCopyButton)
-    customCopyButton._hoverBg:Hide()
-    RefreshCopyGlyph(customCopyButton, false)
-    customCopyButton:SetScript("OnEnter", function(self)
+    button:EnableMouse(true)
+    button._hoverBg = button:CreateTexture(nil, "BACKGROUND")
+    button._hoverBg:SetAllPoints(button)
+    button._hoverBg:Hide()
+    RefreshCopyGlyph(button, false)
+    button:SetScript("OnEnter", function(self)
         RefreshCopyGlyph(self, true)
     end)
-    customCopyButton:SetScript("OnLeave", function(self)
+    button:SetScript("OnLeave", function(self)
         RefreshCopyGlyph(self, false)
     end)
-    customCopyButton:SetScript("OnClick", function()
-        Copy.ShowCustomCopyFrame()
+    button:SetScript("OnClick", function(self)
+        Copy.ShowCustomCopyFrame(self._quiWindowID)
     end)
-    -- Apply mode (always/hover) immediately after creation.
-    ApplyCustomCopyButtonMode(container)
+    container._quiCopyButton = button
+    return button
+end
+
+-- Ensure every live window has its own copy button, each scoped to that
+-- window's active tab. Idempotent: existing buttons are reused (and their
+-- windowID + mode refreshed) so live settings changes and id compaction both
+-- take effect without a /reload.
+function Copy.EnsureCustomCopyButton()
+    local Display = ns.QUI.Chat.DisplayLayer
+    if not (Display and Display.GetContainer) then return end
+    local count = (Display.GetWindowCount and Display.GetWindowCount()) or 1
+    local settings = I.GetSettings and I.GetSettings()
+    local mode = settings and settings.copyButtonMode or "always"
+    for windowID = 1, count do
+        local container = Display.GetContainer(windowID)
+        if container then
+            local button = container._quiCopyButton
+            -- Lazy creation: skip first creation for hidden/disabled to avoid
+            -- an invisible orphan button when the feature is off.
+            if not button and mode ~= "hidden" and mode ~= "disabled" then
+                button = CreateCopyButton(windowID, container)
+            end
+            if button then
+                button._quiWindowID = windowID
+                ApplyCustomCopyButtonMode(button, container)
+            end
+        end
+    end
+end
+
+-- DisplayLayer.DeleteWindow compacts window ids; refresh every surviving
+-- button's windowID + mode. The deleted window's container is hidden/pooled by
+-- DisplayLayer, so its button hides with it and is reclaimed (via the stored
+-- container._quiCopyButton) when that pooled shell is reused.
+function Copy.OnWindowDeleted()
+    Copy.EnsureCustomCopyButton()
 end
 
 ---------------------------------------------------------------------------

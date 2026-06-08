@@ -123,6 +123,33 @@ local function SetEditBoxVisualShown(editBox, shown)
     end
 end
 
+-- The channel prefix shown to the LEFT of the input ("Guild", "/w Name", …) is
+-- a set of child fontstrings, not the editbox's own text — each inherits
+-- ChatFontNormal from the template, so the editbox SetFontObject doesn't reach
+-- them. Font them explicitly (Blizzard re-sets only their COLOR/TEXT per channel,
+-- never the font, so this persists). parentKeys per ChatFrameEditBox.xml.
+local EDITBOX_HEADER_KEYS = { "header", "headerSuffix", "languageHeader", "prompt" }
+
+-- The input editbox follows the QUI chat font: it adopts the SAME font object
+-- the message frame uses (_G.QUI_CustomChatFontObject), so typed text matches
+-- the rendered messages exactly — path, size and outline are resolved in one
+-- place (display_layer.ApplyTheme) and shared, never duplicated here. ApplyTheme
+-- builds that object during Display.Refresh, which runs before StyleEditBox on
+-- every refresh path; fall back to the stock ChatFontNormal when no custom font
+-- object exists yet (no font path configured, or pre-build).
+local function ApplyEditBoxFont(editBox)
+    if not (editBox and editBox.SetFontObject) then return end
+    local fo = _G.QUI_CustomChatFontObject or _G.ChatFontNormal
+    if not fo then return end
+    editBox:SetFontObject(fo)
+    for _, key in ipairs(EDITBOX_HEADER_KEYS) do
+        local fs = editBox[key]
+        if fs and fs.SetFontObject then
+            fs:SetFontObject(fo)
+        end
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Style edit box (chat input area)
 ---------------------------------------------------------------------------
@@ -162,6 +189,19 @@ local function StyleEditBox(chatFrame)
     if not ebState.styled then
         ebState.styled = true
 
+        -- Remember the stock font objects so a live disable flip restores them
+        -- (the input plus each channel-prefix child).
+        if editBox.GetFontObject then
+            ebState.origFontObject = editBox:GetFontObject()
+        end
+        ebState.origHeaderFonts = {}
+        for _, key in ipairs(EDITBOX_HEADER_KEYS) do
+            local fs = editBox[key]
+            if fs and fs.GetFontObject then
+                ebState.origHeaderFonts[key] = fs:GetFontObject()
+            end
+        end
+
         -- Hide child FRAMES by global name (these are frames, not textures)
         local childSuffixes = {
             "Left", "Mid", "Right",
@@ -195,6 +235,9 @@ local function StyleEditBox(chatFrame)
             end
         end
     end
+
+    -- Follow the QUI chat font (re-applied every call so live font changes land).
+    ApplyEditBoxFont(editBox)
 
     -- Create glass backdrop for edit box (once per chatFrame, stored in local table)
     -- Parent to chatFrame (not editBox) so we can control visibility independently
@@ -344,6 +387,19 @@ function RemoveEditBoxStyle(chatFrame)
     local ebState = I.editBoxState[editBox]
     if ebState and ebState.styled then
         ebState.styled = false
+        -- Hand the QUI chat font back to the stock font objects (input + prefix).
+        local stockFont = ebState.origFontObject or _G.ChatFontNormal
+        if editBox.SetFontObject and stockFont then
+            editBox:SetFontObject(stockFont)
+        end
+        local origHeaderFonts = ebState.origHeaderFonts
+        for _, key in ipairs(EDITBOX_HEADER_KEYS) do
+            local fs = editBox[key]
+            local stockHeader = (origHeaderFonts and origHeaderFonts[key]) or _G.ChatFontNormal
+            if fs and fs.SetFontObject and stockHeader then
+                fs:SetFontObject(stockHeader)
+            end
+        end
         local childSuffixes = {
             "Left", "Mid", "Right",
             "FocusLeft", "FocusMid", "FocusRight",
