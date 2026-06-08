@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta29 - 2026-06-08
+
+> 🧪 **QUI 4 beta — small fixes.** A quick follow-up to beta28: cooldowns that a talent turns passive now reliably go dormant (beta28's version missed the most common case), QUI Chat no longer spams Lua errors on text emotes and guild loot messages, and the close button on item-link tooltips picks up QUI's skin. No schema migration — your beta28 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Cooldowns that a talent turns passive now reliably go dormant.** beta28 added this, but it missed the most common case — a talent that swaps an active ability for a passive one (a different spell) left the old icon sitting on the bar doing nothing. The Cooldown Manager now keys this on your currently-active cooldowns, so a converted-away ability goes dormant on its own and comes back automatically once it's an active ability again. Legitimate active replacements are kept.
+- **QUI Chat no longer throws Lua errors on text emotes and guild loot messages.** With the QUI Chat module enabled, lines such as text emotes (for example `/wave`) and guild member loot notifications produced a burst of `formatKey ... doesn't exist` errors. Those messages now format cleanly with no errors.
+- **The close button on item-link tooltips is skinned.** Clicking an item link opens a tooltip whose close button was still Blizzard's red X, showing through the otherwise-skinned frame. It now matches QUI's skin.
+
 ## v4.0.0-beta28 - 2026-06-08
 
 > 🧪 **QUI 4 beta — suite-split follow-up fixes.** A fast follow-up to beta27 that restores tooltip skinning and a few other features the suite split quietly broke, cleans up how the Cooldown Manager handles spells that hero talents turn passive, makes the Hero Talents window movable, and locks the resize handles on anchored chat and damage-meter windows. No schema migration — your beta27 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
