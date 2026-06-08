@@ -2,7 +2,7 @@
 ## Title: |cFF30D1FFQUI|r Minimap
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol
-## Version: 4.0.0-beta26
+## Version: 4.0.0-beta27
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI

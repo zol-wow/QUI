@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta27 - 2026-06-08
+
+> 🧪 **QUI 4 beta — suite split + opt-in QUI chat.** The biggest structural change since QUI 4: QUI now installs as a core addon plus a set of per-feature sub-addons you can enable or disable individually — and one of them is a brand-new, opt-in QUI-owned chat display. Plus a Cooldown Manager loadout-tracking fix at login, a first-open Options speed fix, and Korean/Chinese font support. This build upgrades your profile to schema v43 and **takes an automatic backup of your profile first** — your beta26 settings carry over untouched, and if you were on Blizzard chat you stay there unless you opt in. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+>
+> ⚠️ **Install note:** QUI is now several addon folders. Updating through CurseForge or the release zip installs all of them automatically — but if you copy files in by hand, install **every** `QUI*` folder from the zip, not just `QUI`, or modules will be missing.
+
+### Added
+- **QUI is now a modular suite.** QUI has been split from one monolithic addon into a core addon plus individual sub-addons — Unit Frames, Action Bars, Cooldown Manager, Chat, Group Frames, Resource Bars, Skinning, Minimap, Quality of Life, Damage Meter, and the Options panel. You can turn whole modules on or off from QUI's Module Addons page (or your AddOns list), and several load on demand instead of at every login. Your settings and layouts carry over unchanged.
+- **QUI-owned chat display (opt-in).** A new QUI Chat module replaces Blizzard's chat with QUI's own: multi-window chat, dedicated whisper conversation tabs, a copy button, a custom scrollbar, and full parity with Blizzard's message formatting — channel labels, system lines, guild Message of the Day, and class colors. It ships **off by default** — enable the **QUI Chat** module from the Module Addons page (or your AddOns list) to switch it on, and turn it off any time to go back to Blizzard chat. Existing beta26 setups stay on Blizzard chat unless you opt in.
+
+### Changed
+- **Modules are now enabled or disabled per addon.** The old per-profile module master switches have been retired in favor of the single enable/disable row each module has on the Module Addons page (and in your AddOns list). If you'd previously turned a module off, that choice is carried over automatically — and it is now account-wide rather than per-profile.
+- **The Options window opens instantly the first time.** The settings search index — a large generated file — now loads on demand the moment you first use the search box, instead of being compiled up front, so the first time you open Options in a session no longer briefly hitches.
+
+### Fixed
+- **Cooldown Manager containers track the right loadout right after login.** The game doesn't report your selected talent loadout until just after you finish loading in, so containers keyed to a specific loadout could come up tracking the wrong one until a `/reload`. QUI now waits for the game's talent/loadout callbacks and re-keys to the correct loadout on its own, including through rapid loadout swaps.
+- **Korean and Chinese characters render with the QUI font.** QUI's font carries no CJK glyphs, and applying it collapsed the game's per-language font fallback, blanking Korean/Chinese names and text wherever QUI set the font. QUI now builds a proper font family that keeps the game's CJK fonts as fallbacks, so those names display correctly.
+
 ## v4.0.0-beta26 - 2026-06-06
 
 > 🧪 **QUI 4 beta — bugfix build.** Follow-up to beta25 with a ground-up rework of how Cooldown Manager containers treat spells the game reports as unknown, a keyboard click-cast hover fix, a new durability mover, and refreshed skyriding defaults. No schema migrations: your beta25 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
