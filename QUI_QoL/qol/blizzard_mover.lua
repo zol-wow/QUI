@@ -273,6 +273,8 @@ function M.functions.RegisterFrame(def)
 		useRootHandle = def.useRootHandle,
 		keepTwoPointSize = def.keepTwoPointSize,
 		disableMove = def.disableMove or def.scaleOnly,
+		deferReassert = def.deferReassert,
+		proxyParent = def.proxyParent,
 		ignoreFramePositionManager = def.ignoreFramePositionManager,
 		userPlaced = def.userPlaced,
 		skipOnHide = def.skipOnHide,
@@ -485,7 +487,9 @@ local function applyInteractionBaseline(f, panel, active, usedOverlay)
 	if InCombatLockdown() and f.IsProtected and f:IsProtected() then return end
 	if active then
 		if f.SetMovable then f:SetMovable(true) end
-		if f.SetClampedToScreen then f:SetClampedToScreen(true) end
+		-- proxyParent panels (the hero-talent dialog) skip clamping: clamping
+		-- auto-re-anchors the frame as it resizes during its populate/Layout pass.
+		if f.SetClampedToScreen and not panel.proxyParent then f:SetClampedToScreen(true) end
 		if panel.userPlaced ~= nil and f.SetUserPlaced then f:SetUserPlaced(panel.userPlaced) end
 		if panel.ignoreFramePositionManager ~= nil then f.ignoreFramePositionManager = panel.ignoreFramePositionManager end
 		if not usedOverlay and f.EnableMouse then f:EnableMouse(true) end
@@ -588,14 +592,16 @@ function M.functions.applyFrameSettings(f, entry)
 	local hasPos = saved and saved.point and saved.x ~= nil and saved.y ~= nil
 	local sc = storedScaleValue(row)
 	if not hasPos and not sc then return end
-	if InCombatLockdown() and f:IsProtected() then
+	if InCombatLockdown() and (f:IsProtected() or panel.proxyParent) then
 		M.functions.deferApply(f, panel)
 		return
 	end
 	local c = ctx(f)
 	c.applyingLayout = true
-	if f.IsProtected and f:IsProtected() and not panel.keepTwoPointSize then
-		-- Protected frame: position/scale via the secure positioner (no taint).
+	if ((f.IsProtected and f:IsProtected()) or panel.proxyParent) and not panel.keepTwoPointSize then
+		-- Protected frame OR proxyParent: position/scale via the secure
+		-- positioner, pinned to the UIParent-mirroring secure anchor (no taint;
+		-- and, for proxyParent, a distinct anchor node from the real UIParent).
 		if hasPos then
 			securePlace(f, saved.point, saved.x, saved.y, sc)
 		elseif sc then
@@ -757,49 +763,19 @@ local function installPlayerChoiceLayoutGuard(f)
 	return true
 end
 
-local function heroDialogMoverOn()
-	if not db or not db.enabled then return false end
-	local p = R.panels.HeroTalentsSelectionDialog
-	return p and panelIsActive(p)
-end
-
-local function installHeroTalentAnchorWorkaround()
-	if M.variables.heroTalentWorkaround then return true end
-	if not heroDialogMoverOn() then return false end
-	if not (TalentFrameUtil and TalentFrameUtil.GetNormalizedSubTreeNodePosition) then return false end
-	if not (HeroTalentsSelectionDialog and PlayerSpellsFrame) then return false end
-
-	M.variables.heroTalentWorkaround = true
-	local reenter = false
-	local queued = false
-
-	hooksecurefunc(TalentFrameUtil, "GetNormalizedSubTreeNodePosition", function(talentFrame)
-		if reenter then return end
-		if not heroDialogMoverOn() then return end
-		if HeroTalentsSelectionDialog and HeroTalentsSelectionDialog.IsShown and not HeroTalentsSelectionDialog:IsShown() then return end
-		if queued then return end
-		queued = true
-		local function clearSubTreeAnchors()
-			queued = false
-			reenter = true
-			if talentFrame and talentFrame.EnumerateAllTalentButtons then
-				for btn in talentFrame:EnumerateAllTalentButtons() do
-					local info = btn and btn.GetNodeInfo and btn:GetNodeInfo()
-					if info and info.subTreeID and btn.ClearAllPoints then btn:ClearAllPoints() end
-				end
-			end
-			reenter = false
-		end
-		if RunNextFrame then
-			RunNextFrame(clearSubTreeAnchors)
-		elseif C_Timer and C_Timer.After then
-			C_Timer.After(0, clearSubTreeAnchors)
-		else
-			clearSubTreeAnchors()
-		end
-	end)
-	return true
-end
+-- NOTE: There is deliberately no hero-talent "anchor workaround" here.
+-- A previous version hooked TalentFrameUtil.GetNormalizedSubTreeNodePosition
+-- and ClearAllPoints()'d every subTree (hero talent) button while the dialog
+-- was shown. Blizzard calls that same function *during* the talent-tree
+-- rebuild that follows activating a hero spec (OnTraitConfigUpdated ->
+-- SetConfigID -> LoadTalentTree -> InstantiateTalentButton/PlaceHeroTalentButton),
+-- so the clear raced the rebuild and stripped anchors off live tree buttons.
+-- Under 12.0's anchor-family guard that tripped "anchor family connection" /
+-- "Not allowed to depend on Button" in the tree edges (Line:SetStartPoint),
+-- AcquireTalentButton, and PlaceHeroTalentButton. Blizzard already
+-- ClearAllPoints()'s each button itself right before re-anchoring it, so the
+-- extra clear was both redundant and harmful. Repositioning the dialog
+-- (root -> UIParent) never touches these buttons and does not need it.
 
 ---------------------------------------------------------------------------
 -- Install hooks on one concrete root frame for a panel definition
@@ -1125,21 +1101,61 @@ function M.functions.createHooks(root, entry)
 		local hasPos = saved and saved.point and saved.x ~= nil and saved.y ~= nil
 		local sc = storedScaleValue(row)
 		if not hasPos and not sc then return end
-		if InCombatLockdown() and self:IsProtected() then
+		if InCombatLockdown() and (self:IsProtected() or panel.proxyParent) then
 			M.functions.deferApply(self, panel)
 			return
 		end
 		c.applyingLayout = true
-		if hasPos then
-			if panel.keepTwoPointSize then
-				applyDualCornerSize(self, saved.x, saved.y, saved.point, saved.point)
-			else
-				self:ClearAllPoints()
-				self:SetPoint(saved.point, UIParent, saved.point, saved.x, saved.y)
+		if panel.proxyParent and not panel.keepTwoPointSize then
+			-- Pin via the UIParent-mirroring secure anchor (QUI_MoverSecureAnchor),
+			-- never the real UIParent, so the moved dialog does not share UIParent's
+			-- anchor node with the talent buttons it borrows from the live tree.
+			if hasPos then
+				securePlace(self, saved.point, saved.x, saved.y, sc)
+			elseif sc then
+				securePlace(self, nil, nil, nil, sc)
 			end
+		else
+			if hasPos then
+				if panel.keepTwoPointSize then
+					applyDualCornerSize(self, saved.x, saved.y, saved.point, saved.point)
+				else
+					self:ClearAllPoints()
+					self:SetPoint(saved.point, UIParent, saved.point, saved.x, saved.y)
+				end
+			end
+			if sc and self.SetScale then self:SetScale(sc) end
 		end
-		if sc and self.SetScale then self:SetScale(sc) end
 		c.applyingLayout = false
+	end
+
+	-- Defer the SetPoint-hook re-assert out of the current frame, coalescing
+	-- multiple SetPoints in one frame into a single re-apply. Blizzard's
+	-- UIParentPanelManager re-anchors UIPanel frames (e.g. PlayerSpellsFrame via
+	-- UpdateUIPanelPositions) SYNCHRONOUSLY during layout passes that also run
+	-- the hero-talent tree rebuild. Slamming the moved frame back to its saved
+	-- position *inside* that pass re-anchors the tree while Blizzard is handing
+	-- the hero-talent buttons back, tripping 12.0's anchor-family guard
+	-- (HeroTalentsContainer:UpdateHeroTalentButtonPosition). Running a frame
+	-- later lets Blizzard's re-anchor + button hand-back finish first, then we
+	-- restore the saved position.
+	local reassertQueued = false
+	local function reassertLayoutSoon()
+		if reassertQueued then return end
+		if c.dragging or c.applyingLayout then return end
+		if not panelIsActive(panel) then return end
+		reassertQueued = true
+		local function runReassert()
+			reassertQueued = false
+			reassertLayout(root)
+		end
+		if RunNextFrame then
+			RunNextFrame(runReassert)
+		elseif C_Timer and C_Timer.After then
+			C_Timer.After(0, runReassert)
+		else
+			runReassert()
+		end
 	end
 
 	-- TAINT SAFETY: Frames that use secureexecuterange internally (e.g.
@@ -1180,11 +1196,26 @@ function M.functions.createHooks(root, entry)
 			end
 		end)
 	else
-		hooksecurefunc(root, "SetPoint", reassertLayout)
+		-- Synchronous re-assert by default: when the UIParent panel manager
+		-- re-anchors a moved panel (MoveUIPanel -> SetPoint as a sibling panel
+		-- opens/closes), snapping back in the SAME frame means Blizzard's
+		-- position never renders, so there is no flicker. Only panels that opt
+		-- into deferReassert (PlayerSpellsFrame -> hero-talent anchor-family
+		-- guard) take the one-frame-later path.
+		local reassertHook = panel.deferReassert and reassertLayoutSoon or reassertLayout
+		hooksecurefunc(root, "SetPoint", reassertHook)
 
 		root:HookScript("OnShow", function(self)
 			if not ctx(self).blizzardAnchors then rememberAnchors(self) end
-			M.functions.applyFrameSettings(self, panel)
+			if panel.proxyParent then
+				-- Do NOT re-anchor synchronously while the dialog is populating
+				-- with borrowed talent buttons (that was the original 610/442
+				-- trip). Restore the saved position one frame later, after the
+				-- populate/Layout pass, via the deferred proxy-routed re-assert.
+				reassertLayoutSoon()
+			else
+				M.functions.applyFrameSettings(self, panel)
+			end
 		end)
 
 		if not panel.skipOnHide then
@@ -1297,7 +1328,6 @@ function M.functions.RefreshEntry(entry)
 	if not panel then return end
 	if panel.id == "CollectionsJournal" then tweakWardrobeSecondaryLabel() end
 	if panel.id == "PlayerChoiceFrame" and PlayerChoiceFrame then installPlayerChoiceLayoutGuard(PlayerChoiceFrame) end
-	if panel.id == "HeroTalentsSelectionDialog" then installHeroTalentAnchorWorkaround() end
 end
 
 function M.functions.ApplyAll()
@@ -1339,7 +1369,6 @@ local function onAddonLoaded(name)
 	end
 	if name == "Blizzard_Collections" then tweakWardrobeSecondaryLabel() end
 	if name == "Blizzard_PlayerChoice" and PlayerChoiceFrame then installPlayerChoiceLayoutGuard(PlayerChoiceFrame) end
-	if name == "Blizzard_PlayerSpells" then installHeroTalentAnchorWorkaround() end
 	local list = R.addonToPanels and R.addonToPanels[name]
 	if list then
 		for _, panel in ipairs(list) do M.functions.TryHookEntry(panel) end
@@ -1374,7 +1403,6 @@ local function attachEventFrame()
 	-- already-loaded addons are covered by TryHookAll() at boot.
 	if C_AddOns.IsAddOnLoaded("Blizzard_Collections") then tweakWardrobeSecondaryLabel() end
 	if C_AddOns.IsAddOnLoaded("Blizzard_PlayerChoice") and PlayerChoiceFrame then installPlayerChoiceLayoutGuard(PlayerChoiceFrame) end
-	if C_AddOns.IsAddOnLoaded("Blizzard_PlayerSpells") then installHeroTalentAnchorWorkaround() end
 end
 
 local function initRegistryAndHooks()

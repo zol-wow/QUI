@@ -1716,16 +1716,18 @@ end
 --- MODULE INITIALIZATION HOOK
 ---=================================================================================
 
--- Initialize when QUICore is enabled
-local initFrame = CreateFrame("Frame")
-initFrame:RegisterEvent("ADDON_LOADED")
-initFrame:SetScript("OnEvent", function(self, event, arg1)
-    if arg1 ~= ADDON_NAME then return end
-    self:UnregisterEvent("ADDON_LOADED")
-    local db = GetDB()
-    if db.loot or db.lootRoll then
-        Loot:Initialize()
-        -- Hook Edit Mode after initialization
-        Loot:HookBlizzardEditMode()
-    end
-end)
+-- Initialize after login. ns.WhenLoggedIn runs now if already logged in (the
+-- post-login LOD case after the suite split) rather than this addon's own
+-- ADDON_LOADED, which is NOT delivered when the core eager-LoadAddOn's the
+-- module from OnEnable (see QUI_QoL/qol/tooltip_provider.lua). ns.WhenLoggedIn
+-- is nil only in the headless test harness.
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(function()
+        local db = GetDB()
+        if db.loot or db.lootRoll then
+            Loot:Initialize()
+            -- Hook Edit Mode after initialization
+            Loot:HookBlizzardEditMode()
+        end
+    end)
+end

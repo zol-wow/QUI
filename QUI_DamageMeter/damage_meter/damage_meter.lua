@@ -2027,7 +2027,12 @@ local function AttachWindowResizeOverlay(overlay, frame, window, windowID)
         grip:SetScript("OnEnter", function(self)
             if GameTooltip then
                 GameTooltip:SetOwner(self, tooltipAnchor)
-                GameTooltip:SetText("Drag to resize meter window")
+                local LM = ns.QUI_LayoutMode
+                if LM and LM.IsElementAnchored and LM:IsElementAnchored(overlay._barKey) then
+                    GameTooltip:SetText("Hold Shift to resize (anchored)")
+                else
+                    GameTooltip:SetText("Drag to resize meter window")
+                end
                 GameTooltip:Show()
             end
         end)
@@ -2037,6 +2042,18 @@ local function AttachWindowResizeOverlay(overlay, frame, window, windowID)
         grip:SetScript("OnMouseDown", function(_, button)
             if button ~= "LeftButton" then return end
             if InCombatLockdown and InCombatLockdown() then return end
+            -- Locked-when-anchored: mirror the chat resize grips / move-lock. An
+            -- anchored window blocks resizing; Shift detaches the anchor (parity
+            -- with Shift-drag) and then resizes.
+            local LM = ns.QUI_LayoutMode
+            local key = overlay._barKey
+            if LM and key and LM.IsElementAnchored and LM:IsElementAnchored(key) then
+                if not IsShiftKeyDown() then
+                    if LM.FlashLockedHandle then LM:FlashLockedHandle(key) end
+                    return
+                end
+                if LM.DetachElementAnchor then LM:DetachElementAnchor(key) end
+            end
             if frame.SetResizable then frame:SetResizable(true) end
             frame:StartSizing(corner)
         end)

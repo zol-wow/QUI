@@ -3265,7 +3265,54 @@ local function IsEntryDormantForContainerInternal(containerKey, entry)
         return CDMCatalogReady("aura")
             and not IsSpellInCDMCategoryInternal(normalized.id, "aura")
     end
-    return not IsSpellKnownByPlayer(normalized.id)
+    -- Cooldown family. Unknown spell -> dormant (unchanged). Additionally, a
+    -- blizzardCDM-sourced cooldown that has dropped out of the live cooldown
+    -- catalog (e.g. a hero talent converted it to a passive) is dormant --
+    -- mirrors the aura branch above. Hand-added cooldowns (Spell ID / All
+    -- Cooldowns / Items tabs, source ~= blizzardCDM) are never judged by
+    -- catalog membership, so they stay user-managed.
+    if not IsSpellKnownByPlayer(normalized.id) then return true end
+    if normalized.source == BLIZZARD_CDM_ENTRY_SOURCE then
+        return CDMCatalogReady("cooldown")
+            and not IsSpellInCDMCategoryInternal(normalized.id, "cooldown")
+    end
+    return false
+end
+
+-- Hero-build scoping for removedSpells. Key 0 = global/legacy bucket (always
+-- honored); a positive key = the active hero sub-tree's bucket; -1 = the
+-- "no hero spec active" sentinel. C_ClassTalents.GetActiveHeroTalentSpec
+-- returns a stable SubTreeID (Nilable), NOT an ephemeral staging config.
+-- Defined as CDMSpellData methods (not file locals) so they don't consume
+-- main-chunk local slots -- cdm_spelldata.lua sits at the 200-local ceiling.
+function CDMSpellData:_HeroSubTreeKey()
+    local heroID = C_ClassTalents and C_ClassTalents.GetActiveHeroTalentSpec
+        and C_ClassTalents.GetActiveHeroTalentSpec()
+    if type(heroID) == "number" and heroID > 0 then return heroID end
+    return -1
+end
+
+-- One-shot lazy migration: a flat removedSpells (spellID -> true) becomes the
+-- global bucket { [0] = <flat> }. Idempotent; empty and already-nested no-op.
+function CDMSpellData:_MigrateRemovedSpells(db)
+    if type(db) ~= "table" then return end
+    local rs = db.removedSpells
+    if type(rs) ~= "table" or next(rs) == nil then return end
+    for _, v in pairs(rs) do
+        if type(v) ~= "table" then
+            db.removedSpells = { [0] = rs }
+            return
+        end
+    end
+end
+
+function CDMSpellData:_IsSpellRemovedForCurrentBuild(db, spellID)
+    local rs = db and db.removedSpells
+    if type(rs) ~= "table" then return false end
+    local global = rs[0]
+    if type(global) == "table" and global[spellID] then return true end
+    local bucket = rs[self:_HeroSubTreeKey()]
+    return type(bucket) == "table" and bucket[spellID] == true
 end
 
 -- BuildSpellListFromOwned: Build runtime spell list from owned data
@@ -3282,7 +3329,7 @@ function CDMSpellData:BuildSpellListFromOwned(containerKey)
     -- Wipe per-batch memo caches so a stale aura-active result from the
     -- previous batch can't persist across buff-data-changed dispatches.
     local ownedSpells = NormalizeOwnedSpells(db.ownedSpells)
-    local removedSpells = db.removedSpells or {}
+    self:_MigrateRemovedSpells(db)
 
     -- Resolve entries, preserving row assignment from ownedSpells
     local result = {}
@@ -3291,7 +3338,7 @@ function CDMSpellData:BuildSpellListFromOwned(containerKey)
         if entry and entry.id then
             -- Skip removed spells
             local isRemoved = false
-            if entry.type == "spell" and removedSpells[entry.id] then
+            if entry.type == "spell" and self:_IsSpellRemovedForCurrentBuild(db, entry.id) then
                 isRemoved = true
             end
             -- Display-time dormancy. Owned lists are pure user intent and
@@ -3916,14 +3963,27 @@ function CDMSpellData:RemoveEntry(containerKey, index, specKey)
     -- lists have no snapshot concept.
     if not db.specSpecific and GetEntryListField(db) == "ownedSpells"
         and entry and entry.id then
-        if not db.removedSpells then
-            db.removedSpells = {}
-        end
-        db.removedSpells[entry.id] = true
+        self:_MigrateRemovedSpells(db)
+        if not db.removedSpells then db.removedSpells = {} end
+        local key = self:_HeroSubTreeKey()
+        db.removedSpells[key] = db.removedSpells[key] or {}
+        db.removedSpells[key][entry.id] = true
     end
 
     FireChangeCallback()
     return true
+end
+
+-- Re-adding a spell lifts its suppression in the GLOBAL bucket (legacy
+-- removals) and the CURRENT hero build's bucket. Other builds' intentional
+-- removes are preserved. Called by the composer's add/re-add flows.
+function CDMSpellData:ClearRemoved(db, spellID)
+    self:_MigrateRemovedSpells(db)
+    local rs = db and db.removedSpells
+    if type(rs) ~= "table" or type(spellID) ~= "number" then return end
+    if type(rs[0]) == "table" then rs[0][spellID] = nil end
+    local bucket = rs[self:_HeroSubTreeKey()]
+    if type(bucket) == "table" then bucket[spellID] = nil end
 end
 
 function CDMSpellData:ReorderEntry(containerKey, fromIndex, toIndex, specKey)

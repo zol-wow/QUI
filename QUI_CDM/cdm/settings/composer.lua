@@ -3443,7 +3443,7 @@ RefreshAddList = function()
                         end
 
                         if containerDB.removedSpells and addID then
-                            containerDB.removedSpells[addID] = nil
+                            ns.CDMSpellData:ClearRemoved(containerDB, addID)
                         end
 
                         -- Kind precedence:
@@ -3502,7 +3502,7 @@ RefreshAddList = function()
                         local addResult
                         if addType == "slot" and entryRef._slotID then
                             if containerDB.removedSpells then
-                                containerDB.removedSpells[entryRef._slotID] = nil
+                                ns.CDMSpellData:ClearRemoved(containerDB, entryRef._slotID)
                             end
                             addResult = spellData:AddTrinketSlot(activeContainer, entryRef._slotID, targetRow, itemKind)
                         elseif addType == "item" then

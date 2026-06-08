@@ -212,14 +212,34 @@ M._FrameRegistryData = {
 			names = { "PlayerSpellsFrame" },
 			handlesRelative = { "TalentsFrame", "SpecFrame" },
 			addon = "Blizzard_PlayerSpells",
+			-- Defer the SetPoint re-assert one frame: a synchronous re-anchor
+			-- mid hero-talent-tree rebuild trips 12.0's anchor-family guard.
+			-- Every other panel re-asserts synchronously (no flicker).
+			deferReassert = true,
 			defaultEnabled = true,
 		},
+		-- PROTOTYPE (in-game verification PENDING) — the dialog is packed with
+		-- talent buttons reparented from the live tree whose edges weave them
+		-- into one anchor family. Earlier QUI attempts pinned the moved dialog to
+		-- the REAL UIParent (it inherits DefaultPanelTemplate = NOT protected, so
+		-- it never took the secure path) and tripped 12.0's anchor-family guard
+		-- during the tree rebuild (PlaceHeroTalentButton, ...Dialog.lua:442). The
+		-- reference mover DOES move this dialog, but only ever anchors moved
+		-- frames to a UIParent-MIRRORING proxy, never UIParent itself — a
+		-- difference QUI never tested on the dialog. proxyParent routes the
+		-- re-anchor through QUI_MoverSecureAnchor (our same mirror) to test
+		-- whether a distinct anchor node avoids the trip; deferReassert keeps the
+		-- re-anchor out of any synchronous rebuild pass. If 442 still fires
+		-- in-game, the conflict is local to NodesContainer (proxy-independent) —
+		-- remove this panel again, now genuinely exhaustive.
 		{
 			id = "HeroTalentsSelectionDialog",
 			label = "Hero Talents",
 			group = "character",
 			names = { "HeroTalentsSelectionDialog" },
 			addon = "Blizzard_PlayerSpells",
+			proxyParent = true,
+			deferReassert = true,
 			defaultEnabled = true,
 		},
 		{

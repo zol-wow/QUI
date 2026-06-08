@@ -145,14 +145,19 @@ local function ApplyTheme(win)
     end
 end
 
+-- The container's SetMovable/SetResizable flags are set ONCE at creation and
+-- NEVER toggled here — the damage-meter pattern (damage_meter.lua:2264-2265).
+-- Toggling SetResizable with layout-mode state raced the resize grips: the
+-- flag could read false at the instant a grip fired, so the protected
+-- StartSizing threw "Frame is not resizable" + tainted QUI. The window stays
+-- move/resize-only-in-Layout-Mode because the AFFORDANCES are gated, not the
+-- flags: the dragHandle/resizeGrip are mouse-disabled outside Layout Mode
+-- (below) AND every handler returns early unless IsLayoutModeActive(), and the
+-- four-corner overlay grips live on a handle that is hidden outside Layout Mode.
 local function RefreshInteractionState()
     local layoutActive = IsLayoutModeActive()
     for i = 1, #windows do
         local win = windows[i]
-        if win.container then
-            if win.container.SetMovable  then win.container:SetMovable(layoutActive)  end
-            if win.container.SetResizable then win.container:SetResizable(layoutActive) end
-        end
         if win.dragHandle  then win.dragHandle:EnableMouse(layoutActive)  end
         if win.resizeGrip  then win.resizeGrip:EnableMouse(layoutActive)  end
     end
@@ -298,6 +303,12 @@ local function CreateWindow(id)
     resizeGrip:SetScript("OnMouseDown", function()
         Display.SetActiveWindow(win.id)
         if not IsLayoutModeActive() then return end
+        -- Guarantee the resizable flag at the point of use: StartSizing is
+        -- protected and throws "Frame is not resizable" if RefreshInteractionState
+        -- hasn't (re)enabled it for this container. SetResizable is not protected.
+        if container.SetResizable and container.IsResizable and not container:IsResizable() then
+            container:SetResizable(true)
+        end
         container:StartSizing("BOTTOMRIGHT")
     end)
     resizeGrip:SetScript("OnMouseUp", function()

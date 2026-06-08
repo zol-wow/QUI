@@ -605,16 +605,31 @@ function TooltipProvider:InitializeEngine()
 end
 
 ---------------------------------------------------------------------------
--- ADDON_LOADED TRIGGER
+-- INIT TRIGGER
 ---------------------------------------------------------------------------
-local providerEventFrame = CreateFrame("Frame")
-providerEventFrame:RegisterEvent("ADDON_LOADED")
-providerEventFrame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
-        self:UnregisterEvent("ADDON_LOADED")
+-- Initialize the selected engine after login. NOT gated on this addon's own
+-- ADDON_LOADED: post-split that "QUI_QoL" self-event isn't delivered when the
+-- core eager-LoadAddOn's the module from OnEnable, so the cursor-follow / anchor
+-- hooks were never installed (anchorToCursor did nothing).
+--
+-- Two subtleties drive the shape below:
+--   1. ns.WhenLoggedIn fires the callback IMMEDIATELY when already logged in
+--      (init.lua) — which is the eager-LOD case.
+--   2. tooltip.lua registers the "default" engine LATER in the TOC
+--      (tooltip_provider precedes it), so initializing inline here runs before
+--      the engine exists and InitializeEngine bails (no engine -> cursor-anchor
+--      stays dead). Defer one frame so the whole addon (incl. tooltip.lua) has
+--      finished loading and every engine is registered.
+local function InitTooltipEngineDeferred()
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function() TooltipProvider:InitializeEngine() end)
+    else
         TooltipProvider:InitializeEngine()
     end
-end)
+end
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(InitTooltipEngineDeferred)
+end
 
 ---------------------------------------------------------------------------
 -- GLOBAL REFRESH

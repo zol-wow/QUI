@@ -1069,6 +1069,69 @@ GetFrameAnchoring = function()
     return db.frameAnchoring
 end
 
+--- Layout Mode "lock" = an element with an ACTIVE frame anchor (its position is
+--- owned by the anchoring system). Anchored movers block dragging (OnDragStart)
+--- AND resizing (the corner grips) unless Shift is held. Single source of truth
+--- so move-lock and resize-lock can never drift apart.
+function QUI_LayoutMode:IsElementAnchored(key)
+    if not key then return false end
+    local fa = GetFrameAnchoring()
+    local entry = fa and fa[key]
+    if type(entry) ~= "table" then return false end
+    return entry.parent ~= nil and entry.parent ~= "disabled"
+end
+
+--- Flash an element handle's border red to signal the locked state, then restore
+--- it to the accent color. Shared by the drag-lock and the resize-grip lock.
+function QUI_LayoutMode:FlashLockedHandle(key)
+    local handle = key and self._handles[key]
+    local border = handle and handle._border
+    if border and border.SetColor then
+        border:SetColor(1, 0.3, 0.3, 1)
+        C_Timer.After(0.3, function()
+            if border and border.SetColor then
+                border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+            end
+        end)
+    end
+end
+
+--- Detach an element from its anchor (Shift-override intent), converting the
+--- anchor to a free screen position so the frame does not jump. Mirrors the
+--- explicit detach the Shift-drag path performs at drag stop. No-op if the
+--- element is not currently anchored.
+function QUI_LayoutMode:DetachElementAnchor(key)
+    if not self:IsElementAnchored(key) then return end
+    local fa = GetFrameAnchoring()
+    local entry = fa and fa[key]
+    if type(entry) ~= "table" then return end
+
+    -- Pin to the frame's current screen position (CENTER/CENTER + offset from
+    -- the screen center) so dropping the anchor doesn't move it.
+    local def = self._elements[key]
+    local frame = def and def.getFrame and def.getFrame()
+    if frame and frame.GetCenter then
+        local cx, cy = frame:GetCenter()
+        if cx and cy then
+            local pw, ph = UIParent:GetWidth(), UIParent:GetHeight()
+            entry.offsetX = math.floor(cx - pw / 2 + 0.5)
+            entry.offsetY = math.floor(cy - ph / 2 + 0.5)
+        end
+    end
+    entry.parent = "disabled"
+    entry.point = "CENTER"
+    entry.relative = "CENTER"
+
+    if _G.QUI_ApplyFrameAnchor then
+        pcall(_G.QUI_ApplyFrameAnchor, key)
+    end
+    local QUI = _G.QUI
+    if QUI and QUI.SendMessage then
+        QUI:SendMessage("QUI_FRAME_ANCHOR_CHANGED", key)
+    end
+    self._hasChanges = true
+end
+
 --- Load position for an element key.
 --- Returns point, relPoint, offsetX, offsetY or nil if no saved position.
 local function LoadPosition(key)
@@ -1730,23 +1793,13 @@ AddHandleScripts = function(handle, def)
 
         -- Check if frame has an active anchor (position controlled by anchoring system).
         -- If so, block dragging unless Shift is held (Shift = re-anchor/detach intent).
-        local hasActiveAnchor = false
-        if not usesCustomPersistence then
-            local fa = GetFrameAnchoring()
-            if fa and fa[self._barKey] and type(fa[self._barKey]) == "table" then
-                local parent = fa[self._barKey].parent
-                hasActiveAnchor = parent and parent ~= "disabled"
-            end
-        end
+        -- Shared with the resize-grip lock via QUI_LayoutMode:IsElementAnchored.
+        local hasActiveAnchor = (not usesCustomPersistence)
+            and QUI_LayoutMode:IsElementAnchored(self._barKey) or false
 
         if hasActiveAnchor and not IsShiftKeyDown() then
             -- Flash border to indicate locked state
-            if self._border and self._border.SetColor then
-                self._border:SetColor(1, 0.3, 0.3, 1)
-                C_Timer.After(0.3, function()
-                    self._border:SetColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-                end)
-            end
+            QUI_LayoutMode:FlashLockedHandle(self._barKey)
             return
         end
 
@@ -2962,7 +3015,11 @@ do
                     grip:SetScript("OnEnter", function(self)
                         if GameTooltip then
                             GameTooltip:SetOwner(self, tooltipAnchor)
-                            GameTooltip:SetText("Drag to resize chat frame")
+                            if QUI_LayoutMode:IsElementAnchored(overlay._barKey) then
+                                GameTooltip:SetText("Hold Shift to resize (anchored)")
+                            else
+                                GameTooltip:SetText("Drag to resize chat frame")
+                            end
                             GameTooltip:Show()
                         end
                     end)
@@ -2971,13 +3028,39 @@ do
                     end)
                     grip:SetScript("OnMouseDown", function(_, button)
                         if button ~= "LeftButton" then return end
+                        -- Resize is a Layout-Mode-only affordance: bail when
+                        -- Layout Mode is inactive (mirrors display_layer's grip).
+                        if not QUI_LayoutMode.isActive then return end
                         if InCombatLockdown and InCombatLockdown() then return end
+                        -- Locked-when-anchored: an anchored window blocks resizing
+                        -- the same way it blocks dragging. Shift overrides — it
+                        -- detaches the anchor (parity with Shift-drag) and resizes.
+                        local key = overlay._barKey
+                        if key and QUI_LayoutMode:IsElementAnchored(key) then
+                            if not IsShiftKeyDown() then
+                                QUI_LayoutMode:FlashLockedHandle(key)
+                                return
+                            end
+                            QUI_LayoutMode:DetachElementAnchor(key)
+                        end
                         local f = getFrame()
                         if not f then return end
+                        -- StartSizing is protected and throws "Frame is not
+                        -- resizable" unless the resizable flag is set. The chat
+                        -- container is created SetResizable(true) and never
+                        -- toggled (damage-meter pattern), but re-assert it here
+                        -- at the point of use as a belt-and-suspenders guarantee
+                        -- against any stray reset — exactly as the damage meter
+                        -- grip does (damage_meter.lua:2040). SetResizable is NOT
+                        -- protected — no taint.
+                        if f.SetResizable and f.IsResizable and not f:IsResizable() then
+                            f:SetResizable(true)
+                        end
                         f:StartSizing(corner)
                     end)
                     grip:SetScript("OnMouseUp", function(_, button)
                         if button ~= "LeftButton" then return end
+                        if not QUI_LayoutMode.isActive then return end
                         local f = getFrame()
                         if f then
                             f:StopMovingOrSizing()

@@ -371,20 +371,23 @@ local function TogglePreview(enabled)
 end
 
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
-eventFrame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "ADDON_LOADED" then
-        if arg1 ~= ADDON_NAME then return end
-        self:UnregisterEvent("ADDON_LOADED")
+
+-- Install after login. ns.WhenLoggedIn runs now if already logged in (the
+-- post-login LOD case) rather than this addon's own ADDON_LOADED, which is NOT
+-- delivered when the core eager-LoadAddOn's the module from OnEnable (see
+-- tooltip_provider.lua). Nil only in the headless test harness.
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(function()
         state.inCombat = InCombatLockdown()
         RefreshRangeCheck()
-        return
-    end
+    end)
+end
 
+eventFrame:SetScript("OnEvent", function(_, event, arg1)
     if event == "PLAYER_ENTERING_WORLD" then
         -- Re-apply appearance after zone-in / reload so the user's font size
         -- and position survive any scale changes that happened during loading.

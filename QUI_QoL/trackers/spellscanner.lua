@@ -787,20 +787,21 @@ end
 ---------------------------------------------------------------------------
 
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 eventFrame:RegisterEvent("BAG_UPDATE_COOLDOWN")
 eventFrame:RegisterUnitEvent("UNIT_AURA", "player")
 
-eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
-    if event == "ADDON_LOADED" then
-        if arg1 ~= ADDON_NAME then return end
-        self:UnregisterEvent("ADDON_LOADED")
-        -- Initialize database
-        GetDB()
+-- Initialize the DB after login. ns.WhenLoggedIn runs now if already logged in
+-- (the post-login LOD case) rather than this addon's own ADDON_LOADED, which is
+-- NOT delivered when the core eager-LoadAddOn's the module from OnEnable (see
+-- tooltip_provider.lua). Nil only in the headless test harness.
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(GetDB)
+end
 
-    elseif event == "PLAYER_REGEN_ENABLED" then
+eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
+    if event == "PLAYER_REGEN_ENABLED" then
         -- Process pending scanning after combat
         C_Timer.After(0.3, ProcessPendingScanning)
 

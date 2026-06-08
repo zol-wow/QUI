@@ -1259,8 +1259,19 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         DiscoverExtraTooltips()
         return
     end
+end)
 
-    if event ~= "ADDON_LOADED" or arg1 ~= ADDON_NAME then return end
+-- Install the tooltip hooks reliably AFTER login via ns.WhenLoggedIn (runs now
+-- if already logged in — the LOD case after the suite split — else on
+-- PLAYER_LOGIN). It is NOT gated on this addon's own ADDON_LOADED: in the
+-- monolith ADDON_NAME was "QUI" and that startup event drove init, but this
+-- file now lives in QUI_Skinning (LoadOnDemand) and its "QUI_Skinning"
+-- self-ADDON_LOADED does not fire the init in time, leaving GameTooltip unhooked
+-- (Blizzard NineSlice everywhere). Every other skinning file installs at load
+-- the same way (see popups.lua). The eventFrame above still handles post-init
+-- addon-tooltip discovery and the post-combat restyle restore.
+local function InitializeTooltipSkinning()
+    if initialized then return end
 
     RebuildTooltipList()
 
@@ -1349,9 +1360,14 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     SetupHealthBarHook()
     SetupPostProcessor()
     DiscoverExtraTooltips()
-    self:RegisterEvent("PLAYER_REGEN_ENABLED")
+    eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     initialized = true
-end)
+end
+
+-- ns.WhenLoggedIn is nil only in the headless test harness.
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(InitializeTooltipSkinning)
+end
 
 ---------------------------------------------------------------------------
 -- Chrome Refit (post-AddLine extent recovery)

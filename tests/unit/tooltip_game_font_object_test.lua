@@ -146,11 +146,17 @@ local ns = {
         CreateBorderLines = function() end,
         UpdateBorderLines = function() end,
     },
+    -- The LOD skinning addon installs its tooltip hooks via ns.WhenLoggedIn
+    -- (runs immediately when already logged in — the post-login LOD case),
+    -- NOT via its own ADDON_LOADED. The harness runs the callback synchronously
+    -- at load, so init happens during the loadfile call below.
+    WhenLoggedIn = function(fn) fn() end,
 }
 
 assert(loadfile("QUI_Skinning/skinning/system/tooltips.lua"))("QUI", ns)
+-- Init already ran (ns.WhenLoggedIn fired synchronously during load). The
+-- eventFrame remains for post-init addon-tooltip discovery + combat restore.
 assert(eventFrame and eventFrame.scripts.OnEvent, "tooltip skinning must register an event handler")
-eventFrame.scripts.OnEvent(eventFrame, "ADDON_LOADED", "QUI")
 
 assert(GameTooltipHeaderText.path == customFont,
     "GameTooltip header Font object should use the configured addon font")

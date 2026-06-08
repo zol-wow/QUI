@@ -352,12 +352,7 @@ end
 local eventFrame = CreateFrame("Frame")
 
 local function OnEvent(_, event, arg1)
-    if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
-        MPlusProgress:RegisterTooltipHook()
-        C_Timer.After(0.5, function()
-            MPlusProgress:Refresh()
-        end)
-    elseif event == "PLAYER_ENTERING_WORLD" then
+    if event == "PLAYER_ENTERING_WORLD" then
         State.challengeCompleted = false
         C_Timer.After(0.5, function()
             MPlusProgress:Refresh()
@@ -381,7 +376,6 @@ local function OnEvent(_, event, arg1)
 end
 
 eventFrame:SetScript("OnEvent", OnEvent)
-eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("CHALLENGE_MODE_START")
 eventFrame:RegisterEvent("CHALLENGE_MODE_COMPLETED")
@@ -393,6 +387,19 @@ eventFrame:RegisterEvent("SCENARIO_POI_UPDATE")
 eventFrame:RegisterEvent("SCENARIO_UPDATE")
 eventFrame:RegisterEvent("ZONE_CHANGED")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+
+-- Install the tooltip hook after login. ns.WhenLoggedIn runs now if already
+-- logged in (the post-login LOD case) rather than this addon's own ADDON_LOADED,
+-- which is NOT delivered when the core eager-LoadAddOn's the module from
+-- OnEnable (see tooltip_provider.lua). Nil only in the headless test harness.
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(function()
+        MPlusProgress:RegisterTooltipHook()
+        C_Timer.After(0.5, function()
+            MPlusProgress:Refresh()
+        end)
+    end)
+end
 
 _G.QUI_MPlusProgress = MPlusProgress
 _G.QUI_RefreshMPlusProgress = function()

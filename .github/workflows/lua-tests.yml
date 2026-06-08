@@ -12,6 +12,8 @@ jobs:
       - uses: leafo/gh-actions-lua@v13
         with:
           luaVersion: "5.1"
+      - name: Compile-check all Lua under 5.1
+        run: bash tools/check_compile.sh
       - name: Run standalone Lua test suite
         run: |
           set -u

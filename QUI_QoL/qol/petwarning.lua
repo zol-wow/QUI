@@ -278,21 +278,26 @@ end
 -- EVENT HANDLING
 ---------------------------------------------------------------------------
 
-eventFrame:RegisterEvent("ADDON_LOADED")
-eventFrame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "ADDON_LOADED" then
-        if arg1 ~= ADDON_NAME then return end
-        self:UnregisterEvent("ADDON_LOADED")
-        UpdatePetWarningEventRegistration()
-        if InCombatLockdown() and combatEventsRegistered then
-            StartPetWarningPolling()
-        end
-    elseif event == "PLAYER_REGEN_DISABLED" then
+eventFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_DISABLED" then
         StartPetWarningPolling()
     elseif event == "PLAYER_REGEN_ENABLED" then
         StopPetWarningPolling()
     end
 end)
+
+-- Install after login. ns.WhenLoggedIn runs now if already logged in (the
+-- post-login LOD case) rather than this addon's own ADDON_LOADED, which is NOT
+-- delivered when the core eager-LoadAddOn's the module from OnEnable (see
+-- tooltip_provider.lua). Nil only in the headless test harness.
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(function()
+        UpdatePetWarningEventRegistration()
+        if InCombatLockdown() and combatEventsRegistered then
+            StartPetWarningPolling()
+        end
+    end)
+end
 
 ---------------------------------------------------------------------------
 -- GLOBAL API (for options panel)

@@ -170,6 +170,7 @@ local SPEC_TRACKING_MAX_RETRIES = 6
 -- in this same file can close over them without forward-reference issues.
 local _previousLoadoutID = nil       -- outgoing loadout ID; used by save-on-switch (mirrors _previousSpecID)
 local _lastKnownSavedConfigID = nil  -- before/after compare filter: distinguishes loadout swap vs in-place talent edit
+local _lastKnownHeroSubTree = nil    -- active hero SubTreeID last reconciled (in-place hero-swap detection)
 local loadoutListReady = false       -- flipped true by TRAIT_CONFIG_LIST_UPDATED
 local pendingLoadoutRefresh = false  -- combat-deferred save/load flag; drained by PLAYER_REGEN_ENABLED
 local loadoutTrackingToken = 0       -- abort-on-supersede token (parallels specTrackingRetryToken at line 130)
@@ -220,6 +221,17 @@ local function NormalizeLoadoutID(loadoutID)
     if loadoutID == nil then return nil end
     if loadoutID == NO_SAVED_LOADOUT_ID then return 0 end
     return loadoutID
+end
+
+-- Active hero-talent SubTreeID, or -1 when none (low level / specs without
+-- hero talents). Mirrors cdm_spelldata's _HeroSubTreeKey so storage-side and
+-- render-side agree on the bucket key. GetActiveHeroTalentSpec returns a
+-- stable SubTreeID (Nilable), not an ephemeral staging config.
+local function GetCurrentHeroSubTree()
+    local id = C_ClassTalents and C_ClassTalents.GetActiveHeroTalentSpec
+        and C_ClassTalents.GetActiveHeroTalentSpec()
+    if type(id) == "number" and id > 0 then return id end
+    return -1
 end
 
 local function GetPlayerClassID()
@@ -870,6 +882,10 @@ local function ResolveInitialLoadoutSlot()
     if savedID == nil then return end  -- CVars not loaded yet; a later wake-up re-checks
 
     _initialLoadoutResolved = true
+
+    -- Seed the hero-sub-tree baseline so the first in-place hero swap is
+    -- detected against a known value (not nil).
+    _lastKnownHeroSubTree = GetCurrentHeroSubTree()
 
     -- Prime the db.char fast-path cache (combat-reload recovery, LDEV-04).
     if savedID ~= NO_SAVED_LOADOUT_ID then
@@ -3657,6 +3673,16 @@ function ownedEngine:Initialize()
                 local specID = GetCurrentSpecID()
                 if not specID then return end
 
+                -- In-place hero-talent swap shares the saved configID, so the
+                -- configID filter below would skip it. Routed through
+                -- ns.CDMContainers (an upvalue this closure already holds via
+                -- `ns`) instead of referencing the hero-subtree locals directly:
+                -- Initialize sits at WoW's 60-upvalue-per-function ceiling, so
+                -- adding any new upvalue here fails the whole file to compile.
+                if ns.CDMContainers and ns.CDMContainers.ReconcileOnHeroSubTreeChange then
+                    ns.CDMContainers.ReconcileOnHeroSubTreeChange()
+                end
+
                 -- Re-resolve the saved-loadout ID fresh inside the callback.
                 -- NEVER use the event payload's configID for the storage key
                 -- (it's the active staging config, not the persistent saved one).
@@ -4191,6 +4217,20 @@ ns.CDMContainers = {
     LayoutContainer = LayoutContainer,
     RefreshAll = RefreshAll,
     RebuildBuffContainer = RebuildBuffContainer,
+    -- In-place hero-talent swap detection, called from the loadout debounce in
+    -- ownedEngine:Initialize. Lives on this table -- not as a direct Initialize
+    -- upvalue -- because Initialize is at WoW's 60-upvalue-per-function ceiling;
+    -- the closure reaches it via the `ns` upvalue it already holds.
+    ReconcileOnHeroSubTreeChange = function()
+        local current = GetCurrentHeroSubTree()
+        if current == _lastKnownHeroSubTree then return end
+        _lastKnownHeroSubTree = current
+        if not InCombatLockdown() and ns.CDMSpellData then
+            ns.CDMSpellData:CheckAllDormantSpells()
+            ns.CDMSpellData:ReconcileAllContainers()
+            if RefreshAll then RefreshAll() end
+        end
+    end,
     GetTrackedBarContainer = function() return containers.trackedBar end,
     GetContainerShape = GetContainerShape,
     IsBarShape = IsBarShape,
