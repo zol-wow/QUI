@@ -111,8 +111,7 @@ local function ApplyTheme(win)
             smf:SetFading(false)
         end
         local fontPath = Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont()
-        if fontPath and _G.CreateFont then
-            local fo = _G.QUI_CustomChatFontObject or _G.CreateFont("QUI_CustomChatFontObject")
+        if fontPath then
             local size = 13
             if _G.GetChatWindowInfo then
                 local _, winSize = _G.GetChatWindowInfo(1)
@@ -125,8 +124,19 @@ local function ApplyTheme(win)
             if settings and settings.font and settings.font.forceOutline then
                 flags = "OUTLINE"
             end
-            fo:SetFont(fontPath, size, flags)
-            smf:SetFontObject(fo)
+            -- Prefer a per-script font family so CJK chat (Korean/Chinese
+            -- names and messages) falls back to Blizzard fonts instead of
+            -- rendering blank; degrade to the single-file path if unavailable.
+            local family = Helpers and Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(fontPath, size, flags)
+            if family then
+                smf:SetFontObject(family)
+            elseif _G.CreateFont then
+                local fo = _G.QUI_CustomChatFontObject or _G.CreateFont("QUI_CustomChatFontObject")
+                fo:SetFont(fontPath, size, flags)
+                smf:SetFontObject(fo)
+            else
+                smf:SetFontObject(_G.ChatFontNormal)
+            end
         else
             smf:SetFontObject(_G.ChatFontNormal)
         end
@@ -303,7 +313,13 @@ local function CreateWindow(id)
     local smf = CreateFrame("ScrollingMessageFrame", smfName, container)
     win.smf = smf
     smf:SetPoint("TOPLEFT",     container, "TOPLEFT",     6,  -(DRAG_STRIP_HEIGHT + 2))
-    smf:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -6, 6)
+    -- Right inset clears the scrollbar's lane instead of overlapping it. The
+    -- custom scrollbar occupies the rightmost ~11px (scrollbar_custom.lua's
+    -- TRACK_INSET 3 + TRACK_WIDTH 8); the SMF and that track are both mouse-
+    -- enabled at the same frame level, so any overlap lets the SMF win the
+    -- contested zone and swallow clicks on the bar's left half. -13 ends the
+    -- text ~2px before the bar's left edge so the whole bar stays grabbable.
+    smf:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -13, 6)
     smf:SetJustifyH("LEFT")
     smf:SetMaxLines((cd and cd.maxLines) or 1000)
     smf:SetHyperlinksEnabled(true)

@@ -30,7 +30,15 @@ local MANIFEST = {
     { folder = "QUI_Skinning",     class = "lod",                                                    sources = { "modules/skinning" } },
     -- No legacyFlag: minimap.enabled was retired (v43); addon state alone
     -- gates this module.
-    { folder = "QUI_Minimap",      class = "lod",                                                    sources = { "modules/minimap" } },
+    -- lateLoad: the minimap reparents MinimapCluster out of Blizzard EditMode
+    -- and skins/positions against the applied UI scale — all of which must run
+    -- AFTER EditMode has registered+applied its layout (around/after first
+    -- PLAYER_ENTERING_WORLD). Eager loading on the loading screen runs its
+    -- one-shot Initialize too early, so EditMode re-asserts control (minimap
+    -- "moves in Edit Mode") and the skin/anchor land wrong. Load it post-login
+    -- via the staggered kick-off instead; the other lod modules self-defer
+    -- their runtime work and load fine eagerly.
+    { folder = "QUI_Minimap",      class = "lod", lateLoad = true,                                   sources = { "modules/minimap" } },
     { folder = "QUI_QoL",          class = "lod",                                                    sources = { "modules/qol", "modules/dungeon", "modules/trackers", "modules/combat", "modules/utility" } },
     { folder = "QUI_DamageMeter",  class = "lod",                                                    sources = { "modules/damage_meter" } },
 }

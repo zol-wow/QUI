@@ -1044,6 +1044,143 @@ function Helpers.GetGeneralFontSettings()
 end
 
 ---------------------------------------------------------------------------
+-- PER-SCRIPT FONT FALLBACK (CJK)
+-- WoW's stock font objects are FontFamily objects with one member per
+-- script (roman / korean / simplifiedchinese / traditionalchinese / russian;
+-- see Blizzard_Fonts_Shared/Shared/Fonts.xml). The engine picks the member
+-- per text-run, which is how an enUS client renders Korean/Chinese names.
+--
+-- A plain FontString:SetFont(file, ...) collapses the string to one physical
+-- file, so any glyph that file lacks renders blank. Quazii.ttf has zero CJK
+-- glyphs, so CJK names blanked everywhere QUI owns the font.
+--
+-- CreateFontFamily(name, members) rebuilds that per-script fallback at
+-- runtime: the QUI font handles roman/russian (Quazii covers Cyrillic) and
+-- Blizzard's stock fonts handle korean/chinese. Assigned via SetFontObject().
+--
+-- CreateFontFamily requires EXACTLY one member per script alphabet (5 total:
+-- roman, korean, simplifiedchinese, traditionalchinese, russian) — fewer than
+-- 5 throws "unexpected number of member fonts". The alphabet is given as the
+-- canonical Fonts.xml string; Enum.FontAlphabet does not exist on live 12.0
+-- clients, so we pass the strings directly (and use an enum value only on the
+-- rare build that exposes one). Any failure degrades to plain SetFont.
+---------------------------------------------------------------------------
+
+-- The five script alphabets, in Blizzard's canonical Fonts.xml spelling.
+-- roman/russian render with the QUI font (Quazii covers Cyrillic); the CJK
+-- scripts fall back to Blizzard's stock fonts.
+local FONT_ALPHABET_FILES = {
+    { name = "roman",              cjk = false },
+    { name = "korean",             cjk = "Fonts\\2002.TTF" },
+    { name = "simplifiedchinese",  cjk = "Fonts\\ARKai_T.ttf" },
+    { name = "traditionalchinese", cjk = "Fonts\\blei00d.TTF" },
+    { name = "russian",            cjk = false },
+}
+
+-- Resolve an alphabet name to whatever value CreateFontFamily wants: the
+-- numeric Enum.FontAlphabet entry when a build exposes it, else the string.
+local function AlphabetValue(name)
+    local enum = _G.Enum and _G.Enum.FontAlphabet
+    if type(enum) == "table" then
+        for k, v in pairs(enum) do
+            if type(k) == "string" and k:lower() == name then return v end
+        end
+    end
+    return name
+end
+
+-- One SimpleFont family per (path|size|flags) so CreateFontFamily runs at
+-- most once per distinct combination. Only successes are cached.
+local fontFamilyCache = {}
+
+--- Build (and cache) a per-script fallback SimpleFont for a QUI font.
+--- @param fontPath string Resolved roman/russian font file path
+--- @param size number Font height (> 0)
+--- @param flags string|nil Outline flags ("", "OUTLINE", "THICKOUTLINE", ...)
+--- @return any|nil SimpleFont font object, or nil when unavailable
+function Helpers.GetFontFamilyObject(fontPath, size, flags)
+    if type(fontPath) ~= "string" or type(size) ~= "number" or size <= 0 then
+        return nil
+    end
+    flags = flags or ""
+    if not _G.CreateFontFamily then return nil end
+
+    local key = fontPath .. "|" .. size .. "|" .. flags
+    local cached = fontFamilyCache[key]
+    if cached then return cached end
+
+    -- All five members are mandatory. CJK scripts use Blizzard's stock fonts;
+    -- roman/russian use the QUI font.
+    local members = {}
+    for i = 1, #FONT_ALPHABET_FILES do
+        local entry = FONT_ALPHABET_FILES[i]
+        members[i] = {
+            alphabet = AlphabetValue(entry.name),
+            file = entry.cjk or fontPath,
+            height = size,
+            flags = flags,
+        }
+    end
+
+    local familyName = "QUIFB_" .. key:gsub("[^%w]", "_")
+    local ok, family = pcall(_G.CreateFontFamily, familyName, members)
+    if not ok or not family then
+        -- Do NOT cache the failure. A throw here is most likely a transient
+        -- tainted/secure-context call; let a later untainted refresh retry so
+        -- the family self-heals instead of degrading for the whole session.
+        return nil
+    end
+    fontFamilyCache[key] = family
+    return family
+end
+
+--- Apply a QUI font to a FontString WITH per-script CJK fallback.
+--- Drop-in for fontString:SetFont — snapshots justify/color so appearance is
+--- unchanged for roman text, and falls back to plain SetFont whenever the
+--- family API is unavailable (older clients) so behaviour never regresses.
+--- @param fontString table FontString to style
+--- @param fontNameOrPath string LSM font name or a font file path
+--- @param size number Font height
+--- @param flags string|nil Outline flags
+function Helpers.ApplyFontWithFallback(fontString, fontNameOrPath, size, flags)
+    if not fontString or not fontString.SetFont then return end
+    flags = flags or ""
+
+    -- Resolve an LSM name to a path (mirrors GetGeneralFont); a raw path is
+    -- left as-is because Fetch(..., true) returns nil for unregistered keys.
+    local fontPath = fontNameOrPath
+    if LSM and type(fontNameOrPath) == "string" then
+        local fetched = LSM:Fetch("font", fontNameOrPath, true)
+        if fetched then fontPath = fetched end
+    end
+    if type(fontPath) ~= "string" then fontPath = DEFAULT_FONT end
+
+    local family
+    if type(size) == "number" and size > 0 then
+        family = Helpers.GetFontFamilyObject(fontPath, size, flags)
+    end
+
+    if family and fontString.SetFontObject then
+        -- SetFontObject re-bases inherited properties; snapshot the ones call
+        -- sites rely on so this stays a true drop-in for SetFont.
+        local jh = fontString.GetJustifyH and fontString:GetJustifyH()
+        local jv = fontString.GetJustifyV and fontString:GetJustifyV()
+        local r, g, b, a
+        if fontString.GetTextColor then r, g, b, a = fontString:GetTextColor() end
+
+        if pcall(fontString.SetFontObject, fontString, family) then
+            if jh and fontString.SetJustifyH then fontString:SetJustifyH(jh) end
+            if jv and fontString.SetJustifyV then fontString:SetJustifyV(jv) end
+            if r and fontString.SetTextColor then fontString:SetTextColor(r, g, b, a) end
+            return
+        end
+    end
+
+    -- Fallback: single physical file (today's behaviour).
+    fontString:SetFont(fontPath, size or 12, flags)
+end
+
+---------------------------------------------------------------------------
 -- COLOR/THEME HELPERS
 -- Centralized color utilities for skin system and class colors
 ---------------------------------------------------------------------------

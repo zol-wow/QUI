@@ -241,7 +241,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         local nameOffsetY = nameSettings and nameSettings.nameOffsetY or 0
         local namePadX = math.abs(nameOffsetX)
         local nameText = textFrame:CreateFontString(nil, "OVERLAY")
-        nameText:SetFont(fontPath, nameSettings and nameSettings.nameFontSize or 12, fontOutline)
+        Helpers.ApplyFontWithFallback(nameText, fontPath, nameSettings and nameSettings.nameFontSize or 12, fontOutline)
         nameText:SetPoint(nameAnchorInfo.leftPoint, frame, nameAnchorInfo.leftPoint, namePadX, nameOffsetY)
         nameText:SetPoint(nameAnchorInfo.rightPoint, frame, nameAnchorInfo.rightPoint, -namePadX, nameOffsetY)
         nameText:SetJustifyH(nameAnchorInfo.justify)

@@ -8,8 +8,8 @@ Run each from the **repository root** so bundled libs (`libs/`) resolve.
 
 ## generate_search_cache.lua
 
-Regenerates `QUI_Options/search_cache.lua` from in-source settings definitions.
-Run after adding or renaming user-visible settings.
+Regenerates `QUI_OptionsSearch/search_cache.lua` from in-source settings
+definitions. Run after adding or renaming user-visible settings.
 
 ```sh
 lua tools/generate_search_cache.lua

@@ -1,6 +1,6 @@
 local ADDON_NAME = "QUI"
 local ROOT = "."
-local OUTPUT_PATH = "QUI_Options/search_cache.lua"
+local OUTPUT_PATH = "QUI_OptionsSearch/search_cache.lua"
 _G.unpack = _G.unpack or table.unpack
 local unpack = _G.unpack
 

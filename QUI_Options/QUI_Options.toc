@@ -1,22 +1,29 @@
 ## Interface: 120000, 120001, 120005, 120007
 ## Title: |cFF30D1FFQUI Options|r
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
-## Notes: Load-on-demand configuration UI for QUI
+## Notes: Configuration UI for QUI
 ## Author: Zol
 ## Version: 4.0.0-beta26
 ## Category: User Interface
 ## RequiredDeps: QUI
-## LoadOnDemand: 1
+## OptionalDeps: QUI_ActionBars, QUI_CDM, QUI_Chat, QUI_GroupFrames, QUI_ResourceBars, QUI_UnitFrames
 
 bootstrap.lua
 
 # File list converted from the old options.xml include manifest.
 # Order is load-bearing. ..\QUI\ paths load files from the main addon
 # (parent-dir TOC entries are client-supported; Blizzard_PTRFeedbackGlue ships them).
+#
+# NOTE: this addon now loads at login (no LoadOnDemand) so opening the options
+# window never pays a compile cost — the window appears instantly. The OptionalDeps
+# above only order this addon after the login-class module addons (their settings
+# builders are loaded here); no builder captures a module symbol at file scope, so
+# the ordering is belt-and-suspenders (proven by the headless generator smoke test).
+# The ~3MB generated search index lives in the QUI_OptionsSearch LoadOnDemand
+# addon and is pulled in on demand the first time the search box is used.
 search_synonyms.lua
 framework.lua
 border_control.lua
-search_cache.lua
 shared.lua
 # Options-only settings framework, deferred out of the login path. Every
 # consumer reaches these lazily (inside a function) from UI-build code; none

@@ -1,6 +1,6 @@
 name: Regenerate Search Cache
 
-# Auto-regenerates QUI_Options/search_cache.lua on every push to
+# Auto-regenerates QUI_OptionsSearch/search_cache.lua on every push to
 # options-v2-phase1 and commits the result back to the branch.
 #
 # Loop prevention: pushes made with the default GITHUB_TOKEN do NOT
@@ -51,13 +51,13 @@ jobs:
       - name: Commit and push if cache changed
         if: steps.bot-check.outputs.skip != 'true'
         run: |
-          if git diff --quiet -- QUI_Options/search_cache.lua; then
+          if git diff --quiet -- QUI_OptionsSearch/search_cache.lua; then
             echo "Search cache is already up to date; nothing to commit."
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add QUI_Options/search_cache.lua
+          git add QUI_OptionsSearch/search_cache.lua
           git commit -m "chore(options): regenerate search cache [skip ci]"
           git push

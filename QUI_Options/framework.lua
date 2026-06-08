@@ -427,6 +427,36 @@ function GUI:HasGeneratedSearchCache()
     return self._generatedSearchCacheVersion ~= nil
 end
 
+-- The generated per-setting search index ships as its own LoadOnDemand addon
+-- (QUI_OptionsSearch, ~3MB) so it never compiles on the login path or when the
+-- options window first opens. We load it on demand the first time the settings
+-- search box is used. search_cache.lua self-applies via ApplyGeneratedSearchCache
+-- as it loads, so HasGeneratedSearchCache() flips true synchronously by the time
+-- this returns — the first query already gets full results. Idempotent and cheap
+-- after the first call; until it loads (or if the addon is absent/disabled),
+-- search degrades gracefully to the tile-seeded routes registered at panel build.
+local SEARCH_CACHE_ADDON = "QUI_OptionsSearch"
+function GUI:EnsureSearchCacheLoaded()
+    if self:HasGeneratedSearchCache() or self._searchCacheLoadAttempted then
+        return
+    end
+    self._searchCacheLoadAttempted = true
+    local loader = (C_AddOns and C_AddOns.LoadAddOn) or LoadAddOn
+    if type(loader) == "function" then
+        pcall(loader, SEARCH_CACHE_ADDON)
+    end
+    -- Pre-split, the cache applied at QUI_Options load (before the panel built),
+    -- then SeedStaticSearchRoutesFromTiles layered tile/sub-tab routes on top.
+    -- Now the cache applies on demand AFTER the panel is built, and
+    -- ApplyGeneratedSearchCache resets the static index — so re-seed the tile
+    -- routes to restore that union. The seed is idempotent (RegisterStaticNav-
+    -- igationEntry dedupes by key; backfill re-derives identical metadata), so
+    -- pages with no declarative settings (Welcome/Help/Modules) stay searchable.
+    if self:HasGeneratedSearchCache() and self.MainFrame then
+        self:SeedStaticSearchRoutesFromTiles(self.MainFrame)
+    end
+end
+
 function GUI:RegisterStaticNavigationEntry(entry)
     if type(entry) ~= "table" or type(entry.label) ~= "string" or entry.label == "" then
         return nil
@@ -6910,6 +6940,10 @@ function GUI:AddSidebarSearchBar(frame)
             end
             return
         end
+        -- Pull in the on-demand search index (no-op after the first call). It
+        -- self-applies synchronously as it loads, so ExecuteSearch below already
+        -- sees the full per-setting entries on the very first query.
+        GUI:EnsureSearchCacheLoaded()
         frame._searchResultsArea = frame._searchResultsArea or GUI:_CreateV2SearchResultsArea(frame)
         frame._searchResultsArea:Show()
         if frame._tileContent then frame._tileContent:Hide() end
@@ -6920,6 +6954,15 @@ function GUI:AddSidebarSearchBar(frame)
     box.onClear = function()
         if frame._searchResultsArea then frame._searchResultsArea:Hide() end
         if frame._tileContent then frame._tileContent:Show() end
+    end
+
+    -- Preload the on-demand search index the moment the box is focused (a
+    -- deliberate click), so the one-time compile happens before the user types
+    -- and the first keystroke already returns full per-setting results.
+    if box._editBox and box._editBox.HookScript then
+        box._editBox:HookScript("OnEditFocusGained", function()
+            GUI:EnsureSearchCacheLoaded()
+        end)
     end
 
     frame._searchBox = box
@@ -8027,6 +8070,7 @@ end
 function GUI:FocusSearchBox()
     local frame = self.MainFrame
     if not frame or not frame._searchBox then return end
+    self:EnsureSearchCacheLoaded()
     local box = frame._searchBox.editBox or frame._searchBox
     if box and box.SetFocus then
         box:SetFocus()

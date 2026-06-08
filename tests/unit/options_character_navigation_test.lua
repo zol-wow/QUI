@@ -65,7 +65,7 @@ assert(
     "characterPane feature should no longer be categorized as gameplay")
 
 local ns = {}
-assert(loadfile("QUI_Options/search_cache.lua"))("QUI", ns)
+assert(loadfile("QUI_OptionsSearch/search_cache.lua"))("QUI", ns)
 local cache = assert(ns.QUI_SearchCache, "search cache should load")
 
 local foundCharacterEntry = false

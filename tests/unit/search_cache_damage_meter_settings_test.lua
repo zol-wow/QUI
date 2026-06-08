@@ -11,7 +11,7 @@
 -- Run: lua tests/unit/search_cache_damage_meter_settings_test.lua
 
 local ns = {}
-assert(loadfile("QUI_Options/search_cache.lua"))("QUI", ns)
+assert(loadfile("QUI_OptionsSearch/search_cache.lua"))("QUI", ns)
 local cache = assert(ns.QUI_SearchCache, "search cache should load")
 local settings = assert(cache.settings, "cache must have a settings section")
 

@@ -330,7 +330,7 @@ local function DecorateGroupFrame(frame)
 
     local nameText = frame.nameText or textFrame:CreateFontString(nil, "OVERLAY")
     nameText:ClearAllPoints()
-    nameText:SetFont(fontPath, nameFontSize, fontOutline)
+    Helpers.ApplyFontWithFallback(nameText, fontPath, nameFontSize, fontOutline)
     local namePadX = math.abs(nameOffsetX)
     nameText:SetPoint(nameAnchor.leftPoint, frame, nameAnchor.leftPoint, namePadX, nameOffsetY + nameBottomPad)
     nameText:SetPoint(nameAnchor.rightPoint, frame, nameAnchor.rightPoint, -namePadX, nameOffsetY + nameBottomPad)

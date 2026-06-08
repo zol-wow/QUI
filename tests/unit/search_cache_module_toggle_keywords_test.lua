@@ -10,8 +10,8 @@
 --
 -- Run: lua tests/unit/search_cache_module_toggle_keywords_test.lua
 
-local chunk = assert(loadfile("QUI_Options/search_cache.lua"),
-    "could not load QUI_Options/search_cache.lua")
+local chunk = assert(loadfile("QUI_OptionsSearch/search_cache.lua"),
+    "could not load QUI_OptionsSearch/search_cache.lua")
 local ns = {}
 chunk("QUI", ns)
 

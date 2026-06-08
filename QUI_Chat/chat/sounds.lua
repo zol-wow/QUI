@@ -133,6 +133,11 @@ local function InstallStoreSubscriber()
     storeSubscribed = true
     Store.OnAppend(function(entry)
         if entry.s then return end -- secrets carry no playable classification
+        -- Replayed login history carries its ORIGINAL event now (so it can be
+        -- routed per-window like live traffic), so the e=="HISTORY" guard no
+        -- longer catches it -- skip on the hist marker instead, or every login
+        -- would replay a burst of message sounds.
+        if entry.hist then return end
         local e = entry.e
         if e == "ADDMESSAGE" or e == "BACKFILL" or e == "HISTORY" then return end
         TryPlayForEvent(e, entry.gid)

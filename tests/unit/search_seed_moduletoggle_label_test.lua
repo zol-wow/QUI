@@ -28,7 +28,7 @@ assert((loadstring or load)(src:sub(1, cut - 1), "@gen-preamble"))()
 local GUI = assert(_G.QUI and _G.QUI.GUI, "framework did not initialize QUI.GUI")
 
 -- Apply the generated cache exactly as the runtime does.
-assert(loadfile("QUI_Options/search_cache.lua"))("QUI", {})
+assert(loadfile("QUI_OptionsSearch/search_cache.lua"))("QUI", {})
 
 -- The legacy damageMeterNativePage master row was retired with the toggle
 -- consolidation; the Module Addons row is the damage meter switch now.

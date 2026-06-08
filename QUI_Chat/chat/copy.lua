@@ -679,23 +679,36 @@ local function ApplyCustomCopyButtonMode(button, container)
         button:Hide()
         container:SetScript("OnEnter", nil)
         container:SetScript("OnLeave", nil)
+        container:SetScript("OnUpdate", nil)
         container:EnableMouse(false)
     elseif mode == "hover" then
         button:Hide()
-        -- OnLeave fires when entering a CHILD — only hide on a true exit.
         container:EnableMouse(true)
-        container:SetScript("OnEnter", function()
-            button:Show()
-        end)
-        container:SetScript("OnLeave", function(self)
-            if not (self.IsMouseOver and self:IsMouseOver()) then
-                button:Hide()
+        container._quiCopyHovered = false
+        -- Drive show AND hide from a single IsMouseOver() poll, NOT OnEnter/
+        -- OnLeave. The container has mouse-enabled children (scrollbar track,
+        -- jump-to-bottom + copy buttons, drag strip, resize grip). Entering OR
+        -- leaving THROUGH a child fires the child's enter/leave, not the
+        -- container's, so an OnEnter/OnLeave pair both misses the show (cursor
+        -- arrives onto the scrollbar first, container OnEnter never fires) and
+        -- misses the hide (cursor departs off the scrollbar). IsMouseOver() is
+        -- true for the whole container rect, children included, so the poll is
+        -- correct for both directions. It only fires while the container is
+        -- shown, and toggles the button on transitions only.
+        container:SetScript("OnEnter", nil)
+        container:SetScript("OnLeave", nil)
+        container:SetScript("OnUpdate", function(self)
+            local over = (self.IsMouseOver and self:IsMouseOver()) or false
+            if over ~= self._quiCopyHovered then
+                self._quiCopyHovered = over
+                button:SetShown(over)
             end
         end)
     else -- "always"
         button:Show()
         container:SetScript("OnEnter", nil)
         container:SetScript("OnLeave", nil)
+        container:SetScript("OnUpdate", nil)
         container:EnableMouse(false)
     end
 end

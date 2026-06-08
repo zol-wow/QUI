@@ -1,7 +1,8 @@
 -- tests/unit/chat_copy_button_hover_test.lua
 -- Run: lua tests/unit/chat_copy_button_hover_test.lua
--- Verifies copyButtonMode="hover": button hidden until container OnEnter,
--- hidden again on true OnLeave (not when entering a child), and that
+-- Verifies copyButtonMode="hover": button hidden until the cursor is over the
+-- window, shown/hidden via an IsMouseOver() poll (not container OnEnter/OnLeave,
+-- which a mouse-enabled child intercepts in both directions), and that
 -- "always"/"hidden" modes behave as before with hover scripts cleared.
 
 local function recFrame(name)
@@ -83,20 +84,22 @@ local clicked = false
 Copy.ShowCustomCopyFrame = function() clicked = true end
 button.scripts.OnClick(button)
 assert(clicked == true, "copy button click should open the custom copy frame")
-assert(type(container.scripts.OnEnter) == "function", "OnEnter installed")
-assert(type(container.scripts.OnLeave) == "function", "OnLeave installed")
+-- Poll-only hover: an IsMouseOver() poll drives show/hide, so no reliance on
+-- container OnEnter/OnLeave (a child intercepts those in both directions).
+assert(type(container.scripts.OnUpdate) == "function", "IsMouseOver poll installed")
+assert(container.scripts.OnEnter == nil and container.scripts.OnLeave == nil,
+    "hover must not rely on container OnEnter/OnLeave")
 assert(container.mouse == true, "container mouse enabled for hover")
 
--- Enter shows; leave-with-cursor-still-over (child) keeps it
-container.scripts.OnEnter(container)
-assert(button.shown == true, "shown on hover")
+-- Cursor over the window (incl. directly over a child like the scrollbar):
+-- IsMouseOver() true -> shown, even though container OnEnter never fired.
 container.mouseOver = true
-container.scripts.OnLeave(container)
-assert(button.shown == true, "stays while cursor over a child")
+container.scripts.OnUpdate(container)
+assert(button.shown == true, "shown while cursor is over the window")
 
--- True leave hides
+-- True leave -> hidden.
 container.mouseOver = false
-container.scripts.OnLeave(container)
+container.scripts.OnUpdate(container)
 assert(button.shown == false, "hidden on true leave")
 
 -- Switch to always: shown, hover scripts cleared, mouse released
@@ -104,6 +107,7 @@ settings.copyButtonMode = "always"
 Copy.EnsureCustomCopyButton()
 assert(button.shown == true, "always shows")
 assert(container.scripts.OnEnter == nil and container.scripts.OnLeave == nil, "hover scripts cleared")
+assert(container.scripts.OnUpdate == nil, "hover poll cleared")
 assert(container.mouse == false, "container mouse released")
 
 -- Hidden mode hides

@@ -7,6 +7,7 @@ local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 
 local LSM = ns.LSM
+local Helpers = ns.Helpers
 
 ---------------------------------------------------------------------------
 -- SAFE FONT HELPER
@@ -87,10 +88,21 @@ local function ApplyFontToFontString(fontString, fontPath)
     local currentFont, size, flags = fontString:GetFont()
     if size and size > 0 then
         if not originalGlobalFonts[fontString] then
-            originalGlobalFonts[fontString] = { font = currentFont, flags = flags }
+            -- Capture the original font OBJECT (not just the file) so restore
+            -- can put Blizzard's real FontFamily back losslessly, preserving
+            -- its per-script (CJK) fallback.
+            local originalObject = fontString.GetFontObject and fontString:GetFontObject()
+            originalGlobalFonts[fontString] = { font = currentFont, flags = flags, object = originalObject }
         end
         if currentFont ~= fontPath then
-            fontString:SetFont(fontPath, size, flags or "")
+            -- Use a per-script family so Blizzard UI keeps CJK fallback under
+            -- the QUI font; fall back to the single file when unavailable.
+            local family = Helpers and Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(fontPath, size, flags or "")
+            if family and fontString.SetFontObject then
+                fontString:SetFontObject(family)
+            else
+                fontString:SetFont(fontPath, size, flags or "")
+            end
         end
     end
 end
@@ -100,7 +112,20 @@ local function RestoreFontString(fontString)
     if fontString.IsForbidden and fontString:IsForbidden() then return end
 
     local original = originalGlobalFonts[fontString]
-    if not original or not original.font then return end
+    if not original then return end
+
+    -- Prefer restoring the original font OBJECT so Blizzard's FontFamily (and
+    -- its CJK fallback) comes back intact; fall back to the file otherwise.
+    if original.object and fontString.SetFontObject then
+        pcall(fontString.SetFontObject, fontString, original.object)
+        originalGlobalFonts[fontString] = nil
+        return
+    end
+
+    if not original.font then
+        originalGlobalFonts[fontString] = nil
+        return
+    end
 
     local _, size, flags = fontString:GetFont()
     if size and size > 0 then
@@ -198,14 +223,23 @@ local function ApplyGlobalFontToChatFrames(fontPath, shouldApply)
             if size then
                 if shouldApply then
                     if not originalChatFonts[chatFrame] then
-                        originalChatFonts[chatFrame] = { font = currentFont, flags = flags }
+                        local originalObject = chatFrame.GetFontObject and chatFrame:GetFontObject()
+                        originalChatFonts[chatFrame] = { font = currentFont, flags = flags, object = originalObject }
                     end
                     if currentFont ~= fontPath then
-                        chatFrame:SetFont(fontPath, size, flags or "")
+                        local family = Helpers and Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(fontPath, size, flags or "")
+                        if family and chatFrame.SetFontObject then
+                            chatFrame:SetFontObject(family)
+                        else
+                            chatFrame:SetFont(fontPath, size, flags or "")
+                        end
                     end
                 else
                     local original = originalChatFonts[chatFrame]
-                    if original and original.font then
+                    if original and original.object and chatFrame.SetFontObject then
+                        pcall(chatFrame.SetFontObject, chatFrame, original.object)
+                        originalChatFonts[chatFrame] = nil
+                    elseif original and original.font then
                         chatFrame:SetFont(original.font, size, flags or original.flags or "")
                         originalChatFonts[chatFrame] = nil
                     end
@@ -281,9 +315,16 @@ function QUICore:ApplyGlobalFont()
                         -- Apply global font directly to ScrollingMessageFrame (not just children)
                         local currentFont, size, flags = chatFrame:GetFont()
                         if not originalChatFonts[chatFrame] then
-                            originalChatFonts[chatFrame] = { font = currentFont, flags = flags }
+                            local originalObject = chatFrame.GetFontObject and chatFrame:GetFontObject()
+                            originalChatFonts[chatFrame] = { font = currentFont, flags = flags, object = originalObject }
                         end
-                        chatFrame:SetFont(fp, fontSize or size or 14, flags or "")
+                        local targetSize = fontSize or size or 14
+                        local family = Helpers and Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(fp, targetSize, flags or "")
+                        if family and chatFrame.SetFontObject then
+                            chatFrame:SetFontObject(family)
+                        else
+                            chatFrame:SetFont(fp, targetSize, flags or "")
+                        end
                     end
                 end)
             end)

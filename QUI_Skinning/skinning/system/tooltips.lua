@@ -145,18 +145,32 @@ local function ApplyFontSizeViaFontObjects(size)
     local headerSize = size + 2
     local font = (Helpers.GetGeneralFont and Helpers.GetGeneralFont()) or defaultBodyFont or STANDARD_TEXT_FONT
     local outline = Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline()
+    -- Prefer a per-script font family (modifying the Font object, the
+    -- documented taint-safe layer) so CJK tooltip text — item names, NPC
+    -- names, CJK player names — falls back to Blizzard fonts instead of
+    -- rendering blank. Degrade to the single-file SetFont when unavailable.
     if GameTooltipHeaderText and defaultHeaderFont then
         local curFont, curSize, curFlags = GameTooltipHeaderText:GetFont()
         local targetFlags = outline or curFlags or defaultHeaderFlag or ""
         if curFont ~= font or curFlags ~= targetFlags or not curSize or math.abs(curSize - headerSize) >= 0.5 then
-            GameTooltipHeaderText:SetFont(font or defaultHeaderFont, headerSize, targetFlags)
+            local family = Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(font, headerSize, targetFlags)
+            if family then
+                GameTooltipHeaderText:SetFontObject(family)
+            else
+                GameTooltipHeaderText:SetFont(font or defaultHeaderFont, headerSize, targetFlags)
+            end
         end
     end
     if GameTooltipText and defaultBodyFont then
         local curFont, curSize, curFlags = GameTooltipText:GetFont()
         local targetFlags = outline or curFlags or defaultBodyFlag or ""
         if curFont ~= font or curFlags ~= targetFlags or not curSize or math.abs(curSize - size) >= 0.5 then
-            GameTooltipText:SetFont(font or defaultBodyFont, size, targetFlags)
+            local family = Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(font, size, targetFlags)
+            if family then
+                GameTooltipText:SetFontObject(family)
+            else
+                GameTooltipText:SetFont(font or defaultBodyFont, size, targetFlags)
+            end
         end
     end
 end

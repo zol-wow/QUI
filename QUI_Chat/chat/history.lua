@@ -76,6 +76,7 @@ end
 -- default-frame slot.
 local function captureFromStore(entry)
     if History._repumping then return end
+    if entry.hist then return end -- a replayed history line; never re-capture it
     if entry.s then return end -- secrets are never persisted
     if type(entry.m) ~= "string" or entry.m == "" then return end -- future producers
     local e = entry.e
@@ -95,6 +96,14 @@ local function captureFromStore(entry)
         m = entry.m,
         r = entry.r, g = entry.g, b = entry.b,
         c = chatTypeKey,
+        -- Routing fields, so login replay can flow through the SAME per-window
+        -- tab filters as live traffic instead of fanning into every window:
+        -- channel name (named-channel routing), source event (group fallback
+        -- for keys like PARTY_LEADER), whisper conversation key (conversation
+        -- tab routing). All nil for traffic that doesn't carry them.
+        ch = entry.ch,
+        ev = entry.e,
+        w = entry.w,
     })
 end
 
@@ -159,21 +168,34 @@ local function repump()
 
         -- Chat enabled = the QUI display owns rendering; repump goes to the
         -- store. (Repump never runs with chat disabled — gated above.)
-        -- e="HISTORY" excludes them from sounds/recapture; k="SYSTEM"
-        -- routes them like other un-classifiable rendered lines.
+        -- hist=true marks every replayed line so capture and sounds skip it
+        -- (each line now carries its ORIGINAL event for routing, so the old
+        -- e=="HISTORY" guard can no longer identify it).
         -- History._repumping is still true here (we are inside the pcall).
         local StoreMod = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.MessageStore
         if StoreMod and StoreMod.Append then
-            local function pump(m, pr, pg, pb)
-                StoreMod.Append({ m = m, r = pr, g = pg, b = pb, e = "HISTORY", k = "SYSTEM",
-                    t = (GetServerTime and GetServerTime()) or time() })
+            local now = (GetServerTime and GetServerTime()) or time()
+            -- Separators are synthetic session markers: SYSTEM-keyed so they
+            -- surface in the main/default tabs.
+            local function pumpSeparator(m)
+                StoreMod.Append({ m = m, r = sepR, g = sepG, b = sepB,
+                    e = "HISTORY", k = "SYSTEM", hist = true, t = now })
             end
-            if s.showSeparators then pump(sepBefore, sepR, sepG, sepB) end
+            -- Replayed entries carry their original routing fields (type key,
+            -- channel name, source event, whisper conversation) so each window's
+            -- tab filter routes them exactly like live traffic.
+            local function pumpEntry(rec)
+                StoreMod.Append({
+                    m = rec.m or "", r = rec.r or 1, g = rec.g or 1, b = rec.b or 1,
+                    k = rec.c, ch = rec.ch, e = rec.ev, w = rec.w,
+                    hist = true, t = rec.t or now,
+                })
+            end
+            if s.showSeparators then pumpSeparator(sepBefore) end
             for i = 1, #entries do
-                local e = entries[i]
-                pump(e.m or "", e.r or 1, e.g or 1, e.b or 1)
+                pumpEntry(entries[i])
             end
-            if s.showSeparators then pump(sepAfter, sepR, sepG, sepB) end
+            if s.showSeparators then pumpSeparator(sepAfter) end
         end
     end)
 

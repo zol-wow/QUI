@@ -17,7 +17,7 @@ local function makeFrame(ftype)
     f.GetHeight = function(s) return s.h or 100 end
     f.GetBottom = function() return 100 end
     f.GetEffectiveScale = function() return 1 end
-    f.SetHitRectInsets = noop
+    f.SetHitRectInsets = function(s, l, r, t, b) s.hitInsets = { l, r, t, b } end
     f.EnableMouse = noop
     f.Show = function(s) s.shown = true end
     f.Hide = function(s) s.shown = false end
@@ -63,6 +63,8 @@ end
 -- Build two containers and two SMFs (window 1 and window 2).
 local containers = { makeFrame("Frame"), makeFrame("Frame") }
 local scrollCbs = {}
+local displayCbs = {}          -- idx -> fire the SMF's display-refreshed listeners
+local displayHookCount = {}    -- idx -> how many times AddOnDisplayRefreshedCallback ran
 local function makeSMF(idx)
     local smf = {
         range = 0, offset = 0,
@@ -78,6 +80,13 @@ local function makeSMF(idx)
         end,
         SetOnScrollChangedCallback = function(s, cb)
             scrollCbs[idx] = function() cb(s) end
+        end,
+        -- Adder (matches the real ScrollingMessageFrame): each call appends.
+        -- We chain so the test can verify add-once-per-SMF behaviour.
+        AddOnDisplayRefreshedCallback = function(s, cb)
+            displayHookCount[idx] = (displayHookCount[idx] or 0) + 1
+            local prev = displayCbs[idx]
+            displayCbs[idx] = function() if prev then prev() end; cb(s) end
         end,
     }
     return smf
@@ -117,6 +126,15 @@ for _, f in ipairs(created) do
 end
 assert(track1 and bottomBtn1, "window 1: track + jump button created")
 assert(track1.width == 8, "window 1: track width should be 8, got " .. tostring(track1.width))
+-- The click/drag hit rect must stay aligned to the visible bar: left inset 0
+-- (no bleed past the bar into the message text) and right inset -3 (reach the
+-- window edge, no off-frame spill). Guards against the old -5/-5 padding that
+-- made the 8px bar respond across an 18px zone.
+local hi = track1.hitInsets
+assert(hi and hi[1] == 0 and hi[2] == -3 and hi[3] == 0 and hi[4] == 0,
+    "window 1: hit rect must align to the visible bar (0, -3, 0, 0), got "
+    .. (hi and table.concat({ tostring(hi[1]), tostring(hi[2]),
+        tostring(hi[3]), tostring(hi[4]) }, ", ") or "nil"))
 assert(bottomBtn1._quiGlyphParts and #bottomBtn1._quiGlyphParts == 3,
     "window 1: jump button should render the drawn three-line glyph")
 for _, fs in ipairs(createdFontStrings) do
@@ -183,6 +201,31 @@ local glyph = bottomBtn1._quiGlyphParts
 assert(glyph[1].color and glyph[1].color[1] == 0.9,
     "Restyle re-applied accent to jump glyph, got " .. tostring(glyph[1].color and glyph[1].color[1]))
 accent = { 0.2, 0.8, 0.6, 1 } -- restore
+
+-- ── Bug: thumb recomputes on display refresh, not only on offset change ──────
+-- New lines arriving while the view is pinned to the bottom grow the scroll
+-- range WITHOUT moving the offset, so SetOnScrollChangedCallback never fires.
+-- The display-refreshed callback must shrink the thumb in real time; otherwise
+-- it stays stale (too tall) until the next manual scroll.
+assert(displayCbs[1], "window 1: display-refreshed callback registered")
+assert(displayHookCount[1] == 1, "display-refreshed hook attached exactly once")
+
+smfs[1].range, smfs[1].offset = 40, 0
+displayCbs[1]()
+local tallThumb = thumbTx.h
+assert(tallThumb and tallThumb > 30,
+    "window 1: small backlog -> tall thumb, got " .. tostring(tallThumb))
+
+-- Backlog grows while STILL pinned to the bottom (offset stays 0). The scroll
+-- callback is silent; only the display-refreshed callback can update the thumb.
+smfs[1].range = 400
+displayCbs[1]()
+assert(thumbTx.h and thumbTx.h < tallThumb,
+    "FIX: growing backlog at a fixed offset must shrink the thumb via the "
+    .. "display-refreshed callback, got " .. tostring(thumbTx.h)
+    .. " vs " .. tostring(tallThumb))
+print("  ok  display refresh recomputes thumb at a constant offset")
+smfs[1].range, smfs[1].offset = 40, 0 -- restore for later sections
 
 -- ── Window 2: multi-window attach ────────────────────────────────────────────
 windowCount = 2

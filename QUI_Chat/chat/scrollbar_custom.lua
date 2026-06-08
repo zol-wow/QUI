@@ -20,6 +20,7 @@ local Scrollbar = ns.QUI.Chat.Scrollbar
 
 local instances = {} -- windowID -> { track, thumb, bottomBtn }
 local TRACK_WIDTH = 8
+local TRACK_INSET = 3 -- gap from the container's right edge to the track
 local MIN_THUMB = 12
 local JUMP_GLYPH_STROKE = 1
 
@@ -138,8 +139,8 @@ local function CreateInstance(windowID, container, smf)
     local trackName = (windowID == 1) and "QUI_CustomChatScrollbar" or nil
     local btnName   = (windowID == 1) and "QUI_CustomChatJumpBottom" or nil
     sb.track = CreateFrame("Frame", trackName, container)
-    sb.track:SetPoint("TOPRIGHT", container, "TOPRIGHT", -3, -16)
-    sb.track:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -3, 24)
+    sb.track:SetPoint("TOPRIGHT", container, "TOPRIGHT", -TRACK_INSET, -16)
+    sb.track:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", -TRACK_INSET, 24)
     sb.track:SetWidth(TRACK_WIDTH)
     local bg = sb.track:CreateTexture(nil, "BACKGROUND")
     bg:SetPoint("TOPLEFT", sb.track, "TOPLEFT", 0, 0)
@@ -165,12 +166,17 @@ local function CreateInstance(windowID, container, smf)
         UpdateInstance(windowID)
     end)
 
-    -- Click-to-jump + drag: the slim track gets a widened hit rect; while
-    -- the button is held an OnUpdate keeps tracking the cursor.
+    -- Click-to-jump + drag: keep the clickable hit rect aligned to the visible
+    -- track so the grab zone matches what's drawn. Left inset 0 -> the hit area
+    -- doesn't bleed past the bar's left edge into the message text; right inset
+    -- -TRACK_INSET -> it reaches the window edge (covering the bar plus the dead
+    -- gutter beside it) without spilling off-frame. (The old -5/-5 padding made
+    -- the hit area 18px wide -- 5px over the text, 2px past the frame -- against
+    -- an 8px bar, so the drag zone no longer matched the bar's actual width.)
     sb.track:EnableMouse(true)
     if sb.track.SetHitRectInsets then
         -- Safe: the track is a QUI-owned, unprotected frame.
-        sb.track:SetHitRectInsets(-5, -5, 0, 0)
+        sb.track:SetHitRectInsets(0, -TRACK_INSET, 0, 0)
     end
     sb.track:SetScript("OnMouseDown", function(self)
         JumpToCursor(windowID)
@@ -189,6 +195,32 @@ local function CreateInstance(windowID, container, smf)
     -- so there is no risk of a stale closure updating a dead instance.
     if smf.SetOnScrollChangedCallback then
         smf:SetOnScrollChangedCallback(function() UpdateInstance(windowID) end)
+    end
+
+    -- Display-refreshed callback: fired by the SMF on every RefreshDisplay
+    -- (AddMessage, relayout, ScrollToBottom) -- crucially even when the scroll
+    -- OFFSET does not change. New lines arriving while the view is pinned to the
+    -- bottom grow GetMaxScrollRange() without moving GetScrollOffset(), so the
+    -- scroll-changed callback never fires and the thumb keeps its stale (too
+    -- tall) size until the next manual scroll. This recomputes the thumb on
+    -- every refresh so it shrinks as backlog accumulates in real time.
+    --
+    -- Unlike SetOnScrollChangedCallback, AddOnDisplayRefreshedCallback is an
+    -- ADDER with no remover, and windows 2+ reuse a pooled SMF across
+    -- delete/recreate -- so it must attach at most ONCE per SMF (the flag
+    -- persists on the frame object through pooling). The closure can't capture
+    -- windowID by value (a pooled shell's id changes), so it resolves the live
+    -- id by matching the SMF at call time.
+    if smf.AddOnDisplayRefreshedCallback and not smf._quiDisplayRefreshHooked then
+        smf._quiDisplayRefreshHooked = true
+        smf:AddOnDisplayRefreshedCallback(function(self)
+            for wid in pairs(instances) do
+                if GetSMF(wid) == self then
+                    UpdateInstance(wid)
+                    return
+                end
+            end
+        end)
     end
 end
 

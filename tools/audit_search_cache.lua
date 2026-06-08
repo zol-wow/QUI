@@ -1,5 +1,5 @@
 local ROOT = "."
-local CACHE_PATH = "QUI_Options/search_cache.lua"
+local CACHE_PATH = "QUI_OptionsSearch/search_cache.lua"
 
 -- Manual override for features that legitimately emit zero declarative
 -- settings but can't be detected structurally — i.e., ProviderFeatures:Register

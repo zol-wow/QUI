@@ -23,9 +23,9 @@ jobs:
         run: |
           lua5.1 tools/generate_search_cache.lua
           lua5.1 tools/audit_search_cache.lua
-          if ! git diff --quiet -- QUI_Options/search_cache.lua; then
-            echo "QUI_Options/search_cache.lua is stale. Run: lua5.1 tools/generate_search_cache.lua && lua5.1 tools/audit_search_cache.lua"
-            git diff -- QUI_Options/search_cache.lua
+          if ! git diff --quiet -- QUI_OptionsSearch/search_cache.lua; then
+            echo "QUI_OptionsSearch/search_cache.lua is stale. Run: lua5.1 tools/generate_search_cache.lua && lua5.1 tools/audit_search_cache.lua"
+            git diff -- QUI_OptionsSearch/search_cache.lua
             exit 1
           fi
 
@@ -45,7 +45,7 @@ jobs:
 
           # All shipped sub-addon sibling folders (QUI_Debug is NOT listed here).
           suite_folders=(
-            QUI_Options
+            QUI_Options QUI_OptionsSearch
             QUI_ActionBars QUI_CDM QUI_Chat QUI_GroupFrames QUI_ResourceBars QUI_UnitFrames
             QUI_Skinning QUI_Minimap QUI_QoL QUI_DamageMeter
           )
@@ -97,8 +97,9 @@ jobs:
             build/QUI_Options/QUI_Options.toc
             build/QUI_Options/bootstrap.lua
             build/QUI_Options/init.lua
-            build/QUI_Options/search_cache.lua
             build/QUI_Options/tiles/action_bars.lua
+            build/QUI_OptionsSearch/QUI_OptionsSearch.toc
+            build/QUI_OptionsSearch/search_cache.lua
             build/QUI_ActionBars/QUI_ActionBars.toc
             build/QUI_ActionBars/bootstrap.lua
             build/QUI_CDM/QUI_CDM.toc

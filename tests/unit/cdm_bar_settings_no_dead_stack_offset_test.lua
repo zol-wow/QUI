@@ -9,7 +9,7 @@ local function readAll(path)
 end
 
 local source = readAll("QUI_CDM/cdm/settings/containers_page.lua")
-local searchCache = readAll("QUI_Options/search_cache.lua")
+local searchCache = readAll("QUI_OptionsSearch/search_cache.lua")
 
 local barSpacingStart = assert(source:find('"Bar Spacing"', 1, true),
     "bar layout section must expose the renderer-backed Bar Spacing control")

@@ -656,6 +656,16 @@ function QUICore:OnEnable()
         QUI.BuffBorders.Init()
     end
 
+    -- Eager-load enabled LoadOnDemand sub-addons now, inside the ADDON_LOADED
+    -- safe window, so their files compile on the loading screen instead of a
+    -- post-login hitch, and any secure setup in their init runs in the
+    -- protected window like the login-class siblings. Skips lateLoad modules
+    -- (e.g. QUI_Minimap), which need post-login state (settled EditMode) and are
+    -- loaded later by the staggered post-first-frame kick-off in addon_loader.
+    if ns.AddonLoader and ns.AddonLoader.LoadEnabledLODModulesEager then
+        ns.AddonLoader:LoadEnabledLODModulesEager()
+    end
+
     -- IMMEDIATE: Apply frame anchoring synchronously during ADDON_LOADED
     -- safe window. Protected calls work here even during combat reloads.
     ApplyFrameOverrides()

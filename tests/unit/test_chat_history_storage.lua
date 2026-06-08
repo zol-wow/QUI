@@ -312,5 +312,46 @@ do
           ("prev=%s next=%s"):format(tostring(prev), tostring(next)))
 end
 
+-- Clear must be DURABLE: a cleared character must not resurrect legacy AceDB
+-- history on the next login. resetV2 wipes the _migrated flag, so without an
+-- explicit re-assert (plus a legacy-slot wipe) MigrateFromAceDB re-runs on the
+-- next Init and re-imports any un-consumed legacy entries -- the reported
+-- "clear history doesn't stick; history returns after a relog" bug. (Note that
+-- ClearAllCharacters already wipes legacy slots; single-char Clear must match.)
+do
+    local KEY = "ClearChar - TestRealm"
+    _G.QUI_ChatHistory = nil
+    _G.QUIDB = {
+        char = {
+            [KEY] = { chat = { history = {
+                schemaVersion = 1,
+                entries = { entry(1, 1, "legacy A"), entry(2, 1, "legacy B") },
+            } } },
+        },
+    }
+    -- Load-order race: the character key is not ready at the chat addon's first
+    -- Init, so the first migration defers and leaves the legacy slot un-consumed.
+    _G.QUI = { db = { keys = {} } }
+    Storage.Init()
+    check("deferred migration leaves legacy un-consumed",
+          _G.QUI_ChatHistory._migrated ~= true
+          and _G.QUIDB.char[KEY].chat.history.entries ~= nil)
+
+    -- Player clears this character's history; the key is available by now.
+    _G.QUI.db.keys.char = KEY
+    Storage.Clear()
+    check("clear empties the store", #Storage.Snapshot() == 0)
+
+    -- Logout + relog: the saved tables persist; re-run Init.
+    Storage.PersistNow()
+    Storage.Init()
+    check("cleared history does NOT resurrect on relog",
+          #Storage.Snapshot() == 0,
+          ("resurrected %d entries"):format(#Storage.Snapshot()))
+    check("clear wiped this character's legacy slot",
+          _G.QUIDB.char[KEY].chat.history.entries == nil
+          or #_G.QUIDB.char[KEY].chat.history.entries == 0)
+end
+
 print(("\n%d failure(s)"):format(failures))
 os.exit(failures == 0 and 0 or 1)

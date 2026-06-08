@@ -1,6 +1,13 @@
 ---------------------------------------------------------------------------
--- QUI AddonLoader — loads LoadOnDemand sub-addons post-login (staggered,
--- one per frame) and backs the per-module addon toggles in options.
+-- QUI AddonLoader — loads LoadOnDemand sub-addons and backs the per-module
+-- addon toggles in options. Two-stage at login:
+--   * Eager: the core eager-loads non-lateLoad modules inside the ADDON_LOADED
+--     safe window (LoadEnabledLODModulesEager, called from QUICore:OnEnable) so
+--     their files compile on the loading screen instead of a post-login hitch.
+--   * Late: a staggered, combat-parking pass (LoadEnabledLODModules) runs
+--     post-first-frame for manifest entries flagged lateLoad (e.g. QUI_Minimap,
+--     which must load after Blizzard EditMode settles). The same staggered pass
+--     backs live profile switches via OnProfileChanged.
 --
 -- Model: Blizzard addon enable state = "is the code present" (hard, zero
 -- cost when off).  LOD eligibility = lod class + not loaded + exists +
@@ -74,6 +81,62 @@ local function LoadNow(folder)
     return ok
 end
 
+-- Manifest-ordered list of lod folders eligible to load now: lod class + not
+-- already loaded/loading + exists on disk + addon-enabled. Profile flags are
+-- NOT load gates; dormant-guard flags are handled by the Module Addons rows
+-- and by each module's own init. Shared by the eager and staggered loaders.
+--   includeLate=false (eager, loading-screen): skip lateLoad entries — those
+--     need post-login state (e.g. settled EditMode) and break if loaded early.
+--   includeLate=true (staggered, post-login): load everything still eligible,
+--     i.e. the lateLoad modules plus anything the eager pass missed.
+local function CollectEligibleLODFolders(includeLate)
+    local queue = {}
+    for _, entry in ipairs(ns.AddonManifest or {}) do
+        if entry.class == "lod"
+            and (includeLate or not entry.lateLoad)
+            and not AddonLoader.IsModuleLoaded(entry.folder)
+            and (not C_AddOns.DoesAddOnExist or C_AddOns.DoesAddOnExist(entry.folder))
+            and AddonLoader.IsModuleAddonEnabled(entry.folder) then
+            queue[#queue + 1] = entry.folder
+        end
+    end
+    return queue
+end
+
+-- Re-register anchor targets and re-apply saved anchors after a load batch:
+-- module frames may be created during/after the load, past the core's earlier
+-- anchoring passes. Idempotent; only call when ≥1 module actually loaded.
+local function ApplyAnchoringCatchUp()
+    if ns.QUI_Anchoring then
+        if ns.QUI_Anchoring.RegisterAllFrameTargets then
+            ns.QUI_Anchoring:RegisterAllFrameTargets()
+        end
+        if ns.QUI_Anchoring.ApplyAllFrameAnchors then
+            ns.QUI_Anchoring:ApplyAllFrameAnchors()
+        end
+    end
+end
+
+-- Eager load (login / combat /reload): invoked from QUICore:OnEnable, which
+-- runs synchronously inside the ADDON_LOADED safe window. Loading the sub-addon
+-- files here puts their compile cost on the loading screen (no post-login
+-- hitch) and lets any secure setup in their init run in the protected window,
+-- exactly like the login-class siblings. No stagger / combat park: the safe
+-- window is the sanctioned place for this even during a combat /reload, so we
+-- load every eligible module synchronously in manifest order.
+function AddonLoader:LoadEnabledLODModulesEager()
+    if not AddonLoader.GetProfile() then return end  -- DB not ready; keeps headless tests inert
+    local loadedAny = false
+    for _, folder in ipairs(CollectEligibleLODFolders(false)) do  -- exclude lateLoad
+        -- Re-check per folder: a live toggle racing OnEnable could have loaded it.
+        if not AddonLoader.IsModuleLoaded(folder) then
+            LoadNow(folder)
+            loadedAny = true
+        end
+    end
+    if loadedAny then ApplyAnchoringCatchUp() end
+end
+
 ---------------------------------------------------------------------------
 -- LOD stagger
 ---------------------------------------------------------------------------
@@ -83,43 +146,23 @@ end
 local regenResumeFrame
 
 -- Walk LOD manifest entries in order; load each eligible one on its own
--- frame so post-login work never lands as a single hitch.
--- Safe to call multiple times (OnProfileChanged re-invokes via core/main.lua);
--- already-loaded folders are skipped by IsModuleLoaded re-checks inside step().
--- Eligibility: lod class + not loaded + exists + addon-enabled.
--- Profile flags are NOT load gates; dormant-guard flags are handled by the
--- Module Addons rows and by each module's own init.
+-- frame so the work never lands as a single hitch. Used for LIVE profile
+-- switches (OnProfileChanged re-invokes via core/main.lua), which can happen
+-- mid-combat — hence the per-frame stagger + combat park. The login path uses
+-- LoadEnabledLODModulesEager instead.
+-- Safe to call multiple times; already-loaded folders are skipped by
+-- IsModuleLoaded re-checks (in CollectEligibleLODFolders and inside step()).
 function AddonLoader:LoadEnabledLODModules()
     if not AddonLoader.GetProfile() then return end  -- DB not ready; keeps headless tests inert
-    local queue = {}
-    for _, entry in ipairs(ns.AddonManifest or {}) do
-        if entry.class == "lod"
-            and not AddonLoader.IsModuleLoaded(entry.folder)
-            and (not C_AddOns.DoesAddOnExist or C_AddOns.DoesAddOnExist(entry.folder))
-            and AddonLoader.IsModuleAddonEnabled(entry.folder) then
-            queue[#queue + 1] = entry.folder
-        end
-    end
+    local queue = CollectEligibleLODFolders(true)  -- include lateLoad (post-login)
     local i = 0
     local loadedAny = false
-    local function applyAnchoringCatchUp()
-        -- LOD frames were born after the +1.0s anchoring passes — re-register
-        -- targets and re-apply saved anchors once the queue drains.
-        if ns.QUI_Anchoring then
-            if ns.QUI_Anchoring.RegisterAllFrameTargets then
-                ns.QUI_Anchoring:RegisterAllFrameTargets()
-            end
-            if ns.QUI_Anchoring.ApplyAllFrameAnchors then
-                ns.QUI_Anchoring:ApplyAllFrameAnchors()
-            end
-        end
-    end
     local function step()
         i = i + 1
         local folder = queue[i]
         if not folder then
             -- Queue drained — re-anchor any LOD frames that were just created.
-            if loadedAny then applyAnchoringCatchUp() end
+            if loadedAny then ApplyAnchoringCatchUp() end
             return
         end
         -- Combat gating: loading addon files mid-lockdown is an unaudited
@@ -185,10 +228,17 @@ end
 ---------------------------------------------------------------------------
 -- Login kick-off
 ---------------------------------------------------------------------------
-
--- After the first rendered frame + the 1.0s anchor pass in QUICore:OnEnable,
--- start the stagger. Profile switches re-invoke LoadEnabledLODModules via
--- QUICore:OnProfileChanged in core/main.lua.
+--
+-- Two-stage load:
+--   1. Eager (loading screen): QUICore:OnEnable (core/main.lua) calls
+--      LoadEnabledLODModulesEager inside the ADDON_LOADED safe window, so the
+--      non-lateLoad sub-addon files compile on the loading screen rather than
+--      as a post-login hitch.
+--   2. Late (post-login): the stagger below loads any lateLoad modules (e.g.
+--      QUI_Minimap) after the first frame, once Blizzard EditMode has settled.
+--      It re-scans, so the eager modules are already loaded and skipped.
+-- Live profile switches re-invoke the staggered LoadEnabledLODModules via
+-- QUICore:OnProfileChanged.
 ns.WhenLoggedIn(function()
     ns.RunAfterFirstFrame(function()
         AddonLoader:LoadEnabledLODModules()

@@ -422,8 +422,32 @@ function Storage.PersistNow()
     refreshCount(sv)
 end
 
+-- Wipe THIS character's legacy AceDB-per-character history slot (QUIDB.char).
+-- Mirrors the per-character branch ClearAllCharacters applies to every char.
+local function wipeLegacyAceDBForSelf()
+    local key = selfKey()
+    if not key then return end
+    local quiDB = _G.QUIDB
+    if type(quiDB) ~= "table" or type(quiDB.char) ~= "table" then return end
+    local charDB = quiDB.char[key]
+    local hist = type(charDB) == "table" and type(charDB.chat) == "table" and charDB.chat.history
+    if type(hist) == "table" then
+        hist.entries = nil
+        hist._sizeWarned = nil
+    end
+end
+
 function Storage.Clear()
-    resetV2(getSV())
+    local sv = getSV()
+    resetV2(sv)
+    -- Clear must be DURABLE across a relog. resetV2 wipes the _migrated flag, so
+    -- without this the next MigrateFromAceDB re-runs and re-imports any
+    -- un-consumed legacy AceDB history (deferred first migration, profile
+    -- re-import) -- the cleared history then "returns after a relog". Re-assert
+    -- the flag and wipe this character's legacy slot, exactly as
+    -- ClearAllCharacters already does for every character.
+    sv._migrated = true
+    wipeLegacyAceDBForSelf()
 end
 
 function Storage.MigrateFromAceDB()
