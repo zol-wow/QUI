@@ -99,6 +99,14 @@ end)
 local CDMSpellData = {}
 CDMSpellData.SyncCooldownViewerCVar = SyncCooldownViewerCVarToMasterToggle
 
+-- Learned/active cooldown catalog: preferred spell id of each LEARNED
+-- cooldown slot (rebuilt with the catalog maps below). Used only by the
+-- blizzardCDM cooldown dormancy check. Stored as a field on CDMSpellData
+-- (not a new main-chunk local) because this file sits at the 200-local
+-- ceiling. See IsEntryDormantForContainerInternal for the rationale on why
+-- the allowUnlearned _spellInCDMCooldowns superset can't answer dormancy.
+CDMSpellData._cdmCooldownLearnedPreferred = {}
+
 -- Zone transition flag — set true on PLAYER_ENTERING_WORLD, cleared after
 -- 2s. Defers SPELLS_CHANGED reconciles while WoW APIs (IsSpellKnown,
 -- C_CooldownViewer, spellbook) are returning stale/incomplete data, so the
@@ -3266,17 +3274,45 @@ local function IsEntryDormantForContainerInternal(containerKey, entry)
             and not IsSpellInCDMCategoryInternal(normalized.id, "aura")
     end
     -- Cooldown family. Unknown spell -> dormant (unchanged). Additionally, a
-    -- blizzardCDM-sourced cooldown that has dropped out of the live cooldown
-    -- catalog (e.g. a hero talent converted it to a passive) is dormant --
-    -- mirrors the aura branch above. Hand-added cooldowns (Spell ID / All
-    -- Cooldowns / Items tabs, source ~= blizzardCDM) are never judged by
+    -- blizzardCDM-sourced cooldown that is no longer a LEARNED/active cooldown
+    -- (e.g. a talent converted it to a passive with a different spell id, or
+    -- overrode the slot to a different ability) is dormant.
+    --
+    -- We judge this against the learned/active catalog (the preferred spell id
+    -- of each learned cooldown slot, _cdmCooldownLearnedPreferred), NOT the
+    -- _spellInCDMCooldowns membership map. The latter is built allowUnlearned=
+    -- true and is a stable superset: once the spec has ever known a cooldown,
+    -- its id stays a member forever, so it can never retire an ability a
+    -- talent converted away (the Augmentation "Time Skip -> passive" report).
+    -- blizzardCDM entry ids are always created from the slot's preferred id,
+    -- so an entry whose id is no longer any learned slot's preferred id has
+    -- been superseded -> dormant; a legit active override keeps its id as the
+    -- slot's preferred id and stays active. Hand-added cooldowns (Spell ID /
+    -- All Cooldowns / Items tabs, source ~= blizzardCDM) are never judged by
     -- catalog membership, so they stay user-managed.
     if not IsSpellKnownByPlayer(normalized.id) then return true end
     if normalized.source == BLIZZARD_CDM_ENTRY_SOURCE then
-        return CDMCatalogReady("cooldown")
-            and not IsSpellInCDMCategoryInternal(normalized.id, "cooldown")
+        if not CDMSpellData:_CooldownLearnedCatalogReady() then return false end
+        return not CDMSpellData:_IsCooldownLearnedPreferred(normalized.id)
     end
     return false
+end
+
+-- Learned/active cooldown catalog accessors. Defined as CDMSpellData methods
+-- (not file locals) to stay under this file's 200-local ceiling. The backing
+-- set is rebuilt alongside the catalog maps in RebuildSpellToCooldownID.
+-- _CooldownLearnedCatalogReady gates the dormancy check so an empty/unbuilt
+-- set never produces false-positive dormancy mid-load (mirrors CDMCatalogReady).
+function CDMSpellData:_CooldownLearnedCatalogReady()
+    local set = self._cdmCooldownLearnedPreferred
+    return type(set) == "table" and next(set) ~= nil
+end
+
+function CDMSpellData:_IsCooldownLearnedPreferred(spellID)
+    local id = tonumber(spellID)
+    if not id then return false end
+    local set = self._cdmCooldownLearnedPreferred
+    return type(set) == "table" and set[id] == true
 end
 
 -- Hero-build scoping for removedSpells. Key 0 = global/legacy bucket (always
@@ -3440,6 +3476,21 @@ RebuildSpellToCooldownID = function()
             _spellToCooldownID, _spellInCDMCooldowns,
             _spellInCDMAuras, _abilityToAuraSpellID,
             _auraIDsForSpell)
+    end
+
+    -- Rebuild the learned/active cooldown set used by dormancy. Kept separate
+    -- from the maps above because those are intentionally allowUnlearned=true
+    -- supersets; this one is the allowUnlearned=false (currently-learned)
+    -- view, so a talent that converts an active ability to a passive drops the
+    -- old active id here even though it lingers in _spellInCDMCooldowns.
+    local learnedSet = CDMSpellData._cdmCooldownLearnedPreferred
+    if type(learnedSet) ~= "table" then
+        learnedSet = {}
+        CDMSpellData._cdmCooldownLearnedPreferred = learnedSet
+    end
+    wipe(learnedSet)
+    if composer and composer.RebuildCooldownLearnedPreferredIDs then
+        composer.RebuildCooldownLearnedPreferredIDs(learnedSet)
     end
 end
 

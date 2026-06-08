@@ -98,6 +98,12 @@ _G.CHAT_IGNORED = "%s is ignoring you."
 _G.CHAT_FILTERED = "Message to %s was filtered."
 _G.CHAT_RESTRICTED_TRIAL = "Trial accounts cannot use that."
 _G.CHAT_EMOTE_GET = "%s "
+-- GET globals for the monster/boss prefixes. They exist in the live client; the
+-- format-key resolver only consults ChatFrameUtil.GetOutMessageFormatKey when
+-- the key is present (key-less types like TEXT_EMOTE must not trip the helper's
+-- missing-key assert — see chat_text_emote_missing_get_no_assert_test).
+_G.CHAT_MONSTER_YELL_GET = "%s yells: "
+_G.CHAT_RAID_BOSS_EMOTE_GET = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:0|t%s "
 _G.GetPlayerInfoByGUID = function() return nil end
 _G.RAID_CLASS_COLORS = {}
 _G.C_EventUtils = { IsEventValid = function(e) return e ~= "CHAT_MSG_BOGUS" end }

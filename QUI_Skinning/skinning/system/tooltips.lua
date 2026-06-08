@@ -565,6 +565,17 @@ local function StyleTooltip(tooltip)
     local dbg, dbgStart, dbgHeap = TooltipDebugBegin()
     pcall(ApplyTooltipChrome, tooltip)
     SkinBase.SkinFrameText(tooltip, { recurse = true })
+    -- ItemRefTooltip (the item-link tooltip) carries a
+    -- UIPanelCloseButtonNoScripts at .CloseButton (ItemRef.xml). Without
+    -- restyling it the stock red Blizzard X shows through the otherwise-skinned
+    -- chrome, so route it through the shared QUI close-button skinner.
+    -- Idempotent (closeStyled flag) and only acts when a CloseButton exists, so
+    -- it is a no-op for the rest of the tooltip family. StyleTooltip never runs
+    -- in combat (the Show hook and RefreshAllColors gate it out), so the
+    -- first-call frame creation inside SkinCloseButton stays taint-safe.
+    if tooltip.CloseButton and SkinBase.SkinCloseButton then
+        pcall(SkinBase.SkinCloseButton, tooltip.CloseButton)
+    end
     TooltipDebugEnd(dbg, "skin.style", dbgStart, nil, dbgHeap)
 end
 

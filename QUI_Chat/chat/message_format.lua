@@ -398,7 +398,21 @@ end
 -- GET-format resolution: full mode uses Blizzard's CHAT_<TYPE>_GET ("%s says: ");
 -- short mode swaps in the compact prefix ("[G] %s: "). Monster/boss/emote
 -- grammar always keeps the GET string.
+--
+-- Blizzard's ChatFrameUtil.GetOutMessageFormatKey reports a NON-FATAL assert
+-- (assertsafe -> geterrorhandler, which is NOT catchable by the pcall below)
+-- whenever CHAT_<TYPE>_GET is absent. Some chat types legitimately have none —
+-- TEXT_EMOTE and GUILD_ITEM_LOOTED bodies arrive pre-formatted and Blizzard's
+-- own MessageFormatter never queries a format key for them. Resolve the raw
+-- global FIRST and only delegate to the Blizzard helper when the key exists;
+-- otherwise fall back without tripping the assert. In live clients the helper
+-- just returns this same global, so gating on it is behaviour-neutral for any
+-- key that is present.
 local function GetOutMessageFormatKey(typeKey)
+    local direct = _G["CHAT_" .. typeKey .. "_GET"]
+    if type(direct) ~= "string" or direct == "" then
+        return "%s "
+    end
     local util = _G.ChatFrameUtil and _G.ChatFrameUtil.GetOutMessageFormatKey
     if type(util) == "function" then
         local ok, fmt = pcall(util, typeKey)
@@ -406,11 +420,7 @@ local function GetOutMessageFormatKey(typeKey)
             return fmt
         end
     end
-    local fmt = _G["CHAT_" .. typeKey .. "_GET"]
-    if type(fmt) == "string" and fmt ~= "" then
-        return fmt
-    end
-    return "%s "
+    return direct
 end
 
 local function OutFormat(typeKey)

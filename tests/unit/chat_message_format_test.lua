@@ -247,16 +247,17 @@ eq("evt boss", F.BuildEventLine("CHAT_MSG_RAID_BOSS_EMOTE",
         { text = "%s prepares something deadly!", sender = "Big Boss" }),
     "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:0|tBig Boss Big Boss prepares something deadly!")
 
--- Boss and monster out-message prefixes must come from ChatFrameUtil when it
--- is available, matching Blizzard's MessageFormatter branch for MONSTER_* and
--- RAID_BOSS_* events.
-local oldBossGet = _G.CHAT_RAID_BOSS_EMOTE_GET
-_G.CHAT_RAID_BOSS_EMOTE_GET = nil
+-- Boss and monster out-message prefixes resolve through the CHAT_<TYPE>_GET
+-- globals (mirrored by ChatFrameUtil.GetOutMessageFormatKey), matching
+-- Blizzard's MessageFormatter branch for MONSTER_* and RAID_BOSS_* events. The
+-- resolver delegates to the helper only when the key EXISTS — a key-less type
+-- (TEXT_EMOTE / GUILD_ITEM_LOOTED) must never trip Blizzard's missing-key assert
+-- (see chat_text_emote_missing_get_no_assert_test).
 eq("evt boss helper prefix", F.BuildEventLine("CHAT_MSG_RAID_BOSS_EMOTE",
         { text = "casts Doom.", sender = "Big Boss" }),
     "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:0|tBig Boss casts Doom.")
-_G.CHAT_RAID_BOSS_EMOTE_GET = oldBossGet
 
+_G.CHAT_MONSTER_YELL_GET = "%s yells: "
 eq("evt monster yell helper prefix", F.BuildEventLine("CHAT_MSG_MONSTER_YELL",
         { text = "Run away!", sender = "Dungeon Boss" }),
     "Dungeon Boss yells: Run away!")

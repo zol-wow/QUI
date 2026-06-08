@@ -184,6 +184,14 @@ function ns.CDMComposer.RebuildBlizzardCatalogMaps(spellToCDID, inCooldowns, inA
     return false
 end
 
+function ns.CDMComposer.RebuildCooldownLearnedPreferredIDs(outSet)
+    local catalog = ns.CDMCatalog
+    if catalog and catalog.RebuildCooldownLearnedPreferredIDs then
+        return catalog.RebuildCooldownLearnedPreferredIDs(outSet)
+    end
+    return false
+end
+
 function ns.CDMComposer.GetAvailableSpellsForContainer(containerKey, containerType, ownedSet, correctionMap)
     local catalog = ns.CDMCatalog
     if catalog and catalog.GetAvailableSpellsForContainer then

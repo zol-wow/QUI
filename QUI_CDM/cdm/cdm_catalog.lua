@@ -405,6 +405,39 @@ function CDMCatalog.RebuildBlizzardCatalogMaps(spellToCDID, inCooldowns, inAuras
     return true
 end
 
+-- Learned/active cooldown catalog signal for dormancy classification.
+--
+-- _spellInCDMCooldowns (built above with allowUnlearned=TRUE) is a stable
+-- superset that never drops a spell once the spec has ever known it, so it
+-- cannot answer "is this still a live cooldown right now." When a talent
+-- converts an active ability into a passive (different spell ID), the old
+-- active ID lingers in that superset forever. This set instead collects the
+-- PREFERRED spell id of each LEARNED cooldown slot (allowUnlearned=FALSE),
+-- so the converted-away active ID drops out and the slot's new preferred id
+-- (the passive / override target) takes its place. A blizzardCDM cooldown
+-- entry whose id is absent here is dormant. Cooldown categories only (0,1);
+-- aura families keep their own membership path.
+function CDMCatalog.RebuildCooldownLearnedPreferredIDs(outSet)
+    if type(outSet) ~= "table" then return false end
+    if not HasCooldownViewerAPI() then return false end
+
+    for _, cat in ipairs(COOLDOWN_CATEGORIES) do
+        local ids = CDMCatalog.GetCategorySet(cat, false)
+        if ids then
+            for _, cdID in ipairs(ids) do
+                local info = CDMCatalog.GetCooldownInfo(cdID)
+                if info then
+                    local sid = SelectPreferredSpellID(info, false)
+                    if CDMCatalog.IsUsableID(sid) then
+                        outSet[sid] = true
+                    end
+                end
+            end
+        end
+    end
+    return true
+end
+
 function CDMCatalog.GetAvailableSpellsForContainer(containerKey, containerType, ownedSet, correctionMap)
     if not HasCooldownViewerAPI() then
         return {}
