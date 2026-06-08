@@ -261,6 +261,18 @@ _G.QUI_GetCDMViewerFrame = function(viewerName)
     return nil
 end
 
+-- FormatKeybind now lives in core (core/utils.lua); in-game the core addon
+-- loads before this LoadOnDemand module and sets ns.FormatKeybind on the shared
+-- namespace. Mirror that ordering by grafting the real core function onto the
+-- namespace (via a throwaway load) without disturbing this test's Helpers stubs.
+do
+    local coreNs = {}
+    LibStub = function() return nil end
+    assert(loadfile("core/utils.lua"))("QUI", coreNs)
+    LibStub = nil
+    addon.FormatKeybind = coreNs.FormatKeybind
+end
+
 assert(loadfile("QUI_QoL/utility/keybinds.lua"))("QUI", addon)
 
 addon.Keybinds.UpdateViewer("customQuality")

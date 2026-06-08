@@ -212,87 +212,13 @@ local function GetOverrideKeybindForItem(itemID)
     return nil
 end
 
--- Format keybind text for display (shorten modifiers, max 4 chars)
-local function FormatKeybind(keybind)
-    if not keybind then return nil end
-
-    local upper = keybind:upper()
-
-    -- CRITICAL: Remove ALL spaces first to normalize localized text
-    -- WoW returns "Num Pad 3", "Mouse Wheel Up", etc. - we need "NUMPAD3", "MOUSEWHEELUP"
-    upper = upper:gsub(" ", "")
-
-    -- Shorten mousewheel/mouse BEFORE removing modifier hyphens
-    -- This ensures CTRL-MOUSEWHEELUP -> CTRL-WU -> CWU (not CMOUSEWHEELUP)
-    upper = upper:gsub("MOUSEWHEELUP", "WU")
-    upper = upper:gsub("MOUSEWHEELDOWN", "WD")
-    upper = upper:gsub("MIDDLEMOUSE", "B3")
-    upper = upper:gsub("MIDDLEBUTTON", "B3")
-    upper = upper:gsub("BUTTON(%d+)", "B%1")  -- BUTTON4 -> B4, BUTTON5 -> B5
-
-    -- THEN: Remove modifier hyphens
-    upper = upper:gsub("SHIFT%-", "S")
-    upper = upper:gsub("CTRL%-", "C")
-    upper = upper:gsub("ALT%-", "A")
-    upper = upper:gsub("^S%-(.+)", "S%1")
-    upper = upper:gsub("^C%-(.+)", "C%1")
-    upper = upper:gsub("^A%-(.+)", "A%1")
-
-    -- Numpad special keys (BEFORE generic NUMPAD replacement)
-    upper = upper:gsub("NUMPADPLUS", "N+")
-    upper = upper:gsub("NUMPADMINUS", "N-")
-    upper = upper:gsub("NUMPADMULTIPLY", "N*")
-    upper = upper:gsub("NUMPADDIVIDE", "N/")
-    upper = upper:gsub("NUMPADPERIOD", "N.")
-    upper = upper:gsub("NUMPADENTER", "NE")
-
-    -- Other common keys
-    upper = upper:gsub("NUMPAD", "N")
-    upper = upper:gsub("CAPSLOCK", "CAP")
-    upper = upper:gsub("DELETE", "DEL")
-    upper = upper:gsub("ESCAPE", "ESC")
-    upper = upper:gsub("BACKSPACE", "BS")
-    upper = upper:gsub("SPACE", "SP")
-    upper = upper:gsub("INSERT", "INS")
-    upper = upper:gsub("PAGEUP", "PU")
-    upper = upper:gsub("PAGEDOWN", "PD")
-    upper = upper:gsub("HOME", "HM")
-    upper = upper:gsub("END", "ED")
-    upper = upper:gsub("PRINTSCREEN", "PS")
-    upper = upper:gsub("SCROLLLOCK", "SL")
-    upper = upper:gsub("PAUSE", "PA")
-    upper = upper:gsub("TILDE", "`")
-    upper = upper:gsub("GRAVE", "`")
-
-    -- Arrow keys
-    upper = upper:gsub("UPARROW", "UP")
-    upper = upper:gsub("DOWNARROW", "DN")
-    upper = upper:gsub("LEFTARROW", "LF")
-    upper = upper:gsub("RIGHTARROW", "RT")
-
-    -- Symbol keys
-    upper = upper:gsub("SEMICOLON", ";")
-    upper = upper:gsub("APOSTROPHE", "'")
-    upper = upper:gsub("LEFTBRACKET", "[")
-    upper = upper:gsub("RIGHTBRACKET", "]")
-    upper = upper:gsub("BACKSLASH", "\\")
-    upper = upper:gsub("MINUS", "-")
-    upper = upper:gsub("EQUALS", "=")
-    upper = upper:gsub("COMMA", ",")
-    -- Note: PERIOD already handled by NUMPADPERIOD, but standalone PERIOD key:
-    upper = upper:gsub("^PERIOD$", ".")
-    upper = upper:gsub("SLASH", "/")
-
-    -- Final safety: truncate to max 4 characters
-    if #upper > 4 then
-        upper = upper:sub(1, 4)
-    end
-
-    return upper
-end
-
--- Expose globally for other modules (action bars, rotation helper)
-QUI.FormatKeybind = FormatKeybind
+-- FormatKeybind now lives in core (core/utils.lua, set on the shared namespace
+-- as ns.FormatKeybind). Core loads first and is a hard dependency of every
+-- sub-addon, so login-class consumers (action bars render keybind text at
+-- login) resolve it immediately instead of waiting on this LoadOnDemand module.
+-- Pulled into a local here for the internal call sites below; QUI is this
+-- module's namespace alias (see top of file), so this reads the core export.
+local FormatKeybind = QUI.FormatKeybind
 
 -- BT4 bar number to WoW binding name mapping (matches Bartender4's BINDING_MAPPINGS)
 local BT4_BINDING_MAPPINGS = {

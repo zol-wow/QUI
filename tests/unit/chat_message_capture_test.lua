@@ -227,6 +227,8 @@ assert(not registered.CHAT_MSG_BOGUS, "IsEventValid gate skips bogus event")
 -- replicated by capture (suppressed frames are event-neutered and would lose
 -- them entirely).
 assert(registered.GUILD_MOTD, "GUILD_MOTD replicated (SystemEventHandler parity)")
+assert(registered.GUILD_ROSTER_UPDATE, "GUILD_ROSTER_UPDATE registered (login MOTD pull)")
+assert(registered.PLAYER_GUILD_UPDATE, "PLAYER_GUILD_UPDATE registered (login MOTD pull)")
 assert(registered.TIME_PLAYED_MSG, "TIME_PLAYED_MSG replicated (/played output)")
 assert(registered.PLAYER_LEVEL_CHANGED, "PLAYER_LEVEL_CHANGED replicated (level-up line)")
 assert(registered.CHAT_SERVER_DISCONNECTED, "disconnect notice replicated")
@@ -577,6 +579,37 @@ assert(Store.Size() == 1, "GMOTD deduped, got " .. Store.Size())
 local motd; Store.ForEach(function(e) motd = e end)
 assert(motd.m == "[12:00] Guild MOTD: Raid tonight", "gmotd line, got " .. tostring(motd.m))
 assert(motd.k == "GUILD" and motd.e == "GUILD_MOTD", "gmotd metadata")
+
+-- GMOTD login pull: at login the MOTD often lands before the capture frame
+-- catches the GUILD_MOTD event (Blizzard's own chat frame hits the same race),
+-- so capture also pulls C_GuildInfo.GetMOTD() on guild-data events. seenMotd is
+-- shared with the event path, so the pull and the event never double-post.
+_G.IsInGuild = function() return true end
+_G.C_GuildInfo = { GetMOTD = function() return "Welcome home" end }
+Store.Clear()
+fire("GUILD_ROSTER_UPDATE")
+assert(Store.Size() == 1, "GMOTD pulled on roster update, got " .. Store.Size())
+local pulled; Store.ForEach(function(e) pulled = e end)
+assert(pulled.m == "[12:00] Guild MOTD: Welcome home", "pulled gmotd line, got " .. tostring(pulled.m))
+assert(pulled.k == "GUILD" and pulled.e == "GUILD_MOTD", "pulled gmotd metadata (event-named, not trigger)")
+-- Repeat guild-data events + the real event are deduped against the pull.
+fire("GUILD_ROSTER_UPDATE")
+fire("PLAYER_GUILD_UPDATE")
+fire("GUILD_MOTD", "Welcome home")
+assert(Store.Size() == 1, "pull/event share seenMotd dedupe, got " .. Store.Size())
+-- Not in a guild: no pull, no crash.
+_G.IsInGuild = function() return false end
+Store.Clear()
+fire("GUILD_ROSTER_UPDATE")
+assert(Store.Size() == 0, "no MOTD pull when not in a guild, got " .. Store.Size())
+-- PLAYER_ENTERING_WORLD also pulls (the /reload path, guild data already cached).
+_G.IsInGuild = function() return true end
+_G.C_GuildInfo = { GetMOTD = function() return "Reloaded greeting" end }
+Store.Clear()
+fire("PLAYER_ENTERING_WORLD")
+assert(Store.Size() == 1, "GMOTD pulled on PLAYER_ENTERING_WORLD, got " .. Store.Size())
+local reloaded; Store.ForEach(function(e) reloaded = e end)
+assert(reloaded.m == "[12:00] Guild MOTD: Reloaded greeting", "PEW gmotd line, got " .. tostring(reloaded.m))
 
 -- PLAYER_REPORT_SUBMITTED purges the reported sender's stored lines
 Store.Clear()

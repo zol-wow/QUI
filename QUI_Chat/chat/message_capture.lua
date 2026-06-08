@@ -162,6 +162,29 @@ SYSTEM_EVENTS.GUILD_MOTD = function(event, motd)
     AppendSystemLine(event, FormatString(fmt, motd), "GUILD")
 end
 
+-- Login backfill for the GMOTD. At login the MOTD is delivered with the guild
+-- roster sync, often BEFORE this frame catches a GUILD_MOTD event (Blizzard's
+-- own chat frame hits the same race — vendored ChatFrameOverrides.lua:131
+-- "GMOTD may have arrived before this frame registered for the event"). Blizzard
+-- recovers by pulling C_GuildInfo.GetMOTD() once guild data lands; without that
+-- pull the login MOTD is simply lost. Route the pulled value through the
+-- GUILD_MOTD handler so it shares the seenMotd latch — the event path and the
+-- pull never double-post, and repeated guild-data events are cheap no-ops once
+-- a non-empty MOTD has latched. GetMOTD HasRestrictions: the return may be a
+-- secret value, so it flows opaquely into the handler, which probes before any
+-- operator (pcall is the house guard for restricted getters).
+local function MaybePullGMOTD()
+    local CGI = _G.C_GuildInfo
+    if not (CGI and CGI.GetMOTD) then return end
+    if _G.IsInGuild and not _G.IsInGuild() then return end
+    local ok, motd = pcall(CGI.GetMOTD)
+    if not ok then return end
+    SYSTEM_EVENTS.GUILD_MOTD("GUILD_MOTD", motd)
+end
+
+SYSTEM_EVENTS.GUILD_ROSTER_UPDATE = function() MaybePullGMOTD() end
+SYSTEM_EVENTS.PLAYER_GUILD_UPDATE = function() MaybePullGMOTD() end
+
 SYSTEM_EVENTS.CHAT_SERVER_DISCONNECTED = function(event)
     AppendSystemLine(event, GlobalString("CHAT_SERVER_DISCONNECTED_MESSAGE"))
 end
@@ -221,6 +244,10 @@ end
 -- capture frame owns its event wiring (format stays frame-free).
 SYSTEM_EVENTS.PLAYER_ENTERING_WORLD = function()
     if Format.RefreshLanguages then Format.RefreshLanguages() end
+    -- /reload keeps guild data cached, so the MOTD is readable right here even
+    -- if no GUILD_ROSTER_UPDATE re-fires; on a cold login GetMOTD is still empty
+    -- this early and the roster-update pull above catches it. seenMotd dedupes.
+    MaybePullGMOTD()
 end
 
 SYSTEM_EVENTS.ALTERNATIVE_DEFAULT_LANGUAGE_CHANGED = function()
