@@ -18,21 +18,25 @@ local formattedSecretWhisper = {}
 local formattedSecretBNWhisper = {}
 local formattedSecretChannel = {}
 local formattedSecretYell = {}
+local formattedSecretCommunity = {}
 local formattedSecretSenderName = {}
 local formattedSecretSenderLink = {}
-local formattedSecretSenderPart = {}
 local formattedSecretSenderPrefix = {}
 local formattedSecretPartyAndSender = {}
+-- Prefixes match the parity formatter: full player links with
+-- lineID:chatType:chatTarget data, short type labels (channelShorten enabled
+-- in the settings mock below), letter-preset channel decoration.
 local formattedLinesByPrefix = {
-    ["|Hplayer:Ann|h[Ann]|h: "] = formattedSecretBarePlayer,
-    ["[G] |Hplayer:Ann|h[Ann]|h: "] = formattedSecretGuild,
+    ["|Hplayer:Ann:0:SAY:|h[Ann]|h: "] = formattedSecretBarePlayer,
+    ["[G] |Hplayer:Ann:0:GUILD:|h[Ann]|h: "] = formattedSecretGuild,
     ["Dungeon Boss yells: "] = formattedSecretMonster,
-    ["[P] |Hplayer:Ann|h[Ann]|h: "] = formattedSecretParty,
-    ["[RW] |Hplayer:Boss|h[Boss]|h: "] = formattedSecretRaidWarning,
-    ["[W:From] |Hplayer:Ann|h[Ann]|h: "] = formattedSecretWhisper,
-    ["[W:From] |HBNplayer:Aria:77:31337:BN_WHISPER:0|h[Aria]|h: "] = formattedSecretBNWhisper,
-    ["[2. Trade] |Hplayer:Ann|h[Ann]|h: "] = formattedSecretChannel,
-    ["[Y] |Hplayer:Ann|h[Ann]|h: "] = formattedSecretYell,
+    ["[P] |Hplayer:Ann:0:PARTY:|h[Ann]|h: "] = formattedSecretParty,
+    ["[RW] |Hplayer:Boss:0:RAID:|h[Boss]|h: "] = formattedSecretRaidWarning,
+    ["[W:From] |Hplayer:Ann:0:WHISPER:ANN|h[Ann]|h: "] = formattedSecretWhisper,
+    ["[W:From] |HBNplayer:Aria:77:31337:BN_WHISPER:ARIA|h[Aria]|h: "] = formattedSecretBNWhisper,
+    ["|Hchannel:channel:2|h[T]|h |Hplayer:Ann:0:CHANNEL:2|h[Ann]|h: "] = formattedSecretChannel,
+    ["[Y] |Hplayer:Ann:0:YELL:|h[Ann]|h: "] = formattedSecretYell,
+    ["[Ann]: "] = formattedSecretCommunity,
 }
 
 local realStringFormat = string.format
@@ -45,9 +49,10 @@ string.format = function(fmt, ...)
         return formattedSecretSenderName
     elseif fmt == "|Hplayer:%s|h%s|h" and rawequal(a1, secretSender) and rawequal(a2, formattedSecretSenderName) then
         return formattedSecretSenderLink
-    elseif fmt == "%s: " and rawequal(a1, formattedSecretSenderLink) then
-        return formattedSecretSenderPart
-    elseif fmt == "%s%s" and a1 == "[P] " and rawequal(a2, formattedSecretSenderPart) then
+    elseif fmt == "%s%s" and a1 == "" and rawequal(a2, formattedSecretSenderLink) then
+        -- pflag .. link join (empty pflag): identity on the secret link
+        return formattedSecretSenderLink
+    elseif fmt == "[P] %s: " and rawequal(a1, formattedSecretSenderLink) then
         return formattedSecretSenderPrefix
     elseif fmt == "%s%s" and rawequal(a1, formattedSecretSenderPrefix) and rawequal(a2, secret) then
         return formattedSecretPartyAndSender
@@ -69,6 +74,11 @@ _G.ChatTypeGroupInverted = { CHAT_MSG_SAY = "SAY", CHAT_MSG_GUILD = "GUILD", CHA
     CHAT_MSG_EMOTE = "EMOTE", CHAT_MSG_TEXT_EMOTE = "EMOTE",
     CHAT_MSG_MONSTER_YELL = "MONSTER_YELL", CHAT_MSG_RAID_BOSS_EMOTE = "MONSTER_BOSS_EMOTE",
     CHAT_MSG_IGNORED = "IGNORED", CHAT_MSG_FILTERED = "ERRORS", CHAT_MSG_RESTRICTED = "ERRORS" }
+-- FrameXML constant consumed for link chatType data (RAID_WARNING -> RAID).
+_G.CHAT_INVERTED_CATEGORY_LIST = {
+    RAID_WARNING = "RAID", PARTY_LEADER = "PARTY",
+    WHISPER_INFORM = "WHISPER", BN_WHISPER_INFORM = "BN_WHISPER",
+}
 _G.CHAT_YOU_CHANGED_NOTICE = "Changed Channel: |Hchannel:%d|h[%s]|h"
 _G.BN_INLINE_TOAST_FRIEND_OFFLINE = "%s has gone offline."
 _G.BN_INLINE_TOAST_BROADCAST = "%s broadcast: %s"
@@ -129,7 +139,10 @@ function _G.debugstack() return stack end
 
 -- ns / settings scaffolding --------------------------------------------------
 local tsSecretCalls = 0
-local settings = { enabled = true, customDisplay = { maxLines = 500 }, urls = { enabled = true } }
+local settings = { enabled = true, customDisplay = { maxLines = 500 }, urls = { enabled = true },
+    -- channelShorten ON matches core/defaults.lua: short type labels + letter
+    -- channel abbreviations (the secret prefix map above assumes this mode).
+    modifiers = { channelShorten = { enabled = true, preset = "letter" } } }
 -- Channel-color override store (ChannelColors rewire).
 local channelColorDB = {}
 local ChannelColors = {
@@ -148,7 +161,7 @@ local ChannelColors = {
 local ns = {
     Helpers = { IsSecretValue = function(v) return rawequal(v, secret) or rawequal(v, secretSender)
         or rawequal(v, formattedSecretSenderName) or rawequal(v, formattedSecretSenderLink)
-        or rawequal(v, formattedSecretSenderPart) or rawequal(v, formattedSecretSenderPrefix) end },
+        or rawequal(v, formattedSecretSenderPrefix) end },
     QUI = { Chat = {
         _internals = {
             GetSettings = function() return settings end,
@@ -200,7 +213,14 @@ assert(registered.CHAT_MSG_BN_INLINE_TOAST_BROADCAST, "registers explicit BN bro
 assert(registered.CHAT_MSG_BN_INLINE_TOAST_BROADCAST_INFORM, "registers explicit BN broadcast inform toasts")
 assert(registered.CHAT_MSG_BN_WHISPER_PLAYER_OFFLINE, "registers explicit BN offline whispers")
 assert(not registered.CHAT_MSG_BOGUS, "IsEventValid gate skips bogus event")
-assert(not registered.GUILD_MOTD, "non-CHAT_MSG event (GUILD_MOTD) not registered")
+-- System events Blizzard's SystemEventHandler turns into chat lines are now
+-- replicated by capture (suppressed frames are event-neutered and would lose
+-- them entirely).
+assert(registered.GUILD_MOTD, "GUILD_MOTD replicated (SystemEventHandler parity)")
+assert(registered.TIME_PLAYED_MSG, "TIME_PLAYED_MSG replicated (/played output)")
+assert(registered.PLAYER_LEVEL_CHANGED, "PLAYER_LEVEL_CHANGED replicated (level-up line)")
+assert(registered.CHAT_SERVER_DISCONNECTED, "disconnect notice replicated")
+assert(registered.PLAYER_REPORT_SUBMITTED, "report purge event registered")
 assert(registered.CHAT_MSG_CHANNEL_NOTICE, "channel notices now captured")
 assert(registered.CHAT_MSG_ACHIEVEMENT, "achievements now captured")
 assert(registered.CHAT_MSG_CHANNEL_LIST, "channel list now captured")
@@ -223,7 +243,7 @@ local fire = function(event, ...) captureFrame._onEvent(captureFrame, event, ...
 fire("CHAT_MSG_SAY", "hello", "Bob")
 assert(Store.Size() == 1, "captured 1")
 local e1; Store.ForEach(function(e) e1 = e end)
-assert(e1.m == "[12:00] |Hplayer:Bob|h[Bob]|h: hello", "timestamped formatted line, got " .. tostring(e1.m))
+assert(e1.m == "[12:00] |Hplayer:Bob:0:SAY:|h[Bob]|h: hello", "timestamped formatted line, got " .. tostring(e1.m))
 assert(e1.e == "CHAT_MSG_SAY" and e1.k == "SAY" and e1.t == 1234, "metadata")
 assert(e1.r == 1 and e1.g == 1 and e1.b == 1, "event color")
 assert(kaCalls >= 1, "capture consults keyword highlighter")
@@ -274,14 +294,15 @@ settings.enabled = true
 -- Channel messages pull per-channel color (ChatTypeInfo.CHANNEL<n>)
 fire("CHAT_MSG_CHANNEL", "wts gem", "Ann", nil, "2. Trade", nil, nil, nil, 2, "Trade")
 local e3b; Store.ForEach(function(e) e3b = e end)
-assert(e3b.m == "[12:00] [2. Trade] |Hplayer:Ann|h[Ann]|h: wts gem", "channel line, got " .. tostring(e3b.m))
+assert(e3b.m == "[12:00] |Hchannel:channel:2|h[T]|h |Hplayer:Ann:0:CHANNEL:2|h[Ann]|h: wts gem",
+    "channel line, got " .. tostring(e3b.m))
 assert(e3b.r == 1 and e3b.g == 0.75 and e3b.b == 0.75, "per-channel color from CHANNEL2")
 assert(e3b.k == "CHANNEL" and e3b.ch == "Trade", "channel metadata")
 
 -- Secret channel number: the "CHANNEL"..n concat is guarded (sentinel traps __concat)
 fire("CHAT_MSG_CHANNEL", "x", "Ann", nil, nil, nil, nil, nil, secret, "Trade")
 local e3c; Store.ForEach(function(e) e3c = e end)
-assert(e3c.m == "[12:00] [Trade] |Hplayer:Ann|h[Ann]|h: x", "secret chan num degrades, got " .. tostring(e3c.m))
+assert(e3c.m == "[12:00] [Trade] |Hplayer:Ann:0:CHANNEL:|h[Ann]|h: x", "secret chan num degrades, got " .. tostring(e3c.m))
 
 -- Secret channel body: formatted, channelBaseName is retained for tab routing.
 fire("CHAT_MSG_CHANNEL", secret, "Ann", nil, "2. Trade", nil, nil, nil, 2, "Trade")
@@ -346,12 +367,12 @@ assert(eRestricted.m == "[12:00] Trial accounts cannot use that.",
 
 fire("CHAT_MSG_EMOTE", "waves.", "Ann")
 local eEmote; Store.ForEach(function(e) eEmote = e end)
-assert(eEmote.m == "[12:00] |Hplayer:Ann|h[Ann]|h waves.",
+assert(eEmote.m == "[12:00] |Hplayer:Ann:0:EMOTE:|hAnn|h waves.",
     "player emote formatted, got " .. tostring(eEmote.m))
 
 fire("CHAT_MSG_TEXT_EMOTE", "Ann waves.", "Ann")
 local eTextEmote; Store.ForEach(function(e) eTextEmote = e end)
-assert(eTextEmote.m == "[12:00] |Hplayer:Ann|h[Ann]|h waves.",
+assert(eTextEmote.m == "[12:00] |Hplayer:Ann:0:TEXT_EMOTE:|hAnn|h waves.",
     "text emote formatted, got " .. tostring(eTextEmote.m))
 
 fire("CHAT_MSG_MONSTER_YELL", "Run away!", "Dungeon Boss")
@@ -457,7 +478,7 @@ assert(rawequal(eSecretChannel.m, formattedSecretChannel),
 
 fire("CHAT_MSG_COMMUNITIES_CHANNEL", secret, "Ann")
 local eSecretCommunity; Store.ForEach(function(e) eSecretCommunity = e end)
-assert(rawequal(eSecretCommunity.m, formattedSecretBarePlayer),
+assert(rawequal(eSecretCommunity.m, formattedSecretCommunity),
     "secret community body formatted with readable sender prefix")
 
 fire("RAID_BOSS_EMOTE", "%s casts Doom.", "Big Boss")
@@ -521,6 +542,41 @@ local eSAY; Store.ForEach(function(e) eSAY = e end)
 assert(eSAY and eSAY.r == 0.1 and eSAY.g == 0.2 and eSAY.b == 0.3,
     "SAY override reaches store r/g/b, got " .. tostring(eSAY and eSAY.r))
 channelColorDB["SAY"] = nil
+
+-- SystemEventHandler replication: /played output (two SYSTEM lines)
+_G.TIME_PLAYED_TOTAL = "Total time played: %s"
+_G.TIME_PLAYED_LEVEL = "Time played this level: %s"
+_G.TIME_DAYHOURMINUTESECOND = "%d days, %d hours, %d minutes, %d seconds"
+Store.Clear()
+fire("TIME_PLAYED_MSG", 90061, 61) -- 1d 1h 1m 1s / 1m 1s
+local played = {}
+Store.ForEach(function(e) played[#played + 1] = e end)
+assert(#played == 2, "played emits two lines, got " .. #played)
+assert(played[1].m == "[12:00] Total time played: 1 days, 1 hours, 1 minutes, 1 seconds",
+    "played total, got " .. tostring(played[1].m))
+assert(played[2].m == "[12:00] Time played this level: 0 days, 0 hours, 1 minutes, 1 seconds",
+    "played level, got " .. tostring(played[2].m))
+assert(played[1].k == "SYSTEM" and played[1].e == "TIME_PLAYED_MSG", "played metadata")
+
+-- GMOTD: GUILD-typed, deduped per session
+_G.GUILD_MOTD_TEMPLATE = "Guild MOTD: %s"
+Store.Clear()
+fire("GUILD_MOTD", "Raid tonight")
+fire("GUILD_MOTD", "Raid tonight")
+assert(Store.Size() == 1, "GMOTD deduped, got " .. Store.Size())
+local motd; Store.ForEach(function(e) motd = e end)
+assert(motd.m == "[12:00] Guild MOTD: Raid tonight", "gmotd line, got " .. tostring(motd.m))
+assert(motd.k == "GUILD" and motd.e == "GUILD_MOTD", "gmotd metadata")
+
+-- PLAYER_REPORT_SUBMITTED purges the reported sender's stored lines
+Store.Clear()
+fire("CHAT_MSG_SAY", "spammy", "Bob", nil, nil, nil, nil, nil, nil, nil, nil, nil, "Player-1-SPAM")
+fire("CHAT_MSG_SAY", "fine", "Ann", nil, nil, nil, nil, nil, nil, nil, nil, nil, "Player-2-OK")
+assert(Store.Size() == 2, "two lines pre-report")
+fire("PLAYER_REPORT_SUBMITTED", "Player-1-SPAM")
+assert(Store.Size() == 1, "reported sender's lines purged, got " .. Store.Size())
+local survivor; Store.ForEach(function(e) survivor = e end)
+assert(survivor.gid == "Player-2-OK", "unreported sender survives")
 
 -- Teardown unregisters everything
 Capture.Teardown()

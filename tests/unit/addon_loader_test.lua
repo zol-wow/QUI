@@ -1,5 +1,5 @@
--- Verifies core/addon_loader.lua: flag resolution, LOD load gating,
--- staggered loading, and the toggle helper's Enable/Disable/Load calls.
+-- Verifies core/addon_loader.lua: manifest shape, LOD staggered loading,
+-- and the toggle helper's Enable/Disable/Load calls.
 -- Standalone: stubs ns + C_AddOns; loads manifest + loader via loadfile.
 
 local function newEnv()
@@ -60,52 +60,84 @@ local function loadLoader(ns)
     return ns.AddonLoader
 end
 
--- 1) Manifest shape: 10 entries, classes valid, folders unique
+-- 1) Manifest shape: 10 entries, classes valid, folders unique;
+--    legacyFlag present on exactly QUI_Chat and QUI_GroupFrames, absent on all
+--    others; flag field absent on every entry.
 do
     local ns = newEnv()
     loadLoader(ns)
     local seen, lod, login = {}, 0, 0
+    local legacyFlagFolders = {}
     for _, e in ipairs(ns.AddonManifest) do
         assert(type(e.folder) == "string" and e.folder:match("^QUI_"), "folder name")
         assert(not seen[e.folder], "unique folder"); seen[e.folder] = true
         assert(e.class == "login" or e.class == "lod", "class")
         assert(type(e.sources) == "table" and #e.sources > 0, "sources")
+        -- flag field must be gone from every entry
+        assert(e.flag == nil, "flag field must be absent on " .. e.folder)
+        -- track which entries carry legacyFlag
+        if e.legacyFlag ~= nil then
+            assert(type(e.legacyFlag) == "table" and #e.legacyFlag > 0,
+                "legacyFlag must be a non-empty table on " .. e.folder)
+            legacyFlagFolders[#legacyFlagFolders + 1] = e.folder
+        end
         if e.class == "lod" then lod = lod + 1 else login = login + 1 end
     end
     assert(login == 6, "6 login-class entries, got " .. login)
     assert(lod == 4, "4 lod entries, got " .. lod)
+    assert(#legacyFlagFolders == 2,
+        "exactly 2 legacyFlag entries, got " .. #legacyFlagFolders)
+    -- Sort for deterministic comparison (manifest order may vary)
+    table.sort(legacyFlagFolders)
+    assert(legacyFlagFolders[1] == "QUI_Chat",
+        "1st legacyFlag entry must be QUI_Chat, got " .. tostring(legacyFlagFolders[1]))
+    assert(legacyFlagFolders[2] == "QUI_GroupFrames",
+        "2nd legacyFlag entry must be QUI_GroupFrames, got " .. tostring(legacyFlagFolders[2]))
 end
 
--- 2) Flag resolution: nested paths + nil flag means "on"
+-- 2) LOD stagger: all 4 LOD modules load when addon-enabled, regardless of
+--    profile content.  Profile flags are no longer load gates; only
+--    addon enable state matters.  Two variants: empty profile and a profile
+--    with damageMeter.native.enabled=false both produce 4 loads.
 do
-    local ns = newEnv()
-    local loader = loadLoader(ns)
-    local profile = { damageMeter = { native = { enabled = false } }, minimap = { enabled = true } }
-    assert(loader.IsFlagOn(profile, { "minimap", "enabled" }) == true)
-    assert(loader.IsFlagOn(profile, { "damageMeter", "native", "enabled" }) == false)
-    assert(loader.IsFlagOn(profile, nil) == true, "no flag = on")
-    assert(loader.IsFlagOn(profile, { "absent", "enabled" }) == true, "missing table = default on")
+    -- 2a) Empty profile: all 4 LOD modules load.
+    do
+        local ns, calls = newEnv()
+        local loader = loadLoader(ns)
+        loader.GetProfile = function() return {} end
+        loader:LoadEnabledLODModules()
+        local loads = {}
+        for _, c in ipairs(calls) do if c:match("^load:") then loads[#loads+1] = c end end
+        assert(#loads == 4, "2a: expected 4 loads (empty profile), got " .. #loads)
+        assert(loads[1] == "load:QUI_Skinning",    "2a 1st: skinning")
+        assert(loads[2] == "load:QUI_Minimap",     "2a 2nd: minimap")
+        assert(loads[3] == "load:QUI_QoL",         "2a 3rd: qol")
+        assert(loads[4] == "load:QUI_DamageMeter", "2a 4th: damagemeter")
+        assert(#ns.QUI_Modules.notified == 4, "2a: one notify per load")
+    end
+
+    -- 2b) Profile with damageMeter.native.enabled=false: DamageMeter still loads
+    --    (profile flags are not load gates).
+    do
+        local ns, calls = newEnv()
+        local loader = loadLoader(ns)
+        loader.GetProfile = function()
+            return { damageMeter = { native = { enabled = false } } }
+        end
+        loader:LoadEnabledLODModules()
+        local loads = {}
+        for _, c in ipairs(calls) do if c:match("^load:") then loads[#loads+1] = c end end
+        assert(#loads == 4, "2b: expected 4 loads (flag-false profile), got " .. #loads)
+        assert(loads[4] == "load:QUI_DamageMeter",
+            "2b: DamageMeter must load even when profile flag is false")
+    end
 end
 
--- 3) LOD stagger: loads exactly the flag-on modules in manifest order, pings QUI_Modules
--- QUI_Minimap now has flag=nil (always loads); exclude DamageMeter by flag instead.
-do
-    local ns, calls = newEnv()
-    local loader = loadLoader(ns)
-    loader.GetProfile = function() return { damageMeter = { native = { enabled = false } } } end
-    loader:LoadEnabledLODModules()
-    local loads = {}
-    for _, c in ipairs(calls) do if c:match("^load:") then loads[#loads+1] = c end end
-    -- DamageMeter is excluded by flag; the remaining three load in manifest order.
-    assert(#loads == 3, "expected 3 loads (no damagemeter), got " .. #loads)
-    assert(loads[1] == "load:QUI_Skinning", "1st: skinning, got "  .. tostring(loads[1]))
-    assert(loads[2] == "load:QUI_Minimap",  "2nd: minimap, got "   .. tostring(loads[2]))
-    assert(loads[3] == "load:QUI_QoL",      "3rd: qol, got "       .. tostring(loads[3]))
-    assert(#ns.QUI_Modules.notified == 3, "one notify per load")
-end
-
--- 4) Toggle helper: lod enable = Enable+Load now; login enable = reload; disable = reload;
+-- 3) Toggle helper: lod enable = Enable+Load now; login enable = reload; disable = reload;
 --    LoadAddOn failure returns "reload"; SaveAddOns called after Enable/Disable.
+--    Also documents the loader-level contract: enabling a login-class addon that is
+--    already loaded returns "loaded" (the module ran at load time; the row layer in
+--    module_addons_content.lua compensates by checking the dormant-guard flag flip).
 do
     local ns, calls, state = newEnv()
     local loader = loadLoader(ns)
@@ -124,8 +156,16 @@ do
     assert(calls[1] == "disable:QUI_UnitFrames", "disable call")
     assert(calls[2] == "save",                   "save after disable")
 
-    -- enable a login-class (already loaded) → "reload"
-    assert(loader.SetModuleAddonEnabled("QUI_UnitFrames", true) == "reload")
+    -- enable a login-class that is NOT yet loaded → "reload" (addon enabled, will load on reload)
+    assert(loader.SetModuleAddonEnabled("QUI_UnitFrames", true) == "reload",
+        "login-class not yet loaded: enable must return reload")
+
+    -- enable a login-class that IS already loaded → "loaded" (loader-level contract:
+    -- the module ran at load time; the module_addons_content row handles the
+    -- dormant-guard-flag flip case separately by prompting reload when flipped+loaded).
+    state.loaded.QUI_UnitFrames = true
+    assert(loader.SetModuleAddonEnabled("QUI_UnitFrames", true) == "loaded",
+        "login-class already loaded: enable must return loaded")
 
     -- missing addon
     state.exists.QUI_Chat = false
@@ -139,11 +179,12 @@ do
         "LoadAddOn failure must return reload")
 end
 
--- 5) Combat parking: no loads during lockdown; all drain after PLAYER_REGEN_ENABLED
+-- 4) Combat parking: no loads during lockdown; all drain after PLAYER_REGEN_ENABLED.
+--    All 4 LOD modules are addon-enabled (default stub) so all 4 load post-regen.
 do
     local ns, calls, state, getLastFrame = newEnv()
     local loader = loadLoader(ns)
-    loader.GetProfile = function() return {} end  -- all flags on (nil flag = on)
+    loader.GetProfile = function() return {} end  -- DB ready; profile content not used for gating
 
     -- Enter simulated combat before the stagger starts.
     _G.InCombatLockdown = function() return true end
@@ -164,7 +205,7 @@ do
     _G.InCombatLockdown = function() return false end
     frame:FireEvent("PLAYER_REGEN_ENABLED")
 
-    -- All 4 LOD modules (all flags on) must now be loaded in manifest order.
+    -- All 4 LOD modules must now be loaded in manifest order.
     local loadsAfter = {}
     for _, c in ipairs(calls) do if c:match("^load:") then loadsAfter[#loadsAfter+1] = c end end
     assert(#loadsAfter == 4, "all 4 lod modules loaded after regen, got " .. #loadsAfter)
@@ -177,7 +218,7 @@ do
     assert(not frame._events["PLAYER_REGEN_ENABLED"], "unregistered after drain")
 end
 
--- 6) Combat guard on SetModuleAddonEnabled: enabling a LOD addon mid-combat
+-- 5) Combat guard on SetModuleAddonEnabled: enabling a LOD addon mid-combat
 --    records EnableAddOn+SaveAddOns but skips LoadNow, returns "reload".
 --    Out of combat: LoadNow fires and returns "loaded".
 do
@@ -212,10 +253,10 @@ do
     end
 end
 
--- 7) Anchoring catch-up: RegisterAllFrameTargets + ApplyAllFrameAnchors called
+-- 6) Anchoring catch-up: RegisterAllFrameTargets + ApplyAllFrameAnchors called
 --    exactly once after a stagger that loaded ≥1 module; NOT called when nothing loaded.
 do
-    -- 7a) At least one load → both anchoring methods called exactly once.
+    -- 6a) At least one load → both anchoring methods called exactly once.
     do
         local ns, calls, state = newEnv()
         local loader = loadLoader(ns)
@@ -231,7 +272,7 @@ do
         assert(anchorCalls[2] == "apply",    "ApplyAllFrameAnchors called second")
     end
 
-    -- 7b) Nothing eligible (all already loaded) → anchoring methods NOT called.
+    -- 6b) Nothing eligible (all already loaded) → anchoring methods NOT called.
     do
         local ns, calls, state = newEnv()
         -- Mark all LOD modules as already loaded so nothing gets enqueued.
@@ -250,7 +291,7 @@ do
         assert(#anchorCalls == 0, "no anchoring calls when nothing loaded, got " .. #anchorCalls)
     end
 
-    -- 7c) Combat-deferred stagger: anchoring fires after regen drain (loads happened post-combat).
+    -- 6c) Combat-deferred stagger: anchoring fires after regen drain (loads happened post-combat).
     do
         local ns, calls, state, getLastFrame = newEnv()
         local loader = loadLoader(ns)

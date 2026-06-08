@@ -30,7 +30,9 @@ local GUI = assert(_G.QUI and _G.QUI.GUI, "framework did not initialize QUI.GUI"
 -- Apply the generated cache exactly as the runtime does.
 assert(loadfile("QUI_Options/search_cache.lua"))("QUI", {})
 
-local FEATURE_ID = "damageMeterNativePage"
+-- The legacy damageMeterNativePage master row was retired with the toggle
+-- consolidation; the Module Addons row is the damage meter switch now.
+local FEATURE_ID = "moduleAddon_QUI_DamageMeter"
 
 local function moduleToggleLabel()
     for _, e in ipairs(GUI.StaticNavigationRegistry or {}) do

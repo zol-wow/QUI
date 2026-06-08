@@ -3,9 +3,15 @@
 -- one per frame) and backs the per-module addon toggles in options.
 --
 -- Model: Blizzard addon enable state = "is the code present" (hard, zero
--- cost when off). Profile master flags = "is the feature active" (live,
--- unchanged semantics). This loader never flips addon state on its own;
--- only the user-facing toggle does (SetModuleAddonEnabled).
+-- cost when off).  LOD eligibility = lod class + not loaded + exists +
+-- addon-enabled.  Profile flags are NOT load gates here; two dormant-guard
+-- flags (chat.enabled, quiGroupFrames.enabled) are handled exclusively by
+-- the Module Addons rows (AND-read / heal-on-enable) and by each module's
+-- own init.
+--
+-- GetProfile() is kept as an overridable readiness hook so tests can inject
+-- a profile table and prevent the kick-off stagger from firing during
+-- loadLoader().  It is NOT used to gate individual module loads.
 --
 -- C_AddOns.IsAddOnLoaded returns (loadedOrLoading, loaded); we gate on the
 -- first return so a currently-loading addon is also skipped.
@@ -18,28 +24,14 @@ local AddonLoader = {}
 ns.AddonLoader = AddonLoader
 
 ---------------------------------------------------------------------------
--- Flag resolution
+-- Profile accessor (overridable for tests — readiness bail only)
 ---------------------------------------------------------------------------
 
--- Resolve a manifest flag path against a profile table. nil flag and
--- missing intermediate tables default to ON (matches default-on modules;
--- quiGroupFrames defaults off in defaults.lua, which AceDB materializes,
--- so the explicit false is always present when off).
-function AddonLoader.IsFlagOn(profile, flagPath)
-    if not flagPath then return true end
-    local node = profile
-    for i = 1, #flagPath do
-        if type(node) ~= "table" then return true end
-        node = node[flagPath[i]]
-    end
-    return node ~= false
-end
-
----------------------------------------------------------------------------
--- Profile accessor (overridable for tests)
----------------------------------------------------------------------------
-
--- Overridable for tests; real implementation reads the live AceDB profile.
+-- Overridable for tests.  Real implementation returns the live AceDB profile
+-- when the DB is ready; nil otherwise.  LoadEnabledLODModules bails when nil
+-- so the kick-off stagger (ns.WhenLoggedIn below) does not fire during the
+-- headless loadLoader() call in tests.  The profile content is NOT used to
+-- gate individual module loads.
 function AddonLoader.GetProfile()
     return QUI and QUI.db and QUI.db.profile
 end
@@ -94,16 +86,17 @@ local regenResumeFrame
 -- frame so post-login work never lands as a single hitch.
 -- Safe to call multiple times (OnProfileChanged re-invokes via core/main.lua);
 -- already-loaded folders are skipped by IsModuleLoaded re-checks inside step().
+-- Eligibility: lod class + not loaded + exists + addon-enabled.
+-- Profile flags are NOT load gates; dormant-guard flags are handled by the
+-- Module Addons rows and by each module's own init.
 function AddonLoader:LoadEnabledLODModules()
-    local profile = AddonLoader.GetProfile()
-    if not profile then return end  -- DB not ready (also keeps headless tests inert)
+    if not AddonLoader.GetProfile() then return end  -- DB not ready; keeps headless tests inert
     local queue = {}
     for _, entry in ipairs(ns.AddonManifest or {}) do
         if entry.class == "lod"
             and not AddonLoader.IsModuleLoaded(entry.folder)
             and (not C_AddOns.DoesAddOnExist or C_AddOns.DoesAddOnExist(entry.folder))
-            and AddonLoader.IsModuleAddonEnabled(entry.folder)
-            and AddonLoader.IsFlagOn(profile, entry.flag) then
+            and AddonLoader.IsModuleAddonEnabled(entry.folder) then
             queue[#queue + 1] = entry.folder
         end
     end

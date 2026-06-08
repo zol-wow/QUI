@@ -116,75 +116,9 @@ local function DBChar(key)
     end
 end
 
-local function ShowReloadConfirmation(message)
-    local QUI = _G.QUI
-    local GUI = QUI and QUI.GUI
-    if GUI and GUI.ShowConfirmation then
-        GUI:ShowConfirmation({
-            title = "Reload UI?",
-            message = message,
-            acceptText = "Reload",
-            cancelText = "Later",
-            onAccept = function() QUI:SafeReload() end,
-        })
-    end
-end
-
 ---------------------------------------------------------------------------
 -- Frames group
 ---------------------------------------------------------------------------
-
-RegisterNonVisualFeature("unitFrames", {
-    group        = "Frames",
-    label        = "Unit Frames",
-    caption      = "Master toggle for player, target, focus, pet, and boss unit frames.",
-    combatLocked = true,
-    isEnabled    = function()
-        local db = DBProfile("quiUnitFrames")()
-        return db and db.enabled ~= false
-    end,
-    setEnabled   = function(val)
-        local db = DBProfile("quiUnitFrames")()
-        if not db then return end
-        local enabled = val ~= false
-        local old = db.enabled ~= false
-        if old == enabled then return end
-        db.enabled = enabled
-        if ns.QUI_Modules then
-            ns.QUI_Modules:NotifyChanged("unitFrames")
-        end
-        if type(_G.QUI_RefreshUnitFrames) == "function" then
-            _G.QUI_RefreshUnitFrames()
-        end
-        ShowReloadConfirmation("Enabling or disabling unit frames requires a UI reload to take effect.")
-    end,
-})
-
-RegisterNonVisualFeature("groupFrames", {
-    group        = "Frames",
-    label        = "Group Frames",
-    caption      = "Master toggle for party, raid, and spotlight group frames.",
-    combatLocked = true,
-    isEnabled    = function()
-        local db = DBProfile("quiGroupFrames")()
-        return db and db.enabled ~= false
-    end,
-    setEnabled   = function(val)
-        local db = DBProfile("quiGroupFrames")()
-        if not db then return end
-        local enabled = val ~= false
-        local old = db.enabled ~= false
-        if old == enabled then return end
-        db.enabled = enabled
-        if ns.QUI_Modules then
-            ns.QUI_Modules:NotifyChanged("groupFrames")
-        end
-        if type(_G.QUI_RefreshGroupFrames) == "function" then
-            _G.QUI_RefreshGroupFrames()
-        end
-        ShowReloadConfirmation("Enabling or disabling group frames requires a UI reload to take effect.")
-    end,
-})
 
 RegisterNonVisualFeature("clickCast", {
     group        = "Frames",
@@ -328,42 +262,6 @@ Register(
     "enabled",
     nil   -- hooks are permanent; no teardown global required
 )
-
----------------------------------------------------------------------------
--- Chat group
----------------------------------------------------------------------------
-
--- Chat module master toggle. QUI_RefreshChat tears down glass, tabs, edit
--- box styling, copy buttons, and fade live; message filters and link hooks are
--- permanent but re-check db.profile.chat.enabled on every event. A reload is
--- still required to fully hand ChatFrame1 back to (or retake it from)
--- Blizzard's Edit Mode, so this prompts like the other module master toggles
--- rather than using the bare-DB-write MakeSubtableEntry path.
-RegisterNonVisualFeature("chat", {
-    group        = "Chat",
-    label        = "Chat Engine",
-    caption      = "Glass chat frames, URL clickability, timestamps, copy buttons, and message history.",
-    combatLocked = true,
-    isEnabled    = function()
-        local db = DBProfile("chat")()
-        return db and db.enabled ~= false
-    end,
-    setEnabled   = function(val)
-        local db = DBProfile("chat")()
-        if not db then return end
-        local enabled = val ~= false
-        local old = db.enabled ~= false
-        if old == enabled then return end
-        db.enabled = enabled
-        if ns.QUI_Modules then
-            ns.QUI_Modules:NotifyChanged("chat")
-        end
-        if type(_G.QUI_RefreshChat) == "function" then
-            _G.QUI_RefreshChat()
-        end
-        ShowReloadConfirmation("Enabling or disabling the chat module requires a UI reload to take effect.")
-    end,
-})
 
 ---------------------------------------------------------------------------
 -- Consumable Macros (QoL) — custom setEnabled routes through the module API

@@ -68,27 +68,6 @@ local function RefreshCDM()
     if _G.QUI_RefreshCustomTrackersVisibility then _G.QUI_RefreshCustomTrackersVisibility() end
 end
 
-local function ShowCDMReloadPrompt(enabled)
-    local QUI = _G.QUI
-    local GUI = QUI and QUI.GUI
-    if not (GUI and GUI.ShowConfirmation) then
-        return
-    end
-
-    GUI:ShowConfirmation({
-        title = "Reload UI?",
-        message = enabled
-            and "Enabling Cooldown Manager requires a UI reload to hand cooldown viewers back to QUI."
-            or "Disabling Cooldown Manager requires a UI reload to fully hand cooldown viewers back to the default UI.",
-        acceptText = "Reload",
-        cancelText = "Later",
-        onAccept = function()
-            if QUI and QUI.SafeReload then
-                QUI:SafeReload()
-            end
-        end,
-    })
-end
 
 local function GetViewerFrame(elementKey)
     local viewerKey = CDM_VIEWER_MAP[elementKey]
@@ -131,26 +110,7 @@ local function RegisterMasterElement(um)
         order = -1,
         isOwned = true,
         noHandle = true,
-        isEnabled = function()
-            local ncdm = GetNcdmDB()
-            return ncdm and ncdm.enabled ~= false
-        end,
-        setEnabled = function(val)
-            local ncdm = GetNcdmDB()
-            local oldEnabled = ncdm and ncdm.enabled ~= false
-            local enabled = val ~= false
-            if ncdm then ncdm.enabled = val end
-            if ns.CDMSpellData and ns.CDMSpellData.SyncCooldownViewerCVar then
-                ns.CDMSpellData:SyncCooldownViewerCVar()
-            end
-            RefreshCDM()
-            if not enabled and ns.CDMProvider and ns.CDMProvider.DisableRuntime then
-                ns.CDMProvider:DisableRuntime()
-            end
-            if oldEnabled ~= nil and oldEnabled ~= enabled then
-                ShowCDMReloadPrompt(enabled)
-            end
-        end,
+        -- module on/off lives in Module Addons (addon state); positioning only here
         setGameplayHidden = SetAllGameplayHidden,
         getFrame = GetFirstViewerFrame,
     })
@@ -164,8 +124,6 @@ local function RegisterBuiltInElement(um, info)
         order = info.order,
         isOwned = true,
         isEnabled = function()
-            local ncdm = GetNcdmDB()
-            if not ncdm or ncdm.enabled == false then return false end
             local db = GetCDMDB(info.key)
             return db and db.enabled ~= false
         end,

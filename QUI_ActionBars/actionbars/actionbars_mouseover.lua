@@ -436,7 +436,7 @@ function SetupBarMouseover(barKey)
     local fadeSettings = GetFadeSettings()
     local db = GetDB()
 
-    if not db or not db.enabled then return end
+    if not db then return end
 
     -- Extra button bars (Zone Ability, Extra Action) should never inherit global fade
     -- They only fade if explicitly enabled for that specific bar
@@ -673,7 +673,7 @@ function SkinBar(barKey)
     if not SKINNABLE_BAR_KEYS[barKey] then return end
 
     local db = GetDB()
-    if not db or not db.enabled then return end
+    if not db then return end
 
     local barSettings = GetBarSettings(barKey)
     if not barSettings or not barSettings.enabled then return end

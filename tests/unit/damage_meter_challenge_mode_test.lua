@@ -51,8 +51,8 @@ assert(coreSrc:find("autoResetOnChallengeStart", 1, true),
     "CHALLENGE_MODE_START handler must consult autoResetOnChallengeStart")
 assert(coreSrc:find("autoSwapChallengeSessions", 1, true),
     "challenge lifecycle handler must consult autoSwapChallengeSessions")
-assert(challengeStartBlock:find("s.enabled", 1, true),
-    "CHALLENGE_MODE_START must be inert when damageMeter.native.enabled is false")
+-- (the old damageMeter.native.enabled master gate was retired in the
+-- module-toggle consolidation — a disabled meter is now a disabled addon)
 assert(coreSrc:find("C_DamageMeter.ResetAllCombatSessions", 1, true),
     "key-start reset must call C_DamageMeter.ResetAllCombatSessions")
 assert(coreSrc:find("function Data:ResetCombatClock", 1, true),

@@ -17,6 +17,12 @@ ns.Migrations = Migrations
 -- reach the snapshot/restore helpers for the `/qui migration` slash command.
 if _G.QUI then _G.QUI.Migrations = Migrations end
 
+-- Module-level upvalues set by Migrations.Run before iterating profiles and
+-- cleared on exit. Declared here (file scope) so migration functions defined
+-- anywhere in the file can reference them without forward-declaration issues.
+local _currentGlobalDB     = nil  -- db.global; for cross-profile reads (v32+)
+local _currentActiveProfile = nil  -- raw sv profile table for the active profile (v43+)
+
 ---------------------------------------------------------------------------
 -- Schema version history
 ---------------------------------------------------------------------------
@@ -260,10 +266,21 @@ if _G.QUI then _G.QUI.Migrations = Migrations end
 --        Idempotent: a profile already carrying windows[] only sheds any
 --        leftover flat keys.)
 --
+-- v43 = RetireModuleMasterFlags (suite-split follow-up)
+--       The Module Addons rows (addon enable state, account-wide via
+--       C_AddOns.EnableAddOn/DisableAddOn) are now the only module-level
+--       switch. Five legacy per-profile master flags are forced true so a
+--       stale false can never silently disable a module whose addon row
+--       says on. When the ACTIVE profile carried an explicit false, that
+--       intent is first reflected account-wide into the addon disable state
+--       before the flag is forced. chat.enabled and quiGroupFrames.enabled
+--       are deliberately NOT touched (dormant guards: stock-chat users and
+--       group-frames opt-in default).
+--
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 42
+local CURRENT_SCHEMA_VERSION = 43
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -1532,6 +1549,79 @@ local function MigrateCustomDisplayWindows(profile)
     cd.width, cd.height, cd.position, cd.tabs = nil, nil, nil, nil
 end
 
+---------------------------------------------------------------------------
+-- v43: RetireModuleMasterFlags — suite-split follow-up.
+--
+-- The Module Addons rows (C_AddOns enable state, account-wide) are now the
+-- only module-level switch. Five legacy per-profile master flags are forced
+-- true so a stale false can never silently disable a module whose addon row
+-- says on.
+--
+-- When the ACTIVE profile carried an explicit false, that intent is first
+-- reflected account-wide into the addon disable state before the flag is
+-- forced, so users who turned a module off don't silently lose their choice.
+--
+-- chat.enabled and quiGroupFrames.enabled are deliberately NOT touched:
+-- chat.enabled is the dormant guard for stock-chat users; quiGroupFrames.enabled
+-- is the group-frames opt-in default.
+--
+-- Headless safety: every C_AddOns / QUI reference is guarded so the step
+-- degrades to pure force-true when running outside the WoW client.
+---------------------------------------------------------------------------
+local RETIRED_MASTER_FLAGS = {
+    { path = { "quiUnitFrames", "enabled" },         folder = "QUI_UnitFrames"  },
+    { path = { "actionBars",    "enabled" },         folder = "QUI_ActionBars"  },
+    { path = { "ncdm",          "enabled" },         folder = "QUI_CDM"         },
+    { path = { "minimap",       "enabled" },         folder = "QUI_Minimap"     },
+    { path = { "damageMeter",   "native", "enabled" }, folder = "QUI_DamageMeter" },
+}
+
+local function RetireModuleMasterFlags(profile)
+    if type(profile) ~= "table" then return end
+
+    -- Detect whether this is the currently active profile by table identity
+    -- against the raw sv entry that Migrations.Run pinned in _currentActiveProfile.
+    -- Outside Migrations.Run (e.g. profile import / profile switch), the
+    -- variable is nil and the addon-disable branch is skipped gracefully.
+    local isActiveProfile = (_currentActiveProfile ~= nil)
+        and (profile == _currentActiveProfile)
+
+    for _, entry in ipairs(RETIRED_MASTER_FLAGS) do
+        -- Walk the path into the profile, stopping at any non-table step.
+        local tbl = profile
+        local ok = true
+        for i = 1, #entry.path - 1 do
+            local segment = entry.path[i]
+            if type(tbl[segment]) ~= "table" then
+                ok = false
+                break
+            end
+            tbl = tbl[segment]
+        end
+        if not ok then
+            -- Intermediate table absent — no stored flag, nothing to retire.
+        else
+            local leaf = entry.path[#entry.path]
+            if tbl[leaf] == false then
+                -- This profile explicitly disabled the module.
+                -- If it's the active profile, carry the intent to the addon layer.
+                if isActiveProfile
+                    and C_AddOns
+                    and type(C_AddOns.DisableAddOn) == "function"
+                then
+                    C_AddOns.DisableAddOn(entry.folder)
+                    if type(C_AddOns.SaveAddOns) == "function" then
+                        C_AddOns.SaveAddOns()
+                    end
+                end
+                -- Force the flag true in ALL profiles so it can never suppress
+                -- a module whose addon row is on.
+                tbl[leaf] = true
+            end
+        end
+    end
+end
+
 local DEFAULT_SKY_BLUE_ACCENT = { 0.376, 0.647, 0.980, 1 }
 
 local function EnsureThemeStorage(profile)
@@ -2756,7 +2846,6 @@ end
 --   `anchorTo = "disabled"`. The migration translates by copying the
 --   offsets verbatim and forcing anchorTo="disabled".
 ---------------------------------------------------------------------------
-local _currentGlobalDB = nil  -- set by Migrations.Run for cross-profile access
 local CUSTOM_TRACKER_ANCHOR_PREFIX = "customTracker:"
 local CDM_CUSTOM_ANCHOR_PREFIX = "cdmCustom_"
 
@@ -4284,6 +4373,11 @@ function Migrations.RunOnProfile(profile)
     -- v42: wrap flat customDisplay into the multi-window array.
     if stored < 42 then MigrateCustomDisplayWindows(profile) end
 
+    -- v43: force the five legacy per-profile module master-flags to true so a
+    -- stale false can't silently disable a module whose addon row is on. For the
+    -- active profile, an explicit false is first reflected to the addon layer.
+    if stored < 43 then RetireModuleMasterFlags(profile) end
+
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame
         MigLog("post-mig debuffFrame: parent=%s point=%s ofs=%s/%s enabled=%s",
@@ -4320,7 +4414,18 @@ function Migrations.Run(db)
     -- import, profile switch) get nil and handle its absence gracefully.
     _currentGlobalDB = db.global
 
-    local profiles = db.sv and db.sv.profiles
+    -- Pin the active profile's raw sv table so RetireModuleMasterFlags (v43)
+    -- can detect which profile is active and carry an explicit false to the
+    -- addon layer. db.keys.profile is the profile name key; db.sv.profiles
+    -- maps that name to the raw table iterated below. Cleared on exit so
+    -- standalone RunOnProfile calls (profile import/switch) get nil and
+    -- degrade to force-true only.
+    local activeProfileName = db.keys and db.keys.profile
+    local sv = db.sv
+    _currentActiveProfile = (activeProfileName and sv and sv.profiles)
+        and sv.profiles[activeProfileName] or nil
+
+    local profiles = sv and sv.profiles
     if type(profiles) == "table" then
         local any = false
         for _, profile in pairs(profiles) do
@@ -4340,7 +4445,8 @@ function Migrations.Run(db)
             end
         end
 
-        _currentGlobalDB = nil
+        _currentGlobalDB     = nil
+        _currentActiveProfile = nil
         return any
     end
 
@@ -4357,6 +4463,7 @@ function Migrations.Run(db)
         end
     end
 
-    _currentGlobalDB = nil
+    _currentGlobalDB     = nil
+    _currentActiveProfile = nil
     return result
 end

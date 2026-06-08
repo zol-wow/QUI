@@ -245,7 +245,7 @@ local function GetNameSettings(settings)
 end
 
 local function IsPlayerFrameEnabled(db)
-    return db and db.enabled and db.player and db.player.enabled
+    return db and db.player and db.player.enabled
 end
 
 local function IsStandalonePlayerCastbarActive(db)
@@ -4111,12 +4111,6 @@ function QUI_UF:Initialize()
     local db = GetDB()
     if not db then inInitSafeWindow = false return end
 
-    local unitFramesEnabled = db.enabled == true
-    local standaloneActive = IsStandalonePlayerCastbarActive(db)
-    if not unitFramesEnabled and not standaloneActive then
-        return
-    end
-
     -- Setup castbar module references
     if QUI_Castbar then
         QUI_Castbar:SetHelpers({
@@ -4136,11 +4130,6 @@ function QUI_UF:Initialize()
 
     -- Apply standalone player castbar first; ignored while player frame is enabled.
     ApplyStandalonePlayerCastbarMode()
-
-    -- If unit frames are globally disabled, standalone mode is the only runtime path.
-    if not unitFramesEnabled then
-        return
-    end
 
     -- Hide Blizzard default frames first
     self:HideBlizzardFrames()
@@ -4629,7 +4618,7 @@ do
                 isOwned = true,
                 isEnabled = function()
                     local ufdb = GetUFDB()
-                    if not ufdb or not ufdb.enabled then return false end
+                    if not ufdb then return false end
                     return ufdb[info.unit] and ufdb[info.unit].enabled ~= false
                 end,
                 setEnabled = function(val)
@@ -4684,7 +4673,7 @@ do
             isOwned = true,
             isEnabled = function()
                 local ufdb = GetUFDB()
-                if not ufdb or not ufdb.enabled then return false end
+                if not ufdb then return false end
                 return ufdb.boss and ufdb.boss.enabled ~= false
             end,
             setEnabled = function(val)

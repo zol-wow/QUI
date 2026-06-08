@@ -3,12 +3,19 @@
 -- CHAT_MSG_* event on an insecure capture frame (independent delivery — no
 -- dispatch-order dependence), runs Blizzard's message-event filters for
 -- cross-addon compat, applies the secret-first guard, and appends to
--- MessageStore. A hooksecurefunc on DEFAULT_CHAT_FRAME.AddMessage is the
--- FALLBACK for non-event traffic only (addon print(), system AddMessage);
--- event-driven and own-addon lines are skipped via stack inspection.
+-- MessageStore. Also registers the non-CHAT_MSG system events Blizzard's
+-- ChatFrameMixin:SystemEventHandler turns into chat lines (/played, level-up,
+-- GMOTD, disconnects...) — suppressed Blizzard frames are event-neutered, so
+-- without this those lines would be lost entirely. A hooksecurefunc on
+-- DEFAULT_CHAT_FRAME.AddMessage is the FALLBACK for non-event traffic only
+-- (addon print(), direct AddMessage); event-driven and own-addon lines are
+-- skipped via stack inspection.
 --
 -- SECRET SAFETY: arg1 (and any payload arg) may be secret. issecretvalue
--- BEFORE any operator; classification keys off the EVENT NAME only.
+-- BEFORE any operator; classification keys off the EVENT NAME only. Payload
+-- args proven non-secret land in the `p` table handed to MessageFormat;
+-- p.text/p.rawSender carry raw (possibly secret) values for the entry points
+-- that own the secret discipline.
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 
@@ -20,6 +27,7 @@ local Capture = ns.QUI.Chat.MessageCapture
 
 local Store = assert(ns.QUI.Chat.MessageStore, "message_store.lua must load before message_capture.lua")
 local Format = assert(ns.QUI.Chat.MessageFormat, "message_format.lua must load before message_capture.lua")
+local Registry = ns.QUI.Chat.ChannelRegistry
 
 local function IsSecret(v)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(v) or false
@@ -27,6 +35,12 @@ end
 
 local function Now()
     return (_G.GetServerTime and _G.GetServerTime()) or time()
+end
+
+local function FormatString(fmt, ...)
+    local ok, formatted = pcall(string.format, fmt, ...)
+    if not ok then return nil end
+    return formatted
 end
 
 -- Events routed to chat frames but not in ChatTypeGroupInverted.
@@ -55,15 +69,222 @@ local function CaptureActive()
     return true
 end
 
+-- ---------------------------------------------------------------------------
+-- System-event replication (ChatFrameMixin:SystemEventHandler parity —
+-- vendored FrameXML: Blizzard_ChatFrameBase/Mainline/ChatFrameOverrides.lua
+-- :183-266 + ChatFrameUtil.DisplayTimePlayed/DisplayLevelUp/DisplayGMOTD).
+-- Suppressed frames never receive these, so the capture frame owns them.
+-- ---------------------------------------------------------------------------
+
+-- Append a replicated system line. typeKey colors via the same read-only
+-- resolver event lines use; entries are SYSTEM-group so default tabs show them.
+-- SECRET-FIRST: probe before any inspection — a secret line (GMOTD under
+-- lockdown) flows opaquely with s=true; type() is the only operator applied
+-- to non-secret values before the string checks.
+local function AppendSystemLine(event, line, typeKey)
+    local secretBody = IsSecret(line)
+    if not secretBody and (type(line) ~= "string" or line == "") then return end
+    typeKey = typeKey or "SYSTEM"
+    local r, g, b = Format.ColorForTypeKey(typeKey)
+    if I.AddTimestamp then
+        line = (I.AddTimestamp(line))
+    end
+    Store.Append({ m = line, r = r, g = g, b = b, e = event, k = typeKey,
+        s = secretBody or nil, t = Now() })
+end
+
+local function GlobalString(name)
+    local gs = _G[name]
+    return type(gs) == "string" and gs or nil
+end
+
+local function TimeBreakDown(t)
+    local days = math.floor(t / 86400)
+    local hours = math.floor((t % 86400) / 3600)
+    local minutes = math.floor((t % 3600) / 60)
+    local seconds = math.floor(t % 60)
+    return days, hours, minutes, seconds
+end
+
+local seenMotd -- session GMOTD dedupe (Blizzard shows each broadcast once)
+
+local SYSTEM_EVENTS = {}
+
+SYSTEM_EVENTS.TIME_PLAYED_MSG = function(event, totalTime, levelTime)
+    local dayFmt = GlobalString("TIME_DAYHOURMINUTESECOND")
+    local totalFmt, levelFmt = GlobalString("TIME_PLAYED_TOTAL"), GlobalString("TIME_PLAYED_LEVEL")
+    if not dayFmt then return end
+    if not IsSecret(totalTime) and type(totalTime) == "number" and totalFmt then
+        local d, h, m, s = TimeBreakDown(totalTime)
+        AppendSystemLine(event, FormatString(totalFmt, FormatString(dayFmt, d, h, m, s) or ""))
+    end
+    if not IsSecret(levelTime) and type(levelTime) == "number" and levelFmt then
+        local d, h, m, s = TimeBreakDown(levelTime)
+        AppendSystemLine(event, FormatString(levelFmt, FormatString(dayFmt, d, h, m, s) or ""))
+    end
+end
+
+SYSTEM_EVENTS.PLAYER_LEVEL_CHANGED = function(event, oldLevel, newLevel, real)
+    if IsSecret(oldLevel) or IsSecret(newLevel) or IsSecret(real) then return end
+    if not (real and type(oldLevel) == "number" and type(newLevel) == "number") then return end
+    if oldLevel == 0 or newLevel == 0 or newLevel <= oldLevel then return end
+    local noLink = false
+    if _G.C_GameRules and _G.C_GameRules.IsGameRuleActive and _G.Enum
+        and _G.Enum.GameRule and _G.Enum.GameRule.ChatLinkLevelToastsDisabled then
+        local ok, active = pcall(_G.C_GameRules.IsGameRuleActive, _G.Enum.GameRule.ChatLinkLevelToastsDisabled)
+        noLink = ok and active or false
+    end
+    if not noLink and _G.C_PlayerInfo and _G.C_PlayerInfo.IsPlayerNPERestricted then
+        local ok, restricted = pcall(_G.C_PlayerInfo.IsPlayerNPERestricted)
+        noLink = ok and restricted or false
+    end
+    local line
+    if noLink then
+        line = FormatString(GlobalString("LEVEL_UP_NO_LINK") or "", newLevel)
+    else
+        line = FormatString(GlobalString("LEVEL_UP") or "", newLevel, newLevel)
+    end
+    AppendSystemLine(event, line)
+end
+
+SYSTEM_EVENTS.GUILD_MOTD = function(event, motd)
+    local fmt = GlobalString("GUILD_MOTD_TEMPLATE")
+    if not fmt then return end
+    if IsSecret(motd) then
+        -- Can't compare for dedupe; show at most one secret MOTD per session.
+        if seenMotd == true then return end
+        seenMotd = true
+        AppendSystemLine(event, FormatString(fmt, motd), "GUILD")
+        return
+    end
+    if type(motd) ~= "string" or motd == "" or motd == seenMotd then return end
+    seenMotd = motd
+    AppendSystemLine(event, FormatString(fmt, motd), "GUILD")
+end
+
+SYSTEM_EVENTS.CHAT_SERVER_DISCONNECTED = function(event)
+    AppendSystemLine(event, GlobalString("CHAT_SERVER_DISCONNECTED_MESSAGE"))
+end
+
+SYSTEM_EVENTS.CHAT_SERVER_RECONNECTED = function(event)
+    AppendSystemLine(event, GlobalString("CHAT_SERVER_RECONNECTED_MESSAGE"))
+end
+
+SYSTEM_EVENTS.BN_CONNECTED = function(event, suppressNotification)
+    if not IsSecret(suppressNotification) and suppressNotification then return end
+    AppendSystemLine(event, GlobalString("BN_CHAT_CONNECTED"))
+end
+
+SYSTEM_EVENTS.BN_DISCONNECTED = function(event, _, suppressNotification)
+    if not IsSecret(suppressNotification) and suppressNotification then return end
+    AppendSystemLine(event, GlobalString("BN_CHAT_DISCONNECTED"))
+end
+
+local function RegionalUnavailableLine()
+    if _G.GetRegionalChatUnavailableString then
+        local ok, s = pcall(_G.GetRegionalChatUnavailableString)
+        if ok and type(s) == "string" then return s end
+    end
+    return nil
+end
+
+SYSTEM_EVENTS.CHAT_REGIONAL_STATUS_CHANGED = function(event, isServiceAvailable)
+    if IsSecret(isServiceAvailable) then return end
+    if isServiceAvailable then
+        if _G.GetRegionalChatAvailableString then
+            local ok, s = pcall(_G.GetRegionalChatAvailableString)
+            if ok and type(s) == "string" then AppendSystemLine(event, s) end
+        end
+    else
+        AppendSystemLine(event, RegionalUnavailableLine())
+    end
+end
+
+SYSTEM_EVENTS.CHAT_REGIONAL_SEND_FAILED = function(event)
+    AppendSystemLine(event, RegionalUnavailableLine())
+end
+
+SYSTEM_EVENTS.NOTIFY_CHAT_SUPPRESSED = function(event)
+    local linkLabel = GlobalString("RESTRICT_CHAT_CONFIG_HYPERLINK")
+    local fmt = GlobalString("RESTRICT_CHAT_CHATFRAME_FORMAT")
+    local body = GlobalString("RESTRICT_CHAT_MESSAGE_SUPPRESSED")
+    if not (linkLabel and fmt and body) then return end
+    local hyperlink = ("|Haadcopenconfig|h[%s]"):format(linkLabel)
+    local color = _G.LIGHTBLUE_FONT_COLOR
+    if color and color.WrapTextInColorCode then
+        hyperlink = color:WrapTextInColorCode(hyperlink)
+    end
+    AppendSystemLine(event, FormatString(fmt, body, hyperlink))
+end
+
+-- Language cache for [Orcish]-style headers lives in MessageFormat; the
+-- capture frame owns its event wiring (format stays frame-free).
+SYSTEM_EVENTS.PLAYER_ENTERING_WORLD = function()
+    if Format.RefreshLanguages then Format.RefreshLanguages() end
+end
+
+SYSTEM_EVENTS.ALTERNATIVE_DEFAULT_LANGUAGE_CHANGED = function()
+    if Format.RefreshLanguages then Format.RefreshLanguages() end
+end
+
+-- Reported sender: drop their lines from the store and rebuild the windows
+-- (FCF_RemoveAllMessagesFromChanSender parity). Compares metadata only —
+-- entry.m is never touched.
+SYSTEM_EVENTS.PLAYER_REPORT_SUBMITTED = function(_, reportedGUID)
+    if IsSecret(reportedGUID) or type(reportedGUID) ~= "string" or reportedGUID == "" then return end
+    local removed = Store.RemoveWhere and Store.RemoveWhere(function(entry)
+        return entry.gid == reportedGUID
+    end) or 0
+    if removed > 0 then
+        local TM = ns.QUI.Chat.TabManager
+        if TM and TM.ReapplyAll then TM.ReapplyAll() end
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- Regional-channel auto-add (ChatFrame_CheckAddChannel parity — vendored
+-- ChatFrameOverrides.lua:49-71): joining a regional channel that no window-1
+-- tab lists gets added to the first tab, like Blizzard adds it to the
+-- default frame. Heals configs whose channel seed predates the channel.
+-- ---------------------------------------------------------------------------
+local function MaybeAutoAddChannel(event, p)
+    if event ~= "CHAT_MSG_CHANNEL_NOTICE" then return end
+    if IsSecret(p.text) or p.text ~= "YOU_CHANGED" then return end
+    if type(p.zoneID) ~= "number" or p.zoneID <= 0 then return end
+    local CI = _G.C_ChatInfo
+    if not (CI and CI.IsChannelRegionalForChannelID) then return end
+    local ok, regional = pcall(CI.IsChannelRegionalForChannelID, p.zoneID)
+    if not ok or not regional then return end
+    if Registry and Registry.Refresh then Registry.Refresh() end
+    local name = p.chName or p.chBase
+    local TM = ns.QUI.Chat.TabManager
+    if TM and TM.EnsureDefaultChannelListed and type(name) == "string" and name ~= "" then
+        TM.EnsureDefaultChannelListed(name)
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- CHAT_MSG_* capture
+-- ---------------------------------------------------------------------------
+
 local function OnCaptureEvent(_, event, ...)
     local active = CaptureActive()
     if not active then return end
+
+    local sysHandler = SYSTEM_EVENTS[event]
+    if sysHandler then
+        sysHandler(event, ...)
+        return
+    end
 
     -- Letterbox/cinematic-hidden lines: Blizzard bails before filters when
     -- arg16 is set; mirror that. Probe before truth-testing (may be secret;
     -- if it is, we can't know — let the line through rather than risk an op).
     local a16 = select(16, ...)
     if not IsSecret(a16) and a16 then return end
+    -- arg17 (suppressRaidIcons) is not in the filter contract (filters see
+    -- args 1-14) — read it from the original payload.
+    local a17 = select(17, ...)
 
     -- Cross-addon compat: honor ChatFrameUtil.AddMessageEventFilter consumers
     -- (spam blockers etc.). ChatFrame1 is the filter context — filters that
@@ -84,25 +305,45 @@ local function OnCaptureEvent(_, event, ...)
     end
 
     local typeKey = Format.EventToTypeKey(event)
-    -- Per-channel colors live in ChatTypeInfo.CHANNEL<n>, not .CHANNEL.
-    -- a8 (channel number) may be secret in restricted contexts — probe first.
-    -- a9 is the channel base-name ("Trade"); needed so ColorForTypeKey can
-    -- resolve channel-name-keyed user overrides in ChannelColors.
-    local colorKey = typeKey
-    local colorChName  -- channel base-name for override lookup; nil for non-channel events
-    if (typeKey == "CHANNEL" or typeKey == "CHANNEL_NOTICE")
-        and not IsSecret(a8) and type(a8) == "number" and a8 > 0 then
-        colorKey = "CHANNEL" .. a8
-        if not IsSecret(a9) and type(a9) == "string" and a9 ~= "" then
-            colorChName = a9
-        end
-    end
-    local r, g, b = Format.ColorForTypeKey(colorKey, colorChName)
 
-    local chName
-    if not IsSecret(a9) and type(a9) == "string" and a9 ~= "" then
-        chName = a9
+    -- Probed payload for MessageFormat: every field except text/rawSender is
+    -- nil unless proven non-secret AND well-typed. chName is the registry's
+    -- canonical display name (community identifiers resolved) so filters and
+    -- rendering agree on one spelling.
+    local p = {
+        text = a1,
+        rawSender = a2,
+        sender = (not IsSecret(a2)) and type(a2) == "string" and a2 ~= "" and a2 or nil,
+        language = (not IsSecret(a3)) and type(a3) == "string" and a3 or nil,
+        channelFull = (not IsSecret(a4)) and type(a4) == "string" and a4 or nil,
+        target = (not IsSecret(a5)) and type(a5) == "string" and a5 or nil,
+        flags = (not IsSecret(a6)) and type(a6) == "string" and a6 or nil,
+        zoneID = (not IsSecret(a7)) and type(a7) == "number" and a7 or nil,
+        chNum = (not IsSecret(a8)) and type(a8) == "number" and a8 or nil,
+        chBase = (not IsSecret(a9)) and type(a9) == "string" and a9 ~= "" and a9 or nil,
+        lineID = (not IsSecret(a11)) and type(a11) == "number" and a11 or nil,
+        guid = (not IsSecret(a12)) and type(a12) == "string" and a12 ~= "" and a12 or nil,
+        bnID = (not IsSecret(a13)) and type(a13) == "number" and a13 or nil,
+        suppressIcons = (not IsSecret(a17)) and a17 and true or nil,
+    }
+    if p.chBase then
+        p.chName = Registry and Registry.ResolveName
+            and Registry.ResolveName(p.chNum, p.chBase) or p.chBase
     end
+    if Format.DecorateSender then
+        p.decorated = Format.DecorateSender(event, a1, a2, a3, a4, a5, a6, a7,
+            a8, a9, a10, a11, a12, a13, a14)
+    end
+
+    MaybeAutoAddChannel(event, p)
+
+    -- Per-channel colors live in ChatTypeInfo.CHANNEL<n>, not .CHANNEL.
+    -- chName resolves channel-name-keyed user overrides in ChannelColors.
+    local colorKey = typeKey
+    if (typeKey == "CHANNEL" or typeKey == "CHANNEL_NOTICE") and p.chNum and p.chNum > 0 then
+        colorKey = "CHANNEL" .. p.chNum
+    end
+    local r, g, b = Format.ColorForTypeKey(colorKey, p.chName)
 
     -- Whisper conversation tagging: key off the counterparty identity
     -- (arg2 playerName — sender on incoming, target on _INFORM; vendored
@@ -116,9 +357,9 @@ local function OnCaptureEvent(_, event, ...)
     do
         local Conv = ns.QUI.Chat.ConversationManager
         local info = Conv and Conv.WHISPER_EVENTS and Conv.WHISPER_EVENTS[event]
-        if info and not IsSecret(a2) and type(a2) == "string" and a2 ~= "" then
-            convKey = Conv.DeriveKey(info.chatType, a2)
-            convName = a2
+        if info and p.sender then
+            convKey = Conv.DeriveKey(info.chatType, p.sender)
+            convName = p.sender
         end
     end
 
@@ -126,14 +367,7 @@ local function OnCaptureEvent(_, event, ...)
     if IsSecret(a1) then
         local m = a1
         if Format.WrapSecretEventLine then
-            m = Format.WrapSecretEventLine(event, a1,
-                a2,
-                (not IsSecret(a4)) and type(a4) == "string" and a4 or nil,
-                (not IsSecret(a8)) and type(a8) == "number" and a8 or nil,
-                (not IsSecret(a9)) and type(a9) == "string" and a9 or nil,
-                (not IsSecret(a12)) and type(a12) == "string" and a12 or nil,
-                (not IsSecret(a13)) and type(a13) == "number" and a13 or nil,
-                (not IsSecret(a11)) and type(a11) == "number" and a11 or nil) or a1
+            m = Format.WrapSecretEventLine(event, p) or a1
         end
         -- Timestamp secret lines too: AddTimestamp's secret path wraps via
         -- C_StringUtil.WrapString (secret-safe) and passes through unchanged
@@ -142,21 +376,12 @@ local function OnCaptureEvent(_, event, ...)
             m = (I.AddTimestamp(m))
         end
         Store.Append({ m = m, r = r, g = g, b = b, e = event, k = typeKey, s = true,
-            ch = chName, gid = (not IsSecret(a12)) and type(a12) == "string" and a12 or nil,
-            w = convKey, wn = convName, t = Now() })
+            ch = p.chName, gid = p.guid, w = convKey, wn = convName, t = Now() })
         return
     end
     if type(a1) ~= "string" or a1 == "" then return end
 
-    local line = Format.BuildEventLine(event, a1,
-        (not IsSecret(a2)) and a2 or nil,
-        (not IsSecret(a4)) and a4 or nil,
-        (not IsSecret(a8)) and a8 or nil,
-        chName,
-        (not IsSecret(a12)) and a12 or nil,
-        (not IsSecret(a13)) and a13 or nil,
-        (not IsSecret(a11)) and a11 or nil,
-        (not IsSecret(a5)) and a5 or nil)
+    local line = Format.BuildEventLine(event, p)
     if not line then return end
     -- Redundant-text collapse (loot/xp/honor compaction) — pure transform,
     -- gated inside the module on its own setting.
@@ -173,7 +398,7 @@ local function OnCaptureEvent(_, event, ...)
     -- Keyword highlight + sound (ProcessForCapture owns the keyword sound).
     local KA = ns.QUI.Chat.KeywordAlert
     if KA and KA.ProcessForCapture then
-        line = (KA.ProcessForCapture(line, (not IsSecret(a2)) and a2 or nil))
+        line = (KA.ProcessForCapture(line, p.sender))
     end
     -- Capture-time decorations: timestamps must reflect ARRIVAL time and
     -- rebuilds must not re-run transforms, so entry.m stores the final line.
@@ -186,9 +411,8 @@ local function OnCaptureEvent(_, event, ...)
     if I.MakeURLsClickable and cfg and cfg.urls and cfg.urls.enabled then
         line = (I.MakeURLsClickable(line))
     end
-    Store.Append({ m = line, r = r, g = g, b = b, e = event, k = typeKey, ch = chName,
-        gid = (not IsSecret(a12)) and type(a12) == "string" and a12 or nil,
-        w = convKey, wn = convName, t = Now() })
+    Store.Append({ m = line, r = r, g = g, b = b, e = event, k = typeKey, ch = p.chName,
+        gid = p.guid, w = convKey, wn = convName, t = Now() })
 end
 
 -- Fallback for traffic that never fires a CHAT_MSG event (addon print(),
@@ -259,8 +483,7 @@ function Capture.Setup()
     local valid = _G.C_EventUtils and _G.C_EventUtils.IsEventValid
     for event in pairs(_G.ChatTypeGroupInverted or {}) do
         -- Only CHAT_MSG_* events: the inverted map also carries GUILD_MOTD,
-        -- which Blizzard routes via SystemEventHandler -> AddMessage; our
-        -- fallback hook captures that formatted line once instead.
+        -- which is replicated through SYSTEM_EVENTS below instead.
         if event:sub(1, 9) == "CHAT_MSG_"
             and (not valid or valid(event)) then
             captureFrame:RegisterEvent(event)
@@ -268,6 +491,12 @@ function Capture.Setup()
     end
     for i = 1, #EXTRA_EVENTS do
         local event = EXTRA_EVENTS[i]
+        if not valid or valid(event) then
+            captureFrame:RegisterEvent(event)
+        end
+    end
+    -- Non-CHAT_MSG system traffic (SystemEventHandler parity).
+    for event in pairs(SYSTEM_EVENTS) do
         if not valid or valid(event) then
             captureFrame:RegisterEvent(event)
         end

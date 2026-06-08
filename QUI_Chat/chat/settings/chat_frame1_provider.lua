@@ -610,9 +610,15 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 ns.QUI_Options.CreateAccentDotLabel(body, "Channels (current join list)", sy)
                 sy = sy - 30
 
-                -- Collect live channel names.
+                -- Collect live channel names: the channel registry resolves
+                -- community identifiers to display names and tracks the same
+                -- channel list the capture pipeline tags entries with, so the
+                -- checkboxes here match what the filter compares against.
                 local liveChannels = {}
-                if type(GetChannelList) == "function" then
+                local Reg = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.ChannelRegistry
+                if Reg and Reg.AllNames then
+                    liveChannels = Reg.AllNames()
+                elseif type(GetChannelList) == "function" then
                     local data = { GetChannelList() }
                     local ci = 1
                     while ci + 1 <= #data do

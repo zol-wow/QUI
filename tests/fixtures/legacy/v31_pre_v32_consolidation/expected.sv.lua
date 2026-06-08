@@ -6455,7 +6455,7 @@ return {
     profiles = {
       Default = {
         _defaultsVersion = 3,
-        _schemaVersion = 42,
+        _schemaVersion = 43,
         chat = {
           enabled = false
         },

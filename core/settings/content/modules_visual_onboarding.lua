@@ -98,11 +98,6 @@ local VISUAL_MODULES = {
     -- Display
     ---------------------------------------------------------------------------
     {
-        key = "minimap", group = "Display", label = "Minimap",
-        caption = "Master toggle for the custom minimap treatment.",
-        combatLocked = true,
-    },
-    {
         key = "buffFrame", group = "Display", label = "Buff Frame",
         caption = "Active beneficial auras with custom borders.",
         combatLocked = true,
@@ -254,11 +249,6 @@ local VISUAL_MODULES = {
     ---------------------------------------------------------------------------
     -- Action Bars
     ---------------------------------------------------------------------------
-    {
-        key = "actionBars", group = "Action Bars", label = "Action Bars",
-        caption = "Master toggle for the custom action bar system.",
-        combatLocked = true,
-    },
     {
         key = "bar1", group = "Action Bars", label = "Action Bar 1",
         caption = "Primary action bar (main bar).",
@@ -453,12 +443,6 @@ local VISUAL_MODULES = {
     ---------------------------------------------------------------------------
     -- Cooldown Manager & Custom Tracker Bars
     ---------------------------------------------------------------------------
-    {
-        key = "cdm", group = "Cooldown Manager & Custom Tracker Bars",
-        label = "Cooldown Manager",
-        caption = "Master toggle for cooldown viewers, buff trackers, and tracked bars.",
-        combatLocked = true,
-    },
     {
         key = "rotationAssistIcon", group = "Cooldown Manager & Custom Tracker Bars",
         label = "Rotation Assist Icon",

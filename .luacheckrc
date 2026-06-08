@@ -336,6 +336,12 @@ files["QUI_ActionBars/actionbars/actionbars_glow.lua"] = {
 files["QUI_ActionBars/actionbars/actionbars_helpers.lua"] = {
     ignore = { "111", "112", "113" },
 }
+files["QUI_ActionBars/actionbars/actionbars_public.lua"] = {
+    ignore = { "111", "112", "113" },
+}
+files["QUI_ActionBars/actionbars/actionbars_mouseover.lua"] = {
+    ignore = { "111", "112", "113" },
+}
 
 files["QUI_QoL/dungeon/party_keystones.lua"] = {
     ignore = { "113" },

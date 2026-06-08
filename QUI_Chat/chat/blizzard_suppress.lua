@@ -70,6 +70,16 @@ local function IsCombatLogFrame(frame)
     return frame == _G.ChatFrame2
 end
 
+-- ChatFrame1 additionally keeps CAUTIONARY_CHAT_MESSAGE: its handler routes
+-- straight to ChatFrameUtil.HandleCautionaryChatMessage (the suspicious-link
+-- confirm flow, ChatFrameOverrides.lua:273-275) and renders nothing — the
+-- flow must keep one live listener while frames are hidden. Default frame
+-- only, so a confirm fires once, not once per window.
+local function IsNeuterAllowed(frame, event)
+    if NEUTER_ALLOWED[event] then return true end
+    return event == "CAUTIONARY_CHAT_MESSAGE" and frame == _G.ChatFrame1
+end
+
 local function HookRegisterEvent(frame)
     if registerHooked[frame] or not _G.hooksecurefunc then return end
     registerHooked[frame] = true
@@ -78,7 +88,7 @@ local function HookRegisterEvent(frame)
     -- groups; dead frames must stay dead). Reentrancy-guarded.
     _G.hooksecurefunc(frame, "RegisterEvent", function(self, event)
         if inOwnRegister or not neutered[self] then return end
-        if type(event) == "string" and not NEUTER_ALLOWED[event] then
+        if type(event) == "string" and not IsNeuterAllowed(self, event) then
             pcall(self.UnregisterEvent, self, event)
         end
     end)
@@ -92,6 +102,11 @@ local function NeuterOne(frame)
     inOwnRegister = true
     for event in pairs(NEUTER_ALLOWED) do
         pcall(frame.RegisterEvent, frame, event)
+    end
+    local valid = _G.C_EventUtils and _G.C_EventUtils.IsEventValid
+    if frame == _G.ChatFrame1
+        and (not valid or valid("CAUTIONARY_CHAT_MESSAGE")) then
+        pcall(frame.RegisterEvent, frame, "CAUTIONARY_CHAT_MESSAGE")
     end
     inOwnRegister = false
     HookRegisterEvent(frame)

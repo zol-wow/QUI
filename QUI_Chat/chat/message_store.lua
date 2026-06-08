@@ -75,6 +75,28 @@ function Store.Size()
     return #entries
 end
 
+-- Remove entries matching pred (PLAYER_REPORT_SUBMITTED purge — Blizzard's
+-- FCF_RemoveAllMessagesFromChanSender parity). pred receives the entry table;
+-- it must only inspect metadata fields (gid/e/k), NEVER entry.m (may be
+-- secret). Returns the number of removed entries; callers rebuild displays.
+function Store.RemoveWhere(pred)
+    if type(pred) ~= "function" then return 0 end
+    local kept, removed = {}, 0
+    for i = 1, #entries do
+        local entry = entries[i]
+        local ok, matched = pcall(pred, entry)
+        if ok and matched then
+            removed = removed + 1
+        else
+            kept[#kept + 1] = entry
+        end
+    end
+    if removed > 0 then
+        entries = kept
+    end
+    return removed
+end
+
 function Store.Clear()
     entries = {}
 end

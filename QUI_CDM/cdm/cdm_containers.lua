@@ -179,6 +179,8 @@ local pendingClassTalentSwitchSpecID = nil
 local pendingClassTalentSwitchLoadoutSpecID = nil
 local pendingClassTalentSwitchLoadoutID = nil
 local classTalentSwitchCallbacksRegistered = false
+local _hydratedLoadoutID = nil       -- slot the live containers were last hydrated FROM (provisional until the initial latch confirms it against the live API)
+local _initialLoadoutResolved = false -- one-shot latch: GetLastSelectedSavedConfigID answered and the hydrated slot was confirmed or re-keyed (ResolveInitialLoadoutSlot)
 
 -- Phase 2 / D-06: Live-refresh subscribers (settings label hook).
 -- Subscribers register via ns.CDMContainers.RegisterLoadoutChangeCallback
@@ -693,6 +695,10 @@ local function SaveSpecProfileToLoadout(specID, loadoutID)
     if loadoutID == nil then
         return
     end
+    -- Callers may pass a raw GetLastSelectedSavedConfigID result, which can
+    -- be STARTER_BUILD_TRAIT_CONFIG_ID (-2). Storage slots are normalized
+    -- (0 = no saved loadout) — never key a literal -2 slot.
+    loadoutID = NormalizeLoadoutID(loadoutID)
 
     local store = GetSpecLoadoutProfileStore(specID, loadoutID, true)
     if not store then
@@ -783,6 +789,8 @@ local function LoadLoadoutProfile(loadoutID, specID, myToken)
     if myToken and myToken ~= loadoutTrackingToken then return false end  -- LDEV-05 abort
     if not specID or specID == 0 then return false end
     if loadoutID == nil then return false end
+    -- Same -2 keying hazard as SaveSpecProfileToLoadout: normalize at entry.
+    loadoutID = NormalizeLoadoutID(loadoutID)
 
     local store = GetSpecLoadoutProfileStore(specID, loadoutID, false)
     if not store then return false end  -- empty slot: per D-05, leave containers as-is
@@ -823,7 +831,89 @@ local function LoadLoadoutProfile(loadoutID, specID, myToken)
         ns.CDMSpellData:ReconcileAllContainers()
     end
     if RefreshAll then RefreshAll() end  -- Q10: containers must re-render for the new loadout slot
+    -- Live containers now hold this slot's data.
+    _hydratedLoadoutID = loadoutID
     return true
+end
+
+-- Login-time authoritative loadout resolution (event-driven latch).
+-- GetLastSelectedSavedConfigID is CVar-backed: per Blizzard_ClassTalentsFrame
+-- ("CVars are unloaded when we leave the world, so we have to refresh last
+-- selected configID after entering the world") it reads nil at ADDON_LOADED
+-- on initial login and only becomes readable around PLAYER_ENTERING_WORLD /
+-- PLAYER_TALENT_UPDATE / SELECTED_LOADOUT_CHANGED / TRAIT_CONFIG_LIST_UPDATED.
+-- The ADDON_LOADED hydration therefore keys off the char-DB cache (warm =
+-- correct, loadouts cannot change while logged out); this latch re-checks
+-- once the live API answers and re-keys the containers when the provisional
+-- slot was wrong (cold cache resolved sentinel slot 0).
+-- One-shot per login/profile-switch; in-session swaps are handled by the
+-- TRAIT_CONFIG_UPDATED / SELECTED_LOADOUT_CHANGED debounce.
+local function ResolveInitialLoadoutSlot()
+    if _initialLoadoutResolved then return end
+    if not specTrackingReady then return end
+
+    local profileDB = GetDB()
+    if not profileDB then return end
+    if not profileDB.perLoadoutSpec then
+        -- Toggle off: everything lives in sentinel slot 0; nothing to re-key.
+        _initialLoadoutResolved = true
+        return
+    end
+
+    local specID = GetCurrentSpecID()
+    if not specID or specID == 0 then return end
+
+    local savedID
+    if C_ClassTalents and C_ClassTalents.GetLastSelectedSavedConfigID then
+        savedID = C_ClassTalents.GetLastSelectedSavedConfigID(specID)
+    end
+    if savedID == nil then return end  -- CVars not loaded yet; a later wake-up re-checks
+
+    _initialLoadoutResolved = true
+
+    -- Prime the db.char fast-path cache (combat-reload recovery, LDEV-04).
+    if savedID ~= NO_SAVED_LOADOUT_ID then
+        local charNcdm = GetCharNcdmDB(true)
+        if charNcdm then
+            if type(charNcdm._lastLoadoutConfigID) ~= "table" then
+                charNcdm._lastLoadoutConfigID = {}
+            end
+            charNcdm._lastLoadoutConfigID[specID] = savedID
+        end
+    end
+
+    local resolvedSlot = NormalizeLoadoutID(savedID)
+    local hydratedSlot = _hydratedLoadoutID or 0
+
+    if resolvedSlot == hydratedSlot then
+        -- Provisional hydration keyed the right slot — adopt baselines.
+        _lastKnownSavedConfigID = savedID
+        _previousLoadoutID = resolvedSlot
+        return
+    end
+
+    if InCombatLockdown() then
+        -- Combat /reload with a cold cache: defer the re-key. The
+        -- PLAYER_REGEN_ENABLED drain re-resolves fresh and runs the
+        -- save/load as an atomic pair (_previousLoadoutID still points at
+        -- the hydrated slot, so the outgoing save cannot contaminate the
+        -- authoritative slot).
+        pendingLoadoutRefresh = true
+        return
+    end
+
+    -- Re-key: the live containers hold hydratedSlot's data. Save it back to
+    -- the slot it came FROM (never into the authoritative slot — that would
+    -- overwrite the user's real per-loadout settings with provisional data),
+    -- then load the authoritative slot. An empty authoritative slot leaves
+    -- the live containers as-is (D-05 seeding semantics, same as a swap).
+    loadoutTrackingToken = loadoutTrackingToken + 1
+    local myToken = loadoutTrackingToken
+    SaveLoadoutProfile(_hydratedLoadoutID, specID)
+    _previousLoadoutID = resolvedSlot
+    _lastKnownSavedConfigID = savedID
+    LoadLoadoutProfile(resolvedSlot, specID, myToken)
+    FireLoadoutChangeCallbacks()
 end
 
 local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
@@ -840,6 +930,12 @@ local function LoadOrSnapshotSpecProfile(specID, attempt, retryToken)
 
     local containerKeys = CDMContainers_API:GetAllContainerKeys()
     local loadoutID = GetEffectiveLoadoutID()
+    -- Record which slot this hydration keys off. Until ResolveInitialLoadoutSlot
+    -- confirms it against the live API this is provisional — and
+    -- _previousLoadoutID must point at it so any interim save returns the data
+    -- to the slot it came from, never into a slot it was not loaded from.
+    _hydratedLoadoutID = loadoutID
+    _previousLoadoutID = loadoutID
     local store = GetSpecLoadoutProfileStore(specID, loadoutID, false)
     local savedProfile = store  -- store IS the loadout leaf; no extra [specID] index needed
 
@@ -1145,6 +1241,11 @@ local function SyncCurrentProfileSpecState(event, _, profileKey)
     _previousLoadoutID = nil
     _lastKnownSavedConfigID = nil
     pendingLoadoutRefresh = false
+    -- Re-arm the initial-loadout latch: the new profile may have
+    -- perLoadoutSpec set differently, and its hydration below re-keys the
+    -- live containers from scratch.
+    _hydratedLoadoutID = nil
+    _initialLoadoutResolved = false
     -- NOTE: loadoutListReady is intentionally NOT reset — the talent list is
     -- a Blizzard-side session global, not profile-scoped. Resetting it would
     -- block all subsequent loadout drains until TRAIT_CONFIG_LIST_UPDATED fires.
@@ -1155,6 +1256,11 @@ local function SyncCurrentProfileSpecState(event, _, profileKey)
     if not specReadyNow then
         specTrackingPendingRefresh = true
     end
+
+    -- Mid-session profile switches run with live APIs: resolve immediately.
+    -- At login (LibDualSpec switches the profile around PEW) this may still
+    -- read nil — the event wake-ups re-check.
+    ResolveInitialLoadoutSlot()
 
     -- Phase 2 / D-06: profile switch may change perLoadoutSpec; refresh subscribers.
     FireLoadoutChangeCallbacks()
@@ -1635,9 +1741,6 @@ function CDMContainers_API:RegisterDynamicLayoutElement(containerKey, settings)
         order = 100,  -- custom containers sort after built-in
         isOwned = true,
         isEnabled = function()
-            local core = ns.Helpers.GetCore()
-            local ncdm = core and core.db and core.db.profile and core.db.profile.ncdm
-            if not ncdm or ncdm.enabled == false then return false end
             local s = GetTrackerSettings(containerKey)
             return s and s.enabled ~= false
         end,
@@ -3380,6 +3483,14 @@ function ownedEngine:Initialize()
     eventFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
     eventFrame:RegisterEvent("ACTIVE_COMBAT_CONFIG_CHANGED")
     eventFrame:RegisterEvent("TRAIT_CONFIG_LIST_UPDATED")
+    -- Login-time wake-ups for the initial spec/loadout resolution latch
+    -- (Blizzard_ClassTalentsFrame pattern): PLAYER_TALENT_UPDATE is the
+    -- "talent/spec data now readable" signal Blizzard retries
+    -- CheckSetSelectedConfigID from when the spec is nil at PEW;
+    -- SELECTED_LOADOUT_CHANGED is the precise "saved-loadout selection
+    -- changed" signal it re-reads GetLastSelectedSavedConfigID from.
+    eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
+    eventFrame:RegisterEvent("SELECTED_LOADOUT_CHANGED")
     eventFrame:RegisterEvent("SPECIALIZATION_CHANGE_CAST_FAILED")
     eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     eventFrame:RegisterEvent("CHALLENGE_MODE_START")
@@ -3422,7 +3533,17 @@ function ownedEngine:Initialize()
                 end
                 inInitSafeWindow = false
                 ns._inInitSafeWindow = pewPreviousInitSafeWindow
+                -- /reload keeps CVars loaded, so the saved configID is
+                -- readable now; on a combat /reload with a mismatched cache
+                -- the latch defers the re-key to PLAYER_REGEN_ENABLED.
+                ResolveInitialLoadoutSlot()
             elseif isLogin then
+                -- CVars (and thus GetLastSelectedSavedConfigID) are loaded
+                -- once we are in the world (Blizzard_ClassTalentsFrame
+                -- refreshes its selected configID at this exact event) —
+                -- resolve the authoritative loadout slot immediately rather
+                -- than waiting for the deferred self-heal below.
+                ResolveInitialLoadoutSlot()
                 -- Fresh login (or character switch): fold any stale dormant
                 -- shelves and reconcile before the first meaningful
                 -- RefreshAll fires from the deferred timer. Cross-class/spec
@@ -3442,6 +3563,10 @@ function ownedEngine:Initialize()
                             return
                         end
                     end
+                    -- Spec may only have become readable in the self-heal
+                    -- above — give the loadout latch another chance before
+                    -- the reconcile pass renders.
+                    ResolveInitialLoadoutSlot()
                     -- Deterministic cross-character guard: with a profile shared
                     -- across alts, force a reconcile when the live container is
                     -- still owned by another character so we never render their
@@ -3462,6 +3587,9 @@ function ownedEngine:Initialize()
                     end
                 end)
             elseif not isReload then
+                -- Zone transition: harmless one-shot backstop in case the
+                -- trait system initialized unusually late at login.
+                ResolveInitialLoadoutSlot()
                 C_Timer.After(0.3, RefreshAll)
             end
         elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
@@ -3502,10 +3630,17 @@ function ownedEngine:Initialize()
                     RefreshAll()
                 end
             end
-        elseif event == "TRAIT_CONFIG_UPDATED" or event == "ACTIVE_COMBAT_CONFIG_CHANGED" then
-            -- Both events route through one debounce timer. Cancel any prior
-            -- fire so a rapid sequence (e.g. talent edit immediately followed
-            -- by save) collapses to a single save/load pair.
+        elseif event == "TRAIT_CONFIG_UPDATED" or event == "ACTIVE_COMBAT_CONFIG_CHANGED"
+            or event == "SELECTED_LOADOUT_CHANGED" then
+            -- Before the initial latch resolves, any of these doubles as a
+            -- login wake-up (GetLastSelectedSavedConfigID may have just become
+            -- readable). One-shot guard inside; cheap no-op afterwards.
+            if not _initialLoadoutResolved then
+                ResolveInitialLoadoutSlot()
+            end
+            -- All three events route through one debounce timer. Cancel any
+            -- prior fire so a rapid sequence (e.g. talent edit immediately
+            -- followed by save) collapses to a single save/load pair.
             if loadoutDebounceTimer then loadoutDebounceTimer:Cancel() end
 
             loadoutTrackingToken = loadoutTrackingToken + 1
@@ -3559,6 +3694,23 @@ function ownedEngine:Initialize()
                 LoadLoadoutProfile(newConfigID, specID, myToken)
                 FireLoadoutChangeCallbacks()  -- Phase 2 / D-06
             end)
+        elseif event == "PLAYER_TALENT_UPDATE" then
+            -- Blizzard's login-time "talent/spec data now readable" signal:
+            -- Blizzard_ClassTalentsFrame registers this when
+            -- PlayerUtil.GetCurrentSpecID() is still nil and re-runs
+            -- CheckSetSelectedConfigID from it. Use it the same way — an
+            -- event-driven wake-up for spec tracking that deferred during the
+            -- load window (instead of relying solely on blind timer retries),
+            -- then run the initial-loadout latch. Both are one-shot guarded,
+            -- so later in-session fires are cheap no-ops.
+            if not specTrackingReady then
+                local readyNow = InitSpecTracking()
+                specTrackingReady = readyNow
+                if readyNow and specTrackingPendingRefresh then
+                    FinalizeSpecTracking()
+                end
+            end
+            ResolveInitialLoadoutSlot()
         elseif event == "SPECIALIZATION_CHANGE_CAST_FAILED" then
             ClearPendingClassTalentSwitchIntent()
         elseif event == "TRAIT_CONFIG_LIST_UPDATED" then
@@ -3577,12 +3729,17 @@ function ownedEngine:Initialize()
                         end
                         charNcdm._lastLoadoutConfigID[specID] = configID
                     end
-                    if _lastKnownSavedConfigID == nil then
-                        _lastKnownSavedConfigID = configID
-                        _previousLoadoutID = configID
-                    end
                 end
             end
+
+            -- Initial-login resolution: verify the provisionally-hydrated slot
+            -- against the now-readable saved configID and re-key when it was
+            -- wrong. Replaces the old silent baseline adoption
+            -- (_lastKnownSavedConfigID/_previousLoadoutID = configID with no
+            -- hydrated-slot comparison and no reload), which left a cold-cache
+            -- slot-0 hydration rendered all session and then saved it into the
+            -- real loadout's slot.
+            ResolveInitialLoadoutSlot()
 
             -- If a swap-or-init was deferred at login (before the list was
             -- ready), drain it now — but only when out of combat. The combat

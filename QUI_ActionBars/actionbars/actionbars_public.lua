@@ -11,11 +11,6 @@ env.SetChunkEnv(1, env)
 function ActionBarsOwned:Initialize()
     if self.initialized then return end
 
-    -- Master enabled check — skip all bar creation if the module is disabled,
-    -- letting Blizzard's default action bars remain untouched.
-    local masterDB = GetDB()
-    if masterDB and masterDB.enabled == false then return end
-
     self.initialized = true
 
     -- Patch LibKeyBound Binder methods to work with unified frameState
@@ -560,8 +555,7 @@ initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:SetScript("OnEvent", function(self, event, addonName)
     if addonName == ADDON_NAME then
-        local db = GetDB()
-        if not db or not db.enabled then return end
+        if not GetDB() then return end
         ActionBarsOwned:Initialize()
     elseif addonName == "Blizzard_ActionBar" then
         ActionBarsOwned.HookSpellFlyoutSkinning()
@@ -621,7 +615,8 @@ do
             microMenu = "microbar", bagBar = "bags",
         }
 
-        -- Master action bars toggle — disabling reverts to Blizzard bars (requires reload)
+        -- Master action bars element — module on/off lives in Module Addons
+        -- (addon state); positioning only here
         um:RegisterElement({
             key = "actionBars",
             label = "Action Bars",
@@ -629,33 +624,6 @@ do
             order = -1,
             isOwned = true,
             noHandle = true,
-            isEnabled = function()
-                local db = GetDB()
-                return db and db.enabled ~= false
-            end,
-            setEnabled = function(val)
-                local db = GetDB()
-                if not db then return end
-                local old = db.enabled ~= false
-                db.enabled = val
-                if ns.QUI_Modules then
-                    ns.QUI_Modules:NotifyChanged("actionBarsGeneral")
-                    ns.QUI_Modules:NotifyChanged("actionBars")
-                end
-                if (val ~= false) ~= old then
-                    local QUI = _G.QUI
-                    local GUI = QUI and QUI.GUI
-                    if GUI and GUI.ShowConfirmation then
-                        GUI:ShowConfirmation({
-                            title = "Reload UI?",
-                            message = "Enabling or disabling action bars requires a UI reload to take effect.",
-                            acceptText = "Reload",
-                            cancelText = "Later",
-                            onAccept = function() QUI:SafeReload() end,
-                        })
-                    end
-                end
-            end,
             getFrame = function()
                 return ActionBarsOwned.containers and ActionBarsOwned.containers["bar1"]
             end,
@@ -682,8 +650,6 @@ do
                 order = info.order,
                 isOwned = true,
                 isEnabled = function()
-                    local db = GetDB()
-                    if not db or db.enabled == false then return false end
                     local barDB = GetBarSettings(dbKey)
                     return barDB and barDB.enabled ~= false
                 end,

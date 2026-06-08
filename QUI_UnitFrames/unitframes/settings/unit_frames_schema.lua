@@ -1187,7 +1187,7 @@ local function RenderFrameStandaloneCastbarSection(sectionHost, ctx)
                     return
                 end
 
-                local playerFrameEnabled = unit.ufdb and unit.ufdb.enabled and unit.unitDB.enabled
+                local playerFrameEnabled = unit.ufdb and unit.unitDB.enabled
                 if not playerFrameEnabled then
                     local confirm = GetGUI()
                     if confirm and type(confirm.ShowConfirmation) == "function" then

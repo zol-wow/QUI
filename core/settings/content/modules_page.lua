@@ -79,6 +79,14 @@ local function CollectVisibleModules()
     end
 
     table.sort(groupOrder)
+    -- Module-level switches lead the panel.
+    for i, name in ipairs(groupOrder) do
+        if name == "Module Addons" and i > 1 then
+            table.remove(groupOrder, i)
+            table.insert(groupOrder, 1, name)
+            break
+        end
+    end
     for _, name in ipairs(groupOrder) do
         table.sort(groups[name], function(a, b)
             local ao = a.entry.order or 1000

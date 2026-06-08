@@ -35,6 +35,20 @@ local function NormalizeSet(t)
     return out
 end
 
+-- Channel sets match case-insensitively: Blizzard's own routing compares
+-- strupper(saved name) == strupper(arg9) (vendored FrameXML:
+-- Blizzard_ChatFrameBase/Mainline/ChatFrameOverrides.lua:320), so stored
+-- names with case drift must keep matching.
+local function NormalizeSetUpper(t)
+    local set = NormalizeSet(t)
+    if not set then return nil end
+    local out = {}
+    for key in pairs(set) do
+        out[key:upper()] = true
+    end
+    return out
+end
+
 local EVENT_GROUP_ALIAS = {
     RAID_BOSS_EMOTE = "MONSTER_BOSS_EMOTE",
     QUEST_BOSS_EMOTE = "MONSTER_BOSS_EMOTE",
@@ -47,18 +61,27 @@ local EVENT_GROUP_ALIAS = {
 function TabManager.BuildFilter(tabData)
     if type(tabData) ~= "table" then return nil end
     local groups = NormalizeSet(tabData.groups)
-    local channels = NormalizeSet(tabData.channels)
+    local channels = NormalizeSetUpper(tabData.channels)
     if not groups and not channels then return nil end
     local invert = tabData.invert and true or false
 
-    -- Named channel traffic is routed by channelBaseName first. A tab that
-    -- lists General must not inherit Trade just because CHANNEL is present in
-    -- its message groups.
+    -- Named channel traffic is routed by channel name first (case-insensitive,
+    -- matching Blizzard's routing). A tab that curates a channel list must not
+    -- inherit Trade just because CHANNEL is present in its message groups —
+    -- but a tab that never curated channels (empty set) shows default-category
+    -- channels (zone/regional) through its CHANNEL group, like Blizzard's
+    -- default frame carries zone channels without explicit listing. That heals
+    -- seeds taken before the channels existed.
     return function(entry)
         local listed = false
         local channelName = entry.ch
         if type(channelName) == "string" and channelName ~= "" then
-            listed = channels and channels[channelName] or false
+            if channels then
+                listed = channels[channelName:upper()] or false
+            elseif groups and groups.CHANNEL then
+                local Reg = ns.QUI.Chat.ChannelRegistry
+                listed = (Reg and Reg.IsDefault and Reg.IsDefault(channelName)) or false
+            end
         else
             if groups and entry.k and groups[entry.k] then listed = true end
             -- Normalize typeKey -> message group (PARTY_LEADER lives in group
@@ -74,6 +97,34 @@ function TabManager.BuildFilter(tabData)
         end
         return listed
     end
+end
+
+-- Regional-channel auto-add (ChatFrame_CheckAddChannel parity): called by
+-- capture when a YOU_CHANGED notice arrives for a regional channel. If no
+-- window-1 tab lists the channel, the first tab inherits it — same as
+-- Blizzard adding the channel to the default frame's saved list. Explicit
+-- curation elsewhere wins: any tab already listing the name (any case)
+-- means the user routed it deliberately.
+function TabManager.EnsureDefaultChannelListed(name)
+    if type(name) ~= "string" or name == "" then return end
+    local tabs = TabManager.GetWindowTabs(1)
+    if #tabs == 0 then return end
+    local upper = name:upper()
+    for i = 1, #tabs do
+        local chs = type(tabs[i]) == "table" and tabs[i].channels
+        if type(chs) == "table" then
+            for stored, v in pairs(chs) do
+                if v and type(stored) == "string" and stored:upper() == upper then
+                    return -- already routed somewhere in window 1
+                end
+            end
+        end
+    end
+    local first = tabs[1]
+    if type(first) ~= "table" then return end
+    if type(first.channels) ~= "table" then first.channels = {} end
+    first.channels[name] = true
+    TabManager.ReapplyAll()
 end
 
 -- Conversation-exclusion wrapper: while a conversation tab for entry.w is

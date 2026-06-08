@@ -68,17 +68,10 @@ for _, key in ipairs({"bg", "border", "rowName", "rowValue", "headerText"}) do
         "Colors section must wire colors." .. key)
 end
 
--- Regression: disabling the feature toggle must take effect immediately by
--- despawning all windows in-session AND must restore the damageMeterEnabled
--- CVar so Blizzard's stock meter loads on next reload. Prior to this, the
--- toggle only flipped db.enabled and showed a reload prompt; windows lingered
--- on screen until the user reloaded, and the CVar stayed suppressed.
-assert(contentSrc:find("WindowManager:DespawnAll", 1, true),
-    "SetDamageMeterEnabled must call WindowManager:DespawnAll on disable")
-assert(contentSrc:find("ApplyBlizzardSuppression(false)", 1, true),
-    "SetDamageMeterEnabled must call ApplyBlizzardSuppression(false) on disable to restore the CVar")
-
--- DespawnAll is a real method on WindowManager (not just a string match above).
+-- The legacy master enable row (SetDamageMeterEnabled + DespawnAll/
+-- ApplyBlizzardSuppression(false) live-disable path) was deleted in the
+-- module-toggle consolidation: the meter is now switched via the Module
+-- Addons row (addon enable state), so no in-session disable path remains.
 local coreSrc2 = readAll("QUI_DamageMeter/damage_meter/damage_meter.lua")
 assert(coreSrc2:find("function WindowManager:DespawnAll", 1, true),
     "WindowManager:DespawnAll must be defined in damage_meter.lua")

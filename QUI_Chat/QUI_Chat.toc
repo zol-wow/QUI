@@ -26,6 +26,7 @@ chat\editbox_history.lua
 chat\editbox_basics.lua
 chat\channel_colors.lua
 chat\message_store.lua
+chat\channel_registry.lua
 chat\message_format.lua
 chat\message_capture.lua
 chat\display_layer.lua

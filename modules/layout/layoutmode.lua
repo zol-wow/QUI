@@ -3008,15 +3008,8 @@ do
             group = "Display",
             order = 7,
             isOwned = true,
-            isEnabled = function()
-                local db = ChatDB()
-                return db and db.enabled ~= false
-            end,
-            setEnabled = function(val)
-                local db = ChatDB()
-                if db then db.enabled = val end
-                if _G.QUI_RefreshChat then _G.QUI_RefreshChat() end
-            end,
+            -- module on/off lives in Module Addons (addon state + guard flag);
+            -- positioning only here
             setGameplayHidden = function(hide)
                 local f = GetChatContainer()
                 if not f then return end

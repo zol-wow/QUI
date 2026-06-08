@@ -2095,7 +2095,7 @@ local function RegisterWithLayoutMode(window)
             end,
             isEnabled = function()
                 local s = GetSettings()
-                return s and s.enabled and (QUI_DamageMeter.WindowManager:Get(windowID) ~= nil)
+                return s and (QUI_DamageMeter.WindowManager:Get(windowID) ~= nil)
             end,
             setGameplayHidden = function(hide)
                 if hide then window:Hide() else window:Show() end
@@ -3046,7 +3046,7 @@ end
 
 function WindowManager:ApplyChallengeModeStart()
     local s = GetSettings()
-    if not s or s.enabled == false then return end
+    if not s then return end
 
     if s.autoResetOnChallengeStart ~= false then
         ResetAllDamageMeterSessions()
@@ -3073,7 +3073,7 @@ end
 
 function WindowManager:ApplyChallengeModeCompleted()
     local s = GetSettings()
-    if not (s and s.enabled ~= false and s.autoSwapChallengeSessions) then return end
+    if not (s and s.autoSwapChallengeSessions) then return end
     local S = Enum and Enum.DamageMeterSessionType
     local currentSession = (S and S.Current) or 1
     local overallSession = (S and S.Overall) or 0
@@ -3170,7 +3170,7 @@ QUI_DamageMeter.ApplyBlizzardSuppression = ApplyBlizzardSuppression
 if ns.WhenLoggedIn then
     ns.WhenLoggedIn(function()
         local s = GetSettings()
-        if not s or not s.enabled then return end
+        if not s then return end
         ApplyBlizzardSuppression(true)
         QueueOrRun(function()
             -- Phase 3: spawn every window in saved state, not just windowID 1.

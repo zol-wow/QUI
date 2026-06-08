@@ -569,7 +569,7 @@ end
 
 local function UpdateBackdrop()
     local settings = GetSettings()
-    if not settings or not settings.enabled then return end
+    if not settings then return end
     if not backdrop then CreateBackdrop() end
 
     -- Ensure backdrop is visible (may have been hidden by HUD detection or disabled state)
@@ -726,7 +726,7 @@ local function UpdateDatatextPanel()
     local dtSettings = GetDatatextSettings()
     CountMinimapDebug("datatextPanel")
 
-    if not minimapSettings or not minimapSettings.enabled then return end
+    if not minimapSettings then return end
     if not dtSettings or not dtSettings.enabled then
         if datatextFrame then datatextFrame:Hide() end
         return
@@ -864,7 +864,7 @@ end
 
 local function UpdateClock()
     local settings = GetSettings()
-    if not settings or not settings.enabled then return end
+    if not settings then return end
     if not clockFrame then CreateClock() end
 
     local clockConfig = settings.clockConfig
@@ -977,7 +977,7 @@ end
 
 local function UpdateCoords()
     local settings = GetSettings()
-    if not settings or not settings.enabled then return end
+    if not settings then return end
     if not coordsFrame then CreateCoords() end
 
     local coordsConfig = settings.coordsConfig
@@ -1130,7 +1130,7 @@ end
 
 local function UpdateZoneText()
     local settings = GetSettings()
-    if not settings or not settings.enabled then return end
+    if not settings then return end
     if not zoneTextFrame then CreateZoneText() end
 
     local zoneConfig = settings.zoneTextConfig
@@ -1485,15 +1485,6 @@ local function UpdateGreatVaultButton()
     UpdateGreatVaultButtonAlpha()
 end
 
-local function RestoreBlizzardMailIndicator()
-    local indicator = MinimapCluster and MinimapCluster.IndicatorFrame
-    local mailFrame = indicator and indicator.MailFrame
-    if not mailFrame then return end
-
-    mailFrame:SetAlpha(1)
-    mailFrame:EnableMouse(true)
-end
-
 local function ShowCustomMailTooltip(owner)
     GameTooltip:SetOwner(owner, "ANCHOR_LEFT")
 
@@ -1560,7 +1551,7 @@ local function UpdateCustomMailButton()
         hasMail = mailFrame:IsShown()
     end
 
-    if not settings or not settings.enabled or not settings.showMail or not hasMail then
+    if not settings or not settings.showMail or not hasMail then
         if customMailButton then
             customMailButton:Hide()
         end
@@ -1637,7 +1628,7 @@ if ExpansionLandingPageMinimapButton and not expansionButtonHooked then
         if expansionButtonReparenting then return end
         C_Timer.After(0, function()
             local s = GetSettings()
-            if not s or not s.enabled then return end
+            if not s then return end
             if s.showMissions and ExpansionLandingPageMinimapButton.title then
                 expansionButtonReparenting = true
                 ExpansionLandingPageMinimapButton:SetParent(Minimap)
@@ -1648,7 +1639,7 @@ if ExpansionLandingPageMinimapButton and not expansionButtonHooked then
     hooksecurefunc(ExpansionLandingPageMinimapButton, "UpdateIconForGarrison", function()
         C_Timer.After(0, function()
             local s = GetSettings()
-            if not s or not s.enabled or not s.showMissions then return end
+            if not s or not s.showMissions then return end
             if InCombatLockdown() then return end
             ExpansionLandingPageMinimapButton:ClearAllPoints()
             ExpansionLandingPageMinimapButton:SetPoint("LEFT", Minimap, "LEFT", -5, 0)
@@ -1659,7 +1650,7 @@ end
 local function UpdateButtonVisibility()
     if InCombatLockdown() and not inInitSafeWindow then return end
     local settings = GetSettings()
-    if not settings or not settings.enabled then return end
+    if not settings then return end
 
     local minimapSize = settings.size or 160
     local halfSize = minimapSize / 2
@@ -2107,7 +2098,7 @@ end
 
 local function UpdateMiddleClickMenuOverlayState()
     local settings = GetSettings()
-    local enabled = settings and settings.enabled and settings.middleClickMenuEnabled
+    local enabled = settings and settings.middleClickMenuEnabled
 
     if not enabled then
         if middleClickMenuFrame then
@@ -2129,7 +2120,7 @@ local function SetupMiddleClickMenu()
     -- ping continues to work; our menu opens additively on top.
     Minimap:HookScript("OnMouseUp", function(_, button)
         local settings = GetSettings()
-        if settings and settings.enabled and settings.middleClickMenuEnabled and button == "MiddleButton" then
+        if settings and settings.middleClickMenuEnabled and button == "MiddleButton" then
             ShowMiddleClickMenu()
         end
     end)
@@ -2261,7 +2252,7 @@ end
 
 UpdateDungeonEyePosition = function()
     local settings = GetSettings()
-    if not settings or not settings.enabled then return end
+    if not settings then return end
 
     local eyeSettings = settings.dungeonEye
     if not eyeSettings then return end
@@ -2330,7 +2321,7 @@ end
 
 local function SetupAddonButtonHiding()
     local settings = GetSettings()
-    if not settings or not settings.enabled or not LibDBIcon then return end
+    if not settings or not LibDBIcon then return end
     -- When the button drawer is enabled, it manages buttons instead
     if settings.buttonDrawer and settings.buttonDrawer.enabled then return end
 
@@ -3369,7 +3360,7 @@ local function UpdateMinimapSize()
         return
     end
     local settings = GetSettings()
-    if not settings or not settings.enabled then return end
+    if not settings then return end
     CountMinimapDebug("size")
 
     -- Set minimap size inside the HUD suppression window so our own geometry
@@ -3411,7 +3402,7 @@ end
 
 local function SetupMinimapDragging()
     local settings = GetSettings()
-    if not settings or not settings.enabled then
+    if not settings then
         return
     end
 
@@ -3569,7 +3560,7 @@ local function CheckExternalHud()
     if um and um.isActive then return end
 
     local settings = GetSettings()
-    if not settings or not settings.enabled then return end
+    if not settings then return end
 
     local expectedScale = settings.scale or 1.0
     local expectedSize = settings.size or 140
@@ -3733,7 +3724,7 @@ local autoZoomCurrent = 0
 
 local function SetupAutoZoom()
     local settings = GetSettings()
-    if not settings or not settings.enabled or not settings.autoZoom then return end
+    if not settings or not settings.autoZoom then return end
 
     local function ZoomOut()
         autoZoomCurrent = autoZoomCurrent + 1
@@ -3775,7 +3766,7 @@ end
 
 local function StartUpdateTickers()
     local settings = GetSettings()
-    if not settings or not settings.enabled then return end
+    if not settings then return end
 
     -- Cancel existing tickers if any
     if clockTicker then clockTicker:Cancel() end
@@ -3784,7 +3775,7 @@ local function StartUpdateTickers()
     -- Clock ticker: Updates every 1 second
     clockTicker = C_Timer.NewTicker(1, function()
         local s = GetSettings()
-        if s and s.enabled then
+        if s then
             UpdateClockTime()
         end
     end)
@@ -3793,17 +3784,12 @@ local function StartUpdateTickers()
     local coordInterval = settings.coordUpdateInterval or 1
     coordsTicker = C_Timer.NewTicker(coordInterval, function()
         local s = GetSettings()
-        if s and s.enabled then
+        if s then
             UpdateCoordsPosition()
         end
     end)
 
     -- Datatext updates are handled by individual datatext tickers via the registry
-end
-
-local function StopUpdateTickers()
-    if clockTicker then clockTicker:Cancel(); clockTicker = nil end
-    if coordsTicker then coordsTicker:Cancel(); coordsTicker = nil end
 end
 
 ---=================================================================================
@@ -3815,10 +3801,6 @@ function Minimap_Module:Initialize()
 
     local settings = GetSettings()
     if not settings then return end
-
-    if not settings.enabled then
-        return
-    end
 
     -- ADDON_LOADED safe window: protected calls are allowed even though
     -- InCombatLockdown() returns true during a combat /reload. Set flag
@@ -3984,29 +3966,6 @@ function Minimap_Module:Refresh()
         return
     end
 
-    -- Handle disabled state - ensure minimap is still visible in Blizzard default state
-    if not settings.enabled then
-        StopUpdateTickers()
-        UpdateMiddleClickMenuOverlayState()
-        -- Hide QUI customizations but keep minimap visible
-        if backdropFrame then
-            backdropFrame:Hide()
-        end
-        if greatVaultButton then
-            greatVaultButton:Hide()
-        end
-        if customMailButton then
-            customMailButton:Hide()
-        end
-        RestoreBlizzardMailIndicator()
-        if datatextFrame then
-            datatextFrame:Hide()
-        end
-        -- Ensure minimap is still visible
-        Minimap:Show()
-        return
-    end
-
     -- If an external HUD overlay is active, keep decorations hidden
     if externalHudActive then
         HideAllDecorations()
@@ -4064,7 +4023,7 @@ end
 
 local function RefreshMinimapButtonsAfterTransition()
     local settings = GetSettings()
-    if not settings or not settings.enabled then return end
+    if not settings then return end
 
     if InCombatLockdown() then
         pendingMinimapRefresh = true
@@ -4074,7 +4033,7 @@ local function RefreshMinimapButtonsAfterTransition()
     -- Instance indicators can get laid out on the next frame(s) after zoning.
     C_Timer.After(0, function()
         local s = GetSettings()
-        if s and s.enabled and not InCombatLockdown() then
+        if s and not InCombatLockdown() then
             UpdateButtonVisibility()
             UpdateDungeonEyePosition()
         end
@@ -4082,7 +4041,7 @@ local function RefreshMinimapButtonsAfterTransition()
 
     C_Timer.After(1, function()
         local s = GetSettings()
-        if s and s.enabled and not InCombatLockdown() then
+        if s and not InCombatLockdown() then
             UpdateButtonVisibility()
             UpdateDungeonEyePosition()
         end
@@ -4108,7 +4067,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             -- LOD catch-up: these Blizzard LoD addons may have loaded before
             -- this module did (the watchers below would have missed them).
             local settings = GetSettings()
-            if settings and settings.enabled then
+            if settings then
                 if C_AddOns.IsAddOnLoaded("Blizzard_QueueStatusFrame") then
                     UpdateDungeonEyePosition()
                 end
@@ -4119,13 +4078,13 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         elseif arg1 == "Blizzard_QueueStatusFrame" then
             -- LoD: install hooks once the queue button actually exists.
             local settings = GetSettings()
-            if settings and settings.enabled then
+            if settings then
                 UpdateDungeonEyePosition()
             end
         elseif arg1 == "Blizzard_HybridMinimap" then
             -- Handle HybridMinimap loading (Delves/scenarios)
             local settings = GetSettings()
-            if settings and settings.enabled then
+            if settings then
                 SetMinimapShape(settings.shape)
             end
         end
@@ -4154,7 +4113,7 @@ calendarFrame:RegisterEvent("CALENDAR_UPDATE_PENDING_INVITES")
 calendarFrame:RegisterEvent("CALENDAR_ACTION_PENDING")
 calendarFrame:SetScript("OnEvent", function()
     local settings = GetSettings()
-    if not settings or not settings.enabled then return end
+    if not settings then return end
     if InCombatLockdown() then return end
 
     if settings.showCalendar and GameTimeFrame then
@@ -4178,7 +4137,7 @@ petBattleFrame:SetScript("OnEvent", function(self, event)
     else
         Minimap:Show()
         local settings = GetSettings()
-        if settings and settings.enabled then
+        if settings then
             C_Timer.After(0, function()
                 Minimap_Module:Refresh()
             end)
@@ -4251,29 +4210,7 @@ do
             label = "Minimap",
             group = "Display",
             order = 1,
-            isEnabled = function()
-                local settings = GetSettings()
-                return settings and settings.enabled ~= false
-            end,
-            setEnabled = function(val)
-                local settings = GetSettings()
-                if not settings then return end
-                -- Skip if already in the requested state (avoids spurious reload
-                -- prompts when layout mode re-enforces state on close)
-                if (settings.enabled ~= false) == (val ~= false) then return end
-                settings.enabled = val
-                InvalidateSettingsCache()
-                local GUI = _G.QUI and _G.QUI.GUI
-                if GUI and GUI.ShowConfirmation then
-                    GUI:ShowConfirmation({
-                        title = "Reload UI?",
-                        message = "Enabling or disabling the minimap module requires a UI reload to take effect.",
-                        acceptText = "Reload",
-                        cancelText = "Later",
-                        onAccept = function() _G.QUI:SafeReload() end,
-                    })
-                end
-            end,
+            -- module on/off lives in Module Addons (addon state); positioning only here
             setGameplayHidden = function(hide)
                 if not Minimap then return end
                 if hide then

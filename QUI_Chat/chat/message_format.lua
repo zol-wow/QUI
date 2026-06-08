@@ -1,8 +1,20 @@
 -- modules/chat/message_format.lua
--- Minimal formatter for custom-display lines captured from CHAT_MSG_* events.
--- Phase 1 uses deliberately short prefixes ([G], [2. Trade]); full Blizzard
--- formatting parity is the Phase 2 expansion of this file (design Risk 2 —
--- ALL replicated Blizzard formatting must stay isolated here).
+-- Blizzard-parity formatter for custom-display lines captured from CHAT_MSG_*
+-- events. Replicates ChatFrameMixin:MessageEventHandler's formatting (vendored
+-- FrameXML: Blizzard_ChatFrameBase/Mainline/ChatFrameOverrides.lua:268-674):
+-- CHAT_<TYPE>_GET format strings, AFK/DND/GM flags, raid-icon/group expression
+-- expansion, language headers, hyperlinked channel prefixes, full player links
+-- (lineID:chatType:chatTarget). The channelShorten modifier setting swaps the
+-- GET prefixes for compact labels ([G], [T]) without losing the rest.
+--
+-- Payload tables: both entry points take `p`, a table of probed CHAT_MSG_*
+-- args built by message_capture — every possibly-secret field is nil unless
+-- proven non-secret, EXCEPT p.text (BuildEventLine: non-secret string;
+-- WrapSecretEventLine: secret) and p.rawSender (may be secret; only ever
+-- touched through pcall'd string.format, never a Lua operator).
+--   p = { text, rawSender, sender, language, channelFull, target, flags,
+--         zoneID, chNum, chBase, chName (registry-resolved display name),
+--         lineID, guid, bnID, decorated (DecorateSender output) }
 --
 -- HARD CONSTRAINT: ChatTypeInfo is READ-ONLY here. Never assign into it and
 -- never call ChangeChatColor.
@@ -17,6 +29,26 @@ local Format = ns.QUI.Chat.MessageFormat
 
 local function IsSecret(v)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(v) or false
+end
+
+local function FormatString(fmt, ...)
+    local ok, formatted = pcall(string.format, fmt, ...)
+    if not ok then return nil end
+    return formatted
+end
+
+-- ---------------------------------------------------------------------------
+-- Settings gates
+-- ---------------------------------------------------------------------------
+
+-- channelShorten modifier: nil when disabled (full Blizzard formats), else
+-- the preset string ("letter" | "number"). Channel labels follow the preset;
+-- chat-type prefixes shorten under both presets.
+local function ShortenPreset()
+    local settings = I.GetSettings and I.GetSettings()
+    local cs = settings and settings.modifiers and settings.modifiers.channelShorten
+    if not (cs and cs.enabled) then return nil end
+    return cs.preset == "number" and "number" or "letter"
 end
 
 -- Class color for a sender GUID, gated on the existing classColors setting.
@@ -37,15 +69,55 @@ local function SenderClassColorStr(guid)
     return type(colorStr) == "string" and colorStr or nil
 end
 
-local function PlayerLink(sender, guid)
+-- ---------------------------------------------------------------------------
+-- Sender decoration (ChatFrameUtil.GetDecoratedSenderName parity, vendored
+-- ChatFrameUtil.lua:977 — replicated so the class-color gate is QUI's setting,
+-- not Blizzard's per-type color toggle)
+-- ---------------------------------------------------------------------------
+
+-- Called from capture with the RAW event vararg (filters applied) so
+-- ProcessSenderNameFilters sees the same payload Blizzard hands it.
+-- Returns nil when the sender is secret/absent — callers fall back to the
+-- raw value through pcall'd formats.
+function Format.DecorateSender(event, ...)
+    local _, sender = ...
     if IsSecret(sender) or type(sender) ~= "string" or sender == "" then return nil end
-    local shown = (_G.Ambiguate and _G.Ambiguate(sender, "short")) or sender
-    local colorStr = SenderClassColorStr(guid)
-    if colorStr then
-        shown = ("|c%s%s|r"):format(colorStr, shown)
+    local typeKey = Format.EventToTypeKey(event)
+    local decorated = sender
+    if _G.Ambiguate then
+        -- Compact look under channelShorten keeps the old always-short names;
+        -- full mode mirrors Blizzard ("guild" inside guild chat, else "none").
+        local mode = ShortenPreset() and "short"
+            or (typeKey == "GUILD" and "guild" or "none")
+        local ok, short = pcall(_G.Ambiguate, sender, mode)
+        if ok and type(short) == "string" and short ~= "" then decorated = short end
     end
-    return ("|Hplayer:%s|h[%s]|h"):format(sender, shown), shown
+    local guid = select(12, ...)
+    if not IsSecret(guid) and type(guid) == "string" and guid ~= ""
+        and _G.C_ChatInfo and _G.C_ChatInfo.IsTimerunningPlayer
+        and _G.TimerunningUtil and _G.TimerunningUtil.AddSmallIcon then
+        local ok, isTR = pcall(_G.C_ChatInfo.IsTimerunningPlayer, guid)
+        if ok and isTR then
+            local ok2, marked = pcall(_G.TimerunningUtil.AddSmallIcon, decorated)
+            if ok2 and type(marked) == "string" and marked ~= "" then decorated = marked end
+        end
+    end
+    local colorStr = SenderClassColorStr(not IsSecret(guid) and guid or nil)
+    if colorStr then
+        decorated = ("|c%s%s|r"):format(colorStr, decorated)
+    end
+    -- Cross-addon sender-name filters (same registry Blizzard consults).
+    local util = _G.ChatFrameUtil
+    if util and util.ProcessSenderNameFilters then
+        local ok, filtered = pcall(util.ProcessSenderNameFilters, event, decorated, ...)
+        if ok and type(filtered) == "string" and filtered ~= "" then decorated = filtered end
+    end
+    return decorated
 end
+
+-- ---------------------------------------------------------------------------
+-- Type classification
+-- ---------------------------------------------------------------------------
 
 local BOSS_NOTICE_EVENTS = {
     RAID_BOSS_EMOTE = true,
@@ -53,7 +125,8 @@ local BOSS_NOTICE_EVENTS = {
     QUEST_BOSS_EMOTE = true,
 }
 
--- Short prefixes for the common routed types. Types not listed render bare.
+-- Compact prefixes used when channelShorten is enabled. Types not listed
+-- render as "name: text" (SAY/CHANNEL) in short mode.
 local TYPE_PREFIX = {
     GUILD = "[G] ",
     OFFICER = "[O] ",
@@ -80,6 +153,49 @@ function Format.EventToTypeKey(event)
     if BOSS_NOTICE_EVENTS[event] then return event end
     return nil
 end
+
+local function IsMonsterOrRaidBossType(typeKey)
+    return type(typeKey) == "string"
+        and (typeKey:sub(1, 7) == "MONSTER" or typeKey:sub(1, 9) == "RAID_BOSS")
+end
+
+-- Blizzard renders these bodies verbatim (ChatFrameOverrides.lua:382-392) —
+-- no sender prefix even when arg2 carries a name (CHAT_MSG_SYSTEM often does).
+local RAW_TYPES = {
+    SYSTEM = true, SKILL = true, CURRENCY = true, MONEY = true,
+    OPENING = true, TRADESKILLS = true, PET_INFO = true, TARGETICONS = true,
+    BN_WHISPER_PLAYER_OFFLINE = true, LOOT = true, PING = true,
+}
+
+local function IsRawType(typeKey)
+    if RAW_TYPES[typeKey] then return true end
+    return typeKey:sub(1, 7) == "COMBAT_"
+        or typeKey:sub(1, 6) == "SPELL_"
+        or typeKey:sub(1, 10) == "BG_SYSTEM_"
+end
+
+-- Message group for link data / expression expansion (CHAT_INVERTED_CATEGORY_LIST
+-- maps PARTY_LEADER -> PARTY etc.; identity for unlisted types).
+local function ChatCategory(typeKey)
+    local categories = _G.CHAT_INVERTED_CATEGORY_LIST
+    local category = type(categories) == "table" and categories[typeKey] or nil
+    if type(category) == "string" then return category end
+    return typeKey
+end
+
+local function ChatCategoryForTypeKey(typeKey)
+    local category = ChatCategory(typeKey)
+    if category ~= typeKey then return category end
+    if typeKey == "BN_INLINE_TOAST_BROADCAST"
+        or typeKey == "BN_INLINE_TOAST_BROADCAST_INFORM" then
+        return "BN_INLINE_TOAST_ALERT"
+    end
+    return typeKey
+end
+
+-- ---------------------------------------------------------------------------
+-- Color resolution
+-- ---------------------------------------------------------------------------
 
 -- READ-ONLY color resolver; white fallback.
 -- Consults user channel-color overrides (ns.QUI.Chat.ChannelColors) FIRST so
@@ -123,54 +239,342 @@ function Format.ColorForTypeKey(typeKey, chName)
     return 1, 1, 1
 end
 
--- Build the display line for a NON-secret body. Secret/absent sender or
--- channel args degrade gracefully (drop that fragment; never touch secrets).
--- Args mirror the CHAT_MSG_* payload positions used: text=arg1, sender=arg2,
--- channelNumber=arg8, channelBaseName=arg9, guid=arg12, bnID=arg13, lineID=arg11.
-function Format.BuildLine(event, text, sender, channelNumber, channelName, guid, bnID, lineID)
-    -- Contract: non-secret string body (capture guards this). Degrade to an
-    -- empty body rather than erroring/tainting if a future caller slips.
-    if IsSecret(text) or type(text) ~= "string" then text = "" end
-    local typeKey = Format.EventToTypeKey(event)
-    local prefix = ""
-    if typeKey == "CHANNEL" then
-        if not IsSecret(channelName) and type(channelName) == "string" and channelName ~= "" then
-            if not IsSecret(channelNumber) and type(channelNumber) == "number" and channelNumber > 0 then
-                prefix = ("[%d. %s] "):format(channelNumber, channelName)
-            else
-                prefix = ("[%s] "):format(channelName)
-            end
-        end
-    elseif typeKey and TYPE_PREFIX[typeKey] then
-        prefix = TYPE_PREFIX[typeKey]
-    end
+-- ---------------------------------------------------------------------------
+-- Language cache (MessageFormatter's defaultLanguage handling; PEW-refreshed
+-- like Blizzard's PLAYER_ENTERING_WORLD handler)
+-- ---------------------------------------------------------------------------
 
-    local senderPart = ""
-    if not IsSecret(sender) and type(sender) == "string" and sender ~= "" then
-        local _, shown = PlayerLink(sender, guid)
-        if typeKey == "BN_WHISPER" or typeKey == "BN_WHISPER_INFORM" then
-            if not IsSecret(bnID) and type(bnID) == "number" then
-                local lid = (not IsSecret(lineID) and type(lineID) == "number") and lineID or 0
-                -- Category per Blizzard: INFORM links carry BN_WHISPER.
-                local category = (typeKey == "BN_WHISPER_INFORM") and "BN_WHISPER" or typeKey
-                -- Real BN link: |HBNplayer:name:bnetIDAccount:lineID:chatType:chatTarget|h
-                senderPart = ("|HBNplayer:%s:%d:%d:%s:0|h[%s]|h: "):format(sender, bnID, lid, category, shown)
-            else
-                -- No bnSenderID -> plain (a |Hplayer:| link would be a broken
-                -- click target for BN display names).
-                senderPart = ("[%s]: "):format(shown)
-            end
-        else
-            senderPart = ("|Hplayer:%s|h[%s]|h: "):format(sender, shown)
-        end
-    end
+local defaultLanguage, alternativeDefaultLanguage
 
-    return prefix .. senderPart .. text
+-- Re-read on PLAYER_ENTERING_WORLD / ALTERNATIVE_DEFAULT_LANGUAGE_CHANGED —
+-- the capture frame owns the event registration (this file stays frame-free;
+-- it is a pure formatter).
+function Format.RefreshLanguages()
+    if _G.GetDefaultLanguage then
+        local ok, lang = pcall(_G.GetDefaultLanguage)
+        if ok and type(lang) == "string" then defaultLanguage = lang end
+    end
+    if _G.GetAlternativeDefaultLanguage then
+        local ok, lang = pcall(_G.GetAlternativeDefaultLanguage)
+        if ok and type(lang) == "string" then alternativeDefaultLanguage = lang end
+    end
 end
 
--- Special-event dispatch table: these events carry tokens/templates instead
--- of plain bodies and replicate Blizzard's exact format calls (vendored
--- FrameXML: Blizzard_ChatFrameBase/Mainline/ChatFrameOverrides.lua).
+local function RelevantDefaultLanguage(typeKey)
+    if defaultLanguage == nil and alternativeDefaultLanguage == nil then
+        Format.RefreshLanguages() -- lazy first read (login burst before PEW)
+    end
+    if typeKey == "SAY" or typeKey == "YELL" then
+        return alternativeDefaultLanguage
+    end
+    return defaultLanguage
+end
+
+-- ---------------------------------------------------------------------------
+-- Formatting building blocks
+-- ---------------------------------------------------------------------------
+
+-- AFK/DND/GM/GUIDE/NEWCOMER flag prefix. ChatFrameUtil.GetPFlag is Blizzard's
+-- implementation (vendored ChatFrameUtil.lua:254); flags/zoneID/chNum are
+-- NeverSecret per ChatInfoDocumentation event payloads.
+local function PFlag(flags, zoneID, chNum)
+    if type(flags) ~= "string" or flags == "" then return "" end
+    local util = _G.ChatFrameUtil
+    if util and util.GetPFlag then
+        local ok, pflag = pcall(util.GetPFlag, flags, zoneID or 0, chNum or 0)
+        if ok and type(pflag) == "string" then return pflag end
+    end
+    local gs = _G["CHAT_FLAG_" .. flags]
+    return type(gs) == "string" and gs or ""
+end
+
+-- Escape '%' so user text can pass through string.format (Blizzard escapes
+-- before formatting; skipped for monster types whose GET strings expect raw).
+local function EscapeFormatTokens(msg)
+    if _G.C_StringUtil and _G.C_StringUtil.EscapeLuaFormatString then
+        local ok, escaped = pcall(_G.C_StringUtil.EscapeLuaFormatString, msg)
+        if ok and type(escaped) == "string" then return escaped end
+    end
+    return (msg:gsub("%%", "%%%%"))
+end
+
+-- {rt1}/{skull} -> texture markup; group expressions expand only where
+-- Blizzard allows (RAID, or INSTANCE_CHAT while in an instance raid).
+local function CanExpandExpressions(chatGroup)
+    local util = _G.ChatFrameUtil
+    if util and util.CanChatGroupPerformExpressionExpansion then
+        local ok, can = pcall(util.CanChatGroupPerformExpressionExpansion, chatGroup)
+        if ok then return can and true or false end
+    end
+    return chatGroup == "RAID"
+end
+
+local function ExpandIconExpressions(msg, suppressIcons, chatGroup)
+    if _G.C_ChatInfo and _G.C_ChatInfo.ReplaceIconAndGroupExpressions then
+        local ok, replaced = pcall(_G.C_ChatInfo.ReplaceIconAndGroupExpressions,
+            msg, suppressIcons and true or false, not CanExpandExpressions(chatGroup))
+        if ok and type(replaced) == "string" then return replaced end
+    end
+    return msg
+end
+
+local function CollapseSpaces(msg)
+    if _G.C_StringUtil and _G.C_StringUtil.RemoveContiguousSpaces then
+        local ok, trimmed = pcall(_G.C_StringUtil.RemoveContiguousSpaces, msg, 4)
+        if ok and type(trimmed) == "string" then return trimmed end
+    end
+    return (msg:gsub("     +", "    "))
+end
+
+-- "2. Community:1234:1" -> "2. Club - Stream"; plain channels pass through.
+local function ResolvePrefixedChannelName(channelFull)
+    local util = _G.ChatFrameUtil
+    if util and util.ResolvePrefixedChannelName then
+        local ok, resolved = pcall(util.ResolvePrefixedChannelName, channelFull)
+        if ok and type(resolved) == "string" and resolved ~= "" then return resolved end
+    end
+    return channelFull
+end
+
+-- First n UTF-8 characters (channel letter-abbreviations on localized names).
+local function UTF8Prefix(text, n)
+    local out, i, count = "", 1, 0
+    while i <= #text and count < n do
+        local b = text:byte(i)
+        local len = (b >= 240 and 4) or (b >= 224 and 3) or (b >= 194 and 2) or 1
+        out = out .. text:sub(i, i + len - 1)
+        i = i + len
+        count = count + 1
+    end
+    return out
+end
+
+-- Compact channel label for the letter preset: [1. General] → Gen,
+-- [2. Trade - City] → T, [Services] → S; unknown/custom → first 3 letters.
+local function LetterChannelLabel(name)
+    if name:find("Services", 1, true) then return "S" end
+    if name:sub(1, 5) == "Trade" then return "T" end
+    if name:sub(1, 7) == "General" then return "Gen" end
+    if name:sub(1, 12) == "LocalDefense" then return "LD" end
+    if name:sub(1, 12) == "WorldDefense" then return "WD" end
+    if name:sub(1, 15) == "LookingForGroup" then return "LFG" end
+    return UTF8Prefix(name, 3)
+end
+
+-- A line gets the channel prefix when the event carried a prefixed channel
+-- name (Blizzard's channelLength>0 rule) — plus the degenerate case where
+-- arg4 was secret/absent but the base name survived (channel-family only).
+local function HasChannelContext(p, typeKey)
+    if type(p.channelFull) == "string" and p.channelFull ~= "" then return true end
+    return (typeKey == "CHANNEL" or typeKey == "COMMUNITIES_CHANNEL")
+        and type(p.chName) == "string" and p.chName ~= ""
+end
+
+-- Hyperlinked channel prefix (Blizzard: "|Hchannel:channel:N|h[2. Trade]|h ")
+-- with the shorten presets swapping the label text only — the link survives.
+local function ChannelDecoration(p)
+    local num = p.chNum
+    if type(num) ~= "number" or num <= 0 then
+        -- No numbered slot (some communities traffic): plain bracket label.
+        local name = p.chName or (type(p.channelFull) == "string" and ResolvePrefixedChannelName(p.channelFull))
+        if type(name) ~= "string" or name == "" then return "" end
+        return ("[%s] "):format(name)
+    end
+    local preset = ShortenPreset()
+    local label
+    if preset == "number" then
+        label = tostring(num)
+    elseif preset == "letter" then
+        local base = p.chName or p.chBase or ""
+        label = base ~= "" and LetterChannelLabel(base) or tostring(num)
+    else
+        local full = type(p.channelFull) == "string" and p.channelFull ~= ""
+            and ResolvePrefixedChannelName(p.channelFull) or nil
+        label = full or (("%d. %s"):format(num, p.chName or p.chBase or ""))
+    end
+    return ("|Hchannel:channel:%d|h[%s]|h "):format(num, label)
+end
+
+-- GET-format resolution: full mode uses Blizzard's CHAT_<TYPE>_GET ("%s says: ");
+-- short mode swaps in the compact prefix ("[G] %s: "). Monster/boss/emote
+-- grammar always keeps the GET string.
+local function GetOutMessageFormatKey(typeKey)
+    local util = _G.ChatFrameUtil and _G.ChatFrameUtil.GetOutMessageFormatKey
+    if type(util) == "function" then
+        local ok, fmt = pcall(util, typeKey)
+        if ok and type(fmt) == "string" and fmt ~= "" then
+            return fmt
+        end
+    end
+    local fmt = _G["CHAT_" .. typeKey .. "_GET"]
+    if type(fmt) == "string" and fmt ~= "" then
+        return fmt
+    end
+    return "%s "
+end
+
+local function OutFormat(typeKey)
+    if IsMonsterOrRaidBossType(typeKey) or typeKey == "EMOTE" or typeKey == "TEXT_EMOTE" then
+        return GetOutMessageFormatKey(typeKey)
+    end
+    if ShortenPreset() then
+        return (TYPE_PREFIX[typeKey] or "") .. "%s: "
+    end
+    local fmt = GetOutMessageFormatKey(typeKey)
+    if fmt == "%s " then fmt = "%s: " end -- missing GET: sane "[name]: text"
+    return fmt
+end
+
+-- ---------------------------------------------------------------------------
+-- Player links (LinkUtil parity: |Hplayer:name:lineID:chatType:chatTarget|h)
+-- ---------------------------------------------------------------------------
+
+local function ChatTargetFor(chatGroup, sender, chNum)
+    if chatGroup == "CHANNEL" then
+        return type(chNum) == "number" and tostring(chNum) or ""
+    end
+    if (chatGroup == "WHISPER" or chatGroup == "BN_WHISPER")
+        and not IsSecret(sender) and type(sender) == "string" then
+        return sender:upper()
+    end
+    return ""
+end
+
+local function BuildPlayerLink(typeKey, chatGroup, p, linkDisplayText)
+    local sender = p.sender
+    if type(sender) ~= "string" or sender == "" then return nil end
+    if typeKey == "BN_WHISPER" or typeKey == "BN_WHISPER_INFORM" then
+        if type(p.bnID) == "number" then
+            local lid = type(p.lineID) == "number" and p.lineID or 0
+            local target = ChatTargetFor(chatGroup, sender, p.chNum)
+            return ("|HBNplayer:%s:%d:%d:%s:%s|h%s|h"):format(
+                sender, p.bnID, lid, chatGroup, target, linkDisplayText)
+        end
+        -- No bnSenderID -> plain text (a |Hplayer:| link would be a broken
+        -- click target for BN display names).
+        return linkDisplayText
+    end
+    if typeKey == "COMMUNITIES_CHANNEL" then
+        -- Community message links carry club/stream/message coordinates
+        -- (ChatFrameOverrides.lua:564-576). GetInfoFromLastCommunityChatLine
+        -- is only valid during the dispatch of this event — pcall + fallback.
+        if _G.C_Club and _G.C_Club.GetInfoFromLastCommunityChatLine then
+            local ok, messageInfo, clubId, streamId = pcall(_G.C_Club.GetInfoFromLastCommunityChatLine)
+            if ok and type(messageInfo) == "table" and messageInfo.messageId then
+                local epoch = ("%.f"):format(messageInfo.messageId.epoch or 0)
+                local position = ("%.f"):format(messageInfo.messageId.position or 0)
+                local isBN = type(p.bnID) == "number" and p.bnID ~= 0
+                if isBN then
+                    return ("|HBNplayerCommunity:%s:%d:%s:%s:%s:%s|h%s|h"):format(
+                        sender, p.bnID, tostring(clubId), tostring(streamId), epoch, position, linkDisplayText)
+                end
+                return ("|HplayerCommunity:%s:%s:%s:%s:%s|h%s|h"):format(
+                    sender, tostring(clubId), tostring(streamId), epoch, position, linkDisplayText)
+            end
+        end
+        return linkDisplayText
+    end
+    local lid = type(p.lineID) == "number" and p.lineID or 0
+    local target = ChatTargetFor(chatGroup, sender, p.chNum)
+    return ("|Hplayer:%s:%d:%s:%s|h%s|h"):format(sender, lid, chatGroup, target, linkDisplayText)
+end
+
+-- ---------------------------------------------------------------------------
+-- Normal (non-secret body) line — MessageFormatter parity
+-- ---------------------------------------------------------------------------
+
+local function FormatNormalLine(event, typeKey, p)
+    local text = p.text
+    local chatGroup = ChatCategory(typeKey)
+    local isMonster = IsMonsterOrRaidBossType(typeKey)
+    local showLink = not isMonster
+
+    -- VOICE_TEXT honors the speech-to-text CVar like Blizzard.
+    if typeKey == "VOICE_TEXT" and _G.GetCVarBool then
+        local ok, enabled = pcall(_G.GetCVarBool, "speechToText")
+        if ok and not enabled then return nil end
+    end
+
+    -- Censored lines render the censored-link body verbatim (lineID is
+    -- NeverSecret; the placeholder text arrives pre-built in arg1).
+    if type(p.lineID) == "number" and _G.C_ChatInfo and _G.C_ChatInfo.IsChatLineCensored then
+        local ok, censored = pcall(_G.C_ChatInfo.IsChatLineCensored, p.lineID)
+        if ok and censored then return text end
+    end
+
+    local msg = text
+    if showLink then
+        msg = EscapeFormatTokens(msg)
+    end
+    msg = ExpandIconExpressions(msg, p.suppressIcons, chatGroup)
+    msg = CollapseSpaces(msg)
+
+    local pflag = PFlag(p.flags, p.zoneID, p.chNum)
+    local sender = type(p.sender) == "string" and p.sender or ""
+
+    -- Secret/absent sender on a player-typed line: degrade to the bare body
+    -- (a "%s says:" with an empty name reads worse than no prefix). Monster
+    -- types keep Blizzard's empty-name format below.
+    if showLink and sender == "" and typeKey ~= "TEXT_EMOTE" then
+        if HasChannelContext(p, typeKey) then
+            return ChannelDecoration(p) .. msg
+        end
+        return msg
+    end
+
+    local usingDifferentLanguage = type(p.language) == "string" and p.language ~= ""
+        and p.language ~= RelevantDefaultLanguage(typeKey)
+    local usingEmote = typeKey == "EMOTE" or typeKey == "TEXT_EMOTE"
+
+    local display = p.decorated or sender
+    local linkDisplayText = display
+    if usingDifferentLanguage or not usingEmote then
+        linkDisplayText = ("[%s]"):format(display)
+    end
+    local playerLink = BuildPlayerLink(typeKey, chatGroup, p, linkDisplayText)
+
+    local outMsg
+    local fmt = OutFormat(typeKey)
+    if usingDifferentLanguage then
+        local languageHeader = ("[%s] "):format(p.language)
+        if showLink and sender ~= "" and playerLink then
+            outMsg = FormatString(fmt .. languageHeader .. msg, pflag .. playerLink)
+        else
+            outMsg = FormatString(fmt .. languageHeader .. msg, pflag .. sender)
+        end
+    else
+        if not showLink or sender == "" or not playerLink then
+            if typeKey == "TEXT_EMOTE" then
+                outMsg = msg
+            else
+                outMsg = FormatString(fmt .. msg, pflag .. sender, sender)
+            end
+        else
+            if typeKey == "TEXT_EMOTE" then
+                outMsg = (msg:gsub(sender, pflag .. playerLink, 1))
+            elseif typeKey == "GUILD_ITEM_LOOTED" then
+                -- "$s has looted ..." — Blizzard substitutes a bare player link.
+                outMsg = (msg:gsub("%$s", ("|Hplayer:%s|h%s|h"):format(sender, linkDisplayText)))
+            else
+                outMsg = FormatString(fmt .. msg, pflag .. playerLink)
+            end
+        end
+    end
+    if not outMsg then return nil end
+
+    -- Channel prefix whenever the event carries a prefixed channel name
+    -- (CHANNEL and COMMUNITIES_CHANNEL traffic).
+    if HasChannelContext(p, typeKey) then
+        outMsg = ChannelDecoration(p) .. outMsg
+    end
+    return outMsg
+end
+
+-- ---------------------------------------------------------------------------
+-- Special-event dispatch: tokens/templates instead of plain bodies, matching
+-- Blizzard's exact format calls (vendored ChatFrameOverrides.lua).
+-- ---------------------------------------------------------------------------
+
 local SPECIAL_KIND = {
     ACHIEVEMENT = "ach",
     GUILD_ACHIEVEMENT = "ach",
@@ -183,15 +587,6 @@ local SPECIAL_KIND = {
     IGNORED = "ignored",
     FILTERED = "filtered",
     RESTRICTED = "restricted",
-    EMOTE = "playeremote",
-    TEXT_EMOTE = "textemote",
-    MONSTER_SAY = "emote",
-    MONSTER_YELL = "emote",
-    MONSTER_WHISPER = "emote",
-    MONSTER_PARTY = "emote",
-    MONSTER_EMOTE = "emote",
-    RAID_BOSS_EMOTE = "emote",
-    RAID_BOSS_WHISPER = "emote",
 }
 
 local function BNToastGlobalString(token)
@@ -201,17 +596,6 @@ local function BNToastGlobalString(token)
         return _G.ERR_FRIEND_OFFLINE_S
     end
     return nil
-end
-
-local function ChatCategoryForTypeKey(typeKey)
-    local categories = _G.CHAT_INVERTED_CATEGORY_LIST
-    local category = type(categories) == "table" and categories[typeKey] or nil
-    if type(category) == "string" then return category end
-    if typeKey == "BN_INLINE_TOAST_BROADCAST"
-        or typeKey == "BN_INLINE_TOAST_BROADCAST_INFORM" then
-        return "BN_INLINE_TOAST_ALERT"
-    end
-    return typeKey
 end
 
 local function BNToastPlayerLink(sender, bnID, lineID, typeKey)
@@ -232,227 +616,72 @@ local function NormalizeInlineToastText(text)
     return text
 end
 
-local function GetOutMessageFormatKey(typeKey)
-    local util = _G.ChatFrameUtil and _G.ChatFrameUtil.GetOutMessageFormatKey
-    if type(util) == "function" then
-        local ok, fmt = pcall(util, typeKey)
-        if ok and type(fmt) == "string" and fmt ~= "" then
-            return fmt
-        end
-    end
-    local fmt = _G["CHAT_" .. typeKey .. "_GET"]
-    if type(fmt) == "string" and fmt ~= "" then
-        return fmt
-    end
-    return "%s "
-end
-
-local function IsMonsterOrRaidBossType(typeKey)
-    return type(typeKey) == "string"
-        and (typeKey:sub(1, 7) == "MONSTER" or typeKey:sub(1, 9) == "RAID_BOSS")
-end
-
-local function FormatString(fmt, ...)
-    local ok, formatted = pcall(string.format, fmt, ...)
-    if not ok then return nil end
-    return formatted
-end
-
-local function IsNormalPlayerType(typeKey)
-    return typeKey == "SAY"
-        or typeKey == "CHANNEL"
-        or typeKey == "COMMUNITIES_CHANNEL"
-        or TYPE_PREFIX[typeKey] ~= nil
-end
-
-local function FormattedPlayerLink(sender, guid)
-    if not IsSecret(sender) then
-        return PlayerLink(sender, guid)
-    end
-    local shown = FormatString("[%s]", sender)
-    if not shown then return nil end
-    return FormatString("|Hplayer:%s|h%s|h", sender, shown)
-end
-
-local function FormattedBNPlayerLink(typeKey, sender, guid, bnID, lineID)
-    local shown
-    if IsSecret(sender) then
-        shown = FormatString("[%s]", sender)
-    else
-        local _, display = PlayerLink(sender, guid)
-        shown = display and FormatString("[%s]", display) or nil
-    end
-    if not shown then return nil end
-
-    if not IsSecret(bnID) and type(bnID) == "number" then
-        local lid = (not IsSecret(lineID) and type(lineID) == "number") and lineID or 0
-        local category = (typeKey == "BN_WHISPER_INFORM") and "BN_WHISPER" or typeKey
-        return FormatString("|HBNplayer:%s:%d:%d:%s:0|h%s|h", sender, bnID, lid, category, shown)
-    end
-
-    return shown
-end
-
-local function FormattedSenderPart(typeKey, sender, guid, bnID, lineID)
-    local link
-    if typeKey == "BN_WHISPER" or typeKey == "BN_WHISPER_INFORM" then
-        link = FormattedBNPlayerLink(typeKey, sender, guid, bnID, lineID)
-    else
-        link = FormattedPlayerLink(sender, guid)
-    end
-    if not link then return nil end
-    return FormatString("%s: ", link)
-end
-
-local function FormattedChannelPrefix(channelNumber, channelName)
-    if IsSecret(channelName) or type(channelName) ~= "string" or channelName == "" then
-        return ""
-    end
-    if not IsSecret(channelNumber) and type(channelNumber) == "number" and channelNumber > 0 then
-        return FormatString("[%d. %s] ", channelNumber, channelName) or ""
-    end
-    return FormatString("[%s] ", channelName) or ""
-end
-
-local function SecretNormalPrefix(typeKey, sender, channelNumber, channelName, guid, bnID, lineID)
-    local prefix = ""
-    if typeKey == "CHANNEL" then
-        prefix = FormattedChannelPrefix(channelNumber, channelName)
-    elseif TYPE_PREFIX[typeKey] then
-        prefix = TYPE_PREFIX[typeKey]
-    end
-
-    local senderPart = FormattedSenderPart(typeKey, sender, guid, bnID, lineID)
-    if not senderPart then return prefix ~= "" and prefix or nil end
-    return FormatString("%s%s", prefix, senderPart)
-end
-
-local function SecretMonsterPrefix(typeKey, sender)
-    local fmt = GetOutMessageFormatKey(typeKey)
-    if IsSecret(sender) then
-        return FormatString(fmt, sender)
-    end
-    if type(sender) ~= "string" or sender == "" then return nil end
-    return FormatString(fmt, sender)
-end
-
-function Format.WrapSecretEventLine(event, text, sender, _channelFull, channelNumber, channelName, guid, bnID, lineID)
-    if not IsSecret(text) then return text end
-    local typeKey = Format.EventToTypeKey(event)
-
-    local prefix
-    if IsNormalPlayerType(typeKey) then
-        prefix = SecretNormalPrefix(typeKey, sender, channelNumber, channelName, guid, bnID, lineID)
-    elseif IsMonsterOrRaidBossType(typeKey) then
-        prefix = SecretMonsterPrefix(typeKey, sender)
-    else
-        return text
-    end
-    if IsSecret(prefix) then
-        return FormatString("%s%s", prefix, text) or text
-    end
-    if type(prefix) ~= "string" or prefix == "" then return text end
-
-    return FormatString("%s%s", prefix, text) or text
-end
-
--- One entry point for capture: returns the display line, or nil to DROP the
--- message (unrenderable token, secret template, missing globalstring).
--- Args mirror payload positions: text=arg1, sender=arg2, channelFull=arg4,
--- channelNumber=arg8, channelBase=arg9, guid=arg12, bnID=arg13, lineID=arg11,
--- targetUser=arg5 (CHANNEL_NOTICE_USER two-user target, e.g. kicked player).
-function Format.BuildEventLine(event, text, sender, channelFull, channelNumber, channelBase, guid, bnID, lineID, targetUser)
-    local typeKey = Format.EventToTypeKey(event)
-    local kind = BOSS_NOTICE_EVENTS[event] and "bossnotice" or typeKey and SPECIAL_KIND[typeKey]
-    if not kind then
-        return Format.BuildLine(event, text, sender, channelNumber, channelBase, guid, bnID, lineID)
-    end
-
-    -- Every special kind formats with the payload — secret or non-string
-    -- templates are unrenderable: drop rather than risk an operator.
-    if IsSecret(text) or type(text) ~= "string" or text == "" then return nil end
+local function FormatSpecialLine(event, typeKey, kind, p)
+    local text, sender = p.text, p.sender
+    local channelFull, channelNumber, targetUser = p.channelFull, p.chNum, p.target
 
     if kind == "ach" then
-        if IsSecret(sender) or type(sender) ~= "string" or sender == "" then return nil end
-        local shown = (_G.Ambiguate and _G.Ambiguate(sender, "short")) or sender
-        local colorStr = SenderClassColorStr(guid)
-        if colorStr then shown = ("|c%s%s|r"):format(colorStr, shown) end
+        if type(sender) ~= "string" or sender == "" then return nil end
+        local shown = p.decorated or sender
         local link = ("|Hplayer:%s|h[%s]|h"):format(sender, shown)
-        local ok, line = pcall(string.format, text, link)
-        return ok and line or nil
-    elseif kind == "playeremote" then
-        local link = PlayerLink(sender, guid)
-        if not link then return nil end
-        local fmt = GetOutMessageFormatKey(typeKey)
-        local ok, line = pcall(string.format, fmt .. text, link)
-        return ok and line or nil
-    elseif kind == "textemote" then
-        local link = PlayerLink(sender, guid)
-        if not link or IsSecret(sender) or type(sender) ~= "string" or sender == "" then return nil end
-        return (text:gsub(sender, link, 1))
+        return FormatString(text, link)
     elseif kind == "bossnotice" then
-        if IsSecret(sender) or type(sender) ~= "string" or sender == "" then return nil end
-        local ok, line = pcall(string.format, text, sender, sender)
-        return ok and line or nil
+        if type(sender) ~= "string" or sender == "" then return nil end
+        return FormatString(text, sender, sender)
     elseif kind == "chanlist" then
-        local num = (not IsSecret(channelNumber) and type(channelNumber) == "number") and channelNumber or nil
-        local name = (not IsSecret(channelFull) and type(channelFull) == "string") and channelFull or nil
+        local num = type(channelNumber) == "number" and channelNumber or nil
+        local name = type(channelFull) == "string" and channelFull or nil
         local fmt = _G.CHAT_CHANNEL_LIST_GET
         if num and name and type(fmt) == "string" then
-            local ok, line = pcall(string.format, fmt .. text, num, name)
-            return ok and line or text
+            return FormatString(fmt .. text, num, name) or text
         end
         return text
     elseif kind == "channotuser" then
         local gs = _G["CHAT_" .. text .. "_NOTICE_BN"]
         if type(gs) ~= "string" then gs = _G["CHAT_" .. text .. "_NOTICE"] end
         if type(gs) ~= "string" then return nil end
-        local num = (not IsSecret(channelNumber) and type(channelNumber) == "number") and channelNumber or 0
-        local name = (not IsSecret(channelFull) and type(channelFull) == "string") and channelFull or ""
-        local actor = (not IsSecret(sender) and type(sender) == "string") and sender or ""
-        local target = (not IsSecret(targetUser) and type(targetUser) == "string") and targetUser or ""
-        local ok, line
+        local num = type(channelNumber) == "number" and channelNumber or 0
+        local name = type(channelFull) == "string" and ResolvePrefixedChannelName(channelFull) or ""
+        local actor = type(sender) == "string" and sender or ""
+        local target = type(targetUser) == "string" and targetUser or ""
         if text == "INVITE" then
             local link = actor ~= "" and ("|Hplayer:%s|h[%s]|h"):format(actor, actor) or ""
-            ok, line = pcall(string.format, gs, name, link)
+            return FormatString(gs, name, link)
         elseif target ~= "" then
-            ok, line = pcall(string.format, gs, num, name, actor, target)
-        else
-            ok, line = pcall(string.format, gs, num, name, actor)
+            return FormatString(gs, num, name, actor, target)
         end
-        return ok and line or nil
+        return FormatString(gs, num, name, actor)
     elseif kind == "notice" then
-        local gs = _G["CHAT_" .. text .. "_NOTICE_BN"]
+        local gs
+        if text == "TRIAL_RESTRICTED" then
+            gs = _G.CHAT_TRIAL_RESTRICTED_NOTICE_TRIAL
+        end
+        if type(gs) ~= "string" then gs = _G["CHAT_" .. text .. "_NOTICE_BN"] end
         if type(gs) ~= "string" then gs = _G["CHAT_" .. text .. "_NOTICE"] end
         if type(gs) ~= "string" then return nil end
-        local num = (not IsSecret(channelNumber) and type(channelNumber) == "number") and channelNumber or 0
-        -- arg4 is the PREFIXED full name ("2. Trade") — Blizzard passes it
-        -- through (ResolvePrefixedChannelName keeps the prefix); real notice
-        -- globalstrings place %s inside [..] with the %d in the link data.
-        local name = (not IsSecret(channelFull) and type(channelFull) == "string") and channelFull or ""
-        local ok, line = pcall(string.format, gs, num, name)
-        return ok and line or nil
+        local num = type(channelNumber) == "number" and channelNumber or 0
+        -- arg4 is the PREFIXED full name ("2. Trade") — resolved so community
+        -- identifiers display as "N. Club - Stream" like Blizzard.
+        local name = type(channelFull) == "string" and ResolvePrefixedChannelName(channelFull) or ""
+        return FormatString(gs, num, name)
     elseif kind == "ignored" then
         local gs = _G.CHAT_IGNORED
-        if type(gs) ~= "string" or IsSecret(sender) or type(sender) ~= "string" or sender == "" then return nil end
-        local ok, line = pcall(string.format, gs, sender)
-        return ok and line or nil
+        if type(gs) ~= "string" or type(sender) ~= "string" or sender == "" then return nil end
+        return FormatString(gs, sender)
     elseif kind == "filtered" then
         local gs = _G.CHAT_FILTERED
-        if type(gs) ~= "string" or IsSecret(sender) or type(sender) ~= "string" or sender == "" then return nil end
-        local ok, line = pcall(string.format, gs, sender)
-        return ok and line or nil
+        if type(gs) ~= "string" or type(sender) ~= "string" or sender == "" then return nil end
+        return FormatString(gs, sender)
     elseif kind == "restricted" then
         return type(_G.CHAT_RESTRICTED_TRIAL) == "string" and _G.CHAT_RESTRICTED_TRIAL or nil
     elseif kind == "bnbroadcast" then
         local gs = _G.BN_INLINE_TOAST_BROADCAST
         if type(gs) ~= "string" then return nil end
-        local link = BNToastPlayerLink(sender, bnID, lineID, typeKey)
+        local link = BNToastPlayerLink(sender, p.bnID, p.lineID, typeKey)
         if not link then return nil end
         local body = NormalizeInlineToastText(text)
         if body == "" then return nil end
-        local ok, line = pcall(string.format, gs, link, body)
-        return ok and line or nil
+        return FormatString(gs, link, body)
     elseif kind == "bnbroadcastinform" then
         return type(_G.BN_INLINE_TOAST_BROADCAST_INFORM) == "string"
             and _G.BN_INLINE_TOAST_BROADCAST_INFORM or nil
@@ -462,27 +691,25 @@ function Format.BuildEventLine(event, text, sender, channelFull, channelNumber, 
         -- FRIEND_PENDING is %d-based (invite count), not %s-based.
         if text == "FRIEND_PENDING" then
             local n = (_G.BNGetNumFriendInvites and _G.BNGetNumFriendInvites()) or 0
-            local okP, lineP = pcall(string.format, gs, n)
-            return okP and lineP or nil
+            return FormatString(gs, n)
         end
         -- FRIEND_REMOVED/BATTLETAG_FRIEND_REMOVED: plain name, no link, no brackets.
         if text == "FRIEND_REMOVED" or text == "BATTLETAG_FRIEND_REMOVED" then
-            if IsSecret(sender) or type(sender) ~= "string" or sender == "" then return nil end
-            local okR, lineR = pcall(string.format, gs, sender)
-            return okR and lineR or nil
+            if type(sender) ~= "string" or sender == "" then return nil end
+            return FormatString(gs, sender)
         end
         if not gs:find("%%s") then return gs end
-        if IsSecret(sender) or type(sender) ~= "string" or sender == "" then return nil end
-        local part = BNToastPlayerLink(sender, bnID, lineID, typeKey)
+        if type(sender) ~= "string" or sender == "" then return nil end
+        local part = BNToastPlayerLink(sender, p.bnID, p.lineID, typeKey)
         if not part then return nil end
         -- FRIEND_ONLINE/OFFLINE parity: append the character name when the
         -- BN account info resolves (sync read; nil-safe — the API may return
         -- nothing at login or when the friend is in a non-WoW game).
         -- gameAccountInfo.characterName is Nilable per BNetGameAccountInfo docs.
         if (text == "FRIEND_ONLINE" or text == "FRIEND_OFFLINE")
-            and not IsSecret(bnID) and type(bnID) == "number"
+            and type(p.bnID) == "number"
             and _G.C_BattleNet and _G.C_BattleNet.GetAccountInfoByID then
-            local okA, info = pcall(_G.C_BattleNet.GetAccountInfoByID, bnID)
+            local okA, info = pcall(_G.C_BattleNet.GetAccountInfoByID, p.bnID)
             local game = okA and type(info) == "table"
                 and type(info.gameAccountInfo) == "table" and info.gameAccountInfo or nil
             local charName = game and game.characterName
@@ -490,12 +717,92 @@ function Format.BuildEventLine(event, text, sender, channelFull, channelNumber, 
                 part = part .. (" (%s)"):format(charName)
             end
         end
-        local ok, line = pcall(string.format, gs, part)
-        return ok and line or nil
-    else -- "emote": format(GET .. text, name, name) — Blizzard's literal call
-        if IsSecret(sender) or type(sender) ~= "string" or sender == "" then return nil end
-        local fmt = GetOutMessageFormatKey(typeKey)
-        local ok, line = pcall(string.format, fmt .. text, sender, sender)
-        return ok and line or nil
+        return FormatString(gs, part)
     end
+    return nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Entry points
+-- ---------------------------------------------------------------------------
+
+-- One entry point for capture: returns the display line, or nil to DROP the
+-- message (unrenderable token, secret template, missing globalstring).
+-- p.text is a non-secret string here (capture guards this).
+function Format.BuildEventLine(event, p)
+    if type(p) ~= "table" then return nil end
+    local text = p.text
+    if IsSecret(text) or type(text) ~= "string" or text == "" then return nil end
+    local typeKey = Format.EventToTypeKey(event)
+    if not typeKey then return nil end
+
+    if IsRawType(typeKey) then
+        return text
+    end
+    local kind = BOSS_NOTICE_EVENTS[event] and "bossnotice" or SPECIAL_KIND[typeKey]
+    if kind then
+        return FormatSpecialLine(event, typeKey, kind, p)
+    end
+    return FormatNormalLine(event, typeKey, p)
+end
+
+-- Secret-body line: build the largest non-secret prefix we can (flags, links,
+-- channel decoration, GET format) and join it to the secret body through
+-- pcall'd string.format only — no Lua operator ever touches the payload.
+-- p.rawSender may itself be secret; it flows only through FormatString.
+function Format.WrapSecretEventLine(event, p)
+    if type(p) ~= "table" then return nil end
+    local text = p.text
+    if not IsSecret(text) then return text end
+    local typeKey = Format.EventToTypeKey(event)
+    if not typeKey then return text end
+
+    local prefix
+    if IsMonsterOrRaidBossType(typeKey) then
+        local fmt = GetOutMessageFormatKey(typeKey)
+        local sender = p.rawSender
+        if IsSecret(sender) then
+            prefix = FormatString(fmt, sender)
+        elseif type(sender) == "string" and sender ~= "" then
+            prefix = FormatString(fmt, sender)
+        end
+    elseif IsRawType(typeKey) or typeKey == "EMOTE" or typeKey == "TEXT_EMOTE" then
+        -- Raw types render bodies verbatim; emote grammar embeds the name in
+        -- the body itself — no prefix we could safely add to a secret body.
+        return text
+    elseif not SPECIAL_KIND[typeKey] and not BOSS_NOTICE_EVENTS[event] then
+        local chatGroup = ChatCategory(typeKey)
+        local pflag = PFlag(p.flags, p.zoneID, p.chNum)
+        local link
+        if type(p.sender) == "string" and p.sender ~= "" then
+            local display = ("[%s]"):format(p.decorated or p.sender)
+            link = BuildPlayerLink(typeKey, chatGroup, p, display)
+        elseif IsSecret(p.rawSender) then
+            local shown = FormatString("[%s]", p.rawSender)
+            link = shown and FormatString("|Hplayer:%s|h%s|h", p.rawSender, shown) or nil
+        end
+        if link then
+            -- pflag..link via format (link may be secret); then the GET fmt.
+            local combined = FormatString("%s%s", pflag, link)
+            prefix = combined and FormatString(OutFormat(typeKey), combined) or nil
+        elseif TYPE_PREFIX[typeKey] then
+            prefix = TYPE_PREFIX[typeKey]
+        end
+        if HasChannelContext(p, typeKey) then
+            local deco = ChannelDecoration(p)
+            if deco ~= "" then
+                if prefix then
+                    prefix = FormatString("%s%s", deco, prefix) or prefix
+                else
+                    prefix = deco
+                end
+            end
+        end
+    else
+        -- Secret special-event template: unrenderable — pass through.
+        return text
+    end
+
+    if prefix == nil or prefix == "" then return text end
+    return FormatString("%s%s", prefix, text) or text
 end

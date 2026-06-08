@@ -292,20 +292,13 @@ local function BuildMasterSettingsTab(tabContent)
     headerAt("General")
     local s1 = sectionAt()
 
-    local enableW = GUI:CreateFormToggle(s1.frame, nil, "enabled", actionBars, function()
-        GUI:ShowConfirmation({
-            title = "Reload Required",
-            message = "Action Bar styling requires a UI reload to take effect.",
-            acceptText = "Reload Now", cancelText = "Later",
-            onAccept = function() QUI:SafeReload() end,
-        })
-    end, { description = "Enable QUI's action bar styling. Requires a UI reload to take effect." })
+    -- Module on/off lives in Module Addons (addon enable state); the old
+    -- "Enable Action Bars" master toggle was retired with its flag (v43).
     local lockDD = GUI:CreateFormDropdown(s1.frame, nil, lockOptions,
         "buttonLock", lockProxy, RefreshActionBars,
         { description = "Control whether action buttons can be dragged. Choose a modifier to unlock them on the fly or lock the bars fully." })
     lockDD:HookScript("OnShow", function(self) self.SetValue(lockProxy.buttonLock, true) end)
     s1.AddRow(
-        Opts.BuildSettingRow(s1.frame, "Enable Action Bars", enableW),
         Opts.BuildSettingRow(s1.frame, "Button Lock", lockDD)
     )
 

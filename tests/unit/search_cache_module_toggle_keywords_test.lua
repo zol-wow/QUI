@@ -38,9 +38,10 @@ local function keywordsContain(entry, needle)
 end
 
 -- Specific case from the bug report: searching "damage meter" must surface the
--- native damage meter feature toggle.
-local dm = assert(findModuleToggle("damageMeterNativePage"),
-    "expected a moduleToggle nav entry for damageMeterNativePage")
+-- damage meter module switch. The legacy damageMeterNativePage master row was
+-- retired with the toggle consolidation; the Module Addons row is the switch.
+local dm = assert(findModuleToggle("moduleAddon_QUI_DamageMeter"),
+    "expected a moduleToggle nav entry for moduleAddon_QUI_DamageMeter")
 
 assert(dm.label == "Damage Meter",
     ("moduleToggle label should be the feature name; got %q"):format(tostring(dm.label)))

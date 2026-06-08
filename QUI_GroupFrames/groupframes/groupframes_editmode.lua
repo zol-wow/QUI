@@ -1957,56 +1957,15 @@ do
             return core and core.db and core.db.profile and core.db.profile.quiGroupFrames
         end
 
-        -- Shared enable/disable + reload prompt for group frames
-        -- Both party and raid share db.enabled, so toggling one must sync the other
-        local function GroupFrameSetEnabled(val, siblingKey)
-            local db = GetGFDB()
-            -- Skip if already in the requested state (avoids spurious reload
-            -- prompts when layout mode re-enforces disabled state on close)
-            if db and (db.enabled ~= false) == (val ~= false) then return end
-            if db then db.enabled = val end
-            -- Sync sibling handle visual
-            C_Timer.After(0, function()
-                local um2 = ns.QUI_LayoutMode
-                if um2 and um2._handles and um2._handles[siblingKey] then
-                    -- Re-read isEnabled for sibling — the drawer will read the updated DB
-                    -- Force the sibling handle visible/hidden to match
-                    if val then
-                        if not um2._handles[siblingKey]:IsShown() then
-                            um2:SetElementEnabled(siblingKey, true)
-                        end
-                    else
-                        if um2._handles[siblingKey]:IsShown() then
-                            um2:SetElementEnabled(siblingKey, false)
-                        end
-                    end
-                end
-            end)
-            local GUI = QUI and QUI.GUI
-            if GUI and GUI.ShowConfirmation then
-                GUI:ShowConfirmation({
-                    title = "Reload UI?",
-                    message = "Enabling or disabling group frames requires a UI reload to take effect.",
-                    acceptText = "Reload",
-                    cancelText = "Later",
-                    onAccept = function() QUI:SafeReload() end,
-                })
-            end
-        end
-
+        -- Module on/off lives in Module Addons (addon state + guard flag);
+        -- the party/raid enable pills and their shared reload-prompt helper
+        -- were retired with the master-toggle consolidation. Positioning only.
         um:RegisterElement({
             key = "partyFrames",
             label = "Party Frames",
             group = "Group Frames",
             order = 1,
             isOwned = true,
-            isEnabled = function()
-                local db = GetGFDB()
-                return db and db.enabled ~= false
-            end,
-            setEnabled = function(val)
-                GroupFrameSetEnabled(val, "raidFrames")
-            end,
             getFrame = function()
                 local GFEM = ns.QUI_GroupFrameEditMode
                 if GFEM then
@@ -2054,13 +2013,7 @@ do
             group = "Group Frames",
             order = 2,
             isOwned = true,
-            isEnabled = function()
-                local db = GetGFDB()
-                return db and db.enabled ~= false
-            end,
-            setEnabled = function(val)
-                GroupFrameSetEnabled(val, "partyFrames")
-            end,
+            -- positioning only; module on/off in Module Addons
             setGameplayHidden = function(hide)
                 local GF = ns.QUI_GroupFrames
                 local root = GF and GF.anchorFrames and GF.anchorFrames.raid

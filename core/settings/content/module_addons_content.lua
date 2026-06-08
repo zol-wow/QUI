@@ -3,12 +3,26 @@
 --
 -- The toggle drives Blizzard's addon enable state, which controls whether
 -- the sub-addon's code is present at all (zero cost when off after reload).
--- Per-module master flags keep their live feature semantics and are NOT
--- touched here.
+--
+-- Two entries carry a manifest legacyFlag (chat.enabled, quiGroupFrames.enabled).
+-- These flags act as dormant guards: their module's own init skips setup when
+-- the flag is false.  For those entries the row shows OFF when either the
+-- addon is disabled OR the flag is false, and heals the flag to true on
+-- enable so the module becomes fully active after reload.
+--
+--   isEnabled  (with legacyFlag): IsModuleAddonEnabled(folder) AND flag ~= false
+--   setEnabled(true):  write flag → true (if path materialized), then
+--                      SetModuleAddonEnabled(folder, true)
+--   setEnabled(false): write flag → false (same nil-safe walk), then
+--                      SetModuleAddonEnabled(folder, false)
 --
 --   off             → DisableAddOn + reload prompt (zero cost next reload)
 --   on  (LOD class) → EnableAddOn + LoadAddOn live, no reload needed
 --   on  (login cls) → EnableAddOn + reload prompt
+--   on  (legacyFlag, already loaded) → healed flag + reload prompt
+--       Enabling a dormant-guarded module that is already loaded (login-class)
+--       returns "loaded" from the loader, but the module's activation runs at
+--       load time — so a reload is still needed when the flag was false.
 --
 -- "not installed" (folder absent from disk): the row is silently skipped so
 -- the panel never shows a toggle for a sub-addon the user hasn't deployed.
@@ -72,33 +86,105 @@ local function AddonExists(folder)
 end
 
 ---------------------------------------------------------------------------
+-- legacyFlag helpers: nil-safe flag read + write against QUI.db.profile.
+-- AceDB materializes defaults so intermediate tables are normally present at
+-- runtime; absent tables are treated as not-false (flag defaults to on).
+-- On disable we write false to preserve the module's live-teardown semantics.
+---------------------------------------------------------------------------
+
+-- Read a legacyFlag path from the live profile.  Returns false only when the
+-- final value is explicitly false; absent tables / nil value → treat as on.
+-- Guards against QUI.db being absent (headless context).
+local function ReadLegacyFlag(flagPath)
+    local profile = _G.QUI and _G.QUI.db and _G.QUI.db.profile
+    if not profile then return true end  -- DB absent → treat as on
+    local node = profile
+    for i = 1, #flagPath do
+        if type(node) ~= "table" then return true end
+        node = node[flagPath[i]]
+    end
+    return node ~= false
+end
+
+-- Write a legacyFlag path in the live profile.  Walks the path, skipping the
+-- write silently if an intermediate table is missing (AceDB materializes them
+-- in practice; missing → flag was never set → heal is a no-op, fine).
+local function WriteLegacyFlag(flagPath, value)
+    local profile = _G.QUI and _G.QUI.db and _G.QUI.db.profile
+    if not profile then return end
+    local node = profile
+    for i = 1, #flagPath - 1 do
+        if type(node) ~= "table" then return end  -- intermediate missing; skip
+        local next = node[flagPath[i]]
+        if type(next) ~= "table" then return end  -- not materialized yet; skip
+        node = next
+    end
+    if type(node) == "table" then
+        node[flagPath[#flagPath]] = value
+    end
+end
+
+---------------------------------------------------------------------------
 -- One moduleEntry + stub feature per manifest entry.
 -- Entries whose folder is absent from disk are silently skipped.
 ---------------------------------------------------------------------------
+-- Display labels (match the sub-addon TOC titles); search keywords are built
+-- from these, so spaced names keep e.g. "damage meter" findable.
+local LABELS = {
+    QUI_ActionBars   = "Action Bars",
+    QUI_CDM          = "Cooldown Manager",
+    QUI_Chat         = "Chat",
+    QUI_GroupFrames  = "Group Frames",
+    QUI_ResourceBars = "Resource Bars",
+    QUI_UnitFrames   = "Unit Frames",
+    QUI_Skinning     = "Skinning",
+    QUI_Minimap      = "Minimap",
+    QUI_QoL          = "Quality of Life",
+    QUI_DamageMeter  = "Damage Meter",
+}
+
 for _, entry in ipairs(ns.AddonManifest) do
-    local folder = entry.folder
+    local folder    = entry.folder
+    local flagPath  = entry.legacyFlag  -- nil for most entries
 
     -- Skip sub-addons not installed in this client.
     if AddonExists(folder) then
-        -- Strip "QUI_" prefix to get a readable short name (e.g. "ActionBars").
-        local shortName = folder:match("^QUI_(.+)$") or folder
-
         local moduleEntry = {
             group        = "Module Addons",
-            label        = shortName,
+            label        = LABELS[folder] or folder:match("^QUI_(.+)$") or folder,
             caption      = DESCS[folder] or "",
             combatLocked = false,
             isEnabled    = function()
-                return ns.AddonLoader.IsModuleAddonEnabled(folder)
+                local addonOn = ns.AddonLoader.IsModuleAddonEnabled(folder)
+                if flagPath then
+                    -- AND with the dormant-guard flag: if the flag is false the
+                    -- row shows OFF even when the addon itself is enabled.
+                    return addonOn and ReadLegacyFlag(flagPath)
+                end
+                return addonOn
             end,
             setEnabled   = function(val)
+                local flipped = false
+                if flagPath then
+                    -- Detect whether the dormant-guard flag was explicitly false
+                    -- BEFORE writing, so we can decide whether a reload is needed
+                    -- even when the addon is already loaded (login-class path).
+                    if val then
+                        flipped = (ReadLegacyFlag(flagPath) == false)
+                    end
+                    -- Heal (or clear) the dormant-guard flag so the module
+                    -- becomes fully active (or correctly dormant) after reload.
+                    WriteLegacyFlag(flagPath, val and true or false)
+                end
                 local result = ns.AddonLoader.SetModuleAddonEnabled(folder, val and true or false)
                 if ns.QUI_Modules then
-                    ns.QUI_Modules:NotifyChanged(folder)
+                    ns.QUI_Modules:NotifyChanged("moduleAddon_" .. folder)
                 end
-                -- "loaded" = LOD addon brought live; no prompt needed.
-                -- "reload" = login-class or disable; prompt the user.
-                if result == "reload" then
+                -- "reload" = login-class addon or disable; always prompt.
+                -- "loaded" = LOD addon brought live; no prompt needed UNLESS
+                --   the dormant-guard flag was false (module activation runs at
+                --   load time, so it won't activate until a reload clears it).
+                if result == "reload" or (flipped and result == "loaded") then
                     ShowReloadPrompt()
                 end
             end,

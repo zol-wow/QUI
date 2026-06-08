@@ -696,67 +696,6 @@ ns.QUI_NativeDamageMeterOptions = {
     BuildNativeDamageMeterTab = BuildNativeDamageMeterTab,
 }
 
-local function GetNativeDamageMeterDB()
-    local profile = QUI and QUI.db and QUI.db.profile
-    return profile and profile.damageMeter and profile.damageMeter.native or nil
-end
-
-local function ShowDamageMeterReloadPrompt()
-    local Q = QUI or _G.QUI
-    local G = Q and Q.GUI
-    if G and G.ShowConfirmation then
-        G:ShowConfirmation({
-            title      = "Reload UI?",
-            message    = "Enabling or disabling the damage meter requires a UI reload to take effect.",
-            acceptText = "Reload",
-            cancelText = "Later",
-            onAccept   = function()
-                if Q and Q.SafeReload then Q:SafeReload() end
-            end,
-        })
-    end
-end
-
-local function SetDamageMeterEnabled(val)
-    local db = GetNativeDamageMeterDB()
-    if not db then return end
-    local enabled = val ~= false
-    local old = db.enabled ~= false
-    db.enabled = enabled
-    if ns.QUI_Modules then
-        ns.QUI_Modules:NotifyChanged("damageMeterNativePage")
-    end
-    if enabled ~= old then
-        if not enabled then
-            -- Apply the disable immediately so the user sees windows vanish
-            -- without a reload. The reload prompt is still shown because
-            -- Blizzard's stock meter can only re-appear at addon-load time:
-            -- restore the damageMeterEnabled CVar so it loads next reload.
-            local mod = GetMod()
-            if mod and mod.WindowManager and mod.WindowManager.DespawnAll then
-                mod.WindowManager:DespawnAll()
-            end
-            if mod and mod.ApplyBlizzardSuppression then
-                mod.ApplyBlizzardSuppression(false)
-            end
-        end
-        ShowDamageMeterReloadPrompt()
-    end
-end
-
-local DamageMeterModuleEntry = {
-    group        = "Combat",
-    label        = "Damage Meter",
-    caption      = "Native damage/healing meter with multi-window support, breakdowns, and spell history.",
-    order        = 0,
-    combatLocked = true,
-    isEnabled    = function()
-        local db = GetNativeDamageMeterDB()
-        return db and db.enabled ~= false
-    end,
-    setEnabled   = SetDamageMeterEnabled,
-}
-
 if Registry and Schema
     and type(Registry.RegisterFeature) == "function"
     and type(Schema.Feature) == "function"
@@ -764,7 +703,6 @@ if Registry and Schema
     Registry:RegisterFeature(Schema.Feature({
         id          = "damageMeterNativePage",
         category    = "gameplay",
-        moduleEntry = DamageMeterModuleEntry,
         nav         = { tileId = "gameplay", subPageIndex = NATIVE_DM_SUBPAGE_INDEX },
         sections    = {
             Schema.Section({

@@ -1,8 +1,9 @@
 -- tests/unit/chat_message_format_test.lua
 -- Run: lua tests/unit/chat_message_format_test.lua
--- Verifies event->typeKey mapping, short prefixes, sender player-links,
--- channel prefixes, READ-ONLY ChatTypeInfo color lookup (write-trapped),
--- and secret-arg degradation.
+-- Verifies event->typeKey mapping, Blizzard-parity line building (GET formats,
+-- full player links with lineID:chatType:chatTarget, hyperlinked channel
+-- prefixes), the channelShorten presets, sender decoration, READ-ONLY
+-- ChatTypeInfo color lookup (write-trapped), and secret-arg degradation.
 
 -- ChatTypeInfo mock that EXPLODES on write — proves HARD CONSTRAINT 2.
 _G.C_BattleNet = { GetAccountInfoByID = function(id)
@@ -27,6 +28,14 @@ function _G.GetPlayerInfoByGUID(guid)
     if guid == "Player-1-MAGE" then return "Mage", "MAGE" end
     return nil
 end
+
+-- FrameXML constant consumed for link chatType data (PARTY_LEADER -> PARTY).
+_G.CHAT_INVERTED_CATEGORY_LIST = {
+    PARTY_LEADER = "PARTY", RAID_LEADER = "RAID", RAID_WARNING = "RAID",
+    GUILD_ACHIEVEMENT = "GUILD", GUILD_ITEM_LOOTED = "GUILD",
+    WHISPER_INFORM = "WHISPER", AFK = "WHISPER", DND = "WHISPER",
+    BN_WHISPER_INFORM = "BN_WHISPER", INSTANCE_CHAT_LEADER = "INSTANCE_CHAT",
+}
 
 _G.CHAT_YOU_CHANGED_NOTICE = "Changed Channel: |Hchannel:%d|h[%s]|h"
 _G.BN_INLINE_TOAST_FRIEND_ONLINE = "%s has come online."
@@ -77,11 +86,17 @@ local ChannelColors = {
     end,
 }
 
+-- channelShorten defaults ON (matches core/defaults.lua); flipped per-section.
+local settings = { modifiers = {
+    classColors = { enabled = true },
+    channelShorten = { enabled = true, preset = "letter" },
+} }
+
 local ns = {
     Helpers = { IsSecretValue = function(v) return v == secret end },
     QUI = { Chat = {
         _internals = {
-            GetSettings = function() return { modifiers = { classColors = { enabled = true } } } end,
+            GetSettings = function() return settings end,
         },
         ChannelColors = ChannelColors,
     } },
@@ -110,96 +125,121 @@ eq("unknown r", r, 1); eq("unknown g", g, 1); eq("unknown b", b, 1)
 r = F.ColorForTypeKey(nil)
 eq("nil key r", r, 1)
 
--- BuildLine: say (no prefix), sender becomes player link, realm ambiguated
-eq("say line", F.BuildLine("CHAT_MSG_SAY", "hello", "Bob-Realm"),
-    "|Hplayer:Bob-Realm|h[Bob]|h: hello")
+-- DecorateSender: realm ambiguated; class color from GUID (QUI setting gate)
+eq("decorate ambiguate", F.DecorateSender("CHAT_MSG_SAY", "hi", "Bob-Realm"), "Bob")
+-- guid is a12: event, text(1), sender(2), then a3..a11 nils, guid at 12
+eq("decorate class color",
+    F.DecorateSender("CHAT_MSG_SAY", "hi", "Bob-Realm", nil, nil, nil, nil, nil, nil, nil, nil, nil, "Player-1-MAGE"),
+    "|cff3fc7ebBob|r")
+eq("decorate guid unknown",
+    F.DecorateSender("CHAT_MSG_SAY", "hi", "Bob-Realm", nil, nil, nil, nil, nil, nil, nil, nil, nil, "Player-9-NONE"),
+    "Bob")
+eq("decorate secret sender", F.DecorateSender("CHAT_MSG_SAY", "hi", secret), nil)
+
+-- ============ short mode (channelShorten enabled, letter preset) ============
+
+-- SAY: no type prefix in short mode; full player link carries lineID:chatType:chatTarget
+eq("say line", F.BuildEventLine("CHAT_MSG_SAY", { text = "hello", sender = "Bob-Realm", decorated = "Bob" }),
+    "|Hplayer:Bob-Realm:0:SAY:|h[Bob]|h: hello")
 
 -- Guild gets the short prefix
-eq("guild line", F.BuildLine("CHAT_MSG_GUILD", "hi", "Ann"),
-    "[G] |Hplayer:Ann|h[Ann]|h: hi")
+eq("guild line", F.BuildEventLine("CHAT_MSG_GUILD", { text = "hi", sender = "Ann" }),
+    "[G] |Hplayer:Ann:0:GUILD:|h[Ann]|h: hi")
 
--- Numbered channel prefix
-eq("channel line", F.BuildLine("CHAT_MSG_CHANNEL", "wts", "Ann", 2, "Trade"),
-    "[2. Trade] |Hplayer:Ann|h[Ann]|h: wts")
+-- Numbered channel: letter preset abbreviates the label; the channel link and
+-- the link's channel chatTarget survive
+eq("channel line", F.BuildEventLine("CHAT_MSG_CHANNEL",
+        { text = "wts", sender = "Ann", chNum = 2, chBase = "Trade", chName = "Trade", channelFull = "2. Trade" }),
+    "|Hchannel:channel:2|h[T]|h |Hplayer:Ann:0:CHANNEL:2|h[Ann]|h: wts")
 
--- Channel without number
-eq("channel noname", F.BuildLine("CHAT_MSG_CHANNEL", "wts", "Ann", nil, "Trade"),
-    "[Trade] |Hplayer:Ann|h[Ann]|h: wts")
+-- Channel without number (secret/absent arg8+arg4, base name survived)
+eq("channel noname", F.BuildEventLine("CHAT_MSG_CHANNEL",
+        { text = "wts", sender = "Ann", chName = "Trade" }),
+    "[Trade] |Hplayer:Ann:0:CHANNEL:|h[Ann]|h: wts")
 
--- No sender -> bare text with prefix
-eq("system-ish", F.BuildLine("CHAT_MSG_SYSTEM", "Realm restart", nil), "Realm restart")
+-- Number preset keeps just the slot number
+settings.modifiers.channelShorten.preset = "number"
+eq("channel number preset", F.BuildEventLine("CHAT_MSG_CHANNEL",
+        { text = "wts", sender = "Ann", chNum = 2, chBase = "Trade", chName = "Trade", channelFull = "2. Trade" }),
+    "|Hchannel:channel:2|h[2]|h |Hplayer:Ann:0:CHANNEL:2|h[Ann]|h: wts")
+settings.modifiers.channelShorten.preset = "letter"
+
+-- RAW types render bodies verbatim — CHAT_MSG_SYSTEM often carries a sender
+-- name in arg2 that must NOT become a prefix (Blizzard parity).
+eq("system raw", F.BuildEventLine("CHAT_MSG_SYSTEM", { text = "Realm restart", sender = "Ann" }),
+    "Realm restart")
 
 -- BN whisper sender renders plain (a |Hplayer:| link would be a broken target)
-eq("bn whisper", F.BuildLine("CHAT_MSG_BN_WHISPER", "yo", "Aria"), "[W:From] [Aria]: yo")
+eq("bn whisper", F.BuildEventLine("CHAT_MSG_BN_WHISPER", { text = "yo", sender = "Aria" }),
+    "[W:From] [Aria]: yo")
 
--- Non-string text degrades to empty body (defensive contract guard)
-eq("nil text", F.BuildLine("CHAT_MSG_SAY", nil, "Ann"), "|Hplayer:Ann|h[Ann]|h: ")
+-- BN whisper WITH bnSenderID -> real BNplayer link (chatTarget = upper name)
+eq("bn link", F.BuildEventLine("CHAT_MSG_BN_WHISPER", { text = "yo", sender = "Aria", bnID = 77 }),
+    "[W:From] |HBNplayer:Aria:77:0:BN_WHISPER:ARIA|h[Aria]|h: yo")
 
--- Class-colored sender via GUID (reads RAID_CLASS_COLORS directly)
-eq("class color", F.BuildLine("CHAT_MSG_SAY", "hi", "Bob-Realm", nil, nil, "Player-1-MAGE"),
-    "|Hplayer:Bob-Realm|h[|cff3fc7ebBob|r]|h: hi")
+-- BN link carries lineID + category (INFORM maps to BN_WHISPER)
+eq("bn lineid", F.BuildEventLine("CHAT_MSG_BN_WHISPER_INFORM",
+        { text = "yo", sender = "Aria", bnID = 77, lineID = 4242 }),
+    "[W:To] |HBNplayer:Aria:77:4242:BN_WHISPER:ARIA|h[Aria]|h: yo")
 
--- Unknown GUID -> uncolored
-eq("guid unknown", F.BuildLine("CHAT_MSG_SAY", "hi", "Bob-Realm", nil, nil, "Player-9-NONE"),
-    "|Hplayer:Bob-Realm|h[Bob]|h: hi")
+-- Absent text -> nil (capture guards non-empty strings; nothing to render)
+eq("nil text", F.BuildEventLine("CHAT_MSG_SAY", { sender = "Ann" }), nil)
 
--- BN whisper WITH bnSenderID -> real BNplayer link
-eq("bn link", F.BuildLine("CHAT_MSG_BN_WHISPER", "yo", "Aria", nil, nil, nil, 77),
-    "[W:From] |HBNplayer:Aria:77:0:BN_WHISPER:0|h[Aria]|h: yo")
+-- Secret sender (capture passes sender=nil) degrades to the bare body
+eq("secret sender", F.BuildEventLine("CHAT_MSG_SAY", { text = "hello", rawSender = secret }), "hello")
 
--- Secret sender degrades to bare text (no ops on the secret)
-eq("secret sender", F.BuildLine("CHAT_MSG_SAY", "hello", secret), "hello")
+-- Secret channel name degrades to no channel prefix (chatTarget keeps slot)
+eq("secret channel", F.BuildEventLine("CHAT_MSG_CHANNEL", { text = "x", sender = "Ann", chNum = 2 }),
+    "|Hplayer:Ann:0:CHANNEL:2|h[Ann]|h: x")
 
--- Secret channel name degrades to no channel prefix
-eq("secret channel", F.BuildLine("CHAT_MSG_CHANNEL", "x", "Ann", 2, secret),
-    "|Hplayer:Ann|h[Ann]|h: x")
-
--- BuildEventLine: default path delegates to BuildLine
-eq("evt default", F.BuildEventLine("CHAT_MSG_SAY", "hello", "Bob-Realm"),
-    "|Hplayer:Bob-Realm|h[Bob]|h: hello")
-
--- Achievement: arg1 template formatted with player link
-eq("evt ach", F.BuildEventLine("CHAT_MSG_ACHIEVEMENT", "%s has earned [Big Win]!", "Ann"),
+-- Achievement: arg1 template formatted with player link (decorated name)
+eq("evt ach", F.BuildEventLine("CHAT_MSG_ACHIEVEMENT", { text = "%s has earned [Big Win]!", sender = "Ann" }),
     "|Hplayer:Ann|h[Ann]|h has earned [Big Win]!")
 
 -- Channel notice: token -> globalstring(num, channelFullName)
-eq("evt notice", F.BuildEventLine("CHAT_MSG_CHANNEL_NOTICE", "YOU_CHANGED", nil, "2. Trade", 2),
+eq("evt notice", F.BuildEventLine("CHAT_MSG_CHANNEL_NOTICE",
+        { text = "YOU_CHANGED", channelFull = "2. Trade", chNum = 2 }),
     "Changed Channel: |Hchannel:2|h[2. Trade]|h")
 
 -- Unknown notice token -> nil (drop, never render raw token)
-eq("evt notice unknown", F.BuildEventLine("CHAT_MSG_CHANNEL_NOTICE", "NO_SUCH_TOKEN", nil, "2. Trade", 2), nil)
+eq("evt notice unknown", F.BuildEventLine("CHAT_MSG_CHANNEL_NOTICE",
+    { text = "NO_SUCH_TOKEN", channelFull = "2. Trade", chNum = 2 }), nil)
 
 -- BN toast with %s: BN link when bnID known; character name appended when
 -- C_BattleNet.GetAccountInfoByID resolves (bnID 77 -> "Thrall" in the mock)
-eq("evt toast", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_ALERT", "FRIEND_ONLINE", "Aria", nil, nil, nil, nil, 77),
+eq("evt toast", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_ALERT",
+        { text = "FRIEND_ONLINE", sender = "Aria", bnID = 77 }),
     "|HBNplayer:Aria:77:0:BN_INLINE_TOAST_ALERT:0|h[Aria]|h (Thrall) has come online.")
 
 -- No account info (bnID 88 unknown) -> no suffix
-eq("evt toast nochar", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_ALERT", "FRIEND_ONLINE", "Bea", nil, nil, nil, nil, 88),
+eq("evt toast nochar", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_ALERT",
+        { text = "FRIEND_ONLINE", sender = "Bea", bnID = 88 }),
     "|HBNplayer:Bea:88:0:BN_INLINE_TOAST_ALERT:0|h[Bea]|h has come online.")
 
 -- FRIEND_OFFLINE must never render as the raw token; it formats the localized
 -- BN toast string with the actual friend display name.
-eq("evt toast offline friend", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_ALERT", "FRIEND_OFFLINE", "Bea", nil, nil, nil, nil, 88, 31337),
+eq("evt toast offline friend", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_ALERT",
+        { text = "FRIEND_OFFLINE", sender = "Bea", bnID = 88, lineID = 31337 }),
     "|HBNplayer:Bea:88:31337:BN_INLINE_TOAST_ALERT:0|h[Bea]|h has gone offline.")
 
 -- BN toast without %s: bare globalstring
-eq("evt toast bare", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_ALERT", "FRIEND_REQUEST", nil),
+eq("evt toast bare", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_ALERT", { text = "FRIEND_REQUEST" }),
     "You have a pending friend request.")
 
--- Player emotes use Blizzard's emote branch: link the sender without adding a
--- normal chat colon.
-eq("evt player emote", F.BuildEventLine("CHAT_MSG_EMOTE", "waves.", "Ann"),
-    "|Hplayer:Ann|h[Ann]|h waves.")
+-- Player emotes: Blizzard's emote grammar — sender link WITHOUT brackets
+-- (usingEmote keeps the bare decorated name), no colon.
+eq("evt player emote", F.BuildEventLine("CHAT_MSG_EMOTE", { text = "waves.", sender = "Ann" }),
+    "|Hplayer:Ann:0:EMOTE:|hAnn|h waves.")
 
 -- Text emotes are already full sentences; replace the first sender occurrence
 -- with a player link instead of prefixing "sender: ".
-eq("evt text emote", F.BuildEventLine("CHAT_MSG_TEXT_EMOTE", "Ann waves.", "Ann"),
-    "|Hplayer:Ann|h[Ann]|h waves.")
+eq("evt text emote", F.BuildEventLine("CHAT_MSG_TEXT_EMOTE", { text = "Ann waves.", sender = "Ann" }),
+    "|Hplayer:Ann:0:TEXT_EMOTE:|hAnn|h waves.")
 
 -- Boss emote: format(GET .. text, name, name) — Blizzard substitutes the
 -- GET's %s AND any %s inside the emote text with the monster name.
-eq("evt boss", F.BuildEventLine("CHAT_MSG_RAID_BOSS_EMOTE", "%s prepares something deadly!", "Big Boss"),
+eq("evt boss", F.BuildEventLine("CHAT_MSG_RAID_BOSS_EMOTE",
+        { text = "%s prepares something deadly!", sender = "Big Boss" }),
     "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:0|tBig Boss Big Boss prepares something deadly!")
 
 -- Boss and monster out-message prefixes must come from ChatFrameUtil when it
@@ -207,68 +247,74 @@ eq("evt boss", F.BuildEventLine("CHAT_MSG_RAID_BOSS_EMOTE", "%s prepares somethi
 -- RAID_BOSS_* events.
 local oldBossGet = _G.CHAT_RAID_BOSS_EMOTE_GET
 _G.CHAT_RAID_BOSS_EMOTE_GET = nil
-eq("evt boss helper prefix", F.BuildEventLine("CHAT_MSG_RAID_BOSS_EMOTE", "casts Doom.", "Big Boss"),
+eq("evt boss helper prefix", F.BuildEventLine("CHAT_MSG_RAID_BOSS_EMOTE",
+        { text = "casts Doom.", sender = "Big Boss" }),
     "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon_8:0|tBig Boss casts Doom.")
 _G.CHAT_RAID_BOSS_EMOTE_GET = oldBossGet
 
-eq("evt monster yell helper prefix", F.BuildEventLine("CHAT_MSG_MONSTER_YELL", "Run away!", "Dungeon Boss"),
+eq("evt monster yell helper prefix", F.BuildEventLine("CHAT_MSG_MONSTER_YELL",
+        { text = "Run away!", sender = "Dungeon Boss" }),
     "Dungeon Boss yells: Run away!")
 
 -- Monster emote
-eq("evt emote", F.BuildEventLine("CHAT_MSG_MONSTER_EMOTE", "looks around.", "A Rat"),
+eq("evt emote", F.BuildEventLine("CHAT_MSG_MONSTER_EMOTE", { text = "looks around.", sender = "A Rat" }),
     "A Rat looks around.")
 
 -- Secret text on special path -> nil (drop)
-eq("evt secret", F.BuildEventLine("CHAT_MSG_ACHIEVEMENT", secret, "Ann"), nil)
+eq("evt secret", F.BuildEventLine("CHAT_MSG_ACHIEVEMENT", { text = secret, sender = "Ann" }), nil)
 
 -- Monster say: GET verb + name, no player link
-eq("evt monster say", F.BuildEventLine("CHAT_MSG_MONSTER_SAY", "Hello adventurer.", "Quest Giver"),
+eq("evt monster say", F.BuildEventLine("CHAT_MSG_MONSTER_SAY",
+        { text = "Hello adventurer.", sender = "Quest Giver" }),
     "Quest Giver says: Hello adventurer.")
 
 -- Non-chat raid-warning boss events feed RaidNotice_AddMessage in Blizzard;
 -- when mirrored into QUI chat they use the same format(text, name, name) body.
-eq("evt raid boss notice", F.BuildEventLine("RAID_BOSS_EMOTE", "%s casts Doom.", "Big Boss"),
+eq("evt raid boss notice", F.BuildEventLine("RAID_BOSS_EMOTE",
+        { text = "%s casts Doom.", sender = "Big Boss" }),
     "Big Boss casts Doom.")
-eq("evt raid boss whisper notice", F.BuildEventLine("RAID_BOSS_WHISPER", "%s whispers: Hide!", "Big Boss"),
+eq("evt raid boss whisper notice", F.BuildEventLine("RAID_BOSS_WHISPER",
+        { text = "%s whispers: Hide!", sender = "Big Boss" }),
     "Big Boss whispers: Hide!")
-eq("evt quest boss notice", F.BuildEventLine("QUEST_BOSS_EMOTE", "%s calls for help.", "Quest Boss"),
+eq("evt quest boss notice", F.BuildEventLine("QUEST_BOSS_EMOTE",
+        { text = "%s calls for help.", sender = "Quest Boss" }),
     "Quest Boss calls for help.")
 
 -- FRIEND_PENDING toast: %d invite count, never the raw template
-eq("evt toast pending", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_ALERT", "FRIEND_PENDING", nil),
+eq("evt toast pending", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_ALERT", { text = "FRIEND_PENDING" }),
     "You have 3 pending friend requests.")
 
--- BN link carries lineID + category (INFORM maps to BN_WHISPER)
-_G.BN_INLINE_TOAST_FRIEND_REMOVED = "%s has been removed from your friends list."
-eq("bn lineid", F.BuildLine("CHAT_MSG_BN_WHISPER_INFORM", "yo", "Aria", nil, nil, nil, 77, 4242),
-    "[W:To] |HBNplayer:Aria:77:4242:BN_WHISPER:0|h[Aria]|h: yo")
-
 -- FRIEND_REMOVED: plain name, no link, no brackets (Blizzard parity)
-eq("evt toast removed", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_ALERT", "FRIEND_REMOVED", "Aria"),
+_G.BN_INLINE_TOAST_FRIEND_REMOVED = "%s has been removed from your friends list."
+eq("evt toast removed", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_ALERT",
+        { text = "FRIEND_REMOVED", sender = "Aria" }),
     "Aria has been removed from your friends list.")
 
 -- BN broadcast/inform events carry templates, not plain message bodies.
-eq("evt bn broadcast", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_BROADCAST", "Raid\nnight   now", "Aria", nil, nil, nil, nil, 77, 4242),
+eq("evt bn broadcast", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_BROADCAST",
+        { text = "Raid\nnight   now", sender = "Aria", bnID = 77, lineID = 4242 }),
     "|HBNplayer:Aria:77:4242:BN_INLINE_TOAST_ALERT:0|h[Aria]|h broadcast: Raid night now")
-eq("evt bn broadcast inform", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_BROADCAST_INFORM", "Raid night now", "Aria"),
+eq("evt bn broadcast inform", F.BuildEventLine("CHAT_MSG_BN_INLINE_TOAST_BROADCAST_INFORM",
+        { text = "Raid night now", sender = "Aria" }),
     "Broadcast sent.")
 
 -- Error/ignore events format global strings instead of displaying the token body.
-eq("evt ignored", F.BuildEventLine("CHAT_MSG_IGNORED", "IGNORED", "Noisy"),
+eq("evt ignored", F.BuildEventLine("CHAT_MSG_IGNORED", { text = "IGNORED", sender = "Noisy" }),
     "Noisy is ignoring you.")
-eq("evt filtered", F.BuildEventLine("CHAT_MSG_FILTERED", "FILTERED", "Noisy"),
+eq("evt filtered", F.BuildEventLine("CHAT_MSG_FILTERED", { text = "FILTERED", sender = "Noisy" }),
     "Message to Noisy was filtered.")
-eq("evt restricted", F.BuildEventLine("CHAT_MSG_RESTRICTED", "RESTRICTED", nil),
+eq("evt restricted", F.BuildEventLine("CHAT_MSG_RESTRICTED", { text = "RESTRICTED" }),
     "Trial accounts cannot use that.")
 
 -- CHANNEL_LIST roster rendering
 _G.CHAT_CHANNEL_LIST_GET = "[%d. %s] "
 -- chanlist with channel context: GET prefix + raw list text
 -- format("[%d. %s] " .. "Ann, Bob, Cee", 2, "Trade") = "[2. Trade] Ann, Bob, Cee"
-eq("evt chanlist", F.BuildEventLine("CHAT_MSG_CHANNEL_LIST", "Ann, Bob, Cee", nil, "Trade", 2),
+eq("evt chanlist", F.BuildEventLine("CHAT_MSG_CHANNEL_LIST",
+        { text = "Ann, Bob, Cee", channelFull = "Trade", chNum = 2 }),
     "[2. Trade] Ann, Bob, Cee")
 -- No channel context (num/name absent) -> raw text
-eq("evt chanlist raw", F.BuildEventLine("CHAT_MSG_CHANNEL_LIST", "Ann, Bob", nil, nil, nil),
+eq("evt chanlist raw", F.BuildEventLine("CHAT_MSG_CHANNEL_LIST", { text = "Ann, Bob" }),
     "Ann, Bob")
 
 -- CHANNEL_NOTICE_USER moderation notices
@@ -276,24 +322,69 @@ eq("evt chanlist raw", F.BuildEventLine("CHAT_MSG_CHANNEL_LIST", "Ann, Bob", nil
 -- Single-user: format(gs, arg8=num, arg4=name, arg2=actor)
 _G.CHAT_OWNER_CHANGED_NOTICE = "%d %s owner is now %s"
 -- format("%d %s owner is now %s", 2, "Trade", "Ann") = "2 Trade owner is now Ann"
-eq("evt notuser owner", F.BuildEventLine("CHAT_MSG_CHANNEL_NOTICE_USER", "OWNER_CHANGED", "Ann", "Trade", 2),
+eq("evt notuser owner", F.BuildEventLine("CHAT_MSG_CHANNEL_NOTICE_USER",
+        { text = "OWNER_CHANGED", sender = "Ann", channelFull = "Trade", chNum = 2 }),
     "2 Trade owner is now Ann")
 
 -- Two-user: format(gs, arg8=num, arg4=name, arg2=actor, arg5=target)
 _G.CHAT_PLAYER_KICKED_NOTICE = "[%d %s] %s kicked by %s."
 -- format("[%d %s] %s kicked by %s.", 2, "Trade", "Mod", "Bob") = "[2 Trade] Mod kicked by Bob."
-eq("evt notuser kicked", F.BuildEventLine("CHAT_MSG_CHANNEL_NOTICE_USER", "PLAYER_KICKED", "Mod", "Trade", 2, nil, nil, nil, nil, "Bob"),
+eq("evt notuser kicked", F.BuildEventLine("CHAT_MSG_CHANNEL_NOTICE_USER",
+        { text = "PLAYER_KICKED", sender = "Mod", channelFull = "Trade", chNum = 2, target = "Bob" }),
     "[2 Trade] Mod kicked by Bob.")
 
 -- INVITE: format(gs, arg4=name, playerLink(arg2=actor))
 _G.CHAT_INVITE_NOTICE = "%s has invited you to join %s"
 -- format("%s has invited you to join %s", "Trade", "|Hplayer:Ann|h[Ann]|h")
 --   = "Trade has invited you to join |Hplayer:Ann|h[Ann]|h"
-eq("evt notuser invite", F.BuildEventLine("CHAT_MSG_CHANNEL_NOTICE_USER", "INVITE", "Ann", "Trade", nil),
+eq("evt notuser invite", F.BuildEventLine("CHAT_MSG_CHANNEL_NOTICE_USER",
+        { text = "INVITE", sender = "Ann", channelFull = "Trade" }),
     "Trade has invited you to join |Hplayer:Ann|h[Ann]|h")
 
 -- Unknown token -> dropped (nil)
-eq("evt notuser unknown", F.BuildEventLine("CHAT_MSG_CHANNEL_NOTICE_USER", "NO_SUCH", "Ann", "Trade", 2), nil)
+eq("evt notuser unknown", F.BuildEventLine("CHAT_MSG_CHANNEL_NOTICE_USER",
+    { text = "NO_SUCH", sender = "Ann", channelFull = "Trade", chNum = 2 }), nil)
+
+-- GUILD_ITEM_LOOTED: "$s" placeholder substituted with a bare player link
+eq("evt guild item looted", F.BuildEventLine("CHAT_MSG_GUILD_ITEM_LOOTED",
+        { text = "$s loots [Sword]", sender = "Ann" }),
+    "|Hplayer:Ann|h[Ann]|h loots [Sword]")
+
+-- ============ full mode (channelShorten disabled: Blizzard GET formats) =====
+
+settings.modifiers.channelShorten.enabled = false
+_G.CHAT_SAY_GET = "%s says: "
+_G.CHAT_CHANNEL_GET = "%s: "
+
+eq("say full", F.BuildEventLine("CHAT_MSG_SAY", { text = "hello", sender = "Bob-Realm", decorated = "Bob" }),
+    "|Hplayer:Bob-Realm:0:SAY:|h[Bob]|h says: hello")
+
+-- Full channel label via ResolvePrefixedChannelName (identity without util)
+eq("channel full", F.BuildEventLine("CHAT_MSG_CHANNEL",
+        { text = "wts", sender = "Ann", chNum = 2, chBase = "Trade", chName = "Trade", channelFull = "2. Trade" }),
+    "|Hchannel:channel:2|h[2. Trade]|h |Hplayer:Ann:0:CHANNEL:2|h[Ann]|h: wts")
+
+-- Language header when the message language differs from the default
+_G.GetDefaultLanguage = function() return "Common" end
+_G.GetAlternativeDefaultLanguage = function() return "Common" end
+eq("say language header", F.BuildEventLine("CHAT_MSG_SAY",
+        { text = "throm-ka", sender = "Bob-Realm", decorated = "Bob", language = "Orcish" }),
+    "|Hplayer:Bob-Realm:0:SAY:|h[Bob]|h says: [Orcish] throm-ka")
+
+-- AFK flag prefix from CHAT_FLAG_* globalstrings
+_G.CHAT_FLAG_AFK = "<AFK> "
+eq("afk pflag", F.BuildEventLine("CHAT_MSG_SAY",
+        { text = "hello", sender = "Bob-Realm", decorated = "Bob", flags = "AFK" }),
+    "<AFK> |Hplayer:Bob-Realm:0:SAY:|h[Bob]|h says: hello")
+
+-- Raid-icon expression expansion routed through C_ChatInfo
+_G.C_ChatInfo = { ReplaceIconAndGroupExpressions = function(msg) return (msg:gsub("{rt1}", "{ICON}")) end }
+eq("raid icon expansion", F.BuildEventLine("CHAT_MSG_SAY",
+        { text = "go {rt1}", sender = "Bob-Realm", decorated = "Bob" }),
+    "|Hplayer:Bob-Realm:0:SAY:|h[Bob]|h says: go {ICON}")
+_G.C_ChatInfo = nil
+
+settings.modifiers.channelShorten.enabled = true
 
 -- ChannelColors rewire: override must reach ColorForTypeKey --------------------
 -- 1. No override → ChatTypeInfo fallback (existing SAY mock: r=1, g=0.5, b=0.25)
