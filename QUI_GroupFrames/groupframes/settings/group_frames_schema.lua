@@ -1772,6 +1772,13 @@ local function RenderPrivateAurasSection(sectionHost, ctx)
     controlledRows[#controlledRows + 1] = reverseSwipeRow
     card.AddRow(showCountdownNumbersRow, reverseSwipeRow)
 
+    local textScaleSlider = gui:CreateFormSlider(card.frame, nil, 0.5, 1.5, 0.05, "textScale", privateAuras, refresh, { deferOnDrag = true }, {
+        description = "Scales the Blizzard-drawn countdown timer and stack-count text. There is no API to size that text directly, so the whole icon is scaled and the icon/border compensated -- lowering this shrinks the text while the icon and border stay at their configured size.",
+    })
+    local textScaleRow = optionsAPI.BuildSettingRow(card.frame, "Text Scale", textScaleSlider)
+    controlledRows[#controlledRows + 1] = textScaleRow
+    card.AddRow(textScaleRow)
+
     UpdatePrivateAuraRows()
     builder.CloseCard(card)
     return builder.Height()

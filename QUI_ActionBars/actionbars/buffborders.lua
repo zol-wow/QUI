@@ -25,8 +25,6 @@ local CreateFrame = CreateFrame
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
 local format = string.format
-local floor = math.floor
-local ceil = math.ceil
 
 -- Private aura API (WoW 10.1.0+)
 local AddPrivateAuraAnchor = C_UnitAuras and C_UnitAuras.AddPrivateAuraAnchor
@@ -249,41 +247,18 @@ local function ConfigureAuraCooldownFrame(cooldown)
 end
 
 ---------------------------------------------------------------------------
--- DURATION TEXT (round-to-nearest, replaces Blizzard's floor-rounded text)
+-- DURATION TEXT
 ---------------------------------------------------------------------------
--- Round to nearest hour above 1h, nearest minute above 1m, ceil seconds
--- below 1m. 2h45m -> "3h", 2h20m -> "2h", 59m -> "59m", 30s -> "30s".
-local function FormatDuration(remaining)
-    if remaining <= 0 then return "" end
-    if remaining < 60 then return format("%ds", ceil(remaining)) end
-    if remaining < 3600 then return format("%dm", floor(remaining / 60 + 0.5)) end
-    return format("%dh", floor(remaining / 3600 + 0.5))
-end
-
-local function GetAuraDurationObject(unit, auraInstanceID)
-    if not unit then return nil end
-    if not C_UnitAuras or not C_UnitAuras.GetAuraDuration then return nil end
-    if not IsSecretValue(auraInstanceID) and auraInstanceID == nil then return nil end
-
-    local ok, durationObj = pcall(C_UnitAuras.GetAuraDuration, unit, auraInstanceID)
-    if ok and durationObj then
-        return durationObj
-    end
-    return nil
-end
-
-local function GetDurationObjectRemaining(durationObj)
-    if not durationObj or type(durationObj) == "number" then return nil end
-    if not durationObj.GetRemainingDuration then return nil end
-
-    local ok, remaining = pcall(durationObj.GetRemainingDuration, durationObj)
-    if ok and not IsSecretValue(remaining) and remaining ~= nil then
-        return tonumber(remaining)
-    end
-    return nil
-end
-
-local trackedDurationChildren = {}
+-- Duration is rendered ENTIRELY by Blizzard's C-side cooldown countdown
+-- (ConfigureAuraCooldownFrame -> SetHideCountdownNumbers(false), fed by
+-- ApplyCooldownFromAura -> SetCooldownFromDurationObject). There is NO QUI
+-- Lua-side duration text. In combat the remaining time is a secret number
+-- (both the GetUnitAuras expirationTime/duration fields and
+-- DurationObject:GetRemainingDuration go secret), so only the C-side renderer
+-- can format it. A Lua timer that read those values had to gate on
+-- IsSecretValue and then froze at a stale value or blanked once combat made
+-- them secret — most visibly on hour-long flasks, which span many combat
+-- transitions with no per-aura structural refresh to heal the stale state.
 local buffBorderStats -- debug counters; nil until QUI_Debug activates instrumentation (populated by SetupDebugInstrumentation at the bottom of this file)
 
 local buffAuraChildrenByID = {}
@@ -335,61 +310,6 @@ local function ClearStaleHeaderAuraChildMapEntries(header, firstIndex)
         ClearAuraChildMapEntry(child)
     end
 end
-
-local function EnsureDurationText(child)
-    if child._quiDuration then return child._quiDuration end
-    local fs = child:CreateFontString(nil, "OVERLAY")
-    fs:SetFont(GetGeneralFont(), 12, GetGeneralFontOutline() or "OUTLINE")
-    fs:SetPoint("CENTER", child, "CENTER", 0, 0)
-    fs:SetJustifyH("CENTER")
-    fs:SetTextColor(1, 1, 1, 1)
-    fs:SetShadowColor(0, 0, 0, 1)
-    fs:SetShadowOffset(1, -1)
-    fs:SetText("")
-    child._quiDuration = fs
-    trackedDurationChildren[child] = true
-    return fs
-end
-
-local sharedDurationTimer = CreateFrame("Frame")
-local durationTimerElapsed = 0
-local DURATION_TIMER_INTERVAL = 0.2
-
-sharedDurationTimer:SetScript("OnUpdate", function(_, elapsed)
-    durationTimerElapsed = durationTimerElapsed + elapsed
-    if durationTimerElapsed < DURATION_TIMER_INTERVAL then return end
-    durationTimerElapsed = 0
-    local now = GetTime()
-    for child in pairs(trackedDurationChildren) do
-        local fs = child._quiDuration
-        if fs then
-            if not child:IsShown() then
-                fs:SetText("")
-            elseif child._quiUseNativeDuration then
-                fs:SetText("")
-            else
-                local exp = child._quiExpiration
-                local dur = child._quiDuration_secs
-                -- Restricted instances can redact numeric aura fields. Prefer
-                -- the aura DurationObject when available so refreshed buffs
-                -- update immediately instead of ticking from old expiration
-                -- fields.
-                local durationObjRemaining = GetDurationObjectRemaining(child._quiDurationObject)
-                if durationObjRemaining ~= nil then
-                    fs:SetText(FormatDuration(durationObjRemaining))
-                elseif not (IsSecretValue(exp) or IsSecretValue(dur)) then
-                    local expN = tonumber(exp) or 0
-                    local durN = tonumber(dur) or 0
-                    if expN > 0 and durN > 0 then
-                        fs:SetText(FormatDuration(expN - now))
-                    else
-                        fs:SetText("")
-                    end
-                end
-            end
-        end
-    end
-end)
 
 local function StyleIcon(icon, settings, isBuff, debuffType)
     if not icon or not settings then return end
@@ -464,8 +384,9 @@ local function StyleIcon(icon, settings, isBuff, debuffType)
         end
     end
 
-    -- Style and position Blizzard's auto-managed countdown FontString
-    -- (kept positioned for parity even though it's hidden — see ConfigureAuraCooldownFrame)
+    -- Style and position Blizzard's C-side countdown FontString — this IS the
+    -- duration text (SetHideCountdownNumbers(false) keeps it visible), so font
+    -- and DurationText anchor settings apply to it directly.
     local cdAnchor = settings[tp .. "DurationTextAnchor"] or "CENTER"
     local cdOffX = settings[tp .. "DurationTextOffsetX"] or 0
     local cdOffY = settings[tp .. "DurationTextOffsetY"] or 0
@@ -476,13 +397,6 @@ local function StyleIcon(icon, settings, isBuff, debuffType)
             pcall(cdText.ClearAllPoints, cdText)
             pcall(cdText.SetPoint, cdText, cdAnchor, icon.Cooldown, cdAnchor, cdOffX, cdOffY)
         end
-    end
-
-    if icon._quiDuration then
-        local fs = icon._quiDuration
-        if fs.SetFont then fs:SetFont(font, fontSize, outline) end
-        pcall(fs.ClearAllPoints, fs)
-        pcall(fs.SetPoint, fs, cdAnchor, icon, cdAnchor, cdOffX, cdOffY)
     end
 end
 
@@ -536,6 +450,40 @@ local function EnsureIconRegions(child)
         child:RegisterForClicks("RightButtonUp", "RightButtonDown")
         child._quiClicksRegistered = true
     end
+end
+
+---------------------------------------------------------------------------
+-- BLANK AN UNPAINTED CHILD
+-- The secure header lays out children synchronously on UNIT_AURA and hides
+-- truly-dead children itself (SecureGroupHeaders configureAuras), but our
+-- styling is coalesced a frame later, so the header can briefly show a pooled
+-- child that GetUnitAuras has no live aura for this pass. The border/icon/
+-- cooldown/stacks are QUI-owned regions parented to the child — they only
+-- vanish when the child frame hides, which is the header's job, NOT ours
+-- (hiding a secure child from insecure code taints / is protected in combat).
+-- So clear our own regions, or a stale border is left sitting on an
+-- apparently-empty slot. All operations target QUI-created regions, so none
+-- are protected — safe in combat.
+---------------------------------------------------------------------------
+local function BlankAuraChild(child)
+    if not child then return end
+    if child.Icon then pcall(child.Icon.SetTexture, child.Icon, nil) end
+    if child.BorderTop then
+        child.BorderTop:SetShown(false)
+        child.BorderBottom:SetShown(false)
+        child.BorderLeft:SetShown(false)
+        child.BorderRight:SetShown(false)
+    end
+    if child.Cooldown then
+        pcall(child.Cooldown.Clear, child.Cooldown)
+    end
+    if child.Stacks then
+        pcall(child.Stacks.SetText, child.Stacks, "")
+        pcall(child.Stacks.Hide, child.Stacks)
+    end
+    child._auraInstanceID = nil
+    child._spellId = nil
+    ClearAuraChildMapEntry(child)
 end
 
 ---------------------------------------------------------------------------
@@ -672,7 +620,6 @@ local function StyleHeaderChildren(header, settings, isBuff)
             firstStaleChildIndex = i
             break
         end
-        visibleCount = visibleCount + 1
         EnsureIconRegions(child)
 
         -- Pair child[i] to auras[i] — both are in slot order. AuraData fields
@@ -683,10 +630,25 @@ local function StyleHeaderChildren(header, settings, isBuff)
         -- calls that accept it.
         local data = auras and auras[i]
         if not data then
-            ClearAuraChildMapEntry(child)
-            firstStaleChildIndex = i + 1
+            -- GetUnitAuras returns a dense, never-nil table (UnitAura doc:
+            -- auras Nilable=false), so a nil slot means this shown child has
+            -- NO live aura — a surplus the secure header is still showing this
+            -- frame (it lays out synchronously on UNIT_AURA; our styling is
+            -- coalesced a frame later) or a pooled child mid-reuse. The header
+            -- hides truly-dead children itself, but our borders/icon/cooldown
+            -- are QUI-owned regions — blank every remaining shown child (the
+            -- array is dense, so all later slots are empty too) so no stale
+            -- border is left on an apparently-empty slot, then stop.
+            for j = i, 40 do
+                local staleChild = header:GetAttribute("child" .. j)
+                if not staleChild or not staleChild:IsShown() then break end
+                BlankAuraChild(staleChild)
+            end
+            firstStaleChildIndex = i
             break
         end
+
+        visibleCount = visibleCount + 1
 
         -- Resize child (out of combat only — protected on secure children)
         if not InCombatLockdown() or ns._inInitSafeWindow then
@@ -753,14 +715,14 @@ local function StyleHeaderChildren(header, settings, isBuff)
             end)
         end
 
-        -- Cooldown swipe + text:
-        --   • DurationObject drives normal display and keeps secret-capable
-        --     aura timing on the C-side.
-        --   • Clean AuraData expiration/duration is only a fallback when the
-        --     DurationObject path cannot be used.
-        --   • Text via Blizzard's built-in countdown (ConfigureAuraCooldownFrame
-        --     calls SetHideCountdownNumbers(false)). Blizzard's C-side renderer
-        --     handles secret remaining time natively.
+        -- Cooldown swipe + countdown text:
+        --   • ApplyCooldownFromAura prefers SetCooldownFromDurationObject (the
+        --     secret-safe path) and falls back to the numeric expiration only
+        --     when readable. This drives BOTH the swipe and the countdown text.
+        --   • The countdown text is Blizzard's built-in C-side renderer
+        --     (ConfigureAuraCooldownFrame -> SetHideCountdownNumbers(false)).
+        --     It is the ONLY thing that can format secret combat durations, so
+        --     QUI does not render duration in Lua and never re-hides it here.
         if child.Cooldown then
             ConfigureAuraCooldownFrame(child.Cooldown)
             ApplyCooldownFromAura(
@@ -772,23 +734,6 @@ local function StyleHeaderChildren(header, settings, isBuff)
                 true,
                 data.timeMod
             )
-            -- Custom duration text (Blizzard's countdown floors; we round to nearest)
-            local durationText = EnsureDurationText(child)
-            child._quiExpiration = data.expirationTime
-            child._quiDuration_secs = data.duration
-            child._quiDurationObject = GetAuraDurationObject("player", data.auraInstanceID)
-            local hasReadableNumericDuration =
-                not (IsSecretValue(data.expirationTime) or IsSecretValue(data.duration))
-                and tonumber(data.expirationTime) ~= nil
-                and tonumber(data.duration) ~= nil
-            local hasReadableObjectDuration = GetDurationObjectRemaining(child._quiDurationObject) ~= nil
-            child._quiUseNativeDuration = not (hasReadableNumericDuration or hasReadableObjectDuration)
-            if child._quiUseNativeDuration then
-                durationText:SetText("")
-            end
-            if child.Cooldown.SetHideCountdownNumbers then
-                pcall(child.Cooldown.SetHideCountdownNumbers, child.Cooldown, not child._quiUseNativeDuration)
-            end
             -- Swipe settings
             local showSwipe = not settings.hideSwipe
             child.Cooldown:SetDrawSwipe(showSwipe)
@@ -949,16 +894,13 @@ local function RefreshUpdatedAuraChild(child)
     if auraInstanceID == nil then return false end
 
     if child.Cooldown then
+        -- Re-apply the cooldown so Blizzard's C-side countdown refreshes for a
+        -- reapplied aura. auraInstanceID is non-secret here (guarded above), so
+        -- ApplyCooldownFromAura can fetch the DurationObject; the C-side
+        -- renderer owns the countdown text (ConfigureAuraCooldownFrame keeps
+        -- SetHideCountdownNumbers(false)).
         ConfigureAuraCooldownFrame(child.Cooldown)
-        local durationObj = GetAuraDurationObject("player", auraInstanceID)
-        if durationObj then
-            child._quiDurationObject = durationObj
-            child._quiUseNativeDuration = GetDurationObjectRemaining(durationObj) == nil
-            if child.Cooldown.SetHideCountdownNumbers then
-                pcall(child.Cooldown.SetHideCountdownNumbers, child.Cooldown, not child._quiUseNativeDuration)
-            end
-            pcall(child.Cooldown.SetCooldownFromDurationObject, child.Cooldown, durationObj, true)
-        end
+        ApplyCooldownFromAura(child.Cooldown, "player", auraInstanceID, nil, nil, true)
     end
 
     if child.Stacks and C_UnitAuras and C_UnitAuras.GetAuraApplicationDisplayCount then
@@ -2013,7 +1955,7 @@ paRegenFrame:SetScript("OnEvent", function()
 end)
 
 -- SetupDebugInstrumentation is defined here so all the frames and tables it references
--- are already declared above. buffBorderStats itself is declared up near trackedDurationChildren.
+-- are already declared above. buffBorderStats itself is declared up near the aura child maps.
 local function SetupDebugInstrumentation()
     buffBorderStats = {
         unitAuraScans = 0,
@@ -2027,7 +1969,6 @@ local function SetupDebugInstrumentation()
     }
     local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "BB_enchantCache", tbl = enchantCachedDuration }
-    mp[#mp + 1] = { name = "BB_durationTrack", tbl = trackedDurationChildren }
     mp[#mp + 1] = { name = "BB_unitAuraScans", counter = true, fn = function() return buffBorderStats.unitAuraScans end }
     mp[#mp + 1] = { name = "BB_fastAuraUpdates", counter = true, fn = function() return buffBorderStats.fastAuraUpdates end }
     mp[#mp + 1] = { name = "BB_buffUpdates", counter = true, fn = function() return buffBorderStats.buffUpdates end }
@@ -2040,7 +1981,6 @@ local function SetupDebugInstrumentation()
     mp[#mp + 1] = { name = "BB_debuffAuraChildrenByID", tbl = debuffAuraChildrenByID }
     local reg = ns.QUI_PerfRegistry or {}; ns.QUI_PerfRegistry = reg
     reg[#reg + 1] = { name = "BuffBorders_CombatEnd",     frame = paRegenFrame }
-    reg[#reg + 1] = { name = "BuffBorders_DurationTick",  frame = sharedDurationTimer, scriptType = "OnUpdate" }
     reg[#reg + 1] = { name = "BuffBorders_BuffCoalesce",  frame = buffCoalesceFrame,   scriptType = "OnUpdate" }
     reg[#reg + 1] = { name = "BuffBorders_DebuffCoalesce",frame = debuffCoalesceFrame, scriptType = "OnUpdate" }
     reg[#reg + 1] = { name = "BuffBorders_EnchantEvent",  frame = enchantEventFrame }

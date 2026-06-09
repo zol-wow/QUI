@@ -2939,6 +2939,7 @@ local defaults = {
                     showCountdownNumbers = true,
                     reverseSwipe = false,
                     borderScale = 1,
+                    textScale = 1,  -- scales Blizzard's fixed countdown/stack text; <1 shrinks it relative to the icon
                 },
                 auraIndicators = {
                     enabled = false,
@@ -3124,6 +3125,7 @@ local defaults = {
                     showCountdownNumbers = true,
                     reverseSwipe = false,
                     borderScale = 1,
+                    textScale = 1,  -- scales Blizzard's fixed countdown/stack text; <1 shrinks it relative to the icon
                 },
                 auraIndicators = {
                     enabled = false,

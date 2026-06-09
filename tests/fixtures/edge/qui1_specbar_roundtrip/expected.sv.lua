@@ -4097,7 +4097,8 @@ return {
               reverseSwipe = false,
               showCountdown = true,
               showCountdownNumbers = true,
-              spacing = 2
+              spacing = 2,
+              textScale = 1
             },
             range = {
               enabled = true,
@@ -4472,7 +4473,8 @@ return {
               reverseSwipe = false,
               showCountdown = true,
               showCountdownNumbers = true,
-              spacing = 2
+              spacing = 2,
+              textScale = 1
             },
             range = {
               enabled = true,

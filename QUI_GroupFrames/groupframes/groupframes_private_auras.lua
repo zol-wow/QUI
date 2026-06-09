@@ -182,6 +182,7 @@ local function ReleaseContainer(container)
     container:Hide()
     container:ClearAllPoints()
     container:SetParent(UIParent)
+    container:SetScale(1) -- drop any textScale so a reused container starts clean
     if #containerPool < POOL_SIZE then
         table_insert(containerPool, container)
     end
@@ -213,8 +214,16 @@ end
 
 --- Register the private-aura anchor for a single aura slot.
 --- The client renders the icon, cooldown spiral, stack count and duration into
---- this one anchor at native sizes — every anchor draws its own Count/Duration
---- fontstrings, so a second anchor would only double them.
+--- this one anchor — every anchor draws its own Count/Duration fontstrings, so a
+--- second anchor would only double them.
+---
+--- The Count/Duration fontstrings use FIXED Blizzard font objects
+--- (GameFontNormalSmall / NumberFontNormal) and there is NO anchor-arg to size
+--- them, so on a small icon they look oversized. The only lever is scaling the
+--- parent CONTAINER (SetupPrivateAuras does that via SetScale) — the text is a
+--- descendant of the container and inherits the scale. To keep the icon + border
+--- at their configured pixel size despite a scaled container, the icon dimension
+--- and border scale are divided by textScale here.
 --- @param unit string unit token
 --- @param auraIndex number slot index
 --- @param container table icon container frame
@@ -226,6 +235,14 @@ local function RegisterAnchor(unit, auraIndex, container, settings)
     local showCountdown = settings.showCountdown ~= false
     local showCountdownNumbers = settings.showCountdownNumbers ~= false
 
+    -- Compensate the icon/border for the container's SetScale(textScale) so only
+    -- the (un-sizable) Blizzard text changes on-screen size. textScale < 1 shrinks
+    -- the text relative to the icon.
+    local textScale = settings.textScale or 1
+    if textScale <= 0 then textScale = 1 end
+    local scaledIcon = math.floor(iconSize / textScale + 0.5)
+    if scaledIcon < 1 then scaledIcon = 1 end
+
     local args = {
         unitToken = unit,
         auraIndex = auraIndex,
@@ -233,9 +250,9 @@ local function RegisterAnchor(unit, auraIndex, container, settings)
         showCountdownFrame = showCountdown,
         showCountdownNumbers = showCountdownNumbers,
         iconInfo = {
-            iconWidth = iconSize,
-            iconHeight = iconSize,
-            borderScale = borderScale,
+            iconWidth = scaledIcon,
+            iconHeight = scaledIcon,
+            borderScale = borderScale / textScale,
             iconAnchor = {
                 point = "CENTER",
                 relativeTo = container,
@@ -331,6 +348,14 @@ local function SetupPrivateAuras(frame)
     local reverseSwipe = settings.reverseSwipe == true
     if anchor:find("BOTTOM") then offsetY = offsetY + (frame._bottomPad or 0) end
 
+    -- textScale shrinks the (un-sizable) Blizzard Count/Duration text by scaling
+    -- the whole container; RegisterAnchor divides the icon/border by it so they
+    -- stay at their configured pixel size. Because a frame's own SetPoint offsets
+    -- and SetSize are in its scaled coordinate space, divide both by textScale so
+    -- on-screen geometry is unchanged — only the text size moves.
+    local textScale = settings.textScale or 1
+    if textScale <= 0 then textScale = 1 end
+
     state.unit = unit
 
     for i = 1, maxSlots do
@@ -345,7 +370,8 @@ local function SetupPrivateAuras(frame)
             container:Show()
         end
 
-        container:SetSize(iconSize, iconSize)
+        container:SetScale(textScale)
+        container:SetSize(iconSize / textScale, iconSize / textScale)
         container:SetFrameLevel(frame:GetFrameLevel() + (settings.frameLevel or 50))
         -- The Blizzard-rendered aura frame is created at frame level 0 and does
         -- not use the parent's level, so the +50 above is a no-op for the icon —
@@ -355,9 +381,12 @@ local function SetupPrivateAuras(frame)
         container:SetFrameStrata("DIALOG")
         container:SetFixedFrameStrata(true)
 
-        -- Position relative to the anchor point on the parent frame
+        -- Position relative to the anchor point on the parent frame. Offsets are
+        -- computed in screen pixels then divided by textScale into the container's
+        -- own (scaled) coordinate space.
         local slotOffX, slotOffY = CalculateSlotOffset(i, iconSize, spacingVal, direction, maxSlots)
-        container:SetPoint(anchor, frame, anchor, offsetX + slotOffX, offsetY + slotOffY)
+        container:SetPoint(anchor, frame, anchor,
+            (offsetX + slotOffX) / textScale, (offsetY + slotOffY) / textScale)
 
         state.anchorIDs[i] = RegisterAnchor(unit, i, container, settings)
     end
