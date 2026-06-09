@@ -631,8 +631,14 @@ local function SyncHeaderAttributes(header, settings, prefix)
     -- header creates a new child. 'self' is the new child button. Bake the
     -- icon size directly into the snippet — updated each time SyncHeaderAttributes
     -- runs (out of combat). During combat, new children use the last-set size.
+    -- CRITICAL: this OVERWRITES the snippet CreateHeader installed, so it must
+    -- carry the same secure wiring — frame level AND type=cancelaura. Dropping
+    -- type=cancelaura here silently kills right-click-to-remove for every child
+    -- constructed after a settings/combat-end refresh (the child reaches
+    -- SecureActionButton_OnClick with no `type` and SECURE_ACTIONS.cancelaura
+    -- never runs). Inner quotes must be single — the format string is double-quoted.
     header:SetAttribute("initialConfigFunction",
-        ("self:SetWidth(%d) self:SetHeight(%d)"):format(iconSize, iconSize)
+        ("self:SetWidth(%d) self:SetHeight(%d) self:SetFrameLevel(4) self:SetAttribute('type', 'cancelaura')"):format(iconSize, iconSize)
     )
 end
 
