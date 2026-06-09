@@ -171,4 +171,36 @@ assert(GameTooltipHeaderText.size == 15,
 assert(GameTooltipText.size == 13,
     "GameTooltip body Font object should be tooltip font size")
 
+local function readFile(path)
+    local fh = assert(io.open(path, "rb"), "failed to open " .. path)
+    local text = fh:read("*a")
+    fh:close()
+    return text
+end
+
+local function assertContains(text, needle, reason)
+    assert(text:find(needle, 1, true), reason)
+end
+
+local function assertAbsent(text, needle, reason)
+    assert(not text:find(needle, 1, true), reason)
+end
+
+local tooltipSkinningSource = readFile("QUI_Skinning/skinning/system/tooltips.lua")
+assertContains(tooltipSkinningSource, "local function IsInternalEmbeddedItemTooltipFrame(tooltip)",
+    "tooltip skinning must centralize the embedded item reward tooltip guard")
+
+local family = assert(tooltipSkinningSource:match("local gameTooltipFamily = %{%s*(.-)%s*%}"),
+    "tooltip skinning must expose the named GameTooltip family list")
+assertAbsent(family, '"GameTooltipTooltip"',
+    "GameTooltipTooltip is GameTooltip.ItemTooltip.Tooltip and must not receive the normal Show hook")
+
+assertAbsent(tooltipSkinningSource, 'hooksecurefunc(GameTooltip.ItemTooltip, "Show"',
+    "GameTooltip.ItemTooltip:Show fires inside Blizzard quest reward sizing and must not be hooked")
+
+local hookBody = assert(tooltipSkinningSource:match("HookTooltipOnShow = function%(tooltip%)%s*(.-)\nend\n\nlocal function HookAllTooltips"),
+    "tooltip skinning must define HookTooltipOnShow before HookAllTooltips")
+assertContains(hookBody, "IsInternalEmbeddedItemTooltipFrame(tooltip)",
+    "dynamic tooltip discovery must refuse embedded item reward tooltip frames before installing Show hooks")
+
 print("OK: tooltip_game_font_object_test")

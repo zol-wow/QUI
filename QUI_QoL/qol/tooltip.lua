@@ -867,6 +867,34 @@ local function IsChildOfFrame(frame, ancestor)
     return false
 end
 
+-- GameTooltip.ItemTooltip is Blizzard's embedded quest reward card. World
+-- quest reward hovers show this frame and its child tooltip, then immediately
+-- run EmbeddedItemTooltip_UpdateSize, which reads their widths. Appending QoL
+-- lines during that TooltipDataProcessor pass can taint those width reads.
+local function IsInternalEmbeddedItemRoot(root, tooltip)
+    if not root or not tooltip then return false end
+    if tooltip == root or tooltip == root.Tooltip or tooltip == root.FollowerTooltip then
+        return true
+    end
+    if tooltip.GetParent then
+        local ok, parent = pcall(tooltip.GetParent, tooltip)
+        if ok and parent == root then
+            return true
+        end
+    end
+    return false
+end
+
+local function IsInternalEmbeddedItemTooltipFrame(tooltip)
+    if IsInternalEmbeddedItemRoot(GameTooltip and GameTooltip.ItemTooltip, tooltip) then
+        return true
+    end
+    if IsInternalEmbeddedItemRoot(EmbeddedItemTooltip and EmbeddedItemTooltip.ItemTooltip, tooltip) then
+        return true
+    end
+    return false
+end
+
 local function IsFrameObject(object)
     if not object or not object.IsObjectType then
         return false
@@ -2068,6 +2096,10 @@ local function SetupTooltipHook()
             return false
         end
         if not tooltip or tooltip.IsForbidden and tooltip:IsForbidden() then
+            TooltipDebugCount("qol.idPostSkipped")
+            return false
+        end
+        if IsInternalEmbeddedItemTooltipFrame(tooltip) then
             TooltipDebugCount("qol.idPostSkipped")
             return false
         end

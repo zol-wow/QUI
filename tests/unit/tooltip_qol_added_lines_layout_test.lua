@@ -61,6 +61,17 @@ assert(nativeLookup,
 assert(providerLookup < nativeLookup,
     "external score provider should be preferred before native client rating fallback")
 
+assert(source:find("local function IsInternalEmbeddedItemTooltipFrame(tooltip)", 1, true),
+    "tooltip QoL must identify Blizzard embedded item reward tooltip frames")
+
+local idProcessStart = assert(source:find("local function ShouldProcessTooltipIDs", 1, true),
+    "tooltip ID processing gate should exist")
+local idProcessEnd = assert(source:find("local function ResolveSpellIDFromTooltipData", idProcessStart, true),
+    "tooltip ID processing gate should remain bounded before ID resolvers")
+local idProcessBody = source:sub(idProcessStart, idProcessEnd)
+assert(idProcessBody:find("IsInternalEmbeddedItemTooltipFrame(tooltip)", 1, true),
+    "tooltip ID injection must skip embedded quest reward item tooltips before Blizzard width sizing")
+
 local extrasStart = assert(source:find("local function HandleUnitExtrasPost", 1, true),
     "unit extras post handler should exist")
 local extrasEnd = assert(source:find("local function HandleUnitHealthPost", extrasStart, true),

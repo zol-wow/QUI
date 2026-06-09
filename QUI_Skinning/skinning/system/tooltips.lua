@@ -468,6 +468,35 @@ local function IsEmbedded(tooltip)
             or (parent.NineSlice and parent ~= UIParent and parent ~= WorldFrame))
 end
 
+-- GameTooltip.ItemTooltip is Blizzard's embedded quest reward card. During
+-- world quest hover, Blizzard shows the card and its child GameTooltip
+-- (GameTooltipTooltip), then immediately reads their widths in
+-- EmbeddedItemTooltip_UpdateSize. Any addon Show/backdrop/font work inside
+-- that build can make those GetWidth() calls return secret values.
+local function IsInternalEmbeddedItemRoot(root, tooltip)
+    if not root or not tooltip then return false end
+    if tooltip == root or tooltip == root.Tooltip or tooltip == root.FollowerTooltip then
+        return true
+    end
+    if tooltip.GetParent then
+        local ok, parent = pcall(tooltip.GetParent, tooltip)
+        if ok and parent == root then
+            return true
+        end
+    end
+    return false
+end
+
+local function IsInternalEmbeddedItemTooltipFrame(tooltip)
+    if IsInternalEmbeddedItemRoot(GameTooltip and GameTooltip.ItemTooltip, tooltip) then
+        return true
+    end
+    if IsInternalEmbeddedItemRoot(EmbeddedItemTooltip and EmbeddedItemTooltip.ItemTooltip, tooltip) then
+        return true
+    end
+    return false
+end
+
 local function StyleShoppingCompareHeader(header, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not header then return end
     if header.IsForbidden and header:IsForbidden() then return end
@@ -496,6 +525,7 @@ end
 
 local function ApplyTooltipChrome(tooltip)
     if not tooltip then return end
+    if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
     TooltipDebugCount("skin.applyChrome")
 
     -- Embedded tooltips: strip border, no overlay (parent has one)
@@ -558,6 +588,7 @@ end
 
 local function StyleTooltip(tooltip)
     if not tooltip then return end
+    if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
     if not IsEnabled() then return end
 
@@ -595,6 +626,7 @@ end
 -- Combat-safe: refresh addon-owned chrome without touching Blizzard's backdrop.
 local function CombatRefreshTooltip(tooltip)
     if not tooltip then return end
+    if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
     if not IsEnabled() then return end
 
@@ -698,6 +730,7 @@ end
 
 local function RefreshTooltipLayout(tooltip)
     if not tooltip or not (tooltip.IsShown and tooltip:IsShown()) then return end
+    if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
 
     if tooltip == GameTooltip then
@@ -714,6 +747,7 @@ end
 -- Dispatch: combat vs normal path
 local function OnTooltipShow(tooltip)
     if not IsEnabled() then return end
+    if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
     -- MoneyFrame children can taint tooltip width arithmetic on some Blizzard
     -- GameTooltip update paths, so keep the conservative show-existing-chrome path.
     if tooltip == GameTooltip and HasActiveMoneyFrame(tooltip) then
@@ -735,7 +769,9 @@ local gameTooltipFamily = {
     "GameTooltip", "ItemRefTooltip",
     "ItemRefShoppingTooltip1", "ItemRefShoppingTooltip2",
     "ShoppingTooltip1", "ShoppingTooltip2",
-    "GameTooltipTooltip", "SmallTextTooltip",
+    -- GameTooltipTooltip is GameTooltip.ItemTooltip.Tooltip; leave it fully
+    -- Blizzard-owned so world quest reward sizing can read safe widths.
+    "SmallTextTooltip",
     "ReputationParagonTooltip", "NamePlateTooltip",
     "FriendsTooltip", "SettingsTooltip",
     "GameSmallHeaderTooltip", "QuickKeybindTooltip",
@@ -831,6 +867,7 @@ end
 
 SafeHookTooltipOnShow = function(tooltip)
     if hookedTooltips[tooltip] then return end
+    if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
     if InCombatLockdown() then
         _pendingHookQueue[#_pendingHookQueue + 1] = tooltip
         if not _pendingHookTimerActive then
@@ -862,6 +899,7 @@ end
 
 HookTooltipOnShow = function(tooltip)
     if not tooltip or hookedTooltips[tooltip] then return end
+    if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
 
     -- GameTooltip: use HookScript("OnShow"/"OnHide") with protected-
     -- tooltip detection.  OnShow fires before the first render, so
@@ -946,6 +984,7 @@ end
 
 local function DiscoverAndSkin(tooltip)
     if not tooltip then return end
+    if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
     SafeHookTooltipOnShow(tooltip)
     if IsEnabled() and not InCombatLockdown() then
@@ -989,6 +1028,7 @@ local function SetupBackdropStyleHooks()
         hooksecurefunc("SharedTooltip_SetBackdropStyle", function(tooltip, style, isEmbedded)
             TooltipDebugCount("skin.sharedBackdrop")
             if not IsEnabled() or not tooltip then return end
+            if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
             local ok, objType = pcall(tooltip.GetObjectType, tooltip)
             if not ok or objType ~= "GameTooltip" then return end
 
@@ -1041,6 +1081,7 @@ local function SetupBackdropStyleHooks()
         hooksecurefunc("GameTooltip_SetBackdropStyle", function(tooltip, style)
             TooltipDebugCount("skin.gameBackdrop")
             if not IsEnabled() or not tooltip then return end
+            if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
             local ok, objType = pcall(tooltip.GetObjectType, tooltip)
             if not ok or objType ~= "GameTooltip" then return end
             -- Defer GameTooltip — same taint safety concern as above.
@@ -1093,13 +1134,9 @@ local function SetupBackdropStyleHooks()
         end
     end
 
-    -- GameTooltip.ItemTooltip NineSlice
-    if GameTooltip and GameTooltip.ItemTooltip and GameTooltip.ItemTooltip.NineSlice then
-        hooksecurefunc(GameTooltip.ItemTooltip, "Show", function(self)
-            if not IsEnabled() then return end
-            if self.NineSlice then pcall(self.NineSlice.Hide, self.NineSlice) end
-        end)
-    end
+    -- Do not hook GameTooltip.ItemTooltip:Show. That frame is shown inside
+    -- Blizzard's quest reward sizing path before EmbeddedItemTooltip_UpdateSize
+    -- performs width arithmetic.
 end
 
 ---------------------------------------------------------------------------
@@ -1116,6 +1153,7 @@ local function SetupPostProcessor()
     local function HandlePostCall(tooltip)
         TooltipDebugCount("skin.postCall")
         if not tooltip or tooltip == EmbeddedItemTooltip then return end
+        if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
         SafeHookTooltipOnShow(tooltip)
         -- TAINT SAFETY: Defer GameTooltip to the watcher (same as backdrop hooks).
         if tooltip == GameTooltip then
@@ -1204,7 +1242,7 @@ local function RefreshAllFonts()
     if InCombatLockdown() then return end
     for _, name in ipairs(tooltipsToSkin) do
         local tooltip = _G[name]
-        if tooltip then
+        if tooltip and not IsInternalEmbeddedItemTooltipFrame(tooltip) then
             ApplyFontSize(tooltip)
             RefreshTooltipLayout(tooltip)
         end
