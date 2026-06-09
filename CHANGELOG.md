@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta31 - 2026-06-09
+
+> 🧪 **QUI 4 beta — small fixes.** Another quick follow-up to beta30: buff border timers on long buffs like flasks no longer freeze or blank out, right-clicking a buff border to cancel it works again, QUI Chat is steadier (whisper tabs, the guild message of the day, and a couple of crashes), fresh installs get a starter look and a welcome window, and loot roll toasts and the Mythic+ abandon prompt land where they should. No schema migration — your beta30 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Fresh installs start with a ready-made look.** A brand-new install now applies a starter profile automatically and shows a short welcome window with a Reload button, so QUI looks complete the first time you log in. Upgrades are untouched — this only happens on a clean first install.
+- **Private auras have a Text Scale setting.** Group-frame private auras now have a Text Scale slider (0.5–1.5) so you can size their countdown and stack text without changing the icon size.
+
+### Fixed
+- **Buff border timers no longer freeze or blank out.** The countdown on action-bar buff borders — most visibly on long buffs such as flasks — could freeze at a stale number or disappear during combat. The remaining time is now drawn by the game's own countdown, so it stays accurate through combat.
+- **Right-clicking a buff border to cancel it works again.** Cancelling a buff by right-clicking its border had silently stopped working after a settings change or leaving combat. It cancels reliably again.
+- **No more stale borders on empty buff slots.** A buff border could briefly linger on a slot that no longer had a buff. Empty slots are now cleared.
+- **QUI Chat whisper tabs no longer hide whispers from your regular tabs.** Opening a whisper conversation in its own tab removed those whispers from your normal tabs. Whisper tabs are now additive — the conversation tab is extra, and your regular tabs keep showing the whispers.
+- **QUI Chat no longer crashes when you turn it off.** Disabling the QUI Chat module could crash the game while restoring Blizzard's chat font. The font is now restored safely.
+- **Clicking a name in QUI Chat no longer crashes.** Left-clicking a player, Battle.net, or channel name could crash the game. Those clicks are safe again.
+- **The guild message of the day shows reliably at login in QUI Chat.** It could be missing right after logging in; QUI Chat now picks it up once chat settings finish downloading.
+- **Loot roll-won toasts respect your Alert Anchor.** A toast for loot you won could snap to the bottom-center of the screen instead of following QUI's Alert Anchor. It now stays where you placed it.
+- **The Mythic+ abandon-vote prompt opens in the right place.** Blizzard's "leave instance?" vote popup appeared in the bottom-right corner; it now opens top-center through QUI's frame mover, where you can reposition it.
+- **Boss frames no longer risk a combat error during encounters.** Refreshing boss frames when an encounter begins could trip a protected-value error; the refresh now avoids it.
+- **World quest reward tooltips no longer cause errors.** Hovering a world quest's reward card could taint Blizzard's tooltip sizing and produce errors. QUI now leaves that embedded reward tooltip untouched.
+
+### Changed
+- **The QUI Chat settings page offers a reload when you toggle it.** Turning the chat module on or off from its settings page now prompts for a UI reload, matching the Module Addons screen.
+- **QUI's sub-addons group together in the AddOns list.** The separate QUI feature folders now share a "QUI" group so they sit together on the in-game AddOns list.
+
 ## v4.0.0-beta30 - 2026-06-09
 
 > 🧪 **QUI 4 beta — small fixes.** Another quick follow-up to beta29: several Quality of Life features that quietly stopped starting at login are back (combat timer, crosshair, reticle, consumable check and more), the minimap is skinned and positioned correctly straight from the loading screen, QUI Chat shows Battle.net friend online/offline notices again, and a couple of in-combat "action blocked" errors around the Cooldown Manager and the guild message of the day are fixed. No schema migration — your beta29 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
