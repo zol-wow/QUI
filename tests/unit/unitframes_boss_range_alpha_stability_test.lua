@@ -32,14 +32,14 @@ assert(body:find("bossRange.pending", 1, true),
 local auraSource = readAll("QUI_UnitFrames/unitframes/unitframe_auras.lua")
 assert(auraSource:find("local bossEngageFrame", 1, true),
     "boss engage aura refresh should use one shared event frame")
-assert(auraSource:find("local bossEngageState", 1, true),
-    "boss engage aura refresh should track per-slot boss identity")
-assert(auraSource:find("UnitGUID", 1, true),
-    "boss engage aura refresh should distinguish boss slot identity changes")
-assert(auraSource:find("BossUnitStateChanged", 1, true),
-    "boss engage aura refresh should skip unchanged boss slots")
+assert(not auraSource:find("bossEngageState", 1, true),
+    "boss engage aura refresh must not cache per-slot boss GUIDs")
+assert(not auraSource:find("UnitGUID", 1, true),
+    "boss engage aura refresh must not read secret UnitGUID values")
+assert(not auraSource:find("BossUnitStateChanged", 1, true),
+    "boss engage aura refresh should not compare cached boss identity")
 assert(auraSource:find("RefreshBossFrameForEngage", 1, true),
-    "boss engage aura refresh should be scoped to changed boss frames")
+    "boss engage aura refresh should be scoped to boss frames")
 assert(not auraSource:find('frame:RegisterEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT"', 1, true),
     "boss frames should not each register the global engage event")
 assert(auraSource:find('bossEngageFrame:RegisterEvent("INSTANCE_ENCOUNTER_ENGAGE_UNIT"', 1, true),
@@ -102,7 +102,15 @@ do
         return units[unit] ~= nil
     end
 
+    local unitGuidCalls = 0
+    local secretGUIDMT = {
+        __eq = function()
+            error("attempted to compare a secret boss UnitGUID")
+        end,
+    }
+
     function UnitGUID(unit)
+        unitGuidCalls = unitGuidCalls + 1
         local data = units[unit]
         return data and data.guid or nil
     end
@@ -180,24 +188,27 @@ do
     assert(engageFrame and engageFrame.scripts.OnEvent,
         "boss aura tracking should install a shared engage event handler")
 
-    units.boss1 = { guid = "Creature-1" }
+    units.boss1 = { guid = setmetatable({}, secretGUIDMT) }
     engageFrame.scripts.OnEvent(engageFrame, "INSTANCE_ENCOUNTER_ENGAGE_UNIT")
     assert(#updateFrameCalls == 1 and updateFrameCalls[1] == "boss1",
         "first engage should refresh only the newly available boss slot")
 
     engageFrame.scripts.OnEvent(engageFrame, "INSTANCE_ENCOUNTER_ENGAGE_UNIT")
-    assert(#updateFrameCalls == 1,
-        "unchanged boss slots should not be refreshed repeatedly on duplicate engage events")
+    assert(#updateFrameCalls == 2 and updateFrameCalls[2] == "boss1",
+        "duplicate engage events should refresh existing boss slots without GUID comparisons")
 
-    units.boss2 = { guid = "Creature-2" }
+    units.boss2 = { guid = setmetatable({}, secretGUIDMT) }
     engageFrame.scripts.OnEvent(engageFrame, "INSTANCE_ENCOUNTER_ENGAGE_UNIT")
-    assert(#updateFrameCalls == 2 and updateFrameCalls[2] == "boss2",
-        "a later boss slot should refresh without reprocessing existing boss slots")
+    assert(#updateFrameCalls == 4 and updateFrameCalls[3] == "boss1" and updateFrameCalls[4] == "boss2",
+        "a later boss slot should refresh alongside existing boss slots")
 
     units.boss1 = nil
     engageFrame.scripts.OnEvent(engageFrame, "INSTANCE_ENCOUNTER_ENGAGE_UNIT")
-    assert(#updateFrameCalls == 2,
-        "despawning boss slots should clear aura state without a full frame refresh")
+    assert(#updateFrameCalls == 5 and updateFrameCalls[5] == "boss2",
+        "despawning boss slots should skip UpdateFrame while existing boss slots refresh")
+
+    assert(unitGuidCalls == 0,
+        "boss engage aura refresh must never read UnitGUID secret values")
 end
 
 print("OK: unitframes_boss_range_alpha_stability_test")

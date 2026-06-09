@@ -18,7 +18,6 @@ local pairs = pairs
 local rawget = rawget
 local type = type
 local UnitExists = UnitExists
-local UnitGUID = UnitGUID
 
 -- QUI_UF is created in unitframes.lua and exported to ns.QUI_UnitFrames.
 -- This file loads after unitframes.lua, so the reference is available.
@@ -90,7 +89,6 @@ QUI_UF._lastAuraUpdate = lastAuraUpdate
 -- Boss engage is a global event; one shared listener avoids five frames
 -- reprocessing every transient boss-slot pulse.
 local bossEngageFrame
-local bossEngageState = {}
 
 ---------------------------------------------------------------------------
 -- AURA ICON STATE (weak-keyed to avoid tainting frames with secret values)
@@ -710,31 +708,8 @@ end
 -- Expose for unitframes.lua callers
 QUI_UF.UpdateAuras = UpdateAuras
 
-local function BossUnitStateChanged(unit)
-    local exists = UnitExists(unit) and true or false
-    local guid = nil
-    if exists and UnitGUID then
-        guid = UnitGUID(unit)
-    end
-
-    local state = bossEngageState[unit]
-    if not state then
-        bossEngageState[unit] = { exists = exists, guid = guid }
-        return exists
-    end
-
-    if state.exists ~= exists or state.guid ~= guid then
-        state.exists = exists
-        state.guid = guid
-        return true
-    end
-
-    return false
-end
-
 local function RefreshBossFrameForEngage(frame)
     if not frame or not frame.unit then return end
-    if not BossUnitStateChanged(frame.unit) then return end
 
     lastAuraUpdate[frame.unit] = 0
     if UnitExists(frame.unit) then
