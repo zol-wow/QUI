@@ -3,7 +3,7 @@
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## Notes: Configuration UI for QUI
 ## Author: Zol
-## Version: 4.0.0-beta29
+## Version: 4.0.0-beta30
 ## Category: User Interface
 ## RequiredDeps: QUI
 ## OptionalDeps: QUI_ActionBars, QUI_CDM, QUI_Chat, QUI_GroupFrames, QUI_ResourceBars, QUI_UnitFrames

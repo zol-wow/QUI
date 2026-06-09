@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta30 - 2026-06-09
+
+> 🧪 **QUI 4 beta — small fixes.** Another quick follow-up to beta29: several Quality of Life features that quietly stopped starting at login are back (combat timer, crosshair, reticle, consumable check and more), the minimap is skinned and positioned correctly straight from the loading screen, QUI Chat shows Battle.net friend online/offline notices again, and a couple of in-combat "action blocked" errors around the Cooldown Manager and the guild message of the day are fixed. No schema migration — your beta29 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Quality of Life features that stopped starting at login work again.** With the Quality of Life module enabled, several features set themselves up at login but never actually started — so you would see no combat timer in encounters, no crosshair or reticle, and no consumable check, action tracker, battle-res counter, or extra combat text. They now initialize reliably once you log in.
+- **The minimap is skinned and positioned from the loading screen.** The minimap could briefly appear unskinned or mis-placed after logging in, and stay that way until you opened Layout Mode. It now skins, reparents, and anchors during the loading screen and re-settles against your final UI scale, so it looks right the moment you arrive.
+- **Battle.net friend online and offline notices show again in QUI Chat.** With the QUI Chat module enabled, Battle.net friends coming online or going offline produced no message. Those notices are back.
+- **The Cooldown Manager no longer throws an "action blocked" error in combat.** Refreshing the buff-icon layout during combat could trigger a blocked-action error. The refresh now waits a frame so it runs safely.
+- **The guild message of the day no longer throws an "action blocked" error.** Reading the guild message of the day during combat could trigger a blocked-action error and drop the message. It is now read through a path that is safe in combat, so your guild's message of the day shows reliably at login.
+- **Blizzard chat keeps its left alignment when QUI Chat is off.** Applying QUI's font to Blizzard's chat frames re-centered their text; chat now preserves its original alignment.
+- **More close buttons sit correctly and pick up QUI's skin.** The Inspect window's close button and its View and Talents buttons are now skinned, and the close buttons on the loot-history and item-link tooltip windows are tucked into the corner so QUI's button no longer overhangs the frame edge.
+
 ## v4.0.0-beta29 - 2026-06-08
 
 > 🧪 **QUI 4 beta — small fixes.** A quick follow-up to beta28: cooldowns that a talent turns passive now reliably go dormant (beta28's version missed the most common case), QUI Chat no longer spams Lua errors on text emotes and guild loot messages, and the close button on item-link tooltips picks up QUI's skin. No schema migration — your beta28 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
