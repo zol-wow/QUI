@@ -303,7 +303,19 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end)
 
         -- Chat Display
-        CreateChatSection("customDisplay", "Chat Display", FORM_ROW * 3 + 8, function(card)
+        CreateChatSection("customDisplay", "Chat Display", FORM_ROW * 4 + 8, function(card)
+            if not chat.customDisplay then chat.customDisplay = {} end
+            -- Combat Log tab toggle: embeds Blizzard's ChatFrame2 as a pinned
+            -- tab in window 1. The reconcile runs through GetWindowsConfig.
+            local clt = GUI:CreateFormCheckbox(card.frame, nil, "combatLogTab", chat.customDisplay, function()
+                local TM = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabManager
+                if TM and TM.GetWindowsConfig then TM.GetWindowsConfig() end
+                local TabUI = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabUI
+                if TabUI and TabUI.Rebuild then TabUI.Rebuild() end
+                Refresh()
+            end, { description = "Show Blizzard's Combat Log as a pinned tab in the primary chat window. Right-click the tab for Blizzard's combat-log filter settings." })
+            card.AddRow(row(card.frame, "Show Combat Log Tab", clt))
+
             local ml = GUI:CreateFormSlider(card.frame, nil, 200, 5000, 100, "maxLines", chat.customDisplay, Refresh, {
                 description = "Scrollback cap for the custom display (messages kept in RAM).",
             })
@@ -1326,6 +1338,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             if not chat.modifiers.channelShorten then
                 chat.modifiers.channelShorten = { enabled = true, preset = "letter" }
             end
+            if chat.modifiers.showRealmNames == nil then chat.modifiers.showRealmNames = false end
             local classColors = chat.modifiers.classColors
             local channelShorten = chat.modifiers.channelShorten
 
@@ -1341,6 +1354,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             end, { description = "Color player names in chat by their class color (e.g. Mage names appear in light blue, Druid names in orange)." })
             recolorBodyCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "recolorBodyText", classColors, Refresh, { description = "Performs an extra regex pass on every chat message to recolor known player names anywhere in the body. Slightly more expensive than the default name-only coloring." })
             card.AddRow(row(card.frame, "Class colors on player names", classColorsCheckbox), row(card.frame, "Recolor names mentioned in body text", recolorBodyCheckbox))
+
+            local showRealmCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "showRealmNames", chat.modifiers, Refresh, { description = "Show the server/realm name after cross-realm players' names in chat (e.g. Anya-Stormrage). Players on your own realm never show a realm suffix." })
+            card.AddRow(row(card.frame, "Show realm names", showRealmCheckbox))
 
             local channelShortenCheckbox = GUI:CreateFormCheckbox(card.frame, nil, "enabled", channelShorten, function()
                 Refresh()

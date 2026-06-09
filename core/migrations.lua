@@ -277,10 +277,18 @@ local _currentActiveProfile = nil  -- raw sv profile table for the active profil
 --       are deliberately NOT touched (dormant guards: stock-chat users and
 --       group-frames opt-in default).
 --
+-- v44 = MigrateChatRealmNames
+--       Sender realm display (Anya vs Anya-Stormrage) used to be a side effect
+--       of chat.modifiers.channelShorten. It now has its own setting,
+--       chat.modifiers.showRealmNames (default false). Realm was shown iff
+--       channel-shortening was EXPLICITLY off, so the migration only sets
+--       showRealmNames = true for those profiles; the false default reproduces
+--       the stripped look everywhere else. Idempotent.
+--
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 43
+local CURRENT_SCHEMA_VERSION = 44
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -1620,6 +1628,31 @@ local function RetireModuleMasterFlags(profile)
             end
         end
     end
+end
+
+---------------------------------------------------------------------------
+-- v44: MigrateChatRealmNames — decouple sender realm display from
+-- channelShorten.
+--
+-- Sender realm display used to be a side effect of chat.modifiers.channelShorten
+-- ("shorten channel labels"): on ⇒ realm stripped, off ⇒ realm shown. It now
+-- has its own setting, chat.modifiers.showRealmNames (default false).
+--
+-- Realm names were shown iff channel-shortening was EXPLICITLY disabled, so only
+-- that case needs a write — the false default already reproduces the stripped
+-- look for default / shorten-on profiles. Idempotent.
+---------------------------------------------------------------------------
+local function MigrateChatRealmNames(profile)
+    if type(profile) ~= "table" then return end
+    local chat = type(profile.chat) == "table" and profile.chat or nil
+    local mods = chat and type(chat.modifiers) == "table" and chat.modifiers or nil
+    if not mods then return end
+    local cs = type(mods.channelShorten) == "table" and mods.channelShorten or nil
+    if cs and cs.enabled == false then
+        -- This profile opted out of shortening, so it was showing realms; keep it.
+        mods.showRealmNames = true
+    end
+    -- else: leave the false default — default/shorten-on profiles stripped the realm.
 end
 
 local DEFAULT_SKY_BLUE_ACCENT = { 0.376, 0.647, 0.980, 1 }
@@ -4377,6 +4410,10 @@ function Migrations.RunOnProfile(profile)
     -- stale false can't silently disable a module whose addon row is on. For the
     -- active profile, an explicit false is first reflected to the addon layer.
     if stored < 43 then RetireModuleMasterFlags(profile) end
+
+    -- v44: decouple chat sender realm display from channelShorten — preserve the
+    -- shown-realm look for profiles that had channel-shortening explicitly off.
+    if stored < 44 then MigrateChatRealmNames(profile) end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame

@@ -17,6 +17,13 @@ local TabManager = ns.QUI.Chat.TabManager
 
 local activeFilters = {} -- dense array: windowID -> active filter closure
 
+-- A combat-log tab embeds Blizzard's ChatFrame2 (combat_log_tab.lua). It is a
+-- pinned, non-filter tab: BuildTabFilter returns show-nothing for it, and the
+-- embedded frame covers the render area while it is active.
+function TabManager.IsCombatLogTab(tabData)
+    return type(tabData) == "table" and tabData.combatLog == true
+end
+
 local function NormalizeSet(t)
     if type(t) ~= "table" then return nil end
     local out
@@ -140,6 +147,9 @@ end
 -- dense for ReapplyAll's `for id = 1, #activeFilters` loop, so a no-constraint
 -- tab gets an explicit show-all closure.
 function TabManager.BuildTabFilter(tabData)
+    if TabManager.IsCombatLogTab(tabData) then
+        return function() return false end
+    end
     return TabManager.BuildFilter(tabData) or function() return true end
 end
 
@@ -299,6 +309,31 @@ local function EnsureFriendStatusInSystemTabs(cd)
     cd._friendStatusUpgrade = FRIEND_STATUS_UPGRADE_VERSION
 end
 
+-- Ensure window 1 has exactly one combat-log tab iff customDisplay.combatLogTab
+-- is on. Appends at the end on first add; removes all combat-log entries (and
+-- any accidental extras) when off. Idempotent (runs on every GetWindowsConfig).
+-- Window 1 only — there is a single Blizzard ChatFrame2.
+local function ReconcileCombatLogTab(cd)
+    if type(cd) ~= "table" then return end
+    local tabs = cd.windows and cd.windows[1] and cd.windows[1].tabs
+    if type(tabs) ~= "table" then return end
+    local enabled = cd.combatLogTab ~= false
+    local kept
+    for i = #tabs, 1, -1 do
+        if TabManager.IsCombatLogTab(tabs[i]) then
+            if enabled and not kept then
+                kept = true       -- keep the first; drop any extras
+            else
+                table.remove(tabs, i)
+            end
+        end
+    end
+    if enabled and not kept then
+        tabs[#tabs + 1] = { name = "Combat Log", combatLog = true }
+    end
+end
+TabManager._ReconcileCombatLogTab = ReconcileCombatLogTab -- test/diagnostic
+
 local function SeedWindows(settings)
     settings.customDisplay = settings.customDisplay or {}
     local cd = settings.customDisplay
@@ -320,6 +355,7 @@ local function SeedWindows(settings)
         SeedTabsInto(cd.windows[1].tabs)
     end
     EnsureFriendStatusInSystemTabs(cd)
+    ReconcileCombatLogTab(cd)
     return cd.windows
 end
 

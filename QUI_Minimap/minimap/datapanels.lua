@@ -670,3 +670,28 @@ SlashCmdList["QUIDATAPANELS"] = function(msg)
     end
 end
 
+---------------------------------------------------------------------------
+-- IN-WINDOW MINIMAP INIT (combat /reload safe)
+---------------------------------------------------------------------------
+--
+-- The minimap's one-time init does protected layout on the Minimap — a Blizzard
+-- protected frame — via SetPoint/SetParent/SetSize/SetScale. Those are blocked
+-- in combat UNLESS they run inside the core's ADDON_LOADED safe window
+-- (ns._inInitSafeWindow), where protected calls are permitted even during a
+-- combat /reload. The core eager-loads QUI_Minimap synchronously inside that
+-- window, executing every TOC sibling in order; this datapanels.lua is the LAST
+-- sibling, so by here all dependencies (datatexts, etc.) are loaded AND we are
+-- still in the window. Fire the init NOW, synchronously, so a /reload issued in
+-- combat lands the minimap correctly instead of throwing ADDON_ACTION_BLOCKED.
+--
+-- Pre-split this init ran in the monolith's ADDON_LOADED handler (same window).
+-- The suite split moved it to ns.WhenLoggedIn + C_Timer.After(0) in minimap.lua,
+-- which fires AFTER the window closes — that is what regressed the combat
+-- /reload. minimap.lua's WhenLoggedIn path is retained as the live-toggle /
+-- headless fallback (InitializeOnce is idempotent); the login path is driven
+-- here, in-window. Outside the window (ns._inInitSafeWindow false/nil: live
+-- toggle, headless), this is a no-op and the fallback path runs instead.
+if ns._inInitSafeWindow and QUICore and QUICore.Minimap and QUICore.Minimap.InitializeOnce then
+    QUICore.Minimap:InitializeOnce()
+end
+

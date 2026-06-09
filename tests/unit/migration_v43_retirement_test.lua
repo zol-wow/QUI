@@ -1,7 +1,7 @@
 -- tests/unit/migration_v43_retirement_test.lua
 -- Verifies the v43 RetireModuleMasterFlags migration:
 --   - Active profile with an explicit false flag → DisableAddOn called once,
---     flag forced true, _schemaVersion == 43.
+--     flag forced true, _schemaVersion == 44.
 --   - Non-active profile with a false flag → flag forced true, NO DisableAddOn.
 --   - chat.enabled and quiGroupFrames.enabled are untouched by this migration.
 --   - Idempotency: second run makes no further DisableAddOn calls and no changes.
@@ -73,7 +73,7 @@ end
 ---------------------------------------------------------------------------
 -- 1) Active profile with ncdm.enabled = false
 --    → DisableAddOn("QUI_CDM") called exactly once, flag forced true,
---      _schemaVersion == 43.
+--      _schemaVersion == 44.
 ---------------------------------------------------------------------------
 do
     local calls = makeAddOnStub()
@@ -90,8 +90,8 @@ do
         disableCDM == 1, ("called %d times"):format(disableCDM))
     check("1: ncdm.enabled flag forced true after migration",
         profile.ncdm.enabled == true, tostring(profile.ncdm.enabled))
-    check("1: _schemaVersion == 43",
-        profile._schemaVersion == 43, tostring(profile._schemaVersion))
+    check("1: _schemaVersion == 44",
+        profile._schemaVersion == 44, tostring(profile._schemaVersion))
 end
 
 ---------------------------------------------------------------------------

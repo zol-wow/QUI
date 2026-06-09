@@ -1382,6 +1382,10 @@ local defaults = {
                     enabled = true,
                     preset = "letter",        -- "letter" | "number"
                 },
+                -- Show cross-realm players' "-Realm" suffix in chat sender names
+                -- (decoupled from channelShorten, which only shapes channel/type
+                -- labels). Default off mirrors the historical channelShorten-on look.
+                showRealmNames = false,
                 keywordAlert = {
                     enabled = false,                        -- default off; opt-in (sounds + flashes can be intrusive)
                     keywords = {},                           -- list of strings (user-added)
@@ -1462,6 +1466,10 @@ local defaults = {
             customDisplay = {
                 maxLines = 1000,        -- scrollback cap (store + every window's view)
                 bgAlpha = 0.25,         -- glass backdrop alpha (display-wide)
+                -- Combat Log tab: embeds Blizzard's real ChatFrame2 as a pinned
+                -- tab in window 1. Default on (mirrors Blizzard's stock Combat
+                -- Log tab). Governs presence via TabManager.ReconcileCombatLogTab.
+                combatLogTab = true,
                 -- Multi-window: ARRAY of per-window entries, seeded on first
                 -- access (tab_manager.GetWindowsConfig). windows[i] = {
                 --   width, height, position = { point, relPoint, x, y },

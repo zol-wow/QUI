@@ -83,6 +83,15 @@ end
 
 local function UpdateInstance(windowID)
     local sb = instances[windowID]
+    -- While the combat-log tab owns this window, the embedded ChatFrame2 covers
+    -- the message area (QUI's SMF is hidden); keep our scrollbar hidden too.
+    local CL = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.CombatLogTab
+    if sb and CL and CL.IsActiveWindow and CL.IsActiveWindow(windowID) then
+        if sb.track then sb.track:SetShown(false) end
+        if sb.thumb then sb.thumb:SetShown(false) end
+        if sb.bottomBtn then sb.bottomBtn:SetShown(false) end
+        return
+    end
     local smf = GetSMF(windowID)
     if not (smf and sb and sb.track and sb.thumb and sb.bottomBtn) then return end
     local range = (smf.GetMaxScrollRange and smf:GetMaxScrollRange()) or 0
@@ -108,6 +117,16 @@ function Scrollbar.Update()
     for windowID in pairs(instances) do
         UpdateInstance(windowID)
     end
+end
+
+-- Immediate show/hide of a window's scrollbar trio, used by combat-log tab
+-- activation. On re-show, the next UpdateInstance recomputes proper visibility.
+function Scrollbar.SetShown(windowID, shown)
+    local sb = instances[tonumber(windowID) or 1]
+    if not sb then return end
+    if sb.track then sb.track:SetShown(shown) end
+    if sb.thumb then sb.thumb:SetShown(shown) end
+    if sb.bottomBtn then sb.bottomBtn:SetShown(shown) end
 end
 
 -- Jump the scroll offset to the cursor's position on the track (bottom of

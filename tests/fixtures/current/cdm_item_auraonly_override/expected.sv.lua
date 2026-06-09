@@ -662,6 +662,7 @@ return {
           copyButtonMode = "always",
           customDisplay = {
             bgAlpha = 0.25,
+            combatLogTab = true,
             maxLines = 1000,
             whisperTabs = {
               autoIncoming = false,
@@ -760,7 +761,8 @@ return {
                 reputation = true,
                 xp = true
               }
-            }
+            },
+            showRealmNames = false
           },
           newMessageSound = {
             enabled = false,
@@ -6383,7 +6385,7 @@ return {
       Default = {
         _defaultsVersion = 3,
         _needsLateAbImport = true,
-        _schemaVersion = 43,
+        _schemaVersion = 44,
         chat = {
           enabled = false
         },

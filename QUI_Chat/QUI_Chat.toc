@@ -31,6 +31,7 @@ chat\message_format.lua
 chat\message_capture.lua
 chat\display_layer.lua
 chat\tab_manager.lua
+chat\combat_log_tab.lua
 chat\conversation_manager.lua
 chat\tab_ui.lua
 chat\scrollbar_custom.lua

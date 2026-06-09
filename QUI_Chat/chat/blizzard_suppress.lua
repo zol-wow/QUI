@@ -304,12 +304,33 @@ local function NeutralizeDockUpdateScripts()
     end
 end
 
+-- ChatFrame2's enforced parent is dynamic: the combat-log host container while
+-- its QUI tab is active (combat_log_tab.lua), the hidden anchor otherwise.
+-- Passed by reference to SuppressRegion so the SetParent hook re-resolves live —
+-- letting the combat-log tab embed ChatFrame2 instead of being yanked back.
+-- Defined here (after the module-level `hiddenAnchor` local) so it captures it.
+local function ChatFrame2EnforcedParent()
+    local CL = ns.QUI.Chat.CombatLogTab
+    local host = CL and CL.GetHostParent and CL.GetHostParent()
+    return host or hiddenAnchor
+end
+
+-- Test/diagnostic hook.
+function Suppress._ResolveChatFrame2Parent()
+    return ChatFrame2EnforcedParent()
+end
+
 -- Suppress a single named frame+tab/button set. Idempotent: regions already parented
 -- to hiddenAnchor are skipped so re-running on the full list is safe.
 local function SuppressOne(name)
     local f = _G[name]
     if f then
-        SuppressRegion(f, function() return hiddenAnchor end)
+        -- The combat log (ChatFrame2) gets the dynamic enforced parent; every
+        -- other chat frame is pinned to the hidden anchor.
+        local parentFn = IsCombatLogFrame(f)
+            and ChatFrame2EnforcedParent
+            or function() return hiddenAnchor end
+        SuppressRegion(f, parentFn)
         NeuterOne(f)
     end
     SuppressRegion(_G[name .. "Tab"], function() return hiddenAnchor end)
@@ -415,6 +436,11 @@ local function RestoreAll()
     -- Hand the whisper-popout machinery back to Blizzard before reparenting.
     RestoreChatFrameManager()
     RestoreTempWindowFn()
+    -- Tear down the combat-log embed first: this clears CombatLogTab's active
+    -- state so ChatFrame2's enforced parent resolves away from our container,
+    -- and the savedParents restore below then hands ChatFrame2 back to Blizzard.
+    local CL = ns.QUI.Chat.CombatLogTab
+    if CL and CL.Deactivate then CL.Deactivate(1) end
     for region, parent in pairs(savedParents) do
         SafeSetParent(region, parent)
     end

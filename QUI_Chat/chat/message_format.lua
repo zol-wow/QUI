@@ -51,6 +51,14 @@ local function ShortenPreset()
     return cs.preset == "number" and "number" or "letter"
 end
 
+-- showRealmNames modifier: when true, cross-realm players keep their "-Realm"
+-- suffix in chat sender names. Independent of channelShorten (which only
+-- shapes channel/type labels). Default false ⇒ realm stripped.
+local function ShowRealmNames()
+    local settings = I.GetSettings and I.GetSettings()
+    return (settings and settings.modifiers and settings.modifiers.showRealmNames) == true
+end
+
 -- Class color for a sender GUID, gated on the existing classColors setting.
 -- Reads RAID_CLASS_COLORS directly (NOT any custom-color-aware helper — the
 -- chat sender recolor must track Blizzard's class palette).
@@ -85,10 +93,13 @@ function Format.DecorateSender(event, ...)
     local typeKey = Format.EventToTypeKey(event)
     local decorated = sender
     if _G.Ambiguate then
-        -- Compact look under channelShorten keeps the old always-short names;
-        -- full mode mirrors Blizzard ("guild" inside guild chat, else "none").
-        local mode = ShortenPreset() and "short"
-            or (typeKey == "GUILD" and "guild" or "none")
+        -- Sender realm display is its OWN setting (showRealmNames), decoupled
+        -- from channelShorten (which only shapes channel/type labels). ON mirrors
+        -- Blizzard's realm-showing pair ("guild" in guild chat, else "none" —
+        -- ChatFrameUtil.lua:993-998); OFF ("short") strips the realm.
+        local mode = ShowRealmNames()
+            and (typeKey == "GUILD" and "guild" or "none")
+            or "short"
         local ok, short = pcall(_G.Ambiguate, sender, mode)
         if ok and type(short) == "string" and short ~= "" then decorated = short end
     end

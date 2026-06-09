@@ -4148,13 +4148,19 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     end
 end)
 
--- Drive init from login. ns.WhenLoggedIn fires at PLAYER_LOGIN (or immediately
--- if already logged in, e.g. a live module toggle). The one-frame defer lets
--- every QUI_Minimap toc sibling finish loading first — the integrated datatext
--- panel reads QUICore.Datatexts, populated by the later-loaded datatexts.lua, so
--- running Initialize mid-load would skip it. At login PLAYER_LOGIN is still under
--- the loading screen, so this lands before the world is visible — no unskinned-
--- minimap pop.
+-- Fallback init driver (live toggle / headless). The LOGIN path is driven
+-- in-window from the last TOC sibling (datapanels.lua) while the core's
+-- ADDON_LOADED safe window (ns._inInitSafeWindow) is still open, because the
+-- minimap's protected-frame layout (Minimap:SetPoint/SetParent/SetSize) is only
+-- permitted in combat inside that window — a combat /reload throws
+-- ADDON_ACTION_BLOCKED otherwise. This C_Timer.After(0) path runs AFTER the
+-- window closes, so it must NOT be the login driver; it covers:
+--   * live module toggle (already logged in): ns.WhenLoggedIn fires immediately
+--     mid-load, and the one-frame defer lets the remaining toc siblings (the
+--     integrated datatext panel reads QUICore.Datatexts from datatexts.lua)
+--     finish loading first. Toggles happen out of combat, so the window is moot.
+--   * a redundant login fallback — InitializeOnce is idempotent (_initialized),
+--     so the in-window call having already run makes this a no-op.
 -- ns.WhenLoggedIn is nil only in the headless test harness, where the
 -- ADDON_LOADED fallback above drives init instead.
 if ns.WhenLoggedIn then

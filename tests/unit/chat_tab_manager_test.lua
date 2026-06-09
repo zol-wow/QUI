@@ -44,7 +44,10 @@ function _G.GetChatWindowChannels(i)
     if t then return unpack(t) end
 end
 
-local settings = { enabled = true, customDisplay = { windows = {} } }
+-- combatLogTab disabled here: this test covers stock-window seeding only; the
+-- combat-log tab (a separate feature) has its own test and would perturb the
+-- General/Trade seed-count assertions below.
+local settings = { enabled = true, customDisplay = { combatLogTab = false, windows = {} } }
 local ns = {
     Helpers = { IsSecretValue = function() return false end },
     QUI = { Chat = { _internals = {

@@ -239,6 +239,12 @@ local function OnTabDragStart(self)
     local inst = self._inst
     if not inst then return end
     if not (type(self.frameID) == "number" and self.frameID < 0) then return end
+    -- The combat-log tab is pinned to window 1 — not drag-reorderable.
+    local TMcl = ns.QUI.Chat.TabManager
+    if TMcl and TMcl.GetWindowTab and TMcl.IsCombatLogTab
+        and TMcl.IsCombatLogTab(TMcl.GetWindowTab(inst.windowID, -self.frameID)) then
+        return
+    end
     inst.draggingBtn = self
     self:SetAlpha(0.5)
     if inst.bar and inst.bar.SetScript then
@@ -454,6 +460,19 @@ local function ActivateFrameID(inst, frameID, userInitiated)
     end
     if not target then return false end
 
+    -- Combat-log tab routing: deactivate a previously-active embed when
+    -- switching away. (Re)activation happens in the saved-tab branch below.
+    local TM_cl = ns.QUI.Chat.TabManager
+    local CL_tab = ns.QUI.Chat.CombatLogTab
+    local newIsCombatLog = false
+    if type(frameID) == "number" and frameID < 0 and TM_cl and TM_cl.GetWindowTab and TM_cl.IsCombatLogTab then
+        newIsCombatLog = TM_cl.IsCombatLogTab(TM_cl.GetWindowTab(inst.windowID, -frameID))
+    end
+    if inst.combatLogActive and not newIsCombatLog and CL_tab and CL_tab.Deactivate then
+        CL_tab.Deactivate(inst.windowID)
+        inst.combatLogActive = false
+    end
+
     inst.activeID = frameID
     inst.unread[frameID] = nil
     UpdateBadge(inst, target)
@@ -486,6 +505,11 @@ local function ActivateFrameID(inst, frameID, userInitiated)
         local t = TabManager.GetWindowTab and TabManager.GetWindowTab(inst.windowID, -frameID) or nil
         inst.activeCustomSig = CustomTabSignature(t)
         TabManager.SetActiveTab(inst.windowID, t)
+        -- Combat-log tab: embed the real ChatFrame2 into this window.
+        if newIsCombatLog and CL_tab and CL_tab.Activate then
+            CL_tab.Activate(inst.windowID)
+            inst.combatLogActive = true
+        end
         local Conv = ns.QUI.Chat.ConversationManager
         if Conv and Conv.ClearPreTarget then
             Conv.ClearPreTarget()
@@ -598,6 +622,20 @@ local function ShowTabContextMenu(inst, btn)
     -- MenuUtil.CreateContextMenu(owner, generator) —
     -- tests/framexml/Interface/AddOns/Blizzard_Menu/MenuUtil.lua:153.
     _G.MenuUtil.CreateContextMenu(btn, function(owner, rootDescription)
+        -- Combat-log tab: delegate filtering to Blizzard's combat-log config;
+        -- omit move/close (pinned to window 1).
+        if type(btn.frameID) == "number" and btn.frameID < 0 then
+            local TMcl = ns.QUI.Chat.TabManager
+            local clTab = TMcl and TMcl.GetWindowTab and TMcl.GetWindowTab(inst.windowID, -btn.frameID)
+            if TMcl and TMcl.IsCombatLogTab and TMcl.IsCombatLogTab(clTab) then
+                rootDescription:CreateButton("Combat Log Settings", function()
+                    if _G.ShowUIPanel and _G.ChatConfigFrame then
+                        _G.ShowUIPanel(_G.ChatConfigFrame)
+                    end
+                end)
+                return
+            end
+        end
         if type(btn.frameID) == "string" then
             rootDescription:CreateButton("Close conversation", function()
                 -- Click-time re-read: the button may have been pool-recycled
