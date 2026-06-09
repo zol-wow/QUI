@@ -11,8 +11,10 @@ function _G.InCombatLockdown() return false end
 function _G.GetChatWindowInfo() return "General" end
 _G.C_Timer = { After = function(_, callback) callback() end }
 
--- Sentinel font objects.
+-- Sentinel font objects. ChatFontNormal resolves to a real file so the disable
+-- flip can read its values for the SetFont-based stock restore.
 _G.ChatFontNormal = { _id = "ChatFontNormal" }
+function _G.ChatFontNormal:GetFont() return "Fonts\\ARIALN.TTF", 14, "" end
 _G.QUI_CustomChatFontObject = { _id = "QUI_CustomChatFontObject" }
 
 local function createFrame()
@@ -62,6 +64,7 @@ local function createFontString()
     local fs = { fontObject = _G.ChatFontNormal }
     function fs:SetFontObject(fo) self.fontObject = fo end
     function fs:GetFontObject() return self.fontObject end
+    function fs:SetFont(file, h, fl) self.font = { file, h, fl } end
     return fs
 end
 
@@ -71,6 +74,7 @@ local editBox = createFrame()
 editBox.fontObject = _G.ChatFontNormal
 function editBox:SetFontObject(fo) self.fontObject = fo end
 function editBox:GetFontObject() return self.fontObject end
+function editBox:SetFont(file, h, fl) self.font = { file, h, fl } end
 -- Channel prefix + suffix children (parentKeys per ChatFrameEditBox.xml).
 editBox.header = createFontString()
 editBox.headerSuffix = createFontString()
@@ -110,12 +114,15 @@ assert(editBox.header.fontObject == _G.QUI_CustomChatFontObject,
 assert(editBox.headerSuffix.fontObject == _G.QUI_CustomChatFontObject,
     "channel prefix suffix must adopt the QUI chat font")
 
--- 2) Live disable flip restores the stock font object on input AND header.
+-- 2) Live disable flip restores the stock chat font on input AND header. The
+--    restore uses SetFont (explicit ChatFontNormal values), NOT SetFontObject —
+--    re-applying a captured font object can self-cycle and stack-overflow the
+--    client (see chat_editbox_restore_safe_font_test.lua).
 EditBoxBasics.RemoveEditBoxStyle(chatFrame)
-assert(editBox.fontObject == _G.ChatFontNormal,
-    "RemoveEditBoxStyle must restore the stock font object")
-assert(editBox.header.fontObject == _G.ChatFontNormal,
-    "RemoveEditBoxStyle must restore the stock header font")
+assert(type(editBox.font) == "table" and editBox.font[1] == "Fonts\\ARIALN.TTF" and editBox.font[2] == 14,
+    "RemoveEditBoxStyle must SetFont the input to the stock ChatFontNormal values")
+assert(type(editBox.header.font) == "table" and editBox.header.font[1] == "Fonts\\ARIALN.TTF",
+    "RemoveEditBoxStyle must SetFont the header child to the stock font")
 
 -- 3) Re-enable re-applies the QUI font.
 EditBoxBasics.StyleEditBox(chatFrame)

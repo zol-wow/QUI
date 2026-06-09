@@ -1,10 +1,11 @@
 ## Interface: 120000, 120001, 120005, 120007
-## Title: |cFF30D1FFQUI Options Search|r
+## Title: |cFF30D1FFQUI|r Options Search
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## Notes: Load-on-demand settings search index for QUI (loaded on first search)
 ## Author: Zol
 ## Version: 4.0.0-beta30
 ## Category: User Interface
+## Group: QUI
 ## RequiredDeps: QUI, QUI_Options
 ## LoadOnDemand: 1
 

@@ -107,8 +107,8 @@ assert(TM.BuildFilter(nil) == nil, "nil tabData -> nil filter")
 assert(TM.BuildFilter({}) == nil, "empty tabData -> nil filter")
 
 -- SetActiveTab is window-scoped and drives Display.Rebuild for that window.
--- Even a nil tab produces a closure now (conversation exclusion), but with no
--- ConversationManager loaded it behaves as show-all.
+-- BuildTabFilter never returns nil (the activeFilters array must stay dense for
+-- ReapplyAll); a nil tab yields a show-all closure.
 TM.SetActiveTab(1, { groups = { GUILD = true }, invert = false })
 assert(rebuiltWindow == 1, "rebuild targeted window 1")
 assert(type(rebuiltWith) == "function", "rebuild called with filter fn")
@@ -119,27 +119,32 @@ TM.SetActiveTab(2, { groups = { SAY = true } })
 assert(rebuiltWindow == 2, "second window rebuild targeted window 2")
 assert(TM.GetActiveFilter(1) ~= TM.GetActiveFilter(2), "filters independent per window")
 TM.SetActiveTab(1, nil)
-assert(type(TM.GetActiveFilter(1)) == "function", "nil tab still yields exclusion closure")
+assert(type(TM.GetActiveFilter(1)) == "function", "nil tab still yields a show-all closure")
 assert(TM.GetActiveFilter(1)({ k = "SAY" }) == true, "nil-tab closure shows everything")
 
--- Conversation filter + exclusion
+-- Conversation filter: a conversation tab shows ONLY its own tagged entries.
 local cf = TM.BuildConversationFilter("W:somebody-realm")
 assert(cf({ w = "W:somebody-realm", k = "WHISPER" }) == true, "conversation filter matches key")
 assert(cf({ w = "W:other-realm", k = "WHISPER" }) == false, "other conversation blocked")
 assert(cf({ k = "WHISPER" }) == false, "untagged whisper blocked from conversation tab")
 
--- Exclusion: with a stub manager claiming the conversation is open, regular
--- tab filters drop its entries; closed conversations flow normally.
+-- Additive whisper tabs (reference parity): an open conversation does NOT strip
+-- its whispers from the regular saved tabs. A whisper from someone with an open
+-- conversation tab still shows in the main window's WHISPER-group tab AND in its
+-- dedicated conversation tab (the line is never hidden). Even with a manager
+-- reporting the conversation open, BuildTabFilter passes the entry through.
 local openKeys = { ["W:somebody-realm"] = true }
 ns.QUI.Chat.ConversationManager = { IsOpen = function(k) return openKeys[k] == true end }
 local wf = TM.BuildTabFilter({ groups = { WHISPER = true }, channels = {}, invert = false })
-assert(wf({ k = "WHISPER", w = "W:somebody-realm" }) == false, "open conversation excluded from regular tab")
-assert(wf({ k = "WHISPER", w = "W:other-realm" }) == true, "closed conversation passes")
+assert(wf({ k = "WHISPER", w = "W:somebody-realm" }) == true,
+    "open conversation's whisper STILL shows in the regular WHISPER tab (additive)")
+assert(wf({ k = "WHISPER", w = "W:other-realm" }) == true, "other conversation's whisper passes")
 assert(wf({ k = "WHISPER" }) == true, "untagged whisper passes")
+assert(wf({ k = "SAY" }) == false, "non-whisper still filtered by the tab's groups")
 local allf = TM.BuildTabFilter(nil)
 assert(allf({ k = "SAY" }) == true, "unconstrained tab filter shows non-whisper")
-assert(allf({ k = "WHISPER", w = "W:somebody-realm" }) == false,
-    "unconstrained tab filter still excludes open conversations")
+assert(allf({ k = "WHISPER", w = "W:somebody-realm" }) == true,
+    "unconstrained tab filter shows open-conversation whispers too (additive)")
 ns.QUI.Chat.ConversationManager = nil
 
 -- Group normalization: typeKey PARTY_LEADER matches a groups set listing PARTY

@@ -102,12 +102,18 @@ function Conv.EachForWindow(windowID, fn)
 end
 
 local function RefreshAfterChange()
+    -- Additive model (see TabManager.BuildTabFilter): opening/closing a
+    -- conversation only adds/removes its own tab button — it never changes what
+    -- the OTHER tabs show, so only the tab BAR needs rebuilding here.
+    --
+    -- Do NOT run a content ReapplyAll: this store subscriber runs BEFORE
+    -- display_layer's, so a Clear+rebuild here would render the just-appended
+    -- whisper that auto-created the tab, and display_layer's live append would
+    -- then render it a second time (double line). Closing an ACTIVE conversation
+    -- tab is handled inside TabUI.Rebuild, whose fallback re-activates a saved
+    -- tab and rebuilds that one window's content.
     local TabUI = ns.QUI.Chat.TabUI
     if TabUI and TabUI.Rebuild then TabUI.Rebuild() end
-    -- Conversation open/close moves lines between tabs (exclusion wrapper in
-    -- tab_manager) — re-run every window's active filter.
-    local TM = ns.QUI.Chat.TabManager
-    if TM and TM.ReapplyAll then TM.ReapplyAll() end
 end
 
 -- Idempotent. activate=true also selects the conversation tab (and thereby

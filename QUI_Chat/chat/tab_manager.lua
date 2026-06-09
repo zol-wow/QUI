@@ -127,28 +127,20 @@ function TabManager.EnsureDefaultChannelListed(name)
     TabManager.ReapplyAll()
 end
 
--- Conversation-exclusion wrapper: while a conversation tab for entry.w is
--- open ANYWHERE, that conversation's lines render only in its own tab.
--- ConversationManager is a runtime lookup (nil-safe before its file loads;
--- conversation state is session-only so this can never go stale across
--- /reload). entry.w is nil for non-whisper traffic — one field test.
-local function WrapWithConversationExclusion(baseFilter)
-    return function(entry)
-        if entry.w then
-            local Conv = ns.QUI.Chat.ConversationManager
-            if Conv and Conv.IsOpen and Conv.IsOpen(entry.w) then
-                return false
-            end
-        end
-        if not baseFilter then return true end
-        return baseFilter(entry)
-    end
-end
-
--- Saved-tab filter for display/unread use. Unlike BuildFilter this never
--- returns nil: even a no-constraint tab must exclude open conversations.
+-- Saved-tab filter for display/unread use. Whisper conversation tabs are
+-- ADDITIVE: opening a conversation tab for someone does NOT remove their
+-- whispers from the regular saved tabs. The line stays visible in the main
+-- window's WHISPER-group tab AND also appears in its dedicated conversation tab
+-- (BuildConversationFilter). An earlier exclusive model dropped the line from
+-- every other tab, so a whisper that auto-spawned a non-activated conversation
+-- tab rendered nowhere — the message appeared to vanish. The conversation tab is
+-- now purely an extra filtered view.
+--
+-- Unlike BuildFilter this never returns nil: the activeFilters array must stay
+-- dense for ReapplyAll's `for id = 1, #activeFilters` loop, so a no-constraint
+-- tab gets an explicit show-all closure.
 function TabManager.BuildTabFilter(tabData)
-    return WrapWithConversationExclusion(TabManager.BuildFilter(tabData))
+    return TabManager.BuildFilter(tabData) or function() return true end
 end
 
 -- A conversation tab shows exactly its conversation's tagged entries.

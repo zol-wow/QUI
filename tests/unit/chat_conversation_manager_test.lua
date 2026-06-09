@@ -69,7 +69,10 @@ assert(Conv.DeriveKey("BN_WHISPER", "Friend") == "BN:friend",
 local key = Conv.Open("WHISPER", "Somebody-Realm", 2, false)
 assert(key == "W:somebody-realm" and Conv.IsOpen(key), "open registers")
 assert(Conv.Get(key).windowID == 2 and Conv.Get(key).name == "Somebody", "window + short name")
-assert(rebuilt == 1 and reapplied == 1, "open refreshed tabs + filters")
+-- Additive model: opening a conversation only rebuilds the tab BAR (adds the
+-- button); it must NOT trigger a content ReapplyAll (that would double-render the
+-- just-appended whisper, since this subscriber runs before display_layer's).
+assert(rebuilt == 1 and reapplied == 0, "open rebuilds the tab bar only, no content reapply")
 assert(flashed and flashed.key == key, "background open flashes the tab")
 flashed = nil
 assert(Conv.Open("WHISPER", "SOMEBODY-Realm", 1, false) == key, "case-insensitive idempotent")

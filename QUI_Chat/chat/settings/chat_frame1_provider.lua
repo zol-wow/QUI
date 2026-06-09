@@ -276,12 +276,29 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             return container
         end
 
-        -- Master enable toggle. The flip is live: enabling activates the QUI
+        -- Master enable toggle. The flip is live (enabling activates the QUI
         -- display and suppresses the stock frames; disabling hands everything
-        -- back without a reload.
+        -- back), but a UI reload is offered so the change takes full effect and
+        -- residues clear — parity with the Module Addons tile, the other surface
+        -- that toggles this module (moduleAddon_QUI_Chat), which always prompts.
+        local function ShowChatModuleReloadPrompt()
+            local Q = _G.QUI
+            local G = Q and Q.GUI
+            if G and type(G.ShowConfirmation) == "function" then
+                G:ShowConfirmation({
+                    title      = "Reload UI?",
+                    message    = "This change takes full effect after a reload.",
+                    acceptText = "Reload",
+                    cancelText = "Later",
+                    onAccept   = function() if Q and Q.SafeReload then Q:SafeReload() end end,
+                })
+            end
+        end
         CreateChatSection("chatModule", "Chat Module", FORM_ROW + 8, function(card)
-            local w = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat, Refresh,
-                { description = "QUI's chat takeover. Enabled: chat is captured and rendered in QUI's own display. Disabled: QUI leaves chat completely stock." })
+            local w = GUI:CreateFormCheckbox(card.frame, nil, "enabled", chat, function()
+                Refresh()
+                ShowChatModuleReloadPrompt()
+            end, { description = "QUI's chat takeover. Enabled: chat is captured and rendered in QUI's own display. Disabled: QUI leaves chat completely stock." })
             card.AddRow(row(card.frame, "Enable Chat Module", w))
         end)
 

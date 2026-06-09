@@ -150,6 +150,34 @@ local function ApplyEditBoxFont(editBox)
     end
 end
 
+-- Restore a chat-input FontInstance (the editbox or a channel-prefix child) to
+-- the stock chat font.
+--
+-- We DELIBERATELY do not re-apply a captured GetFontObject() snapshot. The
+-- editbox's pre-QUI font object — handed back by GetFontObject() and reported
+-- "Font <UnknownFile:0>" (a runtime object with no XML source) — RESOLVES to a
+-- real file (ARIALN) yet its font-object derivation chain is self-referential.
+-- Re-applying it via SetFontObject makes the engine walk that cycle until the C
+-- stack overflows (ERROR #132, uncatchable by pcall, and indistinguishable by
+-- any property test since GetFont returns a valid path). SetFont(file,height,
+-- flags) writes the physical font with NO object-derivation link, so the cycle
+-- is structurally impossible — it never reaches SetFontObject's graph walk.
+-- Values come from ChatFontNormal (what the ChatFrameEditBox template inherits);
+-- a guarded fallback covers a garbage GetFont (height can come back negative,
+-- which makes SetFont throw "Invalid fontHeight").
+local function RestoreStockEditBoxFont(fontInstance)
+    if not (fontInstance and fontInstance.SetFont) then return end
+    local file, height, flags = "Fonts\\ARIALN.TTF", 14, ""
+    local stock = _G.ChatFontNormal
+    if stock and stock.GetFont then
+        local ok, f, h, fl = pcall(stock.GetFont, stock)
+        if ok and type(f) == "string" and f ~= "" and type(h) == "number" and h > 0 then
+            file, height, flags = f, h, fl or ""
+        end
+    end
+    pcall(fontInstance.SetFont, fontInstance, file, height, flags)
+end
+
 ---------------------------------------------------------------------------
 -- Style edit box (chat input area)
 ---------------------------------------------------------------------------
@@ -189,18 +217,10 @@ local function StyleEditBox(chatFrame)
     if not ebState.styled then
         ebState.styled = true
 
-        -- Remember the stock font objects so a live disable flip restores them
-        -- (the input plus each channel-prefix child).
-        if editBox.GetFontObject then
-            ebState.origFontObject = editBox:GetFontObject()
-        end
-        ebState.origHeaderFonts = {}
-        for _, key in ipairs(EDITBOX_HEADER_KEYS) do
-            local fs = editBox[key]
-            if fs and fs.GetFontObject then
-                ebState.origHeaderFonts[key] = fs:GetFontObject()
-            end
-        end
+        -- The stock font is restored via RestoreStockEditBoxFont (SetFont with
+        -- ChatFontNormal's values) on the disable flip — we do NOT snapshot
+        -- editBox:GetFontObject() here: that object can be self-referential and
+        -- re-applying it stack-overflows the client (see RemoveEditBoxStyle).
 
         -- Hide child FRAMES by global name (these are frames, not textures)
         local childSuffixes = {
@@ -387,18 +407,13 @@ function RemoveEditBoxStyle(chatFrame)
     local ebState = I.editBoxState[editBox]
     if ebState and ebState.styled then
         ebState.styled = false
-        -- Hand the QUI chat font back to the stock font objects (input + prefix).
-        local stockFont = ebState.origFontObject or _G.ChatFontNormal
-        if editBox.SetFontObject and stockFont then
-            editBox:SetFontObject(stockFont)
-        end
-        local origHeaderFonts = ebState.origHeaderFonts
+        -- Hand the QUI chat font back to the stock chat font, on the input AND
+        -- each channel-prefix child. RestoreStockEditBoxFont uses SetFont (never
+        -- SetFontObject) so a captured self-referential font object can't
+        -- stack-overflow the client — see its comment.
+        RestoreStockEditBoxFont(editBox)
         for _, key in ipairs(EDITBOX_HEADER_KEYS) do
-            local fs = editBox[key]
-            local stockHeader = (origHeaderFonts and origHeaderFonts[key]) or _G.ChatFontNormal
-            if fs and fs.SetFontObject and stockHeader then
-                fs:SetFontObject(stockHeader)
-            end
+            RestoreStockEditBoxFont(editBox[key])
         end
         local childSuffixes = {
             "Left", "Mid", "Right",
