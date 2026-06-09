@@ -166,20 +166,30 @@ end
 -- roster sync, often BEFORE this frame catches a GUILD_MOTD event (Blizzard's
 -- own chat frame hits the same race — vendored ChatFrameOverrides.lua:131
 -- "GMOTD may have arrived before this frame registered for the event"). Blizzard
--- recovers by pulling C_GuildInfo.GetMOTD() once guild data lands; without that
--- pull the login MOTD is simply lost. Route the pulled value through the
--- GUILD_MOTD handler so it shares the seenMotd latch — the event path and the
--- pull never double-post, and repeated guild-data events are cheap no-ops once
--- a non-empty MOTD has latched. GetMOTD HasRestrictions: the return may be a
--- secret value, so it flows opaquely into the handler, which probes before any
--- operator (pcall is the house guard for restricted getters).
+-- recovers by re-reading the MOTD once guild data lands; without that pull the
+-- login MOTD is simply lost. Route the pulled value through the GUILD_MOTD
+-- handler so it shares the seenMotd latch — the event path and the pull never
+-- double-post, and repeated guild-data events are cheap no-ops once a non-empty
+-- MOTD has latched.
+--
+-- Read the MOTD from the guild club's broadcast field (C_Club), NOT
+-- C_GuildInfo.GetMOTD: GetMOTD is HasRestrictions=true and is blocked as a
+-- protected function (ADDON_ACTION_BLOCKED) when a guild-data event lands inside
+-- an in-combat secret-value dispatch — a pcall cannot suppress that block.
+-- C_Club.GetClubInfo carries no such restriction; it only flags a possibly
+-- secret return during chat-messaging lockdown, so info.broadcast flows opaquely
+-- into the handler, which probes IsSecret before any operator. GetGuildClubId
+-- and GetClubInfo are both Nilable (clubs may still be initializing), so guard
+-- each return.
 local function MaybePullGMOTD()
-    local CGI = _G.C_GuildInfo
-    if not (CGI and CGI.GetMOTD) then return end
     if _G.IsInGuild and not _G.IsInGuild() then return end
-    local ok, motd = pcall(CGI.GetMOTD)
-    if not ok then return end
-    SYSTEM_EVENTS.GUILD_MOTD("GUILD_MOTD", motd)
+    local CC = _G.C_Club
+    if not (CC and CC.GetGuildClubId and CC.GetClubInfo) then return end
+    local guildClubId = CC.GetGuildClubId()
+    if not guildClubId then return end
+    local info = CC.GetClubInfo(guildClubId)
+    if not info then return end
+    SYSTEM_EVENTS.GUILD_MOTD("GUILD_MOTD", info.broadcast)
 end
 
 SYSTEM_EVENTS.GUILD_ROSTER_UPDATE = function() MaybePullGMOTD() end

@@ -120,7 +120,14 @@ function CDMIconVisibilityPolicy.Create(callbacks)
     end
 
     function controller:RequestBuffIconLayoutRefresh()
-        controller:WakeBuffIconContainer()
+        -- WakeBuffIconContainer calls container:Show(). When this refresh is
+        -- requested synchronously inside an in-combat cooldown/aura dispatch (a
+        -- secure-execution context), that Show is a blocked protected action
+        -- (ADDON_ACTION_BLOCKED on QUI_CDMBuffIconContainer:Show). Never wake
+        -- here synchronously -- defer it one frame (below) so it runs outside
+        -- the secure dispatch. The container is a plain UIParent child, so a
+        -- deferred Show is safe even mid-combat. Mirrors the secure-context-vs-
+        -- combat defer pattern used elsewhere in QUI.
         if controller.buffIconLayoutRefreshPending then return end
         controller.buffIconLayoutRefreshPending = true
         local schedule = callbacks.scheduleAfter

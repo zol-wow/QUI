@@ -606,10 +606,22 @@ assert(motd.k == "GUILD" and motd.e == "GUILD_MOTD", "gmotd metadata")
 
 -- GMOTD login pull: at login the MOTD often lands before the capture frame
 -- catches the GUILD_MOTD event (Blizzard's own chat frame hits the same race),
--- so capture also pulls C_GuildInfo.GetMOTD() on guild-data events. seenMotd is
--- shared with the event path, so the pull and the event never double-post.
+-- so capture also pulls the guild MOTD on guild-data events. The pull reads the
+-- guild club's broadcast (C_Club.GetClubInfo().broadcast) -- an UNRESTRICTED
+-- API. C_GuildInfo.GetMOTD is HasRestrictions=true and is blocked as a
+-- protected function (ADDON_ACTION_BLOCKED) when a guild-data event lands inside
+-- an in-combat secret-value dispatch -- a pcall cannot suppress that block --
+-- so the pull must never touch it. seenMotd is shared with the event path, so
+-- the pull and the event never double-post.
 _G.IsInGuild = function() return true end
-_G.C_GuildInfo = { GetMOTD = function() return "Welcome home" end }
+_G.C_GuildInfo = { GetMOTD = function() error("restricted C_GuildInfo.GetMOTD must not be called") end }
+_G.C_Club = {
+    GetGuildClubId = function() return 42 end,
+    GetClubInfo = function(id)
+        assert(id == 42, "GetClubInfo called with the resolved guild club id, got " .. tostring(id))
+        return { broadcast = "Welcome home" }
+    end,
+}
 Store.Clear()
 fire("GUILD_ROSTER_UPDATE")
 assert(Store.Size() == 1, "GMOTD pulled on roster update, got " .. Store.Size())
@@ -626,9 +638,15 @@ _G.IsInGuild = function() return false end
 Store.Clear()
 fire("GUILD_ROSTER_UPDATE")
 assert(Store.Size() == 0, "no MOTD pull when not in a guild, got " .. Store.Size())
--- PLAYER_ENTERING_WORLD also pulls (the /reload path, guild data already cached).
+-- Guild club id not resolved yet (clubs still initializing): no pull, no crash.
 _G.IsInGuild = function() return true end
-_G.C_GuildInfo = { GetMOTD = function() return "Reloaded greeting" end }
+_G.C_Club.GetGuildClubId = function() return nil end
+Store.Clear()
+fire("GUILD_ROSTER_UPDATE")
+assert(Store.Size() == 0, "no MOTD pull before the guild club id resolves, got " .. Store.Size())
+-- PLAYER_ENTERING_WORLD also pulls (the /reload path, guild data already cached).
+_G.C_Club.GetGuildClubId = function() return 42 end
+_G.C_Club.GetClubInfo = function() return { broadcast = "Reloaded greeting" } end
 Store.Clear()
 fire("PLAYER_ENTERING_WORLD")
 assert(Store.Size() == 1, "GMOTD pulled on PLAYER_ENTERING_WORLD, got " .. Store.Size())
