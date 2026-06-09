@@ -16,6 +16,14 @@ local function makeFrame()
     function frame:Show() self.shown = true end
     function frame:Hide() self.shown = false end
     function frame:SetAllPoints() self.allPoints = true end
+    function frame:ClearAllPoints() self.points = nil end
+    function frame:SetPoint(point, relativeTo, relativePoint, x, y)
+        self.points = self.points or {}
+        self.points[#self.points + 1] = {
+            point = point, relativeTo = relativeTo,
+            relativePoint = relativePoint, x = x, y = y,
+        }
+    end
     function frame:EnableMouse() end
     function frame:SetFrameLevel(level) self.frameLevel = level end
     function frame:SetFrameStrata(strata) self.frameStrata = strata end
@@ -109,5 +117,21 @@ assert(sawItemRefClose,
 for _, btn in ipairs(skinnedCloseButtons) do
     assert(btn ~= nil, "SkinCloseButton must never be called with a nil button")
 end
+
+-- The stock close button is anchored TOPRIGHT +2,+2 (ItemRef.xml) and so
+-- overhangs the tooltip corner; the solid QUI box (unlike the padded red-X
+-- atlas) would poke out above and to the right of the chrome. StyleTooltip must
+-- re-anchor it to TOPRIGHT of the tooltip with a non-positive offset so the box
+-- tucks inside the corner instead.
+local closeButton = _G.ItemRefTooltip.CloseButton
+assert(closeButton.points and #closeButton.points > 0,
+    "ItemRefTooltip.CloseButton must be re-anchored after skinning")
+local anchor = closeButton.points[#closeButton.points]
+assert(anchor.point == "TOPRIGHT" and anchor.relativePoint == "TOPRIGHT",
+    "close button must be re-anchored TOPRIGHT-to-TOPRIGHT of the tooltip")
+assert(anchor.relativeTo == _G.ItemRefTooltip,
+    "close button must be re-anchored relative to the tooltip itself")
+assert(anchor.x <= 0 and anchor.y <= 0,
+    "close button offset must be non-positive (tucked inside the corner, not overhanging)")
 
 print("OK: tooltip_itemref_close_button_skinned_test")

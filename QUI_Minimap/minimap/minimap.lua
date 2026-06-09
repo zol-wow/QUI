@@ -4020,6 +4020,28 @@ function Minimap_Module:Refresh()
     FlushMinimapDebugStats(false)
 end
 
+-- Idempotent one-time init. The minimap eager-loads from the core's OnEnable, so
+-- its OWN ADDON_LOADED is NOT delivered to the handler below (nested-load
+-- context) — gating init on `arg1 == ADDON_NAME` would leave the minimap dead.
+-- ns.WhenLoggedIn drives init instead (see below); the ADDON_LOADED branch is a
+-- self-healing fallback for the clean-stack paths (live toggle, headless tests).
+-- The _initialized guard makes a double trigger a no-op. Defined as a method so
+-- it adds no new chunk-level upvalue (Lua 5.1 caps those at 60).
+function Minimap_Module:InitializeOnce()
+    if self._initialized then return end
+    self._initialized = true
+    self:Initialize()
+    -- LOD catch-up: these Blizzard LoD addons may already be loaded.
+    local settings = GetSettings()
+    if settings then
+        if C_AddOns.IsAddOnLoaded("Blizzard_QueueStatusFrame") then
+            UpdateDungeonEyePosition()
+        end
+        if C_AddOns.IsAddOnLoaded("Blizzard_HybridMinimap") then
+            SetMinimapShape(settings.shape)
+        end
+    end
+end
 
 local function RefreshMinimapButtonsAfterTransition()
     local settings = GetSettings()
@@ -4059,22 +4081,22 @@ eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("PLAYER_DIFFICULTY_CHANGED")
 eventFrame:RegisterEvent("UPDATE_INSTANCE_INFO")
+-- The minimap now eager-loads on the loading screen, so Initialize runs before
+-- the UI scale / UIParent dimensions are final. EDIT_MODE_LAYOUTS_UPDATED is the
+-- documented signal (EditModeManagerDocumentation.lua) that EditMode has applied
+-- its layout — the point at which those values are settled. Re-apply on it (and
+-- on the first PLAYER_ENTERING_WORLD, in case it fires first) so the minimap's
+-- size/anchor land correct without any post-login pop.
+eventFrame:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then
-            Minimap_Module:Initialize()
-            -- LOD catch-up: these Blizzard LoD addons may have loaded before
-            -- this module did (the watchers below would have missed them).
-            local settings = GetSettings()
-            if settings then
-                if C_AddOns.IsAddOnLoaded("Blizzard_QueueStatusFrame") then
-                    UpdateDungeonEyePosition()
-                end
-                if C_AddOns.IsAddOnLoaded("Blizzard_HybridMinimap") then
-                    SetMinimapShape(settings.shape)
-                end
-            end
+            -- Self-healing fallback for clean-stack loads (live toggle, headless
+            -- tests). The eager-login path runs InitializeOnce via
+            -- ns.WhenLoggedIn instead — this self-ADDON_LOADED is not delivered
+            -- in that nested-load context. Idempotent.
+            Minimap_Module:InitializeOnce()
         elseif arg1 == "Blizzard_QueueStatusFrame" then
             -- LoD: install hooks once the queue button actually exists.
             local settings = GetSettings()
@@ -4104,8 +4126,42 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         or event == "PLAYER_DIFFICULTY_CHANGED"
         or event == "UPDATE_INSTANCE_INFO" then
         RefreshMinimapButtonsAfterTransition()
+        -- First time the world is up after the eager (loading-screen) init,
+        -- re-apply the full minimap once: the UI scale / UIParent dimensions
+        -- the loading-screen Initialize ran against are settled now. Deferred a
+        -- frame; Refresh() self-guards combat + external HUD.
+        if not Minimap_Module._settleReapplyDone then
+            Minimap_Module._settleReapplyDone = true
+            C_Timer.After(0, function()
+                if Minimap_Module.Refresh then Minimap_Module:Refresh() end
+            end)
+        end
+    elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
+        -- EditMode finished applying a layout (the documented settle signal).
+        -- Re-assert QUI's minimap so our size/anchor win over EditMode's pass,
+        -- and cover the first-settle case if this fires before PLAYER_ENTERING_
+        -- WORLD. The payload is ignored, so no secret-value handling is needed.
+        Minimap_Module._settleReapplyDone = true
+        C_Timer.After(0, function()
+            if Minimap_Module.Refresh then Minimap_Module:Refresh() end
+        end)
     end
 end)
+
+-- Drive init from login. ns.WhenLoggedIn fires at PLAYER_LOGIN (or immediately
+-- if already logged in, e.g. a live module toggle). The one-frame defer lets
+-- every QUI_Minimap toc sibling finish loading first — the integrated datatext
+-- panel reads QUICore.Datatexts, populated by the later-loaded datatexts.lua, so
+-- running Initialize mid-load would skip it. At login PLAYER_LOGIN is still under
+-- the loading screen, so this lands before the world is visible — no unskinned-
+-- minimap pop.
+-- ns.WhenLoggedIn is nil only in the headless test harness, where the
+-- ADDON_LOADED fallback above drives init instead.
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(function()
+        C_Timer.After(0, function() Minimap_Module:InitializeOnce() end)
+    end)
+end
 
 -- Calendar pending invites handling
 local calendarFrame = CreateFrame("Frame")

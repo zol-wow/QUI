@@ -2,6 +2,7 @@ local addonName, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
 local SkinBase = ns.SkinBase
+local UIKit = ns.UIKit
 
 local GetCore = ns.Helpers.GetCore
 
@@ -245,6 +246,45 @@ local function SkinInspectFrameTabs()
 end
 
 ---------------------------------------------------------------------------
+-- Skin the close button + paper-doll action buttons (were unskinned: stock
+-- red close X, plain View/Talents buttons showed through the chrome).
+--
+-- InspectFrame inherits ButtonFrameTemplate, so its close button is
+-- InspectFrame.CloseButton (UIPanelCloseButtonDefaultAnchors). The two
+-- paper-doll actions are UIPanelButtonTemplate buttons:
+--   InspectPaperDollFrame.ViewButton            ("View in Dressing Room")
+--   InspectPaperDollItemsFrame.InspectTalents   ("Talents")
+-- Route the close button through SkinChromeCloseButton (matches the character
+-- frame; its 2px border inset keeps the box from overhanging the corner) and
+-- the action buttons through the shared UIPanelButton skinner. Every helper is
+-- idempotent (IsStyled / Hooked guards), so re-running on each show is cheap.
+---------------------------------------------------------------------------
+local function SkinInspectButtons()
+    if not SkinBase then return end
+
+    if InspectFrame and InspectFrame.CloseButton and SkinBase.SkinChromeCloseButton then
+        SkinBase.SkinChromeCloseButton(InspectFrame.CloseButton, {
+            prefix = "inspectFrame",
+            stateKey = "inspectClose",
+            label = "X",
+            fontSize = 11,
+            fontFlags = "OUTLINE",
+            insetPixels = 2,
+        })
+    end
+
+    if SkinBase.SkinButton then
+        local paperDoll = _G.InspectPaperDollFrame
+        local viewButton = paperDoll and paperDoll.ViewButton
+        if viewButton then SkinBase.SkinButton(viewButton) end
+
+        local itemsFrame = _G.InspectPaperDollItemsFrame
+        local talentsButton = itemsFrame and itemsFrame.InspectTalents
+        if talentsButton then SkinBase.SkinButton(talentsButton) end
+    end
+end
+
+---------------------------------------------------------------------------
 -- Main skinning setup
 -- Note: OnShow hook is handled by qui_character.lua which calls SetExtended()
 -- This avoids duplicate hooks and ensures proper coordination with layout code
@@ -256,6 +296,7 @@ local function SetupInspectFrameSkinning()
     SkinBase.SkinFrameText(InspectFrame, { recurse = true })
     CreateOrUpdateBackground()
     SkinInspectFrameTabs()
+    SkinInspectButtons()
 
     -- Position backdrop on every show, independent of the overlay module.
     -- Previously only SetInspectExtendedMode / SetInspectNormalMode (in the
@@ -265,6 +306,7 @@ local function SetupInspectFrameSkinning()
     InspectFrame:HookScript("OnShow", function()
         SetInspectFrameBgExtended(IsInspectOverlaysEnabled())
         SkinInspectFrameTabs()
+        SkinInspectButtons()
     end)
 
     -- First-show race: if InspectFrame is already shown when this runs, the
@@ -272,6 +314,7 @@ local function SetupInspectFrameSkinning()
     if InspectFrame:IsShown() then
         SetInspectFrameBgExtended(IsInspectOverlaysEnabled())
         SkinInspectFrameTabs()
+        SkinInspectButtons()
     end
 end
 
@@ -294,6 +337,28 @@ local function RefreshInspectFrameColors()
 end
 
 ---------------------------------------------------------------------------
+-- Rebuild pixel borders after the inspect panel scale changes.
+--
+-- The "Panel Scale" slider calls InspectFrame:SetScale(), which does NOT fire
+-- the global UI scale-refresh event. QUI's 1px borders are computed from each
+-- frame's EFFECTIVE scale, so without a rebuild the customBg border and the
+-- tab insets stay sized for the old scale and render wrong (missing / blurred /
+-- sub-pixel). Re-assert the backdrop (ApplyPixelBackdrop recomputes the border
+-- at the new scale) and queue a pixel-border rebuild so every registered border
+-- (tab insets, etc.) re-snaps too.
+---------------------------------------------------------------------------
+local function RefreshInspectFrameScale()
+    if not IsSkinningEnabled() then return end
+    if not InspectFrame then return end
+
+    SetInspectFrameBgExtended(IsInspectOverlaysEnabled())
+    SkinInspectFrameTabs()
+    if UIKit and UIKit.QueueScaleRefresh then
+        UIKit.QueueScaleRefresh(2)
+    end
+end
+
+---------------------------------------------------------------------------
 -- CONSOLIDATED API TABLE
 ---------------------------------------------------------------------------
 _G.QUI_InspectFrameSkinning = {
@@ -304,6 +369,7 @@ _G.QUI_InspectFrameSkinning = {
     IsEnabled = IsSkinningEnabled,
     SetExtended = SetInspectFrameBgExtended,
     Refresh = RefreshInspectFrameColors,
+    RefreshScale = RefreshInspectFrameScale,
 }
 
 -- Legacy compatibility alias

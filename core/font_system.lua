@@ -215,32 +215,66 @@ function QUICore:ApplyGlobalFontToGameMenu()
     ApplyOrRestoreGlobalFontForFrame(GameMenuFrame, GetGlobalFontPath(), shouldApply)
 end
 
-local function ApplyGlobalFontToChatFrames(fontPath, shouldApply)
+-- SetFontObject re-bases a frame's inherited layout props. On a chat
+-- ScrollingMessageFrame a freshly built FontFamily carries no justification,
+-- so the frame falls back to the WoW default (CENTER) and renders every line
+-- centered once the Blizzard frame is visible again (e.g. the QUI chat takeover
+-- is off). Blizzard's own ChatFrameMixin:OnLoad sets the font object THEN
+-- re-asserts SetJustifyH("LEFT") for exactly this reason — mirror it here.
+-- justifyH/justifyV come from the capture-time snapshot (the frame's real
+-- justification before any QUI font was applied); GetJustifyH/V are never secret
+-- (JustifyHorizontal/Vertical enums), so the getter result feeds the setter.
+local function SetChatFontObject(chatFrame, fontObject, justifyH, justifyV)
+    if not (chatFrame and chatFrame.SetFontObject and fontObject) then return false end
+    if not pcall(chatFrame.SetFontObject, chatFrame, fontObject) then return false end
+    if justifyH and chatFrame.SetJustifyH then pcall(chatFrame.SetJustifyH, chatFrame, justifyH) end
+    if justifyV and chatFrame.SetJustifyV then pcall(chatFrame.SetJustifyV, chatFrame, justifyV) end
+    return true
+end
+
+-- Snapshot a chat frame's pristine font + justification exactly once, before
+-- any QUI font is applied, so both the SetFontObject re-base above and the
+-- flip-back restore can put the original justification back.
+local function CaptureOriginalChatFont(chatFrame, currentFont, flags)
+    local snap = originalChatFonts[chatFrame]
+    if snap then return snap end
+    snap = {
+        font = currentFont,
+        flags = flags,
+        object = chatFrame.GetFontObject and chatFrame:GetFontObject(),
+        justifyH = chatFrame.GetJustifyH and chatFrame:GetJustifyH(),
+        justifyV = chatFrame.GetJustifyV and chatFrame:GetJustifyV(),
+    }
+    originalChatFonts[chatFrame] = snap
+    return snap
+end
+
+function QUICore:ApplyGlobalFontToChatFrames(fontPath, shouldApply)
     for i = 1, (NUM_CHAT_WINDOWS or 0) do
         local chatFrame = _G["ChatFrame" .. i]
         if chatFrame and chatFrame.GetFont and chatFrame.SetFont then
             local currentFont, size, flags = chatFrame:GetFont()
             if size then
                 if shouldApply then
-                    if not originalChatFonts[chatFrame] then
-                        local originalObject = chatFrame.GetFontObject and chatFrame:GetFontObject()
-                        originalChatFonts[chatFrame] = { font = currentFont, flags = flags, object = originalObject }
-                    end
+                    local snap = CaptureOriginalChatFont(chatFrame, currentFont, flags)
                     if currentFont ~= fontPath then
                         local family = Helpers and Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(fontPath, size, flags or "")
-                        if family and chatFrame.SetFontObject then
-                            chatFrame:SetFontObject(family)
-                        else
+                        if not SetChatFontObject(chatFrame, family, snap.justifyH, snap.justifyV) then
                             chatFrame:SetFont(fontPath, size, flags or "")
                         end
                     end
                 else
                     local original = originalChatFonts[chatFrame]
                     if original and original.object and chatFrame.SetFontObject then
-                        pcall(chatFrame.SetFontObject, chatFrame, original.object)
+                        SetChatFontObject(chatFrame, original.object, original.justifyH, original.justifyV)
                         originalChatFonts[chatFrame] = nil
                     elseif original and original.font then
                         chatFrame:SetFont(original.font, size, flags or original.flags or "")
+                        -- SetFont leaves justify alone, but a prior SetFontObject
+                        -- may have re-based it — restore the captured justification.
+                        if original.justifyH and chatFrame.SetJustifyH then
+                            pcall(chatFrame.SetJustifyH, chatFrame, original.justifyH)
+                        end
                         originalChatFonts[chatFrame] = nil
                     end
                 end
@@ -314,15 +348,10 @@ function QUICore:ApplyGlobalFont()
                     if chatFrame and type(chatFrame.GetFont) == "function" and type(chatFrame.SetFont) == "function" then
                         -- Apply global font directly to ScrollingMessageFrame (not just children)
                         local currentFont, size, flags = chatFrame:GetFont()
-                        if not originalChatFonts[chatFrame] then
-                            local originalObject = chatFrame.GetFontObject and chatFrame:GetFontObject()
-                            originalChatFonts[chatFrame] = { font = currentFont, flags = flags, object = originalObject }
-                        end
+                        local snap = CaptureOriginalChatFont(chatFrame, currentFont, flags)
                         local targetSize = fontSize or size or 14
                         local family = Helpers and Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(fp, targetSize, flags or "")
-                        if family and chatFrame.SetFontObject then
-                            chatFrame:SetFontObject(family)
-                        else
+                        if not SetChatFontObject(chatFrame, family, snap.justifyH, snap.justifyV) then
                             chatFrame:SetFont(fp, targetSize, flags or "")
                         end
                     end
@@ -339,7 +368,7 @@ function QUICore:ApplyGlobalFont()
             if not IsGlobalFontEnabled() then return end
             C_Timer.After(0.05, function()
                 local fp = GetGlobalFontPath()
-                ApplyGlobalFontToChatFrames(fp, true)
+                QUICore:ApplyGlobalFontToChatFrames(fp, true)
             end)
         end)
     end
@@ -348,7 +377,7 @@ function QUICore:ApplyGlobalFont()
     self:ApplyGlobalFontToGameMenu()
 
     -- Apply to existing chat frames (SetFont on the frame itself for new message persistence)
-    ApplyGlobalFontToChatFrames(fontPath, shouldApply)
+    self:ApplyGlobalFontToChatFrames(fontPath, shouldApply)
 
     -- Tooltip fonts are applied per-instance by skinning/system/tooltips.lua.
     -- Recursive application here would taint UIWidget child FontStrings.

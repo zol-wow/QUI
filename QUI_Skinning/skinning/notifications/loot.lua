@@ -895,7 +895,17 @@ local function SkinGroupLootHistoryFrame()
     -- the canonical helper that hides all 5 Blizzard X layers and stamps the QUI
     -- "×" — a SetVertexColor dim alone left the red X visible.
     if HistoryFrame.ClosePanelButton then
-        SkinBase.SkinCloseButton(HistoryFrame.ClosePanelButton)
+        local closeButton = HistoryFrame.ClosePanelButton
+        SkinBase.SkinCloseButton(closeButton)
+        -- UIPanelCloseButtonDefaultAnchors anchors the button TOPRIGHT +1,0, so
+        -- it overhangs the frame corner. The stock red-X atlas hid that with
+        -- transparent padding, but the solid QUI box pokes out past the skinned
+        -- chrome. Re-anchor it to tuck just inside the corner (same fix as the
+        -- ItemRefTooltip close button).
+        if closeButton.ClearAllPoints and closeButton.SetPoint then
+            closeButton:ClearAllPoints()
+            closeButton:SetPoint("TOPRIGHT", HistoryFrame, "TOPRIGHT", -2, -2)
+        end
     end
 
     -- Style the resize button

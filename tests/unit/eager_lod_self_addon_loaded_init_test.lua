@@ -3,17 +3,20 @@
 --
 -- Regression guard for the "Eager-LOD self-ADDON_LOADED init is DEAD" class.
 --
--- These modules live in QUI_QoL, which the core eager-LoadAddOn's from OnEnable.
--- A module's own ADDON_LOADED self-event is NOT delivered to a handler it
--- registers during that load, so any init gated on `arg == ADDON_NAME` never
--- runs (in-game report: combat timer / brez counter / crosshair / reticle etc.
--- "enabled but never appear in an encounter"). Init must instead run via
--- ns.WhenLoggedIn (fires immediately for a post-login LOD load).
+-- These modules live in eager-loaded LOD sub-addons (QUI_QoL, QUI_Minimap),
+-- which the core eager-LoadAddOn's from OnEnable. A module's own ADDON_LOADED
+-- self-event is NOT delivered to a handler it registers during that load, so any
+-- init gated on `arg == ADDON_NAME` never runs (in-game report: combat timer /
+-- brez counter / crosshair / reticle etc. "enabled but never appear in an
+-- encounter"; the minimap would simply never skin/anchor). Init must instead run
+-- via ns.WhenLoggedIn (fires immediately for a post-login LOD load).
 --
 -- This guards the files that were converted away from the dead pattern. Each
 -- MUST install its init via ns.WhenLoggedIn and MUST NOT gate init on its own
--- ADDON_LOADED ("~= ADDON_NAME"). The behavioral counterpart for the combat
--- timer is combattimer_login_init_test.lua.
+-- ADDON_LOADED ("~= ADDON_NAME"). QUI_Minimap keeps a positive `== ADDON_NAME`
+-- branch as a clean-stack fallback (live toggle / tests), which is allowed — the
+-- guard only forbids the dead `~= ADDON_NAME` gating. The behavioral counterpart
+-- for the combat timer is combattimer_login_init_test.lua.
 
 local files = {
     "QUI_QoL/qol/combattimer.lua",
@@ -22,6 +25,7 @@ local files = {
     "QUI_QoL/qol/actiontracker.lua",
     "QUI_QoL/qol/crosshair.lua",
     "QUI_QoL/qol/reticle.lua",
+    "QUI_Minimap/minimap/minimap.lua",
 }
 
 local function read(path)

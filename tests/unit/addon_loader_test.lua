@@ -99,11 +99,11 @@ do
         "1st legacyFlag entry must be QUI_Chat, got " .. tostring(legacyFlagFolders[1]))
     assert(legacyFlagFolders[2] == "QUI_GroupFrames",
         "2nd legacyFlag entry must be QUI_GroupFrames, got " .. tostring(legacyFlagFolders[2]))
-    -- lateLoad: exactly QUI_Minimap (needs post-login / settled EditMode).
-    assert(#lateLoadFolders == 1,
-        "exactly 1 lateLoad entry, got " .. #lateLoadFolders)
-    assert(lateLoadFolders[1] == "QUI_Minimap",
-        "lateLoad entry must be QUI_Minimap, got " .. tostring(lateLoadFolders[1]))
+    -- lateLoad: none today. QUI_Minimap now eager-loads (skinned/anchored
+    -- before the first frame, re-applying after EditMode settles), so no entry
+    -- is flagged lateLoad. The mechanism itself is retained for future use.
+    assert(#lateLoadFolders == 0,
+        "no lateLoad entries expected, got " .. #lateLoadFolders)
 end
 
 -- 2) LOD stagger: all 4 LOD modules load when addon-enabled, regardless of
@@ -327,14 +327,13 @@ do
     end
 end
 
--- 7) Eager load (loading-screen path): LoadEnabledLODModulesEager loads the
---    non-lateLoad LOD modules synchronously in manifest order, in ONE pass with
---    NO combat parking (it runs inside the ADDON_LOADED safe window), and runs
---    the anchoring catch-up exactly once when ≥1 module loaded. lateLoad
---    modules (QUI_Minimap) are EXCLUDED here — they need post-login state
---    (settled EditMode) and load via the staggered pass instead.
+-- 7) Eager load (loading-screen path): LoadEnabledLODModulesEager loads every
+--    eligible LOD module synchronously in manifest order, in ONE pass with NO
+--    combat parking (it runs inside the ADDON_LOADED safe window), and runs the
+--    anchoring catch-up exactly once when ≥1 module loaded. No entry is lateLoad
+--    today, so QUI_Minimap loads here too (skinned/anchored before first frame).
 do
-    -- 7a) The 3 non-lateLoad modules load in manifest order (minimap excluded);
+    -- 7a) All 4 LOD modules load in manifest order (minimap included);
     --     one notify each; anchoring catch-up once.
     do
         local ns, calls = newEnv()
@@ -348,19 +347,17 @@ do
         loader:LoadEnabledLODModulesEager()
         local loads = {}
         for _, c in ipairs(calls) do if c:match("^load:") then loads[#loads+1] = c end end
-        assert(#loads == 3, "7a: expected 3 eager loads (minimap excluded), got " .. #loads)
+        assert(#loads == 4, "7a: expected 4 eager loads (minimap included), got " .. #loads)
         assert(loads[1] == "load:QUI_Skinning",    "7a 1st: skinning")
-        assert(loads[2] == "load:QUI_QoL",         "7a 2nd: qol")
-        assert(loads[3] == "load:QUI_DamageMeter", "7a 3rd: damagemeter")
-        for _, c in ipairs(loads) do
-            assert(c ~= "load:QUI_Minimap", "7a: lateLoad minimap must NOT eager-load")
-        end
-        assert(#ns.QUI_Modules.notified == 3, "7a: one notify per eager load")
+        assert(loads[2] == "load:QUI_Minimap",     "7a 2nd: minimap")
+        assert(loads[3] == "load:QUI_QoL",         "7a 3rd: qol")
+        assert(loads[4] == "load:QUI_DamageMeter", "7a 4th: damagemeter")
+        assert(#ns.QUI_Modules.notified == 4, "7a: one notify per eager load")
         assert(#anchorCalls == 2, "7a: anchoring catch-up runs once (register+apply)")
         assert(anchorCalls[1] == "register" and anchorCalls[2] == "apply", "7a: register then apply")
     end
 
-    -- 7b) Combat is IRRELEVANT to the eager path: still loads the 3 in lockdown
+    -- 7b) Combat is IRRELEVANT to the eager path: still loads all 4 in lockdown
     --     (the safe window sanctions loading even during a combat /reload).
     do
         local ns, calls = newEnv()
@@ -371,10 +368,10 @@ do
         _G.InCombatLockdown = function() return false end
         local loads = {}
         for _, c in ipairs(calls) do if c:match("^load:") then loads[#loads+1] = c end end
-        assert(#loads == 3, "7b: eager load ignores combat lockdown, got " .. #loads)
+        assert(#loads == 4, "7b: eager load ignores combat lockdown, got " .. #loads)
     end
 
-    -- 7c) Disabled (non-late) addon is skipped: disable QoL → eager loads 2.
+    -- 7c) Disabled addon is skipped: disable QoL → eager loads 3.
     do
         local ns, calls, state = newEnv()
         local loader = loadLoader(ns)
@@ -388,9 +385,9 @@ do
         loader:LoadEnabledLODModulesEager()
         local loads = {}
         for _, c in ipairs(calls) do if c:match("^load:") then loads[#loads+1] = c end end
-        assert(#loads == 2, "7c: disabled QUI_QoL skipped, got " .. #loads)
+        assert(#loads == 3, "7c: disabled QUI_QoL skipped, got " .. #loads)
         for _, c in ipairs(loads) do assert(c ~= "load:QUI_QoL", "7c: qol must not load") end
-        assert(#anchorCalls == 2, "7c: anchoring still runs (2 loaded)")
+        assert(#anchorCalls == 2, "7c: anchoring still runs (3 loaded)")
     end
 
     -- 7d) DB not ready (GetProfile nil) → inert, no loads.
@@ -404,8 +401,9 @@ do
         assert(loads == 0, "7d: no eager loads when DB not ready, got " .. loads)
     end
 
-    -- 7e) Two-stage split: eager excludes lateLoad (minimap); the staggered
-    --     pass then loads everything still eligible — i.e. the minimap.
+    -- 7e) Two-stage split: with no lateLoad entries, eager loads ALL 4
+    --     (including the minimap); the staggered post-login pass is a no-op
+    --     catch-up — everything is already loaded, so it loads nothing more.
     do
         local ns, calls = newEnv()
         local loader = loadLoader(ns)
@@ -414,19 +412,22 @@ do
             RegisterAllFrameTargets = function() end,
             ApplyAllFrameAnchors    = function() end,
         }
-        -- Stage 1: eager — minimap not among the loads.
+        -- Stage 1: eager — minimap IS among the loads now.
         loader:LoadEnabledLODModulesEager()
-        local afterEager = {}
-        for _, c in ipairs(calls) do if c:match("^load:") then afterEager[#afterEager+1] = c end end
-        assert(#afterEager == 3, "7e: eager loads 3, got " .. #afterEager)
-        for _, c in ipairs(afterEager) do
-            assert(c ~= "load:QUI_Minimap", "7e: minimap excluded from eager")
+        local afterEager, minimapEager = 0, false
+        for _, c in ipairs(calls) do
+            if c:match("^load:") then
+                afterEager = afterEager + 1
+                if c == "load:QUI_Minimap" then minimapEager = true end
+            end
         end
-        -- Stage 2: staggered post-login — loads the remaining eligible = minimap.
+        assert(afterEager == 4, "7e: eager loads all 4, got " .. afterEager)
+        assert(minimapEager, "7e: minimap now eager-loads")
+        -- Stage 2: staggered post-login — all already loaded, loads nothing new.
         loader:LoadEnabledLODModules()
-        local minimapLoaded = false
-        for _, c in ipairs(calls) do if c == "load:QUI_Minimap" then minimapLoaded = true end end
-        assert(minimapLoaded, "7e: staggered pass must load the lateLoad minimap")
+        local total = 0
+        for _, c in ipairs(calls) do if c:match("^load:") then total = total + 1 end end
+        assert(total == 4, "7e: staggered catch-up loads nothing new, got " .. total)
     end
 end
 

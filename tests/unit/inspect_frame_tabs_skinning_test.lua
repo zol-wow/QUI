@@ -64,4 +64,43 @@ assertContains(
     "InspectFrame and InspectFrameTab1",
     "Inspect frame skinning must catch up if InspectFrame already exists before ADDON_LOADED is observed")
 
+-- Close button + paper-doll action buttons must be skinned (were unskinned:
+-- stock red close X, plain View/Talents buttons showed through the chrome).
+assertContains(
+    source,
+    "local function SkinInspectButtons()",
+    "Inspect frame skinning must skin the close + paper-doll action buttons")
+
+assertContains(
+    source,
+    "SkinBase.SkinChromeCloseButton(InspectFrame.CloseButton",
+    "Inspect close button (ButtonFrameTemplate) must route through SkinChromeCloseButton")
+
+assertContains(
+    source,
+    "paperDoll.ViewButton",
+    "Inspect 'View in Dressing Room' button must be skinned")
+
+assertContains(
+    source,
+    "itemsFrame.InspectTalents",
+    "Inspect Talents button must be skinned")
+
+assertContains(
+    source,
+    "SkinInspectButtons()",
+    "Inspect frame setup must apply close/action button skinning")
+
+-- Scale changes must rebuild the 1px borders (per-frame SetScale does not fire
+-- the global scale-refresh event).
+assertContains(
+    source,
+    "local function RefreshInspectFrameScale()",
+    "Inspect skinning must expose a scale-refresh that rebuilds pixel borders")
+
+assertContains(
+    source,
+    "UIKit.QueueScaleRefresh",
+    "Inspect scale-refresh must queue a pixel-border rebuild")
+
 print("OK: inspect_frame_tabs_skinning_test")

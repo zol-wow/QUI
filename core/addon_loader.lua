@@ -5,9 +5,10 @@
 --     safe window (LoadEnabledLODModulesEager, called from QUICore:OnEnable) so
 --     their files compile on the loading screen instead of a post-login hitch.
 --   * Late: a staggered, combat-parking pass (LoadEnabledLODModules) runs
---     post-first-frame for manifest entries flagged lateLoad (e.g. QUI_Minimap,
---     which must load after Blizzard EditMode settles). The same staggered pass
---     backs live profile switches via OnProfileChanged.
+--     post-first-frame as a catch-up for any manifest entry flagged lateLoad,
+--     plus anything the eager pass missed. No entry is lateLoad by default
+--     today (the mechanism is retained); the same staggered pass also backs
+--     live profile switches via OnProfileChanged.
 --
 -- Model: Blizzard addon enable state = "is the code present" (hard, zero
 -- cost when off).  LOD eligibility = lod class + not loaded + exists +
@@ -233,10 +234,11 @@ end
 --   1. Eager (loading screen): QUICore:OnEnable (core/main.lua) calls
 --      LoadEnabledLODModulesEager inside the ADDON_LOADED safe window, so the
 --      non-lateLoad sub-addon files compile on the loading screen rather than
---      as a post-login hitch.
---   2. Late (post-login): the stagger below loads any lateLoad modules (e.g.
---      QUI_Minimap) after the first frame, once Blizzard EditMode has settled.
---      It re-scans, so the eager modules are already loaded and skipped.
+--      as a post-login hitch. With no lateLoad entries today, this loads every
+--      eligible lod module (including QUI_Minimap).
+--   2. Late (post-login): the stagger below is now a catch-up safety net — it
+--      re-scans after the first frame and loads any lateLoad entry (none by
+--      default) or anything the eager pass missed; normally a no-op.
 -- Live profile switches re-invoke the staggered LoadEnabledLODModules via
 -- QUICore:OnProfileChanged.
 ns.WhenLoggedIn(function()

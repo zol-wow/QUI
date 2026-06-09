@@ -574,7 +574,20 @@ local function StyleTooltip(tooltip)
     -- in combat (the Show hook and RefreshAllColors gate it out), so the
     -- first-call frame creation inside SkinCloseButton stays taint-safe.
     if tooltip.CloseButton and SkinBase.SkinCloseButton then
-        pcall(SkinBase.SkinCloseButton, tooltip.CloseButton)
+        local closeButton = tooltip.CloseButton
+        pcall(SkinBase.SkinCloseButton, closeButton)
+        -- The stock button is anchored TOPRIGHT +2,+2 (ItemRef.xml), so it
+        -- overhangs the tooltip's corner. The original red-X atlas masked that
+        -- with transparent padding; the solid QUI box would otherwise poke out
+        -- above and to the right of the skinned chrome. Re-anchor it to tuck
+        -- just inside the corner. (Panel close buttons keep the overhanging
+        -- look, so this stays tooltip-local instead of living in
+        -- SkinCloseButton.) Idempotent — re-asserting the same point each show
+        -- is harmless, and the tooltip only shows on an item-link click.
+        if closeButton.ClearAllPoints and closeButton.SetPoint then
+            pcall(closeButton.ClearAllPoints, closeButton)
+            pcall(closeButton.SetPoint, closeButton, "TOPRIGHT", tooltip, "TOPRIGHT", -2, -2)
+        end
     end
     TooltipDebugEnd(dbg, "skin.style", dbgStart, nil, dbgHeap)
 end

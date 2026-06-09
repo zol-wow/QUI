@@ -61,6 +61,11 @@ inspectCombatFrame:SetScript("OnEvent", function()
     if pendingInspectScale then
         InspectFrame:SetScale(pendingInspectScale)
         pendingInspectScale = nil
+        -- Per-frame SetScale does not fire the global scale-refresh; rebuild the
+        -- inspect skin's 1px borders at the new effective scale.
+        if _G.QUI_InspectFrameSkinning and _G.QUI_InspectFrameSkinning.RefreshScale then
+            _G.QUI_InspectFrameSkinning.RefreshScale()
+        end
     end
 
     if pendingInspectLayout then
@@ -111,6 +116,11 @@ local function SetInspectScaleDeferred(scale)
         pendingInspectScale = scale
     else
         InspectFrame:SetScale(scale)
+        -- Per-frame SetScale does not fire the global scale-refresh; rebuild the
+        -- inspect skin's 1px borders at the new effective scale.
+        if _G.QUI_InspectFrameSkinning and _G.QUI_InspectFrameSkinning.RefreshScale then
+            _G.QUI_InspectFrameSkinning.RefreshScale()
+        end
     end
 end
 
@@ -599,7 +609,13 @@ local function RepositionInspectTabs()
 
     if firstTab then
         firstTab:ClearAllPoints()
-        firstTab:SetPoint("BOTTOMLEFT", InspectFrame, "BOTTOMLEFT", 15, -75)
+        -- The skinned box (frames/inspect.lua) extends 50px below the frame to
+        -- cover the weapon slots + talents button. Hang the tab row just below
+        -- that box bottom so it reads as a separate strip beneath the window.
+        -- A 32px tab anchored by BOTTOMLEFT at -81 puts its top at -49 and its
+        -- skinned backdrop (3px top inset) ~2px under the -50 box edge — a tight
+        -- seam rather than a floating gap.
+        firstTab:SetPoint("BOTTOMLEFT", InspectFrame, "BOTTOMLEFT", 15, -81)
     end
 
     -- Reposition Talents button just below last slot (Trinket1)
