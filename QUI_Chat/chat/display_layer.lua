@@ -335,7 +335,21 @@ local function CreateWindow(id)
     smf:SetMaxLines((cd and cd.maxLines) or 1000)
     smf:SetHyperlinksEnabled(true)
     smf:SetScript("OnHyperlinkClick", function(self, link, text, button)
-        if _G.SetItemRef then _G.SetItemRef(link, text, button, self) end
+        if not _G.SetItemRef then return end
+        -- The 4th SetItemRef arg becomes Blizzard's contextData.frame. For
+        -- player/BN/channel links it flows into ChatFrameUtil.SendTell /
+        -- OpenChat -> ChooseBoxForSend(frame), which dereferences frame.editBox.
+        -- This custom ScrollingMessageFrame has no editBox (the QUI input is
+        -- ChatFrame1's editbox, restyled in place by editbox_basics), so handing
+        -- Blizzard `self` crashes the instant someone left-clicks a player or
+        -- channel name. Hand it the canonical chat frame instead: ChatFrame1 is
+        -- only reparented (never Hide()'d) under the takeover, so it stays
+        -- IsShown()-true and owns the QUI-styled editbox -- whispers/joins open
+        -- there. contextData.frame is read ONLY by chat link handlers (whisper
+        -- editbox + context-menu anchor); every other link type anchors its
+        -- tooltip to UIParent, so this substitution is inert for them.
+        local refFrame = _G.DEFAULT_CHAT_FRAME or _G.ChatFrame1 or self
+        _G.SetItemRef(link, text, button, refFrame)
     end)
     -- Clicking the message area marks the window active (editbox follow).
     if smf.HookScript then

@@ -71,6 +71,7 @@ init.lua
 # == core/core.xml ==
 core\debug_gate.lua
 core\utils.lua
+core\first_run.lua
 core\border_registry.lua
 core\diagnostics_console.lua
 core\dumpspell.lua

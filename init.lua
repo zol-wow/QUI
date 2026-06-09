@@ -262,10 +262,7 @@ QUI.imports = setmetatable({}, {
 -- To add a new preset, just append an entry here and ship the matching
 -- importstring file — the UI picks it up automatically.
 QUI._presetProfiles = {
-    { key = "OakTankDPS",  profileName = "Oak's Tank/DPS", description = "Oak's Tank/DPS UI layout" },
-    { key = "OakHealer",   profileName = "Oak's Healer",   description = "Oak's Healer UI layout" },
     { key = "CocoProfile", profileName = "Coco",            description = "Coco's personal UI layout" },
-    { key = "NokterianHealing", profileName = "Nokterian Healing Profile", description = "Nokterian's healing UI layout" },
 }
 
 ---@type table
@@ -273,6 +270,11 @@ QUI.defaults = {
     global = {
         ---@type string
         toggleOptionsKey = "",
+        -- Account-wide seal for the first-launch starter-profile install
+        -- (see core/first_run.lua + QUI_Options/first_run.lua). Set true once
+        -- the flow has run so it never repeats.
+        ---@type boolean
+        firstRunComplete = false,
     },
     char = {
         ---@type table
@@ -293,6 +295,13 @@ QUI.defaults = {
 }
 
 function QUI:OnInitialize()
+    -- Fresh-install detection MUST run before the QuaziiUI_DB alias and
+    -- AceDB:New below, both of which populate QUI_DB. Once QUI_DB exists this
+    -- can never be true again, so it cannot false-positive on an existing
+    -- user. Published on ns for QUI_Options' first-run hook (see
+    -- core/first_run.lua + QUI_Options/first_run.lua).
+    local freshInstall = ns.FirstRun and ns.FirstRun.IsFreshInstall(QUI_DB, QuaziiUI_DB) or false
+
     -- Migrate old QuaziiUI_DB to QUI_DB if needed
     if QuaziiUI_DB and not QUI_DB then
         QUI_DB = QuaziiUI_DB
@@ -300,6 +309,8 @@ function QUI:OnInitialize()
 
     ---@type AceDBObject-3.0
     self.db = LibStub("AceDB-3.0"):New("QUI_DB", self.defaults, "Default")
+
+    ns._freshInstall = freshInstall
 
     self:RegisterChatCommand("qui", "SlashCommandOpen")
     self:RegisterChatCommand("quaziiui", "SlashCommandOpen")

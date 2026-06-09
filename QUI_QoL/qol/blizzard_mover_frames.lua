@@ -699,7 +699,14 @@ M._FrameRegistryData = {
 			id = "StaticPopup",
 			label = "Static Popups",
 			group = "system",
-			names = { "StaticPopup1", "StaticPopup2", "StaticPopup3", "StaticPopup4", "StaticPopup5" },
+			-- InstanceAbandonPopup is Blizzard's reserved StaticPopup for the M+
+			-- "vote to abandon" prompt. FrameXML hard-anchors it BOTTOMRIGHT and
+			-- StaticPopup_SetUpPosition leaves reserved/fixed dialogs at their XML
+			-- anchor (no top-stack), so it pops in the corner instead of with the
+			-- other popups. Folding it in here shares this entry's saved offset; the
+			-- defaultPoint below restores the top-center home for the default case.
+			names = { "StaticPopup1", "StaticPopup2", "StaticPopup3", "StaticPopup4", "StaticPopup5", "InstanceAbandonPopup" },
+			defaultPoint = { point = "TOP", x = 0, y = -135 },
 			defaultEnabled = true,
 		},
 		{

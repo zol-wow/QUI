@@ -275,6 +275,7 @@ function M.functions.RegisterFrame(def)
 		disableMove = def.disableMove or def.scaleOnly,
 		deferReassert = def.deferReassert,
 		proxyParent = def.proxyParent,
+		defaultPoint = def.defaultPoint,
 		ignoreFramePositionManager = def.ignoreFramePositionManager,
 		userPlaced = def.userPlaced,
 		skipOnHide = def.skipOnHide,
@@ -788,6 +789,19 @@ function M.functions.createHooks(root, entry)
 
 	local c = ctx(root)
 	if c.hooksInstalled then return end
+
+	-- Seed a declarative default anchor BEFORE remembering Blizzard's layout, so an
+	-- entry that ships at an unwanted FrameXML default (e.g. the reserved
+	-- InstanceAbandonPopup, hard-anchored BOTTOMRIGHT and left there by
+	-- StaticPopup_SetUpPosition's fixed-dialog path) instead defaults to the entry's
+	-- canonical home. rememberAnchors then captures THIS as the restore baseline; a
+	-- saved offset still layers on top via applyFrameSettings. UIParent-relative with
+	-- anchorPoint == relativePoint, matching the saved-offset path.
+	local dp = panel.defaultPoint
+	if dp and dp.point and not (InCombatLockdown() and root.IsProtected and root:IsProtected()) then
+		root:ClearAllPoints()
+		root:SetPoint(dp.point, UIParent, dp.point, dp.x or 0, dp.y or 0)
+	end
 
 	rememberAnchors(root)
 	rememberInteraction(root)

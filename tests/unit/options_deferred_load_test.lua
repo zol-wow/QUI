@@ -61,9 +61,6 @@ check(not quiToc:find("importstrings", 1, true),
 for _, f in ipairs({
     "qui_editmode_base",
     "coco_profile",
-    "nokterian_healing_profile",
-    "oak_tankdps_profile",
-    "oak_healer_profile",
 }) do
     check(optionsXml:find(f, 1, true) ~= nil,
         "QUI_Options/options.xml must load importstrings\\" .. f .. ".lua")

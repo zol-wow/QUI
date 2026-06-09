@@ -374,6 +374,39 @@ settings.fade.enabled = false
 Display.Refresh()
 assert(smf1.fading == false, "fade re-disabled: SetFading(false) called")
 
+-- Hyperlink click context frame --------------------------------------------
+-- A player/channel name click hands its frame to Blizzard's SetItemRef, which
+-- routes it through ChatFrameUtil.SendTell / OpenChat -> ChooseBoxForSend(frame)
+-- -> frame.editBox. The custom ScrollingMessageFrame has NO editBox (the QUI
+-- input is ChatFrame1's editbox restyled in place), so passing the SMF crashed
+-- the instant someone left-clicked a player or channel name. The handler must
+-- substitute the canonical chat frame (DEFAULT_CHAT_FRAME / ChatFrame1), which
+-- owns the QUI-styled editbox and stays IsShown()-true under the takeover.
+do
+    local captured
+    local realChatFrame = { editBox = {} }
+    _G.DEFAULT_CHAT_FRAME = realChatFrame
+    local origSetItemRef = _G.SetItemRef
+    _G.SetItemRef = function(link, text, button, frame)
+        captured = { link = link, text = text, button = button, frame = frame }
+    end
+
+    local hyperlinkClick = smf1.scripts.OnHyperlinkClick
+    assert(type(hyperlinkClick) == "function", "SMF wires OnHyperlinkClick")
+
+    hyperlinkClick(smf1, "player:Tenszangetsu-Sylvanas:1:WHISPER", "[Tenszangetsu]", "LeftButton")
+    assert(captured, "OnHyperlinkClick forwards to SetItemRef")
+    assert(captured.frame ~= smf1,
+        "must NOT pass the editbox-less custom SMF as the link context frame")
+    assert(captured.frame == realChatFrame and captured.frame.editBox ~= nil,
+        "must pass the canonical chat frame that owns the editbox (ChooseBoxForSend reads .editBox)")
+    assert(captured.link == "player:Tenszangetsu-Sylvanas:1:WHISPER" and captured.button == "LeftButton",
+        "link + button forwarded to SetItemRef unchanged")
+
+    _G.SetItemRef = origSetItemRef
+    _G.DEFAULT_CHAT_FRAME = nil
+end
+
 -- Active-window tracking ---------------------------------------------------
 assert(Display.GetActiveWindow() == 1, "primary active by default")
 Display.SetActiveWindow(2)
