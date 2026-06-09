@@ -1080,14 +1080,33 @@ local function CreateAlertMover()
         C_Timer.After(0, PostAlertMove)
     end)
 
-    -- Disable mouse on GroupLootContainer for cleaner interaction
+    -- Disable mouse on GroupLootContainer for cleaner interaction, and opt it
+    -- out of Blizzard's UIParent frame-position manager.
+    --
+    -- GroupLootContainer inherits UIParentBottomManagedFrameTemplate, so each
+    -- time it shows *from its default position* Blizzard's
+    -- UIParentManagedFrameContainerMixin:AddManagedFrame reparents it into the
+    -- bottom-managed container and Layout()s it back to screen-bottom-center
+    -- (UIParent.lua). Because GroupLootContainer is the HEAD of the alert anchor
+    -- chain (AddExternallyAnchoredSubSystem at priority 30, GroupLootFrame.lua),
+    -- a roll-won toast chained off it then intermittently lands at that Blizzard
+    -- default location instead of QUI's Alert Anchor mover. The correct opt-out
+    -- is ignoreFramePositionManager (the flag AddManagedFrame early-returns on) --
+    -- NOT ignoreInLayout, which is the unrelated LayoutFrame child-region flag and
+    -- does nothing to the position manager. Deregister first so a stale
+    -- showingFrames ref can't drive a later Layout pass (taint hazard) -- mirrors
+    -- the managed-frame detach in modules/layout/anchoring.lua.
     if GroupLootContainer then
         GroupLootContainer:EnableMouse(false)
-        -- TAINT SAFETY: Defer ignoreInLayout write to break taint chain.
+        -- TAINT SAFETY: Defer the field writes to break the taint chain.
         C_Timer.After(0, function()
-            if GroupLootContainer then
-                GroupLootContainer.ignoreInLayout = true
+            if not GroupLootContainer then return end
+            local mgr = GroupLootContainer.layoutParent
+            if mgr and mgr.RemoveManagedFrame then
+                pcall(mgr.RemoveManagedFrame, mgr, GroupLootContainer)
             end
+            GroupLootContainer.ignoreFramePositionManager = true
+            GroupLootContainer.ignoreInLayout = true
         end)
     end
 

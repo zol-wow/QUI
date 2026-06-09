@@ -235,6 +235,12 @@ assert(not registered.CHAT_MSG_BOGUS, "IsEventValid gate skips bogus event")
 assert(registered.GUILD_MOTD, "GUILD_MOTD replicated (SystemEventHandler parity)")
 assert(registered.GUILD_ROSTER_UPDATE, "GUILD_ROSTER_UPDATE registered (login MOTD pull)")
 assert(registered.PLAYER_GUILD_UPDATE, "PLAYER_GUILD_UPDATE registered (login MOTD pull)")
+-- The primary login-MOTD recovery point (Blizzard ChatFrameOverrides.lua parity):
+-- UPDATE_CHAT_WINDOWS fires once chat settings download, by which point the GMOTD
+-- has reliably arrived. The channel-UI events give repeat retries during login.
+assert(registered.UPDATE_CHAT_WINDOWS, "UPDATE_CHAT_WINDOWS registered (primary login MOTD pull)")
+assert(registered.CHANNEL_UI_UPDATE, "CHANNEL_UI_UPDATE registered (login MOTD pull retry)")
+assert(registered.CHANNEL_LEFT, "CHANNEL_LEFT registered (login MOTD pull retry)")
 assert(registered.TIME_PLAYED_MSG, "TIME_PLAYED_MSG replicated (/played output)")
 assert(registered.PLAYER_LEVEL_CHANGED, "PLAYER_LEVEL_CHANGED replicated (level-up line)")
 assert(registered.CHAT_SERVER_DISCONNECTED, "disconnect notice replicated")
@@ -633,6 +639,22 @@ fire("GUILD_ROSTER_UPDATE")
 fire("PLAYER_GUILD_UPDATE")
 fire("GUILD_MOTD", "Welcome home")
 assert(Store.Size() == 1, "pull/event share seenMotd dedupe, got " .. Store.Size())
+-- The PRIMARY login recovery point: UPDATE_CHAT_WINDOWS (Blizzard's own GMOTD
+-- backfill event -- ChatFrameOverrides.lua) pulls the MOTD. On cold login the
+-- guild-data events fire before C_Club's broadcast is populated; UPDATE_CHAT_WINDOWS
+-- fires once chat settings download, when the MOTD has reliably arrived. A fresh
+-- broadcast value (vs the latched seenMotd above) proves the pull, not the dedupe.
+_G.C_Club.GetClubInfo = function() return { broadcast = "Server is back up" } end
+Store.Clear()
+fire("UPDATE_CHAT_WINDOWS")
+assert(Store.Size() == 1, "GMOTD pulled on UPDATE_CHAT_WINDOWS (login path), got " .. Store.Size())
+local viaWindows; Store.ForEach(function(e) viaWindows = e end)
+assert(viaWindows.m == "[12:00] Guild MOTD: Server is back up", "UPDATE_CHAT_WINDOWS gmotd line, got " .. tostring(viaWindows.m))
+assert(viaWindows.k == "GUILD" and viaWindows.e == "GUILD_MOTD", "UPDATE_CHAT_WINDOWS gmotd metadata (event-named, not trigger)")
+-- The channel-UI events are retry points too, deduped against the first pull.
+fire("CHANNEL_UI_UPDATE")
+fire("CHANNEL_LEFT")
+assert(Store.Size() == 1, "channel-UI retries share seenMotd dedupe, got " .. Store.Size())
 -- Not in a guild: no pull, no crash.
 _G.IsInGuild = function() return false end
 Store.Clear()

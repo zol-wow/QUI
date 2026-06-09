@@ -192,6 +192,20 @@ local function MaybePullGMOTD()
     SYSTEM_EVENTS.GUILD_MOTD("GUILD_MOTD", info.broadcast)
 end
 
+-- Primary login-MOTD recovery point. Blizzard's own chat frame backfills the
+-- GMOTD on UPDATE_CHAT_WINDOWS (vendored ChatFrameOverrides.lua:114-136,
+-- "GMOTD may have arrived before this frame registered for the event"): by the
+-- time chat settings download the MOTD has reliably landed, whereas the
+-- guild-data events below fire on a cold login BEFORE C_Club's broadcast field is
+-- populated (the club broadcast syncs separately from the roster), so the pull
+-- there no-ops and the login MOTD is lost until some unrelated later roster
+-- update happens to fire. The channel-UI events give repeat retries through the
+-- channel-join sequence. Capture.Setup() registers these at ADDON_LOADED, before
+-- the login UPDATE_CHAT_WINDOWS, so the login firing is caught. seenMotd dedupes
+-- against the GUILD_MOTD event path and the guild-data triggers.
+SYSTEM_EVENTS.UPDATE_CHAT_WINDOWS = function() MaybePullGMOTD() end
+SYSTEM_EVENTS.CHANNEL_UI_UPDATE = function() MaybePullGMOTD() end
+SYSTEM_EVENTS.CHANNEL_LEFT = function() MaybePullGMOTD() end
 SYSTEM_EVENTS.GUILD_ROSTER_UPDATE = function() MaybePullGMOTD() end
 SYSTEM_EVENTS.PLAYER_GUILD_UPDATE = function() MaybePullGMOTD() end
 
