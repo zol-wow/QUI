@@ -216,21 +216,23 @@ end
 -- Initialize
 ---------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" then
-        local addonName = ...
-        if addonName ~= ADDON_NAME then return end
-        self:UnregisterEvent("ADDON_LOADED")
-        CreateTextFrame()
-    elseif event == "PLAYER_REGEN_DISABLED" then
+    if event == "PLAYER_REGEN_DISABLED" then
         OnCombatStart()
     elseif event == "PLAYER_REGEN_ENABLED" then
         OnCombatEnd()
     end
 end)
+
+-- Install after login. ns.WhenLoggedIn runs now if already logged in (the
+-- post-login LOD case) rather than this addon's own ADDON_LOADED, which is NOT
+-- delivered when the core eager-LoadAddOn's the module from OnEnable (see
+-- petwarning.lua / tooltip_provider.lua). Nil only in the headless test harness.
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(CreateTextFrame)
+end
 
 ---------------------------------------------------------------------------
 -- Global refresh function for GUI

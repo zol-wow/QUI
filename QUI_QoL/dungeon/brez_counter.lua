@@ -593,7 +593,6 @@ end
 -- Event handler
 ---------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("ENCOUNTER_START")
 eventFrame:RegisterEvent("ENCOUNTER_END")
@@ -603,14 +602,7 @@ eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" then
-        local addonName = ...
-        if addonName ~= ADDON_NAME then return end
-        self:UnregisterEvent("ADDON_LOADED")
-        CreateBrezFrame()
-        EvaluateVisibility()
-
-    elseif event == "PLAYER_ENTERING_WORLD" then
+    if event == "PLAYER_ENTERING_WORLD" then
         -- Delay 1 frame to let instance info settle
         C_Timer.After(0, function()
             EvaluateVisibility()
@@ -650,6 +642,17 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
 
     end
 end)
+
+-- Install after login. ns.WhenLoggedIn runs now if already logged in (the
+-- post-login LOD case) rather than this addon's own ADDON_LOADED, which is NOT
+-- delivered when the core eager-LoadAddOn's the module from OnEnable (see
+-- petwarning.lua / tooltip_provider.lua). Nil only in the headless test harness.
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(function()
+        CreateBrezFrame()
+        EvaluateVisibility()
+    end)
+end
 
 -- COMBAT_LOG_EVENT_UNFILTERED is protected in 12.0; RegisterEvent/RegisterFrameEventAndCallback
 -- both trigger ADDON_ACTION_FORBIDDEN. Use RegisterCallback which subscribes to Blizzard's

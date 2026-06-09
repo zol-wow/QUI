@@ -1121,7 +1121,6 @@ end
 -- EVENTS
 ---------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -1139,18 +1138,6 @@ eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
 eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTED", "player")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" then
-        local addonName = ...
-        if addonName ~= ADDON_NAME then return end
-        self:UnregisterEvent("ADDON_LOADED")
-        state.inCombat = InCombatLockdown()
-        state.suppressUntil = GetTime() + STARTUP_SUPPRESS_SECONDS
-        state.lastActivityTime = GetTime()
-        RefreshActionBarSpellCache()
-        RefreshActionTracker()
-        return
-    end
-
     if event == "PLAYER_ENTERING_WORLD" then
         state.suppressUntil = GetTime() + STARTUP_SUPPRESS_SECONDS
         RefreshActionBarSpellCache()
@@ -1213,6 +1200,20 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         ResolveCastToFailed(castGUID, spellID)
     end
 end)
+
+-- Install after login. ns.WhenLoggedIn runs now if already logged in (the
+-- post-login LOD case) rather than this addon's own ADDON_LOADED, which is NOT
+-- delivered when the core eager-LoadAddOn's the module from OnEnable (see
+-- petwarning.lua / tooltip_provider.lua). Nil only in the headless test harness.
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(function()
+        state.inCombat = InCombatLockdown()
+        state.suppressUntil = GetTime() + STARTUP_SUPPRESS_SECONDS
+        state.lastActivityTime = GetTime()
+        RefreshActionBarSpellCache()
+        RefreshActionTracker()
+    end)
+end
 
 _G.QUI_RefreshActionTracker = RefreshActionTracker
 _G.QUI_ToggleActionTrackerPreview = TogglePreview

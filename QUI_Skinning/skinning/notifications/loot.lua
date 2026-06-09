@@ -890,13 +890,12 @@ local function SkinGroupLootHistoryFrame()
         if Dropdown.NineSlice then Dropdown.NineSlice:SetAlpha(0) end
     end
 
-    -- Style the close button
+    -- Style the close button. ClosePanelButton inherits
+    -- UIPanelCloseButtonDefaultAnchors (LootHistory.xml:217), so route it through
+    -- the canonical helper that hides all 5 Blizzard X layers and stamps the QUI
+    -- "×" — a SetVertexColor dim alone left the red X visible.
     if HistoryFrame.ClosePanelButton then
-        local closeBtn = HistoryFrame.ClosePanelButton
-        -- Simplified close button styling
-        if closeBtn:GetNormalTexture() then
-            closeBtn:GetNormalTexture():SetVertexColor(0.8, 0.8, 0.8)
-        end
+        SkinBase.SkinCloseButton(HistoryFrame.ClosePanelButton)
     end
 
     -- Style the resize button

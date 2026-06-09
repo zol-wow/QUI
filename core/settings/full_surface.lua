@@ -520,7 +520,6 @@ function FullSurface.CreateTabStrip(parent, options)
         end
 
         if fixedRows then
-            local rows = {}
             local rowLookup = {}
             local rowKeys = {}
 
@@ -535,14 +534,13 @@ function FullSurface.CreateTabStrip(parent, options)
                 rowKey = rowKey or 1
                 if not rowLookup[rowKey] then
                     rowLookup[rowKey] = {}
-                    rows[#rows + 1] = rowLookup[rowKey]
                     rowKeys[#rowKeys + 1] = rowKey
                 end
                 rowLookup[rowKey][#rowLookup[rowKey] + 1] = index
             end
 
             table.sort(rowKeys)
-            rows = {}
+            local rows = {}
             for _, rowKey in ipairs(rowKeys) do
                 rows[#rows + 1] = rowLookup[rowKey]
             end

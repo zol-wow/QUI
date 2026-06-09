@@ -392,6 +392,16 @@ local function OnCaptureEvent(_, event, ...)
 
     -- SECRET-FIRST: no operator may touch a1 before this check.
     if IsSecret(a1) then
+        -- BN friend-status toasts put the toast TYPE token in arg1
+        -- (FRIEND_ONLINE/FRIEND_OFFLINE/...), which Blizzard renders by indexing
+        -- BN_INLINE_TOAST_<token>. Under ChatMessagingLockdown the token is
+        -- secret: it can neither index that globalstring (concat throws) nor be
+        -- shown as-is (a secret token paints the raw word "FRIEND_ONLINE"). Drop
+        -- it, exactly as the reference client discards secret friend-status
+        -- toasts. Classifies by EVENT NAME (typeKey) only -- never compares the
+        -- secret value. Broadcasts carry real message text in arg1, so they fall
+        -- through to the verbatim secret path below and are NOT dropped.
+        if typeKey == "BN_INLINE_TOAST_ALERT" then return end
         local m = a1
         if Format.WrapSecretEventLine then
             m = Format.WrapSecretEventLine(event, p) or a1

@@ -390,7 +390,6 @@ end
 -- Initialize
 ---------------------------------------------------------------------------
 local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -399,16 +398,7 @@ eventFrame:RegisterEvent("ACTIONBAR_UPDATE_COOLDOWN")
 eventFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
 
 eventFrame:SetScript("OnEvent", function(self, event, unit, _, spellID)
-    if event == "ADDON_LOADED" then
-        if unit ~= ADDON_NAME then return end  -- unit is arg1 here
-        self:UnregisterEvent("ADDON_LOADED")
-        CreateReticle()
-        UpdateReticle()
-        SetupCursorFollowing()
-        SetupRightClickHide()
-        lastCombatState = InCombatLockdown()
-
-    elseif event == "PLAYER_ENTERING_WORLD" then
+    if event == "PLAYER_ENTERING_WORLD" then
         UpdateReticle()
 
     elseif event == "PLAYER_REGEN_DISABLED" then
@@ -440,6 +430,22 @@ eventFrame:SetScript("OnEvent", function(self, event, unit, _, spellID)
         end
     end
 end)
+
+-- Install after login. ns.WhenLoggedIn runs now if already logged in (the
+-- post-login LOD case) rather than this addon's own ADDON_LOADED, which is NOT
+-- delivered when the core eager-LoadAddOn's the module from OnEnable (see
+-- petwarning.lua / tooltip_provider.lua). Without this CreateReticle() +
+-- cursor-follow/right-click setup never run, so the reticle never appears. Nil
+-- only in the headless test harness.
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(function()
+        CreateReticle()
+        UpdateReticle()
+        SetupCursorFollowing()
+        SetupRightClickHide()
+        lastCombatState = InCombatLockdown()
+    end)
+end
 
 ---------------------------------------------------------------------------
 -- Global refresh function for GUI

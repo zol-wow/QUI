@@ -116,6 +116,11 @@ read_globals = {
     "tostringall", "issecretvalue", "Clamp",
     "CopyTable", "debugprofilestop", "geterrorhandler", "time", "tinsert",
 
+    -- debug.upvaluejoin is a Blizzard backport (Lua 5.2+) used by the ActionBars
+    -- chunk-env setfenv shim (actionbars_env.lua); allow this one field while
+    -- still flagging typos like debug.<misspelled>.
+    debug = { fields = { "upvaluejoin" } },
+
     -- Blizzard internals
     "hash_SlashCmdList",
 
@@ -341,6 +346,24 @@ files["QUI_ActionBars/actionbars/actionbars_public.lua"] = {
 }
 files["QUI_ActionBars/actionbars/actionbars_mouseover.lua"] = {
     ignore = { "111", "112", "113" },
+}
+files["QUI_ActionBars/actionbars/actionbars_builder.lua"] = {
+    ignore = { "111", "112", "113" },
+}
+files["QUI_ActionBars/actionbars/actionbars_extra_buttons.lua"] = {
+    ignore = { "111", "112", "113" },
+}
+files["QUI_ActionBars/actionbars/actionbars_layout.lua"] = {
+    ignore = { "111", "112", "113" },
+}
+files["QUI_ActionBars/actionbars/actionbars_per_bar_builders.lua"] = {
+    ignore = { "111", "112", "113" },
+}
+files["QUI_ActionBars/actionbars/actionbars_petstance.lua"] = {
+    ignore = { "111", "112", "113" },
+}
+files["QUI_ActionBars/actionbars/actionbars_skinning.lua"] = {
+    ignore = { "111", "112", "113", "121" },
 }
 
 files["QUI_QoL/dungeon/party_keystones.lua"] = {

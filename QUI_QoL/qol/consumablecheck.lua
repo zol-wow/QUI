@@ -1908,8 +1908,17 @@ end)
 -- LOD catch-up: first PEW already fired before this module loads.
 -- ns.WhenLoggedIn is nil only in the headless test harness, where the old
 -- never-firing PEW registration was equally inert.
+--
+-- This is ALSO the real init path: QUI_QoL is eager-LoadAddOn'd by the core
+-- from OnEnable, so the ADDON_LOADED self-event above is never delivered to its
+-- just-registered handler and InitializeButtons() never runs that way. Build the
+-- buttons here (WhenLoggedIn fires immediately for a post-login LOD load), before
+-- any READY_CHECK / PLAYER_REGEN_ENABLED handler can call UpdateConsumables on an
+-- empty buttons table. InitializeButtons is idempotent, so the dead ADDON_LOADED
+-- fallback re-running it (non-eager contexts) is harmless.
 if ns.WhenLoggedIn then
     ns.WhenLoggedIn(function()
+        InitializeButtons()
         C_Timer.After(1, OnInstanceEnter)
         C_Timer.After(1.5, function()
             local s = GetSettings()
@@ -2017,6 +2026,7 @@ end
 if ns.__test then
     ns.ConsumableCheckTest = {
         RuneIconFallback = RUNE_ICON_FALLBACK,
+        GetButtons = function() return ConsumablesFrame.buttons end,
         GetOwnedItemsForButton = GetOwnedItemsForButton,
         ResolveSelectedOwnedItem = ResolveSelectedOwnedItem,
         BuildOwnedItemsFromTotals = BuildOwnedItemsFromTotals,

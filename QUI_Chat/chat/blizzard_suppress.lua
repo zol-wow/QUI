@@ -153,6 +153,11 @@ local inOwnSetParent = false
 local pewSeen = false
 local pendingApply = false
 local windowHooksInstalled = false
+local dockScriptsHooked = false
+local origDockSetScript
+local managerNeutered = false
+local fcfTempSwapped = false
+local origFCFOpenTemp
 local pewFrame
 local channelRefreshFrame
 
@@ -270,6 +275,35 @@ local function SuppressGlobalChatRegions()
     end
 end
 
+-- Neutralize the dock's transient update driver. The dock carries only an
+-- OnLoad by default (FrameXML FloatingChatFrame.xml), but FCFDock_OnPrimarySizeChanged
+-- installs dock:SetScript("OnUpdate", FCFDock_OnUpdate) every time the primary
+-- chat frame resizes. Left live on the dock we just reparented — which taints
+-- the dock frame — that OnUpdate runs FCFDock_UpdateTabs -> FCF_CheckShowChatFrame
+-- -> ChatFrame1:SetShown(AllowChatFramesToShow(...)) -> Show(): a protected call
+-- reached on the tainted path, blocked as ADDON_ACTION_BLOCKED on QUI_Chat (and
+-- AllowChatFramesToShow returns true unconditionally in-game, so it would also
+-- un-hide ChatFrame1). Clear the dock's update scripts now and re-clear them on
+-- every SetScript while suppression is active, so any re-install is undone the
+-- instant it happens. origDockSetScript is captured BEFORE the hook so we can
+-- re-nil without re-entering our own SetScript hook. Gated on lastActive so the
+-- dock's normal tab-layout OnUpdate works again after a flip back to Blizzard.
+local function NeutralizeDockUpdateScripts()
+    local dock = _G.GeneralDockManager
+    if not (dock and dock.SetScript) then return end
+    if not origDockSetScript then origDockSetScript = dock.SetScript end
+    origDockSetScript(dock, "OnUpdate", nil)
+    origDockSetScript(dock, "OnSizeChanged", nil)
+    if not dockScriptsHooked and _G.hooksecurefunc then
+        dockScriptsHooked = true
+        _G.hooksecurefunc(dock, "SetScript", function()
+            if lastActive ~= true then return end
+            origDockSetScript(dock, "OnUpdate", nil)
+            origDockSetScript(dock, "OnSizeChanged", nil)
+        end)
+    end
+end
+
 -- Suppress a single named frame+tab/button set. Idempotent: regions already parented
 -- to hiddenAnchor are skipped so re-running on the full list is safe.
 local function SuppressOne(name)
@@ -280,6 +314,59 @@ local function SuppressOne(name)
     end
     SuppressRegion(_G[name .. "Tab"], function() return hiddenAnchor end)
     SuppressRegion(_G[name .. "ButtonFrame"], function() return hiddenAnchor end)
+end
+
+-- FloatingChatFrameManager auto-pops out incoming whispers (whisperMode
+-- "popout"/"popout_and_inline"). Each popout calls FCF_OpenTemporaryWindow,
+-- whose body docks the new temp frame on the reparented (tainted) dock ->
+-- FCFDock_UpdateTabs -> FCF_CheckShowChatFrame -> ChatFrame1:Show() = blocked.
+-- The manager registers ONLY whisper events, so neuter it wholesale while active
+-- and rebuild from its OnLoad on flip-back.
+local function NeuterChatFrameManager()
+    local mgr = _G.FloatingChatFrameManager
+    if managerNeutered or not (mgr and mgr.UnregisterAllEvents) then return end
+    managerNeutered = true
+    pcall(mgr.UnregisterAllEvents, mgr)
+end
+
+local function RestoreChatFrameManager()
+    if not managerNeutered then return end
+    managerNeutered = false
+    local mgr = _G.FloatingChatFrameManager
+    if mgr and type(_G.FloatingChatFrameManager_OnLoad) == "function" then
+        pcall(_G.FloatingChatFrameManager_OnLoad, mgr)
+    end
+end
+
+-- Neutering the manager is not enough: a user "whisper -> new window"
+-- (UnitPopupPopoutChatButtonMixin) and the pet-battle combat log also call
+-- FCF_OpenTemporaryWindow directly, and its body always docks the temp frame on
+-- the tainted dock (same blocked ChatFrame1:Show()). While suppressed, REPLACE
+-- the global with a forward-only wrapper: translate the whisper intent into a
+-- QUI conversation tab (Conv.OnBlizzardPopout self-gates on whisper types +
+-- translatePopout) and skip Blizzard's body entirely. The remaining callers
+-- ignore the return; only the manager consumed it, and it is neutered. The
+-- pristine original is restored on flip-back and the wrapper NEVER calls it, so
+-- the Blizzard popout path stays untainted while the takeover is off.
+local function QUIForwardTempWindow(chatType, chatTarget)
+    local Conv = ns.QUI.Chat.ConversationManager
+    if Conv and Conv.OnBlizzardPopout then
+        Conv.OnBlizzardPopout(chatType, chatTarget)
+    end
+    return nil
+end
+
+local function SwapTempWindowFn()
+    if fcfTempSwapped or type(_G.FCF_OpenTemporaryWindow) ~= "function" then return end
+    if not origFCFOpenTemp then origFCFOpenTemp = _G.FCF_OpenTemporaryWindow end
+    fcfTempSwapped = true
+    _G.FCF_OpenTemporaryWindow = QUIForwardTempWindow
+end
+
+local function RestoreTempWindowFn()
+    if not fcfTempSwapped then return end
+    fcfTempSwapped = false
+    if origFCFOpenTemp then _G.FCF_OpenTemporaryWindow = origFCFOpenTemp end
 end
 
 local function SuppressAll()
@@ -294,30 +381,26 @@ local function SuppressAll()
     SuppressGlobalChatRegions()
 
     -- GeneralDockManager is UIParent-parented and resurfaces suppressed tabs;
-    -- park it in the hidden anchor too.
+    -- park it in the hidden anchor too. Reparenting taints the dock frame, so
+    -- its update scripts must also be neutralized (below) or the dock's
+    -- transient OnUpdate drives a blocked ChatFrame1:Show().
     SuppressRegion(_G.GeneralDockManager, function() return hiddenAnchor end)
+    NeutralizeDockUpdateScripts()
 
     SuppressRegion(_G.ChatFrame1EditBox, function() return _G.UIParent end)
 
-    -- Install post-hooks on window-creation globals so frames born AFTER the
-    -- initial SuppressAll are caught immediately.
+    -- Stop Blizzard driving the (tainted) dock to show ChatFrame1: kill the
+    -- whisper-popout manager and intercept temp-window creation. Both reverse on
+    -- flip-back (RestoreAll).
+    NeuterChatFrameManager()
+    SwapTempWindowFn()
+
+    -- Install a post-hook on FCF_OpenNewWindow so a user-created chat window
+    -- born AFTER the initial SuppressAll is caught immediately. (Temp windows go
+    -- through the FCF_OpenTemporaryWindow swap above, which never creates a
+    -- Blizzard frame to suppress.)
     if not windowHooksInstalled and _G.hooksecurefunc then
         windowHooksInstalled = true
-        if _G.FCF_OpenTemporaryWindow then
-            _G.hooksecurefunc("FCF_OpenTemporaryWindow", function(chatType, chatTarget)
-                if lastActive ~= true then return end
-                EachChatFrameName(SuppressOne)
-                SuppressGlobalChatRegions()
-                -- Popout translation: the Blizzard temp frame just created is
-                -- now suppressed (above); surface the whisper intent as a QUI
-                -- conversation tab instead. Self-gates on
-                -- whisperTabs.translatePopout + whisper chat types.
-                local Conv = ns.QUI.Chat.ConversationManager
-                if Conv and Conv.OnBlizzardPopout then
-                    Conv.OnBlizzardPopout(chatType, chatTarget)
-                end
-            end)
-        end
         if _G.FCF_OpenNewWindow then
             _G.hooksecurefunc("FCF_OpenNewWindow", function()
                 if lastActive ~= true then return end
@@ -329,6 +412,9 @@ local function SuppressAll()
 end
 
 local function RestoreAll()
+    -- Hand the whisper-popout machinery back to Blizzard before reparenting.
+    RestoreChatFrameManager()
+    RestoreTempWindowFn()
     for region, parent in pairs(savedParents) do
         SafeSetParent(region, parent)
     end

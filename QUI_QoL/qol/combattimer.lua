@@ -414,15 +414,8 @@ end
 ---------------------------------------------------------------------------
 -- Initialize
 ---------------------------------------------------------------------------
-eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "ADDON_LOADED" then
-        local addonName = ...
-        if addonName ~= ADDON_NAME then return end
-        self:UnregisterEvent("ADDON_LOADED")
-        CreateTimerFrame()
-        UpdateEventRegistrations()
-    elseif event == "PLAYER_REGEN_DISABLED" then
+    if event == "PLAYER_REGEN_DISABLED" then
         OnCombatStart()
     elseif event == "PLAYER_REGEN_ENABLED" then
         OnCombatEnd()
@@ -432,6 +425,19 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         OnEncounterEnd()
     end
 end)
+
+-- Install after login. ns.WhenLoggedIn runs now if already logged in (the
+-- post-login LOD case) rather than this addon's own ADDON_LOADED, which is NOT
+-- delivered when the core eager-LoadAddOn's the module from OnEnable (see
+-- petwarning.lua / tooltip_provider.lua). Without this CreateTimerFrame() +
+-- UpdateEventRegistrations() never run, so the runtime combat events are never
+-- registered and the timer never appears. Nil only in the headless test harness.
+if ns.WhenLoggedIn then
+    ns.WhenLoggedIn(function()
+        CreateTimerFrame()
+        UpdateEventRegistrations()
+    end)
+end
 
 ---------------------------------------------------------------------------
 -- Global functions for GUI

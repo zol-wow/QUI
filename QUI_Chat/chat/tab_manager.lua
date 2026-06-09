@@ -270,6 +270,43 @@ local function SeedTabsInto(tabs)
     end
 end
 
+-- Battle.net friend online/offline lines arrive as the BN_INLINE_TOAST_ALERT
+-- message group, captured on our own frame regardless of stock registration.
+-- That group does NOT round-trip through GetChatWindowMessages, so a tab seeded
+-- from the stock General window (or migrated from a pre-takeover profile) omits
+-- it and the opt-in display filter silently drops "[Friend] has come online".
+-- One-time pass: any non-inverted tab that already shows SYSTEM also shows
+-- friend status -- the same pairing tab_filters.lua's SYSTEM_GROUP_UPGRADE
+-- applies to the legacy per-frame store. Versioned so a later deliberate removal
+-- sticks; inverted (opt-out) tabs already show it and are left untouched.
+local FRIEND_STATUS_GROUP = "BN_INLINE_TOAST_ALERT"
+local FRIEND_STATUS_UPGRADE_VERSION = 1
+
+local function EnsureFriendStatusInSystemTabs(cd)
+    if type(cd) ~= "table" or cd._friendStatusUpgrade == FRIEND_STATUS_UPGRADE_VERSION then
+        return
+    end
+    local windows = cd.windows
+    if type(windows) == "table" then
+        for i = 1, #windows do
+            local w = windows[i]
+            local tabs = type(w) == "table" and w.tabs
+            if type(tabs) == "table" then
+                for j = 1, #tabs do
+                    local tab = tabs[j]
+                    if type(tab) == "table" and not tab.invert
+                        and type(tab.groups) == "table"
+                        and tab.groups.SYSTEM
+                        and tab.groups[FRIEND_STATUS_GROUP] == nil then
+                        tab.groups[FRIEND_STATUS_GROUP] = true
+                    end
+                end
+            end
+        end
+    end
+    cd._friendStatusUpgrade = FRIEND_STATUS_UPGRADE_VERSION
+end
+
 local function SeedWindows(settings)
     settings.customDisplay = settings.customDisplay or {}
     local cd = settings.customDisplay
@@ -290,6 +327,7 @@ local function SeedWindows(settings)
     if #cd.windows[1].tabs == 0 then
         SeedTabsInto(cd.windows[1].tabs)
     end
+    EnsureFriendStatusInSystemTabs(cd)
     return cd.windows
 end
 

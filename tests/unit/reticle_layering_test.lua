@@ -102,6 +102,10 @@ function GetTime()
     return 1
 end
 
+function IsLoggedIn()
+    return true
+end
+
 C_Timer = {
     After = function(_, callback) callback() end,
 }
@@ -135,12 +139,14 @@ local ns = {
         end,
     },
     QUI = {},
+    -- Eager-LOD modules never receive their own ADDON_LOADED, so reticle inits
+    -- via ns.WhenLoggedIn (runs immediately when already logged in). This stub
+    -- mirrors that: init runs during loadfile, not off a fired ADDON_LOADED.
+    WhenLoggedIn = function(fn) if fn then fn() end end,
 }
 
 assert(loadfile("QUI_QoL/qol/reticle.lua"))("QUI", ns)
 assert(eventFrame and eventFrame.scripts.OnEvent, "reticle should register an event handler")
-
-eventFrame.scripts.OnEvent(eventFrame, "ADDON_LOADED", "QUI")
 
 local reticle = assert(createdByName.QUI_Reticle, "reticle frame should be created")
 assert(reticle.frameStrata == "TOOLTIP", "reticle should render in tooltip strata")

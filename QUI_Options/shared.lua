@@ -306,7 +306,7 @@ local function CreateScrollableContent(parent)
             end)
         end)
     end
-    
+
     ns.ApplyScrollWheel(scrollFrame)
 
     return scrollFrame, content

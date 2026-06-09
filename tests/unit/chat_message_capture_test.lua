@@ -368,6 +368,24 @@ local eBroadcastInform; Store.ForEach(function(e) eBroadcastInform = e end)
 assert(eBroadcastInform.m == "[12:00] Broadcast sent.",
     "broadcast inform formatted, got " .. tostring(eBroadcastInform.m))
 
+-- SECRET friend-status toast (ChatMessagingLockdown): arg1 is the TOAST TYPE
+-- token, which selects a BN_INLINE_TOAST_<token> globalstring -- it is a lookup
+-- key, not a body. A secret key can't index the global (concat throws) and a
+-- secret token would paint the raw word ("FRIEND_ONLINE"). Drop it, like the
+-- reference client; classification is by EVENT NAME only, never the secret value.
+local beforeSecretToast = Store.Size()
+fire("CHAT_MSG_BN_INLINE_TOAST_ALERT", secret, "Bea", nil, nil, nil, nil, nil, nil, nil, nil, 31337, nil, 88)
+assert(Store.Size() == beforeSecretToast,
+    "secret BN friend-status toast dropped, not stored as the raw token")
+
+-- A secret BROADCAST is NOT dropped: arg1 there is real broadcast text (a body),
+-- so it flows through the secret path verbatim like any other secret message.
+fire("CHAT_MSG_BN_INLINE_TOAST_BROADCAST", secret, "Aria", nil, nil, nil, nil, nil, nil, nil, nil, 4242, nil, 77)
+assert(Store.Size() == beforeSecretToast + 1, "secret BN broadcast retained (arg1 is real text)")
+local eSecretBroadcast; Store.ForEach(function(e) eSecretBroadcast = e end)
+assert(rawequal(eSecretBroadcast.m, secret) and eSecretBroadcast.s == true,
+    "secret broadcast stored opaquely + flagged")
+
 fire("CHAT_MSG_IGNORED", "IGNORED", "Noisy")
 local eIgnored; Store.ForEach(function(e) eIgnored = e end)
 assert(eIgnored.m == "[12:00] Noisy is ignoring you.",

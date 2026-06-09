@@ -13,6 +13,9 @@ local function makeBlizzFrame(name, parent)
     f.GetName = function() return name end
     f.GetParent = function(s) return s.parent end
     f.SetParent = function(s, p) s.parent = p; if s._setParentHook then s._setParentHook(s, p) end end
+    f.scripts = {}
+    f.SetScript = function(s, k, v) s.scripts[k] = v end
+    f.GetScript = function(s, k) return s.scripts[k] end
     f.Hide = function() error("Hide() on Blizzard chat frame is forbidden: " .. name) end
     f.SetPoint = function() error("SetPoint on Blizzard chat frame is forbidden: " .. name) end
     f.SetSize = function() error("SetSize on Blizzard chat frame is forbidden: " .. name) end
@@ -67,8 +70,21 @@ function _G.GetChatWindowMessages(i) return "SAY", "GUILD" end
 function _G.GetChatWindowChannels(i) return unpack(channelReturns) end
 _G.C_EventUtils = { IsEventValid = function() return true end }
 
--- FCF_OpenTemporaryWindow declared before loadfile so the module can hook it.
-_G.FCF_OpenTemporaryWindow = function() end
+-- FCF_OpenTemporaryWindow declared before loadfile: while suppressed the module
+-- REPLACES it with a forward-only wrapper, restoring this pristine original on
+-- flip-back. origTempCalled detects whether the wrapper ever delegates to it
+-- (it must not while active).
+local origTempCalled = false
+local function origTempFn() origTempCalled = true end
+_G.FCF_OpenTemporaryWindow = origTempFn
+-- FCF_OpenNewWindow: the module post-hooks this to re-suppress user-created
+-- windows born after activation.
+_G.FCF_OpenNewWindow = function() end
+-- FloatingChatFrameManager: auto whisper-popout driver. The module neuters it
+-- (UnregisterAllEvents) while active and rebuilds via its OnLoad on flip-back.
+_G.FloatingChatFrameManager = makeBlizzFrame("FloatingChatFrameManager", _G.UIParent)
+function _G.FloatingChatFrameManager_OnLoad(self) self:RegisterEvent("CHAT_MSG_WHISPER") end
+_G.FloatingChatFrameManager_OnLoad(_G.FloatingChatFrameManager)
 
 -- hooksecurefunc: supports both frame-method hooks (tbl, name, fn) and global
 -- function hooks (name-as-string, fn).  Frame-method chains via _setParentHook;
@@ -82,12 +98,18 @@ function _G.hooksecurefunc(tbl, name, fn)
         globalHooks[tbl] = name
         return
     end
-    assert(name == "SetParent" or name == "RegisterEvent",
-        "only SetParent/RegisterEvent frame-method hooks expected, got: " .. tostring(name))
+    assert(name == "SetParent" or name == "RegisterEvent" or name == "SetScript",
+        "only SetParent/RegisterEvent/SetScript frame-method hooks expected, got: " .. tostring(name))
     if name == "SetParent" then
         tbl._setParentHook = function(self, p) fn(self, p) end
     elseif name == "RegisterEvent" then
         tbl._registerHook = function(self, e) fn(self, e) end
+    elseif name == "SetScript" then
+        -- Emulate WoW: hooksecurefunc replaces the method with a wrapper, while
+        -- the pre-hook reference (captured by the module) stays raw so the
+        -- module can re-nil without re-entering its own hook.
+        local orig = tbl.SetScript
+        tbl.SetScript = function(self, k, v) orig(self, k, v); fn(self, k, v) end
     end
 end
 
@@ -186,6 +208,32 @@ assert(_G.ChatFrame1.events.UPDATE_CHAT_COLOR == true, "allowed event survives t
 -- (a) Dock suppressed and restores
 assert(_G.GeneralDockManager.parent == hidden, "dock reparented to hidden anchor")
 
+-- (a2) Dock update-script neutralization. REGRESSION: ADDON_ACTION_BLOCKED
+-- 'ChatFrame1:Show()' via FCFDock_OnUpdate. When the suppressed primary chat
+-- frame resizes, Blizzard's FCFDock_OnPrimarySizeChanged installs a transient
+-- dock OnUpdate (FCFDock_OnUpdate); on the reparented (tainted) dock it runs
+-- FCFDock_UpdateTabs -> FCF_CheckShowChatFrame -> ChatFrame1:SetShown(true) ->
+-- Show() = blocked. While active the dock's update scripts must be cleared AND
+-- any re-install instantly undone.
+assert(_G.GeneralDockManager.scripts.OnUpdate == nil
+    and _G.GeneralDockManager.scripts.OnSizeChanged == nil,
+    "dock update scripts cleared on activation")
+_G.GeneralDockManager:SetScript("OnUpdate", function() error("FCFDock_OnUpdate must not run while suppressed") end)
+assert(_G.GeneralDockManager.scripts.OnUpdate == nil, "dock OnUpdate re-install undone while active")
+_G.GeneralDockManager:SetScript("OnSizeChanged", function() end)
+assert(_G.GeneralDockManager.scripts.OnSizeChanged == nil, "dock OnSizeChanged re-install undone while active")
+
+-- (a3) Whisper-popout neutralization. Closes the synchronous path to the tainted
+-- dock: FloatingChatFrameManager / a user "whisper -> new window" call
+-- FCF_OpenTemporaryWindow, whose body docks the temp frame -> FCFDock_UpdateTabs
+-- -> ChatFrame1:Show() = blocked. While active the manager is neutered and the
+-- global is swapped for a forward-only wrapper that never runs Blizzard's body.
+assert(next(_G.FloatingChatFrameManager.events) == nil, "chat-frame manager neutered while active")
+assert(_G.FCF_OpenTemporaryWindow ~= origTempFn, "temp-window fn swapped while active")
+origTempCalled = false
+_G.FCF_OpenTemporaryWindow("WHISPER", "Someone-Realm")
+assert(not origTempCalled, "swapped wrapper never runs Blizzard's temp-window body while active")
+
 -- Enforcement: a dock layout pass reparenting a tab gets forced back
 _G.ChatFrame1Tab:SetParent({ name = "Dock" })
 assert(_G.ChatFrame1Tab.parent == hidden, "tab forced back to hidden while active")
@@ -207,6 +255,16 @@ assert(_G.ChatFrame1.parent.name == "Container",
 assert(_G.ChatFrame1Tab.parent.name == "Dock", "tab parent restored")
 assert(_G.ChatFrame1EditBox.parent == _G.ChatFrame1, "editbox parent restored")
 assert(_G.GeneralDockManager.parent == _G.UIParent, "dock restored")
+
+-- Dock script hook is inert while inactive: Blizzard's own dock OnUpdate (the
+-- normal tab-layout driver) must work again once the takeover is off.
+local liveDockOnUpdate = function() end
+_G.GeneralDockManager:SetScript("OnUpdate", liveDockOnUpdate)
+assert(_G.GeneralDockManager.scripts.OnUpdate == liveDockOnUpdate, "dock OnUpdate hook inert while inactive")
+_G.GeneralDockManager:SetScript("OnUpdate", nil)
+-- Whisper-popout machinery handed back to Blizzard on flip-back.
+assert(_G.FCF_OpenTemporaryWindow == origTempFn, "pristine FCF_OpenTemporaryWindow restored while inactive")
+assert(_G.FloatingChatFrameManager.events.CHAT_MSG_WHISPER == true, "chat-frame manager rebuilt (OnLoad) on flip-back")
 assert(_G.ChatFrame1ButtonFrame.parent == _G.ChatFrame1, "button frame parent restored")
 assert(_G.QuickJoinToastButton.parent.name == "SocialButtonOwner",
     "social button restores latest outside parent intent")
@@ -243,25 +301,26 @@ local p = _G.ChatFrame1.parent
 SP.Apply()
 assert(_G.ChatFrame1.parent == p, "latched")
 
--- (b) Window-creation hook: a frame born after activation is caught when the
--- FCF_OpenTemporaryWindow hook fires.
+-- (b) Window-creation hook: a user window born after activation is caught when
+-- the FCF_OpenNewWindow hook fires. (Temp windows never reach this path — they
+-- go through the FCF_OpenTemporaryWindow swap, which creates no Blizzard frame.)
 _G.ChatFrame3 = makeBlizzFrame("ChatFrame3", _G.UIParent)
 _G.ChatFrame3.id = 3
 _G.ChatFrame3Tab = makeBlizzFrame("ChatFrame3Tab", { name = "Dock" })
 _G.ChatFrame3ButtonFrame = makeBlizzFrame("ChatFrame3ButtonFrame", _G.ChatFrame3)
 _G.CHAT_FRAMES[#_G.CHAT_FRAMES + 1] = "ChatFrame3"
-assert(globalHooks["FCF_OpenTemporaryWindow"], "FCF_OpenTemporaryWindow hook installed")
-globalHooks["FCF_OpenTemporaryWindow"]()
-assert(_G.ChatFrame3.parent == hidden, "new window caught by FCF_OpenTemporaryWindow hook")
-assert(_G.ChatFrame3Tab.parent == hidden, "new window tab caught by FCF_OpenTemporaryWindow hook")
+assert(globalHooks["FCF_OpenNewWindow"], "FCF_OpenNewWindow hook installed")
+globalHooks["FCF_OpenNewWindow"]()
+assert(_G.ChatFrame3.parent == hidden, "new window caught by FCF_OpenNewWindow hook")
+assert(_G.ChatFrame3Tab.parent == hidden, "new window tab caught by FCF_OpenNewWindow hook")
 assert(_G.ChatFrame3ButtonFrame.parent == hidden, "new window button frame caught by hook")
 
--- Temp windows born suppressed get the full canonical restore on flip-back
+-- Windows born suppressed get the full canonical restore on flip-back
 settings.enabled = false
 SP.Apply()
-assert(_G.ChatFrame3.events.UPDATE_CHAT_COLOR == true, "temp window base events restored")
-assert(_G.ChatFrame3.events.PLAYER_ENTERING_WORLD == true, "temp window base list complete")
-assert(_G.ChatFrame3.messagesRegistered ~= nil, "temp window RegisterForMessages called")
+assert(_G.ChatFrame3.events.UPDATE_CHAT_COLOR == true, "new window base events restored")
+assert(_G.ChatFrame3.events.PLAYER_ENTERING_WORLD == true, "new window base list complete")
+assert(_G.ChatFrame3.messagesRegistered ~= nil, "new window RegisterForMessages called")
 
 -- (d) STALE-SNAPSHOT regression (adversarial review): a legitimate reparent
 -- during a DISABLED interlude must survive the next enable/disable cycle.
@@ -279,8 +338,9 @@ SP.Apply()
 assert(_G.ChatFrame1.parent == newHome,
     "flip-back restores the LATEST inactive parent (NewHome), not a stale snapshot")
 
--- FCF_OpenTemporaryWindow hook: forwards whisper intent to ConversationManager
--- when suppression is active, and does NOT forward when inactive.
+-- FCF_OpenTemporaryWindow swap: the active wrapper forwards whisper intent to
+-- ConversationManager (translate to a QUI tab) instead of running Blizzard's
+-- docking body; the pristine original (no forward) is back while inactive.
 local forwarded
 ns.QUI.Chat.ConversationManager = {
     OnBlizzardPopout = function(ct, t) forwarded = { ct, t } end,
@@ -293,18 +353,20 @@ _G.ChatFrame2.parent = _G.UIParent
 SP.Apply()
 assert(SP.IsActive(), "active before popout-forwarding test")
 
-forwarded = nil
-globalHooks["FCF_OpenTemporaryWindow"]("WHISPER", "Someone-Realm")
-assert(forwarded ~= nil, "hook forwards when suppression is active")
+forwarded, origTempCalled = nil, false
+_G.FCF_OpenTemporaryWindow("WHISPER", "Someone-Realm", _G.ChatFrame1, true)
+assert(forwarded ~= nil, "swapped wrapper forwards when suppression is active")
 assert(forwarded[1] == "WHISPER", "forwarded chatType is correct")
 assert(forwarded[2] == "Someone-Realm", "forwarded chatTarget is correct")
+assert(not origTempCalled, "swapped wrapper does not run Blizzard's body")
 
--- Inactive path: forwarding must NOT happen when suppression is off.
+-- Inactive path: the pristine original is restored, so QUI does NOT forward.
 settings.enabled = false
 SP.Apply()
 assert(not SP.IsActive(), "inactive for no-forward test")
+assert(_G.FCF_OpenTemporaryWindow == origTempFn, "original restored for no-forward test")
 forwarded = nil
-globalHooks["FCF_OpenTemporaryWindow"]("WHISPER", "Someone-Realm")
-assert(forwarded == nil, "hook does NOT forward when suppression is inactive")
+_G.FCF_OpenTemporaryWindow("WHISPER", "Someone-Realm")
+assert(forwarded == nil, "pristine original does NOT forward when suppression is inactive")
 
 print("OK: chat_blizzard_suppress_test")
