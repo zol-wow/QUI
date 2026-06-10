@@ -418,11 +418,20 @@ local function IsMessageProtected(message)
     return false
 end
 
--- Entry's baked base color (set at capture time; secret components already
--- degraded to 1 there) as a "|cff..." escape. White returns nil — it matches
--- the editbox base color, so the wrap would only bloat the copied text.
+-- Entry's effective base color as a "|cff..." escape. The live resolver
+-- override is applied first — the SAME one RenderEntry uses — so a channel
+-- color edited after capture (or resolved only at render time) wraps the
+-- copied line exactly as the window paints it; the baked capture color is
+-- the fallback. White returns nil — it matches the editbox base color, so
+-- the wrap would only bloat the copied text. Callers gate on entry.s, so
+-- the resolver is never consulted for secret entries (RenderEntry parity).
 local function LineColorCode(entry)
     local r, g, b = entry.r, entry.g, entry.b
+    local resolver = ns.QUI.Chat._lineColorResolver
+    if resolver and entry.e then
+        local orR, orG, orB = resolver(entry.e, entry.ch and { [9] = entry.ch } or nil)
+        if orR then r, g, b = orR, orG, orB end
+    end
     if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then return nil end
     if r >= 1 and g >= 1 and b >= 1 then return nil end
     local function byte(v)
@@ -441,17 +450,40 @@ local function CleanMessage(message, lineColor)
     if Helpers.IsSecretValue(message) or type(message) ~= "string" then return "" end
 
     local cleaned = message
+    -- Battle.net kstrings (|K...|k) and name-wrap escapes (|W...|w) FIRST:
+    -- an EditBox cannot render foreign kstrings — one leaked |K anywhere in
+    -- the concatenated text blanks the ENTIRE copy editbox (the SMF renders
+    -- them fine, so the window looks normal while copy shows nothing). BN
+    -- links also embed kstrings in their link DATA, which would break the
+    -- |H strip below; substituting first keeps that pattern matching.
+    cleaned = cleaned:gsub("%f[|]|K.-%f[|]|k", "???")
+    cleaned = cleaned:gsub("%f[|]|W(.-)%f[|]|w", "%1")
     -- Convert raid icons to text BEFORE the generic texture strip eats them
     cleaned = cleaned:gsub("|TInterface\\TargetingFrame\\UI%-RaidTargetingIcon_(%d):[^|]*|t", "{rt%1}")
     -- Remove texture escapes |T...|t
     cleaned = cleaned:gsub("|T[^|]*|t", "")
     -- Remove atlas textures |A...|a
     cleaned = cleaned:gsub("|A[^|]*|a", "")
-    -- Strip hyperlink formatting but keep visible text |H...|h[text]|h -> text
-    cleaned = cleaned:gsub("|H[^|]*|h%[?([^%]|]*)%]?|h", "%1")
+    -- Strip hyperlink wrappers but keep the visible text VERBATIM, brackets
+    -- included — |H...|h[text]|h -> [text] — so the copied line reads like the
+    -- window renders it. The capture must admit | (class-colored player names
+    -- are |H...|h[|cff..Name|r]|h). A leaked raw |H..|h wrapper renders
+    -- unreliably in the copy editbox (link parsing degrades on refocus/
+    -- scroll), so both bracketed and bare link shapes must strip.
+    cleaned = cleaned:gsub("|H[^|]*|h(%[.-%])|h", "%1")
+    cleaned = cleaned:gsub("|H[^|]*|h(.-)|h", "%1")
     cleaned = cleaned:gsub("|n", "\n")
     if lineColor and cleaned ~= "" then
-        cleaned = lineColor .. cleaned:gsub("|r", lineColor) .. "|r"
+        -- Plain wrap ONLY — never touch the line's own |r terminators and
+        -- never inject extra color codes after them. Both re-assert variants
+        -- (replacing |r, and keeping |r while re-pushing the line color)
+        -- corrupt the editbox's color rendering at scale: colors die partway
+        -- down the text or bleed across lines. Verified in-game via
+        -- /quicopydiag on a full spam-channel scrollback: this exact form
+        -- renders 100% correctly. Accepted tradeoff: text after an inner |r
+        -- (links, class-colored names) falls back to the editbox base color
+        -- for the rest of that line instead of the line color.
+        cleaned = lineColor .. cleaned .. "|r"
     end
 
     return cleaned
@@ -690,6 +722,23 @@ function Copy.ShowCustomCopyFrame(windowID)
     frame.editBox:SetFocus()
     if #text <= AUTO_HIGHLIGHT_MAX_CHARS then
         frame.editBox:HighlightText()
+    end
+    -- Land on the NEWEST lines (bottom). Deferred a frame: the editbox's
+    -- height (and so the scroll range) settles only after SetText lays out.
+    -- GetVerticalScrollRange may return a SECRET (SecretReturnsForAspect
+    -- ScrollRange) and SetVerticalScroll rejects secret args — guard before
+    -- passing it through.
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, function()
+            local sf = frame.scrollFrame
+            if not (frame:IsShown() and sf and sf.SetVerticalScroll and sf.GetVerticalScrollRange) then
+                return
+            end
+            local range = sf:GetVerticalScrollRange()
+            if type(range) == "number" and not Helpers.IsSecretValue(range) then
+                sf:SetVerticalScroll(range)
+            end
+        end)
     end
 end
 
