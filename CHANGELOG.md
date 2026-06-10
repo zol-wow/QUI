@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta32 - 2026-06-10
+
+> 🧪 **QUI 4 beta — QUI Chat polish.** This one is almost entirely about the QUI Chat module: the Combat Log joins your chat window as a real tab, whisper tabs can be reordered alongside your saved tabs, the copy-chat window finally copies exactly what you see (colors included), chat windows stop jumping between two remembered positions, replying with the reply keybind works again, and channel colors are right at login instead of white. There's also a new option to show cross-realm players' full "Name-Realm" in chat, and the minimap lays out correctly after a /reload during combat. **This beta migrates your profile schema (v43 → v45)** — an automatic backup is taken, but as always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **The Combat Log is a tab in QUI Chat.** Blizzard's Combat Log now embeds as a pinned tab in your first chat window, using QUI's font and styling, with its own scrollbar. It's on by default, can be turned off in the chat settings, and can be drag-reordered within the tab bar like any other tab.
+- **Option to show cross-realm players' realm names.** A new "Show Realm Names" chat setting displays senders as "Name-Realm" instead of just "Name". It's off by default; if your profile previously showed realms via the channel-shortening setting, the migration keeps your current look.
+
+### Fixed
+- **Chat windows no longer snap between two saved positions.** QUI Chat kept a window's position in two places that could drift apart, so a window would sometimes jump to an older spot after a move or reload. Position now lives in a single store (migrated automatically), and resizing a window from a corner grip no longer shifts it sideways when you close Layout Mode — for the damage meter too.
+- **Copy Chat copies what you actually see.** The copy window could come up completely blank when a Battle.net name was anywhere in the scrollback, dropped all colors, and mangled some item and player links. It now preserves each line's color, keeps link text readable, and opens scrolled to the newest lines.
+- **Channel colors are correct at login.** Lines that arrived before your chat colors finished downloading — most visibly the guild message of the day — were baked white and stayed white. QUI Chat now waits for the right color and retroactively recolors the affected lines once colors sync.
+- **The reply keybind works in QUI Chat.** Pressing your reply key (R by default) to answer the last whisper did nothing under the chat takeover. Incoming whispers and Battle.net whispers now register as your reply target again.
+- **Battle.net names in chat link correctly.** Clicking a Battle.net player's name could fail because the protected name token was being upper-cased. Those name links work again.
+- **Chat respects your font with Asian-language clients.** With CJK locales, the chat edit box and the embedded Combat Log stayed on Blizzard's stock font; they now adopt the same font as the rest of QUI Chat, including after live theme changes.
+- **Chat history honors its limits.** Restored history now respects your configured line cap instead of a fixed default, and excluded channels are matched reliably so their lines stay out of the saved history.
+- **The minimap survives a /reload during combat.** Reloading the UI mid-combat could leave the minimap blocked from laying out ("action blocked"); it now initializes inside the safe window and comes up positioned and skinned.
+
+### Changed
+- **Whisper tabs reorder like normal tabs.** Conversation (whisper) tabs and your saved tabs now share one ordering on the tab bar, so you can drag any tab anywhere. Saved-tab order persists; conversation-tab positions last for the session.
+
 ## v4.0.0-beta31 - 2026-06-09
 
 > 🧪 **QUI 4 beta — small fixes.** Another quick follow-up to beta30: buff border timers on long buffs like flasks no longer freeze or blank out, right-clicking a buff border to cancel it works again, QUI Chat is steadier (whisper tabs, the guild message of the day, and a couple of crashes), fresh installs get a starter look and a welcome window, and loot roll toasts and the Mythic+ abandon prompt land where they should. No schema migration — your beta30 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
