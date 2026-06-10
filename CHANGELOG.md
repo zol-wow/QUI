@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta33 - 2026-06-10
+
+> 🧪 **QUI 4 beta — QUI Chat follow-up fixes.** A quick follow-up to beta32 focused on the new Combat Log tab and custom chat tabs: combat-log filters no longer reset to "show everything", the embedded Combat Log is left-aligned like the stock one, /played no longer prints repeatedly at login, and unchecking channels on a custom tab actually keeps them out. No schema migration — your beta32 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Combat-log filters no longer reset to "show everything".** With the Combat Log embedded as a QUI Chat tab, your combat-log filters could silently break — the log began showing every event from everyone and stayed that way until a /reload. The embed now keeps Blizzard's filter refresh on a safe path, so your filters keep working.
+- **The embedded Combat Log is left-aligned again.** Combat Log lines were centered after adopting QUI's chat font; they now stay left-aligned like the stock combat log, including after live font changes, and alignment is handed back correctly when the tab is disabled.
+- **/played no longer prints repeatedly at login.** Addons can quietly ask the game for your played time; QUI Chat printed every one of those background requests as /played output. It now prints only when the result was meant to be shown, and old /played lines are no longer replayed from saved chat history.
+- **Unchecked channels stay out of custom chat tabs.** Unchecking every channel on a custom tab could bring Trade and Services right back on the next login. A deselected channel now stays deselected. If a tab you emptied before this fix still shows them, toggle any of its channel checkboxes once to re-save it.
+
 ## v4.0.0-beta32 - 2026-06-10
 
 > 🧪 **QUI 4 beta — QUI Chat polish.** This one is almost entirely about the QUI Chat module: the Combat Log joins your chat window as a real tab, whisper tabs can be reordered alongside your saved tabs, the copy-chat window finally copies exactly what you see (colors included), chat windows stop jumping between two remembered positions, replying with the reply keybind works again, and channel colors are right at login instead of white. There's also a new option to show cross-realm players' full "Name-Realm" in chat, and the minimap lays out correctly after a /reload during combat. **This beta migrates your profile schema (v43 → v45)** — an automatic backup is taken, but as always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
