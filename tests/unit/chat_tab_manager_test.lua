@@ -90,8 +90,33 @@ local channelsOnly = TM.BuildFilter({
 assert(channelsOnly({ k = "SAY" }) == false, "false group keys do not pass")
 assert(channelsOnly({ k = "CHANNEL", ch = "Trade" }) == true, "array channel value passes")
 assert(channelsOnly({ k = "CHANNEL", ch = "General" }) == false, "false channel key blocked")
-assert(TM.BuildFilter({ groups = { SAY = false }, channels = { Trade = false } }) == nil,
-    "all-false sets are treated as unconstrained")
+
+-- Explicit channel deselection: the settings UI persists FALSE (not nil) on
+-- channel uncheck, so "user removed this channel" is distinguishable from a
+-- never-curated empty table. A deselect-all tab must NOT fall back to nil
+-- (the old behavior let the CHANNEL-group default fallback resurrect
+-- Trade/Services on a tab whose channels were all unchecked).
+local allOff = TM.BuildFilter({ groups = { SAY = false }, channels = { Trade = false } })
+assert(type(allOff) == "function", "explicit-false channels ARE a constraint")
+assert(allOff({ k = "CHANNEL", ch = "Trade" }) == false, "deselected channel blocked")
+assert(allOff({ k = "CHANNEL", ch = "TRADE" }) == false, "deselected channel blocked case-insensitively")
+assert(allOff({ k = "SAY" }) == true, "groups unconstrained: non-channel traffic still shows")
+assert(allOff({ k = "CHANNEL", ch = "General" }) == true,
+    "channels without an explicit decision still show on an otherwise-unconstrained tab")
+
+-- A GROUP-constrained tab (seeded tabs carry CHANNEL in groups) with every
+-- channel deselected must not leak default-category channels through the
+-- CHANNEL-group fallback.
+local guildNoChannels = TM.BuildFilter({
+    groups = { GUILD = true, CHANNEL = true },
+    channels = { Trade = false, ["Services"] = false },
+})
+assert(guildNoChannels({ k = "GUILD" }) == true, "guild traffic passes")
+assert(guildNoChannels({ k = "CHANNEL", ch = "Trade" }) == false,
+    "deselected default channel does not leak via CHANNEL group")
+assert(guildNoChannels({ k = "CHANNEL", ch = "Services" }) == false,
+    "deselected Services does not leak via CHANNEL group")
+assert(guildNoChannels({ k = "SAY" }) == false, "unlisted group still blocked")
 
 -- Blacklist filter
 local g = TM.BuildFilter({ groups = { SAY = true }, channels = {}, invert = true })

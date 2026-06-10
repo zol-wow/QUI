@@ -63,8 +63,13 @@ local function CustomTabSignature(t)
         parts[#parts + 1] = "g:" .. table.concat(keys, ",")
     end
     if type(t.channels) == "table" then
+        -- Channel keys persist with explicit false on deselect; the signature
+        -- must encode the VALUE too or a check->uncheck edit (same key set)
+        -- would never re-derive the active filter.
         local keys = {}
-        for k in pairs(t.channels) do keys[#keys + 1] = tostring(k) end
+        for k, v in pairs(t.channels) do
+            keys[#keys + 1] = tostring(k) .. (v and "=1" or "=0")
+        end
         table.sort(keys)
         parts[#parts + 1] = "c:" .. table.concat(keys, ",")
     end

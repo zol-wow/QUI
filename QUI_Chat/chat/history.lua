@@ -91,6 +91,9 @@ local function captureFromStore(entry)
     if type(entry.m) ~= "string" or entry.m == "" then return end -- future producers
     local e = entry.e
     if e == "ADDMESSAGE" or e == "BACKFILL" or e == "HISTORY" then return end
+    -- /played output is point-in-time: replaying stale totals every login
+    -- reads as "/played fired multiple times". Never persist it.
+    if e == "TIME_PLAYED_MSG" then return end
     local settings = I.GetSettings and I.GetSettings()
     if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
     local s = settings and settings.history
@@ -203,7 +206,12 @@ local function repump()
             end
             if s.showSeparators then pumpSeparator(sepBefore) end
             for i = 1, #entries do
-                pumpEntry(entries[i])
+                -- Stale /played totals from earlier sessions read as repeated
+                -- /played output; skip them on replay (capture no longer
+                -- persists new ones, this purges already-saved data).
+                if entries[i].ev ~= "TIME_PLAYED_MSG" then
+                    pumpEntry(entries[i])
+                end
             end
             if s.showSeparators then pumpSeparator(sepAfter) end
         end

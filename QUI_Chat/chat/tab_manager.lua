@@ -56,6 +56,21 @@ local function NormalizeSetUpper(t)
     return out
 end
 
+-- Explicitly DESELECTED channels: string keys stored with value false (the
+-- settings UI writes false, not nil, on channel uncheck so "user removed this
+-- channel" survives in the saved shape). Returns nil when none exist.
+local function NormalizeFalseSetUpper(t)
+    if type(t) ~= "table" then return nil end
+    local out
+    for k, v in pairs(t) do
+        if type(k) == "string" and v == false then
+            out = out or {}
+            out[k:upper()] = true
+        end
+    end
+    return out
+end
+
 local EVENT_GROUP_ALIAS = {
     RAID_BOSS_EMOTE = "MONSTER_BOSS_EMOTE",
     QUEST_BOSS_EMOTE = "MONSTER_BOSS_EMOTE",
@@ -69,34 +84,55 @@ function TabManager.BuildFilter(tabData)
     if type(tabData) ~= "table" then return nil end
     local groups = NormalizeSet(tabData.groups)
     local channels = NormalizeSetUpper(tabData.channels)
-    if not groups and not channels then return nil end
+    local channelsOff = NormalizeFalseSetUpper(tabData.channels)
+    if not groups and not channels and not channelsOff then return nil end
     local invert = tabData.invert and true or false
 
     -- Named channel traffic is routed by channel name first (case-insensitive,
     -- matching Blizzard's routing). A tab that curates a channel list must not
     -- inherit Trade just because CHANNEL is present in its message groups —
-    -- but a tab that never curated channels (empty set) shows default-category
-    -- channels (zone/regional) through its CHANNEL group, like Blizzard's
-    -- default frame carries zone channels without explicit listing. That heals
-    -- seeds taken before the channels existed.
+    -- but a tab that never curated channels (no keys at all) shows
+    -- default-category channels (zone/regional) through its CHANNEL group,
+    -- like Blizzard's default frame carries zone channels without explicit
+    -- listing. That heals seeds taken before the channels existed. Explicit
+    -- false keys are user deselections and always block their channel — a
+    -- fully unchecked list must NOT fall back to "show Trade anyway"
+    -- (deselect-all used to be stored as an empty table, indistinguishable
+    -- from never-curated, so the fallback resurrected Trade/Services).
     return function(entry)
         local listed = false
         local channelName = entry.ch
         if type(channelName) == "string" and channelName ~= "" then
             if channels then
                 listed = channels[channelName:upper()] or false
-            elseif groups and groups.CHANNEL then
-                local Reg = ns.QUI.Chat.ChannelRegistry
-                listed = (Reg and Reg.IsDefault and Reg.IsDefault(channelName)) or false
+            elseif channelsOff and channelsOff[channelName:upper()] then
+                listed = false
+            elseif groups then
+                if groups.CHANNEL then
+                    local Reg = ns.QUI.Chat.ChannelRegistry
+                    listed = (Reg and Reg.IsDefault and Reg.IsDefault(channelName)) or false
+                end
+            else
+                -- No group constraint and no channel whitelist: an
+                -- everything-tab minus its deselected channels.
+                listed = true
             end
         else
-            if groups and entry.k and groups[entry.k] then listed = true end
-            -- Normalize typeKey -> message group (PARTY_LEADER lives in group
-            -- PARTY): the stored/derived sets use GROUP names.
-            if not listed and groups and entry.e then
-                local grp = _G.ChatTypeGroupInverted and _G.ChatTypeGroupInverted[entry.e]
-                if not grp then grp = EVENT_GROUP_ALIAS[entry.e] end
-                if grp and groups[grp] then listed = true end
+            if groups then
+                if entry.k and groups[entry.k] then listed = true end
+                -- Normalize typeKey -> message group (PARTY_LEADER lives in
+                -- group PARTY): the stored/derived sets use GROUP names.
+                if not listed and entry.e then
+                    local grp = _G.ChatTypeGroupInverted and _G.ChatTypeGroupInverted[entry.e]
+                    if not grp then grp = EVENT_GROUP_ALIAS[entry.e] end
+                    if grp and groups[grp] then listed = true end
+                end
+            elseif not channels then
+                -- Deselected-channels-only tab: groups are unconstrained, so
+                -- non-channel traffic shows (only the falses are filtered).
+                -- A channel WHITELIST tab (channels set) keeps the original
+                -- channel-only semantics: non-channel traffic stays hidden.
+                listed = true
             end
         end
         if invert then
@@ -120,8 +156,10 @@ function TabManager.EnsureDefaultChannelListed(name)
     for i = 1, #tabs do
         local chs = type(tabs[i]) == "table" and tabs[i].channels
         if type(chs) == "table" then
-            for stored, v in pairs(chs) do
-                if v and type(stored) == "string" and stored:upper() == upper then
+            for stored in pairs(chs) do
+                -- An explicit false (deselected) entry is ALSO a deliberate
+                -- routing decision — never resurrect a deselected channel.
+                if type(stored) == "string" and stored:upper() == upper then
                     return -- already routed somewhere in window 1
                 end
             end

@@ -4,9 +4,10 @@
 -- 100% Blizzard: we reparent ChatFrame2 and the native quick-filter bar
 -- (CombatLogQuickButtonFrame_Custom) into the window container when the tab is
 -- active, hide QUI's own render (SMF + scrollbar) for that window, and park the
--- frame on a hidden anchor otherwise. blizzard_suppress reads GetHostParent()
--- to decide ChatFrame2's enforced parent so it cooperates instead of yanking
--- the frame back to its hidden anchor.
+-- frame on a SHOWN clipped off-screen anchor otherwise (see filter-taint notes
+-- below). blizzard_suppress reads GetHostParent()/GetParkParent() to decide
+-- ChatFrame2's enforced parent so it cooperates instead of yanking the frame
+-- back to its park.
 --
 -- Taint posture: ChatFrame2 is an EditModeSystem frame and :ClearAllPoints /
 -- :SetPoint are protected functions, so geometry mutation is insecure and must
@@ -15,6 +16,25 @@
 -- Blizzard-internal; full taint validation is Drew's in-game pass. Fallback if
 -- combat-log dispatch ever taints: detach ChatFrame2 from Edit Mode once before
 -- owning geometry (docs/superpowers/specs/2026-06-09-combat-log-tab-design.md §6).
+--
+-- FILTER taint (the "all combat events show" bug): Blizzard_CombatLog wraps
+-- ChatFrame2's OnShow/OnHide (Blizzard_CombatLog.lua:1456-1469) — OnShow runs
+-- Blizzard_CombatLog_QuickButton_OnClick(currentFilter), which writes the
+-- Blizzard_CombatLog_CurrentSettings/currentFilter globals and calls
+-- C_CombatLog.ApplyFilterSettings; the filters land via the SecureOnly
+-- C_CombatLogSecure.AddEventFilter AFTER C_CombatLogSecure.ClearEventFilters
+-- (Blizzard_CombatLogProcessor.lua:121-183). If that wrapper fires on a
+-- QUI-tainted path (our SetParent/Show flipping effective visibility), the
+-- apply half-completes — filters cleared, re-add blocked — and the combat log
+-- shows EVERYTHING from then on; the tainted globals keep every later apply
+-- broken too. Two rules keep the wrapper off our execution path:
+--   1. ChatFrame2 parks on a SHOWN, clipped, off-screen anchor — reparenting
+--      between park and host container never changes effective visibility, so
+--      OnShow/OnHide never fire from a QUI reparent.
+--   2. The one Show() the embed may need (ChatFrame2 arrives hidden when it
+--      was a docked, unselected tab) goes through a SecureHandler Execute so
+--      the wrapper — and the whole filter re-apply — runs untainted
+--      (same pattern as the WorldMap/Mail secure reposition).
 local ADDON_NAME, ns = ... -- luacheck: ignore ADDON_NAME
 
 local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
@@ -29,6 +49,7 @@ local hiddenAnchor      -- shared hidden parent for parked chrome/quick-bar
 local loadWaiter        -- waits for the LoadOnDemand combat-log addon/frame
 local combatWaiter      -- waits for PLAYER_REGEN_ENABLED to finish a deferred embed
 local stockFont         -- {file, height, flags} captured before the first QUI apply
+local stockJustifyH     -- ChatFrame2's pre-QUI horizontal justification ("LEFT" stock)
 local fontHookInstalled -- SetFont durability post-hook (installed once, gated on activeWindow)
 
 local function HiddenAnchor()
@@ -37,6 +58,62 @@ local function HiddenAnchor()
         hiddenAnchor:Hide()
     end
     return hiddenAnchor
+end
+
+-- ChatFrame2's park: SHOWN (never fires the OnShow/OnHide filter wrapper on
+-- reparent — see header), clipped to 1px and positioned fully off-screen so a
+-- parked combat log renders nothing. The quick bar and stripped chrome keep
+-- using the plain hidden anchor (they carry no visibility side effects).
+local shownPark
+local function ShownPark()
+    if not shownPark and _G.CreateFrame then
+        shownPark = _G.CreateFrame("Frame", "QUI_CombatLogShownPark", _G.UIParent)
+        shownPark:SetSize(1, 1)
+        shownPark:SetPoint("TOPRIGHT", _G.UIParent, "BOTTOMLEFT", -20, -20)
+        if shownPark.SetClipsChildren then
+            shownPark:SetClipsChildren(true)
+        end
+        -- Explicitly shown: the whole point of this park is that ChatFrame2's
+        -- effective visibility never changes while parked here.
+        shownPark:Show()
+    end
+    return shownPark
+end
+
+-- Read by blizzard_suppress: where ChatFrame2 parks while its tab is inactive.
+function CombatLogTab.GetParkParent()
+    return ShownPark() or HiddenAnchor()
+end
+
+-- One-time secure Show: a docked, unselected ChatFrame2 arrives with its shown
+-- flag false; flipping it from QUI code would run the Blizzard_CombatLog
+-- OnShow wrapper tainted (header). A SecureHandler Execute shows it from the
+-- restricted environment instead, so the wrapper's filter re-apply stays
+-- secure. Falls back to a plain pcall Show when the secure path is
+-- unavailable (no worse than the pre-fix behavior).
+local secureShowDriver
+local function EnsureShownSecure(cf)
+    if not cf then return end
+    if cf.IsShown and cf:IsShown() then return end
+    if not secureShowDriver and _G.CreateFrame then
+        local ok, drv = pcall(_G.CreateFrame, "Frame", "QUI_CombatLogSecureShow",
+            nil, "SecureHandlerBaseTemplate")
+        if ok and drv then secureShowDriver = drv end
+    end
+    if secureShowDriver and secureShowDriver.SetFrameRef and secureShowDriver.Execute then
+        local okRef = pcall(secureShowDriver.SetFrameRef, secureShowDriver, "quiCombatLog", cf)
+        if okRef then
+            pcall(secureShowDriver.Execute, secureShowDriver, [=[
+                local f = self:GetFrameRef("quiCombatLog")
+                if f and not f:IsShown() then f:Show() end
+            ]=])
+        end
+    end
+    -- Fallback when the secure path didn't take (unprotected frame, missing
+    -- template): plain Show — the pre-fix behavior.
+    if not (cf.IsShown and cf:IsShown()) and cf.Show then
+        pcall(cf.Show, cf)
+    end
 end
 
 function CombatLogTab.IsEnabled()
@@ -100,6 +177,16 @@ end
 -- font family. A post-hook on ChatFrame2.SetFont re-applies the QUI font
 -- object whenever an outside SetFont lands while the embed is active; the
 -- pre-QUI font is snapshotted once so Deactivate can hand back stock values.
+-- SetFontObject adopts the font OBJECT's justification too — the QUI font
+-- family carries no explicit justifyH, so applying it re-centers the SMF text
+-- (display_layer re-asserts SetJustifyH("LEFT") on its own SMF for the same
+-- reason). Re-assert ChatFrame2's pre-QUI justification after every apply.
+local function ReassertJustify(cf)
+    if cf.SetJustifyH then
+        pcall(cf.SetJustifyH, cf, stockJustifyH or "LEFT")
+    end
+end
+
 function CombatLogTab.RefreshFont()
     if not activeWindow then return end
     local cf = _G.ChatFrame2
@@ -112,7 +199,12 @@ function CombatLogTab.RefreshFont()
             stockFont = { file = file, height = height, flags = flags or "" }
         end
     end
+    if not stockJustifyH and cf.GetJustifyH then
+        local j = cf:GetJustifyH()
+        if type(j) == "string" and j ~= "" then stockJustifyH = j end
+    end
     pcall(cf.SetFontObject, cf, fo)
+    ReassertJustify(cf)
     if not fontHookInstalled and _G.hooksecurefunc then
         fontHookInstalled = true
         _G.hooksecurefunc(cf, "SetFont", function(self)
@@ -122,6 +214,7 @@ function CombatLogTab.RefreshFont()
             -- SetFont hook, so there is no recursion.
             if cur and self.SetFontObject then
                 pcall(self.SetFontObject, self, cur)
+                ReassertJustify(self)
             end
         end)
     end
@@ -170,7 +263,9 @@ local function Embed(windowID, container)
     end
     StripChrome(cf)
     CombatLogTab.RefreshFont()
-    if cf.Show then cf:Show() end
+    -- Secure show (header): the Blizzard_CombatLog OnShow wrapper re-applies
+    -- the user's combat-log filter; it must not run on QUI's tainted path.
+    EnsureShownSecure(cf)
 end
 
 function CombatLogTab.Activate(windowID)
@@ -219,15 +314,23 @@ function CombatLogTab.Deactivate(windowID)
     local park = HiddenAnchor()
     local cf = _G.ChatFrame2
     local qb = _G.CombatLogQuickButtonFrame_Custom
-    -- ChatFrame2: blizzard_suppress now enforces hidden (GetHostParent == nil),
-    -- but park it ourselves too so the move happens even if suppression is off.
-    if cf and park and cf.SetParent then pcall(cf.SetParent, cf, park) end
+    -- ChatFrame2 parks on the SHOWN clipped anchor (header: a hidden park
+    -- would fire the Blizzard_CombatLog OnHide wrapper on our tainted path).
+    -- blizzard_suppress enforces the same parent (GetHostParent == nil), but
+    -- park it ourselves too so the move happens even if suppression is off.
+    local cfPark = CombatLogTab.GetParkParent()
+    if cf and cfPark and cf.SetParent then pcall(cf.SetParent, cf, cfPark) end
     if qb and park and qb.SetParent then pcall(qb.SetParent, qb, park) end
     -- Hand the stock font back via explicit SetFont values (NEVER a captured
     -- font object — editbox_setfontobject-self-cycle lesson). activeWindow is
     -- already nil here, so the durability hook lets this through.
     if stockFont and cf and cf.SetFont then
         pcall(cf.SetFont, cf, stockFont.file, stockFont.height, stockFont.flags)
+    end
+    -- Hand back the pre-QUI justification too (the QUI font object pulled the
+    -- text to its own justify; stock combat log is LEFT).
+    if cf and cf.SetJustifyH then
+        pcall(cf.SetJustifyH, cf, stockJustifyH or "LEFT")
     end
 
     local Display = ns.QUI.Chat.DisplayLayer

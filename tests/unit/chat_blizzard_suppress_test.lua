@@ -25,7 +25,10 @@ local function makeBlizzFrame(name, parent)
         s.events[e] = true
         if s._registerHook then s._registerHook(s, e) end
     end
-    f.UnregisterEvent = function(s, e) s.events[e] = nil end
+    f.UnregisterEvent = function(s, e)
+        s.events[e] = nil
+        if s._unregisterHook then s._unregisterHook(s, e) end
+    end
     f.UnregisterAllEvents = function(s) s.events = {} end
     f.GetID = function(s) return s.id or 1 end
     f.RegisterForMessages = function(s, ...) s.messagesRegistered = { ... } end
@@ -98,12 +101,16 @@ function _G.hooksecurefunc(tbl, name, fn)
         globalHooks[tbl] = name
         return
     end
-    assert(name == "SetParent" or name == "RegisterEvent" or name == "SetScript",
-        "only SetParent/RegisterEvent/SetScript frame-method hooks expected, got: " .. tostring(name))
+    assert(name == "SetParent" or name == "RegisterEvent" or name == "UnregisterEvent"
+        or name == "SetScript",
+        "only SetParent/RegisterEvent/UnregisterEvent/SetScript frame-method hooks expected, got: "
+        .. tostring(name))
     if name == "SetParent" then
         tbl._setParentHook = function(self, p) fn(self, p) end
     elseif name == "RegisterEvent" then
         tbl._registerHook = function(self, e) fn(self, e) end
+    elseif name == "UnregisterEvent" then
+        tbl._unregisterHook = function(self, e) fn(self, e) end
     elseif name == "SetScript" then
         -- Emulate WoW: hooksecurefunc replaces the method with a wrapper, while
         -- the pre-hook reference (captured by the module) stays raw so the
@@ -368,5 +375,21 @@ assert(_G.FCF_OpenTemporaryWindow == origTempFn, "original restored for no-forwa
 forwarded = nil
 _G.FCF_OpenTemporaryWindow("WHISPER", "Someone-Realm")
 assert(forwarded == nil, "pristine original does NOT forward when suppression is inactive")
+
+-- /played visibility mirror: the silent-request dance (addon unregisters
+-- TIME_PLAYED_MSG on the default frame, requests, re-registers) must flip
+-- TimePlayedWanted so the capture frame can skip the addon-triggered output.
+settings.enabled = true
+SP.Apply()
+assert(SP.IsActive(), "active for /played latch test")
+assert(SP.TimePlayedWanted() == true, "wanted by default")
+_G.ChatFrame1:UnregisterEvent("TIME_PLAYED_MSG") -- outside suppression intent
+assert(SP.TimePlayedWanted() == false, "outside unregister latches suppression")
+_G.ChatFrame1:RegisterEvent("TIME_PLAYED_MSG")   -- outside re-register
+assert(SP.TimePlayedWanted() == true, "outside re-register clears the latch")
+-- The strip the suppress module performs on that re-register (neutered frame)
+-- must NOT re-latch suppression: it runs under the module's own-write guard.
+assert(_G.ChatFrame1.events["TIME_PLAYED_MSG"] == nil,
+    "neutered frame still strips the re-registered event")
 
 print("OK: chat_blizzard_suppress_test")

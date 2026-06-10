@@ -66,6 +66,21 @@ local neutered = {}        -- frame -> true while event-neutered
 local registerHooked = {}  -- frame -> true (blocking hook installed)
 local inOwnRegister = false
 
+-- /played visibility mirror. Stock chat shows TIME_PLAYED_MSG via the SYSTEM
+-- message group; addons that silently RequestTimePlayed() at login suppress
+-- the print by UnregisterEvent("TIME_PLAYED_MSG") on the chat frames and
+-- re-register afterwards. The capture frame replicates the event regardless
+-- of frame registration, so without this mirror every silent request prints
+-- ("/played multiple times at login"). Track outside register/unregister
+-- intent on the DEFAULT frame (the suppression dance always includes it) and
+-- let message_capture consult it. Starts true: the stock default frame
+-- carries the SYSTEM group.
+local timePlayedWanted = true
+
+function Suppress.TimePlayedWanted()
+    return timePlayedWanted
+end
+
 local function IsCombatLogFrame(frame)
     return frame == _G.ChatFrame2
 end
@@ -87,9 +102,29 @@ local function HookRegisterEvent(frame)
     -- is registered (Blizzard settings paths and other addons re-add message
     -- groups; dead frames must stay dead). Reentrancy-guarded.
     _G.hooksecurefunc(frame, "RegisterEvent", function(self, event)
-        if inOwnRegister or not neutered[self] then return end
+        if inOwnRegister then return end
+        -- Outside register of TIME_PLAYED_MSG on the default frame = "the
+        -- silent /played requester is done"; the line is wanted again.
+        if event == "TIME_PLAYED_MSG" and self == _G.ChatFrame1 then
+            timePlayedWanted = true
+        end
+        if not neutered[self] then return end
         if type(event) == "string" and not IsNeuterAllowed(self, event) then
+            -- The strip is OUR write: guard it so the UnregisterEvent hook
+            -- below does not read it as an outside suppression request.
+            inOwnRegister = true
             pcall(self.UnregisterEvent, self, event)
+            inOwnRegister = false
+        end
+    end)
+    -- Outside UnregisterEvent of TIME_PLAYED_MSG on the default frame is the
+    -- canonical "request /played silently" dance — honor it (see
+    -- timePlayedWanted above). NeuterOne/RestoreEventsOne use
+    -- UnregisterAllEvents, which this hook does not see.
+    _G.hooksecurefunc(frame, "UnregisterEvent", function(self, event)
+        if inOwnRegister then return end
+        if event == "TIME_PLAYED_MSG" and self == _G.ChatFrame1 then
+            timePlayedWanted = false
         end
     end)
 end
@@ -305,14 +340,21 @@ local function NeutralizeDockUpdateScripts()
 end
 
 -- ChatFrame2's enforced parent is dynamic: the combat-log host container while
--- its QUI tab is active (combat_log_tab.lua), the hidden anchor otherwise.
--- Passed by reference to SuppressRegion so the SetParent hook re-resolves live —
--- letting the combat-log tab embed ChatFrame2 instead of being yanked back.
--- Defined here (after the module-level `hiddenAnchor` local) so it captures it.
+-- its QUI tab is active (combat_log_tab.lua), the combat-log module's SHOWN
+-- clipped park otherwise. The park must stay shown: a hidden parent fires the
+-- Blizzard_CombatLog OnShow/OnHide wrapper on QUI's tainted path, and its
+-- filter re-apply then half-completes (C_CombatLogSecure.ClearEventFilters
+-- runs, the tainted AddEventFilter is blocked) — the combat log shows
+-- everything from then on. Passed by reference to SuppressRegion so the
+-- SetParent hook re-resolves live — letting the combat-log tab embed
+-- ChatFrame2 instead of being yanked back. Defined here (after the
+-- module-level `hiddenAnchor` local) so the last-ditch fallback captures it.
 local function ChatFrame2EnforcedParent()
     local CL = ns.QUI.Chat.CombatLogTab
     local host = CL and CL.GetHostParent and CL.GetHostParent()
-    return host or hiddenAnchor
+    if host then return host end
+    local park = CL and CL.GetParkParent and CL.GetParkParent()
+    return park or hiddenAnchor
 end
 
 -- Test/diagnostic hook.

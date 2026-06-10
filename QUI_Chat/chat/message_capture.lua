@@ -137,6 +137,15 @@ end
 local SYSTEM_EVENTS = {}
 
 SYSTEM_EVENTS.TIME_PLAYED_MSG = function(event, totalTime, levelTime)
+    -- Honor the stock silent-request dance: addons that RequestTimePlayed()
+    -- without wanting chat output unregister TIME_PLAYED_MSG from the chat
+    -- frames first. The neutered frames can't reflect that, so
+    -- blizzard_suppress mirrors the outside intent — when the default frame
+    -- wouldn't have printed, neither do we (fixes "/played spam at login").
+    local Suppress = ns.QUI.Chat.BlizzardSuppress
+    if Suppress and Suppress.TimePlayedWanted and not Suppress.TimePlayedWanted() then
+        return
+    end
     local dayFmt = GlobalString("TIME_DAYHOURMINUTESECOND")
     local totalFmt, levelFmt = GlobalString("TIME_PLAYED_TOTAL"), GlobalString("TIME_PLAYED_LEVEL")
     if not dayFmt then return end

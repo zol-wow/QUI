@@ -438,10 +438,15 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 return tabs[selectedCustomDisplayTabIndex]
             end
 
-            -- Set-shaped binding that writes nil (not false) so an empty
-            -- selection reads as "no constraint" rather than an all-blocking
-            -- whitelist. Used for both groups and channels on custom tabs.
-            local function makeSetBinding(getSet)
+            -- Set-shaped binding. Groups write nil (not false) on uncheck so
+            -- an empty selection reads as "no constraint" rather than an
+            -- all-blocking whitelist. Channels pass explicitFalse=true and
+            -- persist false instead: "user deselected this channel" must
+            -- survive in storage, or a fully-unchecked list is identical to a
+            -- never-curated one and the CHANNEL-group default fallback
+            -- resurrects Trade/Services (TabManager.BuildFilter consumes the
+            -- false keys as explicit blocks).
+            local function makeSetBinding(getSet, explicitFalse)
                 return MarkTransientOptionsBinding(setmetatable({}, {
                     __index = function(_, k)
                         local s = getSet()
@@ -450,7 +455,11 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     __newindex = function(_, k, v)
                         local s = getSet()
                         if not s then return end
-                        s[k] = v and true or nil
+                        if v then
+                            s[k] = true
+                        else
+                            s[k] = explicitFalse and false or nil
+                        end
                     end,
                 }))
             end
@@ -699,7 +708,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                         if not t then return nil end
                         if type(t.channels) ~= "table" then t.channels = {} end
                         return t.channels
-                    end)
+                    end, true) -- explicitFalse: deselects persist as false
                     local channelsCard = ns.QUI_Options.CreateSettingsCardGroup(body, sy)
                     local function makeChannelCheckbox(channelName)
                         local cb = GUI:CreateFormCheckbox(channelsCard.frame, nil, channelName, channelsBinding, Refresh,

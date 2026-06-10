@@ -13,6 +13,8 @@ local function F()
     function f:SetPoint(...) self._pts[#self._pts + 1] = { ... } end
     function f:Show() self._shown = true end
     function f:Hide() self._shown = false end
+    function f:IsShown() return self._shown end
+    function f:SetSize(w, h) self._size = { w, h } end
     function f:SetScript(k, fn) self.scripts[k] = fn end
     function f:RegisterEvent() end
     function f:UnregisterAllEvents() end
@@ -35,6 +37,17 @@ end
 function _G.ChatFrame2:GetFont()
     local rf = self._rawFont
     if rf then return rf[1], rf[2], rf[3] end
+end
+-- Justification models the in-game SetFontObject behavior: adopting a font
+-- object pulls the SMF to the OBJECT's justification (the QUI font family
+-- carries none -> CENTER), which is the centered-combat-log bug.
+_G.ChatFrame2._justifyH = "LEFT"
+function _G.ChatFrame2:GetJustifyH() return self._justifyH end
+function _G.ChatFrame2:SetJustifyH(j) self._justifyH = j end
+local realSetFontObject = _G.ChatFrame2.SetFontObject
+function _G.ChatFrame2:SetFontObject(fo)
+    realSetFontObject(self, fo)
+    self._justifyH = "CENTER"
 end
 -- hooksecurefunc stub: post-hook on a table member.
 function _G.hooksecurefunc(tbl, name, fn)
@@ -91,6 +104,8 @@ assert(smf._shown == false, "SMF hidden while combat log active")
 assert(_G.ChatFrame2._shown == true, "ChatFrame2 shown")
 assert(_G.ChatFrame2._font == fontSentinel,
     "ChatFrame2 adopts the QUI chat font object on embed")
+assert(_G.ChatFrame2._justifyH == "LEFT",
+    "justification re-asserted after SetFontObject (font family centers the SMF)")
 
 -- Live font change while the tab is open: RefreshFont re-applies the
 -- (re-published) font object.
@@ -99,6 +114,8 @@ ns.QUI.Chat._internals.chatFontObject = fontSentinel2
 CL.RefreshFont()
 assert(_G.ChatFrame2._font == fontSentinel2,
     "RefreshFont re-applies the published font object while active")
+assert(_G.ChatFrame2._justifyH == "LEFT",
+    "justification survives a live font refresh")
 
 -- Blizzard clobber while the tab is open: ChatFrame2 keeps UPDATE_CHAT_WINDOWS
 -- (neuter-exempt), and its handler re-asserts the saved per-window font via
@@ -107,12 +124,20 @@ assert(_G.ChatFrame2._font == fontSentinel2,
 _G.ChatFrame2:SetFont("Fonts\\FRIZQT__.TTF", 14, "")
 assert(_G.ChatFrame2._font == fontSentinel2,
     "QUI font object re-applied after an outside SetFont while active")
+assert(_G.ChatFrame2._justifyH == "LEFT",
+    "justification re-asserted by the durability hook too")
 
 -- Deactivate(1): host clears, SMF restored, ChatFrame2 parked off the container.
 CL.Deactivate(1)
 assert(CL.IsActiveWindow(1) == false, "inactive after deactivate")
 assert(CL.GetHostParent() == nil, "no host after deactivate")
 assert(_G.ChatFrame2:GetParent() ~= container, "ChatFrame2 parked off the container")
+-- The park must be the SHOWN clipped anchor: parking on a hidden parent would
+-- fire Blizzard_CombatLog's OnHide wrapper on QUI's tainted path and break the
+-- combat-log filter pipeline (ClearEventFilters runs, AddEventFilter blocked).
+assert(_G.ChatFrame2:GetParent() == CL.GetParkParent(),
+    "ChatFrame2 parks on the module's park parent")
+assert(CL.GetParkParent()._shown == true, "park parent is a SHOWN frame")
 assert(smf._shown == true, "SMF restored after deactivate")
 assert(_G.ChatFrame2._rawFont[1] == "Fonts\\STOCK.TTF" and _G.ChatFrame2._rawFont[2] == 12,
     "snapshotted stock font handed back on deactivate")
