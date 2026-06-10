@@ -85,16 +85,22 @@ function CombatLogTab.GetParkParent()
     return ShownPark() or HiddenAnchor()
 end
 
--- One-time secure Show: a docked, unselected ChatFrame2 arrives with its shown
--- flag false; flipping it from QUI code would run the Blizzard_CombatLog
--- OnShow wrapper tainted (header). A SecureHandler Execute shows it from the
--- restricted environment instead, so the wrapper's filter re-apply stays
--- secure. Falls back to a plain pcall Show when the secure path is
--- unavailable (no worse than the pre-fix behavior).
+-- Secure visibility CYCLE (not just a one-time Show): Blizzard_CombatLog
+-- applies the user's saved quick-filter ONLY from its ChatFrame2 OnShow
+-- wrapper (Blizzard_CombatLog.lua:1456-1462) — QuickButtonFrame_OnLoad
+-- installs the wrapper but never applies the filter itself. Under the
+-- never-flip-visibility park design that wrapper can go a whole session
+-- without firing: when ChatFrame2 arrives with its shown flag already true,
+-- a Show() is a no-op, no OnShow transition ever happens, the C-side event
+-- filter list stays EMPTY, and the combat log renders every event ("ignores
+-- its Blizzard filters") with no taint involved. So on EVERY embed, drive a
+-- Hide+Show transition from the SecureHandler snippet: the wrapper
+-- (SetFilteredEventsEnabled + Blizzard_CombatLog_QuickButton_OnClick →
+-- C_CombatLog.ApplyFilterSettings) runs untainted and re-applies the saved
+-- filter — the same OnShow re-apply a stock dock tab-select performs.
 local secureShowDriver
-local function EnsureShownSecure(cf)
+local function SecureShowCycle(cf)
     if not cf then return end
-    if cf.IsShown and cf:IsShown() then return end
     if not secureShowDriver and _G.CreateFrame then
         local ok, drv = pcall(_G.CreateFrame, "Frame", "QUI_CombatLogSecureShow",
             nil, "SecureHandlerBaseTemplate")
@@ -103,14 +109,20 @@ local function EnsureShownSecure(cf)
     if secureShowDriver and secureShowDriver.SetFrameRef and secureShowDriver.Execute then
         local okRef = pcall(secureShowDriver.SetFrameRef, secureShowDriver, "quiCombatLog", cf)
         if okRef then
-            pcall(secureShowDriver.Execute, secureShowDriver, [=[
+            local okRun = pcall(secureShowDriver.Execute, secureShowDriver, [=[
                 local f = self:GetFrameRef("quiCombatLog")
-                if f and not f:IsShown() then f:Show() end
+                if f then
+                    if f:IsShown() then f:Hide() end
+                    f:Show()
+                end
             ]=])
+            if okRun and cf.IsShown and cf:IsShown() then return end
         end
     end
-    -- Fallback when the secure path didn't take (unprotected frame, missing
-    -- template): plain Show — the pre-fix behavior.
+    -- Fallback when the secure path didn't take (missing template): plain
+    -- Show, and only when hidden. NEVER cycle Hide/Show insecurely — the
+    -- wrapper would write Blizzard_CombatLog's filter globals tainted and
+    -- poison every later filter apply for the session.
     if not (cf.IsShown and cf:IsShown()) and cf.Show then
         pcall(cf.Show, cf)
     end
@@ -134,17 +146,33 @@ end
 
 -- Blizzard_CombatLog is LoadOnDemand; CombatLogQuickButtonFrame_Custom is built
 -- lazily. Guarantee both exist, then call cb. Returns true if ready now.
+--
+-- LOAD POSTURE: stock UIParent force-loads Blizzard_CombatLog itself at
+-- PLAYER_LOGIN, unconditionally and securely (UIParent.lua PLAYER_LOGIN →
+-- CombatLog_LoadUI()). NEVER LoadAddOn it from QUI before that has had its
+-- chance: code loaded by an addon-initiated LoadAddOn executes on the
+-- CALLER'S tainted path, so Blizzard_CombatLog's ChatFrame2 OnShow/OnHide
+-- wrapper closures would be created tainted — and then EVERY filter apply
+-- (even engine/secure-triggered ones) runs tainted: ClearEventFilters lands,
+-- AddEventFilter is blocked, and the combat log shows everything for the
+-- session. Wait for Blizzard's own load instead; force-load remains only as
+-- a post-login last resort (CombatLog_LoadUI overridden by a combat-log
+-- replacement), accepting broken quick-filters over a permanently empty tab.
 function CombatLogTab.EnsureLoaded(cb)
     if _G.CombatLogQuickButtonFrame_Custom and _G.ChatFrame2 then
         if cb then cb() end
         return true
     end
-    if _G.C_AddOns and _G.C_AddOns.LoadAddOn then
-        pcall(_G.C_AddOns.LoadAddOn, "Blizzard_CombatLog")
-    end
-    if _G.CombatLogQuickButtonFrame_Custom and _G.ChatFrame2 then
-        if cb then cb() end
-        return true
+    if _G.IsLoggedIn and _G.IsLoggedIn() then
+        -- Post-login and still absent: Blizzard's own PLAYER_LOGIN load did
+        -- not produce the frame. Last-resort force-load (taint caveat above).
+        if _G.C_AddOns and _G.C_AddOns.LoadAddOn then
+            pcall(_G.C_AddOns.LoadAddOn, "Blizzard_CombatLog")
+        end
+        if _G.CombatLogQuickButtonFrame_Custom and _G.ChatFrame2 then
+            if cb then cb() end
+            return true
+        end
     end
     if not loadWaiter and _G.CreateFrame then
         loadWaiter = _G.CreateFrame("Frame")
@@ -161,6 +189,10 @@ function CombatLogTab.EnsureLoaded(cb)
         end)
         loadWaiter:RegisterEvent("ADDON_LOADED")
         loadWaiter:RegisterEvent("UPDATE_CHAT_WINDOWS")
+        -- UIParent's PLAYER_LOGIN handler (registered long before this frame)
+        -- runs CombatLog_LoadUI first, so by the time this fires the frame
+        -- exists in any stock setup.
+        loadWaiter:RegisterEvent("PLAYER_LOGIN")
     end
     return false
 end
@@ -263,9 +295,10 @@ local function Embed(windowID, container)
     end
     StripChrome(cf)
     CombatLogTab.RefreshFont()
-    -- Secure show (header): the Blizzard_CombatLog OnShow wrapper re-applies
-    -- the user's combat-log filter; it must not run on QUI's tainted path.
-    EnsureShownSecure(cf)
+    -- Secure Hide+Show cycle (see SecureShowCycle): fires the
+    -- Blizzard_CombatLog OnShow wrapper untainted so the saved quick-filter
+    -- is actually applied — OnShow is the ONLY apply path Blizzard has.
+    SecureShowCycle(cf)
 end
 
 function CombatLogTab.Activate(windowID)

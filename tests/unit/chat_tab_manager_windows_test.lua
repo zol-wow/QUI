@@ -8,7 +8,11 @@
 _G.ChatTypeGroupInverted = {}
 _G.NUM_CHAT_WINDOWS = 2
 _G.ChatFrame1 = {}
-_G.ChatFrame2 = { isCombatLog = true }
+-- Mirror in-game reality: modern FrameXML sets NO `isCombatLog` property on
+-- ChatFrame2 (only the IsCombatLog() function exists, false until LOD
+-- Blizzard_CombatLog loads). The seed must skip the combat log by IDENTITY;
+-- a property-shaped stub here previously masked the dead guard.
+_G.ChatFrame2 = {}
 function _G.GetChatWindowInfo(i)
     if i == 1 then return "General", 14, 1, 1, 1, 1, true, false, true end
     if i == 2 then return "Combat Log", 14, 1, 1, 1, 1, true, false, true end
@@ -44,6 +48,10 @@ assert(wins[1].width == 430 and wins[1].height == 190, "default geometry seeded"
 assert(wins[1].position == nil, "no legacy position in the window seed")
 assert(type(wins[1].tabs) == "table" and #wins[1].tabs >= 1, "tabs seeded")
 assert(wins[1].tabs[1].name == "General", "Blizzard-derived seed (combat log skipped)")
+for i = 1, #wins[1].tabs do
+    assert(wins[1].tabs[i].name ~= "Combat Log" or wins[1].tabs[i].combatLog == true,
+        "ChatFrame2 must never seed as a plain filter tab")
+end
 assert(wins[1].tabs[1].groups.SAY == true and wins[1].tabs[1].groups.GUILD == true, "groups seeded")
 assert(wins[1].tabs[1].channels.General == true, "channels seeded")
 

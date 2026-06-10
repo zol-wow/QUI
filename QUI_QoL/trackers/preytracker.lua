@@ -1527,7 +1527,38 @@ end
 -- REFRESH & PREVIEW
 ---------------------------------------------------------------------------
 
+-- One-time bar creation + default-widget suppression. Runs from the PEW
+-- init branch at login, and from RefreshPreyTracker so enabling the module
+-- mid-session works without a /reload.
+local function EnsureInitialized()
+    local settings = GetSettings()
+    if not settings or not settings.enabled then return end
+
+    if not State.initialized then
+        CreatePreyBar()
+        UpdateBarAppearance()
+        State.initialized = true
+        InitCurrencyBaseline()
+        C_Timer.After(0.1, UpdatePreyState)
+    end
+
+    if settings.replaceDefaultIndicator then
+        SuppressBlizzardPreyWidget()
+        -- Re-apply after a delay — widgets may not exist at first load
+        C_Timer.After(1, ApplyDefaultPreyIconVisibility)
+    end
+end
+
 local function RefreshPreyTracker()
+    local settings = GetSettings()
+    if not settings or not settings.enabled then
+        -- Master toggle off: hide our bar and hand the default indicator
+        -- back to Blizzard immediately (no /reload required).
+        RestoreBlizzardPreyWidget()
+        HideBar()
+        return
+    end
+    EnsureInitialized()
     if not State.frame then return end
     UpdateBarAppearance()
     UpdateBarDisplay()
@@ -1602,20 +1633,8 @@ local function OnEvent(self, event, arg1, arg2)
         local settings = GetSettings()
         if not settings or not settings.enabled then return end
 
-        if not State.initialized then
-            CreatePreyBar()
-            UpdateBarAppearance()
-            State.initialized = true
-        end
-
-        -- Suppress default widget if needed
-        if settings.replaceDefaultIndicator then
-            SuppressBlizzardPreyWidget()
-            -- Re-apply after a delay — widgets may not exist at first load
-            C_Timer.After(1, ApplyDefaultPreyIconVisibility)
-        end
-
-        InitCurrencyBaseline()
+        EnsureInitialized()
+        InitCurrencyBaseline() -- re-baseline session deltas on every loading screen
         C_Timer.After(0.5, UpdatePreyState) -- slight delay for quest log to be ready
 
     elseif event == "QUEST_LOG_UPDATE" or event == "QUEST_ACCEPTED" then

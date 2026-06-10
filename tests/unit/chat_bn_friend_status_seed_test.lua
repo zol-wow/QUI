@@ -15,7 +15,7 @@
 _G.ChatTypeGroupInverted = {}
 _G.NUM_CHAT_WINDOWS = 3
 _G.ChatFrame1 = {}
-_G.ChatFrame2 = { isCombatLog = true }
+_G.ChatFrame2 = {} -- bare: modern FrameXML sets no isCombatLog property; seed must skip by identity
 _G.ChatFrame3 = {}
 
 local windowInfo = {

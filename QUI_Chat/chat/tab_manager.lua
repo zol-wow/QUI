@@ -274,7 +274,15 @@ end
 local function ShouldSeedWindow(frameID)
     local frame = _G["ChatFrame" .. tostring(frameID)]
     if not frame then return nil end
-    if frame and (frame.isCombatLog or frame.privateMessageList or frame.isTemporary) then
+    -- Skip the combat log by IDENTITY: `frame.isCombatLog` is not a real
+    -- property in modern FrameXML (only the IsCombatLog() FUNCTION exists,
+    -- and it answers false until LoadOnDemand Blizzard_CombatLog loads).
+    -- Relying on the property seeded ChatFrame2 as a regular filterable tab
+    -- — the legacy "Log"/"Combat Log" tabs carrying COMBAT_MISC_INFO/
+    -- TRADESKILLS/... groups in older profiles. Same belt-and-suspenders as
+    -- editbox_history.lua's frame loop.
+    if frame == _G.ChatFrame2
+        or frame.isCombatLog or frame.privateMessageList or frame.isTemporary then
         return nil
     end
 

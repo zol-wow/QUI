@@ -250,6 +250,57 @@ local function HideBlizzardBar()
 end
 
 ---------------------------------------------------------------------------
+-- POWER BAR WIDGET CARRY-ALONG
+---------------------------------------------------------------------------
+-- Blizzard parents UIWidgetPowerBarContainerFrame (prey hunt crystal and
+-- other encounter widgets) to EncounterBar, a VerticalLayoutFrame whose
+-- Layout() re-anchors its children on every widget update — so the
+-- container must be reparented out, not just re-pinned. Since QUI replaces
+-- PlayerPowerBarAlt with its own bar at the powerBarAlt anchor, the widget
+-- container rides along below the QUI bar; otherwise those widgets stay at
+-- Blizzard's default bottom-center position while the user's encounter bar
+-- lives elsewhere.
+
+local widgetCarryInstalled = false
+
+local function PowerBarWidgetsMoverActive()
+    -- The Blizzard Frame Mover has its own "Power Bar Widgets" entry
+    -- (default off). If the user enabled it, that system owns the
+    -- container's position — don't fight it.
+    local mover = GetDB().blizzardMover
+    if not mover or not mover.enabled or not mover.frames then return false end
+    local row = mover.frames.UIWidgetPowerBarContainerFrame
+    return row ~= nil and row.enabled == true
+end
+
+local function CarryPowerBarWidgetContainer()
+    if widgetCarryInstalled then return end
+    if PowerBarWidgetsMoverActive() then return end
+    local container = _G.UIWidgetPowerBarContainerFrame
+    if not container or not QUIAltPowerBar then return end
+
+    -- Combat /reload lands Initialize() in combat; the container isn't a
+    -- protected frame, but defer anyway so the reparent never runs while
+    -- Blizzard's encounter layout is live mid-fight.
+    if InCombatLockdown() then
+        local waiter = CreateFrame("Frame")
+        waiter:RegisterEvent("PLAYER_REGEN_ENABLED")
+        waiter:SetScript("OnEvent", function(self)
+            self:UnregisterAllEvents()
+            CarryPowerBarWidgetContainer()
+        end)
+        return
+    end
+
+    container:SetParent(UIParent)
+    -- Non-fixed strata follows the parent on SetParent; keep EncounterBar's
+    container:SetFrameStrata("MEDIUM")
+    container:ClearAllPoints()
+    container:SetPoint("TOP", QUIAltPowerBar, "BOTTOM", 0, -6)
+    widgetCarryInstalled = true
+end
+
+---------------------------------------------------------------------------
 -- REFRESH COLORS
 ---------------------------------------------------------------------------
 
@@ -299,6 +350,10 @@ local function Initialize()
 
     -- Create our bar
     QUIAltPowerBar = CreateQUIAltPowerBar()
+
+    -- Carry the Blizzard power-bar widget container (prey crystal, encounter
+    -- widgets) along with the QUI bar's anchor
+    CarryPowerBarWidgetContainer()
 
     -- Initial update
     UpdateBar(QUIAltPowerBar)

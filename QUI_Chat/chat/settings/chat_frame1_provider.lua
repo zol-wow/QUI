@@ -177,7 +177,11 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 or f.privateMessageList
                 or (I and I.IsTemporaryChatFrame and I.IsTemporaryChatFrame(f))
             )
-            if f and not f.isCombatLog and not isTemporary and not f.privateMessageList
+            -- ChatFrame2 identity check: `isCombatLog` is not a real property
+            -- in modern FrameXML (see tab_manager.ShouldSeedWindow); without
+            -- the identity skip the combat log shows up as a button-bar host.
+            if f and f ~= _G.ChatFrame2
+                and not f.isCombatLog and not isTemporary and not f.privateMessageList
                 and IsChatWindowSlotActive(i, f)
                 and type(name) == "string" and name ~= "" then
                 opts[#opts + 1] = { value = i, text = "ChatFrame" .. i .. " (" .. name .. ")" }
@@ -529,7 +533,19 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                     -- Idempotency guard: CreateFormDropdown's SetValue fires
                     -- onChange on every click without checking value-changed.
                     if newValue == selectedCustomDisplayTabIndex then return end
+                    local IsCL = TabManager and TabManager.IsCombatLogTab
+                    local wasCombatLog = IsCL and IsCL(tabs[selectedCustomDisplayTabIndex]) or false
                     selectedCustomDisplayTabIndex = newValue
+                    -- The combat-log tab renders a note instead of the
+                    -- group/channel editors, so crossing into or out of it
+                    -- needs a structural rebuild — a soft refresh would leave
+                    -- the wrong editor set on screen (and let filter edits
+                    -- land on the combat-log entry).
+                    local nowCombatLog = IsCL and IsCL(tabs[newValue]) or false
+                    if wasCombatLog ~= nowCombatLog then
+                        NotifyProviderFor(frameSelector, { structural = true })
+                        return
+                    end
                     for i = 1, #refreshList do
                         pcall(refreshList[i])
                     end
@@ -538,6 +554,15 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
                 deleteBtn = GUI:CreateButton(selectorCard.frame, "Delete Tab", 100, 22, function()
                     if #tabs <= 1 then return end
+                    local doomed = tabs[selectedCustomDisplayTabIndex]
+                    -- Deleting the combat-log tab must also turn the feature
+                    -- flag off, or ReconcileCombatLogTab re-appends the tab on
+                    -- the next GetWindowsConfig. (The "Show Combat Log Tab"
+                    -- checkbox above re-reads the flag on the structural
+                    -- rebuild, so the two stay in sync.)
+                    if TabManager and TabManager.IsCombatLogTab and TabManager.IsCombatLogTab(doomed) then
+                        chat.customDisplay.combatLogTab = false
+                    end
                     table.remove(tabs, selectedCustomDisplayTabIndex)
                     if selectedCustomDisplayTabIndex > #tabs then selectedCustomDisplayTabIndex = math.max(1, #tabs) end
                     Refresh()
@@ -611,6 +636,24 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 nameCard.AddRow(row(nameCard.frame, "Tab name", nameEdit))
                 nameCard.Finalize()
                 sy = sy - nameCard.frame:GetHeight() - GAP
+
+                -- Combat-log tab: QUI message filtering never applies (the
+                -- tab embeds Blizzard's ChatFrame2; its content is governed
+                -- by Blizzard's combat-log quick filters). Rename/Move/Delete
+                -- above stay available; the group/channel editors are
+                -- replaced with an explanatory note so filter edits cannot
+                -- land on the combat-log entry.
+                if TabManager and TabManager.IsCombatLogTab and TabManager.IsCombatLogTab(ct) then
+                    local note = GUI:CreateLabel(body,
+                        "This tab embeds Blizzard's Combat Log. QUI message-group and channel filters do not apply to it — right-click the Combat Log tab in the chat window to configure Blizzard's combat-log filters.",
+                        10, {0.6, 0.6, 0.6, 1})
+                    note:SetPoint("TOPLEFT", 8, sy)
+                    note:SetPoint("RIGHT", body, "RIGHT", -8, 0)
+                    note:SetJustifyH("LEFT")
+                    if note.SetWordWrap then note:SetWordWrap(true) end
+                    sy = sy - 44
+                    return math.abs(sy) + 4
+                end
 
                 -- Message groups card: two-column checkboxes bound via
                 -- makeSetBinding writing nil-not-false into ct.groups.
