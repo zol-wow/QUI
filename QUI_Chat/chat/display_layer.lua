@@ -127,19 +127,32 @@ local function ApplyTheme(win)
             -- Prefer a per-script font family so CJK chat (Korean/Chinese
             -- names and messages) falls back to Blizzard fonts instead of
             -- rendering blank; degrade to the single-file path if unavailable.
+            -- Whatever object wins is PUBLISHED on the shared internals
+            -- (I.chatFontObject) — the editbox and the embedded combat log
+            -- adopt the same object. In-game CreateFontFamily exists, so the
+            -- family branch always wins and the QUI_CustomChatFontObject
+            -- global is never built; consumers must read I.chatFontObject.
             local family = Helpers and Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(fontPath, size, flags)
             if family then
                 smf:SetFontObject(family)
+                I.chatFontObject = family
             elseif _G.CreateFont then
                 local fo = _G.QUI_CustomChatFontObject or _G.CreateFont("QUI_CustomChatFontObject")
                 fo:SetFont(fontPath, size, flags)
                 smf:SetFontObject(fo)
+                I.chatFontObject = fo
             else
                 smf:SetFontObject(_G.ChatFontNormal)
+                I.chatFontObject = nil
             end
         else
             smf:SetFontObject(_G.ChatFontNormal)
+            I.chatFontObject = nil
         end
+        -- Combat Log tab embeds the real ChatFrame2; mirror font changes onto
+        -- it while active (loads after this file — runtime lookup).
+        local CL = ns.QUI.Chat.CombatLogTab
+        if CL and CL.RefreshFont then CL.RefreshFont() end
         smf:SetJustifyH("LEFT")
         if cd then smf:SetMaxLines(cd.maxLines or 1000) end
     end

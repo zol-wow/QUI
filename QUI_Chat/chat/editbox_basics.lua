@@ -131,15 +131,17 @@ end
 local EDITBOX_HEADER_KEYS = { "header", "headerSuffix", "languageHeader", "prompt" }
 
 -- The input editbox follows the QUI chat font: it adopts the SAME font object
--- the message frame uses (_G.QUI_CustomChatFontObject), so typed text matches
--- the rendered messages exactly — path, size and outline are resolved in one
--- place (display_layer.ApplyTheme) and shared, never duplicated here. ApplyTheme
--- builds that object during Display.Refresh, which runs before StyleEditBox on
--- every refresh path; fall back to the stock ChatFontNormal when no custom font
--- object exists yet (no font path configured, or pre-build).
+-- the message frame uses, so typed text matches the rendered messages exactly —
+-- path, size and outline are resolved in one place (display_layer.ApplyTheme)
+-- and shared, never duplicated here. ApplyTheme publishes that object on the
+-- shared internals (I.chatFontObject) during Display.Refresh, which runs before
+-- StyleEditBox on every refresh path. In-game that object is a per-script font
+-- FAMILY (CJK fallback), so the QUI_CustomChatFontObject global — built only on
+-- the family-less degrade path — usually never exists; it is kept as a second
+-- choice, with stock ChatFontNormal last (no font path configured, or pre-build).
 local function ApplyEditBoxFont(editBox)
     if not (editBox and editBox.SetFontObject) then return end
-    local fo = _G.QUI_CustomChatFontObject or _G.ChatFontNormal
+    local fo = I.chatFontObject or _G.QUI_CustomChatFontObject or _G.ChatFontNormal
     if not fo then return end
     editBox:SetFontObject(fo)
     for _, key in ipairs(EDITBOX_HEADER_KEYS) do

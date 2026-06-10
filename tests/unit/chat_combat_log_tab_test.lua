@@ -25,6 +25,7 @@ _G.CreateFrame = function() return F() end
 _G.ChatFrame2 = F()
 _G.CombatLogQuickButtonFrame_Custom = F()
 _G.ChatFrame2.Background = F()
+function _G.ChatFrame2:SetFontObject(fo) self._font = fo end
 
 local container = F()
 local smf = F()
@@ -36,6 +37,8 @@ ns = {
     } } },
 }
 ns._settings = { customDisplay = { combatLogTab = true } }
+local fontSentinel = { _id = "QUI_ChatFont" }
+ns.QUI.Chat._internals.chatFontObject = fontSentinel
 ns.QUI.Chat.DisplayLayer = {
     GetContainer = function() return container end,
     GetMessageFrame = function() return smf end,
@@ -64,6 +67,16 @@ assert(_G.ChatFrame2:GetParent() == container, "ChatFrame2 reparented into conta
 assert(_G.CombatLogQuickButtonFrame_Custom:GetParent() == container, "quick-bar reparented in")
 assert(smf._shown == false, "SMF hidden while combat log active")
 assert(_G.ChatFrame2._shown == true, "ChatFrame2 shown")
+assert(_G.ChatFrame2._font == fontSentinel,
+    "ChatFrame2 adopts the QUI chat font object on embed")
+
+-- Live font change while the tab is open: RefreshFont re-applies the
+-- (re-published) font object.
+local fontSentinel2 = { _id = "QUI_ChatFont2" }
+ns.QUI.Chat._internals.chatFontObject = fontSentinel2
+CL.RefreshFont()
+assert(_G.ChatFrame2._font == fontSentinel2,
+    "RefreshFont re-applies the published font object while active")
 
 -- Deactivate(1): host clears, SMF restored, ChatFrame2 parked off the container.
 CL.Deactivate(1)

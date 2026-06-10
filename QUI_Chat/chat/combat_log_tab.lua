@@ -86,6 +86,19 @@ function CombatLogTab.EnsureLoaded(cb)
     return false
 end
 
+-- ChatFrame2 keeps its stock font otherwise; adopt the QUI chat font object
+-- resolved by display_layer.ApplyTheme (a per-script font family in-game, so
+-- CJK combat-log lines keep rendering). ApplyTheme calls this on every theme
+-- refresh so live font changes land while the tab is open.
+function CombatLogTab.RefreshFont()
+    if not activeWindow then return end
+    local cf = _G.ChatFrame2
+    local fo = I.chatFontObject or _G.QUI_CustomChatFontObject
+    if cf and fo and cf.SetFontObject then
+        pcall(cf.SetFontObject, cf, fo)
+    end
+end
+
 -- Strip Blizzard chrome so the frame blends into the QUI window.
 local function StripChrome(cf)
     local park = HiddenAnchor()
@@ -128,6 +141,7 @@ local function Embed(windowID, container)
         pcall(cf.SetPoint, cf, "BOTTOMRIGHT", smf, "BOTTOMRIGHT", 0, 0)
     end
     StripChrome(cf)
+    CombatLogTab.RefreshFont()
     if cf.Show then cf:Show() end
 end
 

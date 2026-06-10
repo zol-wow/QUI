@@ -456,6 +456,10 @@ local function ChatTargetFor(chatGroup, sender, chNum)
     end
     if (chatGroup == "WHISPER" or chatGroup == "BN_WHISPER")
         and not IsSecret(sender) and type(sender) == "string" then
+        -- BN senders arrive as |K kstrings; the escape is case-sensitive, so
+        -- uppercasing corrupts it and the whole |HBNplayer link renders raw
+        -- (FCFManager_GetChatTarget parity).
+        if sender:sub(1, 2) == "|K" then return sender end
         return sender:upper()
     end
     return ""

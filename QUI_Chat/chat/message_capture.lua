@@ -388,6 +388,22 @@ local function OnCaptureEvent(_, event, ...)
 
     MaybeAutoAddChannel(event, p)
 
+    -- R-to-reply: Blizzard records the last whisperer via
+    -- ChatFrameUtil.SetLastTellTarget inside its per-frame message handler
+    -- (ChatFrameOverrides.lua:648-651) — event-neutered under the takeover —
+    -- so mirror the bookkeeping here or ChatFrameUtil.ReplyTell (the REPLY
+    -- keybind) finds no target and silently no-ops. Incoming only: the
+    -- outgoing side (LastTOLD, reply-to-last-told) is recorded by the editbox
+    -- send path, which stays live. p.sender is already nil when arg2 is
+    -- secret or malformed; BN kstring senders pass through raw, exactly as
+    -- Blizzard passes arg2.
+    if (event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER") and p.sender then
+        local CFU = _G.ChatFrameUtil
+        if CFU and CFU.SetLastTellTarget then
+            pcall(CFU.SetLastTellTarget, p.sender, typeKey)
+        end
+    end
+
     -- Per-channel colors live in ChatTypeInfo.CHANNEL<n>, not .CHANNEL.
     -- chName resolves channel-name-keyed user overrides in ChannelColors.
     local colorKey = typeKey

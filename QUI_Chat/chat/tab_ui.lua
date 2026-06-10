@@ -239,12 +239,6 @@ local function OnTabDragStart(self)
     local inst = self._inst
     if not inst then return end
     if not (type(self.frameID) == "number" and self.frameID < 0) then return end
-    -- The combat-log tab is pinned to window 1 — not drag-reorderable.
-    local TMcl = ns.QUI.Chat.TabManager
-    if TMcl and TMcl.GetWindowTab and TMcl.IsCombatLogTab
-        and TMcl.IsCombatLogTab(TMcl.GetWindowTab(inst.windowID, -self.frameID)) then
-        return
-    end
     inst.draggingBtn = self
     self:SetAlpha(0.5)
     if inst.bar and inst.bar.SetScript then

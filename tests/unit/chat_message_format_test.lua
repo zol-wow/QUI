@@ -187,6 +187,13 @@ eq("bn lineid", F.BuildEventLine("CHAT_MSG_BN_WHISPER_INFORM",
         { text = "yo", sender = "Aria", bnID = 77, lineID = 4242 }),
     "[W:To] |HBNplayer:Aria:77:4242:BN_WHISPER:ARIA|h[Aria]|h: yo")
 
+-- In-game the BN sender is a |K kstring; kstring escapes are CASE-SENSITIVE,
+-- so the chatTarget must pass through un-uppercased (FCFManager_GetChatTarget
+-- parity) — |KJ27|K is an invalid escape that breaks the whole link parse.
+eq("bn kstring target", F.BuildEventLine("CHAT_MSG_BN_WHISPER_INFORM",
+        { text = "yo", sender = "|Kj27|k", bnID = 77, lineID = 4242 }),
+    "[W:To] |HBNplayer:|Kj27|k:77:4242:BN_WHISPER:|Kj27|k|h[|Kj27|k]|h: yo")
+
 -- Absent text -> nil (capture guards non-empty strings; nothing to render)
 eq("nil text", F.BuildEventLine("CHAT_MSG_SAY", { sender = "Ann" }), nil)
 

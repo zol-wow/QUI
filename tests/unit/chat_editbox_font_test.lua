@@ -136,4 +136,19 @@ EditBoxBasics.StyleEditBox(chatFrame)
 assert(editBox.fontObject == _G.ChatFontNormal,
     "missing custom font object falls back to ChatFontNormal")
 
+-- 5) Family path: in-game CreateFontFamily exists, so display_layer.ApplyTheme
+--    takes the CJK font-family branch and the QUI_CustomChatFontObject global
+--    is NEVER created — the editbox must follow the family object ApplyTheme
+--    publishes on the shared internals (I.chatFontObject), not silently revert
+--    to the stock font.
+local family = { _id = "QUI_FontFamily" }
+ns.QUI.Chat._internals.chatFontObject = family
+EditBoxBasics.StyleEditBox(chatFrame)
+assert(editBox.fontObject == family,
+    "editbox must adopt the published font-family object")
+assert(editBox.header.fontObject == family,
+    "channel prefix header must adopt the font-family object")
+assert(editBox.headerSuffix.fontObject == family,
+    "channel prefix suffix must adopt the font-family object")
+
 print("OK: chat_editbox_font_test")

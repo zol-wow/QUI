@@ -3,7 +3,7 @@
 -- Verifies the combat-log tab's tab_ui behaviour:
 --  * right-click yields ONLY "Combat Log Settings" (no move/close);
 --  * a normal tab's menu never offers "Combat Log Settings";
---  * the combat-log tab cannot be drag-reordered (OnDragStart no-ops);
+--  * the combat-log tab IS drag-reorderable within its own tab bar;
 --  * activating it calls CombatLogTab.Activate; switching away calls Deactivate.
 
 local function makeFrame(ftype)
@@ -125,10 +125,12 @@ for _, l in ipairs(menuLabels) do
     assert(l ~= "Combat Log Settings", "normal tab must not offer combat-log settings")
 end
 
--- 3. Drag guard: combat-log tab OnDragStart must not begin a drag.
+-- 3. Drag: the combat-log tab reorders within its bar like any custom tab.
 inst.draggingBtn = nil
 clBtn._OnDragStart(clBtn)
-assert(inst.draggingBtn == nil, "combat-log tab must not be drag-reorderable")
+assert(inst.draggingBtn == clBtn, "combat-log tab must be drag-reorderable in its own bar")
+inst.draggingBtn = nil
+if inst.bar and inst.bar._OnUpdate then inst.bar:SetScript("OnUpdate", nil) end
 
 -- 4. Activation routing: activate combat-log tab => Activate; switch away => Deactivate.
 assert(TabUI.ActivateFrameID(1, 2) == true, "activate combat-log tab (index 2)")
