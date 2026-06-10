@@ -418,23 +418,41 @@ local function IsMessageProtected(message)
     return false
 end
 
--- Strip textures, icons, and hyperlink formatting from message
-local function CleanMessage(message)
+-- Entry's baked base color (set at capture time; secret components already
+-- degraded to 1 there) as a "|cff..." escape. White returns nil — it matches
+-- the editbox base color, so the wrap would only bloat the copied text.
+local function LineColorCode(entry)
+    local r, g, b = entry.r, entry.g, entry.b
+    if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then return nil end
+    if r >= 1 and g >= 1 and b >= 1 then return nil end
+    local function byte(v)
+        if v < 0 then v = 0 elseif v > 1 then v = 1 end
+        return math.floor(v * 255 + 0.5)
+    end
+    return ("|cff%02x%02x%02x"):format(byte(r), byte(g), byte(b))
+end
+
+-- Strip textures, icons, and hyperlink wrappers but KEEP color escapes so the
+-- copy window shows lines the way the chat window renders them. lineColor (the
+-- entry's baked base-color escape) wraps the line and replaces |r terminators:
+-- |r resets to the editbox's single base text color, not the line's own color,
+-- so "|cff..Name|r: hi" would paint the tail the wrong color without it.
+local function CleanMessage(message, lineColor)
     if Helpers.IsSecretValue(message) or type(message) ~= "string" then return "" end
 
     local cleaned = message
+    -- Convert raid icons to text BEFORE the generic texture strip eats them
+    cleaned = cleaned:gsub("|TInterface\\TargetingFrame\\UI%-RaidTargetingIcon_(%d):[^|]*|t", "{rt%1}")
     -- Remove texture escapes |T...|t
     cleaned = cleaned:gsub("|T[^|]*|t", "")
     -- Remove atlas textures |A...|a
     cleaned = cleaned:gsub("|A[^|]*|a", "")
-    -- Convert raid icons to text
-    cleaned = cleaned:gsub("|TInterface\\TargetingFrame\\UI%-RaidTargetingIcon_(%d):[^|]*|t", "{rt%1}")
     -- Strip hyperlink formatting but keep visible text |H...|h[text]|h -> text
     cleaned = cleaned:gsub("|H[^|]*|h%[?([^%]|]*)%]?|h", "%1")
-    -- Remove color codes (strip start and end separately for robustness)
-    cleaned = cleaned:gsub("|c%x%x%x%x%x%x%x%x", "")
-    cleaned = cleaned:gsub("|r", "")
     cleaned = cleaned:gsub("|n", "\n")
+    if lineColor and cleaned ~= "" then
+        cleaned = lineColor .. cleaned:gsub("|r", lineColor) .. "|r"
+    end
 
     return cleaned
 end
@@ -442,15 +460,17 @@ end
 -- Lines for the CUSTOM display's copy popup. With a windowID, sourced from
 -- exactly that window's visible set (the store filtered by its active tab) so
 -- the copied text matches what's on screen; without one — or before the
--- display exists — the whole store (back-compat with no-arg callers). Markup
--- is stripped; secrets are replaced with a placeholder (never touched).
+-- display exists — the whole store (back-compat with no-arg callers). Texture/
+-- link markup is stripped; color escapes are kept (and each line is wrapped in
+-- its baked base color) so the window renders like the chat display; secrets
+-- are replaced with a placeholder (never touched).
 local function GetCustomDisplayLines(windowID)
     local lines = {}
     local function collect(entry)
         if entry.s then
             lines[#lines + 1] = "??? (protected message)"
         else
-            local cleaned = CleanMessage(entry.m)
+            local cleaned = CleanMessage(entry.m, LineColorCode(entry))
             if cleaned ~= "" then
                 lines[#lines + 1] = cleaned
             end

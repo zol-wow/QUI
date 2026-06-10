@@ -108,6 +108,32 @@ end
 
 local seenMotd -- session GMOTD dedupe (Blizzard shows each broadcast once)
 
+-- GMOTD held until the GUILD chat color syncs. ChatTypeInfo carries NO r/g/b
+-- at file scope (vendored ChatTypeInfoConstants.lua) — colors arrive per-type
+-- via UPDATE_CHAT_COLOR during the login settings download, AFTER the login
+-- GMOTD is available. Appending earlier bakes ColorForTypeKey's white fallback
+-- into the entry permanently: Blizzard prints early too but recovers by
+-- retroactively recoloring lines (UpdateColorByID, ChatFrameOverrides.lua:147),
+-- a pass the store has no equivalent of. The held payload may be SECRET:
+-- stored opaquely, flagged separately, no operator ever touches it here.
+local pendingMotd, hasPendingMotd
+
+-- Per-type colors captured from UPDATE_CHAT_COLOR's OWN args ({r,g,b} keyed
+-- by upper-cased type). The event payload is authoritative the moment it
+-- fires, while ChatTypeInfo is only authoritative after Blizzard's handler
+-- (same dispatch, unspecified cross-frame order) writes it — reading the args
+-- removes that ordering dependence entirely.
+local syncedTypeColors = {}
+
+local function GuildColorReady()
+    -- A user override wins inside ColorForTypeKey regardless of ChatTypeInfo.
+    local CC = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.ChannelColors
+    if CC and CC.HasOverride and CC.HasOverride("GUILD") then return true end
+    if syncedTypeColors.GUILD then return true end
+    local info = _G.ChatTypeInfo and _G.ChatTypeInfo.GUILD
+    return info ~= nil and info.r ~= nil
+end
+
 local SYSTEM_EVENTS = {}
 
 SYSTEM_EVENTS.TIME_PLAYED_MSG = function(event, totalTime, levelTime)
@@ -148,6 +174,16 @@ SYSTEM_EVENTS.PLAYER_LEVEL_CHANGED = function(event, oldLevel, newLevel, real)
 end
 
 SYSTEM_EVENTS.GUILD_MOTD = function(event, motd)
+    if not GuildColorReady() then
+        -- Only a REAL payload may stash. The pull triggers route empty
+        -- broadcasts through here (C_Club's broadcast field is nil/"" until
+        -- the club syncs, AFTER the GUILD_MOTD event on a cold login), and
+        -- letting one overwrite a stashed real MOTD drops the line at flush.
+        if IsSecret(motd) or (type(motd) == "string" and motd ~= "") then
+            pendingMotd, hasPendingMotd = motd, true
+        end
+        return
+    end
     local fmt = GlobalString("GUILD_MOTD_TEMPLATE")
     if not fmt then return end
     if IsSecret(motd) then
@@ -208,6 +244,100 @@ SYSTEM_EVENTS.CHANNEL_UI_UPDATE = function() MaybePullGMOTD() end
 SYSTEM_EVENTS.CHANNEL_LEFT = function() MaybePullGMOTD() end
 SYSTEM_EVENTS.GUILD_ROSTER_UPDATE = function() MaybePullGMOTD() end
 SYSTEM_EVENTS.PLAYER_GUILD_UPDATE = function() MaybePullGMOTD() end
+
+local function FlushPendingMotd()
+    if not (hasPendingMotd and CaptureActive() and GuildColorReady()) then return end
+    local motd = pendingMotd
+    pendingMotd, hasPendingMotd = nil, false
+    SYSTEM_EVENTS.GUILD_MOTD("GUILD_MOTD", motd)
+end
+
+-- UPDATE_CHAT_COLOR: the login color burst both un-gates a held GMOTD and
+-- retroactively REBAKES already-stored lines of the synced types — Blizzard's
+-- UpdateColorByID parity (ChatFrameOverrides.lua:147): their early-printed
+-- lines carry a colorID and get recolored when the type's color lands; store
+-- entries bake r/g/b at append time, so without this pass any line captured
+-- (or replayed from persisted history) before its type synced keeps the white
+-- fallback forever.
+--
+-- Colors come from the event ARGS (cached in syncedTypeColors), never from
+-- re-reading ChatTypeInfo: Blizzard's own handler (the neutered frames keep
+-- this event registered) writes ChatTypeInfo in the same dispatch with
+-- unspecified cross-frame order, and the addon must never write it itself
+-- (taints chat dispatch session-wide). The work is DEBOUNCED one frame
+-- (C_Timer.After(0)) purely as batching: one walk + one reapply covers the
+-- whole same-frame login burst.
+--
+-- Rebake scope: entries whose k matches a synced type AND whose color was
+-- RESOLVED from that type at append time. ADDMESSAGE/BACKFILL carry the
+-- producer's own r/g/b (addon prints in custom colors) and HISTORY is the
+-- grey session separators — k is just a routing bucket for those, never a
+-- color source. CHANNEL/CHANNEL_NOTICE entries bake per-SLOT colors
+-- (CHANNEL<n>), so a blanket per-type rebake would be wrong — skipped.
+local pendingColorTypes, colorSyncQueued
+
+local REBAKE_SKIP_EVENTS = { ADDMESSAGE = true, BACKFILL = true, HISTORY = true }
+
+-- Override → synced event args → ColorForTypeKey (ChatTypeInfo). Same
+-- precedence ColorForTypeKey itself applies, with the args cache between.
+local function ResolveSyncedColor(typeKey)
+    local CC = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.ChannelColors
+    if CC and CC.HasOverride and CC.GetEffective and CC.HasOverride(typeKey) then
+        return CC.GetEffective(typeKey)
+    end
+    local c = syncedTypeColors[typeKey]
+    if c then return c[1], c[2], c[3] end
+    return Format.ColorForTypeKey(typeKey)
+end
+
+local function DrainColorSync()
+    colorSyncQueued = nil
+    local types = pendingColorTypes
+    pendingColorTypes = nil
+    if not (types and CaptureActive()) then return end
+    FlushPendingMotd()
+    local resolved = {}
+    for typeKey in pairs(types) do
+        local r, g, b = ResolveSyncedColor(typeKey)
+        resolved[typeKey] = { r, g, b }
+    end
+    local changed = 0
+    Store.ForEach(function(entry)
+        local c = entry.k and resolved[entry.k]
+        if c and not REBAKE_SKIP_EVENTS[entry.e] then
+            if entry.r ~= c[1] or entry.g ~= c[2] or entry.b ~= c[3] then
+                entry.r, entry.g, entry.b = c[1], c[2], c[3]
+                changed = changed + 1
+            end
+        end
+    end)
+    if changed > 0 then
+        local TM = ns.QUI.Chat.TabManager
+        if TM and TM.ReapplyAll then TM.ReapplyAll() end
+    end
+end
+
+SYSTEM_EVENTS.UPDATE_CHAT_COLOR = function(_, chatType, r, g, b)
+    if IsSecret(chatType) or type(chatType) ~= "string" then return end
+    local typeKey = chatType:upper()
+    if typeKey == "CHANNEL" or typeKey == "CHANNEL_NOTICE" then return end
+    if not (IsSecret(r) or IsSecret(g) or IsSecret(b))
+        and type(r) == "number" and type(g) == "number" and type(b) == "number" then
+        syncedTypeColors[typeKey] = { r, g, b }
+    end
+    pendingColorTypes = pendingColorTypes or {}
+    pendingColorTypes[typeKey] = true
+    if colorSyncQueued then return end
+    colorSyncQueued = true
+    -- Debounce: the login burst is dozens of same-frame events; one walk +
+    -- one reapply next frame covers them all. The args cache already makes
+    -- the colors correct, so the defer is purely a batching concern.
+    if _G.C_Timer and _G.C_Timer.After then
+        _G.C_Timer.After(0, DrainColorSync)
+    else
+        DrainColorSync()
+    end
+end
 
 SYSTEM_EVENTS.CHAT_SERVER_DISCONNECTED = function(event)
     AppendSystemLine(event, GlobalString("CHAT_SERVER_DISCONNECTED_MESSAGE"))

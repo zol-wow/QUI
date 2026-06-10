@@ -112,7 +112,11 @@ _G.C_StringUtil = {
         error("secret chat formatter should not require C_StringUtil.WrapString", 2)
     end,
 }
-_G.ChatTypeInfo = { SAY = { r = 1, g = 1, b = 1 }, RAID_WARNING = { r = 1, g = 0.28, b = 0 }, CHANNEL2 = { r = 1, g = 0.75, b = 0.75 },
+-- GUILD carries r/g/b here = post-color-sync state. The real table has NO
+-- colors at file scope (ChatTypeInfoConstants.lua); the GMOTD color-gate
+-- section below nils GUILD to model the pre-sync login window.
+_G.ChatTypeInfo = { SAY = { r = 1, g = 1, b = 1 }, GUILD = { r = 0.25, g = 1, b = 0.25 },
+    RAID_WARNING = { r = 1, g = 0.28, b = 0 }, CHANNEL2 = { r = 1, g = 0.75, b = 0.75 },
     EMOTE = { r = 1, g = 0.5, b = 0.25 }, TEXT_EMOTE = { r = 1, g = 0.5, b = 0.25 },
     MONSTER_YELL = { r = 1, g = 0.25, b = 0.25 }, RAID_BOSS_EMOTE = { r = 1, g = 0.82, b = 0 } }
 function _G.Ambiguate(name) return name end
@@ -241,6 +245,7 @@ assert(registered.PLAYER_GUILD_UPDATE, "PLAYER_GUILD_UPDATE registered (login MO
 assert(registered.UPDATE_CHAT_WINDOWS, "UPDATE_CHAT_WINDOWS registered (primary login MOTD pull)")
 assert(registered.CHANNEL_UI_UPDATE, "CHANNEL_UI_UPDATE registered (login MOTD pull retry)")
 assert(registered.CHANNEL_LEFT, "CHANNEL_LEFT registered (login MOTD pull retry)")
+assert(registered.UPDATE_CHAT_COLOR, "UPDATE_CHAT_COLOR registered (GMOTD color-gate flush)")
 assert(registered.TIME_PLAYED_MSG, "TIME_PLAYED_MSG replicated (/played output)")
 assert(registered.PLAYER_LEVEL_CHANGED, "PLAYER_LEVEL_CHANGED replicated (level-up line)")
 assert(registered.CHAT_SERVER_DISCONNECTED, "disconnect notice replicated")
@@ -609,6 +614,7 @@ assert(Store.Size() == 1, "GMOTD deduped, got " .. Store.Size())
 local motd; Store.ForEach(function(e) motd = e end)
 assert(motd.m == "[12:00] Guild MOTD: Raid tonight", "gmotd line, got " .. tostring(motd.m))
 assert(motd.k == "GUILD" and motd.e == "GUILD_MOTD", "gmotd metadata")
+assert(motd.r == 0.25 and motd.g == 1 and motd.b == 0.25, "gmotd baked with the GUILD color")
 
 -- GMOTD login pull: at login the MOTD often lands before the capture frame
 -- catches the GUILD_MOTD event (Blizzard's own chat frame hits the same race),
@@ -674,6 +680,86 @@ fire("PLAYER_ENTERING_WORLD")
 assert(Store.Size() == 1, "GMOTD pulled on PLAYER_ENTERING_WORLD, got " .. Store.Size())
 local reloaded; Store.ForEach(function(e) reloaded = e end)
 assert(reloaded.m == "[12:00] Guild MOTD: Reloaded greeting", "PEW gmotd line, got " .. tostring(reloaded.m))
+
+-- GMOTD color gate: the real ChatTypeInfo has NO r/g/b at file scope
+-- (ChatTypeInfoConstants.lua) -- colors arrive per-type via the login
+-- UPDATE_CHAT_COLOR burst, AFTER the login GMOTD is available. Appending
+-- early would bake ColorForTypeKey's white fallback into the entry, so the
+-- line is HELD until GUILD's color is known and flushed by the color burst
+-- (drained one frame later via C_Timer.After(0): Blizzard's own handler
+-- writes ChatTypeInfo in the same dispatch with unspecified cross-frame
+-- order, and the burst is dozens of same-frame events).
+local timerCallbacks = {}
+_G.C_Timer = { After = function(_, cb) timerCallbacks[#timerCallbacks + 1] = cb end }
+local reapplies = 0
+ns.QUI.Chat.TabManager = { ReapplyAll = function() reapplies = reapplies + 1 end }
+local guildColor = _G.ChatTypeInfo.GUILD
+_G.ChatTypeInfo.GUILD = nil -- pre-sync login state
+Store.Clear()
+fire("GUILD_MOTD", "Held until colors sync")
+assert(Store.Size() == 0, "GMOTD held while the GUILD color is unsynced, got " .. Store.Size())
+-- An EMPTY pull pre-sync (cold login: C_Club's broadcast field syncs after
+-- the GUILD_MOTD event) must NOT clobber the stashed real MOTD.
+_G.C_Club.GetClubInfo = function() return { broadcast = "" } end
+fire("GUILD_ROSTER_UPDATE")
+assert(Store.Size() == 0, "empty pre-sync pull appends nothing")
+-- Same-frame color events debounce to ONE deferred drain; draining while the
+-- GUILD color is still missing keeps holding the line.
+fire("UPDATE_CHAT_COLOR", "SAY", 1, 1, 1)
+fire("UPDATE_CHAT_COLOR", "EMOTE", 1, 0.5, 0.25)
+assert(#timerCallbacks == 1, "same-frame color burst debounced to one drain, got " .. #timerCallbacks)
+timerCallbacks[1]()
+assert(Store.Size() == 0, "drain no-ops while the GUILD color is still missing")
+-- GUILD's own color event lands. ChatTypeInfo.GUILD is deliberately STILL
+-- nil here: the colors must come from the event ARGS (Blizzard's handler
+-- writes ChatTypeInfo in the same dispatch with unspecified cross-frame
+-- order, so the table may lag our handler). The flush appends and the
+-- same-drain rebake pass bakes the args color in.
+fire("UPDATE_CHAT_COLOR", "GUILD", 0.25, 1, 0.25)
+assert(#timerCallbacks == 2, "post-drain color event queues a new drain, got " .. #timerCallbacks)
+timerCallbacks[2]()
+assert(Store.Size() == 1, "held GMOTD flushed once the GUILD color synced, got " .. Store.Size())
+local held; Store.ForEach(function(e) held = e end)
+assert(held.m == "[12:00] Guild MOTD: Held until colors sync", "held gmotd line, got " .. tostring(held.m))
+assert(held.k == "GUILD" and held.e == "GUILD_MOTD", "held gmotd metadata")
+assert(held.r == 0.25 and held.g == 1 and held.b == 0.25,
+    "held gmotd baked from the event ARGS without any ChatTypeInfo write")
+_G.ChatTypeInfo.GUILD = guildColor -- restore the post-sync mock for later sections
+-- Pending is one-shot and shares the seenMotd dedupe with the live paths.
+fire("UPDATE_CHAT_COLOR", "GUILD", guildColor.r, guildColor.g, guildColor.b)
+timerCallbacks[#timerCallbacks]()
+fire("GUILD_MOTD", "Held until colors sync")
+assert(Store.Size() == 1, "flush is one-shot + deduped, got " .. Store.Size())
+
+-- Retroactive rebake (Blizzard UpdateColorByID parity): lines stored BEFORE
+-- their type's color synced -- including history-replayed lines from an
+-- earlier session -- are rebaked when the type's color lands and the display
+-- reapplied once per drain. Producer-colored entries (ADDMESSAGE/BACKFILL)
+-- and the grey HISTORY separators keep their own colors: k is only a routing
+-- bucket there, never the color source.
+Store.Append({ m = "old white gmotd", r = 1, g = 1, b = 1, k = "GUILD", e = "GUILD_MOTD", hist = true, t = 1 })
+Store.Append({ m = "session separator", r = 0.5, g = 0.5, b = 0.5, k = "SYSTEM", e = "HISTORY", hist = true, t = 1 })
+Store.Append({ m = "addon print", r = 0.2, g = 0.4, b = 0.9, k = "SYSTEM", e = "ADDMESSAGE", t = 1 })
+Store.Append({ m = "played line", r = 1, g = 1, b = 1, k = "SYSTEM", e = "TIME_PLAYED_MSG", t = 1 })
+_G.ChatTypeInfo.SYSTEM = { r = 1, g = 1, b = 0 } -- SYSTEM yellow syncs too
+reapplies = 0
+fire("UPDATE_CHAT_COLOR", "GUILD", 0.25, 1, 0.25)
+fire("UPDATE_CHAT_COLOR", "SYSTEM", 1, 1, 0)
+timerCallbacks[#timerCallbacks]()
+local byMsg = {}
+Store.ForEach(function(e) byMsg[e.m] = e end)
+local oldMotd = byMsg["old white gmotd"]
+assert(oldMotd.r == 0.25 and oldMotd.g == 1 and oldMotd.b == 0.25,
+    "history-replayed white GMOTD rebaked to the synced GUILD color")
+local sep = byMsg["session separator"]
+assert(sep.r == 0.5 and sep.g == 0.5 and sep.b == 0.5, "HISTORY separator keeps its grey")
+local addonPrint = byMsg["addon print"]
+assert(addonPrint.r == 0.2 and addonPrint.g == 0.4 and addonPrint.b == 0.9,
+    "ADDMESSAGE keeps the producer's color")
+local playedLine = byMsg["played line"]
+assert(playedLine.r == 1 and playedLine.g == 1 and playedLine.b == 0,
+    "type-resolved SYSTEM line rebaked to the synced SYSTEM color")
+assert(reapplies == 1, "one display reapply per drain with changes, got " .. tostring(reapplies))
 
 -- PLAYER_REPORT_SUBMITTED purges the reported sender's stored lines
 Store.Clear()
