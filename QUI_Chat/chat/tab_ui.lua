@@ -90,30 +90,28 @@ local TAB_BADGE_RESERVED_WIDTH = 30
 local TAB_BADGE_RIGHT_PAD = 6
 local DRAG_INDICATOR_WIDTH = 2
 
--- Move tabs[from] to final position `to`, remapping the unread badges (keyed
--- -index) and the active id so both FOLLOW their tab (identity-keyed snapshot;
--- index math stays mechanical). Mutates the live stored array — persistence is
--- the mutation. Returns true on a real move.
-local function ReorderCustomTab(inst, from, to)
+-- Reorder display position `from` -> `to` (both indices into the on-bar
+-- order, which mixes saved and conversation tabs). TabManager.MoveDisplayEntry
+-- owns the order mutation — and rewrites the stored saved-tab array in place
+-- when their relative order changes; persistence is the mutation. This wrapper
+-- remaps the per-window unread badges and active id around it: saved-tab
+-- frameIDs are -<stored index>, so they MOVE when the stored order changes —
+-- snapshot by tab identity, re-key after. Conversation ids ("conv:<key>") are
+-- identity-stable and need no remap. Returns moved, savedChanged.
+local function ReorderDisplayTab(inst, from, to)
     local TM = ns.QUI.Chat.TabManager
-    local tabs = TM and TM.GetWindowTabs and TM.GetWindowTabs(inst.windowID)
-    if type(tabs) ~= "table" then return false end
+    if not (TM and TM.MoveDisplayEntry and TM.GetWindowTabs) then return false end
+    local tabs = TM.GetWindowTabs(inst.windowID)
     local n = #tabs
-    if n < 2 or type(from) ~= "number" or from < 1 or from > n then return false end
-    if type(to) ~= "number" then return false end
-    if to < 1 then to = 1 elseif to > n then to = n end
-    if to == from then return false end
-
-    local activeTab = (type(inst.activeID) == "number" and inst.activeID < 0)
-        and tabs[-inst.activeID] or nil
     local vals = {}
     for i = 1, n do
         vals[tabs[i]] = inst.unread[-i]
         inst.unread[-i] = nil
     end
+    local activeTab = (type(inst.activeID) == "number" and inst.activeID < 0)
+        and tabs[-inst.activeID] or nil
 
-    local moved = table.remove(tabs, from)
-    table.insert(tabs, to, moved)
+    local moved, savedChanged = TM.MoveDisplayEntry(inst.windowID, from, to)
 
     for i = 1, n do
         if vals[tabs[i]] ~= nil then inst.unread[-i] = vals[tabs[i]] end
@@ -128,22 +126,29 @@ local function ReorderCustomTab(inst, from, to)
             end
         end
     end
-    return true
+    return moved, savedChanged
 end
--- Test export: the test calls _ReorderCustomTab(from, to) on the module-level
+-- Test export: the test calls _ReorderDisplayTab(from, to) on the module-level
 -- TabUI; we shim it to use window 1's instance.
-TabUI._ReorderCustomTab = function(from, to)
-    return ReorderCustomTab(GetInstance(1), from, to)
+TabUI._ReorderDisplayTab = function(from, to)
+    return ReorderDisplayTab(GetInstance(1), from, to)
 end
 
 local ApplyTextureColor
 local CreateSolidTexture
 
-local function CustomButtonMidpoints(inst)
+-- Every tab on the bar reorders: saved tabs (-index) and conversation tabs
+-- ("conv:<key>") share one display-order space.
+local function IsReorderableID(frameID)
+    return (type(frameID) == "number" and frameID < 0)
+        or (type(frameID) == "string" and frameID:sub(1, 5) == "conv:")
+end
+
+local function ReorderableButtonMidpoints(inst)
     local positions = {}
     for i = 1, #inst.buttons do
         local b = inst.buttons[i]
-        if type(b.frameID) == "number" and b.frameID < 0 then
+        if IsReorderableID(b.frameID) then
             -- GetLeft: MayReturnNothing + SecretWhenAnchoringSecret.
             -- GetWidth: SecretWhenAnchoringSecret + ConstSecretAccessor.
             -- Both: guard type=="number" before arithmetic.
@@ -227,7 +232,7 @@ local function UpdateDragIndicator(inst)
         HideDragIndicator(inst)
         return
     end
-    local positions = CustomButtonMidpoints(inst)
+    local positions = ReorderableButtonMidpoints(inst)
     if #positions < 2 then
         HideDragIndicator(inst)
         return
@@ -238,7 +243,7 @@ end
 local function OnTabDragStart(self)
     local inst = self._inst
     if not inst then return end
-    if not (type(self.frameID) == "number" and self.frameID < 0) then return end
+    if not IsReorderableID(self.frameID) then return end
     inst.draggingBtn = self
     self:SetAlpha(0.5)
     if inst.bar and inst.bar.SetScript then
@@ -256,15 +261,23 @@ local function OnTabDragStop(self)
     self:SetAlpha(1)
     local cx = CursorXForButton(self)
     if not cx then return end
-    local positions = CustomButtonMidpoints(inst)
+    local positions = ReorderableButtonMidpoints(inst)
     if #positions < 2 then return end
+    -- `from` is the dragged button's DISPLAY index (positions cover every tab
+    -- on the bar, in bar order — saved and conversation alike).
+    local from
+    for i = 1, #positions do
+        if positions[i].button == self then from = i; break end
+    end
+    if not from then return end
     local insertPos = ComputeDropIndex(positions, cx)
-    local from = -self.frameID
     local to = (insertPos > from) and (insertPos - 1) or insertPos
-    if ReorderCustomTab(inst, from, to) then
+    local moved, savedChanged = ReorderDisplayTab(inst, from, to)
+    if moved then
         TabUI.Rebuild()
         -- Saved tab order changed in-game: a cached options panel must rebuild.
-        if I.NotifyChatSettingsChanged then I.NotifyChatSettingsChanged() end
+        -- (Conversation-only moves are session state — nothing to re-render.)
+        if savedChanged and I.NotifyChatSettingsChanged then I.NotifyChatSettingsChanged() end
     end
 end
 
@@ -765,26 +778,42 @@ RebuildInstance = function(inst)
         inst.buttons[#inst.buttons + 1] = btn
     end
 
+    -- One ordered pass over saved + conversation tabs. TabManager owns the
+    -- mixed display order (session reorder overlay; saved tabs keep their
+    -- relative order in the stored array). The synthesis fallback — saved
+    -- order, then conversations — covers partial managers (stubbed tests).
     local TM = ns.QUI.Chat.TabManager
-    if TM and TM.GetWindowTabs then
-        local saved = TM.GetWindowTabs(inst.windowID)
-        for i = 1, #saved do
-            local t = saved[i]
-            local label = (type(t) == "table" and type(t.name) == "string" and t.name ~= "")
-                and t.name or ("Tab " .. i)
-            place(-i, label, TM.BuildTabFilter and TM.BuildTabFilter(t) or nil)
+    local Conv = ns.QUI.Chat.ConversationManager
+    local entries
+    if TM and TM.GetDisplayEntries then
+        entries = TM.GetDisplayEntries(inst.windowID)
+    else
+        entries = {}
+        if TM and TM.GetWindowTabs then
+            local saved = TM.GetWindowTabs(inst.windowID)
+            for i = 1, #saved do
+                entries[#entries + 1] = { kind = "saved", index = i, tab = saved[i] }
+            end
+        end
+        if Conv and Conv.EachForWindow then
+            Conv.EachForWindow(inst.windowID, function(c)
+                entries[#entries + 1] = { kind = "conv", key = c.key, conv = c }
+            end)
         end
     end
-
-    -- Conversation tabs render after the saved tabs (session-only).
-    local Conv = ns.QUI.Chat.ConversationManager
-    if Conv and Conv.EachForWindow and TM and TM.BuildConversationFilter then
-        -- Whisper chat color, read-only from ChatTypeInfo (never written).
-        local c = _G.ChatTypeInfo and _G.ChatTypeInfo.WHISPER
-        local tint = c and { c.r or 1, c.g or 0.5, c.b or 1, 1 } or nil
-        Conv.EachForWindow(inst.windowID, function(conv)
-            place("conv:" .. conv.key, conv.name, TM.BuildConversationFilter(conv.key), tint)
-        end)
+    -- Whisper chat color, read-only from ChatTypeInfo (never written).
+    local wc = _G.ChatTypeInfo and _G.ChatTypeInfo.WHISPER
+    local tint = wc and { wc.r or 1, wc.g or 0.5, wc.b or 1, 1 } or nil
+    for i = 1, #entries do
+        local e = entries[i]
+        if e.kind == "saved" and type(e.tab) == "table" then
+            local label = (type(e.tab.name) == "string" and e.tab.name ~= "")
+                and e.tab.name or ("Tab " .. e.index)
+            place(-e.index, label,
+                TM and TM.BuildTabFilter and TM.BuildTabFilter(e.tab) or nil)
+        elseif e.kind == "conv" and e.conv and TM and TM.BuildConversationFilter then
+            place("conv:" .. e.key, e.conv.name, TM.BuildConversationFilter(e.key), tint)
+        end
     end
 
     -- Prune unread for tabs that no longer exist.

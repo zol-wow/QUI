@@ -1,5 +1,5 @@
 ## Interface: 120000, 120001, 120005, 120007
-## Title: |cFF30D1FFQUI Debug Tools|r
+## Title: |cFF30D1FFQUI|r Debug Tools
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## Notes: Load-on-demand diagnostics and profiling tools for QUI
 ## Author: Zol

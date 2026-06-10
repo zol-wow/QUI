@@ -1,8 +1,9 @@
 -- tests/unit/chat_tab_drag_reorder_test.lua
 -- Run: lua tests/unit/chat_tab_drag_reorder_test.lua
--- Verifies: ComputeDropIndex pure math, ReorderCustomTab array mutation,
--- unread badge identity-remap, active-tab follow, OnDragStart/Stop handlers
--- end-to-end, single-tab guard.
+-- Verifies: ComputeDropIndex pure math, ReorderDisplayTab stored-array
+-- mutation, unread badge identity-remap, active-tab follow, OnDragStart/Stop
+-- handlers end-to-end (saved AND conversation tabs in one display-order
+-- space), single-tab guard.
 -- Ported to per-window instance model: TU._instances[1].buttons replaces
 -- the old TU._buttons singleton; TU._instances[1].dragIndicator replaces
 -- TU._dragIndicator; TabManager stubs use window API signatures.
@@ -91,6 +92,34 @@ local function makePerTabFilter(td)
     return function(entry) return entry.k == (td and td.name) end
 end
 
+-- Conversation (whisper) tabs share the display-order space with saved tabs.
+-- The mixed-order engine is the REAL tab_manager (its semantics are covered
+-- in depth by chat_tab_display_order_test.lua); it is loaded into its own ns
+-- and drives the same stubCustomTabs array, so the stubbed TabManager below
+-- delegates GetDisplayEntries/MoveDisplayEntry to it.
+local stubConvs = {}
+_G.ChatTypeGroupInverted = _G.ChatTypeGroupInverted or {}
+function _G.GetChatWindowMessages() end
+function _G.GetChatWindowChannels() end
+local tmSettings = { enabled = true, customDisplay = { combatLogTab = false,
+    windows = { { tabs = stubCustomTabs } } } }
+local nsTM = {
+    Helpers = { IsSecretValue = function() return false end },
+    QUI = { Chat = { _internals = {
+        GetSettings = function() return tmSettings end,
+        IsChatEnabled = function(s) return s and s.enabled ~= false end,
+    } } },
+}
+nsTM.QUI.Chat.ConversationManager = {
+    EachForWindow = function(windowID, fn)
+        for i = 1, #stubConvs do
+            if stubConvs[i].windowID == windowID then fn(stubConvs[i]) end
+        end
+    end,
+}
+assert(loadfile("QUI_Chat/chat/tab_manager.lua"))("QUI", nsTM)
+local realTM = nsTM.QUI.Chat.TabManager
+
 local ns = {
     Helpers = { IsSecretValue = function() return false end },
     QUI = { Chat = {
@@ -107,6 +136,11 @@ local ns = {
             GetWindowTabs = function(wid) return stubCustomTabs end,
             GetWindowTab = function(wid, i) return stubCustomTabs[i] end,
             BuildTabFilter = makePerTabFilter,
+            BuildConversationFilter = function(key)
+                return function(entry) return entry.cv == key end
+            end,
+            GetDisplayEntries = function(wid) return realTM.GetDisplayEntries(wid) end,
+            MoveDisplayEntry = function(wid, from, to) return realTM.MoveDisplayEntry(wid, from, to) end,
         },
     } },
 }
@@ -129,7 +163,7 @@ assert(TU._ComputeDropIndex(pos, 500) == 4, "(a) past last mid -> slot n+1")
 -- ─── (b) ReorderCustomTab mutates the LIVE stored array ───────────────────
 
 -- stubCustomTabs is the exact table returned by GetWindowTabs — mutation persists.
-assert(TU._ReorderCustomTab(1, 3) == true, "(b) move A(1) -> slot 3 returns true")
+assert(TU._ReorderDisplayTab(1, 3) == true, "(b) move A(1) -> slot 3 returns true")
 assert(stubCustomTabs[1] == tabB, "(b) slot 1 is now B, got " .. tostring(stubCustomTabs[1] and stubCustomTabs[1].name))
 assert(stubCustomTabs[2] == tabC, "(b) slot 2 is now C, got " .. tostring(stubCustomTabs[2] and stubCustomTabs[2].name))
 assert(stubCustomTabs[3] == tabA, "(b) slot 3 is now A, got " .. tostring(stubCustomTabs[3] and stubCustomTabs[3].name))
@@ -183,7 +217,7 @@ assert(bB and bB.badge.text == "2",
 
 -- Move Alpha (slot 1) -> slot 3: array becomes [Beta, Gamma, Alpha].
 -- Expected remap: unread[-3]=5 (Alpha's 5 follows it), unread[-1]=2 (Beta's 2 follows it).
-TU._ReorderCustomTab(1, 3)
+TU._ReorderDisplayTab(1, 3)
 TU.Rebuild()
 
 -- After Rebuild: frameID -3 = Alpha (slot 3), frameID -1 = Beta (slot 1).
@@ -209,7 +243,7 @@ bA2._OnClick(bA2)
 local setActiveCountBefore = #setActiveCalls
 
 -- Move A from slot 1 to slot 3; activeID should update to -3.
-TU._ReorderCustomTab(1, 3)
+TU._ReorderDisplayTab(1, 3)
 TU.Rebuild()
 -- stubCustomTabs is now [B,C,A]; A is at slot 3.
 
@@ -362,6 +396,71 @@ assert(stubCustomTabs[1] == tabA and stubCustomTabs[2] == tabB and stubCustomTab
     (stubCustomTabs[2] and stubCustomTabs[2].name or "?") .. "," ..
     (stubCustomTabs[3] and stubCustomTabs[3].name or "?"))
 
+-- ─── (g) Conversation (whisper) tabs drag-reorder among saved tabs ────────
+
+stubCustomTabs[1] = tabA; stubCustomTabs[2] = tabB; stubCustomTabs[3] = tabC
+stubConvs[1] = { key = "W:ann", name = "Ann", windowID = 1 }
+TU.Rebuild()
+local function getConvBtn(key)
+    for _, b in ipairs(buttons1()) do
+        if b.frameID == "conv:" .. key then return b end
+    end
+    return nil
+end
+local function barFrameIDs()
+    local out = {}
+    for _, b in ipairs(buttons1()) do out[#out + 1] = tostring(b.frameID) end
+    return table.concat(out, ",")
+end
+local convBtn = assert(getConvBtn("W:ann"), "(g) conversation button rendered")
+assert(barFrameIDs() == "-1,-2,-3,conv:W:ann", "(g) default order, got " .. barFrameIDs())
+
+-- Drag Ann (display slot 4) between Alpha and Beta -> display slot 2.
+assignGeometry()
+local midsAll = {}
+for _, b in ipairs(buttons1()) do
+    midsAll[#midsAll + 1] = (b._left or 0) + (b.width or 50) / 2
+end
+_G.GetCursorPosition = function() return midsAll[1] + (midsAll[2] - midsAll[1]) / 2 end
+convBtn._OnDragStart(convBtn)
+assert(convBtn:GetAlpha() == 0.5, "(g) conversation tab drag is permitted (dims)")
+convBtn._OnDragStop(convBtn)
+assert(barFrameIDs() == "-1,conv:W:ann,-2,-3",
+    "(g) conv interleaved between saved tabs, got " .. barFrameIDs())
+assert(stubCustomTabs[1] == tabA and stubCustomTabs[2] == tabB and stubCustomTabs[3] == tabC,
+    "(g) conv-only move leaves the stored array untouched")
+
+-- (g2) Saved tab dragged across the conversation persists the saved order:
+-- drag Alpha (display 1) past everything -> display [Ann,B,C,A], stored {B,C,A}.
+assignGeometry()
+local midsG2 = {}
+for _, b in ipairs(buttons1()) do
+    midsG2[#midsG2 + 1] = (b._left or 0) + (b.width or 50) / 2
+end
+_G.GetCursorPosition = function() return midsG2[#midsG2] + 100 end
+local alphaBtn = assert(getCustomBtnAt(1), "(g2) Alpha button at stored slot 1")
+alphaBtn._OnDragStart(alphaBtn)
+alphaBtn._OnDragStop(alphaBtn)
+assert(stubCustomTabs[1] == tabB and stubCustomTabs[2] == tabC and stubCustomTabs[3] == tabA,
+    "(g2) stored array rewritten to B,C,A, got " ..
+    (stubCustomTabs[1] and stubCustomTabs[1].name or "?") .. "," ..
+    (stubCustomTabs[2] and stubCustomTabs[2].name or "?") .. "," ..
+    (stubCustomTabs[3] and stubCustomTabs[3].name or "?"))
+assert(barFrameIDs() == "conv:W:ann,-1,-2,-3",
+    "(g2) bar order conv,B,C,A, got " .. barFrameIDs())
+local lastBtn = buttons1()[#buttons1()]
+assert(lastBtn and lastBtn.label.text == "Alpha",
+    "(g2) last bar button is Alpha, got " .. tostring(lastBtn and lastBtn.label.text))
+
+-- (g3) Conversation close prunes its slot; saved order stays.
+stubConvs[1] = nil
+TU.Rebuild()
+assert(barFrameIDs() == "-1,-2,-3", "(g3) conv pruned, got " .. barFrameIDs())
+
+-- Restore baseline for the sections below.
+stubCustomTabs[1] = tabA; stubCustomTabs[2] = tabB; stubCustomTabs[3] = tabC
+TU.Rebuild()
+
 -- ─── (f) Single custom tab guard ──────────────────────────────────────────
 
 local singleStub = { { name = "Only", groups = { SAY = true } } }
@@ -386,9 +485,9 @@ local nsf = {
 }
 assert(loadfile("QUI_Chat/chat/tab_ui.lua"))("QUI", nsf)
 local TUsingle = nsf.QUI.Chat.TabUI
-assert(TUsingle._ReorderCustomTab(1, 2) == false,
-    "(f) single custom tab -> _ReorderCustomTab returns false")
-assert(TUsingle._ReorderCustomTab(1, 1) == false,
+assert(TUsingle._ReorderDisplayTab(1, 2) == false,
+    "(f) single custom tab -> _ReorderDisplayTab returns false")
+assert(TUsingle._ReorderDisplayTab(1, 1) == false,
     "(f) single tab same-slot -> false")
 
 print("OK: chat_tab_drag_reorder_test")

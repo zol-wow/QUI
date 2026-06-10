@@ -194,9 +194,21 @@ function TabManager.ReapplyAll()
     end
 end
 
--- Display.DeleteWindow shifts window IDs down; keep filter slots aligned.
+-- Display.DeleteWindow shifts window IDs down; keep filter slots and the
+-- session display order (declared below, captured upvalue) aligned.
+local displayOrderRef
 function TabManager.OnWindowDeleted(windowID)
-    table.remove(activeFilters, tonumber(windowID) or 0)
+    windowID = tonumber(windowID) or 0
+    table.remove(activeFilters, windowID)
+    if displayOrderRef and windowID >= 1 then
+        -- Sparse map (a window may never have been rebuilt): shift manually.
+        local maxID = 0
+        for id in pairs(displayOrderRef) do if id > maxID then maxID = id end end
+        for id = windowID, maxID - 1 do
+            displayOrderRef[id] = displayOrderRef[id + 1]
+        end
+        if maxID >= windowID then displayOrderRef[maxID] = nil end
+    end
 end
 
 local function SetFromReturns(...)
@@ -381,4 +393,131 @@ function TabManager.GetWindowTab(windowID, index)
     local t = TabManager.GetWindowTabs(windowID)[index]
     if type(t) == "table" then return t end
     return nil
+end
+
+---------------------------------------------------------------------------
+-- Mixed display order: conversation (whisper) tabs are orderable anywhere
+-- among saved tabs on the bar. Per window, a SESSION-ONLY token list holds
+-- the on-bar order; a token is either a saved-tab TABLE reference (identity
+-- survives stored-array reorders) or a "conv:<key>" string. Saved tabs
+-- remain the persistence source of truth for their RELATIVE order — moving
+-- one rewrites the stored windows[].tabs array in place — while conversation
+-- positions die with the session, like the conversations themselves.
+---------------------------------------------------------------------------
+local displayOrder = {} -- windowID -> array of tokens (session-only)
+displayOrderRef = displayOrder -- OnWindowDeleted (above) shifts this map
+
+-- Reconcile the session token list against the live worlds: prune tokens
+-- whose tab/conversation is gone, re-seat saved tokens to the stored array's
+-- relative order (so external reorders — options panel — win), then append
+-- new saved tabs (array order) and new conversations (creation order).
+local function ReconcileOrder(windowID)
+    windowID = tonumber(windowID) or 1
+    local saved = TabManager.GetWindowTabs(windowID)
+    local savedIndex = {}
+    for i = 1, #saved do savedIndex[saved[i]] = i end
+
+    local convTokens, convByToken = {}, {}
+    local Conv = ns.QUI.Chat.ConversationManager
+    if Conv and Conv.EachForWindow then
+        Conv.EachForWindow(windowID, function(c)
+            local tok = "conv:" .. c.key
+            convTokens[#convTokens + 1] = tok
+            convByToken[tok] = c
+        end)
+    end
+
+    local tokens = displayOrder[windowID]
+    if type(tokens) ~= "table" then
+        tokens = {}
+        displayOrder[windowID] = tokens
+    end
+
+    -- Prune dead/duplicate tokens, compacting in place.
+    local seen, n = {}, 0
+    for i = 1, #tokens do
+        local tok = tokens[i]
+        local live = (type(tok) == "table" and savedIndex[tok] ~= nil)
+            or (type(tok) == "string" and convByToken[tok] ~= nil)
+        if live and not seen[tok] then
+            n = n + 1
+            tokens[n] = tok
+            seen[tok] = true
+        end
+    end
+    for i = #tokens, n + 1, -1 do tokens[i] = nil end
+
+    -- Re-seat the saved tokens in stored-array order (slot positions kept).
+    local slots = {}
+    for i = 1, #tokens do
+        if type(tokens[i]) == "table" then slots[#slots + 1] = i end
+    end
+    local k = 0
+    for i = 1, #saved do
+        if seen[saved[i]] then
+            k = k + 1
+            tokens[slots[k]] = saved[i]
+        end
+    end
+
+    -- Append newcomers.
+    for i = 1, #saved do
+        if not seen[saved[i]] then
+            tokens[#tokens + 1] = saved[i]
+            seen[saved[i]] = true
+        end
+    end
+    for i = 1, #convTokens do
+        if not seen[convTokens[i]] then
+            tokens[#tokens + 1] = convTokens[i]
+            seen[convTokens[i]] = true
+        end
+    end
+    return tokens, savedIndex, convByToken
+end
+
+-- On-bar order for tab_ui. Entries are
+--   { kind = "saved", index = <stored-array index>, tab = <tab table> } or
+--   { kind = "conv",  key = <conversation key>,     conv = <registry obj> }.
+function TabManager.GetDisplayEntries(windowID)
+    local tokens, savedIndex, convByToken = ReconcileOrder(windowID)
+    local out = {}
+    for i = 1, #tokens do
+        local tok = tokens[i]
+        if type(tok) == "table" then
+            out[#out + 1] = { kind = "saved", index = savedIndex[tok], tab = tok }
+        else
+            out[#out + 1] = { kind = "conv", key = tok:sub(6), conv = convByToken[tok] }
+        end
+    end
+    return out
+end
+
+-- Move display position `from` to final position `to` (drag-reorder).
+-- Returns moved(boolean), savedChanged(boolean) — savedChanged is true when
+-- the saved tabs' relative order changed (stored array rewritten in place;
+-- the caller decides whether to notify the options panel).
+function TabManager.MoveDisplayEntry(windowID, from, to)
+    local tokens = ReconcileOrder(windowID)
+    local n = #tokens
+    if n < 2 or type(from) ~= "number" or from < 1 or from > n then return false end
+    if type(to) ~= "number" then return false end
+    if to < 1 then to = 1 elseif to > n then to = n end
+    if to == from then return false end
+
+    local moved = table.remove(tokens, from)
+    table.insert(tokens, to, moved)
+
+    -- Persist the saved tabs' new relative order into the stored array.
+    local saved = TabManager.GetWindowTabs(windowID)
+    local reordered = {}
+    for i = 1, #tokens do
+        if type(tokens[i]) == "table" then reordered[#reordered + 1] = tokens[i] end
+    end
+    local savedChanged = false
+    for i = 1, #reordered do
+        if saved[i] ~= reordered[i] then savedChanged = true end
+        saved[i] = reordered[i]
+    end
+    return true, savedChanged
 end
