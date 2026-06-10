@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta34 - 2026-06-10
+
+> 🧪 **QUI 4 beta — action bar, chat, and tracker fixes.** A small follow-up beta: the pet and stance bars now properly join the "Link Bars 1-8" mouseover group, the guild message of the day no longer reappears randomly mid-session, the combat-log filter fix from beta33 now holds across every login path, the Prey Tracker can be toggled without a /reload, and encounter power-bar widgets follow the skinned power bar instead of floating at their stock position. No schema migration — your beta33 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Pet and stance bars follow the linked mouseover group.** With "Link Bars 1-8" on, mousing over a linked bar showed bars 1-8 but left the pet and stance bars faded out. They're now full members of the linked group — they appear with the group, stay shown with it during combat when configured to, and the pet bar keeps working after mid-combat pet changes. Linked fading also respects a bar's individual fade setting.
+- **The guild message of the day no longer reappears mid-session.** The login recovery added in beta32 could re-print the guild MOTD beside system messages at random points during play. The recovery now runs only around login; real MOTD changes still show normally.
+- **Combat-log filters survive every login.** Beta33's fix for combat-log filters resetting to "show everything" could still miss on some logins; the embedded Combat Log now re-applies your saved filters reliably every time it's shown.
+- **The Prey Tracker toggles without a /reload.** Enabling the Prey Tracker mid-session now takes effect immediately, and disabling it hands the stock Blizzard tracker back live.
+- **Encounter power-bar widgets follow the skinned power bar.** Fights that add extra power-bar widgets left them at their stock screen position, detached from QUI's alternate power bar. They now sit just below it — unless you've taken control of them with the "Power Bar Widgets" mover, which still wins.
+
+### Changed
+- **Combat Log tab settings are clearer.** The Combat Log tab's settings page now explains that message groups and channels don't apply to it instead of showing empty editors, and deleting the tab turns the embedded Combat Log feature off.
+
 ## v4.0.0-beta33 - 2026-06-10
 
 > 🧪 **QUI 4 beta — QUI Chat follow-up fixes.** A quick follow-up to beta32 focused on the new Combat Log tab and custom chat tabs: combat-log filters no longer reset to "show everything", the embedded Combat Log is left-aligned like the stock one, /played no longer prints repeatedly at login, and unchecking channels on a custom tab actually keeps them out. No schema migration — your beta32 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
