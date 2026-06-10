@@ -335,7 +335,9 @@ function Storage.HonorPendingClearAll()
     return true
 end
 
-function Storage.AppendLive(entry)
+-- maxEntries: the configured settings cap; falls back to the storage default
+-- when absent. The HOT_ROTATE_AT slack keeps Cap off the per-append hot path.
+function Storage.AppendLive(entry, maxEntries)
     if type(entry) ~= "table" then return end
     local sv = getSV()
     sv.current[#sv.current + 1] = entry
@@ -343,8 +345,9 @@ function Storage.AppendLive(entry)
     sv.totalCount = sv.count
     rotateCurrent(sv, false)
     refreshCount(sv)
-    if sv.count > DEFAULT_MAX_ENTRIES + HOT_ROTATE_AT then
-        Storage.Cap(DEFAULT_MAX_ENTRIES)
+    local cap = tonumber(maxEntries) or DEFAULT_MAX_ENTRIES
+    if sv.count > cap + HOT_ROTATE_AT then
+        Storage.Cap(cap)
     end
 end
 

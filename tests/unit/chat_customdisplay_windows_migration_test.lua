@@ -3,6 +3,8 @@
 -- tabs} wraps into customDisplay.windows[1]; geometry-less profiles with only
 -- tabs still wrap; fully-default (empty) profiles are untouched; re-running is
 -- a no-op; a profile already carrying windows[] just sheds leftover flat keys.
+-- v45 runs in the same chain and folds the wrapped position into
+-- frameAnchoring (single position store) — asserted where it applies.
 -- Run: lua tests/unit/chat_customdisplay_windows_migration_test.lua
 
 local env = dofile("tools/_addon_env.lua")
@@ -39,7 +41,15 @@ ns.Migrations.RunOnProfile(prof)
 local cd = prof.chat.customDisplay
 check("windows array created", type(cd.windows) == "table" and #cd.windows == 1)
 check("geometry wrapped", cd.windows[1].width == 500 and cd.windows[1].height == 240)
-check("position wrapped", cd.windows[1].position and cd.windows[1].position.x == -20)
+-- v45 (same chain) folds the wrapped position into frameAnchoring and
+-- deletes the windows[1].position sub-table — single position store.
+check("position folded into frameAnchoring", prof.frameAnchoring
+    and prof.frameAnchoring.chatFrame1
+    and prof.frameAnchoring.chatFrame1.point == "BOTTOMRIGHT"
+    and prof.frameAnchoring.chatFrame1.offsetX == -20
+    and prof.frameAnchoring.chatFrame1.offsetY == 60
+    and prof.frameAnchoring.chatFrame1.parent == "disabled")
+check("legacy position deleted", cd.windows[1].position == nil)
 check("tabs wrapped", cd.windows[1].tabs and cd.windows[1].tabs[1]
     and cd.windows[1].tabs[1].name == "General")
 check("flat keys removed", cd.width == nil and cd.height == nil
@@ -84,7 +94,10 @@ local profP = { chat = { customDisplay = {
 ns.Migrations.RunOnProfile(profP)
 local cdP = profP.chat.customDisplay
 check("position-only wraps", type(cdP.windows) == "table" and #cdP.windows == 1)
-check("position-only preserves point", cdP.windows[1].position and cdP.windows[1].position.point == "CENTER")
+check("position-only folds to frameAnchoring", profP.frameAnchoring
+    and profP.frameAnchoring.chatFrame1
+    and profP.frameAnchoring.chatFrame1.point == "CENTER"
+    and cdP.windows[1].position == nil)
 check("position-only no phantom width", cdP.windows[1].width == nil)
 
 if failures > 0 then os.exit(1) end

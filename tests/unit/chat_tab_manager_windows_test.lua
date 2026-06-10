@@ -39,7 +39,9 @@ local TM = ns.QUI.Chat.TabManager
 local wins = TM.GetWindowsConfig()
 assert(#wins == 1, "windows[1] seeded")
 assert(wins[1].width == 430 and wins[1].height == 190, "default geometry seeded")
-assert(wins[1].position and wins[1].position.point == "BOTTOMLEFT", "default position seeded")
+-- Position lives in frameAnchoring (single store); the seed must not
+-- create a legacy windows[1].position sub-table.
+assert(wins[1].position == nil, "no legacy position in the window seed")
 assert(type(wins[1].tabs) == "table" and #wins[1].tabs >= 1, "tabs seeded")
 assert(wins[1].tabs[1].name == "General", "Blizzard-derived seed (combat log skipped)")
 assert(wins[1].tabs[1].groups.SAY == true and wins[1].tabs[1].groups.GUILD == true, "groups seeded")

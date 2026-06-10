@@ -59,15 +59,25 @@ local WHISPER_KEYS = {
     BN_WHISPER_INFORM = true,
 }
 
-local function isExcludedChannel(chatTypeKey, excludedSet)
-    if not excludedSet or not chatTypeKey then return false end
+-- excludedChannels is keyed by channel NAME (same GetChannelList spelling the
+-- settings UI stores and Registry.ResolveName produces). Live channel captures
+-- carry k="CHANNEL" — no slot digits, the slot only feeds the color key — so
+-- entry.ch is the primary match; the CHANNEL<slot> path is only a fallback for
+-- entries that carry a slot-suffixed key without a channel name.
+local function isExcludedChannel(chatTypeKey, channelName, excludedSet)
+    if not excludedSet then return false end
+    if type(channelName) == "string" and channelName ~= ""
+       and excludedSet[channelName] == true then
+        return true
+    end
+    if type(chatTypeKey) ~= "string" then return false end
     local slotStr = chatTypeKey:match("^CHANNEL(%d+)$")
     if not slotStr then return false end
     local slot = tonumber(slotStr)
     if not slot or not GetChannelName then return false end
-    local _, channelName = GetChannelName(slot)
-    if not channelName or channelName == "" then return false end
-    return excludedSet[channelName] == true
+    local resolvedName = select(2, GetChannelName(slot))
+    if not resolvedName or resolvedName == "" then return false end
+    return excludedSet[resolvedName] == true
 end
 
 -- Store subscriber owns ALL capture (pre-PEW and steady state). Capture
@@ -87,7 +97,7 @@ local function captureFromStore(entry)
     if not s or not s.enabled then return end
     local chatTypeKey = entry.k
     if not s.storeWhispers and chatTypeKey and WHISPER_KEYS[chatTypeKey] then return end
-    if isExcludedChannel(chatTypeKey, s.excludedChannels) then return end
+    if isExcludedChannel(chatTypeKey, entry.ch, s.excludedChannels) then return end
     local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
     if not Storage then return end
     Storage.AppendLive({
@@ -104,7 +114,7 @@ local function captureFromStore(entry)
         ch = entry.ch,
         ev = entry.e,
         w = entry.w,
-    })
+    }, s.maxEntries)
 end
 
 -- Export for the test harness (the real subscriber installs on ADDON_LOADED,

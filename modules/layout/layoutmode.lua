@@ -1377,6 +1377,25 @@ local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, ancho
     end
 end
 
+--- Record an element's live FREE position (CENTER-based screen offsets) as a
+--- pending layout-mode position. Shared by the chat and damage-meter resize
+--- grips' OnMouseUp (cross-addon via ns.QUI_LayoutMode): sizing from a corner
+--- moves the frame's CENTER while the stored frameAnchoring offsets still
+--- hold the pre-resize center, so without this the post-close
+--- ApplyAllFrameAnchors(true) recenters the window by half the size delta.
+--- No-op when the element is anchored (the locked-grip gate on OnMouseDown
+--- means no resize happened) or the frame has no rect yet.
+function QUI_LayoutMode:RecordFreeElementPosition(key, frame)
+    if not self.isActive then return end
+    if not key or not frame or not frame.GetCenter then return end
+    if self:IsElementAnchored(key) then return end
+    local cx, cy = frame:GetCenter()
+    if not cx or not cy then return end
+    local pw, ph = UIParent:GetWidth(), UIParent:GetHeight()
+    SavePendingPosition(key, "CENTER", "CENTER",
+        math.floor(cx - pw / 2 + 0.5), math.floor(cy - ph / 2 + 0.5))
+end
+
 --- Convert a handle's position to CENTER-based offsets relative to UIParent.
 --- Works for both proxy movers and child overlays.
 --- Returns offsets in UIParent local coord. For scaled child overlay parents,
@@ -3064,9 +3083,14 @@ do
                         local f = getFrame()
                         if f then
                             f:StopMovingOrSizing()
-                            -- Persist via the shared export — same logic as
-                            -- display_layer's own drag/grip handlers.
+                            -- Persist SIZE via the shared export — same logic
+                            -- as display_layer's own drag/grip handlers.
                             persist()
+                            -- Sizing from a corner moves the container's
+                            -- CENTER; record the live center as a pending
+                            -- position (see RecordFreeElementPosition) or the
+                            -- post-close anchor re-apply recenters the window.
+                            QUI_LayoutMode:RecordFreeElementPosition(overlay._barKey, f)
                         end
                         -- Sync Layout Mode drawer size sliders to the new dims.
                         local U = ns.QUI_LayoutMode_Utils
@@ -3080,6 +3104,8 @@ do
             end
         end
 
+        -- Persists window 1's SIZE only (chat position lives in the shared
+        -- frameAnchoring DB — damage-meter pattern, single store).
         local function PersistPrimaryChatGeometry()
             local D = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.DisplayLayer
             if D and D.PersistGeometry then D.PersistGeometry() end
@@ -3107,14 +3133,10 @@ do
             getFrame = function()
                 return GetChatContainer()
             end,
-            -- The display layer owns geometry (customDisplay.windows[1]);
-            -- PersistGeometry writes the container's live rect there.
-            -- Route layout-mode drags through it, exactly like the
-            -- corner-grip handlers below, so both paths persist to the
-            -- same location that Refresh reads from.
-            savePosition = function()
-                PersistPrimaryChatGeometry()
-            end,
+            -- No savePosition/loadPosition: position persistence is the
+            -- generic frameAnchoring path (single store, damage-meter
+            -- pattern). The display layer only owns SIZE
+            -- (customDisplay.windows[1].width/height via PersistGeometry).
             -- Small symmetric inset: the container is its own top-level frame
             -- with an internal drag strip. The custom tab row sits above the
             -- container, so include its height in the mover's top edge.
@@ -3277,9 +3299,8 @@ do
                         end
                     end,
                     getFrame = getFrame,
-                    savePosition = function()
-                        persist()
-                    end,
+                    -- No savePosition: frameAnchoring is the position store
+                    -- (persist() only covers size, via the resize grips).
                     setupOverlay = function(overlay, frame)
                         SetupChatWindowOverlay(overlay, frame, getFrame, persist,
                             function()
@@ -3321,10 +3342,13 @@ do
                     Registry:RegisterLookupKey(CHAT_WINDOW_LAYOUT_FEATURE_ID, key)
                 end
 
-                -- Apply a saved frameAnchoring entry if the user anchored
-                -- this window (no-op otherwise — display_layer's saved
-                -- geometry already positioned it).
-                if _G.QUI_ApplyFrameAnchor then
+                -- Position from the frameAnchoring store (single store —
+                -- covers windows that existed before this method was
+                -- installed). Skip while Layout Mode is live: the handle
+                -- system owns positions there, and pending drag positions
+                -- aren't in the DB until Save, so a re-apply would yank the
+                -- frame from its mover.
+                if _G.QUI_ApplyFrameAnchor and not QUI_LayoutMode.isActive then
                     _G.QUI_ApplyFrameAnchor(key)
                 end
             end

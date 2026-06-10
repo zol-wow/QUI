@@ -6,6 +6,11 @@
 --   (c) whisper entry, storeWhispers=false    → skipped
 --   (d) e="HISTORY"/"BACKFILL" or entry.hist → skipped
 --   (e) secret entry (entry.s=true)           → skipped
+--   (e2) excluded channel by NAME             → skipped (live capture shape is
+--                                                k="CHANNEL" + ch=channelName;
+--                                                slot-suffixed keys are only a
+--                                                fallback)
+--   (e3) settings.maxEntries                  → forwarded to AppendLive cap arg
 --   (f) repump + enabled                      → store receives sep+lines+sep;
 --                                                separators stay SYSTEM+hist,
 --                                                lines preserve their original
@@ -66,6 +71,7 @@ _G.QUI = {}  -- the AceAddon global expected by history.lua
 
 local suppressActive   = false
 local appendLiveCalls  = {}  -- records each AppendLive call
+local appendLiveCaps   = {}  -- records the maxEntries cap passed alongside
 local storeAppendCalls = {}  -- records each MessageStore.Append call
 local addMsgCalls      = {}  -- per-frame AddMessage call records
 
@@ -91,8 +97,9 @@ local HistoryStorageStub = {
     MigrateFromAceDB = function() end,
     PersistNow      = function() end,
     Prune           = function() end,
-    AppendLive = function(entry)
+    AppendLive = function(entry, maxEntries)
         appendLiveCalls[#appendLiveCalls + 1] = entry
+        appendLiveCaps[#appendLiveCaps + 1] = maxEntries
     end,
     GetRecentEntries = function(limit)
         local out = {}
@@ -174,6 +181,7 @@ end
 
 local function resetCaptureCalls()
     appendLiveCalls = {}
+    appendLiveCaps = {}
 end
 
 local function resetRepumpCalls()
@@ -280,6 +288,61 @@ fireCapture({ e = "CHAT_MSG_GUILD", k = "GUILD", m = "secret text",
 assert(#appendLiveCalls == 0,
     "(e) secret entry should be skipped, got " .. #appendLiveCalls)
 print("  ok  (e) secret entry skipped")
+
+-------------------------------------------------------------------------------
+-- Case (e2): excluded channel by NAME → skipped. Live channel captures carry
+-- k="CHANNEL" (no slot digits; the slot only feeds the color key) plus
+-- ch=channelName, and excludedChannels is keyed by channel name — so the
+-- name on the entry is what must drive the exclusion.
+-------------------------------------------------------------------------------
+
+suppressActive = true
+settings.history.excludedChannels = { Services = true }
+
+resetCaptureCalls()
+fireCapture({ e = "CHAT_MSG_CHANNEL", k = "CHANNEL", ch = "Services",
+              m = "WTS boost spam", r = 1, g = 1, b = 1, s = false })
+assert(#appendLiveCalls == 0,
+    "(e2) excluded channel (k=CHANNEL, ch=Services) must be skipped, got "
+    .. #appendLiveCalls)
+
+-- A non-excluded channel with the same live shape is still captured.
+fireCapture({ e = "CHAT_MSG_CHANNEL", k = "CHANNEL", ch = "Newcomers",
+              m = "welcome!", r = 1, g = 1, b = 1, s = false })
+assert(#appendLiveCalls == 1,
+    "(e2) non-excluded channel must still be captured, got " .. #appendLiveCalls)
+
+-- Slot-suffixed type keys (no ch on the entry) still resolve via GetChannelName.
+_G.GetChannelName = function(slot)
+    if slot == 5 then return 5, "Services" end
+    return 0, nil
+end
+resetCaptureCalls()
+fireCapture({ e = "CHAT_MSG_CHANNEL", k = "CHANNEL5",
+              m = "spam via slot key", r = 1, g = 1, b = 1, s = false })
+assert(#appendLiveCalls == 0,
+    "(e2) excluded channel via CHANNEL5 slot fallback must be skipped, got "
+    .. #appendLiveCalls)
+_G.GetChannelName = nil
+
+settings.history.excludedChannels = {}
+print("  ok  (e2) excluded channel skipped by name; slot-key fallback intact")
+
+-------------------------------------------------------------------------------
+-- Case (e3): settings.maxEntries is forwarded to AppendLive so the live cap
+-- honors the configured limit instead of the storage default.
+-------------------------------------------------------------------------------
+
+settings.history.maxEntries = 12345
+resetCaptureCalls()
+fireCapture({ e = "CHAT_MSG_SAY", k = "SAY", m = "cap check",
+              r = 1, g = 1, b = 1, s = false })
+assert(#appendLiveCalls == 1, "(e3) expected 1 AppendLive, got " .. #appendLiveCalls)
+assert(appendLiveCaps[1] == 12345,
+    "(e3) settings.maxEntries must be forwarded to AppendLive, got "
+    .. tostring(appendLiveCaps[1]))
+settings.history.maxEntries = nil
+print("  ok  (e3) settings.maxEntries forwarded to AppendLive")
 
 -------------------------------------------------------------------------------
 -- Case (f): repump + enabled → store gets sep+lines+sep, frames get NO AddMessage

@@ -145,6 +145,44 @@ do
           recent[1] and recent[1].m or "nil")
 end
 
+-- AppendLive honors a caller-provided maxEntries cap. A raised cap must NOT
+-- trim down to the storage default mid-session (the live cap previously
+-- ignored the configured limit and always capped at the hardcoded default).
+do
+    reset()
+    for i = 1, 6500 do
+        Storage.AppendLive(entry(i, 1, "raised " .. i), 10000)
+    end
+    check("AppendLive raised cap keeps all entries",
+          Storage.GetCount() == 6500, tostring(Storage.GetCount()))
+end
+
+-- A lowered cap evicts oldest entries during the session, keeping newest.
+do
+    reset()
+    for i = 1, 1200 do
+        Storage.AppendLive(entry(i, 1, "small " .. i), 100)
+    end
+    local count = Storage.GetCount()
+    check("AppendLive small cap evicts", count < 1200, tostring(count))
+    local snap = Storage.Snapshot()
+    check("AppendLive small cap keeps newest",
+          snap[#snap] and snap[#snap].m == "small 1200",
+          snap[#snap] and snap[#snap].m or "nil")
+    check("AppendLive small cap drops oldest",
+          snap[1] and snap[1].m ~= "small 1", snap[1] and snap[1].m or "nil")
+end
+
+-- Without a caller cap the default live cap still bounds growth.
+do
+    reset()
+    for i = 1, 6500 do
+        Storage.AppendLive(entry(i, 1, "default " .. i))
+    end
+    check("AppendLive default cap bounds growth",
+          Storage.GetCount() <= 6000, tostring(Storage.GetCount()))
+end
+
 -- PersistNow normalizes chunks without writing the old monolithic blob.
 do
     reset()

@@ -285,10 +285,19 @@ local _currentActiveProfile = nil  -- raw sv profile table for the active profil
 --       showRealmNames = true for those profiles; the false default reproduces
 --       the stripped look everywhere else. Idempotent.
 --
+-- v45 = MigrateChatWindowPositionsToFrameAnchoring
+--       Chat window position becomes frameAnchoring-only (damage-meter
+--       pattern). The legacy chat.customDisplay.windows[i].position
+--       sub-table is folded into frameAnchoring.chatFrame1/chatWindow<i>
+--       (it wins over free/stale FA entries — it's what the display layer
+--       re-asserted on every refresh, i.e. what the user saw; real frame
+--       anchors are kept) and then deleted. Ends the dual-store drift that
+--       made the chat frame snap between two saved positions.
+--
 -- When adding a new migration: bump CURRENT_SCHEMA_VERSION, add it to the
 -- linear gate chain in RunOnProfile, and document the version above.
 ---------------------------------------------------------------------------
-local CURRENT_SCHEMA_VERSION = 44
+local CURRENT_SCHEMA_VERSION = 45
 
 ---------------------------------------------------------------------------
 -- Shared helpers
@@ -1653,6 +1662,61 @@ local function MigrateChatRealmNames(profile)
         mods.showRealmNames = true
     end
     -- else: leave the false default — default/shorten-on profiles stripped the realm.
+end
+
+---------------------------------------------------------------------------
+-- v45: MigrateChatWindowPositionsToFrameAnchoring — single position store
+-- for chat windows (damage-meter pattern).
+--
+-- Chat window position used to live in TWO places at once:
+--   * chat.customDisplay.windows[i].position — re-asserted by the display
+--     layer on every Refresh, and
+--   * frameAnchoring.chatFrame1/chatWindow<i> — written by every layout-mode
+--     drag and re-applied by the anchoring system at login, on spec change,
+--     and on layout-mode Save/Discard.
+-- The two drifted apart (grip resizes, size sliders, and settings writes
+-- only updated windows[i]), so the chat frame snapped between the stores
+-- depending on which system applied last.
+--
+-- frameAnchoring is now the only position store. windows[i].position wins
+-- the fold for free/screen entries because the display layer re-asserted it
+-- on every refresh — it is the position the user actually saw. An entry
+-- anchored to a REAL frame is an explicit user choice and is kept as-is.
+-- The legacy position sub-table is deleted either way. Idempotent: a second
+-- pass finds no windows[i].position and does nothing.
+---------------------------------------------------------------------------
+local function MigrateChatWindowPositionsToFrameAnchoring(profile)
+    if type(profile) ~= "table" then return end
+    local chat = type(profile.chat) == "table" and profile.chat or nil
+    local cd = chat and type(chat.customDisplay) == "table" and chat.customDisplay or nil
+    local windows = cd and type(cd.windows) == "table" and cd.windows or nil
+    if not windows then return end
+    for i = 1, #windows do
+        local wc = windows[i]
+        if type(wc) == "table" then
+            local pos = type(wc.position) == "table" and wc.position or nil
+            if pos and pos.point then
+                if type(profile.frameAnchoring) ~= "table" then
+                    profile.frameAnchoring = {}
+                end
+                local key = (i == 1) and "chatFrame1" or ("chatWindow" .. i)
+                local existing = profile.frameAnchoring[key]
+                local hasRealParent = type(existing) == "table" and existing.parent
+                    and existing.parent ~= "disabled" and existing.parent ~= "screen"
+                if not hasRealParent then
+                    profile.frameAnchoring[key] = {
+                        parent     = "disabled",
+                        point      = pos.point,
+                        relative   = pos.relPoint or pos.point,
+                        offsetX    = pos.x or 0,
+                        offsetY    = pos.y or 0,
+                        sizeStable = true,
+                    }
+                end
+            end
+            wc.position = nil
+        end
+    end
 end
 
 local DEFAULT_SKY_BLUE_ACCENT = { 0.376, 0.647, 0.980, 1 }
@@ -4414,6 +4478,10 @@ function Migrations.RunOnProfile(profile)
     -- v44: decouple chat sender realm display from channelShorten — preserve the
     -- shown-realm look for profiles that had channel-shortening explicitly off.
     if stored < 44 then MigrateChatRealmNames(profile) end
+
+    -- v45: chat window position becomes frameAnchoring-only (single store);
+    -- fold legacy windows[i].position in and delete it.
+    if stored < 45 then MigrateChatWindowPositionsToFrameAnchoring(profile) end
 
     if type(profile.frameAnchoring) == "table" and profile.frameAnchoring.debuffFrame then
         local d = profile.frameAnchoring.debuffFrame

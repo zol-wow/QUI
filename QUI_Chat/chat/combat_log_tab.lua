@@ -28,6 +28,8 @@ local activeWindow      -- the single window currently showing the combat log
 local hiddenAnchor      -- shared hidden parent for parked chrome/quick-bar
 local loadWaiter        -- waits for the LoadOnDemand combat-log addon/frame
 local combatWaiter      -- waits for PLAYER_REGEN_ENABLED to finish a deferred embed
+local stockFont         -- {file, height, flags} captured before the first QUI apply
+local fontHookInstalled -- SetFont durability post-hook (installed once, gated on activeWindow)
 
 local function HiddenAnchor()
     if not hiddenAnchor and _G.CreateFrame then
@@ -90,12 +92,38 @@ end
 -- resolved by display_layer.ApplyTheme (a per-script font family in-game, so
 -- CJK combat-log lines keep rendering). ApplyTheme calls this on every theme
 -- refresh so live font changes land while the tab is open.
+--
+-- Durability: ChatFrame2 is neuter-EXEMPT (blizzard_suppress), so its
+-- UPDATE_CHAT_WINDOWS handler stays live and re-asserts the saved per-window
+-- font via SetFont (ChatFrameOverrides.lua:114-119) on every settings sync —
+-- including at login, AFTER the embed. SetFont also collapses the per-script
+-- font family. A post-hook on ChatFrame2.SetFont re-applies the QUI font
+-- object whenever an outside SetFont lands while the embed is active; the
+-- pre-QUI font is snapshotted once so Deactivate can hand back stock values.
 function CombatLogTab.RefreshFont()
     if not activeWindow then return end
     local cf = _G.ChatFrame2
     local fo = I.chatFontObject or _G.QUI_CustomChatFontObject
-    if cf and fo and cf.SetFontObject then
-        pcall(cf.SetFontObject, cf, fo)
+    if not (cf and fo and cf.SetFontObject) then return end
+    if not stockFont and cf.GetFont then
+        local file, height, flags = cf:GetFont()
+        -- GetFont can hand back garbage heights; only keep a sane snapshot.
+        if file and type(height) == "number" and height > 0 then
+            stockFont = { file = file, height = height, flags = flags or "" }
+        end
+    end
+    pcall(cf.SetFontObject, cf, fo)
+    if not fontHookInstalled and _G.hooksecurefunc then
+        fontHookInstalled = true
+        _G.hooksecurefunc(cf, "SetFont", function(self)
+            if not activeWindow then return end
+            local cur = I.chatFontObject or _G.QUI_CustomChatFontObject
+            -- Re-apply via SetFontObject only: it does not re-enter this
+            -- SetFont hook, so there is no recursion.
+            if cur and self.SetFontObject then
+                pcall(self.SetFontObject, self, cur)
+            end
+        end)
     end
 end
 
@@ -195,6 +223,12 @@ function CombatLogTab.Deactivate(windowID)
     -- but park it ourselves too so the move happens even if suppression is off.
     if cf and park and cf.SetParent then pcall(cf.SetParent, cf, park) end
     if qb and park and qb.SetParent then pcall(qb.SetParent, qb, park) end
+    -- Hand the stock font back via explicit SetFont values (NEVER a captured
+    -- font object — editbox_setfontobject-self-cycle lesson). activeWindow is
+    -- already nil here, so the durability hook lets this through.
+    if stockFont and cf and cf.SetFont then
+        pcall(cf.SetFont, cf, stockFont.file, stockFont.height, stockFont.flags)
+    end
 
     local Display = ns.QUI.Chat.DisplayLayer
     local smf = Display and Display.GetMessageFrame and Display.GetMessageFrame(windowID)

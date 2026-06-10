@@ -351,10 +351,12 @@ local function SeedWindows(settings)
     local cd = settings.customDisplay
     if type(cd.windows) ~= "table" then cd.windows = {} end
     if #cd.windows == 0 then
+        -- No position field: window position lives in the shared
+        -- frameAnchoring DB ("chatFrame1"); display_layer falls back to the
+        -- BOTTOMLEFT 35,40 default until the user moves it.
         cd.windows[1] = {
             width = 430,
             height = 190,
-            position = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 35, y = 40 },
             tabs = {},
         }
     end

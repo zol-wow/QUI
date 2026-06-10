@@ -1472,9 +1472,11 @@ local defaults = {
                 combatLogTab = true,
                 -- Multi-window: ARRAY of per-window entries, seeded on first
                 -- access (tab_manager.GetWindowsConfig). windows[i] = {
-                --   width, height, position = { point, relPoint, x, y },
-                --   tabs = ARRAY of SET-shaped entries { name,
+                --   width, height, tabs = ARRAY of SET-shaped entries { name,
                 --     groups = {KEY=true}, channels = {Name=true}, invert } }
+                -- Window POSITION lives in frameAnchoring ("chatFrame1" /
+                -- "chatWindow<i>") — single store, damage-meter pattern
+                -- (migration v45 folded legacy windows[i].position in).
                 -- Window 1 is the primary (editbox fallback owner; never
                 -- deletable). Empty until seeded.
                 windows = {},

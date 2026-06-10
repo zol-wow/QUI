@@ -19,7 +19,8 @@ local function check(name, ok, detail)
 end
 
 -- 1. Explicit channelShorten.enabled = false → showRealmNames forced true,
---    profile stamped to the current schema version (44).
+--    profile stamped to the current schema version (44+; later migrations
+--    in the chain may stamp higher).
 do
     local profile = { _schemaVersion = 43,
         chat = { modifiers = { channelShorten = { enabled = false, preset = "letter" } } } }
@@ -27,8 +28,8 @@ do
     check("1: shorten-off profile → showRealmNames = true",
         profile.chat.modifiers.showRealmNames == true,
         tostring(profile.chat.modifiers.showRealmNames))
-    check("1: _schemaVersion stamped to current (44)",
-        profile._schemaVersion == 44, tostring(profile._schemaVersion))
+    check("1: _schemaVersion stamped to at least 44",
+        (tonumber(profile._schemaVersion) or 0) >= 44, tostring(profile._schemaVersion))
 end
 
 -- 2. channelShorten.enabled = true → left at the false default (no write).

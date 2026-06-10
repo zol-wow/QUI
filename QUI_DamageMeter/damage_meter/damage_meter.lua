@@ -2069,6 +2069,17 @@ local function AttachWindowResizeOverlay(overlay, frame, window, windowID)
                 ws.size.h = math.floor((frame:GetHeight() or 0) + 0.5)
             end
 
+            -- Sizing from a corner moves the frame's CENTER while the
+            -- frameAnchoring entry (the position store) still holds the
+            -- pre-resize center; record the live center as a pending
+            -- position or the post-close anchor re-apply recenters the
+            -- window by half the size delta. Shared helper — no-op when
+            -- anchored or Layout Mode is inactive.
+            local LM = ns.QUI_LayoutMode
+            if LM and LM.RecordFreeElementPosition then
+                LM:RecordFreeElementPosition(overlay._barKey, frame)
+            end
+
             if window.Refresh then
                 pcall(window.Refresh, window)
             end

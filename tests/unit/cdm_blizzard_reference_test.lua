@@ -83,6 +83,20 @@ local function discoverCdmLuaFiles()
         files[#files + 1] = rel
     end
     p:close()
+    if #files > 0 then return files end
+    -- Shell discovery lists nothing when the repo sits on a UNC path (CMD
+    -- refuses UNC working directories). The suite TOC must name every runtime
+    -- file or it never loads in-game, so it is an equivalent source.
+    local toc = io.open("QUI_CDM/QUI_CDM.toc", "r")
+    if toc then
+        for line in toc:lines() do
+            local rel = line:match("^%s*(cdm[\\/]%S+%.lua)%s*$")
+            if rel then
+                files[#files + 1] = "QUI_CDM/" .. rel:gsub("\\", "/")
+            end
+        end
+        toc:close()
+    end
     return files
 end
 

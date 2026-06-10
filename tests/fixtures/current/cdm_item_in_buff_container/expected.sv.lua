@@ -6385,7 +6385,7 @@ return {
       Default = {
         _defaultsVersion = 3,
         _needsLateAbImport = true,
-        _schemaVersion = 44,
+        _schemaVersion = 45,
         chat = {
           enabled = false
         },

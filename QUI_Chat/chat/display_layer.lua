@@ -50,29 +50,123 @@ local function GetWindowsConfig()
     return type(cfg) == "table" and cfg or {}
 end
 
--- Position persists in the codebase-standard sub-table shape:
--- windows[id].position = { point, relPoint, x, y }.
+-- Geometry split (damage-meter pattern): SIZE persists here in
+-- windows[id].width/height; POSITION lives in the shared frameAnchoring DB
+-- under "chatFrame1"/"chatWindow<id>" — one store, one applier
+-- (QUI_ApplyFrameAnchor). The old windows[id].position sub-table is legacy:
+-- migration v45 and the fold in ApplySavedGeometry convert it.
+local function AnchorKeyFor(id)
+    return id == 1 and "chatFrame1" or ("chatWindow" .. id)
+end
+
+local function GetFrameAnchoringDB()
+    local core = Helpers and Helpers.GetCore and Helpers.GetCore()
+    local db = core and core.db and core.db.profile
+    if not db then return nil end
+    if type(db.frameAnchoring) ~= "table" then db.frameAnchoring = {} end
+    return db.frameAnchoring
+end
+
 local function SaveGeometry(win)
     local wc = GetWindowsConfig()[win.id]
     if not wc or not win.container then return end
-    local point, _, relPoint, x, y = win.container:GetPoint(1)
-    if point then
-        wc.position = wc.position or {}
-        wc.position.point, wc.position.relPoint = point, relPoint or point
-        wc.position.x, wc.position.y = x, y
-    end
     wc.width  = math.floor((win.container:GetWidth()  or wc.width  or 430) + 0.5)
     wc.height = math.floor((win.container:GetHeight() or wc.height or 190) + 0.5)
+end
+
+-- Write the container's live rect into the window's FREE frameAnchoring
+-- entry as CENTER-based screen offsets. No-op when the entry is anchored
+-- (any non-"disabled" parent) — the anchoring system owns position there.
+-- Needed after StartMoving/StartSizing: StopMovingOrSizing rewrites the
+-- frame's anchor to a screen-absolute point, leaving the stored entry stale.
+local function SaveFreePosition(win)
+    local fa = GetFrameAnchoringDB()
+    if not fa or not win.container then return end
+    local key = AnchorKeyFor(win.id)
+    local entry = fa[key]
+    if type(entry) == "table" and entry.parent and entry.parent ~= "disabled" then
+        return
+    end
+    local cx, cy = win.container:GetCenter()
+    if not cx or not cy then return end
+    local pw, ph = _G.UIParent:GetWidth(), _G.UIParent:GetHeight()
+    if type(entry) ~= "table" then
+        entry = {}
+        fa[key] = entry
+    end
+    entry.parent = "disabled"
+    entry.point, entry.relative = "CENTER", "CENTER"
+    entry.offsetX = math.floor(cx - pw / 2 + 0.5)
+    entry.offsetY = math.floor(cy - ph / 2 + 0.5)
+    if entry.sizeStable == nil then entry.sizeStable = true end
 end
 
 local function ApplySavedGeometry(win)
     local wc = GetWindowsConfig()[win.id]
     if not wc or not win.container then return end
     win.container:SetSize(wc.width or 430, wc.height or 190)
-    win.container:ClearAllPoints()
-    local pos = wc.position or {}
-    win.container:SetPoint(pos.point or "BOTTOMLEFT", _G.UIParent,
-        pos.relPoint or pos.point or "BOTTOMLEFT", pos.x or 35, pos.y or 40)
+
+    local key = AnchorKeyFor(win.id)
+    local fa = GetFrameAnchoringDB()
+
+    -- One-shot legacy fold: pre-v45 profiles (and old exports imported
+    -- later) carry windows[id].position. This module re-asserted it on
+    -- every Refresh, so it is what the user actually saw — it wins over a
+    -- free/stale FA entry. A real frame anchor is an explicit user choice
+    -- and is kept.
+    local pos = wc.position
+    if fa and type(pos) == "table" and pos.point then
+        local entry = fa[key]
+        local hasRealParent = type(entry) == "table" and entry.parent
+            and entry.parent ~= "disabled" and entry.parent ~= "screen"
+        if not hasRealParent then
+            fa[key] = {
+                parent     = "disabled",
+                point      = pos.point,
+                relative   = pos.relPoint or pos.point,
+                offsetX    = pos.x or 0,
+                offsetY    = pos.y or 0,
+                sizeStable = true,
+            }
+        end
+    end
+    wc.position = nil
+
+    -- Position: the anchoring system is the single applier. While Layout
+    -- Mode is live the handle system owns positions — never re-apply under
+    -- it (that yank-back was the old dual-store bug). A brand new frame
+    -- with no point yet still needs SOME anchor to render.
+    if IsLayoutModeActive() and win.container:GetNumPoints() > 0 then
+        return
+    end
+    if fa and fa[key] then
+        if _G.QUI_ApplyFrameAnchor then
+            _G.QUI_ApplyFrameAnchor(key)
+        end
+    else
+        -- First-ever default (fresh install): same spot the old seed used.
+        win.container:ClearAllPoints()
+        win.container:SetPoint("BOTTOMLEFT", _G.UIParent, "BOTTOMLEFT", 35, 40)
+    end
+end
+
+-- Anchoring plumbing for windows 2+: anchoring.lua statically resolves
+-- chatFrame1 (window 1); dynamic windows register here so
+-- QUI_ApplyFrameAnchor can position them immediately at create time
+-- (layoutmode's SyncChatWindowElements re-registers the same keys
+-- harmlessly ~2s after login).
+local function EnsureFrameResolver(id)
+    if id == 1 then return end
+    if not _G.QUI_RegisterFrameResolver then return end
+    _G.QUI_RegisterFrameResolver(AnchorKeyFor(id), {
+        resolver = function()
+            local w = windows[id]
+            return w and w.container
+        end,
+        displayName = "Chat Window " .. id,
+        category = "Display",
+        order = 7 + id,
+    })
 end
 
 -- Theme the container + SMF font from the chat module's skin helpers.
@@ -251,6 +345,11 @@ local function CreateWindow(id)
         win.filter = nil
         win.smf:Clear()
         windows[id] = win
+        EnsureFrameResolver(id)
+        -- Drop the shell's stale points from its previous life so
+        -- ApplySavedGeometry's fresh-frame branch positions it even when
+        -- Layout Mode is live (where positioned frames are left alone).
+        win.container:ClearAllPoints()
         ApplySavedGeometry(win)
         ApplyTheme(win)
         win.container:Show()
@@ -300,6 +399,7 @@ local function CreateWindow(id)
         if not IsLayoutModeActive() then return end
         container:StopMovingOrSizing()
         SaveGeometry(win)
+        SaveFreePosition(win)
     end)
     -- SetPropagateMouseMotion is a protected function — safe here because
     -- window creation runs at login/options time, never from a secure handler.
@@ -328,6 +428,9 @@ local function CreateWindow(id)
         if not IsLayoutModeActive() then return end
         container:StopMovingOrSizing()
         SaveGeometry(win)
+        -- Sizing from a corner moves the container's CENTER; refresh the
+        -- free-position store so the next anchor apply doesn't recenter.
+        SaveFreePosition(win)
     end)
     if resizeGrip.SetPropagateMouseMotion then
         resizeGrip:SetPropagateMouseMotion(true)
@@ -387,6 +490,7 @@ local function CreateWindow(id)
     end)
 
     windows[id] = win
+    EnsureFrameResolver(id)
     ApplySavedGeometry(win)
     ApplyTheme(win)
     RegisterLayoutCallbacks()
@@ -427,11 +531,19 @@ function Display.CreateNewWindow()
     cfg[n + 1] = {
         width  = 430,
         height = 190,
-        -- Cascade so stacked new windows don't perfectly overlap.
-        position = { point = "CENTER", relPoint = "CENTER", x = 40 * n, y = -30 * n },
         tabs = { TM and TM.NewDefaultTab and TM.NewDefaultTab() or { name = "Tab 1", groups = {}, channels = {}, invert = false } },
     }
     local id = n + 1
+    -- Cascade-offset position seed, in the single position store
+    -- (frameAnchoring), so stacked new windows don't perfectly overlap.
+    local fa = GetFrameAnchoringDB()
+    local key = AnchorKeyFor(id)
+    if fa and not fa[key] then
+        fa[key] = {
+            parent = "disabled", point = "CENTER", relative = "CENTER",
+            offsetX = 40 * n, offsetY = -30 * n, sizeStable = true,
+        }
+    end
     CreateWindow(id)
     local TabUI = ns.QUI.Chat.TabUI
     if TabUI and TabUI.EnsureAttached then TabUI.EnsureAttached() end
@@ -461,6 +573,21 @@ function Display.DeleteWindow(id)
     framePool[#framePool + 1] = win
     -- Re-index surviving windows' id fields.
     for i = id, #windows do windows[i].id = i end
+    -- The position store is keyed by window index (chatWindow<N>); shift the
+    -- frameAnchoring entries down with the re-indexed windows and drop the
+    -- now-unused top key (+ its dynamic resolver). id >= 2, so this never
+    -- touches chatFrame1.
+    local oldCount = #windows + 1
+    local fa = GetFrameAnchoringDB()
+    if fa then
+        for j = id + 1, oldCount do
+            fa[AnchorKeyFor(j - 1)] = fa[AnchorKeyFor(j)]
+        end
+        fa[AnchorKeyFor(oldCount)] = nil
+    end
+    if _G.QUI_UnregisterFrameResolver then
+        _G.QUI_UnregisterFrameResolver(AnchorKeyFor(oldCount))
+    end
     if activeWindowID == id then
         activeWindowID = 1
         local EditBox = ns.QUI.Chat.EditBoxBasics
@@ -539,8 +666,11 @@ function Display.Hide()
     end
 end
 
--- Write a window's current rect into its config entry. No-arg = window 1
--- (layoutmode.lua's grip OnMouseUp contract).
+-- Write a window's current SIZE into its config entry. No-arg = window 1
+-- (layoutmode.lua's grip OnMouseUp contract). Position is NOT persisted
+-- here — it lives in frameAnchoring and flows through the layout-mode
+-- pending/commit pipeline (or SaveFreePosition for this module's own
+-- affordances).
 function Display.PersistGeometry(windowID)
     local win = windows[tonumber(windowID) or 1]
     if win then SaveGeometry(win) end

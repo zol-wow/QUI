@@ -19,6 +19,8 @@ local function makeFrame()
     function f:SetPoint(...) self.points[#self.points + 1] = { ... } end
     function f:ClearAllPoints() self.points = {} end
     function f:GetPoint() return "BOTTOMLEFT", nil, "BOTTOMLEFT", 35, 40 end
+    function f:GetNumPoints() return #self.points end
+    function f:GetCenter() return self.cx or 200, self.cy or 100 end
     function f:GetWidth() return self.w or 430 end
     function f:GetHeight() return self.h or 190 end
     function f:Show() self.shown = true end
@@ -91,12 +93,23 @@ local settings = { enabled = true, customDisplay = {
 } }
 
 local resolverCalls = {}
+-- Live frameAnchoring store: chat window POSITION persists here (single
+-- store, damage-meter pattern); windows[i] keeps only width/height.
+local faStore = {}
+local registeredResolvers = {}
+function _G.QUI_RegisterFrameResolver(key, info)
+    registeredResolvers[key] = info
+end
+function _G.QUI_UnregisterFrameResolver(key)
+    registeredResolvers[key] = nil
+end
 local ns = {
     Helpers = {
         IsSecretValue = function(v) return v == secret end,
         SetFrameBackdropColor = function(f, r, g, b, a) f._bg = { r, g, b, a } end,
         SetFrameBackdropBorderColor = function(f, r, g, b, a) f._border = { r, g, b, a } end,
         GetGeneralFont = function() return "Interface\\Addons\\QUI\\media\\font.ttf" end,
+        GetCore = function() return { db = { profile = { frameAnchoring = faStore } } } end,
     },
     UIKit = { ApplyPixelBackdrop = function() end },
     QUI = { Chat = {
@@ -146,6 +159,23 @@ assert(Display.GetMessageFrame(2) ~= nil, "window 2 has SMF")
 local c1, c2 = Display.GetContainer(1), Display.GetContainer(2)
 assert(c1.w == 430 and c1.h == 190, "window 1 geometry from config")
 assert(c2.w == 300 and c2.h == 150, "window 2 geometry from config")
+
+-- Single position store: legacy windows[i].position is folded into
+-- frameAnchoring (free entry, parent="disabled") and deleted.
+assert(settings.customDisplay.windows[1].position == nil, "legacy position consumed (window 1)")
+assert(settings.customDisplay.windows[2].position == nil, "legacy position consumed (window 2)")
+assert(faStore.chatFrame1 and faStore.chatFrame1.parent == "disabled"
+    and faStore.chatFrame1.point == "BOTTOMLEFT"
+    and faStore.chatFrame1.offsetX == 35 and faStore.chatFrame1.offsetY == 40,
+    "window 1 legacy position folded into frameAnchoring.chatFrame1")
+assert(faStore.chatWindow2 and faStore.chatWindow2.point == "CENTER"
+    and faStore.chatWindow2.parent == "disabled",
+    "window 2 legacy position folded into frameAnchoring.chatWindow2")
+-- Windows 2+ register a dynamic frame resolver so QUI_ApplyFrameAnchor can
+-- position them at create time (window 1 is statically resolved).
+assert(registeredResolvers.chatWindow2 and registeredResolvers.chatWindow2.resolver() == c2,
+    "window 2 registers a frameAnchoring resolver")
+assert(registeredResolvers.chatFrame1 == nil, "window 1 uses the static anchoring resolver")
 
 -- maxLines from settings.customDisplay.maxLines
 local smf1, smf2 = Display.GetMessageFrame(1), Display.GetMessageFrame(2)
@@ -321,40 +351,55 @@ assert(smf1.fontObject and smf1.fontObject.path == "Interface\\Addons\\QUI\\medi
     "QUI font applied to window 1")
 assert(smf1.fontObject.size == 13, "font size from GetChatWindowInfo(1)")
 
--- PersistGeometry: writes into the window's config entry (window 1 = windows[1])
+-- PersistGeometry: SIZE only into the window's config entry; position is
+-- frameAnchoring-owned and must never come back as windows[i].position.
 do
     local wc = settings.customDisplay.windows[1]
-    wc.width  = 430
-    wc.height = 190
-    wc.position = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 35, y = 40 }
-
     c1.w = 550
     c1.h = 240
-    local origGetPoint = c1.GetPoint
-    c1.GetPoint = function(self, _) return "CENTER", nil, "CENTER", 100, 50 end
-
     Display.PersistGeometry(1)
-
     assert(wc.width  == 550, "PersistGeometry writes width to windows[1]")
     assert(wc.height == 240, "PersistGeometry writes height to windows[1]")
-    assert(wc.position.point    == "CENTER",  "PersistGeometry writes position.point")
-    assert(wc.position.relPoint == "CENTER",  "PersistGeometry writes position.relPoint")
-    assert(wc.position.x        == 100,       "PersistGeometry writes position.x")
-    assert(wc.position.y        == 50,        "PersistGeometry writes position.y")
-
-    c1.GetPoint = origGetPoint
+    assert(wc.position == nil, "PersistGeometry must NOT write a position sub-table")
 end
 
 -- No-arg PersistGeometry = window 1 (back-compat)
 do
-    local wc = settings.customDisplay.windows[1]
-    wc.position = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = 35, y = 40 }
-    c1.GetPoint = function(self, _) return "TOPLEFT", nil, "TOPLEFT", 10, 20 end
+    c1.w = 561
     Display.PersistGeometry()
-    assert(wc.position.point == "TOPLEFT", "no-arg PersistGeometry persists window 1")
-    c1.GetPoint = nil
-    -- Restore GetPoint to the default makeFrame one
-    c1.GetPoint = function(self, _) return "BOTTOMLEFT", nil, "BOTTOMLEFT", 35, 40 end
+    assert(settings.customDisplay.windows[1].width == 561,
+        "no-arg PersistGeometry persists window 1")
+end
+
+-- Grip/drag stop refreshes the FREE position store: the internal resize
+-- grip's OnMouseUp writes the live center as CENTER-based screen offsets
+-- (StopMovingOrSizing rewrites the frame anchor, so the store must follow).
+do
+    layoutModeActive = true
+    faStore.chatFrame1 = { parent = "disabled", point = "BOTTOMLEFT",
+        relative = "BOTTOMLEFT", offsetX = 35, offsetY = 40 }
+    _G.UIParent.w, _G.UIParent.h = 1000, 600
+    c1.cx, c1.cy = 300, 120
+    -- dragHandles[2] is window 1's resize grip (creation order).
+    dragHandles[2].scripts.OnMouseUp(dragHandles[2])
+    local e = faStore.chatFrame1
+    assert(e.point == "CENTER" and e.relative == "CENTER",
+        "free-position write normalizes to CENTER offsets")
+    assert(e.offsetX == 300 - 500 and e.offsetY == 120 - 300,
+        "free-position offsets from live center, got "
+            .. tostring(e.offsetX) .. "/" .. tostring(e.offsetY))
+    -- Anchored to a real frame: the anchoring system owns position — the
+    -- grip stop must NOT clobber the entry.
+    faStore.chatFrame1 = { parent = "minimap", point = "TOPLEFT",
+        relative = "BOTTOMLEFT", offsetX = 1, offsetY = 2 }
+    c1.cx, c1.cy = 50, 50
+    dragHandles[2].scripts.OnMouseUp(dragHandles[2])
+    assert(faStore.chatFrame1.parent == "minimap" and faStore.chatFrame1.offsetX == 1,
+        "anchored entry untouched by grip stop")
+    faStore.chatFrame1 = { parent = "disabled", point = "BOTTOMLEFT",
+        relative = "BOTTOMLEFT", offsetX = 35, offsetY = 40 }
+    _G.UIParent.w, _G.UIParent.h = nil, nil
+    layoutModeActive = false
 end
 
 -- Fade wiring: disabled by default (settings.fade absent)
@@ -419,6 +464,11 @@ local newID = Display.CreateNewWindow()
 assert(newID == 3 and Display.GetWindowCount() == 3,
     "CreateNewWindow appends, got id=" .. tostring(newID) .. " count=" .. tostring(Display.GetWindowCount()))
 assert(#settings.customDisplay.windows == 3, "config entry appended, got " .. #settings.customDisplay.windows)
+assert(settings.customDisplay.windows[3].position == nil,
+    "new window config carries no position (frameAnchoring owns it)")
+assert(faStore.chatWindow3 and faStore.chatWindow3.parent == "disabled"
+    and faStore.chatWindow3.offsetX == 80 and faStore.chatWindow3.offsetY == -60,
+    "CreateNewWindow seeds a cascade-offset FA entry")
 assert(Display.DeleteWindow(1) == false, "window 1 not deletable")
 Display.SetActiveWindow(3)
 assert(Display.DeleteWindow(3) == true, "delete works")
@@ -452,9 +502,16 @@ assert(#smf3.added == 1 and smf3.added[1] == "pool-check",
 -- State: windows 1..3 exist.
 Display.Rebuild(2, function(e) return e.k == "NEVER" end) -- marker filter on the doomed window
 local survivorContainer = Display.GetContainer(3)
+-- Distinguishable FA entries: the index-keyed position store must shift
+-- down with the re-indexed windows on a mid-list delete.
+faStore.chatWindow2 = { parent = "disabled", point = "CENTER", relative = "CENTER", offsetX = 11, offsetY = 22 }
+faStore.chatWindow3 = { parent = "disabled", point = "CENTER", relative = "CENTER", offsetX = 33, offsetY = 44 }
 assert(Display.DeleteWindow(2) == true, "mid-list delete works")
 assert(Display.GetWindowCount() == 2, "registry compacted after mid-list delete, got " .. tostring(Display.GetWindowCount()))
 assert(Display.GetContainer(2) == survivorContainer, "old window 3 shifted into slot 2")
+assert(faStore.chatWindow2 and faStore.chatWindow2.offsetX == 33 and faStore.chatWindow2.offsetY == 44,
+    "FA entry shifted down with the re-indexed window")
+assert(faStore.chatWindow3 == nil, "top FA key dropped after delete")
 Display.PersistGeometry(2)
 assert(settings.customDisplay.windows[2] ~= nil, "geometry written to compacted slot 2")
 

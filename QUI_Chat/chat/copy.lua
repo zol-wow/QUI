@@ -60,6 +60,16 @@ local function ResolveAccent()
     return (I.GetAccent and I.GetAccent()) or QUI_COLORS.accent
 end
 
+-- Copy surfaces render with the SAME font object the message frame publishes
+-- (I.chatFontObject, resolved once in display_layer.ApplyTheme) so copied
+-- history looks exactly like the chat window — the chain the input editbox
+-- uses (editbox_basics.ApplyEditBoxFont). Re-resolved on every open via
+-- RefreshPopupAccent: the popups are created once and reused, and the chat
+-- font can change between opens.
+local function ResolveChatFontObject()
+    return I.chatFontObject or _G.QUI_CustomChatFontObject or _G.ChatFontNormal
+end
+
 local function ResolveTheme()
     if I.GetThemeColors then
         local theme = I.GetThemeColors()
@@ -279,6 +289,8 @@ local function RefreshPopupAccent(popup)
     end
     if popup.editBox then
         popup.editBox:SetTextColor(theme.text[1], theme.text[2], theme.text[3], theme.text[4] or 1)
+        local fo = ResolveChatFontObject()
+        if fo then popup.editBox:SetFontObject(fo) end
     end
     if popup.scrollFrame then
         StyleScrollFrame(popup.scrollFrame)
@@ -332,7 +344,7 @@ local function CreateCopyPopup()
     editBox:SetHeight(22)
     editBox:SetAutoFocus(true)
     editBox:SetTextColor(theme.text[1], theme.text[2], theme.text[3], theme.text[4] or 1)
-    editBox:SetFontObject(ChatFontNormal)
+    editBox:SetFontObject(ResolveChatFontObject() or ChatFontNormal)
     editBox:SetScript("OnEscapePressed", function() urlPopup:Hide() end)
     editBox:SetScript("OnEnterPressed", function() urlPopup:Hide() end)
     urlPopup.editBox = editBox
@@ -583,7 +595,7 @@ local function CreateChatCopyFrame()
     -- Edit box for text selection
     local editBox = CreateFrame("EditBox", nil, scrollFrame)
     editBox:SetMultiLine(true)
-    editBox:SetFontObject(ChatFontNormal)
+    editBox:SetFontObject(ResolveChatFontObject() or ChatFontNormal)
     editBox:SetWidth(math.max(1, scrollFrame:GetWidth() - 10))
     editBox:SetAutoFocus(false)
     editBox:SetTextColor(theme.text[1], theme.text[2], theme.text[3], theme.text[4] or 1)

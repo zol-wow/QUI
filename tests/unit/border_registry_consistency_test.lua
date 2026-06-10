@@ -55,7 +55,7 @@ local function listModuleLuaFiles()
     if #files > 0 then return files end
     -- Fallback: the files known to host Register calls.
     return {
-        "QUI_CDM/cdm/cdm_containers.lua",
+        "QUI_CDM/cdm/cdm_container_border_registry.lua",
         "QUI_Chat/chat/chat.lua",
         "QUI_QoL/combat/rotationassist.lua",
         "QUI_DamageMeter/damage_meter/damage_meter.lua",
