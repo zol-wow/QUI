@@ -227,6 +227,18 @@ end
 -- and GetClubInfo are both Nilable (clubs may still be initializing), so guard
 -- each return.
 local function MaybePullGMOTD()
+    -- LOGIN-RECOVERY ONLY: once any MOTD has shown (or stashed pending the
+    -- color sync), stop pulling for the rest of the session. The pull events
+    -- below keep firing all session (GUILD_ROSTER_UPDATE on every guildie
+    -- login/logout, CHANNEL_LEFT/CHANNEL_UI_UPDATE beside channel notices),
+    -- and C_Club's broadcast flips between a plain string and a SECRET value
+    -- depending on chat-messaging lockdown at pull time — the seenMotd latch
+    -- can't dedupe across that domain flip (string latch vs `true` latch), so
+    -- an ungated pull re-appends the GMOTD on every flip, "randomly through
+    -- the session, next to system messages". A genuinely changed MOTD still
+    -- shows via the real GUILD_MOTD event (stock parity); only the pull
+    -- fallback is one-shot.
+    if seenMotd ~= nil or hasPendingMotd then return end
     if _G.IsInGuild and not _G.IsInGuild() then return end
     local CC = _G.C_Club
     if not (CC and CC.GetGuildClubId and CC.GetClubInfo) then return end

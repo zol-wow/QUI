@@ -293,7 +293,7 @@ function OnBarMouseEnter(barKey)
 
     -- LINKED BARS: If enabled and this is a linked bar, show ALL linked bars
     if fadeSettings and fadeSettings.linkBars1to8 and IsLinkedBar(barKey) then
-        for _, linkedKey in ipairs(LINKED_BAR_KEYS) do
+        for _, linkedKey in ipairs(LINKED_OWNED_BAR_KEYS) do
             if linkedKey ~= barKey then
                 ShowLinkedBarDirect(linkedKey)
             end
@@ -355,7 +355,7 @@ function OnBarMouseLeave(barKey)
                 return  -- Mouse moved to another linked bar, don't fade any
             end
             -- Mouse left all linked bars - fade them all
-            for _, linkedKey in ipairs(LINKED_BAR_KEYS) do
+            for _, linkedKey in ipairs(LINKED_OWNED_BAR_KEYS) do
                 FadeLinkedBarDirect(linkedKey)
             end
             return  -- Skip normal single-bar fade logic
@@ -637,10 +637,12 @@ end -- do (mouseover fade subsystem)
 ---------------------------------------------------------------------------
 
 -- Combat event handler for "always show in combat" feature
--- Only applies to main action bars (1-8), not microbar, bags, pet, stance
+-- Applies to the owned fade bars (1-8 plus pet/stance, which the combat-enter
+-- handler also shows), not microbar or bags
 COMBAT_FADE_BARS = {
     bar1 = true, bar2 = true, bar3 = true, bar4 = true,
     bar5 = true, bar6 = true, bar7 = true, bar8 = true,
+    pet = true, stance = true,
 }
 
 -- Combat-leave fade resume.  REGEN_DISABLED is already handled by the

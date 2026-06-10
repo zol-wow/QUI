@@ -146,6 +146,12 @@ STANDARD_BAR_KEY_SET = {
     bar5 = true, bar6 = true, bar7 = true, bar8 = true,
 }
 
+-- Bars that participate in the "Link Bars 1-8" mouseover group. Pet and
+-- stance share the owned fade system and sit inside the bar cluster, so
+-- they must show and hide with the linked group — otherwise they stay
+-- faded while the surrounding bars light up.
+LINKED_OWNED_BAR_KEYS = {"bar1", "bar2", "bar3", "bar4", "bar5", "bar6", "bar7", "bar8", "pet", "stance"}
+
 -- All managed bar keys (includes pet/stance/microbar/bags which are reparented into owned containers)
 ALL_MANAGED_BAR_KEYS = {"bar1", "bar2", "bar3", "bar4", "bar5", "bar6", "bar7", "bar8", "pet", "stance", "microbar", "bags"}
 

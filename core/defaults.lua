@@ -1619,7 +1619,7 @@ local defaults = {
                 showWhenSpellBookOpen = false, -- Force bars visible while Spellbook is open
                 keepLeaveVehicleVisible = false, -- Keep leave-vehicle button visible when mouseover hide is active
                 disableBelowMaxLevel = false, -- Keep bars visible until character reaches max level
-                linkBars1to8 = true,       -- Link all action bars 1-8 for mouseover
+                linkBars1to8 = true,       -- Link bars 1-8 plus pet/stance for mouseover
             },
             -- Per-bar settings (nil = use global, value = override)
             -- alwaysShow = true means bar stays visible even when mouseover hide is enabled

@@ -445,7 +445,7 @@ local function BuildMouseoverHideTab(tabContent)
     local delayW = GUI:CreateFormSlider(s1.frame, nil, 0, 2.0, 0.1, "fadeOutDelay", fade, RefreshActionBarFade,
         { description = "Delay in seconds between your cursor leaving a bar and the fade-out starting." })
     local linkW = GUI:CreateFormToggle(s1.frame, nil, "linkBars1to8", fade, RefreshActionBarFade,
-        { description = "Treat bars 1-8 as a single group so hovering any one shows all of them together." })
+        { description = "Treat bars 1-8 plus the pet and stance bars as a single group so hovering any one shows all of them together." })
     s1.AddRow(
         Opts.BuildSettingRow(s1.frame, "Fade Out Delay", delayW),
         Opts.BuildSettingRow(s1.frame, "Link Bars 1-8", linkW)

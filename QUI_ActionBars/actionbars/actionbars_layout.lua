@@ -538,7 +538,7 @@ function CancelOwnedBarFadeTimers(state)
 end
 
 function IsLinkedBar(barKey)
-    for _, key in ipairs(STANDARD_BAR_KEYS) do
+    for _, key in ipairs(LINKED_OWNED_BAR_KEYS) do
         if key == barKey then return true end
     end
     return false
@@ -558,7 +558,7 @@ function IsMouseOverOwnedBar(barKey)
 end
 
 function IsMouseOverAnyLinkedOwnedBar()
-    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+    for _, barKey in ipairs(LINKED_OWNED_BAR_KEYS) do
         if IsMouseOverOwnedBar(barKey) then return true end
     end
     return false
@@ -604,7 +604,7 @@ function ActionBarsOwned:OnBarMouseEnter(barKey)
     state.isMouseOver = true
 
     if fadeSettings and fadeSettings.linkBars1to8 and IsLinkedBar(barKey) then
-        for _, linkedKey in ipairs(STANDARD_BAR_KEYS) do
+        for _, linkedKey in ipairs(LINKED_OWNED_BAR_KEYS) do
             if linkedKey ~= barKey then
                 local linkedState = GetOwnedBarFadeState(linkedKey)
                 CancelOwnedBarFadeTimers(linkedState)
@@ -635,8 +635,10 @@ function ActionBarsOwned:OnBarMouseLeave(barKey)
 
     if barSettings and barSettings.alwaysShow then return end
 
-    local isMainBar = barKey and barKey:match("^bar%d$")
-    if isMainBar and InCombatLockdown() and fadeSettings and fadeSettings.alwaysShowInCombat then
+    -- Pet/stance are held in combat too when linked, so the group stays whole.
+    local heldInCombat = (barKey and barKey:match("^bar%d$"))
+        or (fadeSettings and fadeSettings.linkBars1to8 and IsLinkedBar(barKey))
+    if heldInCombat and InCombatLockdown() and fadeSettings and fadeSettings.alwaysShowInCombat then
         return
     end
 
@@ -657,9 +659,13 @@ function ActionBarsOwned:OnBarMouseLeave(barKey)
 
         if fadeSettings and fadeSettings.linkBars1to8 and IsLinkedBar(barKey) then
             if IsMouseOverAnyLinkedOwnedBar() then return end
-            for _, linkedKey in ipairs(STANDARD_BAR_KEYS) do
+            for _, linkedKey in ipairs(LINKED_OWNED_BAR_KEYS) do
                 local linkedBarSettings = GetBarSettings(linkedKey)
-                if not (linkedBarSettings and linkedBarSettings.alwaysShow) then
+                local linkedFadeEnabled = linkedBarSettings and linkedBarSettings.fadeEnabled
+                if linkedFadeEnabled == nil then
+                    linkedFadeEnabled = fadeSettings and fadeSettings.enabled
+                end
+                if linkedFadeEnabled and not (linkedBarSettings and linkedBarSettings.alwaysShow) then
                     local linkedState = GetOwnedBarFadeState(linkedKey)
                     linkedState.isMouseOver = false
                     local linkedFadeOutAlpha = linkedBarSettings and linkedBarSettings.fadeOutAlpha
@@ -764,9 +770,13 @@ function SetupOwnedBarMouseover(barKey)
     -- Combat override: keep bars visible when alwaysShowInCombat is on.
     -- Mirrors the guard in OnBarMouseLeave — without this, HUD visibility
     -- refreshes (QUI_RefreshActionBarFade) reset alpha to fadeOutAlpha
-    -- even though the combat-enter handler just showed the bars.
-    local isMainBar = barKey and barKey:match("^bar%d$")
-    if isMainBar and InCombatLockdown() and fadeSettings and fadeSettings.alwaysShowInCombat then
+    -- even though the combat-enter handler just showed the bars. Linked
+    -- pet/stance are held too: UpdatePetBarVisibility re-runs this setup
+    -- on every PET_BAR_UPDATE* event, which would re-fade the pet bar
+    -- mid-combat while bars 1-8 stay shown.
+    local heldInCombat = (barKey and barKey:match("^bar%d$"))
+        or (fadeSettings and fadeSettings.linkBars1to8 and IsLinkedBar(barKey))
+    if heldInCombat and InCombatLockdown() and fadeSettings and fadeSettings.alwaysShowInCombat then
         SetOwnedBarAlpha(barKey, 1)
         return
     end

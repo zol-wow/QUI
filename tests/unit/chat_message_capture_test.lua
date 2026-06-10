@@ -605,17 +605,6 @@ assert(played[2].m == "[12:00] Time played this level: 0 days, 0 hours, 1 minute
     "played level, got " .. tostring(played[2].m))
 assert(played[1].k == "SYSTEM" and played[1].e == "TIME_PLAYED_MSG", "played metadata")
 
--- GMOTD: GUILD-typed, deduped per session
-_G.GUILD_MOTD_TEMPLATE = "Guild MOTD: %s"
-Store.Clear()
-fire("GUILD_MOTD", "Raid tonight")
-fire("GUILD_MOTD", "Raid tonight")
-assert(Store.Size() == 1, "GMOTD deduped, got " .. Store.Size())
-local motd; Store.ForEach(function(e) motd = e end)
-assert(motd.m == "[12:00] Guild MOTD: Raid tonight", "gmotd line, got " .. tostring(motd.m))
-assert(motd.k == "GUILD" and motd.e == "GUILD_MOTD", "gmotd metadata")
-assert(motd.r == 0.25 and motd.g == 1 and motd.b == 0.25, "gmotd baked with the GUILD color")
-
 -- GMOTD login pull: at login the MOTD often lands before the capture frame
 -- catches the GUILD_MOTD event (Blizzard's own chat frame hits the same race),
 -- so capture also pulls the guild MOTD on guild-data events. The pull reads the
@@ -623,10 +612,21 @@ assert(motd.r == 0.25 and motd.g == 1 and motd.b == 0.25, "gmotd baked with the 
 -- API. C_GuildInfo.GetMOTD is HasRestrictions=true and is blocked as a
 -- protected function (ADDON_ACTION_BLOCKED) when a guild-data event lands inside
 -- an in-combat secret-value dispatch -- a pcall cannot suppress that block --
--- so the pull must never touch it. seenMotd is shared with the event path, so
--- the pull and the event never double-post.
-_G.IsInGuild = function() return true end
+-- so the pull must never touch it.
+--
+-- The pull is LOGIN-RECOVERY ONLY: it retries until a payload latches (shown
+-- or stashed for the color gate), then goes dormant for the session. The pull
+-- triggers keep firing all session (GUILD_ROSTER_UPDATE on every guildie
+-- login/logout, CHANNEL_LEFT/CHANNEL_UI_UPDATE beside channel notices), and
+-- C_Club's broadcast flips between a plain string and a SECRET value with
+-- chat-messaging lockdown -- seenMotd can't dedupe across that domain flip,
+-- so an ungated pull re-appended the GMOTD "randomly through the session,
+-- next to system messages". Mid-session MOTD changes still show via the real
+-- GUILD_MOTD event, which stays ungated (stock parity).
+_G.GUILD_MOTD_TEMPLATE = "Guild MOTD: %s"
 _G.C_GuildInfo = { GetMOTD = function() error("restricted C_GuildInfo.GetMOTD must not be called") end }
+-- Not in a guild: no pull, no crash.
+_G.IsInGuild = function() return false end
 _G.C_Club = {
     GetGuildClubId = function() return 42 end,
     GetClubInfo = function(id)
@@ -636,50 +636,56 @@ _G.C_Club = {
 }
 Store.Clear()
 fire("GUILD_ROSTER_UPDATE")
-assert(Store.Size() == 1, "GMOTD pulled on roster update, got " .. Store.Size())
-local pulled; Store.ForEach(function(e) pulled = e end)
-assert(pulled.m == "[12:00] Guild MOTD: Welcome home", "pulled gmotd line, got " .. tostring(pulled.m))
-assert(pulled.k == "GUILD" and pulled.e == "GUILD_MOTD", "pulled gmotd metadata (event-named, not trigger)")
--- Repeat guild-data events + the real event are deduped against the pull.
-fire("GUILD_ROSTER_UPDATE")
-fire("PLAYER_GUILD_UPDATE")
-fire("GUILD_MOTD", "Welcome home")
-assert(Store.Size() == 1, "pull/event share seenMotd dedupe, got " .. Store.Size())
--- The PRIMARY login recovery point: UPDATE_CHAT_WINDOWS (Blizzard's own GMOTD
--- backfill event -- ChatFrameOverrides.lua) pulls the MOTD. On cold login the
--- guild-data events fire before C_Club's broadcast is populated; UPDATE_CHAT_WINDOWS
--- fires once chat settings download, when the MOTD has reliably arrived. A fresh
--- broadcast value (vs the latched seenMotd above) proves the pull, not the dedupe.
-_G.C_Club.GetClubInfo = function() return { broadcast = "Server is back up" } end
-Store.Clear()
-fire("UPDATE_CHAT_WINDOWS")
-assert(Store.Size() == 1, "GMOTD pulled on UPDATE_CHAT_WINDOWS (login path), got " .. Store.Size())
-local viaWindows; Store.ForEach(function(e) viaWindows = e end)
-assert(viaWindows.m == "[12:00] Guild MOTD: Server is back up", "UPDATE_CHAT_WINDOWS gmotd line, got " .. tostring(viaWindows.m))
-assert(viaWindows.k == "GUILD" and viaWindows.e == "GUILD_MOTD", "UPDATE_CHAT_WINDOWS gmotd metadata (event-named, not trigger)")
--- The channel-UI events are retry points too, deduped against the first pull.
-fire("CHANNEL_UI_UPDATE")
-fire("CHANNEL_LEFT")
-assert(Store.Size() == 1, "channel-UI retries share seenMotd dedupe, got " .. Store.Size())
--- Not in a guild: no pull, no crash.
-_G.IsInGuild = function() return false end
-Store.Clear()
-fire("GUILD_ROSTER_UPDATE")
 assert(Store.Size() == 0, "no MOTD pull when not in a guild, got " .. Store.Size())
 -- Guild club id not resolved yet (clubs still initializing): no pull, no crash.
 _G.IsInGuild = function() return true end
 _G.C_Club.GetGuildClubId = function() return nil end
-Store.Clear()
 fire("GUILD_ROSTER_UPDATE")
 assert(Store.Size() == 0, "no MOTD pull before the guild club id resolves, got " .. Store.Size())
--- PLAYER_ENTERING_WORLD also pulls (the /reload path, guild data already cached).
+-- Cold login: the broadcast field is empty until the club syncs. An empty
+-- pull must neither show nor close the retry window.
 _G.C_Club.GetGuildClubId = function() return 42 end
-_G.C_Club.GetClubInfo = function() return { broadcast = "Reloaded greeting" } end
-Store.Clear()
+_G.C_Club.GetClubInfo = function() return { broadcast = "" } end
+fire("GUILD_ROSTER_UPDATE")
+assert(Store.Size() == 0, "empty broadcast shows nothing, got " .. Store.Size())
+-- The PRIMARY login recovery point: UPDATE_CHAT_WINDOWS (Blizzard's own GMOTD
+-- backfill event -- ChatFrameOverrides.lua) pulls once the broadcast has synced.
+_G.C_Club.GetClubInfo = function() return { broadcast = "Welcome home" } end
+fire("UPDATE_CHAT_WINDOWS")
+assert(Store.Size() == 1, "GMOTD pulled on UPDATE_CHAT_WINDOWS (login path), got " .. Store.Size())
+local pulled; Store.ForEach(function(e) pulled = e end)
+assert(pulled.m == "[12:00] Guild MOTD: Welcome home", "pulled gmotd line, got " .. tostring(pulled.m))
+assert(pulled.k == "GUILD" and pulled.e == "GUILD_MOTD", "pulled gmotd metadata (event-named, not trigger)")
+assert(pulled.r == 0.25 and pulled.g == 1 and pulled.b == 0.25, "gmotd baked with the GUILD color")
+-- Repeat guild-data events + the real event are deduped against the pull.
+fire("GUILD_ROSTER_UPDATE")
+fire("PLAYER_GUILD_UPDATE")
+fire("CHANNEL_UI_UPDATE")
+fire("CHANNEL_LEFT")
+fire("GUILD_MOTD", "Welcome home")
+assert(Store.Size() == 1, "pull/event share seenMotd dedupe, got " .. Store.Size())
+-- THE GATE: after the latch, pull triggers are dormant even when the
+-- broadcast READS differently. Mid-session the value flips to a SECRET under
+-- chat-messaging lockdown (and back); ungated, each flip re-appended the
+-- GMOTD beside whatever system traffic fired the trigger.
+_G.C_Club.GetClubInfo = function() return { broadcast = secret } end
+fire("GUILD_ROSTER_UPDATE")
+fire("UPDATE_CHAT_WINDOWS")
+assert(Store.Size() == 1, "secret broadcast pull is gated after the latch, got " .. Store.Size())
+_G.C_Club.GetClubInfo = function() return { broadcast = "Server is back up" } end
+fire("UPDATE_CHAT_WINDOWS")
+fire("CHANNEL_UI_UPDATE")
 fire("PLAYER_ENTERING_WORLD")
-assert(Store.Size() == 1, "GMOTD pulled on PLAYER_ENTERING_WORLD, got " .. Store.Size())
-local reloaded; Store.ForEach(function(e) reloaded = e end)
-assert(reloaded.m == "[12:00] Guild MOTD: Reloaded greeting", "PEW gmotd line, got " .. tostring(reloaded.m))
+assert(Store.Size() == 1, "fresh-string broadcast pull is gated after the latch, got " .. Store.Size())
+-- A genuine mid-session MOTD CHANGE still shows -- via the real event only.
+Store.Clear()
+fire("GUILD_MOTD", "Raid tonight")
+fire("GUILD_MOTD", "Raid tonight")
+assert(Store.Size() == 1, "event-path GMOTD shows once per new value, got " .. Store.Size())
+local motd; Store.ForEach(function(e) motd = e end)
+assert(motd.m == "[12:00] Guild MOTD: Raid tonight", "gmotd line, got " .. tostring(motd.m))
+assert(motd.k == "GUILD" and motd.e == "GUILD_MOTD", "gmotd metadata")
+assert(motd.r == 0.25 and motd.g == 1 and motd.b == 0.25, "gmotd baked with the GUILD color")
 
 -- GMOTD color gate: the real ChatTypeInfo has NO r/g/b at file scope
 -- (ChatTypeInfoConstants.lua) -- colors arrive per-type via the login

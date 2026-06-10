@@ -26669,7 +26669,7 @@ ns.QUI_SearchCache = {
         },
         {
             ["category"] = "appearance",
-            ["description"] = "Treat bars 1-8 as a single group so hovering any one shows all of them together.",
+            ["description"] = "Treat bars 1-8 plus the pet and stance bars as a single group so hovering any one shows all of them together.",
             ["featureId"] = "barHidingPage",
             ["label"] = "Link Bars 1-8",
             ["subPageIndex"] = 6,
