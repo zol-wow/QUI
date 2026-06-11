@@ -354,6 +354,19 @@ function Transfers.ResolveSendDestination(state)
     return nil
 end
 
+--- Which destination owns a targeted right-click on a live bag item button?
+--- state = booleans { bankTabSelected, auctionOpen } (the caller reads the
+--- live surfaces; this stays pure). A banker and an auctioneer can't be
+--- open at once — the priority just settles pathological overlaps.
+--- → "bankTab" | "auction" | nil (catcher hidden, the template's own
+--- OnClick handles the click).
+function Transfers.ResolveItemRightClickRoute(state)
+    if not state then return nil end
+    if state.bankTabSelected then return "bankTab" end
+    if state.auctionOpen then return "auction" end
+    return nil
+end
+
 --- Send a snapshot list of cells ({ bag, slot, itemID }) to dest (from
 --- ResolveSendDestination). Same machinery as DepositAllToWarband: the
 --- shared ops gate, the paced queue, per-tick occupant re-validation.

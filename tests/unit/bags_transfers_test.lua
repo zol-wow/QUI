@@ -533,5 +533,23 @@ do
     assert(emptyOK == true and #deposits == 0, "empty selection → immediate done")
 end
 
+---------------------------------------------------------------------------
+-- Section: targeted right-click route (pure) — bank-tab deposit vs auction
+-- post. Drives the bag window's per-button right-click catcher: nil hides
+-- the catcher (the template's own OnClick handles the click).
+---------------------------------------------------------------------------
+do
+    reset()
+    local R = Transfers.ResolveItemRightClickRoute
+    assert(R(nil) == nil, "nil state → nil")
+    assert(R({}) == nil, "nothing open → nil (catcher hidden)")
+    assert(R({ bankTabSelected = true }) == "bankTab",
+        "live bank tab routes the targeted deposit")
+    assert(R({ auctionOpen = true }) == "auction",
+        "open auction house routes the sell post")
+    assert(R({ bankTabSelected = true, auctionOpen = true }) == "bankTab",
+        "bank tab outranks auction on (pathological) overlap")
+end
+
 _G.print = realPrint
 print("OK: bags_transfers_test")

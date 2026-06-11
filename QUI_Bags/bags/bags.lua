@@ -345,8 +345,13 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         Bags.RequestDrain()
     elseif event == "AUCTION_HOUSE_SHOW" then
         Bags.ScanAuctions.OnAuctionHouseShow()
+        -- the bag window's right-click sell-post catcher flips on this edge
+        -- (consumers re-read AuctionHouseFrame:IsShown() on their own
+        -- deferred refresh, so event-vs-frame-show ordering doesn't matter)
+        Bags.Bus.Publish("AuctionHouseChanged", true)
     elseif event == "AUCTION_HOUSE_CLOSED" then
         Bags.ScanAuctions.OnAuctionHouseClosed()
+        Bags.Bus.Publish("AuctionHouseChanged", false)
     elseif event == "OWNED_AUCTIONS_UPDATED" then
         Bags.ScanAuctions.MarkDirty()
         Bags.RequestDrain()

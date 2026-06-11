@@ -10,7 +10,7 @@
 --          live-only (Sort/Sell Junk hidden), money/free come from the cache.
 ---------------------------------------------------------------------------
 -- luacheck: read globals BAG_NAME_BACKPACK QUI_BagsToggleBank QUI_BagsToggleGuild
--- luacheck: read globals TradeFrame SendMailFrame
+-- luacheck: read globals TradeFrame SendMailFrame AuctionHouseFrame C_AuctionHouse
 -- luacheck: read globals PutItemInBag PickupBagFromSlot GetInventoryItemTexture GetInventoryItemQuality
 -- luacheck: read globals ItemLocation
 -- luacheck: read globals MenuUtil BAG_FILTER_CLEANUP SELL_ALL_JUNK_ITEMS_EXCLUDE_FLAG
@@ -124,6 +124,38 @@ local function DepositToSelectedTab(btn)
     C_Container.PickupContainerItem(bagID, slot)
     C_Container.PickupContainerItem(tabID, target)
     ClearCursor()
+end
+
+--- Targeted auction post: right-click while the auction house is open stages
+--- the item in the sell panel (AuctionHouseFrame:SetPostItem — the same call
+--- the stock handler's AH branch makes). The stock branch only fires when a
+--- sell screen is up (IsListingAuctions) or the item already passes
+--- C_AuctionHouse.IsSellItemValid; everything else falls through to
+--- UseContainerItem, which USES the item at the auctioneer (equips/eats it).
+--- QUI always attempts the post instead: SetPostItem validates internally
+--- (IsSellItemValid with displayError defaulted true, vendored
+--- Blizzard_AuctionHouseFrame.lua:608) and surfaces the proper "can't
+--- auction that" error rather than consuming the click as a use.
+local function PostToAuctionHouse(btn)
+    if not (AuctionHouseFrame and AuctionHouseFrame:IsShown()) then return end
+    local bagID, slot = btn:GetBagID(), btn:GetID()
+    local info = C_Container.GetContainerItemInfo(bagID, slot)
+    if not info or info.isLocked then return end
+    local loc = ItemLocation:CreateFromBagAndSlot(bagID, slot)
+    if not loc or not loc:IsValid() then return end
+    AuctionHouseFrame:SetPostItem(loc)
+end
+
+--- Live right-click route for the per-button catcher: bank-tab deposit or
+--- auction post (Transfers.ResolveItemRightClickRoute keeps the priority
+--- pure/testable). nil = catcher hidden, template OnClick owns the click.
+local function RightClickRoute()
+    return Bags.Transfers.ResolveItemRightClickRoute({
+        bankTabSelected = Bags.BankWindow ~= nil
+            and Bags.BankWindow.GetSelectedLiveTab ~= nil
+            and Bags.BankWindow.GetSelectedLiveTab() ~= nil,
+        auctionOpen = (AuctionHouseFrame ~= nil and AuctionHouseFrame:IsShown()) or false,
+    })
 end
 
 --- Category-mode section headers: pooled FontStrings on the body. nil/empty
@@ -796,6 +828,9 @@ function BagWindow.Refresh()
     for _, byBag in pairs(cachedButtons) do
         for _, btn in pairs(byBag) do btn:Hide() end
     end
+    -- one route resolve per render (the dress loop below reads it per
+    -- button); the catchers' own handlers re-resolve at click/hover time
+    local rightClickRoute = RightClickRoute()
     for _, p in ipairs(placed) do
         local cell = p.cell
         local btn
@@ -855,14 +890,15 @@ function BagWindow.Refresh()
                 catcher:SetScript("OnLeave", function() GameTooltip:Hide() end)
                 catcher:Hide()
                 btn._quiSelectCatcher = catcher
-                -- Targeted-deposit catcher: while a live bank session shows
-                -- a SPECIFIC tab (and select mode is off), right-clicks
-                -- route the item into that tab. Left clicks/drags PASS
-                -- THROUGH to the secure template button below
-                -- (SimpleScriptRegionAPI SetPassThroughButtons — protected
-                -- function but insecurely callable out of combat; pcall
-                -- guards the in-combat-creation edge and the dress loop
-                -- retries once out of combat).
+                -- Targeted right-click catcher: while a routed destination
+                -- is open (live bank session showing a SPECIFIC tab, or the
+                -- auction house — RightClickRoute) and select mode is off,
+                -- right-clicks route the item there instead of the template
+                -- fall-through. Left clicks/drags PASS THROUGH to the secure
+                -- template button below (SimpleScriptRegionAPI
+                -- SetPassThroughButtons — protected function but insecurely
+                -- callable out of combat; pcall guards the in-combat-creation
+                -- edge and the dress loop retries once out of combat).
                 local dep = CreateFrame("Button", nil, btn)
                 dep:SetAllPoints()
                 dep:SetFrameLevel(btn:GetFrameLevel() + 4)
@@ -871,14 +907,34 @@ function BagWindow.Refresh()
                     dep._quiPassThroughFailed = true
                 end
                 dep:SetScript("OnClick", function()
-                    DepositToSelectedTab(btn)
+                    local route = RightClickRoute()
+                    if route == "auction" then
+                        PostToAuctionHouse(btn)
+                    elseif route == "bankTab" then
+                        DepositToSelectedTab(btn)
+                    end
                 end)
                 dep:SetScript("OnEnter", function(self)
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                     GameTooltip:SetBagItem(btn:GetBagID(), btn:GetID())
                     GameTooltip:AddLine(" ")
-                    GameTooltip:AddLine("Right-click: deposit into the open bank tab.",
-                        0.2, 0.82, 1, true)
+                    if RightClickRoute() == "auction" then
+                        -- mirror the context fade: a slot dimmed as
+                        -- not-sellable must not advertise the sell click
+                        local loc = ItemLocation:CreateFromBagAndSlot(
+                            btn:GetBagID(), btn:GetID())
+                        if loc and loc:IsValid()
+                            and C_AuctionHouse.IsSellItemValid(loc, false) then
+                            GameTooltip:AddLine("Right-click: sell at the auction house.",
+                                0.2, 0.82, 1, true)
+                        else
+                            GameTooltip:AddLine("This item can't be put up for auction.",
+                                0.6, 0.6, 0.6, true)
+                        end
+                    else
+                        GameTooltip:AddLine("Right-click: deposit into the open bank tab.",
+                            0.2, 0.82, 1, true)
+                    end
                     GameTooltip:Show()
                 end)
                 dep:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -939,9 +995,7 @@ function BagWindow.Refresh()
             dep:SetShown(live and not selectMode
                 and not dep._quiPassThroughFailed
                 and cell.entry ~= nil
-                and Bags.BankWindow ~= nil
-                and Bags.BankWindow.GetSelectedLiveTab ~= nil
-                and Bags.BankWindow.GetSelectedLiveTab() ~= nil)
+                and rightClickRoute ~= nil)
         end
         btn:Show()
     end
@@ -1076,6 +1130,13 @@ end)
 -- in Refresh next to the footer-text update (ScheduleRefresh no-ops while
 -- hidden — the autoopen path re-renders on show anyway)
 Bags.Bus.Subscribe("MerchantChanged", function()
+    ScheduleRefresh()
+end)
+
+-- auctioneer open/close flips the right-click sell-post catcher; same shape
+-- as MerchantChanged, and the deferred refresh reads the live
+-- AuctionHouseFrame:IsShown() a frame later, past any event-order ambiguity
+Bags.Bus.Subscribe("AuctionHouseChanged", function()
     ScheduleRefresh()
 end)
 
