@@ -71,19 +71,32 @@ _G.ChatFrame2.events = {
     COMBAT_LOG_EVENT = true,
     CHAT_MSG_TRADESKILLS = true,
     CHAT_MSG_CHANNEL = true,
+    CHAT_MSG_COMMUNITIES_CHANNEL = true,
     GUILD_MOTD = true,
     UPDATE_CHAT_WINDOWS = true,
 }
 _G.ChatTypeGroup = {
     TRADESKILLS = { "CHAT_MSG_TRADESKILLS" },
     OPENING = { "CHAT_MSG_OPENING" },
-    CHANNEL = { "CHAT_MSG_CHANNEL" },
+    CHANNEL = {
+        "CHAT_MSG_CHANNEL_JOIN",
+        "CHAT_MSG_CHANNEL_LEAVE",
+        "CHAT_MSG_CHANNEL_NOTICE",
+        "CHAT_MSG_CHANNEL_NOTICE_USER",
+        "CHAT_MSG_CHANNEL_LIST",
+    },
+    COMMUNITIES_CHANNEL = { "CHAT_MSG_COMMUNITIES_CHANNEL" },
     GUILD = { "CHAT_MSG_GUILD", "GUILD_MOTD" },
 }
 _G.ChatTypeGroupInverted = {
     CHAT_MSG_TRADESKILLS = "TRADESKILLS",
     CHAT_MSG_OPENING = "OPENING",
-    CHAT_MSG_CHANNEL = "CHANNEL",
+    CHAT_MSG_CHANNEL_JOIN = "CHANNEL",
+    CHAT_MSG_CHANNEL_LEAVE = "CHANNEL",
+    CHAT_MSG_CHANNEL_NOTICE = "CHANNEL",
+    CHAT_MSG_CHANNEL_NOTICE_USER = "CHANNEL",
+    CHAT_MSG_CHANNEL_LIST = "CHANNEL",
+    CHAT_MSG_COMMUNITIES_CHANNEL = "COMMUNITIES_CHANNEL",
     CHAT_MSG_GUILD = "GUILD",
     GUILD_MOTD = "GUILD",
 }
@@ -212,6 +225,8 @@ assert(_G.ChatFrame2.events.COMBAT_LOG_EVENT == true, "combat log frame EXEMPT f
 -- otherwise interleave "X creates Y" chat lines into the embedded combat log.
 assert(_G.ChatFrame2.events.CHAT_MSG_TRADESKILLS == nil, "tradeskill chat stripped from combat log frame")
 assert(_G.ChatFrame2.events.CHAT_MSG_CHANNEL == nil, "base channel event stripped from combat log frame")
+assert(_G.ChatFrame2.events.CHAT_MSG_COMMUNITIES_CHANNEL == nil,
+    "base communities channel event stripped from combat log frame")
 assert(_G.ChatFrame2.events.GUILD_MOTD == nil, "non-CHAT_MSG group event stripped from combat log frame")
 assert(_G.ChatFrame2.events.UPDATE_CHAT_WINDOWS == true, "non-message events untouched by the strip")
 -- Durability: ChatFrame2's live UPDATE_CHAT_WINDOWS handler re-asserts saved
@@ -330,6 +345,8 @@ assert(_G.ChatFrame2.events.COMBAT_LOG_EVENT == true, "combat log frame untouche
 -- ChatFrame2 message restore: flip-back hands the chat-message events back —
 -- base channel events re-registered, saved groups rebuilt, strip hook inert.
 assert(_G.ChatFrame2.events.CHAT_MSG_CHANNEL == true, "combat log base channel event restored")
+assert(_G.ChatFrame2.events.CHAT_MSG_COMMUNITIES_CHANNEL == true,
+    "combat log communities channel event restored")
 assert(_G.ChatFrame2.messagesRegistered and _G.ChatFrame2.messagesRegistered[1] == "SAY",
     "combat log RegisterForMessages(GetChatWindowMessages) called on flip-back")
 _G.ChatFrame2:RegisterEvent("CHAT_MSG_TRADESKILLS")

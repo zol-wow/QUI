@@ -453,6 +453,7 @@ end
 -- ChatFrame2 is never in `neutered`, so it needs its own restore).
 local cf2Stripped = false
 local cf2RegisterHooked = false
+local COMBAT_LOG_BASE_CHAT_EVENTS = { "CHAT_MSG_CHANNEL", "CHAT_MSG_COMMUNITIES_CHANNEL" }
 
 local function IsChatMessageEvent(event)
     if type(event) ~= "string" then return false end
@@ -472,6 +473,10 @@ local function StripCombatLogChatMessages()
     -- no-op). Frame event de/registration is insecure-safe; messageTypeList
     -- stays Blizzard-owned and untouched.
     inOwnRegister = true
+    -- ChatFrameMixin:OnLoad registers these directly, outside ChatTypeGroup.
+    for i = 1, #COMBAT_LOG_BASE_CHAT_EVENTS do
+        pcall(cf.UnregisterEvent, cf, COMBAT_LOG_BASE_CHAT_EVENTS[i])
+    end
     if type(_G.ChatTypeGroup) == "table" then
         for _, events in pairs(_G.ChatTypeGroup) do
             if type(events) == "table" then
@@ -504,10 +509,10 @@ local function RestoreCombatLogChatMessages()
     -- The strip also removed the OnLoad base channel events; hand them back,
     -- then rebuild the message groups from Blizzard's saved settings.
     local valid = _G.C_EventUtils and _G.C_EventUtils.IsEventValid
-    local base = { "CHAT_MSG_CHANNEL", "CHAT_MSG_COMMUNITIES_CHANNEL" }
-    for i = 1, #base do
-        if not valid or valid(base[i]) then
-            pcall(cf.RegisterEvent, cf, base[i])
+    for i = 1, #COMBAT_LOG_BASE_CHAT_EVENTS do
+        local event = COMBAT_LOG_BASE_CHAT_EVENTS[i]
+        if not valid or valid(event) then
+            pcall(cf.RegisterEvent, cf, event)
         end
     end
     local id = cf.GetID and cf:GetID()
