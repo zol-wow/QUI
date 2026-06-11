@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta35 - 2026-06-11
+
+> 🧪 **QUI 4 beta — Bags and the Info Bar arrive.** Two brand-new modules land in this beta: **QUI Bags**, a complete replacement for your bags, bank, Warband bank, and guild bank, and the **Info Bar**, a full-width datatext bar with a micro menu. ⚠️ **Both modules are very new and may have bugs — they are OFF by default.** Enable them under **Module Addons** in the QUI options if you'd like to help test, and please report anything you hit on GitHub. This beta also adds four new datatexts plus data-broker plugin support, folds overflowing chat tabs into a "»" menu, and keeps non-combat chatter out of the embedded Combat Log. No schema migration — your beta34 profiles carry over unchanged. As always, **back up your `WTF` folder before installing**.
+
+### Added
+- **New module: QUI Bags** ⚠️ *brand new, off by default — expect bugs.* A full takeover of your bags, bank, Warband bank, and guild bank in QUI-styled combined windows: flat or category-grouped layouts, per-corner item badges (item level, crafting quality, junk, equipment set, quantity, binding, expansion), junk dimming with a Sell Junk button at merchants, one-click sorting (quality, type, name, item level, or expansion), Warband reagent deposit, new-item glow, and tooltip item counts across your characters. A "search everywhere" window finds items across every character's bags, banks, mail, equipped gear, and auction listings. Auto-open at merchants, mail, the auction house, and more is configurable, and there's an optional currency bar. Enable it under **Module Addons → Bags** and please report what breaks.
+- **New module: Info Bar** ⚠️ *brand new, off by default — expect bugs.* A full-width bar across the top or bottom of the screen with left/center/right widget zones. Fill it with any QUI datatext, a micro menu, a travel/hearthstone button, or a quick spec-swap widget — and third-party data-broker (LDB) plugins are supported too. Height, font, background, border, mouseover fade, and combat hiding are all configurable. Enable it under **Module Addons → Info Bar**.
+- **Four new datatexts: Reputation, Great Vault, Mail, and Professions.** Usable on the data panels and the new Info Bar.
+- **Chat tabs overflow into a "»" menu.** When a chat window has more tabs than fit on the tab bar, the tail tabs fold into a "»" button — click it to jump to any hidden tab.
+
+### Fixed
+- **The embedded Combat Log shows only combat-log entries.** The Combat Log tab could interleave plain chat lines — tradeskill "creates" messages, pet info, and similar — with real combat events. That chatter now stays in your chat tabs, where its message groups belong.
+- **Re-enabling the Combat Log tab refreshes the chat Filters page.** Toggling the Combat Log tab off and back on now updates the Filters page's "Editing tab" list immediately instead of leaving it stale.
+- **Chat window sizing waits out combat restrictions.** If combat restricts the chat window (for example, a secure button is anchored to it), size and position updates are now applied when combat ends instead of being blocked with an error.
+
+### Changed
+- **Datatexts now live in their own module addon.** The data panels and datatexts moved into a `QUI_Datatexts` sub-addon as part of the suite split. It loads automatically — no action needed, your settings carry over.
+
 ## v4.0.0-beta34 - 2026-06-10
 
 > 🧪 **QUI 4 beta — action bar, chat, and tracker fixes.** A small follow-up beta: the pet and stance bars now properly join the "Link Bars 1-8" mouseover group, the guild message of the day no longer reappears randomly mid-session, the combat-log filter fix from beta33 now holds across every login path, the Prey Tracker can be toggled without a /reload, and encounter power-bar widgets follow the skinned power bar instead of floating at their stock position. No schema migration — your beta33 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
