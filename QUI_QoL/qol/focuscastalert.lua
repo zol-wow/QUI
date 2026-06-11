@@ -439,7 +439,7 @@ end
 
 -- Apply interruptibility to the alert frame's alpha.
 -- On Midnight, notInterruptible is a secret value that can't be compared in Lua
--- but works natively with SetAlphaFromBoolean (same approach as Plater's BorderShield).
+-- but works natively with SetAlphaFromBoolean.
 -- notInterruptible true  → alpha 0 (hidden)
 -- notInterruptible false → alpha 1 (visible)
 local function ApplyInterruptAlpha()

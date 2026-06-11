@@ -12,8 +12,8 @@
 --
 -- Model: Blizzard addon enable state = "is the code present" (hard, zero
 -- cost when off).  LOD eligibility = lod class + not loaded + exists +
--- addon-enabled.  Profile flags are NOT load gates here; two dormant-guard
--- flags (chat.enabled, quiGroupFrames.enabled) are handled exclusively by
+-- addon-enabled.  Profile flags are NOT load gates here; three dormant-guard
+-- flags (chat.enabled, quiGroupFrames.enabled, bags.enabled) are handled by
 -- the Module Addons rows (AND-read / heal-on-enable) and by each module's
 -- own init.
 --
@@ -50,13 +50,20 @@ end
 
 function AddonLoader.IsModuleAddonEnabled(folder)
     if not (C_AddOns and C_AddOns.GetAddOnEnableState) then return true end
-    -- Pass the current character so that "enabled on another toon" (state=1)
-    -- doesn't mis-gate this character. UnitName may be nil in headless/early
-    -- contexts; fall back to the aggregate no-arg form in that case.
-    local charName = UnitName and UnitName("player")
-    local state = C_AddOns.GetAddOnEnableState(folder, charName)
-    -- AddOnEnableState: 0=None (disabled), 1=Some (enabled for some chars),
-    -- 2=All (enabled for all). Any non-zero value = effectively enabled.
+    -- Blizzard idiom (AddOnUtil.IsAddOnEnabledForCurrentCharacter): query by
+    -- the player GUID and require Enum.AddOnEnableState.All. A per-character
+    -- query never answers All for a character the addon is disabled on;
+    -- "Some" means enabled on OTHER characters only and must NOT gate as
+    -- enabled here (the AddOns-list per-character boundary is hard).
+    local guid = UnitGUID and UnitGUID("player")
+    if guid then
+        local state = C_AddOns.GetAddOnEnableState(folder, guid)
+        local all = Enum and Enum.AddOnEnableState and Enum.AddOnEnableState.All or 2
+        return state == all
+    end
+    -- No GUID (headless / very early): aggregate no-arg query — 0=None,
+    -- 1=Some, 2=All; any non-zero = possibly enabled somewhere.
+    local state = C_AddOns.GetAddOnEnableState(folder)
     return (tonumber(state) or 0) > 0
 end
 
@@ -197,10 +204,33 @@ end
 -- Options-toggle backend
 ---------------------------------------------------------------------------
 
+-- First TOC dependency of `folder` that exists on disk but is disabled for
+-- this character; nil when every dep is enabled (or the API is absent).
+-- The client refuses to load an addon whose hard dependency is disabled
+-- (LoadAddOn fails with reason DEP_DISABLED, and a reload won't help), so
+-- the toggle backend surfaces the dep instead of a useless reload prompt.
+-- Limitation: a dep MISSING from disk is skipped here, so it falls through
+-- to the LoadNow failure → "reload"; acceptable because the Module Addons
+-- tile for that dep would itself show as not installed.
+local function GetDisabledDependency(folder)
+    if not (C_AddOns and C_AddOns.GetAddOnDependencies) then return nil end
+    local deps = { C_AddOns.GetAddOnDependencies(folder) }
+    for _, dep in ipairs(deps) do
+        if (not C_AddOns.DoesAddOnExist or C_AddOns.DoesAddOnExist(dep))
+            and not AddonLoader.IsModuleAddonEnabled(dep) then
+            return dep
+        end
+    end
+    return nil
+end
+
 -- Options-toggle backend. Returns:
 --   "loaded"  — LOD module enabled and loaded live, no reload needed
 --   "reload"  — change recorded; takes effect on next reload (caller prompts)
 --   "missing" — folder not on disk; caller renders "not installed"
+--   "depDisabled", depFolder — enable recorded, but a hard TOC dependency is
+--               disabled so the addon cannot load (now or after reload);
+--               caller surfaces the dependency
 function AddonLoader.SetModuleAddonEnabled(folder, on)
     if C_AddOns.DoesAddOnExist and not C_AddOns.DoesAddOnExist(folder) then
         return "missing"
@@ -212,6 +242,14 @@ function AddonLoader.SetModuleAddonEnabled(folder, on)
     if on then
         C_AddOns.EnableAddOn(folder)
         if C_AddOns.SaveAddOns then C_AddOns.SaveAddOns() end
+        -- Hard TOC dependency disabled (e.g. QUI_InfoBar → QUI_Datatexts):
+        -- LoadAddOn would fail with DEP_DISABLED and a reload won't fix it.
+        -- The enable is recorded above so the addon comes up once the dep is
+        -- enabled; tell the caller which dep is blocking.
+        if not AddonLoader.IsModuleLoaded(folder) then
+            local dep = GetDisabledDependency(folder)
+            if dep then return "depDisabled", dep end
+        end
         if entry and entry.class == "lod" and not AddonLoader.IsModuleLoaded(folder) then
             -- Loading mid-combat would run file-scope secure setup under lockdown;
             -- the reload prompt covers it.

@@ -23,6 +23,7 @@ libs\LibStub\LibStub.lua
 libs\AceConsole-3.0\AceConsole-3.0.lua
 libs\AceDB-3.0\AceDB-3.0.lua
 libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
+libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
 libs\LibDualSpec-1.0\LibDualSpec-1.0.lua
 libs\AceEvent-3.0\AceEvent-3.0.lua
 

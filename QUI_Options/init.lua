@@ -88,6 +88,9 @@ function GUI:InitializeOptions()
     if ns.QUI_MinimapTile then
         ns.QUI_MinimapTile.Register(frame)
     end
+    if ns.QUI_InfoBarTile then
+        ns.QUI_InfoBarTile.Register(frame)
+    end
     if ns.QUI_AppearanceTile then
         ns.QUI_AppearanceTile.Register(frame)
     end
@@ -99,6 +102,9 @@ function GUI:InitializeOptions()
     end
     if ns.QUI_QoLTile then
         ns.QUI_QoLTile.Register(frame)
+    end
+    if ns.QUI_BagsTile then
+        ns.QUI_BagsTile.Register(frame)
     end
 
     -- Help & Welcome tile — bottom of sidebar, two sub-pages.

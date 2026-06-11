@@ -55,6 +55,8 @@ local function makeFrame()
     function f:ScrollUp() end
     function f:ScrollDown() end
     function f:ScrollToBottom() self.scrolledToBottom = true end
+    function f:RegisterEvent(e) self.events = self.events or {}; self.events[e] = true end
+    function f:UnregisterEvent(e) if self.events then self.events[e] = nil end end
     return f
 end
 
@@ -543,5 +545,59 @@ local refreshSyncBase = moverSyncs
 Display.Refresh()
 assert(moverSyncs > refreshSyncBase, "Refresh syncs layout movers")
 ns.QUI_LayoutMode = nil
+
+-- Combat anchor-restriction --------------------------------------------------
+-- A protected DEPENDENT (the button bar anchors to the container's corners
+-- and hosts SecureActionButton custom macro buttons) anchor-restricts the
+-- container in combat: insecure SetSize/SetPoint on it is then
+-- ADDON_ACTION_BLOCKED ("QUI_CustomChatFrame:SetSize()" from a mid-combat
+-- options-open RefreshAll). Refresh must defer geometry while restricted and
+-- re-apply once on PLAYER_REGEN_ENABLED.
+do
+    local inCombat = false
+    _G.InCombatLockdown = function() return inCombat end
+
+    -- Model the live-game block: geometry writes on a restricted frame in
+    -- combat throw, so a regression fails loudly instead of recording.
+    local function armRestricted(cont)
+        cont.IsAnchoringRestricted = function() return inCombat end
+        for _, m in ipairs({ "SetSize", "SetPoint", "ClearAllPoints" }) do
+            local real = cont[m]
+            cont[m] = function(self, ...)
+                if inCombat then
+                    error("ADDON_ACTION_BLOCKED: " .. m .. " on anchor-restricted frame in combat", 2)
+                end
+                return real(self, ...)
+            end
+        end
+    end
+    armRestricted(Display.GetContainer(1))
+    armRestricted(Display.GetContainer(2))
+
+    local cw = Display.GetContainer(1)
+    local before = cw.w
+    settings.customDisplay.windows[1].width = 555
+
+    inCombat = true
+    local ok, err = pcall(Display.Refresh)
+    assert(ok, "Refresh in combat with a restricted container must not write geometry: " .. tostring(err))
+    assert(cw.w == before, "geometry deferred while restricted, got " .. tostring(cw.w))
+
+    -- The deferral registers a PLAYER_REGEN_ENABLED watcher.
+    local watcher
+    for _, f in ipairs(frames) do
+        if f.events and f.events.PLAYER_REGEN_ENABLED then watcher = f end
+    end
+    assert(watcher, "combat-deferred geometry needs a PLAYER_REGEN_ENABLED watcher")
+
+    inCombat = false
+    watcher.scripts.OnEvent(watcher, "PLAYER_REGEN_ENABLED")
+    assert(c1.w == 555, "deferred geometry applied at combat end, got " .. tostring(c1.w))
+
+    -- Drained: a second regen fire must not re-apply (no thrash).
+    c1.w = 111
+    watcher.scripts.OnEvent(watcher, "PLAYER_REGEN_ENABLED")
+    assert(c1.w == 111, "pending flag drained after the regen re-apply")
+end
 
 print("OK: chat_display_layer_test")

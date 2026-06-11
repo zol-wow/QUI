@@ -59,6 +59,10 @@ function _G.CreateFrame(ftype, name, parent)
     local f = makeFrame(ftype)
     f.name = name
     f._parent = parent
+    -- The tab bar must report a width wide enough for every tab or the
+    -- overflow pass hides the tail (overflow has its own test:
+    -- chat_tab_overflow_test.lua); makeFrame's GetWidth default is 50.
+    if name == "QUI_CustomChatTabBar" then f.width = 4000 end
     created[#created + 1] = f
     return f
 end

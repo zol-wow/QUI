@@ -322,7 +322,9 @@ local function IsItemFrameName(name)
         strmatch(name, "BankFrame") or
         strmatch(name, "ReagentBank") or
         strmatch(name, "BagItem") or
-        strmatch(name, "Baganator") or
+        strmatch(name, "^QUI_BagWindow") or
+        strmatch(name, "^QUI_BankWindow") or
+        strmatch(name, "^QUI_GuildBankWindow") or
         strmatch(name, "^Character.+Slot$") or
         strmatch(name, "^Inspect.+Slot$")
 end

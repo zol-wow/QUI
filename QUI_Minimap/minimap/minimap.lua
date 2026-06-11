@@ -52,6 +52,7 @@ local coordsTicker = nil
 local inInitSafeWindow = false
 local pendingMinimapRefresh = false
 local pendingDrawerSetup = false
+local pendingDatatextPanelUpdate = false
 local middleClickMenuHooked = false
 -- (micro/bag visibility now managed by action bars module)
 
@@ -722,12 +723,36 @@ local function RefreshDatatextSlots()
 end
 
 local function UpdateDatatextPanel()
+    -- Combat guard: the slot teardown/re-anchor in RefreshDatatextSlots
+    -- (DetachFromSlot + slot ClearAllPoints/SetPoint) and the panel re-anchor
+    -- below are ADDON_ACTION_BLOCKED once a slot subtree hosts a protected
+    -- child (e.g. the travel widget's secure flyout). Guarded at THIS
+    -- function's top so every caller inherits the deferral; drained by the
+    -- eventFrame PLAYER_REGEN_ENABLED handler. Exception: inside the core's
+    -- ADDON_LOADED safe window (ns._inInitSafeWindow / Initialize's local
+    -- inInitSafeWindow) protected work is permitted even though
+    -- InCombatLockdown() is true during a combat /reload (see
+    -- init_inwindow.lua) — skip the defer there so the in-window login init
+    -- keeps landing the panel.
+    if InCombatLockdown() and not (inInitSafeWindow or ns._inInitSafeWindow) then
+        pendingDatatextPanelUpdate = true
+        return
+    end
+
     local minimapSettings = GetSettings()
     local dtSettings = GetDatatextSettings()
     CountMinimapDebug("datatextPanel")
 
     if not minimapSettings then return end
     if not dtSettings or not dtSettings.enabled then
+        if datatextFrame then datatextFrame:Hide() end
+        return
+    end
+
+    -- The datatext registry lives in the QUI_Datatexts sub-addon. If that
+    -- addon is disabled there is nothing to attach to the slots — showing the
+    -- panel would render an empty bar, so treat it like the panel is disabled.
+    if not (QUICore and QUICore.Datatexts) then
         if datatextFrame then datatextFrame:Hide() end
         return
     end
@@ -4116,6 +4141,16 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             pendingDrawerSetup = false
             SetupButtonDrawer()
         end
+        -- Combat ended: re-run the deferred datatext panel pass (slot
+        -- teardown is blocked in combat once a slot hosts a protected child).
+        -- Skipped when a full refresh is also pending — Refresh() below runs
+        -- UpdateDatatextPanel itself.
+        if pendingDatatextPanelUpdate then
+            pendingDatatextPanelUpdate = false
+            if not pendingMinimapRefresh then
+                UpdateDatatextPanel()
+            end
+        end
         -- Combat ended: run deferred refresh if one was requested during combat
         if pendingMinimapRefresh then
             pendingMinimapRefresh = false
@@ -4149,16 +4184,17 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
 end)
 
 -- Fallback init driver (live toggle / headless). The LOGIN path is driven
--- in-window from the last TOC sibling (datapanels.lua) while the core's
+-- in-window from the last TOC sibling (init_inwindow.lua) while the core's
 -- ADDON_LOADED safe window (ns._inInitSafeWindow) is still open, because the
 -- minimap's protected-frame layout (Minimap:SetPoint/SetParent/SetSize) is only
 -- permitted in combat inside that window — a combat /reload throws
 -- ADDON_ACTION_BLOCKED otherwise. This C_Timer.After(0) path runs AFTER the
 -- window closes, so it must NOT be the login driver; it covers:
 --   * live module toggle (already logged in): ns.WhenLoggedIn fires immediately
---     mid-load, and the one-frame defer lets the remaining toc siblings (the
---     integrated datatext panel reads QUICore.Datatexts from datatexts.lua)
---     finish loading first. Toggles happen out of combat, so the window is moot.
+--     mid-load, and the one-frame defer lets the remaining toc siblings finish
+--     loading first (the integrated datatext panel reads QUICore.Datatexts,
+--     owned by the QUI_Datatexts sub-addon, which the manifest loads before
+--     this one). Toggles happen out of combat, so the window is moot.
 --   * a redundant login fallback — InitializeOnce is idempotent (_initialized),
 --     so the in-window call having already run makes this a no-op.
 -- ns.WhenLoggedIn is nil only in the headless test harness, where the
@@ -4259,6 +4295,20 @@ if ns.Registry then
     })
 end
 
+-- Live-enable catch-up: enabling the Datatexts tile on the Module Addons page
+-- LoadAddOn's QUI_Datatexts with no reload, and the loader notifies folder
+-- subscribers afterwards (core/addon_loader.lua LoadNow → ns.QUI_Modules:
+-- NotifyChanged(folder)). This module initialized while QUICore.Datatexts was
+-- absent, so UpdateDatatextPanel hid the 3-slot panel — re-run it now that the
+-- registry exists so the panel appears without a /reload.
+if ns.QUI_Modules and ns.QUI_Modules.Subscribe then
+    ns.QUI_Modules:Subscribe("QUI_Datatexts", function()
+        if QUICore and QUICore.Datatexts then
+            UpdateDatatextPanel()
+        end
+    end)
+end
+
 ---------------------------------------------------------------------------
 -- UNLOCK MODE ELEMENT REGISTRATION
 ---------------------------------------------------------------------------
@@ -4316,7 +4366,17 @@ do
             end,
             setGameplayHidden = function(hide)
                 if not datatextFrame then return end
-                if hide then datatextFrame:Hide() else datatextFrame:Show() end
+                if hide then
+                    datatextFrame:Hide()
+                else
+                    -- Same gate as UpdateDatatextPanel: never re-show an empty
+                    -- bar when the panel is disabled or the QUI_Datatexts
+                    -- registry is absent.
+                    local dt = GetDatatextSettings()
+                    if dt and dt.enabled and QUICore and QUICore.Datatexts then
+                        datatextFrame:Show()
+                    end
+                end
             end,
         })
     end

@@ -439,6 +439,90 @@ return {
             [4] = 0.55000000000000004
           }
         },
+        bags = {
+          appearance = {
+            bankColumns = 14,
+            columns = 12,
+            contextFading = true,
+            cornerFontSize = 11,
+            corners = {
+              bl1 = "equipment_set",
+              bl2 = "none",
+              br1 = "quantity",
+              br2 = "none",
+              tl1 = "junk",
+              tl2 = "item_level",
+              tr1 = "crafting_quality",
+              tr2 = "none"
+            },
+            equipmentSetBorder = false,
+            equipmentSetMark = true,
+            greyJunk = false,
+            groupEmptySlots = false,
+            guildColumns = 14,
+            hiddenBags = {},
+            iconSize = 36,
+            layoutMode = "flat",
+            markUnusable = false,
+            qualityColorText = false,
+            reagentDisplay = "separate",
+            showBagSlots = true,
+            spacing = 4
+          },
+          behavior = {
+            autoDepositReagents = false,
+            autoOpen = {
+              auctionHouse = true,
+              bank = true,
+              guildBank = true,
+              itemUpgrade = true,
+              mail = true,
+              merchant = true,
+              scrappingMachine = true,
+              socket = true,
+              trade = true
+            },
+            junk = {
+              dim = true,
+              exclusions = {},
+              sellButton = true
+            },
+            newItemGlow = {
+              enabled = true,
+              timeoutMinutes = 30
+            },
+            sortKey = "quality",
+            sortReverse = false,
+            tooltipCounts = "on"
+          },
+          currencyBar = {
+            currencies = {},
+            enabled = false
+          },
+          enabled = false,
+          windows = {
+            bag = {
+              point = "BOTTOMRIGHT",
+              x = -40,
+              y = 120
+            },
+            bank = {
+              point = "BOTTOMLEFT",
+              x = 40,
+              y = 120
+            },
+            guildbank = {
+              point = "BOTTOMLEFT",
+              x = 40,
+              y = 460
+            },
+            search = {
+              point = "CENTER",
+              x = 0,
+              y = 60
+            }
+          }
+        },
         bigWigs = {
           backupPositions = {},
           emphasized = {
@@ -2467,6 +2551,48 @@ return {
           totFrame = 3,
           totemBar = 5,
           utility = 5
+        },
+        infobar = {
+          bgOpacity = 85,
+          borderColor = {
+            [1] = 0,
+            [2] = 0,
+            [3] = 0,
+            [4] = 1
+          },
+          borderColorSource = "inherit",
+          borderSize = 1,
+          enabled = false,
+          fadeRestOpacity = 0,
+          fontSize = 12,
+          height = 22,
+          hideInCombat = false,
+          micromenu = {
+            buttons = {
+              achievements = true,
+              character = true,
+              collections = true,
+              help = false,
+              lfg = true,
+              shop = false,
+              spellbook = true,
+              talents = true
+            }
+          },
+          mouseoverFade = false,
+          position = "TOP",
+          travel = {
+            useRandomHearth = false
+          },
+          widgetSettings = {},
+          widgetSpacing = 12,
+          zonePadding = 8,
+          zones = {
+            center = {},
+            left = {},
+            right = {}
+          },
+          zonesSeeded = false
         },
         keybindOverridesEnabledCDM = true,
         keybindOverridesEnabledTrackers = true,

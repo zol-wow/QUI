@@ -9,7 +9,9 @@
 -- RegisterForMessages/RegisterForChannels with Blizzard's own saved-settings
 -- APIs — exactly what Blizzard's UPDATE_CHAT_WINDOWS handler does. Combat
 -- log frame (ChatFrame2) is exempt from neuter/restore: Blizzard_CombatLog
--- hardcodes it.
+-- hardcodes it. Exception: its chat-MESSAGE events are stripped while active
+-- (StripCombatLogChatMessages) so the embedded combat log renders only
+-- combat-log entries, not window-2's legacy chat groups (tradeskills etc.).
 --
 -- Subsystem ownership (single-path):
 --   sounds        → store subscriber  (sounds.lua)
@@ -432,6 +434,91 @@ local function RestoreTempWindowFn()
     if origFCFOpenTemp then _G.FCF_OpenTemporaryWindow = origFCFOpenTemp end
 end
 
+-- ChatFrame2 is event-EXEMPT from the neuter (Blizzard_CombatLog hardcodes
+-- the frame), so its native chat-message rendering stays live too — and the
+-- stock Combat Log window carries the legacy combat-info message groups
+-- (TRADESKILLS/OPENING/PET_INFO/COMBAT_MISC_INFO, the chat-config "Other >
+-- Combat" section), so the embedded combat log interleaves "Soandso creates
+-- X" chat lines with real combat-log entries. While the takeover is active,
+-- ChatFrame2 must render ONLY the processor-driven combat log
+-- (Blizzard_CombatLogProcessor's COMBAT_LOG_EVENT callback — independent of
+-- these frame events); chat traffic belongs to the QUI store, where the
+-- capture frame already records every CHAT_MSG_* group and a tab opts in via
+-- its group filter. Strip every chat-message event from ChatFrame2 and KEEP
+-- it stripped: the frame's live UPDATE_CHAT_WINDOWS handler re-asserts the
+-- saved groups on every settings sync (vendored ChatFrameOverrides.lua:
+-- 124-126 — the same clobber path as the font re-assert), so a RegisterEvent
+-- post-hook re-strips while active. Flip-back re-registers the OnLoad base
+-- channel events and rebuilds the saved groups (RestoreEventsOne's shape;
+-- ChatFrame2 is never in `neutered`, so it needs its own restore).
+local cf2Stripped = false
+local cf2RegisterHooked = false
+
+local function IsChatMessageEvent(event)
+    if type(event) ~= "string" then return false end
+    if event:sub(1, 9) == "CHAT_MSG_" then return true end
+    -- Group events without the prefix (GUILD_MOTD, TIME_PLAYED_MSG, ...).
+    local inv = _G.ChatTypeGroupInverted
+    return type(inv) == "table" and inv[event] ~= nil
+end
+
+local function StripCombatLogChatMessages()
+    local cf = _G.ChatFrame2
+    if not (cf and cf.UnregisterEvent) then return end
+    cf2Stripped = true
+    -- ChatTypeGroup is the authoritative group -> events map; visiting every
+    -- event regardless of registration keeps this independent of the user's
+    -- window-2 saved groups (UnregisterEvent on an unregistered event is a
+    -- no-op). Frame event de/registration is insecure-safe; messageTypeList
+    -- stays Blizzard-owned and untouched.
+    inOwnRegister = true
+    if type(_G.ChatTypeGroup) == "table" then
+        for _, events in pairs(_G.ChatTypeGroup) do
+            if type(events) == "table" then
+                for i = 1, #events do
+                    pcall(cf.UnregisterEvent, cf, events[i])
+                end
+            end
+        end
+    end
+    inOwnRegister = false
+    if not cf2RegisterHooked and _G.hooksecurefunc then
+        cf2RegisterHooked = true
+        _G.hooksecurefunc(cf, "RegisterEvent", function(self, event)
+            if inOwnRegister or not cf2Stripped then return end
+            if IsChatMessageEvent(event) then
+                inOwnRegister = true
+                pcall(self.UnregisterEvent, self, event)
+                inOwnRegister = false
+            end
+        end)
+    end
+end
+
+local function RestoreCombatLogChatMessages()
+    if not cf2Stripped then return end
+    cf2Stripped = false -- before the re-registers so the hook lets them through
+    local cf = _G.ChatFrame2
+    if not cf then return end
+    inOwnRegister = true
+    -- The strip also removed the OnLoad base channel events; hand them back,
+    -- then rebuild the message groups from Blizzard's saved settings.
+    local valid = _G.C_EventUtils and _G.C_EventUtils.IsEventValid
+    local base = { "CHAT_MSG_CHANNEL", "CHAT_MSG_COMMUNITIES_CHANNEL" }
+    for i = 1, #base do
+        if not valid or valid(base[i]) then
+            pcall(cf.RegisterEvent, cf, base[i])
+        end
+    end
+    local id = cf.GetID and cf:GetID()
+    if id and not IsSecret(id) then
+        if cf.RegisterForMessages and _G.GetChatWindowMessages then
+            pcall(cf.RegisterForMessages, cf, _G.GetChatWindowMessages(id))
+        end
+    end
+    inOwnRegister = false
+end
+
 local function SuppressAll()
     if not hiddenAnchor then
         hiddenAnchor = CreateFrame("Frame", "QUI_ChatSuppressAnchor", _G.UIParent)
@@ -439,6 +526,7 @@ local function SuppressAll()
     end
 
     EachChatFrameName(SuppressOne)
+    StripCombatLogChatMessages()
     EnsureChannelRefreshWatcher()
     RefreshSuppressedChannels()
     SuppressGlobalChatRegions()
@@ -498,6 +586,7 @@ local function RestoreAll()
     for i = 1, #toRestore do
         RestoreEventsOne(toRestore[i])
     end
+    RestoreCombatLogChatMessages()
 end
 
 local function ApplyNow()

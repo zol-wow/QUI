@@ -45,7 +45,7 @@ for _, k in ipairs(EXPECTED_KEYS) do expectedLookup[k] = true end
 -- the files known to Register (kept in sync with grep) if `find` is unavailable.
 local function listModuleLuaFiles()
     local files = {}
-    local p = io.popen and io.popen("find QUI_ActionBars QUI_CDM QUI_Chat QUI_DamageMeter QUI_GroupFrames QUI_Minimap QUI_QoL QUI_ResourceBars QUI_Skinning QUI_UnitFrames modules/layout modules/ui modules/integrations -name '*.lua' -type f 2>/dev/null")
+    local p = io.popen and io.popen("find QUI_ActionBars QUI_CDM QUI_Chat QUI_DamageMeter QUI_Datatexts QUI_GroupFrames QUI_Minimap QUI_QoL QUI_ResourceBars QUI_Skinning QUI_UnitFrames modules/layout modules/ui modules/integrations -name '*.lua' -type f 2>/dev/null")
     if p then
         for line in p:lines() do
             files[#files + 1] = line
@@ -60,7 +60,7 @@ local function listModuleLuaFiles()
         "QUI_QoL/combat/rotationassist.lua",
         "QUI_DamageMeter/damage_meter/damage_meter.lua",
         "QUI_QoL/dungeon/brez_counter.lua",
-        "QUI_Minimap/minimap/datapanels.lua",
+        "QUI_Datatexts/datatexts/datapanels.lua",
         "QUI_Minimap/minimap/minimap.lua",
         "QUI_QoL/qol/actiontracker.lua",
         "QUI_QoL/qol/combattimer.lua",

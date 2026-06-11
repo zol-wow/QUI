@@ -1,0 +1,53 @@
+## Interface: 120000, 120001, 120005, 120007
+## Title: |cFF30D1FFQUI|r Bags
+## Notes: QUI module. Requires the QUI core addon.
+## Author: Zol
+## Version: 4.0.0-beta27
+## Category: User Interface
+## Group: QUI
+## Dependencies: QUI
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+## LoadOnDemand: 1
+## SavedVariables: QUI_StorageDB
+## LoadSavedVariablesFirst: 1
+
+bootstrap.lua
+# == bags load order (was modules/bags/bags.xml) ==
+bags\data\bus.lua
+bags\data\store.lua
+bags\data\item_info.lua
+bags\data\scan_common.lua
+bags\data\scan_bags.lua
+bags\data\scan_bank.lua
+bags\data\scan_guild.lua
+bags\data\scan_mail.lua
+bags\data\scan_equipped.lua
+bags\data\scan_currencies.lua
+bags\data\scan_auctions.lua
+bags\data\summaries.lua
+bags\newitems.lua
+bags\search\compiler.lua
+bags\search\everywhere.lua
+bags\ops\sort_planner.lua
+bags\ops\reagent_fill.lua
+bags\ops\sort_executor.lua
+bags\ops\transfers.lua
+bags\ops\junk.lua
+bags\views\details.lua
+bags\views\grid_layout.lua
+bags\views\category_layout.lua
+bags\views\chassis.lua
+bags\views\corner_widgets.lua
+bags\views\item_buttons.lua
+bags\views\owner_select.lua
+bags\views\currency_bar.lua
+bags\views\bag_window.lua
+bags\views\bank_window.lua
+bags\views\guild_window.lua
+bags\views\search_window.lua
+bags\tooltip_counts.lua
+bags\autoopen.lua
+bags\takeover.lua
+bags\bank_takeover.lua
+bags\guild_takeover.lua
+bags\bags.lua

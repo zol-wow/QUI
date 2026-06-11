@@ -296,6 +296,23 @@ function Datatexts:AttachToSlot(slotFrame, datatextID, settings)
         return false
     end
 
+    -- Providers anchor both their hover tooltip and their click-opened
+    -- context menus to the slot, so a tooltip that survives the click
+    -- renders on top of the menu. Wrap the provider's
+    -- OnClick — insecure, slot-owned, re-set by OnEnable on every attach
+    -- after DetachFromSlot cleared it — to drop the slot's tooltip first.
+    if slotFrame.RegisterForClicks then
+        local providerOnClick = slotFrame:GetScript("OnClick")
+        if providerOnClick then
+            slotFrame:SetScript("OnClick", function(frame, ...)
+                if GameTooltip:IsShown() and GameTooltip:GetOwner() == frame then
+                    GameTooltip:Hide()
+                end
+                return providerOnClick(frame, ...)
+            end)
+        end
+    end
+
     -- Store instance for cleanup
     slotFrame.datatextInstance = {
         id = datatextID,
@@ -313,6 +330,28 @@ function Datatexts:AttachToSlot(slotFrame, datatextID, settings)
     return true
 end
 
+-- Protected instance subtrees (e.g. travel's secure buttons) can't be
+-- hidden/reparented insecurely in combat; queue them and finish at regen.
+local combatDeferredTeardown
+local combatTeardownWatcher
+local function QueueCombatTeardown(frame)
+    combatDeferredTeardown = combatDeferredTeardown or {}
+    combatDeferredTeardown[#combatDeferredTeardown + 1] = frame
+    if not combatTeardownWatcher then
+        combatTeardownWatcher = CreateFrame("Frame")
+        combatTeardownWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+        combatTeardownWatcher:SetScript("OnEvent", function()
+            local list = combatDeferredTeardown
+            combatDeferredTeardown = nil
+            if not list then return end
+            for _, frame in ipairs(list) do
+                frame:Hide()
+                frame:SetParent(nil)
+            end
+        end)
+    end
+end
+
 --- Detach datatext from a slot
 function Datatexts:DetachFromSlot(slotFrame)
     if not slotFrame or not slotFrame.datatextInstance then return end
@@ -324,10 +363,23 @@ function Datatexts:DetachFromSlot(slotFrame)
         pcall(instance.def.OnDisable, instance.frame)
     end
 
-    -- Clean up instance frame
+    -- Providers install these in OnEnable; clearing prevents handler bleed-through across reassignment.
+    -- (Hosts own OnDragStart/OnDragStop, set at slot creation — those must survive detach.)
+    slotFrame:SetScript("OnClick", nil)
+    slotFrame:SetScript("OnDoubleClick", nil)
+    slotFrame:SetScript("OnEnter", nil)
+    slotFrame:SetScript("OnLeave", nil)
+
+    -- Clean up instance frame. Hide/SetParent on a protected subtree is
+    -- combat-blocked — defer just that to regen; everything else above and
+    -- below is insecure-safe and stays immediate.
     if instance.frame then
-        instance.frame:Hide()
-        instance.frame:SetParent(nil)
+        if InCombatLockdown() and instance.frame:IsProtected() then
+            QueueCombatTeardown(instance.frame)
+        else
+            instance.frame:Hide()
+            instance.frame:SetParent(nil)
+        end
     end
 
     -- Remove from global tracking

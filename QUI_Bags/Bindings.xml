@@ -1,0 +1,22 @@
+<Bindings>
+  <Binding name="QUI_BAGS_TOGGLE" category="BINDING_HEADER_QUIBAGS">
+    if QUI_BagsToggle then
+      QUI_BagsToggle()
+    end
+  </Binding>
+  <Binding name="QUI_BAGS_SEARCH_EVERYWHERE" category="BINDING_HEADER_QUIBAGS">
+    if QUI_BagsSearchEverywhere then
+      QUI_BagsSearchEverywhere()
+    end
+  </Binding>
+  <Binding name="QUI_BAGS_TOGGLE_BANK" category="BINDING_HEADER_QUIBAGS">
+    if QUI_BagsToggleBank then
+      QUI_BagsToggleBank()
+    end
+  </Binding>
+  <Binding name="QUI_BAGS_TOGGLE_GUILD" category="BINDING_HEADER_QUIBAGS">
+    if QUI_BagsToggleGuild then
+      QUI_BagsToggleGuild()
+    end
+  </Binding>
+</Bindings>

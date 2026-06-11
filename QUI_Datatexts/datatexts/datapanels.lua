@@ -20,6 +20,27 @@ end
 -- Active panels storage
 Datapanels.activePanels = {}
 
+-- Set whenever a rebuild/teardown lands in combat; drained at regen by the
+-- regen watcher below.
+local rebuildPendingCombat = false
+
+-- Persistent regen watcher draining the combat-deferred rebuild. Slot
+-- teardown (DetachFromSlot + Hide/SetParent(nil)) and panel re-anchoring are
+-- ADDON_ACTION_BLOCKED once a slot subtree hosts a protected child (e.g. the
+-- travel widget's secure flyout), so RefreshAll/UpdatePanel/DeletePanel defer
+-- wholesale and replay here. Created at file scope (matching QUI_InfoBar's
+-- regenWatcher) so a rebuild deferred mid-combat replays at regen even if no
+-- further UI action arrives. The flag is cleared before invoking the action,
+-- so a re-deferral from inside RefreshAll re-arms cleanly.
+local regenWatcher = CreateFrame("Frame")
+regenWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+regenWatcher:SetScript("OnEvent", function()
+    if rebuildPendingCombat then
+        rebuildPendingCombat = false
+        Datapanels:RefreshAll()
+    end
+end)
+
 ---=================================================================================
 --- PANEL CREATION
 ---=================================================================================
@@ -168,16 +189,44 @@ end
 --- SLOT MANAGEMENT
 ---=================================================================================
 
-function Datapanels:UpdateSlots(panel)
-    -- Clear existing slots
+-- Free list mirroring QUI_InfoBar's slot pool (infobar.lua ReleaseSlots):
+-- per-host pools, no shared abstraction — the two hosts' slots differ (fixed
+-- size, centered text and drag forwarding here vs auto-width left-aligned
+-- text there). WoW never GCs frames, so the old release-and-abandon leaked a
+-- slot per rebuild. Released slots stay parented to their old panel (hidden);
+-- reuse re-parents. Beyond the cap, abandon as before pooling.
+local slotPool = {}
+local SLOT_POOL_CAP = 32
+
+local function ReleasePanelSlots(panel)
     for _, slot in ipairs(panel.slots) do
         if QUICore.Datatexts then
+            -- Clears datatextInstance + provider OnClick/OnEnter/OnLeave.
             QUICore.Datatexts:DetachFromSlot(slot)
         end
+        -- Field-clearing contract (mirrors infobar.lua): every per-slot field
+        -- this host or any provider sets must be cleared, or it leaks into
+        -- the next datatext that reuses this frame.
+        slot.index = nil
+        slot.shortLabel = nil
+        slot.noLabel = nil
+        slot._quiFixedWidth = nil
+        slot._quiLdbName = nil
+        slot._quiOnWidthDirty = nil
+        slot.text:SetText("")
         slot:Hide()
-        slot:SetParent(nil)
+        if #slotPool < SLOT_POOL_CAP then
+            slotPool[#slotPool + 1] = slot
+        else
+            slot:SetParent(nil)
+        end
     end
     panel.slots = {}
+end
+
+function Datapanels:UpdateSlots(panel)
+    -- Clear existing slots (pooled for reuse below)
+    ReleasePanelSlots(panel)
 
     local numSlots = panel.config.numSlots or 3
     local slotWidth = panel:GetWidth() / numSlots
@@ -195,18 +244,30 @@ function Datapanels:UpdateSlots(panel)
     local fontSize = panel.config.fontSize or 12
 
     for i = 1, numSlots do
-        local slot = CreateFrame("Button", panel:GetName() .. "_Slot" .. i, panel)
+        local slot = table.remove(slotPool)
+        if slot then
+            slot:SetParent(panel)
+            slot:Show()
+        else
+            -- Unnamed on purpose: pooled frames migrate between panels, so a
+            -- baked-in "<panel>_SlotN" global name would lie after reuse (and
+            -- nothing references those names).
+            slot = CreateFrame("Button", nil, panel)
+            -- Create text for datatext use; anchored to both edges to
+            -- constrain width and enable auto-truncation
+            slot.text = slot:CreateFontString(nil, "OVERLAY")
+            slot.text:SetPoint("LEFT", slot, "LEFT", 1, 0)
+            slot.text:SetPoint("RIGHT", slot, "RIGHT", -1, 0)
+            slot.text:SetJustifyH("CENTER")
+            slot.text:SetWordWrap(false)
+        end
         slot:SetSize(slotWidth, slotHeight)
+        slot:ClearAllPoints()
         slot:SetPoint("LEFT", panel, "LEFT", (i - 1) * slotWidth, 0)
 
-        -- Create text for datatext use
-        slot.text = slot:CreateFontString(nil, "OVERLAY")
+        -- Re-applied on pooled reuse too: panel font size / global font can
+        -- change between rebuilds.
         QUICore:SafeSetFont(slot.text, fontPath, fontSize, generalOutline)
-        -- Anchor to both edges to constrain width and enable auto-truncation
-        slot.text:SetPoint("LEFT", slot, "LEFT", 1, 0)
-        slot.text:SetPoint("RIGHT", slot, "RIGHT", -1, 0)
-        slot.text:SetJustifyH("CENTER")
-        slot.text:SetWordWrap(false)
         slot.text:SetTextColor(1, 1, 1, 1)
 
         -- Store slot index
@@ -265,9 +326,20 @@ end
 ---=================================================================================
 
 --- Update panel appearance
+--- NOTE: currently has no callers repo-wide — RefreshAll (DeletePanel +
+--- CreatePanel) is the live rebuild path.
 function Datapanels:UpdatePanel(panelID)
     local panel = self.activePanels[panelID]
     if not panel then return end
+
+    -- Combat guard: the panel re-anchor + slot teardown below are blocked
+    -- when a slot subtree contains a protected child (e.g. the travel
+    -- widget's secure flyout). Defer wholesale; the regen watcher's
+    -- RefreshAll is a superset of this per-panel update.
+    if InCombatLockdown() then
+        rebuildPendingCombat = true
+        return
+    end
 
     -- Update size
     panel:SetSize(panel.config.width or 300, panel.config.height or 22)
@@ -325,12 +397,21 @@ function Datapanels:DeletePanel(panelID)
     local panel = self.activePanels[panelID]
     if not panel then return end
 
-    -- Detach all datatexts
-    for _, slot in ipairs(panel.slots) do
-        if QUICore.Datatexts then
-            QUICore.Datatexts:DetachFromSlot(slot)
-        end
+    -- Combat guard: detaching slots + SetParent(nil) below are blocked when
+    -- a slot subtree contains a protected child (e.g. the travel widget's
+    -- secure flyout). Defer wholesale: callers remove the panel from the db
+    -- first, so the regen watcher's RefreshAll tears this frame down and
+    -- rebuilds without it. (RefreshAll's own internal DeletePanel calls only
+    -- run after its guard has already passed out of combat.)
+    if InCombatLockdown() then
+        rebuildPendingCombat = true
+        return
     end
+
+    -- Detach all datatexts and feed the slot pool. Pooled slots stay
+    -- parented (hidden) to this abandoned frame until UpdateSlots reuses
+    -- them and re-parents to the new panel.
+    ReleasePanelSlots(panel)
 
     -- Remove frame
     panel:Hide()
@@ -368,6 +449,20 @@ end
 function Datapanels:RefreshAll()
     -- Guard: db may not be ready yet on initial login
     if not QUICore.db or not QUICore.db.profile then return end
+
+    -- Combat guard: tearing down EXISTING panels (RefreshAll → DeletePanel →
+    -- ReleasePanelSlots → slot pool: DetachFromSlot + Hide) is blocked when a
+    -- slot subtree contains a protected child (e.g. the travel widget's
+    -- secure flyout). Only that teardown/re-layout is hazardous — on a fresh
+    -- login (incl. a combat /reload, where WhenLoggedIn fires outside the
+    -- ADDON_LOADED safe window) there are no panels yet, and creating
+    -- brand-new insecure frames + SetPoint on them is not blocked (travel's
+    -- own OnEnable defers its secure build to regen). So defer only when
+    -- panels already exist; the regen watcher replays the full refresh.
+    if InCombatLockdown() and next(self.activePanels) then
+        rebuildPendingCombat = true
+        return
+    end
 
     -- Clear existing panels
     for panelID, panel in pairs(self.activePanels) do
@@ -410,6 +505,26 @@ if ns.Registry then
         priority = 40,
         group = "data",
         importCategories = { "minimapDatatexts" },
+    })
+    -- Companion skinning registration (see skin_refresh_group_companion_test):
+    -- panel borders track the global skin via GetSkinBorderColor, but a live
+    -- skin/accent recolor fires only Registry:RefreshAll("skinning") — group
+    -- "data" would stay stale until /reload. Light recolor only: repaint the
+    -- four border textures of every live panel, no slot teardown/rebuild
+    -- (which is also why this doesn't route through UpdatePanel/RefreshAll).
+    ns.Registry:Register("datapanelsSkin", {
+        refresh = function()
+            for _, panel in pairs(Datapanels.activePanels) do
+                local bR, bG, bB, bA = ns.Helpers.GetSkinBorderColor(panel.config, "")
+                panel.borderLeft:SetColorTexture(bR, bG, bB, bA)
+                panel.borderRight:SetColorTexture(bR, bG, bB, bA)
+                panel.borderTop:SetColorTexture(bR, bG, bB, bA)
+                panel.borderBottom:SetColorTexture(bR, bG, bB, bA)
+            end
+        end,
+        priority = 40,
+        group = "skinning",
+        importCategories = { "skinning", "theme" },
     })
 end
 
@@ -668,30 +783,5 @@ SlashCmdList["QUIDATAPANELS"] = function(msg)
         print("/quidp show - List all panels and their status")
         print("/quidp refresh - Refresh all panels")
     end
-end
-
----------------------------------------------------------------------------
--- IN-WINDOW MINIMAP INIT (combat /reload safe)
----------------------------------------------------------------------------
---
--- The minimap's one-time init does protected layout on the Minimap — a Blizzard
--- protected frame — via SetPoint/SetParent/SetSize/SetScale. Those are blocked
--- in combat UNLESS they run inside the core's ADDON_LOADED safe window
--- (ns._inInitSafeWindow), where protected calls are permitted even during a
--- combat /reload. The core eager-loads QUI_Minimap synchronously inside that
--- window, executing every TOC sibling in order; this datapanels.lua is the LAST
--- sibling, so by here all dependencies (datatexts, etc.) are loaded AND we are
--- still in the window. Fire the init NOW, synchronously, so a /reload issued in
--- combat lands the minimap correctly instead of throwing ADDON_ACTION_BLOCKED.
---
--- Pre-split this init ran in the monolith's ADDON_LOADED handler (same window).
--- The suite split moved it to ns.WhenLoggedIn + C_Timer.After(0) in minimap.lua,
--- which fires AFTER the window closes — that is what regressed the combat
--- /reload. minimap.lua's WhenLoggedIn path is retained as the live-toggle /
--- headless fallback (InitializeOnce is idempotent); the login path is driven
--- here, in-window. Outside the window (ns._inInitSafeWindow false/nil: live
--- toggle, headless), this is a no-op and the fallback path runs instead.
-if ns._inInitSafeWindow and QUICore and QUICore.Minimap and QUICore.Minimap.InitializeOnce then
-    QUICore.Minimap:InitializeOnce()
 end
 

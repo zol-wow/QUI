@@ -227,6 +227,79 @@ local defaults = {
             },
         },
 
+        -- Bags / Inventory module (Phase 1 data layer; Phase 2 bag window + takeover)
+        bags = {
+            enabled = false,  -- master switch: scanning + UI takeover
+            appearance = {
+                iconSize = 36,      -- item button pixel size
+                columns = 12,       -- grid columns (bag window)
+                bankColumns = 14,   -- grid columns (bank window tabs)
+                guildColumns = 14,  -- grid columns (guild bank tabs)
+                spacing = 4,        -- gap between buttons (pixels)
+                equipmentSetMark = true, -- equipment-set corner widget eligible (live views)
+                equipmentSetBorder = false, -- cyan border override on set items (live views)
+                layoutMode = "flat", -- bag window layout: "flat" grid | "categories"
+                reagentDisplay = "separate", -- flat mode reagent bag: separate | merged | hidden
+                groupEmptySlots = false, -- flat mode: collapse empties into one counter cell
+                showBagSlots = true, -- bag-slot strip (equip/swap containers) atop the bag window
+                -- bags 1–4 hidden from the bag window grid (display-only:
+                -- scanning, search, and sort still cover them). Scalar map
+                -- [bagID]=true on purpose — see corners comment below.
+                hiddenBags = {},
+                -- per-corner icon widgets: primary + fallback pick per corner
+                -- (scalar keys on purpose — array defaults resurrect removed
+                -- entries at login). Widgets: none | quantity | item_level |
+                -- junk | equipment_set | binding | expansion | crafting_quality
+                corners = {
+                    tl1 = "junk",          tl2 = "item_level",
+                    tr1 = "crafting_quality", tr2 = "none",
+                    bl1 = "equipment_set", bl2 = "none",
+                    br1 = "quantity",      br2 = "none",
+                },
+                cornerFontSize = 11,    -- corner text size (quantity/ilvl/binding)
+                qualityColorText = false, -- corner text in item-quality color
+                greyJunk = false,       -- desaturate junk items
+                markUnusable = false,   -- red-tint items whose tooltip says unusable
+                contextFading = true,   -- fade non-matching items in context UIs
+            },
+            behavior = {
+                autoOpen = {        -- open/close bag window at interactions
+                    merchant = true,
+                    mail = true,
+                    auctionHouse = true,
+                    trade = true,
+                    scrappingMachine = true,
+                    itemUpgrade = true,
+                    socket = true,
+                    bank = true,        -- open the bag window alongside the bank window
+                    guildBank = true,   -- open the bag window alongside the guild bank window
+                },
+                sortKey = "quality",  -- quality | type | name | ilvl | expansion
+                sortReverse = false,  -- flip the chosen sort order wholesale
+                autoDepositReagents = false, -- deposit crafting reagents into the warband bank on bank open
+                junk = {
+                    dim        = true,       -- show coin overlay + desaturate junk items
+                    sellButton = true,       -- show "Sell Junk" button at merchant
+                    exclusions = {},         -- [itemID]=true; managed via options later
+                },
+                tooltipCounts = "on",  -- on | off | modifier (counts only while a modifier held)
+                newItemGlow = {
+                    enabled       = true,
+                    timeoutMinutes = 30,
+                },
+            },
+            currencyBar = {
+                enabled    = false,
+                currencies = {},  -- [currencyID]=true, managed in options
+            },
+            windows = {
+                bag       = { point = "BOTTOMRIGHT", x = -40, y = 120 },
+                bank      = { point = "BOTTOMLEFT",  x = 40,  y = 120 },
+                guildbank = { point = "BOTTOMLEFT",  x = 40,  y = 460 },
+                search    = { point = "CENTER",      x = 0,   y = 60 },
+            },
+        },
+
         damageMeter = {
             -- Native QUI damage meter. Spec: docs/superpowers/specs/2026-05-22-damage-meter-design.md
             -- Phase 5 (2026-05-22) deleted the legacy skinner module that previously
@@ -3754,6 +3827,46 @@ local defaults = {
         -- Additional Datapanels (user-created, independent of minimap)
         quiDatatexts = {
             panels = {},  -- Array of panel configurations
+        },
+
+        -- Info Bar (full-width top/bottom datatext bar — QUI_InfoBar module)
+        infobar = {
+            enabled = false,
+            position = "TOP",            -- "TOP" | "BOTTOM"
+            height = 22,
+            fontSize = 12,
+            bgOpacity = 85,              -- 0-100
+            borderSize = 1,
+            borderColorSource = "inherit",  -- inherit | theme | class | custom
+            borderColor = {0, 0, 0, 1},
+            mouseoverFade = false,
+            fadeRestOpacity = 0,         -- 0-100 (% opacity when faded out)
+            hideInCombat = false,
+            widgetSpacing = 12,
+            zonePadding = 8,
+            -- Zone lists ship EMPTY: AceDB's removeDefaults strips array entries
+            -- equal-by-index to defaults, so a user-shortened list matching a
+            -- default prefix would be wiped and reseeded next login. The starter
+            -- layout is seeded once at runtime (infobar.lua SeedDefaultZones).
+            zonesSeeded = false,
+            zones = {
+                left   = {},
+                center = {},
+                right  = {},
+            },
+            -- [widgetId] = { shortLabel=bool, noLabel=bool, minWidth=number, xOffset=number,
+            --                hideIcon=bool, clickThrough=bool }
+            widgetSettings = {},
+            micromenu = {
+                buttons = {
+                    character = true, spellbook = true, talents = true,
+                    achievements = true, collections = true, lfg = true,
+                    shop = false, help = false,
+                },
+            },
+            travel = {
+                useRandomHearth = false,
+            },
         },
 
         -- Custom Tracker Bars (consumables, trinkets, custom spells)

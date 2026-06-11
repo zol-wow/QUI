@@ -311,12 +311,19 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             if not chat.customDisplay then chat.customDisplay = {} end
             -- Combat Log tab toggle: embeds Blizzard's ChatFrame2 as a pinned
             -- tab in window 1. The reconcile runs through GetWindowsConfig.
-            local clt = GUI:CreateFormCheckbox(card.frame, nil, "combatLogTab", chat.customDisplay, function()
+            local clt
+            clt = GUI:CreateFormCheckbox(card.frame, nil, "combatLogTab", chat.customDisplay, function()
                 local TM = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabManager
                 if TM and TM.GetWindowsConfig then TM.GetWindowsConfig() end
                 local TabUI = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabUI
                 if TabUI and TabUI.Rebuild then TabUI.Rebuild() end
                 Refresh()
+                -- Structural: the reconcile adds/removes the window-1 combat-log
+                -- tab entry, and the Filters sub-page's "Editing tab" dropdown
+                -- captures its option list at build time. Without the notify the
+                -- provider revision never bumps, so that (hidden) surface stays
+                -- stale and a re-enabled Combat Log tab never appears in it.
+                NotifyProviderFor(clt, { structural = true })
             end, { description = "Show Blizzard's Combat Log as a pinned tab in the primary chat window. Right-click the tab for Blizzard's combat-log filter settings." })
             card.AddRow(row(card.frame, "Show Combat Log Tab", clt))
 

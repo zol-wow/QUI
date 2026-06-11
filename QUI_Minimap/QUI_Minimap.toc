@@ -13,5 +13,4 @@ bootstrap.lua
 # == modules/minimap/minimap.xml ==
 minimap\minimap.lua
 minimap\dungeon_data.lua
-minimap\datatexts.lua
-minimap\datapanels.lua
+minimap\init_inwindow.lua

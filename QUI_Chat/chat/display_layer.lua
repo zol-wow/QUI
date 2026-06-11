@@ -101,9 +101,56 @@ local function SaveFreePosition(win)
     if entry.sizeStable == nil then entry.sizeStable = true end
 end
 
-local function ApplySavedGeometry(win)
+-- Combat anchor-restriction deferral. The containers are QUI-owned insecure
+-- frames, but a PROTECTED dependent anchor-restricts them in combat: the
+-- button bar anchors to the container's corners and can host
+-- SecureActionButton custom macro buttons (button_bar.lua createButton), and
+-- the frame-anchoring system lets users hang other elements off chatFrame1.
+-- Insecure SetSize/SetPoint on a restricted frame is ADDON_ACTION_BLOCKED,
+-- and Refresh re-asserts geometry on every cosmetic registry pass (e.g.
+-- options opened mid-combat). IsAnchoringRestricted is the C-side query for
+-- exactly this dependent-driven state — IsProtected() stays false — and its
+-- return can be secret (SecretReturnsForAspect=ObjectSecurity): branch on
+-- it, never compare or store it.
+local ApplySavedGeometry -- forward decl (regen watcher re-runs it)
+local pendingGeometryRegen = false
+local regenWatcher
+
+local function EnsureRegenWatcher()
+    if regenWatcher or not _G.CreateFrame then return end
+    regenWatcher = CreateFrame("Frame")
+    regenWatcher:RegisterEvent("PLAYER_REGEN_ENABLED")
+    regenWatcher:SetScript("OnEvent", function()
+        if not pendingGeometryRegen then return end
+        pendingGeometryRegen = false
+        for i = 1, #windows do
+            ApplySavedGeometry(windows[i])
+        end
+    end)
+end
+
+local function GeometryBlockedInCombat(win)
+    if not (type(_G.InCombatLockdown) == "function" and _G.InCombatLockdown()) then
+        return false
+    end
+    -- Combat /reload: the ADDON_LOADED→PEW init window allows protected
+    -- writes (same exemption as anchoring.lua's ApplyFrameAnchor).
+    if ns._inInitSafeWindow then return false end
+    local c = win.container
+    if c and c.IsAnchoringRestricted and c:IsAnchoringRestricted() then
+        return true
+    end
+    return false
+end
+
+function ApplySavedGeometry(win)
     local wc = GetWindowsConfig()[win.id]
     if not wc or not win.container then return end
+    if GeometryBlockedInCombat(win) then
+        pendingGeometryRegen = true
+        EnsureRegenWatcher()
+        return
+    end
     win.container:SetSize(wc.width or 430, wc.height or 190)
 
     local key = AnchorKeyFor(win.id)

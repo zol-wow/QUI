@@ -2303,10 +2303,12 @@ local tile_order = {
     "QUI_CooldownManagerTile",
     "QUI_ResourceBarsTile",
     "QUI_MinimapTile",
+    "QUI_InfoBarTile",
     "QUI_AppearanceTile",
     "QUI_ChatTooltipsTile",
     "QUI_GameplayTile",
     "QUI_QoLTile",
+    "QUI_BagsTile",
     "QUI_HelpTile",
 }
 

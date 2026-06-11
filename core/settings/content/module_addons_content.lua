@@ -4,7 +4,7 @@
 -- The toggle drives Blizzard's addon enable state, which controls whether
 -- the sub-addon's code is present at all (zero cost when off after reload).
 --
--- Two entries carry a manifest legacyFlag (chat.enabled, quiGroupFrames.enabled).
+-- Three entries carry a manifest legacyFlag (chat.enabled, quiGroupFrames.enabled, bags.enabled).
 -- These flags act as dormant guards: their module's own init skips setup when
 -- the flag is false.  For those entries the row shows OFF when either the
 -- addon is disabled OR the flag is false, and heals the flag to true on
@@ -19,6 +19,7 @@
 --   off             → DisableAddOn + reload prompt (zero cost next reload)
 --   on  (LOD class) → EnableAddOn + LoadAddOn live, no reload needed
 --   on  (login cls) → EnableAddOn + reload prompt
+--   on  (dep disabled) → dependency prompt (enable dep + retry)
 --   on  (legacyFlag, already loaded) → healed flag + reload prompt
 --       Enabling a dormant-guarded module that is already loaded (login-class)
 --       returns "loaded" from the loader, but the module's activation runs at
@@ -51,9 +52,12 @@ local DESCS = {
     QUI_ResourceBars = "Personal resource and power bars.",
     QUI_UnitFrames   = "Player, target, focus, and boss frames.",
     QUI_Skinning     = "Blizzard UI reskin — character pane, popups, tooltips.",
-    QUI_Minimap      = "Minimap reskin and data panels.",
+    QUI_Datatexts    = "Datatext registry, providers, and custom datapanels.",
+    QUI_Minimap      = "Minimap reskin and button drawer.",
     QUI_QoL          = "Quality-of-life features, dungeon tools, and trackers.",
     QUI_DamageMeter  = "Built-in damage meter.",
+    QUI_InfoBar      = "Full-width top/bottom info bar with datatext widgets.",
+    QUI_Bags         = "Bag, bank, guild bank, and storage windows with a cross-character cache.",
 }
 
 ---------------------------------------------------------------------------
@@ -138,10 +142,47 @@ local LABELS = {
     QUI_ResourceBars = "Resource Bars",
     QUI_UnitFrames   = "Unit Frames",
     QUI_Skinning     = "Skinning",
+    QUI_Datatexts    = "Datatexts",
     QUI_Minimap      = "Minimap",
     QUI_QoL          = "Quality of Life",
     QUI_DamageMeter  = "Damage Meter",
+    QUI_InfoBar      = "Info Bar",
+    QUI_Bags         = "Bags",
 }
+
+---------------------------------------------------------------------------
+-- Dependency prompt: enabling a module whose hard TOC dependency is disabled
+-- can't load it (the client refuses DEP_DISABLED loads, and a reload won't
+-- fix it). Offer to enable the dependency too; on accept, retry the original
+-- module so an LOD pair comes up live without a reload when possible.
+---------------------------------------------------------------------------
+local function ShowDependencyPrompt(folder, depFolder)
+    local QUI = _G.QUI
+    local GUI = QUI and QUI.GUI
+    local label    = LABELS[folder] or folder
+    local depLabel = LABELS[depFolder] or depFolder
+    if GUI and type(GUI.ShowConfirmation) == "function" then
+        GUI:ShowConfirmation({
+            title      = "Dependency Disabled",
+            message    = (label .. " requires the " .. depLabel
+                .. " module addon, which is disabled. Enable " .. depLabel .. " too?"),
+            acceptText = "Enable",
+            cancelText = "Later",
+            onAccept   = function()
+                local depResult = ns.AddonLoader.SetModuleAddonEnabled(depFolder, true)
+                -- Retry the original module now that the dependency is enabled.
+                local result = ns.AddonLoader.SetModuleAddonEnabled(folder, true)
+                if ns.QUI_Modules then
+                    ns.QUI_Modules:NotifyChanged("moduleAddon_" .. depFolder)
+                    ns.QUI_Modules:NotifyChanged("moduleAddon_" .. folder)
+                end
+                if depResult == "reload" or result == "reload" then
+                    ShowReloadPrompt()
+                end
+            end,
+        })
+    end
+end
 
 for _, entry in ipairs(ns.AddonManifest) do
     local folder    = entry.folder
@@ -176,15 +217,19 @@ for _, entry in ipairs(ns.AddonManifest) do
                     -- becomes fully active (or correctly dormant) after reload.
                     WriteLegacyFlag(flagPath, val and true or false)
                 end
-                local result = ns.AddonLoader.SetModuleAddonEnabled(folder, val and true or false)
+                local result, depFolder = ns.AddonLoader.SetModuleAddonEnabled(folder, val and true or false)
                 if ns.QUI_Modules then
                     ns.QUI_Modules:NotifyChanged("moduleAddon_" .. folder)
                 end
+                -- "depDisabled" = hard TOC dependency disabled; a reload can't
+                --   help, so name the dependency and offer to enable it.
                 -- "reload" = login-class addon or disable; always prompt.
                 -- "loaded" = LOD addon brought live; no prompt needed UNLESS
                 --   the dormant-guard flag was false (module activation runs at
                 --   load time, so it won't activate until a reload clears it).
-                if result == "reload" or (flipped and result == "loaded") then
+                if result == "depDisabled" then
+                    ShowDependencyPrompt(folder, depFolder)
+                elseif result == "reload" or (flipped and result == "loaded") then
                     ShowReloadPrompt()
                 end
             end,

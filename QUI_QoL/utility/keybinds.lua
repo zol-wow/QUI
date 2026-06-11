@@ -220,7 +220,7 @@ end
 -- module's namespace alias (see top of file), so this reads the core export.
 local FormatKeybind = QUI.FormatKeybind
 
--- BT4 bar number to WoW binding name mapping (matches Bartender4's BINDING_MAPPINGS)
+-- BT4 bar number to WoW binding name mapping (mirrors the bar addon's own binding table)
 local BT4_BINDING_MAPPINGS = {
     [1] = "ACTIONBUTTON%d",
     [3] = "MULTIACTIONBAR3BUTTON%d",
@@ -383,7 +383,7 @@ local function GetKeybindFromActionButton(button, actionSlot)
         elseif buttonName:match("^BT4Button(%d+)$") then
             local num = tonumber(buttonName:match("^BT4Button(%d+)$"))
             if num then
-                -- Priority 1: Try Bartender4's CLICK binding formats
+                -- Priority 1: Try the bar addon's CLICK binding formats
                 key1 = GetBindingKey("CLICK " .. buttonName .. ":Keybind")
                 if not key1 then
                     key1 = GetBindingKey("CLICK " .. buttonName .. ":LeftButton")

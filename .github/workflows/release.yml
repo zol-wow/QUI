@@ -51,7 +51,7 @@ jobs:
           suite_folders=(
             QUI_Options QUI_OptionsSearch
             QUI_ActionBars QUI_CDM QUI_Chat QUI_GroupFrames QUI_ResourceBars QUI_UnitFrames
-            QUI_Skinning QUI_Minimap QUI_QoL QUI_DamageMeter
+            QUI_Skinning QUI_Datatexts QUI_Minimap QUI_QoL QUI_DamageMeter QUI_InfoBar QUI_Bags
           )
 
           rm -rf build
@@ -119,12 +119,18 @@ jobs:
             build/QUI_UnitFrames/bootstrap.lua
             build/QUI_Skinning/QUI_Skinning.toc
             build/QUI_Skinning/bootstrap.lua
+            build/QUI_Datatexts/QUI_Datatexts.toc
+            build/QUI_Datatexts/bootstrap.lua
             build/QUI_Minimap/QUI_Minimap.toc
             build/QUI_Minimap/bootstrap.lua
             build/QUI_QoL/QUI_QoL.toc
             build/QUI_QoL/bootstrap.lua
             build/QUI_DamageMeter/QUI_DamageMeter.toc
             build/QUI_DamageMeter/bootstrap.lua
+            build/QUI_InfoBar/QUI_InfoBar.toc
+            build/QUI_InfoBar/bootstrap.lua
+            build/QUI_Bags/QUI_Bags.toc
+            build/QUI_Bags/bootstrap.lua
           )
 
           for required_path in "${required_paths[@]}"; do

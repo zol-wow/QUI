@@ -63,9 +63,30 @@ _G.TextToSpeechButtonFrame = makeBlizzFrame("TextToSpeechButtonFrame", _G.UIPare
 _G.QuickJoinToastButton = makeBlizzFrame("QuickJoinToastButton", _G.UIParent)
 _G.ChatFrameToggleVoiceDeafenButton = makeBlizzFrame("ChatFrameToggleVoiceDeafenButton", _G.UIParent)
 _G.ChatFrameToggleVoiceMuteButton = makeBlizzFrame("ChatFrameToggleVoiceMuteButton", _G.UIParent)
--- Seed pre-suppression events
+-- Seed pre-suppression events. ChatFrame2 carries the legacy Combat Log
+-- window chat groups (stock window-2 saved settings): their lines would
+-- otherwise render natively inside the embedded combat log.
 _G.ChatFrame1.events = { CHAT_MSG_SAY = true, UPDATE_CHAT_WINDOWS = true }
-_G.ChatFrame2.events = { COMBAT_LOG_EVENT = true }
+_G.ChatFrame2.events = {
+    COMBAT_LOG_EVENT = true,
+    CHAT_MSG_TRADESKILLS = true,
+    CHAT_MSG_CHANNEL = true,
+    GUILD_MOTD = true,
+    UPDATE_CHAT_WINDOWS = true,
+}
+_G.ChatTypeGroup = {
+    TRADESKILLS = { "CHAT_MSG_TRADESKILLS" },
+    OPENING = { "CHAT_MSG_OPENING" },
+    CHANNEL = { "CHAT_MSG_CHANNEL" },
+    GUILD = { "CHAT_MSG_GUILD", "GUILD_MOTD" },
+}
+_G.ChatTypeGroupInverted = {
+    CHAT_MSG_TRADESKILLS = "TRADESKILLS",
+    CHAT_MSG_OPENING = "OPENING",
+    CHAT_MSG_CHANNEL = "CHANNEL",
+    CHAT_MSG_GUILD = "GUILD",
+    GUILD_MOTD = "GUILD",
+}
 
 -- GetChatWindowMessages/Channels: Blizzard's saved-settings rebuild APIs
 local channelReturns = { "Trade", 0 }
@@ -185,6 +206,24 @@ assert(_G.ChatFrame1.events.UPDATE_CHAT_WINDOWS == nil, "rebuild event unregiste
 assert(_G.ChatFrame1.events.UPDATE_CHAT_COLOR == true, "color sync stays registered")
 assert(_G.ChatFrame2.events.COMBAT_LOG_EVENT == true, "combat log frame EXEMPT from neuter")
 
+-- ChatFrame2 chat-MESSAGE strip: the frame stays event-exempt (combat log
+-- machinery alive) but its native chat rendering must go dark — stock window-2
+-- saved settings carry TRADESKILLS/OPENING/PET_INFO/COMBAT_MISC_INFO, which
+-- otherwise interleave "X creates Y" chat lines into the embedded combat log.
+assert(_G.ChatFrame2.events.CHAT_MSG_TRADESKILLS == nil, "tradeskill chat stripped from combat log frame")
+assert(_G.ChatFrame2.events.CHAT_MSG_CHANNEL == nil, "base channel event stripped from combat log frame")
+assert(_G.ChatFrame2.events.GUILD_MOTD == nil, "non-CHAT_MSG group event stripped from combat log frame")
+assert(_G.ChatFrame2.events.UPDATE_CHAT_WINDOWS == true, "non-message events untouched by the strip")
+-- Durability: ChatFrame2's live UPDATE_CHAT_WINDOWS handler re-asserts saved
+-- groups on every settings sync (RegisterForMessages -> RegisterEvent); the
+-- post-hook must re-strip while active.
+_G.ChatFrame2:RegisterEvent("CHAT_MSG_TRADESKILLS")
+assert(_G.ChatFrame2.events.CHAT_MSG_TRADESKILLS == nil, "re-registered tradeskill chat re-stripped while active")
+_G.ChatFrame2:RegisterEvent("GUILD_MOTD")
+assert(_G.ChatFrame2.events.GUILD_MOTD == nil, "re-registered group event re-stripped while active")
+_G.ChatFrame2:RegisterEvent("UPDATE_CHAT_WINDOWS")
+assert(_G.ChatFrame2.events.UPDATE_CHAT_WINDOWS == true, "non-message register passes the strip hook")
+
 -- Regional channel refresh: hidden ChatFrame1 remains event-neutered, but its
 -- channel bookkeeping tracks city-channel joins/leaves instead of waiting for /reload.
 local channelWatcher
@@ -287,6 +326,14 @@ assert(_G.ChatFrame1.messagesRegistered and _G.ChatFrame1.messagesRegistered[1] 
 assert(_G.ChatFrame1.channelsRegistered and _G.ChatFrame1.channelsRegistered[1] == "Trade",
     "RegisterForChannels(GetChatWindowChannels) called")
 assert(_G.ChatFrame2.events.COMBAT_LOG_EVENT == true, "combat log frame untouched by restore")
+
+-- ChatFrame2 message restore: flip-back hands the chat-message events back —
+-- base channel events re-registered, saved groups rebuilt, strip hook inert.
+assert(_G.ChatFrame2.events.CHAT_MSG_CHANNEL == true, "combat log base channel event restored")
+assert(_G.ChatFrame2.messagesRegistered and _G.ChatFrame2.messagesRegistered[1] == "SAY",
+    "combat log RegisterForMessages(GetChatWindowMessages) called on flip-back")
+_G.ChatFrame2:RegisterEvent("CHAT_MSG_TRADESKILLS")
+assert(_G.ChatFrame2.events.CHAT_MSG_TRADESKILLS == true, "combat log strip hook inert while inactive")
 
 -- Blocker inert while inactive
 _G.ChatFrame1:RegisterEvent("CHAT_MSG_EMOTE")

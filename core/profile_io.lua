@@ -1248,6 +1248,13 @@ local PROFILE_IMPORT_CATEGORIES = {
         },
     },
     {
+        id = "infobar",
+        label = "Info Bar",
+        description = "Full-width info bar layout, widgets, and appearance.",
+        recommended = true,
+        topLevelKeys = { "infobar" },
+    },
+    {
         id = "customTrackers",
         label = "Custom CDM Bars",
         description = "Custom CDM bar settings and individual imported bars.",
@@ -1314,6 +1321,13 @@ local PROFILE_IMPORT_CATEGORIES = {
         recommended = true,
         topLevelKeys = { "alerts", "tooltip", "character", "loot", "lootRoll", "lootResults" },
         generalKeys = PROFILE_SKINNING_GENERAL_KEYS,
+    },
+    {
+        id = "bags",
+        label = "Bags",
+        description = "Bag, bank, and storage module settings.",
+        recommended = true,
+        topLevelKeys = { "bags" },
     },
 }
 

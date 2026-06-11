@@ -2645,13 +2645,19 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
     -- ADDON_LOADED / PLAYER_ENTERING_WORLD safe window where protected calls
     -- are allowed even in combat (ns._inInitSafeWindow).
     if InCombatLockdown() and not ns._inInitSafeWindow then
-        local isProtected = false
+        local probe = resolved
         if type(resolved) == "table" and not resolved.GetObjectType then
             -- Boss frames array — check first frame
-            local first = resolved[1]
-            isProtected = first and first.IsProtected and first:IsProtected()
-        else
-            isProtected = resolved.IsProtected and resolved:IsProtected()
+            probe = resolved[1]
+        end
+        local isProtected = probe and probe.IsProtected and probe:IsProtected()
+        -- A protected DEPENDENT (e.g. secure macro buttons on the chat
+        -- button bar, anchored to the chat container) blocks SetPoint the
+        -- same way but leaves IsProtected() false — IsAnchoringRestricted
+        -- is the query for that state. Both returns can be secret: branch
+        -- only, never compare or store past this block.
+        if not isProtected and probe and probe.IsAnchoringRestricted then
+            isProtected = probe:IsAnchoringRestricted()
         end
         if isProtected then
             pendingAnchoredFrameUpdateAfterCombat = true

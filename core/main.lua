@@ -445,7 +445,7 @@ function QUICore:OnProfileChanged(event, db, profileKey)
     -- 0.5s for skinning (avoids stacking too much work at once).
     -- Priority ordering within the registry ensures correct refresh sequence
     -- (cooldowns → frames → qol → combat → trackers → anchoring).
-    local refreshGroups = { "cooldowns", "frames", "castbars", "qol", "combat", "trackers", "data", "chat", "character", "utility", "ui", "anchoring" }
+    local refreshGroups = { "cooldowns", "frames", "castbars", "qol", "combat", "trackers", "data", "chat", "character", "utility", "ui", "anchoring", "bags" }
     C_Timer.After(0.2, function()
         if ns.Registry then
             -- Refresh all non-skinning modules in priority order

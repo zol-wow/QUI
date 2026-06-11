@@ -7,7 +7,7 @@
 ## Category: User Interface
 ## Group: QUI
 ## RequiredDeps: QUI
-## OptionalDeps: QUI_ActionBars, QUI_CDM, QUI_Chat, QUI_GroupFrames, QUI_ResourceBars, QUI_UnitFrames
+## OptionalDeps: QUI_ActionBars, QUI_CDM, QUI_Chat, QUI_Datatexts, QUI_GroupFrames, QUI_InfoBar, QUI_ResourceBars, QUI_UnitFrames
 
 bootstrap.lua
 
@@ -90,6 +90,10 @@ tiles\help_content.lua
 ..\QUI\modules\layout\settings\third_party_anchoring_content.lua
 ..\QUI_Minimap\minimap\settings\minimap.lua
 ..\QUI_Minimap\minimap\settings\minimap_providers.lua
+..\QUI_Datatexts\datatexts\settings\datatexts_features.lua
+..\QUI_Datatexts\datatexts\settings\datatexts_providers.lua
+..\QUI_InfoBar\infobar\settings\infobar_features.lua
+..\QUI_InfoBar\infobar\settings\infobar_content.lua
 ..\QUI_QoL\qol\settings\pet_warning.lua
 ..\QUI_QoL\qol\settings\consumables.lua
 ..\QUI_QoL\qol\settings\combat_timer.lua
@@ -100,6 +104,8 @@ tiles\help_content.lua
 ..\QUI_QoL\qol\settings\xp_tracker.lua
 ..\QUI_QoL\qol\settings\focus_cast_alert.lua
 ..\QUI_QoL\qol\settings\qol_content.lua
+..\QUI_Bags\bags\settings\bags_providers.lua
+..\QUI_Bags\bags\settings\bags.lua
 ..\QUI_ResourceBars\resourcebars\settings\resource_bars.lua
 ..\QUI_ResourceBars\resourcebars\settings\resource_bars_builders.lua
 ..\QUI_ResourceBars\resourcebars\settings\resource_bars_preview_driver.lua
@@ -129,6 +135,7 @@ tiles\help_content.lua
 init.lua
 tiles\related.lua
 tiles\minimap.lua
+tiles\infobar.lua
 tiles\unit_frames.lua
 tiles\group_frames.lua
 tiles\action_bars.lua
@@ -138,6 +145,7 @@ tiles\appearance.lua
 tiles\chat_tooltips.lua
 tiles\gameplay.lua
 tiles\qol.lua
+tiles\bags.lua
 tiles\global.lua
 tiles\help.lua
 blizzard_options.lua

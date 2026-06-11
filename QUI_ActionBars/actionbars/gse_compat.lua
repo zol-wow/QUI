@@ -2,7 +2,7 @@
     QUI GSE Action Bar Compatibility
 
     GSE identifies override-capable action buttons by global name prefix
-    (ActionButton, MultiBarBottomLeftButton, BT4, ElvUI, Dominos, ...).
+    (ActionButton, MultiBarBottomLeftButton, common third-party bar prefixes, ...).
     QUI's native engine creates buttons named QUI_Bar<N>Button<i> /
     QUI_PetButton<i> / QUI_StanceButton<i>, none of which match GSE's
     prefix table, so GSE falls into its generic third-party branch and

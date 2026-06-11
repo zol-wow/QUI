@@ -28,6 +28,10 @@ local EXPECTED = {
     { "QUI_Chat/chat/display_fallback.lua",  "chatCustomDisplaySkin" },
     { "QUI_Chat/chat/button_bar.lua",        "chatButtonBarSkin" },
     { "QUI_GroupFrames/groupframes/raidbuffs.lua",  "raidbuffsSkin" },
+    -- Info bar + custom datapanels (2026-06): bar edge / panel borders track
+    -- the skin via GetSkinBorderColor but register under group "data".
+    { "QUI_InfoBar/infobar/infobar.lua",        "infobarSkin" },
+    { "QUI_Datatexts/datatexts/datapanels.lua", "datapanelsSkin" },
 }
 
 local function read(path)

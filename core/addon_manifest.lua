@@ -7,7 +7,7 @@
 --   class      — "login" (loads with the loading screen) | "lod" (LoadOnDemand,
 --                loaded by the core post-login, in manifest order)
 --   legacyFlag — profile-DB path of the module's dormant-guard flag, or nil.
---                Present on exactly two entries (QUI_Chat and QUI_GroupFrames)
+--                Present on three entries (QUI_Chat, QUI_GroupFrames, QUI_Bags)
 --                that default to off for stock-chat / opt-in users.  Consumed
 --                by the Module Addons rows (AND-read for isEnabled, heal-on-
 --                enable) and honored by each module's own init.
@@ -28,6 +28,11 @@ local MANIFEST = {
     { folder = "QUI_UnitFrames",   class = "login",                                                  sources = { "modules/unitframes" } },
     -- lod class: loaded post-login in THIS order (cosmetics first)
     { folder = "QUI_Skinning",     class = "lod",                                                    sources = { "modules/skinning" } },
+    -- Datatext registry + providers + custom datapanels + LDB host. Must load
+    -- BEFORE QUI_Minimap (its 3-slot panel consumes the registry; minimap
+    -- soft-guards if this addon is disabled).
+    -- sources: "modules/datatexts" is a forward-looking name; the files originated in modules/minimap.
+    { folder = "QUI_Datatexts",    class = "lod",                                                    sources = { "modules/datatexts" } },
     -- No legacyFlag: minimap.enabled was retired (v43); addon state alone
     -- gates this module.
     -- Eager (no lateLoad): loads on the loading screen so the minimap is
@@ -45,6 +50,12 @@ local MANIFEST = {
     { folder = "QUI_Minimap",      class = "lod",                                                    sources = { "modules/minimap" } },
     { folder = "QUI_QoL",          class = "lod",                                                    sources = { "modules/qol", "modules/dungeon", "modules/trackers", "modules/combat", "modules/utility" } },
     { folder = "QUI_DamageMeter",  class = "lod",                                                    sources = { "modules/damage_meter" } },
+    -- Full-width info bar. Hard-depends on QUI_Datatexts (TOC Dependencies).
+    { folder = "QUI_InfoBar",      class = "lod",                                                    sources = { "modules/infobar" } },
+    -- Opt-in, default-off (legacyFlag bags.enabled): ships enabled but stays
+    -- dormant until the user turns it on via the Module Addons row. Loads via
+    -- the eager LOD pass like its siblings; bags.lua self-gates on the flag.
+    { folder = "QUI_Bags",         class = "lod", legacyFlag = { "bags", "enabled" },                sources = { "modules/bags" } },
 }
 
 local ADDON_NAME, ns = ...

@@ -32,6 +32,7 @@ local seedTable = {
     skyriding  = { "dragonriding", "flying" },
     minimap    = { "map", "datatext" },
     datatext   = { "minimap", "info" },
+    infobar    = { "info bar", "data bar", "top bar", "bottom bar", "datatext" },
 }
 
 -- Build the expanded symmetric map.
