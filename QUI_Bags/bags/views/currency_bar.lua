@@ -1,7 +1,12 @@
 ---------------------------------------------------------------------------
 -- Bags views: currency bar. A footer-adjacent row on the BAG window showing
--- the user's settings-listed currencies (currencyBar.currencies, a
--- [currencyID]=true map managed in options) as icon + amount segments.
+-- the user's settings-listed currencies as icon + amount segments. Config
+-- is the shared currency-section model (currencyBar.currencyOrder array +
+-- currencyBar.currencyEnabled map, STRING ids — the same shape the Info
+-- Bar/datatext Currencies settings edit): render order ∩ enabled==true. A
+-- pre-migration profile (settings page never opened) may still carry the
+-- legacy currencyBar.currencies [id]=true set — rendered sorted until the
+-- options page migrates it.
 --
 -- Data (verified, CurrencyInfoDocumentation.lua): C_CurrencyInfo.
 -- GetCurrencyInfo(id) → CurrencyInfo { iconFileID (fileID), quantity
@@ -35,12 +40,22 @@ local SEG_GAP = 12 -- gap between segments
 local function Update(bar, record, live)
     local s = GetSettings()
     local cfg = s and s.currencyBar
-    local listed = cfg and cfg.enabled and cfg.currencies or nil
     local ids = {}
-    if listed then
-        for id in pairs(listed) do ids[#ids + 1] = id end
+    if cfg and cfg.enabled then
+        if type(cfg.currencyOrder) == "table" then
+            local en = cfg.currencyEnabled
+            for _, sid in ipairs(cfg.currencyOrder) do
+                if type(en) == "table" and en[sid] == true then
+                    ids[#ids + 1] = tonumber(sid) or sid
+                end
+            end
+        end
+        if #ids == 0 and type(cfg.currencies) == "table" then
+            -- legacy pre-migration set: everything listed, sorted
+            for id in pairs(cfg.currencies) do ids[#ids + 1] = id end
+            table.sort(ids)
+        end
     end
-    table.sort(ids) -- deterministic order (options manage an unordered map)
 
     local shown = 0
     local x = 0

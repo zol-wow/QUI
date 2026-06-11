@@ -212,8 +212,8 @@ local function UpdateMoneyText()
     else
         money = GetMoney()
     end
-    if C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString then
-        win._money:SetText(C_CurrencyInfo.GetCoinTextureString(money))
+    if GetMoneyString then
+        win._money:SetText(GetMoneyString(money, true))
     else
         win._money:SetText(tostring(money))
     end
@@ -897,13 +897,16 @@ function BagWindow.Refresh()
                 -- fall-through. Left clicks/drags PASS THROUGH to the secure
                 -- template button below (SimpleScriptRegionAPI
                 -- SetPassThroughButtons — protected function but insecurely
-                -- callable out of combat; pcall guards the in-combat-creation
-                -- edge and the dress loop retries once out of combat).
+                -- callable out of combat). In-combat creation must not even
+                -- ATTEMPT the call: pcall catches the Lua error but cannot
+                -- suppress the client's ADDON_ACTION_BLOCKED log — flag for
+                -- the dress loop's out-of-combat retry instead.
                 local dep = CreateFrame("Button", nil, btn)
                 dep:SetAllPoints()
                 dep:SetFrameLevel(btn:GetFrameLevel() + 4)
                 dep:RegisterForClicks("RightButtonUp")
-                if not pcall(dep.SetPassThroughButtons, dep, "LeftButton") then
+                if InCombatLockdown()
+                    or not pcall(dep.SetPassThroughButtons, dep, "LeftButton") then
                     dep._quiPassThroughFailed = true
                 end
                 dep:SetScript("OnClick", function()

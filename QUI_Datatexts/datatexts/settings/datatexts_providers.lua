@@ -116,6 +116,252 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
     end
     ns.QUI_DatatextsRegistryNotice = PlaceRegistryMissingNotice
 
+    -- Hover tooltip for a CUSTOM-PLACED bare dropdown (no BuildSettingRow to
+    -- carry it): the widget's mouse-enabled dropdown Button swallows
+    -- enter/leave over almost the whole footprint, so hook the button AND
+    -- the container (AttachTooltip HookScripts, so the button's own hover
+    -- visual keeps working).
+    local function AttachDropdownTooltip(dd, description, title)
+        if not GUI.AttachTooltip then return end
+        GUI:AttachTooltip(dd, description, title)
+        if dd.dropdown then GUI:AttachTooltip(dd.dropdown, description, title) end
+    end
+
+    ---------------------------------------------------------------------------
+    -- Shared Currencies order/visibility section. currencyOrder/currencyEnabled
+    -- live in profile.datatext and are surface-agnostic — the currencies
+    -- datatext reads them at render time wherever it's hosted (datatext
+    -- panels, minimap panel, Info Bar). Exported on ns for the Info Bar page
+    -- (QUI_InfoBar hard-depends on QUI_Datatexts, so the export exists by the
+    -- time that page builds; consumers still guard the read).
+    -- opts: dtGlobal  = config table holding currencyOrder/currencyEnabled
+    --                   (profile.datatext for the datatext surfaces;
+    --                   bags.currencyBar for the bag window's bar — every
+    --                   consumer lists the same Blizzard backpack-tracked
+    --                   pool, only the edited config differs),
+    --       refresh   = re-render the host surface(s) after a change,
+    --       notify    = structural rebuild for the host provider (receives
+    --                   a region owned by that provider's page),
+    --       header/hint/emptyText/toggleDescription/note = text overrides.
+    ---------------------------------------------------------------------------
+    local function BuildCurrencyOrderSection(L, content, opts)
+        local dtGlobal = opts.dtGlobal
+        local refresh = opts.refresh or function() end
+        local notify = opts.notify or function() end
+
+        local trackedCurrencies = {}
+        if _G.C_CurrencyInfo and C_CurrencyInfo.GetBackpackCurrencyInfo then
+            local i = 1
+            local seen = {}
+            while true do
+                local info = C_CurrencyInfo.GetBackpackCurrencyInfo(i)
+                if not info then break end
+                local currencyID = info.currencyTypesID or info.currencyID
+                if currencyID and info.name and not seen[currencyID] then
+                    seen[currencyID] = true
+                    trackedCurrencies[#trackedCurrencies + 1] = {
+                        value = tostring(currencyID),
+                        text = info.name,
+                    }
+                end
+                i = i + 1
+            end
+        end
+
+        if type(dtGlobal.currencyOrder) ~= "table" then dtGlobal.currencyOrder = {} end
+        if type(dtGlobal.currencyEnabled) ~= "table" then dtGlobal.currencyEnabled = {} end
+
+        local trackedById = {}
+        for _, c in ipairs(trackedCurrencies) do trackedById[c.value] = c end
+
+        local ordered = {}
+        local seen = {}
+        for _, rawVal in ipairs(dtGlobal.currencyOrder) do
+            local val = type(rawVal) == "number" and tostring(rawVal) or rawVal
+            if val and val ~= "" and val ~= "none" and trackedById[val] and not seen[val] then
+                seen[val] = true
+                ordered[#ordered + 1] = val
+            end
+        end
+        for _, c in ipairs(trackedCurrencies) do
+            if not seen[c.value] then
+                ordered[#ordered + 1] = c.value
+            end
+        end
+        dtGlobal.currencyOrder = ordered
+
+        for _, cid in ipairs(ordered) do
+            if dtGlobal.currencyEnabled[cid] == nil then
+                dtGlobal.currencyEnabled[cid] = true
+            end
+        end
+
+        L.headerAt(opts.header or "Currencies")
+        local currencyFrame = CreateFrame("Frame", nil, content)
+        local rowFrames = {}
+
+        local hintFs = currencyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        hintFs:SetPoint("TOPLEFT", currencyFrame, "TOPLEFT", 4, -4)
+        hintFs:SetPoint("RIGHT", currencyFrame, "RIGHT", -4, 0)
+        hintFs:SetTextColor(0.6, 0.6, 0.6, 0.8)
+        hintFs:SetText(opts.hint or "First 6 enabled are displayed. Use arrows to reorder.")
+
+        local CURRENCY_ROW_HEIGHT = 28
+        local function RebuildCurrencyRows()
+            for _, rf in ipairs(rowFrames) do rf:Hide() end
+
+            local ry = -24
+            for idx, cid in ipairs(dtGlobal.currencyOrder) do
+                local cInfo = trackedById[cid]
+                local displayName = cInfo and cInfo.text or cid
+
+                local r = rowFrames[idx]
+                if not r then
+                    r = CreateFrame("Frame", nil, currencyFrame)
+                    r:SetHeight(CURRENCY_ROW_HEIGHT - 4)
+                    rowFrames[idx] = r
+                end
+                r:ClearAllPoints()
+                r:SetPoint("TOPLEFT", currencyFrame, "TOPLEFT", 0, ry)
+                r:SetPoint("RIGHT", currencyFrame, "RIGHT", 0, 0)
+                r:Show()
+
+                if not r._built then
+                    -- CreateFormCheckbox is the toggle widget: no SetChecked/
+                    -- GetChecked/OnClick surface. State flows through
+                    -- SetValue(val, skipCallback) and the onChange callback;
+                    -- r._cid keeps the callback current when reorders reuse
+                    -- this row for a different currency. BARE mode (nil
+                    -- label): the row owns the name fontstring directly —
+                    -- the zone-row pattern — rather than driving the
+                    -- widget's internal label.
+                    r._cb = GUI:CreateFormCheckbox(r, nil, nil, nil, function(val)
+                        dtGlobal.currencyEnabled[r._cid] = val and true or false
+                        refresh()
+                        notify(r._cb)
+                    end, { description = opts.toggleDescription
+                        or "Toggle this currency in the Currencies datatext. Use the arrows to reorder." })
+                    r._cb:SetPoint("LEFT", 4, 0)
+
+                    r._name = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    r._name:SetPoint("LEFT", r, "LEFT", 40, 0)
+                    r._name:SetPoint("RIGHT", r, "RIGHT", -48, 0)
+                    r._name:SetJustifyH("LEFT")
+                    r._name:SetTextColor(0.9, 0.9, 0.9, 1)
+
+                    r._upBtn = CreateFrame("Button", nil, r)
+                    r._upBtn:SetSize(16, 16)
+                    r._upBtn:SetPoint("RIGHT", r, "RIGHT", -24, 0)
+                    r._upBtn:SetNormalFontObject("GameFontNormalSmall")
+                    r._upBtn:SetText("^")
+                    r._upBtn:GetFontString():SetTextColor(0.376, 0.647, 0.980, 1)
+
+                    r._downBtn = CreateFrame("Button", nil, r)
+                    r._downBtn:SetSize(16, 16)
+                    r._downBtn:SetPoint("RIGHT", r, "RIGHT", -4, 0)
+                    r._downBtn:SetNormalFontObject("GameFontNormalSmall")
+                    r._downBtn:SetText("v")
+                    r._downBtn:GetFontString():SetTextColor(0.376, 0.647, 0.980, 1)
+
+                    r._built = true
+                end
+
+                r._cid = cid
+                r._name:SetText(displayName)
+                r._cb:SetValue(dtGlobal.currencyEnabled[cid] ~= false, true) -- render-only, skip onChange
+
+                local capturedIdx = idx
+                r._upBtn:SetScript("OnClick", function()
+                    if capturedIdx > 1 then
+                        local order = dtGlobal.currencyOrder
+                        order[capturedIdx], order[capturedIdx - 1] = order[capturedIdx - 1], order[capturedIdx]
+                        RebuildCurrencyRows()
+                        refresh()
+                        notify(r._upBtn)
+                    end
+                end)
+                r._upBtn:SetAlpha(idx > 1 and 1 or 0.3)
+
+                r._downBtn:SetScript("OnClick", function()
+                    if capturedIdx < #dtGlobal.currencyOrder then
+                        local order = dtGlobal.currencyOrder
+                        order[capturedIdx], order[capturedIdx + 1] = order[capturedIdx + 1], order[capturedIdx]
+                        RebuildCurrencyRows()
+                        refresh()
+                        notify(r._downBtn)
+                    end
+                end)
+                r._downBtn:SetAlpha(idx < #dtGlobal.currencyOrder and 1 or 0.3)
+
+                ry = ry - CURRENCY_ROW_HEIGHT
+            end
+        end
+
+        -- Track-a-currency dropdown: currencies the character owns that are
+        -- NOT backpack-tracked yet, from the visible currency-list walk
+        -- (GetCurrencyListSize/GetCurrencyListInfo — collapsed headers hide
+        -- their children, and ExpandCurrencyList mutates user UI state so we
+        -- never call it; those currencies need their header expanded in the
+        -- Currency tab first). Selecting one calls SetCurrencyBackpackByID —
+        -- the same Blizzard tracked list the Currency tab's checkbox edits —
+        -- and the structural notify rebuilds this section with the new row.
+        local function BuildTrackableOptions()
+            local rows = {}
+            if _G.C_CurrencyInfo and C_CurrencyInfo.GetCurrencyListSize
+                and C_CurrencyInfo.GetCurrencyListInfo then
+                local n = C_CurrencyInfo.GetCurrencyListSize() or 0
+                for i = 1, n do
+                    local info = C_CurrencyInfo.GetCurrencyListInfo(i) -- MayReturnNothing
+                    if info and not info.isHeader and not info.isShowInBackpack
+                        and info.currencyID and info.name then
+                        rows[#rows + 1] = { value = info.currencyID, text = info.name }
+                    end
+                end
+                table.sort(rows, function(a, b) return a.text < b.text end)
+            end
+            local dd = { { value = "", text = "Track a currency..." } }
+            for _, o in ipairs(rows) do dd[#dd + 1] = o end
+            return dd
+        end
+
+        local trackDesc = "Add a currency you own to Blizzard's backpack-tracked list — the pool every Currencies section uses. Currencies under a collapsed header in the Currency tab aren't listed; expand the header there first."
+        local trackDD
+        trackDD = GUI:CreateFormDropdown(currencyFrame, nil, BuildTrackableOptions(), nil, nil, function(val)
+            if not val or val == "" then return end
+            if _G.C_CurrencyInfo and C_CurrencyInfo.SetCurrencyBackpackByID then
+                C_CurrencyInfo.SetCurrencyBackpackByID(val, true)
+            end
+            refresh()
+            notify(trackDD)
+        end, { description = trackDesc }, { searchable = true })
+        AttachDropdownTooltip(trackDD, trackDesc, "Track a Currency")
+
+        local rowCount = math.max(#ordered, 1)
+        local listBottom = 24 + rowCount * CURRENCY_ROW_HEIGHT
+        trackDD:SetPoint("TOPLEFT", currencyFrame, "TOPLEFT", 0, -(listBottom + 2))
+        trackDD:SetPoint("RIGHT", currencyFrame, "RIGHT", -4, 0)
+        if trackDD.SetValue then trackDD:SetValue("", true) end
+
+        local currencyHeight = listBottom + 38
+        L.placeCustom(currencyFrame, currencyHeight)
+        RebuildCurrencyRows()
+
+        if #ordered == 0 then
+            local empty = currencyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            empty:SetPoint("TOPLEFT", currencyFrame, "TOPLEFT", 4, -24)
+            empty:SetTextColor(0.6, 0.6, 0.6, 1)
+            empty:SetText(opts.emptyText or "No tracked currencies. Track one below or via the Currency tab.")
+        end
+
+        local cNoteRow = CreateFrame("Frame", nil, content)
+        local cNote = cNoteRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        cNote:SetPoint("LEFT", cNoteRow, "LEFT", 0, 0)
+        cNote:SetTextColor(0.6, 0.6, 0.6, 0.8)
+        cNote:SetText(opts.note or "Currencies applies to all panels with the Currencies datatext.")
+        L.placeCustom(cNoteRow, 18)
+    end
+    ns.QUI_BuildCurrencyOrderSection = BuildCurrencyOrderSection
+
     ---------------------------------------------------------------------------
     -- DATATEXT PANEL HELPERS
     ---------------------------------------------------------------------------
@@ -837,12 +1083,15 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 DatatextPanelState.activePanel = val
                 NotifyStructuralRefresh()
             end,
-            { description = "Pick which datatext panel you want to configure. The minimap panel and every custom datapanel are edited from this same tab.",
-              searchable = true, collapsible = false }
+            { description = "Pick which datatext panel you want to configure. The minimap panel and every custom datapanel are edited from this same tab." },
+            { searchable = true }
         )
         selector:SetPoint("TOPLEFT", selectorRow, "TOPLEFT", 0, 0)
         selector:SetPoint("RIGHT", selectorRow, "RIGHT", -196, 0)
         if selector.SetValue then selector:SetValue(selected.key, true) end
+        AttachDropdownTooltip(selector,
+            "Pick which datatext panel you want to configure. The minimap panel and every custom datapanel are edited from this same tab.",
+            "Datatext Panel")
 
         local newBtn = GUI:CreateButton(selectorRow, "+ New", 90, 24, function()
             local newPanel = CreateCustomDatapanel(profile)
@@ -1075,161 +1324,14 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             L.closeSection(tm)
         end
 
-        -- CURRENCIES (conditional, custom layout with reorder controls)
+        -- CURRENCIES (conditional, custom layout with reorder controls;
+        -- section body shared with the Info Bar page)
         if CountSlotsWithValue(selected.slots, selected.numSlots, "currencies") then
-            local trackedCurrencies = {}
-            if _G.C_CurrencyInfo and C_CurrencyInfo.GetBackpackCurrencyInfo then
-                local i = 1
-                local seen = {}
-                while true do
-                    local info = C_CurrencyInfo.GetBackpackCurrencyInfo(i)
-                    if not info then break end
-                    local currencyID = info.currencyTypesID or info.currencyID
-                    if currencyID and info.name and not seen[currencyID] then
-                        seen[currencyID] = true
-                        trackedCurrencies[#trackedCurrencies + 1] = {
-                            value = tostring(currencyID),
-                            text = info.name,
-                        }
-                    end
-                    i = i + 1
-                end
-            end
-
-            if type(dtGlobal.currencyOrder) ~= "table" then dtGlobal.currencyOrder = {} end
-            if type(dtGlobal.currencyEnabled) ~= "table" then dtGlobal.currencyEnabled = {} end
-
-            local trackedById = {}
-            for _, c in ipairs(trackedCurrencies) do trackedById[c.value] = c end
-
-            local ordered = {}
-            local seen = {}
-            for _, rawVal in ipairs(dtGlobal.currencyOrder) do
-                local val = type(rawVal) == "number" and tostring(rawVal) or rawVal
-                if val and val ~= "" and val ~= "none" and trackedById[val] and not seen[val] then
-                    seen[val] = true
-                    ordered[#ordered + 1] = val
-                end
-            end
-            for _, c in ipairs(trackedCurrencies) do
-                if not seen[c.value] then
-                    ordered[#ordered + 1] = c.value
-                end
-            end
-            dtGlobal.currencyOrder = ordered
-
-            for _, cid in ipairs(ordered) do
-                if dtGlobal.currencyEnabled[cid] == nil then
-                    dtGlobal.currencyEnabled[cid] = true
-                end
-            end
-
-            L.headerAt("Currencies")
-            local currencyFrame = CreateFrame("Frame", nil, content)
-            local rowFrames = {}
-
-            local hintFs = currencyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            hintFs:SetPoint("TOPLEFT", currencyFrame, "TOPLEFT", 4, -4)
-            hintFs:SetPoint("RIGHT", currencyFrame, "RIGHT", -4, 0)
-            hintFs:SetTextColor(0.6, 0.6, 0.6, 0.8)
-            hintFs:SetText("First 6 enabled are displayed. Use arrows to reorder.")
-
-            local CURRENCY_ROW_HEIGHT = 28
-            local function RebuildCurrencyRows()
-                for _, rf in ipairs(rowFrames) do rf:Hide() end
-
-                local ry = -24
-                for idx, cid in ipairs(dtGlobal.currencyOrder) do
-                    local cInfo = trackedById[cid]
-                    local displayName = cInfo and cInfo.text or cid
-
-                    local r = rowFrames[idx]
-                    if not r then
-                        r = CreateFrame("Frame", nil, currencyFrame)
-                        r:SetHeight(CURRENCY_ROW_HEIGHT - 4)
-                        rowFrames[idx] = r
-                    end
-                    r:ClearAllPoints()
-                    r:SetPoint("TOPLEFT", currencyFrame, "TOPLEFT", 0, ry)
-                    r:SetPoint("RIGHT", currencyFrame, "RIGHT", 0, 0)
-                    r:Show()
-
-                    if not r._built then
-                        r._cb = GUI:CreateFormCheckbox(r, "", nil, nil, nil,
-                            { description = "Toggle this currency in the Currencies datatext. Use the arrows to reorder." })
-                        r._cb:SetPoint("LEFT", 4, 0)
-                        r._cb:SetHeight(CURRENCY_ROW_HEIGHT - 4)
-
-                        r._upBtn = CreateFrame("Button", nil, r)
-                        r._upBtn:SetSize(16, 16)
-                        r._upBtn:SetPoint("RIGHT", r, "RIGHT", -24, 0)
-                        r._upBtn:SetNormalFontObject("GameFontNormalSmall")
-                        r._upBtn:SetText("^")
-                        r._upBtn:GetFontString():SetTextColor(0.376, 0.647, 0.980, 1)
-
-                        r._downBtn = CreateFrame("Button", nil, r)
-                        r._downBtn:SetSize(16, 16)
-                        r._downBtn:SetPoint("RIGHT", r, "RIGHT", -4, 0)
-                        r._downBtn:SetNormalFontObject("GameFontNormalSmall")
-                        r._downBtn:SetText("v")
-                        r._downBtn:GetFontString():SetTextColor(0.376, 0.647, 0.980, 1)
-
-                        r._built = true
-                    end
-
-                    r._cb.label:SetText(displayName)
-                    r._cb:SetChecked(dtGlobal.currencyEnabled[cid] ~= false)
-                    r._cb:SetScript("OnClick", function(self)
-                        dtGlobal.currencyEnabled[cid] = self:GetChecked()
-                        RefreshAllDatatextSurfaces()
-                        NotifyProviderFor(r._cb, { structural = true })
-                    end)
-
-                    local capturedIdx = idx
-                    r._upBtn:SetScript("OnClick", function()
-                        if capturedIdx > 1 then
-                            local order = dtGlobal.currencyOrder
-                            order[capturedIdx], order[capturedIdx - 1] = order[capturedIdx - 1], order[capturedIdx]
-                            RebuildCurrencyRows()
-                            RefreshAllDatatextSurfaces()
-                            NotifyProviderFor(r._upBtn, { structural = true })
-                        end
-                    end)
-                    r._upBtn:SetAlpha(idx > 1 and 1 or 0.3)
-
-                    r._downBtn:SetScript("OnClick", function()
-                        if capturedIdx < #dtGlobal.currencyOrder then
-                            local order = dtGlobal.currencyOrder
-                            order[capturedIdx], order[capturedIdx + 1] = order[capturedIdx + 1], order[capturedIdx]
-                            RebuildCurrencyRows()
-                            RefreshAllDatatextSurfaces()
-                            NotifyProviderFor(r._downBtn, { structural = true })
-                        end
-                    end)
-                    r._downBtn:SetAlpha(idx < #dtGlobal.currencyOrder and 1 or 0.3)
-
-                    ry = ry - CURRENCY_ROW_HEIGHT
-                end
-            end
-
-            local rowCount = math.max(#ordered, 1)
-            local currencyHeight = 24 + rowCount * CURRENCY_ROW_HEIGHT + 8
-            L.placeCustom(currencyFrame, currencyHeight)
-            RebuildCurrencyRows()
-
-            if #ordered == 0 then
-                local empty = currencyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                empty:SetPoint("TOPLEFT", currencyFrame, "TOPLEFT", 4, -24)
-                empty:SetTextColor(0.6, 0.6, 0.6, 1)
-                empty:SetText("No tracked currencies. Track currencies via the backpack.")
-            end
-
-            local cNoteRow = CreateFrame("Frame", nil, content)
-            local cNote = cNoteRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            cNote:SetPoint("LEFT", cNoteRow, "LEFT", 0, 0)
-            cNote:SetTextColor(0.6, 0.6, 0.6, 0.8)
-            cNote:SetText("Currencies applies to all panels with the Currencies datatext.")
-            L.placeCustom(cNoteRow, 18)
+            BuildCurrencyOrderSection(L, content, {
+                dtGlobal = dtGlobal,
+                refresh = RefreshAllDatatextSurfaces,
+                notify = function(region) NotifyProviderFor(region, { structural = true }) end,
+            })
         end
 
         -- Layout-mode chrome

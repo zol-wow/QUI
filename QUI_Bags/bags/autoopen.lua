@@ -2,8 +2,9 @@
 -- Bags auto-open: per-interaction open/close policy.
 -- Two surfaces: (1) PLAYER_INTERACTION_MANAGER_FRAME_SHOW/HIDE events
 -- (wired by bags.lua while takeover is active) for interactions that don't
--- open bags themselves; (2) ShouldOpenFor(frame), consulted by the takeover's
--- OpenAllBags replacement for programmatic opens (merchant etc.).
+-- open bags themselves; (2) ShouldOpenFor(frame), consulted by the
+-- takeover's OpenAllBags/OpenAllBagsMatchingContext hooks and its internal
+-- OpenForFrame callers (bank/guild) for programmatic opens (merchant etc.).
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags

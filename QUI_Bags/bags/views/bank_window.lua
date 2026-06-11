@@ -256,8 +256,8 @@ local function ShowPurchasePopup(bankType)
     -- { tabCost, canAfford, purchasePromptTitle/Body/Confirmation } or nil.
     local data = C_Bank.FetchNextPurchasableBankTabData(bankType)
     if not data then return end
-    local cost = C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString
-        and C_CurrencyInfo.GetCoinTextureString(data.tabCost) or tostring(data.tabCost)
+    local cost = GetMoneyString and GetMoneyString(data.tabCost, true)
+        or tostring(data.tabCost)
     -- No disabled state when not canAfford — the cost line is the signal;
     -- the purchase simply fails server-side if gold ran out meanwhile.
     StaticPopupDialogs["QUI_BANK_BUY_TAB"] = {
@@ -864,8 +864,8 @@ local function RenderFooter()
     local bankType = SelectedBankType()
     -- Doc: FetchDepositedMoney(bankType) → WOWMONEY (non-nilable).
     local money = C_Bank.FetchDepositedMoney(bankType)
-    if C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString then
-        win._bankMoney:SetText(C_CurrencyInfo.GetCoinTextureString(money))
+    if GetMoneyString then
+        win._bankMoney:SetText(GetMoneyString(money, true))
     else
         win._bankMoney:SetText(tostring(money))
     end

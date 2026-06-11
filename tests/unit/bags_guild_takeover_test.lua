@@ -76,23 +76,28 @@ _G.C_AddOns.IsAddOnLoaded = function(name)
     return name == "Blizzard_GuildBankUI" and addonLoaded
 end
 
--- Replaced bag globals: log the GetName() of the opener argument AND feed a
--- shared ordered session log (pump-before-window ordering is load-bearing).
 local sessionLog = {}
 local openLog, closeLog = {}, {}
-_G.OpenAllBags = function(frame)
-    openLog[#openLog + 1] = frame and frame.GetName and frame:GetName() or "<no-name>"
-    sessionLog[#sessionLog + 1] = "openallbags"
-end
-_G.CloseAllBags = function(frame)
-    closeLog[#closeLog + 1] = frame and frame.GetName and frame:GetName() or "<no-name>"
-    sessionLog[#sessionLog + 1] = "closeallbags"
-end
 
 local closeGuildBankCalls = 0
 _G.CloseGuildBankFrame = function() closeGuildBankCalls = closeGuildBankCalls + 1 end
 
 local ns = loader.LoadAll()
+
+-- Takeover internal open/close API (guild routes through it, NOT the
+-- Blizzard-owned globals): log the GetName() of the opener argument AND
+-- feed a shared ordered session log (pump-before-window ordering is
+-- load-bearing).
+ns.Bags.Takeover = {
+    OpenForFrame = function(frame)
+        openLog[#openLog + 1] = frame and frame.GetName and frame:GetName() or "<no-name>"
+        sessionLog[#sessionLog + 1] = "openallbags"
+    end,
+    CloseForFrame = function(frame)
+        closeLog[#closeLog + 1] = frame and frame.GetName and frame:GetName() or "<no-name>"
+        sessionLog[#sessionLog + 1] = "closeallbags"
+    end,
+}
 
 -- Scanner + window stubs share the ordered session log.
 ns.Bags.ScanGuild = {
@@ -171,7 +176,7 @@ assert(sessionLog[1] == "scan-open", "the scanner pump must run FIRST")
 assert(sessionLog[2] == "window-showlive", "the window shows after the pump")
 assert(sessionLog[3] == "openallbags", "bags auto-open last")
 assert(#openLog == 1 and openLog[1] == "QUI_GuildBankWindow",
-    "OpenAllBags must receive a QUI_GuildBankWindow-named opener (policy key + opener tracking)")
+    "OpenForFrame must receive a QUI_GuildBankWindow-named opener (policy key + opener tracking)")
 
 -- Test 3b: OnOpened is LATCHED — the session open now has two triggers
 -- (PLAYER_INTERACTION_MANAGER_FRAME_SHOW GuildBanker routing, the retail
@@ -191,7 +196,7 @@ assert(sessionLog[1] == "scan-close", "CLOSED must close the scanner session")
 assert(sessionLog[2] == "window-onbankclosed", "CLOSED must notify the guild window")
 assert(sessionLog[3] == "closeallbags", "CLOSED must close the auto-opened bags")
 assert(#closeLog == 1 and closeLog[1] == "QUI_GuildBankWindow",
-    "CloseAllBags must receive the QUI_GuildBankWindow-named opener")
+    "CloseForFrame must receive the QUI_GuildBankWindow-named opener")
 assert(closeGuildBankCalls == 0, "a server-driven close must NOT call CloseGuildBankFrame")
 -- Test 4b: OnClosed is latched on live too (CLOSED + interaction HIDE can
 -- both arrive): a close while not live must not re-run the close chain.

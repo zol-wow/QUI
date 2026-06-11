@@ -98,8 +98,8 @@ local function StartScanning()
     Bags.Store.EnsureCurrentCharacter()
     Bags.Summaries.SeedOwners()
     -- Takeover applies synchronously: a B-press in the deferral window must
-    -- not open (then eat) the Blizzard bags. Apply is 7 hides + 10 global
-    -- writes — login-cost negligible. BankTakeover.Suppress shares the same
+    -- not open (then eat) the Blizzard bags. Apply is 7 hides + 1 global
+    -- write + 5 one-time hooks — login-cost negligible. BankTakeover.Suppress shares the same
     -- race rationale: a Banker interaction in the deferral window must not
     -- show the Blizzard BankFrame. GuildTakeover.Init runs synchronously too:
     -- if Blizzard_GuildBankUI is already loaded (enable-after-visit, /reload

@@ -39,9 +39,10 @@
 --   OnOpened()         GUILDBANKFRAME_OPENED → live; scanner pump FIRST
 --                      (QueryGuildBankTab calls start the server streaming
 --                      the data the window renders), then the guild window,
---                      then auto-open bags via the replaced OpenAllBags
+--                      then auto-open bags via Takeover.OpenForFrame
 --   OnClosed()         GUILDBANKFRAME_CLOSED → not live; scanner session
---                      closed; window notified; CloseAllBags; latch cleared
+--                      closed; window notified; Takeover.CloseForFrame;
+--                      latch cleared
 --   UserClosedWindow() user closed the guild window while live → ask the
 --                      server (CloseGuildBankFrame) ONCE; the `closing`
 --                      latch swallows re-entry (chassis onClose fires on
@@ -50,11 +51,12 @@
 --                      disarm pending (a disabled takeover must not act on
 --                      a later ADDON_LOADED)
 --
--- Opener proxy: the replaced OpenAllBags/CloseAllBags only need GetName()
+-- Opener proxy: Takeover.OpenForFrame/CloseForFrame only need GetName()
 -- from their frame argument (opener tracking + the autoopen "guildBank"
 -- policy key via FRAME_TO_KEY["QUI_GuildBankWindow"]), so a stable
 -- name-carrying proxy is passed instead of the real window frame — no
--- load-order or frame dependency on GuildWindow.
+-- load-order or frame dependency on GuildWindow. The internal calls bypass
+-- the (un-replaced, Blizzard-owned) globals — see bank_takeover.lua.
 --
 -- Taint note: GuildBankFrame is not protected; setting its scripts from
 -- insecure code follows the established detach-once precedent (chat model).
@@ -147,9 +149,9 @@ function GuildTakeover.OnOpened()
     -- cache + fresh data instead of an empty live grid.
     Bags.ScanGuild.OnGuildBankOpened()
     Bags.GuildWindow.ShowLive()
-    -- Replaced global, resolved at call time: opener parity with Blizzard's
-    -- GuildBankFrame session + the autoopen "guildBank" policy key.
-    _G.OpenAllBags(GUILD_OPENER)
+    -- Opener parity with Blizzard's GuildBankFrame session + the autoopen
+    -- "guildBank" policy key.
+    Bags.Takeover.OpenForFrame(GUILD_OPENER)
 end
 
 function GuildTakeover.OnClosed()
@@ -161,7 +163,7 @@ function GuildTakeover.OnClosed()
     live = false
     Bags.ScanGuild.OnGuildBankClosed()
     Bags.GuildWindow.OnBankClosed()
-    _G.CloseAllBags(GUILD_OPENER)
+    Bags.Takeover.CloseForFrame(GUILD_OPENER)
 end
 
 function GuildTakeover.UserClosedWindow()

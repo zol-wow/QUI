@@ -178,8 +178,7 @@ local function ShowPurchasePopup()
     -- re-checks (cost can vanish between render and click).
     local cost = GetGuildBankTabCost()
     if not cost then return end
-    local costText = C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString
-        and C_CurrencyInfo.GetCoinTextureString(cost) or tostring(cost)
+    local costText = GetMoneyString and GetMoneyString(cost, true) or tostring(cost)
     StaticPopupDialogs["QUI_GUILDBANK_BUY_TAB"] = {
         text = "Purchase guild bank tab?\n\n" .. costText,
         button1 = ACCEPT,
@@ -785,8 +784,8 @@ local function RenderFooter()
         return
     end
     local money = GetGuildBankMoney()
-    if C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString then
-        win._guildMoney:SetText(C_CurrencyInfo.GetCoinTextureString(money))
+    if GetMoneyString then
+        win._guildMoney:SetText(GetMoneyString(money, true))
     else
         win._guildMoney:SetText(tostring(money))
     end
@@ -801,8 +800,8 @@ local function RenderFooter()
         local limit = GetGuildBankWithdrawMoney()
         if limit == -1 then
             win._withdrawLimit:SetText("Limit: none")
-        elseif C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString then
-            win._withdrawLimit:SetText("Limit: " .. C_CurrencyInfo.GetCoinTextureString(limit))
+        elseif GetMoneyString then
+            win._withdrawLimit:SetText("Limit: " .. GetMoneyString(limit, true))
         else
             win._withdrawLimit:SetText("Limit: " .. tostring(limit))
         end

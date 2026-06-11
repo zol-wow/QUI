@@ -24,7 +24,7 @@
 -- sellPrice * stackCount, sellPrice = C_Item.GetItemInfo return 11
 -- (ItemDocumentation.lua:611); MayReturnNothing → an uncached item is still
 -- SOLD but skipped from the reported total. Completion prints count +
--- GetCoinTextureString(total). Note: the merchant buyback page holds 12
+-- GetMoneyString(total, true). Note: the merchant buyback page holds 12
 -- items; bulk sells past that are fine (older entries roll off) — sell
 -- anyway, report to chat.
 --
@@ -166,7 +166,7 @@ function Junk.SellJunk(onDone)
         if ok then
             print(("%s Sold %d junk item%s for %s."):format(
                 PREFIX, count, count == 1 and "" or "s",
-                C_CurrencyInfo.GetCoinTextureString(total)))
+                GetMoneyString(total, true)))
         end
         if onDone then onDone(ok, reason) end
     end)

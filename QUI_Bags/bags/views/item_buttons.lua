@@ -12,6 +12,7 @@
 -- luacheck: read globals AutoStoreGuildBankItem PickupGuildBankItem SetItemButtonTexture
 -- luacheck: read globals SetItemButtonCount SetItemButtonDesaturated
 -- luacheck: read globals C_AuctionHouse ItemButtonUtil ItemLocation
+-- luacheck: read globals ContainerFrameItemButtonMixin
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
 local UIKit = ns.UIKit
@@ -60,11 +61,56 @@ function ItemButtons.AddSlotBackground(button)
     button._quiSlotBg = bg
 end
 
+--- Auction-house sell-context match. Stock bags' context list (vendored
+--- ItemUtil.lua GetItemContext) has NO auctioneer entry, so the template
+--- pipeline never fades anything at the AH — QUI adds it: while the auction
+--- house is open, an occupied slot whose item fails
+--- C_AuctionHouse.IsSellItemValid renders the stock Mismatch treatment
+--- (black 0.8 ItemContextOverlay), the same darkening the scrapper/upgrade
+--- UIs get. This MUST live inside the stock pipeline as a per-button
+--- GetItemContextMatchResult override (installed in CreateLive), NOT as a
+--- manual overlay write: the intrinsic's PostOnShow runs
+--- UpdateItemContextMatching after every pooled re-Show (vendored
+--- ItemButtonTemplate.lua:16) and reverts any hand-set overlay state.
+--- → nil when the auction context doesn't apply (defer to stock matching),
+--- else an ItemButtonUtil.ItemContextMatchResult value.
+local function AuctionContextMatchResult(button)
+    if not (AuctionHouseFrame and AuctionHouseFrame:IsShown()) then return nil end
+    -- a real context UI open alongside the AH keeps priority (mirrors stock:
+    -- an active GetItemContext owns the overlay)
+    if ItemButtonUtil.GetItemContext() ~= nil then return nil end
+    local bagID, slot = button:GetBagID(), button:GetID()
+    if not C_Container.GetContainerItemInfo(bagID, slot) then
+        return ItemButtonUtil.ItemContextMatchResult.DoesNotApply -- empty slot
+    end
+    local loc = ItemLocation:CreateFromBagAndSlot(bagID, slot)
+    if not (loc and loc:IsValid()) then
+        return ItemButtonUtil.ItemContextMatchResult.DoesNotApply
+    end
+    return C_AuctionHouse.IsSellItemValid(loc, false)
+        and ItemButtonUtil.ItemContextMatchResult.Match
+        or ItemButtonUtil.ItemContextMatchResult.Mismatch
+end
+
+--- CreateLive installs this over the container mixin's method; every stock
+--- consumer (PostOnShow, the ItemContextChanged callback, QUI's Dress call
+--- to UpdateItemContextMatching) then computes the auction fade natively.
+local function LiveGetItemContextMatchResult(button)
+    local auction = AuctionContextMatchResult(button)
+    if auction ~= nil then return auction end
+    return ContainerFrameItemButtonMixin.GetItemContextMatchResult(button)
+end
+
 --- Create one live button under a holder. NOT pooled across bags (a button's
 --- holder fixes its bagID); pooled per holder by the window.
 function ItemButtons.CreateLive(holder, bagID)
     local button = CreateFrame("ItemButton", nil, holder, "ContainerFrameItemButtonTemplate")
     button:SetBagID(bagID)
+    -- AH sell fade rides the stock context pipeline through this override —
+    -- a plain data method (NOT a secure script handler; the OnClick
+    -- replacement prohibition doesn't apply), consulted by the mixin's
+    -- UpdateItemContextMatching from PostOnShow and context callbacks.
+    button.GetItemContextMatchResult = LiveGetItemContextMatchResult
     -- Blizzard's IconBorder is replaced by the QUI pixel border
     if button.IconBorder then button.IconBorder:SetAlpha(0) end
     -- The template ships BattlepayItemTexture VISIBLE by default — it is the
@@ -342,28 +388,6 @@ function ItemButtons.DressGuildLive(button, tab, slot, entry, searchResult)
     button:SetAlpha(searchResult == false and SEARCH_DIM or 1)
 end
 
---- Auction-house sell-context fade. Stock bags' context list (vendored
---- ItemUtil.lua GetItemContext) has NO auctioneer entry, so the template's
---- own matching never fades anything at the AH — QUI adds it: while the
---- auction house is open, an occupied slot whose item fails
---- C_AuctionHouse.IsSellItemValid reads as "not sellable here", the same
---- darkened treatment the scrapper/upgrade UIs get.
---- → nil when the auction context doesn't apply (caller falls back to the
---- stock matching), else fade boolean (true = darken, false = clear).
-local function AuctionContextFade(button, entry)
-    if not (AuctionHouseFrame and AuctionHouseFrame:IsShown()) then return nil end
-    -- a real context UI open alongside the AH outranks the auction fade
-    -- (mirrors stock priority: an active GetItemContext owns the overlay)
-    if ItemButtonUtil and ItemButtonUtil.GetItemContext
-        and ItemButtonUtil.GetItemContext() ~= nil then
-        return nil
-    end
-    if not entry then return false end -- empty slots never fade
-    local loc = ItemLocation:CreateFromBagAndSlot(button:GetBagID(), button:GetID())
-    if not (loc and loc:IsValid()) then return false end
-    return not C_AuctionHouse.IsSellItemValid(loc, false)
-end
-
 --- Dress a live button from a cache slot entry (nil entry = empty slot).
 --- searchResult: true (match) | false (dim) | nil (no active search).
 --- newGuid: glow-eligible item GUID | nil (bag window live mode passes
@@ -426,29 +450,20 @@ function ItemButtons.Dress(button, entry, searchResult, newGuid)
     -- the corner system owns the junk coin now; the template's stays off
     if button.JunkIcon then button.JunkIcon:Hide() end
     if button.IconQuestTexture then button.IconQuestTexture:Hide() end
-    -- Item-context matching (socketing/upgrade/scrapping UIs): the template
+    -- Item-context matching (socketing/upgrade/scrapping UIs + the QUI
+    -- auction-sell fade via LiveGetItemContextMatchResult): the template
     -- mixin fades non-matching slots on its own via the ItemContextChanged
     -- callback (PostOnShow), but a content change re-dressed by OUR Refresh
     -- bypasses the mixin's SetItem path — re-evaluate here so the overlay
-    -- tracks the slot's CURRENT item while a context UI is open. The
-    -- contextFading toggle suppresses ALL the overlay's paths (stock
-    -- matching and the QUI auction fade alike).
+    -- tracks the slot's CURRENT item while a context applies. The
+    -- contextFading toggle suppresses the overlay via alpha (the mixin's
+    -- own PostOnShow pass keeps SetShown-ing it); re-assert alpha 1 when
+    -- enabled or a toggle off→on would stay invisible until reload.
     if appearance and appearance.contextFading == false then
         if button.ItemContextOverlay then button.ItemContextOverlay:SetAlpha(0) end
     else
-        local auctionFade = AuctionContextFade(button, entry)
-        if auctionFade ~= nil and button.ItemContextOverlay then
-            local overlay = button.ItemContextOverlay
-            if auctionFade then
-                -- stock mismatch dressing (vendored ItemButtonTemplate.lua:
-                -- 101-104); alpha re-asserted in case a contextFading=off
-                -- session previously zeroed it
-                overlay:SetColorTexture(0, 0, 0, 0.8)
-                overlay:SetAllPoints()
-                overlay:SetAlpha(1)
-            end
-            overlay:SetShown(auctionFade)
-        elseif button.UpdateItemContextMatching then
+        if button.ItemContextOverlay then button.ItemContextOverlay:SetAlpha(1) end
+        if button.UpdateItemContextMatching then
             button:UpdateItemContextMatching()
         end
     end

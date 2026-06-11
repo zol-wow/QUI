@@ -891,7 +891,7 @@ local function SetupFrameClickCast(frame)
             if not isEnabled then return end
             local ccdb = GetDB()
             if not ccdb or not ccdb.clickCast or not ccdb.clickCast.showTooltip then return end
-            if #activeBindings == 0 and #keyboardBindings == 0 then return end
+            if #activeBindings == 0 and #keyboardBindings == 0 and #globalKeyBindings == 0 then return end
 
             -- Check if we should show tooltip (avoid conflict with unit tooltip)
             local existingOwner = GameTooltip:GetOwner()
@@ -910,16 +910,20 @@ local function SetupFrameClickCast(frame)
                         0.8, 0.8, 0.8, 1, 1, 1
                     )
                 end
-                for _, binding in ipairs(keyboardBindings) do
-                    local modLabel = MODIFIER_LABELS[binding.modifiers or ""] or ""
-                    local keyLabel = KEY_DISPLAY_NAMES[binding.key] or binding.key or "?"
-                    local at = binding.actionType or "spell"
-                    local spellLabel = PING_LABELS[at] or binding.spell or at or "?"
-                    GameTooltip:AddDoubleLine(
-                        modLabel .. keyLabel,
-                        spellLabel,
-                        0.8, 0.8, 0.8, 1, 1, 1
-                    )
+                -- Keyboard keys live on the global caster (globalKeyBindings);
+                -- keyboardBindings holds only the per-frame scroll-wheel binds.
+                for _, keyTable in ipairs({ globalKeyBindings, keyboardBindings }) do
+                    for _, binding in ipairs(keyTable) do
+                        local modLabel = MODIFIER_LABELS[binding.modifiers or ""] or ""
+                        local keyLabel = KEY_DISPLAY_NAMES[binding.key] or binding.key or "?"
+                        local at = binding.actionType or "spell"
+                        local spellLabel = PING_LABELS[at] or binding.spell or at or "?"
+                        GameTooltip:AddDoubleLine(
+                            modLabel .. keyLabel,
+                            spellLabel,
+                            0.8, 0.8, 0.8, 1, 1, 1
+                        )
+                    end
                 end
                 GameTooltip:Show()
             end

@@ -9,7 +9,8 @@
 --   OnHide -> CloseAllBags(self) AND C_Bank.CloseBankFrame()
 -- which is exactly why the suppression must clear the scripts BEFORE any
 -- Hide (a live OnHide would slam the bank session shut) and why the
--- takeover replicates the OpenAllBags/CloseAllBags calls itself. BankFrame
+-- takeover replicates the open/close calls itself (via the Takeover's
+-- internal OpenForFrame/CloseForFrame, not the Blizzard globals). BankFrame
 -- has NO OnEvent in the live client (PlayerInteractionFrameManager routes
 -- the Banker interaction to BankFrame_Open), so the OnEvent slot here is
 -- nil — the capture/restore must round-trip a nil slot, not just functions.
@@ -50,19 +51,23 @@ _G.CreateFrame = function()
     return holder
 end
 
--- Replaced bag globals: log the GetName() of the opener argument.
 local openLog, closeLog = {}, {}
-_G.OpenAllBags = function(frame)
-    openLog[#openLog + 1] = frame and frame.GetName and frame:GetName() or "<no-name>"
-end
-_G.CloseAllBags = function(frame)
-    closeLog[#closeLog + 1] = frame and frame.GetName and frame:GetName() or "<no-name>"
-end
 
 local closeBankCalls = 0
 _G.C_Bank.CloseBankFrame = function() closeBankCalls = closeBankCalls + 1 end
 
 local ns = loader.LoadAll()
+
+-- Takeover internal open/close API (bank routes through it, NOT the
+-- Blizzard-owned globals): log the GetName() of the opener argument.
+ns.Bags.Takeover = {
+    OpenForFrame = function(frame)
+        openLog[#openLog + 1] = frame and frame.GetName and frame:GetName() or "<no-name>"
+    end,
+    CloseForFrame = function(frame)
+        closeLog[#closeLog + 1] = frame and frame.GetName and frame:GetName() or "<no-name>"
+    end,
+}
 
 local windowLog = {}
 ns.Bags.BankWindow = {
@@ -104,14 +109,14 @@ BankTakeover.OnBankOpened()
 assert(BankTakeover.IsLive() == true, "OPENED must set live")
 assert(windowLog[#windowLog] == "showlive", "OPENED must call BankWindow.ShowLive")
 assert(#openLog == 1 and openLog[1] == "QUI_BankWindow",
-    "OpenAllBags must receive a QUI_BankWindow-named opener (policy key + opener tracking)")
+    "OpenForFrame must receive a QUI_BankWindow-named opener (policy key + opener tracking)")
 
 -- Test 3: BANKFRAME_CLOSED (server-driven) -> window notified + CloseAllBags
 BankTakeover.OnBankClosed()
 assert(BankTakeover.IsLive() == false, "CLOSED must clear live")
 assert(windowLog[#windowLog] == "onbankclosed", "CLOSED must call BankWindow.OnBankClosed")
 assert(#closeLog == 1 and closeLog[1] == "QUI_BankWindow",
-    "CloseAllBags must receive the QUI_BankWindow-named opener")
+    "CloseForFrame must receive the QUI_BankWindow-named opener")
 assert(closeBankCalls == 0, "a server-driven close must NOT call C_Bank.CloseBankFrame")
 
 -- Test 4: user-close while live -> CloseBankFrame EXACTLY once; the echoed

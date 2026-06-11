@@ -18,20 +18,22 @@
 -- Session state machine:
 --   Suppress()         login/enable: detach BankFrame once (idempotent)
 --   OnBankOpened()     BANKFRAME_OPENED → live; BankWindow.ShowLive();
---                      auto-open bags via the replaced OpenAllBags global
+--                      auto-open bags via Takeover.OpenForFrame
 --   OnBankClosed()     BANKFRAME_CLOSED → not live; notify the window;
---                      CloseAllBags; clears the closing latch
+--                      Takeover.CloseForFrame; clears the closing latch
 --   UserClosedWindow() the user closed the bank window while live → ask the
 --                      server (C_Bank.CloseBankFrame) ONCE; the `closing`
 --                      latch swallows re-entry (chassis onClose fires on ANY
 --                      hide) until the echoed BANKFRAME_CLOSED lands
 --   Revert()           disable: defensively Hide, restore scripts + parent
 --
--- Opener proxy: the replaced OpenAllBags/CloseAllBags only need GetName()
+-- Opener proxy: Takeover.OpenForFrame/CloseForFrame only need GetName()
 -- from their frame argument (opener tracking + the autoopen "bank" policy
 -- key via FRAME_TO_KEY["QUI_BankWindow"]), so a stable name-carrying proxy
 -- is passed instead of the real window frame — no load-order or frame
--- dependency on BankWindow.
+-- dependency on BankWindow. The internal calls deliberately bypass the
+-- (un-replaced, Blizzard-owned) globals: routing through _G would open the
+-- hidden Blizzard container frames for no benefit.
 --
 -- Taint note: BankFrame is not protected; setting its scripts from insecure
 -- code follows the established detach-once precedent (chat model).
@@ -92,16 +94,16 @@ end
 function BankTakeover.OnBankOpened()
     live = true
     Bags.BankWindow.ShowLive()
-    -- Replaced global, resolved at call time: opener parity with Blizzard's
-    -- BankFrame OnShow + the autoopen "bank" policy key.
-    _G.OpenAllBags(BANK_OPENER)
+    -- Opener parity with Blizzard's BankFrame OnShow + the autoopen "bank"
+    -- policy key.
+    Bags.Takeover.OpenForFrame(BANK_OPENER)
 end
 
 function BankTakeover.OnBankClosed()
     closing = false -- our echo landed (or the close was server-driven)
     live = false
     Bags.BankWindow.OnBankClosed()
-    _G.CloseAllBags(BANK_OPENER)
+    Bags.Takeover.CloseForFrame(BANK_OPENER)
 end
 
 function BankTakeover.UserClosedWindow()

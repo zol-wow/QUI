@@ -1067,10 +1067,9 @@ Datatexts:Register("gold", {
             GameTooltip:AddLine(" ")
 
             local money = GetMoney() or 0
-            local gold = floor(money / 10000)
             local silver = floor((money % 10000) / 100)
             local copper = money % 100
-            GameTooltip:AddDoubleLine("Current:", string.format("%dg %ds %dc", gold, silver, copper), 0.8, 0.8, 0.8, 1, 1, 1)
+            GameTooltip:AddDoubleLine("Current:", string.format("%s %ds %dc", FormatGold(money), silver, copper), 0.8, 0.8, 0.8, 1, 1, 1)
 
             -- Show all characters' gold from global storage
             local db = QUICore and QUICore.db
@@ -2793,21 +2792,30 @@ Datatexts:Register("currencies", {
         end
 
         local function Update()
-            -- Determine how many currencies to show based on slot width
-            local slotWidth = slotFrame:GetWidth() or 0
+            -- How many currencies to show. On a content-sized host (Info
+            -- Bar slots grow to fit their text; marked by _quiOnWidthDirty,
+            -- which fixed-width datapanel slots explicitly nil) the width
+            -- ladder would read our own current width and lock at 1 —
+            -- show every enabled currency there instead (the configured
+            -- cap is 6). Fixed-width panels keep the adaptive ladder.
             local maxToShow
-            if slotWidth <= 0 or slotWidth < 80 then
-                maxToShow = 1      -- Compact: 1 currency (also handles 0/nil)
-            elseif slotWidth < 120 then
-                maxToShow = 2      -- Medium: 2 currencies
-            elseif slotWidth < 165 then
-                maxToShow = 3
-            elseif slotWidth < 210 then
-                maxToShow = 4
-            elseif slotWidth < 255 then
-                maxToShow = 5
-            else
+            if slotFrame._quiOnWidthDirty then
                 maxToShow = 6
+            else
+                local slotWidth = slotFrame:GetWidth() or 0
+                if slotWidth <= 0 or slotWidth < 80 then
+                    maxToShow = 1      -- Compact: 1 currency (also handles 0/nil)
+                elseif slotWidth < 120 then
+                    maxToShow = 2      -- Medium: 2 currencies
+                elseif slotWidth < 165 then
+                    maxToShow = 3
+                elseif slotWidth < 210 then
+                    maxToShow = 4
+                elseif slotWidth < 255 then
+                    maxToShow = 5
+                else
+                    maxToShow = 6
+                end
             end
 
             local displayString = ""
@@ -2832,6 +2840,9 @@ Datatexts:Register("currencies", {
                 local r, g, b = GetValueColor()
                 text:SetFormattedText("|cff%02x%02x%02x%s|r", r, g, b, "No Currencies")
             end
+            -- Content-sized host: tell the bar our width changed (the
+            -- provider pattern — ldb_bridge/providers_extra do the same).
+            if slotFrame._quiOnWidthDirty then slotFrame._quiOnWidthDirty() end
         end
 
         frame.Update = Update
@@ -2871,7 +2882,7 @@ Datatexts:Register("currencies", {
             local gold = floor(money / 10000)
             local silver = floor((money % 10000) / 100)
             local copper = money % 100
-            GameTooltip:AddDoubleLine(goldIcon .. " Gold", format("%dg %ds %dc", gold, silver, copper), 1, 0.82, 0, 1, 1, 1)
+            GameTooltip:AddDoubleLine(goldIcon .. " Gold", format("%sg %ds %dc", BreakUpLargeNumbers and BreakUpLargeNumbers(gold) or gold, silver, copper), 1, 0.82, 0, 1, 1, 1)
 
             -- All backpack currencies in configured order
             local orderedCurrencies = GetOrderedCurrencies()

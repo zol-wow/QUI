@@ -29,6 +29,7 @@ end
 ProviderPanels:RegisterAfterLoad(function(ctx)
     local GUI = ctx.GUI
     local U = ctx.U
+    local NotifyProviderFor = ctx.NotifyProviderFor
     local PAD = (ns.QUI_Options and ns.QUI_Options.PADDING) or 15
     local HEADER_GAP = 26
     local SECTION_GAP = 14
@@ -144,16 +145,36 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         return opts
     end
 
-    local function BuildCurrencyOptions(cfg)
-        local ids = {}
-        for id in pairs((cfg and cfg.currencies) or {}) do ids[#ids + 1] = id end
-        table.sort(ids)
-        local opts = {}
-        for _, id in ipairs(ids) do
-            opts[#opts + 1] = { value = id, text = CurrencyLabel(id) }
+    -- Currency bar config uses the shared currency-section model
+    -- (currencyOrder array + currencyEnabled map, STRING ids — the same
+    -- shape the datatext/Info Bar Currencies section edits). One-time
+    -- migration folds the legacy [id]=true set in as enabled rows; the
+    -- lists are authoritative afterwards (currency_bar.lua renders
+    -- order ∩ enabled).
+    local function EnsureCurrencyBarLists(cfg)
+        if type(cfg.currencyOrder) ~= "table" then cfg.currencyOrder = {} end
+        if type(cfg.currencyEnabled) ~= "table" then cfg.currencyEnabled = {} end
+        if type(cfg.currencies) == "table" then
+            local legacy = {}
+            for id in pairs(cfg.currencies) do legacy[#legacy + 1] = id end
+            table.sort(legacy)
+            local inOrder = {}
+            for _, sid in ipairs(cfg.currencyOrder) do inOrder[tostring(sid)] = true end
+            for _, id in ipairs(legacy) do
+                local sid = tostring(id)
+                if not inOrder[sid] then
+                    cfg.currencyOrder[#cfg.currencyOrder + 1] = sid
+                end
+                cfg.currencyEnabled[sid] = true
+            end
+            cfg.currencies = nil
         end
-        return opts
     end
+
+    -- (The section's row pool is the Blizzard backpack-tracked list — the
+    -- shared builder's default, the same pool the Info Bar/datatext pages
+    -- list. Legacy configured-but-untracked IDs survive in currencyEnabled
+    -- but only get a row/render while tracked.)
 
     local function BuildCharacterOptions()
         local Store = ns.Bags and ns.Bags.Store
@@ -195,7 +216,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         if not behavior.junk.exclusions then behavior.junk.exclusions = {} end
         if not behavior.newItemGlow then behavior.newItemGlow = {} end
         if not bags.currencyBar then bags.currencyBar = {} end
-        if not bags.currencyBar.currencies then bags.currencyBar.currencies = {} end
+        -- (currencyOrder/currencyEnabled are ensured by EnsureCurrencyBarLists
+        -- at the Currency Bar section below; the legacy `currencies` set is
+        -- migrated there and must NOT be re-created here.)
 
         local function Refresh() if _G.QUI_RefreshBags then _G.QUI_RefreshBags() end end
 
@@ -501,55 +524,37 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local s5 = L.sectionAt()
         local cbar = bags.currencyBar
         local cbarEnableW = GUI:CreateFormCheckbox(s5.frame, nil, "enabled", cbar, Refresh,
-            { description = "Show a footer row on the bag window with the currencies listed below." })
+            { description = "Show a footer row on the bag window with the currencies enabled below." })
         s5.AddRow(row(s5.frame, "Enable Currency Bar", cbarEnableW))
-
-        local currencyWrapper = { selected = "" }
-        local currencyDropdown
-        currencyDropdown = GUI:CreateFormDropdown(s5.frame, nil, BuildCurrencyOptions(cbar), "selected", currencyWrapper, function(value)
-            if not value or value == "" then return end
-            cbar.currencies[value] = nil
-            print("|cff60A5FAQUI:|r Removed currency: " .. CurrencyLabel(value))
-            currencyWrapper.selected = ""
-            if currencyDropdown.SetOptions then currencyDropdown.SetOptions(BuildCurrencyOptions(cbar)) end
-            if currencyDropdown.SetValue then currencyDropdown.SetValue("", true) end
-            Refresh()
-        end, { description = "Currencies shown on the bar. Selecting one removes it." })
-
-        -- Add-by-ID cell: BuildSettingRow supplies the label/pin/search
-        -- capture; the bare editbox is re-anchored to make room for an inline
-        -- Add button (profiles_content New Profile idiom).
-        local addInput = GUI:CreateFormEditBox(s5.frame, nil, nil, nil, nil, {
-            commitOnEnter = false, commitOnFocusLost = false,
-            onEscapePressed = function(self) self:ClearFocus() end,
-        }, { description = "Numeric currency ID to add to the bar (find IDs on database sites or the currency tab). Click Add to validate and append it." })
-        local addCell = row(s5.frame, "Add Currency by ID", addInput)
-        local addBtn = GUI:CreateButton(addCell, "Add", 70, 22, function()
-            local text = addInput.editBox and addInput.editBox:GetText()
-            local id = tonumber(text)
-            if not id or id <= 0 or id % 1 ~= 0 then
-                print("|cffff0000QUI:|r Enter a numeric currency ID.")
-                return
-            end
-            local info = C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo
-                and C_CurrencyInfo.GetCurrencyInfo(id)
-            if not info then
-                print("|cffff0000QUI:|r Unknown currency ID: " .. id)
-                return
-            end
-            cbar.currencies[id] = true
-            if addInput.editBox then addInput.editBox:SetText("") end
-            print("|cff60A5FAQUI:|r Added currency: " .. CurrencyLabel(id))
-            if currencyDropdown.SetOptions then currencyDropdown.SetOptions(BuildCurrencyOptions(cbar)) end
-            Refresh()
-        end)
-        addBtn:SetPoint("RIGHT", addCell, "RIGHT", 0, 0)
-        addInput:ClearAllPoints()
-        addInput:SetPoint("LEFT", addCell, "LEFT", 84, 0)
-        addInput:SetPoint("RIGHT", addBtn, "LEFT", -8, 0)
-
-        s5.AddRow(addCell, row(s5.frame, "Remove Currency", currencyDropdown))
         L.closeSection(s5)
+
+        -- Currency list: the shared toggle+reorder section — the same view
+        -- AND the same Blizzard backpack-tracked pool as the Info Bar/
+        -- datatext Currencies settings; only the edited config differs
+        -- (bags.currencyBar). The builder is exported by the QUI_Datatexts
+        -- settings page — guarded because QUI_Bags does not depend on that
+        -- module addon.
+        if ns.QUI_BuildCurrencyOrderSection then
+            EnsureCurrencyBarLists(cbar)
+            ns.QUI_BuildCurrencyOrderSection(L, content, {
+                dtGlobal = cbar,
+                header = "Currencies",
+                hint = "Enabled currencies show on the bag window's bar, in this order.",
+                toggleDescription = "Show this currency on the bag window's currency bar. Use the arrows to reorder.",
+                note = "Lists your backpack-tracked currencies — the same pool as the Currencies datatext.",
+                refresh = Refresh,
+                notify = function(region)
+                    if NotifyProviderFor then NotifyProviderFor(region, { structural = true }) end
+                end,
+            })
+        else
+            local noteRow = CreateFrame("Frame", nil, content)
+            local note = noteRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            note:SetPoint("LEFT", noteRow, "LEFT", 0, 0)
+            note:SetTextColor(1, 0.6, 0.1, 1)
+            note:SetText("Enable the Datatexts module addon (Modules page) to configure the currency list.")
+            L.placeCustom(noteRow, 18)
+        end
 
         -- CACHED DATA
         L.headerAt("Cached Data")

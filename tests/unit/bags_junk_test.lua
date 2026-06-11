@@ -6,7 +6,7 @@
 -- MerchantChanged bus publish on OnMerchant.
 -- WoW surface stubs: C_Timer (capture/fire), C_Container (live bags +
 -- junk-sell flags), C_Item.GetItemInfo (sellPrice = position 11),
--- C_CurrencyInfo.GetCoinTextureString, C_Container.UseContainerItem capture.
+-- GetMoneyString, C_Container.UseContainerItem capture.
 
 ---------------------------------------------------------------------------
 -- Mutable test state
@@ -107,9 +107,7 @@ _G.C_Item = {
     end,
 }
 
-_G.C_CurrencyInfo = {
-    GetCoinTextureString = function(copper) return "<" .. tostring(copper) .. "c>" end,
-}
+_G.GetMoneyString = function(copper, _separateThousands) return "<" .. tostring(copper) .. "c>" end
 
 reset()
 
@@ -305,7 +303,7 @@ do
     assert(#printed == 1, "exactly one summary print expected, got " .. #printed)
     assert(printed[1]:find("2", 1, true), "summary must contain the item count: " .. printed[1])
     assert(printed[1]:find("<37c>", 1, true),
-        "summary must contain GetCoinTextureString(37), got: " .. printed[1])
+        "summary must contain GetMoneyString(37), got: " .. printed[1])
     Junk.OnMerchant(false)
 end
 

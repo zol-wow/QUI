@@ -80,6 +80,17 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         return ns.QUI_Options.BuildSettingRow(parent, label, widget, desc)
     end
 
+    -- Hover tooltip for a CUSTOM-PLACED bare dropdown (no BuildSettingRow to
+    -- carry it): the widget's mouse-enabled dropdown Button swallows
+    -- enter/leave over almost the whole footprint, so hook the button AND
+    -- the container (AttachTooltip HookScripts, so the button's own hover
+    -- visual keeps working).
+    local function AttachDropdownTooltip(dd, description, title)
+        if not GUI.AttachTooltip then return end
+        GUI:AttachTooltip(dd, description, title)
+        if dd.dropdown then GUI:AttachTooltip(dd.dropdown, description, title) end
+    end
+
     ---------------------------------------------------------------------------
     -- INFO BAR HELPERS
     ---------------------------------------------------------------------------
@@ -464,8 +475,11 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 zoneList[#zoneList + 1] = val
                 RefreshInfoBar()
                 NotifyStructuralRefresh()
-            end, { description = "Add a widget to the end of this zone. Widgets already placed in any zone are not listed.",
-                   searchable = true })
+            end, { description = "Add a widget to the end of this zone. Widgets already placed in any zone are not listed." },
+                { searchable = true })
+            AttachDropdownTooltip(addDD,
+                "Add a widget to the end of this zone. Widgets already placed in any zone are not listed.",
+                "Add Widget")
             addDD:SetPoint("TOPLEFT", zoneFrame, "TOPLEFT", 0, ry - 4)
             addDD:SetPoint("RIGHT", zoneFrame, "RIGHT", -4, 0)
             if addDD.SetValue then addDD:SetValue("", true) end
@@ -502,7 +516,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 if not val or val == InfoBarPageState.selectedWidget then return end
                 InfoBarPageState.selectedWidget = val
                 NotifyStructuralRefresh()
-            end, { description = "Pick which placed widget the overrides below apply to.", searchable = true })
+            end, { description = "Pick which placed widget the overrides below apply to." }, { searchable = true })
+            AttachDropdownTooltip(selDD, "Pick which placed widget the overrides below apply to.", "Widget")
             if selDD.SetValue then selDD:SetValue(selected, true) end
             ov.AddRow(row(ov.frame, "Widget", selDD))
 
@@ -534,6 +549,27 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             note:SetTextColor(0.6, 0.6, 0.6, 0.8)
             note:SetText("Place a widget in a zone to configure per-widget overrides.")
             L.placeCustom(noteRow, 18)
+        end
+
+        -- CURRENCIES (conditional; section body exported by the datatexts
+        -- settings page, which always loads first — QUI_InfoBar hard-depends
+        -- on QUI_Datatexts. currencyOrder/currencyEnabled live in
+        -- profile.datatext and the currencies widget reads them at render
+        -- time wherever it's hosted, so this edits the same config the
+        -- datatext panel page does.)
+        if placedSet["currencies"] and ns.QUI_BuildCurrencyOrderSection then
+            if not profile.datatext then profile.datatext = {} end
+            ns.QUI_BuildCurrencyOrderSection(L, content, {
+                dtGlobal = profile.datatext,
+                refresh = function()
+                    RefreshInfoBar()
+                    if QUICore and QUICore.Datatexts and QUICore.Datatexts.UpdateAll then
+                        QUICore.Datatexts:UpdateAll()
+                    end
+                end,
+                notify = function(_region) NotifyStructuralRefresh() end,
+                note = "Order and visibility apply everywhere the Currencies datatext is shown, including datatext panels.",
+            })
         end
 
         -- MICRO MENU
