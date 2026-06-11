@@ -173,6 +173,14 @@ assert(sessionLog[3] == "openallbags", "bags auto-open last")
 assert(#openLog == 1 and openLog[1] == "QUI_GuildBankWindow",
     "OpenAllBags must receive a QUI_GuildBankWindow-named opener (policy key + opener tracking)")
 
+-- Test 3b: OnOpened is LATCHED — the session open now has two triggers
+-- (PLAYER_INTERACTION_MANAGER_FRAME_SHOW GuildBanker routing, the retail
+-- path, plus legacy GUILDBANKFRAME_OPENED kept as a redundant trigger), so
+-- a build where both fire must not double-pump/double-show.
+GuildTakeover.OnOpened()
+assert(#sessionLog == 3, "a second OnOpened while live must be a no-op (latch)")
+assert(#openLog == 1, "a second OnOpened while live must not re-OpenAllBags")
+
 -- Test 4: GUILDBANKFRAME_CLOSED (server-driven) -> live cleared; scanner
 -- session closed; window notified; CloseAllBags with the proxy; the server
 -- already closed, so CloseGuildBankFrame must NOT be called.
@@ -185,6 +193,12 @@ assert(sessionLog[3] == "closeallbags", "CLOSED must close the auto-opened bags"
 assert(#closeLog == 1 and closeLog[1] == "QUI_GuildBankWindow",
     "CloseAllBags must receive the QUI_GuildBankWindow-named opener")
 assert(closeGuildBankCalls == 0, "a server-driven close must NOT call CloseGuildBankFrame")
+-- Test 4b: OnClosed is latched on live too (CLOSED + interaction HIDE can
+-- both arrive): a close while not live must not re-run the close chain.
+sessionLog = {}
+GuildTakeover.OnClosed()
+assert(#sessionLog == 0, "OnClosed while not live must be a no-op (latch)")
+assert(#closeLog == 1, "OnClosed while not live must not re-CloseAllBags")
 
 -- Test 5: user-close while live -> CloseGuildBankFrame EXACTLY once; the
 -- chassis onClose fires on ANY hide, so a re-entrant call must be swallowed

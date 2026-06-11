@@ -234,12 +234,31 @@ local function BuildSecureWidgets(frame, slotFrame, size)
     BuildFlyout(frame, slotFrame)
 
     hearth:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        -- Flyout first: the tooltip anchor depends on whether it shows
+        -- (and the dirty path can rebuild frame._flyout — re-read after).
+        ShowFlyout(frame)
+        local flyout = frame._flyout
+        if flyout and flyout:IsShown() then
+            -- At ANCHOR_BOTTOM the tooltip covers the flyout's top rows
+            -- (both hang off the slot's bottom edge). Stack it past the
+            -- flyout's far edge instead — button → portal list → tooltip —
+            -- mirroring the flyout's own above/below edge choice. Anchoring
+            -- the insecure tooltip TO the protected flyout is taint-safe
+            -- (only repositioning protected frames is not).
+            GameTooltip:SetOwner(self, "ANCHOR_NONE")
+            local db = GetTravelDB()
+            if db and db.position == "BOTTOM" then
+                GameTooltip:SetPoint("BOTTOMLEFT", flyout, "TOPLEFT", 0, 2)
+            else
+                GameTooltip:SetPoint("TOPLEFT", flyout, "BOTTOMLEFT", 0, -2)
+            end
+        else
+            GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        end
         GameTooltip:ClearLines()
         GameTooltip:AddLine(displayName, 1, 1, 1)
         GameTooltip:AddLine("Hover for dungeon teleports", 0.6, 0.6, 0.6)
         GameTooltip:Show()
-        ShowFlyout(frame)
     end)
     hearth:SetScript("OnLeave", function()
         GameTooltip:Hide()

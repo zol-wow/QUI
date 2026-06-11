@@ -1,7 +1,11 @@
 ---------------------------------------------------------------------------
 -- Bags guild-bank takeover: suppresses Blizzard's GuildBankFrame and owns
--- the guild-bank session (GUILDBANKFRAME_OPENED/CLOSED routing to the
--- scanner + the QUI guild window).
+-- the guild-bank session. The session open/close triggers are the
+-- GuildBanker PLAYER_INTERACTION_MANAGER_FRAME_SHOW/HIDE events (the retail
+-- path — GUILDBANKFRAME_OPENED/CLOSED have no mainline FrameXML consumer
+-- and do not fire at the vault; only classic-era UIParent uses them), with
+-- the legacy events kept as redundant latched triggers. Both route to the
+-- scanner + the QUI guild window via OnOpened/OnClosed.
 --
 -- Clones bank_takeover's suppression model (clear scripts, Hide, reparent
 -- to a hidden holder) with one structural addition: Blizzard_GuildBankUI is
@@ -131,6 +135,12 @@ function GuildTakeover.SuppressNow()
 end
 
 function GuildTakeover.OnOpened()
+    -- Latched: the session open has TWO triggers — the GuildBanker
+    -- interaction SHOW (the retail path; GUILDBANKFRAME_OPENED has no
+    -- mainline consumer and was observed NOT to fire at the vault) plus the
+    -- legacy event kept as a redundant trigger — so a build where both fire
+    -- must not double-pump the scanner or double-open.
+    if live then return end
     live = true
     -- Pump FIRST: OnGuildBankOpened's QueryGuildBankTab loop starts the
     -- server streaming GUILDBANKBAGSLOTS_CHANGED — the window then renders
@@ -143,6 +153,10 @@ function GuildTakeover.OnOpened()
 end
 
 function GuildTakeover.OnClosed()
+    -- Same dual-trigger latch as OnOpened (CLOSED + interaction HIDE):
+    -- `closing` is only ever set while live, so a not-live close has
+    -- nothing to do.
+    if not live then return end
     closing = false -- our echo landed (or the close was server-driven)
     live = false
     Bags.ScanGuild.OnGuildBankClosed()

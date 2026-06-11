@@ -246,11 +246,28 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         -- unit harnesses load partial module sets.
         if arg1 == Enum.PlayerInteractionType.Merchant and Bags.Junk then
             Bags.Junk.OnMerchant(true)
+        elseif arg1 == Enum.PlayerInteractionType.GuildBanker
+            and Bags.GuildTakeover then
+            -- The RETAIL guild-bank session trigger: GUILDBANKFRAME_OPENED
+            -- has no mainline FrameXML consumer (only the classic-era
+            -- UIParent registers it) and does not fire at the vault — the
+            -- interaction manager event is what drives Blizzard's own
+            -- GuildBankFrame. Blizzard's manager handles this same event
+            -- first (registered at UI load, before this frame), so the LoD
+            -- addon is loaded and the takeover suppression has landed by
+            -- the time OnOpened runs. OnOpened is latched: harmless if a
+            -- build fires the legacy event too.
+            Bags.GuildTakeover.OnOpened()
         end
     elseif event == "PLAYER_INTERACTION_MANAGER_FRAME_HIDE" then
         Bags.AutoOpen.OnInteraction(arg1, false)
         if arg1 == Enum.PlayerInteractionType.Merchant and Bags.Junk then
             Bags.Junk.OnMerchant(false)
+        elseif arg1 == Enum.PlayerInteractionType.GuildBanker
+            and Bags.GuildTakeover then
+            -- Session end mirror (walk-away or our CloseGuildBankFrame
+            -- echo); latched like OnOpened.
+            Bags.GuildTakeover.OnClosed()
         end
     elseif event == "ITEM_LOCK_CHANGED" or event == "BAG_UPDATE_COOLDOWN"
         or event == "EQUIPMENT_SETS_CHANGED" then

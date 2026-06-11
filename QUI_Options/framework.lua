@@ -5651,7 +5651,7 @@ function GUI:CreateMainFrame()
     ---------------------------------------------------------------------------
     local footer = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     footer:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMRIGHT", 1, 0)
-    footer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    footer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 10)
     footer:SetHeight(36)
 
     local footerBg = footer:CreateTexture(nil, "BACKGROUND")
@@ -5719,7 +5719,7 @@ function GUI:CreateMainFrame()
     ---------------------------------------------------------------------------
     local contentArea = CreateFrame("Frame", nil, frame)
     contentArea:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", 5, 0)
-    contentArea:SetPoint("BOTTOMRIGHT", -10, 36)
+    contentArea:SetPoint("BOTTOMRIGHT", -10, 46)  -- footer top: 10px margin + 36px bar
     contentArea:EnableMouse(false)
 
     -- Content background

@@ -14,3 +14,4 @@ infobar\infobar.lua
 infobar\micromenu.lua
 infobar\travel.lua
 infobar\specswap.lua
+infobar\contextmenu.lua

@@ -482,6 +482,10 @@ local function CreateTabButton()
         end
         activeBankType = entry.bankType or activeBankType
         SetSelectedBagID(entry.bagID)
+        -- leaving the All grid: drop the hover highlight (OnLeave won't
+        -- fire while the cursor stays on the tab, and the single-tab view
+        -- doesn't use it)
+        ApplyTabHover(nil)
         BankWindow.Refresh()
     end)
     btn:SetScript("OnEnter", function(self)
@@ -497,9 +501,11 @@ local function CreateTabButton()
             end
             GameTooltip:Show()
         end
-        -- membership highlight: light up this tab's slots (the unified All
-        -- grid is where it matters — shows which slots the tab owns)
-        if entry and not entry.purchase and not entry.all then
+        -- membership highlight: light up this tab's slots. Only meaningful
+        -- on the unified All grid — a single open tab already shows just
+        -- its own slots, so highlighting there is noise.
+        if entry and not entry.purchase and not entry.all
+            and GetSelectedBagID() == "all" then
             ApplyTabHover(entry.bagID)
         end
     end)
@@ -542,6 +548,7 @@ local function CreateFooterButton(label, onClick, tooltip)
     btn._label:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
     btn._label:SetText(label)
     btn:SetSize(math.max(40, math.ceil(btn._label:GetStringWidth()) + 12), 18)
+    UIKit.CreateBorderLines(btn)
     btn:SetScript("OnClick", onClick)
     if tooltip then
         btn:SetScript("OnEnter", function(self)
@@ -835,6 +842,14 @@ local function PlaceGridButton(bagID, slot, entry, x, y, snappedSize)
     btn:Show()
 end
 
+-- Footer row metrics: 18px buttons with 2px top/bottom breathing room and
+-- a 4px row gap make each row exactly 22px — one row reproduces the
+-- chassis default FOOTER_H, so wide windows look unchanged.
+local FOOTER_PAD_X = 8
+local FOOTER_PAD_Y = 2
+local FOOTER_GAP = 4
+local FOOTER_ROW_H = 18
+
 local function RenderFooter()
     if not liveMode then
         win._bankMoney:Hide()
@@ -843,6 +858,7 @@ local function RenderFooter()
         win._autoBtn:Hide()
         win._depositAllBtn:Hide()
         win._depositReagentsBtn:Hide()
+        win:SetFooterHeight(FOOTER_ROW_H + FOOTER_PAD_Y * 2)
         return
     end
     local bankType = SelectedBankType()
@@ -854,29 +870,71 @@ local function RenderFooter()
         win._bankMoney:SetText(tostring(money))
     end
     win._bankMoney:Show()
-    -- Dynamic chain: each visible button anchors to the previous visible
-    -- one, so hidden buttons (gold pair on a moneyless bank type, warband-
-    -- only actions on the character bank) leave no gap.
-    local prev = nil
-    local function chain(btn, show)
+
+    -- Visibility gates: hidden buttons (gold pair on a moneyless bank
+    -- type, warband-only actions on the character bank) leave no gap.
+    local sr, sg, sb = Helpers.GetSkinColors()
+    local shown = {}
+    local function gate(btn, show)
         if show then
-            btn:ClearAllPoints()
-            if prev then
-                btn:SetPoint("LEFT", prev, "RIGHT", 4, 0)
-            else
-                btn:SetPoint("LEFT", 8, 0)
-            end
+            UIKit.UpdateBorderLines(btn, 1, sr, sg, sb, 0.35)
             btn:Show()
-            prev = btn
+            shown[#shown + 1] = btn
         else
             btn:Hide()
         end
     end
-    chain(win._depositBtn, C_Bank.CanDepositMoney(bankType) and true or false)
-    chain(win._withdrawBtn, C_Bank.CanWithdrawMoney(bankType) and true or false)
-    chain(win._autoBtn, C_Bank.DoesBankTypeSupportAutoDeposit(bankType) and true or false)
-    chain(win._depositAllBtn, bankType == Enum.BankType.Account)
-    chain(win._depositReagentsBtn, true)
+    gate(win._depositBtn, C_Bank.CanDepositMoney(bankType) and true or false)
+    gate(win._withdrawBtn, C_Bank.CanWithdrawMoney(bankType) and true or false)
+    gate(win._autoBtn, C_Bank.DoesBankTypeSupportAutoDeposit(bankType) and true or false)
+    gate(win._depositAllBtn, bankType == Enum.BankType.Account)
+    gate(win._depositReagentsBtn, true)
+
+    -- Row-wrap layout: buttons flow left-to-right and wrap to a new row
+    -- when the window is too narrow, instead of running under the gold
+    -- text. The gold text rides the right edge of the last button row when
+    -- it fits beside those buttons, otherwise it gets its own row.
+    local availW = win:GetWidth() - FOOTER_PAD_X * 2
+    local moneyW = win._bankMoney:GetStringWidth() or 0
+    local rows = { {} } -- rows of buttons; parallel rowW tracks used width
+    local rowW = { 0 }
+    for _, btn in ipairs(shown) do
+        local w = btn:GetWidth()
+        local r = #rows
+        local need = rowW[r] > 0 and (rowW[r] + FOOTER_GAP + w) or w
+        if rowW[r] > 0 and need > availW then
+            r = r + 1
+            rows[r], rowW[r] = {}, 0
+            need = w
+        end
+        rows[r][#rows[r] + 1] = btn
+        rowW[r] = need
+    end
+    local moneyRow = #rows
+    if rowW[moneyRow] > 0 and rowW[moneyRow] + FOOTER_GAP + moneyW > availW then
+        moneyRow = moneyRow + 1
+    end
+    local totalRows = math.max(moneyRow, #rows)
+
+    local rowStride = FOOTER_ROW_H + FOOTER_GAP
+    for r, rowBtns in ipairs(rows) do
+        local x = FOOTER_PAD_X
+        local rowTop = FOOTER_PAD_Y + (r - 1) * rowStride
+        for _, btn in ipairs(rowBtns) do
+            btn:ClearAllPoints()
+            btn:SetPoint("TOPLEFT", win._footer, "TOPLEFT", x, -rowTop)
+            x = x + btn:GetWidth() + FOOTER_GAP
+        end
+    end
+    local footerH = FOOTER_PAD_Y * 2 + totalRows * FOOTER_ROW_H
+        + (totalRows - 1) * FOOTER_GAP
+    -- center the gold text in its row (offset measured from footer center
+    -- so the single-row case keeps the original RIGHT/-8 anchor exactly)
+    local moneyCenter = FOOTER_PAD_Y + (moneyRow - 1) * rowStride + FOOTER_ROW_H / 2
+    win._bankMoney:ClearAllPoints()
+    win._bankMoney:SetPoint("RIGHT", win._footer, "RIGHT", -FOOTER_PAD_X,
+        footerH / 2 - moneyCenter)
+    win:SetFooterHeight(footerH)
 end
 
 function BankWindow.Refresh()

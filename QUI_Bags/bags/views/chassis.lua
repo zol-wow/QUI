@@ -253,11 +253,14 @@ function Chassis.CreateWindow(opts)
     body:SetPoint("BOTTOMRIGHT", -PAD, FOOTER_H)
     win._body = body
 
-    -- footer (money / free slots text, owner-populated)
+    -- footer (money / free slots text, owner-populated). Height is
+    -- dynamic: owners that wrap footer controls into extra rows on narrow
+    -- windows grow it via SetFooterHeight below.
+    local footerH = FOOTER_H
     local footer = CreateFrame("Frame", nil, win)
     footer:SetPoint("BOTTOMLEFT", 0, 0)
     footer:SetPoint("BOTTOMRIGHT", 0, 0)
-    footer:SetHeight(FOOTER_H)
+    footer:SetHeight(footerH)
     win._footer = footer
 
     win:SetScript("OnHide", function()
@@ -272,7 +275,20 @@ function Chassis.CreateWindow(opts)
 
     --- size the window so the body content area is contentW x contentH
     function win:SetContentSize(contentW, contentH)
-        self:SetSize(contentW + PAD * 2, contentH + HEADER_H + FOOTER_H)
+        self._contentW, self._contentH = contentW, contentH
+        self:SetSize(contentW + PAD * 2, contentH + HEADER_H + footerH)
+    end
+
+    --- grow/shrink the footer (multi-row footers); keeps the body content
+    --- area intact by re-applying the last SetContentSize
+    function win:SetFooterHeight(h)
+        if h == footerH then return end
+        footerH = h
+        footer:SetHeight(h)
+        body:SetPoint("BOTTOMRIGHT", -PAD, h)
+        if self._contentW then
+            self:SetContentSize(self._contentW, self._contentH)
+        end
     end
 
     function win:ApplyPosition()
