@@ -67,6 +67,7 @@ local cachedButtons = {}   -- tab → { [slot] = cached button }
 local searchText = ""
 local matcher = nil
 local searchTimer = nil
+local hoverTabIndex = nil  -- tab button under the cursor: its slots highlight (All grid)
 
 ---------------------------------------------------------------------------
 -- Pure: tab-strip assembly (headless-tested)
@@ -79,6 +80,9 @@ local searchTimer = nil
 --- drops that tab (live GetGuildBankTabInfo says non-viewable); absent keys
 --- default to viewable, so cached mode (nil opts) keeps the browse-anywhere
 --- full list. canPurchase appends a { purchase = true } marker last.
+--- ≥2 real tabs (after the filter) prepend a synthetic All entry
+--- ({ all = true }, bank-window precedent) — one tab has nothing to unify;
+--- the selection sentinel is the string "all".
 --- Returns an array of { tab, name, icon, withdrawals }.
 function GuildWindow.BuildTabList(rec, opts)
     local list = {}
@@ -92,6 +96,9 @@ function GuildWindow.BuildTabList(rec, opts)
                     withdrawals = t.withdrawals,
                 }
             end
+        end
+        if #list > 1 then
+            table.insert(list, 1, { all = true })
         end
     end
     if opts and opts.canPurchase then
@@ -128,17 +135,21 @@ local function GetGuildRecord()
     return key and Bags.Store.GetGuild(key) or nil
 end
 
---- Keep the selection when its tab still exists, else fall back to the
---- first real tab in the list (nil when the cache has no tabs at all).
---- Returns true when the selection changed (caller re-syncs the server tab).
+--- Keep the selection when its tab still exists (the "all" sentinel stays
+--- valid while its list has ≥2 real tabs), else fall back to the first
+--- real tab in the list (nil when the cache has no tabs at all).
+--- Returns true when the selection changed (caller re-syncs the server tab
+--- when the new selection is numeric).
 local function EnsureSelection(tabs)
-    local first = nil
+    local first, realTabs = nil, 0
     for _, entry in ipairs(tabs) do
-        if not entry.purchase then
+        if not entry.purchase and not entry.all then
+            realTabs = realTabs + 1
             first = first or entry.tab
             if entry.tab == selectedTab then return false end
         end
     end
+    if selectedTab == "all" and realTabs > 1 then return false end
     local changed = selectedTab ~= first
     selectedTab = first
     return changed
@@ -152,7 +163,7 @@ local function QueryLog()
     if not liveMode then return end
     if logMode == "money" then
         QueryGuildBankLog(MAX_TABS + 1)
-    elseif selectedTab then
+    elseif type(selectedTab) == "number" then
         QueryGuildBankLog(selectedTab)
     end
 end
@@ -302,7 +313,12 @@ end
 --- globals per vendored Blizzard_GuildBankUI.lua:748-778). Each format
 --- global is guarded with a plain-text fallback.
 local function RenderItemLog(smf)
-    if not selectedTab then return end
+    -- the item log is per-tab server data — the All grid has no single tab
+    -- to query, so show a hint instead of a misleading/stale log
+    if type(selectedTab) ~= "number" then
+        smf:AddMessage("Select a tab to view its item log.")
+        return
+    end
     for i = 1, GetNumGuildBankTransactions(selectedTab) do
         local kind, name, itemLink, count, tab1, tab2, year, month, day, hour =
             GetGuildBankTransaction(selectedTab, i)
@@ -394,6 +410,25 @@ end
 -- Frame construction (lazy)
 ---------------------------------------------------------------------------
 
+--- Tab-hover highlight: light up every rendered slot belonging to tab
+--- (nil clears). Sweeps the shown buttons directly — no re-render — and
+--- PlaceGridButton applies the same state on refresh so a mid-hover
+--- re-render can't strand or miss highlights. (Bank-window precedent.)
+local function ApplyTabHover(tab)
+    hoverTabIndex = tab
+    local function sweep(pool)
+        for poolTab, byTab in pairs(pool) do
+            for _, btn in pairs(byTab) do
+                if btn:IsShown() then
+                    Bags.ItemButtons.SetBagHighlight(btn, tab ~= nil and poolTab == tab)
+                end
+            end
+        end
+    end
+    sweep(liveButtons)
+    sweep(cachedButtons)
+end
+
 local function CreateTabButton()
     local btn = CreateFrame("Button", nil, win._tabStrip)
     btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -415,6 +450,13 @@ local function CreateTabButton()
             end
             return
         end
+        if entry.all then
+            if mouseButton == "LeftButton" then
+                selectedTab = "all"
+                GuildWindow.Refresh()
+            end
+            return -- no rename on the synthetic All entry
+        end
         if mouseButton == "RightButton" then
             -- rename: live only + permission-gated (Blizzard parity:
             -- CanEditGuildBankTabInfo at Blizzard_GuildBankUI.lua:628)
@@ -433,6 +475,10 @@ local function CreateTabButton()
                 QueryGuildBankLog(entry.tab)
             end
         end
+        -- leaving the All grid: drop the hover highlight (OnLeave won't
+        -- fire while the cursor stays on the tab, and the single-tab view
+        -- doesn't use it)
+        ApplyTabHover(nil)
         GuildWindow.Refresh()
     end)
     btn:SetScript("OnEnter", function(self)
@@ -441,6 +487,8 @@ local function CreateTabButton()
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         if entry.purchase then
             GameTooltip:SetText("Purchase guild bank tab")
+        elseif entry.all then
+            GameTooltip:SetText("All tabs in one grid")
         else
             local label = (entry.name and entry.name ~= "") and entry.name
                 or ("Tab " .. tostring(entry.tab))
@@ -467,8 +515,17 @@ local function CreateTabButton()
             end
         end
         GameTooltip:Show()
+        -- membership highlight: light up this tab's slots. Only meaningful
+        -- on the unified All grid — a single open tab already shows just
+        -- its own slots, so highlighting there is noise.
+        if not entry.purchase and not entry.all and selectedTab == "all" then
+            ApplyTabHover(entry.tab)
+        end
     end)
-    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    btn:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+        ApplyTabHover(nil)
+    end)
     return btn
 end
 
@@ -646,7 +703,9 @@ local function RenderTabStrip(tabs)
         end
         btn._entry = entry
         local label = "+"
-        if not entry.purchase then
+        if entry.all then
+            label = "All"
+        elseif not entry.purchase then
             label = (entry.name and entry.name ~= "") and entry.name
                 or ("Tab " .. tostring(entry.tab))
         end
@@ -657,7 +716,8 @@ local function RenderTabStrip(tabs)
         btn:ClearAllPoints()
         btn:SetPoint("TOPLEFT", win._tabStrip, "TOPLEFT", x, 0)
         -- selected tab gets the full-strength accent border
-        local selected = (not entry.purchase) and entry.tab == selectedTab
+        local selected = (entry.all and selectedTab == "all")
+            or (not entry.purchase and not entry.all and entry.tab == selectedTab)
         UIKit.UpdateBorderLines(btn, 1, sr, sg, sb, selected and 1 or 0.35)
         btn:Show()
         x = x + w + TAB_GAP
@@ -687,6 +747,34 @@ local function AcquireGridButton(tab, slot)
     return btn
 end
 
+--- Shared place+dress for one grid cell (single-tab and All render paths).
+local function PlaceGridButton(tab, slot, entry, x, y, snappedSize)
+    local btn = AcquireGridButton(tab, slot)
+    btn:SetSize(snappedSize, snappedSize)
+    btn:ClearAllPoints()
+    btn:SetPoint("TOPLEFT", win._body, "TOPLEFT", x, y)
+    local result = nil
+    if matcher then
+        local details = Bags.Details.Build(entry)
+        if details then
+            local m = matcher(details)
+            result = (m ~= false) -- pending counts as visible
+        else
+            result = false -- empty slots dim while a search is active
+        end
+    end
+    if liveMode then
+        Bags.ItemButtons.DressGuildLive(btn, tab, slot, entry, result)
+    else
+        Bags.ItemButtons.DressCached(btn, entry, result)
+    end
+    Bags.ItemButtons.SetFocusFlash(btn,
+        focusItemID ~= nil and entry ~= nil and entry.itemID == focusItemID)
+    Bags.ItemButtons.SetBagHighlight(btn,
+        hoverTabIndex ~= nil and tab == hoverTabIndex)
+    btn:Show()
+end
+
 local function RenderFooter()
     if not liveMode then
         win._guildMoney:Hide()
@@ -704,16 +792,22 @@ local function RenderFooter()
     end
     win._guildMoney:Show()
     -- per-tab withdraw limit for the server-side current tab;
-    -- -1 = unlimited (plan-verified GetGuildBankWithdrawMoney contract)
-    local limit = GetGuildBankWithdrawMoney()
-    if limit == -1 then
-        win._withdrawLimit:SetText("Limit: none")
-    elseif C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString then
-        win._withdrawLimit:SetText("Limit: " .. C_CurrencyInfo.GetCoinTextureString(limit))
+    -- -1 = unlimited (plan-verified GetGuildBankWithdrawMoney contract).
+    -- Meaningless on the mixed All grid (it reflects whichever tab was last
+    -- synced) — hidden there; tab tooltips carry per-tab withdrawals.
+    if selectedTab == "all" then
+        win._withdrawLimit:Hide()
     else
-        win._withdrawLimit:SetText("Limit: " .. tostring(limit))
+        local limit = GetGuildBankWithdrawMoney()
+        if limit == -1 then
+            win._withdrawLimit:SetText("Limit: none")
+        elseif C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString then
+            win._withdrawLimit:SetText("Limit: " .. C_CurrencyInfo.GetCoinTextureString(limit))
+        else
+            win._withdrawLimit:SetText("Limit: " .. tostring(limit))
+        end
+        win._withdrawLimit:Show()
     end
-    win._withdrawLimit:Show()
     win._depositBtn:Show()
     win._withdrawBtn:Show()
     win._logsBtn._label:SetText(bodyMode == "log" and "Items" or "Logs")
@@ -744,7 +838,8 @@ function GuildWindow.Refresh()
     local tabs = GuildWindow.BuildTabList(rec, opts)
     -- search-focus tab autoselect: jump to the first tab holding the focused
     -- item when the current selection doesn't (one-shot per focus).
-    if focusItemID then
+    -- the All grid already shows every slot, so it never jumps away
+    if focusItemID and selectedTab ~= "all" then
         local cur = rec and rec.tabs and selectedTab and rec.tabs[selectedTab]
         local found = false
         if cur and cur.slots then
@@ -757,7 +852,7 @@ function GuildWindow.Refresh()
             if target then selectedTab = target end
         end
     end
-    if EnsureSelection(tabs) and liveMode and selectedTab then
+    if EnsureSelection(tabs) and liveMode and type(selectedTab) == "number" then
         -- first render / selected tab vanished: re-sync the server tab so
         -- the footer's withdraw limit tracks what the grid shows
         SetCurrentGuildBankTab(selectedTab)
@@ -778,63 +873,84 @@ function GuildWindow.Refresh()
         snappedGap = math.floor(appearance.spacing / px + 0.5) * px
     end
 
-    local tabRec = rec and rec.tabs and selectedTab and rec.tabs[selectedTab] or nil
-    local size = tabRec and tabRec.size or 0
-    local slots = tabRec and tabRec.slots
-    local layout = Bags.GridLayout.Compute(size, {
-        columns = appearance.guildColumns or appearance.columns, iconSize = snappedSize, spacing = snappedGap,
-    })
+    -- two-pass render: collect placements first so the centering offset
+    -- (final width vs grid width) is known before any SetPoint. "all"
+    -- sentinel — every listed tab's slots flatten into ONE continuous grid
+    -- at DOUBLE the per-tab column count (bank-window precedent: width
+    -- stays bounded and the merge halves the height versus stacking
+    -- per-tab sections; tab membership stays discoverable via the
+    -- tab-hover highlight). Log mode never renders the grid, so the All
+    -- flatten is skipped there (the log panel sizes to MIN_LOG_H instead
+    -- of the giant merged grid).
+    local cols = appearance.guildColumns or appearance.columns
+    local renderAll = selectedTab == "all" and not (bodyMode == "log" and liveMode)
+    local pending = {} -- { tab, slot, entry, x, y }
+    local gridW, gridH
+    if renderAll then
+        local cells = {}
+        for _, entry in ipairs(tabs) do
+            if not entry.purchase and not entry.all then
+                local t = rec and rec.tabs and rec.tabs[entry.tab]
+                local size = t and t.size or 0
+                for slot = 1, size do
+                    cells[#cells + 1] = { tab = entry.tab, slot = slot,
+                        entry = t.slots and t.slots[slot] or nil }
+                end
+            end
+        end
+        local layout = Bags.GridLayout.Compute(#cells, {
+            columns = cols * 2, iconSize = snappedSize, spacing = snappedGap,
+        })
+        for i, c in ipairs(cells) do
+            pending[#pending + 1] = { tab = c.tab, slot = c.slot,
+                entry = c.entry,
+                x = layout[i].x, y = layout[i].y - TAB_STRIP_H }
+        end
+        gridW, gridH = layout.width, layout.height
+    else
+        local tabRec = rec and rec.tabs and type(selectedTab) == "number"
+            and rec.tabs[selectedTab] or nil
+        local size = tabRec and tabRec.size or 0
+        local slots = tabRec and tabRec.slots
+        local layout = Bags.GridLayout.Compute(size, {
+            columns = cols, iconSize = snappedSize, spacing = snappedGap,
+        })
+        for slot = 1, size do
+            pending[#pending + 1] = { tab = selectedTab, slot = slot,
+                entry = slots and slots[slot],
+                x = layout[slot].x, y = layout[slot].y - TAB_STRIP_H }
+        end
+        gridW, gridH = layout.width, layout.height
+    end
+
     win._ownerSelect:Update()
     local headerMinW = Bags.Chassis.MeasureHeaderWidth({
         win._title, win._ownerSelect, win._searchBox, win._close,
     }, { leftPad = 8, rightPad = 6, gap = 8 })
-    local bodyW = math.max(layout.width, stripW, headerMinW, MIN_BODY_W)
+    local bodyW = math.max(gridW, stripW, headerMinW, MIN_BODY_W)
     -- when the header/strip out-measures the grid, center the grid instead
     -- of leaving all the slack on the right (log panel stays full-width)
     local xOff = 0
-    if bodyW > layout.width and layout.width > 0 then
-        xOff = (bodyW - layout.width) / 2
+    if bodyW > gridW and gridW > 0 then
+        xOff = (bodyW - gridW) / 2
         if px and px > 0 then xOff = math.floor(xOff / px + 0.5) * px end
     end
-    local bodyH = layout.height
+    local bodyH = gridH
     if bodyMode == "log" then
         bodyH = math.max(bodyH, MIN_LOG_H) -- log stays readable with an empty cache
     end
     win:SetContentSize(bodyW, TAB_STRIP_H + bodyH)
 
     -- hide both pools (a mode/tab switch must not strand the other pool's
-    -- buttons), then place + dress the selected tab's slots
+    -- buttons), then place + dress the collected cells
     HideAllGridButtons()
     if bodyMode == "log" and liveMode then
         win._logPanel:Show()
         RenderLog()
     else
         win._logPanel:Hide()
-        for slot = 1, size do
-            local entry = slots[slot]
-            local btn = AcquireGridButton(selectedTab, slot)
-            btn:SetSize(snappedSize, snappedSize)
-            btn:ClearAllPoints()
-            btn:SetPoint("TOPLEFT", win._body, "TOPLEFT",
-                layout[slot].x + xOff, layout[slot].y - TAB_STRIP_H)
-            local result = nil
-            if matcher then
-                local details = Bags.Details.Build(entry)
-                if details then
-                    local m = matcher(details)
-                    result = (m ~= false) -- pending counts as visible
-                else
-                    result = false -- empty slots dim while a search is active
-                end
-            end
-            if liveMode then
-                Bags.ItemButtons.DressGuildLive(btn, selectedTab, slot, entry, result)
-            else
-                Bags.ItemButtons.DressCached(btn, entry, result)
-            end
-            Bags.ItemButtons.SetFocusFlash(btn,
-                focusItemID ~= nil and entry ~= nil and entry.itemID == focusItemID)
-            btn:Show()
+        for _, pl in ipairs(pending) do
+            PlaceGridButton(pl.tab, pl.slot, pl.entry, pl.x + xOff, pl.y, snappedSize)
         end
     end
 
