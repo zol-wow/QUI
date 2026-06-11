@@ -7,9 +7,11 @@ local ADDON_NAME, ns = ...
 local V2Bags = {}
 ns.QUI_BagsTile = V2Bags
 
--- Search-route namespace for this tile. Indices 2-17 are claimed by the
--- other tiles (see tiles/*.lua); 18 is the next free slot.
-local SEARCH_TAB_INDEX = 18
+-- Search-route namespace for this tile. Indices 2-18 are claimed by the
+-- other tiles (18 is the Info Bar's — see tiles/infobar.lua); 19 is the
+-- next free slot. Route-pair uniqueness is guarded by
+-- tests/unit/options_tile_navroute_collision_test.lua.
+local SEARCH_TAB_INDEX = 19
 local SEARCH_TAB_NAME = "Bags"
 
 function V2Bags.Register(frame)
