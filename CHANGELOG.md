@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta36 - 2026-06-11
+
+> 🧪 **QUI 4 beta — Bags and Info Bar follow-up polish.** A quick follow-up to beta35's two new modules: the Info Bar gains a right-click menu for adding and arranging widgets, the guild bank now opens reliably with QUI Bags, bank footer buttons wrap on narrow windows, and the micro menu and bag bar get the same Enabled checkbox as the other action bars. No schema migration — your beta35 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Right-click the Info Bar to manage widgets.** Right-clicking empty space on the Info Bar opens a context menu for the section under the cursor (left, center, or right): add any available widget there, remove ones you don't want, tweak per-widget settings, or jump straight to the Info Bar settings page.
+- **Enabled checkbox for the micro menu and bag bar.** The micro menu and bag bar settings pages now have the same **Bar → Enabled** checkbox as bars 2-8, and toggling it takes effect immediately — no /reload needed.
+
+### Fixed
+- **The guild bank opens with QUI Bags.** Visiting the guild vault could leave QUI's guild bank window closed because the events it listened for don't fire there on retail. It now keys off the retail interaction events, with the old ones kept as a fallback.
+- **Bank footer buttons wrap on narrow windows.** Shrinking the bank window squeezed the footer buttons into each other; they now wrap onto extra rows, the footer grows to fit, and the buttons pick up proper borders. The warband-tab highlight also shows only on the "All" grid and clears when you switch tabs.
+- **The hearthstone tooltip no longer covers the teleport list.** On the Info Bar travel widget, hovering the hearthstone now stacks its tooltip past the teleport flyout instead of overlapping its top rows.
+- **Options search routes Bags results correctly.** Bags search results shared a navigation slot with the Info Bar tile, which could send a click to the wrong page; each tile now has its own slot, with a regression test guarding future collisions.
+
 ## v4.0.0-beta35 - 2026-06-11
 
 > 🧪 **QUI 4 beta — Bags and the Info Bar arrive.** Two brand-new modules land in this beta: **QUI Bags**, a complete replacement for your bags, bank, Warband bank, and guild bank, and the **Info Bar**, a full-width datatext bar with a micro menu. ⚠️ **Both modules are very new and may have bugs — they are OFF by default.** Enable them under **Module Addons** in the QUI options if you'd like to help test, and please report anything you hit on GitHub. This beta also adds four new datatexts plus data-broker plugin support, folds overflowing chat tabs into a "»" menu, and keeps non-combat chatter out of the embedded Combat Log. No schema migration — your beta34 profiles carry over unchanged. As always, **back up your `WTF` folder before installing**.

@@ -2,7 +2,7 @@
 ## Title: |cFF30D1FFQUI|r Damage Meter
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol
-## Version: 4.0.0-beta35
+## Version: 4.0.0-beta36
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI
