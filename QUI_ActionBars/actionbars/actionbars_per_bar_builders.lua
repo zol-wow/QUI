@@ -98,6 +98,7 @@ do
         local TOGGLEABLE_MAIN_BARS = {
             bar2 = true, bar3 = true, bar4 = true, bar5 = true,
             bar6 = true, bar7 = true, bar8 = true,
+            microbar = true, bags = true,
         }
         local SPECIAL_BUTTON_BARS = { extraActionButton = true, zoneAbility = true }
 
@@ -256,6 +257,25 @@ do
             local DEFER_SIZE = { deferOnDrag = true, onDragPreview = PreviewBarSize }
 
             local function ApplyBarEnabledState(val)
+                -- Mirror Layout Mode's element toggle: apply the container
+                -- state now so re-enabling takes effect without a reload.
+                -- Containers are secure (SetAttribute is protected in
+                -- combat); the deferred QUI_RefreshActionBars covers the
+                -- disable side on regen, enable completes at reload.
+                if not InCombatLockdown() then
+                    local container = ActionBarsOwned.containers and ActionBarsOwned.containers[dbKey]
+                    if container then
+                        container:SetAttribute("qui-user-shown", val and true or false)
+                        if val then
+                            container:Show()
+                        else
+                            if ActionBarsOwned.HideOwnedFlyout then
+                                ActionBarsOwned.HideOwnedFlyout()
+                            end
+                            container:Hide()
+                        end
+                    end
+                end
                 if type(_G.QUI_RefreshActionBars) == "function" then
                     _G.QUI_RefreshActionBars()
                 end
@@ -263,7 +283,10 @@ do
                     _G.QUI_RefreshActionBarsVisibility()
                 end
                 if type(_G.QUI_UpdateFramesAnchoredTo) == "function" then
-                    _G.QUI_UpdateFramesAnchoredTo(dbKey)
+                    local anchorKey = (dbKey == "microbar" and "microMenu")
+                        or (dbKey == "bags" and "bagBar")
+                        or dbKey
+                    _G.QUI_UpdateFramesAnchoredTo(anchorKey)
                 end
                 if ns.QUI_ActionBarsOptions and ns.QUI_ActionBarsOptions.RefreshPreview then
                     ns.QUI_ActionBarsOptions.RefreshPreview()
@@ -283,11 +306,14 @@ do
             end
 
             if TOGGLEABLE_MAIN_BARS[dbKey] then
+                local enabledDesc = (dbKey == "microbar" and "Show or hide the micro menu. Stays in sync with this element's enable toggle in Layout Mode.")
+                    or (dbKey == "bags" and "Show or hide the bag bar. Stays in sync with this element's enable toggle in Layout Mode.")
+                    or "Show or hide this action bar. Bars 2-8 can be individually disabled without affecting the pet or stance bars."
                 CreateCollapsible(content, "Bar", FORM_ROW + 8, function(body)
                     local sy = -4
                     P(GUI:CreateFormCheckbox(body, "Enabled",
                         "enabled", barDB, ApplyBarEnabledState,
-                        { description = "Show or hide this action bar. Bars 2-8 can be individually disabled without affecting the pet or stance bars." }), body, sy)
+                        { description = enabledDesc }), body, sy)
                 end, sections, relayout)
             end
 
