@@ -1216,6 +1216,7 @@ return {
                 iconStyle = "spec",
                 numberFormat = "compact",
                 showRowBackground = true,
+                showSecondaryValue = true,
                 textures = {},
                 useClassColor = true
               },

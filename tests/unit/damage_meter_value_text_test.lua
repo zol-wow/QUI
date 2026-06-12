@@ -126,4 +126,16 @@ reset()
 assert(BuildValueText(1500, 0, "compact", nil, FormatNumber) == "1.5K",
     "nil IsSecret falls back to non-secret path")
 
+-- ---- showSecondaryValue ("short value") contract ----
+-- When the Show Secondary Value toggle is OFF, _SetRowSource passes
+-- secondaryVal = nil. BuildValueText must render primary-only — this locks
+-- the contract the call-site gate relies on, including the secret-primary
+-- case (the secret value is rendered as-is, never compared).
+reset()
+assert(BuildValueText(1500, nil, "compact", IsSecret, FormatNumber) == "1.5K",
+    "nil secondary renders primary only (showSecondaryValue OFF path)")
+reset()
+assert(BuildValueText(SECRET_NUMBER, nil, "compact", IsSecret, FormatNumber) == "SEC",
+    "secret primary + nil secondary renders primary only")
+
 print("OK: damage_meter_value_text_test")

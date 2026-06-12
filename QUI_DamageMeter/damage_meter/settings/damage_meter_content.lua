@@ -440,8 +440,15 @@ BuildNativeDamageMeterTab = function(tabContent)
             return GUI:CreateFormDropdown(p, nil, iconStyleOptions, "iconStyle", bt, ApplyNative,
                 { description = "Which icon to show on each row." })
         end)
+    local showSecW = BuildOverrideWidget(sBeh.frame, app, "showSecondaryValue", ApplyNative,
+        function(p, bt)
+            return GUI:CreateFormCheckbox(p, nil, "showSecondaryValue", bt, ApplyNative,
+                { description = "When ON (default), rows show the other metric in parentheses — e.g. DPS mode shows 1.5M (42.3M). Turn off to show only the primary value." })
+        end)
     local pending = placeOverrideRow(sBeh, "Number Format", numW, nil)
-    placeOverrideRow(sBeh, "Icon Style", iconW, pending)
+    pending = placeOverrideRow(sBeh, "Icon Style", iconW, pending)
+    pending = placeOverrideRow(sBeh, "Show Secondary Value", showSecW, pending)
+    if pending then sBeh.AddRow(pending) end
     L.closeSection(sBeh)
 
     ---------------------------------------------------------------------------

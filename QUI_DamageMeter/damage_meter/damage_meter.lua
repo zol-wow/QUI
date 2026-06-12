@@ -1475,10 +1475,16 @@ function Window:_SetRowSource(row, source, maxAmount)
     -- secondary = totalAmount; for everything else, primary = totalAmount
     -- and secondary = amountPerSecond. numberFormat is per-window-overridable
     -- and applies to the primary; secondary always uses "compact" for brevity.
+    -- showSecondaryValue=false ("short value" option) drops the parenthetical
+    -- entirely: nil secondary renders primary-only in BuildValueText, and the
+    -- possibly-secret secondary is never inspected — just not passed.
     local numberFormat = ResolveAppearance(windowID, "numberFormat") or "compact"
     local perSecondMode = IsPerSecondType(self.damageMeterType)
     local primaryVal   = perSecondMode and source.amountPerSecond or source.totalAmount
     local secondaryVal = perSecondMode and source.totalAmount     or source.amountPerSecond
+    if ResolveAppearance(windowID, "showSecondaryValue") == false then
+        secondaryVal = nil
+    end
     local IsSecret = Helpers and Helpers.IsSecretValue
     row.Value:SetText(BuildValueText(primaryVal, secondaryVal, numberFormat, IsSecret, FormatNumber))
 

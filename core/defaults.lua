@@ -340,6 +340,11 @@ local defaults = {
                         headerShowIcons  = true,
                         numberFormat     = "compact",   -- "minimal" | "compact" | "complete"
                         iconStyle        = "spec",      -- "spec" | "class" | "none"
+                        -- When true (default), the row value cell appends the
+                        -- secondary metric in parentheses — per-second modes
+                        -- show "DPS (total)", total modes show "total (per
+                        -- second)". false = primary value only.
+                        showSecondaryValue = true,
                         useClassColor    = true,
                         barColorAccent   = true,
                         barColor         = { 0.35, 0.55, 0.8, 1 },  -- {r,g,b,a} array form (CreateFormColorPicker contract)
