@@ -8,7 +8,9 @@
 --                ch=channelName|nil, s=true when m is secret, t=epoch,
 --                gid=senderGUID|nil (non-secret only),
 --                w=conversationKey|nil, wn=counterpartyName|nil (whisper
---                events only; nil when the identity arg is absent/secret) }
+--                events only; nil when the identity arg is absent/secret),
+--                whisperPopoutOnly=true when Blizzard would suppress the
+--                whisper from regular tabs under whisperMode=popout }
 --
 -- SECRET SAFETY: entries may carry secret values in .m. This file must never
 -- apply ANY Lua operator to .m — store the table and hand it back, only.

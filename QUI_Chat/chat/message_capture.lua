@@ -465,6 +465,35 @@ local function MaybeAutoAddChannel(event, p)
     end
 end
 
+local WHISPER_POPOUT_KEYS = {
+    WHISPER = true,
+    WHISPER_INFORM = true,
+    BN_WHISPER = true,
+    BN_WHISPER_INFORM = true,
+}
+
+local function GetWhisperMode()
+    if type(_G.GetCVar) ~= "function" then return nil end
+    local ok, value = pcall(_G.GetCVar, "whisperMode")
+    if ok then return value end
+    return nil
+end
+
+local function ShouldTranslateBlizzardWhisperPopouts()
+    local settings = I.GetSettings and I.GetSettings()
+    local wt = settings and settings.customDisplay and settings.customDisplay.whisperTabs
+    return wt == nil or wt.translatePopout ~= false
+end
+
+local function IsWhisperPopoutOnly(typeKey, convKey)
+    -- Do not suppress the regular saved tabs unless the entry has a known
+    -- conversation destination. Secret/malformed identities stay inline rather
+    -- than disappearing.
+    if not convKey or not WHISPER_POPOUT_KEYS[typeKey] then return nil end
+    if not ShouldTranslateBlizzardWhisperPopouts() then return nil end
+    return GetWhisperMode() == "popout" and true or nil
+end
+
 -- ---------------------------------------------------------------------------
 -- CHAT_MSG_* capture
 -- ---------------------------------------------------------------------------
@@ -580,6 +609,7 @@ local function OnCaptureEvent(_, event, ...)
             convName = p.sender
         end
     end
+    local whisperPopoutOnly = IsWhisperPopoutOnly(typeKey, convKey)
 
     -- SECRET-FIRST: no operator may touch a1 before this check.
     if IsSecret(a1) then
@@ -604,7 +634,8 @@ local function OnCaptureEvent(_, event, ...)
             m = (I.AddTimestamp(m))
         end
         Store.Append({ m = m, r = r, g = g, b = b, e = event, k = typeKey, s = true,
-            ch = p.chName, gid = p.guid, w = convKey, wn = convName, t = Now() })
+            ch = p.chName, gid = p.guid, w = convKey, wn = convName,
+            whisperPopoutOnly = whisperPopoutOnly, t = Now() })
         return
     end
     if type(a1) ~= "string" or a1 == "" then return end
@@ -640,7 +671,8 @@ local function OnCaptureEvent(_, event, ...)
         line = (I.MakeURLsClickable(line))
     end
     Store.Append({ m = line, r = r, g = g, b = b, e = event, k = typeKey, ch = p.chName,
-        gid = p.guid, w = convKey, wn = convName, t = Now() })
+        gid = p.guid, w = convKey, wn = convName,
+        whisperPopoutOnly = whisperPopoutOnly, t = Now() })
 end
 
 -- Fallback for traffic that never fires a CHAT_MSG event (addon print(),

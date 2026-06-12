@@ -102,6 +102,7 @@ _G.ChatTypeGroupInverted = {
 }
 
 -- GetChatWindowMessages/Channels: Blizzard's saved-settings rebuild APIs
+local unpack = table.unpack or _G.unpack
 local channelReturns = { "Trade", 0 }
 function _G.GetChatWindowMessages(i) return "SAY", "GUILD" end
 function _G.GetChatWindowChannels(i) return unpack(channelReturns) end

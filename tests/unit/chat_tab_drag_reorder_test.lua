@@ -8,6 +8,8 @@
 -- the old TU._buttons singleton; TU._instances[1].dragIndicator replaces
 -- TU._dragIndicator; TabManager stubs use window API signatures.
 
+local unpack = table.unpack or _G.unpack
+
 local function makeFrame(ftype)
     local f = { ftype = ftype, shown = true, children = {} }
     local function noop() end

@@ -6,6 +6,8 @@
 -- Ported to per-window instance model: TabUI._instances[1].buttons replaces
 -- the old TabUI._buttons singleton export; ActivateFrameID takes (windowID, tabIndex).
 
+local unpack = table.unpack or _G.unpack
+
 local function makeFrame(ftype)
     local f = { ftype = ftype, shown = true, children = {}, points = {} }
     local function noop() end

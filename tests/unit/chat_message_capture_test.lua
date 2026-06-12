@@ -107,6 +107,8 @@ _G.CHAT_RAID_BOSS_EMOTE_GET = "|TInterface\\TargetingFrame\\UI-RaidTargetingIcon
 _G.GetPlayerInfoByGUID = function() return nil end
 _G.RAID_CLASS_COLORS = {}
 _G.C_EventUtils = { IsEventValid = function(e) return e ~= "CHAT_MSG_BOGUS" end }
+local cvars = { whisperMode = "inline" }
+function _G.GetCVar(name) return cvars[name] end
 _G.C_StringUtil = {
     WrapString = function()
         error("secret chat formatter should not require C_StringUtil.WrapString", 2)
@@ -497,6 +499,21 @@ assert(eTagOut.w == "W:target-realm", "outgoing whisper keys to the TARGET, got 
 fire("CHAT_MSG_BN_WHISPER", "bn hi", "Aria", nil, nil, nil, nil, nil, nil, nil, nil, 31337, nil, 77)
 local eTagBN; Store.ForEach(function(e) eTagBN = e end)
 assert(eTagBN.w == "BN:aria", "bn whisper tagged, got " .. tostring(eTagBN.w))
+
+-- Blizzard whisperMode=popout suppresses inline delivery to regular chat
+-- frames. Capture records that routing decision so QUI saved tabs can mirror
+-- it while the conversation tab still receives the tagged entry.
+cvars.whisperMode = "popout"
+fire("CHAT_MSG_WHISPER", "popout only", "Pop-Realm")
+local ePopoutOnly; Store.ForEach(function(e) ePopoutOnly = e end)
+assert(ePopoutOnly.whisperPopoutOnly == true,
+    "whisperMode=popout marks regular-tab suppression")
+cvars.whisperMode = "popout_and_inline"
+fire("CHAT_MSG_WHISPER", "both", "Both-Realm")
+local ePopoutAndInline; Store.ForEach(function(e) ePopoutAndInline = e end)
+assert(ePopoutAndInline.whisperPopoutOnly == nil,
+    "whisperMode=popout_and_inline keeps regular tabs inline")
+cvars.whisperMode = "inline"
 
 fire("CHAT_MSG_SAY", "hello", "Talker-Realm")
 local eTagSay; Store.ForEach(function(e) eTagSay = e end)

@@ -14,6 +14,7 @@
 
 _G.ChatTypeGroupInverted = {}
 _G.NUM_CHAT_WINDOWS = 3
+local unpack = table.unpack or _G.unpack
 _G.ChatFrame1 = {}
 _G.ChatFrame2 = {} -- bare: modern FrameXML sets no isCombatLog property; seed must skip by identity
 _G.ChatFrame3 = {}

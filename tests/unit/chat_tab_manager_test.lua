@@ -10,6 +10,7 @@ _G.ChatTypeGroupInverted = {
     CHAT_MSG_RAID_BOSS_EMOTE = "MONSTER_BOSS_EMOTE",
 }
 _G.NUM_CHAT_WINDOWS = 5
+local unpack = table.unpack or _G.unpack
 _G.ChatFrame1 = {}
 _G.ChatFrame2 = {} -- bare: modern FrameXML sets no isCombatLog property; seed must skip by identity
 _G.ChatFrame3 = {}
@@ -156,24 +157,23 @@ assert(cf({ w = "W:somebody-realm", k = "WHISPER" }) == true, "conversation filt
 assert(cf({ w = "W:other-realm", k = "WHISPER" }) == false, "other conversation blocked")
 assert(cf({ k = "WHISPER" }) == false, "untagged whisper blocked from conversation tab")
 
--- Additive whisper tabs (reference parity): an open conversation does NOT strip
--- its whispers from the regular saved tabs. A whisper from someone with an open
--- conversation tab still shows in the main window's WHISPER-group tab AND in its
--- dedicated conversation tab (the line is never hidden). Even with a manager
--- reporting the conversation open, BuildTabFilter passes the entry through.
-local openKeys = { ["W:somebody-realm"] = true }
-ns.QUI.Chat.ConversationManager = { IsOpen = function(k) return openKeys[k] == true end }
+-- Conversation tabs stay additive for QUI-created conversations, but a whisper
+-- captured while Blizzard's whisperMode=popout is active is popout-only:
+-- saved/regular tabs must skip it, while the conversation tab still shows it.
 local wf = TM.BuildTabFilter({ groups = { WHISPER = true }, channels = {}, invert = false })
 assert(wf({ k = "WHISPER", w = "W:somebody-realm" }) == true,
-    "open conversation's whisper STILL shows in the regular WHISPER tab (additive)")
-assert(wf({ k = "WHISPER", w = "W:other-realm" }) == true, "other conversation's whisper passes")
+    "ordinary conversation whisper still shows in the regular WHISPER tab")
+assert(wf({ k = "WHISPER", w = "W:somebody-realm", whisperPopoutOnly = true }) == false,
+    "Blizzard popout-only whisper is suppressed from regular WHISPER tabs")
+assert(wf({ k = "WHISPER", w = "W:other-realm" }) == true, "other ordinary conversation whisper passes")
 assert(wf({ k = "WHISPER" }) == true, "untagged whisper passes")
 assert(wf({ k = "SAY" }) == false, "non-whisper still filtered by the tab's groups")
 local allf = TM.BuildTabFilter(nil)
 assert(allf({ k = "SAY" }) == true, "unconstrained tab filter shows non-whisper")
 assert(allf({ k = "WHISPER", w = "W:somebody-realm" }) == true,
-    "unconstrained tab filter shows open-conversation whispers too (additive)")
-ns.QUI.Chat.ConversationManager = nil
+    "unconstrained tab filter shows ordinary conversation whispers")
+assert(allf({ k = "WHISPER", w = "W:somebody-realm", whisperPopoutOnly = true }) == false,
+    "unconstrained saved tab also suppresses Blizzard popout-only whispers")
 
 -- Group normalization: typeKey PARTY_LEADER matches a groups set listing PARTY
 local pf = TM.BuildFilter({ groups = { PARTY = true } })

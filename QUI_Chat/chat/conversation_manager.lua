@@ -75,6 +75,19 @@ local function WhisperSettings()
     return cd and cd.whisperTabs or nil
 end
 
+local function GetWhisperMode()
+    if type(_G.GetCVar) ~= "function" then return nil end
+    local ok, value = pcall(_G.GetCVar, "whisperMode")
+    if ok then return value end
+    return nil
+end
+
+local function BlizzardWantsConversationTab(wt)
+    if wt and wt.translatePopout == false then return false end
+    local mode = GetWhisperMode()
+    return mode == "popout" or mode == "popout_and_inline"
+end
+
 -- whisperTabs.targetWindow (and any caller-supplied id) may be stale after
 -- window deletion — clamp to a live window, falling back to the primary.
 local function ClampWindowID(windowID)
@@ -283,10 +296,11 @@ Store.OnAppend(function(entry)
     local info = WHISPER_EVENTS[entry.e]
     if not info then return end
     local wt = WhisperSettings()
-    if not wt then return end
-    local want
-    if info.incoming then want = wt.autoIncoming else want = wt.autoOutgoing end
+    local want = BlizzardWantsConversationTab(wt)
+    if not want and wt then
+        if info.incoming then want = wt.autoIncoming else want = wt.autoOutgoing end
+    end
     if not want then return end
     if IsSecret(entry.wn) or type(entry.wn) ~= "string" or entry.wn == "" then return end
-    Conv.Open(info.chatType, entry.wn, wt.targetWindow, false)
+    Conv.Open(info.chatType, entry.wn, wt and wt.targetWindow or 1, false)
 end)

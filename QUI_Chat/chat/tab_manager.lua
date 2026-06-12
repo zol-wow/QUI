@@ -173,13 +173,11 @@ function TabManager.EnsureDefaultChannelListed(name)
 end
 
 -- Saved-tab filter for display/unread use. Whisper conversation tabs are
--- ADDITIVE: opening a conversation tab for someone does NOT remove their
--- whispers from the regular saved tabs. The line stays visible in the main
--- window's WHISPER-group tab AND also appears in its dedicated conversation tab
--- (BuildConversationFilter). An earlier exclusive model dropped the line from
--- every other tab, so a whisper that auto-spawned a non-activated conversation
--- tab rendered nowhere — the message appeared to vanish. The conversation tab is
--- now purely an extra filtered view.
+-- ADDITIVE for QUI-created conversations: opening a conversation tab for
+-- someone does NOT remove their whispers from the regular saved tabs. The
+-- exception is Blizzard whisperMode=popout parity: capture marks those entries
+-- as whisperPopoutOnly, and saved tabs skip them so the dedicated conversation
+-- tab is the only visible destination.
 --
 -- Unlike BuildFilter this never returns nil: the activeFilters array must stay
 -- dense for ReapplyAll's `for id = 1, #activeFilters` loop, so a no-constraint
@@ -188,7 +186,11 @@ function TabManager.BuildTabFilter(tabData)
     if TabManager.IsCombatLogTab(tabData) then
         return function() return false end
     end
-    return TabManager.BuildFilter(tabData) or function() return true end
+    local base = TabManager.BuildFilter(tabData) or function() return true end
+    return function(entry)
+        if entry and entry.whisperPopoutOnly then return false end
+        return base(entry)
+    end
 end
 
 -- A conversation tab shows exactly its conversation's tagged entries.

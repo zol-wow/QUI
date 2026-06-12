@@ -17,6 +17,8 @@ local ns = {
 }
 _G.Ambiguate = function(name) return (name:gsub("%-.*$", "")) end
 _G.GetNormalizedRealmName = function() return "Realm" end
+local cvars = { whisperMode = "inline" }
+function _G.GetCVar(name) return cvars[name] end
 
 -- Store stub with subscriber support
 local subscribers = {}
@@ -179,6 +181,15 @@ Conv.Close("W:popout-realm")
 ns.QUI.Chat.MessageStore.Append({ e = "CHAT_MSG_WHISPER", k = "WHISPER",
     w = "W:auto-realm", wn = "Auto-Realm", m = "x", t = 0 })
 assert(not Conv.IsOpen("W:auto-realm"), "autoIncoming off -> no tab")
+cvars.whisperMode = "popout"
+ns.QUI.Chat.MessageStore.Append({ e = "CHAT_MSG_WHISPER", k = "WHISPER",
+    w = "W:cvar-realm", wn = "Cvar-Realm", m = "x", t = 0 })
+assert(Conv.IsOpen("W:cvar-realm"), "Blizzard whisperMode=popout auto-opens a conversation")
+cvars.whisperMode = "popout_and_inline"
+ns.QUI.Chat.MessageStore.Append({ e = "CHAT_MSG_BN_WHISPER", k = "BN_WHISPER",
+    w = "BN:cvarbn", wn = "CvarBN", m = "x", t = 0 })
+assert(Conv.IsOpen("BN:cvarbn"), "Blizzard whisperMode=popout_and_inline auto-opens a conversation")
+cvars.whisperMode = "inline"
 whisperSettings.autoIncoming = true
 ns.QUI.Chat.MessageStore.Append({ e = "CHAT_MSG_WHISPER", k = "WHISPER",
     w = "W:auto-realm", wn = "Auto-Realm", m = "x", t = 0 })
