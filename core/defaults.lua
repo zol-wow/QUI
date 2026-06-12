@@ -430,6 +430,7 @@ local defaults = {
             showDeaths = true,
             showAffixes = true,
             showObjectives = true,
+            objectiveTextAlign = "LEFT",    -- "LEFT" | "CENTER" | "RIGHT"
             position = { x = -11.667, y = -204.998 },
             forcesBarEnabled = true,
             forcesDisplayMode = "bar",

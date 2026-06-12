@@ -43217,6 +43217,42 @@ ns.QUI_SearchCache = {
         },
         {
             ["category"] = "dungeon",
+            ["description"] = "Horizontal alignment of the boss/objective text rows on the timer panel.",
+            ["featureId"] = "mplusTimer",
+            ["label"] = "Objective Text Alignment",
+            ["providerKey"] = "mplusTimer",
+            ["subPageIndex"] = 6,
+            ["subTabName"] = "Combat",
+            ["tabName"] = "Gameplay",
+            ["tileId"] = "gameplay",
+            ["widgetDescriptor"] = {
+                ["category"] = "dungeon",
+                ["dbKey"] = "objectiveTextAlign",
+                ["dbPath"] = "profile.mplusTimer",
+                ["dropdownOptions"] = {
+                },
+                ["featureId"] = "mplusTimer",
+                ["kind"] = "dropdown",
+                ["options"] = {
+                    {
+                        ["text"] = "Left",
+                        ["value"] = "LEFT",
+                    },
+                    {
+                        ["text"] = "Center",
+                        ["value"] = "CENTER",
+                    },
+                    {
+                        ["text"] = "Right",
+                        ["value"] = "RIGHT",
+                    },
+                },
+                ["providerKey"] = "mplusTimer",
+            },
+            ["widgetType"] = "dropdown",
+        },
+        {
+            ["category"] = "dungeon",
             ["featureId"] = "mplusProgress",
             ["label"] = "Offset X",
             ["providerKey"] = "mplusProgress",

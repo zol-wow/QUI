@@ -200,6 +200,7 @@ local DEFAULTS = {
     showDeaths = true,
     showAffixes = true,
     showObjectives = true,
+    objectiveTextAlign = "LEFT",  -- "LEFT" | "CENTER" | "RIGHT"
     scale = 1.0,
     forcesBarEnabled = true,
     forcesDisplayMode = "bar",       -- "bar" | "text"
@@ -502,9 +503,9 @@ function MPlusTimer:CreateFrames()
     posMarker:SetSize(2, SLEEK_BAR_HEIGHT)
     self.frames.sleekPosMarker = posMarker
 
-    -- Objectives container
+    -- Objectives container (width comes from the per-layout TOPLEFT/TOPRIGHT anchors)
     local objectivesFrame = CreateFrame("Frame", nil, root)
-    objectivesFrame:SetSize(FRAME_WIDTH - FRAME_PADDING * 2, 100)
+    objectivesFrame:SetHeight(100)
     self.frames.objectives = objectivesFrame
 
     -- Pre-create objective lines (up to 8 bosses)
@@ -664,6 +665,35 @@ end
 ---------------------------------------------------------------------------
 -- Layout
 ---------------------------------------------------------------------------
+-- Anchors the objectives container across the panel width and lays out the
+-- objective lines per the alignment setting. Lines stay auto-sized (single
+-- anchor point) so long boss names overflow instead of wrapping/clipping.
+-- Returns the total height consumed.
+function MPlusTimer:LayoutObjectiveLines(settings, font, fontSize, spacing, pad, yOffset)
+    local align = settings.objectiveTextAlign
+    if align ~= "CENTER" and align ~= "RIGHT" then align = "LEFT" end
+    local anchor = (align == "RIGHT" and "TOPRIGHT") or (align == "CENTER" and "TOP") or "TOPLEFT"
+
+    self.frames.objectives:ClearAllPoints()
+    self.frames.objectives:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
+    self.frames.objectives:SetPoint("TOPRIGHT", self.frames.root, "TOPRIGHT", -pad, -yOffset)
+
+    local objY = 0
+    for i = 1, 8 do
+        local line = self.objectives[i]
+        line:ClearAllPoints()
+        line:SetPoint(anchor, self.frames.objectives, anchor, 0, -objY)
+        line:SetFont(font, fontSize, FONT_FLAGS)
+        line:SetJustifyH(align)
+        local objText = line:GetText()
+        if objText and objText ~= "" then
+            objY = objY + fontSize + spacing
+        end
+    end
+
+    return objY
+end
+
 function MPlusTimer:UpdateLayout()
     if not self.frames.root then return end
 
@@ -887,21 +917,7 @@ function MPlusTimer:UpdateLayoutCompact(font, settings)
         end
     end
 
-    self.frames.objectives:ClearAllPoints()
-    self.frames.objectives:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-
-    local objY = 0
-    for i = 1, 8 do
-        self.objectives[i]:ClearAllPoints()
-        self.objectives[i]:SetPoint("TOPLEFT", self.frames.objectives, "TOPLEFT", 0, -objY)
-        self.objectives[i]:SetFont(font, COMPACT_FONT_SIZE_OBJECTIVE, FONT_FLAGS)
-        local objText = self.objectives[i]:GetText()
-        if objText and objText ~= "" then
-            objY = objY + COMPACT_FONT_SIZE_OBJECTIVE + objSpace
-        end
-    end
-
-    yOffset = yOffset + objY
+    yOffset = yOffset + self:LayoutObjectiveLines(settings, font, COMPACT_FONT_SIZE_OBJECTIVE, objSpace, pad, yOffset)
 
     if forcesEnabled and forcesPos == "after_objectives" then
         if forcesDisplayMode == "text" then
@@ -1126,22 +1142,8 @@ function MPlusTimer:UpdateLayoutSleek(font, settings)
     end
 
     if settings.showObjectives then
-        self.frames.objectives:ClearAllPoints()
-        self.frames.objectives:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
         self.frames.objectives:Show()
-
-        local objY = 0
-        for i = 1, 8 do
-            self.objectives[i]:ClearAllPoints()
-            self.objectives[i]:SetPoint("TOPLEFT", self.frames.objectives, "TOPLEFT", 0, -objY)
-            self.objectives[i]:SetFont(font, SLEEK_FONT_SIZE_OBJECTIVE, FONT_FLAGS)
-            local objText = self.objectives[i]:GetText()
-            if objText and objText ~= "" then
-                objY = objY + SLEEK_FONT_SIZE_OBJECTIVE + objSpace
-            end
-        end
-
-        yOffset = yOffset + objY
+        yOffset = yOffset + self:LayoutObjectiveLines(settings, font, SLEEK_FONT_SIZE_OBJECTIVE, objSpace, pad, yOffset)
     else
         self.frames.objectives:Hide()
     end
@@ -1441,21 +1443,7 @@ function MPlusTimer:UpdateLayoutFull(font, settings)
         end
     end
 
-    self.frames.objectives:ClearAllPoints()
-    self.frames.objectives:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-
-    local objY = 0
-    for i = 1, 8 do
-        self.objectives[i]:ClearAllPoints()
-        self.objectives[i]:SetPoint("TOPLEFT", self.frames.objectives, "TOPLEFT", 0, -objY)
-        self.objectives[i]:SetFont(font, FONT_SIZE_OBJECTIVE, FONT_FLAGS)
-        local objText = self.objectives[i]:GetText()
-        if objText and objText ~= "" then
-            objY = objY + FONT_SIZE_OBJECTIVE + objSpace
-        end
-    end
-
-    yOffset = yOffset + objY
+    yOffset = yOffset + self:LayoutObjectiveLines(settings, font, FONT_SIZE_OBJECTIVE, objSpace, pad, yOffset)
 
     if forcesEnabled and forcesPos == "after_objectives" then
         if forcesDisplayMode == "text" then

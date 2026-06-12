@@ -115,6 +115,7 @@ do
                 showDeaths = true,
                 showAffixes = true,
                 showObjectives = true,
+                objectiveTextAlign = "LEFT",
                 maxDungeonNameLength = 18,
             })
 
@@ -168,6 +169,15 @@ do
                 row(sGen.frame, "Show Objectives", genObjW),
                 row(sGen.frame, "Show Border", genBorderW)
             )
+
+            local objAlignOpts = {
+                { text = "Left", value = "LEFT" },
+                { text = "Center", value = "CENTER" },
+                { text = "Right", value = "RIGHT" },
+            }
+            local genObjAlignW = GUI:CreateFormDropdown(sGen.frame, nil, objAlignOpts, "objectiveTextAlign", mpDB, RefreshLayout,
+                { description = "Horizontal alignment of the boss/objective text rows on the timer panel." })
+            sGen.AddRow(row(sGen.frame, "Objective Text Alignment", genObjAlignW))
             L.closeSection(sGen)
 
             -- Border

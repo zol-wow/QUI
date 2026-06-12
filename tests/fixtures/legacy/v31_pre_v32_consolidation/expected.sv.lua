@@ -2835,6 +2835,7 @@ return {
           frameBackgroundOpacity = 1,
           layoutMode = "sleek",
           maxDungeonNameLength = 18,
+          objectiveTextAlign = "LEFT",
           position = {
             x = -11.667,
             y = -204.99799999999999
