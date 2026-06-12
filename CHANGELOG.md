@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta42 - 2026-06-12
+
+> 🧪 **QUI 4 beta — Layout Mode and minimap drawer fixes.** This beta fixes two Layout Mode regressions around chat windows — extra chat windows no longer lose their unsaved Layout Mode position when you change a chat setting, and chat windows anchored to another element no longer vanish when Layout Mode opens — plus a minimap drawer fix for buttons that opened the drawer but sat invisible behind its backdrop. No profile schema migration — your beta41 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Layout Mode: chat window position lost on settings change.** Changing any chat setting while Layout Mode had pending (unsaved) chat-window moves rebuilt the chat window movers and silently wiped those moves. The rebuild now only runs when the number of chat windows actually changes.
+- **Layout Mode: anchored chat windows destroyed on open.** Opening Layout Mode replaced the mover of a chat window anchored to another element with a detached proxy, pulling the window out of its anchor chain. Anchored windows now keep their normal mover.
+- **Layout Mode: window stuck invisible after mover teardown.** A chat window whose proxy mover was torn down mid-session (e.g. by a settings change) could stay glued to the dead mover — invisible until reload. The window is now restored to its on-screen position when its mover is removed.
+- **Minimap button drawer: buttons hidden behind the drawer.** Buttons whose strata fell below the drawer backdrop's were covered by it — present in the drawer but invisible and unclickable. Collected buttons are now lifted above the drawer backdrop and restored to their original strata on release.
+
 ## v4.0.0-beta41 - 2026-06-12
 
 > 🧪 **QUI 4 beta — minimap drawer fix.** A one-fix beta: minimap buttons no longer escape (or vanish from) the button drawer when their owning addon re-anchors them after collection, and buttons created very late in the loading process are now caught too. No profile schema migration — your beta40 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
