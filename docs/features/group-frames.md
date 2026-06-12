@@ -18,11 +18,12 @@ Group Frames are **disabled by default**. QUI does not take over your party or r
 
 ## How to Enable
 
-1. Open `/qui` and select **Group Frames**.
-2. Choose the unit group you want to work on, such as **Party** or **Raid**.
-3. Toggle **Enable QUI Group Frames**.
-4. Reload your UI when prompted.
-5. Use **Edit in Layout Mode** only when you want to move the frames on screen.
+1. Open `/qui` > **Module Addons** and enable **Group Frames**.
+2. Reload if prompted.
+3. Open `/qui` and select **Group Frames**.
+4. Choose the unit group you want to work on, such as **Party** or **Raid**.
+5. Toggle **Enable QUI Group Frames** if the profile-level setting is off.
+6. Use **Edit in Layout Mode** only when you want to move the frames on screen.
 
 Most group frame behavior is configured directly from the main `/qui` page. Click-casting is configured separately under **General > Click-Cast**.
 

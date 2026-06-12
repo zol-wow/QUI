@@ -11,7 +11,7 @@ QUI's Blizzard Frame Mover lets you reposition default Blizzard UI elements by d
 
 ## Overview
 
-Many default Blizzard frames -- the objective tracker, durability indicator, vehicle seat indicator, and others -- are placed in fixed positions that may not suit your layout. While Blizzard's Edit Mode covers some frames, it does not provide control over all of them. The Blizzard Frame Mover fills that gap by making these frames directly draggable. Once repositioned, frame positions are saved and persist across reloads and sessions. If you ever want to start fresh, a reset option restores all frames to their original Blizzard default positions.
+Many default Blizzard frames -- the objective tracker, durability indicator, vehicle seat indicator, Hero Talents window, challenge prompts, and others -- are placed in fixed positions that may not suit your layout. While Blizzard's Edit Mode covers some frames, it does not provide control over all of them. The Blizzard Frame Mover fills that gap by making these frames directly draggable. Once repositioned, frame positions are saved and persist across reloads and sessions. If you ever want to start fresh, a reset option restores all frames to their original Blizzard default positions.
 
 ## How to Enable
 
@@ -25,6 +25,7 @@ To enable and configure the Blizzard Frame Mover:
 - **Position persistence** -- Frame positions are saved to your profile and restored automatically on login, reload, and between sessions.
 - **Reset to default** -- A single button restores all moved frames to their original Blizzard default positions.
 - **Broad frame coverage** -- Supports many standard Blizzard frames that Edit Mode does not handle, giving you control over UI elements that are otherwise fixed in place.
+- **Interactive child safety** -- Dragging starts from the mover surface, not from text boxes, buttons, or child controls you are trying to click.
 
 ## Important Settings
 

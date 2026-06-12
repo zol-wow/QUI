@@ -18,6 +18,7 @@ _Layout Mode is the visual editing layer for frame movers, anchors, group handle
 - Keeping related frames spaced consistently
 - Avoiding overlaps and visual clutter
 - Making the HUD feel centered around your own eye movement, not a preset screenshot
+- Resizing anchored chat or damage meter windows without drifting off the saved anchor
 
 ## How to Configure
 
@@ -33,6 +34,18 @@ Frame layout settings are spread across several locations:
 1. Place your **Essential CDM** first.
 2. Position player and target frames around it.
 3. Anchor nearby elements so they move together.
+4. Drag the parent element to confirm anchored children follow live.
+5. Save once the major clusters are stable, then fine-tune exact offsets in settings.
+
+## Anchored Frames
+
+QUI's anchoring system lets one element follow another. In current QUI 4 builds, anchored children update live while you drag or nudge the parent. This applies to direct children, deeper chains, and frames anchored through a mover handle.
+
+Anchored chat and damage meter windows keep their saved anchor pinned when resized. The window grows away from the anchored edge or corner instead of drifting from the center.
+
+## Shift To Detach
+
+Some anchored windows intentionally resist normal dragging or resizing so you do not accidentally break a layout chain. Hold **Shift** while dragging or resizing to detach from the anchor and place the window freely.
 4. Add utility pieces like minimap panels, timers, and group frames only after the core combat cluster feels right.
 
 ## Core Concepts

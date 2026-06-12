@@ -1,63 +1,65 @@
 [![GitHub release](https://img.shields.io/github/v/release/zol-wow/QUI)](https://github.com/zol-wow/QUI/releases)
 [![GPLv3 License](https://img.shields.io/badge/License-GPL%20v3-yellow.svg)](https://opensource.org/licenses/)
-[![Discord](https://img.shields.io/badge/discord-QUI_2.0-0da37b?logo=discord&logoColor=white)](https://discord.gg/FFUjA4JXnH)
-[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/zol__)
-[![Ko-fi](https://img.shields.io/badge/PayPal-Support%20me-142c8e?logo=paypal&logoColor=white)](https://paypal.me/ZolQUI)
+[![Discord](https://img.shields.io/badge/discord-QUI-0da37b?logo=discord&logoColor=white)](https://discord.gg/FFUjA4JXnH)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-ff5e5b?logo=ko-fi)](https://ko-fi.com/zol__)
 
-# QUI 3.0 – QuaziiUI continued and kept alive
+# QUI Community Edition
 
-### Why This Exists
+QUI is a modular World of Warcraft UI suite for Midnight 12.0+. It combines combat HUD tools, layout editing, action bars, unit and group frames, chat, minimap controls, data panels, a native damage meter, profile tools, and quality-of-life helpers under one settings experience.
 
-Quazii created one of the most loved and polished UI packages for World of Warcraft – especially in the pre-Midnight era. Many players (myself included) still rely on its design philosophy: minimalism, performance in high-end content (Mythic+, Raiding), and pixel-perfect scaling without the bloat.
+Current beta: **v4.0.0-beta43**.
 
-After the recent drama involving code disputes, monetization concerns, and Quazii's decision to retire from the scene, the original QUI is no longer being updated or supported. This repo aims to:
+## What is New in QUI 4
 
-- Preserve the core vision and feel of QuaziiUI
-- Make it freely available to everyone (no Patreon, no paid installers – pure open-source)
-- Fix compatibility issues for current WoW patches (e.g., Midnight 12.0+)
-- Use public, community-approved libraries to avoid any past controversies (rewrote scaling logic from scratch)
-- Keep the UI as a free resource for the community that Quazii once built it for
+- **Modular addon suite:** QUI now ships as a core addon plus feature folders such as `QUI_ActionBars`, `QUI_CDM`, `QUI_Chat`, `QUI_Bags`, `QUI_InfoBar`, `QUI_Alts`, and `QUI_Options`.
+- **Module Addons page:** enable or disable whole feature addons from `/qui` without digging through the character-select addon list.
+- **Opt-in QUI Chat:** custom chat display with multi-window support, conversation tabs, an embedded Combat Log tab, copy window, tab overflow menu, and safer restore behavior.
+- **QUI Bags:** optional bag, bank, Warband bank, and guild bank windows with search everywhere, sorting, item badges, currency bar, merchant tools, and cached bank browsing.
+- **Info Bar:** optional top or bottom bar that hosts datatext widgets, a micro menu, travel controls, spec swapping, and data-object style plugin feeds.
+- **Alts:** optional account-wide character tracker with roster, equipment, professions, reputations, weeklies, currencies, and cross-character item search.
+- **Layout Mode improvements:** anchored frames follow live while dragging, anchored chat and damage meter windows keep their anchor pinned while resizing, and mover teardown restores windows cleanly.
+- **Damage meter polish:** native meter windows support per-window settings, row popouts, reset keybinds, and an option to hide secondary row values.
 
-For the base of this I cleaned up and re-organized the code base, removed the controversial PixelPerfect code snippets, in part likely copied from ElvUI, and merged some of the open feature branches from before Quazii's exit. The rest of the base is basically the state of **QuaziiUI v1.99b**.
+## Core Features
 
-Since then I added a few features and fixes important to me, and I will continue doing that for at least until a while into Midnight. Feel free to raise issues or create pull requests, I will try to get to them as quickly as possible.
+- Cooldown Manager with icon, aura, and bar containers plus a spell composer.
+- Unit frames for player, target, focus, pet, boss, and related combat frames.
+- Opt-in group frames with click-casting, private auras, raid buffs, and party/raid layouts.
+- Action bars with mouseover fade, per-bar options, buff borders, pet/stance handling, micro menu, and bag bar controls.
+- Minimap, data panels, and shared currency/datatext settings.
+- Dungeon tools: M+ timer, party keystones, battle res counter, teleport shortcuts, and combat logging helpers.
+- Skinning and frame mover coverage for many Blizzard windows and alerts.
+- Profile import/export, selective profile imports, and profile migration backups.
 
-### Credits & Thanks
+## Installation
 
-- **Original Creator**: Quazii – for the vision, the clean design, the performance optimizations, and the countless hours of work that made QUI special.
-- **Original Co-Developers & Contributors**: All the people who helped shape QUI behind the scenes (you know who you are, let me know if you want to be mentioned). Your code, ideas, and testing live on here.
-- **Special Thanks**: To everyone who reached out after the fallout, shared ideas, or simply kept using the UI. This repo exists because of you.
+### Addon Manager
 
-### Features (Inherited + Improvements)
+1. Search for **QUI Community Edition** in your addon manager.
+2. Install or update normally.
+3. Log in and open `/qui`.
 
-- Clean, modern UI layout with Layout Mode for visual frame positioning
-- Strong performance focus (Mythic+, Raiding)
-- Pixel-perfect scaling
-- Cooldown Manager with flexible container system (cooldown, aura, aura bar) and Composer
-- Custom unit frames (Player, Target, Focus, Boss, Pet, ToT) with castbars and heal prediction
-- Group frames (party/raid) with click-casting, dispel overlays, and separate party/raid profiles
-- Native action bar engine with mouseover fade, per-bar overrides, and button spacing
-- Skinning system for Blizzard frames (game menu, loot, tooltips, objective tracker, and more)
-- Minimap customization with button drawer, clock, coordinates, and data panels
-- Dungeon features: custom M+ timer, party keystones, battle res counter, combat timer
-- Quality of life: auto-sell junk, auto-repair, consumable checks, popup blocking, and more
-- Ongoing fixes for Midnight (12.0+) patch compatibility
+### Manual Install
 
-### Installation
+1. Download the latest release zip from [GitHub Releases](https://github.com/zol-wow/QUI/releases) or [CurseForge](https://www.curseforge.com/wow/addons/qui-community-edition).
+2. Extract the zip.
+3. Copy every top-level `QUI*` folder from the zip into:
+   ```text
+   World of Warcraft\_retail_\Interface\AddOns\
+   ```
+4. Confirm `QUI.toc`, `QUI_Options\QUI_Options.toc`, and the other `QUI_*` `.toc` files sit directly under `Interface\AddOns\`.
+5. Back up your `WTF` folder before installing beta builds.
 
-#### Manual Installation
+## Documentation
 
-1. Download the latest release from [Releases](https://github.com/zol-wow/QUI/releases) or CurseForge: (https://www.curseforge.com/wow/addons/qui-community-edition)
-2. Extract to `Interface\AddOns\QUI`
-3. Enable in-game and reload UI (`/rl` or `/reload`)
+- User guide: https://zol-wow.github.io/QUI/
+- Releases: https://github.com/zol-wow/QUI/releases
+- Issues: https://github.com/zol-wow/QUI/issues
 
-#### Installation via WoWUp or CurseForge
+## Credits
 
-1. Go to "Get Addons"
-2. Search for "QUI Community Edition"
-2. Press Install
-
+QUI Community Edition continues work originally created by Quazii and expanded by community contributors.
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 (same as most major WoW UI addons and libraries) - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE) for details.

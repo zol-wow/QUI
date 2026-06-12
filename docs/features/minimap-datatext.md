@@ -7,7 +7,7 @@ nav_order: 9
 
 # Minimap & Data Panels
 
-QUI's Minimap and Data Panels help you move utility information out of the center of your screen and into the corners where it belongs.
+QUI's Minimap, Datatexts, and Data Panels help you move utility information out of the center of your screen and into stable utility zones.
 
 ![Actual QUI Minimap settings page]({{ '/assets/images/qui-minimap-settings.png' | relative_url }})
 _The Minimap page is where you control map dimensions, button handling, borders, labels, and other corner-HUD details._
@@ -16,12 +16,12 @@ _The Minimap page is where you control map dimensions, button handling, borders,
 
 - A cleaner minimap area with less button clutter
 - Better use of screen corners for stats and utility panels
-- Quick access to coordinates, clock, performance info, and currencies
+- Quick access to coordinates, clock, performance info, currencies, mail, professions, Great Vault, reputation, and alts data
 - Strong visual consistency with the rest of QUI
 
 ## How to Enable
 
-The minimap module is enabled by default. Configure it in `/qui` under **Minimap & Datatext**.
+The minimap and datatext modules are enabled by default. Configure them in `/qui` under **Minimap & Datatext**.
 
 The tile is split into **Minimap** and **Datatext** so you can manage the map itself separately from the information panels around it. Use **Edit in Layout Mode** when you want to reposition those elements on your screen.
 
@@ -39,7 +39,8 @@ The tile is split into **Minimap** and **Datatext** so you can manage the map it
 - Clock, coordinates, and zone text styling
 - Visibility of built-in minimap elements
 - Queue status eye placement
-- Standalone data panels for stats, currencies, and system info
+- Standalone data panels for stats, currencies, mail, professions, reputation, Great Vault, alts, and system info
+- Shared currency ordering used by minimap panels, custom data panels, the Info Bar, and Bags
 
 ## Important Settings
 
@@ -61,8 +62,15 @@ The tile is split into **Minimap** and **Datatext** so you can manage the map it
 {: .note }
 The button drawer is the recommended way to handle addon minimap buttons. Instead of hiding them entirely or letting them clutter the minimap border, the drawer collects them into a clean panel that you can expand when needed and auto-hides after a configurable delay.
 
+{: .note }
+Late-created minimap buttons are rescanned when the drawer opens and when its options list is shown, so buttons that appear after login can still be collected.
+
 {: .important }
 Hiding the micro menu and bag bar frees up significant screen space, but make sure you know the keyboard shortcuts for the functionality they provide (e.g., opening your bags, character pane, spell book) before hiding them.
 
 {: .note }
 If you use the square minimap shape, the button drawer and addon button hiding become especially useful since addon buttons do not naturally distribute well around a square border.
+
+## Info Bar Relationship
+
+The [Info Bar](info-bar) uses the same datatext registry as minimap and custom data panels. If a datatext is available for a panel, it can usually be placed on the Info Bar too. Currency order and visibility are shared across all Currencies surfaces.

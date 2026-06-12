@@ -18,6 +18,7 @@ _The Entries tab is where you confirm what each container tracks and add or remo
 - Important utility and defensive cooldowns get their own space.
 - Tracked buffs, debuffs, and aura bars can live in the same visual system.
 - It works well for DPS, healing, support, and utility-heavy playstyles.
+- Tracked entries stay user-owned; unavailable spells go dormant instead of being removed from your lists.
 
 ## Where To Configure It
 
@@ -32,6 +33,12 @@ _The Entries tab is where you confirm what each container tracks and add or remo
 3. Open the **Entries** page and confirm the spells you care about are present.
 4. Adjust icon size before you change anything more advanced.
 5. Add custom entries only after the core setup already feels good.
+
+## Dormant Entries
+
+QUI does not automatically delete tracked spells just because your current talents, spec, loadout, or hero build temporarily make them unavailable. Instead, the entry becomes dormant: hidden from the active display but still kept in your configured list.
+
+This is especially useful while swapping talents or loadouts. When the spell becomes available again, it returns without you rebuilding the container.
 
 ## How CDM Is Organized
 

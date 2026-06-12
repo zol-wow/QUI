@@ -23,6 +23,7 @@ The character pane enhancements are enabled by default. To configure them:
 
 - **Item level overlays** -- Displays the item level on each equipment slot, including the upgrade track indicator (e.g., "Hero 4/6") in gold text.
 - **Enchant status** -- Shows enchant text on enchantable slots. Missing enchants display a "No Enchant" warning in red.
+- **Leg enchant handling** -- Legs count as permanently enchantable and show missing-enchant warnings when appropriate.
 - **Gem indicators** -- Visual indicators for gem sockets on applicable items.
 - **Durability bars** -- Small durability bars on each equipment slot showing remaining durability at a glance.
 - **Inspect frame support** -- All overlays also appear when inspecting other players, so you can quickly evaluate their gear.

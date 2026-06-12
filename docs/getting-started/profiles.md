@@ -2,7 +2,7 @@
 layout: default
 title: Profiles
 parent: Getting Started
-nav_order: 3
+nav_order: 4
 ---
 
 # Profiles
@@ -16,6 +16,9 @@ Profiles are how QUI remembers your setup. If you understand this page, you can 
 - Use **spec-based switching** if you want a healing layout in one spec and a damage layout in another.
 
 Manage your profiles in `/qui` under **General > Profiles**.
+
+{: .note }
+Module Addons are not the same thing as profiles. Enabling or disabling a `QUI_*` feature addon is account-wide, while most styling, layout, and behavior choices remain profile-based.
 
 ## When To Use Each Option
 
@@ -53,6 +56,8 @@ You do not always need to replace your whole setup. QUI can import only specific
 - **Theme / Fonts / Colors** -- Update visual settings without moving frame positions.
 - **Layout / Positions** -- Update frame positions without changing visual settings.
 - **Module-specific** -- Update only the area you care about.
+
+Partial imports cover profile data. They do not install missing module folders or override the account-wide Module Addons enable state.
 
 This is especially useful when you like someone else's style but want to keep your own frame placement.
 

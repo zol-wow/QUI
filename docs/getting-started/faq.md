@@ -2,7 +2,7 @@
 layout: default
 title: FAQ
 parent: Getting Started
-nav_order: 5
+nav_order: 6
 ---
 
 # Frequently Asked Questions
@@ -10,6 +10,14 @@ nav_order: 5
 ## What is QUI?
 
 QUI is a full UI addon for World of Warcraft Midnight that combines a combat HUD, frame positioning tools, action bar styling, minimap and panel customization, group tools, quality-of-life helpers, and profile management in one package.
+
+## Why do I see many QUI folders?
+
+QUI 4 is modular. The `QUI` folder is the core addon, and `QUI_*` folders provide feature modules such as options, chat, bags, datatexts, and the damage meter. Addon-manager installs handle this automatically. If you install manually, copy every `QUI*` folder from the release zip.
+
+## Which modules are off by default?
+
+The biggest opt-in modules are **QUI Chat**, **Group Frames**, **Bags**, **Info Bar**, and **Alts**. Enable them from `/qui` > **Module Addons** when you want those systems. Some need a reload before taking full effect.
 
 ## How do I move frames?
 
@@ -42,6 +50,18 @@ Most likely, mouseover fade is active. Move your mouse over the area where the b
 QUI Group Frames are opt-in. Open `/qui`, select **Group Frames**, enable them, and reload if prompted. Use **Edit in Layout Mode** afterward if you want to reposition them.
 
 They have separate party and raid setups, so you can keep them lightweight in small groups and more information-dense in raids.
+
+## How do I enable QUI Chat?
+
+Open `/qui` > **Module Addons** and enable **QUI Chat**, then reload if prompted. QUI Chat is optional; if you leave it off, your normal chat remains in place with the non-takeover styling features that are enabled.
+
+## How do I open Bags or Alts?
+
+Enable the module first from **Module Addons**. Bags uses `/quibags`; Alts uses `/alts` or `/quialts`. If either command says the module is disabled, turn it on and reload if prompted.
+
+## Why does Alts not show every character's inventory yet?
+
+The account cache fills as you log into characters. After a cache reset or first install, offline inventory and equipment data repopulate the next time each character logs in.
 
 ## Why can I not click things in combat?
 

@@ -2,7 +2,7 @@
 layout: default
 title: Troubleshooting
 parent: Getting Started
-nav_order: 6
+nav_order: 7
 ---
 
 # Troubleshooting
@@ -15,16 +15,28 @@ If something feels off, start here before rebuilding your whole UI.
 |---------|-----------------|
 | A frame is missing | Check visibility rules and Layout Mode placement |
 | Action bars are gone | Mouseover fade is hiding them |
-| Group frames will not appear | Enable them, then reload |
+| Group frames will not appear | Enable the module, then reload |
+| `/quibags` or `/alts` says disabled | Enable that module from Module Addons |
+| A QUI module is missing entirely | Check for a partial manual install |
 | A move or toggle will not apply | Leave combat and try again |
 | Profile import failed | Recopy the full string and try a fresh profile |
+
+## Module Missing From The AddOns List
+
+QUI 4 installs as multiple folders. If a feature does not appear in **Module Addons**, the folder may not be installed.
+
+1. Exit the game.
+2. Open `World of Warcraft\_retail_\Interface\AddOns\`.
+3. Confirm all release zip `QUI*` folders are present side by side.
+4. Make sure none are nested inside an extra folder.
+5. Start the game and check the character-select **AddOns** list.
 
 ## Frames Are Invisible or Missing
 
 The most common cause is a visibility rule hiding the frame when you do not meet its conditions.
 
 1. Open `/qui` and check **Appearance > HUD Visibility** for the visibility rules affecting CDM, Unit Frames, and trackers.
-2. Open the feature page itself and confirm the module is enabled.
+2. Open **Module Addons** and the feature page itself to confirm the module is enabled.
 3. Temporarily set visibility to "Show Always" to confirm frames exist.
 4. If frames appear, adjust the visibility rules to your preferred conditions.
 
@@ -52,7 +64,7 @@ This is usually normal behavior, not a broken install.
 
 Click-casting depends on both the right frames and the right bindings.
 
-1. Verify QUI Group Frames are enabled (`/qui` > **Group Frames** > enable toggle).
+1. Verify QUI Group Frames are enabled (`/qui` > **Module Addons** and `/qui` > **Group Frames**).
 2. Open `/qui` > **General** > **Click-Cast** and configure your bindings.
 3. Click-casting bindings are per-specialization -- switch to the correct spec.
 4. A UI reload (`/rl`) may be required after enabling group frames for the first time.
@@ -77,12 +89,32 @@ If tooltips are acting strangely:
 Group Frames are disabled until you explicitly turn them on.
 
 1. Open `/qui`.
-2. Select **Group Frames**.
-3. Enable QUI Group Frames.
+2. Open **Module Addons** and enable **Group Frames**.
+3. Select **Group Frames** and enable the profile setting if it is off.
 4. **Reload the UI** with `/rl` -- this is required when first enabling group frames.
 
 {: .important }
 Group frames replace Blizzard's secure group frame headers, which can only be swapped at load time. A reload is always required when toggling group frames on or off.
+
+## Bags, Info Bar, Or Alts Do Not Open
+
+These modules are opt-in beta features.
+
+1. Open `/qui` > **Module Addons**.
+2. Enable the module you want.
+3. Reload if prompted.
+4. Use `/quibags`, `/alts`, or the feature's settings page again.
+
+Alts and Bags use a shared account storage cache. Some offline character data appears only after each character has logged in once on the current cache.
+
+## QUI Chat Is Not Replacing Chat
+
+QUI Chat is optional.
+
+1. Open `/qui` > **Module Addons**.
+2. Enable **Chat**.
+3. Reload if prompted.
+4. Open `/qui` > **Chat & Tooltips** to configure chat windows, tabs, copy behavior, and Combat Log support.
 
 ## Performance Issues in Large Groups
 

@@ -18,6 +18,8 @@ _The General page handles the master action bar toggles, range and usability fee
 - Mouseover fade for a minimalist HUD
 - Per-bar overrides when one size does not fit all
 - Better range and usability feedback than a plain default setup
+- Separate enable toggles for the micro menu and bag bar
+- Buff-border timers and right-click cancellation support on action buttons
 
 ## How to Enable
 
@@ -25,12 +27,15 @@ Action bar enhancements are enabled by default. To access settings, open `/qui` 
 
 Within that tile, the top strip is split into **General**, **Buff/Debuff**, and **Per-Bar** so you can decide whether you want broad changes or one-off overrides.
 
+The micro menu and bag bar have the same **Bar > Enabled** style toggle as the numbered bars, and changes apply immediately when possible.
+
 ## Best First Tweaks
 
 1. Decide whether you want bars always visible or mouseover-faded.
 2. Make sure the keybind text is readable before changing visual flourishes.
 3. Adjust spacing and scale so your bars feel intentional, not cramped.
 4. Use per-bar overrides only after the global style is close.
+5. Decide whether pet, stance, micro menu, and bag bar should link with your main bar fade behavior.
 
 ![Actual QUI Action Bars Per-Bar page]({{ '/assets/images/qui-action-bars-per-bar.png' | relative_url }})
 _Use the Per-Bar page when one bar needs its own size, spacing, or layout without changing the rest of the setup._

@@ -2,7 +2,7 @@
 layout: default
 title: Slash Commands
 parent: Getting Started
-nav_order: 4
+nav_order: 5
 ---
 
 # Slash Commands
@@ -19,6 +19,8 @@ These are the commands most players actually use. Type them into the WoW chat wi
 | `/rl` or `/reload` | Safe reload. If you are in combat, the reload is queued and executes automatically when combat ends. |
 | `/kb` | Toggle keybind mode (LibKeyBound). Hover over action buttons and press a key to bind it. Press the key again to unbind. |
 | `/cdm` | Open the CDM (Cooldown Manager) settings panel directly. |
+| `/qui cdm` | Open QUI's CDM composer/settings route from the QUI options panel. |
+| `/alts` or `/quialts` | Toggle the Alts window when the Alts module is enabled. |
 
 ## Utility Commands
 
@@ -28,6 +30,33 @@ These are the commands most players actually use. Type them into the WoW chat wi
 | `/qpull` or `/quipull` | Always-available pull timer aliases. |
 | `/qui perf` | Toggle the performance monitor overlay. |
 | `/qui debug` | Enable debug mode. Debug output persists for one reload, then turns off automatically. |
+| `/qui cdm_cache status` | Print CDM cache status without loading the CDM debug addon. |
+| `/qui cdm_cache reset` | Reset CDM caches out of combat. |
+
+## Bags Commands
+
+These commands work when the Bags module is enabled.
+
+| Command | Description |
+|---------|-------------|
+| `/quibags` | Toggle the QUI bag window. |
+| `/quibags search` | Open Search Everywhere across cached character storage. |
+| `/quibags bank` | Browse the live bank when open, or cached bank data when away from the bank. |
+| `/quibags guild` | Browse the live guild bank when open, or cached guild-bank data when away from the vault. |
+| `/quibags clearnew` | Clear all new-item glow markers. |
+
+## Data Panel Commands
+
+| Command | Description |
+|---------|-------------|
+| `/quidp show` | List custom datatext panels and their status. |
+| `/quidp refresh` | Refresh all datatext panels. |
+
+## Damage Meter Commands
+
+| Command | Description |
+|---------|-------------|
+| `/quidmreset` | Reset the current damage meter session. |
 
 ## CDM Debug Commands
 
@@ -47,3 +76,4 @@ These are available after `/qui debug` reloads the load-on-demand debug tools.
 - `/qui` and `/qui layout` are the two commands you will use the most.
 - `/rl` is safe to use with QUI even in combat because it waits until combat ends.
 - If another pull-timer addon already owns `/pull`, use `/qpull` or `/quipull` instead.
+- Module-specific commands do nothing or print a disabled-module note when their module is off.

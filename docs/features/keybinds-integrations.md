@@ -7,11 +7,11 @@ nav_order: 17
 
 # Keybinds & Integrations
 
-QUI includes a built-in keybind management system powered by LibKeyBound and integrates with several popular third-party addons. The keybind system gives you visual keybind text on your CDM icons, action bars, and tracker bars, while the integrations let QUI work alongside other addons as part of a cohesive UI.
+QUI includes a built-in keybind management system powered by LibKeyBound and integration hooks for compatible UI tools. The keybind system gives you visual keybind text on your CDM icons, action bars, and tracker bars, while integration hooks let QUI fit into a broader UI setup.
 
 ## Overview
 
-The keybind features cover two areas: binding keys to abilities (via LibKeyBound's hover-and-press system) and displaying those bindings as text overlays on icons. The integration features connect QUI to external addons for frame positioning, nameplate styling, profile switching, and shared media resources.
+The keybind features cover two areas: binding keys to abilities through hover-and-press mode and displaying those bindings as text overlays on icons. Integration features cover compatible frame anchoring, profile switching, and shared media resources.
 
 ## How to Enable
 
@@ -21,7 +21,7 @@ Keybind features are available by default. To configure display options:
 - Type `/kb` in chat to toggle keybind mode for hover-and-press binding.
 - Click-casting settings are in **General > Click-Cast** inside `/qui`.
 
-Third-party integrations are configured through **General > Third-party** and the related feature tiles, and most activate automatically when the relevant addon is detected.
+Compatible integrations are configured through **General > Integrations** and related feature tiles. Most activate automatically when the related tool is detected.
 
 ## Keybind Features
 
@@ -59,47 +59,32 @@ Third-party integrations are configured through **General > Third-party** and th
 | CDM overrides | Enable per-character keybind overrides for CDM | Disabled |
 | Tracker overrides | Enable per-character keybind overrides for trackers | Disabled |
 
-## Third-Party Integrations
+## Integrations
 
-### DandersFrames
+### Compatible Frame Anchoring
 
-QUI detects DandersFrames automatically and enables frame anchoring integration:
+- **Frame anchoring** -- When compatible timing, frame, or timeline tools are present, QUI can offer them as anchor targets or allow their frames to follow QUI layout elements.
+- **Target frame anchor** -- The QUI Target unit frame can be used as an anchor target for compatible frames.
+- **Configuration previews** -- Some compatible preview frames can be anchored while configuring layouts so the final setup is easier to judge.
 
-- **Anchor party and raid frames** -- Position DandersFrames' party and raid group frames relative to QUI elements using the anchoring system.
-- **Anchor pinned frames** -- DandersFrames pinned (bookmarked) frames can also be anchored to QUI elements.
-- **Target unitframe as anchor target** -- The QUI Target unit frame is available as an anchor target for DandersFrames elements.
-- **Container anchoring** -- DandersFrames preview frame containers can be anchored to QUI elements for consistent positioning during configuration.
-
-### BigWigs
-
-- **Frame anchoring** -- When BigWigs is installed, QUI elements can be anchored to the BigWigs bar display. This lets you position your CDM or other elements relative to boss timers, keeping your encounter HUD organized.
-
-### AbilityTimeline / Better Timeline
-
-- **Frame anchoring** -- When AbilityTimeline (Better Timeline) is installed, QUI elements can be anchored to it for consistent layout positioning.
-
-### Plater and Platynator
-
-- **Bundled import strings** -- QUI ships with pre-built Plater and Platynator nameplate profiles that complement QUI's visual style. These are available in **General > Import / Export** and can be applied with one click.
-
-### LibDualSpec
+### Profile Switching
 
 - **Automatic profile switching** -- LibDualSpec integration lets QUI automatically switch to a different profile when you change specializations. Configure which profile maps to each spec in **General > Profiles**.
 
-### LibSharedMedia
+### Shared Media
 
-- **Shared media resources** -- QUI registers its fonts, textures, and status bar textures with LibSharedMedia, making them available to other addons. Conversely, any fonts or textures registered by other addons via LibSharedMedia are available in QUI's texture and font dropdowns.
+- **Shared media resources** -- QUI registers its fonts, textures, and status bar textures with the shared media library. Fonts or textures registered by your UI setup are available in QUI's texture and font dropdowns.
 
 ## Tips
 
 {: .note }
-The `/kb` keybind mode works on any LibKeyBound-compatible frame, not just QUI elements. If other addons in your setup use LibKeyBound, you can bind their frames in the same session.
+The `/kb` keybind mode works on any compatible LibKeyBound frame, not just QUI elements.
 
 {: .important }
 Keybind overrides are stored per character and per spec. If you change a keybind override on your Retribution Paladin, it will not affect your Holy spec's overrides on the same character. This is intentional -- different specs often use different keybind layouts.
 
 {: .note }
-The DandersFrames and BigWigs integrations require those addons to be installed and loaded. QUI checks for their presence at startup and only enables the relevant anchoring options when they are detected. No manual activation is needed.
+Compatible frame integrations require the related tool to be installed and loaded. QUI checks at startup and only enables relevant anchoring options when they are detected. No manual activation is needed.
 
 {: .note }
-LibSharedMedia integration is bidirectional. Installing a font or texture pack that registers with LibSharedMedia will automatically make those resources available in QUI's dropdowns without any additional configuration.
+Shared media integration is bidirectional. Installing a font or texture pack that registers media resources will automatically make those resources available in QUI's dropdowns without additional configuration.

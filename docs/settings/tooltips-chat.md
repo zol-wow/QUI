@@ -9,6 +9,9 @@ nav_order: 13
 
 Tooltip and Chat settings are accessible from the **Chat & Tooltips** tile in-game and are documented separately here for convenience. This page also covers several related presentation settings that may appear in nearby tiles such as Gameplay, Appearance, and Quality of Life.
 
+{: .note }
+QUI Chat is an optional module. Enable it from **Module Addons** before expecting the custom QUI chat windows, tabs, copy tools, or Combat Log tab. If the Chat module is off, only stock-chat styling and related tooltip/chat helpers apply.
+
 ---
 
 ## Tooltip Settings

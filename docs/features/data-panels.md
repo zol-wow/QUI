@@ -7,11 +7,11 @@ nav_order: 20
 
 # Data Panels
 
-QUI's data panel system provides configurable information displays that show useful game data at a glance. Available datatexts include gold and currency tracking, durability, FPS, latency, memory and bandwidth statistics, guild information, clock and calendar access, quest progress, and more. Panels can be positioned on the minimap border or placed as standalone panels anywhere on screen.
+QUI's data panel system provides configurable information displays that show useful game data at a glance. Available datatexts include gold and currency tracking, durability, FPS, latency, memory and bandwidth statistics, guild information, clock and calendar access, quest progress, mail, professions, reputation, Great Vault, and Alts data. Panels can be positioned on the minimap border, placed as standalone panels, or hosted by the Info Bar.
 
 ## Overview
 
-The data panel system is built around a collection of individual datatexts -- small, self-contained information displays that each show a specific piece of game data. These datatexts can be assigned to panel slots on the minimap or placed in standalone data panels elsewhere on your screen. Each datatext updates on a shared one-second ticker for efficient resource usage, and most support left-click and right-click actions for quick access to related functionality (for example, clicking the gold datatext can open your currency panel).
+The data panel system is built around a collection of individual datatexts -- small, self-contained information displays that each show a specific piece of game data. These datatexts can be assigned to panel slots on the minimap, placed in standalone data panels, or added to the Info Bar. Each datatext updates on a shared one-second ticker for efficient resource usage, and most support left-click and right-click actions for quick access to related functionality.
 
 The system supports LibSharedMedia fonts for full typographic control and offers a no-label mode for minimal display when you want just the values without descriptive labels.
 
@@ -21,12 +21,15 @@ Data panels are configured through multiple entry points depending on panel type
 
 - For minimap datatexts, enter Layout Mode with `/qui layout` and access the minimap settings through the toolbar or drawer.
 - For standalone data panels, configure them through the relevant settings in `/qui`.
+- For the Info Bar, open the **Info Bar** tile or right-click empty space on the bar.
 
 ## Key Features
 
 ### Available Datatexts
 
 - **Gold and currency** -- Displays your current gold with configurable currency ordering options. Shows additional currencies relevant to current content.
+- **Alts** -- Shows account gold or tracked alt count and opens the Alts window when clicked.
+- **Mail, Professions, Reputation, Great Vault** -- Surfaces common account and weekly status checks without opening larger windows.
 - **Durability** -- Shows your current gear durability percentage so you know when repairs are needed.
 - **System statistics** -- Displays FPS, latency (home and world), and memory usage in a combined readout for monitoring game performance.
 - **Bandwidth** -- Shows network bandwidth usage for tracking connection quality.
@@ -38,6 +41,7 @@ Data panels are configured through multiple entry points depending on panel type
 
 - **Minimap panel slots** -- Assign datatexts to configurable slots around the minimap border for an integrated information display.
 - **Standalone data panels** -- Place data panels anywhere on screen, independent of the minimap. These can be locked in position once placed.
+- **Info Bar zones** -- Add datatexts to left, center, or right zones on the optional Info Bar.
 - **No-label mode** -- Display only the data values without descriptive labels for a minimal, compact appearance.
 - **Font customization** -- Full LibSharedMedia font support for font face, size, and styling across all datatexts.
 
@@ -62,6 +66,10 @@ Data panels are configured through multiple entry points depending on panel type
 | Font size | Text size for datatext values | Configurable |
 | Currency ordering | Order in which currencies are displayed | Default |
 | Lock panels | Prevent standalone panels from being moved | Enabled |
+
+## Shared Currency List
+
+Currencies use one shared order and visibility list across minimap panels, standalone panels, the Info Bar, and Bags. If you hide or reorder a currency in one Currencies settings section, every Currencies surface follows that choice.
 
 ## Tips
 

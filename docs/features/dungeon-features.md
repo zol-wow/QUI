@@ -32,6 +32,8 @@ A redesigned Mythic Plus timer with a cleaner layout than Blizzard's default.
 - **Affix display** -- Shows the active dungeon affixes.
 - **Objective tracking** -- Displays boss kill and enemy forces progress.
 - **Forces bar** -- A progress bar for enemy forces percentage with multiple display modes and text format options.
+- **Forces row alignment** -- Left, center, or right alignment for objective text.
+- **Bar height control** -- Optional height setting for bar mode; leaving it at 0 uses the layout default.
 - **Font customization** -- Control font face and size for timer text.
 - **Dungeon name truncation** -- Set a maximum character length for the dungeon name to keep the timer compact.
 - **Panel opacity** -- Configurable backdrop opacity for the M+ timer panel, allowing you to control how prominent the timer background is independently of the background color.
