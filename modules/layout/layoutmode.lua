@@ -3378,6 +3378,11 @@ do
                                 h = math.max(100, math.min(900, math.floor(h + 0.5)))
                                 container:SetSize(w, h)
                                 if D.PersistGeometry then D.PersistGeometry(windowID) end
+                                -- Anchored windows: keep the anchor point
+                                -- pinned — grow away from it, not from center.
+                                if _G.QUI_ReassertAnchorAfterResize then
+                                    _G.QUI_ReassertAnchorAfterResize(providerKey)
+                                end
                             end
 
                             local prevPosOnly = U._layoutModePositionOnly

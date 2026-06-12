@@ -2233,6 +2233,11 @@ do
                             ws.size.w = w
                             ws.size.h = h
                         end
+                        -- Anchored windows: keep the anchor point pinned —
+                        -- grow away from it, not from center.
+                        if _G.QUI_ReassertAnchorAfterResize then
+                            _G.QUI_ReassertAnchorAfterResize(providerKey)
+                        end
                         if window.Refresh then pcall(window.Refresh, window) end
                     end
 

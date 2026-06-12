@@ -3206,6 +3206,34 @@ _G.QUI_ForceReapplyFrameAnchor = function(key)
     QUI_Anchoring:ApplyFrameAnchor(key, settings)
 end
 
+-- Re-assert a frame's saved anchor after a programmatic resize (size
+-- sliders). SetSize keeps the frame's CURRENT SetPoint fixed — for
+-- size-stable anchored frames that point is CENTER, so the frame grows
+-- symmetrically and drifts off its anchored corner/edge. Re-applying the
+-- saved anchor re-solves the stored point relation against the NEW size,
+-- keeping the anchor point visually pinned with growth away from it.
+-- Free entries (parent="disabled"/no entry) keep center growth — there is
+-- no anchor to pin. In layout mode, any pending drag position holds
+-- pre-resize CENTER offsets and would yank the handle back — clear it and
+-- re-sync the handle to the re-anchored frame.
+_G.QUI_ReassertAnchorAfterResize = function(key)
+    if not key or not QUICore or not QUICore.db or not QUICore.db.profile then
+        return
+    end
+    local anchoringDB = QUICore.db.profile.frameAnchoring
+    local settings = GetSavedFrameAnchorSettings(anchoringDB, key)
+    if not settings then return end
+    local parent = settings.parent
+    if not parent or parent == "disabled" then return end
+    if _G.QUI_LayoutModeClearPending then
+        _G.QUI_LayoutModeClearPending(key)
+    end
+    _G.QUI_ForceReapplyFrameAnchor(key)
+    if _G.QUI_LayoutModeSyncHandle then
+        _G.QUI_LayoutModeSyncHandle(key)
+    end
+end
+
 -- Position-only re-anchor: repositions a frame to its configured
 -- parent without calling ApplyAutoSizing.
 _G.QUI_ReanchorFramePositionOnly = function(key)

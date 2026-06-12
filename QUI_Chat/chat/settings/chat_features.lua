@@ -55,6 +55,12 @@ local function ChatSetSize(w, h)
     if Display and Display.PersistGeometry then
         Display.PersistGeometry()
     end
+    -- Anchored window: keep the anchor point pinned — grow away from it,
+    -- not from center (display_layer's Refresh skips position re-apply
+    -- while Layout Mode is live, so this is the in-drawer path).
+    if _G.QUI_ReassertAnchorAfterResize then
+        _G.QUI_ReassertAnchorAfterResize("chatFrame1")
+    end
     if Display and Display.Refresh then
         Display.Refresh()
     end
