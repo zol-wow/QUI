@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta38 - 2026-06-12
+
+> 🧪 **QUI 4 beta — Layout Mode anchoring polish and a damage meter display option.** A small beta: in Layout Mode, frames anchored to other frames now follow live while you drag, mover handles land where the anchored frame actually sits, and the minimap no longer fights the mover while docked elsewhere. The damage meter gains a toggle to hide the parenthetical secondary value on rows. No schema migration — your beta37 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Damage meter: "Show secondary value" toggle.** A new appearance option (global, with a per-window override) controls the parenthetical metric on row values — per-second windows show "DPS (total)" and total windows show "total (per second)". Turn it off for a primary-value-only display. Default stays on, matching current behavior.
+
+### Fixed
+- **Anchored frames follow drags live in Layout Mode.** Dragging or nudging a frame now cascades immediately to everything anchored to it — children, grandchildren, and frames anchored through a proxy — instead of leaving them behind until the next refresh. The anchor sliders in settings cascade the same way.
+- **Mover handles line up with anchored frames.** A frame's Layout Mode handle is now placed from its resolved anchor — the parent's handle, the parent frame itself, or the screen edge — so handles no longer drift for frames glued to their own handle, and a re-applied anchor snaps the frame back into its handle cleanly.
+- **Minimap stops fighting Layout Mode while docked elsewhere.** When the minimap is parented away from the screen (for example into an external HUD), its anchor mirror now stands down, and entering Layout Mode no longer trips the HUD's reparent latch.
+
 ## v4.0.0-beta37 - 2026-06-11
 
 > 🧪 **QUI 4 beta — Bags keep growing: auction house selling, a guild bank "All" tab, and a taint-safe takeover.** This beta keeps polishing the new Bags module: right-click items to post them at the auction house, browse the whole guild vault on one "All" tab, and manage your currencies from a single shared list used by the bag window, Info Bar, data panels, and minimap. Under the hood, the bag takeover was rewritten so secure flows that open bags — the mailbox, profession windows, loot toasts — keep running Blizzard's own code and can't be blocked by taint. The M+ timer learns objective text alignment, and the embedded Combat Log tab gets several in-combat fixes. No schema migration — your beta36 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.

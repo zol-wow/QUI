@@ -2,7 +2,7 @@
 ## Title: |cFF30D1FFQUI|r Group Frames
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol
-## Version: 4.0.0-beta37
+## Version: 4.0.0-beta38
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI
