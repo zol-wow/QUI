@@ -2821,15 +2821,23 @@ local function LayoutDrawerButtons()
         local f = entry.frame
         local centerX = padding + (entry.centerX - minX)
         local centerY = padding + (entry.centerY - minY)
-        f:ClearAllPoints()
-        f:SetPoint("CENTER", drawerFrame, "BOTTOMLEFT", centerX, centerY)
+        -- Anchor and show via metatable: collected frames have
+        -- ClearAllPoints/SetPoint/Show/SetAlpha no-op'd so owners can't
+        -- re-anchor or hide them out of the drawer.
+        local mt = getmetatable(f)
+        local raw = mt and mt.__index
+        if raw then
+            raw.ClearAllPoints(f)
+            raw.SetPoint(f, "CENTER", drawerFrame, "BOTTOMLEFT", centerX, centerY)
+        else
+            f:ClearAllPoints()
+            f:SetPoint("CENTER", drawerFrame, "BOTTOMLEFT", centerX, centerY)
+        end
         f:SetSize(bSize, bSize)
 
-        -- Force visible via metatable (bypasses our overrides)
-        local mt = getmetatable(f)
-        if mt and mt.__index then
-            mt.__index.SetAlpha(f, 1)
-            mt.__index.Show(f)
+        if raw then
+            raw.SetAlpha(f, 1)
+            raw.Show(f)
         end
 
         -- Make icons square
@@ -3149,6 +3157,14 @@ local function CollectButton(frame, name)
         end
     end
     frame.SetParent = function() end  -- Prevent addons from re-parenting out of drawer
+    -- Block owner-driven re-anchoring too: custom minimap buttons (and
+    -- LibDBIcon's updatePosition on zoom/shape events) re-assert
+    -- SetPoint relative to Minimap after collection. With SetParent blocked,
+    -- that leaves the icon anchored at minimap coordinates inside the
+    -- clipped (and usually hidden) drawer — invisible everywhere.
+    -- LayoutDrawerButtons places buttons through the metatable instead.
+    frame.ClearAllPoints = function() end
+    frame.SetPoint = function() end
     -- Force visible using metatable methods (bypass our overrides for initial set)
     if mtSetAlpha then mtSetAlpha(frame, 1) end
     if mt and mt.__index then mt.__index.Show(frame) end
@@ -3228,6 +3244,8 @@ local function ReleaseAllButtons()
             frame.SetShown = nil
             frame.SetAlpha = nil
             frame.SetParent = nil
+            frame.ClearAllPoints = nil
+            frame.SetPoint = nil
             -- Restore hidden overlay/border textures for LibDBIcon buttons
             if data.hiddenRegions then
                 for _, region in ipairs(data.hiddenRegions) do
@@ -4134,6 +4152,11 @@ eventFrame:RegisterEvent("UPDATE_INSTANCE_INFO")
 -- on the first PLAYER_ENTERING_WORLD, in case it fires first) so the minimap's
 -- size/anchor land correct without any post-login pop.
 eventFrame:RegisterEvent("EDIT_MODE_LAYOUTS_UPDATED")
+-- Some addons create their minimap button on VARIABLES_LOADED, which on retail
+-- fires after PLAYER_ENTERING_WORLD — long past the eager (loading-screen)
+-- drawer scan and its catch-up timers. Rescan on it so those buttons land in
+-- the drawer at login instead of waiting for the first drawer open.
+eventFrame:RegisterEvent("VARIABLES_LOADED")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
@@ -4190,6 +4213,19 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
             Minimap_Module._settleReapplyDone = true
             C_Timer.After(0, function()
                 if Minimap_Module.Refresh then Minimap_Module:Refresh() end
+            end)
+        end
+    elseif event == "VARIABLES_LOADED" then
+        local settings = GetSettings()
+        if settings and settings.buttonDrawer and settings.buttonDrawer.enabled then
+            -- Deferred: the late-creating addon's own VARIABLES_LOADED handler
+            -- may not have run yet when ours fires.
+            C_Timer.After(0.5, function()
+                local s = GetSettings()
+                if s and s.buttonDrawer and s.buttonDrawer.enabled
+                    and ScanAndCollectButtons and not InCombatLockdown() then
+                    ScanAndCollectButtons()
+                end
             end)
         end
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" then
