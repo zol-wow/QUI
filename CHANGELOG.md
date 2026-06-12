@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta40 - 2026-06-12
+
+> 🧪 **QUI 4 beta — Alts equipment tab and tab filters.** The Alts window gains an **Equipment** tab comparing every character's gear side by side, and the Currencies and Reputations tabs gain **Filter** buttons so you can hide the entries you don't care about (also configurable from the Alts settings panel). The minimap button drawer now catches addon buttons created late in the loading process. Equipped item levels are newly cached, so the Equipment tab fills in per character as you next log each one in. No profile schema migration — your beta39 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Alts: Equipment tab.** A cross-character gear comparison grid — rows are equipment slots, columns are your characters (class-colored names, average item level per character in the footer). Each cell shows the item's icon and item level with a quality-colored border; hover for the full tooltip, shift-click to link in chat, and mouse-wheel to scroll when your roster overflows the window. Item levels populate from a newly cached per-slot scan, so each character fills in on their next login.
+- **Alts: Currencies and Reputations tab filters.** Both tabs gain a top-right **Filter** button opening a searchable checklist (with Select all / Deselect all) to hide currencies or factions you don't track. The footer shows how many are hidden. The same filters are also editable under the Alts settings panel, and newly discovered currencies and factions always default to visible.
+
+### Fixed
+- **Minimap button drawer: late-created buttons.** Buttons that other addons create late during loading could miss the drawer's login scan and stay loose on the minimap. The drawer now rescans when opened (and when its options list is shown), so stragglers get collected.
+
 ## v4.0.0-beta39 - 2026-06-12
 
 > 🧪 **QUI 4 beta — meet QUI Alts: account-wide character tracking.** ⚠️ This beta introduces the **QUI Alts module — brand new, expect bugs, and off by default** (enable it under Module Addons). A new Alts window tracks every character you log: gold, item level, played time, professions, reputations, weeklies, lockouts, currencies, and a cross-character item search that covers bags, banks, the warband bank, and guild banks. Under the hood, the character data layer moved from the Bags module into core and now collects in the background on every login regardless of which modules you enable — **this is a one-time cache reset**: offline characters' inventory snapshots repopulate as you next log each one in. The M+ timer also picks up forces-row alignment and height options. No profile schema migration — your beta38 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
