@@ -565,6 +565,12 @@ local function SuppressAll()
             end)
         end
     end
+
+    -- Takeover now owns ChatFrame2 (parked above): drive the session's first
+    -- combat-log filter apply so a mid-combat first Combat-tab click finds the
+    -- filters applied and the frame shown (CombatLogTab.Prime). Idempotent.
+    local CL = ns.QUI.Chat.CombatLogTab
+    if CL and CL.Prime then CL.Prime() end
 end
 
 local function RestoreAll()

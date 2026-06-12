@@ -6,7 +6,7 @@
 
 -- Minimal frame stub.
 local function F()
-    local f = { _pts = {}, _shown = false, _parent = nil, scripts = {} }
+    local f = { _pts = {}, _shown = false, _parent = nil, scripts = {}, _events = {} }
     function f:SetParent(p) self._parent = p end
     function f:GetParent() return self._parent end
     function f:ClearAllPoints() self._pts = {} end
@@ -16,14 +16,39 @@ local function F()
     function f:IsShown() return self._shown end
     function f:SetSize(w, h) self._size = { w, h } end
     function f:SetScript(k, fn) self.scripts[k] = fn end
-    function f:RegisterEvent() end
-    function f:UnregisterAllEvents() end
+    function f:RegisterEvent(e) self._events[e] = true end
+    function f:UnregisterAllEvents() self._events = {} end
     function f:GetName() return "ChatFrame2" end
     return f
 end
 
 _G.UIParent = F()
-_G.CreateFrame = function() return F() end
+-- CreateFrame records every frame (the module's waiters/driver are internal,
+-- tests locate them by shape) and emulates SecureHandlerBaseTemplate: Execute
+-- models the module's snippet — Hide+Show cycle the referenced combat log.
+local createdFrames = {}
+_G.CreateFrame = function(_, _, _, template)
+    local f = F()
+    if template == "SecureHandlerBaseTemplate" then
+        f._refs = {}
+        function f:SetFrameRef(label, frame) self._refs[label] = frame end
+        function f:Execute()
+            self._executed = (self._executed or 0) + 1
+            local cf = self._refs.quiCombatLog
+            if cf then
+                if cf:IsShown() then cf:Hide() end
+                cf:Show()
+            end
+        end
+    end
+    createdFrames[#createdFrames + 1] = f
+    return f
+end
+local function FindFrame(pred)
+    for _, f in ipairs(createdFrames) do
+        if pred(f) then return f end
+    end
+end
 _G.ChatFrame2 = F()
 _G.CombatLogQuickButtonFrame_Custom = F()
 _G.ChatFrame2.Background = F()
@@ -76,6 +101,10 @@ ns.QUI.Chat.DisplayLayer = {
 }
 ns.QUI.Chat.TabManager = { ReapplyAll = function() end }
 ns.QUI.Chat.Scrollbar = { SetShown = function() end }
+-- Regen-cycle/Prime guard: the module skips secure cycles when the Blizzard
+-- takeover is no longer active (e.g. torn down mid-combat).
+local suppressActive = true
+ns.QUI.Chat.BlizzardSuppress = { IsActive = function() return suppressActive end }
 
 assert(loadfile("QUI_Chat/chat/combat_log_tab.lua"))("QUI", ns)
 local CL = ns.QUI.Chat.CombatLogTab
@@ -143,5 +172,95 @@ assert(_G.ChatFrame2._rawFont[1] == "Fonts\\STOCK.TTF" and _G.ChatFrame2._rawFon
     "snapshotted stock font handed back on deactivate")
 assert(_G.ChatFrame2._font == nil,
     "durability hook stays inert while the tab is inactive")
+
+-- ===== In-combat activation =====
+-- ChatFrame2 is unprotected (FloatingChatFrame.xml:676), so the embed must run
+-- IMMEDIATELY during lockdown — the old defer-to-regen left the Combat tab
+-- dead until the fight ended. Only the secure filter cycle (restricted frame
+-- handles refuse unprotected frames in combat) waits for PLAYER_REGEN_ENABLED.
+local driver = FindFrame(function(f) return f._refs ~= nil end)
+assert(driver and driver._executed == 1,
+    "secure driver cycled exactly once during the out-of-combat activation")
+
+local inCombat = true
+_G.InCombatLockdown = function() return inCombat end
+
+CL.Activate(1)
+assert(CL.IsActiveWindow(1) == true, "window 1 active from an in-combat activate")
+assert(CL.GetHostParent() == container, "host resolves during lockdown")
+assert(_G.ChatFrame2:GetParent() == container,
+    "ChatFrame2 embedded immediately during lockdown (no regen wait)")
+assert(_G.CombatLogQuickButtonFrame_Custom:GetParent() == container,
+    "quick-bar embedded immediately during lockdown")
+assert(smf._shown == false, "SMF hidden by the in-combat embed")
+assert(_G.ChatFrame2._font == fontSentinel2, "font applied by the in-combat embed")
+assert(driver._executed == 1,
+    "secure cycle must NOT run in combat (restricted handles reject unprotected frames)")
+
+-- The deferred cycle is armed for regen...
+local waiter = FindFrame(function(f) return f._events.PLAYER_REGEN_ENABLED end)
+assert(waiter, "a regen waiter is registered for the deferred filter cycle")
+-- ...and fires it once combat drops.
+inCombat = false
+waiter.scripts.OnEvent(waiter)
+assert(driver._executed == 2, "filter cycle re-fired at PLAYER_REGEN_ENABLED")
+assert(_G.ChatFrame2._shown == true, "ChatFrame2 shown after the regen cycle")
+
+-- Deactivated before combat drops: the regen waiter still cycles — a parked
+-- cycle is harmless and doubles as the session's priming apply.
+inCombat = true
+CL.Activate(1)
+CL.Deactivate(1)
+assert(_G.ChatFrame2:GetParent() == CL.GetParkParent(),
+    "in-combat deactivate parks ChatFrame2 (unprotected reparent is lockdown-legal)")
+assert(smf._shown == true, "SMF restored by the in-combat deactivate")
+inCombat = false
+waiter = FindFrame(function(f) return f._events.PLAYER_REGEN_ENABLED end)
+assert(waiter, "regen waiter re-armed by the second in-combat activate")
+waiter.scripts.OnEvent(waiter)
+assert(driver._executed == 3, "regen cycle runs even while the tab is parked")
+
+-- Takeover torn down before combat drops: the regen waiter must SKIP (cycling
+-- a re-docked stock ChatFrame2 would pop it visible over stock chat).
+inCombat = true
+CL.Activate(1)
+suppressActive = false
+inCombat = false
+waiter = FindFrame(function(f) return f._events.PLAYER_REGEN_ENABLED end)
+assert(waiter, "regen waiter armed by the third in-combat activate")
+waiter.scripts.OnEvent(waiter)
+assert(driver._executed == 3, "regen cycle skipped after takeover teardown")
+suppressActive = true
+CL.Deactivate(1)
+
+-- ===== Priming =====
+-- Prime drives the session's first filter apply at takeover time so a
+-- mid-combat FIRST tab click finds filters applied and the frame shown.
+ns._settings.customDisplay.combatLogTab = false
+CL.Prime()
+assert(driver._executed == 3, "Prime no-ops while the tab feature is off (and must not latch)")
+ns._settings.customDisplay.combatLogTab = true
+CL.Prime()
+assert(driver._executed == 4, "Prime drives the first apply on the PARKED frame")
+assert(_G.ChatFrame2._shown == true, "primed ChatFrame2 ends shown (the park's design state)")
+CL.Prime()
+assert(driver._executed == 4, "Prime latches: once per session")
+
+-- ===== Mid-combat hidden fallback =====
+-- A still-hidden ChatFrame2 mid-combat (combat-/reload session) is shown
+-- INSECURELY rather than left blank; the queued regen cycle then re-fires
+-- the wrapper securely to restore exact filtering.
+inCombat = true
+_G.ChatFrame2:Hide()
+CL.Activate(1)
+assert(_G.ChatFrame2._shown == true,
+    "hidden ChatFrame2 shown insecurely mid-combat (never blank)")
+assert(driver._executed == 4, "secure cycle still deferred while locked")
+inCombat = false
+waiter = FindFrame(function(f) return f._events.PLAYER_REGEN_ENABLED end)
+assert(waiter, "regen waiter armed by the hidden-fallback activate")
+waiter.scripts.OnEvent(waiter)
+assert(driver._executed == 5, "secure re-apply heals the insecure show at regen")
+CL.Deactivate(1)
 
 print("OK chat_combat_log_tab_test")
