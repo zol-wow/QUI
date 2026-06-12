@@ -86,9 +86,43 @@ function UnitFactionGroup()  return "Alliance"            end
 function GetLocale()         return "enUS"                end
 function GetCurrentRegion()  return 1                      end
 
--- Combat-secret APIs (12.0+) — stub to "not secret"
-_G.issecretvalue   = function() return false end
-_G.canaccesstable  = function() return true end
+-- Combat-secret APIs (12.0+).
+-- Default behavior is unchanged: nothing is secret. Tests can create
+-- sentinel values via M.MakeSecret() that these predicates recognize.
+-- IMPORTANT: core/utils.lua captures _G.issecretvalue into a local at file
+-- load (core/utils.lua:27) — these exact function objects must be installed
+-- before LoadCore() and never reassigned. They consult the registry instead.
+--
+-- Simulation limits (Lua 5.1 cannot intercept these on tables):
+--   `if secret then` is truthy (real secrets throw on boolean test)
+--   `#secret` is 0            (real secrets throw on length)
+--   `secret == x` is false    (real secrets throw on equality)
+-- Arithmetic, relational compare, indexing all throw — matching the client.
+local SECRET_REGISTRY = setmetatable({}, { __mode = "k" })
+
+_G.issecretvalue  = function(v) return SECRET_REGISTRY[v] == true end
+_G.canaccesstable = function(t) return SECRET_REGISTRY[t] ~= true end
+
+local SECRET_MT = {
+    __index    = function() error("attempted to index a secret value", 2) end,
+    __newindex = function() error("attempted to write to a secret value", 2) end,
+    __concat   = function(a, b)
+        local function part(x)
+            return SECRET_REGISTRY[x] and "<secret>" or tostring(x)
+        end
+        return part(a) .. part(b)
+    end,
+    __tostring = function() return "<secret>" end,
+    __metatable = "secret",
+}
+
+-- Create an opaque secret sentinel for tests. Each call returns a distinct
+-- value that issecretvalue() reports as secret.
+function M.MakeSecret()
+    local s = setmetatable({}, SECRET_MT)
+    SECRET_REGISTRY[s] = true
+    return s
+end
 
 -- C_AddOns / similar tables — just empty so init.lua-style lookups don't error
 _G.C_AddOns = _G.C_AddOns or { GetAddOnMetadata = function() return nil end }
