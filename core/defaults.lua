@@ -308,6 +308,10 @@ local defaults = {
                 zone = true, lastSeen = true, professions = true,
             },
             scanners = { reputations = true, weeklies = true, lockouts = true },
+            -- Tab visibility filters: [id] = false hides; absent = visible
+            -- (explicit-false so newly seen currencies/factions default ON).
+            currencyFilter = {},
+            reputationFilter = {},
         },
 
         damageMeter = {

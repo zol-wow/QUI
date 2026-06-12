@@ -6,9 +6,12 @@
 -- (verified against vendored EquipmentManager.lua / PaperDollFrame.lua).
 -- PLAYER_EQUIPMENT_CHANGED(equipmentSlot, hasCurrent) gives a per-slot
 -- dirty unit; login catch-up is a MarkAllDirty from the deferred block.
--- Nil quality means item data isn't loaded yet → the shared scan_common
--- pending handler re-marks the slot on load success (cf. scan_bags.lua).
--- Store shape: rec.equipped = { size = 19, slots = { [invSlot] = entry } }.
+-- Nil quality or nil ilvl (C_Item.GetDetailedItemLevelInfo is
+-- MayReturnNothing) means item data isn't loaded yet → the shared
+-- scan_common pending handler re-marks the slot on load success
+-- (cf. scan_bags.lua).
+-- Store shape: rec.equipped = { size = 19, slots = { [invSlot] = entry } }
+-- where entry = { itemID, count, link, quality, ilvl, icon, isBound }.
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Storage = ns.Storage or {}; ns.Storage = Storage
@@ -40,12 +43,17 @@ local function ReadSlot(slot, onPending)
     local itemID = GetInventoryItemID("player", slot)
     if not itemID then return nil end
     local quality = GetInventoryItemQuality("player", slot)
-    if quality == nil and onPending then onPending(itemID) end
+    local link = GetInventoryItemLink("player", slot)
+    -- C_Item.GetDetailedItemLevelInfo is MayReturnNothing while item data
+    -- loads — re-mark the slot through the same pending path as nil quality.
+    local ilvl = C_Item.GetDetailedItemLevelInfo(link or itemID)
+    if (quality == nil or ilvl == nil) and onPending then onPending(itemID) end
     return {
         itemID = itemID,
         count = 1,
-        link = GetInventoryItemLink("player", slot),
+        link = link,
         quality = quality,
+        ilvl = ilvl,
         icon = GetInventoryItemTexture("player", slot),
         isBound = true, -- equipping binds (warbound at minimum)
     }

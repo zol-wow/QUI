@@ -2403,6 +2403,7 @@ local drawerAnimationFrame = nil
 local drawerAnimationState = nil
 local drawerExpandedWidth = 40
 local drawerExpandedHeight = 40
+local ScanAndCollectButtons  -- forward declared: ShowDrawer rescans on open
 
 local function IsMinimapButton(frame)
     if not frame or not frame.IsObjectType then return false end
@@ -2605,6 +2606,12 @@ end
 
 local function ShowDrawer()
     if drawerFrame and (not drawerVisible or not drawerFrame:IsShown()) then
+        -- Rescan on open: some addons create their minimap button on
+        -- VARIABLES_LOADED, which on retail fires after PLAYER_ENTERING_WORLD —
+        -- past the login-time scan and its expired catch-up timers.
+        if ScanAndCollectButtons and not InCombatLockdown() then
+            ScanAndCollectButtons()
+        end
         drawerVisible = true
         StartDrawerAnimation(true)
     end
@@ -3164,7 +3171,7 @@ local function CollectButton(frame, name)
     end
 end
 
-local function ScanAndCollectButtons()
+ScanAndCollectButtons = function()  -- assigned to forward-declared local
     if not drawerFrame then return end
 
     -- Scan Minimap children
@@ -4268,6 +4275,14 @@ end
 
 -- Expose collected button names for the options panel
 _G.QUI_GetDrawerButtonNames = function()
+    -- Same late-creator catch-up as ShowDrawer: buttons born on
+    -- VARIABLES_LOADED miss the login scans, and the panel may be opened
+    -- before the drawer ever was.
+    local settings = GetSettings()
+    if settings and settings.buttonDrawer and settings.buttonDrawer.enabled
+        and ScanAndCollectButtons and not InCombatLockdown() then
+        ScanAndCollectButtons()
+    end
     local names = {}
     for name in pairs(collectedButtons) do
         names[#names + 1] = name

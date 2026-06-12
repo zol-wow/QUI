@@ -4,11 +4,15 @@
 -- can see gaps. Group-label rows (gold text) precede their factions; groups
 -- sorted alphabetically with "Other" last; factions within a group sorted by
 -- name. Footer: "%d factions". Wheel scroll + row pool exactly like the
--- roster/professions tabs.
+-- roster/professions tabs. Rows honor alts.reputationFilter ([id] = false
+-- hides, absent = visible); the top-right Filter button opens the shared
+-- searchable checkbox popup (filter_popup.lua: search box + Select all/
+-- Deselect all on matched rows, gold group header rows) editing that map
+-- (the options panel's "Reputations Tab" section shares the key).
 --
 -- Pure helpers are exported on Alts.ReputationsView for headless tests:
 --   FormatEntry(entry)  → value-cell string
---   BuildDisplayRows(characters, names, groups) → flat row list
+--   BuildDisplayRows(characters, names, groups, filter) → flat row list
 -- Frame parts are NOT tested (no WoW frame API headless).
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
@@ -101,7 +105,10 @@ end
 --- characters: { [key] = rec, ... } (any value shape; only rec.reputations used)
 --- names:      [factionID] = name  (or nil → "Faction "..id)
 --- groups:     [factionID] = groupLabel (or nil → "Other")
-function ReputationsView.BuildDisplayRows(characters, names, groups)
+--- filter:     optional visibility map; [id] == false hides that faction
+---             (alts.reputationFilter shape — absent/true = visible). Groups
+---             whose every faction is hidden lose their header row too.
+function ReputationsView.BuildDisplayRows(characters, names, groups, filter)
     names  = names  or {}
     groups = groups or {}
 
@@ -117,16 +124,20 @@ function ReputationsView.BuildDisplayRows(characters, names, groups)
     end
 
     -- 2. Bucket factionIDs by their group label; record unique group labels.
+    --    Hidden factions (filter[id] == false) are skipped here, so groups
+    --    whose every faction is hidden never get a header row.
     local groupBuckets = {}  -- { [groupLabel] = { factionID, ... } }
     local groupSet     = {}  -- unique group labels
     for id in pairs(seen) do
-        local g = groups[id] or "Other"
-        if not groupBuckets[g] then
-            groupBuckets[g] = {}
-            groupSet[#groupSet + 1] = g
+        if not (filter and filter[id] == false) then
+            local g = groups[id] or "Other"
+            if not groupBuckets[g] then
+                groupBuckets[g] = {}
+                groupSet[#groupSet + 1] = g
+            end
+            local bucket = groupBuckets[g]
+            bucket[#bucket + 1] = id
         end
-        local bucket = groupBuckets[g]
-        bucket[#bucket + 1] = id
     end
 
     -- 3. Sort group labels alphabetically, "Other" forced to the end.
@@ -284,6 +295,61 @@ local function Builder(parent)
         end)
     end)
 
+    ---- filter button (top-right; selector chrome) --------------------------
+    -- Edits alts.reputationFilter in place ([id] = false hides, absent
+    -- shows); opens the shared searchable popup attached below. The
+    -- options panel's "Reputations Tab" section writes the same key.
+    local filterBtn = CreateFrame("Button", nil, frame)
+    filterBtn:SetHeight(22)
+    filterBtn:SetWidth(70)
+    filterBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -CELL_PAD, 0)
+    UIKit.CreateBackground(filterBtn, 1, 1, 1, 0.06)
+    UIKit.CreateBorderLines(filterBtn)
+    UIKit.UpdateBorderLines(filterBtn, 1, 1, 1, 1, 0.2)
+    filterBtn:SetScript("OnEnter", function(self)
+        UIKit.UpdateBorderLines(self, 1, 1, 1, 1, 0.35)
+    end)
+    filterBtn:SetScript("OnLeave", function(self)
+        UIKit.UpdateBorderLines(self, 1, 1, 1, 1, 0.2)
+    end)
+    local filterLabel = MakeFS(filterBtn, 11)
+    filterLabel:SetPoint("CENTER")
+    filterLabel:SetText("Filter")
+    filterLabel:SetTextColor(0.9, 0.9, 0.9)
+
+    ---- filter popup (shared searchable checkbox popup; filter_popup.lua) ---
+    -- Group rows become gold header rows inside the popup list; searching a
+    -- group name keeps its whole group (FilterPopup.MatchRows).
+    Alts.FilterPopup.Attach({
+        tabFrame = frame,
+        anchorButton = filterBtn,
+        getRows = function()
+            -- UNFILTERED rows so hidden entries stay listed (re-checkable)
+            local popupRows = {}
+            for _, e in ipairs(ReputationsView.BuildDisplayRows(cachedChars, cachedNames, cachedGroups, nil)) do
+                if e.kind == "group" then
+                    popupRows[#popupRows + 1] = { label = e.label, header = true }
+                else
+                    popupRows[#popupRows + 1] = { id = e.factionID, label = e.label }
+                end
+            end
+            return popupRows
+        end,
+        isChecked = function(id)
+            local s = Alts.GetSettings and Alts.GetSettings()
+            local filter = s and s.reputationFilter
+            return not (filter and filter[id] == false)
+        end,
+        setChecked = function(id, checked)
+            local s = Alts.GetSettings and Alts.GetSettings()
+            if not s then return end
+            if not s.reputationFilter then s.reputationFilter = {} end
+            if checked then s.reputationFilter[id] = nil
+            else s.reputationFilter[id] = false end
+        end,
+        onChanged = function() view.Refresh() end,
+    })
+
     ---- row pool (one Button per visible slot) -----------------------------
     local function GetRow(i)
         local r = rowPool[i]
@@ -405,7 +471,8 @@ local function Builder(parent)
             selectedKey = ChooseDefaultKey(cachedChars)
         end
 
-        rows = ReputationsView.BuildDisplayRows(cachedChars, cachedNames, cachedGroups)
+        local filter = (Alts.GetSettings and Alts.GetSettings() or {}).reputationFilter
+        rows = ReputationsView.BuildDisplayRows(cachedChars, cachedNames, cachedGroups, filter)
 
         -- Count faction rows for footer
         factionCount = 0
@@ -413,9 +480,20 @@ local function Builder(parent)
             if r.kind == "faction" then factionCount = factionCount + 1 end
         end
 
+        -- unfiltered count just for the footer's hidden tally
+        local total = 0
+        for _, r in ipairs(ReputationsView.BuildDisplayRows(cachedChars, cachedNames, cachedGroups, nil)) do
+            if r.kind == "faction" then total = total + 1 end
+        end
+
         UpdateSelectorLabel()
         RenderRows()
-        footer:SetText(string.format("%d factions", factionCount))
+        local hidden = total - factionCount
+        if hidden > 0 then
+            footer:SetText(string.format("%d factions (%d hidden)", factionCount, hidden))
+        else
+            footer:SetText(string.format("%d factions", factionCount))
+        end
     end
 
     -- mouse-wheel scroll

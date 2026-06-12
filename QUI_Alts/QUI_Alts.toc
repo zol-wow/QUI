@@ -12,10 +12,12 @@
 bootstrap.lua
 alts\roster_data.lua
 alts\views\window.lua
+alts\views\filter_popup.lua
 alts\views\roster.lua
 alts\views\professions.lua
 alts\views\reputations.lua
 alts\views\weeklies.lua
 alts\views\currencies.lua
+alts\views\equipment.lua
 alts\views\search.lua
 alts\alts.lua

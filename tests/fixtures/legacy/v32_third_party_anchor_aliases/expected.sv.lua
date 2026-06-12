@@ -407,7 +407,9 @@ return {
             rested = true,
             zone = true
           },
+          currencyFilter = {},
           enabled = false,
+          reputationFilter = {},
           scanners = {
             lockouts = true,
             reputations = true,

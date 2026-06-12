@@ -201,6 +201,177 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         L.closeSection(s2)
 
         ---------------------------------------------------------------------
+        -- TAB FILTERS (currencies + reputations visibility; same db keys as
+        -- the in-window Filter buttons: [id] = false hides, absent = show).
+        -- One dropdown button per tab opening the shared searchable popup
+        -- (filter_popup.lua, floating mode — the settings scrollframe clips
+        -- child frames). List builders live in the LoD view files — guard
+        -- and fall back to a note when QUI_Alts isn't loaded (LoD-symbol
+        -- rule); the data itself comes from always-loaded core Storage.
+        ---------------------------------------------------------------------
+        if not alts.currencyFilter then alts.currencyFilter = {} end
+        if not alts.reputationFilter then alts.reputationFilter = {} end
+
+        local Store2 = ns.Storage and ns.Storage.Store
+        local storeChars = {}
+        if Store2 and Store2.IsInitialized and Store2.IsInitialized()
+            and Store2.ListCharacters and Store2.GetCharacter then
+            for _, key in ipairs(Store2.ListCharacters()) do
+                local rec = Store2.GetCharacter(key)
+                if rec then storeChars[key] = rec end
+            end
+        end
+
+        -- dropdown-style button (alts-window selector chrome) opening the
+        -- shared filter popup; label shows a visible/hidden summary
+        local function MakeFilterDropdown(parentFrame)
+            local UIKit = ns.UIKit
+            local b = CreateFrame("Button", nil, parentFrame)
+            b:SetSize(200, 22)
+            UIKit.CreateBackground(b, 1, 1, 1, 0.06)
+            UIKit.CreateBorderLines(b)
+            UIKit.UpdateBorderLines(b, 1, 1, 1, 1, 0.2)
+            b:SetScript("OnEnter", function(self)
+                UIKit.UpdateBorderLines(self, 1, 1, 1, 1, 0.35)
+            end)
+            b:SetScript("OnLeave", function(self)
+                UIKit.UpdateBorderLines(self, 1, 1, 1, 1, 0.2)
+            end)
+            local caret = UIKit.CreateChevronCaret(b, {
+                point = "RIGHT", relativeTo = b, relativePoint = "RIGHT",
+                xPixels = -8, sizePixels = 10, lineWidthPixels = 6,
+                r = 1, g = 1, b = 1, a = 0.45,
+                expanded = true,
+            })
+            local lbl = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            lbl:SetPoint("LEFT", b, "LEFT", 8, 0)
+            lbl:SetPoint("RIGHT", caret, "LEFT", -4, 0)
+            lbl:SetJustifyH("LEFT")
+            lbl:SetTextColor(0.9, 0.9, 0.9, 1)
+            function b.SetSummary(text) lbl:SetText(text) end
+            return b
+        end
+
+        local function MakeSummary(entries, filter, idField)
+            local hidden = 0
+            for _, e in ipairs(entries) do
+                if filter[e[idField]] == false then hidden = hidden + 1 end
+            end
+            if hidden == 0 then
+                return string.format("All shown (%d)", #entries)
+            end
+            return string.format("%d of %d shown", #entries - hidden, #entries)
+        end
+
+        local FP = ns.Alts and ns.Alts.FilterPopup
+
+        L.headerAt("Currencies Tab")
+        local CV = ns.Alts and ns.Alts.CurrenciesView
+        if not (CV and FP) then
+            PlaceNote(L, content,
+                "Enable the Alts module (and reload) to configure which currencies the Currencies tab shows.",
+                30)
+        else
+            local curNames = {}
+            for _, rec in pairs(storeChars) do
+                if type(rec.currencies) == "table" then
+                    for id in pairs(rec.currencies) do
+                        if curNames[id] == nil and C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo then
+                            local info = C_CurrencyInfo.GetCurrencyInfo(id) -- MayReturnNothing
+                            curNames[id] = (info and info.name) or false
+                        end
+                    end
+                end
+            end
+            local curEntries = CV.BuildDisplayRows(storeChars, curNames, nil)
+            if #curEntries == 0 then
+                PlaceNote(L, content, "No currencies tracked yet.", 26)
+            else
+                local sC = L.sectionAt()
+                local btn = MakeFilterDropdown(sC.frame)
+                btn.SetSummary(MakeSummary(curEntries, alts.currencyFilter, "currencyID"))
+                FP.Attach({
+                    tabFrame = content,
+                    floating = true,
+                    anchorButton = btn,
+                    getRows = function()
+                        local popupRows = {}
+                        for _, e in ipairs(curEntries) do
+                            popupRows[#popupRows + 1] = { id = e.currencyID, label = e.label }
+                        end
+                        return popupRows
+                    end,
+                    isChecked = function(id) return alts.currencyFilter[id] ~= false end,
+                    setChecked = function(id, checked)
+                        if checked then alts.currencyFilter[id] = nil
+                        else alts.currencyFilter[id] = false end
+                    end,
+                    onChanged = function()
+                        btn.SetSummary(MakeSummary(curEntries, alts.currencyFilter, "currencyID"))
+                        Refresh()
+                    end,
+                })
+                sC.AddRow(row(sC.frame, "Visible currencies", btn,
+                    "Choose which currencies the Currencies tab lists. Same filter as the tab's own Filter button."))
+                L.closeSection(sC)
+            end
+        end
+
+        L.headerAt("Reputations Tab")
+        local RV = ns.Alts and ns.Alts.ReputationsView
+        if not (RV and FP) then
+            PlaceNote(L, content,
+                "Enable the Alts module (and reload) to configure which reputations the Reputations tab shows.",
+                30)
+        else
+            local fNames  = (Store2 and Store2.GetFactionNames  and Store2.GetFactionNames())  or {}
+            local fGroups = (Store2 and Store2.GetFactionGroups and Store2.GetFactionGroups()) or {}
+            local repRows = RV.BuildDisplayRows(storeChars, fNames, fGroups, nil)
+            local factionEntries = {}
+            for _, r in ipairs(repRows) do
+                if r.kind == "faction" then
+                    factionEntries[#factionEntries + 1] = r
+                end
+            end
+            if #factionEntries == 0 then
+                PlaceNote(L, content, "No reputations tracked yet.", 26)
+            else
+                local sR = L.sectionAt()
+                local btn = MakeFilterDropdown(sR.frame)
+                btn.SetSummary(MakeSummary(factionEntries, alts.reputationFilter, "factionID"))
+                FP.Attach({
+                    tabFrame = content,
+                    floating = true,
+                    anchorButton = btn,
+                    getRows = function()
+                        -- full row list incl. group headers (gold rows)
+                        local popupRows = {}
+                        for _, e in ipairs(repRows) do
+                            if e.kind == "group" then
+                                popupRows[#popupRows + 1] = { label = e.label, header = true }
+                            else
+                                popupRows[#popupRows + 1] = { id = e.factionID, label = e.label }
+                            end
+                        end
+                        return popupRows
+                    end,
+                    isChecked = function(id) return alts.reputationFilter[id] ~= false end,
+                    setChecked = function(id, checked)
+                        if checked then alts.reputationFilter[id] = nil
+                        else alts.reputationFilter[id] = false end
+                    end,
+                    onChanged = function()
+                        btn.SetSummary(MakeSummary(factionEntries, alts.reputationFilter, "factionID"))
+                        Refresh()
+                    end,
+                })
+                sR.AddRow(row(sR.frame, "Visible reputations", btn,
+                    "Choose which reputations the Reputations tab lists. Same filter as the tab's own Filter button."))
+                L.closeSection(sR)
+            end
+        end
+
+        ---------------------------------------------------------------------
         -- CACHE (character list + delete — alt-tracking design doc scope:
         -- "character-cache management (list + delete)")
         ---------------------------------------------------------------------

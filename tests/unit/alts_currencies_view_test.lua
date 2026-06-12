@@ -81,3 +81,29 @@ assert(dupRows[1].currencyID == 3 and dupRows[2].currencyID == 5,
     "tie-break by id")
 
 print("OK alts_currencies_view_test")
+
+---------------------------------------------------------------------------
+-- BuildDisplayRows: filter param (visibility map, [id]=false hides)
+---------------------------------------------------------------------------
+do
+    local fchars = { a = { currencies = { [101] = 5, [202] = 9, [303] = 1 } } }
+    local fnames = { [101] = "Alpha", [202] = "Beta", [303] = "Gamma" }
+
+    -- nil filter → all rows (back-compat)
+    local frows = CV.BuildDisplayRows(fchars, fnames, nil)
+    assert(#frows == 3, "nil filter keeps all: " .. #frows)
+
+    -- explicit false hides; true/absent visible
+    frows = CV.BuildDisplayRows(fchars, fnames, { [202] = false })
+    assert(#frows == 2, "filtered count: " .. #frows)
+    assert(frows[1].currencyID == 101 and frows[2].currencyID == 303, "202 hidden")
+
+    -- empty filter table → all visible
+    frows = CV.BuildDisplayRows(fchars, fnames, {})
+    assert(#frows == 3, "empty filter keeps all")
+end
+
+print("OK filter param")
+
+-- Search filtering moved to the shared popup component:
+-- see tests/unit/alts_filter_popup_test.lua (FilterPopup.MatchRows).

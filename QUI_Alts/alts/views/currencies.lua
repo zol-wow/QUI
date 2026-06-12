@@ -6,10 +6,15 @@
 -- name/icon/max resolve LIVE per session through
 -- C_CurrencyInfo.GetCurrencyInfo (MayReturnNothing — unresolvable IDs fall
 -- back to "Currency <id>" with no icon) and are session-cached.
+-- Rows honor alts.currencyFilter ([id] = false hides, absent = visible);
+-- the top-right Filter button opens the shared searchable checkbox popup
+-- (filter_popup.lua: search box + Select all/Deselect all on matched rows)
+-- editing that map in place (the options panel's "Currencies Tab" section
+-- shares the key).
 --
 -- Pure helpers exported on Alts.CurrenciesView for headless tests:
 --   FormatQuantity(qty, max) → value-cell string
---   BuildDisplayRows(characters, names) → sorted { currencyID, label } list
+--   BuildDisplayRows(characters, names, filter) → sorted { currencyID, label } list
 -- Frame parts are NOT tested (no WoW frame API headless).
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
@@ -52,7 +57,9 @@ end
 --- array of { currencyID = id, label = name }.
 --- characters: { [key] = rec } (only rec.currencies used)
 --- names:      [currencyID] = name (or nil → fallback label)
-function CurrenciesView.BuildDisplayRows(characters, names)
+--- filter:     optional visibility map; [id] == false hides that currency
+---             (alts.currencyFilter shape — absent/true = visible)
+function CurrenciesView.BuildDisplayRows(characters, names, filter)
     names = names or {}
     local seen = {}
     for _, rec in pairs(characters or {}) do
@@ -63,7 +70,9 @@ function CurrenciesView.BuildDisplayRows(characters, names)
     end
     local rows = {}
     for id in pairs(seen) do
-        rows[#rows + 1] = { currencyID = id, label = names[id] or ("Currency " .. id) }
+        if not (filter and filter[id] == false) then
+            rows[#rows + 1] = { currencyID = id, label = names[id] or ("Currency " .. id) }
+        end
     end
     table.sort(rows, function(a, b)
         if a.label == b.label then return a.currencyID < b.currencyID end
@@ -210,6 +219,66 @@ local function Builder(parent)
         end)
     end)
 
+    ---- filter button (top-right; selector chrome) --------------------------
+    -- Edits alts.currencyFilter in place ([id] = false hides, absent shows);
+    -- the options panel's "Currencies Tab" section writes the same key.
+    local filterBtn = CreateFrame("Button", nil, frame)
+    filterBtn:SetHeight(22)
+    filterBtn:SetWidth(70)
+    filterBtn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -CELL_PAD, 0)
+    UIKit.CreateBackground(filterBtn, 1, 1, 1, 0.06)
+    UIKit.CreateBorderLines(filterBtn)
+    UIKit.UpdateBorderLines(filterBtn, 1, 1, 1, 1, 0.2)
+    filterBtn:SetScript("OnEnter", function(self)
+        UIKit.UpdateBorderLines(self, 1, 1, 1, 1, 0.35)
+    end)
+    filterBtn:SetScript("OnLeave", function(self)
+        UIKit.UpdateBorderLines(self, 1, 1, 1, 1, 0.2)
+    end)
+    local filterLabel = MakeFS(filterBtn, 11)
+    filterLabel:SetPoint("CENTER")
+    filterLabel:SetText("Filter")
+    filterLabel:SetTextColor(0.9, 0.9, 0.9)
+
+    ---- filter popup (shared searchable checkbox popup; filter_popup.lua) ---
+    Alts.FilterPopup.Attach({
+        tabFrame = frame,
+        anchorButton = filterBtn,
+        getRows = function()
+            -- UNFILTERED union so hidden entries stay listed (re-checkable);
+            -- false name-cache entries fall through to the fallback label
+            local names = {}
+            for _, rec in pairs(cachedChars) do
+                if type(rec.currencies) == "table" then
+                    for id in pairs(rec.currencies) do
+                        if names[id] == nil then
+                            local info = ResolveInfo(id)
+                            names[id] = info and info.name or false
+                        end
+                    end
+                end
+            end
+            local popupRows = {}
+            for _, e in ipairs(CurrenciesView.BuildDisplayRows(cachedChars, names, nil)) do
+                popupRows[#popupRows + 1] = { id = e.currencyID, label = e.label }
+            end
+            return popupRows
+        end,
+        isChecked = function(id)
+            local s = Alts.GetSettings and Alts.GetSettings()
+            local filter = s and s.currencyFilter
+            return not (filter and filter[id] == false)
+        end,
+        setChecked = function(id, checked)
+            local s = Alts.GetSettings and Alts.GetSettings()
+            if not s then return end
+            if not s.currencyFilter then s.currencyFilter = {} end
+            if checked then s.currencyFilter[id] = nil
+            else s.currencyFilter[id] = false end
+        end,
+        onChanged = function() view.Refresh() end,
+    })
+
     ---- row pool ------------------------------------------------------------
     local function GetRow(i)
         local r = rowPool[i]
@@ -325,11 +394,20 @@ local function Builder(parent)
                 if info then names[id] = info.name end
             end
         end
-        rows = CurrenciesView.BuildDisplayRows(cachedChars, names)
+        local filter = (Alts.GetSettings and Alts.GetSettings() or {}).currencyFilter
+        rows = CurrenciesView.BuildDisplayRows(cachedChars, names, filter)
+
+        -- unfiltered count just for the footer's hidden tally
+        local total = #CurrenciesView.BuildDisplayRows(cachedChars, names, nil)
 
         UpdateSelectorLabel()
         RenderRows()
-        footer:SetText(string.format("%d currencies", #rows))
+        local hidden = total - #rows
+        if hidden > 0 then
+            footer:SetText(string.format("%d currencies (%d hidden)", #rows, hidden))
+        else
+            footer:SetText(string.format("%d currencies", #rows))
+        end
     end
 
     -- mouse-wheel scroll

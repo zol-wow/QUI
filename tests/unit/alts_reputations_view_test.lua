@@ -202,3 +202,31 @@ end
 assert(found, "faction 42 present in rows with fallback name")
 
 print("OK: alts_reputations_view_test")
+
+---------------------------------------------------------------------------
+-- BuildDisplayRows: filter param ([factionID]=false hides; group headers
+-- with zero visible factions are dropped)
+---------------------------------------------------------------------------
+do
+    local fchars  = { a = { reputations = { [11] = {}, [22] = {}, [33] = {} } } }
+    local fnames  = { [11] = "AFac", [22] = "BFac", [33] = "CFac" }
+    local fgroups = { [11] = "G1", [22] = "G1", [33] = "G2" }
+
+    -- nil filter → 2 group rows + 3 faction rows (back-compat)
+    local frows = RV.BuildDisplayRows(fchars, fnames, fgroups, nil)
+    assert(#frows == 5, "nil filter keeps all: " .. #frows)
+
+    -- hide one faction in a two-faction group: header stays
+    frows = RV.BuildDisplayRows(fchars, fnames, fgroups, { [11] = false })
+    assert(#frows == 4, "one hidden: " .. #frows)
+
+    -- hide a group's only faction: header dropped too
+    -- (G1 header + AFac + BFac = 3 rows)
+    frows = RV.BuildDisplayRows(fchars, fnames, fgroups, { [33] = false })
+    assert(#frows == 3, "G2 elided: " .. #frows)
+    for _, r in ipairs(frows) do
+        assert(not (r.kind == "group" and r.label == "G2"), "G2 header gone")
+    end
+end
+
+print("OK: filter param")
