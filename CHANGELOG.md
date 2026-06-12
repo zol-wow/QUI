@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta39 - 2026-06-12
+
+> 🧪 **QUI 4 beta — meet QUI Alts: account-wide character tracking.** ⚠️ This beta introduces the **QUI Alts module — brand new, expect bugs, and off by default** (enable it under Module Addons). A new Alts window tracks every character you log: gold, item level, played time, professions, reputations, weeklies, lockouts, currencies, and a cross-character item search that covers bags, banks, the warband bank, and guild banks. Under the hood, the character data layer moved from the Bags module into core and now collects in the background on every login regardless of which modules you enable — **this is a one-time cache reset**: offline characters' inventory snapshots repopulate as you next log each one in. The M+ timer also picks up forces-row alignment and height options. No profile schema migration — your beta38 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **QUI Alts module (off by default).** A new account-wide character window — toggle it under Module Addons, then open it with `/alts` (or `/quialts`). Six tabs: **Roster** (sortable columns for gold, item level, played, rested, zone, professions, last seen, with account totals and right-click to drop a character from the cache), **Currencies** (every currency seen on any character, one selected character at a time), **Professions**, **Reputations** (renown- and paragon-aware, per-character selector), **Weeklies** (Great Vault, keystone, M+ rating, plus raid lockouts), and **Search** (find any item across all characters' bags and banks, including warband and guild banks).
+- **Alts datatext.** A new datatext for the Info Bar and data panels summarising the account cache, with a configurable bar text (total account gold or alt count); clicking it toggles the Alts window.
+- **M+ timer: forces row alignment and height.** The forces text gains a Left/Center/Right alignment dropdown, and bar mode gains a height setting (0 keeps the layout's default).
+
+### Changed
+- **Character data now collects in core, always on.** The storage layer behind Bags was promoted out of the module: scanning (character basics, gold, professions, reputations, weeklies, lockouts, inventory) runs at login whether or not Bags or Alts are enabled, so the cache is warm by the time you opt in. Per-scanner toggles for reputations, weeklies, and lockouts live in the Alts settings. One-time effect for existing installs: offline characters' inventory snapshots reset and repopulate as each character next logs in.
+- **Played time fills in by itself.** The roster's Played column no longer waits for you to type `/played` — one silent request fires at login with the chat reply suppressed, so nothing extra prints to your chat.
+- **Gold datatext reads the account cache.** Gold tracking now uses the same core roster as the Alts window (the old gold store remains as a read-only fallback); deleting a character from the roster also clears its legacy gold entry, and middle-click now opens the Alts window.
+
 ## v4.0.0-beta38 - 2026-06-12
 
 > 🧪 **QUI 4 beta — Layout Mode anchoring polish and a damage meter display option.** A small beta: in Layout Mode, frames anchored to other frames now follow live while you drag, mover handles land where the anchored frame actually sits, and the minimap no longer fights the mover while docked elsewhere. The damage meter gains a toggle to hide the parenthetical secondary value on rows. No schema migration — your beta37 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
