@@ -6,6 +6,19 @@ the command line.
 
 Run each from the **repository root** so bundled libs (`libs/`) resolve.
 
+## test.sh — run all CI gates locally
+
+Runs the same four gates CI enforces (compile check, taint strict mode,
+profile fixtures, unit tests). Run before every push:
+
+```sh
+bash tools/test.sh
+```
+
+Requires Lua 5.1 (`brew install lua@5.1`); falls back to whatever `lua` is
+on PATH with a warning. Override with `LUA=/path/to/lua5.1` /
+`LUAC=/path/to/luac5.1`.
+
 ## generate_search_cache.lua
 
 Regenerates `QUI_OptionsSearch/search_cache.lua` from in-source settings
