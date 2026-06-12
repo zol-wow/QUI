@@ -242,8 +242,10 @@ do
                 forcesDisplayMode = "bar",
                 forcesPosition = "after_timer",
                 forcesTextFormat = "both",
+                forcesTextAlign = "LEFT",
                 forcesFont = "Poppins",
                 forcesFontSize = 11,
+                forcesBarHeight = 0,
                 barUseClassColor = false,
             })
             if mpDB.barColor == nil then
@@ -289,6 +291,15 @@ do
             sFB.AddRow(
                 row(sFB.frame, "Position", fbPosW),
                 row(sFB.frame, "Text Format", fbFmtW)
+            )
+
+            local fbAlignW = GUI:CreateFormDropdown(sFB.frame, nil, objAlignOpts, "forcesTextAlign", mpDB, RefreshLayout,
+                { description = "Horizontal alignment of the forces text when Display Mode is Text Only." })
+            local fbBarHeightW = GUI:CreateFormSlider(sFB.frame, nil, 0, 30, 1, "forcesBarHeight", mpDB, RefreshLayout,
+                { deferOnDrag = true, description = "Height of the forces progress bar. 0 uses the layout's default height (14 Full / 12 Compact / 8 Sleek)." })
+            sFB.AddRow(
+                row(sFB.frame, "Text Alignment", fbAlignW),
+                row(sFB.frame, "Bar Height", fbBarHeightW)
             )
 
             local fontList = {}

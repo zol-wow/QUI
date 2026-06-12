@@ -206,9 +206,11 @@ local DEFAULTS = {
     forcesDisplayMode = "bar",       -- "bar" | "text"
     forcesPosition = "after_timer",  -- "before_timer" | "after_timer" | "before_objectives" | "after_objectives"
     forcesTextFormat = "both",       -- "count" | "percentage" | "both"
+    forcesTextAlign = "LEFT",        -- "LEFT" | "CENTER" | "RIGHT"
     forcesLabel = "Forces",
     forcesFont = "Poppins",
     forcesFontSize = 11,
+    forcesBarHeight = 0,             -- 0 = layout default (full 14 / compact 12 / sleek 8)
     maxDungeonNameLength = 18,
 }
 
@@ -665,6 +667,70 @@ end
 ---------------------------------------------------------------------------
 -- Layout
 ---------------------------------------------------------------------------
+-- Anchors the forces label/value pair inside forcesTextFrame per the
+-- alignment setting. CENTER depends on the rendered string widths, so this
+-- re-runs whenever the value text changes (RenderForces).
+function MPlusTimer:AnchorForcesText()
+    local frame = self.frames.forcesTextFrame
+    local label = self.frames.forcesLabelText
+    local value = self.frames.forcesValueText
+    if not (frame and label and value) then return end
+
+    local align = GetSettings().forcesTextAlign
+    if align ~= "CENTER" and align ~= "RIGHT" then align = "LEFT" end
+
+    label:ClearAllPoints()
+    value:ClearAllPoints()
+    if align == "RIGHT" then
+        value:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+        label:SetPoint("RIGHT", value, "LEFT", -5, 0)
+    elseif align == "CENTER" then
+        local total = label:GetStringWidth() + 5 + value:GetStringWidth()
+        label:SetPoint("LEFT", frame, "CENTER", -total / 2, 0)
+        value:SetPoint("LEFT", label, "RIGHT", 5, 0)
+    else
+        label:SetPoint("LEFT", frame, "LEFT", 0, 0)
+        value:SetPoint("LEFT", label, "RIGHT", 5, 0)
+    end
+end
+
+-- Resolves the forces bar height: explicit setting, or the layout mode's
+-- timer-bar height when the setting is 0/unset.
+local function GetForcesBarHeight(settings, layoutBarHeight)
+    local h = tonumber(settings.forcesBarHeight) or 0
+    if h > 0 then return h end
+    return layoutBarHeight
+end
+
+-- Sizes and shows the bar-mode forces row. The anchor varies by call site
+-- (root-relative, or stacked under the timer bars container).
+function MPlusTimer:LayoutForcesBar(anchorTo, x, y, barWidth, barHeight, fontPath, fontSize)
+    local forces = self.bars.forces
+    forces.frame:ClearAllPoints()
+    forces.frame:SetPoint("TOPLEFT", anchorTo, "TOPLEFT", x, y)
+    forces.frame:SetSize(barWidth, barHeight)
+    forces.bar:SetPoint("TOPLEFT", 1, -1)
+    forces.bar:SetPoint("BOTTOMRIGHT", -1, 1)
+    forces.text:SetFont(fontPath, fontSize, FONT_FLAGS)
+    if forces.overlay then
+        forces.overlay:SetPoint("TOPLEFT", 1, -1)
+        forces.overlay:SetPoint("BOTTOMRIGHT", -1, 1)
+    end
+    forces.frame:Show()
+end
+
+-- Positions the text-mode forces row and applies font + alignment.
+function MPlusTimer:LayoutForcesText(pad, yOffset, barWidth, fontPath, fontSize)
+    local frame = self.frames.forcesTextFrame
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
+    frame:SetSize(barWidth, fontSize + 2)
+    self.frames.forcesLabelText:SetFont(fontPath, fontSize, FONT_FLAGS)
+    self.frames.forcesValueText:SetFont(fontPath, fontSize, FONT_FLAGS)
+    self:AnchorForcesText()
+    frame:Show()
+end
+
 -- Anchors the objectives container across the panel width and lays out the
 -- objective lines per the alignment setting. Lines stay auto-sized (single
 -- anchor point) so long boss names overflow instead of wrapping/clipping.
@@ -735,6 +801,7 @@ function MPlusTimer:UpdateLayoutCompact(font, settings)
     local forcesPos = settings.forcesPosition or "after_timer"
     local forcesDisplayMode = settings.forcesDisplayMode or "bar"
     local forcesFontPath, forcesFontSize = GetForcesFont()
+    local forcesBarHeight = GetForcesBarHeight(settings, barHeight)
 
     if self.frames.forcesTextFrame then
         self.frames.forcesTextFrame:Hide()
@@ -791,30 +858,13 @@ function MPlusTimer:UpdateLayoutCompact(font, settings)
         if forcesDisplayMode == "text" then
             self.bars.forces.frame:Hide()
             if self.frames.forcesTextFrame then
-                self.frames.forcesTextFrame:ClearAllPoints()
-                self.frames.forcesTextFrame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-                self.frames.forcesTextFrame:SetSize(barWidth, forcesFontSize + 2)
-                self.frames.forcesLabelText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesValueText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesLabelText:SetPoint("LEFT", self.frames.forcesTextFrame, "LEFT", 0, 0)
-                self.frames.forcesValueText:SetPoint("LEFT", self.frames.forcesLabelText, "RIGHT", 5, 0)
-                self.frames.forcesTextFrame:Show()
+                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
             end
             yOffset = yOffset + forcesFontSize + 2 + vSpace
         else
             if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self.bars.forces.frame:ClearAllPoints()
-            self.bars.forces.frame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-            self.bars.forces.frame:SetSize(barWidth, barHeight)
-            self.bars.forces.bar:SetPoint("TOPLEFT", 1, -1)
-            self.bars.forces.bar:SetPoint("BOTTOMRIGHT", -1, 1)
-            self.bars.forces.text:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-            if self.bars.forces.overlay then
-                self.bars.forces.overlay:SetPoint("TOPLEFT", 1, -1)
-                self.bars.forces.overlay:SetPoint("BOTTOMRIGHT", -1, 1)
-            end
-            self.bars.forces.frame:Show()
-            yOffset = yOffset + barHeight + barPad
+            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
+            yOffset = yOffset + forcesBarHeight + barPad
         end
     else
         self.bars.forces.frame:Hide()
@@ -857,30 +907,13 @@ function MPlusTimer:UpdateLayoutCompact(font, settings)
         if forcesDisplayMode == "text" then
             self.bars.forces.frame:Hide()
             if self.frames.forcesTextFrame then
-                self.frames.forcesTextFrame:ClearAllPoints()
-                self.frames.forcesTextFrame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-                self.frames.forcesTextFrame:SetSize(barWidth, forcesFontSize + 2)
-                self.frames.forcesLabelText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesValueText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesLabelText:SetPoint("LEFT", self.frames.forcesTextFrame, "LEFT", 0, 0)
-                self.frames.forcesValueText:SetPoint("LEFT", self.frames.forcesLabelText, "RIGHT", 5, 0)
-                self.frames.forcesTextFrame:Show()
+                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
             end
             yOffset = yOffset + forcesFontSize + 2 + vSpace
         else
             if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self.bars.forces.frame:ClearAllPoints()
-            self.bars.forces.frame:SetPoint("TOPLEFT", self.frames.bars, "TOPLEFT", 0, -(barHeight + barPad))
-            self.bars.forces.frame:SetSize(barWidth, barHeight)
-            self.bars.forces.bar:SetPoint("TOPLEFT", 1, -1)
-            self.bars.forces.bar:SetPoint("BOTTOMRIGHT", -1, 1)
-            self.bars.forces.text:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-            if self.bars.forces.overlay then
-                self.bars.forces.overlay:SetPoint("TOPLEFT", 1, -1)
-                self.bars.forces.overlay:SetPoint("BOTTOMRIGHT", -1, 1)
-            end
-            self.bars.forces.frame:Show()
-            yOffset = yOffset + barHeight + barPad
+            self:LayoutForcesBar(self.frames.bars, 0, -(barHeight + barPad), barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
+            yOffset = yOffset + forcesBarHeight + barPad
         end
     end
 
@@ -890,30 +923,13 @@ function MPlusTimer:UpdateLayoutCompact(font, settings)
         if forcesDisplayMode == "text" then
             self.bars.forces.frame:Hide()
             if self.frames.forcesTextFrame then
-                self.frames.forcesTextFrame:ClearAllPoints()
-                self.frames.forcesTextFrame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-                self.frames.forcesTextFrame:SetSize(barWidth, forcesFontSize + 2)
-                self.frames.forcesLabelText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesValueText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesLabelText:SetPoint("LEFT", self.frames.forcesTextFrame, "LEFT", 0, 0)
-                self.frames.forcesValueText:SetPoint("LEFT", self.frames.forcesLabelText, "RIGHT", 5, 0)
-                self.frames.forcesTextFrame:Show()
+                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
             end
             yOffset = yOffset + forcesFontSize + 2 + vSpace
         else
             if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self.bars.forces.frame:ClearAllPoints()
-            self.bars.forces.frame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-            self.bars.forces.frame:SetSize(barWidth, barHeight)
-            self.bars.forces.bar:SetPoint("TOPLEFT", 1, -1)
-            self.bars.forces.bar:SetPoint("BOTTOMRIGHT", -1, 1)
-            self.bars.forces.text:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-            if self.bars.forces.overlay then
-                self.bars.forces.overlay:SetPoint("TOPLEFT", 1, -1)
-                self.bars.forces.overlay:SetPoint("BOTTOMRIGHT", -1, 1)
-            end
-            self.bars.forces.frame:Show()
-            yOffset = yOffset + barHeight + barPad + vSpace
+            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
+            yOffset = yOffset + forcesBarHeight + barPad + vSpace
         end
     end
 
@@ -923,30 +939,13 @@ function MPlusTimer:UpdateLayoutCompact(font, settings)
         if forcesDisplayMode == "text" then
             self.bars.forces.frame:Hide()
             if self.frames.forcesTextFrame then
-                self.frames.forcesTextFrame:ClearAllPoints()
-                self.frames.forcesTextFrame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-                self.frames.forcesTextFrame:SetSize(barWidth, forcesFontSize + 2)
-                self.frames.forcesLabelText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesValueText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesLabelText:SetPoint("LEFT", self.frames.forcesTextFrame, "LEFT", 0, 0)
-                self.frames.forcesValueText:SetPoint("LEFT", self.frames.forcesLabelText, "RIGHT", 5, 0)
-                self.frames.forcesTextFrame:Show()
+                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
             end
             yOffset = yOffset + forcesFontSize + 2 + vSpace
         else
             if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self.bars.forces.frame:ClearAllPoints()
-            self.bars.forces.frame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-            self.bars.forces.frame:SetSize(barWidth, barHeight)
-            self.bars.forces.bar:SetPoint("TOPLEFT", 1, -1)
-            self.bars.forces.bar:SetPoint("BOTTOMRIGHT", -1, 1)
-            self.bars.forces.text:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-            if self.bars.forces.overlay then
-                self.bars.forces.overlay:SetPoint("TOPLEFT", 1, -1)
-                self.bars.forces.overlay:SetPoint("BOTTOMRIGHT", -1, 1)
-            end
-            self.bars.forces.frame:Show()
-            yOffset = yOffset + barHeight + barPad
+            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
+            yOffset = yOffset + forcesBarHeight + barPad
         end
     end
 
@@ -972,6 +971,7 @@ function MPlusTimer:UpdateLayoutSleek(font, settings)
     local forcesPos = settings.forcesPosition or "after_timer"
     local forcesDisplayMode = settings.forcesDisplayMode or "bar"
     local forcesFontPath, forcesFontSize = GetForcesFont()
+    local forcesBarHeight = GetForcesBarHeight(settings, barHeight)
 
     if self.frames.forcesTextFrame then
         self.frames.forcesTextFrame:Hide()
@@ -1040,30 +1040,13 @@ function MPlusTimer:UpdateLayoutSleek(font, settings)
         if forcesDisplayMode == "text" then
             self.bars.forces.frame:Hide()
             if self.frames.forcesTextFrame then
-                self.frames.forcesTextFrame:ClearAllPoints()
-                self.frames.forcesTextFrame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-                self.frames.forcesTextFrame:SetSize(barWidth, forcesFontSize + 2)
-                self.frames.forcesLabelText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesValueText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesLabelText:SetPoint("LEFT", self.frames.forcesTextFrame, "LEFT", 0, 0)
-                self.frames.forcesValueText:SetPoint("LEFT", self.frames.forcesLabelText, "RIGHT", 5, 0)
-                self.frames.forcesTextFrame:Show()
+                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
             end
             yOffset = yOffset + forcesFontSize + 2 + vSpace
         else
             if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self.bars.forces.frame:ClearAllPoints()
-            self.bars.forces.frame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-            self.bars.forces.frame:SetSize(barWidth, barHeight)
-            self.bars.forces.bar:SetPoint("TOPLEFT", 1, -1)
-            self.bars.forces.bar:SetPoint("BOTTOMRIGHT", -1, 1)
-            self.bars.forces.text:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-            if self.bars.forces.overlay then
-                self.bars.forces.overlay:SetPoint("TOPLEFT", 1, -1)
-                self.bars.forces.overlay:SetPoint("BOTTOMRIGHT", -1, 1)
-            end
-            self.bars.forces.frame:Show()
-            yOffset = yOffset + barHeight + vSpace
+            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
+            yOffset = yOffset + forcesBarHeight + vSpace
         end
     else
         self.bars.forces.frame:Hide()
@@ -1083,30 +1066,13 @@ function MPlusTimer:UpdateLayoutSleek(font, settings)
         if forcesDisplayMode == "text" then
             self.bars.forces.frame:Hide()
             if self.frames.forcesTextFrame then
-                self.frames.forcesTextFrame:ClearAllPoints()
-                self.frames.forcesTextFrame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-                self.frames.forcesTextFrame:SetSize(barWidth, forcesFontSize + 2)
-                self.frames.forcesLabelText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesValueText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesLabelText:SetPoint("LEFT", self.frames.forcesTextFrame, "LEFT", 0, 0)
-                self.frames.forcesValueText:SetPoint("LEFT", self.frames.forcesLabelText, "RIGHT", 5, 0)
-                self.frames.forcesTextFrame:Show()
+                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
             end
             yOffset = yOffset + forcesFontSize + 2 + vSpace
         else
             if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self.bars.forces.frame:ClearAllPoints()
-            self.bars.forces.frame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-            self.bars.forces.frame:SetSize(barWidth, barHeight)
-            self.bars.forces.bar:SetPoint("TOPLEFT", 1, -1)
-            self.bars.forces.bar:SetPoint("BOTTOMRIGHT", -1, 1)
-            self.bars.forces.text:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-            if self.bars.forces.overlay then
-                self.bars.forces.overlay:SetPoint("TOPLEFT", 1, -1)
-                self.bars.forces.overlay:SetPoint("BOTTOMRIGHT", -1, 1)
-            end
-            self.bars.forces.frame:Show()
-            yOffset = yOffset + barHeight + vSpace
+            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
+            yOffset = yOffset + forcesBarHeight + vSpace
         end
     end
 
@@ -1114,30 +1080,13 @@ function MPlusTimer:UpdateLayoutSleek(font, settings)
         if forcesDisplayMode == "text" then
             self.bars.forces.frame:Hide()
             if self.frames.forcesTextFrame then
-                self.frames.forcesTextFrame:ClearAllPoints()
-                self.frames.forcesTextFrame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-                self.frames.forcesTextFrame:SetSize(barWidth, forcesFontSize + 2)
-                self.frames.forcesLabelText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesValueText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesLabelText:SetPoint("LEFT", self.frames.forcesTextFrame, "LEFT", 0, 0)
-                self.frames.forcesValueText:SetPoint("LEFT", self.frames.forcesLabelText, "RIGHT", 5, 0)
-                self.frames.forcesTextFrame:Show()
+                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
             end
             yOffset = yOffset + forcesFontSize + 2 + vSpace
         else
             if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self.bars.forces.frame:ClearAllPoints()
-            self.bars.forces.frame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-            self.bars.forces.frame:SetSize(barWidth, barHeight)
-            self.bars.forces.bar:SetPoint("TOPLEFT", 1, -1)
-            self.bars.forces.bar:SetPoint("BOTTOMRIGHT", -1, 1)
-            self.bars.forces.text:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-            if self.bars.forces.overlay then
-                self.bars.forces.overlay:SetPoint("TOPLEFT", 1, -1)
-                self.bars.forces.overlay:SetPoint("BOTTOMRIGHT", -1, 1)
-            end
-            self.bars.forces.frame:Show()
-            yOffset = yOffset + barHeight + vSpace
+            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
+            yOffset = yOffset + forcesBarHeight + vSpace
         end
     end
 
@@ -1152,30 +1101,13 @@ function MPlusTimer:UpdateLayoutSleek(font, settings)
         if forcesDisplayMode == "text" then
             self.bars.forces.frame:Hide()
             if self.frames.forcesTextFrame then
-                self.frames.forcesTextFrame:ClearAllPoints()
-                self.frames.forcesTextFrame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-                self.frames.forcesTextFrame:SetSize(barWidth, forcesFontSize + 2)
-                self.frames.forcesLabelText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesValueText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesLabelText:SetPoint("LEFT", self.frames.forcesTextFrame, "LEFT", 0, 0)
-                self.frames.forcesValueText:SetPoint("LEFT", self.frames.forcesLabelText, "RIGHT", 5, 0)
-                self.frames.forcesTextFrame:Show()
+                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
             end
             yOffset = yOffset + forcesFontSize + 2 + vSpace
         else
             if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self.bars.forces.frame:ClearAllPoints()
-            self.bars.forces.frame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-            self.bars.forces.frame:SetSize(barWidth, barHeight)
-            self.bars.forces.bar:SetPoint("TOPLEFT", 1, -1)
-            self.bars.forces.bar:SetPoint("BOTTOMRIGHT", -1, 1)
-            self.bars.forces.text:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-            if self.bars.forces.overlay then
-                self.bars.forces.overlay:SetPoint("TOPLEFT", 1, -1)
-                self.bars.forces.overlay:SetPoint("BOTTOMRIGHT", -1, 1)
-            end
-            self.bars.forces.frame:Show()
-            yOffset = yOffset + barHeight + vSpace
+            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
+            yOffset = yOffset + forcesBarHeight + vSpace
         end
     end
 
@@ -1258,6 +1190,7 @@ function MPlusTimer:UpdateLayoutFull(font, settings)
     local forcesPos = settings.forcesPosition or "after_timer"
     local forcesDisplayMode = settings.forcesDisplayMode or "bar"
     local forcesFontPath, forcesFontSize = GetForcesFont()
+    local forcesBarHeight = GetForcesBarHeight(settings, barHeight)
 
     if self.frames.forcesTextFrame then
         self.frames.forcesTextFrame:Hide()
@@ -1317,30 +1250,13 @@ function MPlusTimer:UpdateLayoutFull(font, settings)
         if forcesDisplayMode == "text" then
             self.bars.forces.frame:Hide()
             if self.frames.forcesTextFrame then
-                self.frames.forcesTextFrame:ClearAllPoints()
-                self.frames.forcesTextFrame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-                self.frames.forcesTextFrame:SetSize(barWidth, forcesFontSize + 2)
-                self.frames.forcesLabelText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesValueText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesLabelText:SetPoint("LEFT", self.frames.forcesTextFrame, "LEFT", 0, 0)
-                self.frames.forcesValueText:SetPoint("LEFT", self.frames.forcesLabelText, "RIGHT", 5, 0)
-                self.frames.forcesTextFrame:Show()
+                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
             end
             yOffset = yOffset + forcesFontSize + 2 + vSpace
         else
             if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self.bars.forces.frame:ClearAllPoints()
-            self.bars.forces.frame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-            self.bars.forces.frame:SetSize(barWidth, barHeight)
-            self.bars.forces.bar:SetPoint("TOPLEFT", 1, -1)
-            self.bars.forces.bar:SetPoint("BOTTOMRIGHT", -1, 1)
-            self.bars.forces.text:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-            if self.bars.forces.overlay then
-                self.bars.forces.overlay:SetPoint("TOPLEFT", 1, -1)
-                self.bars.forces.overlay:SetPoint("BOTTOMRIGHT", -1, 1)
-            end
-            self.bars.forces.frame:Show()
-            yOffset = yOffset + barHeight + barPad
+            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
+            yOffset = yOffset + forcesBarHeight + barPad
         end
     else
         self.bars.forces.frame:Hide()
@@ -1383,30 +1299,13 @@ function MPlusTimer:UpdateLayoutFull(font, settings)
         if forcesDisplayMode == "text" then
             self.bars.forces.frame:Hide()
             if self.frames.forcesTextFrame then
-                self.frames.forcesTextFrame:ClearAllPoints()
-                self.frames.forcesTextFrame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-                self.frames.forcesTextFrame:SetSize(barWidth, forcesFontSize + 2)
-                self.frames.forcesLabelText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesValueText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesLabelText:SetPoint("LEFT", self.frames.forcesTextFrame, "LEFT", 0, 0)
-                self.frames.forcesValueText:SetPoint("LEFT", self.frames.forcesLabelText, "RIGHT", 5, 0)
-                self.frames.forcesTextFrame:Show()
+                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
             end
             yOffset = yOffset + forcesFontSize + 2 + vSpace
         else
             if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self.bars.forces.frame:ClearAllPoints()
-            self.bars.forces.frame:SetPoint("TOPLEFT", self.frames.bars, "TOPLEFT", 0, -(barHeight + barPad))
-            self.bars.forces.frame:SetSize(barWidth, barHeight)
-            self.bars.forces.bar:SetPoint("TOPLEFT", 1, -1)
-            self.bars.forces.bar:SetPoint("BOTTOMRIGHT", -1, 1)
-            self.bars.forces.text:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-            if self.bars.forces.overlay then
-                self.bars.forces.overlay:SetPoint("TOPLEFT", 1, -1)
-                self.bars.forces.overlay:SetPoint("BOTTOMRIGHT", -1, 1)
-            end
-            self.bars.forces.frame:Show()
-            yOffset = yOffset + barHeight + barPad
+            self:LayoutForcesBar(self.frames.bars, 0, -(barHeight + barPad), barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
+            yOffset = yOffset + forcesBarHeight + barPad
         end
     end
 
@@ -1416,30 +1315,13 @@ function MPlusTimer:UpdateLayoutFull(font, settings)
         if forcesDisplayMode == "text" then
             self.bars.forces.frame:Hide()
             if self.frames.forcesTextFrame then
-                self.frames.forcesTextFrame:ClearAllPoints()
-                self.frames.forcesTextFrame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-                self.frames.forcesTextFrame:SetSize(barWidth, forcesFontSize + 2)
-                self.frames.forcesLabelText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesValueText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesLabelText:SetPoint("LEFT", self.frames.forcesTextFrame, "LEFT", 0, 0)
-                self.frames.forcesValueText:SetPoint("LEFT", self.frames.forcesLabelText, "RIGHT", 5, 0)
-                self.frames.forcesTextFrame:Show()
+                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
             end
             yOffset = yOffset + forcesFontSize + 2 + vSpace
         else
             if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self.bars.forces.frame:ClearAllPoints()
-            self.bars.forces.frame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-            self.bars.forces.frame:SetSize(barWidth, barHeight)
-            self.bars.forces.bar:SetPoint("TOPLEFT", 1, -1)
-            self.bars.forces.bar:SetPoint("BOTTOMRIGHT", -1, 1)
-            self.bars.forces.text:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-            if self.bars.forces.overlay then
-                self.bars.forces.overlay:SetPoint("TOPLEFT", 1, -1)
-                self.bars.forces.overlay:SetPoint("BOTTOMRIGHT", -1, 1)
-            end
-            self.bars.forces.frame:Show()
-            yOffset = yOffset + barHeight + barPad + vSpace
+            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
+            yOffset = yOffset + forcesBarHeight + barPad + vSpace
         end
     end
 
@@ -1449,30 +1331,13 @@ function MPlusTimer:UpdateLayoutFull(font, settings)
         if forcesDisplayMode == "text" then
             self.bars.forces.frame:Hide()
             if self.frames.forcesTextFrame then
-                self.frames.forcesTextFrame:ClearAllPoints()
-                self.frames.forcesTextFrame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-                self.frames.forcesTextFrame:SetSize(barWidth, forcesFontSize + 2)
-                self.frames.forcesLabelText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesValueText:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-                self.frames.forcesLabelText:SetPoint("LEFT", self.frames.forcesTextFrame, "LEFT", 0, 0)
-                self.frames.forcesValueText:SetPoint("LEFT", self.frames.forcesLabelText, "RIGHT", 5, 0)
-                self.frames.forcesTextFrame:Show()
+                self:LayoutForcesText(pad, yOffset, barWidth, forcesFontPath, forcesFontSize)
             end
             yOffset = yOffset + forcesFontSize + 2 + vSpace
         else
             if self.frames.forcesTextFrame then self.frames.forcesTextFrame:Hide() end
-            self.bars.forces.frame:ClearAllPoints()
-            self.bars.forces.frame:SetPoint("TOPLEFT", self.frames.root, "TOPLEFT", pad, -yOffset)
-            self.bars.forces.frame:SetSize(barWidth, barHeight)
-            self.bars.forces.bar:SetPoint("TOPLEFT", 1, -1)
-            self.bars.forces.bar:SetPoint("BOTTOMRIGHT", -1, 1)
-            self.bars.forces.text:SetFont(forcesFontPath, forcesFontSize, FONT_FLAGS)
-            if self.bars.forces.overlay then
-                self.bars.forces.overlay:SetPoint("TOPLEFT", 1, -1)
-                self.bars.forces.overlay:SetPoint("BOTTOMRIGHT", -1, 1)
-            end
-            self.bars.forces.frame:Show()
-            yOffset = yOffset + barHeight + barPad
+            self:LayoutForcesBar(self.frames.root, pad, -yOffset, barWidth, forcesBarHeight, forcesFontPath, forcesFontSize)
+            yOffset = yOffset + forcesBarHeight + barPad
         end
     end
 
@@ -1701,6 +1566,7 @@ function MPlusTimer:RenderForces()
         local label = settings.forcesLabel or "Forces"
         self.frames.forcesLabelText:SetText(label .. ":")
         self.frames.forcesValueText:SetText(text)
+        self:AnchorForcesText()
     end
 end
 

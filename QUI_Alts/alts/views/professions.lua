@@ -233,4 +233,5 @@ local function Builder(parent)
     return view
 end
 
-Alts.Window.RegisterTab("professions", "Professions", Builder)
+Alts.Window.RegisterTab("professions", "Professions", Builder,
+    "Primary and secondary profession ranks for every cached character.")

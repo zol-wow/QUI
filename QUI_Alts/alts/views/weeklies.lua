@@ -417,4 +417,5 @@ local function Builder(parent)
     return view
 end
 
-Alts.Window.RegisterTab("weeklies", "Weeklies", Builder)
+Alts.Window.RegisterTab("weeklies", "Weeklies", Builder,
+    "Great Vault progress, Mythic+ rating, keystone, and saved instances per character.")

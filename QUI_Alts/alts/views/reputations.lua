@@ -15,6 +15,7 @@ local ADDON_NAME, ns = ...
 local Alts = ns.Alts or {}; ns.Alts = Alts
 
 local Helpers = ns.Helpers
+local UIKit = ns.UIKit
 
 local ReputationsView = {}
 Alts.ReputationsView = ReputationsView
@@ -217,20 +218,36 @@ local function Builder(parent)
     footer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", CELL_PAD, 4)
     footer:SetTextColor(0.8, 0.8, 0.8)
 
-    ---- character selector button (top-left) --------------------------------
+    ---- character selector (top-left) ---------------------------------------
+    -- Styled like the settings-form dropdown (GUI:CreateFormDropdown chrome):
+    -- faint bg, 1px white-0.2 border brightening on hover, chevron caret.
     local selector = CreateFrame("Button", nil, frame)
-    selector:SetHeight(20)
+    selector:SetHeight(22)
     selector:SetWidth(200)
     selector:SetPoint("TOPLEFT", frame, "TOPLEFT", CELL_PAD, 0)
 
-    local selectorBg = selector:CreateTexture(nil, "BACKGROUND")
-    selectorBg:SetAllPoints()
-    selectorBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    selectorBg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
+    UIKit.CreateBackground(selector, 1, 1, 1, 0.06)
+    UIKit.CreateBorderLines(selector)
+    UIKit.UpdateBorderLines(selector, 1, 1, 1, 1, 0.2)
+    selector:SetScript("OnEnter", function(self)
+        UIKit.UpdateBorderLines(self, 1, 1, 1, 1, 0.35)
+    end)
+    selector:SetScript("OnLeave", function(self)
+        UIKit.UpdateBorderLines(self, 1, 1, 1, 1, 0.2)
+    end)
+
+    local chevron = UIKit.CreateChevronCaret(selector, {
+        point = "RIGHT", relativeTo = selector, relativePoint = "RIGHT",
+        xPixels = -8, sizePixels = 10, lineWidthPixels = 6,
+        r = 1, g = 1, b = 1, a = 0.45,
+        expanded = true,
+    })
+    selector._chevron = chevron
 
     local selectorLabel = MakeFS(selector, 11)
-    selectorLabel:SetPoint("LEFT", selector, "LEFT", 4, 0)
-    selectorLabel:SetWidth(192)
+    selectorLabel:SetPoint("LEFT", selector, "LEFT", 8, 0)
+    selectorLabel:SetPoint("RIGHT", chevron, "LEFT", -4, 0)
+    selectorLabel:SetJustifyH("LEFT")
 
     local function UpdateSelectorLabel()
         if not selectedKey then
@@ -296,8 +313,8 @@ local function Builder(parent)
         if offset > maxOff then offset = maxOff end
         if offset < 0 then offset = 0 end
 
-        -- selector is 20px tall at top; rows start 24px below TOPLEFT
-        local topY = -24
+        -- selector is 22px tall at top; rows start 28px below TOPLEFT
+        local topY = -28
 
         local selRec = selectedKey and cachedChars[selectedKey]
 
@@ -426,4 +443,5 @@ local function Builder(parent)
     return view
 end
 
-Alts.Window.RegisterTab("reputations", "Reputations", Builder)
+Alts.Window.RegisterTab("reputations", "Reputations", Builder,
+    "Faction standings across your characters, including renown and paragon progress.")

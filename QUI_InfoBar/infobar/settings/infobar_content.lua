@@ -572,6 +572,26 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             })
         end
 
+        -- ALTS (conditional; altsMode lives in profile.datatext like the
+        -- currency config above, so the bar-text mode applies everywhere the
+        -- Alts datatext is shown, including datatext panels.)
+        if placedSet["alts"] then
+            if not profile.datatext then profile.datatext = {} end
+            L.headerAt("Alts Options")
+            local al = L.sectionAt()
+            local altW = GUI:CreateFormDropdown(al.frame, nil, {
+                { value = "gold", text = "Total Gold" },
+                { value = "count", text = "Alt Count" },
+            }, "altsMode", profile.datatext, function()
+                RefreshInfoBar()
+                if QUICore and QUICore.Datatexts and QUICore.Datatexts.UpdateAll then
+                    QUICore.Datatexts:UpdateAll()
+                end
+            end, { description = "What the Alts datatext shows on the bar: total gold across your tracked alts, or the number of tracked alts. The tooltip always lists every alt. Applies everywhere the Alts datatext is shown, including datatext panels." })
+            al.AddRow(row(al.frame, "Bar Text", altW))
+            L.closeSection(al)
+        end
+
         -- MICRO MENU
         L.headerAt("Micro Menu")
         local mmButtons = db.micromenu.buttons

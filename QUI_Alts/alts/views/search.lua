@@ -435,4 +435,5 @@ local function Builder(parent)
     return view
 end
 
-Alts.Window.RegisterTab("search", "Search", Builder)
+Alts.Window.RegisterTab("search", "Search", Builder,
+    "Find items across every cached character's bags, bank, mail, equipped gear, and the warband bank.")

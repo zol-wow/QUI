@@ -451,9 +451,11 @@ local defaults = {
             forcesDisplayMode = "bar",
             forcesPosition = "after_timer",
             forcesTextFormat = "both",
+            forcesTextAlign = "LEFT",       -- "LEFT" | "CENTER" | "RIGHT"
             forcesLabel = "Forces",
             forcesFont = "Poppins",
             forcesFontSize = 11,
+            forcesBarHeight = 0,            -- 0 = layout default (full 14 / compact 12 / sleek 8)
             maxDungeonNameLength = 18,
             borderColorSource = "inherit",  -- inherit | theme | class | custom
             borderColor = {0, 0, 0, 1},     -- custom border color (used when source == "custom")

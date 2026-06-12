@@ -34,6 +34,48 @@ local function ScannerEnabled(key)
     return sc[key] ~= false
 end
 
+---------------------------------------------------------------------------
+-- Silent /played request. scan_character only WRITES playedTotal when a
+-- TIME_PLAYED_MSG lands, and never issues RequestTimePlayed itself — so the
+-- roster Played column stays empty until the user happens to type /played.
+-- Stock silent-request dance (the pattern QUI chat's blizzard_suppress
+-- mirrors): UnregisterEvent("TIME_PLAYED_MSG") on the chat frames →
+-- RequestTimePlayed() → re-register once the reply lands. ChatFrame1 is
+-- ALWAYS included in both halves regardless of registration state: the
+-- suppress mirror tracks the un/register CALLS on the default frame
+-- (hooksecurefunc fires on no-op unregisters too), and that flag is what
+-- keeps the chat-takeover capture frame from printing the reply.
+-- Re-register is deferred a frame (never inside the TIME_PLAYED_MSG
+-- dispatch) with a 10s timeout failsafe so a lost reply can't permanently
+-- eat the user's manual /played output.
+---------------------------------------------------------------------------
+-- luacheck: globals RequestTimePlayed NUM_CHAT_WINDOWS
+local silencedChatFrames = nil
+local function RestoreTimePlayedChat()
+    if not silencedChatFrames then return end
+    local frames = silencedChatFrames
+    silencedChatFrames = nil
+    for _, f in ipairs(frames) do
+        pcall(f.RegisterEvent, f, "TIME_PLAYED_MSG")
+    end
+end
+local function SilentRequestTimePlayed()
+    if type(RequestTimePlayed) ~= "function" then return end
+    if silencedChatFrames then return end -- dance already in flight
+    local frames = {}
+    for i = 1, (NUM_CHAT_WINDOWS or 10) do
+        local f = _G["ChatFrame" .. i]
+        if f and f.UnregisterEvent
+            and (i == 1 or (f.IsEventRegistered and f:IsEventRegistered("TIME_PLAYED_MSG"))) then
+            pcall(f.UnregisterEvent, f, "TIME_PLAYED_MSG")
+            frames[#frames + 1] = f
+        end
+    end
+    silencedChatFrames = frames
+    RequestTimePlayed()
+    C_Timer.After(10, RestoreTimePlayedChat)
+end
+
 --- Coalesced next-frame drain of all scanners. Data files call this after
 --- async item loads; event handlers call it after dirty-marking. Each
 --- Drain() self-guards on dirty/session state. Later-phase scanners are
@@ -222,6 +264,10 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         if Storage.ScanCharacter then
             Storage.ScanCharacter.OnTimePlayed(arg1, arg2)
         end
+        -- end the silent-request dance next frame, never inside the dispatch
+        if silencedChatFrames then
+            C_Timer.After(0, RestoreTimePlayedChat)
+        end
     elseif event == "FACTION_STANDING_CHANGED"
         or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED" then
         if Storage.ScanReputations and ScannerEnabled("reputations") then
@@ -264,6 +310,7 @@ ns.WhenLoggedIn(function()
         if Storage.ScanWeeklies and ScannerEnabled("weeklies") then Storage.ScanWeeklies.MarkAllDirty() end
         if Storage.ScanLockouts and ScannerEnabled("lockouts") and RequestRaidInfo then RequestRaidInfo() end
         if Storage.ScanReputations and ScannerEnabled("reputations") then Storage.ScanReputations.ScheduleFullScan() end
+        SilentRequestTimePlayed()
         Storage.RequestDrain()
     end, 0.5)
 end)

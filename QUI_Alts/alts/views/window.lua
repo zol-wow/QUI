@@ -1,15 +1,19 @@
 ---------------------------------------------------------------------------
--- Alts window: chassis (bg + 1px border + drag header + close + ESC) and
--- tab strip. Tab views self-register via Window.RegisterTab(id, label,
--- builder); builder(parent) returns { frame, Refresh() }. Position/size
--- persist in profile alts.window (bags chassis precedent).
+-- Alts window: chassis styled after the QUI settings window (framework.lua
+-- CreateMainFrame): deep-dark GUI.Colors bg, title bar with line-drawn X
+-- close, LEFT vertical tab sidebar (3px accent indicator + faint accent
+-- active bg + hover wash) and a content area with the horizontal accent
+-- gradient wash. Tab views self-register via Window.RegisterTab(id, label,
+-- builder, desc); builder(parent) returns { frame, Refresh() }; desc feeds
+-- the GUI:AttachTooltip hover on the sidebar tab. Position/size persist in
+-- profile alts.window (bags chassis precedent).
 --
 -- Pure UI: reads settings via Alts.GetSettings; no data access of its own.
--- Mirrors QUI_Bags/bags/views/chassis.lua idioms (UIKit pixel backdrop +
--- border, Helpers skin colors / general font, GetCore():PixelRound drag
--- persistence, UISpecialFrames ESC-close) and the bank_window.lua tab
--- button pattern (WHITE8x8 bg + UIKit.CreateBorderLines/UpdateBorderLines
--- selected-state).
+-- Colors resolve LIVE from QUI.GUI.Colors (chat.lua I.GetThemeColors
+-- precedent — the framework mutates those tables in place on accent
+-- change); the accent itself resolves through GUI:ResolveThemePreset so the
+-- window matches the user's theme even before the options panel has ever
+-- been opened this session (CreateMainFrame is what seeds GUI.Colors.accent).
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Alts = ns.Alts or {}; ns.Alts = Alts
@@ -20,20 +24,21 @@ local UIKit = ns.UIKit
 local Window = {}
 Alts.Window = Window
 
-local HEADER_H, TAB_H, TAB_GAP, PAD = 28, 22, 4, 8
+local HEADER_H, SIDEBAR_W, TAB_H, TAB_GAP, PAD = 32, 120, 26, 2, 10
 
 local win          -- created lazily on first Toggle
-local tabs = {}    -- ordered: { id, label, builder, view, button }
+local tabs = {}    -- ordered: { id, label, builder, desc, view, button }
 local activeTab    -- id
 
 --- Register a tab view. builder(parent) returns { frame, Refresh() };
---- frame is hidden + SetAllPoints(body) by Build. MUST be called at file
---- load (before the first Toggle) — Build runs once and never re-renders
---- the strip, so a post-Build registration is silently invisible.
---- Reskin covers chrome + tab labels ONLY: views own their content's font/
---- color refresh (re-apply inside their Refresh()).
-function Window.RegisterTab(id, label, builder)
-    tabs[#tabs + 1] = { id = id, label = label, builder = builder }
+--- frame is hidden + SetAllPoints(body) by Build. desc (optional) is the
+--- sidebar tab's hover tooltip body. MUST be called at file load (before
+--- the first Toggle) — Build runs once and never re-renders the sidebar,
+--- so a post-Build registration is silently invisible. Reskin covers
+--- chrome + tab labels ONLY: views own their content's font/color refresh
+--- (re-apply inside their Refresh()).
+function Window.RegisterTab(id, label, builder, desc)
+    tabs[#tabs + 1] = { id = id, label = label, builder = builder, desc = desc }
 end
 
 local function Settings()
@@ -41,57 +46,160 @@ local function Settings()
     return s and s.window
 end
 
-local function Reskin()
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = Helpers.GetSkinColors()
-    win._bg:SetVertexColor(bgr, bgg, bgb, bga)
-    if win._border and win._border.SetBackdropBorderColor then
-        win._border:SetBackdropBorderColor(sr, sg, sb, sa)
+-- Fallbacks mirror framework.lua's "Mint Condition" palette so the window
+-- still renders if QUI.GUI is somehow absent (it loads at login).
+local FALLBACK = {
+    bg        = { 0.051, 0.067, 0.09, 0.97 },
+    bgSidebar = { 0, 0, 0, 0.25 },
+    bgContent = { 1, 1, 1, 0.02 },
+    accent    = { 0.204, 0.827, 0.6, 1 },
+    accentFaint = { 0.204, 0.827, 0.6, 0.07 },
+    accentGlow  = { 0.204, 0.827, 0.6, 0.06 },
+    accentLight = { 0.431, 0.906, 0.718, 1 },
+    border    = { 1, 1, 1, 0.06 },
+    text      = { 1, 1, 1, 1 },
+    textDim   = { 1, 1, 1, 0.6 },
+}
+
+local function Colors()
+    local gui = _G.QUI and _G.QUI.GUI
+    return (gui and gui.Colors) or FALLBACK
+end
+
+local function Col(name)
+    local c = Colors()[name] or FALLBACK[name]
+    return c[1], c[2], c[3], c[4] or 1
+end
+
+--- Theme accent r,g,b. GUI.Colors.accent is only seeded with the user's
+--- preset when the options panel first opens (CreateMainFrame), so resolve
+--- the saved preset directly when available.
+local function Accent()
+    local gui = _G.QUI and _G.QUI.GUI
+    local core = Helpers.GetCore and Helpers.GetCore()
+    local general = core and core.db and core.db.profile and core.db.profile.general
+    if gui and gui.ResolveThemePreset and general and general.themePreset then
+        return gui:ResolveThemePreset(general.themePreset)
     end
+    local custom = general and general.addonAccentColor
+    if custom and custom[1] then return custom[1], custom[2], custom[3] end
+    return Col("accent")
+end
+
+local function PanelAlpha()
+    local core = Helpers.GetCore and Helpers.GetCore()
+    local profile = core and core.db and core.db.profile
+    return (profile and profile.configPanelAlpha) or 0.97
+end
+
+local function SetTabActiveState(t, active)
+    local ar, ag, ab = Accent()
+    t.button._indicator:SetShown(active)
+    t.button._indicator:SetColorTexture(ar, ag, ab, 1)
+    if active then
+        t.button._hoverBg:SetColorTexture(ar, ag, ab, 0.07)
+        t.button._hoverBg:Show()
+        t.button._label:SetTextColor(Col("text"))
+    else
+        t.button._hoverBg:SetColorTexture(1, 1, 1, 0.03)
+        t.button._hoverBg:Hide()
+        t.button._label:SetTextColor(Col("textDim"))
+    end
+end
+
+local function Reskin()
+    local ar, ag, ab = Accent()
+    local br, bg_, bb = Col("bg")
+    win._bg:SetVertexColor(br, bg_, bb, PanelAlpha())
+    UIKit.UpdateBorderLines(win, 1, Col("border"))
+    win._sidebarBg:SetColorTexture(Col("bgSidebar"))
+    win._sidebarDivider:SetColorTexture(Col("border"))
+    win._titleSep:SetColorTexture(Col("border"))
+    win._contentBg:SetColorTexture(Col("bgContent"))
+    if win._glow.SetGradient then
+        local gr, gg, gb, ga = Col("accentGlow")
+        -- accentGlow rgb follows the accent on ApplyAccentColor; keep the
+        -- resolved accent as the source so the wash is correct pre-options.
+        local ok = pcall(function()
+            win._glow:SetGradient("HORIZONTAL",
+                CreateColor(ar, ag, ab, ga or 0.06),
+                CreateColor(ar, ag, ab, 0))
+        end)
+        if not ok then win._glow:SetColorTexture(gr, gg, gb, ga) end
+    end
+
     local fontPath = Helpers.GetGeneralFont() or STANDARD_TEXT_FONT
     local outline = Helpers.GetGeneralFontOutline() or "OUTLINE"
-    win._title:SetFont(fontPath, 13, outline)
-    win._closeText:SetFont(fontPath, 12, outline)
+    win._title:SetFont(fontPath, 14, outline)
+    win._title:SetTextColor(Col("accentLight"))
     for _, t in ipairs(tabs) do
-        if t.button and t.button._label then
+        if t.button then
             t.button._label:SetFont(fontPath, 11, outline)
+            SetTabActiveState(t, t.id == activeTab)
         end
     end
 end
 
 local function SelectTab(id)
     activeTab = id
-    local sr, sg, sb = Helpers.GetSkinColors()
     for _, t in ipairs(tabs) do
         local on = (t.id == id)
         if t.view then t.view.frame:SetShown(on) end
-        if t.button then UIKit.UpdateBorderLines(t.button, 1, sr, sg, sb, on and 1 or 0.35) end
+        if t.button then SetTabActiveState(t, on) end
         if on and t.view and t.view.Refresh then t.view.Refresh() end
     end
 end
 
-local function BuildTabStrip()
+local function BuildSidebarTabs()
     local fontPath = Helpers.GetGeneralFont() or STANDARD_TEXT_FONT
     local outline = Helpers.GetGeneralFontOutline() or "OUTLINE"
-    local x = 0
+    local gui = _G.QUI and _G.QUI.GUI
+    local prev
     for _, t in ipairs(tabs) do
-        local btn = CreateFrame("Button", nil, win._tabStrip)
-        local bg = btn:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-        bg:SetVertexColor(0, 0, 0, 0.35)
-        UIKit.DisablePixelSnap(bg)
+        local btn = CreateFrame("Button", nil, win._sidebar)
+        btn:SetHeight(TAB_H)
+        if prev then
+            btn:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -TAB_GAP)
+            btn:SetPoint("TOPRIGHT", prev, "BOTTOMRIGHT", 0, -TAB_GAP)
+        else
+            btn:SetPoint("TOPLEFT", win._sidebar, "TOPLEFT", 6, -6)
+            btn:SetPoint("TOPRIGHT", win._sidebar, "TOPRIGHT", -6, -6)
+        end
+
+        btn._hoverBg = btn:CreateTexture(nil, "BACKGROUND")
+        btn._hoverBg:SetAllPoints()
+        btn._hoverBg:SetColorTexture(1, 1, 1, 0.03)
+        UIKit.DisablePixelSnap(btn._hoverBg)
+        btn._hoverBg:Hide()
+
+        btn._indicator = btn:CreateTexture(nil, "OVERLAY")
+        btn._indicator:SetPoint("TOPLEFT", 0, 0)
+        btn._indicator:SetPoint("BOTTOMLEFT", 0, 0)
+        btn._indicator:SetWidth(3)
+        UIKit.DisablePixelSnap(btn._indicator)
+        btn._indicator:Hide()
+
         btn._label = btn:CreateFontString(nil, "ARTWORK")
-        btn._label:SetPoint("CENTER", 0, 0)
         -- font BEFORE SetText: a templateless FontString has no font and
         -- SetText errors ("Font not set"); Reskin re-applies later.
         btn._label:SetFont(fontPath, 11, outline)
+        btn._label:SetPoint("LEFT", btn, "LEFT", 10, 0)
+        btn._label:SetJustifyH("LEFT")
         btn._label:SetText(t.label)
-        UIKit.CreateBorderLines(btn)
-        btn:SetSize(math.max(56, math.ceil(btn._label:GetStringWidth()) + 16), TAB_H)
-        btn:SetPoint("TOPLEFT", win._tabStrip, "TOPLEFT", x, 0)
+
         btn:SetScript("OnClick", function() SelectTab(t.id) end)
-        x = x + btn:GetWidth() + TAB_GAP
+        btn:SetScript("OnEnter", function(self)
+            if t.id ~= activeTab then self._hoverBg:Show() end
+        end)
+        btn:SetScript("OnLeave", function(self)
+            if t.id ~= activeTab then self._hoverBg:Hide() end
+        end)
+        if gui and gui.AttachTooltip and t.desc then
+            gui:AttachTooltip(btn, t.desc, t.label)
+        end
+
         t.button = btn
+        prev = btn
     end
 end
 
@@ -113,7 +221,7 @@ local function Build()
     win._bg:SetAllPoints()
     win._bg:SetTexture("Interface\\Buttons\\WHITE8x8")
     UIKit.DisablePixelSnap(win._bg)
-    win._border = UIKit.CreateBackdropBorder(win, 1, 1, 1, 1, 1)
+    UIKit.CreateBorderLines(win)
 
     local header = CreateFrame("Frame", nil, win)
     header:SetPoint("TOPLEFT", 0, 0)
@@ -135,31 +243,93 @@ local function Build()
 
     win._title = header:CreateFontString(nil, "ARTWORK")
     -- font BEFORE SetText (templateless FontString errors otherwise)
-    win._title:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 13,
+    win._title:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 14,
         Helpers.GetGeneralFontOutline() or "OUTLINE")
-    win._title:SetPoint("LEFT", PAD, 0)
+    win._title:SetPoint("LEFT", 12, 0)
     win._title:SetText("Alts")
 
+    -- Close button: line-drawn X with accent hover (settings-window style).
     local close = CreateFrame("Button", nil, header)
-    close:SetSize(HEADER_H - 8, HEADER_H - 8)
-    close:SetPoint("RIGHT", -6, 0)
-    win._closeText = close:CreateFontString(nil, "ARTWORK")
-    win._closeText:SetPoint("CENTER", 0, 0)
-    win._closeText:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12, "OUTLINE")
-    win._closeText:SetText("X")
+    close:SetSize(22, 22)
+    close:SetPoint("RIGHT", -8, 0)
+    close._bg = UIKit.CreateBackground(close, 0.08, 0.08, 0.08, 0.6)
+    UIKit.CreateBorderLines(close)
+    UIKit.UpdateBorderLines(close, 1, Col("border"))
+    local LINE_LEN, LINE_W = 10, 1.5
+    local xLine1 = close:CreateTexture(nil, "OVERLAY")
+    xLine1:SetSize(LINE_LEN, LINE_W)
+    xLine1:SetPoint("CENTER")
+    xLine1:SetColorTexture(1, 1, 1, 0.8)
+    xLine1:SetRotation(math.rad(45))
+    local xLine2 = close:CreateTexture(nil, "OVERLAY")
+    xLine2:SetSize(LINE_LEN, LINE_W)
+    xLine2:SetPoint("CENTER")
+    xLine2:SetColorTexture(1, 1, 1, 0.8)
+    xLine2:SetRotation(math.rad(-45))
     close:SetScript("OnClick", function() win:Hide() end)
+    close:SetScript("OnEnter", function(self)
+        local ar, ag, ab = Accent()
+        UIKit.UpdateBorderLines(self, 1, ar, ag, ab, 1)
+        self._bg:SetVertexColor(ar, ag, ab, 0.15)
+        xLine1:SetColorTexture(ar, ag, ab, 1)
+        xLine2:SetColorTexture(ar, ag, ab, 1)
+    end)
+    close:SetScript("OnLeave", function(self)
+        UIKit.UpdateBorderLines(self, 1, Col("border"))
+        self._bg:SetVertexColor(0.08, 0.08, 0.08, 0.6)
+        xLine1:SetColorTexture(1, 1, 1, 0.8)
+        xLine2:SetColorTexture(1, 1, 1, 0.8)
+    end)
     win._close = close
 
-    win._tabStrip = CreateFrame("Frame", nil, win)
-    win._tabStrip:SetPoint("TOPLEFT", PAD, -HEADER_H)
-    win._tabStrip:SetPoint("TOPRIGHT", -PAD, -HEADER_H)
-    win._tabStrip:SetHeight(TAB_H)
+    -- Separator line below the title bar
+    win._titleSep = win:CreateTexture(nil, "ARTWORK")
+    win._titleSep:SetPoint("TOPLEFT", PAD, -HEADER_H)
+    win._titleSep:SetPoint("TOPRIGHT", -PAD, -HEADER_H)
+    win._titleSep:SetHeight(1)
+    UIKit.DisablePixelSnap(win._titleSep)
 
-    win._body = CreateFrame("Frame", nil, win)
-    win._body:SetPoint("TOPLEFT", PAD, -(HEADER_H + TAB_H + 4))
-    win._body:SetPoint("BOTTOMRIGHT", -PAD, PAD)
+    -- Sidebar: vertical tab list on the left
+    local sidebar = CreateFrame("Frame", nil, win)
+    sidebar:SetPoint("TOPLEFT", PAD, -(HEADER_H + 1))
+    sidebar:SetPoint("BOTTOMLEFT", PAD, PAD)
+    sidebar:SetWidth(SIDEBAR_W)
+    win._sidebar = sidebar
 
-    BuildTabStrip()
+    win._sidebarBg = sidebar:CreateTexture(nil, "BACKGROUND")
+    win._sidebarBg:SetAllPoints()
+    UIKit.DisablePixelSnap(win._sidebarBg)
+
+    win._sidebarDivider = sidebar:CreateTexture(nil, "ARTWORK")
+    win._sidebarDivider:SetPoint("TOPRIGHT", 0, 0)
+    win._sidebarDivider:SetPoint("BOTTOMRIGHT", 0, 0)
+    win._sidebarDivider:SetWidth(1)
+    UIKit.DisablePixelSnap(win._sidebarDivider)
+
+    -- Content area right of the sidebar: card surface + accent wash
+    local content = CreateFrame("Frame", nil, win)
+    content:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", 5, 0)
+    content:SetPoint("BOTTOMRIGHT", -PAD, PAD)
+    -- views lay rows/cells out at fixed x offsets; anything wider than the
+    -- window must cut at the content edge, not bleed past the border
+    content:SetClipsChildren(true)
+    win._content = content
+
+    win._contentBg = content:CreateTexture(nil, "BACKGROUND")
+    win._contentBg:SetAllPoints()
+    UIKit.DisablePixelSnap(win._contentBg)
+
+    win._glow = content:CreateTexture(nil, "BACKGROUND")
+    win._glow:SetAllPoints()
+    win._glow:SetTexture("Interface\\Buttons\\WHITE8x8")
+    UIKit.DisablePixelSnap(win._glow)
+
+    -- Body: inset inside the content surface; views fill it
+    win._body = CreateFrame("Frame", nil, content)
+    win._body:SetPoint("TOPLEFT", 8, -8)
+    win._body:SetPoint("BOTTOMRIGHT", -8, 8)
+
+    BuildSidebarTabs()
     for _, t in ipairs(tabs) do
         t.view = t.builder(win._body)
         t.view.frame:SetAllPoints(win._body)
@@ -205,7 +375,6 @@ function Window.RefreshActive()
     end
 end
 
---- Profile switch: re-apply persisted position/size.
 -- live theme recolor (bags chassis precedent: second Registry entry on the
 -- skinning group). Hidden windows skip — Toggle reskins on next show.
 if ns.Registry then
@@ -219,6 +388,7 @@ if ns.Registry then
     })
 end
 
+--- Profile switch: re-apply persisted position/size.
 function Window.OnProfileChanged()
     if not win then return end
     local cfg = Settings()

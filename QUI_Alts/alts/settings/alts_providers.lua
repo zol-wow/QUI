@@ -26,6 +26,7 @@ end
 ProviderPanels:RegisterAfterLoad(function(ctx)
     local GUI = ctx.GUI
     local U = ctx.U
+    local NotifyProviderFor = ctx.NotifyProviderFor
     local PAD = (ns.QUI_Options and ns.QUI_Options.PADDING) or 15
     local HEADER_GAP = 26
     local SECTION_GAP = 14
@@ -125,6 +126,33 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local L = MakeLayout(content)
 
         ---------------------------------------------------------------------
+        -- ALTS MODULE (master toggle — chat_frame1_provider parity: the flip
+        -- writes the manifest legacyFlag live, then offers a reload so the
+        -- LoD addon actually loads/unloads)
+        ---------------------------------------------------------------------
+        local function ShowAltsModuleReloadPrompt()
+            local Q = _G.QUI
+            local G = Q and Q.GUI
+            if G and type(G.ShowConfirmation) == "function" then
+                G:ShowConfirmation({
+                    title      = "Reload UI?",
+                    message    = "This change takes full effect after a reload.",
+                    acceptText = "Reload",
+                    cancelText = "Later",
+                    onAccept   = function() if Q and Q.SafeReload then Q:SafeReload() end end,
+                })
+            end
+        end
+        L.headerAt("Alts Module")
+        local s0 = L.sectionAt()
+        local enableW = GUI:CreateFormCheckbox(s0.frame, nil, "enabled", alts, function()
+            Refresh()
+            ShowAltsModuleReloadPrompt()
+        end, { description = "Account-wide character tracking window (/alts): roster, professions, reputations, weeklies, and item search across all your characters." })
+        s0.AddRow(row(s0.frame, "Enable Alts Module", enableW))
+        L.closeSection(s0)
+
+        ---------------------------------------------------------------------
         -- ROSTER COLUMNS
         ---------------------------------------------------------------------
         L.headerAt("Roster Columns")
@@ -173,12 +201,60 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         L.closeSection(s2)
 
         ---------------------------------------------------------------------
-        -- CACHE
+        -- CACHE (character list + delete — alt-tracking design doc scope:
+        -- "character-cache management (list + delete)")
         ---------------------------------------------------------------------
         L.headerAt("Cache")
-        PlaceNote(L, content,
-            "Right-click a roster row to delete a character from the cache.",
-            26)
+        local Store = ns.Storage and ns.Storage.Store
+        local keys = (Store and Store.IsInitialized and Store.IsInitialized()
+            and Store.ListCharacters and Store.ListCharacters()) or {}
+        if #keys == 0 then
+            PlaceNote(L, content,
+                "No characters cached yet. Log a character in and it appears here.",
+                26)
+        else
+            local ROW_H = 24
+            local currentKey = Store.GetCurrentCharacterKey and Store.GetCurrentCharacterKey()
+            local holder = CreateFrame("Frame", nil, content)
+            for i, key in ipairs(keys) do
+                local rec = Store.GetCharacter and Store.GetCharacter(key)
+                local d = (rec and rec.details) or {}
+                local y0 = -(i - 1) * ROW_H
+
+                local nameFS = holder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                nameFS:SetPoint("TOPLEFT", holder, "TOPLEFT", 6, y0 - 6)
+                nameFS:SetJustifyH("LEFT")
+                nameFS:SetText(key)
+                -- RAID_CLASS_COLORS read directly (roster view precedent)
+                local c = d.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[d.class]
+                if c then nameFS:SetTextColor(c.r, c.g, c.b, 1) end
+
+                local metaFS = holder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                metaFS:SetPoint("LEFT", nameFS, "RIGHT", 8, 0)
+                metaFS:SetTextColor(0.6, 0.6, 0.6, 1)
+                metaFS:SetText(d.level and ("Level " .. d.level) or "")
+
+                if key == currentKey then
+                    local curFS = holder:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+                    curFS:SetPoint("TOPRIGHT", holder, "TOPRIGHT", -6, y0 - 6)
+                    curFS:SetTextColor(0.6, 0.6, 0.6, 1)
+                    curFS:SetText("current character")
+                else
+                    local delBtn
+                    delBtn = GUI:CreateButton(holder, "Delete", 60, 18, function()
+                        if Store.DeleteCharacter then Store.DeleteCharacter(key) end
+                        Refresh()
+                        -- structural: the row set changed — rebuild the panel
+                        NotifyProviderFor(delBtn, { structural = true })
+                    end, "ghost")
+                    delBtn:SetPoint("TOPRIGHT", holder, "TOPRIGHT", -6, y0 - 3)
+                    GUI:AttachTooltip(delBtn,
+                        "Remove this character's cached data (roster, professions, items). It repopulates on that character's next login.",
+                        "Delete " .. key)
+                end
+            end
+            L.placeCustom(holder, #keys * ROW_H + 6)
+        end
 
         L.relayoutSections()
         return content:GetHeight()

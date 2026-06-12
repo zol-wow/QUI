@@ -163,6 +163,14 @@ local function Builder(parent)
         h._label = MakeFS(h, 11)
         h._label:SetPoint("LEFT", h, "LEFT", CELL_PAD, 0)
         h._label:SetTextColor(1, 0.82, 0)
+        -- Sort indicator: texture, not a ▲/▼ glyph — the QUI font lacks the
+        -- geometric-shape codepoints, so text arrows render as tofu boxes.
+        -- Blizzard's AH header atlas; texcoord flip = direction (Blizzard_
+        -- AuctionHouseTableBuilder SetArrowState precedent).
+        h._arrow = h:CreateTexture(nil, "ARTWORK")
+        h._arrow:SetAtlas("auctionhouse-ui-sortarrow", true)
+        h._arrow:SetPoint("LEFT", h._label, "RIGHT", 3, 0)
+        h._arrow:Hide()
         h:SetScript("OnClick", function()
             local col = h._col
             if not (col and col.sortKey) then return end
@@ -223,21 +231,42 @@ local function Builder(parent)
     end
 
     ---- layout / render ---------------------------------------------------
+    -- Effective per-active-column widths. With every column toggled on the
+    -- catalog is wider than the default window; squeeze proportionally to
+    -- the view width instead of bleeding past the border (cells ellipsize —
+    -- SetWordWrap(false)). Cached: wheel-scroll RenderRows reuses the last
+    -- Refresh's widths.
+    local colWidths = {}
+    local function ComputeColWidths()
+        local total = 0
+        for _, col in ipairs(activeCols) do total = total + col.width end
+        local avail = frame:GetWidth() or 0
+        local scale = (avail > 0 and total > avail) and (avail / total) or 1
+        for i, col in ipairs(activeCols) do
+            colWidths[i] = math.max(20, math.floor(col.width * scale))
+        end
+        for i = #activeCols + 1, #colWidths do colWidths[i] = nil end
+    end
+
     local function LayoutHeaders()
+        ComputeColWidths()
         local x = 0
         for i, col in ipairs(activeCols) do
             local h = GetHeader(i)
             h._col = col
             h:ClearAllPoints()
             h:SetPoint("TOPLEFT", frame, "TOPLEFT", x, 0)
-            h:SetWidth(col.width)
-            local label = col.label
+            h:SetWidth(colWidths[i])
+            h._label:SetText(col.label)
             if col.sortKey and col.sortKey == sortKey then
-                label = label .. (sortDesc and " ▼" or " ▲")
+                -- ascending = flipped (points up), descending = native
+                h._arrow:SetTexCoord(0, 1, sortDesc and 0 or 1, sortDesc and 1 or 0)
+                h._arrow:Show()
+            else
+                h._arrow:Hide()
             end
-            h._label:SetText(label)
             h:Show()
-            x = x + col.width
+            x = x + colWidths[i]
         end
         -- hide surplus headers
         for i = #activeCols + 1, #headers do
@@ -267,9 +296,10 @@ local function Builder(parent)
                     local cell = r._cells[c]
                     local col = activeCols[c]
                     if col then
+                        local w = colWidths[c] or col.width
                         cell:ClearAllPoints()
                         cell:SetPoint("LEFT", r, "LEFT", x + CELL_PAD, 0)
-                        cell:SetWidth(col.width - CELL_PAD * 2)
+                        cell:SetWidth(math.max(1, w - CELL_PAD * 2))
                         cell:SetText(RosterView.CellText(col, row, now))
                         if col.id == "name" then
                             cell:SetTextColor(ClassColor(row.details and row.details.class))
@@ -277,7 +307,7 @@ local function Builder(parent)
                             cell:SetTextColor(0.9, 0.9, 0.9)
                         end
                         cell:Show()
-                        x = x + col.width
+                        x = x + w
                     else
                         cell:Hide()
                     end
@@ -340,4 +370,5 @@ local function Builder(parent)
     return view
 end
 
-Alts.Window.RegisterTab("roster", "Roster", Builder)
+Alts.Window.RegisterTab("roster", "Roster", Builder,
+    "Every cached character with level, item level, gold, played time, and more. Click a column header to sort; right-click a row to delete that character from the cache.")
