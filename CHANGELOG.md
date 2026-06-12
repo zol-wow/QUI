@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta37 - 2026-06-11
+
+> 🧪 **QUI 4 beta — Bags keep growing: auction house selling, a guild bank "All" tab, and a taint-safe takeover.** This beta keeps polishing the new Bags module: right-click items to post them at the auction house, browse the whole guild vault on one "All" tab, and manage your currencies from a single shared list used by the bag window, Info Bar, data panels, and minimap. Under the hood, the bag takeover was rewritten so secure flows that open bags — the mailbox, profession windows, loot toasts — keep running Blizzard's own code and can't be blocked by taint. The M+ timer learns objective text alignment, and the embedded Combat Log tab gets several in-combat fixes. No schema migration — your beta36 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Sell from your bags at the auction house.** With the auction house open, right-clicking an item in the QUI bag window stages it in the sell panel. Items that can't be auctioned dim while the sell panel is open, with a tooltip hint to match.
+- **Guild bank "All" tab.** The QUI guild bank window gains a synthetic All tab showing every tab's contents at once, and hovering a tab button highlights that tab's slots in the grid.
+- **One Currencies list everywhere.** The data panels, the minimap currency panel, the Info Bar, and the bag window's currency bar now share a single Currencies section in settings — reorder and toggle your tracked currencies in one place and every surface follows.
+- **M+ timer objective text alignment.** A new Left/Center/Right dropdown in the timer's General settings controls how the objective lines are aligned.
+
+### Fixed
+- **Opening the mailbox no longer trips taint with Bags enabled.** The bag takeover was rewritten to hook Blizzard's bag functions instead of replacing them, so secure code paths that open your bags — the mailbox, profession enchant flows, loot toasts — stay on Blizzard's own code. ESC still closes windows in the usual order.
+- **The Combat Log tab works mid-combat.** Enabling the embedded Combat Log or clicking its tab during combat now shows the log immediately instead of leaving it blank until combat ends; only the protected filter pass waits for combat to drop, and the session's first mid-combat use now finds filters already applied.
+- **Channel chat no longer leaks into the embedded Combat Log.** Trade and community channel messages are wired up outside the groups the Combat Log strip handled, so they kept interleaving with combat events; they're now stripped explicitly and handed back when the tab is disabled.
+- **Leg enchants count in the character pane's enchant sidebar.** Legs are permanently enchantable, but the sidebar didn't treat them that way — a missing leg enchant now shows up like any other missing enchant.
+- **Click-cast hover tooltip lists keyboard binds.** The click-cast tooltip on unit frames now includes your global keyboard binds, not just per-frame scroll-wheel binds.
+- **Gold datatext tooltip uses digit separators.** The current-gold line in the gold datatext tooltip now formats large amounts with separators.
+
 ## v4.0.0-beta36 - 2026-06-11
 
 > 🧪 **QUI 4 beta — Bags and Info Bar follow-up polish.** A quick follow-up to beta35's two new modules: the Info Bar gains a right-click menu for adding and arranging widgets, the guild bank now opens reliably with QUI Bags, bank footer buttons wrap on narrow windows, and the micro menu and bag bar get the same Enabled checkbox as the other action bars. No schema migration — your beta35 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
