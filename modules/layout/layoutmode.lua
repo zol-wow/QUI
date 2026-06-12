@@ -1156,6 +1156,68 @@ local function LoadPosition(key)
            entry.offsetY or 0
 end
 
+--- Resolve an anchor parent's rect (left, right, top, bottom) in UIParent
+--- coords for handle/offset math. Prefers the parent's mover handle (it
+--- reflects the live layout-mode position); falls back to the parent
+--- FRAME's rect when it has no handle (mover hidden, or the parent isn't a
+--- layout element — e.g. minimap anchored to the info bar). The sentinel
+--- parents screen/disabled both resolve to UIParent edges, mirroring
+--- ApplyFrameAnchor's parent resolution.
+local function GetAnchorRectInUIParent(anchorKey)
+    if not anchorKey then return nil end
+    if anchorKey == "screen" or anchorKey == "disabled" then
+        return 0, UIParent:GetWidth(), UIParent:GetHeight(), 0
+    end
+    local h = QUI_LayoutMode._handles and QUI_LayoutMode._handles[anchorKey]
+    if h then
+        local l, r, t, b = h:GetLeft(), h:GetRight(), h:GetTop(), h:GetBottom()
+        if l and r and t and b then return l, r, t, b end
+    end
+    local pf = _G.QUI_ResolveAnchorTargetFrame and _G.QUI_ResolveAnchorTargetFrame(anchorKey)
+    if pf and pf.GetLeft then
+        local l, r, t, b = pf:GetLeft(), pf:GetRight(), pf:GetTop(), pf:GetBottom()
+        if l and r and t and b then
+            -- Rect getters return values in the frame's own scaled space;
+            -- convert to UIParent units.
+            local fs = (pf.GetEffectiveScale and pf:GetEffectiveScale()) or 1
+            local us = UIParent:GetEffectiveScale() or 1
+            if fs ~= us and us > 0 then
+                local ratio = fs / us
+                l, r, t, b = l * ratio, r * ratio, t * ratio, b * ratio
+            end
+            return l, r, t, b
+        end
+    end
+    return nil
+end
+
+--- Re-apply and re-sync every frame anchored (directly or transitively) to
+--- rootKey, breadth-first so each parent is repositioned before its own
+--- children read it. Live cascade for drag/nudge position changes — the
+--- drag-path twin of the slider cascade in anchoring_shared_content's
+--- OnChange. The visited set guards against parent cycles in the DB.
+local function ReapplyAnchoredDescendants(rootKey)
+    local fa = GetFrameAnchoring()
+    if not fa then return end
+    local visited = { [rootKey] = true }
+    local queue = { rootKey }
+    while #queue > 0 do
+        local parentKey = table.remove(queue, 1)
+        for childKey, childSettings in pairs(fa) do
+            if not visited[childKey] and type(childSettings) == "table"
+                and childSettings.parent == parentKey then
+                visited[childKey] = true
+                queue[#queue + 1] = childKey
+                QUI_LayoutMode._pendingPositions[childKey] = nil
+                if _G.QUI_ForceReapplyFrameAnchor then
+                    _G.QUI_ForceReapplyFrameAnchor(childKey)
+                end
+                if SyncHandle then SyncHandle(childKey) end
+            end
+        end
+    end
+end
+
 --- Save a pending position for a key.
 --- anchorTarget, anchorPointSelf, anchorPointTarget are optional (nil = absolute/screen).
 local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, anchorTarget, anchorPointSelf, anchorPointTarget)
@@ -1195,17 +1257,9 @@ local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, ancho
             -- Handles always reflect the correct visual position.
             local childHandle = QUI_LayoutMode._handles and QUI_LayoutMode._handles[key]
 
-            -- For "screen" parent, use UIParent edges (no layout handle exists).
-            local pL, pR, pT, pB
-            if anchorTarget == "screen" then
-                pL, pB = 0, 0
-                pR, pT = UIParent:GetWidth(), UIParent:GetHeight()
-            else
-                local parentHandle = QUI_LayoutMode._handles and QUI_LayoutMode._handles[anchorTarget]
-                if parentHandle then
-                    pL, pR, pT, pB = parentHandle:GetLeft(), parentHandle:GetRight(), parentHandle:GetTop(), parentHandle:GetBottom()
-                end
-            end
+            -- Anchor rect: parent handle edges, parent frame rect when the
+            -- parent has no handle, or UIParent edges for "screen".
+            local pL, pR, pT, pB = GetAnchorRectInUIParent(anchorTarget)
 
             if childHandle and pL and pR and pT and pB then
                 local cL, cR, cT, cB = childHandle:GetLeft(), childHandle:GetRight(), childHandle:GetTop(), childHandle:GetBottom()
@@ -1261,15 +1315,10 @@ local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, ancho
             local hasNonCenterPoints = existingPt ~= "CENTER" or existingRelPt ~= "CENTER"
 
             if hasRealParent and hasNonCenterPoints then
-                -- Compute relative offset from anchor parent
+                -- Compute relative offset from anchor parent (handle edges,
+                -- or the parent frame's rect when it has no handle)
                 local childHandle = QUI_LayoutMode._handles and QUI_LayoutMode._handles[key]
-                local parentHandle = QUI_LayoutMode._handles
-                    and QUI_LayoutMode._handles[existingParent]
-
-                local pL, pR, pT, pB
-                if parentHandle then
-                    pL, pR, pT, pB = parentHandle:GetLeft(), parentHandle:GetRight(), parentHandle:GetTop(), parentHandle:GetBottom()
-                end
+                local pL, pR, pT, pB = GetAnchorRectInUIParent(existingParent)
 
                 if childHandle and pL and pR and pT and pB then
                     local cL, cR, cT, cB = childHandle:GetLeft(), childHandle:GetRight(), childHandle:GetTop(), childHandle:GetBottom()
@@ -1374,6 +1423,20 @@ local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, ancho
     local QUI = _G.QUI
     if QUI and QUI.SendMessage then
         QUI:SendMessage("QUI_FRAME_ANCHOR_CHANGED", key)
+    end
+
+    -- Live cascade: frames anchored to this one should follow the drag
+    -- immediately, not on layout-mode save. For keys whose anchoring
+    -- system positions a PROXY distinct from the element frame (minimap →
+    -- QUI_MinimapAnchor), apply the fresh anchor first so descendants
+    -- anchored to the proxy land at the new position.
+    if fa and not (def and def.usesCustomPositionPersistence) then
+        local resolved = _G.QUI_ResolveAnchorApplyFrame and _G.QUI_ResolveAnchorApplyFrame(key)
+        local elFrame = def and def.getFrame and def.getFrame()
+        if resolved and elFrame and resolved ~= elFrame and _G.QUI_ApplyFrameAnchor then
+            _G.QUI_ApplyFrameAnchor(key)
+        end
+        ReapplyAnchoredDescendants(key)
     end
 end
 
@@ -2525,10 +2588,44 @@ SyncHandle = function(key)
                 end
             else
                 local pt, relPt, ox, oy = LoadPosition(key)
+                -- For non-CENTER anchor pairs, resolve the anchor rect in
+                -- UIParent coords: UIParent edges for sentinel parents
+                -- (screen/disabled/unset), or the live rect of a real anchor
+                -- parent that has NO mover handle (mover hidden, or the
+                -- parent isn't a layout element — e.g. minimap anchored to
+                -- the info bar). Reading the moved frame's center instead is
+                -- circular for proxy-resolved frames (minimap): the frame is
+                -- glued to this very handle during layout mode, so it can
+                -- never reflect new offsets written by the drawer's sliders.
+                local rL, rR, rT, rB
+                if pt and relPt and not (pt == "CENTER" and relPt == "CENTER") then
+                    rL, rR, rT, rB = GetAnchorRectInUIParent(anchorParent or "screen")
+                end
                 if pt then
                     if pt == "CENTER" and relPt == "CENTER" then
                         handle:ClearAllPoints()
                         handle:SetPoint("CENTER", UIParent, "CENTER", ox + cdx, oy + cdy)
+                    elseif relPt and rL and rR and rT and rB then
+                        -- Anchor math against the resolved rect: the handle's
+                        -- `pt` corner lands at the rect's `relPt` corner + the
+                        -- DB offsets — mirroring how ApplyFrameAnchor places
+                        -- the real frame.
+                        local px, py = (rL + rR) / 2, (rT + rB) / 2
+                        if relPt:find("LEFT") then px = rL
+                        elseif relPt:find("RIGHT") then px = rR end
+                        if relPt:find("TOP") then py = rT
+                        elseif relPt:find("BOTTOM") then py = rB end
+                        local cW, cH = handle:GetSize()
+                        local selfOffX, selfOffY = 0, 0
+                        if pt:find("LEFT") then selfOffX = cW / 2
+                        elseif pt:find("RIGHT") then selfOffX = -cW / 2 end
+                        if pt:find("TOP") then selfOffY = -cH / 2
+                        elseif pt:find("BOTTOM") then selfOffY = cH / 2 end
+                        local pw, ph = UIParent:GetWidth(), UIParent:GetHeight()
+                        handle:ClearAllPoints()
+                        handle:SetPoint("CENTER", UIParent, "CENTER",
+                            math.floor(px + ox + selfOffX - pw / 2 + 0.5),
+                            math.floor(py + oy + selfOffY - ph / 2 + 0.5))
                     else
                         local frame = def.getFrame and def.getFrame()
                         if frame and frame.GetCenter then
@@ -2559,6 +2656,24 @@ SyncHandle = function(key)
                         end
                     end
                 end
+            end
+        end
+    end
+
+    -- Re-glue: ApplyFrameAnchor/ForceReapply on this key (slider change or
+    -- drag cascade) SetPoints the real frame away from the handle, breaking
+    -- the SetAllPoints glue that makes handle drags carry the frame. After
+    -- the handle is positioned, re-pin the frame inside it. (Boss frames
+    -- have their own array-aware re-pin below.)
+    if not handle._isChildOverlay and handle._savedTargetParent and key ~= "bossFrames" then
+        local targetFrame = def.getFrame and def.getFrame()
+        if targetFrame and targetFrame.GetObjectType and targetFrame:GetParent() == handle then
+            pcall(targetFrame.ClearAllPoints, targetFrame)
+            if def.getCenterOffset then
+                local gdx, gdy = def.getCenterOffset(handle:GetSize())
+                pcall(targetFrame.SetPoint, targetFrame, "CENTER", handle, "CENTER", -gdx, -gdy)
+            else
+                pcall(targetFrame.SetAllPoints, targetFrame, handle)
             end
         end
     end
@@ -4140,7 +4255,6 @@ _G.QUI_LayoutModeClearPending = function(key)
         QUI_LayoutMode._pendingPositions[key] = nil
     end
 end
-
 
 ---------------------------------------------------------------------------
 -- REFRESH HOOKS: re-sync handles after module refreshes so child overlays

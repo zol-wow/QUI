@@ -3167,6 +3167,24 @@ _G.QUI_ApplyFrameAnchor = function(key)
     end
 end
 
+-- Read-only: expose the frame the anchoring system SetPoints for a key
+-- (e.g. "minimap" → the QUI_MinimapAnchor proxy). Layout mode uses this to
+-- detect proxy-indirect keys whose proxy must be re-applied on drag so
+-- frames anchored to the proxy follow immediately.
+_G.QUI_ResolveAnchorApplyFrame = function(key)
+    if not key then return nil end
+    return ResolveApplyFrameForKey(key)
+end
+
+-- Read-only: resolve an anchor PARENT key to its live frame, exactly as
+-- ApplyFrameAnchor's parent resolution does (frame resolvers + anchor
+-- target registry). Used by layout mode to compute handle positions for
+-- entries anchored to a frame that has no mover handle of its own.
+_G.QUI_ResolveAnchorTargetFrame = function(key)
+    if not key or key == "screen" or key == "disabled" then return nil end
+    return ResolveFrameForKey(key)
+end
+
 -- Force re-apply: clears the frame's existing anchors first so the
 -- anchor chain is definitely re-established. Used when a parent frame
 -- moves and we need children to follow regardless of FrameAlreadyAtPosition.

@@ -230,25 +230,39 @@ function QUI_Anchoring_Options:BuildAnchoringSection(tabContent, frameKey, optio
             _G.QUI_LayoutModeSyncHandle(frameKey)
         end
 
-        -- Re-apply and sync any frames anchored to this frame.
+        -- Re-apply and sync the full anchored-DESCENDANT chain (children,
+        -- grandchildren, ...), breadth-first so each parent is repositioned
+        -- before its own children read it. A one-level pass left
+        -- grandchildren at stale anchors (e.g. debuffFrame → buffFrame →
+        -- minimap: moving the minimap reapplied buffFrame but debuffFrame
+        -- kept its stale absolute anchor from a prior drag).
         -- Use ForceReapply to clear stale anchors (e.g. from drag
         -- operations that set children to CENTER/UIParent) and guarantee
-        -- the child re-anchors to its configured parent frame.
+        -- each child re-anchors to its configured parent frame. The
+        -- visited set guards against parent cycles in the DB.
         local anchoringDB = GetCore()
         anchoringDB = anchoringDB and anchoringDB.db and anchoringDB.db.profile and anchoringDB.db.profile.frameAnchoring
         if anchoringDB then
-            for childKey, childSettings in pairs(anchoringDB) do
-                if type(childSettings) == "table" and childSettings.parent == frameKey then
-                    if inLayoutMode and _G.QUI_LayoutModeClearPending then
-                        _G.QUI_LayoutModeClearPending(childKey)
-                    end
-                    if _G.QUI_ForceReapplyFrameAnchor then
-                        _G.QUI_ForceReapplyFrameAnchor(childKey)
-                    elseif _G.QUI_ApplyFrameAnchor then
-                        _G.QUI_ApplyFrameAnchor(childKey)
-                    end
-                    if _G.QUI_LayoutModeSyncHandle then
-                        _G.QUI_LayoutModeSyncHandle(childKey)
+            local visited = { [frameKey] = true }
+            local queue = { frameKey }
+            while #queue > 0 do
+                local parentKey = table.remove(queue, 1)
+                for childKey, childSettings in pairs(anchoringDB) do
+                    if not visited[childKey] and type(childSettings) == "table"
+                        and childSettings.parent == parentKey then
+                        visited[childKey] = true
+                        queue[#queue + 1] = childKey
+                        if inLayoutMode and _G.QUI_LayoutModeClearPending then
+                            _G.QUI_LayoutModeClearPending(childKey)
+                        end
+                        if _G.QUI_ForceReapplyFrameAnchor then
+                            _G.QUI_ForceReapplyFrameAnchor(childKey)
+                        elseif _G.QUI_ApplyFrameAnchor then
+                            _G.QUI_ApplyFrameAnchor(childKey)
+                        end
+                        if _G.QUI_LayoutModeSyncHandle then
+                            _G.QUI_LayoutModeSyncHandle(childKey)
+                        end
                     end
                 end
             end

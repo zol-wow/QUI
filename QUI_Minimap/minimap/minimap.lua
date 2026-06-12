@@ -3445,13 +3445,21 @@ local function SetupMinimapDragging()
         -- Mirror anchor position to the real Minimap. The anchoring system
         -- positions the proxy; this hook keeps Minimap on top of it.
         -- When an external HUD is active, skip the mirror so the external
-        -- addon's positioning is not overwritten.
+        -- addon's positioning is not overwritten. Same when Minimap is
+        -- parented away from UIParent — layout mode glues it inside its
+        -- mover handle (SetAllPoints), and mirroring would rip that glue
+        -- so handle drags stop carrying the Minimap.
+        local function MirrorOwnsMinimap()
+            if externalHudActive then return false end
+            local parent = Minimap:GetParent()
+            return not parent or parent == UIParent
+        end
         hooksecurefunc(minimapAnchor, "ClearAllPoints", function()
-            if externalHudActive then return end
+            if not MirrorOwnsMinimap() then return end
             Minimap:ClearAllPoints()
         end)
         hooksecurefunc(minimapAnchor, "SetPoint", function(self, pt, relTo, relPt, ox, oy)
-            if externalHudActive then return end
+            if not MirrorOwnsMinimap() then return end
             Minimap:SetPoint(pt, relTo, relPt, ox, oy)
         end)
     end
@@ -3879,6 +3887,12 @@ function Minimap_Module:Initialize()
         -- Bypass the normal debounce and activate immediately.
         hooksecurefunc(Minimap, "SetParent", function()
             if IsExternalHudCheckSuppressed() then return end
+            -- Layout mode reparents Minimap into its mover handle — that is
+            -- QUI's own doing, not an external HUD takeover. Latching
+            -- externalHudActive here would hide all decorations and disable
+            -- the anchor-proxy mirror for the whole layout-mode session.
+            local um = ns.QUI_LayoutMode
+            if um and um.isActive then return end
             local parent = Minimap:GetParent()
             if parent and parent ~= UIParent and not externalHudActive then
                 externalHudActive = true
