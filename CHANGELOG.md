@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta41 - 2026-06-12
+
+> 🧪 **QUI 4 beta — minimap drawer fix.** A one-fix beta: minimap buttons no longer escape (or vanish from) the button drawer when their owning addon re-anchors them after collection, and buttons created very late in the loading process are now caught too. No profile schema migration — your beta40 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Minimap button drawer: buttons stranded by owner re-anchoring.** Some addons re-assert their minimap button's position after the drawer collects it, which could strand the button inside the hidden drawer (invisible until reload) or leave it floating loose. Collected buttons now ignore outside repositioning and stay placed by the drawer's own layout. The drawer also rescans once variables finish loading, catching buttons created after the login scan and catch-up timers.
+
 ## v4.0.0-beta40 - 2026-06-12
 
 > 🧪 **QUI 4 beta — Alts equipment tab and tab filters.** The Alts window gains an **Equipment** tab comparing every character's gear side by side, and the Currencies and Reputations tabs gain **Filter** buttons so you can hide the entries you don't care about (also configurable from the Alts settings panel). The minimap button drawer now catches addon buttons created late in the loading process. Equipped item levels are newly cached, so the Equipment tab fills in per character as you next log each one in. No profile schema migration — your beta39 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
