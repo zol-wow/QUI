@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta43 - 2026-06-12
+
+> 🧪 **QUI 4 beta — Layout Mode anchored-window follow-ups.** This beta finishes the anchored-window work from beta42: chat windows anchored to another element now reliably keep their normal mover when Layout Mode opens, windows can no longer get stuck invisible after a mid-session element re-sync, and resizing an anchored window (chat or damage meter) keeps its anchor point pinned instead of shifting the window. No profile schema migration — your beta42 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Layout Mode: anchored windows still destroyed on open (beta42 follow-up).** beta42's fix missed anchored windows whose movers intentionally stay hidden until the anchor chain is resolved — those were still replaced by a detached proxy at open and snapped out of position on the next settings change. The check now looks at the window itself rather than its mover, so all anchored windows keep their normal mover.
+- **Layout Mode: window stuck inside a dead mover after re-sync.** When an element was unregistered mid-session (e.g. a chat settings change re-syncing windows), a window that had been pulled into a proxy mover wasn't restored — leaving it parented to a dead frame and invisible until reload. Unregistering now restores the window's parent, strata, and on-screen position, mirroring what closing Layout Mode does.
+- **Layout Mode: chat settings changes rebuilt chat movers needlessly.** Every chat settings change re-synced the chat-window movers even when no window was added or removed, tearing down live handles and wiping pending (unsaved) Layout Mode moves. The re-sync now only runs when the number of chat windows actually changes.
+
+### Changed
+- **Anchored windows: resizing keeps the anchor pinned.** Resizing an anchored chat window or the damage meter via their size sliders now re-solves the saved anchor against the new size, so the anchored corner/edge stays put and the window grows away from it (instead of growing from its center and drifting off the anchor).
+
 ## v4.0.0-beta42 - 2026-06-12
 
 > 🧪 **QUI 4 beta — Layout Mode and minimap drawer fixes.** This beta fixes two Layout Mode regressions around chat windows — extra chat windows no longer lose their unsaved Layout Mode position when you change a chat setting, and chat windows anchored to another element no longer vanish when Layout Mode opens — plus a minimap drawer fix for buttons that opened the drawer but sat invisible behind its backdrop. No profile schema migration — your beta41 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
