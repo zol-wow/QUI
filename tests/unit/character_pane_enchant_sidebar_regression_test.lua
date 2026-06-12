@@ -29,6 +29,7 @@ for _, loc in ipairs({
     "INVTYPE_ROBE",
     "INVTYPE_FEET",
     "INVTYPE_FINGER",
+    "INVTYPE_LEGS",
     "INVTYPE_WEAPON",
     "INVTYPE_2HWEAPON",
     "INVTYPE_WEAPONMAINHAND",
@@ -45,7 +46,6 @@ for _, loc in ipairs({
     "INVTYPE_WRIST",
     "INVTYPE_HAND",
     "INVTYPE_WAIST",
-    "INVTYPE_LEGS",
     "INVTYPE_SHIELD",
     "INVTYPE_HOLDABLE",
 }) do

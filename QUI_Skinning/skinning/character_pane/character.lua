@@ -603,6 +603,7 @@ local PERMANENT_ENCHANT_EQUIP_LOCS = {
     INVTYPE_ROBE = true,
     INVTYPE_FEET = true,
     INVTYPE_FINGER = true,
+    INVTYPE_LEGS = true,
     INVTYPE_WEAPON = true,
     INVTYPE_2HWEAPON = true,
     INVTYPE_WEAPONMAINHAND = true,
