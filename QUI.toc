@@ -8,7 +8,7 @@
 ## Author: Zol
 ## Version: 4.0.0-beta38
 ## Category: User Interface
-## SavedVariables: QUI_DB, QUIDB
+## SavedVariables: QUI_DB, QUIDB, QUI_StorageDB
 ## LoadSavedVariablesFirst: 1
 ## OptionalDeps: DandersFrames, BigWigs
 
@@ -80,6 +80,25 @@ core\aura_events.lua
 core\registry.lua
 core\modules.lua
 core\addon_manifest.lua
+# == account-wide character storage (data layer + always-on collection driver) ==
+core\storage\bus.lua
+core\storage\store.lua
+core\storage\item_info.lua
+core\storage\scan_common.lua
+core\storage\scan_bags.lua
+core\storage\scan_bank.lua
+core\storage\scan_guild.lua
+core\storage\scan_mail.lua
+core\storage\scan_equipped.lua
+core\storage\scan_currencies.lua
+core\storage\scan_auctions.lua
+core\storage\scan_character.lua
+core\storage\scan_professions.lua
+core\storage\scan_reputations.lua
+core\storage\scan_weeklies.lua
+core\storage\scan_lockouts.lua
+core\storage\summaries.lua
+core\storage\collector.lua
 core\addon_loader.lua
 core\media.lua
 core\gui_shell.lua

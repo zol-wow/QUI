@@ -1,6 +1,6 @@
 -- luacheck: globals QUI_StorageDB
 ---------------------------------------------------------------------------
--- Bags data layer: persistent store (QUI_StorageDB).
+-- Core storage: persistent store (QUI_StorageDB).
 -- Dumb storage only: schema init/versioning and accessors. Scanners write
 -- through the records returned here; content events are published by scanners.
 -- The ONE exception: deletions are published by the store itself
@@ -16,14 +16,17 @@
 --   carries neither — count-driven location).
 -- Derived fields (class/subclass/ilvl/expansion) are session-cached in
 -- item_info.lua and never persisted.
+-- Schema v2 alt-tracking records (plain tables, see NewCharacterRecord):
+--   professions/reputations/weeklies/lockouts — written by their scanners;
+--   {} is the pre-first-scan placeholder.
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
-local Bags = ns.Bags or {}; ns.Bags = Bags
+local Storage = ns.Storage or {}; ns.Storage = Storage
 
 local Store = {}
-Bags.Store = Store
+Storage.Store = Store
 
-Store.SCHEMA_VERSION = 1
+Store.SCHEMA_VERSION = 2
 
 local db -- → QUI_StorageDB after Initialize()
 
@@ -40,6 +43,16 @@ local function NewCharacterRecord()
         equipped = {},  -- { size = 19, slots = { [invSlot] = entry } }
         currencies = {},-- { [currencyID] = quantity } — flat map, never joins item summaries
         auctions = {},  -- { size = n, slots = { entry list } } (AH sessions)
+        -- Alt-tracking records (schema v2). Written by their scanners;
+        -- {} is the pre-first-scan placeholder.
+        professions = {},  -- list: { skillLineID, name, icon, rank, maxRank, isPrimary }
+        reputations = {},  -- [factionID] = { standing, value, floor, ceiling,
+                           --   accountWide, renownLevel/Earned/Threshold,
+                           --   paragonValue/Threshold/Pending }
+        weeklies = {},     -- { activities = { {type,index,threshold,progress,level} },
+                           --   mplusRating, keystoneMapID/Level/Name }
+        lockouts = {},     -- list: { name, difficultyName, isRaid, resetAt (epoch),
+                           --   bossesTotal, bossesKilled, extended }
     }
 end
 
@@ -52,14 +65,27 @@ function Store.Initialize()
     if db.version ~= nil and db.version > Store.SCHEMA_VERSION then
         -- Written by a newer QUI: leave untouched, read-only this session.
         Store.readOnly = true
-        print("|cFFFF6666QUI:|r bags storage was written by a newer QUI version; cache is read-only this session.")
+        print("|cFFFF6666QUI:|r character storage was written by a newer QUI version; cache is read-only this session.")
         return db
     end
-    -- db.version < SCHEMA_VERSION: future migrations dispatch here (none for v1).
+    -- v1 → v2: additive only — never destructive. Type-guarded against a
+    -- corrupted SV record (this loop runs on every cold-load of a legacy DB).
+    if (db.version or 0) < 2 then
+        for _, rec in pairs(db.characters or {}) do
+            if type(rec) == "table" then
+                rec.professions = rec.professions or {}
+                rec.reputations = rec.reputations or {}
+                rec.weeklies = rec.weeklies or {}
+                rec.lockouts = rec.lockouts or {}
+            end
+        end
+    end
     db.version = Store.SCHEMA_VERSION
     db.characters = db.characters or {}
     db.guilds = db.guilds or {}
     db.warband = db.warband or { tabs = {}, money = 0 }
+    db.factionNames = db.factionNames or {}   -- [factionID] = name (shared across characters)
+    db.factionGroups = db.factionGroups or {} -- [factionID] = header/group label from the rep walk
     return db
 end
 
@@ -149,7 +175,7 @@ function Store.DeleteCharacter(key)
     if not Store.IsReady() then return end
     if db and db.characters and db.characters[key] then
         db.characters[key] = nil
-        Bags.Bus.Publish("CharacterDeleted", key)
+        Storage.Bus.Publish("CharacterDeleted", key)
     end
 end
 
@@ -174,7 +200,7 @@ function Store.DeleteGuild(key)
     if not Store.IsReady() then return end
     if db and db.guilds and db.guilds[key] then
         db.guilds[key] = nil
-        Bags.Bus.Publish("GuildDeleted", key)
+        Storage.Bus.Publish("GuildDeleted", key)
     end
 end
 
@@ -199,4 +225,14 @@ function Store.GetCurrentGuildKey()
     local realm = NormalizedRealm()
     if not realm or realm == "" then return nil end
     return guildName .. "-" .. realm
+end
+
+--- Shared faction-name/group maps (schema v2; written by scan_reputations).
+function Store.GetFactionNames()
+    return db and db.factionNames or nil
+end
+
+--- Shared faction-group map (schema v2; written by scan_reputations).
+function Store.GetFactionGroups()
+    return db and db.factionGroups or nil
 end

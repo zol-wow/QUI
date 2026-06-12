@@ -954,6 +954,23 @@ Datatexts:Register("volume", {
     end,
 })
 
+-- Legacy goldData hygiene: deleting a character from the storage cache
+-- must also drop its read-only legacy twin, or the merge layer would
+-- resurrect the deleted character in the gold tooltip. Module-scope (not
+-- per-widget): the purge must run even when no gold widget is enabled.
+do
+    local Bus = ns.Storage and ns.Storage.Bus
+    if Bus and Bus.Subscribe then
+        Bus.Subscribe("CharacterDeleted", function(charKey)
+            local db = QUICore and QUICore.db
+            local goldData = db and db.global and db.global.goldData
+            if goldData and ns.DatatextAltsData then
+                ns.DatatextAltsData.PurgeLegacyFor(goldData, charKey)
+            end
+        end)
+    end
+end
+
 -- Gold datatext
 Datatexts:Register("gold", {
     displayName = "Gold",
@@ -985,56 +1002,25 @@ Datatexts:Register("gold", {
             return goldStr .. "g"
         end
 
-        -- Get character key for gold tracking (realm-name format)
-        local function GetCharKey()
-            local name = UnitName("player")
-            local realm = GetRealmName()
-            if not name or not realm then return nil end
-            return realm .. "-" .. name
-        end
+        local AltsData = ns.DatatextAltsData
 
-        -- Get class color for a class name
-        local function GetClassColor(className)
-            return Helpers.GetClassColor(className)
-        end
-
-        -- Save current character's gold to global storage (with class info)
-        local function SaveGold()
-            local charKey = GetCharKey()
-            if not charKey then return end  -- Guard against nil during early load
-            local db = QUICore and QUICore.db
-            if db and db.global then
-                if not db.global.goldData then db.global.goldData = {} end
-                local _, className = UnitClass("player")
-                -- Store as table with money and class
-                db.global.goldData[charKey] = {
-                    money = GetMoney() or 0,
-                    class = className
-                }
+        -- Build the { key → record } map from the storage cache (same guard
+        -- idiom as the alts widget). Money/class are tracked by the storage
+        -- collector now; this widget only READS.
+        local function BuildCharacters()
+            local Store = ns.Storage and ns.Storage.Store
+            if not (Store and Store.IsInitialized and Store.IsInitialized()) then
+                return nil
             end
-        end
-
-        -- Get money from goldData entry (handles old format migration)
-        local function GetCharMoney(data)
-            if type(data) == "number" then
-                return data  -- Old format: just the copper amount
-            elseif type(data) == "table" then
-                return data.money or 0  -- New format: table with money key
+            local characters = {}
+            for _, key in ipairs(Store.ListCharacters()) do
+                characters[key] = Store.GetCharacter(key)
             end
-            return 0
-        end
-
-        -- Get class from goldData entry
-        local function GetCharClass(data)
-            if type(data) == "table" then
-                return data.class
-            end
-            return nil  -- Old format has no class
+            return characters
         end
 
         local function Update()
             local money = GetMoney() or 0
-            SaveGold()  -- Update stored gold on every update
             local r, g, b = GetValueColor()
             local label = GetLabel("Gold: ", "G: ", slotFrame.shortLabel, slotFrame.noLabel)
             text:SetFormattedText(label .. "|cff%02x%02x%02x%s|r", r, g, b, FormatGold(money))
@@ -1071,39 +1057,36 @@ Datatexts:Register("gold", {
             local copper = money % 100
             GameTooltip:AddDoubleLine("Current:", string.format("%s %ds %dc", FormatGold(money), silver, copper), 0.8, 0.8, 0.8, 1, 1, 1)
 
-            -- Show all characters' gold from global storage
-            local db = QUICore and QUICore.db
-            if db and db.global and db.global.goldData then
-                local total = 0
-                local charList = {}
-                for charKey, charData in pairs(db.global.goldData) do
-                    local charMoney = GetCharMoney(charData)
-                    local charClass = GetCharClass(charData)
-                    total = total + charMoney
-                    table.insert(charList, {key = charKey, money = charMoney, class = charClass})
-                end
+            -- All Characters: storage cache rows, with legacy goldData folded
+            -- in read-only as a fallback for characters the cache hasn't seen.
+            local characters = BuildCharacters()
+            if characters then
+                local db = QUICore and QUICore.db
+                local goldData = db and db.global and db.global.goldData
+                local rows = AltsData.BuildRows(characters)
+                rows = AltsData.MergeLegacyGold(rows, goldData)
 
-                if #charList > 1 then
-                    -- Sort by gold amount descending
-                    table.sort(charList, function(a, b) return a.money > b.money end)
-
+                if #rows > 1 then
                     -- Get configured accent color for section headers
                     local vr, vg, vb = GetValueColor()
                     local ar, ag, ab = vr/255, vg/255, vb/255
 
+                    local Store = ns.Storage and ns.Storage.Store
+                    local currentKey = Store and Store.GetCurrentCharacterKey and Store.GetCurrentCharacterKey()
+
                     GameTooltip:AddLine(" ")
                     GameTooltip:AddLine("All Characters", 1, 1, 1)
-                    local currentCharKey = GetCharKey()
-                    for _, char in ipairs(charList) do
-                        local isCurrentChar = (char.key == currentCharKey)
+                    for _, row in ipairs(rows) do
                         -- Use class color for character name
-                        local cr, cg, cb = GetClassColor(char.class)
-                        -- Add bullet accent for current character
-                        local displayName = isCurrentChar and ("• " .. char.key) or char.key
-                        GameTooltip:AddDoubleLine(displayName, FormatGold(char.money), cr, cg, cb, 1, 1, 1)
+                        local cr, cg, cb = Helpers.GetClassColor(row.class)
+                        -- Always show the storage key ("Name-Realm") so same-named
+                        -- alts on different realms stay unambiguous. Bullet the
+                        -- current character.
+                        local displayName = (row.key == currentKey) and ("• " .. row.key) or row.key
+                        GameTooltip:AddDoubleLine(displayName, FormatGold(row.money), cr, cg, cb, 1, 1, 1)
                     end
                     GameTooltip:AddLine(" ")
-                    GameTooltip:AddDoubleLine("Total:", FormatGold(total), ar, ag, ab, 1, 0.82, 0)
+                    GameTooltip:AddDoubleLine("Total:", FormatGold(AltsData.Total(rows)), ar, ag, ab, 1, 0.82, 0)
                 end
             end
 
@@ -1136,79 +1119,12 @@ Datatexts:Register("gold", {
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Currency", ar, ag, ab)
             GameTooltip:AddLine("|cffFFFFFFRight Click:|r Toggle Bags", ar, ag, ab)
-            GameTooltip:AddLine("|cffFFFFFFMiddle Click:|r Manage Characters", ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFFMiddle Click:|r Toggle Alts Window", ar, ag, ab)
             GameTooltip:Show()
         end)
         slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-        -- Character management menu using MenuUtil
-        local function ShowCharacterMenu(anchorFrame)
-            local db = QUICore and QUICore.db
-            if not db or not db.global or not db.global.goldData then return end
-
-            local currentCharKey = GetCharKey()
-
-            MenuUtil.CreateContextMenu(anchorFrame, function(_, root)
-                root:CreateTitle("Manage Characters")
-
-                -- Add each character as a deletable entry
-                for charKey, charData in pairs(db.global.goldData) do
-                    local charMoney = GetCharMoney(charData)
-                    local charClass = GetCharClass(charData)
-                    local cr, cg, cb = GetClassColor(charClass)
-                    local colorCode = format("|cff%02x%02x%02x", cr*255, cg*255, cb*255)
-                    local isCurrentChar = (charKey == currentCharKey)
-
-                    -- Capture values for closure
-                    local deleteCharKey = charKey
-                    local btn = root:CreateButton(colorCode .. charKey .. "|r - " .. FormatGold(charMoney), function()
-                        -- Confirm deletion
-                        StaticPopupDialogs["QUAZII_GOLD_DELETE_CHAR"] = {
-                            text = "Delete gold data for " .. deleteCharKey .. "?",
-                            button1 = "Delete",
-                            button2 = "Cancel",
-                            OnAccept = function()
-                                db.global.goldData[deleteCharKey] = nil
-                                print("|cff30D1FF[QUI]|r Removed gold data for " .. deleteCharKey)
-                            end,
-                            timeout = 0,
-                            whileDead = true,
-                            hideOnEscape = true,
-                        }
-                        StaticPopup_Show("QUAZII_GOLD_DELETE_CHAR")
-                    end)
-
-                    -- Can't delete current character
-                    if isCurrentChar then
-                        btn:SetEnabled(false)
-                    end
-                end
-
-                root:CreateDivider()
-                root:CreateButton("|cffFF6666Reset All (Keep Current)|r", function()
-                    StaticPopupDialogs["QUAZII_GOLD_RESET_ALL"] = {
-                        text = "Delete gold data for ALL characters except current?",
-                        button1 = "Reset All",
-                        button2 = "Cancel",
-                        OnAccept = function()
-                            local keepKey = currentCharKey
-                            local keepData = db.global.goldData[keepKey]
-                            db.global.goldData = {}
-                            if keepKey and keepData then
-                                db.global.goldData[keepKey] = keepData
-                            end
-                            print("|cff30D1FF[QUI]|r Reset gold data (kept current character)")
-                        end,
-                        timeout = 0,
-                        whileDead = true,
-                        hideOnEscape = true,
-                    }
-                    StaticPopup_Show("QUAZII_GOLD_RESET_ALL")
-                end)
-            end)
-        end
-
-        -- Click handler: Left = Currency, Right = Bags, Middle = Manage
+        -- Click handler: Left = Currency, Right = Bags, Middle = Alts window.
         slotFrame:RegisterForClicks("AnyUp")
         slotFrame:SetScript("OnClick", function(self, button)
             if button == "LeftButton" then
@@ -1216,7 +1132,11 @@ Datatexts:Register("gold", {
             elseif button == "RightButton" then
                 ToggleAllBags()
             elseif button == "MiddleButton" then
-                ShowCharacterMenu(self)
+                if ns.Alts and ns.Alts.IsEnabled and ns.Alts.IsEnabled() and ns.Alts.Window then
+                    ns.Alts.Window.Toggle()
+                else
+                    print("|cff00ff00QUI:|r enable the Alts module (Options → Modules) to use the Alts window.")
+                end
             end
         end)
 
@@ -1230,6 +1150,199 @@ Datatexts:Register("gold", {
             frame.tokenTicker:Cancel()
             frame.tokenTicker = nil
         end
+    end,
+})
+
+-- Alts datatext: roster summary from the account-wide storage cache.
+-- Pure data shaping lives in alts_data.lua (headless-tested); this block is
+-- the frame/tooltip/click shell. ns.Alts (the Alts window) is an OPTIONAL
+-- runtime dependency — every read is guarded.
+Datatexts:Register("alts", {
+    displayName = "Alts",
+    category = "Character",
+    description = "Alt roster summary from the account-wide cache (left-click opens the Alts window)",
+
+    OnEnable = function(slotFrame, settings)
+        local frame = CreateFrame("Frame", nil, slotFrame)
+        frame:SetAllPoints()
+
+        local text = slotFrame.text
+        if not text then
+            text = slotFrame:CreateFontString(nil, "OVERLAY")
+            text:SetPoint("CENTER")
+            slotFrame.text = text
+        end
+
+        local AltsData = ns.DatatextAltsData
+
+        -- Datatext-local gold formatter (mirrors the gold widget's local).
+        local function FormatGold(copper)
+            local gold = floor((copper or 0) / 10000)
+            local goldStr = tostring(gold)
+            if gold >= 1000 then
+                goldStr = string.format("%d,%03d", floor(gold / 1000), gold % 1000)
+            end
+            if gold >= 1000000 then
+                local millions = floor(gold / 1000000)
+                local thousands = floor((gold % 1000000) / 1000)
+                goldStr = string.format("%d,%03d,%03d", millions, thousands, gold % 1000)
+            end
+            return goldStr .. "g"
+        end
+
+        -- Build the { key → record } map from the storage cache.
+        local function BuildCharacters()
+            local Store = ns.Storage and ns.Storage.Store
+            if not (Store and Store.IsInitialized and Store.IsInitialized()) then
+                return nil
+            end
+            local characters = {}
+            for _, key in ipairs(Store.ListCharacters()) do
+                characters[key] = Store.GetCharacter(key)
+            end
+            return characters
+        end
+
+        local function Update()
+            local characters = BuildCharacters()
+            local r, g, b = GetValueColor()
+            local label = GetLabel("Alts: ", "A: ", slotFrame.shortLabel, slotFrame.noLabel)
+            if not characters then
+                text:SetFormattedText(label .. "|cff%02x%02x%02x%s|r", r, g, b, "—")
+                return
+            end
+            local rows = AltsData.BuildRows(characters)
+            -- Bar-text mode is panel-wide like the Spec/Time datatexts: read
+            -- it from profile.datatext.altsMode, but let a per-slot surface
+            -- override win if one is ever supplied via `settings`.
+            local dtSettings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.datatext
+            local mode = (settings and settings.altsMode)
+                or (dtSettings and dtSettings.altsMode)
+                or "gold"
+            local value
+            if mode == "count" then
+                value = tostring(#rows)
+            else
+                value = FormatGold(AltsData.Total(rows))
+            end
+            text:SetFormattedText(label .. "|cff%02x%02x%02x%s|r", r, g, b, value)
+        end
+
+        frame.Update = Update
+
+        -- Storage bus drives content updates. Bus.Subscribe has a matching
+        -- Unsubscribe, so we hold the handler refs on the frame and tear them
+        -- down in OnDisable; re-enabling makes fresh closures, never doubling.
+        local Bus = ns.Storage and ns.Storage.Bus
+        if Bus and Bus.Subscribe then
+            local function onBus() Update() end
+            frame.busHandler = onBus
+            frame.busEvents = { "MoneyChanged", "CharacterChanged", "CharacterDeleted" }
+            for _, ev in ipairs(frame.busEvents) do
+                Bus.Subscribe(ev, onBus)
+            end
+        end
+
+        frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+        frame:SetScript("OnEvent", Update)
+
+        Update()
+
+        -- Tooltip
+        slotFrame:EnableMouse(true)
+        slotFrame:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+            GameTooltip:ClearLines()
+            GameTooltip:AddLine("Alts", 1, 1, 1)
+            GameTooltip:AddLine(" ")
+
+            local vr, vg, vb = GetValueColor()
+            local ar, ag, ab = vr / 255, vg / 255, vb / 255
+
+            local characters = BuildCharacters()
+            if characters then
+                local rows = AltsData.BuildRows(characters)
+                local Store = ns.Storage and ns.Storage.Store
+                local currentKey = Store and Store.GetCurrentCharacterKey and Store.GetCurrentCharacterKey()
+
+                for _, row in ipairs(rows) do
+                    local cr, cg, cb = Helpers.GetClassColor(row.class)
+                    local levelStr = row.level and tostring(row.level) or "?"
+                    local ilvlStr = row.ilvl and string.format("%.0f", row.ilvl) or "?"
+                    local left = string.format("%s  %s (%s)", row.name, levelStr, ilvlStr)
+                    if row.key == currentKey then
+                        left = "• " .. left
+                    end
+                    GameTooltip:AddDoubleLine(left, FormatGold(row.money), cr, cg, cb, 1, 1, 1)
+                end
+
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddDoubleLine("Total:", FormatGold(AltsData.Total(rows)), ar, ag, ab, 1, 0.82, 0)
+            else
+                GameTooltip:AddLine("Roster cache not ready.", 0.7, 0.7, 0.7)
+            end
+
+            -- Warbound Bank Gold (verbatim from the gold widget).
+            if C_Bank and C_Bank.FetchDepositedMoney then
+                local warboundMoney = C_Bank.FetchDepositedMoney(Enum.BankType.Account)
+                if warboundMoney and warboundMoney > 0 then
+                    GameTooltip:AddLine(" ")
+                    GameTooltip:AddLine("Warbound Bank", 1, 1, 1)
+                    GameTooltip:AddDoubleLine("Account Gold:", FormatGold(warboundMoney), 0.8, 0.8, 0.8, 1, 0.82, 0)
+                end
+            end
+
+            GameTooltip:AddLine(" ")
+            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Toggle Alts Window", ar, ag, ab)
+            GameTooltip:AddLine("|cffFFFFFFRight Click:|r Alts Settings", ar, ag, ab)
+            GameTooltip:Show()
+        end)
+        slotFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+        -- Right-click → Alts settings page. Mirrors the Info Bar context-menu
+        -- idiom: QUI:OpenOptions() then deep-link next frame (the shell builds
+        -- over the first frame). Route 20/1 matches QUI_Options/tiles/alts.lua.
+        local function OpenAltsSettings()
+            local QUI = _G.QUI
+            if QUI and type(QUI.OpenOptions) == "function" then
+                QUI:OpenOptions()
+            end
+            C_Timer.After(0, function()
+                local gui = _G.QUI and _G.QUI.GUI
+                if gui and gui.NavigateTo then
+                    gui:NavigateTo(20, 1)
+                end
+            end)
+        end
+
+        -- Click handler: Left = Alts window, Right = Alts settings.
+        slotFrame:RegisterForClicks("AnyUp")
+        slotFrame:SetScript("OnClick", function(_, button)
+            if button == "LeftButton" then
+                if ns.Alts and ns.Alts.IsEnabled and ns.Alts.IsEnabled() and ns.Alts.Window then
+                    ns.Alts.Window.Toggle()
+                else
+                    print("|cff00ff00QUI:|r enable the Alts module (Options → Modules) to use the Alts window.")
+                end
+            elseif button == "RightButton" then
+                OpenAltsSettings()
+            end
+        end)
+
+        Update()
+        return frame
+    end,
+
+    OnDisable = function(frame)
+        frame:UnregisterAllEvents()
+        local Bus = ns.Storage and ns.Storage.Bus
+        if Bus and Bus.Unsubscribe and frame.busHandler and frame.busEvents then
+            for _, ev in ipairs(frame.busEvents) do
+                Bus.Unsubscribe(ev, frame.busHandler)
+            end
+        end
+        frame.busHandler = nil
+        frame.busEvents = nil
     end,
 })
 

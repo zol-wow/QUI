@@ -144,10 +144,10 @@ function GuildTakeover.OnOpened()
     -- must not double-pump the scanner or double-open.
     if live then return end
     live = true
-    -- Pump FIRST: OnGuildBankOpened's QueryGuildBankTab loop starts the
-    -- server streaming GUILDBANKBAGSLOTS_CHANGED — the window then renders
-    -- cache + fresh data instead of an empty live grid.
-    Bags.ScanGuild.OnGuildBankOpened()
+    -- The scan session is driven by the core collector (it hears the same
+    -- GuildBanker interaction edge and runs OnGuildBankOpened's QueryGuildBankTab
+    -- loop, which starts the server streaming GUILDBANKBAGSLOTS_CHANGED). The
+    -- window renders cache + fresh data as the streamed slots drain.
     Bags.GuildWindow.ShowLive()
     -- Opener parity with Blizzard's GuildBankFrame session + the autoopen
     -- "guildBank" policy key.
@@ -161,7 +161,8 @@ function GuildTakeover.OnClosed()
     if not live then return end
     closing = false -- our echo landed (or the close was server-driven)
     live = false
-    Bags.ScanGuild.OnGuildBankClosed()
+    -- The core collector owns the scan session and closes it on the same
+    -- GuildBanker interaction-HIDE edge; the window just tears down here.
     Bags.GuildWindow.OnBankClosed()
     Bags.Takeover.CloseForFrame(GUILD_OPENER)
 end

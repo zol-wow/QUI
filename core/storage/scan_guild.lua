@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------
--- Bags data layer: guild bank scanner.
+-- Core storage: guild bank scanner.
 -- Guild data is server-resident and only readable while the guild bank is
 -- open, through the legacy global API (no C_Container surface):
 -- GetNumGuildBankTabs / QueryGuildBankTab / GetGuildBankTabInfo /
@@ -13,10 +13,10 @@
 -- luacheck: read globals GetGuildBankItemLink GetCurrentGuildBankTab GetGuildBankTabInfo
 -- luacheck: read globals GetGuildBankMoney
 local ADDON_NAME, ns = ...
-local Bags = ns.Bags or {}; ns.Bags = Bags
+local Storage = ns.Storage or {}; ns.Storage = Storage
 
 local ScanGuild = {}
-Bags.ScanGuild = ScanGuild
+Storage.ScanGuild = ScanGuild
 
 -- 98 = 7 columns × 14 slots per group (vendored Blizzard_GuildBankUI).
 local MAX_SLOTS = 98
@@ -28,9 +28,9 @@ local hasDirty = false
 --- unguilded → the entire session no-ops) and pump the server for every
 --- tab's contents — GUILDBANKBAGSLOTS_CHANGED then streams in per tab.
 function ScanGuild.OnGuildBankOpened()
-    guildKey = Bags.Store.GetCurrentGuildKey()
+    guildKey = Storage.Store.GetCurrentGuildKey()
     if not guildKey then return end
-    Bags.Store.EnsureGuild(guildKey)
+    Storage.Store.EnsureGuild(guildKey)
     for tab = 1, GetNumGuildBankTabs() do
         QueryGuildBankTab(tab)
     end
@@ -88,7 +88,7 @@ end
 function ScanGuild.Drain()
     if not hasDirty then return false end
     if not guildKey then return false end
-    local rec = Bags.Store.GetGuild(guildKey)
+    local rec = Storage.Store.GetGuild(guildKey)
     if not rec then return false end
     hasDirty = false
     local changed = {} -- viewable tab indices written this drain (unordered)
@@ -115,7 +115,7 @@ function ScanGuild.Drain()
     end
     rec.money = GetGuildBankMoney()
     if #changed > 0 then
-        Bags.Bus.Publish("GuildChanged", guildKey, changed)
+        Storage.Bus.Publish("GuildChanged", guildKey, changed)
     end
     return #changed > 0
 end

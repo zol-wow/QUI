@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------
--- Bags data layer: shared container readers.
+-- Core storage: shared container readers.
 -- Single source of truth for the persisted slot-entry shape. Both the bag
 -- scanner and the bank scanner read through here; if the shape changes,
 -- it changes in exactly one place (plus store.lua's doc comment).
@@ -17,10 +17,10 @@
 -- tooltip_counts.lua for that guard and its rationale.)
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
-local Bags = ns.Bags or {}; ns.Bags = Bags
+local Storage = ns.Storage or {}; ns.Storage = Storage
 
 local ScanCommon = {}
-Bags.ScanCommon = ScanCommon
+Storage.ScanCommon = ScanCommon
 
 --- Read one container slot into the persisted entry shape (or nil if empty).
 --- onPending(itemID) is invoked when item data isn't fully loaded yet
@@ -61,10 +61,10 @@ end
 --- itemID causes a scan→request→scan loop.
 function ScanCommon.MakePendingHandler(bagID, markDirty)
     return function(itemID)
-        Bags.ItemInfo.RequestLoad(itemID, function(_, success)
+        Storage.ItemInfo.RequestLoad(itemID, function(_, success)
             if not success then return end
             markDirty(bagID)
-            Bags.RequestDrain()
+            Storage.RequestDrain()
         end)
     end
 end

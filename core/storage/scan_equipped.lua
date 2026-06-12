@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------
--- Bags data layer: equipped-items scanner.
+-- Core storage: equipped-items scanner.
 -- Inventory slots 1..19 (INVSLOT_FIRST_EQUIPPED..INVSLOT_LAST_EQUIPPED,
 -- vendored Blizzard_FrameXMLBase/Constants.lua:152-173) read through the
 -- legacy globals GetInventoryItemID/Link/Texture/Quality("player", slot)
@@ -11,10 +11,10 @@
 -- Store shape: rec.equipped = { size = 19, slots = { [invSlot] = entry } }.
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
-local Bags = ns.Bags or {}; ns.Bags = Bags
+local Storage = ns.Storage or {}; ns.Storage = Storage
 
 local ScanEquipped = {}
-Bags.ScanEquipped = ScanEquipped
+Storage.ScanEquipped = ScanEquipped
 
 -- INVSLOT_FIRST_EQUIPPED .. INVSLOT_LAST_EQUIPPED (INVSLOT_TABARD). Slot 0
 -- (ammo) is retail-dead; PLAYER_EQUIPMENT_CHANGED can also fire for
@@ -56,7 +56,7 @@ end
 --- anything was written.
 function ScanEquipped.Drain()
     if not hasDirty then return false end
-    local rec = Bags.Store.GetCurrentCharacter()
+    local rec = Storage.Store.GetCurrentCharacter()
     if not rec then return false end -- transient: dirty marks preserved
     -- Snapshot-swap BEFORE reading: the pending handler's load callback can
     -- fire synchronously (client-cached item) and re-mark a slot inside
@@ -72,11 +72,11 @@ function ScanEquipped.Drain()
     end
     local wrote = false
     for slot in pairs(toScan) do
-        eq.slots[slot] = ReadSlot(slot, Bags.ScanCommon.MakePendingHandler(slot, ScanEquipped.MarkDirty))
+        eq.slots[slot] = ReadSlot(slot, Storage.ScanCommon.MakePendingHandler(slot, ScanEquipped.MarkDirty))
         wrote = true
     end
     if wrote then
-        Bags.Bus.Publish("EquippedChanged", Bags.Store.GetCurrentCharacterKey())
+        Storage.Bus.Publish("EquippedChanged", Storage.Store.GetCurrentCharacterKey())
         return true
     end
     return false

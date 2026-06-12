@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------
--- Bags data layer: session-only item info.
+-- Core storage: session-only item info.
 -- 1) Derived-field cache (classID/subClassID/equipLoc/icon) — computed from
 --    C_Item.GetItemInfoInstant on demand, NEVER persisted (SV stays minimal).
 -- 2) Async load tracker: scanners request a data load for slots whose
@@ -7,10 +7,10 @@
 --    ITEM_DATA_LOAD_RESULT delivers (bags.lua routes the event here).
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
-local Bags = ns.Bags or {}; ns.Bags = Bags
+local Storage = ns.Storage or {}; ns.Storage = Storage
 
 local ItemInfo = {}
-Bags.ItemInfo = ItemInfo
+Storage.ItemInfo = ItemInfo
 
 local derived = {}      -- itemID → { classID, subClassID, equipLoc, icon }
 local pendingLoads = {} -- itemID → { callback, ... }

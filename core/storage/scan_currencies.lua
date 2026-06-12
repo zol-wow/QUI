@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------
--- Bags data layer: currency scanner.
+-- Core storage: currency scanner.
 -- Enumeration choice (verified against CurrencyInfoDocumentation):
 -- GetCurrencyListInfo(i) returns the full CurrencyInfo struct — including
 -- its own `currencyID` and `isHeader` fields — so the visible list walk
@@ -21,10 +21,10 @@
 -- (currency tooltip hook deliberately out of v1 scope).
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
-local Bags = ns.Bags or {}; ns.Bags = Bags
+local Storage = ns.Storage or {}; ns.Storage = Storage
 
 local ScanCurrencies = {}
-Bags.ScanCurrencies = ScanCurrencies
+Storage.ScanCurrencies = ScanCurrencies
 
 local hasDirty = false
 local observed = {} -- [currencyID] = true; event-payload IDs seen this session
@@ -47,7 +47,7 @@ end
 --- written.
 function ScanCurrencies.Drain()
     if not hasDirty then return false end
-    local rec = Bags.Store.GetCurrentCharacter()
+    local rec = Storage.Store.GetCurrentCharacter()
     if not rec then return false end -- transient: dirty mark preserved
     hasDirty = false
     local fresh = {}
@@ -74,6 +74,6 @@ function ScanCurrencies.Drain()
     end
     for id in pairs(observed) do RefreshUnlisted(id) end
     rec.currencies = fresh
-    Bags.Bus.Publish("CurrenciesChanged", Bags.Store.GetCurrentCharacterKey())
+    Storage.Bus.Publish("CurrenciesChanged", Storage.Store.GetCurrentCharacterKey())
     return true
 end

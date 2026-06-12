@@ -106,6 +106,9 @@ function GUI:InitializeOptions()
     if ns.QUI_BagsTile then
         ns.QUI_BagsTile.Register(frame)
     end
+    if ns.QUI_AltsTile then
+        ns.QUI_AltsTile.Register(frame)
+    end
 
     -- Help & Welcome tile — bottom of sidebar, two sub-pages.
     if ns.QUI_HelpTile then

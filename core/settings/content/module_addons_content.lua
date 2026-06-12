@@ -58,6 +58,7 @@ local DESCS = {
     QUI_DamageMeter  = "Built-in damage meter.",
     QUI_InfoBar      = "Full-width top/bottom info bar with datatext widgets.",
     QUI_Bags         = "Bag, bank, guild bank, and storage windows with a cross-character cache.",
+    QUI_Alts         = "Alt roster window over the account-wide character cache.",
 }
 
 ---------------------------------------------------------------------------
@@ -148,6 +149,7 @@ local LABELS = {
     QUI_DamageMeter  = "Damage Meter",
     QUI_InfoBar      = "Info Bar",
     QUI_Bags         = "Bags",
+    QUI_Alts         = "Alts",
 }
 
 ---------------------------------------------------------------------------

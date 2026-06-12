@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------
--- Bags data layer: summaries index.
+-- Core storage: summaries index.
 -- Per-owner inverted index: owner → itemID → location → count, rebuilt
 -- lazily per dirty owner (owner count is small; GetCounts merges across
 -- owners on demand). This is what tooltip counts and search-everywhere
@@ -10,10 +10,10 @@
 -- one full rebuild; lookups are O(owners) thereafter.
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
-local Bags = ns.Bags or {}; ns.Bags = Bags
+local Storage = ns.Storage or {}; ns.Storage = Storage
 
 local Summaries = {}
-Bags.Summaries = Summaries
+Storage.Summaries = Summaries
 
 -- Reserved owner key for the account-wide warband bank. A "-"-less key can
 -- never collide with a real "Name-Realm" character key.
@@ -37,9 +37,9 @@ end
 
 --- Mark every known owner dirty (login seed; cheap — rebuilds are lazy).
 function Summaries.SeedOwners()
-    for _, key in ipairs(Bags.Store.ListCharacters()) do dirty[key] = true end
+    for _, key in ipairs(Storage.Store.ListCharacters()) do dirty[key] = true end
     dirty[Summaries.WARBAND_OWNER] = true
-    for _, guildKey in ipairs(Bags.Store.ListGuilds()) do
+    for _, guildKey in ipairs(Storage.Store.ListGuilds()) do
         dirty[Summaries.GUILD_PREFIX .. guildKey] = true
     end
 end
@@ -58,7 +58,7 @@ end
 local function RebuildOwner(ownerKey)
     if ownerKey == Summaries.WARBAND_OWNER then
         local idx = {}
-        local wb = Bags.Store.GetWarband()
+        local wb = Storage.Store.GetWarband()
         if wb then
             for _, tab in pairs(wb.tabs) do IndexInto(idx, "warband", tab) end
         end
@@ -68,7 +68,7 @@ local function RebuildOwner(ownerKey)
     -- Guild owner: ":guild:" .. guildKey
     local guildKey = ownerKey:match("^" .. Summaries.GUILD_PREFIX .. "(.+)$")
     if guildKey then
-        local guild = Bags.Store.GetGuild(guildKey)
+        local guild = Storage.Store.GetGuild(guildKey)
         if not guild then
             perOwner[ownerKey] = nil -- deleted guild drops out entirely
             return
@@ -78,7 +78,7 @@ local function RebuildOwner(ownerKey)
         perOwner[ownerKey] = idx
         return
     end
-    local rec = Bags.Store.GetCharacter(ownerKey)
+    local rec = Storage.Store.GetCharacter(ownerKey)
     if not rec then
         perOwner[ownerKey] = nil -- deleted/unknown owner drops out entirely
         return
@@ -104,6 +104,26 @@ local function FlushDirty()
     end
 end
 
+--- Lazily-rebuilt index for one owner. Flushes pending dirty owners first
+--- (same path GetCounts uses) then returns perOwner[ownerKey] — nil for an
+--- unknown/deleted owner. Internal; consumers use IterateOwnerItems.
+local function IndexFor(ownerKey)
+    FlushDirty()
+    return perOwner[ownerKey]
+end
+
+--- Iterate one owner's (lazily rebuilt) index: fn(itemID, { location → count }).
+--- ownerKey: a character key, Summaries.WARBAND_OWNER, or a GUILD_PREFIX key.
+--- Unknown owner → no error, no iteration. Inner tables are internal index
+--- state: READ-ONLY, do not retain across bag/bank events (rebuilds swap them).
+function Summaries.IterateOwnerItems(ownerKey, fn)
+    local idx = IndexFor(ownerKey)
+    if not idx then return end
+    for itemID, byLocation in pairs(idx) do
+        fn(itemID, byLocation)
+    end
+end
+
 --- → { [ownerKey] = { [location] = count } }; WARBAND_OWNER keys the warband.
 --- Inner tables are internal index state: READ-ONLY, and do not retain them
 --- across bag/bank events (rebuilds swap them wholesale).
@@ -120,26 +140,26 @@ end
 -- Data-layer-internal wiring: scans invalidate their owner.
 -- An empty changed array is a synthetic re-dress ping (lock/cooldown visual
 -- refresh, not a real move): skip invalidation so tooltip counts stay stable.
-Bags.Bus.Subscribe("BagsChanged", function(_, charKey, changed)
+Storage.Bus.Subscribe("BagsChanged", function(_, charKey, changed)
     if changed and #changed == 0 then return end -- synthetic re-dress ping
     Summaries.Invalidate(charKey)
 end)
-Bags.Bus.Subscribe("BankChanged", function(_, charKey, changed)
+Storage.Bus.Subscribe("BankChanged", function(_, charKey, changed)
     if changed and #changed == 0 then return end -- synthetic re-dress ping
     Summaries.Invalidate(charKey)
 end)
-Bags.Bus.Subscribe("MailChanged", function(_, charKey) Summaries.Invalidate(charKey) end)
-Bags.Bus.Subscribe("EquippedChanged", function(_, charKey) Summaries.Invalidate(charKey) end)
-Bags.Bus.Subscribe("AuctionsChanged", function(_, charKey) Summaries.Invalidate(charKey) end)
+Storage.Bus.Subscribe("MailChanged", function(_, charKey) Summaries.Invalidate(charKey) end)
+Storage.Bus.Subscribe("EquippedChanged", function(_, charKey) Summaries.Invalidate(charKey) end)
+Storage.Bus.Subscribe("AuctionsChanged", function(_, charKey) Summaries.Invalidate(charKey) end)
 -- CurrenciesChanged is NOT subscribed: currencies never join the item index.
-Bags.Bus.Subscribe("WarbandChanged", function(_, changed)
+Storage.Bus.Subscribe("WarbandChanged", function(_, changed)
     if changed and #changed == 0 then return end -- synthetic re-dress ping
     Summaries.InvalidateWarband()
 end)
-Bags.Bus.Subscribe("CharacterDeleted", function(_, charKey) Summaries.Invalidate(charKey) end)
-Bags.Bus.Subscribe("GuildChanged", function(_, guildKey)
+Storage.Bus.Subscribe("CharacterDeleted", function(_, charKey) Summaries.Invalidate(charKey) end)
+Storage.Bus.Subscribe("GuildChanged", function(_, guildKey)
     Summaries.Invalidate(Summaries.GUILD_PREFIX .. guildKey)
 end)
-Bags.Bus.Subscribe("GuildDeleted", function(_, guildKey)
+Storage.Bus.Subscribe("GuildDeleted", function(_, guildKey)
     Summaries.Invalidate(Summaries.GUILD_PREFIX .. guildKey)
 end)

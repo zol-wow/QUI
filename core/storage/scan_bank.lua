@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------
--- Bags data layer: bank scanner.
+-- Core storage: bank scanner.
 -- Character bank tabs (bag IDs 6–11) persist on the character record;
 -- warband/account tabs (12–16) persist on the shared warband record.
 -- Tab metadata (name/icon/depositFlags) comes from C_Bank and is overlaid
@@ -9,10 +9,10 @@
 -- success — same hazards and remedies as scan_bags.lua (see its comments).
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
-local Bags = ns.Bags or {}; ns.Bags = Bags
+local Storage = ns.Storage or {}; ns.Storage = Storage
 
 local ScanBank = {}
-Bags.ScanBank = ScanBank
+Storage.ScanBank = ScanBank
 
 local CHAR_FIRST, CHAR_LAST = 6, 11
 local WB_FIRST, WB_LAST = 12, 16
@@ -45,7 +45,7 @@ function ScanBank.RefreshTabMetadata()
             warbandMeta = {}
             for i = 1, #wbTabs do local t = wbTabs[i]; warbandMeta[t.ID] = t end
         end
-        local warband = Bags.Store.GetWarband()
+        local warband = Storage.Store.GetWarband()
         if warband then
             warband.money = C_Bank.FetchDepositedMoney(Enum.BankType.Account)
         end
@@ -71,7 +71,7 @@ function ScanBank.MarkAllDirty()
 end
 
 local function ReadTab(bagID, meta)
-    local tab = Bags.ScanCommon.ReadContainer(bagID, Bags.ScanCommon.MakePendingHandler(bagID, ScanBank.MarkDirty))
+    local tab = Storage.ScanCommon.ReadContainer(bagID, Storage.ScanCommon.MakePendingHandler(bagID, ScanBank.MarkDirty))
     if meta then
         tab.name = meta.name
         tab.icon = meta.icon
@@ -84,8 +84,8 @@ end
 --- surface. Returns true when anything was written.
 function ScanBank.Drain()
     if not hasDirty then return false end
-    local rec = Bags.Store.GetCurrentCharacter()
-    local warband = Bags.Store.GetWarband()
+    local rec = Storage.Store.GetCurrentCharacter()
+    local warband = Storage.Store.GetWarband()
     if not rec or not warband then return false end -- transient: marks preserved
     -- Snapshot-swap BEFORE reading (synchronous ITEM_DATA_LOAD_RESULT can
     -- re-mark a tab inside ReadContainer; see scan_bags.lua).
@@ -117,10 +117,10 @@ function ScanBank.Drain()
         end
     end
     if #changedChar > 0 then
-        Bags.Bus.Publish("BankChanged", Bags.Store.GetCurrentCharacterKey(), changedChar)
+        Storage.Bus.Publish("BankChanged", Storage.Store.GetCurrentCharacterKey(), changedChar)
     end
     if #changedWb > 0 then
-        Bags.Bus.Publish("WarbandChanged", changedWb)
+        Storage.Bus.Publish("WarbandChanged", changedWb)
     end
     return (#changedChar + #changedWb) > 0
 end

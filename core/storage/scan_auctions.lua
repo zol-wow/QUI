@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------
--- Bags data layer: owned-auction scanner.
+-- Core storage: owned-auction scanner.
 -- Owned-auction data is server-resident and only streams while the auction
 -- house is open: C_AuctionHouse.GetNumOwnedAuctions +
 -- GetOwnedAuctionInfo(i) (Nilable; OwnedAuctionInfo struct — itemKey.itemID,
@@ -20,10 +20,10 @@
 ---------------------------------------------------------------------------
 -- luacheck: read globals C_AuctionHouse
 local ADDON_NAME, ns = ...
-local Bags = ns.Bags or {}; ns.Bags = Bags
+local Storage = ns.Storage or {}; ns.Storage = Storage
 
 local ScanAuctions = {}
-Bags.ScanAuctions = ScanAuctions
+Storage.ScanAuctions = ScanAuctions
 
 local atAuctionHouse = false -- session: true while the AH is open
 local hasDirty = false
@@ -32,8 +32,8 @@ function ScanAuctions.OnAuctionHouseShow()
     atAuctionHouse = true
 end
 
---- AUCTION_HOUSE_CLOSED ends the session. Also called by StopScanning — a
---- stale at-AH flag must not outlive the module (cf. scan_mail).
+--- AUCTION_HOUSE_CLOSED ends the session; the collector always clears the
+--- flag — a stale at-AH flag would wipe the cache (cf. scan_mail).
 function ScanAuctions.OnAuctionHouseClosed()
     atAuctionHouse = false
 end
@@ -50,7 +50,7 @@ end
 function ScanAuctions.Drain()
     if not hasDirty then return false end
     if not atAuctionHouse then return false end
-    local rec = Bags.Store.GetCurrentCharacter()
+    local rec = Storage.Store.GetCurrentCharacter()
     if not rec then return false end -- transient: dirty mark preserved
     hasDirty = false
     local soldStatus = (Enum.AuctionStatus and Enum.AuctionStatus.Sold) or 1
@@ -72,6 +72,6 @@ function ScanAuctions.Drain()
     -- A genuinely empty owned list at the AH must overwrite (everything
     -- sold/expired/cancelled) and still publish.
     rec.auctions = { size = #list, slots = list }
-    Bags.Bus.Publish("AuctionsChanged", Bags.Store.GetCurrentCharacterKey())
+    Storage.Bus.Publish("AuctionsChanged", Storage.Store.GetCurrentCharacterKey())
     return true
 end

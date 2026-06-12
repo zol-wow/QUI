@@ -1,0 +1,20 @@
+## Interface: 120000, 120001, 120005, 120007
+## Title: |cFF30D1FFQUI|r Alts
+## Notes: QUI module. Requires the QUI core addon.
+## Author: Zol
+## Version: 4.0.0-beta36
+## Category: User Interface
+## Group: QUI
+## Dependencies: QUI
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+## LoadOnDemand: 1
+
+bootstrap.lua
+alts\roster_data.lua
+alts\views\window.lua
+alts\views\roster.lua
+alts\views\professions.lua
+alts\views\reputations.lua
+alts\views\weeklies.lua
+alts\views\search.lua
+alts\alts.lua

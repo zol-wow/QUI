@@ -1,0 +1,20 @@
+## Interface: 120000, 120001, 120005, 120007
+## Title: |cFF30D1FFQUI (Midnight)|r
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+## AddonCompartmentFunc: QUI_CompartmentClick
+## AddonCompartmentFuncOnEnter: QUI_CompartmentOnEnter
+## AddonCompartmentFuncOnLeave: QUI_CompartmentOnLeave
+## Notes: Comprehensive UI customization addon
+## Author: Zol
+## Version: 4.0.0-beta36
+## Category: User Interface
+## SavedVariables: QUI_DB, QUIDB, QUI_StorageDB
+## LoadSavedVariablesFirst: 1
+## OptionalDeps: DandersFrames, BigWigs
+
+## X-Contributors: Quazii (original creator), LiQiuDGG, Mondo, Zol
+## X-License: GPLv3
+
+# File list converted from the old load.xml include tree
+# (tools/generate_flat_toc.lua). Order is load-bearing.
+

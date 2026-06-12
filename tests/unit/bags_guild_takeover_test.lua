@@ -2,8 +2,9 @@
 -- Run: lua tests/unit/bags_guild_takeover_test.lua
 -- Guild bank session state machine: LoD-aware GuildBankFrame suppression
 -- (script neutering + reparent to a hidden holder), GUILDBANKFRAME_OPENED/
--- CLOSED routing (scanner pump + guild window + replaced bag globals), and
--- the user-close -> CloseGuildBankFrame echo guard.
+-- CLOSED routing (guild window + replaced bag globals; the scanner session
+-- is owned by core/storage/collector.lua, not this file), and the
+-- user-close -> CloseGuildBankFrame echo guard.
 --
 -- Verified against the vendored Blizzard_GuildBankUI/Blizzard_GuildBankUI.lua:
 --   OnLoad registers 11 events (GUILDBANKBAGSLOTS_CHANGED etc., lines 18-28)
@@ -166,15 +167,17 @@ assert(frame2._hiddenWithLiveOnHide == false,
 assert(#holders == 2, "the fresh instance creates its own holder")
 assert(frame2._parent == holders[2], "loaded-at-Init must reparent to the holder")
 
--- Test 3: GUILDBANKFRAME_OPENED -> live; scanner pump runs BEFORE the window
--- shows (the pump's QueryGuildBankTab calls start the server streaming data
--- the window will render); OpenAllBags receives the named opener proxy.
+-- Test 3: GUILDBANKFRAME_OPENED -> live; the window shows, then bags
+-- auto-open. The scanner session is owned by the core collection driver
+-- (core/storage/collector.lua), which hears the same GuildBanker interaction
+-- edge — guild_takeover.lua no longer pumps the scanner itself.
 sessionLog = {}
 GuildTakeover.OnOpened()
 assert(GuildTakeover.IsLive() == true, "OPENED must set live")
-assert(sessionLog[1] == "scan-open", "the scanner pump must run FIRST")
-assert(sessionLog[2] == "window-showlive", "the window shows after the pump")
-assert(sessionLog[3] == "openallbags", "bags auto-open last")
+assert(sessionLog[1] == "window-showlive", "the window shows on open")
+assert(sessionLog[2] == "openallbags", "bags auto-open after the window")
+assert(sessionLog[1] ~= "scan-open" and sessionLog[2] ~= "scan-open",
+    "guild_takeover must NOT pump the scanner (the collector owns the session)")
 assert(#openLog == 1 and openLog[1] == "QUI_GuildBankWindow",
     "OpenForFrame must receive a QUI_GuildBankWindow-named opener (policy key + opener tracking)")
 
@@ -183,18 +186,20 @@ assert(#openLog == 1 and openLog[1] == "QUI_GuildBankWindow",
 -- path, plus legacy GUILDBANKFRAME_OPENED kept as a redundant trigger), so
 -- a build where both fire must not double-pump/double-show.
 GuildTakeover.OnOpened()
-assert(#sessionLog == 3, "a second OnOpened while live must be a no-op (latch)")
+assert(#sessionLog == 2, "a second OnOpened while live must be a no-op (latch)")
 assert(#openLog == 1, "a second OnOpened while live must not re-OpenAllBags")
 
--- Test 4: GUILDBANKFRAME_CLOSED (server-driven) -> live cleared; scanner
--- session closed; window notified; CloseAllBags with the proxy; the server
--- already closed, so CloseGuildBankFrame must NOT be called.
+-- Test 4: GUILDBANKFRAME_CLOSED (server-driven) -> live cleared; window
+-- notified; CloseAllBags with the proxy; the server already closed, so
+-- CloseGuildBankFrame must NOT be called. The scanner session is closed by
+-- the collector on the interaction-HIDE edge, not here.
 sessionLog = {}
 GuildTakeover.OnClosed()
 assert(GuildTakeover.IsLive() == false, "CLOSED must clear live")
-assert(sessionLog[1] == "scan-close", "CLOSED must close the scanner session")
-assert(sessionLog[2] == "window-onbankclosed", "CLOSED must notify the guild window")
-assert(sessionLog[3] == "closeallbags", "CLOSED must close the auto-opened bags")
+assert(sessionLog[1] == "window-onbankclosed", "CLOSED must notify the guild window")
+assert(sessionLog[2] == "closeallbags", "CLOSED must close the auto-opened bags")
+assert(sessionLog[1] ~= "scan-close",
+    "guild_takeover must NOT close the scanner session (the collector owns it)")
 assert(#closeLog == 1 and closeLog[1] == "QUI_GuildBankWindow",
     "CloseForFrame must receive the QUI_GuildBankWindow-named opener")
 assert(closeGuildBankCalls == 0, "a server-driven close must NOT call CloseGuildBankFrame")

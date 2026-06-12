@@ -2126,6 +2126,11 @@ local DATATEXT_CLOCK_FORMAT_OPTIONS = {
     { value = false, text = "AM/PM" },
 }
 
+local DATATEXT_ALTS_MODE_OPTIONS = {
+    { value = "gold", text = "Total Gold" },
+    { value = "count", text = "Alt Count" },
+}
+
 local function capture_minimap_setting(section, label, widget_type, db_path, db_key, extra)
     register_manual_static_setting({
         tabIndex = 9,
@@ -2255,6 +2260,7 @@ local function capture_minimap_datatext_settings()
     capture_datatext_setting("Time Options", "Time Format", "dropdown", "profile.datatext", "timeFormat", { options = DATATEXT_TIME_FORMAT_OPTIONS })
     capture_datatext_setting("Time Options", "Clock Format", "dropdown", "profile.datatext", "use24Hour", { options = DATATEXT_CLOCK_FORMAT_OPTIONS })
     capture_datatext_setting("Time Options", "Lockout Refresh (minutes)", "slider", "profile.datatext", "lockoutCacheMinutes", { min = 1, max = 30, step = 1 })
+    capture_datatext_setting("Alts Options", "Bar Text", "dropdown", "profile.datatext", "altsMode", { options = DATATEXT_ALTS_MODE_OPTIONS })
 end
 
 install_search_capture_overrides()

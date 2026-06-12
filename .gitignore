@@ -26,3 +26,4 @@ CLAUDE.md
 .claude/hooks/.gate-touched*
 /docs/analysis
 /.claire/worktrees
+luac.out

@@ -397,6 +397,30 @@ return {
             y = 268.33300000000003
           }
         },
+        alts = {
+          columns = {
+            gold = true,
+            ilvl = true,
+            lastSeen = true,
+            played = true,
+            professions = true,
+            rested = true,
+            zone = true
+          },
+          enabled = false,
+          scanners = {
+            lockouts = true,
+            reputations = true,
+            weeklies = true
+          },
+          window = {
+            height = 540,
+            point = "CENTER",
+            width = 920,
+            x = 0,
+            y = 0
+          }
+        },
         atonementCounter = {
           activeCountColor = {
             [1] = 1,
@@ -1295,6 +1319,7 @@ return {
           }
         },
         datatext = {
+          altsMode = "gold",
           bgOpacity = 60,
           borderColor = {
             [1] = 0,

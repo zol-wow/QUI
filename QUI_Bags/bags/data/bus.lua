@@ -1,69 +1,16 @@
----------------------------------------------------------------------------
--- Bags data layer: callback bus.
--- Snapshot-on-publish + xpcall isolation (same semantics as the cdm
--- resolver bus). Publish frequency is scan-rate, not frame-rate, so the
--- closure wrapper cost is irrelevant — and it keeps stock-Lua test runs
--- identical to in-game behavior (stock xpcall forwards no trailing args).
---
--- Events (published by data/ and the module entry, consumed by anything):
---   "BagsChanged"    (charKey, changedBagIDs)
---   "BankChanged"    (charKey, changedTabIDs)
---   "WarbandChanged" (changedTabIDs)
---
--- Changed-array contract: SCANNER publishes always carry a NON-EMPTY
--- changed array (the scanners publish only after writing at least one
--- container). A literal {} is a SYNTHETIC re-dress ping (bags.lua's
--- lock/cooldown route) — "re-render yourself", no data changed. Consumers
--- that react to data movement (the sort executor) ignore empty arrays.
---   "MoneyChanged"     ()
---   "CharacterDeleted" (charKey)
---   "GuildChanged"     (guildKey, changedTabs)  -- scanner publishes after drain
---   "GuildDeleted"     (guildKey)
---   "GuildMoneyChanged" ()  -- GUILDBANK_UPDATE_MONEY / _WITHDRAWMONEY → window footer
---   "MerchantChanged"  (shown)  -- ops/junk.lua OnMerchant → Sell Junk button visibility
---
--- Phase-6 cache-breadth events: their rescan unit is the WHOLE record
--- (payload-free triggering events), so they carry no changed array at all —
--- the {}-is-synthetic rule above stays true.
---   "MailChanged"       (charKey)  -- rec.mail rewritten (mailbox sessions)
---   "EquippedChanged"   (charKey)  -- rec.equipped slots rewritten
---   "CurrenciesChanged" (charKey)  -- rec.currencies map rewritten
---   "AuctionsChanged"   (charKey)  -- rec.auctions rewritten (AH sessions)
----------------------------------------------------------------------------
+-- Forwarding shim: bus.lua moved to core/storage/bus.lua.
+-- In-game: storage_compat.lua (earlier in the toc) already aliased
+-- ns.Bags.Bus, so this file is a no-op in production.
+-- In stock-Lua tests that loadfile this path directly: delegates to the
+-- canonical location and re-aliases ns.Bags.Bus for the caller.
 local ADDON_NAME, ns = ...
-local Bags = ns.Bags or {}; ns.Bags = Bags
-
-local unpack = table.unpack or unpack
-
-local Bus = {}
-Bags.Bus = Bus
-
-local subscribers = {}
-
-function Bus.Subscribe(eventName, handler)
-    local list = subscribers[eventName]
-    if not list then list = {}; subscribers[eventName] = list end
-    list[#list + 1] = handler
-end
-
-function Bus.Unsubscribe(eventName, handler)
-    local list = subscribers[eventName]
-    if not list then return end
-    for i = #list, 1, -1 do
-        if list[i] == handler then table.remove(list, i); return end
-    end
-end
-
-function Bus.Publish(eventName, ...)
-    local list = subscribers[eventName]
-    if not list then return end
-    local n = #list
-    if n == 0 then return end
-    local snapshot = {}
-    for i = 1, n do snapshot[i] = list[i] end
-    local args, nargs = { ... }, select("#", ...)
-    for i = 1, n do
-        local fn = snapshot[i]
-        xpcall(function() fn(eventName, unpack(args, 1, nargs)) end, geterrorhandler())
+if ns and ns.Bags and ns.Bags.Bus then return end   -- already aliased (in-game path)
+-- stock-Lua test path: loadfile is available, forward to the canonical file
+local loader = loadfile and loadfile("core/storage/bus.lua")
+if loader then
+    loader(ADDON_NAME, ns)
+    local Bags = ns.Bags or {}; ns.Bags = Bags
+    if ns.Storage and ns.Storage.Bus then
+        Bags.Bus = ns.Storage.Bus
     end
 end

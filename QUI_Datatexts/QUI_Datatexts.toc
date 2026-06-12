@@ -10,6 +10,7 @@
 ## LoadOnDemand: 1
 
 bootstrap.lua
+datatexts\alts_data.lua
 datatexts\datatexts.lua
 datatexts\providers_extra.lua
 datatexts\ldb_bridge.lua

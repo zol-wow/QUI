@@ -52,6 +52,7 @@ jobs:
             QUI_Options QUI_OptionsSearch
             QUI_ActionBars QUI_CDM QUI_Chat QUI_GroupFrames QUI_ResourceBars QUI_UnitFrames
             QUI_Skinning QUI_Datatexts QUI_Minimap QUI_QoL QUI_DamageMeter QUI_InfoBar QUI_Bags
+            QUI_Alts
           )
 
           rm -rf build
@@ -131,6 +132,8 @@ jobs:
             build/QUI_InfoBar/bootstrap.lua
             build/QUI_Bags/QUI_Bags.toc
             build/QUI_Bags/bootstrap.lua
+            build/QUI_Alts/QUI_Alts.toc
+            build/QUI_Alts/bootstrap.lua
           )
 
           for required_path in "${required_paths[@]}"; do

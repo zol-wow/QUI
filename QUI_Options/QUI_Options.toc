@@ -106,6 +106,8 @@ tiles\help_content.lua
 ..\QUI_QoL\qol\settings\qol_content.lua
 ..\QUI_Bags\bags\settings\bags_providers.lua
 ..\QUI_Bags\bags\settings\bags.lua
+..\QUI_Alts\alts\settings\alts_providers.lua
+..\QUI_Alts\alts\settings\alts.lua
 ..\QUI_ResourceBars\resourcebars\settings\resource_bars.lua
 ..\QUI_ResourceBars\resourcebars\settings\resource_bars_builders.lua
 ..\QUI_ResourceBars\resourcebars\settings\resource_bars_preview_driver.lua
@@ -146,6 +148,7 @@ tiles\chat_tooltips.lua
 tiles\gameplay.lua
 tiles\qol.lua
 tiles\bags.lua
+tiles\alts.lua
 tiles\global.lua
 tiles\help.lua
 blizzard_options.lua

@@ -25,7 +25,7 @@
 -- CheckSlot is INERT until the window closes (no recording, no glow): a
 -- bag window opened before then renders LAST session's cached slots, and
 -- recording those would stamp long-held items as new. OnDisable
--- (StopScanning) wipes the store and drops the gate so a disable/enable
+-- (StopUI) wipes the store and drops the gate so a disable/enable
 -- cycle re-runs the full window before tracking resumes.
 --
 -- GUID access (verified, ItemDocumentation.lua): C_Item.GetItemGUID(
@@ -214,7 +214,7 @@ function NewItems.OnLogin()
     end
 end
 
---- Module disable (StopScanning): wipe the session state and go inert
+--- Module disable (StopUI): wipe the session state and go inert
 --- until a re-enable has re-run the full priming window.
 function NewItems.OnDisable()
     primed = false

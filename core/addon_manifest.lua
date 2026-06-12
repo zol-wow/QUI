@@ -56,6 +56,10 @@ local MANIFEST = {
     -- dormant until the user turns it on via the Module Addons row. Loads via
     -- the eager LOD pass like its siblings; bags.lua self-gates on the flag.
     { folder = "QUI_Bags",         class = "lod", legacyFlag = { "bags", "enabled" },                sources = { "modules/bags" } },
+    -- Opt-in, default-off (legacyFlag alts.enabled): the roster window over
+    -- the core storage cache. Collection is core-owned and unaffected by
+    -- this flag.
+    { folder = "QUI_Alts",         class = "lod", legacyFlag = { "alts", "enabled" },                sources = {} },
 }
 
 local ADDON_NAME, ns = ...

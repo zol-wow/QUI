@@ -1324,6 +1324,20 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             L.closeSection(tm)
         end
 
+        -- ALTS OPTIONS (conditional)
+        if CountSlotsWithValue(selected.slots, selected.numSlots, "alts") then
+            L.headerAt("Alts Options")
+            local al = L.sectionAt()
+            local altOpts = {
+                { value = "gold", text = "Total Gold" },
+                { value = "count", text = "Alt Count" },
+            }
+            local altW = GUI:CreateFormDropdown(al.frame, nil, altOpts, "altsMode", dtGlobal, RefreshAllDatatextSurfaces,
+                { description = "What the Alts datatext shows on the bar: total gold across your tracked alts, or the number of tracked alts. The tooltip always lists every alt." })
+            al.AddRow(row(al.frame, "Bar Text", altW))
+            L.closeSection(al)
+        end
+
         -- CURRENCIES (conditional, custom layout with reorder controls;
         -- section body shared with the Info Bar page)
         if CountSlotsWithValue(selected.slots, selected.numSlots, "currencies") then

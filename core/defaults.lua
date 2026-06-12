@@ -300,6 +300,16 @@ local defaults = {
             },
         },
 
+        alts = {
+            enabled = false, -- master switch (Module Addons row)
+            window = { point = "CENTER", x = 0, y = 0, width = 920, height = 540 },
+            columns = {
+                ilvl = true, gold = true, played = true, rested = true,
+                zone = true, lastSeen = true, professions = true,
+            },
+            scanners = { reputations = true, weeklies = true, lockouts = true },
+        },
+
         damageMeter = {
             -- Native QUI damage meter. Spec: docs/superpowers/specs/2026-05-22-damage-meter-design.md
             -- Phase 5 (2026-05-22) deleted the legacy skinner module that previously
@@ -3806,6 +3816,9 @@ local defaults = {
 
             -- Player Spec datatext settings
             specDisplayMode = "full",  -- "icon" = icon only, "loadout" = icon + loadout, "full" = icon + spec/loadout
+
+            -- Alts datatext settings
+            altsMode = "gold",  -- "gold" = total gold across alts, "count" = number of tracked alts
 
             -- System datatext settings (combined FPS + Latency)
             system = {

@@ -1082,7 +1082,7 @@ Bags.Bus.Subscribe("GuildChanged", function()
 end)
 
 -- money/limit freshness: GUILDBANK_UPDATE_MONEY / _WITHDRAWMONEY (routed by
--- bags.lua as GuildMoneyChanged). Cached mode renders no money row, so the
+-- the core storage collector as GuildMoneyChanged). Cached mode renders no money row, so the
 -- ping is live-only; ScheduleRefresh already no-ops while hidden.
 Bags.Bus.Subscribe("GuildMoneyChanged", function()
     if liveMode then ScheduleRefresh() end

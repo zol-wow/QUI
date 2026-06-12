@@ -78,7 +78,9 @@ do
         assert(type(e.folder) == "string" and e.folder:match("^QUI_"), "folder name")
         assert(not seen[e.folder], "unique folder"); seen[e.folder] = true
         assert(e.class == "login" or e.class == "lod", "class")
-        assert(type(e.sources) == "table" and #e.sources > 0, "sources")
+        -- sources documents the PRE-SPLIT module paths; addons born after
+        -- the suite split (QUI_Alts) legitimately have none.
+        assert(type(e.sources) == "table", "sources")
         -- flag field must be gone from every entry
         assert(e.flag == nil, "flag field must be absent on " .. e.folder)
         -- track which entries carry legacyFlag
@@ -95,17 +97,19 @@ do
         if e.class == "lod" then lod = lod + 1 else login = login + 1 end
     end
     assert(login == 6, "6 login-class entries, got " .. login)
-    assert(lod == 7, "7 lod entries, got " .. lod)
-    assert(#legacyFlagFolders == 3,
-        "exactly 3 legacyFlag entries, got " .. #legacyFlagFolders)
+    assert(lod == 8, "8 lod entries, got " .. lod)
+    assert(#legacyFlagFolders == 4,
+        "exactly 4 legacyFlag entries, got " .. #legacyFlagFolders)
     -- Sort for deterministic comparison (manifest order may vary)
     table.sort(legacyFlagFolders)
-    assert(legacyFlagFolders[1] == "QUI_Bags",
-        "1st legacyFlag entry must be QUI_Bags, got " .. tostring(legacyFlagFolders[1]))
-    assert(legacyFlagFolders[2] == "QUI_Chat",
-        "2nd legacyFlag entry must be QUI_Chat, got " .. tostring(legacyFlagFolders[2]))
-    assert(legacyFlagFolders[3] == "QUI_GroupFrames",
-        "3rd legacyFlag entry must be QUI_GroupFrames, got " .. tostring(legacyFlagFolders[3]))
+    assert(legacyFlagFolders[1] == "QUI_Alts",
+        "1st legacyFlag entry must be QUI_Alts, got " .. tostring(legacyFlagFolders[1]))
+    assert(legacyFlagFolders[2] == "QUI_Bags",
+        "2nd legacyFlag entry must be QUI_Bags, got " .. tostring(legacyFlagFolders[2]))
+    assert(legacyFlagFolders[3] == "QUI_Chat",
+        "3rd legacyFlag entry must be QUI_Chat, got " .. tostring(legacyFlagFolders[3]))
+    assert(legacyFlagFolders[4] == "QUI_GroupFrames",
+        "4th legacyFlag entry must be QUI_GroupFrames, got " .. tostring(legacyFlagFolders[4]))
     -- lateLoad: none today. QUI_Minimap now eager-loads (skinned/anchored
     -- before the first frame, re-applying after EditMode settles), so no entry
     -- is flagged lateLoad. The mechanism itself is retained for future use.
@@ -113,12 +117,12 @@ do
         "no lateLoad entries expected, got " .. #lateLoadFolders)
 end
 
--- 2) LOD stagger: all 7 LOD modules load when addon-enabled, regardless of
+-- 2) LOD stagger: all 8 LOD modules load when addon-enabled, regardless of
 --    profile content.  Profile flags are no longer load gates; only
 --    addon enable state matters.  Two variants: empty profile and a profile
---    with damageMeter.native.enabled=false both produce 7 loads.
+--    with damageMeter.native.enabled=false both produce 8 loads.
 do
-    -- 2a) Empty profile: all 7 LOD modules load.
+    -- 2a) Empty profile: all 8 LOD modules load.
     do
         local ns, calls = newEnv()
         local loader = loadLoader(ns)
@@ -126,7 +130,7 @@ do
         loader:LoadEnabledLODModules()
         local loads = {}
         for _, c in ipairs(calls) do if c:match("^load:") then loads[#loads+1] = c end end
-        assert(#loads == 7, "2a: expected 7 loads (empty profile), got " .. #loads)
+        assert(#loads == 8, "2a: expected 8 loads (empty profile), got " .. #loads)
         assert(loads[1] == "load:QUI_Skinning",    "2a 1st: skinning")
         assert(loads[2] == "load:QUI_Datatexts",   "2a 2nd: datatexts")
         assert(loads[3] == "load:QUI_Minimap",     "2a 3rd: minimap")
@@ -134,7 +138,8 @@ do
         assert(loads[5] == "load:QUI_DamageMeter", "2a 5th: damagemeter")
         assert(loads[6] == "load:QUI_InfoBar",     "2a 6th: infobar")
         assert(loads[7] == "load:QUI_Bags",        "2a 7th: bags")
-        assert(#ns.QUI_Modules.notified == 7, "2a: one notify per load")
+        assert(loads[8] == "load:QUI_Alts",        "2a 8th: alts")
+        assert(#ns.QUI_Modules.notified == 8, "2a: one notify per load")
     end
 
     -- 2b) Profile with damageMeter.native.enabled=false: DamageMeter still loads
@@ -148,7 +153,7 @@ do
         loader:LoadEnabledLODModules()
         local loads = {}
         for _, c in ipairs(calls) do if c:match("^load:") then loads[#loads+1] = c end end
-        assert(#loads == 7, "2b: expected 7 loads (flag-false profile), got " .. #loads)
+        assert(#loads == 8, "2b: expected 8 loads (flag-false profile), got " .. #loads)
         assert(loads[5] == "load:QUI_DamageMeter",
             "2b: DamageMeter must load even when profile flag is false")
     end
@@ -262,7 +267,7 @@ do
     -- All 7 LOD modules must now be loaded in manifest order.
     local loadsAfter = {}
     for _, c in ipairs(calls) do if c:match("^load:") then loadsAfter[#loadsAfter+1] = c end end
-    assert(#loadsAfter == 7, "all 7 lod modules loaded after regen, got " .. #loadsAfter)
+    assert(#loadsAfter == 8, "all 8 lod modules loaded after regen, got " .. #loadsAfter)
     assert(loadsAfter[1] == "load:QUI_Skinning",    "post-regen 1st: skinning")
     assert(loadsAfter[2] == "load:QUI_Datatexts",   "post-regen 2nd: datatexts")
     assert(loadsAfter[3] == "load:QUI_Minimap",     "post-regen 3rd: minimap")
@@ -270,6 +275,7 @@ do
     assert(loadsAfter[5] == "load:QUI_DamageMeter", "post-regen 5th: damagemeter")
     assert(loadsAfter[6] == "load:QUI_InfoBar",     "post-regen 6th: infobar")
     assert(loadsAfter[7] == "load:QUI_Bags",        "post-regen 7th: bags")
+    assert(loadsAfter[8] == "load:QUI_Alts",        "post-regen 8th: alts")
 
     -- Frame must have unregistered after draining.
     assert(not frame._events["PLAYER_REGEN_ENABLED"], "unregistered after drain")
@@ -340,6 +346,7 @@ do
         state.loaded.QUI_DamageMeter = true
         state.loaded.QUI_InfoBar     = true
         state.loaded.QUI_Bags        = true
+        state.loaded.QUI_Alts        = true
         local loader = loadLoader(ns)
         loader.GetProfile = function() return {} end
         local anchorCalls = {}
@@ -396,7 +403,7 @@ do
         loader:LoadEnabledLODModulesEager()
         local loads = {}
         for _, c in ipairs(calls) do if c:match("^load:") then loads[#loads+1] = c end end
-        assert(#loads == 7, "7a: expected 7 eager loads (minimap included), got " .. #loads)
+        assert(#loads == 8, "7a: expected 8 eager loads (minimap included), got " .. #loads)
         assert(loads[1] == "load:QUI_Skinning",    "7a 1st: skinning")
         assert(loads[2] == "load:QUI_Datatexts",   "7a 2nd: datatexts")
         assert(loads[3] == "load:QUI_Minimap",     "7a 3rd: minimap")
@@ -404,7 +411,8 @@ do
         assert(loads[5] == "load:QUI_DamageMeter", "7a 5th: damagemeter")
         assert(loads[6] == "load:QUI_InfoBar",     "7a 6th: infobar")
         assert(loads[7] == "load:QUI_Bags",        "7a 7th: bags")
-        assert(#ns.QUI_Modules.notified == 7, "7a: one notify per eager load")
+        assert(loads[8] == "load:QUI_Alts",        "7a 8th: alts")
+        assert(#ns.QUI_Modules.notified == 8, "7a: one notify per eager load")
         assert(#anchorCalls == 2, "7a: anchoring catch-up runs once (register+apply)")
         assert(anchorCalls[1] == "register" and anchorCalls[2] == "apply", "7a: register then apply")
     end
@@ -420,7 +428,7 @@ do
         _G.InCombatLockdown = function() return false end
         local loads = {}
         for _, c in ipairs(calls) do if c:match("^load:") then loads[#loads+1] = c end end
-        assert(#loads == 7, "7b: eager load ignores combat lockdown, got " .. #loads)
+        assert(#loads == 8, "7b: eager load ignores combat lockdown, got " .. #loads)
     end
 
     -- 7c) Disabled addon is skipped: disable QoL → eager loads 6.
@@ -437,9 +445,9 @@ do
         loader:LoadEnabledLODModulesEager()
         local loads = {}
         for _, c in ipairs(calls) do if c:match("^load:") then loads[#loads+1] = c end end
-        assert(#loads == 6, "7c: disabled QUI_QoL skipped, got " .. #loads)
+        assert(#loads == 7, "7c: disabled QUI_QoL skipped, got " .. #loads)
         for _, c in ipairs(loads) do assert(c ~= "load:QUI_QoL", "7c: qol must not load") end
-        assert(#anchorCalls == 2, "7c: anchoring still runs (6 loaded)")
+        assert(#anchorCalls == 2, "7c: anchoring still runs (7 loaded)")
     end
 
     -- 7d) DB not ready (GetProfile nil) → inert, no loads.
@@ -453,7 +461,7 @@ do
         assert(loads == 0, "7d: no eager loads when DB not ready, got " .. loads)
     end
 
-    -- 7e) Two-stage split: with no lateLoad entries, eager loads ALL 7
+    -- 7e) Two-stage split: with no lateLoad entries, eager loads ALL 8
     --     (including the minimap); the staggered post-login pass is a no-op
     --     catch-up — everything is already loaded, so it loads nothing more.
     do
@@ -473,13 +481,13 @@ do
                 if c == "load:QUI_Minimap" then minimapEager = true end
             end
         end
-        assert(afterEager == 7, "7e: eager loads all 7, got " .. afterEager)
+        assert(afterEager == 8, "7e: eager loads all 8, got " .. afterEager)
         assert(minimapEager, "7e: minimap now eager-loads")
         -- Stage 2: staggered post-login — all already loaded, loads nothing new.
         loader:LoadEnabledLODModules()
         local total = 0
         for _, c in ipairs(calls) do if c:match("^load:") then total = total + 1 end end
-        assert(total == 7, "7e: staggered catch-up loads nothing new, got " .. total)
+        assert(total == 8, "7e: staggered catch-up loads nothing new, got " .. total)
     end
 end
 

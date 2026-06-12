@@ -8,23 +8,11 @@
 ## Dependencies: QUI
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## LoadOnDemand: 1
-## SavedVariables: QUI_StorageDB
-## LoadSavedVariablesFirst: 1
 
 bootstrap.lua
-# == bags load order (was modules/bags/bags.xml) ==
+bags\storage_compat.lua
 bags\data\bus.lua
-bags\data\store.lua
-bags\data\item_info.lua
-bags\data\scan_common.lua
-bags\data\scan_bags.lua
-bags\data\scan_bank.lua
-bags\data\scan_guild.lua
-bags\data\scan_mail.lua
-bags\data\scan_equipped.lua
-bags\data\scan_currencies.lua
-bags\data\scan_auctions.lua
-bags\data\summaries.lua
+# == bags load order (was modules/bags/bags.xml) ==
 bags\newitems.lua
 bags\search\compiler.lua
 bags\search\everywhere.lua

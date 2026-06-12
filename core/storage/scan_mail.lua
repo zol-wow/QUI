@@ -1,5 +1,5 @@
 ---------------------------------------------------------------------------
--- Bags data layer: mailbox (inbox) scanner.
+-- Core storage: mailbox (inbox) scanner.
 -- Inbox data is server-resident and only readable while a mailbox is open,
 -- through the legacy global API: GetInboxNumItems / GetInboxHeaderInfo /
 -- GetInboxItem / GetInboxItemLink (verified against vendored
@@ -18,10 +18,10 @@
 -- luacheck: read globals ATTACHMENTS_MAX_RECEIVE GetInboxNumItems GetInboxHeaderInfo GetInboxItem
 -- luacheck: read globals GetInboxItemLink
 local ADDON_NAME, ns = ...
-local Bags = ns.Bags or {}; ns.Bags = Bags
+local Storage = ns.Storage or {}; ns.Storage = Storage
 
 local ScanMail = {}
-Bags.ScanMail = ScanMail
+Storage.ScanMail = ScanMail
 
 -- 16 — vendored Blizzard_MailFrame/MailFrame.lua:7 (fallback for harnesses).
 local MAX_ATTACHMENTS = ATTACHMENTS_MAX_RECEIVE or 16
@@ -35,10 +35,10 @@ function ScanMail.OnMailShow()
     hasDirty = true
 end
 
---- MAIL_CLOSED: ends the session; later drains no-op. Also called by
---- StopScanning — a stale at-mailbox flag must not outlive the module
---- (a post-re-enable drain away from a mailbox would read an empty inbox
---- and wipe the cache).
+--- MAIL_CLOSED: ends the session; later drains no-op. The collector always
+--- clears the flag (collection is a core service) — a stale at-mailbox flag
+--- would let a drain away from a mailbox read an empty inbox and wipe the
+--- cache.
 function ScanMail.OnMailClosed()
     atMailbox = false
 end
@@ -55,7 +55,7 @@ end
 function ScanMail.Drain()
     if not hasDirty then return false end
     if not atMailbox then return false end
-    local rec = Bags.Store.GetCurrentCharacter()
+    local rec = Storage.Store.GetCurrentCharacter()
     if not rec then return false end -- transient: dirty mark preserved
     hasDirty = false
     local list = {}
@@ -87,6 +87,6 @@ function ScanMail.Drain()
     -- A genuinely empty inbox must overwrite (the user collected everything)
     -- and still publish so consumers drop stale counts.
     rec.mail = { size = #list, slots = list }
-    Bags.Bus.Publish("MailChanged", Bags.Store.GetCurrentCharacterKey())
+    Storage.Bus.Publish("MailChanged", Storage.Store.GetCurrentCharacterKey())
     return true
 end

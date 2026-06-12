@@ -1329,6 +1329,13 @@ local PROFILE_IMPORT_CATEGORIES = {
         recommended = true,
         topLevelKeys = { "bags" },
     },
+    {
+        id = "alts",
+        label = "Alts",
+        description = "Alt roster window settings.",
+        recommended = true,
+        topLevelKeys = { "alts" },
+    },
 }
 
 local PROFILE_IMPORT_CATEGORY_BY_ID = {}
