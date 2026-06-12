@@ -2476,6 +2476,8 @@ local function SaveOriginalState(frame, name)
         origMovable = frame:IsMovable(),
         wasShown = frame:IsShown(),
         iconTex = iconTex,
+        origStrata = frame:GetFrameStrata(),
+        origLevel = frame:GetFrameLevel(),
     }
 end
 
@@ -3139,6 +3141,13 @@ local function CollectButton(frame, name)
         frame:SetIgnoreParentScale(false)
     end
 
+    -- Strata/level: explicit SetFrameStrata sticks through SetParent, and some
+    -- buttons copy the Minimap's strata (LOW) — below the drawer's MEDIUM
+    -- backdrop, which then covers the icon and eats its clicks. Assert the
+    -- drawer's strata and a level above it, and lock both against re-asserts.
+    frame:SetFrameStrata(drawerFrame:GetFrameStrata())
+    frame:SetFrameLevel(drawerFrame:GetFrameLevel() + 5)
+
     -- Override Hide, SetShown, AND SetAlpha so nothing can re-hide
     -- LibDBIcon uses SetAlpha(0) + fadeOut animation, not Hide()
     local mt = getmetatable(frame)
@@ -3165,6 +3174,8 @@ local function CollectButton(frame, name)
     -- LayoutDrawerButtons places buttons through the metatable instead.
     frame.ClearAllPoints = function() end
     frame.SetPoint = function() end
+    frame.SetFrameStrata = function() end
+    frame.SetFrameLevel = function() end
     -- Force visible using metatable methods (bypass our overrides for initial set)
     if mtSetAlpha then mtSetAlpha(frame, 1) end
     if mt and mt.__index then mt.__index.Show(frame) end
@@ -3246,6 +3257,14 @@ local function ReleaseAllButtons()
             frame.SetParent = nil
             frame.ClearAllPoints = nil
             frame.SetPoint = nil
+            frame.SetFrameStrata = nil
+            frame.SetFrameLevel = nil
+            if data.origStrata then
+                pcall(frame.SetFrameStrata, frame, data.origStrata)
+            end
+            if data.origLevel then
+                pcall(frame.SetFrameLevel, frame, data.origLevel)
+            end
             -- Restore hidden overlay/border textures for LibDBIcon buttons
             if data.hiddenRegions then
                 for _, region in ipairs(data.hiddenRegions) do

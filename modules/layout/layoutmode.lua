@@ -216,6 +216,7 @@ end
 function QUI_LayoutMode:UnregisterElement(key)
     if not key then return end
 
+    local def = self._elements[key]
     self._elements[key] = nil
     self:_RebuildOrder()
 
@@ -229,6 +230,38 @@ function QUI_LayoutMode:UnregisterElement(key)
                 pcall(handle._parentFrame.SetMovable, handle._parentFrame, saved)
                 self._savedMovableState[key] = nil
             end
+        end
+        -- Proxy movers reparent the target frame INTO the handle (Open's
+        -- deferred attach). Close() restores that; an element unregistered
+        -- mid-session (e.g. chat window mover re-sync) must restore it too,
+        -- or the frame is left glued to a dead hidden handle — invisible,
+        -- and every replacement handle re-proxies because the frame reads
+        -- as not shown. Mirrors Close()'s restore: parent, strata, layout
+        -- guard, then re-pin to UIParent at the handle's screen position.
+        if handle._savedTargetParent then
+            local targetFrame = def and def.getFrame and def.getFrame()
+            if targetFrame then
+                pcall(targetFrame.SetParent, targetFrame, handle._savedTargetParent)
+                if handle._savedTargetStrata then
+                    pcall(targetFrame.SetFrameStrata, targetFrame, handle._savedTargetStrata)
+                end
+                if _G.QUI_SetFrameLayoutOwned then
+                    _G.QUI_SetFrameLayoutOwned(targetFrame, nil)
+                end
+                local cx, cy = handle:GetCenter()
+                if cx and cy then
+                    local hs = handle:GetEffectiveScale() or 1
+                    local us = UIParent:GetEffectiveScale() or 1
+                    local uw = UIParent:GetWidth() or 0
+                    local uh = UIParent:GetHeight() or 0
+                    local ox = (cx * hs / us) - (uw / 2)
+                    local oy = (cy * hs / us) - (uh / 2)
+                    pcall(targetFrame.ClearAllPoints, targetFrame)
+                    pcall(targetFrame.SetPoint, targetFrame, "CENTER", UIParent, "CENTER", ox, oy)
+                end
+            end
+            handle._savedTargetParent = nil
+            handle._savedTargetStrata = nil
         end
         handle:SetParent(nil)
         self._handles[key] = nil
@@ -522,10 +555,18 @@ function QUI_LayoutMode:Open()
                     handle:Show()
                 end
 
-                -- If child overlay isn't visible (parent hidden), replace with proxy mover.
+                -- If the child overlay's PARENT FRAME isn't visible, replace with
+                -- proxy mover. Must check the parent frame, not handle:IsVisible():
+                -- anchored handles deliberately skip Show() above (deferred to the
+                -- topological sync), so an invisible HANDLE doesn't mean a hidden
+                -- parent — using handle:IsVisible() here destroyed every anchored
+                -- child overlay (e.g. a chat window anchored to another element)
+                -- and replaced it with a proxy mover that reparents the owned
+                -- container into the handle.
                 -- mplusTimer is exempt: its parent is shown via demo mode and we
                 -- need the child overlay to inherit the parent's user-set scale.
-                if handle._isChildOverlay and not handle:IsVisible() and key ~= "mplusTimer" then
+                if handle._isChildOverlay and handle._parentFrame
+                    and not handle._parentFrame:IsVisible() and key ~= "mplusTimer" then
                     handle:Hide()
                     handle:SetParent(nil)
                     handle = CreateProxyMover(def)
@@ -3376,6 +3417,19 @@ do
         function um:SyncChatWindowElements()
             local D = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.DisplayLayer
             local count = (D and D.GetWindowCount and D.GetWindowCount()) or 0
+            -- Window count unchanged → nothing to re-derive. The registered
+            -- defs capture windowID (not a frame), and getFrame resolves the
+            -- live container per call, so they survive pool swaps. Skipping
+            -- matters: this fires on EVERY chat Refresh (any chat settings
+            -- change), and a live Layout Mode unregister/re-register cycle
+            -- tears down the window's handle and wipes its pending (unsaved)
+            -- layout position. The damage meter registers once per window
+            -- lifecycle for the same reason.
+            local registered = 0
+            for _ in pairs(registeredChatWindowKeys) do
+                registered = registered + 1
+            end
+            if registered == math.max(count - 1, 0) then return end
             for key in pairs(registeredChatWindowKeys) do
                 um:UnregisterElement(key)
                 registeredChatWindowKeys[key] = nil
