@@ -21,7 +21,13 @@ function ItemInfo.GetDerived(itemID)
     if hit then return hit end
     local _, _, _, equipLoc, icon, classID, subClassID = C_Item.GetItemInfoInstant(itemID)
     if not classID then return nil end
-    local rec = { classID = classID, subClassID = subClassID, equipLoc = equipLoc, icon = icon }
+    -- equipLoc alone is an unreliable "is this gear?" signal: non-equippables
+    -- can report the token "INVTYPE_NON_EQUIP_IGNORE" (not ""), so consumers
+    -- that gate on equipLoc ~= "" leak ilvl onto flasks/potions. IsEquippableItem
+    -- (ItemDocumentation) is the authoritative bool — instant, no async load.
+    local isEquippable = C_Item.IsEquippableItem(itemID) and true or false
+    local rec = { classID = classID, subClassID = subClassID, equipLoc = equipLoc,
+        icon = icon, isEquippable = isEquippable }
     derived[itemID] = rec
     return rec
 end
@@ -68,12 +74,15 @@ function ItemInfo.GetExtended(itemID, link)
     if not itemID then return nil end
     local hit = extended[itemID]
     if hit then return hit end
-    -- Position 8 = itemStackCount (ItemDocumentation.lua GetItemInfo returns[8])
-    local name, infoLink, _, baseIlvl, _, _, _, maxStack, _, _, _, _, _, bindType, expacID = C_Item.GetItemInfo(itemID)
+    -- Position 8 = itemStackCount, 15 = expacID, 17 = isCraftingReagent
+    -- (ItemDocumentation.lua GetItemInfo returns). isCraftingReagent is the
+    -- reagent-bag eligibility signal the sort planner needs (the universal
+    -- reagent bag is OUTSIDE the GetItemFamily/bagFamily mask system).
+    local name, infoLink, _, baseIlvl, _, _, _, maxStack, _, _, _, _, _, bindType, expacID, _, isCraftingReagent = C_Item.GetItemInfo(itemID)
     if not name then return nil end
     local ilvl = C_Item.GetDetailedItemLevelInfo(link or infoLink) or baseIlvl
     local rec = { name = name, ilvl = ilvl, expacID = expacID, maxStack = maxStack,
-        bindType = bindType }
+        bindType = bindType, isReagent = isCraftingReagent and true or false }
     extended[itemID] = rec
     return rec
 end

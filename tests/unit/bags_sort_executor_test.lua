@@ -149,6 +149,7 @@ _G.InCombatLockdown = function() return inCombat end
 _G.C_Timer = { After = function(delay, fn) timers[#timers + 1] = { delay = delay, fn = fn } end }
 _G.Enum = _G.Enum or {}
 _G.Enum.BagSlotFlags = { DisableAutoSort = 1, ExcludeJunkSell = 64 }
+_G.Enum.BagIndex = { ReagentBag = 5 }
 
 reset()
 
@@ -160,16 +161,22 @@ _G.C_Item = {
         local m = META[itemID]
         return m and m.itemFamily or 0
     end,
+    IsEquippableItem = function(itemID)
+        local m = META[itemID]
+        return (m and m.isEquippable) or false
+    end,
     GetItemInfoInstant = function(itemID)
         local m = META[itemID]
         if not m then return nil end
         return itemID, "t", "st", "loc", 134400, m.classID, m.subClassID
     end,
+    -- Returns through position 17 = isCraftingReagent (16 = setID, unused here).
     GetItemInfo = function(itemID)
         local m = META[itemID]
         if not m or m.pending then return nil end
         return m.name, "link:" .. itemID, m.quality, m.ilvl,
-               nil, nil, nil, m.maxStack, nil, nil, nil, nil, nil, nil, m.expacID
+               nil, nil, nil, m.maxStack, nil, nil, nil, nil, nil, nil, m.expacID,
+               nil, m.isReagent or false
     end,
     GetDetailedItemLevelInfo = function() return nil end, -- → baseIlvl fallback
 }
@@ -588,6 +595,46 @@ do
     while Exec.IsRunning() do ns.Bags.Bus.Publish("BagsChanged", "k", { 0 }) end
     assert(doneCalls == 1 and pickups > 0,
         "Start must proceed once the sibling ops are idle")
+end
+
+---------------------------------------------------------------------------
+-- Section 13: reagent bag (bagID 5) — BuildContainers flags it as reagent
+-- (REAGENT_BAG_ID), so crafting reagents (META.isReagent) pack into it and
+-- non-reagents stay out. End-to-end through the real planner + executor.
+---------------------------------------------------------------------------
+do
+    reset()
+    -- Fresh itemIDs (970+): item_info's extended/derived caches are session-
+    -- scoped and persist across sections, so reusing an already-seen ID (e.g.
+    -- 901) would serve its stale cached record instead of this isReagent flag.
+    defineItems(0)
+    META[970] = { quality = 1, classID = 2, subClassID = 1, name = "Sword",
+                  ilvl = 1, expacID = 1, maxStack = 1, isReagent = false }
+    META[971] = { quality = 1, classID = 7, subClassID = 1, name = "Ore",
+                  ilvl = 1, expacID = 1, maxStack = 1, isReagent = true }
+    -- reagent in the regular bag, non-reagent squatting in the reagent bag.
+    bag(0, 3, { [1] = item(970), [2] = item(971) })
+    bag(5, 2, { [1] = item(970) }) -- bagID 5 → reagent bag; sword wrongly inside
+
+    local doneOk
+    assert(Exec.Start("bags", function(ok) doneOk = ok end))
+    while Exec.IsRunning() do ns.Bags.Bus.Publish("BagsChanged", "k", { 0, 5 }) end
+    assert(doneOk == true, "reagent sort must converge")
+
+    -- reagent bag must hold ONLY reagents; the sword must be gone from it.
+    for s = 1, sim[5].size do
+        local cell = sim[5].slots[s]
+        if cell then
+            assert(META[cell.itemID].isReagent,
+                "reagent bag holds a non-reagent: " .. flatten(5))
+        end
+    end
+    -- the ore must have migrated into the reagent bag.
+    local oreInReagent = false
+    for s = 1, sim[5].size do
+        if sim[5].slots[s] and sim[5].slots[s].itemID == 971 then oreInReagent = true end
+    end
+    assert(oreInReagent, "ore must pack into the reagent bag: " .. flatten(5))
 end
 
 _G.print = realPrint

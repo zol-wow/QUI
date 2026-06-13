@@ -195,6 +195,12 @@ local function ReleaseSlots(zf)
         slot.hideIcon = nil
         slot.clickThrough = nil
         slot.text:SetText("")
+        -- Drag-reorder dims the slot to 0.4 alpha mid-drag; a release-during-
+        -- drag can pool it dimmed, so reset alpha here as part of the clearing
+        -- contract. (Do NOT clear slot._quiDragWired — its OnDragStart/OnDragStop
+        -- HookScripts persist across pool reuse and HookScript stacks; the flag
+        -- must persist so WireSlotDrag stays a true once-only attach.)
+        slot:SetAlpha(1)
         slot:Hide()
         if #slotPool < SLOT_POOL_CAP then
             slotPool[#slotPool + 1] = slot
@@ -340,6 +346,13 @@ local function ResolveOverflow()
         if not collide then break end
         for _, key in ipairs(ZONES) do ReflowZone(key) end
     end
+end
+
+-- Exposed for the drag-reorder companion (dragreorder.lua): it walks live
+-- slots after each ApplyAll to attach Shift-drag handlers. Returns the live
+-- zoneFrames table (zoneFrames[key].slots[i] mirrors db.zones[key][i]).
+function InfoBar:GetZoneFrames()
+    return zoneFrames
 end
 
 function InfoBar:ReflowAll()

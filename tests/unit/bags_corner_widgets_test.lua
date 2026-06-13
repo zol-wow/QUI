@@ -17,8 +17,8 @@ ns.Bags.ItemButtons = { GetQualityColor = function() return 0.1, 0.2, 0.3 end }
 local function ctx(over)
     local c = {
         entry = { count = 5, quality = 3 },
-        details = { ilvl = 480, equipLoc = "INVTYPE_HEAD", bindType = 2,
-                    isBound = false, expacID = 9 },
+        details = { ilvl = 480, equipLoc = "INVTYPE_HEAD", isEquippable = true,
+                    bindType = 2, isBound = false, expacID = 9 },
         isJunk = false,
         inSet = false,
         qualityColorText = false,
@@ -39,8 +39,13 @@ assert(p and p.text == "480" and p.r == 1, "ilvl renders white by default")
 p = CW.Select("item_level", nil, ctx({ qualityColorText = true }))
 assert(p and p.r == 0.1 and p.g == 0.2 and p.b == 0.3,
        "qualityColorText must route through GetQualityColor")
-p = CW.Select("item_level", nil, ctx({ details = { ilvl = 480, equipLoc = "" } }))
+p = CW.Select("item_level", nil, ctx({ details = { ilvl = 480, isEquippable = false } }))
 assert(p == nil, "non-equippable must not show ilvl")
+-- regression: non-equippables (flasks/potions) can report a non-empty equipLoc
+-- token; the gate is isEquippable, not equipLoc ~= "".
+p = CW.Select("item_level", nil, ctx({ details = {
+    ilvl = 480, equipLoc = "INVTYPE_NON_EQUIP_IGNORE", isEquippable = false } }))
+assert(p == nil, "flask with INVTYPE_NON_EQUIP_IGNORE token must not show ilvl")
 local noDetails = ctx()
 noDetails.details = nil
 p = CW.Select("item_level", nil, noDetails)

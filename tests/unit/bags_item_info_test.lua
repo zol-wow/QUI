@@ -9,6 +9,8 @@ _G.C_Item.GetItemInfoInstant = function(itemID)
     if itemID == 6948 then return 6948, "Miscellaneous", "Other", "", 134414, 15, 0 end
     return nil
 end
+-- 6948 (Hearthstone, classID 15 Miscellaneous) is not equippable.
+_G.C_Item.IsEquippableItem = function(itemID) return itemID == 12345 end
 local requested = {}
 _G.C_Item.RequestLoadItemDataByID = function(itemID) requested[#requested + 1] = itemID end
 
@@ -18,6 +20,7 @@ local ItemInfo = ns.Bags.ItemInfo
 -- Test 1: derived info is fetched once then session-cached
 local d1 = ItemInfo.GetDerived(6948)
 assert(d1 and d1.classID == 15 and d1.subClassID == 0 and d1.icon == 134414, "derived fields wrong")
+assert(d1.isEquippable == false, "non-equippable item must derive isEquippable=false")
 local d2 = ItemInfo.GetDerived(6948)
 assert(d2 == d1, "expected cached table identity")
 assert(instantCalls == 1, "instant info should be called once, got " .. instantCalls)

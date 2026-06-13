@@ -110,6 +110,10 @@ end
 -- Enum.ItemClass.Container = 1 (ItemConstantsDocumentation.lua:207).
 local ITEM_CLASS_CONTAINER = (Enum and Enum.ItemClass and Enum.ItemClass.Container) or 1
 
+-- Universal reagent bag = BagIndex 5 (BagIndexConstantsDocumentation; mirrors
+-- Blizzard's ContainerFrame_IsReagentBag bare id == 5 check).
+local REAGENT_BAG_ID = (Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag) or 5
+
 local function BuildContainers(scope)
     local ItemInfo = Bags.ItemInfo
     local containers = {}
@@ -146,13 +150,16 @@ local function BuildContainers(scope)
                     entry.ilvl = ext.ilvl
                     entry.expacID = ext.expacID
                     entry.maxStack = ext.maxStack
+                    -- isCraftingReagent: reagent-bag eligibility. nil while item
+                    -- data loads → not-reagent (conservative; re-plan corrects).
+                    entry.isReagent = ext.isReagent
                 end
                 slots[slot] = entry
             end
         end
         -- bagFamily: GetContainerNumFreeSlots second return (nilable per
-        -- ContainerDocumentation; nil → unrestricted). Non-zero marks a
-        -- specialty container (retail reagent bag) for the planner.
+        -- ContainerDocumentation; nil → unrestricted). Non-zero marks an OLD
+        -- profession bag (herb/enchant/…) for the planner's family-mask path.
         local _, bagFamily = C_Container.GetContainerNumFreeSlots(bagID)
         containers[#containers + 1] = {
             bagID = bagID,
@@ -160,6 +167,11 @@ local function BuildContainers(scope)
             slots = slots,
             ignored = IsBagIgnored(bagID),
             family = bagFamily or 0,
+            -- The universal reagent bag is bagID 5 and lives OUTSIDE the
+            -- family-mask system (Blizzard's ContainerFrame_IsReagentBag is a
+            -- bare id == 5 check; GetContainerNumFreeSlots/GetItemFamily don't
+            -- reliably flag it). Mark it so the planner gates it on isReagent.
+            reagent = (bagID == REAGENT_BAG_ID),
         }
     end
     return containers

@@ -15,11 +15,17 @@
 -- (unknown/missing key → quality chain; reverse flips every comparator
 -- direction wholesale — nil-last and the stability tiebreaker stay fixed).
 --
--- Bag families: family ~= 0 marks a specialty container (retail reagent
--- bag) that only accepts entries whose itemFamily mask overlaps it
--- (GetContainerNumFreeSlots second return × GetItemFamily — both nilable,
--- nil → 0). nil/0 itemFamily never fits a specialty bag (pending item data
--- stays out conservatively; the executor re-plans when it loads).
+-- Specialty containers, two kinds:
+--   * Family bag: family ~= 0 marks an OLD profession bag (herb/enchant/…)
+--     that only accepts entries whose itemFamily mask overlaps it
+--     (GetContainerNumFreeSlots second return × GetItemFamily — both nilable,
+--     nil → 0). nil/0 itemFamily never fits.
+--   * Reagent bag: container.reagent == true marks the universal reagent bag
+--     (bagID 5), which is OUTSIDE the family-mask system and accepts ONLY
+--     crafting reagents (entry.isReagent). nil/false isReagent never fits, so
+--     non-reagents stay out and reagents pack in (Blizzard parity).
+-- Either way pending item data (nil flags) stays out conservatively; the
+-- executor re-plans when it loads.
 --
 -- Three phases over a VIRTUAL copy of the state (input never mutated):
 --   A) stack-combine: 2+ partial stacks of an item merge smaller→larger,
@@ -105,11 +111,16 @@ local function band(a, b)
     return result
 end
 
--- Can this cell legally sit in a container of the given family?
--- Unrestricted (nil/0) accepts everything; a specialty family requires an
--- overlapping itemFamily mask. nil/0 itemFamily (regular item, or item data
--- still loading) never fits a specialty bag.
-local function Fits(cell, family)
+-- Can this cell legally sit in a container?
+-- * Reagent bag (reagent == true): the universal reagent bag is OUTSIDE the
+--   family-mask system, so it accepts ONLY crafting reagents (entry.isReagent)
+--   regardless of family. nil/false isReagent (regular item, or item data still
+--   loading) never fits — keeps non-reagents out and is conservative on pending.
+-- * Family bag (family ~= 0): requires an overlapping itemFamily mask; nil/0
+--   itemFamily never fits.
+-- * Unrestricted (no reagent flag, family nil/0): accepts everything.
+local function Fits(cell, family, reagent)
+    if reagent then return cell.entry.isReagent == true end
     if not family or family == 0 then return true end
     local itemFamily = cell.entry.itemFamily
     if not itemFamily or itemFamily == 0 then return false end
@@ -213,22 +224,26 @@ function SortPlanner.Plan(containers, opts)
     -- is family-legal: a displaced occupant that wouldn't fit the want's
     -- origin container reroutes through an empty accepting slot instead.
     local specialtyTargets, regularTargets = {}, {}
-    local familyOf = {} -- bagID → family (0 = unrestricted)
+    local familyOf = {}  -- bagID → family (0 = unrestricted)
+    local reagentOf = {} -- bagID → true if the universal reagent bag
     for _, container in ipairs(active) do
         local family = container.family or 0
+        local reagent = container.reagent and true or false
         familyOf[container.bagID] = family
-        local list = (family ~= 0) and specialtyTargets or regularTargets
+        reagentOf[container.bagID] = reagent
+        local list = (family ~= 0 or reagent) and specialtyTargets or regularTargets
         for slot = 1, container.size do
-            list[#list + 1] = { bag = container.bagID, slot = slot, family = family }
+            list[#list + 1] = { bag = container.bagID, slot = slot,
+                family = family, reagent = reagent }
         end
     end
 
     local cursor = 1 -- sorted-order scan start; advances past placed cells
-    local function NextUnplaced(family)
+    local function NextUnplaced(family, reagent)
         while sorted[cursor] and sorted[cursor].placed do cursor = cursor + 1 end
         for i = cursor, #sorted do
             local cell = sorted[i]
-            if not cell.placed and Fits(cell, family) then return cell end
+            if not cell.placed and Fits(cell, family, reagent) then return cell end
         end
         return nil
     end
@@ -237,7 +252,7 @@ function SortPlanner.Plan(containers, opts)
     -- for displaced occupants). Walks containers in input order.
     local function FindEmptyFor(cell)
         for _, container in ipairs(active) do
-            if Fits(cell, container.family or 0) then
+            if Fits(cell, container.family or 0, container.reagent) then
                 local slots = virtual[container.bagID]
                 for slot = 1, container.size do
                     if not slots[slot] then return container.bagID, slot end
@@ -259,7 +274,7 @@ function SortPlanner.Plan(containers, opts)
             want.placed = true
             return
         end
-        if occupant and not Fits(occupant, familyOf[want.bag]) then
+        if occupant and not Fits(occupant, familyOf[want.bag], reagentOf[want.bag]) then
             local emptyBag, emptySlot = FindEmptyFor(occupant)
             if not emptyBag then return end
             moves[#moves + 1] = {
@@ -286,7 +301,7 @@ function SortPlanner.Plan(containers, opts)
     end
 
     for _, target in ipairs(specialtyTargets) do
-        local want = NextUnplaced(target.family)
+        local want = NextUnplaced(target.family, target.reagent)
         if want then Place(want, target) end
     end
     -- Regular pass. Normally fills targets top-down (best item → first slot,
@@ -307,7 +322,7 @@ function SortPlanner.Plan(containers, opts)
     end
     for idx, target in ipairs(regularTargets) do
         if idx > regularSkip then
-            local want = NextUnplaced(0)
+            local want = NextUnplaced(0, false)
             if not want then break end -- everything placed; rest stays empty
             Place(want, target)
         end

@@ -53,8 +53,10 @@ CornerWidgets.Resolvers = {
     end,
     item_level = function(ctx)
         local d = ctx.details
-        -- equippables only: ilvl on consumables/reagents is API filler
-        if d and d.ilvl and d.ilvl > 1 and d.equipLoc and d.equipLoc ~= "" then
+        -- equippables only: ilvl on consumables/reagents is API filler. Gate on
+        -- IsEquippableItem (d.isEquippable) — equipLoc ~= "" leaks ilvl onto
+        -- flasks/potions that report the "INVTYPE_NON_EQUIP_IGNORE" token.
+        if d and d.ilvl and d.ilvl > 1 and d.isEquippable then
             local r, g, b = TextColor(ctx)
             return { text = tostring(d.ilvl), r = r, g = g, b = b }
         end

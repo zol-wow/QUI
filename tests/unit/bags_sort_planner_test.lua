@@ -24,12 +24,13 @@ local function item(id, opts)
         expacID = opts.expacID,
         maxStack = opts.maxStack,
         itemFamily = opts.itemFamily,
+        isReagent = opts.isReagent,
     }
 end
 
-local function bag(bagID, size, slotItems, ignored, family)
+local function bag(bagID, size, slotItems, ignored, family, reagent)
     return { bagID = bagID, size = size, slots = slotItems or {}, ignored = ignored or false,
-             family = family }
+             family = family, reagent = reagent }
 end
 
 -- Pure-Lua bitwise AND (headless Lua 5.1 has no bit library); families are
@@ -51,6 +52,12 @@ local function fitsFamily(itemFamily, bagFamily)
     if not bagFamily or bagFamily == 0 then return true end
     if not itemFamily or itemFamily == 0 then return false end
     return band(itemFamily, bagFamily) ~= 0
+end
+
+-- Reagent legality: the universal reagent bag accepts ONLY crafting reagents.
+local function fitsReagent(isReagent, bagReagent)
+    if not bagReagent then return true end
+    return isReagent == true
 end
 
 local function deepCopy(v)
@@ -90,10 +97,10 @@ local function buildState(containers)
             local e = c.slots[s]
             if e then
                 slots[s] = { itemID = e.itemID, count = e.count or 1, maxStack = e.maxStack,
-                             itemFamily = e.itemFamily }
+                             itemFamily = e.itemFamily, isReagent = e.isReagent }
             end
         end
-        state[c.bagID] = { size = c.size, slots = slots, family = c.family }
+        state[c.bagID] = { size = c.size, slots = slots, family = c.family, reagent = c.reagent }
     end
     return state
 end
@@ -112,6 +119,8 @@ local function simulate(containers, moves)
         if not dst then
             assert(fitsFamily(src.itemFamily, toBag.family),
                 "move " .. i .. " places a non-fitting item into family bag " .. m.toBag)
+            assert(fitsReagent(src.isReagent, toBag.reagent),
+                "move " .. i .. " places a non-reagent into the reagent bag " .. m.toBag)
             toBag.slots[m.toSlot] = src
             fromBag.slots[m.fromSlot] = nil
         elseif dst.itemID == src.itemID and dst.maxStack and dst.count < dst.maxStack then
@@ -124,6 +133,10 @@ local function simulate(containers, moves)
                 "move " .. i .. " places a non-fitting item into family bag " .. m.toBag)
             assert(fitsFamily(dst.itemFamily, fromBag.family),
                 "move " .. i .. " swaps a non-fitting occupant into family bag " .. m.fromBag)
+            assert(fitsReagent(src.isReagent, toBag.reagent),
+                "move " .. i .. " places a non-reagent into the reagent bag " .. m.toBag)
+            assert(fitsReagent(dst.isReagent, fromBag.reagent),
+                "move " .. i .. " swaps a non-reagent into the reagent bag " .. m.fromBag)
             toBag.slots[m.toSlot] = src
             fromBag.slots[m.fromSlot] = dst
         end
@@ -609,6 +622,106 @@ do
     local state = simulate(containers, moves)
     assert(flatten(state, { 0 }) == "30x1,20x1,10x1",
         "fillFromBottom full bag wrong: " .. flatten(state, { 0 }))
+end
+
+---------------------------------------------------------------------------
+-- Section 13: universal reagent bag (container.reagent == true). It is
+-- OUTSIDE the family-mask system: it accepts ONLY crafting reagents
+-- (entry.isReagent), and crafting reagents prefer it. The simulator's
+-- fitsReagent asserts make every move in this file a reagent-illegal-move
+-- detector; these cases pin the placement outcomes.
+---------------------------------------------------------------------------
+-- 13a: crafting reagents pack INTO the reagent bag; non-reagents stay in the
+-- regular bag (the reported bug: non-reagents were landing in the reagent bag
+-- and reagents were being scattered out).
+do
+    local containers = {
+        bag(0, 3, {
+            [1] = item(200, { name = "Zsword" }),       -- non-reagent
+            [2] = item(50, { name = "Aore", isReagent = true }),
+            [3] = item(51, { name = "Bcloth", isReagent = true }),
+        }),
+        bag(5, 3, {}, false, nil, true), -- reagent bag, no family mask
+    }
+    local moves = Planner.Plan(containers, { key = "name" })
+    local state = simulate(containers, moves)
+    assert(flatten(state, { 5 }) == "50x1,51x1,-",
+        "reagents must pack into the reagent bag: " .. flatten(state, { 5 }))
+    -- the sword must NOT have moved into the reagent bag
+    assert(state[5].slots[3] == nil, "reagent bag must not receive the non-reagent sword")
+    local found = false
+    for s = 1, state[0].size do
+        if state[0].slots[s] and state[0].slots[s].itemID == 200 then found = true end
+    end
+    assert(found, "non-reagent must stay in the regular bag")
+end
+
+-- 13b: already-correct layout (reagents in the reagent bag, gear in the
+-- regular bag) must produce ZERO churn — no pulling reagents out.
+do
+    local containers = {
+        bag(0, 2, {
+            [1] = item(100, { name = "Zsword1" }),
+            [2] = item(101, { name = "Zsword2" }),
+        }),
+        bag(5, 2, {
+            [1] = item(50, { name = "Aore", isReagent = true }),
+            [2] = item(51, { name = "Bcloth", isReagent = true }),
+        }, false, nil, true),
+    }
+    local moves = Planner.Plan(containers, { key = "name" })
+    local state = simulate(containers, moves)
+    assert(flatten(state, { 5 }) == "50x1,51x1",
+        "reagent bag must keep its reagents: " .. flatten(state, { 5 }))
+    assert(#moves == 0, "already-correct reagent layout must not churn, got " .. #moves)
+end
+
+-- 13c: a non-reagent sitting in the reagent bag is evicted to the regular
+-- bag, and a stray reagent in the regular bag moves into the reagent bag.
+do
+    local containers = {
+        bag(0, 3, {
+            [1] = item(50, { name = "Aore", isReagent = true }),
+            [2] = item(200, { name = "Zsword" }),
+        }),
+        bag(5, 1, {
+            [1] = item(200, { name = "Zsword" }), -- non-reagent wrongly in reagent bag
+        }, false, nil, true),
+    }
+    local moves = Planner.Plan(containers, { key = "name" })
+    local state = simulate(containers, moves)
+    assert(state[5].slots[1] and state[5].slots[1].itemID == 50,
+        "reagent bag must end up holding the reagent, got "
+        .. tostring(state[5].slots[1] and state[5].slots[1].itemID))
+    -- both swords land in the regular bag (no non-reagent left in bag 5)
+    local swords = 0
+    for s = 1, state[0].size do
+        if state[0].slots[s] and state[0].slots[s].itemID == 200 then swords = swords + 1 end
+    end
+    assert(swords == 2, "both non-reagents must live in the regular bag, got " .. swords)
+end
+
+-- 13d: reagent overflow — more reagents than reagent-bag slots; the surplus
+-- spills into the regular bag (reagent bag isn't a hard wall).
+do
+    local containers = {
+        bag(0, 3, {
+            [1] = item(50, { name = "Aore", isReagent = true }),
+            [2] = item(51, { name = "Bcloth", isReagent = true }),
+            [3] = item(52, { name = "Cherb", isReagent = true }),
+        }),
+        bag(5, 2, {}, false, nil, true),
+    }
+    local moves = Planner.Plan(containers, { key = "name" })
+    local state = simulate(containers, moves)
+    assert(flatten(state, { 5 }) == "50x1,51x1",
+        "reagent bag fills with the best-sorted reagents: " .. flatten(state, { 5 }))
+    assert(totalCount(state, { 0, 5 }) == 3, "no reagents lost on overflow")
+    local overflow = false
+    for s = 1, state[0].size do
+        if state[0].slots[s] and state[0].slots[s].itemID == 52 then overflow = true end
+    end
+    assert(overflow, "surplus reagent must overflow to the regular bag")
 end
 
 print("OK: bags_sort_planner_test")

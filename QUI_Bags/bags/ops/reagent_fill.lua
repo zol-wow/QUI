@@ -10,9 +10,11 @@
 -- lands partial becomes a pour target for later sources of the same item.
 --
 -- Input shape matches sort_planner: containers = array of { bagID, size,
--- slots = {[slot] = entry|nil}, family }. entry needs itemID, count,
--- maxStack, itemFamily. itemID rides on each move so the executor can
--- re-validate the source slot before acting.
+-- slots = {[slot] = entry|nil}, family, reagent }. entry needs itemID, count,
+-- maxStack, and EITHER itemFamily (old profession bags) or isReagent (the
+-- universal reagent bag, which is outside the family-mask system — see
+-- sort_planner). itemID rides on each move so the executor can re-validate
+-- the source slot before acting.
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
@@ -37,7 +39,16 @@ function ReagentFill.Plan(containers, targetBagID)
     for _, c in ipairs(containers) do
         if c.bagID == targetBagID then target = c end
     end
-    if not target or not target.family or target.family == 0 then return {} end
+    if not target then return {} end
+    -- The universal reagent bag accepts crafting reagents (isReagent); an old
+    -- profession bag accepts items whose itemFamily mask overlaps its own.
+    local targetReagent = target.reagent and true or false
+    if not targetReagent and (not target.family or target.family == 0) then return {} end
+    local function accepts(e)
+        if not (e and e.itemID) then return false end
+        if targetReagent then return e.isReagent == true end
+        return e.itemFamily and e.itemFamily ~= 0 and band(e.itemFamily, target.family) ~= 0
+    end
 
     -- Virtual target state: partial stacks by itemID + ordered empty slots.
     local partials = {} -- itemID → array of { slot, count, maxStack }
@@ -59,8 +70,7 @@ function ReagentFill.Plan(containers, targetBagID)
         if c.bagID ~= targetBagID then
             for slot = 1, c.size do
                 local e = c.slots[slot]
-                if e and e.itemID and e.itemFamily and e.itemFamily ~= 0
-                    and band(e.itemFamily, target.family) ~= 0 then
+                if accepts(e) then
                     local remaining = e.count or 1
                     -- merge into existing partial stacks first
                     local list = partials[e.itemID]
