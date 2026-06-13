@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta45 - 2026-06-12
+
+> 🧪 **QUI 4 beta — Chat tab menus & whisper pop-outs.** Saved chat tabs now have "Filter Settings" and "Tab Settings" right-click entries that jump straight to the matching options page, and Blizzard's whisper pop-out windows are now routed correctly into QUI chat tabs. No profile schema migration — your beta44 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Chat: saved-tab right-click "Filter Settings" / "Tab Settings".** Right-clicking a saved chat tab now offers Filter Settings and Tab Settings entries that deep-link the options window to the Chat & Tooltips tile (Filters / Chat sub-pages). Combat-log and conversation tabs keep their existing menus.
+
+### Fixed
+- **Chat: Blizzard whisper pop-out routing.** Whisper conversations popped out into Blizzard's separate window are now routed into the correct QUI chat tab instead of being mishandled.
+
 ## v4.0.0-beta44 - 2026-06-12
 
 > 🧪 **QUI 4 beta — Volume datatext sliders.** The Volume datatext gets a proper control panel: left-click now opens a small skinned popup with sliders for Master, SFX, Music, Ambience and Dialog plus a Mute-all toggle, all themed to your skin accent. Opening the audio settings panel moves to middle-click; scroll-to-adjust and right-click-to-mute are unchanged. Also fixes long-duration buff border countdown text disagreeing with the in-game tooltip. No profile schema migration — your beta43 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
