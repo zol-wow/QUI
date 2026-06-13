@@ -142,32 +142,9 @@ end
 ---------------------------------------------------------------------------
 -- V3 layout helpers
 ---------------------------------------------------------------------------
+-- Shared provider-panel layout scaffold (core/settings_layout_shared.lua).
 local function MakeLayout(content)
-    local y = -10
-    local L = {}
-    function L.headerAt(text)
-        local h = Shared.CreateAccentDotLabel(content, text, y)
-        h:ClearAllPoints()
-        h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-        y = y - HEADER_GAP
-    end
-    function L.sectionAt()
-        local c = Shared.CreateSettingsCardGroup(content, y)
-        c.frame:ClearAllPoints()
-        c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-        return c
-    end
-    function L.closeSection(c)
-        c.Finalize()
-        y = y - c.frame:GetHeight() - SECTION_GAP
-    end
-    function L.finish()
-        content:SetHeight(math.abs(y) + 10)
-        return content:GetHeight()
-    end
-    return L
+    return ns.QUI_SettingsLayoutShared.MakeLayout(content)
 end
 
 local function row(parent, label, widget, desc)
@@ -240,9 +217,7 @@ local function BuildThemeColorsTab(tabContent)
     if tooltip.borderThickness == nil then tooltip.borderThickness = 1 end
     if tooltip.borderColor == nil then tooltip.borderColor = {0.376, 0.647, 0.980, 1} end
     if tooltip.borderColorSource == nil then
-        tooltip.borderColorSource = tooltip.borderUseClassColor and "class"
-            or (tooltip.borderUseAccentColor and "theme")
-            or "theme"
+        tooltip.borderColorSource = tooltip.borderUseClassColor and "class" or "theme"
     end
 
     local L = MakeLayout(tabContent)
@@ -805,15 +780,7 @@ local function BuildSkinningTab(tabContent)
 
     L.headerAt("Objective Tracker")
     local sOT = L.sectionAt()
-    local otSkinW = GUI:CreateFormCheckbox(sOT.frame, nil, "skinObjectiveTracker", general, function()
-        GUI:ShowConfirmation({
-            title = "Reload UI?",
-            message = "Skinning changes require a reload to take effect.",
-            acceptText = "Reload",
-            cancelText = "Later",
-            onAccept = function() QUI:SafeReload() end,
-        })
-    end, { description = "Apply the addon skin and font treatment to the quest/objective tracker. Requires a reload." })
+    local otSkinW = GUI:CreateFormCheckbox(sOT.frame, nil, "skinObjectiveTracker", general, ReloadConfirm, { description = "Apply the addon skin and font treatment to the quest/objective tracker. Requires a reload." })
     local otClickW = GUI:CreateFormCheckbox(sOT.frame, nil, "objectiveTrackerClickThrough", general, RefreshOT,
         { description = "Let mouse clicks pass through the tracker to the game world behind it. Useful if the tracker overlaps targetable mobs or nodes." })
     sOT.AddRow(

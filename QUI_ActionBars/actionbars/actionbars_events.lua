@@ -9,6 +9,37 @@ env.SetChunkEnv(1, env)
 -- activates instrumentation (debug gate).
 local _abCooldownStats
 
+-- Re-apply empty-slot visibility across every standard bar using each bar's
+-- effective settings. Shared by the page-change / window-update / spell-change
+-- event branches, which each ran this identical per-bar loop.
+local function RefreshAllEmptySlotVisibility()
+    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+        local buttons = ActionBarsOwned.nativeButtons[barKey]
+        local settings = GetEffectiveSettings(barKey)
+        if buttons and settings then
+            for _, btn in ipairs(buttons) do
+                UpdateEmptySlotVisibility(btn, settings)
+            end
+        end
+    end
+end
+
+-- Refresh flyout arrows on every standard bar button, then re-apply flyout
+-- directions and resync flyout info to the secure handler. Shared by the
+-- SPELLS_CHANGED and SPELL_FLYOUT_UPDATE branches.
+local function RefreshAllFlyouts()
+    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
+        local btns = ActionBarsOwned.nativeButtons[barKey]
+        if btns then
+            for _, btn in ipairs(btns) do
+                if btn.UpdateFlyout then pcall(btn.UpdateFlyout, btn) end
+            end
+        end
+    end
+    ApplyAllFlyoutDirections()
+    if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
+end
+
 ---------------------------------------------------------------------------
 -- EVENT COALESCING (elapsed-time gated Show/Hide)
 ---------------------------------------------------------------------------
@@ -47,7 +78,6 @@ abUpdateFrame._dirtyStates = false
 abUpdateFrame._dirtyVisuals = false
 abUpdateFrame._dirtyCounts = false
 abUpdateFrame._immediate = false  -- bypass combat throttle for this tick
-abUpdateFrame._lastCount = 0
 abUpdateFrame:SetScript("OnUpdate", function(self)
     local now = GetTime()
     -- Out of combat: flush visual/state immediately; lightly coalesce
@@ -71,7 +101,6 @@ abUpdateFrame:SetScript("OnUpdate", function(self)
         self._lastVis = now
         self._lastCd = now
         self._lastState = now
-        self._lastCount = now
         self._dirtyCooldowns = false
         self._dirtyStates = false
         self._dirtyVisuals = false
@@ -96,7 +125,6 @@ abUpdateFrame:SetScript("OnUpdate", function(self)
             end
         end
         if doCount then
-            self._lastCount = now
             self._dirtyCounts = false
             ActionBarsOwned.UpdateAllButtonCounts()
         end
@@ -108,7 +136,6 @@ abUpdateFrame:SetScript("OnUpdate", function(self)
         ActionBarsOwned.UpdateAllCooldowns()
         -- Piggyback counts if dirty — same frame, avoid extra wake-up.
         if doCount then
-            self._lastCount = now
             self._dirtyCounts = false
             ActionBarsOwned.UpdateAllButtonCounts()
         end
@@ -116,7 +143,6 @@ abUpdateFrame:SetScript("OnUpdate", function(self)
         -- Counts are lightweight — no combat throttle needed, just
         -- once-per-frame dedup via _lastCountUpdateTime inside the fn.
         self:Hide()
-        self._lastCount = now
         self._dirtyCounts = false
         ActionBarsOwned.UpdateAllButtonCounts()
     else
@@ -344,17 +370,7 @@ function OnOwnedEvent(self, event, ...)
             local shouldPreview = CursorHasPlaceableAction()
             if shouldPreview ~= (ActionBarsOwned.dragPreviewActive or false) then
                 ActionBarsOwned.dragPreviewActive = shouldPreview or nil
-                for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-                    local buttons = ActionBarsOwned.nativeButtons[barKey]
-                    if buttons then
-                        local effSettings = GetEffectiveSettings(barKey)
-                        if effSettings then
-                            for _, btn in ipairs(buttons) do
-                                UpdateEmptySlotVisibility(btn, effSettings)
-                            end
-                        end
-                    end
-                end
+                RefreshAllEmptySlotVisibility()
             end
         end
 
@@ -598,15 +614,7 @@ function OnOwnedEvent(self, event, ...)
         ActionBarsOwned.UpdateAllAssistedCombatRotation()
         UpdateAllAssistedHighlights()
         -- Restore empty slot visibility (alpha was forced to 1 during grid)
-        for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-            local buttons = ActionBarsOwned.nativeButtons[barKey]
-            local settings = GetEffectiveSettings(barKey)
-            if buttons and settings then
-                for _, btn in ipairs(buttons) do
-                    UpdateEmptySlotVisibility(btn, settings)
-                end
-            end
-        end
+        RefreshAllEmptySlotVisibility()
         -- Slot contents may have changed; rebuild the lookup lazily.
         if MarkSpellIdMapDirty then MarkSpellIdMapDirty() end
         if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
@@ -630,40 +638,14 @@ function OnOwnedEvent(self, event, ...)
         ScheduleABCooldownUpdate()
         ActionBarsOwned.UpdateAllOverlayGlows()
         -- Update flyout data on all buttons
-        for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-            local btns = ActionBarsOwned.nativeButtons[barKey]
-            if btns then
-                for _, btn in ipairs(btns) do
-                    if btn.UpdateFlyout then pcall(btn.UpdateFlyout, btn) end
-                end
-            end
-        end
-        ApplyAllFlyoutDirections()
-        if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
-        for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-            local btns = ActionBarsOwned.nativeButtons[barKey]
-            local s = GetEffectiveSettings(barKey)
-            if btns and s then
-                for _, btn in ipairs(btns) do
-                    UpdateEmptySlotVisibility(btn, s)
-                end
-            end
-        end
+        RefreshAllFlyouts()
+        RefreshAllEmptySlotVisibility()
         -- Zone/extra abilities may have changed — recapture frames.
         RefreshExtraButtons()
 
     elseif event == "SPELL_FLYOUT_UPDATE" then
         -- Flyout data changed — refresh flyout arrows on all buttons
-        for _, barKey in ipairs(STANDARD_BAR_KEYS) do
-            local btns = ActionBarsOwned.nativeButtons[barKey]
-            if btns then
-                for _, btn in ipairs(btns) do
-                    if btn.UpdateFlyout then pcall(btn.UpdateFlyout, btn) end
-                end
-            end
-        end
-        ApplyAllFlyoutDirections()
-        if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
+        RefreshAllFlyouts()
 
     elseif event == "SPELL_UPDATE_USABLE" then
         -- Spell usability changed (e.g. resource gained/spent, GCD ended).

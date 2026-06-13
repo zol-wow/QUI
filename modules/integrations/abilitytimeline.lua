@@ -14,10 +14,7 @@ ns.QUI_AbilityTimeline = QUI_AbilityTimeline
 
 -- Deferred updates when frames are unavailable
 local pendingUpdate = false
-local retryTimer = nil
 
--- Hook install guard
-local anchoredFramesHookInstalled = false
 local TARGET_KEYS = {
     timeline = "abilityTimelineTimeline",
     bigIcon = "abilityTimelineBigIcon",
@@ -66,63 +63,15 @@ function QUI_AbilityTimeline:GetAddonFrame(frameKey)
 end
 
 function QUI_AbilityTimeline:GetAnchorFrame(anchorName)
-    if not anchorName or anchorName == "disabled" then
-        return nil
-    end
-
-    -- Hardcoded QUI element map
-    if anchorName == "essential" then
-        return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential")
-    elseif anchorName == "utility" then
-        return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility")
-    elseif anchorName == "primary" then
-        return QUICore and QUICore.powerBar
-    elseif anchorName == "secondary" then
-        return QUICore and QUICore.secondaryPowerBar
-    elseif anchorName == "playerCastbar" then
-        return ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["player"]
-    elseif anchorName == "playerFrame" then
-        return ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames.player
-    elseif anchorName == "targetFrame" then
-        return ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames.target
-    end
-
-    -- Registry fallback
-    if ns.QUI_Anchoring and ns.QUI_Anchoring.GetAnchorTarget then
-        return ns.QUI_Anchoring:GetAnchorTarget(anchorName)
-    end
-
-    return nil
+    return ns.QUI_IntegrationShared.GetAnchorFrame(anchorName)
 end
 
 ---------------------------------------------------------------------------
 -- POSITIONING
 ---------------------------------------------------------------------------
-local function QueueRetry()
-    if retryTimer then
-        return
-    end
-    retryTimer = C_Timer.NewTimer(1.0, function()
-        retryTimer = nil
-        if ns.QUI_AbilityTimeline then
-            ns.QUI_AbilityTimeline:ApplyAllPositions()
-        end
-    end)
-end
+local QueueRetry = ns.QUI_IntegrationShared.MakeQueueRetry("QUI_AbilityTimeline")
 
-local function TryInstallAnchoredFramesHook()
-    if anchoredFramesHookInstalled then
-        return true
-    end
-    if not (ns.QUI_Anchoring and ns.QUI_Anchoring.RegisterAnchoredFramesPostHook) then
-        return false
-    end
-    ns.QUI_Anchoring.RegisterAnchoredFramesPostHook("abilitytimeline", function()
-        QUI_AbilityTimeline:ApplyAllPositions()
-    end)
-    anchoredFramesHookInstalled = true
-    return true
-end
+local TryInstallAnchoredFramesHook = ns.QUI_IntegrationShared.MakeTryInstallAnchoredFramesHook("QUI_AbilityTimeline")
 
 local function RegisterAnchorTargets()
     if not (ns.QUI_Anchoring and ns.QUI_Anchoring.RegisterAnchorTarget) then
@@ -202,15 +151,9 @@ end
 ---------------------------------------------------------------------------
 -- INITIALIZE
 ---------------------------------------------------------------------------
-local initialized = false
-
 function QUI_AbilityTimeline:Initialize()
     if not self:IsAvailable() then
         return
-    end
-
-    if not initialized then
-        initialized = true
     end
 
     self:ApplyAllPositions()

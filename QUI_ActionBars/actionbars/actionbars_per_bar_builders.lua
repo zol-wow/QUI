@@ -18,11 +18,8 @@ do
         local GUI = QUI and QUI.GUI
         if not GUI then return nil end
 
-        local C = GUI.Colors or {}
         local U = ns.QUI_LayoutMode_Utils
         local P = U.PlaceRow
-        local ACCENT_R, ACCENT_G, ACCENT_B = 0.376, 0.647, 0.980
-        local PADDING = 0
         local FORM_ROW = U and U.FORM_ROW or 32
 
         local function RefreshActionBars()
@@ -595,7 +592,7 @@ end
 -- EXPOSE MODULE
 ---------------------------------------------------------------------------
 
-core = GetCore()
+local core = GetCore()
 if core then
     core.ActionBars = ActionBarsOwned
 end

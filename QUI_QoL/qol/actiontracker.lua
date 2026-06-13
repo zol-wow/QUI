@@ -316,19 +316,13 @@ local function WasSentCast(castGUID, spellID)
 end
 
 local function ExtractCastGUIDAndSpellID(...)
-    local castGUID, spellID
-    local lastNumeric
-
-    for i = 1, select("#", ...) do
-        local value = select(i, ...)
-        if type(value) == "number" then
-            lastNumeric = value
-            spellID = value
-        end
+    -- UNIT_SPELLCAST_SENT payload: unitTarget, target, castGUID, spellID
+    local _, _, castGUID, spellID = ...
+    if type(castGUID) ~= "string" then
+        castGUID = nil
     end
-
-    if not spellID then
-        spellID = lastNumeric
+    if type(spellID) ~= "number" then
+        spellID = nil
     end
 
     return castGUID, spellID
@@ -465,8 +459,6 @@ local function StyleIconForEntry(icon, entry, settings)
 
     if entry.failed then
         icon.tex:SetVertexColor(1, 0.35, 0.35, 1)
-    elseif entry.casting then
-        icon.tex:SetVertexColor(1, 1, 1, 1)
     else
         icon.tex:SetVertexColor(1, 1, 1, 1)
     end

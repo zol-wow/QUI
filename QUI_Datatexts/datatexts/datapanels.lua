@@ -17,6 +17,40 @@ local function Warn(message)
     end
 end
 
+-- Stop a panel's drag and persist its snapped position to both the live
+-- config and the saved-variables panel list. Shared by the panel's own
+-- OnDragStop and the slot drag-forward handler.
+local function PersistPanelPosition(panel)
+    panel:StopMovingOrSizing()
+
+    -- Save position (snapped to pixel grid)
+    local point, _, relPoint, x, y = QUICore:SnapFramePosition(panel)
+    if point then
+        panel.config.position = {point, relPoint, x, y}
+    end
+
+    -- Update saved variables
+    local db = QUICore.db.profile.quiDatatexts
+    if db and db.panels then
+        for i, panelConfig in ipairs(db.panels) do
+            if panelConfig.id == panel.panelID then
+                db.panels[i].position = panel.config.position
+                break
+            end
+        end
+    end
+end
+
+-- Derive the shared element identity for a datapanel from its config + index.
+-- Returns elementKey, displayName, order. Used by both RegisterFrameResolvers
+-- and the layout-mode element registrar so the two never drift.
+local function DatapanelElementInfo(i, panelConfig)
+    local panelID = panelConfig.id
+    local elementKey = "datapanel_" .. panelID
+    local displayName = panelConfig.name or ("Datapanel: " .. panelID)
+    return elementKey, displayName, 10 + i
+end
+
 -- Active panels storage
 Datapanels.activePanels = {}
 
@@ -163,24 +197,7 @@ function Datapanels:SetupDragging(panel)
     end)
 
     panel:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-
-        -- Save position (snapped to pixel grid)
-        local point, _, relPoint, x, y = QUICore:SnapFramePosition(self)
-        if point then
-            self.config.position = {point, relPoint, x, y}
-        end
-
-        -- Update saved variables
-        local db = QUICore.db.profile.quiDatatexts
-        if db and db.panels then
-            for i, panelConfig in ipairs(db.panels) do
-                if panelConfig.id == self.panelID then
-                    db.panels[i].position = self.config.position
-                    break
-                end
-            end
-        end
+        PersistPanelPosition(self)
     end)
 end
 
@@ -287,24 +304,7 @@ function Datapanels:UpdateSlots(panel)
             end
         end)
         slot:SetScript("OnDragStop", function()
-            panel:StopMovingOrSizing()
-
-            -- Save position (snapped to pixel grid)
-            local point, _, relPoint, x, y = QUICore:SnapFramePosition(panel)
-            if point then
-                panel.config.position = {point, relPoint, x, y}
-            end
-
-            -- Persist to saved variables
-            local db = QUICore.db.profile.quiDatatexts
-            if db and db.panels then
-                for i, panelConfig in ipairs(db.panels) do
-                    if panelConfig.id == panel.panelID then
-                        db.panels[i].position = panel.config.position
-                        break
-                    end
-                end
-            end
+            PersistPanelPosition(panel)
         end)
 
         -- Attach datatext if configured
@@ -433,13 +433,12 @@ function Datapanels:RegisterFrameResolvers()
     for i, panelConfig in ipairs(db.panels) do
         local panelID = panelConfig.id
         if panelID then
-            local elementKey = "datapanel_" .. panelID
-            local displayName = panelConfig.name or ("Datapanel: " .. panelID)
+            local elementKey, displayName, order = DatapanelElementInfo(i, panelConfig)
             RegisterResolver(elementKey, {
                 resolver = function() return Datapanels.activePanels[panelID] end,
                 displayName = displayName,
                 category = "Display",
-                order = 10 + i,
+                order = order,
             })
         end
     end
@@ -689,14 +688,14 @@ do
         for i, panelConfig in ipairs(db.panels) do
             local panelID = panelConfig.id
             if panelID then
-                local elementKey = "datapanel_" .. panelID
+                local elementKey, displayName, order = DatapanelElementInfo(i, panelConfig)
                 desiredLookups[elementKey] = true
 
                 um:RegisterElement({
                     key = elementKey,
-                    label = panelConfig.name or ("Datapanel: " .. panelID),
+                    label = displayName,
                     group = "Display",
-                    order = 10 + i,
+                    order = order,
                     isOwned = true,
                     getFrame = function()
                         return Datapanels.activePanels[panelID]
@@ -724,12 +723,11 @@ do
                 })
 
                 -- Add to FRAME_ANCHOR_INFO and register as anchor target
-                local displayName = panelConfig.name or ("Datapanel: " .. panelID)
                 if ns.FRAME_ANCHOR_INFO then
                     ns.FRAME_ANCHOR_INFO[elementKey] = {
                         displayName = displayName,
                         category = "Display",
-                        order = 10 + i,
+                        order = order,
                     }
                 end
                 local anchoring = ns.QUI_Anchoring
@@ -739,7 +737,7 @@ do
                         anchoring:RegisterAnchorTarget(elementKey, panel, {
                             displayName = displayName,
                             category = "Display",
-                            order = 10 + i,
+                            order = order,
                         })
                     end
                 end

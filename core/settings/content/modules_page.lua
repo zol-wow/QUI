@@ -357,12 +357,17 @@ local function BuildModulesContent(content)
             countsLabel:SetText(CountsText(e2, t2))
         end)
         -- Unsubscribe when the content frame hides (panel closed / rebuilt).
-        content:HookScript("OnHide", function()
-            if content._countsToken and ns.QUI_Modules then
-                ns.QUI_Modules:Unsubscribe(content._countsToken)
-                content._countsToken = nil
-            end
-        end)
+        -- Hooked only once per content frame (HookScript accumulates handlers)
+        -- so repeated BuildModulesContent calls don't leak duplicate closures.
+        if not content._countsHooked then
+            content._countsHooked = true
+            content:HookScript("OnHide", function()
+                if content._countsToken and ns.QUI_Modules then
+                    ns.QUI_Modules:Unsubscribe(content._countsToken)
+                    content._countsToken = nil
+                end
+            end)
+        end
     end
 
     -- ----------------------------------------------------------------

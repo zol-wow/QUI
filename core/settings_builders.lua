@@ -330,11 +330,6 @@ local function ApplyDualColumnLayout(section)
     if section._quiSkipDualColumnLayout or body._quiSkipDualColumnLayout then return end
     body._dualRowFrames = body._dualRowFrames or {}
 
-    local pooledRowFrames = {}
-    for _, rf in ipairs(body._dualRowFrames) do
-        pooledRowFrames[rf] = true
-    end
-
     local layoutItems = {}
     local itemOrder = {}
     local function AddLayoutItem(item, isTextRegion)
@@ -365,7 +360,7 @@ local function ApplyDualColumnLayout(section)
     end
 
     for _, child in ipairs({ body:GetChildren() }) do
-        if not pooledRowFrames[child] and not child._quiDualRowFrame then
+        if not child._quiDualRowFrame then
             AddLayoutItem(child, false)
         end
     end
@@ -439,7 +434,7 @@ local function ApplyDualColumnLayout(section)
     local i = 1
     while i <= #layoutItems do
         local left = layoutItems[i]
-        if left and left._quiDualColumnFullWidth then
+        if left._quiDualColumnFullWidth then
             rowIdx = rowIdx + 1
             local rf = AcquireRowFrame(rowIdx)
             local rowHeight = GetDualColumnRowHeight(left)

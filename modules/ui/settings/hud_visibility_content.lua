@@ -12,48 +12,9 @@ local Settings = ns.Settings
 local Registry = Settings and Settings.Registry
 local Schema = Settings and Settings.Schema
 
-local PAD = (Shared and Shared.PADDING) or 15
-local HEADER_GAP = 26
-local SECTION_GAP = 14
-
-local function MakeLayout(content)
-    local y = -10
-    local L = {}
-    function L.headerAt(text)
-        local h = Shared.CreateAccentDotLabel(content, text, y)
-        h:ClearAllPoints()
-        h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-        y = y - HEADER_GAP
-    end
-    function L.sectionAt()
-        local c = Shared.CreateSettingsCardGroup(content, y)
-        c.frame:ClearAllPoints()
-        c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-        return c
-    end
-    function L.closeSection(c)
-        c.Finalize()
-        y = y - c.frame:GetHeight() - SECTION_GAP
-    end
-    function L.placeCustom(frame, height)
-        frame:ClearAllPoints()
-        frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        frame:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-        frame:SetHeight(height)
-        y = y - height - SECTION_GAP
-    end
-    function L.finish()
-        content:SetHeight(math.abs(y) + 10)
-        return content:GetHeight()
-    end
-    return L
-end
-
-local function row(parent, label, widget, desc)
-    return Shared.BuildSettingRow(parent, label, widget, desc)
-end
+local MakeLayout = ns.QUI_ModulesSettingsLayout.MakeLayout
+local row = ns.QUI_ModulesSettingsLayout.Row
+local pairCells = ns.QUI_ModulesSettingsLayout.PairCells
 
 -- Add a muted hint paragraph between a header and a card.
 local function placeHint(L, parent, text)
@@ -64,22 +25,6 @@ local function placeHint(L, parent, text)
     lbl:SetJustifyH("LEFT")
     lbl:SetWordWrap(true)
     L.placeCustom(f, 22)
-end
-
--- Pair an iterable list of cells 2-per-row, with a trailing unpaired cell.
-local function pairCells(card, cells)
-    local i = 1
-    while i <= #cells do
-        local left = cells[i]
-        local right = cells[i + 1]
-        if right then
-            card.AddRow(left, right)
-            i = i + 2
-        else
-            card.AddRow(left)
-            i = i + 1
-        end
-    end
 end
 
 local function BuildHUDVisibilityTab(tabContent)

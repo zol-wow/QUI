@@ -282,8 +282,6 @@ local QueryDuration       = RuntimeQueries.QueryDuration
 local QueryGCDDuration    = RuntimeQueries.QueryGCDDuration
 local QueryChargeDuration = RuntimeQueries.QueryChargeDuration
 local QueryOverrideSpell  = RuntimeQueries.QueryOverrideSpell
-local QueryDisplayCount   = RuntimeQueries.QueryDisplayCount
-local QuerySpellCount     = RuntimeQueries.QuerySpellCount
 
 
 -- IDENTITY RESOLVERS

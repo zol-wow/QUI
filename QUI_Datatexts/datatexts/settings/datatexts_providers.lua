@@ -31,63 +31,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         ctx.RegisterShared(key, provider)
     end
 
+    -- Shared provider-panel layout scaffold (core/settings_layout_shared.lua).
     local function MakeLayout(content)
         if U._layoutModePositionOnly then
             return U.MakeSuppressedProviderLayout(content)
         end
-        local Opts = ns.QUI_Options
-        local y = -10
-        local L = {}
-        local sections = {}
-
-        function L.headerAt(text)
-            local h = Opts.CreateAccentDotLabel(content, text, y)
-            h:ClearAllPoints()
-            h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-            h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-            y = y - HEADER_GAP
-        end
-        function L.sectionAt()
-            local c = Opts.CreateSettingsCardGroup(content, y)
-            c.frame:ClearAllPoints()
-            c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-            c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-            return c
-        end
-        function L.closeSection(c)
-            c.Finalize()
-            y = y - c.frame:GetHeight() - SECTION_GAP
-        end
-        function L.placeCustom(frame, height)
-            frame:ClearAllPoints()
-            frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-            frame:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-            frame:SetHeight(height)
-            y = y - height - SECTION_GAP
-        end
-
-        -- Tail relayout for legacy V2 collapsibles (Position, OpenFullSettings)
-        -- that still use sections + StandardRelayout. They get laid out
-        -- starting from the bottom of the V3 cards above.
-        local function relayoutSections()
-            local cy = y
-            for _, s in ipairs(sections) do
-                s:ClearAllPoints()
-                s:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, cy)
-                s:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-                cy = cy - s:GetHeight() - 4
-            end
-            content:SetHeight(math.abs(cy) + 16)
-        end
-        L.sections = sections
-        L.relayoutSections = relayoutSections
-
-        function L.finish()
-            content:SetHeight(math.abs(y) + 10)
-            return content:GetHeight()
-        end
-
-        return L
+        return ns.QUI_SettingsLayoutShared.MakeLayout(content, U)
     end
 
     local function row(parent, label, widget, desc)
@@ -734,7 +683,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
         local color = dtSettings and dtSettings.valueColor or nil
         if type(color) == "table" then
-            return color[1] or 0.1, color[2] or 1, color[3] or 0.1
+            local r = color[1]; if r == nil then r = 0.1 end
+            local g = color[2]; if g == nil then g = 1 end
+            local b = color[3]; if b == nil then b = 0.1 end
+            return r, g, b
         end
         return 0.1, 1, 0.1
     end

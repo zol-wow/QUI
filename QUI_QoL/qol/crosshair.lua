@@ -186,7 +186,8 @@ local function UpdateRangeChecking()
 
         -- Handle hideUntilOutOfRange initial visibility
         if settings.hideUntilOutOfRange then
-            if inCombat and isOutOfRange then
+            local shouldShow = inCombat and ((meleeCheck and isOutOfRange) or (midCheck and not meleeCheck and isOutOfMidRange))
+            if shouldShow then
                 crosshairFrame:Show()
             else
                 crosshairFrame:Hide()
@@ -195,10 +196,8 @@ local function UpdateRangeChecking()
     else
         -- Disable range checking
         StopRangeCheckTicker()
-        if rangeCheckFrame then
-            rangeCheckFrame:SetScript("OnUpdate", nil)
-        end
         isOutOfRange = false
+        isOutOfMidRange = false
     end
 end
 

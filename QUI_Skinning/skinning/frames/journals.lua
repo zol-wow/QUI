@@ -278,12 +278,10 @@ local function HookEncounterJournalScrollBoxes(frame)
     HookMonthlyActivitiesScrollBoxes(frame and frame.MonthlyActivitiesFrame)
 end
 
-local function ScheduleMonthlyActivitiesText(monthlyFrame, focusFrame, skinAll)
+local function ScheduleMonthlyActivitiesText(monthlyFrame, focusFrame)
     C_Timer.After(0, function()
         SkinEncounterJournalTextFrame(focusFrame)
-        if skinAll ~= false then
-            SkinMonthlyActivitiesText(monthlyFrame)
-        end
+        SkinMonthlyActivitiesText(monthlyFrame)
     end)
 end
 

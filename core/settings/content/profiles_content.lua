@@ -353,7 +353,7 @@ local function BuildSpecProfilesContent(content)
         local specCells = {}
         local currentSpec = GetSpecialization()
         for i = 1, numSpecs do
-            local specID, specName = GetSpecializationInfo(i)
+            local _, specName = GetSpecializationInfo(i)
             if specName then
                 local displayName = specName .. (i == currentSpec and " (Active)" or "")
                 local currentSpecProfile = specDB:GetDualSpecProfile(i) or ""

@@ -159,14 +159,9 @@ end
 ---------------------------------------------------------------------------
 -- Show combat text with message
 ---------------------------------------------------------------------------
-local function ShowCombatText(message)
-    local settings = GetSettings()
-    if not settings or not settings.enabled then return end
-
-    -- Create frame if needed
-    CreateTextFrame()
-
-    if not CombatTextState.textFrame then return end
+-- Shared render: color/show/fade. Assumes frame exists; caller does enabled gating.
+local function RenderCombatText(settings, message)
+    message = message or "+Combat"
 
     -- Cancel any pending display timer
     if CombatTextState.displayTimer then
@@ -199,6 +194,18 @@ local function ShowCombatText(message)
         StartFade()
         CombatTextState.displayTimer = nil
     end)
+end
+
+local function ShowCombatText(message)
+    local settings = GetSettings()
+    if not settings or not settings.enabled then return end
+
+    -- Create frame if needed
+    CreateTextFrame()
+
+    if not CombatTextState.textFrame then return end
+
+    RenderCombatText(settings, message)
 end
 
 ---------------------------------------------------------------------------
@@ -250,37 +257,7 @@ _G.QUI_PreviewCombatText = function(message)
     -- Create frame if needed
     CreateTextFrame()
 
-    -- Cancel any pending display timer
-    if CombatTextState.displayTimer then
-        CombatTextState.displayTimer:Cancel()
-        CombatTextState.displayTimer = nil
-    end
-
-    -- Stop any ongoing fade
-    if CombatTextState.fadeFrame then
-        CombatTextState.fadeFrame:SetScript("OnUpdate", nil)
-    end
-
-    -- Determine and apply color based on message
-    local color
-    if message == "+Combat" then
-        color = settings.enterCombatColor or {0.376, 0.647, 0.980, 1}
-    else
-        color = settings.leaveCombatColor or {0.376, 0.647, 0.980, 1}
-    end
-    CombatTextState.textFrame.text:SetTextColor(color[1], color[2], color[3], color[4] or 1)
-
-    -- Set text and show
-    CombatTextState.textFrame.text:SetText(message or "+Combat")
-    CombatTextState.textFrame:SetAlpha(1)
-    CombatTextState.textFrame:Show()
-
-    -- Schedule fade after display time
-    local displayTime = settings.displayTime or 0.8
-    CombatTextState.displayTimer = C_Timer.NewTimer(displayTime, function()
-        StartFade()
-        CombatTextState.displayTimer = nil
-    end)
+    RenderCombatText(settings, message)
 end
 
 QUI.CombatText = {

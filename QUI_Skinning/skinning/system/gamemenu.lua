@@ -119,7 +119,7 @@ end
 ---------------------------------------------------------------------------
 -- BUTTON OVERLAY (child of overlay container, positioned over button)
 ---------------------------------------------------------------------------
-local function GetOrCreateButtonOverlay(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+local function GetOrCreateButtonOverlay(button, sr, sg, sb, sa, bgr, bgg, bgb)
     local oc = SyncOverlayContainerLevel()
     local info = buttonOverlays[button]
     if info then
@@ -311,7 +311,7 @@ end
 local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga, label)
     if not button then return end
 
-    local info = GetOrCreateButtonOverlay(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    local info = GetOrCreateButtonOverlay(button, sr, sg, sb, sa, bgr, bgg, bgb)
     local overlay = info.overlay
 
     local btnBgR, btnBgG, btnBgB = info.bgColor[1], info.bgColor[2], info.bgColor[3]

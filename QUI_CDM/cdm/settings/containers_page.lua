@@ -22,13 +22,6 @@ local BUILTIN_LABELS = {
     buff = "Buff Icons",
     trackedBar = "Buff Bars",
 }
-local BUILTIN_TYPES = {
-    essential = "cooldown",
-    utility = "cooldown",
-    buff = "aura",
-    trackedBar = "auraBar",
-}
-
 function Model.GetContainerOptions()
     local options = {}
     local seen = {}
@@ -171,10 +164,6 @@ if not ns._CDMContainersPageSchemaLoaded
 ns._CDMContainersPageSchemaLoaded = true
 
 local FullSurface = Settings and Settings.FullSurface
-if not Renderer or type(Renderer.RenderFeature) ~= "function"
-    or not Schema or type(Schema.Feature) ~= "function" then
-    return
-end
 
 local QUI = QUI
 local LSM = ns.LSM
@@ -1567,7 +1556,7 @@ local function RenderLayoutSection(sectionHost, ctx)
         return builder.Height()
     end
 
-    if (containerType == "cooldown" or containerType == "customBar") and gui and optionsAPI and tracker then
+    if containerType == "cooldown" or containerType == "customBar" then
         local builder = CreateSectionBuilder(sectionHost, ctx, "layout")
         if not builder then
             return nil
@@ -2719,8 +2708,10 @@ local function BuildPreviewBlock(pv)
         if db and db.perLoadoutSpec then
             local specIndex = GetSpecialization and GetSpecialization()
             if specIndex then
-                local _, specName = GetSpecializationInfo and GetSpecializationInfo(specIndex)
-                    or nil, nil
+                local specName
+                if GetSpecializationInfo then
+                    specName = select(2, GetSpecializationInfo(specIndex))
+                end
                 if specName then
                     local labelText = "Editing entries for: " .. specName
                     if C_ClassTalents then
@@ -3057,7 +3048,7 @@ end
 
 local PREVIEW_HEIGHT = 230
 local FEATURE_ID = "cooldownManagerContainersPage"
-local LOOKUP_TO_CONTAINER = {
+local LOOKUP_TO_CONTAINER = ns.CDMShared and ns.CDMShared.ELEMENT_TO_CONTAINER_MAP or {
     cdmEssential = "essential",
     cdmUtility = "utility",
     buffIcon = "buff",

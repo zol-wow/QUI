@@ -415,6 +415,13 @@ function TooltipInspect:GetCachedPlayerData(unit)
 end
 
 
+local function SafeCanInspect(unit)
+    local ok, canInspect = pcall(function()
+        return CanInspect(unit)
+    end)
+    return ok and canInspect
+end
+
 function TooltipInspect:QueueInspect(unit)
     if not IsTooltipPlayerItemLevelEnabled() then return false end
     if not unit or not UnitExists(unit) or InCombatLockdown() then return false end
@@ -438,10 +445,7 @@ function TooltipInspect:QueueInspect(unit)
         return false
     end
 
-    local ok, canInspect = pcall(function()
-        return CanInspect(unit)
-    end)
-    if not ok or not canInspect then
+    if not SafeCanInspect(unit) then
         return false
     end
 
@@ -473,10 +477,7 @@ ProcessQueuedRequest = function()
         if InCombatLockdown() then return end
         if not IsTooltipPlayerItemLevelEnabled() then return end
 
-        local ok, canInspect = pcall(function()
-            return CanInspect(unit)
-        end)
-        if not ok or not canInspect then
+        if not SafeCanInspect(unit) then
             return
         end
 
@@ -488,7 +489,7 @@ ProcessQueuedRequest = function()
 
         NotifyInspect(unit)
 
-        activeTimeout = C_Timer.After(REQUEST_TIMEOUT, function()
+        activeTimeout = C_Timer.NewTimer(REQUEST_TIMEOUT, function()
             FinalizeRequest(guid)
         end)
     end)

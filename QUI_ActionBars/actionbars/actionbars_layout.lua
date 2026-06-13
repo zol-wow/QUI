@@ -8,6 +8,16 @@ env.SetChunkEnv(1, env)
 -- LAYOUT ENGINE
 ---------------------------------------------------------------------------
 
+-- Grid placement: map a zero-based button index to its (col, row) cell.
+-- Vertical bars fill column-major (down each column); horizontal bars fill
+-- row-major (across each row). Shared by the secure and non-secure paths.
+local function ComputeGridColRow(idx, isVertical, numCols, numRows)
+    if isVertical then
+        return math.floor(idx / numRows), idx % numRows
+    end
+    return idx % numCols, math.floor(idx / numCols)
+end
+
 -- Read layout settings from ownedLayout DB (fully independent of Blizzard Edit Mode)
 function GetOwnedLayout(barKey)
     local barDB = GetBarSettings(barKey)
@@ -120,6 +130,8 @@ LayoutNativeButtons = function(barKey)
     local buttons = ActionBarsOwned.nativeButtons[barKey]
     if not container or not buttons or #buttons == 0 then return end
 
+    local settings = GetGlobalSettings()
+
     local orientation, columns, iconCount, growUp, growLeft, sizeOverride, spacingOverride, heightOverride = GetOwnedLayout(barKey)
 
     -- Stance bar: clamp iconCount to actual form count so callers that bypass
@@ -160,7 +172,6 @@ LayoutNativeButtons = function(barKey)
     if sizeOverride and sizeOverride > 0 then
         desiredSize = sizeOverride
     else
-        local settings = GetGlobalSettings()
         local iconSize = settings and settings.iconSize
         if iconSize and iconSize > 0 then
             desiredSize = iconSize
@@ -191,7 +202,6 @@ LayoutNativeButtons = function(barKey)
     if spacingOverride then
         spacing = spacingOverride
     else
-        local settings = GetGlobalSettings()
         spacing = settings and settings.buttonSpacing or 2
     end
 
@@ -258,14 +268,7 @@ LayoutNativeButtons = function(barKey)
         local positions = {}
         for i = 1, numVisible do
             local idx = i - 1
-            local col, row
-            if isVertical then
-                col = math.floor(idx / numRows)
-                row = idx % numRows
-            else
-                col = idx % numCols
-                row = math.floor(idx / numCols)
-            end
+            local col, row = ComputeGridColRow(idx, isVertical, numCols, numRows)
             positions[i] = {
                 x = col * xStep * xDir,
                 y = row * yStep * yDir,
@@ -280,14 +283,7 @@ LayoutNativeButtons = function(barKey)
                 btn:SetScale(btnScale)
                 btn:ClearAllPoints()
                 local idx = i - 1
-                local col, row
-                if isVertical then
-                    col = math.floor(idx / numRows)
-                    row = idx % numRows
-                else
-                    col = idx % numCols
-                    row = math.floor(idx / numCols)
-                end
+                local col, row = ComputeGridColRow(idx, isVertical, numCols, numRows)
                 btn:SetPoint(anchor, container, anchor, col * xStep * xDir, row * yStep * yDir)
                 btn:Show()
             else

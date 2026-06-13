@@ -644,7 +644,8 @@ local function wheelConsumeTarget()
 	local handles = M.variables.moveHandleSet
 	for _, focus in ipairs(GetMouseFoci()) do
 		local root = pins and pins[focus]
-		local entryOnRoot = root and root[CTX_KEY] and root[CTX_KEY].panel
+		local rc = root and rootContext[root]
+		local entryOnRoot = rc and rc.panel
 		if entryOnRoot and panelIsActive(entryOnRoot) then return root end
 		if handles and handles[focus] then return handles[focus] end
 		if not root and not (handles and handles[focus]) then

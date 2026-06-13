@@ -307,7 +307,7 @@ local function GetEnhancementLabel(slot)
         if sel and sel.label then return sel.label end
     end
     if config and config.label then return config.label end
-    return slot == "MH" and "Weapon Oil" or "Weapon Oil"
+    return "Weapon Oil"
 end
 
 -- Export label function for options panel
@@ -1263,7 +1263,6 @@ local function InitializeButtons()
         local button = CreateConsumableButton(ConsumablesFrame, i, def[1], def[2], def[3], buttonSize)
         button:SetPoint("LEFT", ConsumablesFrame, "LEFT", (i - 1) * (buttonSize + BUTTON_SPACING), 0)
         buttons[def[1]] = button
-        buttons[i] = button
     end
 
     ConsumablesFrame.buttonSize = buttonSize

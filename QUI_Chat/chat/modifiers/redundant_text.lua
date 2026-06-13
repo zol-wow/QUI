@@ -41,6 +41,11 @@ local function templateToLuaPattern(template)
     return "^" .. escaped .. "$"
 end
 
+-- Honor gain ("COMBATLOG_HONORGAIN_NO_RANK" / "COMBATLOG_HONORGAIN") collapses
+-- to "+<amount> Honor" — both templates put the amount in the same capture, so
+-- they share one builder.
+local function buildHonor(captures) return "+" .. (captures[2] or captures[1] or "?") .. " Honor" end
+
 -- Pattern table: each entry has the GLOBALSTRINGS templates to match against
 -- and a function that builds the short-form replacement from captures.
 local PATTERN_DEFS = {
@@ -86,8 +91,8 @@ local PATTERN_DEFS = {
     honor = {
         templates = { "COMBATLOG_HONORGAIN_NO_RANK", "COMBATLOG_HONORGAIN" },
         builders = {
-            function(captures) return "+" .. (captures[2] or captures[1] or "?") .. " Honor" end,
-            function(captures) return "+" .. (captures[2] or captures[1] or "?") .. " Honor" end,
+            buildHonor,
+            buildHonor,
         },
     },
     reputation = {
@@ -151,6 +156,14 @@ local function NormalizeEvent(event)
     return event
 end
 
+-- Resolve the redundantText settings sub-table, gated on chat being enabled.
+-- Returns the table when chat is on and the sub-table exists, otherwise falsy.
+local function getRedundantSettings()
+    local settings = I.GetSettings and I.GetSettings()
+    return (I.IsChatEnabled and I.IsChatEnabled(settings))
+        and settings.modifiers and settings.modifiers.redundantText
+end
+
 local function SplitRenderedPrefix(message)
     if IsSecret(message) or type(message) ~= "string" then return "", message end
 
@@ -173,9 +186,7 @@ local function tryCollapse(msg, event)
     local key = EVENT_TO_KEY[event]
     if not key then return msg end
 
-    local settings = I.GetSettings and I.GetSettings()
-    local s = (I.IsChatEnabled and I.IsChatEnabled(settings))
-        and settings.modifiers and settings.modifiers.redundantText
+    local s = getRedundantSettings()
     if not s or not s.enabled then return msg end
     if not s.patterns or s.patterns[key] == false then return msg end
 
@@ -209,9 +220,7 @@ local function ShouldTryCollapse(event)
     local key = EVENT_TO_KEY[event]
     if not key then return false end
 
-    local settings = I.GetSettings and I.GetSettings()
-    local s = (I.IsChatEnabled and I.IsChatEnabled(settings))
-        and settings.modifiers and settings.modifiers.redundantText
+    local s = getRedundantSettings()
     if not s or not s.enabled then return false end
     if not s.patterns or s.patterns[key] == false then return false end
     if not BUILT_PATTERNS[key] then return false end
@@ -233,9 +242,7 @@ function RT.TryCollapseForCapture(message, event)
     if not ShouldTryCollapse(event) then
         -- ShouldTryCollapse checks enabled AND BUILT_PATTERNS; ensure patterns
         -- are built in case settings.enabled is true but buildPatterns hasn't run.
-        local settings = I.GetSettings and I.GetSettings()
-        local s = (I.IsChatEnabled and I.IsChatEnabled(settings))
-            and settings and settings.modifiers and settings.modifiers.redundantText
+        local s = getRedundantSettings()
         if not s or not s.enabled then return message end
         buildPatterns()
         if not ShouldTryCollapse(event) then return message end

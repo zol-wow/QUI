@@ -32,57 +32,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         ctx.RegisterShared(key, provider)
     end
 
+    -- Shared provider-panel layout scaffold (core/settings_layout_shared.lua).
     local function MakeLayout(content)
         if U._layoutModePositionOnly then
             return U.MakeSuppressedProviderLayout(content)
         end
-        local Opts = ns.QUI_Options
-        local y = -10
-        local L = {}
-        local sections = {}
-
-        function L.headerAt(text)
-            local h = Opts.CreateAccentDotLabel(content, text, y)
-            h:ClearAllPoints()
-            h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-            h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-            y = y - HEADER_GAP
-        end
-        function L.sectionAt()
-            local c = Opts.CreateSettingsCardGroup(content, y)
-            c.frame:ClearAllPoints()
-            c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-            c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-            return c
-        end
-        function L.closeSection(c)
-            c.Finalize()
-            y = y - c.frame:GetHeight() - SECTION_GAP
-        end
-        function L.placeCustom(frame, height)
-            frame:ClearAllPoints()
-            frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-            frame:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-            frame:SetHeight(height)
-            y = y - height - SECTION_GAP
-        end
-
-        -- Tail relayout for legacy V2 collapsibles (Position, OpenFullSettings).
-        -- They get laid out starting from the bottom of the V3 cards above, not from -8.
-        local function relayoutSections()
-            local cy = y
-            for _, s in ipairs(sections) do
-                s:ClearAllPoints()
-                s:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, cy)
-                s:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-                cy = cy - s:GetHeight() - 4
-            end
-            content:SetHeight(math.abs(cy) + 16)
-        end
-        L.sections = sections
-        L.relayoutSections = relayoutSections
-
-        return L
+        return ns.QUI_SettingsLayoutShared.MakeLayout(content, U)
     end
 
     local function row(parent, label, widget, desc)
@@ -94,6 +49,49 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         U.BuildOpenFullSettingsLink(content, key, L.sections, L.relayoutSections)
         L.relayoutSections()
         return content:GetHeight()
+    end
+
+    -- Shared "Backdrop" card (showBackdrop checkbox + backdropColor picker).
+    -- elementPhrase fills the showBackdrop description ("behind the <phrase>").
+    local function BuildBackdropSection(L, db, Refresh, elementPhrase)
+        L.headerAt("Backdrop")
+        local s3 = L.sectionAt()
+        local showBdW = GUI:CreateFormCheckbox(s3.frame, nil, "showBackdrop", db, Refresh,
+            { description = "Draw a semi-transparent backdrop behind the " .. elementPhrase .. " so it stands out against busy scenes." })
+        local bdColorW = GUI:CreateFormColorPicker(s3.frame, nil, "backdropColor", db, Refresh, nil,
+            { description = "Color and opacity of the backdrop when Show Backdrop is on." })
+        s3.AddRow(row(s3.frame, "Show Backdrop", showBdW), row(s3.frame, "Backdrop Color", bdColorW))
+        L.closeSection(s3)
+    end
+
+    -- Shared "Use Custom Font" + conditional font dropdown row.
+    local function BuildUseCustomFontRow(section, db, Refresh, fontDesc)
+        local useCustomFontW = GUI:CreateFormCheckbox(section.frame, nil, "useCustomFont", db, Refresh,
+            { description = "Override the global font for this element with the font selected below." })
+        local fonts = U.GetFontList()
+        if #fonts > 0 then
+            local fontW = GUI:CreateFormDropdown(section.frame, nil, fonts, "font", db, Refresh,
+                { description = fontDesc })
+            section.AddRow(row(section.frame, "Use Custom Font", useCustomFontW), row(section.frame, "Font", fontW))
+        else
+            section.AddRow(row(section.frame, "Use Custom Font", useCustomFontW))
+        end
+    end
+
+    -- Shared "Border" card (hideBorder + borderSize + BorderControl.Attach).
+    local function BuildBorderSection(L, db, Refresh)
+        L.headerAt("Border")
+        local s4 = L.sectionAt()
+        local hideBorderW = GUI:CreateFormCheckbox(s4.frame, nil, "hideBorder", db, Refresh,
+            { description = "Hide the border outline entirely." })
+        local borderSizeW2 = GUI:CreateFormSlider(s4.frame, nil, 1, 5, 0.5, "borderSize", db, Refresh,
+            { description = "Border thickness in pixels. Ignored while Hide Border is on." })
+        s4.AddRow(row(s4.frame, "Hide Border", hideBorderW), row(s4.frame, "Border Size", borderSizeW2))
+
+        local srcW, colW = ns.QUI_BorderControl.Attach(GUI, s4.frame, db, "", Refresh,
+            { label = "Border Color Source", colorLabel = "Border Color" })
+        s4.AddRow(row(s4.frame, "Border Color Source", srcW), row(s4.frame, "Border Color", colW))
+        L.closeSection(s4)
     end
 
     ---------------------------------------------------------------------------
@@ -214,41 +212,11 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             { description = "Color used for the timer text when Use Class Color is off." })
         s2.AddRow(row(s2.frame, "Use Class Color", useClassW), row(s2.frame, "Text Color", textColorW))
 
-        local useCustomFontW = GUI:CreateFormCheckbox(s2.frame, nil, "useCustomFont", ct, Refresh,
-            { description = "Override the global font for this element with the font selected below." })
-        local fonts = U.GetFontList()
-        if #fonts > 0 then
-            local fontW = GUI:CreateFormDropdown(s2.frame, nil, fonts, "font", ct, Refresh,
-                { description = "Custom font for the timer text. Requires Use Custom Font to be enabled." })
-            s2.AddRow(row(s2.frame, "Use Custom Font", useCustomFontW), row(s2.frame, "Font", fontW))
-        else
-            s2.AddRow(row(s2.frame, "Use Custom Font", useCustomFontW))
-        end
+        BuildUseCustomFontRow(s2, ct, Refresh, "Custom font for the timer text. Requires Use Custom Font to be enabled.")
         L.closeSection(s2)
 
-        -- BACKDROP
-        L.headerAt("Backdrop")
-        local s3 = L.sectionAt()
-        local showBdW = GUI:CreateFormCheckbox(s3.frame, nil, "showBackdrop", ct, Refresh,
-            { description = "Draw a semi-transparent backdrop behind the combat timer so it stands out against busy scenes." })
-        local bdColorW = GUI:CreateFormColorPicker(s3.frame, nil, "backdropColor", ct, Refresh, nil,
-            { description = "Color and opacity of the backdrop when Show Backdrop is on." })
-        s3.AddRow(row(s3.frame, "Show Backdrop", showBdW), row(s3.frame, "Backdrop Color", bdColorW))
-        L.closeSection(s3)
-
-        -- BORDER
-        L.headerAt("Border")
-        local s4 = L.sectionAt()
-        local hideBorderW = GUI:CreateFormCheckbox(s4.frame, nil, "hideBorder", ct, Refresh,
-            { description = "Hide the border outline entirely." })
-        local borderSizeW2 = GUI:CreateFormSlider(s4.frame, nil, 1, 5, 0.5, "borderSize", ct, Refresh,
-            { description = "Border thickness in pixels. Ignored while Hide Border is on." })
-        s4.AddRow(row(s4.frame, "Hide Border", hideBorderW), row(s4.frame, "Border Size", borderSizeW2))
-
-        local srcW, colW = ns.QUI_BorderControl.Attach(GUI, s4.frame, ct, "", Refresh,
-            { label = "Border Color Source", colorLabel = "Border Color" })
-        s4.AddRow(row(s4.frame, "Border Color Source", srcW), row(s4.frame, "Border Color", colW))
-        L.closeSection(s4)
+        BuildBackdropSection(L, ct, Refresh, "combat timer")
+        BuildBorderSection(L, ct, Refresh)
 
         return FinishProviderPage(L, content, key, "combatTimer")
     end })
@@ -298,41 +266,11 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             { description = "Color used for the recharge timer when Class Color is off." })
         s2.AddRow(row(s2.frame, "Class Color Timer Text", useClassTimerW), row(s2.frame, "Timer Text Color", timerColorW))
 
-        local useCustomFontW = GUI:CreateFormCheckbox(s2.frame, nil, "useCustomFont", bz, Refresh,
-            { description = "Override the global font for this element with the font selected below." })
-        local fonts = U.GetFontList()
-        if #fonts > 0 then
-            local fontW = GUI:CreateFormDropdown(s2.frame, nil, fonts, "font", bz, Refresh,
-                { description = "Custom font for the counter text. Requires Use Custom Font to be enabled." })
-            s2.AddRow(row(s2.frame, "Use Custom Font", useCustomFontW), row(s2.frame, "Font", fontW))
-        else
-            s2.AddRow(row(s2.frame, "Use Custom Font", useCustomFontW))
-        end
+        BuildUseCustomFontRow(s2, bz, Refresh, "Custom font for the counter text. Requires Use Custom Font to be enabled.")
         L.closeSection(s2)
 
-        -- BACKDROP
-        L.headerAt("Backdrop")
-        local s3 = L.sectionAt()
-        local showBdW = GUI:CreateFormCheckbox(s3.frame, nil, "showBackdrop", bz, Refresh,
-            { description = "Draw a semi-transparent backdrop behind the brez counter so it stands out against busy scenes." })
-        local bdColorW = GUI:CreateFormColorPicker(s3.frame, nil, "backdropColor", bz, Refresh, nil,
-            { description = "Color and opacity of the backdrop when Show Backdrop is on." })
-        s3.AddRow(row(s3.frame, "Show Backdrop", showBdW), row(s3.frame, "Backdrop Color", bdColorW))
-        L.closeSection(s3)
-
-        -- BORDER
-        L.headerAt("Border")
-        local s4 = L.sectionAt()
-        local hideBorderW = GUI:CreateFormCheckbox(s4.frame, nil, "hideBorder", bz, Refresh,
-            { description = "Hide the border outline entirely." })
-        local borderSizeW2 = GUI:CreateFormSlider(s4.frame, nil, 1, 5, 0.5, "borderSize", bz, Refresh,
-            { description = "Border thickness in pixels. Ignored while Hide Border is on." })
-        s4.AddRow(row(s4.frame, "Hide Border", hideBorderW), row(s4.frame, "Border Size", borderSizeW2))
-
-        local srcW, colW = ns.QUI_BorderControl.Attach(GUI, s4.frame, bz, "", Refresh,
-            { label = "Border Color Source", colorLabel = "Border Color" })
-        s4.AddRow(row(s4.frame, "Border Color Source", srcW), row(s4.frame, "Border Color", colW))
-        L.closeSection(s4)
+        BuildBackdropSection(L, bz, Refresh, "brez counter")
+        BuildBorderSection(L, bz, Refresh)
 
         return FinishProviderPage(L, content, key, "brezCounter")
     end })
@@ -392,29 +330,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
         L.closeSection(s2)
 
-        -- BACKDROP
-        L.headerAt("Backdrop")
-        local s3 = L.sectionAt()
-        local showBdW = GUI:CreateFormCheckbox(s3.frame, nil, "showBackdrop", ac, Refresh,
-            { description = "Draw a semi-transparent backdrop behind the Atonement counter so it stands out against busy scenes." })
-        local bdColorW = GUI:CreateFormColorPicker(s3.frame, nil, "backdropColor", ac, Refresh, nil,
-            { description = "Color and opacity of the backdrop when Show Backdrop is on." })
-        s3.AddRow(row(s3.frame, "Show Backdrop", showBdW), row(s3.frame, "Backdrop Color", bdColorW))
-        L.closeSection(s3)
-
-        -- BORDER
-        L.headerAt("Border")
-        local s4 = L.sectionAt()
-        local hideBorderW = GUI:CreateFormCheckbox(s4.frame, nil, "hideBorder", ac, Refresh,
-            { description = "Hide the border outline entirely." })
-        local borderSizeW2 = GUI:CreateFormSlider(s4.frame, nil, 1, 5, 0.5, "borderSize", ac, Refresh,
-            { description = "Border thickness in pixels. Ignored while Hide Border is on." })
-        s4.AddRow(row(s4.frame, "Hide Border", hideBorderW), row(s4.frame, "Border Size", borderSizeW2))
-
-        local srcW, colW = ns.QUI_BorderControl.Attach(GUI, s4.frame, ac, "", Refresh,
-            { label = "Border Color Source", colorLabel = "Border Color" })
-        s4.AddRow(row(s4.frame, "Border Color Source", srcW), row(s4.frame, "Border Color", colW))
-        L.closeSection(s4)
+        BuildBackdropSection(L, ac, Refresh, "Atonement counter")
+        BuildBorderSection(L, ac, Refresh)
 
         return FinishProviderPage(L, content, key, "atonementCounter")
     end })

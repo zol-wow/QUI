@@ -60,6 +60,10 @@ local objectiveTrackerSetHeaderHooked = false
 local chatFontHooksInitialized = false
 local originalGlobalFonts = ns.Helpers.CreateStateTable()
 local originalChatFonts = ns.Helpers.CreateStateTable()
+-- Pristine Blizzard DAMAGE_TEXT_FONT captured once before any QUI override, so
+-- the SCT font can be restored when the toggle is turned off (mirrors the
+-- chat/objective restore paths). false = not yet captured.
+local originalDamageTextFont = false
 
 local function GetGlobalFontPath()
     if not QUICore.db or not QUICore.db.profile or not QUICore.db.profile.general then
@@ -386,7 +390,13 @@ function QUICore:ApplyGlobalFont()
     -- DAMAGE_TEXT_FONT is a simple global string variable used by Blizzard's
     -- CombatText system — safe to override without taint concerns.
     if shouldApply and self.db.profile.general.overrideSCTFont then
+        if originalDamageTextFont == false then
+            originalDamageTextFont = _G.DAMAGE_TEXT_FONT
+        end
         _G.DAMAGE_TEXT_FONT = fontPath
+    elseif originalDamageTextFont ~= false then
+        _G.DAMAGE_TEXT_FONT = originalDamageTextFont
+        originalDamageTextFont = false
     end
 
     -- Notify the options panel so its own FontStrings pick up the new font

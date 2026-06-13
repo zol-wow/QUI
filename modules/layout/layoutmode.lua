@@ -121,16 +121,20 @@ function QUI_LayoutMode:EnforceGameplayVisibility()
 
             if shouldHide and not wasHiddenByUs then
                 -- Hide this frame
-                self._gameplayHidden[key] = true
                 if def.setGameplayHidden then
+                    self._gameplayHidden[key] = true
                     pcall(def.setGameplayHidden, true)
                 else
                     local frame = def.getFrame and def.getFrame()
                     if frame then
                         if InCombatLockdown() then
+                            -- Defer the actual hide until combat ends; do NOT
+                            -- mark _gameplayHidden yet, or the post-combat
+                            -- re-run would see wasHiddenByUs and skip the hide.
                             self._deferredGameplayHides = self._deferredGameplayHides or {}
                             self._deferredGameplayHides[key] = true
                         else
+                            self._gameplayHidden[key] = true
                             pcall(frame.SetAlpha, frame, 0)
                             pcall(frame.EnableMouse, frame, false)
                         end
@@ -627,7 +631,6 @@ function QUI_LayoutMode:Open()
 
     -- Deferred: attach preview frames to proxy movers so movers render on top.
     C_Timer.After(0, function()
-        local reparentedKeys = {}
         local hiddenDB = GetHiddenHandlesDB()
         for hKey, handle in pairs(self._handles) do
             local isUserHidden = hiddenDB and hiddenDB[hKey]
@@ -698,8 +701,6 @@ function QUI_LayoutMode:Open()
                             end
                         end
                     end
-
-                    reparentedKeys[hKey] = true
                 end
             end
         end
@@ -2939,12 +2940,10 @@ local function SetupBackwardCompat()
         QUI_LayoutMode:RegisterExitCallback(callback)
     end
 
-    local origRegEnter = core.RegisterEditModeEnter
     function core:RegisterEditModeEnter(callback)
         QUI_LayoutMode:RegisterEnterCallback(callback)
     end
 
-    local origRegExit = core.RegisterEditModeExit
     function core:RegisterEditModeExit(callback)
         QUI_LayoutMode:RegisterExitCallback(callback)
     end

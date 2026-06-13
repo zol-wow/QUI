@@ -614,6 +614,58 @@ function FullSurface.CreateTabStrip(parent, options)
     return strip, Paint
 end
 
+-- Shared tab-repaint wiring used by both BuildScrollTabBody and
+-- BuildMultiHostTabBody. Builds the reentry-guarded RepaintTabs closure and a
+-- RepaintAndRender convenience over a caller-supplied RenderActive. Returns
+-- (RepaintTabs, RepaintAndRender).
+local function CreateTabRepainter(options, paintTabs, RenderActive)
+    local repainting = false
+    local function RepaintTabs()
+        if options.preventReentry and repainting then
+            return
+        end
+        repainting = true
+
+        local tabs = type(options.getTabs) == "function" and options.getTabs() or {}
+        local activeTab = type(options.getActiveTab) == "function" and options.getActiveTab() or nil
+        if type(options.normalizeActiveTab) == "function" then
+            local normalized = options.normalizeActiveTab(tabs, activeTab)
+            if normalized ~= nil and normalized ~= activeTab and type(options.setActiveTab) == "function" then
+                options.setActiveTab(normalized)
+                activeTab = normalized
+            end
+        end
+
+        local function HandleTabClick(tabKey, previousActiveTab)
+            if tabKey == previousActiveTab then
+                return
+            end
+            if type(options.setActiveTab) == "function" then
+                options.setActiveTab(tabKey)
+            end
+            if type(options.onTabChanged) == "function" then
+                options.onTabChanged(tabKey)
+            end
+            repainting = false
+            RepaintTabs()
+            RenderActive(false)
+        end
+
+        paintTabs(tabs, activeTab, function(tabKey)
+            return HandleTabClick(tabKey, activeTab)
+        end)
+
+        repainting = false
+    end
+
+    local function RepaintAndRender(force)
+        RepaintTabs()
+        RenderActive(force ~= false)
+    end
+
+    return RepaintTabs, RepaintAndRender
+end
+
 function FullSurface.BuildScrollTabBody(body, options)
     options = options or {}
 
@@ -756,49 +808,7 @@ function FullSurface.BuildScrollTabBody(body, options)
         end
     end
 
-    local repainting = false
-    local function RepaintTabs()
-        if options.preventReentry and repainting then
-            return
-        end
-        repainting = true
-
-        local tabs = type(options.getTabs) == "function" and options.getTabs() or {}
-        local activeTab = type(options.getActiveTab) == "function" and options.getActiveTab() or nil
-        if type(options.normalizeActiveTab) == "function" then
-            local normalized = options.normalizeActiveTab(tabs, activeTab)
-            if normalized ~= nil and normalized ~= activeTab and type(options.setActiveTab) == "function" then
-                options.setActiveTab(normalized)
-                activeTab = normalized
-            end
-        end
-
-        local function HandleTabClick(tabKey, previousActiveTab)
-            if tabKey == previousActiveTab then
-                return
-            end
-            if type(options.setActiveTab) == "function" then
-                options.setActiveTab(tabKey)
-            end
-            if type(options.onTabChanged) == "function" then
-                options.onTabChanged(tabKey)
-            end
-            repainting = false
-            RepaintTabs()
-            RenderActive(false)
-        end
-
-        paintTabs(tabs, activeTab, function(tabKey)
-            return HandleTabClick(tabKey, activeTab)
-        end)
-
-        repainting = false
-    end
-
-    local function RepaintAndRender(force)
-        RepaintTabs()
-        RenderActive(force ~= false)
-    end
+    local RepaintTabs, RepaintAndRender = CreateTabRepainter(options, paintTabs, RenderActive)
 
     if state then
         state.repaintTabs = RepaintAndRender
@@ -880,12 +890,8 @@ function FullSurface.BuildMultiHostTabBody(body, options)
     local tabBodyCache = {}
 
     local function ResolveHostKey(activeTab)
-        local activeHostKey = type(options.resolveHostKey) == "function"
+        return type(options.resolveHostKey) == "function"
             and options.resolveHostKey(activeTab) or options.defaultHostKey
-        if activeHostKey ~= nil then
-            return activeHostKey
-        end
-        return options.defaultHostKey
     end
 
     local function GetTabCacheKey(tabKey, hostKey)
@@ -1002,49 +1008,7 @@ function FullSurface.BuildMultiHostTabBody(body, options)
         end
     end
 
-    local repainting = false
-    local function RepaintTabs()
-        if options.preventReentry and repainting then
-            return
-        end
-        repainting = true
-
-        local tabs = type(options.getTabs) == "function" and options.getTabs() or {}
-        local activeTab = type(options.getActiveTab) == "function" and options.getActiveTab() or nil
-        if type(options.normalizeActiveTab) == "function" then
-            local normalized = options.normalizeActiveTab(tabs, activeTab)
-            if normalized ~= nil and normalized ~= activeTab and type(options.setActiveTab) == "function" then
-                options.setActiveTab(normalized)
-                activeTab = normalized
-            end
-        end
-
-        local function HandleTabClick(tabKey, previousActiveTab)
-            if tabKey == previousActiveTab then
-                return
-            end
-            if type(options.setActiveTab) == "function" then
-                options.setActiveTab(tabKey)
-            end
-            if type(options.onTabChanged) == "function" then
-                options.onTabChanged(tabKey)
-            end
-            repainting = false
-            RepaintTabs()
-            RenderActive(false)
-        end
-
-        paintTabs(tabs, activeTab, function(tabKey)
-            return HandleTabClick(tabKey, activeTab)
-        end)
-
-        repainting = false
-    end
-
-    local function RepaintAndRender(force)
-        RepaintTabs()
-        RenderActive(force ~= false)
-    end
+    local RepaintTabs, RepaintAndRender = CreateTabRepainter(options, paintTabs, RenderActive)
 
     if state then
         state.repaintTabs = RepaintAndRender

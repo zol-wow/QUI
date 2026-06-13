@@ -7,7 +7,6 @@ local Helpers = ns.Helpers
 -- OVERRIDE ACTION BAR SKINNING (Compact style)
 ---------------------------------------------------------------------------
 
-local FONT_FLAGS = "OUTLINE"
 local BUTTON_SIZE = 40  -- Compact but usable button size
 local BUTTON_SPACING = 3  -- Tight but readable spacing
 local LEAVE_BUTTON_SIZE = 28  -- Visible leave button
@@ -16,7 +15,7 @@ local RESOURCE_BAR_HEIGHT = 40  -- Match button height
 local pendingOverrideSkin = false
 
 -- Style action button with QUI theme
-local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb)
     if not button then return end
 
     -- Resize button
@@ -107,7 +106,7 @@ end
 -- Main skinning function
 local function SkinOverrideActionBar()
     if not QUICore or type(QUICore.GetPixelSize) ~= "function" then return end
-    local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local settings = QUICore.db and QUICore.db.profile and QUICore.db.profile.general
     if not settings or not settings.skinOverrideActionBar then return end
 
     local bar = _G.OverrideActionBar
@@ -148,7 +147,7 @@ local function SkinOverrideActionBar()
     for i = 1, 6 do
         local button = bar["SpellButton" .. i]
         if button then
-            StyleActionButton(button, i, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+            StyleActionButton(button, i, sr, sg, sb, sa, bgr, bgg, bgb)
         end
     end
 

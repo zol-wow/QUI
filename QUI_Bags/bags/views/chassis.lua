@@ -55,6 +55,45 @@ local function ClampInteger(value, fallback, minValue, maxValue)
     return n
 end
 
+--- Build a window's one-shot ScheduleRefresh closure. The returned function
+--- installs an OnUpdate that clears itself and calls refresh() on the next
+--- frame, guarded so it never double-schedules while one is pending. The
+--- window's OnUpdate is owned exclusively by this closure. getWin returns the
+--- (lazily created) chassis window; refresh is the window's Refresh entry.
+function Chassis.MakeScheduleRefresh(getWin, refresh)
+    return function()
+        local win = getWin()
+        if win and win:IsShown() and not win._updateScheduled then
+            win._updateScheduled = true
+            win:SetScript("OnUpdate", function(self)
+                self:SetScript("OnUpdate", nil)
+                self._updateScheduled = false
+                refresh()
+            end)
+        end
+    end
+end
+
+--- Build the shared dark-panel button preamble: a Button with a 35%-black
+--- WHITE8x8 background (pixel-snap disabled). When withLabel is true a
+--- centered ARTWORK label (general font, 11px OUTLINE) is created and stashed
+--- on btn._label. Callers add their own border lines, sizing, text, scripts,
+--- and click registration so per-button ordering stays exactly as before.
+function Chassis.CreatePanelButton(parent, withLabel)
+    local btn = CreateFrame("Button", nil, parent)
+    local bg = btn:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    bg:SetVertexColor(0, 0, 0, 0.35)
+    UIKit.DisablePixelSnap(bg)
+    if withLabel then
+        btn._label = btn:CreateFontString(nil, "ARTWORK")
+        btn._label:SetPoint("CENTER", 0, 0)
+        btn._label:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+    end
+    return btn
+end
+
 --- Measure the minimum width needed for a horizontal header control row.
 --- Hidden/nil controls are ignored; opts = { leftPad, rightPad, gap }.
 function Chassis.MeasureHeaderWidth(controls, opts)

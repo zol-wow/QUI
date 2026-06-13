@@ -134,30 +134,27 @@ function CDMSources.EnableSpellRangeCheck(spellID, enable)
     return ok == true
 end
 
-function CDMSources.QuerySpellHarmful(spellNameOrID)
+local function querySpellAffinity(spellNameOrID, namespacedFn, globalFn)
     if not spellNameOrID then return nil end
-    if C_Spell and C_Spell.IsSpellHarmful then
-        local ok, result = pcall(C_Spell.IsSpellHarmful, spellNameOrID)
+    if namespacedFn then
+        local ok, result = pcall(namespacedFn, spellNameOrID)
         if ok then return result end
     end
-    if IsHarmfulSpell then
-        local ok, result = pcall(IsHarmfulSpell, spellNameOrID)
+    if globalFn then
+        local ok, result = pcall(globalFn, spellNameOrID)
         if ok then return result end
     end
     return nil
 end
 
+function CDMSources.QuerySpellHarmful(spellNameOrID)
+    return querySpellAffinity(spellNameOrID,
+        C_Spell and C_Spell.IsSpellHarmful, IsHarmfulSpell)
+end
+
 function CDMSources.QuerySpellHelpful(spellNameOrID)
-    if not spellNameOrID then return nil end
-    if C_Spell and C_Spell.IsSpellHelpful then
-        local ok, result = pcall(C_Spell.IsSpellHelpful, spellNameOrID)
-        if ok then return result end
-    end
-    if IsHelpfulSpell then
-        local ok, result = pcall(IsHelpfulSpell, spellNameOrID)
-        if ok then return result end
-    end
-    return nil
+    return querySpellAffinity(spellNameOrID,
+        C_Spell and C_Spell.IsSpellHelpful, IsHelpfulSpell)
 end
 
 local _C_GetItemInfoInstant = C_Item and C_Item.GetItemInfoInstant

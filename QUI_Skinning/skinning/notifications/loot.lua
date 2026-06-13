@@ -108,11 +108,10 @@ local function IsUncollectedTransmog(itemLink)
     if not C_TransmogCollection or not C_TransmogCollection.PlayerHasTransmogItemModifiedAppearance then
         return false
     end
-    local itemID = GetItemInfoInstant(itemLink)
+    local itemID, _, _, _, _, classID = GetItemInfoInstant(itemLink)
     if not itemID then return false end
 
     -- Check if it's equipment
-    local _, _, _, _, _, classID = GetItemInfoInstant(itemLink)
     if classID ~= 2 and classID ~= 4 then return false end  -- Weapon or Armor
 
     -- Check if we can learn it
@@ -574,6 +573,16 @@ local function GetAvailableRollFrame()
     return nil
 end
 
+-- Anchor a single roll frame at stacking slot `index` relative to rollAnchor
+local function AnchorRollFrame(frame, growDirection, spacing, index)
+    frame:ClearAllPoints()
+    if growDirection == "UP" then
+        frame:SetPoint("BOTTOM", rollAnchor, "TOP", 0, (index * (ROLL_FRAME_HEIGHT + spacing)))
+    else
+        frame:SetPoint("TOP", rollAnchor, "BOTTOM", 0, -(index * (ROLL_FRAME_HEIGHT + spacing)))
+    end
+end
+
 local function PositionRollFrame(frame)
     local db = GetDB()
     local growDirection = (db.lootRoll and db.lootRoll.growDirection) or "DOWN"
@@ -586,12 +595,7 @@ local function PositionRollFrame(frame)
         end
     end
 
-    frame:ClearAllPoints()
-    if growDirection == "UP" then
-        frame:SetPoint("BOTTOM", rollAnchor, "TOP", 0, (index * (ROLL_FRAME_HEIGHT + spacing)))
-    else
-        frame:SetPoint("TOP", rollAnchor, "BOTTOM", 0, -(index * (ROLL_FRAME_HEIGHT + spacing)))
-    end
+    AnchorRollFrame(frame, growDirection, spacing, index)
 end
 
 local function RepositionAllRolls()
@@ -602,12 +606,7 @@ local function RepositionAllRolls()
     local index = 0
     for _, frame in pairs(activeRolls) do
         if frame:IsShown() then
-            frame:ClearAllPoints()
-            if growDirection == "UP" then
-                frame:SetPoint("BOTTOM", rollAnchor, "TOP", 0, (index * (ROLL_FRAME_HEIGHT + spacing)))
-            else
-                frame:SetPoint("TOP", rollAnchor, "BOTTOM", 0, -(index * (ROLL_FRAME_HEIGHT + spacing)))
-            end
+            AnchorRollFrame(frame, growDirection, spacing, index)
             index = index + 1
         end
     end
@@ -629,7 +628,7 @@ ProcessRollQueue = function()
     end
 end
 
-StartRoll = function(rollID, rollTime, lootHandle)
+StartRoll = function(rollID, rollTime)
     local db = GetDB()
     if not db.lootRoll or not db.lootRoll.enabled then return end
 
@@ -837,7 +836,6 @@ local function SkinGroupLootHistoryFrame()
     local HistoryFrame = _G.GroupLootHistoryFrame
     if not HistoryFrame then return end
 
-    local db = GetDB()
     local bgColor, borderColor, textColor = GetThemeColors()
 
     -- Strip Blizzard textures
@@ -1349,8 +1347,6 @@ function Loot:ShowLootPreview()
     if not lootFrame then
         lootFrame = CreateLootWindow()
     end
-
-    local db = GetDB()
 
     -- Apply current theme
     self:ApplyLootTheme()

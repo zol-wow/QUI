@@ -149,6 +149,10 @@ local ns = {
             _internals = {
                 GetSettings    = function() return settings end,
                 IsChatEnabled  = function(s) return s and s.enabled ~= false end,
+                WHISPER_TYPE_KEYS = {
+                    WHISPER = true, WHISPER_INFORM = true,
+                    BN_WHISPER = true, BN_WHISPER_INFORM = true,
+                },
             },
             HistoryStorage = HistoryStorageStub,
             MessageStore   = MessageStoreStub,

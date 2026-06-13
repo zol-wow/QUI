@@ -12,6 +12,12 @@
 -- Alts.RosterView for headless unit tests; the frame parts have no test.
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
+
+local Shared = ns.AltsViewShared
+local ClassColor = Shared.ClassColor
+local GeneralFont = Shared.GeneralFont
+local GeneralOutline = Shared.GeneralOutline
+local MakeFS = Shared.MakeFS
 local Alts = ns.Alts or {}; ns.Alts = Alts
 
 local Helpers = ns.Helpers
@@ -43,11 +49,6 @@ RosterView.COLUMNS = COLUMNS
 
 --- Class token → r,g,b. RAID_CLASS_COLORS read directly (chat sender-recolor
 --- precedent; routing through the CUSTOM-aware helper would drift here too).
-local function ClassColor(classToken)
-    local c = classToken and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken]
-    if c then return c.r, c.g, c.b end
-    return 1, 1, 1
-end
 
 --- Cell display text for a column over a built row (see RD.BuildRows shape:
 --- { key, name, realm, details, record }). `now` for relative timestamps.
@@ -105,22 +106,8 @@ end
 -- Frame parts (no headless test).
 ---------------------------------------------------------------------------
 
-local function GeneralFont()
-    return (Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont())
-        or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-end
 
-local function GeneralOutline()
-    return (Helpers and Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline())
-        or ""
-end
 
-local function MakeFS(parent, size)
-    local fs = parent:CreateFontString(nil, "ARTWORK")
-    fs:SetFont(GeneralFont(), size or 11, GeneralOutline())
-    fs:SetWordWrap(false)
-    return fs
-end
 
 local function Builder(parent)
     local Store = ns.Storage and ns.Storage.Store
@@ -258,7 +245,7 @@ local function Builder(parent)
             h:SetPoint("TOPLEFT", frame, "TOPLEFT", x, 0)
             h:SetWidth(colWidths[i])
             h._label:SetText(col.label)
-            if col.sortKey and col.sortKey == sortKey then
+            if col.sortKey == sortKey then
                 -- ascending = flipped (points up), descending = native
                 h._arrow:SetTexCoord(0, 1, sortDesc and 0 or 1, sortDesc and 1 or 0)
                 h._arrow:Show()

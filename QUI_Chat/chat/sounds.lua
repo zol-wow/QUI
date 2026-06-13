@@ -64,7 +64,7 @@ end
 
 local function PlayConfiguredMessageSound(entry)
     local soundName = entry.sound or "None"
-    if soundName and soundName ~= "None" and LSM then
+    if soundName ~= "None" and LSM then
         local path = LSM:Fetch("sound", soundName)
         if path and type(path) == "string" then
             PlaySoundFile(path, "Master")

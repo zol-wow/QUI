@@ -18,6 +18,7 @@ bags\search\compiler.lua
 bags\search\everywhere.lua
 bags\ops\sort_planner.lua
 bags\ops\reagent_fill.lua
+bags\ops\shared.lua
 bags\ops\sort_executor.lua
 bags\ops\transfers.lua
 bags\ops\junk.lua
@@ -35,6 +36,7 @@ bags\views\guild_window.lua
 bags\views\search_window.lua
 bags\tooltip_counts.lua
 bags\autoopen.lua
+bags\takeover_shared.lua
 bags\takeover.lua
 bags\bank_takeover.lua
 bags\guild_takeover.lua

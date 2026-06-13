@@ -85,6 +85,16 @@ local function ApplyBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga, showBord
     Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, borderAlpha)
 end
 
+-- Apply the forces text color override (settings.forcesTextColor) or fall back to colors.text
+local function ApplyForcesTextColor(fontString, colors, settings)
+    if settings and type(settings.forcesTextColor) == "table" then
+        local r, g, b, a = unpack(settings.forcesTextColor)
+        fontString:SetTextColor(r, g, b, a)
+    else
+        fontString:SetTextColor(colors.text[1], colors.text[2], colors.text[3], colors.text[4])
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Apply Bar Styling
 ---------------------------------------------------------------------------
@@ -126,9 +136,8 @@ local function ApplyBarSkin(bar, sr, sg, sb, br, bg, bb, colors, isTimerBar, bar
     end
 
     if bar.text then
-        if not isTimerBar and settings and type(settings.forcesTextColor) == "table" then
-            local r, g, b, a = unpack(settings.forcesTextColor)
-            bar.text:SetTextColor(r, g, b, a)
+        if not isTimerBar then
+            ApplyForcesTextColor(bar.text, colors, settings)
         else
             bar.text:SetTextColor(colors.text[1], colors.text[2], colors.text[3], colors.text[4])
         end
@@ -222,14 +231,7 @@ local function ApplyMPlusTimerSkin()
         )
     end
     if MPlusTimer.frames.forcesValueText then
-        if settings and type(settings.forcesTextColor) == "table" then
-            local r, g, b, a = unpack(settings.forcesTextColor)
-            MPlusTimer.frames.forcesValueText:SetTextColor(r, g, b, a)
-        else
-            MPlusTimer.frames.forcesValueText:SetTextColor(
-                colors.text[1], colors.text[2], colors.text[3], colors.text[4]
-            )
-        end
+        ApplyForcesTextColor(MPlusTimer.frames.forcesValueText, colors, settings)
     end
 
     -- Sleek mode: Segmented bar backdrop
@@ -312,7 +314,6 @@ if ns.Registry then
     })
 end
 
-local Helpers = ns.Helpers
 if Helpers and Helpers.BorderRegistry then
     Helpers.BorderRegistry.Register({
         key = "mplusTimer", label = "M+ Timer", category = "HUD", prefix = "",

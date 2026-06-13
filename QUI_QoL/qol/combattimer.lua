@@ -68,7 +68,7 @@ local function CreateTimerFrame()
     text:SetTextColor(1, 1, 1, 1)
     text:SetJustifyH("CENTER")
     text:SetJustifyV("MIDDLE")
-    text:SetText("0:00")
+    text:SetText("00:00")
     frame.text = text
 
     frame:Hide()
@@ -369,7 +369,7 @@ local function RefreshCombatTimer()
             -- Entered combat while feature was disabled, start now
             CombatTimerState.combatStartTime = GetTime()
             CombatTimerState.isInCombat = true
-            CombatTimerState.timerFrame.text:SetText("0:00")
+            CombatTimerState.timerFrame.text:SetText("00:00")
             CombatTimerState.timerFrame:Show()
             CombatTimerState.timerFrame:SetScript("OnUpdate", OnTimerUpdate)
         end
@@ -398,7 +398,7 @@ local function TogglePreview(enable)
             -- Don't hide, we're in combat with feature enabled
             CombatTimerState.isInCombat = true
             CombatTimerState.combatStartTime = GetTime()
-            CombatTimerState.timerFrame.text:SetText("0:00")
+            CombatTimerState.timerFrame.text:SetText("00:00")
             CombatTimerState.timerFrame:SetScript("OnUpdate", OnTimerUpdate)
         else
             CombatTimerState.timerFrame:SetScript("OnUpdate", nil)

@@ -277,7 +277,7 @@ local function SuppressCategoryTextures(button)
 end
 
 -- Skin the left-side categories list
-local function SkinCategoriesList(sr, sg, sb, sa, bgr, bgg, bgb, bga)
+local function SkinCategoriesList()
     local AuctionHouseFrame = _G.AuctionHouseFrame
     if not AuctionHouseFrame then return end
 
@@ -344,7 +344,7 @@ local function SkinAuctionHouse()
     SkinAuctionHouseTabs()
 
     -- Skin sub-panels (pcall each so one failure doesn't block the rest)
-    pcall(SkinCategoriesList, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    pcall(SkinCategoriesList)
     pcall(SkinSearchBar)
     pcall(SkinBrowsePanel)
     pcall(SkinSellPanel)

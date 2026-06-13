@@ -131,6 +131,8 @@ local function should_load_script(path)
     end
 
     if path == "core/utils.lua"
+        or path == "core/infobar_shared.lua"
+        or path == "core/settings_layout_shared.lua"
         or path == "core/border_registry.lua"
         or path == "core/defaults.lua"
         or path == "core/scaling.lua"

@@ -63,6 +63,33 @@ local function HidePVEDecorations()
     SkinBase.StripTextures(PVEFrame)
 end
 
+-- Boosted button background colors (slightly lighter than the panel background)
+local function ButtonBoostColors(bgr, bgg, bgb)
+    return math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1),
+           math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1),
+           math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
+end
+
+-- Install the standard skinColor-based hover brighten/restore border hooks.
+-- Reads the stored "backdrop"/"skinColor" frame data set by the styler.
+local function AddSkinColorHoverBorder(button)
+    button:HookScript("OnEnter", function(self)
+        local bd = SkinBase.GetFrameData(self, "backdrop")
+        local sc = SkinBase.GetFrameData(self, "skinColor")
+        if bd and sc then
+            local r, g, b, a = unpack(sc)
+            bd:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a)
+        end
+    end)
+    button:HookScript("OnLeave", function(self)
+        local bd = SkinBase.GetFrameData(self, "backdrop")
+        local sc = SkinBase.GetFrameData(self, "skinColor")
+        if bd and sc then
+            bd:SetBackdropBorderColor(unpack(sc))
+        end
+    end)
+end
+
 -- Style GroupFinder buttons (LFD, Raid Finder, Premade Groups on the left)
 local function StyleGroupFinderButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not button or SkinBase.IsStyled(button) then return end
@@ -83,9 +110,7 @@ local function StyleGroupFinderButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
         SkinBase.SetFrameData(button, "backdrop", backdrop)
     end
 
-    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgR, btnBgG, btnBgB = ButtonBoostColors(bgr, bgg, bgb)
     SkinBase.ApplyFullBackdrop(backdrop, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
 
     -- Style the icon
@@ -111,21 +136,7 @@ local function StyleGroupFinderButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
     -- Store colors for hover
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
 
-    button:HookScript("OnEnter", function(self)
-        local bd = SkinBase.GetFrameData(self, "backdrop")
-        local sc = SkinBase.GetFrameData(self, "skinColor")
-        if bd and sc then
-            local r, g, b, a = unpack(sc)
-            bd:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a)
-        end
-    end)
-    button:HookScript("OnLeave", function(self)
-        local bd = SkinBase.GetFrameData(self, "backdrop")
-        local sc = SkinBase.GetFrameData(self, "skinColor")
-        if bd and sc then
-            bd:SetBackdropBorderColor(unpack(sc))
-        end
-    end)
+    AddSkinColorHoverBorder(button)
 
     SkinBase.MarkStyled(button)
 end
@@ -158,12 +169,19 @@ local function SkinPVEFrame()
     -- Reposition tabs: left justify and tighten spacing
     -- Blizzard default: Tab1 at x=19, Tab2-3 at -16px overlap, Tab4 at +3px gap
     -- QUI: Tab1 at x=-3, tabs at -5px spacing
-    _G.PVEFrameTab1:ClearAllPoints()
-    _G.PVEFrameTab2:ClearAllPoints()
-    _G.PVEFrameTab3:ClearAllPoints()
-    _G.PVEFrameTab1:SetPoint("BOTTOMLEFT", PVEFrame, "BOTTOMLEFT", -3, -30)
-    _G.PVEFrameTab2:SetPoint("TOPLEFT", _G.PVEFrameTab1, "TOPRIGHT", -5, 0)
-    _G.PVEFrameTab3:SetPoint("TOPLEFT", _G.PVEFrameTab2, "TOPRIGHT", -5, 0)
+    local pveTab1, pveTab2, pveTab3 = _G.PVEFrameTab1, _G.PVEFrameTab2, _G.PVEFrameTab3
+    if pveTab1 then
+        pveTab1:ClearAllPoints()
+        pveTab1:SetPoint("BOTTOMLEFT", PVEFrame, "BOTTOMLEFT", -3, -30)
+    end
+    if pveTab2 then
+        pveTab2:ClearAllPoints()
+        pveTab2:SetPoint("TOPLEFT", pveTab1 or PVEFrame, "TOPRIGHT", -5, 0)
+    end
+    if pveTab3 then
+        pveTab3:ClearAllPoints()
+        pveTab3:SetPoint("TOPLEFT", pveTab2 or pveTab1 or PVEFrame, "TOPRIGHT", -5, 0)
+    end
 
     -- Hook to reposition Tab4 (Delves) - Blizzard repositions it dynamically
     -- Note: Tab4 may not exist in all WoW versions (e.g., 12.x beta)
@@ -736,9 +754,7 @@ local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
 
     SkinBase.ApplyPixelBackdrop(backdrop, 1, true, true)
 
-    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgR, btnBgG, btnBgB = ButtonBoostColors(bgr, bgg, bgb)
     Helpers.SetFrameBackdropColor(backdrop, btnBgR, btnBgG, btnBgB, 1)
     Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
 
@@ -770,21 +786,7 @@ local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
     -- Store colors for hover
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
 
-    button:HookScript("OnEnter", function(self)
-        local bd = SkinBase.GetFrameData(self, "backdrop")
-        local sc = SkinBase.GetFrameData(self, "skinColor")
-        if bd and sc then
-            local r, g, b, a = unpack(sc)
-            bd:SetBackdropBorderColor(math.min(r * 1.3, 1), math.min(g * 1.3, 1), math.min(b * 1.3, 1), a)
-        end
-    end)
-    button:HookScript("OnLeave", function(self)
-        local bd = SkinBase.GetFrameData(self, "backdrop")
-        local sc = SkinBase.GetFrameData(self, "skinColor")
-        if bd and sc then
-            bd:SetBackdropBorderColor(unpack(sc))
-        end
-    end)
+    AddSkinColorHoverBorder(button)
 
     SkinBase.MarkStyled(button)
 end
@@ -823,9 +825,7 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     SkinBase.ApplyPixelBackdrop(backdrop, 1, true, true)
 
-    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgR, btnBgG, btnBgB = ButtonBoostColors(bgr, bgg, bgb)
     Helpers.SetFrameBackdropColor(backdrop, btnBgR, btnBgG, btnBgB, 0.9)
     Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
 
@@ -1098,9 +1098,7 @@ end
 local function UpdateGroupFinderButtonColors(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local bd = button and SkinBase.GetFrameData(button, "backdrop")
     if not bd then return end
-    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgR, btnBgG, btnBgB = ButtonBoostColors(bgr, bgg, bgb)
     bd:SetBackdropColor(btnBgR, btnBgG, btnBgB, 1)
     bd:SetBackdropBorderColor(sr, sg, sb, sa)
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
@@ -1115,9 +1113,7 @@ end
 local function UpdatePVPActivityButtonColors(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local bd = button and SkinBase.GetFrameData(button, "backdrop")
     if not bd then return end
-    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgR, btnBgG, btnBgB = ButtonBoostColors(bgr, bgg, bgb)
     Helpers.SetFrameBackdropColor(bd, btnBgR, btnBgG, btnBgB, 1)
     Helpers.SetFrameBackdropBorderColor(bd, sr, sg, sb, sa)
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })

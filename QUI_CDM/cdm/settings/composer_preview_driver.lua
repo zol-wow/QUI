@@ -30,6 +30,17 @@ local Resolvers       = ns.CDMResolvers
 local GetSpellTexture = Resolvers and Resolvers.GetSpellTexture
 local GetEntryTexture = Resolvers and Resolvers.GetEntryTexture
 
+-- Resolve the preview texture for an entry: typed entries use GetEntryTexture,
+-- spell entries fall back to GetSpellTexture on the (override) spell ID.
+local function ResolveEntryTexture(entry)
+    if entry.type and GetEntryTexture then
+        return GetEntryTexture(entry)
+    elseif GetSpellTexture then
+        return GetSpellTexture(entry.overrideSpellID or entry.spellID)
+    end
+    return nil
+end
+
 local CDMComposerPreview = {}
 ns.CDMComposerPreview = CDMComposerPreview
 
@@ -159,7 +170,7 @@ local function ApplyCooldownPhase(icon, iconState, phaseName, phaseT)
         -- charge count as a single number on StackText (same fontstring,
         -- different data source — see cdm_icon_renderer stackSource == "ChargeCount").
         if icon.StackText then
-            local remaining = math.max(0, 3 - math.floor(phaseT))
+            local remaining = math.max(0, 3 - math.floor(phaseT / 0.75))
             if remaining > 0 then
                 icon.StackText:SetText(tostring(remaining))
                 icon.StackText:Show()
@@ -357,12 +368,7 @@ local function RefreshIcons(containerKey, containerDB)
             -- Re-bind spell entry on existing icon (entry list edits)
             icon._spellEntry = entry
             if entry then
-                local texID
-                if entry.type and GetEntryTexture then
-                    texID = GetEntryTexture(entry)
-                elseif GetSpellTexture then
-                    texID = GetSpellTexture(entry.overrideSpellID or entry.spellID)
-                end
+                local texID = ResolveEntryTexture(entry)
                 if texID and icon.Icon then icon.Icon:SetTexture(texID) end
             end
         end
@@ -445,12 +451,7 @@ local function RefreshBars(_containerKey, containerDB)
         -- runtime sets these in its UpdateOwnedBarAura path which the
         -- preview deliberately bypasses, so paint them here from the entry.
         if entry and bar.IconTexture then
-            local texID
-            if entry.type and GetEntryTexture then
-                texID = GetEntryTexture(entry)
-            elseif GetSpellTexture then
-                texID = GetSpellTexture(entry.overrideSpellID or entry.spellID)
-            end
+            local texID = ResolveEntryTexture(entry)
             if texID then bar.IconTexture:SetTexture(texID) end
         end
         if entry and bar.NameText then

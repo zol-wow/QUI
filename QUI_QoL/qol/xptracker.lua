@@ -19,8 +19,6 @@ local XPTrackerState = {
     startupScheduled = false,
     -- Session tracking
     sessionStartTime = 0,
-    sessionStartXP = 0,
-    sessionStartLevel = 0,
     totalSessionXP = 0,       -- Monotonic across level-ups
     levelStartTime = 0,
     lastKnownXP = 0,
@@ -428,8 +426,6 @@ local function UpdateDisplay()
         maxXP = 13000
         exhaustion = 1260
         level = 72
-        isAtCap = false
-        isXPDisabled = false
     else
         currentXP = UnitXP("player") or 0
         maxXP = UnitXPMax("player") or 1
@@ -719,8 +715,6 @@ local function InitializeSession()
     local currentLevel = UnitLevel("player") or 1
 
     XPTrackerState.sessionStartTime = now
-    XPTrackerState.sessionStartXP = currentXP
-    XPTrackerState.sessionStartLevel = currentLevel
     XPTrackerState.totalSessionXP = 0
     XPTrackerState.levelStartTime = now
     XPTrackerState.lastKnownXP = currentXP

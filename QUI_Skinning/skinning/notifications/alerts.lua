@@ -94,6 +94,36 @@ local function CreateAlertBackdrop(frame, xOffset1, yOffset1, xOffset2, yOffset2
     return backdrop
 end
 
+--- Create a backdrop anchored to an icon border frame (extends rightward by 180px)
+--- @param frame frame Owner frame that stores/keys the backdrop
+--- @param anchorFrame frame The icon border to anchor against
+--- @param inset number Pixel inset for TOPLEFT/BOTTOMRIGHT corners
+local function CreateIconAnchoredBackdrop(frame, anchorFrame, inset)
+    if SkinBase.GetFrameData(frame, "backdrop") or not anchorFrame then return end
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
+
+    local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    backdrop:SetFrameLevel(frame:GetFrameLevel())
+    backdrop:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", -inset, inset)
+    backdrop:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 180, -inset)
+    SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
+    Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
+    Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
+    SkinBase.SetFrameData(frame, "backdrop", backdrop)
+    return backdrop
+end
+
+--- Resolve an item rarity quality color {r,g,b} from a hyperlink, or nil
+local function GetQualityColor(hyperlink)
+    if not hyperlink then return nil end
+    local quality = C_Item.GetItemQualityByID(hyperlink)
+    if quality and quality >= 1 then
+        local r, g, b = GetItemQualityColor(quality)
+        return { r = r, g = g, b = b }
+    end
+    return nil
+end
+
 --- Update existing backdrop colors (for theme changes)
 local function UpdateBackdropColors(frame)
     local bd = SkinBase.GetFrameData(frame, "backdrop")
@@ -239,15 +269,7 @@ end
 local function RefreshAlertQualityColor(frame, icon)
     if not frame or not icon then return end
     local lootItem = frame.lootItem or frame
-    local hyperlink = frame.hyperlink or (lootItem and lootItem.hyperlink)
-    local qualityColor = nil
-    if hyperlink then
-        local quality = C_Item.GetItemQualityByID(hyperlink)
-        if quality and quality >= 1 then
-            local r, g, b = GetItemQualityColor(quality)
-            qualityColor = { r = r, g = g, b = b }
-        end
-    end
+    local qualityColor = GetQualityColor(frame.hyperlink or (lootItem and lootItem.hyperlink))
     CreateIconBorder(icon, frame, qualityColor)
 end
 
@@ -279,32 +301,12 @@ local function SkinLootWonAlert(frame)
     Kill(lootItem.SpecRing)
 
     -- Get quality color from item link
-    local qualityColor = nil
-    local hyperlink = frame.hyperlink or (lootItem and lootItem.hyperlink)
-    if hyperlink then
-        local quality = C_Item.GetItemQualityByID(hyperlink)
-        if quality and quality >= 1 then
-            local r, g, b = GetItemQualityColor(quality)
-            qualityColor = { r = r, g = g, b = b }
-        end
-    end
+    local qualityColor = GetQualityColor(frame.hyperlink or (lootItem and lootItem.hyperlink))
 
     StyleIcon(lootItem.Icon, frame, qualityColor)
 
     -- Create backdrop anchored to icon
-    local iconBorder = SkinBase.GetFrameData(lootItem.Icon, "border")
-    if not SkinBase.GetFrameData(frame, "backdrop") and iconBorder then
-        local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
-
-        local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-        backdrop:SetFrameLevel(frame:GetFrameLevel())
-        backdrop:SetPoint("TOPLEFT", iconBorder, "TOPLEFT", -4, 4)
-        backdrop:SetPoint("BOTTOMRIGHT", iconBorder, "BOTTOMRIGHT", 180, -4)
-        SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
-        Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
-        Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
-        SkinBase.SetFrameData(frame, "backdrop", backdrop)
-    end
+    CreateIconAnchoredBackdrop(frame, SkinBase.GetFrameData(lootItem.Icon, "border"), 4)
 
     SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
@@ -334,32 +336,12 @@ local function SkinLootUpgradeAlert(frame)
     frame.Icon:SetDrawLayer("BORDER", 5)
 
     -- Get quality color from item link
-    local qualityColor = nil
-    local hyperlink = frame.hyperlink
-    if hyperlink then
-        local quality = C_Item.GetItemQualityByID(hyperlink)
-        if quality and quality >= 1 then
-            local r, g, b = GetItemQualityColor(quality)
-            qualityColor = { r = r, g = g, b = b }
-        end
-    end
+    local qualityColor = GetQualityColor(frame.hyperlink)
 
     CreateIconBorder(frame.Icon, frame, qualityColor)
 
     -- Create backdrop
-    local iconBorder = SkinBase.GetFrameData(frame.Icon, "border")
-    if not SkinBase.GetFrameData(frame, "backdrop") and iconBorder then
-        local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
-
-        local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-        backdrop:SetFrameLevel(frame:GetFrameLevel())
-        backdrop:SetPoint("TOPLEFT", iconBorder, "TOPLEFT", -8, 8)
-        backdrop:SetPoint("BOTTOMRIGHT", iconBorder, "BOTTOMRIGHT", 180, -8)
-        SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
-        Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
-        Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
-        SkinBase.SetFrameData(frame, "backdrop", backdrop)
-    end
+    CreateIconAnchoredBackdrop(frame, SkinBase.GetFrameData(frame.Icon, "border"), 8)
 
     SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
@@ -411,19 +393,7 @@ local function SkinHonorAwardedAlert(frame)
 
     StyleIcon(frame.Icon, frame)
 
-    local iconBorder = SkinBase.GetFrameData(frame.Icon, "border")
-    if not SkinBase.GetFrameData(frame, "backdrop") and iconBorder then
-        local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
-
-        local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-        backdrop:SetFrameLevel(frame:GetFrameLevel())
-        backdrop:SetPoint("TOPLEFT", iconBorder, "TOPLEFT", -4, 4)
-        backdrop:SetPoint("BOTTOMRIGHT", iconBorder, "BOTTOMRIGHT", 180, -4)
-        SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
-        Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
-        Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
-        SkinBase.SetFrameData(frame, "backdrop", backdrop)
-    end
+    CreateIconAnchoredBackdrop(frame, SkinBase.GetFrameData(frame.Icon, "border"), 4)
 
     SkinBase.SkinFrameText(frame, { recurse = true })
     SkinBase.MarkSkinned(frame)
@@ -460,7 +430,7 @@ local function SkinNewRecipeLearnedAlert(frame)
         frame.Icon:ClearAllPoints()
         frame.Icon:SetPoint("LEFT", SkinBase.GetFrameData(frame, "backdrop"), 9, 0)
 
-        local border = CreateIconBorder(frame.Icon, frame)
+        CreateIconBorder(frame.Icon, frame)
     end
 
     SkinBase.SkinFrameText(frame, { recurse = true })
@@ -628,24 +598,15 @@ local function SkinLegendaryItemAlert(frame, itemLink)
     SkinBase.MarkSkinned(frame)
 end
 
---- Get quality color for misc alerts (mounts, toys, pets)
---- Returns nil to use the user's skin accent color
-local function GetMiscAlertQuality(frame)
-    -- Just use the user's skin accent color for mounts/toys/pets
-    -- Quality detection is unreliable, accent color is cleaner and consistent
-    return nil
-end
-
 --- Skin Misc Alerts (Pets, Mounts, Toys, Cosmetics, Warband)
 local function SkinMiscAlert(frame)
     if not frame then return end
 
-    -- Always update quality color (frames are pooled and reused)
-    local qualityColor = nil
+    -- Misc alerts (mounts/toys/pets) use the user's skin accent color: quality
+    -- detection is unreliable, accent color is cleaner and consistent (nil border).
     if frame.Icon then
-        qualityColor = GetMiscAlertQuality(frame)
         -- Update existing border color or create new one
-        CreateIconBorder(frame.Icon, frame, qualityColor)
+        CreateIconBorder(frame.Icon, frame, nil)
     end
 
     -- Skip structural changes if already skinned (pooled frame)
@@ -665,20 +626,7 @@ local function SkinMiscAlert(frame)
         frame.Icon:SetTexCoord(unpack(ICON_TEX_COORDS))
         frame.Icon:SetDrawLayer("BORDER", 5)
 
-        local border = SkinBase.GetFrameData(frame.Icon, "border")
-
-        if not SkinBase.GetFrameData(frame, "backdrop") then
-            local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
-
-            local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-            backdrop:SetFrameLevel(frame:GetFrameLevel())
-            backdrop:SetPoint("TOPLEFT", border, "TOPLEFT", -8, 8)
-            backdrop:SetPoint("BOTTOMRIGHT", border, "BOTTOMRIGHT", 180, -8)
-            SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
-            Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
-            Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
-            SkinBase.SetFrameData(frame, "backdrop", backdrop)
-        end
+        CreateIconAnchoredBackdrop(frame, SkinBase.GetFrameData(frame.Icon, "border"), 8)
     end
 
     SkinBase.SkinFrameText(frame, { recurse = true })
@@ -1435,9 +1383,11 @@ function Alerts:HookAlertSystems()
     -- Alert system setUpFunction fires from Blizzard's internal alert pool, which can propagate taint.
     local function DeferredHook(system, skinFunc)
         if system then
-            hooksecurefunc(system, "setUpFunction", function(frame)
+            hooksecurefunc(system, "setUpFunction", function(frame, ...)
+                local args = { ... }
+                local n = select("#", ...)
                 C_Timer.After(0, function()
-                    skinFunc(frame)
+                    skinFunc(frame, unpack(args, 1, n))
                 end)
             end)
         end

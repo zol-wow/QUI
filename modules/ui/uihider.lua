@@ -174,6 +174,13 @@ local function ShouldHideInCurrentInstance(instanceTypes)
     return false
 end
 
+-- Whether the objective tracker should be hidden for the given settings table:
+-- either always-hidden, or hidden for the current instance type.
+local function ShouldHideObjectiveTracker(s)
+    return s.hideObjectiveTrackerAlways
+        or ShouldHideInCurrentInstance(s.hideObjectiveTrackerInstanceTypes)
+end
+
 -- Apply hide/show commands based on saved settings
 local function ApplyHideSettings()
     local settings = GetSettings()
@@ -198,15 +205,7 @@ local function ApplyHideSettings()
 
     -- Objective Tracker (Quest Tracker)
     if ObjectiveTrackerFrame then
-        local shouldHide = false
-
-        -- Check if should hide always
-        if settings.hideObjectiveTrackerAlways then
-            shouldHide = true
-        -- Check if should hide in specific instance types
-        elseif ShouldHideInCurrentInstance(settings.hideObjectiveTrackerInstanceTypes) then
-            shouldHide = true
-        end
+        local shouldHide = ShouldHideObjectiveTracker(settings)
 
         if shouldHide then
             if InCombatLockdown() then
@@ -231,13 +230,7 @@ local function ApplyHideSettings()
                     -- to 0 right away ensures the player never sees the flash.
                     local s = GetSettings()
                     if s then
-                        local shouldHideNow = false
-                        if s.hideObjectiveTrackerAlways then
-                            shouldHideNow = true
-                        elseif ShouldHideInCurrentInstance(s.hideObjectiveTrackerInstanceTypes) then
-                            shouldHideNow = true
-                        end
-                        if shouldHideNow then
+                        if ShouldHideObjectiveTracker(s) then
                             self:SetAlpha(0)
                         end
                     end
@@ -247,15 +240,8 @@ local function ApplyHideSettings()
                         if IsInEditMode() then return end
                         local s2 = GetSettings()
                         if s2 then
-                            local shouldHideNow = false
-                            if s2.hideObjectiveTrackerAlways then
-                                shouldHideNow = true
-                            elseif ShouldHideInCurrentInstance(s2.hideObjectiveTrackerInstanceTypes) then
-                                shouldHideNow = true
-                            end
-
-                            if shouldHideNow then
-                                if type(InCombatLockdown) == "function" and InCombatLockdown() then
+                            if ShouldHideObjectiveTracker(s2) then
+                                if InCombatLockdown() then
                                     pendingObjectiveTrackerHide = true
                                     return
                                 end
@@ -270,7 +256,7 @@ local function ApplyHideSettings()
             end
         else
             pendingObjectiveTrackerHide = false
-            if not (type(InCombatLockdown) == "function" and InCombatLockdown()) then
+            if not InCombatLockdown() then
                 ObjectiveTrackerFrame:SetAlpha(1)  -- Restore alpha in case it was zeroed
                 ObjectiveTrackerFrame:Show()
                 ObjectiveTrackerFrame:EnableMouse(true)  -- Restore mouse when shown
@@ -356,11 +342,11 @@ local function ApplyHideSettings()
     -- Minimap Zone Text
     if MinimapZoneText then
         if settings.hideMinimapZoneText then
-        MinimapZoneText:Hide()
+            MinimapZoneText:Hide()
         else
             MinimapZoneText:Show()
+        end
     end
-end
 
     -- Mail Icon is now controlled by Minimap module (showMail setting)
 
@@ -426,40 +412,32 @@ end
         local thState = hookedSecureFrames[TalkingHeadFrame]
         if not thState then thState = {}; hookedSecureFrames[TalkingHeadFrame] = thState end
 
-        -- Helper to disable mouse on TalkingHeadFrame and children
-        local function DisableTalkingHeadMouse()
-            TalkingHeadFrame:EnableMouse(false)
-            local childrenToDisable = {
-                "MainFrame",
-                "PortraitFrame",
-                "BackgroundFrame",
-                "TextFrame",
-                "NameFrame",
-            }
-            for _, childName in ipairs(childrenToDisable) do
+        -- Child sub-frames whose mouse state mirrors the parent's.
+        local talkingHeadChildren = {
+            "MainFrame",
+            "PortraitFrame",
+            "BackgroundFrame",
+            "TextFrame",
+            "NameFrame",
+        }
+        local function SetTalkingHeadMouse(enable)
+            TalkingHeadFrame:EnableMouse(enable)
+            for _, childName in ipairs(talkingHeadChildren) do
                 local child = TalkingHeadFrame[childName]
                 if child and child.EnableMouse then
-                    child:EnableMouse(false)
+                    child:EnableMouse(enable)
                 end
             end
         end
 
+        -- Helper to disable mouse on TalkingHeadFrame and children
+        local function DisableTalkingHeadMouse()
+            SetTalkingHeadMouse(false)
+        end
+
         -- Helper to re-enable mouse when showing content
         local function EnableTalkingHeadMouse()
-            TalkingHeadFrame:EnableMouse(true)
-            local childrenToEnable = {
-                "MainFrame",
-                "PortraitFrame",
-                "BackgroundFrame",
-                "TextFrame",
-                "NameFrame",
-            }
-            for _, childName in ipairs(childrenToEnable) do
-                local child = TalkingHeadFrame[childName]
-                if child and child.EnableMouse then
-                    child:EnableMouse(true)
-                end
-            end
+            SetTalkingHeadMouse(true)
         end
 
         if settings.hideTalkingHead then
@@ -809,8 +787,7 @@ local function ShowAllHiddenForEditMode()
 
     -- ObjectiveTracker
     if ObjectiveTrackerFrame then
-        local wasHidden = settings.hideObjectiveTrackerAlways
-            or ShouldHideInCurrentInstance(settings.hideObjectiveTrackerInstanceTypes)
+        local wasHidden = ShouldHideObjectiveTracker(settings)
         if wasHidden then
             ObjectiveTrackerFrame:SetAlpha(1)
             ObjectiveTrackerFrame:Show()

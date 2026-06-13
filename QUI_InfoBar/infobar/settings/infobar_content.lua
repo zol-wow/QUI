@@ -28,10 +28,6 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
     local HEADER_GAP = 26
     local SECTION_GAP = 14
 
-    local function RegisterSharedOnly(key, provider)
-        ctx.RegisterShared(key, provider)
-    end
-
     local function MakeLayout(content)
         if U._layoutModePositionOnly then
             return U.MakeSuppressedProviderLayout(content)
@@ -121,20 +117,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         return db
     end
 
-    local function EnsureWidgetSettings(db, widgetId)
-        if not db.widgetSettings[widgetId] then
-            db.widgetSettings[widgetId] = { shortLabel = false, noLabel = false, minWidth = 0, xOffset = 0,
-                hideIcon = false, clickThrough = false }
-        end
-        local ws = db.widgetSettings[widgetId]
-        if ws.shortLabel == nil then ws.shortLabel = false end
-        if ws.noLabel == nil then ws.noLabel = false end
-        if ws.minWidth == nil then ws.minWidth = 0 end
-        if ws.xOffset == nil then ws.xOffset = 0 end
-        if ws.hideIcon == nil then ws.hideIcon = false end
-        if ws.clickThrough == nil then ws.clickThrough = false end
-        return ws
-    end
+    -- Shared with the context menu (core/infobar_shared.lua) so the seeded
+    -- defaults can never drift between the two write surfaces.
+    local EnsureWidgetSettings = ns.QUI_InfoBarShared.EnsureWidgetSettings
 
     local function GetWidgetDef(addon, widgetId)
         if addon and addon.Datatexts and type(addon.Datatexts.Get) == "function" then
@@ -212,7 +197,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
     ---------------------------------------------------------------------------
     -- INFO BAR PROVIDER
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("infobar", { build = function(content, _key, _width)
+    ctx.RegisterShared("infobar", { build = function(content, _key, _width)
         local profile = U.GetProfileDB()
         if not profile or not ns.QUI_Options then return 80 end
 

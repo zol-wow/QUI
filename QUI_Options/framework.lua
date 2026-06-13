@@ -103,6 +103,23 @@ local function RefreshCachedColors()
 end
 GUI.RefreshCachedColors = RefreshCachedColors
 
+-- Shared pill-toggle visual update (track color + knob anchor + knob-mask
+-- reposition). Used by both CreateFormToggle and CreateFormToggleInverted,
+-- which pass their own per-widget isHovered flag.
+local function ApplyToggleVisual(t, isOn, isHovered)
+    local hoverBoost = isHovered and 0.06 or 0
+    if isOn then
+        t.track:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], math.min(1, C.accent[4] + hoverBoost))
+        t.knob:ClearAllPoints()
+        t.knob:SetPoint("RIGHT", t, "RIGHT", -2, 0)
+    else
+        t.track:SetColorTexture(C.toggleOff[1], C.toggleOff[2], C.toggleOff[3], math.min(1, C.toggleOff[4] + hoverBoost))
+        t.knob:ClearAllPoints()
+        t.knob:SetPoint("LEFT", t, "LEFT", 2, 0)
+    end
+    if t._knobMask then t._knobMask:SetAllPoints(t.knob) end
+end
+
 ---------------------------------------------------------------------------
 -- TOOLTIP: per-option on-hover explanation
 -- Attaches a GameTooltip hover to any frame, gated by
@@ -2084,17 +2101,7 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
     local isHovered = false
 
     local function SetToggleVisual(t, isOn)
-        local hoverBoost = isHovered and 0.06 or 0
-        if isOn then
-            t.track:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], math.min(1, C.accent[4] + hoverBoost))
-            t.knob:ClearAllPoints()
-            t.knob:SetPoint("RIGHT", t, "RIGHT", -2, 0)
-        else
-            t.track:SetColorTexture(C.toggleOff[1], C.toggleOff[2], C.toggleOff[3], math.min(1, C.toggleOff[4] + hoverBoost))
-            t.knob:ClearAllPoints()
-            t.knob:SetPoint("LEFT", t, "LEFT", 2, 0)
-        end
-        if t._knobMask then t._knobMask:SetAllPoints(t.knob) end
+        ApplyToggleVisual(t, isOn, isHovered)
     end
 
     local function UpdateVisual(val)
@@ -2246,17 +2253,7 @@ function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange, r
     local isHovered = false
 
     local function SetToggleVisual(t, isOn)
-        local hoverBoost = isHovered and 0.06 or 0
-        if isOn then
-            t.track:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], math.min(1, C.accent[4] + hoverBoost))
-            t.knob:ClearAllPoints()
-            t.knob:SetPoint("RIGHT", t, "RIGHT", -2, 0)
-        else
-            t.track:SetColorTexture(C.toggleOff[1], C.toggleOff[2], C.toggleOff[3], math.min(1, C.toggleOff[4] + hoverBoost))
-            t.knob:ClearAllPoints()
-            t.knob:SetPoint("LEFT", t, "LEFT", 2, 0)
-        end
-        if t._knobMask then t._knobMask:SetAllPoints(t.knob) end
+        ApplyToggleVisual(t, isOn, isHovered)
     end
 
     local function UpdateVisual(isOn)
@@ -3015,12 +3012,6 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
             MaybeAutoNotifyProviderSync(container)
         end
         isDragging = false
-    end)
-
-    -- Track fills a dynamic width now (bounded by the nudge cluster on the
-    -- right). Re-render fill + thumb positions when the slider resizes.
-    slider:SetScript("OnSizeChanged", function()
-        UpdateTrackFill(GetValue())
     end)
 
     editBox:SetScript("OnEnterPressed", function(self)
@@ -7987,6 +7978,24 @@ end
 -- Walk the descendant tree under `root` and return the first frame whose
 -- stored `_widgetLabel` equals `label`. Falls back to matching FontString
 -- child text as a last resort.
+-- Shared depth-first frame-tree walk. `matchSelf(node)` returns the match
+-- node (or nil) for the node itself; children are recursed uniformly. Used
+-- by the three search helpers below, which differ only in their predicate.
+local function FindInFrameTree(root, matchSelf)
+    if not root then return nil end
+    local self = matchSelf(root)
+    if self then return self end
+    local n = root.GetNumChildren and root:GetNumChildren() or 0
+    for i = 1, n do
+        local child = select(i, root:GetChildren())
+        if child then
+            local match = FindInFrameTree(child, matchSelf)
+            if match then return match end
+        end
+    end
+    return nil
+end
+
 function GUI:_findWidgetByLabel(root, label)
     if not root or not label then return nil end
     if root._widgetLabel == label then return root end
@@ -8012,24 +8021,13 @@ function GUI:_findWidgetByPinnedPath(root, path)
     if not root or type(path) ~= "string" or path == "" then
         return nil
     end
-
-    local binding = root._quiPinBinding
-    if type(binding) == "table" and binding.path == path then
-        return root
-    end
-
-    local n = root.GetNumChildren and root:GetNumChildren() or 0
-    for i = 1, n do
-        local child = select(i, root:GetChildren())
-        if child then
-            local match = GUI:_findWidgetByPinnedPath(child, path)
-            if match then
-                return match
-            end
+    return FindInFrameTree(root, function(node)
+        local binding = node._quiPinBinding
+        if type(binding) == "table" and binding.path == path then
+            return node
         end
-    end
-
-    return nil
+        return nil
+    end)
 end
 
 function GUI:_findAncestorScroll(frame)
@@ -8048,18 +8046,12 @@ function GUI:_findSectionByFeatureId(root, featureId)
     if not root or type(featureId) ~= "string" or featureId == "" then
         return nil
     end
-    if root._quiSearchSectionFeatureId == featureId then
-        return root
-    end
-    local n = root.GetNumChildren and root:GetNumChildren() or 0
-    for i = 1, n do
-        local child = select(i, root:GetChildren())
-        if child then
-            local match = GUI:_findSectionByFeatureId(child, featureId)
-            if match then return match end
+    return FindInFrameTree(root, function(node)
+        if node._quiSearchSectionFeatureId == featureId then
+            return node
         end
-    end
-    return nil
+        return nil
+    end)
 end
 
 --[[

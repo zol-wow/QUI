@@ -45,6 +45,29 @@ function QUI_Castbar:SetHelpers(helpers)
     Helpers = helpers or {}
 end
 
+-- Timer-driven remaining-duration text update (non-player / engine-animated bars).
+-- Reads remaining from the DurationObject and passes secret values directly to
+-- C-side SetFormattedText (no SafeToNumber needed). Caches the getter method
+-- lookup across OnUpdate ticks (same durationObj for the duration of a cast,
+-- OnUpdate runs ~60 Hz — recomputing the `or` chain each frame is wasted
+-- metatable work).
+local function UpdateTimerDrivenTimeText(self)
+    if self.timeText and self.durationObj then
+        local obj = self.durationObj
+        if self._durationGetterObj ~= obj then
+            self._durationGetter = obj.GetRemainingDuration or obj.GetRemaining
+            self._durationGetterObj = obj
+        end
+        local getter = self._durationGetter
+        if getter then
+            local ok, rem = pcall(getter, obj)
+            if ok and rem ~= nil then
+                self.timeText:SetFormattedText("%.1f", rem)
+            end
+        end
+    end
+end
+
 -- Helper function wrappers (with fallbacks)
 local function GetUnitSettings(unit)
     return Helpers.GetUnitSettings and Helpers.GetUnitSettings(unit) or nil
@@ -231,6 +254,12 @@ local function UpdateThrottledText(castbar, elapsed, text, value)
     return false
 end
 
+-- Default colors (declared before InitializeDefaultSettings, which references
+-- DEFAULT_BAR_COLOR at lines ~246-251; a later `local` would bind those to a nil global).
+local DEFAULT_BAR_COLOR = {1, 0.7, 0, 1}
+local DEFAULT_BG_COLOR = {0.149, 0.149, 0.149, 1}
+local NOT_INTERRUPTIBLE_COLOR = {0.7, 0.2, 0.2, 1}
+
 local function InitializeDefaultSettings(castSettings, unitKey)
     EnsureDefaults(castSettings, {
         iconAnchor = "LEFT",
@@ -346,10 +375,6 @@ end
 ---------------------------------------------------------------------------
 -- COLOR HELPERS
 ---------------------------------------------------------------------------
--- Default colors
-local DEFAULT_BAR_COLOR = {1, 0.7, 0, 1}
-local DEFAULT_BG_COLOR = {0.149, 0.149, 0.149, 1}
-local NOT_INTERRUPTIBLE_COLOR = {0.7, 0.2, 0.2, 1}
 
 -- Safe color getter - returns valid color table or fallback
 local function GetSafeColor(color, fallback)
@@ -2278,6 +2303,19 @@ local function HandleNoCast(castbar, castSettings, isPlayer, onUpdateHandler)
     end)
 end
 
+-- Shared cast-end teardown: clears empowered/channel-tick state, drops the
+-- timer-driven animation, hides the bar, and applies any deferred refresh.
+-- Callers run their own (differing) early-return guards before invoking this.
+local function CastbarTeardown(self, isPlayer)
+    if isPlayer then ClearEmpoweredState(self) end
+    ClearChannelTickState(self)
+    self.timerDriven = false
+    self.durationObj = nil
+    self:SetScript("OnUpdate", nil)
+    SetCastbarFrameVisible(self, false)
+    TryApplyDeferredCastbarRefresh(self)
+end
+
 local function GetGCDCooldownInfo()
     if not (C_Spell and C_Spell.GetSpellCooldown) then
         return nil, nil
@@ -2468,25 +2506,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                 -- Engine is driving the animation via SetTimerDuration
                 -- Read remaining from the DurationObject and pass secret values
                 -- directly to C-side SetFormattedText (no SafeToNumber needed).
-
-                if self.timeText and self.durationObj then
-                    -- Cache the getter method lookup across OnUpdate ticks
-                    -- (same durationObj for the duration of a cast, OnUpdate
-                    -- runs ~60 Hz — recomputing the `or` chain each frame is
-                    -- wasted metatable work).
-                    local obj = self.durationObj
-                    if self._durationGetterObj ~= obj then
-                        self._durationGetter = obj.GetRemainingDuration or obj.GetRemaining
-                        self._durationGetterObj = obj
-                    end
-                    local getter = self._durationGetter
-                    if getter then
-                        local ok, rem = pcall(getter, obj)
-                        if ok and rem ~= nil then
-                            self.timeText:SetFormattedText("%.1f", rem)
-                        end
-                    end
-                end
+                UpdateTimerDrivenTimeText(self)
 
                 if self.channelTickPositions then
                     self.channelTickLayoutThrottle = (self.channelTickLayoutThrottle or 0) + elapsed
@@ -2803,25 +2823,13 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             if self.isGCD and not UnitCastingInfo(self.unit) and not UnitChannelInfo(self.unit) then
                 return
             end
-            if isPlayer then ClearEmpoweredState(self) end
-            ClearChannelTickState(self)
-            self.timerDriven = false
-            self.durationObj = nil
-            self:SetScript("OnUpdate", nil)
-            SetCastbarFrameVisible(self, false)
-            TryApplyDeferredCastbarRefresh(self)
+            CastbarTeardown(self, isPlayer)
         end,
         UNIT_SPELLCAST_CHANNEL_STOP = function(self, spellID)
             if self.isGCD and not UnitCastingInfo(self.unit) and not UnitChannelInfo(self.unit) then
                 return
             end
-            if isPlayer then ClearEmpoweredState(self) end
-            ClearChannelTickState(self)
-            self.timerDriven = false
-            self.durationObj = nil
-            self:SetScript("OnUpdate", nil)
-            SetCastbarFrameVisible(self, false)
-            TryApplyDeferredCastbarRefresh(self)
+            CastbarTeardown(self, isPlayer)
         end,
         UNIT_SPELLCAST_FAILED = function(self, spellID)
             -- Don't hide if a channel is still active (e.g., pressing spell key again during channel)
@@ -2831,25 +2839,13 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             if self.isGCD then
                 return
             end
-            if isPlayer then ClearEmpoweredState(self) end
-            ClearChannelTickState(self)
-            self.timerDriven = false
-            self.durationObj = nil
-            self:SetScript("OnUpdate", nil)
-            SetCastbarFrameVisible(self, false)
-            TryApplyDeferredCastbarRefresh(self)
+            CastbarTeardown(self, isPlayer)
         end,
         UNIT_SPELLCAST_INTERRUPTED = function(self, spellID)
             if self.isGCD and not UnitCastingInfo(self.unit) and not UnitChannelInfo(self.unit) then
                 return
             end
-            if isPlayer then ClearEmpoweredState(self) end
-            ClearChannelTickState(self)
-            self.timerDriven = false
-            self.durationObj = nil
-            self:SetScript("OnUpdate", nil)
-            SetCastbarFrameVisible(self, false)
-            TryApplyDeferredCastbarRefresh(self)
+            CastbarTeardown(self, isPlayer)
         end,
 
         -- Interruptible state changes
@@ -3058,24 +3054,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
         if spellName or channelName then
             -- Timer-driven mode: engine animates the bar, we just update time text
             if self.timerDriven then
-                if self.timeText and self.durationObj then
-                    -- Cache the getter method lookup across OnUpdate ticks
-                    -- (same durationObj for the duration of a cast, OnUpdate
-                    -- runs ~60 Hz — recomputing the `or` chain each frame is
-                    -- wasted metatable work).
-                    local obj = self.durationObj
-                    if self._durationGetterObj ~= obj then
-                        self._durationGetter = obj.GetRemainingDuration or obj.GetRemaining
-                        self._durationGetterObj = obj
-                    end
-                    local getter = self._durationGetter
-                    if getter then
-                        local ok, rem = pcall(getter, obj)
-                        if ok and rem ~= nil then
-                            self.timeText:SetFormattedText("%.1f", rem)
-                        end
-                    end
-                end
+                UpdateTimerDrivenTimeText(self)
                 return
             end
 

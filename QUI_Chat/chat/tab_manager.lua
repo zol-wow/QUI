@@ -239,7 +239,9 @@ end
 local displayOrderRef
 function TabManager.OnWindowDeleted(windowID)
     windowID = tonumber(windowID) or 0
-    table.remove(activeFilters, windowID)
+    if windowID >= 1 then
+        table.remove(activeFilters, windowID)
+    end
     if displayOrderRef and windowID >= 1 then
         -- Sparse map (a window may never have been rebuilt): shift manually.
         local maxID = 0

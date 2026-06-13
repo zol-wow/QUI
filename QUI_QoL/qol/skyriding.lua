@@ -11,7 +11,6 @@ local LSM = ns.LSM
 local Helpers = ns.Helpers
 local ApplyCooldownFromSpell = Helpers.ApplyCooldownFromSpell
 local IsSecretValue = Helpers.IsSecretValue
-local SafeValue = Helpers.SafeValue
 
 -- Constants
 local VIGOR_SPELL_ID = 372608
@@ -38,10 +37,8 @@ local abilityIcon, abilityIconCooldown
 local lastVigorCharges = -1
 local lastMaxCharges = -1
 local lastSecondWind = -1
-local lastSecondWindMax = -1
 local isGliding = false
 local canGlide = false
-local forwardSpeed = 0
 local groundedTime = 0
 local fadeStart = 0
 local fadeStartAlpha = 1
@@ -273,8 +270,6 @@ local function GetRechargeOverlayColor(settings)
     local color = settings.rechargeColor or {0.4, 0.9, 1.0, 1}
     return color[1], color[2], color[3], color[4] or 0.6
 end
-
-local GetFontPath = Helpers.GetGeneralFont
 
 ---------------------------------------------------------------------------
 -- Cooldown Font Helper
@@ -549,6 +544,33 @@ local function CreateSkyridingFrame()
 end
 
 ---------------------------------------------------------------------------
+-- Shared segment-marker placement (vigor + Second Wind use identical math).
+-- markers: array of marker textures; totalSlots: how many to iterate/hide.
+-- segmentCount: number of charges (boundaries drawn for i < segmentCount).
+-- ctx carries the precomputed pixel metrics and resolved marker color.
+---------------------------------------------------------------------------
+local function PlaceSegmentMarkers(markers, totalSlots, segmentCount, showSegments, ctx)
+    for i = 1, totalSlots do
+        local marker = markers[i]
+        if showSegments and i < segmentCount then
+            local boundaryPixel = GetSegmentBoundaryPixel(ctx.barWidthPixels, segmentCount, i)
+            local markerLeftPixel = boundaryPixel - ctx.halfMarkerWidthPixels
+            markerLeftPixel = math.max(0, math.min(ctx.barWidthPixels - ctx.markerWidthPixels, markerLeftPixel))
+
+            marker:ClearAllPoints()
+            local snappedX = QUICore:PixelRound(markerLeftPixel * ctx.pixelSize, ctx.pixelContext)
+            marker:SetPoint("TOPLEFT", ctx.markerFrame, "TOPLEFT", snappedX, 0)
+            marker:SetPoint("BOTTOMLEFT", ctx.markerFrame, "BOTTOMLEFT", snappedX, 0)
+            marker:SetWidth(QUICore:Pixels(ctx.markerWidthPixels, ctx.pixelContext))
+            marker:SetVertexColor(ctx.markerR, ctx.markerG, ctx.markerB, ctx.markerA)
+            marker:Show()
+        else
+            marker:Hide()
+        end
+    end
+end
+
+---------------------------------------------------------------------------
 -- Update Segment Markers
 ---------------------------------------------------------------------------
 local function UpdateSegmentMarkers(maxCharges)
@@ -573,24 +595,15 @@ local function UpdateSegmentMarkers(maxCharges)
     }
     local markerR, markerG, markerB, markerA = GetSegmentMarkerColor(settings, softColor)
 
-    for i = 1, 10 do
-        local marker = segmentMarkers[i]
-        if showSegments and i < maxCharges then
-            local boundaryPixel = GetSegmentBoundaryPixel(barWidthPixels, maxCharges, i)
-            local markerLeftPixel = boundaryPixel - halfMarkerWidthPixels
-            markerLeftPixel = math.max(0, math.min(barWidthPixels - markerWidthPixels, markerLeftPixel))
-
-            marker:ClearAllPoints()
-            local snappedX = QUICore:PixelRound(markerLeftPixel * pixelSize, pixelContext)
-            marker:SetPoint("TOPLEFT", markerFrame, "TOPLEFT", snappedX, 0)
-            marker:SetPoint("BOTTOMLEFT", markerFrame, "BOTTOMLEFT", snappedX, 0)
-            marker:SetWidth(QUICore:Pixels(markerWidthPixels, pixelContext))
-            marker:SetVertexColor(markerR, markerG, markerB, markerA)
-            marker:Show()
-        else
-            marker:Hide()
-        end
-    end
+    PlaceSegmentMarkers(segmentMarkers, 10, maxCharges, showSegments, {
+        markerFrame = markerFrame,
+        pixelContext = pixelContext,
+        pixelSize = pixelSize,
+        barWidthPixels = barWidthPixels,
+        markerWidthPixels = markerWidthPixels,
+        halfMarkerWidthPixels = halfMarkerWidthPixels,
+        markerR = markerR, markerG = markerG, markerB = markerB, markerA = markerA,
+    })
 
 end
 
@@ -717,24 +730,15 @@ local function UpdateSecondWind()
         }
         local markerR, markerG, markerB, markerA = GetSegmentMarkerColor(settings, softColor)
 
-        for i = 1, 5 do
-            local marker = swSegmentMarkers[i]
-            if i < max then
-                local boundaryPixel = GetSegmentBoundaryPixel(barWidthPixels, max, i)
-                local markerLeftPixel = boundaryPixel - halfMarkerWidthPixels
-                markerLeftPixel = math.max(0, math.min(barWidthPixels - markerWidthPixels, markerLeftPixel))
-
-                marker:ClearAllPoints()
-                local snappedX = QUICore:PixelRound(markerLeftPixel * pixelSize, pixelContext)
-                marker:SetPoint("TOPLEFT", markerFrame, "TOPLEFT", snappedX, 0)
-                marker:SetPoint("BOTTOMLEFT", markerFrame, "BOTTOMLEFT", snappedX, 0)
-                marker:SetWidth(QUICore:Pixels(markerWidthPixels, pixelContext))
-                marker:SetVertexColor(markerR, markerG, markerB, markerA)
-                marker:Show()
-            else
-                marker:Hide()
-            end
-        end
+        PlaceSegmentMarkers(swSegmentMarkers, 5, max, true, {
+            markerFrame = markerFrame,
+            pixelContext = pixelContext,
+            pixelSize = pixelSize,
+            barWidthPixels = barWidthPixels,
+            markerWidthPixels = markerWidthPixels,
+            halfMarkerWidthPixels = halfMarkerWidthPixels,
+            markerR = markerR, markerG = markerG, markerB = markerB, markerA = markerA,
+        })
 
     end
     -- mode == "HIDDEN" does nothing (all hidden)
@@ -919,7 +923,6 @@ local function UpdateSpeed(settings)
 
     local gliding, _, speed = GetGlidingInfo()
     local displaySpeed = ResolveDisplaySpeed(gliding, speed, QueryCurrentUnitSpeed)
-    forwardSpeed = displaySpeed or 0
 
     local format = settings.speedFormat or "PERCENT"
     local speedString = FormatSpeedText(displaySpeed, format)

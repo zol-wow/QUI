@@ -19,8 +19,6 @@ local pairs = pairs
 local ipairs = ipairs
 local pcall = pcall
 local wipe = wipe
-local sort = table.sort
-local tremove = table.remove
 local CreateFrame = CreateFrame
 local GetTime = GetTime
 local InCombatLockdown = InCombatLockdown
@@ -197,10 +195,6 @@ end
 -- Weapon enchant cached total duration per slot
 local enchantCachedDuration = {}
 
--- Sorted icon lists (kept as empty tables for legacy references)
-local buffSortedIcons = {}
-local debuffSortedIcons = {}
-
 -- Containers (created in Init)
 local buffContainer = nil
 local debuffContainer = nil
@@ -352,6 +346,21 @@ local function ClearStaleHeaderAuraChildMapEntries(header, firstIndex)
     end
 end
 
+-- Paint the four edge textures a solid color and set top/bottom height +
+-- left/right width to the border thickness. Shared by StyleIcon and
+-- StyleSlotBorders, which apply identical color+size to their edges.
+local function ApplyBorderColorAndSize(frame, r, g, b, borderSizePx)
+    frame.BorderTop:SetColorTexture(r, g, b, 1)
+    frame.BorderBottom:SetColorTexture(r, g, b, 1)
+    frame.BorderLeft:SetColorTexture(r, g, b, 1)
+    frame.BorderRight:SetColorTexture(r, g, b, 1)
+
+    frame.BorderTop:SetHeight(borderSizePx)
+    frame.BorderBottom:SetHeight(borderSizePx)
+    frame.BorderLeft:SetWidth(borderSizePx)
+    frame.BorderRight:SetWidth(borderSizePx)
+end
+
 local function StyleIcon(icon, settings, isBuff, debuffType)
     if not icon or not settings then return end
 
@@ -367,15 +376,7 @@ local function StyleIcon(icon, settings, isBuff, debuffType)
         r, g, b = colors[1], colors[2], colors[3]
     end
 
-    icon.BorderTop:SetColorTexture(r, g, b, 1)
-    icon.BorderBottom:SetColorTexture(r, g, b, 1)
-    icon.BorderLeft:SetColorTexture(r, g, b, 1)
-    icon.BorderRight:SetColorTexture(r, g, b, 1)
-
-    icon.BorderTop:SetHeight(borderSizePx)
-    icon.BorderBottom:SetHeight(borderSizePx)
-    icon.BorderLeft:SetWidth(borderSizePx)
-    icon.BorderRight:SetWidth(borderSizePx)
+    ApplyBorderColorAndSize(icon, r, g, b, borderSizePx)
 
     local showBorders
     if isBuff then
@@ -703,8 +704,6 @@ local function StyleHeaderChildren(header, settings, isBuff)
         local auraInstanceID = data.auraInstanceID
         child._auraInstanceID = auraInstanceID
         child._spellId = data.spellId
-        child._filter = filter
-        child._quiHeaderSlot = i
         SetAuraChildMapEntry(child, auraChildMap, auraInstanceID)
 
         -- Buff cancellation (type=cancelaura) is declared securely via the
@@ -1135,21 +1134,28 @@ local function ClearPrivateAuraAnchors()
     end
 end
 
+-- Create the four edge textures (OVERLAY sublevel 7) and anchor each to the
+-- frame's own corners. Shared by EnsureSlotBorders and the preview grid; both
+-- want borders flush to their parent frame with no offset.
+local function CreateBorderEdges(frame)
+    frame.BorderTop = frame:CreateTexture(nil, "OVERLAY", nil, 7)
+    frame.BorderBottom = frame:CreateTexture(nil, "OVERLAY", nil, 7)
+    frame.BorderLeft = frame:CreateTexture(nil, "OVERLAY", nil, 7)
+    frame.BorderRight = frame:CreateTexture(nil, "OVERLAY", nil, 7)
+
+    frame.BorderTop:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    frame.BorderTop:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    frame.BorderBottom:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+    frame.BorderBottom:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+    frame.BorderLeft:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    frame.BorderLeft:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+    frame.BorderRight:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+    frame.BorderRight:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+end
+
 local function EnsureSlotBorders(slot)
     if slot.BorderTop then return end
-    slot.BorderTop = slot:CreateTexture(nil, "OVERLAY", nil, 7)
-    slot.BorderBottom = slot:CreateTexture(nil, "OVERLAY", nil, 7)
-    slot.BorderLeft = slot:CreateTexture(nil, "OVERLAY", nil, 7)
-    slot.BorderRight = slot:CreateTexture(nil, "OVERLAY", nil, 7)
-
-    slot.BorderTop:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, 0)
-    slot.BorderTop:SetPoint("TOPRIGHT", slot, "TOPRIGHT", 0, 0)
-    slot.BorderBottom:SetPoint("BOTTOMLEFT", slot, "BOTTOMLEFT", 0, 0)
-    slot.BorderBottom:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT", 0, 0)
-    slot.BorderLeft:SetPoint("TOPLEFT", slot, "TOPLEFT", 0, 0)
-    slot.BorderLeft:SetPoint("BOTTOMLEFT", slot, "BOTTOMLEFT", 0, 0)
-    slot.BorderRight:SetPoint("TOPRIGHT", slot, "TOPRIGHT", 0, 0)
-    slot.BorderRight:SetPoint("BOTTOMRIGHT", slot, "BOTTOMRIGHT", 0, 0)
+    CreateBorderEdges(slot)
 end
 
 local function IsForbiddenObject(object)
@@ -1185,15 +1191,7 @@ local function StyleSlotBorders(slot, settings)
     local borderSizePx = GetBorderSizePx(slot, settings)
     local r, g, b = BORDER_COLOR_DEBUFF_DEFAULT[1], BORDER_COLOR_DEBUFF_DEFAULT[2], BORDER_COLOR_DEBUFF_DEFAULT[3]
 
-    slot.BorderTop:SetColorTexture(r, g, b, 1)
-    slot.BorderBottom:SetColorTexture(r, g, b, 1)
-    slot.BorderLeft:SetColorTexture(r, g, b, 1)
-    slot.BorderRight:SetColorTexture(r, g, b, 1)
-
-    slot.BorderTop:SetHeight(borderSizePx)
-    slot.BorderBottom:SetHeight(borderSizePx)
-    slot.BorderLeft:SetWidth(borderSizePx)
-    slot.BorderRight:SetWidth(borderSizePx)
+    ApplyBorderColorAndSize(slot, r, g, b, borderSizePx)
 
     -- Only show borders when the client has rendered a visible aura child
     -- and the user has borders enabled for debuffs.
@@ -1507,14 +1505,7 @@ local function CreatePreviewGrid(parent, textures, debuffTypes, settings, prefix
         tex:SetTexture(textures[((i - 1) % #textures) + 1])
         icon.Icon = tex
 
-        icon.BorderTop = icon:CreateTexture(nil, "OVERLAY", nil, 7)
-        icon.BorderBottom = icon:CreateTexture(nil, "OVERLAY", nil, 7)
-        icon.BorderLeft = icon:CreateTexture(nil, "OVERLAY", nil, 7)
-        icon.BorderRight = icon:CreateTexture(nil, "OVERLAY", nil, 7)
-        icon.BorderTop:SetPoint("TOPLEFT") icon.BorderTop:SetPoint("TOPRIGHT")
-        icon.BorderBottom:SetPoint("BOTTOMLEFT") icon.BorderBottom:SetPoint("BOTTOMRIGHT")
-        icon.BorderLeft:SetPoint("TOPLEFT") icon.BorderLeft:SetPoint("BOTTOMLEFT")
-        icon.BorderRight:SetPoint("TOPRIGHT") icon.BorderRight:SetPoint("BOTTOMRIGHT")
+        CreateBorderEdges(icon)
 
         icon.Stacks = icon:CreateFontString(nil, "OVERLAY")
         icon.Stacks:SetFont(GetGeneralFont(), 10, GetGeneralFontOutline())

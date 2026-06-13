@@ -5,7 +5,10 @@ ns.QUI_UnitFramesSettingsModel = Model
 local ModelKit = ns.Settings and ns.Settings.ModelKit
 
 local UNIT_ORDER = { "player", "target", "focus", "targettarget", "pet", "boss" }
-local UNIT_LABELS = {
+-- Shared unit -> display-name map (single source of truth lives in
+-- unit_frames_schema.lua, which loads first). Fall back to a local copy so the
+-- model still works if loaded without the schema present.
+local UNIT_LABELS = ns.QUI_UnitFramesUnitDisplayNames or {
     player = "Player",
     target = "Target",
     focus = "Focus",

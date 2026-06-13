@@ -7,6 +7,11 @@ local SurfaceFeatures = Settings.SurfaceFeatures or {}
 Settings.SurfaceFeatures = SurfaceFeatures
 
 local function CopyTable(source)
+    local shallowCopy = Settings.Util and Settings.Util.ShallowCopy
+    if shallowCopy then
+        return shallowCopy(source)
+    end
+
     local copy = {}
     if type(source) ~= "table" then
         return copy
@@ -31,10 +36,6 @@ local function ResolveSurface(spec)
 end
 
 local function ResolvePreview(spec)
-    if type(spec.preview) == "table" then
-        return spec.preview
-    end
-
     local build = function(host)
         local surface = ResolveSurface(spec)
         local preview = surface and surface.preview

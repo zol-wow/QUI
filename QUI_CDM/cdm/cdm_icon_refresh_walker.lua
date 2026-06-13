@@ -31,6 +31,55 @@ local function isAuraContainerType(containerType)
     return containerType == "aura" or containerType == "auraBar"
 end
 
+-- Per-icon cooldown-only processing shared by RefreshCooldownOnly (all pools)
+-- and RefreshRuntimeType (one pool). Resolves the icon's container, skips aura
+-- containers, then runs the cooldown refresh + visibility callbacks. Returns
+-- true when the icon was refreshed so the caller can bump its counter.
+local function processCooldownOnlyIcon(callbacks, icon, context, measure)
+    local entry = icon and icon._spellEntry
+    if not entry then return false end
+
+    local containerDB, containerType
+    if callbacks.resolveContainerDBAndType then
+        if measure then
+            containerDB, containerType = measure(
+                "CDM_walkResolve",
+                callbacks.resolveContainerDBAndType,
+                entry,
+                context.ncdm,
+                context.ncdmContainers)
+        else
+            containerDB, containerType = callbacks.resolveContainerDBAndType(
+                entry, context.ncdm, context.ncdmContainers)
+        end
+    end
+    if isAuraContainerType(containerType) then return false end
+
+    if callbacks.refreshCooldownOnlyIcon then
+        if measure then
+            measure("CDM_walkCooldownIcon", callbacks.refreshCooldownOnlyIcon, icon, entry, context)
+        else
+            callbacks.refreshCooldownOnlyIcon(icon, entry, context)
+        end
+    end
+    if callbacks.updateIconVisibility then
+        if measure then
+            measure(
+                "CDM_walkVisibility",
+                callbacks.updateIconVisibility,
+                icon,
+                entry,
+                containerDB,
+                context.editMode,
+                context.inCombat)
+        else
+            callbacks.updateIconVisibility(
+                icon, entry, containerDB, context.editMode, context.inCombat)
+        end
+    end
+    return true
+end
+
 function CDMIconRefreshWalker.Create(callbacks)
     callbacks = callbacks or {}
 
@@ -60,47 +109,8 @@ function CDMIconRefreshWalker.Create(callbacks)
         local measure = measureFn
         for _, pool in pairs(getIconPools(callbacks)) do
             for _, icon in ipairs(pool) do
-                local entry = icon and icon._spellEntry
-                if entry then
-                    local containerDB, containerType
-                    if callbacks.resolveContainerDBAndType then
-                        if measure then
-                            containerDB, containerType = measure(
-                                "CDM_walkResolve",
-                                callbacks.resolveContainerDBAndType,
-                                entry,
-                                context.ncdm,
-                                context.ncdmContainers)
-                        else
-                            containerDB, containerType = callbacks.resolveContainerDBAndType(
-                                entry, context.ncdm, context.ncdmContainers)
-                        end
-                    end
-                    if not isAuraContainerType(containerType) then
-                        if callbacks.refreshCooldownOnlyIcon then
-                            if measure then
-                                measure("CDM_walkCooldownIcon", callbacks.refreshCooldownOnlyIcon, icon, entry, context)
-                            else
-                                callbacks.refreshCooldownOnlyIcon(icon, entry, context)
-                            end
-                        end
-                        if callbacks.updateIconVisibility then
-                            if measure then
-                                measure(
-                                    "CDM_walkVisibility",
-                                    callbacks.updateIconVisibility,
-                                    icon,
-                                    entry,
-                                    containerDB,
-                                    context.editMode,
-                                    context.inCombat)
-                            else
-                                callbacks.updateIconVisibility(
-                                    icon, entry, containerDB, context.editMode, context.inCombat)
-                            end
-                        end
-                        refreshed = refreshed + 1
-                    end
+                if processCooldownOnlyIcon(callbacks, icon, context, measure) then
+                    refreshed = refreshed + 1
                 end
             end
         end
@@ -134,47 +144,8 @@ function CDMIconRefreshWalker.Create(callbacks)
         local refreshed = 0
         local measure = measureFn
         for _, icon in ipairs(pool) do
-            local entry = icon and icon._spellEntry
-            if entry then
-                local containerDB, containerType
-                if callbacks.resolveContainerDBAndType then
-                    if measure then
-                        containerDB, containerType = measure(
-                            "CDM_walkResolve",
-                            callbacks.resolveContainerDBAndType,
-                            entry,
-                            context.ncdm,
-                            context.ncdmContainers)
-                    else
-                        containerDB, containerType = callbacks.resolveContainerDBAndType(
-                            entry, context.ncdm, context.ncdmContainers)
-                    end
-                end
-                if not isAuraContainerType(containerType) then
-                    if callbacks.refreshCooldownOnlyIcon then
-                        if measure then
-                            measure("CDM_walkCooldownIcon", callbacks.refreshCooldownOnlyIcon, icon, entry, context)
-                        else
-                            callbacks.refreshCooldownOnlyIcon(icon, entry, context)
-                        end
-                    end
-                    if callbacks.updateIconVisibility then
-                        if measure then
-                            measure(
-                                "CDM_walkVisibility",
-                                callbacks.updateIconVisibility,
-                                icon,
-                                entry,
-                                containerDB,
-                                context.editMode,
-                                context.inCombat)
-                        else
-                            callbacks.updateIconVisibility(
-                                icon, entry, containerDB, context.editMode, context.inCombat)
-                        end
-                    end
-                    refreshed = refreshed + 1
-                end
+            if processCooldownOnlyIcon(callbacks, icon, context, measure) then
+                refreshed = refreshed + 1
             end
         end
         return refreshed

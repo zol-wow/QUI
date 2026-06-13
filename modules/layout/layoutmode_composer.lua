@@ -68,6 +68,42 @@ local function RoundVirtual(value, frame)
     return value or 0
 end
 
+-- Build the manual "Spell ID" entry row (EditBox + label + Add button) used by
+-- the aura-indicator and pinned-aura panels. Returns (inputRow, inputBox, addManualBtn).
+local function CreateSpellIdInputRow(parent)
+    local inputRow = CreateFrame("Frame", nil, parent)
+    inputRow:SetHeight(24)
+
+    local inputBox = CreateFrame("EditBox", nil, inputRow, "BackdropTemplate")
+    inputBox:SetSize(80, 20)
+    inputBox:SetPoint("LEFT", 4, 0)
+    inputBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GetPixelSize(inputBox) })
+    inputBox:SetBackdropColor(0.06, 0.06, 0.08, 1)
+    inputBox:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+    inputBox:SetFontObject("GameFontNormalSmall")
+    inputBox:SetAutoFocus(false)
+    inputBox:SetMaxLetters(10)
+    inputBox:SetTextInsets(4, 4, 0, 0)
+    inputBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    local inputLabel = inputRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    inputLabel:SetPoint("LEFT", inputBox, "RIGHT", 4, 0)
+    inputLabel:SetText("Spell ID")
+    inputLabel:SetTextColor(0.5, 0.5, 0.5)
+
+    local addManualBtn = CreateFrame("Button", nil, inputRow, "BackdropTemplate")
+    addManualBtn:SetSize(40, 20)
+    addManualBtn:SetPoint("RIGHT", inputRow, "RIGHT", -2, 0)
+    addManualBtn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GetPixelSize(addManualBtn) })
+    addManualBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
+    addManualBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    local addManualText = addManualBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    addManualText:SetPoint("CENTER")
+    addManualText:SetText("Add")
+
+    return inputRow, inputBox, addManualBtn
+end
+
 local function SetSnappedPoint(frame, point, relativeTo, relativePoint, xOffset, yOffset)
     local QUICore = ns.Addon
     if QUICore and QUICore.SetSnappedPoint then
@@ -354,13 +390,7 @@ local HEALTH_FILL_OPTIONS = {
     { value = "HORIZONTAL", text = "Horizontal (Left to Right)" },
     { value = "VERTICAL", text = "Vertical (Bottom to Top)" },
 }
-local NINE_POINT_OPTIONS = {
-    { value = "TOPLEFT", text = "Top Left" }, { value = "TOP", text = "Top" },
-    { value = "TOPRIGHT", text = "Top Right" }, { value = "LEFT", text = "Left" },
-    { value = "CENTER", text = "Center" }, { value = "RIGHT", text = "Right" },
-    { value = "BOTTOMLEFT", text = "Bottom Left" }, { value = "BOTTOM", text = "Bottom" },
-    { value = "BOTTOMRIGHT", text = "Bottom Right" },
-}
+local NINE_POINT_OPTIONS = ns.QUI_ModulesSettingsLayout.NINE_POINT_OPTIONS
 local TEXT_JUSTIFY_OPTIONS = {
     { value = "LEFT", text = "Left" }, { value = "CENTER", text = "Center" }, { value = "RIGHT", text = "Right" },
 }
@@ -1839,35 +1869,7 @@ local function BuildAuraIndicatorsSettings(content, gfdb, onChange)
         local addHeader = auraListArea:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         addHeader:SetJustifyH("LEFT")
 
-        local inputRow = CreateFrame("Frame", nil, auraListArea)
-        inputRow:SetHeight(24)
-
-        local inputBox = CreateFrame("EditBox", nil, inputRow, "BackdropTemplate")
-        inputBox:SetSize(80, 20)
-        inputBox:SetPoint("LEFT", 4, 0)
-        inputBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GetPixelSize(inputBox) })
-        inputBox:SetBackdropColor(0.06, 0.06, 0.08, 1)
-        inputBox:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
-        inputBox:SetFontObject("GameFontNormalSmall")
-        inputBox:SetAutoFocus(false)
-        inputBox:SetMaxLetters(10)
-        inputBox:SetTextInsets(4, 4, 0, 0)
-        inputBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-
-        local inputLabel = inputRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        inputLabel:SetPoint("LEFT", inputBox, "RIGHT", 4, 0)
-        inputLabel:SetText("Spell ID")
-        inputLabel:SetTextColor(0.5, 0.5, 0.5)
-
-        local addManualBtn = CreateFrame("Button", nil, inputRow, "BackdropTemplate")
-        addManualBtn:SetSize(40, 20)
-        addManualBtn:SetPoint("RIGHT", inputRow, "RIGHT", -2, 0)
-        addManualBtn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GetPixelSize(addManualBtn) })
-        addManualBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
-        addManualBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
-        local addManualText = addManualBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        addManualText:SetPoint("CENTER")
-        addManualText:SetText("Add")
+        local inputRow, inputBox, addManualBtn = CreateSpellIdInputRow(auraListArea)
 
         local indicatorActionsRow = CreateFrame("Frame", nil, auraListArea)
         indicatorActionsRow:SetHeight(26)
@@ -2306,7 +2308,7 @@ local function BuildAuraIndicatorsSettings(content, gfdb, onChange)
             ClearDetailWidgets()
 
             local specID = GetPlayerSpecID()
-            local _, specName = specID and GetSpecializationInfoByID(specID) or nil, nil
+            local specName
             if specID then
                 local _, specDisplayName = GetSpecializationInfoByID(specID)
                 specName = specDisplayName
@@ -2926,35 +2928,7 @@ local function BuildPinnedAurasSettings(content, gfdb, onChange)
         addSectionHeader:SetJustifyH("LEFT")
 
         -- Persistent manual input row
-        local inputRow = CreateFrame("Frame", nil, spellListArea)
-        inputRow:SetHeight(24)
-
-        local inputBox = CreateFrame("EditBox", nil, inputRow, "BackdropTemplate")
-        inputBox:SetSize(80, 20)
-        inputBox:SetPoint("LEFT", 4, 0)
-        inputBox:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GetPixelSize(inputBox) })
-        inputBox:SetBackdropColor(0.06, 0.06, 0.08, 1)
-        inputBox:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
-        inputBox:SetFontObject("GameFontNormalSmall")
-        inputBox:SetAutoFocus(false)
-        inputBox:SetMaxLetters(10)
-        inputBox:SetTextInsets(4, 4, 0, 0)
-        inputBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-
-        local inputLabel = inputRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        inputLabel:SetPoint("LEFT", inputBox, "RIGHT", 4, 0)
-        inputLabel:SetText("Spell ID")
-        inputLabel:SetTextColor(0.5, 0.5, 0.5)
-
-        local addManualBtn = CreateFrame("Button", nil, inputRow, "BackdropTemplate")
-        addManualBtn:SetSize(40, 20)
-        addManualBtn:SetPoint("RIGHT", inputRow, "RIGHT", -2, 0)
-        addManualBtn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = GetPixelSize(addManualBtn) })
-        addManualBtn:SetBackdropColor(0.15, 0.15, 0.15, 1)
-        addManualBtn:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
-        local addManualText = addManualBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        addManualText:SetPoint("CENTER")
-        addManualText:SetText("Add")
+        local inputRow, inputBox, addManualBtn = CreateSpellIdInputRow(spellListArea)
 
         -- Row pool for assigned spell rows
         local spellRowPool = {}
@@ -3009,7 +2983,6 @@ local function BuildPinnedAurasSettings(content, gfdb, onChange)
             row:EnableMouse(true)
             row:SetScript("OnEnter", function(self)
                 GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
-                local dt = self._displayType or "icon"
                 GameTooltip:SetText(self._spellName or "Spell")
                 GameTooltip:AddLine("Right-click to configure", 0.7, 0.7, 0.7)
                 GameTooltip:Show()

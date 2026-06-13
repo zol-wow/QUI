@@ -60,7 +60,7 @@ local function RebuildOwner(ownerKey)
         local idx = {}
         local wb = Storage.Store.GetWarband()
         if wb then
-            for _, tab in pairs(wb.tabs) do IndexInto(idx, "warband", tab) end
+            for _, tab in pairs(wb.tabs or {}) do IndexInto(idx, "warband", tab) end
         end
         perOwner[ownerKey] = idx
         return
@@ -74,7 +74,7 @@ local function RebuildOwner(ownerKey)
             return
         end
         local idx = {}
-        for _, tab in pairs(guild.tabs) do IndexInto(idx, "guild", tab) end
+        for _, tab in pairs(guild.tabs or {}) do IndexInto(idx, "guild", tab) end
         perOwner[ownerKey] = idx
         return
     end

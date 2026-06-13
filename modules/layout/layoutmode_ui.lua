@@ -750,7 +750,7 @@ function QUI_LayoutMode_UI:ApplySnap(handle)
             end
         end
         -- Also highlight the target handle border
-        local targetHandle2 = um._handles[anchorTargetKey]
+        local targetHandle2 = targetHandle
         if targetHandle2 and targetHandle2._border then
             if targetHandle2._border.SetLineSize then
                 targetHandle2._border:SetLineSize(ANCHOR_BORDER_SIZE)
@@ -1851,23 +1851,24 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
     local groupElements = {}
     for _, key in ipairs(um._elementOrder) do
         local def = um._elements[key]
-        if not def then break end
-        local group = def.group or "Other"
+        if def then
+            local group = def.group or "Other"
 
-        local include = true
-        if searchFilter ~= "" then
-            local label = (def.label or key or ""):lower()
-            local groupLower = group:lower()
-            include = (label:find(searchFilter, 1, true) ~= nil)
-                or (groupLower:find(searchFilter, 1, true) ~= nil)
-        end
-
-        if include then
-            if not groupElements[group] then
-                groupElements[group] = {}
-                groupOrder[#groupOrder + 1] = group
+            local include = true
+            if searchFilter ~= "" then
+                local label = (def.label or key or ""):lower()
+                local groupLower = group:lower()
+                include = (label:find(searchFilter, 1, true) ~= nil)
+                    or (groupLower:find(searchFilter, 1, true) ~= nil)
             end
-            groupElements[group][#groupElements[group] + 1] = { key = key, def = def }
+
+            if include then
+                if not groupElements[group] then
+                    groupElements[group] = {}
+                    groupOrder[#groupOrder + 1] = group
+                end
+                groupElements[group][#groupElements[group] + 1] = { key = key, def = def }
+            end
         end
     end
 

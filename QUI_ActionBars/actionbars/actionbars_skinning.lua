@@ -349,7 +349,6 @@ SkinButton = function(button, settings)
             state.normal:SetTexture(TEXTURES.normal)
             state.normal:SetVertexColor(0, 0, 0, 1)
         end
-        state.normal:SetSize(iconSize, iconSize)
         state.normal:ClearAllPoints()
         state.normal:SetAllPoints(button)
         state.normal:Show()

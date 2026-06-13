@@ -29,7 +29,6 @@ local ALTERNATE_POWER_INDEX = Enum.PowerType.Alternate or 10
 
 -- Module state
 local QUIAltPowerBar = nil
-local powerBarMover = nil
 local isEnabled = false
 
 local function RunAfterFirstFrame(callback, delay)
@@ -315,12 +314,6 @@ local function RefreshPowerBarAltColors()
 
     SkinBase.SetFrameData(QUIAltPowerBar, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(QUIAltPowerBar, "bgColor", { bgr, bgg, bgb, bga })
-
-    -- Update mover colors if it exists
-    if powerBarMover then
-        powerBarMover:SetBackdropColor(sr, sg, sb, 0.3)
-        powerBarMover:SetBackdropBorderColor(sr, sg, sb, 1)
-    end
 end
 
 _G.QUI_RefreshPowerBarAltColors = RefreshPowerBarAltColors

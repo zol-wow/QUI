@@ -507,7 +507,7 @@ local function ParseMacroForSpells(macroIndex)
     local itemNames = {}
 
     -- Get macro body
-    local macroName, iconTexture, body = GetMacroInfo(macroIndex)
+    local _, _, body = GetMacroInfo(macroIndex)
     if not body then return spellIDs, spellNames, itemIDs, itemNames end
 
     -- First, try the simple GetMacroSpell which handles basic cases
@@ -620,7 +620,7 @@ local function ProcessActionButton(button)
 
     if actionType == "spell" and id then
         -- Direct spell - cache by both ID and name
-        keybind = keybind or GetKeybindFromActionButton(button, action)
+        keybind = GetKeybindFromActionButton(button, action)
         if keybind then
             if not spellToKeybind[id] then
                 spellToKeybind[id] = keybind
@@ -636,7 +636,7 @@ local function ProcessActionButton(button)
         end
     elseif actionType == "item" and id then
         -- Direct item on action bar - cache by ID and name
-        keybind = keybind or GetKeybindFromActionButton(button, action)
+        keybind = GetKeybindFromActionButton(button, action)
         if keybind then
             if not itemToKeybind[id] then
                 itemToKeybind[id] = keybind
@@ -651,7 +651,7 @@ local function ProcessActionButton(button)
             end
         end
     elseif actionType == "macro" then
-        keybind = keybind or GetKeybindFromActionButton(button, action)
+        keybind = GetKeybindFromActionButton(button, action)
         if not keybind then return end
 
         -- In modern WoW, GetActionInfo for macros may return the spell ID directly
@@ -762,14 +762,6 @@ local function BuildActionButtonCache()
                     -- Check for common action button indicators
                     if frame.action or (frame.GetAction and type(frame.GetAction) == "function") then
                         return true
-                    end
-
-                    -- Also check by name pattern
-                    if globalName:match("ActionButton%d+$") or
-                       globalName:match("Button%d+$") and globalName:match("Bar") then
-                        if frame.action or frame.GetAction then
-                            return true
-                        end
                     end
 
                     return false
@@ -1533,13 +1525,19 @@ local function GetCustomContainerKeys()
     return keys
 end
 
--- Update keybinds on all icons in a viewer
-local function UpdateViewerKeybinds(viewerName)
+-- Resolve a viewer's icon-container children list, or nil if no viewer.
+local function GetViewerChildren(viewerName)
     local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerName)
-    if not viewer then return end
+    if not viewer then return nil end
 
     local container = viewer.viewerFrame or viewer
-    local children = { container:GetChildren() }
+    return { container:GetChildren() }
+end
+
+-- Update keybinds on all icons in a viewer
+local function UpdateViewerKeybinds(viewerName)
+    local children = GetViewerChildren(viewerName)
+    if not children then return end
 
     for _, child in ipairs(children) do
         if child:IsShown() then
@@ -1554,11 +1552,8 @@ end
 -- confirms or changes it.  Hiding here caused a visible blink because
 -- the ThrottledUpdate that re-shows text runs 0.5 s later.
 local function ClearStoredKeybinds(viewerName)
-    local viewer = _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame(viewerName)
-    if not viewer then return end
-
-    local container = viewer.viewerFrame or viewer
-    local children = { container:GetChildren() }
+    local children = GetViewerChildren(viewerName)
+    if not children then return end
 
     for _, child in ipairs(children) do
         local cks = iconKeybindState[child]

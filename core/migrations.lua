@@ -2007,8 +2007,8 @@ local function NormalizeMinimapSettings(profile)
         if not profile.frameAnchoring.minimap then
             profile.frameAnchoring.minimap = {
                 parent = "screen",
-                point = tostring(mm.position[1]) or "CENTER",
-                relative = tostring(mm.position[2]) or "CENTER",
+                point = mm.position[1] and tostring(mm.position[1]) or "CENTER",
+                relative = mm.position[2] and tostring(mm.position[2]) or "CENTER",
                 offsetX = tonumber(mm.position[3]) or 0,
                 offsetY = tonumber(mm.position[4]) or 0,
                 sizeStable = true,

@@ -139,7 +139,7 @@ local defaults = {
                 textColor = {1, 0.2, 0.2, 1},
                 useClassColor = false,
             },
-            -- Consumable Check (disabled by default)
+            -- Consumable Check (enabled by default)
             consumableCheckEnabled = true,       -- Master toggle
             consumableOnReadyCheck = true,        -- Show on ready check
             consumableOnDungeon = false,          -- Show on dungeon entrance
@@ -560,7 +560,6 @@ local defaults = {
                 pos = nil,  -- { ox = number, oy = number } saved container position (nil = first-time, seed from Blizzard)
                 desaturateOnCooldown = true,
                 rangeIndicator = true,
-                rangeColor = {0.8, 0.1, 0.1, 1},
                 usabilityIndicator = true,
                 clickableIcons = false,
                 layoutDirection = "HORIZONTAL",
@@ -647,7 +646,6 @@ local defaults = {
                 pos = nil,  -- { ox = number, oy = number } saved container position (nil = first-time, seed from Blizzard)
                 desaturateOnCooldown = true,
                 rangeIndicator = true,
-                rangeColor = {0.8, 0.1, 0.1, 1},
                 usabilityIndicator = true,
                 clickableIcons = false,
                 layoutDirection = "HORIZONTAL",
@@ -824,7 +822,6 @@ local defaults = {
                     pos = nil,
                     desaturateOnCooldown = true,
                     rangeIndicator = true,
-                    rangeColor = {0.8, 0.1, 0.1, 1},
                     usabilityIndicator = true,
                     clickableIcons = false,
                     layoutDirection = "HORIZONTAL",
@@ -871,7 +868,6 @@ local defaults = {
                     pos = nil,
                     desaturateOnCooldown = true,
                     rangeIndicator = true,
-                    rangeColor = {0.8, 0.1, 0.1, 1},
                     usabilityIndicator = true,
                     clickableIcons = false,
                     layoutDirection = "HORIZONTAL",
@@ -2573,19 +2569,6 @@ local defaults = {
                     opacity = 0.7,
                     texture = "QUI Stripes",
                 },
-                -- Castbar
-                castbar = {
-                    enabled = false,
-                    showIcon = true,
-                    width = 140,
-                    height = 12,
-                    offsetX = 0,
-                    offsetY = -20,
-                    widthAdjustment = 0,
-                    fontSize = 10,
-                    color = {1, 0.7, 0, 1},
-                    anchor = "unitframe",
-                },
                 -- Auras (buffs/debuffs)
                 auras = {
                     showBuffs = false,
@@ -2619,6 +2602,7 @@ local defaults = {
                     showIcon = true,
                     width = 140,
                     height = 15,
+                    anchor = "unitframe",  -- Attach under the pet frame, matching sibling castbars
                     offsetX = 0,
                     offsetY = -20,
                     widthAdjustment = 0,
@@ -3365,7 +3349,7 @@ local defaults = {
 
         -- Combat Timer (displays elapsed combat time)
         combatTimer = {
-            enabled = true,       -- Opt-in feature (disabled by default)
+            enabled = true,       -- Enabled by default
             xOffset = 0,           -- Horizontal offset from screen center
             yOffset = -150,        -- Vertical offset (below center by default)
             width = 80,            -- Frame width

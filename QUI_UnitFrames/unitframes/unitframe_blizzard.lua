@@ -155,7 +155,7 @@ end
 
 local function SuppressPlayerCastingBarFrame()
     local frame = PlayerCastingBarFrame
-    if not frame then return false end
+    if not frame then return end
 
     -- CastingBarFrame can be forbidden/restricted on newer clients, so keep
     -- every frame interaction guarded. This must be repeatable because the
@@ -178,8 +178,6 @@ local function SuppressPlayerCastingBarFrame()
             frame.Icon:Hide()
         end)
     end
-
-    return true
 end
 
 local function QueuePlayerCastingBarSuppression()
@@ -216,85 +214,56 @@ local function EnsurePlayerCastbarHideWatcher()
     end)
 end
 
-local function HideBlizzardTargetVisuals()
-    if not TargetFrame then return end
+-- Hide a Blizzard secondary unit frame's visuals (TargetFrame/FocusFrame share
+-- the same child structure). `frame` is the frame object; `globalPrefix` is the
+-- global-name stem for the legacy aura buttons (e.g. "TargetFrame"/"FocusFrame").
+local function HideBlizzardSecondaryUnitVisuals(frame, globalPrefix)
+    if not frame then return end
 
     -- Hide main art & bars but keep the frame alive for tooltips/buffs
-    KillBlizzardChildFrame(TargetFrame.TargetFrameContainer)
-    KillBlizzardChildFrame(TargetFrame.TargetFrameContent)
-    KillBlizzardChildFrame(TargetFrame.healthbar)
-    KillBlizzardChildFrame(TargetFrame.manabar)
-    KillBlizzardChildFrame(TargetFrame.powerBarAlt)
-    KillBlizzardChildFrame(TargetFrame.overAbsorbGlow)
-    KillBlizzardChildFrame(TargetFrame.overHealAbsorbGlow)
-    KillBlizzardChildFrame(TargetFrame.totalAbsorbBar)
-    KillBlizzardChildFrame(TargetFrame.tempMaxHealthLossBar)
-    KillBlizzardChildFrame(TargetFrame.myHealPredictionBar)
-    KillBlizzardChildFrame(TargetFrame.otherHealPredictionBar)
-    KillBlizzardChildFrame(TargetFrame.name)
-    KillBlizzardChildFrame(TargetFrame.portrait)
-    KillBlizzardChildFrame(TargetFrame.threatIndicator)
-    KillBlizzardChildFrame(TargetFrame.threatNumericIndicator)
+    KillBlizzardChildFrame(frame.TargetFrameContainer)
+    KillBlizzardChildFrame(frame.TargetFrameContent)
+    KillBlizzardChildFrame(frame.healthbar)
+    KillBlizzardChildFrame(frame.manabar)
+    KillBlizzardChildFrame(frame.powerBarAlt)
+    KillBlizzardChildFrame(frame.overAbsorbGlow)
+    KillBlizzardChildFrame(frame.overHealAbsorbGlow)
+    KillBlizzardChildFrame(frame.totalAbsorbBar)
+    KillBlizzardChildFrame(frame.tempMaxHealthLossBar)
+    KillBlizzardChildFrame(frame.myHealPredictionBar)
+    KillBlizzardChildFrame(frame.otherHealPredictionBar)
+    KillBlizzardChildFrame(frame.name)
+    KillBlizzardChildFrame(frame.portrait)
+    KillBlizzardChildFrame(frame.threatIndicator)
+    KillBlizzardChildFrame(frame.threatNumericIndicator)
 
     -- Hide buff/debuff frames (modern WoW structure)
-    KillBlizzardChildFrame(TargetFrame.BuffFrame)
-    KillBlizzardChildFrame(TargetFrame.DebuffFrame)
-    KillBlizzardChildFrame(TargetFrame.buffsContainer)
-    KillBlizzardChildFrame(TargetFrame.debuffsContainer)
+    KillBlizzardChildFrame(frame.BuffFrame)
+    KillBlizzardChildFrame(frame.DebuffFrame)
+    KillBlizzardChildFrame(frame.buffsContainer)
+    KillBlizzardChildFrame(frame.debuffsContainer)
 
     -- Hide old-style aura buttons
     for i = 1, 40 do
-        KillBlizzardChildFrame(_G["TargetFrameBuff"..i])
-        KillBlizzardChildFrame(_G["TargetFrameDebuff"..i])
+        KillBlizzardChildFrame(_G[globalPrefix.."Buff"..i])
+        KillBlizzardChildFrame(_G[globalPrefix.."Debuff"..i])
     end
 
     -- Release aura pools (Dragonflight+)
-    if TargetFrame.auraPools and TargetFrame.auraPools.ReleaseAll then
-        TargetFrame.auraPools:ReleaseAll()
+    if frame.auraPools and frame.auraPools.ReleaseAll then
+        frame.auraPools:ReleaseAll()
     end
 
-    -- Hide the entire TargetFrame since we have our own
-    KillBlizzardFrame(TargetFrame)
+    -- Hide the entire frame since we have our own
+    KillBlizzardFrame(frame)
+end
+
+local function HideBlizzardTargetVisuals()
+    HideBlizzardSecondaryUnitVisuals(TargetFrame, "TargetFrame")
 end
 
 local function HideBlizzardFocusVisuals()
-    if not FocusFrame then return end
-
-    KillBlizzardChildFrame(FocusFrame.TargetFrameContainer)
-    KillBlizzardChildFrame(FocusFrame.TargetFrameContent)
-    KillBlizzardChildFrame(FocusFrame.healthbar)
-    KillBlizzardChildFrame(FocusFrame.manabar)
-    KillBlizzardChildFrame(FocusFrame.powerBarAlt)
-    KillBlizzardChildFrame(FocusFrame.overAbsorbGlow)
-    KillBlizzardChildFrame(FocusFrame.overHealAbsorbGlow)
-    KillBlizzardChildFrame(FocusFrame.totalAbsorbBar)
-    KillBlizzardChildFrame(FocusFrame.tempMaxHealthLossBar)
-    KillBlizzardChildFrame(FocusFrame.myHealPredictionBar)
-    KillBlizzardChildFrame(FocusFrame.otherHealPredictionBar)
-    KillBlizzardChildFrame(FocusFrame.name)
-    KillBlizzardChildFrame(FocusFrame.portrait)
-    KillBlizzardChildFrame(FocusFrame.threatIndicator)
-    KillBlizzardChildFrame(FocusFrame.threatNumericIndicator)
-
-    -- Hide buff/debuff frames (modern WoW structure)
-    KillBlizzardChildFrame(FocusFrame.BuffFrame)
-    KillBlizzardChildFrame(FocusFrame.DebuffFrame)
-    KillBlizzardChildFrame(FocusFrame.buffsContainer)
-    KillBlizzardChildFrame(FocusFrame.debuffsContainer)
-
-    -- Hide old-style aura buttons
-    for i = 1, 40 do
-        KillBlizzardChildFrame(_G["FocusFrameBuff"..i])
-        KillBlizzardChildFrame(_G["FocusFrameDebuff"..i])
-    end
-
-    -- Release aura pools
-    if FocusFrame.auraPools and FocusFrame.auraPools.ReleaseAll then
-        FocusFrame.auraPools:ReleaseAll()
-    end
-
-    -- Hide the entire FocusFrame since we have our own
-    KillBlizzardFrame(FocusFrame)
+    HideBlizzardSecondaryUnitVisuals(FocusFrame, "FocusFrame")
 end
 
 ---------------------------------------------------------------------------

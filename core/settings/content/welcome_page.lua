@@ -138,7 +138,7 @@ local function BuildWelcomeContent(content)
     y = y - 10
 
     -- Set total content height for scrolling
-    content:SetHeight(math.abs(y) + 0)
+    content:SetHeight(math.abs(y))
 end
 
 --------------------------------------------------------------------------------

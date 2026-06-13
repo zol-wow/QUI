@@ -25,57 +25,17 @@ ns.QUI_UnitFramesCastbarPreview = Module
 -- Constants & helpers
 ---------------------------------------------------------------------------
 
-local ANCHOR_MAP = {
-    TOPLEFT     = "TOPLEFT",      TOP         = "TOP",         TOPRIGHT    = "TOPRIGHT",
-    LEFT        = "LEFT",         CENTER      = "CENTER",      RIGHT       = "RIGHT",
-    BOTTOMLEFT  = "BOTTOMLEFT",   BOTTOM      = "BOTTOM",      BOTTOMRIGHT = "BOTTOMRIGHT",
-}
+-- Shared preview helpers live in unit_frames_surface.lua, which QUI_Options.toc
+-- loads before this file. Alias them here to avoid byte-identical duplicates.
+local Shared = ns.QUI_UnitFramesPreviewShared
+local ANCHOR_MAP = Shared.ANCHOR_MAP
+local ResolveStatusBarTexture = Shared.ResolveStatusBarTexture
+local ResolveUnitFrameFont = Shared.ResolveUnitFrameFont
 
-local function GetLSM()
-    return (ns and ns.LSM) or (LibStub and LibStub("LibSharedMedia-3.0", true)) or nil
-end
+-- Hairline border layout shared with unit_frames_surface.lua (loads first).
+local ApplyHairlineBorder = Shared.ApplyHairlineBorder
 
-local function ResolveStatusBarTexture(name)
-    local LSM = GetLSM()
-    if LSM and LSM.Fetch and name then
-        local path = LSM:Fetch("statusbar", name, true)
-        if path then return path end
-    end
-    return "Interface\\Buttons\\WHITE8x8"
-end
-
-local function ResolveUnitFrameFont()
-    local H = ns and ns.Helpers
-    local path    = (H and H.GetGeneralFont and H.GetGeneralFont()) or "Fonts\\FRIZQT__.TTF"
-    local outline = (H and H.GetGeneralFontOutline and H.GetGeneralFontOutline()) or ""
-    return path, outline
-end
-
--- borderTextures = { top, bottom, left, right } 4 hairline strip textures
-local function ApplyHairlineBorder(borderTextures, frame, size)
-    size = math.max(0, size or 0)
-    if size == 0 then
-        for i = 1, 4 do borderTextures[i]:Hide() end
-        return
-    end
-    for i = 1, 4 do borderTextures[i]:Show() end
-    local b = borderTextures
-    b[1]:ClearAllPoints(); b[1]:SetPoint("TOPLEFT",     frame, "TOPLEFT",     0, 0); b[1]:SetPoint("TOPRIGHT",    frame, "TOPRIGHT",    0, 0); b[1]:SetHeight(size)
-    b[2]:ClearAllPoints(); b[2]:SetPoint("BOTTOMLEFT",  frame, "BOTTOMLEFT",  0, 0); b[2]:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0); b[2]:SetHeight(size)
-    b[3]:ClearAllPoints(); b[3]:SetPoint("TOPLEFT",     frame, "TOPLEFT",     0, 0); b[3]:SetPoint("BOTTOMLEFT",  frame, "BOTTOMLEFT",  0, 0); b[3]:SetWidth(size)
-    b[4]:ClearAllPoints(); b[4]:SetPoint("TOPRIGHT",    frame, "TOPRIGHT",    0, 0); b[4]:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0); b[4]:SetWidth(size)
-end
-
-local function ApplyTextAnchor(fs, target, anchorKey, offsetX, offsetY, pad)
-    local anchor = ANCHOR_MAP[anchorKey] or "LEFT"
-    fs:ClearAllPoints()
-    local edgeX = (anchor:find("LEFT") and pad) or (anchor:find("RIGHT") and -pad) or 0
-    local edgeY = (anchor:find("TOP")  and -pad) or (anchor:find("BOTTOM") and pad) or 0
-    fs:SetPoint(anchor, target, anchor, (offsetX or 0) + edgeX, (offsetY or 0) + edgeY)
-    if     anchor:find("RIGHT") then fs:SetJustifyH("RIGHT")
-    elseif anchor:find("LEFT")  then fs:SetJustifyH("LEFT")
-    else                              fs:SetJustifyH("CENTER") end
-end
+local ApplyTextAnchor = Shared.ApplyTextAnchor
 
 -- Position the spell icon outside the bar at the chosen anchor edge.
 local function ApplyIconAnchor(icon, bar, anchorKey, spacing)
@@ -152,10 +112,7 @@ end
 ---------------------------------------------------------------------------
 
 local function GetPlayerClassColor()
-    local _, class = UnitClass("player")
-    local cc = ns.Helpers and ns.Helpers.GetClassColorTable(class)
-    if cc then return cc.r, cc.g, cc.b, 1 end
-    return 1, 0.7, 0, 1
+    return Shared.GetPlayerClassColorOr(1, 0.7, 0, 1)
 end
 
 local function ResolveSegmentColor(mock, seg)

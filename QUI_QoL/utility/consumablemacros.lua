@@ -485,12 +485,22 @@ function ConsumableMacros:UpdateMacros()
 
     for _, slot in ipairs(MACRO_SLOTS) do
         local body, bestID = BuildMacroBody(db[slot.dbKey], slot.defs)
-        if body and body ~= lastBody[slot.macroName] then
-            if EnsureMacro(slot.macroName, body) then
-                NotifyChange(slot.label, bestID, lastBest[slot.macroName])
+        if body then
+            if body ~= lastBody[slot.macroName] then
+                if EnsureMacro(slot.macroName, body) then
+                    NotifyChange(slot.label, bestID, lastBest[slot.macroName])
+                end
+                lastBody[slot.macroName] = body
+                lastBest[slot.macroName] = bestID
             end
-            lastBody[slot.macroName] = body
-            lastBest[slot.macroName] = bestID
+        else
+            -- Slot set to "none": remove any stale macro and clear caches.
+            local index = GetMacroIndexByName(slot.macroName)
+            if index and index > 0 then
+                DeleteMacro(index)
+            end
+            lastBody[slot.macroName] = nil
+            lastBest[slot.macroName] = nil
         end
     end
 end
@@ -513,6 +523,14 @@ end
 -- Event handling
 ---------------------------------------------------------------------------
 
+-- Shared login/catch-up init: mark initialized and schedule a deferred update.
+local function RunLoginInit()
+    initialized = true
+    C_Timer.After(2, function()
+        ConsumableMacros:UpdateMacros()
+    end)
+end
+
 local eventFrame = CreateFrame("Frame")
 
 eventFrame:SetScript("OnEvent", function(_, event, ...)
@@ -522,10 +540,7 @@ eventFrame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
         local isLogin, isReload = ...
         if isLogin or isReload then
-            initialized = true
-            C_Timer.After(2, function()
-                ConsumableMacros:UpdateMacros()
-            end)
+            RunLoginInit()
         end
     elseif event == "BAG_UPDATE_DELAYED" then
         if InCombatLockdown() then
@@ -563,9 +578,6 @@ if ns.WhenLoggedIn then
     ns.WhenLoggedIn(function()
         local db = GetDB()
         if not db or not db.enabled then return end
-        initialized = true
-        C_Timer.After(2, function()
-            ConsumableMacros:UpdateMacros()
-        end)
+        RunLoginInit()
     end)
 end

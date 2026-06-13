@@ -158,39 +158,9 @@ end
 -- ===========================================================================
 -- V3 layout helpers
 -- ===========================================================================
+-- Shared provider-panel layout scaffold (core/settings_layout_shared.lua).
 local function MakeLayout(content)
-    local y = -10
-    local L = {}
-    function L.headerAt(text)
-        local h = Opts.CreateAccentDotLabel(content, text, y)
-        h:ClearAllPoints()
-        h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-        y = y - HEADER_GAP
-    end
-    function L.sectionAt()
-        local c = Opts.CreateSettingsCardGroup(content, y)
-        c.frame:ClearAllPoints()
-        c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-        return c
-    end
-    function L.closeSection(c)
-        c.Finalize()
-        y = y - c.frame:GetHeight() - SECTION_GAP
-    end
-    function L.placeCustom(frame, height)
-        frame:ClearAllPoints()
-        frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        frame:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-        frame:SetHeight(height)
-        y = y - height - SECTION_GAP
-    end
-    function L.finish()
-        content:SetHeight(math.abs(y) + 10)
-        return content:GetHeight()
-    end
-    return L
+    return ns.QUI_SettingsLayoutShared.MakeLayout(content)
 end
 
 local function row(parent, label, widget, desc)

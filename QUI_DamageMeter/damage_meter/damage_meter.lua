@@ -128,6 +128,28 @@ local function SortByDescSafe(list, keyFn, isSecret)
 end
 QUI_DamageMeter.SortByDescSafe = SortByDescSafe
 
+-- `or 0` only short-circuits on nil; a secret-tagged number is truthy and
+-- would taint the `+`. Substitute 0 when the value is secret so the returned
+-- total stays a plain number (per-source bars carry secrets through for
+-- display). Shared by GetCombinedHealingView / GetCombinedHealingBreakdown.
+local function SafeNumOrZero(v, isSecret)
+    if v == nil then return 0 end
+    if isSecret and isSecret(v) then return 0 end
+    return v
+end
+
+-- Re-rank a merged list in place and return the max plain (non-secret)
+-- totalAmount. Shared post-merge step of the combined-healing functions.
+local function RankAndMaxAmount(list, isSecret)
+    local maxAmount = 0
+    for i, s in ipairs(list) do
+        s.rank = i
+        local v = s.totalAmount
+        if v and not (isSecret and isSecret(v)) and v > maxAmount then maxAmount = v end
+    end
+    return maxAmount
+end
+
 -- ==== Data ====
 local Data = {}
 QUI_DamageMeter.Data = Data
@@ -770,25 +792,11 @@ function Data:GetCombinedHealingView(sessionType, sessionID)
         end
     end
     SortByDescSafe(merged, function(s) return s.totalAmount end, IsSecret)
-    local maxAmount = 0
-    for i, s in ipairs(merged) do
-        s.rank = i
-        local v = s.totalAmount
-        if v and not (IsSecret and IsSecret(v)) and v > maxAmount then maxAmount = v end
-    end
-    -- `or 0` only short-circuits on nil; a secret-tagged number is truthy
-    -- and would taint the `+`. Substitute 0 when the value is secret so the
-    -- returned total stays a plain number (the per-source bars in `merged`
-    -- carry the secret values through individually for display).
-    local function safeNum(v)
-        if v == nil then return 0 end
-        if IsSecret and IsSecret(v) then return 0 end
-        return v
-    end
+    local maxAmount = RankAndMaxAmount(merged, IsSecret)
     return {
         duration    = hView.duration,
         maxAmount   = maxAmount,
-        totalAmount = safeNum(hView.totalAmount) + safeNum(aView.totalAmount),
+        totalAmount = SafeNumOrZero(hView.totalAmount, IsSecret) + SafeNumOrZero(aView.totalAmount, IsSecret),
         sources     = merged,
         generation  = math.max(hView.generation or 0, aView.generation or 0),
     }
@@ -829,23 +837,11 @@ function Data:GetCombinedHealingBreakdown(sessionType, sourceGUID, sourceCreatur
         end
     end
     SortByDescSafe(merged, function(s) return s.totalAmount end, IsSecret)
-    local maxAmount = 0
-    for i, sp in ipairs(merged) do
-        sp.rank = i
-        local v = sp.totalAmount
-        if v and not (IsSecret and IsSecret(v)) and v > maxAmount then maxAmount = v end
-    end
-    -- Same secret-arithmetic guard as GetCombinedHealingView: `or 0` doesn't
-    -- short-circuit secret-tagged numbers, so the `+` would taint execution.
-    local function safeNum(v)
-        if v == nil then return 0 end
-        if IsSecret and IsSecret(v) then return 0 end
-        return v
-    end
+    local maxAmount = RankAndMaxAmount(merged, IsSecret)
     return {
         spells      = merged,
         maxAmount   = maxAmount,
-        totalAmount = safeNum(hView.totalAmount) + safeNum(aView.totalAmount),
+        totalAmount = SafeNumOrZero(hView.totalAmount, IsSecret) + SafeNumOrZero(aView.totalAmount, IsSecret),
     }
 end
 

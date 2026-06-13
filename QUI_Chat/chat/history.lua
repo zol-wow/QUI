@@ -52,12 +52,8 @@ local storeSubscribed = false
 
 -- Whisper-family chatTypeKeys. Used by the storeWhispers gate to drop
 -- whisper messages without falling back on locale-fragile text sniffing.
-local WHISPER_KEYS = {
-    WHISPER          = true,
-    WHISPER_INFORM   = true,
-    BN_WHISPER       = true,
-    BN_WHISPER_INFORM = true,
-}
+-- Shared with message_capture via chat.lua's _internals (loads first).
+local WHISPER_KEYS = I.WHISPER_TYPE_KEYS
 
 -- excludedChannels is keyed by channel NAME (same GetChannelList spelling the
 -- settings UI stores and Registry.ResolveName produces). Live channel captures

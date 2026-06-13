@@ -292,9 +292,6 @@ function GUI:EnsureWidgetAPI()
     if QUI and type(QUI.EnsureOptionsLoaded) == "function" then
         local ok, reason = QUI:EnsureOptionsLoaded()
         local gui = QUI.GUI or self
-        if ok and HasWidgetAPI(gui) then
-            return gui
-        end
         if HasWidgetAPI(gui) then
             return gui
         end

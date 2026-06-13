@@ -155,8 +155,6 @@ local function RebuildSalvageLookup()
                         end
 
                         if includeRecipe then
-                            local color = GetColorForAction(action)
-
                             local didAddFromSlots = false
                             local slots = schematic.reagentSlotSchematics
                             if type(slots) == "table" then
@@ -167,7 +165,7 @@ local function RebuildSalvageLookup()
                                         for _, reagent in ipairs(reagents) do
                                             local itemID = reagent and reagent.itemID
                                             if itemID then
-                                                SalvageLookup[itemID] = { spellID = recipeSpellID, color = color, required = qty, action = action }
+                                                SalvageLookup[itemID] = { spellID = recipeSpellID, required = qty, action = action }
                                                 didAddFromSlots = true
                                             end
                                         end
@@ -178,7 +176,7 @@ local function RebuildSalvageLookup()
                             if not didAddFromSlots and C_TradeSkillUI.GetSalvagableItemIDs then
                                 local itemIDs = C_TradeSkillUI.GetSalvagableItemIDs(recipeID)
                                 for _, itemID in ipairs(itemIDs or {}) do
-                                    SalvageLookup[itemID] = { spellID = recipeSpellID, color = color, required = nil, action = action }
+                                    SalvageLookup[itemID] = { spellID = recipeSpellID, required = nil, action = action }
                                 end
                             end
                         end
@@ -250,7 +248,7 @@ local function GetSalvageInfo(itemID, stackCount)
             return nil, nil, "salvage", salvage.required, true
         end
         local action = salvage.action or "salvage"
-        return salvage.spellID, (COLORS[action] or salvage.color or COLORS.salvage), action, salvage.required
+        return salvage.spellID, GetColorForAction(action), action, salvage.required
     end
 
     -- Check for Armor/Weapons -> Disenchanting (green+ quality)
@@ -470,19 +468,15 @@ function SalvageButton:UpdateAttributeDriver()
 
     local settings = GetSettings()
     if not settings or not settings.enabled then
-        if not InCombatLockdown() then
-            UnregisterStateDriver(self, 'visibility')
-        end
+        UnregisterStateDriver(self, 'visibility')
         return
     end
 
     currentModifier = settings.modifier or "ALT"
-    if not InCombatLockdown() then
-        -- We manage visibility manually; a visibility state driver can cause the button
-        -- to reappear (and glow) away from the hovered item, which looks like a
-        -- "full screen glow glitch".
-        UnregisterStateDriver(self, 'visibility')
-    end
+    -- We manage visibility manually; a visibility state driver can cause the button
+    -- to reappear (and glow) away from the hovered item, which looks like a
+    -- "full screen glow glitch".
+    UnregisterStateDriver(self, 'visibility')
 end
 
 -- Re-anchor when shown
@@ -543,6 +537,17 @@ local function TooltipHelp(msg, color)
     GameTooltip:Show()
 end
 
+-- Anchoring-restricted owner rect; returns { left, bottom, width, height } or nil.
+local function BuildOwnerRect(owner)
+    if owner.GetScaledRect and not (owner.IsAnchoringRestricted and owner:IsAnchoringRestricted()) then
+        local left, bottom, width, height = owner:GetScaledRect()
+        if left and bottom and width and height then
+            return { left, bottom, width, height }
+        end
+    end
+    return nil
+end
+
 local function OnTooltipSetItem(tooltip, data)
     -- Skip before DB/bag work on the overwhelmingly common no-modifier path.
     if not IsModifierActive() then return end
@@ -600,13 +605,7 @@ local function OnTooltipSetItem(tooltip, data)
         end
     end
 
-    local ownerRect
-    if owner.GetScaledRect and not (owner.IsAnchoringRestricted and owner:IsAnchoringRestricted()) then
-        local left, bottom, width, height = owner:GetScaledRect()
-        if left and bottom and width and height then
-            ownerRect = { left, bottom, width, height }
-        end
-    end
+    local ownerRect = BuildOwnerRect(owner)
     if not ownerRect then return end
 
     -- Check if salvageable
@@ -689,13 +688,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                             if itemID then
                                 local spellID, color, actionType, requiredStack, needsMore = GetSalvageInfo(itemID, itemInfo.stackCount)
                                 if spellID and not needsMore then
-                                    local rect
-                                    if owner.GetScaledRect and not (owner.IsAnchoringRestricted and owner:IsAnchoringRestricted()) then
-                                        local left, bottom, width, height = owner:GetScaledRect()
-                                        if left and bottom and width and height then
-                                            rect = { left, bottom, width, height }
-                                        end
-                                    end
+                                    local rect = BuildOwnerRect(owner)
                                     if rect then
                                         SalvageButton:ApplySpell(bagID, slotID, itemInfo.hyperlink, spellID, color, rect)
                                     end

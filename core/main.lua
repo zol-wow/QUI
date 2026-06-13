@@ -62,19 +62,6 @@ local function EnsureReloadEventFrame(self)
     return self.__reloadEventFrame
 end
 
-function QUICore:RequestReload()
-    if InCombatLockdown() and not (QUI.db and QUI.db.profile and QUI.db.profile.general and QUI.db.profile.general.allowReloadInCombat) then
-        if not self.__pendingReload then
-            self.__pendingReload = true
-            print("|cFF30D1FFQUI:|r Reload queued - will execute when combat ends.")
-            EnsureReloadEventFrame(self)
-        end
-        return
-    end
-
-    self:ShowReloadPopup()
-end
-
 -- Safe reload function - queues if in combat, reloads immediately if not
 function QUICore:SafeReload()
     if InCombatLockdown() and not (QUI.db and QUI.db.profile and QUI.db.profile.general and QUI.db.profile.general.allowReloadInCombat) then
@@ -117,6 +104,29 @@ function QUI:SafeReload()
             ReloadUI()
         end
     end
+end
+
+-- Resolution-based fallback scale ladder, shared by OnProfileChanged and
+-- OnEnable when GetSmartDefaultScale / pixel-perfect scaling isn't available.
+local function ResolveSmartDefaultScale()
+    local _, screenHeight = GetPhysicalScreenSize()
+    if screenHeight >= 2160 then        -- 4K
+        return 0.53
+    elseif screenHeight >= 1440 then    -- 1440p
+        return 0.64
+    end
+    return 1.0                          -- 1080p or lower
+end
+
+-- Re-assert QUI frame positions after a Blizzard layout/scale pass. Used by the
+-- post-profile-change settle timers (1.0s and, on scale change, 1.8s).
+local function RepositionFramesAfterScale()
+    local ApplyAnchors = _G.QUI_ApplyAllFrameAnchors
+    if ApplyAnchors then pcall(ApplyAnchors, true) end
+    local RefreshUnitFrames = _G.QUI_RefreshUnitFrames
+    if RefreshUnitFrames then pcall(RefreshUnitFrames) end
+    local RefreshGroupFrames = _G.QUI_RefreshGroupFrames
+    if RefreshGroupFrames then pcall(RefreshGroupFrames) end
 end
 
 local LSM = ns.LSM
@@ -175,9 +185,6 @@ function QUICore:OnInitialize()
 
     -- Initialize preserved scale - will be properly set in OnEnable after UI scale is applied
     self._preservedUIScale = nil
-
-    -- Track spec for detecting false PLAYER_SPECIALIZATION_CHANGED events during M+ entry
-    self._lastKnownSpec = GetSpecialization() or 0
 
     -- Track current profile to detect same-profile "switches" during M+ entry
     self._lastKnownProfile = self.db:GetCurrentProfile()
@@ -258,9 +265,6 @@ function QUICore:OnProfileChanged(event, db, profileKey)
         return  -- No actual change happening - skip all UI modifications
     end
     self._lastKnownProfile = effectiveProfileKey
-
-    -- Update spec tracking (kept for reference)
-    self._lastKnownSpec = GetSpecialization() or 0
 
     if ns.CDMResolvers and ns.CDMResolvers._RebuildCatalog then
         ns.CDMResolvers._RebuildCatalog()
@@ -348,15 +352,7 @@ function QUICore:OnProfileChanged(event, db, profileKey)
                 if self.GetSmartDefaultScale then
                     scaleToUse = self:GetSmartDefaultScale()
                 else
-                    -- Inline fallback
-                    local _, screenHeight = GetPhysicalScreenSize()
-                    if screenHeight >= 2160 then
-                        scaleToUse = 0.53
-                    elseif screenHeight >= 1440 then
-                        scaleToUse = 0.64
-                    else
-                        scaleToUse = 1.0
-                    end
+                    scaleToUse = ResolveSmartDefaultScale()
                 end
             end
 
@@ -472,12 +468,7 @@ function QUICore:OnProfileChanged(event, db, profileKey)
     -- unit frame positions to catch any Blizzard layout passes that fired late.
     C_Timer.After(1.0, function()
         if not InCombatLockdown() then
-            local ApplyAnchors = _G.QUI_ApplyAllFrameAnchors
-            if ApplyAnchors then pcall(ApplyAnchors, true) end
-            local RefreshUnitFrames = _G.QUI_RefreshUnitFrames
-            if RefreshUnitFrames then pcall(RefreshUnitFrames) end
-            local RefreshGroupFrames = _G.QUI_RefreshGroupFrames
-            if RefreshGroupFrames then pcall(RefreshGroupFrames) end
+            RepositionFramesAfterScale()
         end
     end)
 
@@ -495,12 +486,7 @@ function QUICore:OnProfileChanged(event, db, profileKey)
                 end
             end
 
-            local ApplyAnchors = _G.QUI_ApplyAllFrameAnchors
-            if ApplyAnchors then pcall(ApplyAnchors, true) end
-            local RefreshUnitFrames = _G.QUI_RefreshUnitFrames
-            if RefreshUnitFrames then pcall(RefreshUnitFrames) end
-            local RefreshGroupFrames = _G.QUI_RefreshGroupFrames
-            if RefreshGroupFrames then pcall(RefreshGroupFrames) end
+            RepositionFramesAfterScale()
         end)
     end
 
@@ -563,22 +549,14 @@ function QUICore:RegisterPostInitialize(callback)
     table.insert(self._postInitializeCallbacks, callback)
 end
 
+-- Layout Mode is the current name for what used to be Edit Mode bridging;
+-- these are exact aliases of the RegisterEditMode* pair above.
 function QUICore:RegisterLayoutModeEnter(callback)
-    local um = ns.QUI_LayoutMode
-    if um then
-        um:RegisterEnterCallback(callback)
-    else
-        table.insert(self._editModeEnterCallbacks, callback)
-    end
+    return self:RegisterEditModeEnter(callback)
 end
 
 function QUICore:RegisterLayoutModeExit(callback)
-    local um = ns.QUI_LayoutMode
-    if um then
-        um:RegisterExitCallback(callback)
-    else
-        table.insert(self._editModeExitCallbacks, callback)
-    end
+    return self:RegisterEditModeExit(callback)
 end
 
 function QUICore:RegisterPostEnable(callback)
@@ -621,15 +599,7 @@ function QUICore:OnEnable()
         if savedScale and savedScale > 0 then
             scaleToApply = savedScale
         else
-            -- Smart default based on resolution
-            local _, screenHeight = GetPhysicalScreenSize()
-            if screenHeight >= 2160 then      -- 4K
-                scaleToApply = 0.53
-            elseif screenHeight >= 1440 then  -- 1440p
-                scaleToApply = 0.64
-            else                              -- 1080p or lower
-                scaleToApply = 1.0
-            end
+            scaleToApply = ResolveSmartDefaultScale()
             self.db.profile.general.uiScale = scaleToApply
         end
         UIParent:SetScale(scaleToApply)

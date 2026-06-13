@@ -51,6 +51,16 @@ local function GetInstance(windowID)
     return inst
 end
 
+-- Resolve a (possibly nil/string) windowID to a valid 1..count window and
+-- return its tab-bar instance. Falls back to window 1 when out of range.
+local function ResolveInstance(windowID)
+    local Display = ns.QUI.Chat.DisplayLayer
+    local count = Display and Display.GetWindowCount and Display.GetWindowCount() or 0
+    windowID = tonumber(windowID) or 1
+    if windowID < 1 or (count > 0 and windowID > count) then windowID = 1 end
+    return GetInstance(windowID)
+end
+
 local storeSubscribed = false
 
 local function CustomTabSignature(t)
@@ -661,7 +671,7 @@ ShowOverflowMenu = function(inst)
     if not (_G.MenuUtil and _G.MenuUtil.CreateContextMenu) then return end
     if not (inst.firstHidden and inst.overflowBtn) then return end
     _G.MenuUtil.CreateContextMenu(inst.overflowBtn, function(_, rootDescription)
-        for i = inst.firstHidden or (#inst.buttons + 1), #inst.buttons do
+        for i = inst.firstHidden, #inst.buttons do
             local btn = inst.buttons[i]
             local fid = btn.frameID
             if fid then
@@ -711,11 +721,7 @@ ShowOverflowMenu = function(inst)
 end
 
 function TabUI.ActivateFrameID(windowID, frameID)
-    local Display = ns.QUI.Chat.DisplayLayer
-    local count = Display and Display.GetWindowCount and Display.GetWindowCount() or 0
-    windowID = tonumber(windowID) or 1
-    if windowID < 1 or (count > 0 and windowID > count) then windowID = 1 end
-    local inst = GetInstance(windowID)
+    local inst = ResolveInstance(windowID)
     frameID = NormalizeFrameID(frameID)
     if not frameID then return false end
     if not inst.bar then
@@ -728,11 +734,7 @@ end
 -- Select a conversation tab (rebuilds the bar first so a just-created
 -- conversation's button exists, then activates it).
 function TabUI.ActivateConversation(windowID, key)
-    local Display = ns.QUI.Chat.DisplayLayer
-    local count = Display and Display.GetWindowCount and Display.GetWindowCount() or 0
-    windowID = tonumber(windowID) or 1
-    if windowID < 1 or (count > 0 and windowID > count) then windowID = 1 end
-    local inst = GetInstance(windowID)
+    local inst = ResolveInstance(windowID)
     if not inst.bar then
         inst.pendingActivationID = "conv:" .. key
         return false

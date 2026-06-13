@@ -437,10 +437,6 @@ local function ResolveFeatureRouteFromPath(path)
         resolved.subPageIndex = route.subPageIndex
     end
 
-    if next(resolved) == nil then
-        return nil
-    end
-
     return resolved
 end
 
@@ -623,6 +619,16 @@ function Pins:GetCurrentProfileName(db)
     return nil
 end
 
+-- Subtrees that can never host a pinnable setting. Descending into them
+-- walks tens of thousands of nested tables (e.g. _migrationBackup holds
+-- full per-slot snapshots of prior profile state) and trips the WoW
+-- script watchdog.
+local PROFILE_PATH_SKIP_KEYS = {
+    _migrationBackup = true,
+    _schemaVersion = true,
+    _defaultsVersion = true,
+}
+
 function Pins:ResolveProfileTablePath(targetTable, db)
     db = db or GetCurrentDB()
     if type(targetTable) ~= "table" or not db then
@@ -646,16 +652,6 @@ function Pins:ResolveProfileTablePath(targetTable, db)
         return cached
     end
 
-    -- Subtrees that can never host a pinnable setting. Descending into them
-    -- walks tens of thousands of nested tables (e.g. _migrationBackup holds
-    -- full per-slot snapshots of prior profile state) and trips the WoW
-    -- script watchdog.
-    local SKIP_KEYS = {
-        _migrationBackup = true,
-        _schemaVersion = true,
-        _defaultsVersion = true,
-    }
-
     local visited = {}
     local function Walk(node, prefix)
         if type(node) ~= "table" or visited[node] then
@@ -664,7 +660,7 @@ function Pins:ResolveProfileTablePath(targetTable, db)
         visited[node] = true
 
         for key, value in pairs(node) do
-            if type(value) == "table" and not SKIP_KEYS[key] and not IsTransientOptionsBinding(value) then
+            if type(value) == "table" and not PROFILE_PATH_SKIP_KEYS[key] and not IsTransientOptionsBinding(value) then
                 local keyName = tostring(key)
                 local childPath = JoinPath(prefix, keyName)
                 if not self._profilePathCache[value] then
@@ -1097,8 +1093,8 @@ function Pins:ApplyAllForDB(db)
 
     local changed = false
     SafeForEachEntry(store, function(path, entry)
-        local value = entry and entry.value
-        if not self:IsPathPinnable(path, entry and entry.kind, value) then
+        local value = entry.value
+        if not self:IsPathPinnable(path, entry.kind, value) then
             MarkEntryApplyFailure(entry, path, "path is no longer pinnable")
             return
         end

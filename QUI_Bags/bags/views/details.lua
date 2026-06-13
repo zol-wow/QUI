@@ -13,7 +13,7 @@ Bags.Details = Details
 --- Returns nil when entry is nil (empty slot — same nil-for-nil contract as
 --- the original local BuildDetails in bag_window.lua).
 --- Field set: itemID, count, quality, isBound, classID, subClassID,
----   equipLoc, name, ilvl, expacID.
+---   equipLoc, name, ilvl, expacID, bindType.
 function Details.Build(entry)
     if not entry then return nil end
     local derived = Bags.ItemInfo.GetDerived(entry.itemID)

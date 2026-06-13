@@ -40,15 +40,7 @@ local function GetLabel(fullLabel, shortLabel, useShortLabel, useNoLabel)
     return fullLabel
 end
 
-local function EnsureText(slotFrame)
-    local text = slotFrame.text
-    if not text then
-        text = slotFrame:CreateFontString(nil, "OVERLAY")
-        text:SetPoint("CENTER")
-        slotFrame.text = text
-    end
-    return text
-end
+local EnsureText = Datatexts.EnsureText
 
 -- Hook installed by auto-width hosts (info bar); nil on fixed-width panels.
 local function MarkWidthDirty(slotFrame)

@@ -41,10 +41,6 @@ local function IsChatMessagingLockedDown()
     return I.IsChatMessagingLockedDown and I.IsChatMessagingLockedDown()
 end
 
-local function IsCombatLockedDown()
-    return type(InCombatLockdown) == "function" and InCombatLockdown()
-end
-
 -- Strip "-Realm" suffix.
 local function bareName(author)
     if IsSecret(author) then return nil end
@@ -129,7 +125,6 @@ local function highlightTrigger(msg, trigger, hex)
     end
     local lowerMsg     = msg:lower()
     local lowerTrigger = trigger:lower()
-    local triggerLen   = #trigger
     local pos = 1
     local out = {}
     local matched = false
@@ -146,8 +141,6 @@ local function highlightTrigger(msg, trigger, hex)
         out[#out + 1] = "|c" .. hex .. msg:sub(s, e) .. "|r"
         pos = e + 1
         if pos > #msg then break end
-        -- Safety: triggerLen 0 would loop forever; guard above ensures >=1.
-        if triggerLen == 0 then break end
     end
     if matched then
         return table.concat(out), true

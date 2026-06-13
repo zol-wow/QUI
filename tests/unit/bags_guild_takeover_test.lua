@@ -110,6 +110,7 @@ ns.Bags.GuildWindow = {
     OnBankClosed = function() sessionLog[#sessionLog + 1] = "window-onbankclosed" end,
 }
 
+assert(loadfile("QUI_Bags/bags/takeover_shared.lua"))("QUI", ns)
 local chunk = assert(loadfile("QUI_Bags/bags/guild_takeover.lua"))
 chunk("QUI", ns)
 local GuildTakeover = ns.Bags.GuildTakeover

@@ -182,7 +182,7 @@ end)
 local function Refresh()
     if not started then return end
     if IsEnabled() then StartUI() else StopUI() end
-    if IsEnabled() and uiActive then
+    if uiActive then
         if Bags.BagWindow.OnProfileChanged then Bags.BagWindow.OnProfileChanged() end
         if Bags.BankWindow.OnProfileChanged then Bags.BankWindow.OnProfileChanged() end
         if Bags.GuildWindow.OnProfileChanged then Bags.GuildWindow.OnProfileChanged() end

@@ -245,11 +245,10 @@ function GetSpellFlyoutSourceButton(flyout)
     return sourceButton
 end
 
-function GetSpellFlyoutSourceBarKey(flyout)
-    local sourceButton = GetSpellFlyoutSourceButton(flyout)
-    if not sourceButton then return nil end
-
-    local name = sourceButton.GetName and sourceButton:GetName()
+-- Map a button's global name to its bar key by prefix pattern. Shared tail of
+-- GetSpellFlyoutSourceBarKey and GetBarKeyFromButton — keep the prefix table in
+-- one place so the two callers cannot drift.
+local function ResolveBarKeyFromButtonName(name)
     if not name then return nil end
 
     if name:match("^ActionButton%d+$") then return "bar1" end
@@ -272,6 +271,14 @@ function GetSpellFlyoutSourceBarKey(flyout)
     if name:match("^QUI_StanceButton%d+$") or name:match("^StanceButton%d+$") then return "stance" end
 
     return nil
+end
+
+function GetSpellFlyoutSourceBarKey(flyout)
+    local sourceButton = GetSpellFlyoutSourceButton(flyout)
+    if not sourceButton then return nil end
+
+    local name = sourceButton.GetName and sourceButton:GetName()
+    return ResolveBarKeyFromButtonName(name)
 end
 
 function IsSpellFlyoutActiveForBar(barKey)
@@ -341,27 +348,7 @@ function GetBarKeyFromButton(button)
 
     local getName = button and button.GetName
     local name = getName and getName(button)
-    if not name then return nil end
-
-    if name:match("^ActionButton%d+$") then return "bar1" end
-    if name:match("^QUI_Bar1Button%d+$") then return "bar1" end
-    if name:match("^QUI_Bar2Button%d+$") then return "bar2" end
-    if name:match("^QUI_Bar3Button%d+$") then return "bar3" end
-    if name:match("^QUI_Bar4Button%d+$") then return "bar4" end
-    if name:match("^QUI_Bar5Button%d+$") then return "bar5" end
-    if name:match("^QUI_Bar6Button%d+$") then return "bar6" end
-    if name:match("^QUI_Bar7Button%d+$") then return "bar7" end
-    if name:match("^QUI_Bar8Button%d+$") then return "bar8" end
-    if name:match("^MultiBarBottomLeftButton%d+$") then return "bar2" end
-    if name:match("^MultiBarBottomRightButton%d+$") then return "bar3" end
-    if name:match("^MultiBarRightButton%d+$") then return "bar4" end
-    if name:match("^MultiBarLeftButton%d+$") then return "bar5" end
-    if name:match("^MultiBar5Button%d+$") then return "bar6" end
-    if name:match("^MultiBar6Button%d+$") then return "bar7" end
-    if name:match("^MultiBar7Button%d+$") then return "bar8" end
-    if name:match("^QUI_PetButton%d+$") or name:match("^PetActionButton%d+$") then return "pet" end
-    if name:match("^QUI_StanceButton%d+$") or name:match("^StanceButton%d+$") then return "stance" end
-    return nil
+    return ResolveBarKeyFromButtonName(name)
 end
 
 -- Get button index from button name

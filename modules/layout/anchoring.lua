@@ -20,6 +20,12 @@ ns.QUI_Anchoring = QUI_Anchoring
 local _forceRawPointMode = true
 C_Timer.After(0.5, function() _forceRawPointMode = false end)
 
+-- Declared at module scope so the early writers (PositionFrame/RegisterAnchoredFrame
+-- at lines ~457/492/715/727) and the PLAYER_REGEN_ENABLED reader share ONE upvalue.
+-- Previously the `local` lived below those writers, so they assigned a stray global
+-- and combat-deferred re-positioning was silently dropped after combat ended.
+local pendingAnchoredFrameUpdateAfterCombat = false
+
 -- Anchor target registry: { name = { frame = frame, options = {...} } }
 QUI_Anchoring.anchorTargets = {}
 
@@ -145,8 +151,7 @@ local function GetSavedFrameAnchorSettings(anchoringDB, key)
     return nil
 end
 
--- frame param reserved for future frame-aware border calculations
-local function GetBorderAdjustment(frame, anchorPoint, borderSize)
+local function GetBorderAdjustment(anchorPoint, borderSize)
     if not borderSize or borderSize == 0 then return 0, 0 end
 
     local adjX, adjY = 0, 0
@@ -513,8 +518,8 @@ function QUI_Anchoring:PositionFrame(frame, anchorTarget, anchorPoint, offsetX, 
         local targetBorderSize = GetBorderSize(parentFrame)
 
         -- Calculate border adjustments
-        local sourceAdjX, sourceAdjY = GetBorderAdjustment(frame, anchorPoint, sourceBorderSize)
-        local targetAdjX, targetAdjY = GetBorderAdjustment(frame, targetAnchorPoint, targetBorderSize)
+        local sourceAdjX, sourceAdjY = GetBorderAdjustment(anchorPoint, sourceBorderSize)
+        local targetAdjX, targetAdjY = GetBorderAdjustment(targetAnchorPoint, targetBorderSize)
         local netAdjX = targetAdjX - sourceAdjX
         local netAdjY = targetAdjY - sourceAdjY
 
@@ -523,8 +528,8 @@ function QUI_Anchoring:PositionFrame(frame, anchorTarget, anchorPoint, offsetX, 
 
         -- Use explicit dual anchors if provided
         if useExplicitDualAnchors then
-            local sourceAdjX2, sourceAdjY2 = GetBorderAdjustment(frame, sourceAnchorPoint2, sourceBorderSize)
-            local targetAdjX2, targetAdjY2 = GetBorderAdjustment(frame, targetAnchorPoint2, targetBorderSize)
+            local sourceAdjX2, sourceAdjY2 = GetBorderAdjustment(sourceAnchorPoint2, sourceBorderSize)
+            local targetAdjX2, targetAdjY2 = GetBorderAdjustment(targetAnchorPoint2, targetBorderSize)
             local netAdjX2 = targetAdjX2 - sourceAdjX2
             local netAdjY2 = targetAdjY2 - sourceAdjY2
 
@@ -556,8 +561,8 @@ function QUI_Anchoring:PositionFrame(frame, anchorTarget, anchorPoint, offsetX, 
     local targetBorderSize = GetBorderSize(anchorFrame)
 
     -- Calculate border adjustments
-    local sourceAdjX, sourceAdjY = GetBorderAdjustment(frame, anchorPoint, sourceBorderSize)
-    local targetAdjX, targetAdjY = GetBorderAdjustment(frame, targetAnchorPoint, targetBorderSize)
+    local sourceAdjX, sourceAdjY = GetBorderAdjustment(anchorPoint, sourceBorderSize)
+    local targetAdjX, targetAdjY = GetBorderAdjustment(targetAnchorPoint, targetBorderSize)
     local netAdjX = targetAdjX - sourceAdjX
     local netAdjY = targetAdjY - sourceAdjY
 
@@ -568,8 +573,8 @@ function QUI_Anchoring:PositionFrame(frame, anchorTarget, anchorPoint, offsetX, 
 
     -- Use explicit dual anchors if provided
     if useExplicitDualAnchors then
-        local sourceAdjX2, sourceAdjY2 = GetBorderAdjustment(frame, sourceAnchorPoint2, sourceBorderSize)
-        local targetAdjX2, targetAdjY2 = GetBorderAdjustment(frame, targetAnchorPoint2, targetBorderSize)
+        local sourceAdjX2, sourceAdjY2 = GetBorderAdjustment(sourceAnchorPoint2, sourceBorderSize)
+        local targetAdjX2, targetAdjY2 = GetBorderAdjustment(targetAnchorPoint2, targetBorderSize)
         local netAdjX2 = targetAdjX2 - sourceAdjX2
         local netAdjY2 = targetAdjY2 - sourceAdjY2
 
@@ -874,8 +879,6 @@ function QUI_Anchoring:SnapTo(frame, anchorTarget, anchorPoint, offsetX, offsetY
 end
 
 -- Update all registered anchored frames
-local pendingAnchoredFrameUpdateAfterCombat = false
-
 function QUI_Anchoring:UpdateAllAnchoredFrames()
     if InCombatLockdown() and not ns._inInitSafeWindow then
         -- Avoid hot-loop requeueing during combat; process once on PLAYER_REGEN_ENABLED.

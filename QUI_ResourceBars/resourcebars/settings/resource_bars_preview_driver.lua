@@ -244,7 +244,7 @@ local function ApplyPreviewTicks(section, cfg, resource)
 
     local thickness = math_max(1, cfg.tickThickness or 1)
     local tc = cfg.tickColor or { 0, 0, 0, 1 }
-    local isVertical = (cfg and cfg.orientation) == "VERTICAL"
+    local isVertical = cfg.orientation == "VERTICAL"
 
     for i = 1, max - 1 do
         local tick = section.ticks[i]
@@ -504,21 +504,16 @@ function Module.Refresh()
     p:Hide()
     s:Hide()
 
+    local primaryInfo   = showPrimary   and { section = p, cfg = pc, textCfg = primaryTextCfg,   resource = primaryResource,   label = POWER_DISPLAY_NAMES[primaryResource]   or "Power" }     or nil
+    local secondaryInfo = showSecondary and { section = s, cfg = sc, textCfg = secondaryTextCfg, resource = secondaryResource, label = POWER_DISPLAY_NAMES[secondaryResource] or "Secondary" } or nil
+
     local orderedSections = {}
     if swapBars then
-        if showSecondary then
-            orderedSections[#orderedSections + 1] = { section = s, cfg = sc, textCfg = secondaryTextCfg, resource = secondaryResource, label = POWER_DISPLAY_NAMES[secondaryResource] or "Secondary" }
-        end
-        if showPrimary then
-            orderedSections[#orderedSections + 1] = { section = p, cfg = pc, textCfg = primaryTextCfg, resource = primaryResource, label = POWER_DISPLAY_NAMES[primaryResource] or "Power" }
-        end
+        if secondaryInfo then orderedSections[#orderedSections + 1] = secondaryInfo end
+        if primaryInfo   then orderedSections[#orderedSections + 1] = primaryInfo   end
     else
-        if showPrimary then
-            orderedSections[#orderedSections + 1] = { section = p, cfg = pc, textCfg = primaryTextCfg, resource = primaryResource, label = POWER_DISPLAY_NAMES[primaryResource] or "Power" }
-        end
-        if showSecondary then
-            orderedSections[#orderedSections + 1] = { section = s, cfg = sc, textCfg = secondaryTextCfg, resource = secondaryResource, label = POWER_DISPLAY_NAMES[secondaryResource] or "Secondary" }
-        end
+        if primaryInfo   then orderedSections[#orderedSections + 1] = primaryInfo   end
+        if secondaryInfo then orderedSections[#orderedSections + 1] = secondaryInfo end
     end
 
     local nextY = -20

@@ -5070,6 +5070,7 @@ return {
             },
             borderSize = 1,
             castbar = {
+              anchor = "unitframe",
               color = {
                 [1] = 0.40400000000000003,
                 [2] = 1,

@@ -58726,7 +58726,6 @@ ns.QUI_SearchCache = {
         },
         {
             ["category"] = "ui",
-            ["description"] = "Add a small pixel gap between buttons inside the drawer.",
             ["featureId"] = "minimap",
             ["label"] = "Button Spacing",
             ["providerKey"] = "minimap",
@@ -58739,10 +58738,16 @@ ns.QUI_SearchCache = {
                 ["dbKey"] = "buttonSpacing",
                 ["dbPath"] = "profile.minimap.buttonDrawer",
                 ["featureId"] = "minimap",
-                ["kind"] = "checkbox",
+                ["kind"] = "slider",
+                ["max"] = 20,
+                ["min"] = 0,
+                ["options"] = {
+                    ["description"] = "Pixel gap between buttons inside the drawer.",
+                },
                 ["providerKey"] = "minimap",
+                ["step"] = 1,
             },
-            ["widgetType"] = "checkbox",
+            ["widgetType"] = "slider",
         },
         {
             ["category"] = "ui",

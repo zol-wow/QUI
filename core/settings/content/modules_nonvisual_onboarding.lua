@@ -36,7 +36,7 @@ end
 --   refreshGlobal — optional string name of a _G function to call after
 --                   toggling (e.g. "QUI_RefreshPopupBlocker")
 ---------------------------------------------------------------------------
-local function MakeSubtableEntry(group, label, caption, combatLocked, dbParentPath, dbField, refreshGlobal)
+local function MakeSubtableEntry(id, group, label, caption, combatLocked, dbParentPath, dbField, refreshGlobal)
     local function GetDB()
         return type(dbParentPath) == "function" and dbParentPath() or nil
     end
@@ -57,7 +57,10 @@ local function MakeSubtableEntry(group, label, caption, combatLocked, dbParentPa
             if not db then return end
             db[dbField] = val and true or false
             if ns.QUI_Modules then
-                ns.QUI_Modules:NotifyChanged(refreshGlobal or label)
+                -- NotifyChanged keys on the registered feature id (matches the
+                -- per-row Subscribe in modules_page); refreshGlobal/label are a
+                -- _G fn name / display string and would miss the right bucket.
+                ns.QUI_Modules:NotifyChanged(id)
             end
             if refreshGlobal and type(_G[refreshGlobal]) == "function" then
                 _G[refreshGlobal]()
@@ -87,7 +90,7 @@ end
 ---------------------------------------------------------------------------
 local function Register(id, group, label, caption, combatLocked, dbParentPath, dbField, refreshGlobal)
     RegisterNonVisualFeature(id, MakeSubtableEntry(
-        group, label, caption, combatLocked, dbParentPath, dbField, refreshGlobal
+        id, group, label, caption, combatLocked, dbParentPath, dbField, refreshGlobal
     ))
 end
 
@@ -112,7 +115,13 @@ local function DBChar(key)
     return function()
         local QUI = _G.QUI
         local c = QUI and QUI.db and QUI.db.char
-        return key and c and c[key] or c
+        -- When a key is requested, return ONLY that subtable (nil if absent) — never
+        -- fall back to the whole char root, which would let clickCast read/write
+        -- db.char.enabled and pollute the root instead of db.char.clickCast.
+        if key then
+            return c and c[key]
+        end
+        return c
     end
 end
 

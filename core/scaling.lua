@@ -113,7 +113,6 @@ end
 --- @param frame? Frame Optional frame for frame-aware scaling (defaults to UIParent)
 --- @return number Virtual coordinate value representing exactly x physical pixels
 function QUICore:Scale(x, frame)
-    if x == 0 then return 0 end
     return self:Pixels(x, frame)
 end
 
@@ -371,17 +370,23 @@ function QUICore:GetSmartDefaultScale()
     return 1.0                                                -- 1080p or lower
 end
 
+-- Re-run ApplyUIScale once combat ends (shared by the in-combat and
+-- protected-call-failed deferral paths in ApplyUIScale below).
+local function DeferUIScaleToRegen(self)
+    if not self._UIScalePending then
+        self._UIScalePending = true
+        self:RegisterEvent('PLAYER_REGEN_ENABLED', function()
+            self._UIScalePending = nil
+            self:UnregisterEvent('PLAYER_REGEN_ENABLED')
+            self:ApplyUIScale()
+        end)
+    end
+end
+
 --- Apply UI scale (defers if in combat, unless in ADDON_LOADED safe window)
 function QUICore:ApplyUIScale()
     if InCombatLockdown() and not ns._inInitSafeWindow then
-        if not self._UIScalePending then
-            self._UIScalePending = true
-            self:RegisterEvent('PLAYER_REGEN_ENABLED', function()
-                self._UIScalePending = nil
-                self:UnregisterEvent('PLAYER_REGEN_ENABLED')
-                self:ApplyUIScale()
-            end)
-        end
+        DeferUIScaleToRegen(self)
         return
     end
 
@@ -395,14 +400,7 @@ function QUICore:ApplyUIScale()
 
     local success = pcall(function() UIParent:SetScale(scaleToApply) end)
     if not success then
-        if not self._UIScalePending then
-            self._UIScalePending = true
-            self:RegisterEvent('PLAYER_REGEN_ENABLED', function()
-                self._UIScalePending = nil
-                self:UnregisterEvent('PLAYER_REGEN_ENABLED')
-                self:ApplyUIScale()
-            end)
-        end
+        DeferUIScaleToRegen(self)
         return
     end
 

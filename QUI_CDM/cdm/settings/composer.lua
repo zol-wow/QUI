@@ -33,6 +33,9 @@ local InCombatLockdown = InCombatLockdown
 local C_Timer = C_Timer
 local Sources = ns.CDMSources
 
+-- Forward declaration: defined below, called from earlier function bodies.
+local RefreshAll_Composer
+
 ---------------------------------------------------------------------------
 -- CONSTANTS
 ---------------------------------------------------------------------------
@@ -145,13 +148,6 @@ local function GetContainerImpliedKind(containerKey)
     if ctype == "aura" or ctype == "auraBar" then return "aura" end
     return nil
 end
-
-local TYPE_TAGS = {
-    spell = "[Spell]",
-    item  = "[Item]",
-    slot  = "[Slot]",
-    macro = "[Macro]",
-}
 
 local GetContainerDB
 local AssignCooldownRowsByCapacity
@@ -776,7 +772,6 @@ end
 -- LIVE PREVIEW
 ---------------------------------------------------------------------------
 local previewFrame = nil
-local previewScaleSlider = nil
 local previewScale = 1.5
 
 local function BuildPreviewSection(parent)
@@ -4213,7 +4208,7 @@ end
 ---------------------------------------------------------------------------
 -- FULL REFRESH
 ---------------------------------------------------------------------------
-function RefreshAll_Composer()
+function RefreshAll_Composer() -- luacheck: ignore (assigns forward-declared upvalue)
     if not composerFrame or not activeContainer then return end
 
     -- Update title

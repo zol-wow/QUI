@@ -146,16 +146,9 @@ end
 ---------------------------------------------------------------------------
 
 -- The window's OnUpdate is owned exclusively by ScheduleRefresh (one-shot).
-local function ScheduleRefresh()
-    if win and win:IsShown() and not win._updateScheduled then
-        win._updateScheduled = true
-        win:SetScript("OnUpdate", function(self)
-            self:SetScript("OnUpdate", nil)
-            self._updateScheduled = false
-            BankWindow.Refresh()
-        end)
-    end
-end
+local ScheduleRefresh = Bags.Chassis.MakeScheduleRefresh(
+    function() return win end,
+    function() BankWindow.Refresh() end)
 
 --- The character record the window renders: the viewed character's cached
 --- record (offline browse), or the current character's. The warband record
@@ -447,16 +440,8 @@ local function ApplyTabHover(bagID)
 end
 
 local function CreateTabButton()
-    local btn = CreateFrame("Button", nil, win._tabStrip)
+    local btn = Bags.Chassis.CreatePanelButton(win._tabStrip, true)
     btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    bg:SetVertexColor(0, 0, 0, 0.35)
-    UIKit.DisablePixelSnap(bg)
-    btn._label = btn:CreateFontString(nil, "ARTWORK")
-    btn._label:SetPoint("CENTER", 0, 0)
-    btn._label:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
     UIKit.CreateBorderLines(btn)
     btn:SetScript("OnClick", function(self, mouseButton)
         local entry = self._entry
@@ -517,15 +502,7 @@ local function CreateTabButton()
 end
 
 local function CreateBankTypeButton(label, bankType)
-    local btn = CreateFrame("Button", nil, win._bankTypeStrip)
-    local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    bg:SetVertexColor(0, 0, 0, 0.35)
-    UIKit.DisablePixelSnap(bg)
-    btn._label = btn:CreateFontString(nil, "ARTWORK")
-    btn._label:SetPoint("CENTER", 0, 0)
-    btn._label:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+    local btn = Bags.Chassis.CreatePanelButton(win._bankTypeStrip, true)
     btn._label:SetText(label)
     btn._bankType = bankType
     btn:SetSize(math.max(88, math.ceil(btn._label:GetStringWidth()) + 16), SEGMENT_H)
@@ -537,15 +514,7 @@ local function CreateBankTypeButton(label, bankType)
 end
 
 local function CreateFooterButton(label, onClick, tooltip)
-    local btn = CreateFrame("Button", nil, win._footer)
-    local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    bg:SetVertexColor(0, 0, 0, 0.35)
-    UIKit.DisablePixelSnap(bg)
-    btn._label = btn:CreateFontString(nil, "ARTWORK")
-    btn._label:SetPoint("CENTER", 0, 0)
-    btn._label:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+    local btn = Bags.Chassis.CreatePanelButton(win._footer, true)
     btn._label:SetText(label)
     btn:SetSize(math.max(40, math.ceil(btn._label:GetStringWidth()) + 12), 18)
     UIKit.CreateBorderLines(btn)
@@ -670,12 +639,7 @@ local function EnsureWindow()
     -- dark bg + centered label + QUI border lines recolored per Refresh;
     -- font set at creation like the footer texts). Live-mode only — the
     -- executor's bank scope needs an open session (Refresh gates shown).
-    local sort = CreateFrame("Button", nil, win._header)
-    local sortBg = sort:CreateTexture(nil, "BACKGROUND")
-    sortBg:SetAllPoints()
-    sortBg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    sortBg:SetVertexColor(0, 0, 0, 0.35)
-    UIKit.DisablePixelSnap(sortBg)
+    local sort = Bags.Chassis.CreatePanelButton(win._header, false)
     -- compact 18×18 icon button (Blizzard autosort atlas, vendored
     -- ContainerFrame.xml:314 / BankFrame.xml:264); tooltip carries the verb
     sort._icon = sort:CreateTexture(nil, "ARTWORK")

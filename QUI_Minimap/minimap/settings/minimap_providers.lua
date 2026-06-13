@@ -26,67 +26,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
     local HEADER_GAP = 26
     local SECTION_GAP = 14
 
-    local function RegisterSharedOnly(key, provider)
-        ctx.RegisterShared(key, provider)
-    end
-
+    -- Shared provider-panel layout scaffold (core/settings_layout_shared.lua).
     local function MakeLayout(content)
         if U._layoutModePositionOnly then
             return U.MakeSuppressedProviderLayout(content)
         end
-        local Opts = ns.QUI_Options
-        local y = -10
-        local L = {}
-        local sections = {}
-
-        function L.headerAt(text)
-            local h = Opts.CreateAccentDotLabel(content, text, y)
-            h:ClearAllPoints()
-            h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-            h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-            y = y - HEADER_GAP
-        end
-        function L.sectionAt()
-            local c = Opts.CreateSettingsCardGroup(content, y)
-            c.frame:ClearAllPoints()
-            c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-            c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-            return c
-        end
-        function L.closeSection(c)
-            c.Finalize()
-            y = y - c.frame:GetHeight() - SECTION_GAP
-        end
-        function L.placeCustom(frame, height)
-            frame:ClearAllPoints()
-            frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-            frame:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-            frame:SetHeight(height)
-            y = y - height - SECTION_GAP
-        end
-
-        -- Tail relayout for legacy V2 collapsibles (Position, OpenFullSettings)
-        -- that still use sections + StandardRelayout. They get laid out
-        -- starting from the bottom of the V3 cards above.
-        local function relayoutSections()
-            local cy = y
-            for _, s in ipairs(sections) do
-                s:ClearAllPoints()
-                s:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, cy)
-                s:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-                cy = cy - s:GetHeight() - 4
-            end
-            content:SetHeight(math.abs(cy) + 16)
-        end
-        L.sections = sections
-        L.relayoutSections = relayoutSections
-
-        function L.finish()
-            content:SetHeight(math.abs(y) + 10)
-            return content:GetHeight()
-        end
-
-        return L
+        return ns.QUI_SettingsLayoutShared.MakeLayout(content, U)
     end
 
     local function row(parent, label, widget, desc)
@@ -96,7 +41,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
     ---------------------------------------------------------------------------
     -- MINIMAP PROVIDER
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("minimap", { build = function(content, key, _width)
+    ctx.RegisterShared("minimap", { build = function(content, key, _width)
         local db = U.GetProfileDB()
         if not db or not db.minimap or not ns.QUI_Options then return 80 end
         local mm = db.minimap
@@ -371,8 +316,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             { description = "Hide the drawer toggle button until you mouse over the minimap." })
         s7.AddRow(row(s7.frame, "Center Growth", bdCenterW), row(s7.frame, "Auto-Hide Toggle Button", bdAutoTogW))
 
-        local bdSpaceW = GUI:CreateFormCheckbox(s7.frame, nil, "buttonSpacing", drawer, Refresh,
-            { description = "Add a small pixel gap between buttons inside the drawer." })
+        local bdSpaceW = GUI:CreateFormSlider(s7.frame, nil, 0, 20, 1, "buttonSpacing", drawer, Refresh,
+            { description = "Pixel gap between buttons inside the drawer." })
         s7.AddRow(row(s7.frame, "Button Spacing", bdSpaceW))
         L.closeSection(s7)
 

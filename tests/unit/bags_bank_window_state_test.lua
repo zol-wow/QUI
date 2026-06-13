@@ -25,6 +25,7 @@ end
 local ns = loader.LoadAll()
 ns.Helpers = { CreateDBGetter = function() return function() return {} end end }
 
+assert(loadfile("QUI_Bags/bags/views/chassis.lua"))("QUI", ns)
 local chunk = assert(loadfile("QUI_Bags/bags/views/bank_window.lua"))
 chunk("QUI", ns)
 local BankWindow = ns.Bags.BankWindow

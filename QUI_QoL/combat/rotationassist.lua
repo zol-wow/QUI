@@ -37,8 +37,6 @@ local isInitialized = false
 local lastSpellID = nil
 local inCombat = false
 
--- Performance: Ticker instead of OnUpdate
-
 -- GCD spell ID (standard global cooldown reference)
 local GCD_SPELL_ID = 61304
 
@@ -613,20 +611,25 @@ if AssistedCombatManager and AssistedCombatManager.UpdateAllAssistedHighlightFra
     end)
 end
 
+-- Shared login/catch-up init body (PEW and LOD WhenLoggedIn run it identically).
+local function InitOrCatchUp()
+    C_Timer.After(0.5, function()
+        if not isInitialized then
+            CreateIconFrame()
+            isInitialized = true
+        end
+        RefreshAvailability()
+        local db = GetDB()
+        if db and db.enabled then
+            RefreshIconFrame()
+            DoUpdate()
+        end
+    end)
+end
+
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_ENTERING_WORLD" then
-        C_Timer.After(0.5, function()
-            if not isInitialized then
-                CreateIconFrame()
-                isInitialized = true
-            end
-            RefreshAvailability()
-            local db = GetDB()
-            if db and db.enabled then
-                RefreshIconFrame()
-                DoUpdate()
-            end
-        end)
+        InitOrCatchUp()
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" or event == "TRAIT_CONFIG_UPDATED" then
         RefreshAvailability()
         local db = GetDB()
@@ -665,18 +668,7 @@ end)
 -- QUI.WhenLoggedIn is nil only in the headless test harness.
 if QUI.WhenLoggedIn then
     QUI.WhenLoggedIn(function()
-        C_Timer.After(0.5, function()
-            if not isInitialized then
-                CreateIconFrame()
-                isInitialized = true
-            end
-            RefreshAvailability()
-            local db = GetDB()
-            if db and db.enabled then
-                RefreshIconFrame()
-                DoUpdate()
-            end
-        end)
+        InitOrCatchUp()
     end)
 end
 

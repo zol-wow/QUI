@@ -879,7 +879,7 @@ SlashCmdList["QUISCANNED"] = function()
 
     -- Show pending queue
     local pendingCount = 0
-    for spellID, data in pairs(SpellScanner.pendingScanning) do
+    for _ in pairs(SpellScanner.pendingScanning) do
         pendingCount = pendingCount + 1
     end
     if pendingCount > 0 then

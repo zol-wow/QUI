@@ -158,10 +158,8 @@ function CDMIconMirrorIndex.Create(callbacks)
         for _, byCooldownID in pairs(controller.byCategory) do
             for _, iconSet in pairs(byCooldownID) do
                 mirrorIndexKeys = mirrorIndexKeys + 1
-                for icon in pairs(iconSet) do
-                    if icon then
-                        mirrorIndexIcons = mirrorIndexIcons + 1
-                    end
+                for _ in pairs(iconSet) do
+                    mirrorIndexIcons = mirrorIndexIcons + 1
                 end
             end
         end

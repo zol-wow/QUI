@@ -235,13 +235,18 @@ local function SetupFrame(frame)
         local slotOffX, slotOffY = CalculateSlotOffset(i, iconSize, spacingVal, direction, maxSlots)
         container:SetPoint(anchorPoint, frame, anchorPoint, offsetX + slotOffX, offsetY + slotOffY)
 
-        state.anchorIDs[i] = RegisterAnchor(unit, i, container, settings)
+        -- RegisterAnchor can return nil; append only real IDs so anchorIDs stays a
+        -- dense array (ipairs in RemoveAllAnchors stops at the first hole, and the
+        -- #anchorIDs count at the re-anchor guard would otherwise be wrong).
+        local anchorID = RegisterAnchor(unit, i, container, settings)
+        if anchorID then
+            state.anchorIDs[#state.anchorIDs + 1] = anchorID
+        end
     end
 
     -- Blizzard creates the cooldown spiral children asynchronously; apply
     -- reverse on next frame once they exist.
     if reverseSwipe then
-        ApplyReverseSwipe(state, true)
         C_Timer.After(0, function()
             if frameState[frame] == state then
                 ApplyReverseSwipe(state, true)

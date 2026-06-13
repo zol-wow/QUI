@@ -519,6 +519,11 @@ local function StopTicker()
     end
 end
 
+local function ShouldRunTicker()
+    local settings = GetSettings()
+    return state.preview or (settings and settings.enabled)
+end
+
 local function RefreshFocusCastAlert()
     CreateAlertFrame()
     CaptureNotInterruptibleFlag()
@@ -533,9 +538,6 @@ local function TogglePreview(show)
         StopTicker()
     end
     RefreshFocusCastAlert()
-    if not state.preview then
-        UpdateAlert()
-    end
 end
 
 local eventFrame = CreateFrame("Frame")
@@ -578,8 +580,7 @@ eventFrame:SetScript("OnEvent", function(self, event, unit, castGUID, spellID, .
 
     -- Start the cooldown poll ticker when focus begins casting; stop on cast end.
     if event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
-        local settings = GetSettings()
-        if state.preview or (settings and settings.enabled) then
+        if ShouldRunTicker() then
             StartTicker()
         end
     elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_CHANNEL_STOP"
@@ -589,8 +590,7 @@ eventFrame:SetScript("OnEvent", function(self, event, unit, castGUID, spellID, .
         StopTicker()
         -- New focus may already be mid-cast; restart ticker if so.
         if IsFocusCasting() then
-            local settings = GetSettings()
-            if state.preview or (settings and settings.enabled) then
+            if ShouldRunTicker() then
                 StartTicker()
             end
         end

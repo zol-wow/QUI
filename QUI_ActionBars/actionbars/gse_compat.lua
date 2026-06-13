@@ -381,7 +381,7 @@ local function SetSequenceLiveIcon(sequenceName, iconID)
 end
 
 --- Defer icon restore one frame so WoW's own ActionButton_Update runs first.
-local function ScheduleIconRestore(btn, icon)
+local function ScheduleIconRestore(btn)
     C_Timer.After(0, function()
         if not btn:GetAttribute("gse-button") then return end
         ApplyGSEButtonIcon(btn, btn:GetName())
@@ -393,12 +393,8 @@ local function ShowGSEButtonTooltip(btn)
     if not btn or not btn.GetAttribute then return end
     local seqName = btn:GetAttribute("gse-button")
     if not seqName then return end
-    local seqFrame = _G[seqName]
-    if not seqFrame or not GSE or not GSE.SequencesExec then return end
-    local step = seqFrame:GetAttribute("step") or 1
-    local executionseq = GSE.SequencesExec[seqName]
-    if not executionseq or not executionseq[step] then return end
-    local entry = executionseq[step]
+    local entry = GetSequenceStepEntry(seqName)
+    if not entry then return end
     local spellID
     if entry.type == "spell" and entry.spell and C_Spell and C_Spell.GetSpellInfo then
         local info = C_Spell.GetSpellInfo(GSE.UnEscapeString(entry.spell))
@@ -501,11 +497,11 @@ local function HookButtonIconUpdates(buttonName)
                 if texture then icon:SetTexture(texture) end
                 SetWatermarkVisible(bName, false)
             else
-                ScheduleIconRestore(self, icon)
+                ScheduleIconRestore(self)
                 SetWatermarkVisible(bName, true)
             end
         elseif name == "type" and value == "click" then
-            ScheduleIconRestore(self, icon)
+            ScheduleIconRestore(self)
         end
     end)
 end
@@ -607,10 +603,7 @@ local function InstallOverrideOnButton(buttonName, sequenceName, suppressRefresh
     -- Icon management — replicate what GSE's overrideActionButton does
     HookButtonIconUpdates(buttonName)
     AddWatermark(buttonName)
-    local icon = GetButtonIcon(btn, buttonName)
-    if icon then
-        ScheduleIconRestore(btn, icon)
-    end
+    ScheduleIconRestore(btn)
     if btn.Update then
         pcall(btn.Update, btn)
     end

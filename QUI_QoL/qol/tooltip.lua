@@ -1805,6 +1805,25 @@ local function SetupTooltipHook()
         return false
     end
 
+    -- Scan tooltip left-lines 2..5; on the first non-secret line where
+    -- matches(text) is true, blank + hide it. Mirrors the realm/guild loops.
+    local function HideTooltipLineMatching(tooltip, matches)
+        for i = 2, 5 do
+            local line = tooltip.GetLeftLine and tooltip:GetLeftLine(i)
+                or _G["GameTooltipTextLeft" .. i]
+            if line then
+                local okLT, lt = pcall(line.GetText, line)
+                if okLT and lt and not Helpers.IsSecretValue(lt) then
+                    if matches(lt) then
+                        pcall(line.SetText, line, "")
+                        pcall(line.Hide, line)
+                        break
+                    end
+                end
+            end
+        end
+    end
+
     local function HandleUnitNamePost(tooltip, settings, unit)
         TooltipDebugCount("qol.unitNamePost")
 
@@ -1829,20 +1848,9 @@ local function SetupTooltipHook()
         if hideServer then
             local okRealm, _, unitRealm = pcall(UnitName, unit)
             if okRealm and unitRealm and unitRealm ~= "" and not Helpers.IsSecretValue(unitRealm) then
-                for i = 2, 5 do
-                    local line = tooltip.GetLeftLine and tooltip:GetLeftLine(i)
-                        or _G["GameTooltipTextLeft" .. i]
-                    if line then
-                        local okLT, lt = pcall(line.GetText, line)
-                        if okLT and lt and not Helpers.IsSecretValue(lt) then
-                            if lt == unitRealm then
-                                pcall(line.SetText, line, "")
-                                pcall(line.Hide, line)
-                                break
-                            end
-                        end
-                    end
-                end
+                HideTooltipLineMatching(tooltip, function(lt)
+                    return lt == unitRealm
+                end)
             end
         end
 
@@ -1850,20 +1858,9 @@ local function SetupTooltipHook()
             local okGuild, guildName = pcall(GetGuildInfo, unit)
             if okGuild and guildName and guildName ~= "" and not Helpers.IsSecretValue(guildName) then
                 local bracketed = "<" .. guildName .. ">"
-                for i = 2, 5 do
-                    local line = tooltip.GetLeftLine and tooltip:GetLeftLine(i)
-                        or _G["GameTooltipTextLeft" .. i]
-                    if line then
-                        local okLT, lt = pcall(line.GetText, line)
-                        if okLT and lt and not Helpers.IsSecretValue(lt) then
-                            if lt == guildName or lt == bracketed then
-                                pcall(line.SetText, line, "")
-                                pcall(line.Hide, line)
-                                break
-                            end
-                        end
-                    end
-                end
+                HideTooltipLineMatching(tooltip, function(lt)
+                    return lt == guildName or lt == bracketed
+                end)
             end
         end
     end
@@ -2110,24 +2107,31 @@ local function SetupTooltipHook()
         return true
     end
 
-    local function ResolveSpellIDFromTooltipData(tooltip, data, allowTooltipFallback)
-        if data then
-            local fromID = data.id
-            if type(fromID) == "number" then
-                if not (type(issecretvalue) == "function" and issecretvalue(fromID)) then
-                    TooltipDebugCount("qol.spellIDDataHit")
-                    return fromID
-                end
-            end
-
-            local fromSpellID = data.spellID
-            if type(fromSpellID) == "number" then
-                if not (type(issecretvalue) == "function" and issecretvalue(fromSpellID)) then
-                    TooltipDebugCount("qol.spellIDDataHit")
-                    return fromSpellID
-                end
+    -- Resolve a numeric, non-secret id from data.id or data[secondaryKey].
+    -- Increments dataCounter and returns the id on hit, else nil.
+    local function ResolveIDFromDataFields(data, secondaryKey, dataCounter)
+        if not data then return nil end
+        local fromID = data.id
+        if type(fromID) == "number" then
+            if not (type(issecretvalue) == "function" and issecretvalue(fromID)) then
+                TooltipDebugCount(dataCounter)
+                return fromID
             end
         end
+
+        local fromSecondary = data[secondaryKey]
+        if type(fromSecondary) == "number" then
+            if not (type(issecretvalue) == "function" and issecretvalue(fromSecondary)) then
+                TooltipDebugCount(dataCounter)
+                return fromSecondary
+            end
+        end
+        return nil
+    end
+
+    local function ResolveSpellIDFromTooltipData(tooltip, data, allowTooltipFallback)
+        local fromData = ResolveIDFromDataFields(data, "spellID", "qol.spellIDDataHit")
+        if fromData then return fromData end
 
         if allowTooltipFallback and tooltip and tooltip.GetSpell then
             local ok, a, b, c, d = pcall(tooltip.GetSpell, tooltip)
@@ -2150,23 +2154,8 @@ local function SetupTooltipHook()
     end
 
     local function ResolveItemIDFromTooltipData(tooltip, data, allowTooltipFallback)
-        if data then
-            local fromID = data.id
-            if type(fromID) == "number" then
-                if not (type(issecretvalue) == "function" and issecretvalue(fromID)) then
-                    TooltipDebugCount("qol.itemIDDataHit")
-                    return fromID
-                end
-            end
-
-            local fromItemID = data.itemID
-            if type(fromItemID) == "number" then
-                if not (type(issecretvalue) == "function" and issecretvalue(fromItemID)) then
-                    TooltipDebugCount("qol.itemIDDataHit")
-                    return fromItemID
-                end
-            end
-        end
+        local fromData = ResolveIDFromDataFields(data, "itemID", "qol.itemIDDataHit")
+        if fromData then return fromData end
 
         if allowTooltipFallback and tooltip and tooltip.GetItem then
             local ok, _, itemLink = pcall(tooltip.GetItem, tooltip)
@@ -2283,16 +2272,21 @@ local function SetupTooltipHook()
     -- TAINT SAFETY: Suppress tooltips that bypass GameTooltip_SetDefaultAnchor.
     -- Uses TooltipDataProcessor instead of hooksecurefunc(GameTooltip, "SetSpellByID"/"SetItemByID")
     -- to avoid tainting GameTooltip's dispatch tables.
-    AddTrackedTooltipPostCall(Enum.TooltipDataType.Spell, "qol.spellVisibilityPost", function(tooltip)
-        TooltipDebugCount("qol.spellVisibilityPost")
+    -- Shared owned-tooltip visibility gate for the Spell/Item post-calls.
+    local function ApplyOwnedTooltipHide(tooltip, context)
         if tooltip ~= GameTooltip then return end
         if tooltip.IsForbidden and tooltip:IsForbidden() then return end
         local settings = Provider:GetSettings()
         if not settings or not settings.enabled then return end
         InvalidatePendingSetUnit()
-        if ShouldHideOwnedTooltip(tooltip, "abilities") then
+        if ShouldHideOwnedTooltip(tooltip, context) then
             tooltip:Hide()
         end
+    end
+
+    AddTrackedTooltipPostCall(Enum.TooltipDataType.Spell, "qol.spellVisibilityPost", function(tooltip)
+        TooltipDebugCount("qol.spellVisibilityPost")
+        ApplyOwnedTooltipHide(tooltip, "abilities")
     end)
 
     AddTrackedTooltipPostCall(Enum.TooltipDataType.Item, "qol.itemPost", function(tooltip, data)
@@ -2303,14 +2297,7 @@ local function SetupTooltipHook()
             end
         end
 
-        if tooltip ~= GameTooltip then return end
-        if tooltip.IsForbidden and tooltip:IsForbidden() then return end
-        local settings = Provider:GetSettings()
-        if not settings or not settings.enabled then return end
-        InvalidatePendingSetUnit()
-        if ShouldHideOwnedTooltip(tooltip, "items") then
-            tooltip:Hide()
-        end
+        ApplyOwnedTooltipHide(tooltip, "items")
     end)
 
     if TooltipInspect and TooltipInspect.RegisterRefreshCallback then

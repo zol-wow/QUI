@@ -4,6 +4,25 @@ env.ADDON_NAME = ADDON_NAME
 env.ns = ns
 env.SetChunkEnv(1, env)
 
+-- Clear OverrideActionBar.isShownExternal and re-run the untaint dance until
+-- the field reads secure again. Edit Mode / Blizzard_ActionBar may have written
+-- a tainted show flag; left in place it propagates through ActionBarController
+-- on re-show. Shared by Initialize and the ADDON_LOADED handler, which ran this
+-- identical loop.
+local function PurgeOverrideBarShownExternal()
+    local overrideBar = _G.OverrideActionBar
+    if overrideBar and overrideBar.system then
+        overrideBar.isShownExternal = nil
+        local c = 42
+        repeat
+            if overrideBar[c] == nil then
+                overrideBar[c] = nil
+            end
+            c = c + 1
+        until issecurevariable(overrideBar, "isShownExternal")
+    end
+end
+
 ---------------------------------------------------------------------------
 -- PUBLIC API
 ---------------------------------------------------------------------------
@@ -86,17 +105,7 @@ function ActionBarsOwned:Initialize()
     -- We still clean isShownExternal on OverrideActionBar to prevent
     -- Edit Mode from writing a tainted show flag that could propagate
     -- through ActionBarController on re-show.
-    local overrideBar = _G.OverrideActionBar
-    if overrideBar and overrideBar.system then
-        overrideBar.isShownExternal = nil
-        local c = 42
-        repeat
-            if overrideBar[c] == nil then
-                overrideBar[c] = nil
-            end
-            c = c + 1
-        until issecurevariable(overrideBar, "isShownExternal")
-    end
+    PurgeOverrideBarShownExternal()
 
     -- Suppress PossessActionBar (mind control bar) — can overlap QUI bars
     local possessBar = _G.PossessActionBar or _G.PossessBarFrame
@@ -571,17 +580,7 @@ initFrame:SetScript("OnEvent", function(self, event, addonName)
         -- during those states via its qui_overridevisibility state driver.
         -- Clean isShownExternal here (Blizzard_ActionBar may have just
         -- created it) so Edit Mode writes don't taint ActionBarController.
-        local overrideBar = _G.OverrideActionBar
-        if overrideBar and overrideBar.system then
-            overrideBar.isShownExternal = nil
-            local c = 42
-            repeat
-                if overrideBar[c] == nil then
-                    overrideBar[c] = nil
-                end
-                c = c + 1
-            until issecurevariable(overrideBar, "isShownExternal")
-        end
+        PurgeOverrideBarShownExternal()
     elseif ActionBarsOwned.HandleSpellBookAddonLoaded then
         ActionBarsOwned.HandleSpellBookAddonLoaded(addonName)
     end
@@ -642,7 +641,7 @@ do
 
         for _, info in ipairs(BAR_ELEMENTS) do
             local dbKey = DB_KEY_MAP[info.key] or info.key
-            local containerKey = DB_KEY_MAP[info.key] or info.key
+            local containerKey = dbKey
             um:RegisterElement({
                 key = info.key,
                 label = info.label,

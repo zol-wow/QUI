@@ -584,7 +584,7 @@ function QUI:BackwardsCompat()
     if QUI_DB and QUI_DB.profiles and QUI_DB.profiles.Default then
         self:DebugPrint("Profiles.Default.imports Exists: " .. tostring(not (not QUI_DB.profiles.Default.imports)))
         self:DebugPrint("global.imports Exists: " .. tostring(not (not self.db.global.imports)))
-        self:DebugPrint("global.imports is {}: " .. tostring(self.db.global.imports == {}))
+        self:DebugPrint("global.imports is {}: " .. tostring(next(self.db.global.imports) == nil))
 
         -- if imports are in default profile db, and not in global, move them over
         if QUI_DB.profiles.Default.imports and (not self.db.global.imports or next(self.db.global.imports) == nil) then

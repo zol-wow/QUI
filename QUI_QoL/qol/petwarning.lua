@@ -149,6 +149,15 @@ PositionPetWarningFrame()
 local petWarningTicker = nil
 local currentWarningState = nil
 
+local function ClearPetWarning()
+    PetWarningFrame:Hide()
+    if LCG and PetWarningFrame.glowActive then
+        LCG.PixelGlow_Stop(PetWarningFrame, "_QUIPetWarning")
+        PetWarningFrame.glowActive = false
+    end
+    currentWarningState = nil
+end
+
 local function UpdatePetWarningState()
     if PetWarningFrame.dismissedThisFight then
         return false
@@ -156,34 +165,19 @@ local function UpdatePetWarningState()
 
     local settings = GetSettings()
     if not settings or settings.petCombatWarning == false then
-        PetWarningFrame:Hide()
-        if LCG and PetWarningFrame.glowActive then
-            LCG.PixelGlow_Stop(PetWarningFrame, "_QUIPetWarning")
-            PetWarningFrame.glowActive = false
-        end
-        currentWarningState = nil
+        ClearPetWarning()
         return false
     end
 
     if not IsPetSpec() then
-        PetWarningFrame:Hide()
-        if LCG and PetWarningFrame.glowActive then
-            LCG.PixelGlow_Stop(PetWarningFrame, "_QUIPetWarning")
-            PetWarningFrame.glowActive = false
-        end
-        currentWarningState = nil
+        ClearPetWarning()
         return false
     end
 
     -- Only warn in instances
     local inInstance, instanceType = IsInInstance()
     if not inInstance or (instanceType ~= "party" and instanceType ~= "raid") then
-        PetWarningFrame:Hide()
-        if LCG and PetWarningFrame.glowActive then
-            LCG.PixelGlow_Stop(PetWarningFrame, "_QUIPetWarning")
-            PetWarningFrame.glowActive = false
-        end
-        currentWarningState = nil
+        ClearPetWarning()
         return false
     end
 
@@ -216,12 +210,7 @@ local function UpdatePetWarningState()
     end
 
     -- Pet is fine
-    PetWarningFrame:Hide()
-    if LCG and PetWarningFrame.glowActive then
-        LCG.PixelGlow_Stop(PetWarningFrame, "_QUIPetWarning")
-        PetWarningFrame.glowActive = false
-    end
-    currentWarningState = nil
+    ClearPetWarning()
     return false
 end
 
@@ -243,12 +232,7 @@ local function StopPetWarningPolling()
         petWarningTicker = nil
     end
 
-    PetWarningFrame:Hide()
-    if LCG and PetWarningFrame.glowActive then
-        LCG.PixelGlow_Stop(PetWarningFrame, "_QUIPetWarning")
-        PetWarningFrame.glowActive = false
-    end
-    currentWarningState = nil
+    ClearPetWarning()
 
     PetWarningFrame.dismissedThisFight = false
 end

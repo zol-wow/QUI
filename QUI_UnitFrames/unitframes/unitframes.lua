@@ -56,6 +56,35 @@ QUI_UF.auraPreviewMode = {}  -- Tracks buff/debuff preview state (keyed by "unit
 -- Reference to castbar module
 local QUI_Castbar = ns.QUI_Castbar
 
+-- Compute the combined bounding box of all shown boss frames + their castbars.
+-- Returns left, right, top, bottom (any may be nil if nothing is shown).
+local function ComputeBossExtent()
+    local left, right, top, bottom
+    for i = 1, 5 do
+        local f = QUI_UF.frames["boss" .. i]
+        if f and f:IsShown() then
+            local fL, fR, fT, fB = f:GetLeft(), f:GetRight(), f:GetTop(), f:GetBottom()
+            if fL and fR and fT and fB then
+                left = left and math.min(left, fL) or fL
+                right = right and math.max(right, fR) or fR
+                top = top and math.max(top, fT) or fT
+                bottom = bottom and math.min(bottom, fB) or fB
+            end
+            local cb = ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["boss" .. i]
+            if cb and cb:IsShown() then
+                local cbL, cbR, cbT, cbB = cb:GetLeft(), cb:GetRight(), cb:GetTop(), cb:GetBottom()
+                if cbL and cbR and cbT and cbB then
+                    left = left and math.min(left, cbL) or cbL
+                    right = right and math.max(right, cbR) or cbR
+                    top = top and math.max(top, cbT) or cbT
+                    bottom = bottom and math.min(bottom, cbB) or cbB
+                end
+            end
+        end
+    end
+    return left, right, top, bottom
+end
+
 -- Check if a frame is owned by the layout system (blocks module positioning)
 local function IsFrameOverridden(frame)
     local anchoring = ns.QUI_Anchoring
@@ -1540,6 +1569,15 @@ local function UpdateHealthTextColor(frame)
     end
 end
 
+-- Clear the ToT (target-of-target) display when the target has no target.
+-- State driver handles Show/Hide - don't call it here to avoid taint.
+local function ClearToTDisplay(frame)
+    if frame.nameText then frame.nameText:SetText("") end
+    if frame.healthText then frame.healthText:SetText("") end
+    if frame.powerText then frame.powerText:Hide() end
+    if frame.healthBar then frame.healthBar:SetValue(0) end
+end
+
 ---------------------------------------------------------------------------
 -- UPDATE: Name text (with truncation and inline ToT support)
 ---------------------------------------------------------------------------
@@ -2865,12 +2903,7 @@ local function CreateUnitFrame(unit, unitKey)
                     UpdateFrame(self)
                 else
                     -- Clear the ToT display when target has no target
-                    if self.nameText then self.nameText:SetText("") end
-                    if self.healthText then self.healthText:SetText("") end
-                    if self.powerText then self.powerText:Hide() end
-                    if self.healthBar then
-                        self.healthBar:SetValue(0)
-                    end
+                    ClearToTDisplay(self)
                 end
             end
         elseif event == "UNIT_TARGET" then
@@ -2884,10 +2917,7 @@ local function CreateUnitFrame(unit, unitKey)
                         UpdateFrame(self)
                     else
                         -- Clear display when target has no target
-                        if self.nameText then self.nameText:SetText("") end
-                        if self.healthText then self.healthText:SetText("") end
-                        if self.powerText then self.powerText:Hide() end
-                        if self.healthBar then self.healthBar:SetValue(0) end
+                        ClearToTDisplay(self)
                     end
                 end
             end
@@ -2995,7 +3025,6 @@ function QUI_UF:ShowPreview(unitKey)
     if unitKey == "boss" then
         local general = GetGeneralSettings()
         local settings = GetUnitSettings("boss")
-        local spacing = settings and settings.spacing or 40
 
         -- First apply current settings to all boss frames
         self:RefreshFrame("boss")
@@ -3655,7 +3684,6 @@ function QUI_UF:RefreshFrame(unitKey)
 
     -- Apply HUD layer priority
     local hudLayering = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.hudLayering
-    local layerKey = unitKey .. "Frame"
     -- Map unitKey to hudLayering key (player -> playerFrame, target -> targetFrame, etc.)
     local layerPriority
     if unitKey == "player" then
@@ -3970,7 +3998,7 @@ function QUI_UF:RefreshFrame(unitKey)
                 if not frame.indicatorFrame then
                     local indicatorFrame = CreateFrame("Frame", nil, frame)
                     indicatorFrame:SetAllPoints()
-                    indicatorFrame:SetFrameLevel(frame.textFrame:GetFrameLevel() + 5)
+                    indicatorFrame:SetFrameLevel(frame.textFrame and (frame.textFrame:GetFrameLevel() + 5) or (frame:GetFrameLevel() + 10))
                     frame.indicatorFrame = indicatorFrame
                 end
                 local leaderIcon = frame.indicatorFrame:CreateTexture(nil, "OVERLAY")
@@ -4460,11 +4488,6 @@ local function GetAnchorDimensions(anchorFrame, anchorType)
     }
 end
 
--- Helper: Resolve anchor frame for a given anchor type.
-local function GetAnchorFrameOrProxy(anchorType)
-    return GetAnchorFrame(anchorType)
-end
-
 -- Update unit frames that are anchored to another frame.
 -- Uses RELATIVE WoW anchors through the proxy system so that when the
 -- anchor source is dragged in Edit Mode, the unit frame follows in
@@ -4479,7 +4502,7 @@ _G.QUI_UpdateAnchoredUnitFrames = function()
     local playerSettings = db.player
     local playerAnchorType = playerSettings and playerSettings.anchorTo
     if playerAnchorType and playerAnchorType ~= "disabled" and QUI_UF.frames.player and not IsFrameOverridden(QUI_UF.frames.player) then
-        local anchorFrame = GetAnchorFrameOrProxy(playerAnchorType)
+        local anchorFrame = GetAnchorFrame(playerAnchorType)
         if anchorFrame and anchorFrame:IsShown() then
             local anchor = GetAnchorDimensions(anchorFrame, playerAnchorType)
             if anchor then
@@ -4511,7 +4534,7 @@ _G.QUI_UpdateAnchoredUnitFrames = function()
     local targetSettings = db.target
     local targetAnchorType = targetSettings and targetSettings.anchorTo
     if targetAnchorType and targetAnchorType ~= "disabled" and QUI_UF.frames.target and not IsFrameOverridden(QUI_UF.frames.target) then
-        local anchorFrame = GetAnchorFrameOrProxy(targetAnchorType)
+        local anchorFrame = GetAnchorFrame(targetAnchorType)
         if anchorFrame and anchorFrame:IsShown() then
             local anchor = GetAnchorDimensions(anchorFrame, targetAnchorType)
             if anchor then
@@ -4702,30 +4725,7 @@ do
             getSize = function()
                 -- Measure actual visual extent of all shown boss frames + castbars
                 if not QUI_UF.frames or not QUI_UF.frames.boss1 then return nil end
-                local left, right, top, bottom
-
-                for i = 1, 5 do
-                    local f = QUI_UF.frames["boss" .. i]
-                    if f and f:IsShown() then
-                        local fL, fR, fT, fB = f:GetLeft(), f:GetRight(), f:GetTop(), f:GetBottom()
-                        if fL and fR and fT and fB then
-                            left = left and math.min(left, fL) or fL
-                            right = right and math.max(right, fR) or fR
-                            top = top and math.max(top, fT) or fT
-                            bottom = bottom and math.min(bottom, fB) or fB
-                        end
-                        local cb = ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["boss" .. i]
-                        if cb and cb:IsShown() then
-                            local cbL, cbR, cbT, cbB = cb:GetLeft(), cb:GetRight(), cb:GetTop(), cb:GetBottom()
-                            if cbL and cbR and cbT and cbB then
-                                left = left and math.min(left, cbL) or cbL
-                                right = right and math.max(right, cbR) or cbR
-                                top = top and math.max(top, cbT) or cbT
-                                bottom = bottom and math.min(bottom, cbB) or cbB
-                            end
-                        end
-                    end
-                end
+                local left, right, top, bottom = ComputeBossExtent()
                 if not left or not right or not top or not bottom then return nil end
                 return right - left, top - bottom
             end,
@@ -4734,30 +4734,7 @@ do
                 local boss1 = QUI_UF.frames.boss1
                 local boss1CX, boss1CY = boss1:GetCenter()
                 if not boss1CX or not boss1CY then return 0, 0 end
-                local left, right, top, bottom
-
-                for i = 1, 5 do
-                    local f = QUI_UF.frames["boss" .. i]
-                    if f and f:IsShown() then
-                        local fL, fR, fT, fB = f:GetLeft(), f:GetRight(), f:GetTop(), f:GetBottom()
-                        if fL and fR and fT and fB then
-                            left = left and math.min(left, fL) or fL
-                            right = right and math.max(right, fR) or fR
-                            top = top and math.max(top, fT) or fT
-                            bottom = bottom and math.min(bottom, fB) or fB
-                        end
-                        local cb = ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["boss" .. i]
-                        if cb and cb:IsShown() then
-                            local cbL, cbR, cbT, cbB = cb:GetLeft(), cb:GetRight(), cb:GetTop(), cb:GetBottom()
-                            if cbL and cbR and cbT and cbB then
-                                left = left and math.min(left, cbL) or cbL
-                                right = right and math.max(right, cbR) or cbR
-                                top = top and math.max(top, cbT) or cbT
-                                bottom = bottom and math.min(bottom, cbB) or cbB
-                            end
-                        end
-                    end
-                end
+                local left, right, top, bottom = ComputeBossExtent()
                 if not left or not right or not top or not bottom then return 0, 0 end
                 return ((left + right) / 2) - boss1CX, ((top + bottom) / 2) - boss1CY
             end,

@@ -53,6 +53,13 @@ local EDITBOX_TEXTURES = {
     "Prompt", "NewcomerHint",
 }
 
+-- Child FRAMES (not textures) hidden by StyleEditBox and re-shown by
+-- RemoveEditBoxStyle; the two must stay symmetric, so keep one list.
+local EDITBOX_CHILD_SUFFIXES = {
+    "Left", "Mid", "Right",
+    "FocusLeft", "FocusMid", "FocusRight",
+}
+
 local EDITBOX_BACKDROP_HEIGHT = 24
 local EDITBOX_TEXT_PAD_X = 8
 
@@ -225,11 +232,7 @@ local function StyleEditBox(chatFrame)
         -- re-applying it stack-overflows the client (see RemoveEditBoxStyle).
 
         -- Hide child FRAMES by global name (these are frames, not textures)
-        local childSuffixes = {
-            "Left", "Mid", "Right",
-            "FocusLeft", "FocusMid", "FocusRight",
-        }
-        for _, suffix in ipairs(childSuffixes) do
+        for _, suffix in ipairs(EDITBOX_CHILD_SUFFIXES) do
             local child = _G[frameName .. "EditBox" .. suffix]
             if child and child.Hide then
                 child:Hide()
@@ -417,11 +420,7 @@ function RemoveEditBoxStyle(chatFrame)
         for _, key in ipairs(EDITBOX_HEADER_KEYS) do
             RestoreStockEditBoxFont(editBox[key])
         end
-        local childSuffixes = {
-            "Left", "Mid", "Right",
-            "FocusLeft", "FocusMid", "FocusRight",
-        }
-        for _, suffix in ipairs(childSuffixes) do
+        for _, suffix in ipairs(EDITBOX_CHILD_SUFFIXES) do
             local child = frameName and _G[frameName .. "EditBox" .. suffix]
             if child and child.Show then
                 child:Show()

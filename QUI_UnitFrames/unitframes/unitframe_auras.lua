@@ -99,6 +99,21 @@ local bossEngageFrame
 -- A plain Lua side-table keeps the value off the frame entirely.
 local auraIconState = Helpers.CreateStateTable()
 
+-- Map a user anchor corner to the icon/frame attach points (flip vertical only
+-- for outside positioning) plus the 1px border-compensation X offset.
+local AURA_ANCHOR_FRAMEPOINT = {
+    TOPLEFT     = { "BOTTOMLEFT",  "TOPLEFT",     1 },
+    TOPRIGHT    = { "BOTTOMRIGHT", "TOPRIGHT",   -1 },
+    BOTTOMLEFT  = { "TOPLEFT",     "BOTTOMLEFT",  1 },
+    BOTTOMRIGHT = { "TOPRIGHT",    "BOTTOMRIGHT", -1 },
+}
+
+local function MapAuraAnchorToFramePoint(anchor)
+    local map = AURA_ANCHOR_FRAMEPOINT[anchor]
+    if not map then return nil, nil, nil end
+    return map[1], map[2], map[3]
+end
+
 ---------------------------------------------------------------------------
 -- AURA ICON SETTINGS
 ---------------------------------------------------------------------------
@@ -477,7 +492,6 @@ local function UpdateAuras(frame)
 
     -- Helper to safely set cooldown (handles secret values on enemy targets)
     -- Uses duration object API when available for combat-safe cooldown display
-    local IsSecretValue = Helpers.IsSecretValue
     local function SafeSetCooldown(cooldownFrame, auraData, unit)
         if not cooldownFrame then return false end
         if not auraData then return false end
@@ -590,16 +604,7 @@ local function UpdateAuras(frame)
 
             -- Map user anchor to frame anchor points (flip vertical only for outside positioning)
             -- Border compensation: icons have 1px border extending beyond frame
-            local iconPoint, framePoint, borderOffsetX
-            if debuffAnchor == "TOPLEFT" then
-                iconPoint, framePoint, borderOffsetX = "BOTTOMLEFT", "TOPLEFT", 1
-            elseif debuffAnchor == "TOPRIGHT" then
-                iconPoint, framePoint, borderOffsetX = "BOTTOMRIGHT", "TOPRIGHT", -1
-            elseif debuffAnchor == "BOTTOMLEFT" then
-                iconPoint, framePoint, borderOffsetX = "TOPLEFT", "BOTTOMLEFT", 1
-            elseif debuffAnchor == "BOTTOMRIGHT" then
-                iconPoint, framePoint, borderOffsetX = "TOPRIGHT", "BOTTOMRIGHT", -1
-            end
+            local iconPoint, framePoint, borderOffsetX = MapAuraAnchorToFramePoint(debuffAnchor)
 
             icon:ClearAllPoints()
             icon:SetPoint(iconPoint, frame, framePoint, xPos + (borderOffsetX or 0), yPos)
@@ -686,16 +691,7 @@ local function UpdateAuras(frame)
 
             -- Map user anchor to frame anchor points (flip vertical only for outside positioning)
             -- Border compensation: icons have 1px border extending beyond frame
-            local iconPoint, framePoint, borderOffsetX
-            if buffAnchor == "TOPLEFT" then
-                iconPoint, framePoint, borderOffsetX = "BOTTOMLEFT", "TOPLEFT", 1
-            elseif buffAnchor == "TOPRIGHT" then
-                iconPoint, framePoint, borderOffsetX = "BOTTOMRIGHT", "TOPRIGHT", -1
-            elseif buffAnchor == "BOTTOMLEFT" then
-                iconPoint, framePoint, borderOffsetX = "TOPLEFT", "BOTTOMLEFT", 1
-            elseif buffAnchor == "BOTTOMRIGHT" then
-                iconPoint, framePoint, borderOffsetX = "TOPRIGHT", "BOTTOMRIGHT", -1
-            end
+            local iconPoint, framePoint, borderOffsetX = MapAuraAnchorToFramePoint(buffAnchor)
 
             icon:ClearAllPoints()
             icon:SetPoint(iconPoint, frame, framePoint, xPos + (borderOffsetX or 0), yPos)
@@ -999,16 +995,7 @@ function QUI_UF:ShowAuraPreviewForFrame(frame, unitKey, auraType)
 
         -- Map user anchor to frame anchor points (flip vertical only for outside positioning)
         -- Border compensation: icons have 1px border extending beyond frame
-        local iconPoint, framePoint, borderOffsetX
-        if anchor == "TOPLEFT" then
-            iconPoint, framePoint, borderOffsetX = "BOTTOMLEFT", "TOPLEFT", 1
-        elseif anchor == "TOPRIGHT" then
-            iconPoint, framePoint, borderOffsetX = "BOTTOMRIGHT", "TOPRIGHT", -1
-        elseif anchor == "BOTTOMLEFT" then
-            iconPoint, framePoint, borderOffsetX = "TOPLEFT", "BOTTOMLEFT", 1
-        elseif anchor == "BOTTOMRIGHT" then
-            iconPoint, framePoint, borderOffsetX = "TOPRIGHT", "BOTTOMRIGHT", -1
-        end
+        local iconPoint, framePoint, borderOffsetX = MapAuraAnchorToFramePoint(anchor)
 
         icon:ClearAllPoints()
         icon:SetPoint(iconPoint, frame, framePoint, xPos + (borderOffsetX or 0), yPos)

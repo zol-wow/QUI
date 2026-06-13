@@ -450,6 +450,13 @@ end
 -- Player links (LinkUtil parity: |Hplayer:name:lineID:chatType:chatTarget|h)
 -- ---------------------------------------------------------------------------
 
+-- Bare bracketed player hyperlink "|Hplayer:<name>|h[<shown>]|h" used by the
+-- achievement and channel-INVITE notice lines. Keep the link template in one
+-- place so a format change can't drift between callers.
+local function BracketedPlayerLink(name, shown)
+    return ("|Hplayer:%s|h[%s]|h"):format(name, shown)
+end
+
 local function ChatTargetFor(chatGroup, sender, chNum)
     if chatGroup == "CHANNEL" then
         return type(chNum) == "number" and tostring(chNum) or ""
@@ -648,7 +655,7 @@ local function FormatSpecialLine(event, typeKey, kind, p)
     if kind == "ach" then
         if type(sender) ~= "string" or sender == "" then return nil end
         local shown = p.decorated or sender
-        local link = ("|Hplayer:%s|h[%s]|h"):format(sender, shown)
+        local link = BracketedPlayerLink(sender, shown)
         return FormatString(text, link)
     elseif kind == "bossnotice" then
         if type(sender) ~= "string" or sender == "" then return nil end
@@ -670,7 +677,7 @@ local function FormatSpecialLine(event, typeKey, kind, p)
         local actor = type(sender) == "string" and sender or ""
         local target = type(targetUser) == "string" and targetUser or ""
         if text == "INVITE" then
-            local link = actor ~= "" and ("|Hplayer:%s|h[%s]|h"):format(actor, actor) or ""
+            local link = actor ~= "" and BracketedPlayerLink(actor, actor) or ""
             return FormatString(gs, name, link)
         elseif target ~= "" then
             return FormatString(gs, num, name, actor, target)

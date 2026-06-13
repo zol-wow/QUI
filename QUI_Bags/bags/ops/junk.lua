@@ -45,7 +45,7 @@ local GetSettings = Helpers.CreateDBGetter("bags")
 local SELL_INTERVAL = 0.17  -- seconds between UseContainerItem sells (≈6/sec)
 
 -- Informational house print prefix (mirrors sort_executor.lua's PREFIX).
-local PREFIX = "|cFF30D1FFQUI:|r"
+local PREFIX = Bags.OpsShared.PREFIX
 
 local merchantOpen = false
 local queue = nil  -- active sell RateQueue, nil when idle
@@ -123,9 +123,7 @@ function Junk.SellJunk(onDone)
         return
     end
     -- shared ops gate: cursor/slot ops must never overlap (wrong-item hazards)
-    if (Bags.SortExecutor and Bags.SortExecutor.IsRunning and Bags.SortExecutor.IsRunning())
-        or (Bags.Transfers and Bags.Transfers.IsRunning and Bags.Transfers.IsRunning())
-        or (Bags.Junk and Bags.Junk.IsSelling and Bags.Junk.IsSelling()) then
+    if Bags.OpsShared.OpsBusy() then
         if onDone then onDone(false, "busy") end
         return
     end

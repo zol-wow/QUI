@@ -126,30 +126,6 @@ local function ValidateImportTree(value, label, state, depth)
     return true
 end
 
-local function ValidateTableTypeShape(candidate, schema, path, errors, depth)
-    if #errors >= MAX_SCHEMA_ERRORS then return end
-    depth = depth or 0
-    if depth > MAX_IMPORT_DEPTH then return end
-    if type(candidate) ~= "table" or type(schema) ~= "table" then return end
-
-    for key, schemaValue in pairs(schema) do
-        if #errors >= MAX_SCHEMA_ERRORS then break end
-
-        local candidateValue = candidate[key]
-        if candidateValue ~= nil then
-            local schemaType = type(schemaValue)
-            local candidateType = type(candidateValue)
-            local keyPath = ("%s.%s"):format(path or "profile", tostring(key))
-
-            if schemaType ~= candidateType then
-                table.insert(errors, { path = keyPath, expected = schemaType, actual = candidateType })
-            elseif schemaType == "table" then
-                ValidateTableTypeShape(candidateValue, schemaValue, keyPath, errors, depth + 1)
-            end
-        end
-    end
-end
-
 local function ValidateTableTypeShapeDetailed(candidate, schema, path, errors, depth)
     if #errors >= MAX_DETAIL_TYPE_MISMATCHES then return end
     depth = depth or 0
@@ -2581,7 +2557,6 @@ function QUICore:ImportSingleTrackerBar(str)
     end
 
     -- Generate collision-safe unique ID for the imported bar
-    local oldID = data.bar.id
     local newID = GenerateUniqueTrackerID()
     local importedBar = CloneValue(data.bar)
     importedBar.id = newID

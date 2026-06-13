@@ -174,11 +174,11 @@ function _resolverRuntimePolicy.ApplyDurationObjectCooldown(cd, durObj, clearWhe
         clearWhenZero = true
     end
 
-local applied = true; cd.SetCooldownFromDurationObject(cd, durObj, clearWhenZero)
+    cd.SetCooldownFromDurationObject(cd, durObj, clearWhenZero)
     if reverse ~= nil and cd.SetReverse then
         cd.SetReverse(cd, reverse and true or false)
     end
-    return applied and true or false
+    return true
 end
 
 -- Per-spell override lookup helper.  Returns the cached override table
@@ -3999,7 +3999,7 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
         spellEntry.name = itemName or ""
     else
         local storedName = entry.name
-        if type(storedName) == "string" and true and storedName ~= "" then
+        if type(storedName) == "string" and storedName ~= "" then
             spellEntry.name = storedName
         else
             spellEntry.name = GetCachedSpellName(entry.id) or ""

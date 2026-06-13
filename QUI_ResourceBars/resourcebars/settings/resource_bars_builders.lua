@@ -17,10 +17,13 @@ local PAD = (ns.QUI_Options and ns.QUI_Options.PADDING) or 15
 local HEADER_GAP = 26
 local SECTION_GAP = 14
 
-local TEXT_SPEC_KEYS = {
-    "showText", "showPercent", "hidePercentSymbol", "textAlign",
-    "textSize", "textX", "textY", "textUseClassColor", "textCustomColor",
-}
+-- Per-spec text helpers live in resourcebars.lua and are shared via the
+-- ns.QUI_ResourceBars_Internal export. That table is populated at runtime
+-- (the QUI_ResourceBars addon loads before this on-demand QUI_Options file),
+-- so resolve it lazily at call time rather than capturing a file-local.
+local function GetInternal()
+    return ns.QUI_ResourceBars_Internal
+end
 
 local VISIBILITY_OPTIONS = {
     { value = "always", text = "Always" },
@@ -174,23 +177,12 @@ local function CreateIndicatorValueProxy(indicatorCfg)
 end
 
 local function EnsureTextSpecOverrides(cfg, specID)
+    local internal = GetInternal()
+    if internal and internal.EnsureTextSpecOverrides then
+        return internal.EnsureTextSpecOverrides(cfg, specID)
+    end
     if type(cfg.textSpecOverrides) ~= "table" then
         cfg.textSpecOverrides = {}
-    end
-    if type(cfg.textSpecOverrides[specID]) ~= "table" then
-        local base = {}
-        for _, key in ipairs(TEXT_SPEC_KEYS) do
-            local value = cfg[key]
-            if type(value) == "table" then
-                local copy = {}
-                for tableKey, tableValue in pairs(value) do
-                    copy[tableKey] = tableValue
-                end
-                value = copy
-            end
-            base[key] = value
-        end
-        cfg.textSpecOverrides[specID] = base
     end
     return cfg.textSpecOverrides[specID]
 end
@@ -198,38 +190,9 @@ end
 ---------------------------------------------------------------------------
 -- V3 BODY HELPERS (per-page, scoped via closure over the page's `y` cursor)
 ---------------------------------------------------------------------------
+-- Shared provider-panel layout scaffold (core/settings_layout_shared.lua).
 local function MakeLayout(content)
-    local Opts = ns.QUI_Options
-    local y = -10
-    local L = {}
-
-    function L.headerAt(text)
-        local h = Opts.CreateAccentDotLabel(content, text, y)
-        h:ClearAllPoints()
-        h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-        y = y - HEADER_GAP
-    end
-
-    function L.sectionAt()
-        local c = Opts.CreateSettingsCardGroup(content, y)
-        c.frame:ClearAllPoints()
-        c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-        return c
-    end
-
-    function L.closeSection(c)
-        c.Finalize()
-        y = y - c.frame:GetHeight() - SECTION_GAP
-    end
-
-    function L.finish()
-        content:SetHeight(math.abs(y) + 10)
-        return content:GetHeight()
-    end
-
-    return L
+    return ns.QUI_SettingsLayoutShared.MakeLayout(content)
 end
 
 local function row(parent, label, widget, desc)

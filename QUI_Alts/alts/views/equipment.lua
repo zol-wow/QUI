@@ -17,6 +17,12 @@
 ---------------------------------------------------------------------------
 -- luacheck: read globals ColorManager ITEM_QUALITY_COLORS ChatEdit_InsertLink
 local ADDON_NAME, ns = ...
+
+local Shared = ns.AltsViewShared
+local ClassColor = Shared.ClassColor
+local GeneralFont = Shared.GeneralFont
+local GeneralOutline = Shared.GeneralOutline
+local MakeFS = Shared.MakeFS
 local Alts = ns.Alts or {}; ns.Alts = Alts
 
 local Helpers = ns.Helpers
@@ -98,28 +104,9 @@ end
 -- Frame parts (no headless test).
 ---------------------------------------------------------------------------
 
-local function GeneralFont()
-    return (Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont())
-        or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-end
 
-local function GeneralOutline()
-    return (Helpers and Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline())
-        or ""
-end
 
-local function MakeFS(parent, size)
-    local fs = parent:CreateFontString(nil, "ARTWORK")
-    fs:SetFont(GeneralFont(), size or 11, GeneralOutline())
-    fs:SetWordWrap(false)
-    return fs
-end
 
-local function ClassColor(classToken)
-    local c = classToken and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken]
-    if c then return c.r, c.g, c.b end
-    return 1, 1, 1
-end
 
 local function GetQualityColor(quality)
     -- 12.0 modern path: ColorManager wraps quality colors (incl. user
@@ -259,6 +246,14 @@ local function Builder(parent)
             fs:Show()
         end
         for i = #slotRows + 1, #labelPool do labelPool[i]:Hide() end
+        -- hide surplus pooled cell rows from a previously taller grid
+        -- (e.g. an optional slot emptied), across every visible column
+        for i = #slotRows + 1, #cellPool do
+            local row = cellPool[i]
+            if row then
+                for _, cell in pairs(row) do cell:Hide() end
+            end
+        end
 
         local footY = -(HEADER_H + 2) - #slotRows * ROW_H
 

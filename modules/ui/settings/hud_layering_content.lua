@@ -9,43 +9,12 @@ local Registry = Settings and Settings.Registry
 local Schema = Settings and Settings.Schema
 
 local PAD = (Shared and Shared.PADDING) or 15
-local HEADER_GAP = 26
-local SECTION_GAP = 14
 local CreateScrollableContent = Shared.CreateScrollableContent
 
 local GetCore = Helpers.GetCore
 
-local function MakeLayout(content, startY)
-    local y = startY or -10
-    local L = {}
-    function L.headerAt(text)
-        local h = Shared.CreateAccentDotLabel(content, text, y)
-        h:ClearAllPoints()
-        h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-        y = y - HEADER_GAP
-    end
-    function L.sectionAt()
-        local c = Shared.CreateSettingsCardGroup(content, y)
-        c.frame:ClearAllPoints()
-        c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-        return c
-    end
-    function L.closeSection(c)
-        c.Finalize()
-        y = y - c.frame:GetHeight() - SECTION_GAP
-    end
-    function L.finish()
-        content:SetHeight(math.abs(y) + 10)
-        return content:GetHeight()
-    end
-    return L
-end
-
-local function row(parent, label, widget, desc)
-    return Shared.BuildSettingRow(parent, label, widget, desc)
-end
+local MakeLayout = ns.QUI_ModulesSettingsLayout.MakeLayout
+local row = ns.QUI_ModulesSettingsLayout.Row
 
 --------------------------------------------------------------------------------
 -- HUD LAYERING PAGE
@@ -60,7 +29,7 @@ local function BuildHUDLayeringContent(content)
         if not db then return nil end
         if not db.hudLayering then
             db.hudLayering = {
-                essential = 5, utility = 5, buffIcon = 5,
+                essential = 5, utility = 5, buffIcon = 5, buffBar = 5,
                 primaryPowerBar = 7, secondaryPowerBar = 6,
                 playerFrame = 4, targetFrame = 4, totFrame = 3, petFrame = 3, focusFrame = 4, bossFrames = 4,
                 playerCastbar = 5, targetCastbar = 5,

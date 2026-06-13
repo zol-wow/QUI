@@ -585,6 +585,28 @@ local function KillNineSlice(nineSlice)
     end
 end
 
+-- Resolve edit-mode opacity (0 is valid = transparent, so check for nil)
+local function ResolveBackdropOpacity(bga)
+    local manager = _G.ObjectiveTrackerManager
+    if manager and manager.backgroundAlpha ~= nil then
+        return manager.backgroundAlpha
+    end
+    return bga or 0.95
+end
+
+-- Apply backdrop border/background colors with the hidden-border one-pixel inset
+local function ApplyBackdropColors(backdrop, hideBorder, sr, sg, sb, sa, bgr, bgg, bgb, opacity)
+    local borderColor = hideBorder and { 0, 0, 0, 0 } or { sr, sg, sb, sa }
+    local bgColor = { bgr, bgg, bgb, opacity }
+    SkinBase.ApplyPixelBackdrop(backdrop, hideBorder and 0 or 1, true, true, borderColor, bgColor, nil, nil, 1)
+    Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, opacity)
+    if hideBorder then
+        Helpers.SetFrameBackdropBorderColor(backdrop, 0, 0, 0, 0)
+    else
+        Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
+    end
+end
+
 -- Apply QUI backdrop
 local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not trackerFrame then return end
@@ -614,13 +636,7 @@ local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga
     end
 
     -- Get initial opacity from edit mode (0 is valid = transparent, so check for nil)
-    local manager = _G.ObjectiveTrackerManager
-    local opacity
-    if manager and manager.backgroundAlpha ~= nil then
-        opacity = manager.backgroundAlpha
-    else
-        opacity = bga or 0.95
-    end
+    local opacity = ResolveBackdropOpacity(bga)
 
     -- Create QUI backdrop (anchors will be set by UpdateBackdropAnchors)
     local backdrop = SkinBase.GetFrameData(trackerFrame, "backdrop")
@@ -634,15 +650,7 @@ local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga
     local settings = GetSettings()
     local hideBorder = settings and settings.hideObjectiveTrackerBorder
 
-    local borderColor = hideBorder and { 0, 0, 0, 0 } or { sr, sg, sb, sa }
-    local bgColor = { bgr, bgg, bgb, opacity }
-    SkinBase.ApplyPixelBackdrop(backdrop, hideBorder and 0 or 1, true, true, borderColor, bgColor, nil, nil, 1)
-    Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, opacity)
-    if hideBorder then
-        Helpers.SetFrameBackdropBorderColor(backdrop, 0, 0, 0, 0)
-    else
-        Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
-    end
+    ApplyBackdropColors(backdrop, hideBorder, sr, sg, sb, sa, bgr, bgg, bgb, opacity)
 
     -- Set initial anchors
     UpdateBackdropAnchors()
@@ -911,24 +919,10 @@ local function RefreshObjectiveTracker()
         local hideBorder = settings.hideObjectiveTrackerBorder
 
         -- Get opacity from edit mode manager
-        local manager = _G.ObjectiveTrackerManager
-        local opacity
-        if manager and manager.backgroundAlpha ~= nil then
-            opacity = manager.backgroundAlpha
-        else
-            opacity = bga or 0.95
-        end
+        local opacity = ResolveBackdropOpacity(bga)
 
         -- Apply backdrop while preserving the one-pixel background inset when the border is hidden.
-        local borderColor = hideBorder and { 0, 0, 0, 0 } or { sr, sg, sb, sa }
-        local bgColor = { bgr, bgg, bgb, opacity }
-        SkinBase.ApplyPixelBackdrop(refreshBackdrop, hideBorder and 0 or 1, true, true, borderColor, bgColor, nil, nil, 1)
-        Helpers.SetFrameBackdropColor(refreshBackdrop, bgr, bgg, bgb, opacity)
-        if hideBorder then
-            Helpers.SetFrameBackdropBorderColor(refreshBackdrop, 0, 0, 0, 0)
-        else
-            Helpers.SetFrameBackdropBorderColor(refreshBackdrop, sr, sg, sb, sa)
-        end
+        ApplyBackdropColors(refreshBackdrop, hideBorder, sr, sg, sb, sa, bgr, bgg, bgb, opacity)
     end
 
     -- Update anchors
@@ -947,10 +941,7 @@ local function RefreshObjectiveTracker()
     HookLineCreation()
 
     -- Click-through toggle
-    local TrackerFrame = _G.ObjectiveTrackerFrame
-    if TrackerFrame then
-        TrackerFrame:EnableMouse(not settings.objectiveTrackerClickThrough)
-    end
+    TrackerFrame:EnableMouse(not settings.objectiveTrackerClickThrough)
 end
 
 -- Expose refresh function globally

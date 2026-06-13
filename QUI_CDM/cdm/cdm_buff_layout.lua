@@ -14,8 +14,6 @@ local CreateFrame = CreateFrame
 local InCombatLockdown = InCombatLockdown
 local C_Timer = C_Timer
 local hooksecurefunc = hooksecurefunc
-local issecretvalue = issecretvalue
-local tostring = tostring
 local table_insert = table.insert
 local string_format = string.format
 
@@ -40,8 +38,6 @@ local inInitSafeWindow = false
 -- HELPER: Get font from general settings (uses shared helpers)
 ---------------------------------------------------------------------------
 local Helpers = ns.Helpers
-local GetGeneralFont = Helpers.GetGeneralFont
-local GetGeneralFontOutline = Helpers.GetGeneralFontOutline
 
 -- CDM VIEWER FRAME GETTERS (resolve via QUI-owned frame registry)
 ---------------------------------------------------------------------------
@@ -226,6 +222,34 @@ local function GetTrackedBarAnchorWidth(anchorTo, anchorFrame)
     return width
 end
 
+-- True when the viewer's cached anchor matches the requested anchor exactly,
+-- meaning a re-anchor would be a no-op.
+local function anchorCacheMatches(cache, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, offsetX, offsetY)
+    return cache ~= nil
+        and cache.anchorTo == anchorTo
+        and cache.placement == placement
+        and cache.anchorFrame == anchorFrame
+        and cache.sourcePoint == sourcePoint
+        and cache.targetPoint == targetPoint
+        and cache.offsetX == offsetX
+        and cache.offsetY == offsetY
+end
+
+-- Persist the applied anchor on the viewer's state so the next call can skip a
+-- redundant SetPoint. Only called when the SetPoint actually succeeded.
+local function writeAnchorCache(viewer, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, offsetX, offsetY)
+    viewerBuffState[viewer] = viewerBuffState[viewer] or {}
+    viewerBuffState[viewer].anchorCache = {
+        anchorTo = anchorTo,
+        placement = placement,
+        anchorFrame = anchorFrame,
+        sourcePoint = sourcePoint,
+        targetPoint = targetPoint,
+        offsetX = offsetX,
+        offsetY = offsetY,
+    }
+end
+
 local function ApplyTrackedBarAnchor(settings)
     local viewer = GetBuffBarViewer()
     if not viewer then return end
@@ -297,16 +321,7 @@ local function ApplyTrackedBarAnchor(settings)
     if anchorFrame ~= UIParent and not anchorFrame:IsShown() then return end
 
     local vbs = viewerBuffState[viewer] or {}
-    local cache = vbs.anchorCache
-    if cache
-        and cache.anchorTo == anchorTo
-        and cache.placement == placement
-        and cache.anchorFrame == anchorFrame
-        and cache.sourcePoint == sourcePoint
-        and cache.targetPoint == targetPoint
-        and cache.offsetX == offsetX
-        and cache.offsetY == offsetY
-    then
+    if anchorCacheMatches(vbs.anchorCache, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, offsetX, offsetY) then
         return
     end
 
@@ -319,16 +334,7 @@ local function ApplyTrackedBarAnchor(settings)
     -- swallowed an error (e.g., anchor frame not fully initialised), leaving
     -- the cache empty lets the 20-fps OnUpdate poll retry next tick.
     if ok then
-        viewerBuffState[viewer] = viewerBuffState[viewer] or {}
-        viewerBuffState[viewer].anchorCache = {
-            anchorTo = anchorTo,
-            placement = placement,
-            anchorFrame = anchorFrame,
-            sourcePoint = sourcePoint,
-            targetPoint = targetPoint,
-            offsetX = offsetX,
-            offsetY = offsetY,
-        }
+        writeAnchorCache(viewer, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, offsetX, offsetY)
     end
 end
 
@@ -405,16 +411,7 @@ local function ApplyBuffIconAnchor(settings)
     if anchorFrame ~= UIParent and not anchorFrame:IsShown() then return end
 
     local vbs = viewerBuffState[viewer] or {}
-    local cache = vbs.anchorCache
-    if cache
-        and cache.anchorTo == anchorTo
-        and cache.placement == placement
-        and cache.anchorFrame == anchorFrame
-        and cache.sourcePoint == sourcePoint
-        and cache.targetPoint == targetPoint
-        and cache.offsetX == offsetX
-        and cache.offsetY == offsetY
-    then
+    if anchorCacheMatches(vbs.anchorCache, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, offsetX, offsetY) then
         return
     end
 
@@ -445,16 +442,7 @@ local function ApplyBuffIconAnchor(settings)
     -- Only write cache when SetPoint succeeded — a failed pcall (e.g., anchor
     -- frame not fully ready) must not block the OnUpdate retry loop.
     if ok then
-        viewerBuffState[viewer] = viewerBuffState[viewer] or {}
-        viewerBuffState[viewer].anchorCache = {
-            anchorTo = anchorTo,
-            placement = placement,
-            anchorFrame = anchorFrame,
-            sourcePoint = sourcePoint,
-            targetPoint = targetPoint,
-            offsetX = offsetX,
-            offsetY = offsetY,
-        }
+        writeAnchorCache(viewer, anchorTo, placement, anchorFrame, sourcePoint, targetPoint, offsetX, offsetY)
     end
 end
 
@@ -1233,12 +1221,9 @@ local function Initialize()
     ---------------------------------------------------------------------------
 
     -- TAINT SAFETY: Use local variables instead of writing to Blizzard CDM viewer frames.
-    local auraHookCreated = false
     local lastAuraIconCount = 0  -- Track visible icon count for change detection
     iconViewer = GetBuffIconViewer()
-    if iconViewer and not auraHookCreated then
-        auraHookCreated = true
-
+    if iconViewer then
         -- Frame-show coalescing: Show() is a no-op if already shown,
         -- so rapid UNIT_AURA events within the same render frame are
         -- automatically batched into a single OnUpdate flush.

@@ -43,7 +43,7 @@ local GetSettings = Helpers.CreateDBGetter("bags")
 local RATE_INTERVAL = 0.2  -- seconds between UseContainerItem calls
 
 -- Informational house print prefix (mirrors sort_executor.lua's PREFIX).
-local PREFIX = "|cFF30D1FFQUI:|r"
+local PREFIX = Bags.OpsShared.PREFIX
 
 ---------------------------------------------------------------------------
 -- RateQueue constructor (returned as Transfers.RateQueue for test access
@@ -166,11 +166,7 @@ Transfers.RateQueue = RateQueue
 --- (false, "busy") while any cursor/slot op (sort, deposit, sell) runs.
 --- Shared refusal gate for cursor/slot ops (sort, deposit, sell, fill):
 --- they must never overlap (wrong-item hazards).
-local function OpsBusy()
-    return (Bags.SortExecutor and Bags.SortExecutor.IsRunning and Bags.SortExecutor.IsRunning())
-        or (Bags.Transfers and Bags.Transfers.IsRunning and Bags.Transfers.IsRunning())
-        or (Bags.Junk and Bags.Junk.IsSelling and Bags.Junk.IsSelling())
-end
+local OpsBusy = Bags.OpsShared.OpsBusy
 
 function Transfers.DepositAllToWarband(onDone)
     -- shared ops gate: cursor/slot ops must never overlap (wrong-item hazards)
@@ -375,9 +371,7 @@ end
 --- (the deposit path needs it).
 --- Destination caps truncate the queue (mail 12, trade 6).
 function Transfers.UseSelected(cells, dest, onDone)
-    if (Bags.SortExecutor and Bags.SortExecutor.IsRunning and Bags.SortExecutor.IsRunning())
-        or Transfers.IsRunning()
-        or (Bags.Junk and Bags.Junk.IsSelling and Bags.Junk.IsSelling()) then
+    if OpsBusy() then
         if onDone then onDone(false, "busy") end
         return
     end

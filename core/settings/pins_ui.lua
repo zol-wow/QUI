@@ -56,6 +56,22 @@ local function GetStaleColor()
     return { 0.92, 0.62, 0.28, 1 }
 end
 
+-- Shared "Unpin All" destructive confirmation, used by both the popup
+-- Clear All button and the manage-page Unpin All button.
+local function ConfirmUnpinAll(gui)
+    gui:ShowConfirmation({
+        title = "Remove all pins?",
+        message = "Unpin every globally pinned setting?",
+        warningText = "Each affected profile will restore its shadowed value where available.",
+        acceptText = "Unpin All",
+        cancelText = "Cancel",
+        isDestructive = true,
+        onAccept = function()
+            Pins:UnpinAll()
+        end,
+    })
+end
+
 local function SetFont(fontString, size, color)
     if not fontString then
         return
@@ -947,7 +963,8 @@ local function BuildPopupRows(chip)
 
         local hover = row:CreateTexture(nil, "ARTWORK")
         hover:SetAllPoints(row)
-        hover:SetColorTexture(GetAccentColor()[1], GetAccentColor()[2], GetAccentColor()[3], 0.08)
+        local hoverAccent = GetAccentColor()
+        hover:SetColorTexture(hoverAccent[1], hoverAccent[2], hoverAccent[3], 0.08)
         hover:Hide()
 
         local title = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1001,7 +1018,8 @@ local function EnsurePopup(chip)
     headerBg:SetPoint("TOPLEFT", popup, "TOPLEFT", 1, -1)
     headerBg:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -1, -1)
     headerBg:SetHeight(24)
-    headerBg:SetColorTexture(GetAccentColor()[1], GetAccentColor()[2], GetAccentColor()[3], 0.08)
+    local headerAccent = GetAccentColor()
+    headerBg:SetColorTexture(headerAccent[1], headerAccent[2], headerAccent[3], 0.08)
 
     local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(title, 11, GetTextColor())
@@ -1018,17 +1036,7 @@ local function EnsurePopup(chip)
     popup.content = content
 
     local clearBtn = gui:CreateButton(popup, "Clear All", 74, 20, function()
-        gui:ShowConfirmation({
-            title = "Remove all pins?",
-            message = "Unpin every globally pinned setting?",
-            warningText = "Each affected profile will restore its shadowed value where available.",
-            acceptText = "Unpin All",
-            cancelText = "Cancel",
-            isDestructive = true,
-            onAccept = function()
-                Pins:UnpinAll()
-            end,
-        })
+        ConfirmUnpinAll(gui)
     end)
     clearBtn:SetPoint("BOTTOMLEFT", popup, "BOTTOMLEFT", 8, 8)
 
@@ -1356,17 +1364,7 @@ local function BuildPinnedGlobalsContent(content, stateHost, scrollFrame)
     state.sortDropdown = sortDropdown
 
     local unpinAll = gui:CreateButton(toolbar, "Unpin All", 82, 20, function()
-        gui:ShowConfirmation({
-            title = "Remove all pins?",
-            message = "Unpin every globally pinned setting?",
-            warningText = "Each affected profile will restore its shadowed value where available.",
-            acceptText = "Unpin All",
-            cancelText = "Cancel",
-            isDestructive = true,
-            onAccept = function()
-                Pins:UnpinAll()
-            end,
-        })
+        ConfirmUnpinAll(gui)
     end)
     unpinAll:SetPoint("RIGHT", toolbar, "RIGHT", 0, 0)
     state.unpinAll = unpinAll

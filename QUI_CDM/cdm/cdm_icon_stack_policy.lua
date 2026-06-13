@@ -779,9 +779,6 @@ function CDMIconStackPolicy.Create(callbacks)
             setOk, setErr, showOk, showErr = sink.Show(icon, value, reason)
         else
             setOk = true; setErr = icon.StackText.SetText(icon.StackText, value)
-            if not setOk and icon.StackText.SetFormattedText then
-                setOk = true; setErr = icon.StackText.SetFormattedText(icon.StackText, "%s", value)
-            end
             showOk = false
             if setOk then
                 showOk = true; showErr = icon.StackText.Show(icon.StackText)

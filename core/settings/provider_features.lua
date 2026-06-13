@@ -9,18 +9,7 @@ Settings.ProviderFeatures = ProviderFeatures
 local Registry = Settings.Registry
 local Schema = Settings.Schema
 
-local function CopyTable(source)
-    local copy = {}
-    if type(source) ~= "table" then
-        return copy
-    end
-
-    for key, value in pairs(source) do
-        copy[key] = value
-    end
-
-    return copy
-end
+local CopyTable = Settings.Util.ShallowCopy
 
 local function BuildProviderSections(spec)
     local sections = {}

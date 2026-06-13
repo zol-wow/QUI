@@ -188,6 +188,10 @@ local ns = {
         _internals = {
             GetSettings = function() return settings end,
             IsChatEnabled = function(s) return s and s.enabled ~= false end,
+            WHISPER_TYPE_KEYS = {
+                WHISPER = true, WHISPER_INFORM = true,
+                BN_WHISPER = true, BN_WHISPER_INFORM = true,
+            },
             AddTimestamp = function(t)
                 if type(t) ~= "string" then tsSecretCalls = tsSecretCalls + 1; return t end
                 return "[12:00] " .. t

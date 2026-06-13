@@ -1579,7 +1579,6 @@ function MPlusTimer:RenderObjectives()
     -- Clear all and reset colors
     for i = 1, 8 do
         self.objectives[i]:SetText("")
-        self.objectives[i].completed = nil
     end
 
     if not settings.showObjectives then return end
@@ -1624,7 +1623,6 @@ function MPlusTimer:RenderObjectives()
             end
 
             self.objectives[i]:SetText(text)
-            self.objectives[i].completed = obj.time ~= nil
         end
     end
 
@@ -1958,6 +1956,17 @@ end
 function MPlusTimer:UpdateObjectives()
     local objectives = {}
 
+    -- Freeze each boss's completion time at the moment it was first seen
+    -- completed. Carry forward any time we already stamped on a prior pass
+    -- (objectivesList is wiped by ResetState at the start of each run), so a
+    -- live timer tick never overwrites an earlier kill's recorded time.
+    local prevTimes = {}
+    for _, prev in ipairs(self.state.objectivesList or {}) do
+        if prev.name and prev.time then
+            prevTimes[prev.name] = prev.time
+        end
+    end
+
     local stepInfo = C_ScenarioInfo.GetScenarioStepInfo()
     local numCriteria = stepInfo and stepInfo.numCriteria or 0
     for i = 1, numCriteria do
@@ -1969,8 +1978,7 @@ function MPlusTimer:UpdateObjectives()
         if criteriaString and not isWeightedProgress then
             local obj = { name = criteriaString, time = nil }
             if completed then
-                -- Try to get completion time from scenario
-                obj.time = self.state.timer
+                obj.time = prevTimes[criteriaString] or self.state.timer
             end
             table.insert(objectives, obj)
         end

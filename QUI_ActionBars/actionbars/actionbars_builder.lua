@@ -4,6 +4,32 @@ env.ADDON_NAME = ADDON_NAME
 env.ns = ns
 env.SetChunkEnv(1, env)
 
+-- Fully silence a Blizzard-managed bar frame before we reparent its buttons:
+-- purge Edit Mode's tainted isShownExternal (write enough nil keys to push the
+-- entry off the secure-variable tracking list), unregister its events, reparent
+-- it under the hidden parent, and hide it via the C-side HideBase to avoid Edit
+-- Mode's Lua override propagating taint. Shared by the pet/stance, microbar and
+-- bags build branches, which each ran this identical sequence.
+local function SuppressManagedBarFrame(barFrame)
+    if barFrame.system then
+        barFrame.isShownExternal = nil
+        local c = 42
+        repeat
+            if barFrame[c] == nil then
+                barFrame[c] = nil
+            end
+            c = c + 1
+        until issecurevariable(barFrame, "isShownExternal")
+    end
+    barFrame:UnregisterAllEvents()
+    barFrame:SetParent(hiddenBarParent)
+    if barFrame.HideBase then
+        barFrame:HideBase()
+    else
+        barFrame:Hide()
+    end
+end
+
 ---------------------------------------------------------------------------
 -- BAR BUILD (native engine)
 ---------------------------------------------------------------------------
@@ -371,26 +397,7 @@ function BuildBar(barKey)
         -- action button addons).  Pet/stance buttons use GetID() for
         -- slot lookup — SetID is the only required setup.
         if barFrame then
-            -- Purge Edit Mode's isShownExternal before reparenting to avoid
-            -- tainting the Edit Mode system.  Writing enough nil keys pushes
-            -- the tainted entry off the secure-variable tracking list.
-            if barFrame.system then
-                barFrame.isShownExternal = nil
-                local c = 42
-                repeat
-                    if barFrame[c] == nil then
-                        barFrame[c] = nil
-                    end
-                    c = c + 1
-                until issecurevariable(barFrame, "isShownExternal")
-            end
-            barFrame:UnregisterAllEvents()
-            barFrame:SetParent(hiddenBarParent)
-            if barFrame.HideBase then
-                barFrame:HideBase()
-            else
-                barFrame:Hide()
-            end
+            SuppressManagedBarFrame(barFrame)
             -- Do NOT write to the bar frame (numForms, Update, etc.) — any
             -- tainted write is read by ActionBarController, tainting its
             -- context and leaking into the ActionBarButtonEventsFrame dispatch.
@@ -492,28 +499,7 @@ function BuildBar(barKey)
         -- Fully silence the Blizzard container so its Layout() never fires
         -- during combat (which would propagate taint through our hooks).
         if barFrame then
-            -- Purge Edit Mode's isShownExternal before reparenting to avoid
-            -- tainting the Edit Mode system. Writing enough nil keys pushes
-            -- the tainted entry off the secure-variable tracking list.
-            if barFrame.system then
-                barFrame.isShownExternal = nil
-                local c = 42
-                repeat
-                    if barFrame[c] == nil then
-                        barFrame[c] = nil
-                    end
-                    c = c + 1
-                until issecurevariable(barFrame, "isShownExternal")
-            end
-            barFrame:UnregisterAllEvents()
-            barFrame:SetParent(hiddenBarParent)
-            -- Use the original C-side Hide to avoid Edit Mode's Lua override
-            -- which can propagate taint on managed frames.
-            if barFrame.HideBase then
-                barFrame:HideBase()
-            else
-                barFrame:Hide()
-            end
+            SuppressManagedBarFrame(barFrame)
         end
 
         -- Suppress Blizzard's MicroMenu.Layout during reparenting — partially
@@ -825,23 +811,7 @@ function BuildBar(barKey)
         -- Fully silence the Blizzard container so its Layout() never fires
         -- during combat (which would propagate taint through our hooks).
         if barFrame then
-            if barFrame.system then
-                barFrame.isShownExternal = nil
-                local c = 42
-                repeat
-                    if barFrame[c] == nil then
-                        barFrame[c] = nil
-                    end
-                    c = c + 1
-                until issecurevariable(barFrame, "isShownExternal")
-            end
-            barFrame:UnregisterAllEvents()
-            barFrame:SetParent(hiddenBarParent)
-            if barFrame.HideBase then
-                barFrame:HideBase()
-            else
-                barFrame:Hide()
-            end
+            SuppressManagedBarFrame(barFrame)
         end
 
         local bagButtons = GetBarButtons("bags")

@@ -30,63 +30,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
     local GUI = ctx.GUI
     local U = ctx.U
     local NotifyProviderFor = ctx.NotifyProviderFor
-    local PAD = (ns.QUI_Options and ns.QUI_Options.PADDING) or 15
-    local HEADER_GAP = 26
-    local SECTION_GAP = 14
 
-    local function RegisterSharedOnly(key, provider)
-        ctx.RegisterShared(key, provider)
-    end
-
+    -- Shared provider-panel layout scaffold (core/settings_layout_shared.lua).
     local function MakeLayout(content)
-        if U._layoutModePositionOnly then
-            return U.MakeSuppressedProviderLayout(content)
-        end
-        local Opts = ns.QUI_Options
-        local y = -10
-        local L = {}
-        local sections = {}
-
-        function L.headerAt(text)
-            local h = Opts.CreateAccentDotLabel(content, text, y)
-            h:ClearAllPoints()
-            h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-            h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-            y = y - HEADER_GAP
-        end
-        function L.sectionAt()
-            local c = Opts.CreateSettingsCardGroup(content, y)
-            c.frame:ClearAllPoints()
-            c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-            c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-            return c
-        end
-        function L.closeSection(c)
-            c.Finalize()
-            y = y - c.frame:GetHeight() - SECTION_GAP
-        end
-        function L.placeCustom(frame, height)
-            frame:ClearAllPoints()
-            frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-            frame:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-            frame:SetHeight(height)
-            y = y - height - SECTION_GAP
-        end
-
-        local function relayoutSections()
-            local cy = y
-            for _, s in ipairs(sections) do
-                s:ClearAllPoints()
-                s:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, cy)
-                s:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-                cy = cy - s:GetHeight() - 4
-            end
-            content:SetHeight(math.abs(cy) + 16)
-        end
-        L.sections = sections
-        L.relayoutSections = relayoutSections
-
-        return L
+        return ns.QUI_SettingsLayoutShared.MakeLayout(content, U)
     end
 
     local function row(parent, label, widget, desc)
@@ -204,7 +151,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
     ---------------------------------------------------------------------------
     -- BAGS PROVIDER
     ---------------------------------------------------------------------------
-    RegisterSharedOnly("bags", { build = function(content, _key, _width)
+    ctx.RegisterShared("bags", { build = function(content, _key, _width)
         local db = U.GetProfileDB()
         if not db or not db.bags or not ns.QUI_Options then return 80 end
         local bags = db.bags

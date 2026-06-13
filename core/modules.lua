@@ -58,21 +58,22 @@ end
 
 --- Dispatch a state-change notification synchronously.
 -- All callbacks are pcall'd; one failure does not block others.
+local function DispatchCallback(cb, featureId)
+    local ok, err = pcall(cb, featureId)
+    if not ok and DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage("|cffff5555[QUI_Modules]|r " .. tostring(err))
+    end
+end
+
 function QUI_Modules:NotifyChanged(featureId)
     if type(featureId) ~= "string" or featureId == "" then return end
     local bucket = self._specific[featureId]
     if bucket then
         for _, cb in pairs(bucket) do
-            local ok, err = pcall(cb, featureId)
-            if not ok and DEFAULT_CHAT_FRAME then
-                DEFAULT_CHAT_FRAME:AddMessage("|cffff5555[QUI_Modules]|r " .. tostring(err))
-            end
+            DispatchCallback(cb, featureId)
         end
     end
     for _, cb in pairs(self._wildcard) do
-        local ok, err = pcall(cb, featureId)
-        if not ok and DEFAULT_CHAT_FRAME then
-            DEFAULT_CHAT_FRAME:AddMessage("|cffff5555[QUI_Modules]|r " .. tostring(err))
-        end
+        DispatchCallback(cb, featureId)
     end
 end

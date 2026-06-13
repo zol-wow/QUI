@@ -53,15 +53,7 @@ end
 function OwnerSelect.Attach(win, opts)
     -- bank tab-button construction: dark bg + centered label + QUI border
     -- lines (recolored per Update); font set at creation like the footers
-    local btn = CreateFrame("Button", nil, win._header)
-    local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    bg:SetVertexColor(0, 0, 0, 0.35)
-    UIKit.DisablePixelSnap(bg)
-    btn._label = btn:CreateFontString(nil, "ARTWORK")
-    btn._label:SetPoint("CENTER", 0, 0)
-    btn._label:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+    local btn = Bags.Chassis.CreatePanelButton(win._header, true)
     btn:SetPoint("LEFT", win._title, "RIGHT", 8, 0)
     UIKit.CreateBorderLines(btn)
     btn:Hide()

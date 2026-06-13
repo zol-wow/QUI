@@ -41,7 +41,6 @@ end
 local State = {
     selectedUnit = "player",
     activeTab    = "general",
-    dropdown     = nil,
     activeBody   = nil,
     repaintTabs  = nil,
 }
@@ -185,11 +184,11 @@ local function ResolveStatusBarTexture(name)
     return "Interface\\Buttons\\WHITE8x8"
 end
 
+local GetPlayerClassColorOr
+
 local function GetPlayerClassColor()
-    local _, class = UnitClass("player")
-    local cc = ns.Helpers and ns.Helpers.GetClassColorTable(class)
-    if cc then return cc.r, cc.g, cc.b end
-    return 0.2, 0.8, 0.2
+    local r, g, b = GetPlayerClassColorOr(0.2, 0.8, 0.2)
+    return r, g, b
 end
 
 local function ResolveHealthColor(unitKey, unitDB, general)
@@ -259,6 +258,44 @@ local function ApplyTextAnchor(fs, target, anchorKey, offsetX, offsetY, pad)
     elseif anchor:find("LEFT") then fs:SetJustifyH("LEFT")
     else fs:SetJustifyH("CENTER") end
 end
+
+-- Resolve the player's class color with a caller-supplied fallback tuple.
+-- Returns r, g, b (and any extra fallback components the caller passed).
+-- (Assigns the forward-declared upvalue so GetPlayerClassColor can delegate.)
+function GetPlayerClassColorOr(dr, dg, db, da)
+    local _, class = UnitClass("player")
+    local cc = ns.Helpers and ns.Helpers.GetClassColorTable(class)
+    if cc then return cc.r, cc.g, cc.b, da end
+    return dr, dg, db, da
+end
+
+-- Lay out 4 hairline strip textures (top/bottom/left/right) flush to a frame's
+-- edges. `textures` is { top, bottom, left, right }. size == 0 hides them all.
+local function ApplyHairlineBorder(textures, frame, size)
+    size = math.max(0, size or 0)
+    if size == 0 then
+        for i = 1, 4 do textures[i]:Hide() end
+        return
+    end
+    for i = 1, 4 do textures[i]:Show() end
+    local b = textures
+    b[1]:ClearAllPoints(); b[1]:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0); b[1]:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0); b[1]:SetHeight(size)
+    b[2]:ClearAllPoints(); b[2]:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0); b[2]:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0); b[2]:SetHeight(size)
+    b[3]:ClearAllPoints(); b[3]:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0); b[3]:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0); b[3]:SetWidth(size)
+    b[4]:ClearAllPoints(); b[4]:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0); b[4]:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0); b[4]:SetWidth(size)
+end
+
+-- Publish the preview helper set so sibling preview files (castbar preview,
+-- which loads after this file in QUI_Options.toc) reuse one implementation
+-- instead of maintaining byte-identical copies.
+ns.QUI_UnitFramesPreviewShared = ns.QUI_UnitFramesPreviewShared or {}
+ns.QUI_UnitFramesPreviewShared.ANCHOR_MAP = ANCHOR_MAP
+ns.QUI_UnitFramesPreviewShared.GetLSM = GetLSM
+ns.QUI_UnitFramesPreviewShared.ResolveStatusBarTexture = ResolveStatusBarTexture
+ns.QUI_UnitFramesPreviewShared.ResolveUnitFrameFont = ResolveUnitFrameFont
+ns.QUI_UnitFramesPreviewShared.ApplyTextAnchor = ApplyTextAnchor
+ns.QUI_UnitFramesPreviewShared.GetPlayerClassColorOr = GetPlayerClassColorOr
+ns.QUI_UnitFramesPreviewShared.ApplyHairlineBorder = ApplyHairlineBorder
 
 local function BuildMockFrame(host)
     local mock = CreateFrame("Frame", nil, host)
@@ -409,21 +446,7 @@ local function BuildMockFrame(host)
 end
 
 local function ApplyBorder(mock, size)
-    local b = mock._border
-    size = math.max(0, size or 0)
-    if size == 0 then
-        for i = 1, 4 do b[i]:Hide() end
-        return
-    end
-    for i = 1, 4 do b[i]:Show() end
-    -- top
-    b[1]:ClearAllPoints(); b[1]:SetPoint("TOPLEFT", mock, "TOPLEFT", 0, 0); b[1]:SetPoint("TOPRIGHT", mock, "TOPRIGHT", 0, 0); b[1]:SetHeight(size)
-    -- bottom
-    b[2]:ClearAllPoints(); b[2]:SetPoint("BOTTOMLEFT", mock, "BOTTOMLEFT", 0, 0); b[2]:SetPoint("BOTTOMRIGHT", mock, "BOTTOMRIGHT", 0, 0); b[2]:SetHeight(size)
-    -- left
-    b[3]:ClearAllPoints(); b[3]:SetPoint("TOPLEFT", mock, "TOPLEFT", 0, 0); b[3]:SetPoint("BOTTOMLEFT", mock, "BOTTOMLEFT", 0, 0); b[3]:SetWidth(size)
-    -- right
-    b[4]:ClearAllPoints(); b[4]:SetPoint("TOPRIGHT", mock, "TOPRIGHT", 0, 0); b[4]:SetPoint("BOTTOMRIGHT", mock, "BOTTOMRIGHT", 0, 0); b[4]:SetWidth(size)
+    ApplyHairlineBorder(mock._border, mock, size)
 end
 
 local function RefreshMock()
@@ -675,18 +698,10 @@ local function RefreshMock()
             pbR, pbG, pbB = c[1], c[2], c[3]
         end
         local pb = portrait._border
-        if pBorder == 0 then
-            for i = 1, 4 do pb[i]:Hide() end
-        else
-            for i = 1, 4 do
-                pb[i]:Show()
-                pb[i]:SetColorTexture(pbR, pbG, pbB, 1)
-            end
-            pb[1]:ClearAllPoints(); pb[1]:SetPoint("TOPLEFT", portrait, "TOPLEFT", 0, 0); pb[1]:SetPoint("TOPRIGHT", portrait, "TOPRIGHT", 0, 0); pb[1]:SetHeight(pBorder)
-            pb[2]:ClearAllPoints(); pb[2]:SetPoint("BOTTOMLEFT", portrait, "BOTTOMLEFT", 0, 0); pb[2]:SetPoint("BOTTOMRIGHT", portrait, "BOTTOMRIGHT", 0, 0); pb[2]:SetHeight(pBorder)
-            pb[3]:ClearAllPoints(); pb[3]:SetPoint("TOPLEFT", portrait, "TOPLEFT", 0, 0); pb[3]:SetPoint("BOTTOMLEFT", portrait, "BOTTOMLEFT", 0, 0); pb[3]:SetWidth(pBorder)
-            pb[4]:ClearAllPoints(); pb[4]:SetPoint("TOPRIGHT", portrait, "TOPRIGHT", 0, 0); pb[4]:SetPoint("BOTTOMRIGHT", portrait, "BOTTOMRIGHT", 0, 0); pb[4]:SetWidth(pBorder)
+        if pBorder ~= 0 then
+            for i = 1, 4 do pb[i]:SetColorTexture(pbR, pbG, pbB, 1) end
         end
+        ApplyHairlineBorder(pb, portrait, pBorder)
     else
         portrait:Hide()
     end
@@ -726,11 +741,8 @@ local function RefreshMock()
                 icon._art:SetPoint("TOPLEFT", 1, -1)
                 icon._art:SetPoint("BOTTOMRIGHT", -1, 1)
                 -- 1px border around each icon
-                for bi = 1, 4 do icon._border[bi]:SetColorTexture(0, 0, 0, 1); icon._border[bi]:Show() end
-                icon._border[1]:ClearAllPoints(); icon._border[1]:SetPoint("TOPLEFT"); icon._border[1]:SetPoint("TOPRIGHT"); icon._border[1]:SetHeight(1)
-                icon._border[2]:ClearAllPoints(); icon._border[2]:SetPoint("BOTTOMLEFT"); icon._border[2]:SetPoint("BOTTOMRIGHT"); icon._border[2]:SetHeight(1)
-                icon._border[3]:ClearAllPoints(); icon._border[3]:SetPoint("TOPLEFT"); icon._border[3]:SetPoint("BOTTOMLEFT"); icon._border[3]:SetWidth(1)
-                icon._border[4]:ClearAllPoints(); icon._border[4]:SetPoint("TOPRIGHT"); icon._border[4]:SetPoint("BOTTOMRIGHT"); icon._border[4]:SetWidth(1)
+                for bi = 1, 4 do icon._border[bi]:SetColorTexture(0, 0, 0, 1) end
+                ApplyHairlineBorder(icon._border, icon, 1)
 
                 -- Stack text
                 if showStack then

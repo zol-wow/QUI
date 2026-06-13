@@ -97,4 +97,21 @@ assert(Compiler.Compile("linen|")(D()) == true, "trailing pipe failed")
 assert(Compiler.Compile("silk||wool")(D()) == false, "double pipe must not match-all")
 assert(Compiler.Compile("linen reagent|epic")(D()) == true, "AND inside first or-group failed")
 
+-- Test 12: as-you-type keyword prefix UNION name substring (never narrows)
+-- "reag" prefixes the "reagent" keyword → fires reagent filter
+assert(Compiler.Compile("reag")(D({ classID = 7 })) == true, "prefix reag→reagent(tradegoods) failed")
+assert(Compiler.Compile("reag")(D({ classID = 5 })) == true, "prefix reag→reagent(class5) failed")
+-- non-reagent class with no name hit → prefix union still false
+assert(Compiler.Compile("reag")(Dnil({ classID = 1, name = "Silk Cloth" })) == false,
+       "prefix reag must not match unrelated item")
+-- name substring path still contributes to the union (item literally named with "reag")
+assert(Compiler.Compile("reag")(Dnil({ classID = 1, name = "Reagent Pouch" })) == true,
+       "prefix union must keep name substring path")
+-- pending propagation through union: both class and name unknown → pending
+assert(Compiler.Compile("reag")(Dnil({ classID = NIL, name = NIL })) == nil,
+       "prefix union with all-unknown fields must be pending")
+-- exact keyword unchanged (pure filter, name NOT union'd)
+assert(Compiler.Compile("reagent")(Dnil({ classID = 1, name = "reagent satchel" })) == false,
+       "exact keyword must stay pure (no name union)")
+
 print("OK: bags_search_compiler_test")

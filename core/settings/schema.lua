@@ -340,7 +340,7 @@ local function RenderSection(runtime, sectionId)
     end
 
     runtime.sectionHeights[sectionId] = math.max(
-        (type(height) == "number" and height or nil) or section.minHeight or 1,
+        (type(height) == "number" and height) or section.minHeight or 1,
         1
     )
     return runtime.sectionHeights[sectionId]

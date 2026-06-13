@@ -125,12 +125,7 @@ function GuildTakeover.SuppressNow()
     guildBankFrame:Hide()
 
     if not hiddenHolder then
-        hiddenHolder = CreateFrame("Frame")
-        -- Children anchored to the holder still get resolved rects — some
-        -- Blizzard code paths want one even on a hidden frame.
-        hiddenHolder:SetSize(1, 1)
-        hiddenHolder:SetPoint("BOTTOMRIGHT")
-        hiddenHolder:Hide()
+        hiddenHolder = Bags.TakeoverShared.MakeHiddenHolder()
     end
     capturedParent = guildBankFrame:GetParent()
     guildBankFrame:SetParent(hiddenHolder)

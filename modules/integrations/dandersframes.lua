@@ -169,33 +169,7 @@ end
 -- ANCHOR FRAME RESOLUTION
 ---------------------------------------------------------------------------
 function QUI_DandersFrames:GetAnchorFrame(anchorName)
-    if not anchorName or anchorName == "disabled" then
-        return nil
-    end
-
-    -- Hardcoded QUI element map
-    if anchorName == "essential" then
-        return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("essential")
-    elseif anchorName == "utility" then
-        return _G.QUI_GetCDMViewerFrame and _G.QUI_GetCDMViewerFrame("utility")
-    elseif anchorName == "primary" then
-        return QUICore and QUICore.powerBar
-    elseif anchorName == "secondary" then
-        return QUICore and QUICore.secondaryPowerBar
-    elseif anchorName == "playerCastbar" then
-        return ns.QUI_Castbar and ns.QUI_Castbar.castbars and ns.QUI_Castbar.castbars["player"]
-    elseif anchorName == "playerFrame" then
-        return ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames.player
-    elseif anchorName == "targetFrame" then
-        return ns.QUI_UnitFrames and ns.QUI_UnitFrames.frames and ns.QUI_UnitFrames.frames.target
-    end
-
-    -- Registry fallback
-    if ns.QUI_Anchoring and ns.QUI_Anchoring.GetAnchorTarget then
-        return ns.QUI_Anchoring:GetAnchorTarget(anchorName)
-    end
-
-    return nil
+    return ns.QUI_IntegrationShared.GetAnchorFrame(anchorName)
 end
 
 ---------------------------------------------------------------------------

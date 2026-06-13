@@ -72,6 +72,8 @@ init.lua
 # == core/core.xml ==
 core\debug_gate.lua
 core\utils.lua
+core\infobar_shared.lua
+core\settings_layout_shared.lua
 core\first_run.lua
 core\border_registry.lua
 core\diagnostics_console.lua
@@ -123,6 +125,7 @@ core\rangeutils.lua
 
 
 # == modules/ui/ui.xml ==
+modules\ui\settings\settings_layout_shared.lua
 modules\ui\uihider.lua
 
 
@@ -140,6 +143,7 @@ modules\layout\anchoring.lua
 
 
 # == modules/integrations/integrations.xml ==
+modules\integrations\integration_shared.lua
 modules\integrations\bigwigs.lua
 modules\integrations\dandersframes.lua
 modules\integrations\abilitytimeline.lua

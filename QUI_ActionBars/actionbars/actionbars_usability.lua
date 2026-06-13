@@ -20,6 +20,14 @@ else
     SetupDebugInstrumentation() -- standalone test harness: no gate, run eagerly
 end
 
+-- Hide the tint overlay (if present) and clear the recorded tint state.
+local function ClearButtonTint(state)
+    if state.tinted then
+        if state.tintOverlay then state.tintOverlay:Hide() end
+        state.tinted = nil
+    end
+end
+
 -- Get or create a QUI-owned tint overlay for range/usability coloring.
 -- Uses MOD (multiplicative) blend on ARTWORK sublevel 1, so it renders
 -- above the icon (sublevel 0) but below OVERLAY borders/gloss.
@@ -55,19 +63,13 @@ function UpdateButtonUsability(button, settings)
     end
 
     if not action or not SafeHasAction(action) then
-        if state.tinted then
-            if state.tintOverlay then state.tintOverlay:Hide() end
-            state.tinted = nil
-        end
+        ClearButtonTint(state)
         return
     end
 
     -- Reset state if both features disabled
     if not settings.rangeIndicator and not settings.usabilityIndicator then
-        if state.tinted then
-            if state.tintOverlay then state.tintOverlay:Hide() end
-            state.tinted = nil
-        end
+        ClearButtonTint(state)
         return
     end
 
@@ -252,15 +254,11 @@ ActionBarsOwned.ScheduleUsabilityUpdate = ScheduleUsabilityUpdate
 
 -- Reset all button tints
 function ResetAllButtonTints()
-    for i = 1, 8 do
-        local barKey = "bar" .. i
+    for _, barKey in ipairs(STANDARD_BAR_KEYS) do
         local buttons = GetBarButtons(barKey)
         for _, button in ipairs(buttons) do
             local state = GetFrameState(button)
-            if state.tinted then
-                if state.tintOverlay then state.tintOverlay:Hide() end
-                state.tinted = nil
-            end
+            ClearButtonTint(state)
         end
     end
 end

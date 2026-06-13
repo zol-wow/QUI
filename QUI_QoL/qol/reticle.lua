@@ -16,13 +16,11 @@ local GetScaledCursorPosition = GetScaledCursorPosition
 local InCombatLockdown = InCombatLockdown
 local UnitClass = UnitClass
 local C_ClassColor = C_ClassColor
-local GetTime = GetTime
 
 -- Frame references
 local ringFrame, ringTexture, reticleTexture, gcdCooldown
 
 -- State tracking
-local lastCombatState = nil
 local cachedSettings = nil
 local cursorUpdateEnabled = false  -- Track OnUpdate state for performance
 
@@ -298,8 +296,7 @@ local function UpdateReticle()
     CacheOffsets()  -- Cache offset values for OnUpdate performance
     UpdateVisibility()
     UpdateReticleDot()
-    UpdateRingAppearance()
-    UpdateGCDCooldown()
+    UpdateGCDCooldown()  -- internally calls UpdateRingAppearance()
 end
 
 ---------------------------------------------------------------------------
@@ -307,8 +304,7 @@ end
 ---------------------------------------------------------------------------
 local function OnCombatStart()
     UpdateVisibility(true)  -- Force: we ARE in combat
-    UpdateRingAppearance()
-    UpdateGCDCooldown()     -- Ensure GCD tracking starts
+    UpdateGCDCooldown()     -- Ensure GCD tracking starts; calls UpdateRingAppearance()
 end
 
 local function OnCombatEnd()
@@ -443,7 +439,6 @@ if ns.WhenLoggedIn then
         UpdateReticle()
         SetupCursorFollowing()
         SetupRightClickHide()
-        lastCombatState = InCombatLockdown()
     end)
 end
 

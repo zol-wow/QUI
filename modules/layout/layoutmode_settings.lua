@@ -481,7 +481,6 @@ end
 --- Build the anchor chain text for a given frame key.
 --- Returns a string like "Frame > Parent > Grandparent > Screen Center"
 local function BuildAnchorChainText(key)
-    local um = ns.QUI_LayoutMode
     local fa
     local core = ns.Helpers.GetCore()
     if core and core.db and core.db.profile then
@@ -960,11 +959,6 @@ function QUI_LayoutMode_Settings:Hide()
     if compat and compat.UnregisterProviderSurface then
         compat.UnregisterProviderSurface("layoutmode-settings")
     end
-end
-
-function QUI_LayoutMode_Settings:Reset()
-    self:Hide()
-    self._currentKey = nil
 end
 
 function QUI_LayoutMode_Settings:IsShown()

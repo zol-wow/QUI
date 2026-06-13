@@ -657,9 +657,7 @@ function UIKit.UpdateBorderLines(frame, sizePixels, r, g, b, a, hide)
     local color = state.color
     local sameSize = state.sizePixels == newSize
     local sameHidden = state.hidden == newHidden
-    if state.sizePixels == newSize
-        and state.hidden == newHidden
-        and color
+    if sameSize and sameHidden and color
         and color[1] == newR
         and color[2] == newG
         and color[3] == newB
@@ -832,9 +830,8 @@ function UIKit.CreateAccentCheckbox(parent, options)
     mark:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
     mark:SetDesaturated(true)
     mark:SetVertexColor(bgDark[1], bgDark[2], bgDark[3], 1)
-    -- UI-CheckBox-Check is naturally drawn ~40% bigger than the box; size accordingly.
-    mark:SetSize(size * 1.4, size * 1.4)
-    mark:SetPoint("CENTER", checkbox, "CENTER", 0, 0)
+    -- UI-CheckBox-Check is naturally drawn ~40% bigger than the box; size/center
+    -- handled by RefreshAccentCheckboxLayout below (pixel-perfect).
     mark:Hide()
     checkbox.mark = mark
 
@@ -1983,19 +1980,7 @@ function SkinBase.SkinCloseButton(closeButton)
         return
     end
 
-    if closeButton.Border then closeButton.Border:SetAlpha(0) end
-    if closeButton.GetNormalTexture and closeButton:GetNormalTexture() then
-        closeButton:GetNormalTexture():SetAlpha(0)
-    end
-    if closeButton.GetPushedTexture and closeButton:GetPushedTexture() then
-        closeButton:GetPushedTexture():SetAlpha(0)
-    end
-    if closeButton.GetHighlightTexture and closeButton:GetHighlightTexture() then
-        closeButton:GetHighlightTexture():SetAlpha(0)
-    end
-    if closeButton.GetDisabledTexture and closeButton:GetDisabledTexture() then
-        closeButton:GetDisabledTexture():SetAlpha(0)
-    end
+    HideButtonTextures(closeButton)
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
     SkinBase.CreateBackdrop(closeButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)

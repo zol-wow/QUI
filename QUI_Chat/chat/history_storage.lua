@@ -341,8 +341,6 @@ function Storage.AppendLive(entry, maxEntries)
     if type(entry) ~= "table" then return end
     local sv = getSV()
     sv.current[#sv.current + 1] = entry
-    sv.count = (tonumber(sv.count) or refreshCount(sv)) + 1
-    sv.totalCount = sv.count
     rotateCurrent(sv, false)
     refreshCount(sv)
     local cap = tonumber(maxEntries) or DEFAULT_MAX_ENTRIES
@@ -562,7 +560,10 @@ end
 
 function Storage.Prune(settings)
     local sv = getSV()
-    local now = (GetServerTime and GetServerTime()) or time()
+    local now = (GetServerTime and GetServerTime())
+        or (type(time) == "function" and time())
+        or (type(os) == "table" and type(os.time) == "function" and os.time())
+        or 0
     local oldestAllowed = now - maxRetentionDays(settings) * 86400
 
     local write = 0

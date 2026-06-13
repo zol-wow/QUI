@@ -19,23 +19,13 @@ local PADDING = Shared.PADDING
 local GetCore = ns.Helpers.GetCore
 local SECTION_GAP = 14
 
-local ANCHOR_POINTS = {
-    {value = "TOPLEFT",     text = "Top Left"},
-    {value = "TOP",         text = "Top"},
-    {value = "TOPRIGHT",    text = "Top Right"},
-    {value = "LEFT",        text = "Left"},
-    {value = "CENTER",      text = "Center"},
-    {value = "RIGHT",       text = "Right"},
-    {value = "BOTTOMLEFT",  text = "Bottom Left"},
-    {value = "BOTTOM",      text = "Bottom"},
-    {value = "BOTTOMRIGHT", text = "Bottom Right"},
-}
+local ANCHOR_POINTS = ns.QUI_ModulesSettingsLayout.NINE_POINT_OPTIONS
 
 local THIRD_PARTY_LAYOUT_KEYS = {
-    dandersParty = { containerKey = "party", label = "Party Frames" },
-    dandersRaid = { containerKey = "raid", label = "Raid Frames" },
-    dandersPinned1 = { containerKey = "pinned1", label = "Pinned Set 1" },
-    dandersPinned2 = { containerKey = "pinned2", label = "Pinned Set 2" },
+    dandersParty = { containerKey = "party" },
+    dandersRaid = { containerKey = "raid" },
+    dandersPinned1 = { containerKey = "pinned1" },
+    dandersPinned2 = { containerKey = "pinned2" },
 }
 
 -- Emit one anchor-config block (accent-dot label + card) inside `tabContent`

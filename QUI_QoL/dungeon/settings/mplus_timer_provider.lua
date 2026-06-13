@@ -45,47 +45,12 @@ do
             if _G.QUI_RefreshMPlusTimerColors then _G.QUI_RefreshMPlusTimerColors() end
         end
 
+        -- Shared provider-panel layout scaffold (core/settings_layout_shared.lua).
         local function MakeLayout(content)
             if U._layoutModePositionOnly then
                 return U.MakeSuppressedProviderLayout(content)
             end
-            local y = -10
-            local L = {}
-            local sections = {}
-
-            function L.headerAt(text)
-                local h = Opts.CreateAccentDotLabel(content, text, y)
-                h:ClearAllPoints()
-                h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-                h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-                y = y - HEADER_GAP
-            end
-            function L.sectionAt()
-                local c = Opts.CreateSettingsCardGroup(content, y)
-                c.frame:ClearAllPoints()
-                c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-                c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-                return c
-            end
-            function L.closeSection(c)
-                c.Finalize()
-                y = y - c.frame:GetHeight() - SECTION_GAP
-            end
-
-            local function relayoutSections()
-                local cy = y
-                for _, s in ipairs(sections) do
-                    s:ClearAllPoints()
-                    s:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, cy)
-                    s:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
-                    cy = cy - s:GetHeight() - 4
-                end
-                content:SetHeight(math.abs(cy) + 16)
-            end
-            L.sections = sections
-            L.relayoutSections = relayoutSections
-
-            return L
+            return ns.QUI_SettingsLayoutShared.MakeLayout(content, U)
         end
 
         local function row(parent, label, widget, desc)

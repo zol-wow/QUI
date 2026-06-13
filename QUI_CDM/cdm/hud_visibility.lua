@@ -99,6 +99,14 @@ local function InvalidateCDMFrameCache()
     _cdmFramesDirty = true
 end
 
+-- Fallback viewer-global names used when CDMProvider can't supply them.
+local DEFAULT_VIEWER_FRAME_NAMES = {
+    essential = "EssentialCooldownViewer",
+    utility   = "UtilityCooldownViewer",
+    buffIcon  = "BuffIconCooldownViewer",
+    buffBar   = "BuffBarCooldownViewer",
+}
+
 -- Get CDM frames (viewers + power bars) — cached to avoid per-frame allocations
 local function IsCustomCDMBarFrame(frame)
     if not frame then return false end
@@ -135,12 +143,7 @@ local function GetCDMFrames()
         end
     else
         local frameNames = ns.CDMProvider and ns.CDMProvider.GetViewerFrameNames and ns.CDMProvider:GetViewerFrameNames()
-        frameNames = frameNames or {
-            essential = "EssentialCooldownViewer",
-            utility   = "UtilityCooldownViewer",
-            buffIcon  = "BuffIconCooldownViewer",
-            buffBar   = "BuffBarCooldownViewer",
-        }
+        frameNames = frameNames or DEFAULT_VIEWER_FRAME_NAMES
         for _, blizzName in pairs(frameNames) do
             if _G[blizzName] then
                 _cdmFramesCache[#_cdmFramesCache + 1] = _G[blizzName]
@@ -201,6 +204,21 @@ local CDMVisibility = {
     leaveTimer = nil,
 }
 
+-- Shared mounted/flying/skyriding/(vehicle) hide rules used by every
+-- ShouldXBeVisible controller. Returns true when the location-based hide rules
+-- dictate the frame should be hidden. `includeVehicle` mirrors the per-
+-- controller behavior (the buff-icon controller omits the vehicle rule); the
+-- order of the independent early-return checks does not affect the result.
+local function ShouldHideForLocationRules(vis, includeVehicle)
+    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
+    if ignoreHideRules then return false end
+    if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
+    if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return true end
+    if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return true end
+    if includeVehicle and vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return true end
+    return false
+end
+
 -- Determine if CDM should be visible (SHOW logic)
 local function ShouldCDMBeVisible()
     if not IsCDMMasterEnabled() then return false end
@@ -209,13 +227,7 @@ local function ShouldCDMBeVisible()
     if not vis then return true end
 
     if vis.showAlways then
-        local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
-        if not ignoreHideRules then
-            if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
-            if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
-            if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
-            if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
-        end
+        if ShouldHideForLocationRules(vis, true) then return false end
         return true
     end
 
@@ -228,19 +240,13 @@ local function ShouldCDMBeVisible()
     if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
 
     -- No active show condition — apply hide rules
-    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
-    if not ignoreHideRules then
-        if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
-        if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
-        if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
-        if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
-    end
+    if ShouldHideForLocationRules(vis, true) then return false end
 
     return false
 end
 
 -- OnUpdate handler for CDM fade animation
-local function OnCDMFadeUpdate(self, elapsed)
+local function OnCDMFadeUpdate(self)
     local targetAlpha = ReadNumber(CDMVisibility.fadeTargetAlpha, 1)
     local vis = GetCDMVisibilitySettings()
     local duration = (vis and vis.fadeDuration) or 0.2
@@ -434,12 +440,7 @@ local function SetupCDMMouseoverDetector()
     else
         viewers = {}
         local names = ns.CDMProvider and ns.CDMProvider.GetViewerFrameNames and ns.CDMProvider:GetViewerFrameNames()
-        names = names or {
-            essential = "EssentialCooldownViewer",
-            utility   = "UtilityCooldownViewer",
-            buffIcon  = "BuffIconCooldownViewer",
-            buffBar   = "BuffBarCooldownViewer",
-        }
+        names = names or DEFAULT_VIEWER_FRAME_NAMES
         for _, name in pairs(names) do
             if _G[name] then
                 viewers[#viewers + 1] = _G[name]
@@ -496,13 +497,7 @@ local function ShouldCustomTrackersBeVisible()
     if not vis then return true end
 
     if vis.showAlways then
-        local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
-        if not ignoreHideRules then
-            if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
-            if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
-            if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
-            if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
-        end
+        if ShouldHideForLocationRules(vis, true) then return false end
         return true
     end
 
@@ -513,18 +508,12 @@ local function ShouldCustomTrackersBeVisible()
     if vis.showOnMouseover and CustomTrackersVisibility.mouseOver then return true end
     if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
 
-    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
-    if not ignoreHideRules then
-        if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
-        if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
-        if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
-        if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
-    end
+    if ShouldHideForLocationRules(vis, true) then return false end
 
     return false
 end
 
-local function OnCustomTrackersFadeUpdate(self, elapsed)
+local function OnCustomTrackersFadeUpdate(self)
     local targetAlpha = ReadNumber(CustomTrackersVisibility.fadeTargetAlpha, 1)
     local vis = GetCustomTrackersVisibilitySettings()
     local duration = (vis and vis.fadeDuration) or 0.2
@@ -812,12 +801,7 @@ local function ShouldUnitframesBeVisible()
     -- here because it'd require comparing a secret HP value in Lua.
 
     if vis.showAlways then
-        local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
-        if not ignoreHideRules then
-            if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
-            if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
-            if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
-        end
+        if ShouldHideForLocationRules(vis, false) then return false end
         return true
     end
 
@@ -830,18 +814,13 @@ local function ShouldUnitframesBeVisible()
     if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
 
     -- No active show condition — apply hide rules
-    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
-    if not ignoreHideRules then
-        if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
-        if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
-        if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
-    end
+    if ShouldHideForLocationRules(vis, false) then return false end
 
     return false
 end
 
 -- OnUpdate handler for Unitframes fade animation
-local function OnUnitframesFadeUpdate(self, elapsed)
+local function OnUnitframesFadeUpdate(self)
     local targetAlpha = ReadNumber(UnitframesVisibility.fadeTargetAlpha, 1)
     if targetAlpha < 1 and IsUnitframesCombatLocked() then
         local frames = UnitframesVisibility.fadeTargets or GetUnitframeFrames()
@@ -1094,13 +1073,7 @@ local function ShouldActionBarsBeVisible()
 
     if vis.showAlways then
         -- "Always show" still respects hide rules (mounted/flying/etc.)
-        local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
-        if not ignoreHideRules then
-            if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
-            if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
-            if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
-            if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
-        end
+        if ShouldHideForLocationRules(vis, true) then return false end
         return true
     end
 
@@ -1113,18 +1086,12 @@ local function ShouldActionBarsBeVisible()
     if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
 
     -- No active show condition matched — apply hide rules
-    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
-    if not ignoreHideRules then
-        if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
-        if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
-        if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
-        if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
-    end
+    if ShouldHideForLocationRules(vis, true) then return false end
 
     return false
 end
 
-local function OnActionBarsFadeUpdate(self, elapsed)
+local function OnActionBarsFadeUpdate(self)
     local targetAlpha = ReadNumber(ActionBarsVisibility.fadeTargetAlpha, 1)
     local vis = GetActionBarsVisibilitySettings()
     local duration = (vis and vis.fadeDuration) or 0.2
@@ -1377,13 +1344,7 @@ local function ShouldChatBeVisible()
     if not vis then return true end
 
     if vis.showAlways then
-        local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
-        if not ignoreHideRules then
-            if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
-            if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
-            if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
-            if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
-        end
+        if ShouldHideForLocationRules(vis, true) then return false end
         return true
     end
 
@@ -1396,18 +1357,12 @@ local function ShouldChatBeVisible()
     if vis.showWhenMounted and Helpers.IsPlayerMounted() then return true end
 
     -- No active show condition — apply hide rules
-    local ignoreHideRules = vis.dontHideInDungeonsRaids and Helpers.IsPlayerInDungeonOrRaid and Helpers.IsPlayerInDungeonOrRaid()
-    if not ignoreHideRules then
-        if vis.hideWhenMounted and not vis.showWhenMounted and Helpers.IsPlayerMounted() then return false end
-        if vis.hideWhenInVehicle and Helpers.IsPlayerInVehicle and Helpers.IsPlayerInVehicle() then return false end
-        if vis.hideWhenFlying and Helpers.IsPlayerFlying() then return false end
-        if vis.hideWhenSkyriding and Helpers.IsPlayerSkyriding() then return false end
-    end
+    if ShouldHideForLocationRules(vis, true) then return false end
 
     return false
 end
 
-local function OnChatFadeUpdate(self, elapsed)
+local function OnChatFadeUpdate(self)
     -- If the takeover's Blizzard-frame suppression activated mid-fade, stop:
     -- the suppression anchor owns chat visibility; don't fade back over it.
     local Suppress = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.BlizzardSuppress

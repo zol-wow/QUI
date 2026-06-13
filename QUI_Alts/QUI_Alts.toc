@@ -11,6 +11,7 @@
 
 bootstrap.lua
 alts\roster_data.lua
+alts\views\shared.lua
 alts\views\window.lua
 alts\views\filter_popup.lua
 alts\views\roster.lua

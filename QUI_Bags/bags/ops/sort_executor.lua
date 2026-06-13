@@ -50,7 +50,7 @@ local FALLBACK_DELAY = 0.5 -- seconds; re-plan even if no bus event arrives
 
 -- Informational house print prefix (registry.lua uses red for errors;
 -- main.lua/gui_shell.lua use this cyan for neutral user-facing messages).
-local PREFIX = "|cFF30D1FFQUI:|r"
+local PREFIX = Bags.OpsShared.PREFIX
 
 -- Scope: container ID range + the bus events that signal "the server
 -- applied our moves" (scanners publish after their drain). Character bank
@@ -301,9 +301,7 @@ function SortExecutor.Start(which, onDone, opts)
     if not scope then return false, "which" end
     if state then return false, "running" end
     -- shared ops gate: cursor/slot ops must never overlap (wrong-item hazards)
-    if (Bags.SortExecutor and Bags.SortExecutor.IsRunning and Bags.SortExecutor.IsRunning())
-        or (Bags.Transfers and Bags.Transfers.IsRunning and Bags.Transfers.IsRunning())
-        or (Bags.Junk and Bags.Junk.IsSelling and Bags.Junk.IsSelling()) then
+    if Bags.OpsShared.OpsBusy() then
         return false, "busy"
     end
     if InCombatLockdown() then return false, "combat" end

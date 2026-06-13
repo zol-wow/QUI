@@ -124,6 +124,20 @@ local function ApplyTextureBackdrop(parts, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     end
 end
 
+-- Compute boosted button background colors and store the normal/hover/border
+-- frame data used by the hover hooks. Returns the boosted btnBg* triple.
+local function StoreButtonColors(button, sr, sg, sb, bgr, bgg, bgb, bga)
+    local btnBgr = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)  -- Slightly lighter for buttons
+    local btnBgg = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgb = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
+
+    SkinBase.SetFrameData(button, "normalBg", { btnBgr, btnBgg, btnBgb, bga })
+    SkinBase.SetFrameData(button, "hoverBg", { math.min(btnBgr + 0.1, 1), math.min(btnBgg + 0.1, 1), math.min(btnBgb + 0.1, 1), bga })
+    SkinBase.SetFrameData(button, "borderColor", { sr, sg, sb, 1 })
+
+    return btnBgr, btnBgg, btnBgb
+end
+
 -- Re-assert the QUI font/color on a button's label.
 -- Blizzard reapplies the button's font object (face + color) when the popup is
 -- shown and on enable/disable; that overwrites the styling we set at skin time
@@ -163,15 +177,9 @@ local function SkinButton(button, sr, sg, sb, bgr, bgg, bgb, bga)
         end
     end
 
-    local btnBgr = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)  -- Slightly lighter for buttons
-    local btnBgg = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgb = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
-    ApplyTextureBackdrop(EnsureTextureBackdrop(button, button), sr, sg, sb, 1, btnBgr, btnBgg, btnBgb, bga)
-
     -- Store colors for hover effects (in local weak-keyed table via SkinBase)
-    SkinBase.SetFrameData(button, "normalBg", { btnBgr, btnBgg, btnBgb, bga })
-    SkinBase.SetFrameData(button, "hoverBg", { math.min(btnBgr + 0.1, 1), math.min(btnBgg + 0.1, 1), math.min(btnBgb + 0.1, 1), bga })
-    SkinBase.SetFrameData(button, "borderColor", { sr, sg, sb, 1 })
+    local btnBgr, btnBgg, btnBgb = StoreButtonColors(button, sr, sg, sb, bgr, bgg, bgb, bga)
+    ApplyTextureBackdrop(EnsureTextureBackdrop(button, button), sr, sg, sb, 1, btnBgr, btnBgg, btnBgb, bga)
 
     -- Hover effects
     button:HookScript("OnEnter", function(self)
@@ -209,13 +217,7 @@ local function RefreshButtonColors(button, sr, sg, sb, bgr, bgg, bgb, bga)
     local backdrop = button and SkinBase.GetFrameData(button, TEXTURE_BACKDROP_KEY)
     if not backdrop then return end
 
-    local btnBgr = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgg = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgb = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
-
-    SkinBase.SetFrameData(button, "normalBg", { btnBgr, btnBgg, btnBgb, bga })
-    SkinBase.SetFrameData(button, "hoverBg", { math.min(btnBgr + 0.1, 1), math.min(btnBgg + 0.1, 1), math.min(btnBgb + 0.1, 1), bga })
-    SkinBase.SetFrameData(button, "borderColor", { sr, sg, sb, 1 })
+    local btnBgr, btnBgg, btnBgb = StoreButtonColors(button, sr, sg, sb, bgr, bgg, bgb, bga)
 
     ApplyTextureBackdrop(backdrop, sr, sg, sb, 1, btnBgr, btnBgg, btnBgb, bga)
 end

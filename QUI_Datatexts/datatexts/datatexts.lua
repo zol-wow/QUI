@@ -36,6 +36,32 @@ QUICore.Datatexts = Datatexts
 Datatexts.registry = {}
 Datatexts.activeInstances = {}  -- Track active datatext instances for cleanup
 
+-- Shared: ensure a slot has a centered OVERLAY fontstring (slotFrame.text).
+function Datatexts.EnsureText(slotFrame)
+    local text = slotFrame.text
+    if not text then
+        text = slotFrame:CreateFontString(nil, "OVERLAY")
+        text:SetPoint("CENTER")
+        slotFrame.text = text
+    end
+    return text
+end
+
+-- Shared: format a copper amount as a grouped gold string ("1,234,567g").
+function Datatexts.FormatGold(copper)
+    local gold = floor((copper or 0) / 10000)
+    local goldStr = tostring(gold)
+    if gold >= 1000 then
+        goldStr = string.format("%d,%03d", floor(gold / 1000), gold % 1000)
+    end
+    if gold >= 1000000 then
+        local millions = floor(gold / 1000000)
+        local thousands = floor((gold % 1000000) / 1000)
+        goldStr = string.format("%d,%03d,%03d", millions, thousands, gold % 1000)
+    end
+    return goldStr .. "g"
+end
+
 ---------------------------------------------------------------------------
 -- SHARED TICKER: One timer drives all 1s datatext updates
 ---------------------------------------------------------------------------
@@ -415,12 +441,7 @@ Datatexts:Register("time", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         local function Update()
             -- Read time settings from global config (not panel config)
@@ -545,12 +566,7 @@ Datatexts:Register("fps", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         local function Update()
             local fps = floor(GetFramerate() + 0.5)
@@ -586,12 +602,7 @@ Datatexts:Register("latency", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         local function Update()
             local _, _, home = GetNetStats()
@@ -628,12 +639,7 @@ Datatexts:Register("system", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         local function Update()
             local fps = floor(GetFramerate() + 0.5)
@@ -692,7 +698,7 @@ Datatexts:Register("system", {
 
             -- Performance stats
             local currentFps = floor(GetFramerate() + 0.5)
-            local bandIn, bandOut, homePing, worldPing = GetNetStats()
+            local _, _, homePing, worldPing = GetNetStats()
 
             GameTooltip:AddDoubleLine("Framerate:", format("%d fps", currentFps), 0.8, 0.8, 0.8, ar, ag, ab)
             GameTooltip:AddDoubleLine("Home Latency:", format("%d ms", floor(homePing or 0)), 0.8, 0.8, 0.8, ar, ag, ab)
@@ -1037,12 +1043,7 @@ Datatexts:Register("volume", {
         frame:EnableMouse(true)
         frame:EnableMouseWheel(true)
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         -- Default volume settings (reused to avoid table creation)
         local defaultVolumeSettings = {
@@ -1202,26 +1203,9 @@ Datatexts:Register("gold", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
-        local function FormatGold(copper)
-            local gold = floor(copper / 10000)
-            local goldStr = tostring(gold)
-            if gold >= 1000 then
-                goldStr = string.format("%d,%03d", floor(gold / 1000), gold % 1000)
-            end
-            if gold >= 1000000 then
-                local millions = floor(gold / 1000000)
-                local thousands = floor((gold % 1000000) / 1000)
-                goldStr = string.format("%d,%03d,%03d", millions, thousands, gold % 1000)
-            end
-            return goldStr .. "g"
-        end
+        local FormatGold = Datatexts.FormatGold
 
         local AltsData = ns.DatatextAltsData
 
@@ -1387,29 +1371,11 @@ Datatexts:Register("alts", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         local AltsData = ns.DatatextAltsData
 
-        -- Datatext-local gold formatter (mirrors the gold widget's local).
-        local function FormatGold(copper)
-            local gold = floor((copper or 0) / 10000)
-            local goldStr = tostring(gold)
-            if gold >= 1000 then
-                goldStr = string.format("%d,%03d", floor(gold / 1000), gold % 1000)
-            end
-            if gold >= 1000000 then
-                local millions = floor(gold / 1000000)
-                local thousands = floor((gold % 1000000) / 1000)
-                goldStr = string.format("%d,%03d,%03d", millions, thousands, gold % 1000)
-            end
-            return goldStr .. "g"
-        end
+        local FormatGold = Datatexts.FormatGold
 
         -- Build the { key → record } map from the storage cache.
         local function BuildCharacters()
@@ -1577,12 +1543,7 @@ Datatexts:Register("durability", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         local DURABLE_SLOTS = {1, 3, 5, 6, 7, 8, 9, 10, 15, 16, 17}
         local SLOT_NAMES = {
@@ -1935,12 +1896,7 @@ Datatexts:Register("friends", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         local function Update()
             -- WoW friends
@@ -2397,12 +2353,7 @@ Datatexts:Register("guild", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         local function Update()
             if not IsInGuild() then
@@ -2672,12 +2623,7 @@ Datatexts:Register("lootspec", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         local function Update()
             local label = GetLabel("Loot: ", "L: ", slotFrame.shortLabel, slotFrame.noLabel)
@@ -2742,17 +2688,27 @@ Datatexts:Register("lootspec", {
             local specIndex = GetSpecialization()
             if specIndex then
                 local lootSpec = GetLootSpecialization()
-                local sameSpec = (lootSpec == 0) and specIndex or nil
-                local displaySpecIndex = sameSpec or lootSpec
-
-                if displaySpecIndex and displaySpecIndex ~= 0 then
-                    local specID, specName, _, icon = GetSpecializationInfo((displaySpecIndex ~= 0 and displaySpecIndex) or specIndex)
-                    if specName then
-                        if lootSpec == 0 then
-                            GameTooltip:AddLine(string.format("Current: %s (Auto)", specName), 1, 1, 1)
-                        else
-                            GameTooltip:AddLine(string.format("Current: %s", specName), 1, 1, 1)
+                -- lootSpec is a specID (0 = auto), NOT a specialization index;
+                -- resolve its name the same way Update() does, never feed it to
+                -- GetSpecializationInfo (which expects a 1-based index).
+                local specName
+                if lootSpec == 0 then
+                    specName = select(2, GetSpecializationInfo(specIndex))
+                else
+                    for i = 1, GetNumSpecializations() or 0 do
+                        local id, name = GetSpecializationInfo(i)
+                        if id == lootSpec then
+                            specName = name
+                            break
                         end
+                    end
+                end
+
+                if specName then
+                    if lootSpec == 0 then
+                        GameTooltip:AddLine(string.format("Current: %s (Auto)", specName), 1, 1, 1)
+                    else
+                        GameTooltip:AddLine(string.format("Current: %s", specName), 1, 1, 1)
                     end
                 end
             end
@@ -2829,12 +2785,7 @@ Datatexts:Register("bags", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         -- Number of bag slots (add 1 for reagent bag on retail)
         local NUM_BAGS = NUM_BAG_SLOTS + 1
@@ -2961,12 +2912,7 @@ Datatexts:Register("coords", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         local function Update()
             local mapID = C_Map.GetBestMapForUnit("player")
@@ -3044,12 +2990,7 @@ Datatexts:Register("currencies", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         local iconString = "|T%s:14:14:0:0:64:64:4:60:4:60|t"
         local goldIcon = "|TInterface\\MoneyFrame\\UI-GoldIcon:14:14:0:0|t"
@@ -3155,11 +3096,11 @@ Datatexts:Register("currencies", {
             local displayString = ""
             local orderedCurrencies = GetOrderedCurrencies()
             local shown = 0
+            local abbr = AbbreviateNumbers or AbbreviateLargeNumbers
 
-            for i, currencyInfo in ipairs(orderedCurrencies) do
+            for _, currencyInfo in ipairs(orderedCurrencies) do
                 if shown >= maxToShow then break end
                 local icon = format(iconString, currencyInfo.iconFileID)
-                local abbr = AbbreviateNumbers or AbbreviateLargeNumbers
                 local quantity = abbr and abbr(currencyInfo.quantity) or tostring(currencyInfo.quantity)
                 if displayString ~= "" then
                     displayString = displayString .. " "
@@ -3303,12 +3244,7 @@ Datatexts:Register("mythickey", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         local function Update()
             local keystoneLevel = C_MythicPlus.GetOwnedKeystoneLevel()
@@ -3390,12 +3326,7 @@ Datatexts:Register("playerspec", {
         local frame = CreateFrame("Frame", nil, slotFrame)
         frame:SetAllPoints()
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         local iconString = "|T%s:14:14:0:0:64:64:4:60:4:60|t"
         -- Store activeLoadoutID on frame to avoid scope issues with multiple instances
@@ -3790,12 +3721,7 @@ Datatexts:Register("experience", {
         frame:SetAllPoints()
         frame:EnableMouse(true)
 
-        local text = slotFrame.text
-        if not text then
-            text = slotFrame:CreateFontString(nil, "OVERLAY")
-            text:SetPoint("CENTER")
-            slotFrame.text = text
-        end
+        local text = Datatexts.EnsureText(slotFrame)
 
         local function Update()
             local level = UnitLevel("player")

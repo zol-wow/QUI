@@ -34,6 +34,37 @@ local function GetPixelSize(frame)
     return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
 end
 
+-- Walk GetChannelList() (id, name, header, id, name, header, ...) and return
+-- the joined non-header channel names in order. Returns an empty table when
+-- the API is unavailable.
+local function CollectJoinedChannelNames()
+    local names = {}
+    if type(GetChannelList) == "function" then
+        local data = { GetChannelList() }
+        local i = 1
+        while i + 1 <= #data do
+            local name = data[i + 1]
+            local isHeader = data[i + 2]
+            if type(name) == "string" and name ~= "" and not isHeader then
+                names[#names + 1] = name
+            end
+            i = i + 3
+        end
+    end
+    return names
+end
+
+-- Dropdown options for the per-window selectors: one entry per configured
+-- window, with window 1 labelled the primary. Always yields at least one
+-- entry so the dropdown is never empty.
+local function BuildWindowOptions(windowsCfg)
+    local opts = {}
+    for i = 1, math.max(1, #windowsCfg) do
+        opts[#opts + 1] = { value = i, text = (i == 1) and "Window 1 (primary)" or ("Window " .. i) }
+    end
+    return opts
+end
+
 ProviderPanels:RegisterAfterLoad(function(ctx)
     local GUI = ctx.GUI
     local U = ctx.U
@@ -345,10 +376,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 selectedWindowIndex = 1
             end
 
-            local winOpts = {}
-            for i = 1, math.max(1, #windowsCfg) do
-                winOpts[#winOpts + 1] = { value = i, text = (i == 1) and "Window 1 (primary)" or ("Window " .. i) }
-            end
+            local winOpts = BuildWindowOptions(windowsCfg)
             local winSelTable = MarkTransientOptionsBinding({ _selected = selectedWindowIndex })
             local winSelector
             winSelector = GUI:CreateFormDropdown(card.frame, nil, winOpts, "_selected", winSelTable, function()
@@ -496,11 +524,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             -- Window selector: shown when more than one window exists.
             if #windowsCfg > 1 then
                 local function windowOptions()
-                    local opts = {}
-                    for i = 1, #windowsCfg do
-                        opts[#opts + 1] = { value = i, text = (i == 1) and "Window 1 (primary)" or ("Window " .. i) }
-                    end
-                    return opts
+                    return BuildWindowOptions(windowsCfg)
                 end
                 local winSelTable = MarkTransientOptionsBinding({ _selected = selectedWindowIndex })
                 local winSelector
@@ -706,17 +730,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 local Reg = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.ChannelRegistry
                 if Reg and Reg.AllNames then
                     liveChannels = Reg.AllNames()
-                elseif type(GetChannelList) == "function" then
-                    local data = { GetChannelList() }
-                    local ci = 1
-                    while ci + 1 <= #data do
-                        local cname = data[ci + 1]
-                        local isHeader = data[ci + 2]
-                        if type(cname) == "string" and cname ~= "" and not isHeader then
-                            liveChannels[#liveChannels + 1] = cname
-                        end
-                        ci = ci + 3
-                    end
+                else
+                    liveChannels = CollectJoinedChannelNames()
                 end
 
                 -- Union live channels with EVERY tab's stored names so soft selector
@@ -814,10 +829,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
             local TabManager = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.TabManager
             local windowsCfg = (TabManager and TabManager.GetWindowsConfig and TabManager.GetWindowsConfig()) or {}
-            local winOpts = {}
-            for i = 1, math.max(1, #windowsCfg) do
-                winOpts[#winOpts + 1] = { value = i, text = (i == 1) and "Window 1 (primary)" or ("Window " .. i) }
-            end
+            local winOpts = BuildWindowOptions(windowsCfg)
             local target = GUI:CreateFormDropdown(card.frame, nil, winOpts, "targetWindow", wt, Refresh, {
                 description = "Which chat window auto-created conversation tabs open in.",
             })
@@ -1607,21 +1619,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local histLocal = (type(chat.history) == "table") and chat.history or nil
             local storedSet = (histLocal and type(histLocal.excludedChannels) == "table")
                               and histLocal.excludedChannels or {}
-            -- Inline channel-list walk for the history exclusion controls.
-            -- GetChannelList returns id1, name1, header1, ... — skip header rows.
+            -- Channel-list walk for the history exclusion controls (joined,
+            -- non-header channel names; see CollectJoinedChannelNames).
             local joinedSet = {}
-            if type(GetChannelList) == "function" then
-                local data = { GetChannelList() }
-                local i = 1
-                while i + 1 <= #data do
-                    local name = data[i + 1]
-                    local isHeader = data[i + 2]
-                    if type(name) == "string" and name ~= "" and not isHeader then
-                        excludedJoinedSnapshot[#excludedJoinedSnapshot + 1] = name
-                        joinedSet[name] = true
-                    end
-                    i = i + 3
-                end
+            for _, name in ipairs(CollectJoinedChannelNames()) do
+                excludedJoinedSnapshot[#excludedJoinedSnapshot + 1] = name
+                joinedSet[name] = true
             end
             for n, on in pairs(storedSet) do
                 if on and type(n) == "string" and n ~= ""

@@ -134,6 +134,15 @@ local HasTaskAPI = C_TaskQuest and type(C_TaskQuest.GetQuestZoneID) == "function
 
 local SafeToNumber = Helpers.SafeToNumber
 local SafeValue = Helpers.SafeValue
+
+-- Safe currency-quantity read: returns the SafeToNumber'd quantity, or nil.
+local function GetCurrencyQuantity(currencyID)
+    local ok, info = pcall(C_CurrencyInfo.GetCurrencyInfo, currencyID)
+    if ok and info and info.quantity then
+        return SafeToNumber(info.quantity, 0)
+    end
+    return nil
+end
 local widgetSideState = setmetatable({}, { __mode = "k" })
 local widgetAnimationState = setmetatable({}, { __mode = "k" })
 local pendingWidgetUpdate = false
@@ -308,8 +317,7 @@ local function ExtractProgressPercent(info, tooltip)
     for _, current in ipairs(currentValues) do
         for _, maxVal in ipairs(maxValues) do
             if maxVal > 0 and current <= maxVal then
-                local pct = max(0, min(100, (current / maxVal) * 100))
-                if pct >= 0 and pct <= 100 then return pct end
+                return max(0, min(100, (current / maxVal) * 100))
             end
         end
     end
@@ -419,14 +427,6 @@ local function DetermineStageFromProgressState(progressState)
     if progressState == 2 then return 3 end
     if progressState == PREY_PROGRESS_FINAL then return 4 end
     return 1
-end
-
-local function DetermineStageFromPercent(pct)
-    if pct >= 75 then return 4
-    elseif pct >= 50 then return 3
-    elseif pct >= 25 then return 2
-    else return 1
-    end
 end
 
 local function DetectPreyZone(questID)
@@ -623,9 +623,8 @@ local function CreatePreyBar()
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Prey Currencies", 0.9, 0.75, 0.3)
             for _, curr in ipairs(PREY_CURRENCIES) do
-                local ok, info = pcall(C_CurrencyInfo.GetCurrencyInfo, curr.id)
-                if ok and info and info.quantity then
-                    local qty = SafeToNumber(info.quantity, 0)
+                local qty = GetCurrencyQuantity(curr.id)
+                if qty then
                     local sessionDelta = qty - (State.sessionStart[curr.id] or qty)
                     local deltaStr = ""
                     if settings2.currencyShowSession and sessionDelta > 0 then
@@ -765,7 +764,7 @@ local function UpdateBarDisplay()
     -- Derive display percent: use raw progressPercent if available,
     -- otherwise fall back to stage-based estimate (like the reference)
     local pct = State.progressPercent
-    local shouldUseStageFallback = (pct == nil) or (stage >= 1 and pct <= 0)
+    local shouldUseStageFallback = (pct == nil) or (pct <= 0)
     if stage == 4 then
         pct = 100
     elseif shouldUseStageFallback then
@@ -1247,6 +1246,8 @@ end
 -- HUNT SCANNER
 ---------------------------------------------------------------------------
 
+local ShowHuntPanel
+
 local function OnGossipShow()
     local settings = GetSettings()
     if not settings or not settings.huntScannerEnabled then return end
@@ -1316,7 +1317,7 @@ local function CreateHuntPanel()
     return panel
 end
 
-function ShowHuntPanel()
+ShowHuntPanel = function()
     local panel = State.huntPanel or CreateHuntPanel()
     if not panel then return end
 
@@ -1351,9 +1352,9 @@ local function InitCurrencyBaseline()
     if not HasCurrencyAPI then return end
 
     for _, curr in ipairs(PREY_CURRENCIES) do
-        local ok, info = pcall(C_CurrencyInfo.GetCurrencyInfo, curr.id)
-        if ok and info and info.quantity then
-            State.sessionStart[curr.id] = SafeToNumber(info.quantity, 0)
+        local qty = GetCurrencyQuantity(curr.id)
+        if qty then
+            State.sessionStart[curr.id] = qty
         end
     end
 end
@@ -1383,9 +1384,9 @@ local function SaveWarbandSnapshot()
     charData.level = UnitLevel("player")
 
     for _, curr in ipairs(PREY_CURRENCIES) do
-        local ok, info = pcall(C_CurrencyInfo.GetCurrencyInfo, curr.id)
-        if ok and info and info.quantity then
-            charData.currencies[curr.id] = SafeToNumber(info.quantity, 0)
+        local qty = GetCurrencyQuantity(curr.id)
+        if qty then
+            charData.currencies[curr.id] = qty
         end
     end
 end

@@ -15,7 +15,7 @@
 -- GetChannelDisplayInfo) — no secret payloads flow through this file.
 local _, ns = ...
 
-local _I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
+assert(ns.QUI.Chat and ns.QUI.Chat._internals,
     "QUI Chat: channel_registry.lua loaded before chat.lua. Check chat.xml — chat.lua must precede channel_registry.lua.")
 
 ns.QUI.Chat.ChannelRegistry = ns.QUI.Chat.ChannelRegistry or {}

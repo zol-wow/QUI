@@ -107,6 +107,18 @@ local cursors = setmetatable({}, { __mode = "k" })
 -- walking back past the newest entry restores exactly what the user was typing.
 local originalInput = setmetatable({}, { __mode = "k" })
 
+-- Append a history entry, FIFO-trim to maxEntries, and reset the per-edit-box
+-- navigation cursor (a fresh send invalidates any in-progress navigation).
+local function pushEntry(store, entry, s, editBox)
+    store.entries[#store.entries + 1] = entry
+    local maxEntries = s.maxEntries or 200
+    while #store.entries > maxEntries do
+        table.remove(store.entries, 1)
+    end
+    cursors[editBox] = nil
+    originalInput[editBox] = nil
+end
+
 -- ---------------------------------------------------------------------------
 -- Capture: use Blizzard's explicit pre-send notification
 -- ---------------------------------------------------------------------------
@@ -166,23 +178,8 @@ local function captureSent(editBox)
     local store = getStore()
     if not store then return end
 
-    -- Append.
-    store.entries[#store.entries + 1] = {
-        ct = chatType,
-        tg = target,
-        m = text,
-    }
-
-    -- FIFO trim at maxEntries.
-    local maxEntries = s.maxEntries or 200
-    while #store.entries > maxEntries do
-        table.remove(store.entries, 1)
-    end
-
-    -- Reset cursor on this edit box (a fresh send invalidates the
-    -- in-progress navigation, if any).
-    cursors[editBox] = nil
-    originalInput[editBox] = nil
+    -- Append, FIFO-trim, and reset navigation cursor.
+    pushEntry(store, { ct = chatType, tg = target, m = text }, s, editBox)
 end
 
 -- ---------------------------------------------------------------------------
@@ -246,15 +243,7 @@ local function captureSlashCommand(editBox, text)
 
     -- Slash commands carry no chat type/target; store the literal line so recall
     -- re-sends it verbatim (ComposeRecallText returns it unchanged).
-    store.entries[#store.entries + 1] = { m = text }
-
-    local maxEntries = s.maxEntries or 200
-    while #store.entries > maxEntries do
-        table.remove(store.entries, 1)
-    end
-
-    cursors[editBox] = nil
-    originalInput[editBox] = nil
+    pushEntry(store, { m = text }, s, editBox)
 end
 
 local function RegisterPreSendCallback()

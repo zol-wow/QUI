@@ -465,12 +465,9 @@ local function MaybeAutoAddChannel(event, p)
     end
 end
 
-local WHISPER_POPOUT_KEYS = {
-    WHISPER = true,
-    WHISPER_INFORM = true,
-    BN_WHISPER = true,
-    BN_WHISPER_INFORM = true,
-}
+-- Whisper-family chatTypeKeys (shared via chat.lua's _internals; see
+-- I.WHISPER_TYPE_KEYS). Used here for whisper-popout conversation routing.
+local WHISPER_POPOUT_KEYS = I.WHISPER_TYPE_KEYS
 
 local function GetWhisperMode()
     if type(_G.GetCVar) ~= "function" then return nil end

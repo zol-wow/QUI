@@ -125,6 +125,7 @@ ns.Bags.BagWindow = {
 }
 ns.Bags.AutoOpen = { ShouldOpenFor = function() return true end }
 
+assert(loadfile("QUI_Bags/bags/takeover_shared.lua"))("QUI", ns)
 local chunk = assert(loadfile("QUI_Bags/bags/takeover.lua"))
 chunk("QUI", ns)
 local Takeover = ns.Bags.Takeover

@@ -102,6 +102,7 @@ local function ApplyBarDimensions(bar, statusBar)
     if not bar or not statusBar then return end
 
     local g = GetGeneralSettings()
+    if not g then return end
     local defW = SkinBase.GetFrameData(bar, "quiStbDefSbW")
     local defH = SkinBase.GetFrameData(bar, "quiStbDefSbH")
     if not defW or not defH then return end

@@ -111,14 +111,40 @@ local function MakeTermMatcher(term)
             return d.equipLoc == slot
         end
     end
+    -- exact keyword wins outright (deliberate filter, no name fallback)
     if KEYWORDS[term] then
         return KEYWORDS[term]
     end
+    -- as-you-type: term that PREFIXES keyword name(s) fires those filters,
+    -- UNION'd with plain name substring. Only adds highlights, never narrows,
+    -- so partial typing ("reag" -> reagent) lights up incrementally.
+    local prefixChecks
+    for kw, fn in pairs(KEYWORDS) do
+        if #term < #kw and kw:sub(1, #term) == term then
+            prefixChecks = prefixChecks or {}
+            local seen = false
+            for i = 1, #prefixChecks do
+                if prefixChecks[i] == fn then seen = true break end
+            end
+            if not seen then prefixChecks[#prefixChecks + 1] = fn end
+        end
+    end
     -- default: case-insensitive name substring (plain find, no patterns)
-    local needle = term:lower()
-    return function(d)
+    local needle = term
+    local nameCheck = function(d)
         if d.name == nil then return nil end
         return d.name:lower():find(needle, 1, true) ~= nil
+    end
+    if not prefixChecks then
+        return nameCheck
+    end
+    return function(d)
+        local r = nameCheck(d)
+        for i = 1, #prefixChecks do
+            r = triOr(r, prefixChecks[i](d))
+            if r == true then return true end
+        end
+        return r
     end
 end
 

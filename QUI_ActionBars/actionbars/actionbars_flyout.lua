@@ -373,7 +373,7 @@ function PopulateOwnedFlyoutInfoEntry(info, flyoutID, numSlots, isKnown)
     info.slots = info.slots or {}
 
     for slot = 1, numSlots do
-        local spellID, overrideSpellID, isKnownSlot = GetFlyoutSlotInfo(flyoutID, slot)
+        local spellID, _, isKnownSlot = GetFlyoutSlotInfo(flyoutID, slot)
         if GetCallPetSpellInfo and type(spellID) == "number" and spellID > 0 then
             local petIndex, petName = GetCallPetSpellInfo(spellID)
             if petIndex and (not petName or petName == "") then

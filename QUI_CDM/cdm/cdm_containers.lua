@@ -1987,9 +1987,9 @@ local function SaveContainerPosition(trackerKey)
                     -- to point/relative offsets for non-center anchors.
                     local vs = viewerState[container]
                     local frameW = (vs and (vs.cdmIconWidth or vs.row1Width)) or (container:GetWidth() or 1) or 1
-                    local frameH = (vs and vs.cdmTotalHeight) or (container:GetHeight() or 1) or 1
-                    local parentW = (UIParent:GetWidth() or 1) or 1
-                    local parentH = (UIParent:GetHeight() or 1) or 1
+                    local frameH = (vs and vs.cdmTotalHeight) or (container:GetHeight() or 1)
+                    local parentW = (UIParent:GetWidth() or 1)
+                    local parentH = (UIParent:GetHeight() or 1)
                     settings.offsetX, settings.offsetY = CDMLayout.ComputeAnchorOffsets(
                         ox, oy,
                         settings.point or "CENTER",

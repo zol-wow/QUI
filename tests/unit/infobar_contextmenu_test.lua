@@ -27,6 +27,10 @@ end
 local InfoBar = { ApplyAll = function() end }
 local ns = { Addon = { InfoBar = InfoBar } }
 
+-- contextmenu.lua now reads EnsureWidgetSettings from the shared core helper;
+-- load it first (in-game core loads long before the InfoBar addon).
+assert(loadfile(ROOT .. "core/infobar_shared.lua"))("QUI", ns)
+
 local chunk = assert(loadfile(ROOT .. "QUI_InfoBar/infobar/contextmenu.lua"))
 chunk("QUI_InfoBar", ns)
 

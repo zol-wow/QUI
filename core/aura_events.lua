@@ -152,25 +152,20 @@ local function GetMergedInfo(unit)
 end
 
 -- Copy delta arrays from updateInfo into the merged accumulator
+local function AppendDeltaField(merged, updateInfo, field)
+    local src = updateInfo[field]
+    if src then
+        local dst = merged[field]
+        for _, v in ipairs(src) do
+            dst[#dst + 1] = v
+        end
+    end
+end
+
 local function AccumulateDelta(merged, updateInfo)
-    if updateInfo.addedAuras then
-        local dst = merged.addedAuras
-        for _, v in ipairs(updateInfo.addedAuras) do
-            dst[#dst + 1] = v
-        end
-    end
-    if updateInfo.removedAuraInstanceIDs then
-        local dst = merged.removedAuraInstanceIDs
-        for _, v in ipairs(updateInfo.removedAuraInstanceIDs) do
-            dst[#dst + 1] = v
-        end
-    end
-    if updateInfo.updatedAuraInstanceIDs then
-        local dst = merged.updatedAuraInstanceIDs
-        for _, v in ipairs(updateInfo.updatedAuraInstanceIDs) do
-            dst[#dst + 1] = v
-        end
-    end
+    AppendDeltaField(merged, updateInfo, "addedAuras")
+    AppendDeltaField(merged, updateInfo, "removedAuraInstanceIDs")
+    AppendDeltaField(merged, updateInfo, "updatedAuraInstanceIDs")
 end
 
 ---------------------------------------------------------------------------

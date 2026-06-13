@@ -26,7 +26,7 @@ local warnedPlugins = {}     -- ldbName -> true once a callback error was printe
 -- churn (chatty plugins reassign bookkeeping keys frequently) is ignored.
 local DISPLAY_KEYS = {
     text = true, value = true, suffix = true, label = true,
-    icon = true, iconCoords = true, iconR = true, iconG = true, iconB = true,
+    icon = true, iconCoords = true,
 }
 
 local function GetObj(name)

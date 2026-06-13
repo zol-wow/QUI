@@ -21,12 +21,7 @@ local CDM_ELEMENTS = {
     { key = "buffBar", label = "Buff Bars", order = 4 },
 }
 
-local CDM_KEY_MAP = {
-    cdmEssential = "essential",
-    cdmUtility = "utility",
-    buffIcon = "buff",
-    buffBar = "trackedBar",
-}
+local CDM_KEY_MAP = Shared.ELEMENT_TO_CONTAINER_MAP
 
 local CDM_VIEWER_MAP = {
     cdmEssential = "essential",

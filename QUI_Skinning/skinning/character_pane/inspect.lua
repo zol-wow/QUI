@@ -224,21 +224,10 @@ local COUNTED_SLOTS = {
 ---------------------------------------------------------------------------
 local TOOLTIP_LINE_TYPE_ITEM_LEVEL = Enum and Enum.TooltipDataLineType and Enum.TooltipDataLineType.ItemLevel or 31
 
-local function CleanTooltipText(text)
-    if text == nil or Helpers.IsSecretValue(text) then return "" end
-    if type(text) ~= "string" then text = tostring(text) end
-
-    text = text:gsub("|c%x%x%x%x%x%x%x%x", "")
-    text = text:gsub("|r", "")
-    text = text:gsub("|A.-|a", "")
-    text = text:gsub("|T.-|t", "")
-    return text:match("^%s*(.-)%s*$") or ""
-end
-
-local function ReadableNumber(value)
-    if value == nil or Helpers.IsSecretValue(value) then return nil end
-    return tonumber(value)
-end
+-- Shared secret-safe parsers come from character.lua's CharacterShared table
+-- (character.lua loads first). Aliased as locals so call sites stay thin.
+local CleanTooltipText = GetShared().CleanTooltipText
+local ReadableNumber = GetShared().ReadableNumber
 
 local function GetReadableUnitGUID(unit)
     if not unit or not UnitGUID then return nil end
@@ -377,37 +366,9 @@ local function IsCurrentInspectUnit(unit)
     return RefreshCurrentInspectGUID(unit)
 end
 
-local function GetReadableInventoryItemLink(unit, slotId)
-    if not unit or not slotId or not GetInventoryItemLink then return nil end
-
-    local ok, itemLink = pcall(GetInventoryItemLink, unit, slotId)
-    if not ok or Helpers.IsSecretValue(itemLink) then
-        return nil
-    end
-
-    return itemLink
-end
-
-local function GetInventoryTooltipData(unit, slotId)
-    if not (C_TooltipInfo and C_TooltipInfo.GetInventoryItem) then return nil end
-
-    local ok, tooltipData = pcall(C_TooltipInfo.GetInventoryItem, unit, slotId)
-    if not ok or Helpers.IsSecretValue(tooltipData) then return nil end
-    if type(tooltipData) ~= "table" or not Helpers.CanAccessTable(tooltipData) then return nil end
-    if type(tooltipData.lines) ~= "table" or not Helpers.CanAccessTable(tooltipData.lines) then return nil end
-
-    return tooltipData
-end
-
-local function MatchItemLevelText(text)
-    text = CleanTooltipText(text)
-    if text == "" then return nil end
-
-    local pattern = ITEM_LEVEL and ITEM_LEVEL:gsub("%%d", "(%%d+)") or "Item Level (%d+)"
-    local ilvl = text:match(pattern)
-    ilvl = ReadableNumber(ilvl)
-    return ilvl and ilvl > 0 and ilvl or nil
-end
+local GetReadableInventoryItemLink = GetShared().GetReadableInventoryItemLink
+local GetInventoryTooltipData = GetShared().GetInventoryTooltipData
+local MatchItemLevelText = GetShared().MatchItemLevelText
 
 local function GetSlotItemLevel(unit, slotId)
     if not unit or not slotId then return nil end
@@ -1268,8 +1229,8 @@ local function UpdateInspectILvlDisplay()
 
     -- Get class info
     local className = ""
-    local classNameLocalized, classToken, classIndex
-    ok, classNameLocalized, classToken, classIndex = pcall(UnitClass, unit)
+    local _, classToken, classIndex
+    ok, _, classToken, classIndex = pcall(UnitClass, unit)
     if not ok or Helpers.IsSecretValue(classToken) then
         classToken = nil
     end
@@ -1288,7 +1249,7 @@ local function UpdateInspectILvlDisplay()
     ok, specID = pcall(GetInspectSpecialization, unit)
     specID = ok and ReadableNumber(specID) or nil
     specID = specID or 0
-    if specID and specID > 0 then
+    if specID > 0 then
         local specOk, specNameLocal = pcall(function()
             return select(2, GetSpecializationInfoByID(specID))
         end)

@@ -833,6 +833,9 @@ local function ReleaseBar(bar)
     bar._timerShowRearmPending = nil
     bar._lastPosKey = nil
     bar._lastAnchor = nil
+    bar._cfgFingerprint = nil
+    bar._cfgActive = nil
+    bar._lastFrameLevel = nil
     bar._desiredTexture = nil
     bar._isTotemInstance = nil
     bar._totemSlot = nil
@@ -917,7 +920,7 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
         for i, bar in ipairs(barPool) do
             local entry = spellList[i]
             local entrySpellID = entry.overrideSpellID or entry.spellID or entry.id
-            if not entry or bar._spellID ~= entrySpellID or bar._instanceKey ~= entry._instanceKey then
+            if bar._spellID ~= entrySpellID or bar._instanceKey ~= entry._instanceKey then
                 needsRebuild = true
                 break
             end
@@ -1358,8 +1361,6 @@ function CDMBars:UpdateOwnedBarAura(bar)
             bar._cSideFill = nil
             bar._preferDurObjFill = nil
             bar._forceTimerDurationRebind = nil
-            bar._lastDurationText = nil
-            bar._lastDurationBucket = nil
             bar._totalDuration = nil
             bar._expirationTime = nil
             SetStatusBarFull(bar.StatusBar)
@@ -1535,9 +1536,6 @@ function CDMBars:UpdateOwnedBarAura(bar)
         bar._expirationTime = nil
         bar._hideDurationText = nil
         bar._hasAuraExpirationTime = nil
-        if not InCombatLockdown() then
-            bar._resolvedAuraID = nil
-        end
         ClearStatusBar(bar.StatusBar)
         if bar.PermanentFill then
             bar.PermanentFill.SetAlpha(bar.PermanentFill, 0)
@@ -1880,8 +1878,6 @@ barTimerGroup:SetScript("OnLoop", function()
         if bar._isOwnedBar and bar._active and bar:IsShown() then
             if bar._hideDurationText then
                 anyActive = true
-                bar._lastDurationText = nil
-                bar._lastDurationBucket = nil
                 if bar.DurationText then
                     bar.DurationText.SetText(bar.DurationText, "")
                 end

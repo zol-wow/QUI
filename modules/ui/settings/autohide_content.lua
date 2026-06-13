@@ -13,57 +13,18 @@ local Settings = ns.Settings
 local Registry = Settings and Settings.Registry
 local Schema = Settings and Settings.Schema
 
-local PAD = (Shared and Shared.PADDING) or 15
-local HEADER_GAP = 26
-local SECTION_GAP = 14
-
-local function MakeLayout(content)
-    local y = -10
-    local L = {}
-    function L.headerAt(text)
-        local h = Shared.CreateAccentDotLabel(content, text, y)
-        h:ClearAllPoints()
-        h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-        y = y - HEADER_GAP
-    end
-    function L.sectionAt()
-        local c = Shared.CreateSettingsCardGroup(content, y)
-        c.frame:ClearAllPoints()
-        c.frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        c.frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
-        return c
-    end
-    function L.closeSection(c)
-        c.Finalize()
-        y = y - c.frame:GetHeight() - SECTION_GAP
-    end
-    function L.finish()
-        content:SetHeight(math.abs(y) + 10)
-        return content:GetHeight()
-    end
-    return L
-end
-
-local function row(parent, label, widget, desc)
-    return Shared.BuildSettingRow(parent, label, widget, desc)
-end
+local MakeLayout = ns.QUI_ModulesSettingsLayout.MakeLayout
+local row = ns.QUI_ModulesSettingsLayout.Row
 
 -- Pair an entry list 2-per-row into card `s`, optionally trailing unpaired.
 local function pairEntries(s, entries, dbTable, refresh)
-    local pending = nil
+    local cells = {}
     for _, it in ipairs(entries) do
         local w = GUI:CreateFormCheckbox(s.frame, nil, it.key, dbTable, refresh,
             { description = it.desc })
-        local cell = row(s.frame, it.label, w)
-        if pending then
-            s.AddRow(pending, cell)
-            pending = nil
-        else
-            pending = cell
-        end
+        cells[#cells + 1] = row(s.frame, it.label, w)
     end
-    if pending then s.AddRow(pending) end
+    ns.QUI_ModulesSettingsLayout.PairCells(s, cells)
 end
 
 local function BuildAutohideTab(tabContent)

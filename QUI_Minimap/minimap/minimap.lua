@@ -1181,17 +1181,13 @@ local function UpdateZoneText()
     end
 
     -- Build font flags
-    local flags = nil
+    local flags
     if zoneConfig.monochrome and zoneConfig.outline ~= "NONE" then
         flags = "MONOCHROME," .. zoneConfig.outline
     elseif zoneConfig.monochrome then
         flags = "MONOCHROME"
-    elseif zoneConfig.outline ~= "NONE" then
-        flags = generalOutline
-    end
-
-    -- Override flags with general outline if not using monochrome
-    if not zoneConfig.monochrome then
+    else
+        -- Non-monochrome zones always use the general outline.
         flags = generalOutline
     end
 

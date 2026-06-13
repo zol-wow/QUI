@@ -33,6 +33,7 @@ ns.Alts = {
     Window = { RegisterTab = function() end },
 }
 
+assert(loadfile("QUI_Alts/alts/views/shared.lua"))("QUI", ns)
 assert(loadfile("QUI_Alts/alts/views/weeklies.lua"))("QUI", ns)
 
 local WV = ns.Alts.WeekliesView

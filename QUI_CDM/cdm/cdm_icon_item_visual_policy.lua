@@ -150,12 +150,21 @@ function CDMIconItemVisualPolicy.Create(callbacks)
         overlay:Show()
     end
 
-    function controller:RefreshInventoryItemVisuals(icon, entry, itemID)
-        if not (icon and entry and itemID and icon.Icon) then return false end
+    -- Compare the item texture against the icon's cached _lastTexture; apply and
+    -- store it when changed. Returns true when the texture was updated.
+    local function applyItemTextureIfChanged(icon, itemID)
         local texture = controller:GetItemTexture(itemID)
         if texture and texture ~= icon._lastTexture then
             icon.Icon:SetTexture(texture)
             icon._lastTexture = texture
+            return true
+        end
+        return false
+    end
+
+    function controller:RefreshInventoryItemVisuals(icon, entry, itemID)
+        if not (icon and entry and itemID and icon.Icon) then return false end
+        if applyItemTextureIfChanged(icon, itemID) then
             controller:UpdateProfessionQuality(icon)
             return true
         end
@@ -172,10 +181,7 @@ function CDMIconItemVisualPolicy.Create(callbacks)
         end
 
         if icon.Icon then
-            local texture = controller:GetItemTexture(itemID)
-            if texture and texture ~= icon._lastTexture then
-                icon.Icon:SetTexture(texture)
-                icon._lastTexture = texture
+            if applyItemTextureIfChanged(icon, itemID) then
                 changed = true
             end
         end

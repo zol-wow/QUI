@@ -380,9 +380,9 @@ local function ResolveCapturedAuraFilter(unit, ad, instID, explicitFilter)
     if filter then return filter end
 
     if ad then
-local okH = true; local isHelpful = ad.isHelpful
+        local isHelpful = ad.isHelpful
         if isHelpful == true then return "HELPFUL" end
-local okR = true; local isHarmful = ad.isHarmful
+        local isHarmful = ad.isHarmful
         if isHarmful == true then return "HARMFUL" end
     end
 
@@ -500,7 +500,7 @@ local function CaptureAuraFromPayload(unit, ad, allowCastCorrelation, explicitFi
     local sid = GetCleanAuraSpellID(ad)
     local nameRaw = GetCleanAuraName(ad)
     local name, nameKey
-local okName = true; local cleanName, cleanNameKey = (function()
+    local cleanName, cleanNameKey = (function()
         if type(nameRaw) == "string" and nameRaw ~= "" then
             return nameRaw, nameRaw:lower()
         end
@@ -800,7 +800,7 @@ local function GetCapturedAuraForLookup(spellIDs, entryName, preferredUnits, all
             end
             local nameMap = _capturedAuraByUnitName[unit]
             if nameMap and type(entryName) == "string" then
-local okName = true; local nameKey = (function()
+                local nameKey = (function()
                     if entryName ~= "" then
                         return entryName:lower()
                     end
@@ -834,7 +834,7 @@ local okName = true; local nameKey = (function()
         end
     end
     if type(entryName) == "string" then
-local okName = true; local nameKey = (function()
+        local nameKey = (function()
             if entryName ~= "" then
                 return entryName:lower()
             end
@@ -929,10 +929,7 @@ local function GetReadableAuraDurationState(auraData)
     if InCombatLockdown() then
         return nil
     end
-local okCompare = true; local hasNoDuration = duration <= 0
-    if not okCompare then
-        return nil
-    end
+    local hasNoDuration = duration <= 0
     if hasNoDuration then
         return false
     end
@@ -979,18 +976,18 @@ local function AuraDataMatchesFilter(unit, auraData, filter, filterWasApplied)
 
     local instID = GetCleanAuraInstanceID(auraData)
     if FilterWantsToken(filter, "HELPFUL") then
-local okH = true; local helpful = auraData.isHelpful
+        local helpful = auraData.isHelpful
         if helpful == true then return true end
         if helpful == false then return false end
         local passes = AuraInstancePassesFilter(unit, instID, "HELPFUL")
         if passes ~= nil then return passes end
-local okR = true; local harmful = auraData.isHarmful
+        local harmful = auraData.isHarmful
         if harmful == true then return false end
         return false
     end
 
     if FilterWantsToken(filter, "HARMFUL") then
-local okR = true; local harmful = auraData.isHarmful
+        local harmful = auraData.isHarmful
         if harmful == true then
             if FilterWantsToken(filter, "PLAYER") then
                 if unit == "target" then
@@ -1003,7 +1000,7 @@ local okR = true; local harmful = auraData.isHarmful
         if harmful == false then return false end
         local passes = AuraInstancePassesFilter(unit, instID, filter)
         if passes ~= nil then return passes end
-local okH = true; local helpful = auraData.isHelpful
+        local helpful = auraData.isHelpful
         if helpful == true then return false end
         return false
     end
@@ -1252,11 +1249,9 @@ local function ResolveVirtualAuraState(explicitSlot)
     local state = { slot = slot }
 
     if slot and GetTotemInfo then
-local tok = true; local _, totemName, _, _, totemIcon = GetTotemInfo(slot)
-        if tok then
-            state.totemName = totemName
-            state.totemIcon = totemIcon
-        end
+        local _, totemName, _, _, totemIcon = GetTotemInfo(slot)
+        state.totemName = totemName
+        state.totemIcon = totemIcon
     end
 
     if slot and GetTotemDuration then
@@ -4344,7 +4339,7 @@ local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIndex, Enum.SpellBookSpell
                                 local baseCDms = 0
                                 if Sources and Sources.QuerySpellBaseCooldown then
                                     local ms = Sources.QuerySpellBaseCooldown(sid)
-                                    if ms then baseCDms = ms or 0 end
+                                    if ms then baseCDms = ms end
                                 end
                                 if baseCDms <= 1500 and Sources and Sources.QuerySpellCharges then
                                     local ci = Sources.QuerySpellCharges(sid)
@@ -4400,7 +4395,7 @@ local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIndex, Enum.SpellBookSpell
                         local baseCDms = 0
                         if Sources and Sources.QuerySpellBaseCooldown then
                             local ms = Sources.QuerySpellBaseCooldown(sid)
-                            if ms then baseCDms = ms or 0 end
+                            if ms then baseCDms = ms end
                         end
                         result[#result + 1] = {
                             spellID = sid,

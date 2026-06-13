@@ -2613,8 +2613,7 @@ local function SyncChildChargeCountFields(child, cdID, s, reason)
         return false
     end
 
-    local count
-    count = RawFrameField(child, "cooldownChargesCount")
+    local count = RawFrameField(child, "cooldownChargesCount")
     if not MirrorStackTextHasDisplay("ChargeCount", count) then
         if countOwner and countOwner.GetText then
             count = countOwner:GetText()
@@ -3826,7 +3825,6 @@ end
 local function DisableViewerChildrenMouse(viewer)
     if not viewer or not viewer.GetChildren then return end
     local n = select('#', viewer:GetChildren())
-    if not n then return end
     for i = 1, n do
         local child = select(i, viewer:GetChildren())
         if child then
@@ -3923,14 +3921,12 @@ UnsuppressViewers = function()
 
             -- Restore mouse on existing children too so tooltips work.
             local n = select('#', viewer:GetChildren())
-            if n then
-                for i = 1, n do
-                    local child = select(i, viewer:GetChildren())
-                    if child then
-                        if child.EnableMouse then child.EnableMouse(child, true) end
-                        if child.SetMouseClickEnabled then child.SetMouseClickEnabled(child, true) end
-                        if child.SetMouseMotionEnabled then child.SetMouseMotionEnabled(child, true) end
-                    end
+            for i = 1, n do
+                local child = select(i, viewer:GetChildren())
+                if child then
+                    if child.EnableMouse then child.EnableMouse(child, true) end
+                    if child.SetMouseClickEnabled then child.SetMouseClickEnabled(child, true) end
+                    if child.SetMouseMotionEnabled then child.SetMouseMotionEnabled(child, true) end
                 end
             end
         end
@@ -3955,42 +3951,9 @@ end
 -- mirrored state by cooldownID, while debug tooling can still inspect the
 -- original child frame and its native regions.
 ---------------------------------------------------------------------------
-local function FindFirstFontString(owner)
-    if not owner then return nil end
-    if owner.GetObjectType then
-        local kind = owner.GetObjectType(owner)
-        if kind == "FontString" then
-            return owner
-        end
-    end
-
-    if owner.GetRegions then
-        local regions = { owner:GetRegions() }
-        if regions then
-            for i = 1, #regions do
-                local region = regions[i]
-                if region and region.GetObjectType then
-                    local kind = region.GetObjectType(region)
-                    if kind == "FontString" then
-                        return region
-                    end
-                end
-            end
-        end
-    end
-
-    if owner.GetChildren then
-        local children = { owner:GetChildren() }
-        if children then
-            for i = 1, #children do
-                local found = FindFirstFontString(children[i])
-                if found then return found end
-            end
-        end
-    end
-
-    return nil
-end
+-- Reuses FindMirrorFontString (defined above): identical self/regions/children
+-- recursive FontString search; redundant nil-checks on {...} tables dropped.
+local FindFirstFontString = FindMirrorFontString
 
 -- Lookup helper used by the icon factory to decide whether a mirror entry
 -- has a live child for the cooldownID.
@@ -4433,7 +4396,7 @@ function HandlePlayerTotemUpdate(updatedSlot)
 
     local seen = {}
     for slot = 1, maxSlots do
-        local tok = true; local hasTotem, totemName, _, _, totemIcon, _, totemSpellID = GetTotemInfo(slot)
+        local hasTotem, totemName, _, _, totemIcon, _, totemSpellID = GetTotemInfo(slot)
         local nameSecret = issecretvalue and issecretvalue(totemName) or false
         local hasTotemSecret = issecretvalue and issecretvalue(hasTotem) or false
         local iconSecret = issecretvalue and issecretvalue(totemIcon) or false
@@ -4444,7 +4407,7 @@ function HandlePlayerTotemUpdate(updatedSlot)
             local spellIDRender = spellIDSecret and "<SECRET>" or totemSpellID
             CDMBlizzMirror.TaintLog("totem.scan",
                 "slot", slot,
-                "ok", tok,
+                "ok", true,
                 "hasTotem", hasTotemSecret and "<SECRET>" or hasTotem,
                 "nameSecret", nameSecret,
                 "name", nameRender,
@@ -4454,7 +4417,7 @@ function HandlePlayerTotemUpdate(updatedSlot)
         -- A non-empty totemName already implies an active totem, so we don't
         -- strictly need to test hasTotem when it's secret. Short-circuit via
         -- hasTotemSecret so Lua never evaluates the bool of a secret value.
-        if tok and (hasTotemSecret or hasTotem) then
+        if hasTotemSecret or hasTotem then
             local key
             local cleanTotemName
             if not nameSecret and type(totemName) == "string" and totemName ~= "" then

@@ -10,6 +10,12 @@
 -- Frame parts are NOT tested (no WoW frame API headless).
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
+
+local Shared = ns.AltsViewShared
+local ClassColor = Shared.ClassColor
+local GeneralFont = Shared.GeneralFont
+local GeneralOutline = Shared.GeneralOutline
+local MakeFS = Shared.MakeFS
 local Alts = ns.Alts or {}; ns.Alts = Alts
 
 local Helpers = ns.Helpers
@@ -50,28 +56,9 @@ end
 -- Frame parts (no headless test).
 ---------------------------------------------------------------------------
 
-local function GeneralFont()
-    return (Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont())
-        or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-end
 
-local function GeneralOutline()
-    return (Helpers and Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline())
-        or ""
-end
 
-local function MakeFS(parent, size)
-    local fs = parent:CreateFontString(nil, "ARTWORK")
-    fs:SetFont(GeneralFont(), size or 11, GeneralOutline())
-    fs:SetWordWrap(false)
-    return fs
-end
 
-local function ClassColor(classToken)
-    local c = classToken and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken]
-    if c then return c.r, c.g, c.b end
-    return 1, 1, 1
-end
 
 -- Total number of columns: name + MAX_PROFS profession slots.
 local TOTAL_COLS = 1 + MAX_PROFS

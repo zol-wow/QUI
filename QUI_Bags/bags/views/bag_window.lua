@@ -83,7 +83,7 @@ local function SendSelection()
     end)
     Bags.Transfers.UseSelected(cells, dest, function(ok, reason)
         if not ok and reason == "busy" then
-            print("|cFF30D1FFQUI:|r another bag operation is already running.")
+            print(Bags.OpsShared.PREFIX .. " another bag operation is already running.")
         end
         ClearSelection()
         BagWindow.Refresh()
@@ -182,16 +182,9 @@ local function RenderCategoryHeaders(headers, xOff)
 end
 
 -- The window's OnUpdate is owned exclusively by ScheduleRefresh (one-shot).
-local function ScheduleRefresh()
-    if win and win:IsShown() and not win._updateScheduled then
-        win._updateScheduled = true
-        win:SetScript("OnUpdate", function(self)
-            self:SetScript("OnUpdate", nil)
-            self._updateScheduled = false
-            BagWindow.Refresh()
-        end)
-    end
-end
+local ScheduleRefresh = Bags.Chassis.MakeScheduleRefresh(
+    function() return win end,
+    function() BagWindow.Refresh() end)
 
 --- The record the window renders: the viewed character's cached record, or
 --- the current character's (live mode) when no offline owner is selected.
@@ -228,6 +221,18 @@ local function IsBagHidden(bagID)
     local s = GetSettings()
     local hb = s and s.appearance and s.appearance.hiddenBags
     return hb and hb[bagID] and true or false
+end
+
+--- Flip a held bag's hidden-from-grid flag and re-render (shared by the
+--- bag-slot menu checkbox and the Alt+click shortcut).
+local function ToggleBagHidden(bagID)
+    local s = GetSettings()
+    if s and s.appearance then
+        s.appearance.hiddenBags = s.appearance.hiddenBags or {}
+        -- toggle: true ↔ removed (false and nil both mean visible)
+        s.appearance.hiddenBags[bagID] = (not s.appearance.hiddenBags[bagID]) or nil
+    end
+    BagWindow.Refresh()
 end
 
 local function EnsureWindow()
@@ -329,14 +334,7 @@ local function EnsureWindow()
                 if bagID >= 1 and bagID <= 4 then
                     root:CreateCheckbox("Hide From Bag Window",
                         function() return IsBagHidden(bagID) end,
-                        function()
-                            local s = GetSettings()
-                            if s and s.appearance then
-                                s.appearance.hiddenBags = s.appearance.hiddenBags or {}
-                                s.appearance.hiddenBags[bagID] = (not s.appearance.hiddenBags[bagID]) or nil
-                            end
-                            BagWindow.Refresh()
-                        end)
+                        function() ToggleBagHidden(bagID) end)
                 end
             end)
         end
@@ -347,13 +345,7 @@ local function EnsureWindow()
                 return
             end
             if IsAltKeyDown() and bagID >= 1 and bagID <= 4 then
-                local s = GetSettings()
-                if s and s.appearance then
-                    s.appearance.hiddenBags = s.appearance.hiddenBags or {}
-                    -- toggle: true ↔ removed (false and nil both mean visible)
-                    s.appearance.hiddenBags[bagID] = (not s.appearance.hiddenBags[bagID]) or nil
-                end
-                BagWindow.Refresh()
+                ToggleBagHidden(bagID)
                 return
             end
             if InCombatLockdown() then return end
@@ -582,7 +574,7 @@ local function CollectSlots()
             local bag = rec and rec.bags and rec.bags[bagID]
             local size = bag and bag.size or 0
             for slot = 1, size do
-                out[#out + 1] = { bagID = bagID, slot = slot, entry = bag.slots[slot] }
+                out[#out + 1] = { bagID = bagID, slot = slot, entry = bag.slots and bag.slots[slot] }
             end
         end
     end
@@ -985,7 +977,7 @@ function BagWindow.Refresh()
             live and selectMode and cell.entry ~= nil
             and selectedCells[cell.bagID .. ":" .. cell.slot] ~= nil)
         if btn._quiSelectCatcher then
-            btn._quiSelectCatcher:SetShown(selectMode and viewedCharacter == nil)
+            btn._quiSelectCatcher:SetShown(selectMode and live)
         end
         if btn._quiDepositCatcher then
             local dep = btn._quiDepositCatcher

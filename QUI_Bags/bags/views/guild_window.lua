@@ -112,16 +112,9 @@ end
 ---------------------------------------------------------------------------
 
 -- The window's OnUpdate is owned exclusively by ScheduleRefresh (one-shot).
-local function ScheduleRefresh()
-    if win and win:IsShown() and not win._updateScheduled then
-        win._updateScheduled = true
-        win:SetScript("OnUpdate", function(self)
-            self:SetScript("OnUpdate", nil)
-            self._updateScheduled = false
-            GuildWindow.Refresh()
-        end)
-    end
-end
+local ScheduleRefresh = Bags.Chassis.MakeScheduleRefresh(
+    function() return win end,
+    function() GuildWindow.Refresh() end)
 
 --- The guild record the window renders: the viewed guild (offline browse
 --- via the owner selector / ShowCached key), falling back to the current
@@ -429,16 +422,8 @@ local function ApplyTabHover(tab)
 end
 
 local function CreateTabButton()
-    local btn = CreateFrame("Button", nil, win._tabStrip)
+    local btn = Bags.Chassis.CreatePanelButton(win._tabStrip, true)
     btn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    bg:SetVertexColor(0, 0, 0, 0.35)
-    UIKit.DisablePixelSnap(bg)
-    btn._label = btn:CreateFontString(nil, "ARTWORK")
-    btn._label:SetPoint("CENTER", 0, 0)
-    btn._label:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
     UIKit.CreateBorderLines(btn)
     btn:SetScript("OnClick", function(self, mouseButton)
         local entry = self._entry
@@ -529,15 +514,7 @@ local function CreateTabButton()
 end
 
 local function CreateTextButton(parent, label, onClick)
-    local btn = CreateFrame("Button", nil, parent)
-    local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    bg:SetVertexColor(0, 0, 0, 0.35)
-    UIKit.DisablePixelSnap(bg)
-    btn._label = btn:CreateFontString(nil, "ARTWORK")
-    btn._label:SetPoint("CENTER", 0, 0)
-    btn._label:SetFont(Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 11, "OUTLINE")
+    local btn = Bags.Chassis.CreatePanelButton(parent, true)
     btn._label:SetText(label)
     btn:SetSize(math.max(40, math.ceil(btn._label:GetStringWidth()) + 12), 18)
     btn:SetScript("OnClick", onClick)

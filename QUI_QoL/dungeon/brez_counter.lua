@@ -108,17 +108,9 @@ local function FormatCombatTime(timestamp)
 end
 
 ---------------------------------------------------------------------------
--- Get class color for a unit GUID
+-- Get class color for a class file name
 ---------------------------------------------------------------------------
-local CLASS_COLORS = RAID_CLASS_COLORS
-
-local function GetClassColorByClass(className)
-    if className and CLASS_COLORS and CLASS_COLORS[className] then
-        local c = CLASS_COLORS[className]
-        return c.r, c.g, c.b
-    end
-    return 1, 1, 1
-end
+local GetClassColorByClass = Helpers.GetClassColor
 
 ---------------------------------------------------------------------------
 -- Create the brez counter frame
@@ -498,7 +490,7 @@ end
 -- Combat log handler for res history
 ---------------------------------------------------------------------------
 local function OnCombatLogEvent()
-    local _, subEvent, _, sourceGUID, sourceName, sourceFlags, _, destGUID, destName, destFlags, _, spellId = CombatLogGetCurrentEventInfo()
+    local _, subEvent, _, sourceGUID, sourceName, _, _, destGUID, destName, _, _, spellId = CombatLogGetCurrentEventInfo()
 
     if not spellId then return end
 

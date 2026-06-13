@@ -10,6 +10,7 @@ ns.Helpers = {
     GetGeneralFontOutline = function() return "" end,
 }
 
+assert(loadfile("QUI_Alts/alts/views/shared.lua"))("QUI", ns)
 assert(loadfile("QUI_Alts/alts/views/filter_popup.lua"))("QUI", ns)
 
 local FP = ns.Alts.FilterPopup

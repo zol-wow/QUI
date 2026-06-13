@@ -19,6 +19,30 @@ local function GetPixelSizeOrDefault(frame, default)
     return fallback
 end
 
+-- Reset an offset slider widget (X or Y) back to 0 and re-fill its track.
+local function ResetOffsetSliderToZero(container)
+    if not container then return end
+    if container.slider and container.editBox then
+        container.value = 0
+        container.slider:SetValue(0)
+        container.editBox:SetText("0")
+        -- Update track fill
+        if container.trackFill and container.trackContainer then
+            local minVal, maxVal = container.min or -500, container.max or 500
+            local pct = (0 - minVal) / (maxVal - minVal)
+            pct = math.max(0, math.min(1, pct))
+            local trackWidth = container.trackContainer:GetWidth() - 2
+            local fillWidth = math.max(1, pct * trackWidth)
+            container.trackFill:SetWidth(fillWidth)
+            if container.thumbFrame then
+                local thumbX = pct * (trackWidth - 14) + 7
+                container.thumbFrame:ClearAllPoints()
+                container.thumbFrame:SetPoint("CENTER", container.trackContainer, "LEFT", thumbX + 1, 0)
+            end
+        end
+    end
+end
+
 local Helpers = ns.Helpers
 
 local QUI_Anchoring_Options = {}
@@ -483,7 +507,7 @@ function QUI_Anchoring_Options:CreateAnchorDropdown(parent, label, settingsDB, a
     end
 
     if width then
-        dropdown:SetPoint("RIGHT", parent, "RIGHT", -x or 0, 0)
+        dropdown:SetPoint("RIGHT", parent, "RIGHT", -(x or 0), 0)
     end
 
     return dropdown
@@ -573,7 +597,7 @@ function QUI_Anchoring_Options:CreateSnapButtonsRow(parent, label, x, y, snapTar
     if x and y then
         container:SetPoint("TOPLEFT", x, y)
     end
-    container:SetPoint("RIGHT", parent, "RIGHT", -x or 0, 0)
+    container:SetPoint("RIGHT", parent, "RIGHT", -(x or 0), 0)
 
     local labelText = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     labelText:SetPoint("LEFT", 0, 0)
@@ -1191,50 +1215,8 @@ function QUI_Anchoring_Options:CreateAnchorPresetControls(parent, settingsDB, x,
             -- Update slider displays to reflect the new values
             -- SetValue is a method, but the function signature expects (val, skipOnChange) not (self, val, skipOnChange)
             -- So we need to update the slider components directly
-            if settingsDB._offsetXSlider then
-                local container = settingsDB._offsetXSlider
-                if container.slider and container.editBox then
-                    container.value = 0
-                    container.slider:SetValue(0)
-                    container.editBox:SetText("0")
-                    -- Update track fill
-                    if container.trackFill and container.trackContainer then
-                        local minVal, maxVal = container.min or -500, container.max or 500
-                        local pct = (0 - minVal) / (maxVal - minVal)
-                        pct = math.max(0, math.min(1, pct))
-                        local trackWidth = container.trackContainer:GetWidth() - 2
-                        local fillWidth = math.max(1, pct * trackWidth)
-                        container.trackFill:SetWidth(fillWidth)
-                        if container.thumbFrame then
-                            local thumbX = pct * (trackWidth - 14) + 7
-                            container.thumbFrame:ClearAllPoints()
-                            container.thumbFrame:SetPoint("CENTER", container.trackContainer, "LEFT", thumbX + 1, 0)
-                        end
-                    end
-                end
-            end
-            if settingsDB._offsetYSlider then
-                local container = settingsDB._offsetYSlider
-                if container.slider and container.editBox then
-                    container.value = 0
-                    container.slider:SetValue(0)
-                    container.editBox:SetText("0")
-                    -- Update track fill
-                    if container.trackFill and container.trackContainer then
-                        local minVal, maxVal = container.min or -500, container.max or 500
-                        local pct = (0 - minVal) / (maxVal - minVal)
-                        pct = math.max(0, math.min(1, pct))
-                        local trackWidth = container.trackContainer:GetWidth() - 2
-                        local fillWidth = math.max(1, pct * trackWidth)
-                        container.trackFill:SetWidth(fillWidth)
-                        if container.thumbFrame then
-                            local thumbX = pct * (trackWidth - 14) + 7
-                            container.thumbFrame:ClearAllPoints()
-                            container.thumbFrame:SetPoint("CENTER", container.trackContainer, "LEFT", thumbX + 1, 0)
-                        end
-                    end
-                end
-            end
+            ResetOffsetSliderToZero(settingsDB._offsetXSlider)
+            ResetOffsetSliderToZero(settingsDB._offsetYSlider)
         end
         if onPresetChange then
             onPresetChange()
@@ -1326,7 +1308,6 @@ function QUI_Anchoring_Options:CreateAnchorPresetControls(parent, settingsDB, x,
 
     -- Update preset button handlers to refresh popover
     local function UpdatePresetHandler(btn, presetAnchors)
-        local originalOnClick = btn:GetScript("OnClick")
         btn:SetScript("OnClick", function()
             ApplyPreset(presetAnchors, RefreshPopover)
         end)

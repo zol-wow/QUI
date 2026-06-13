@@ -162,7 +162,7 @@ local function DumpDescription(spellID)
     header("Description")
     local desc = tryCall(C_Spell and C_Spell.GetSpellDescription, spellID)
     if type(desc) == "string" and desc ~= "" then
-        for line in tostring(desc):gmatch("[^\r\n]+") do
+        for line in desc:gmatch("[^\r\n]+") do
             print("  " .. line)
         end
     else

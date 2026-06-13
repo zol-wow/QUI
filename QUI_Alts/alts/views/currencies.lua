@@ -18,6 +18,12 @@
 -- Frame parts are NOT tested (no WoW frame API headless).
 ---------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
+
+local Shared = ns.AltsViewShared
+local ClassColor = Shared.ClassColor
+local GeneralFont = Shared.GeneralFont
+local GeneralOutline = Shared.GeneralOutline
+local MakeFS = Shared.MakeFS
 local Alts = ns.Alts or {}; ns.Alts = Alts
 
 local Helpers = ns.Helpers
@@ -85,28 +91,9 @@ end
 -- Frame parts (no headless test).
 ---------------------------------------------------------------------------
 
-local function GeneralFont()
-    return (Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont())
-        or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-end
 
-local function GeneralOutline()
-    return (Helpers and Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline())
-        or ""
-end
 
-local function MakeFS(parent, size)
-    local fs = parent:CreateFontString(nil, "ARTWORK")
-    fs:SetFont(GeneralFont(), size or 11, GeneralOutline())
-    fs:SetWordWrap(false)
-    return fs
-end
 
-local function ClassColor(classToken)
-    local c = classToken and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken]
-    if c then return c.r, c.g, c.b end
-    return 1, 1, 1
-end
 
 local function Builder(parent)
     local Store = ns.Storage and ns.Storage.Store
@@ -382,6 +369,8 @@ local function Builder(parent)
 
         -- Resolve names first so BuildDisplayRows sorts by display name.
         local names = {}
+        -- unfiltered count just for the footer's hidden tally (one row per unique currency ID)
+        local total = 0
         do
             local seen = {}
             for _, rec in pairs(cachedChars) do
@@ -390,15 +379,13 @@ local function Builder(parent)
                 end
             end
             for id in pairs(seen) do
+                total = total + 1
                 local info = ResolveInfo(id)
                 if info then names[id] = info.name end
             end
         end
         local filter = (Alts.GetSettings and Alts.GetSettings() or {}).currencyFilter
         rows = CurrenciesView.BuildDisplayRows(cachedChars, names, filter)
-
-        -- unfiltered count just for the footer's hidden tally
-        local total = #CurrenciesView.BuildDisplayRows(cachedChars, names, nil)
 
         UpdateSelectorLabel()
         RenderRows()

@@ -279,8 +279,6 @@ local function BuildImportExportTab(tabContent)
     end
     exportState.preview = exportPreview
 
-    -- Forward-declare; defined after postExportContainer is created
-    local exportRelayout
     local exportCollapsibleAnchorY = y
     local exportCollapsibleSection  -- always-visible section wrapper (accent-dot label + body)
 
@@ -425,7 +423,6 @@ local function BuildImportExportTab(tabContent)
         localY = localY - 42
 
         body:SetHeight(math.abs(localY) + 8)
-        body._contentHeight = math.abs(localY) + 8
         exportCollapsibleSection.RefreshContentHeight()
         ApplyExportSelectionPreset("all")
 
@@ -653,16 +650,10 @@ local function BuildImportExportTab(tabContent)
         tabContent:SetHeight(containerOffset + containerInternalHeight + 20)
     end
 
-    exportRelayout = function()
-        local newY = exportCollapsibleAnchorY
-        if exportCollapsibleSection then
-            newY = exportCollapsibleAnchorY - exportCollapsibleSection:GetHeight() - 8
-        end
-        postExportContainer:ClearAllPoints()
-        postExportContainer:SetPoint("TOPLEFT", tabContent, "TOPLEFT", 0, newY)
-        postExportContainer:SetPoint("RIGHT", tabContent, "RIGHT", 0, 0)
-        UpdateContentHeight()
-    end
+    -- Forward declaration: the STRIP callback inside RenderPreview calls
+    -- ClearAnalysis, which is defined further down in this same scope. Without
+    -- this `local`, those calls bound to a nil global and errored at click time.
+    local ClearAnalysis
 
     local function RenderPreview(title, message, preview, isError, validationDetail)
         previewHost._importCollapsible = nil
@@ -983,7 +974,7 @@ local function BuildImportExportTab(tabContent)
         UpdateContentHeight()
     end
 
-    local function ClearAnalysis(message, isError)
+    function ClearAnalysis(message, isError)
         analysisState.preview = nil
         analysisState.selected = {}
         analysisState.activePayload = nil

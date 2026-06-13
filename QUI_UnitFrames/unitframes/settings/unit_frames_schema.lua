@@ -48,6 +48,9 @@ local UNIT_DISPLAY_NAMES = {
     focus = "Focus",
     boss = "Boss",
 }
+-- Publish the unit -> display-name map. This file loads before the settings
+-- model in QUI_Options.toc, so the model aliases this single source of truth.
+ns.QUI_UnitFramesUnitDisplayNames = UNIT_DISPLAY_NAMES
 local UNIT_SURFACE_TABS = {
     ["Frame"] = "frame",
     ["Bars"] = "bars",
@@ -156,6 +159,12 @@ local DEBUFF_EXCLUSIVE_OPTIONS = {
 
 local function GetGUI()
     return QUI and QUI.GUI or nil
+end
+
+-- Dim a companion settings cell when a higher-priority color toggle is on
+-- (the custom-color row greys to 0.4 alpha while the override is active).
+local function SetCompanionCellDim(cell, dimmed)
+    cell:SetAlpha(dimmed and 0.4 or 1.0)
 end
 
 local function GetOptionsAPI()
@@ -418,9 +427,6 @@ local function EnsureFilterDB(parent, key, modifierFlags)
         if filterDB.modifiers[flag] == nil then
             filterDB.modifiers[flag] = false
         end
-    end
-    if filterDB.exclusive == nil then
-        filterDB.exclusive = nil  -- explicit no-op; documents intent
     end
     return filterDB
 end
@@ -1187,7 +1193,7 @@ local function RenderFrameStandaloneCastbarSection(sectionHost, ctx)
                     return
                 end
 
-                local playerFrameEnabled = unit.ufdb and unit.unitDB.enabled
+                local playerFrameEnabled = unit.unitDB.enabled
                 if not playerFrameEnabled then
                     local confirm = GetGUI()
                     if confirm and type(confirm.ShowConfirmation) == "function" then
@@ -1382,7 +1388,7 @@ local function RenderBarsHealthColorsSection(sectionHost, ctx)
         local hostilityCheckbox = gui:CreateFormCheckbox(card.frame, nil, "useHostilityColor", unit.unitDB, function()
             RefreshUnitFrames()
             if customCell then
-                customCell:SetAlpha(unit.unitDB.useHostilityColor and 0.4 or 1.0)
+                SetCompanionCellDim(customCell, unit.unitDB.useHostilityColor)
             end
         end, {
             description = "Color NPC health bars by hostility using the colors from the Hostility Colors section in General. Disables Custom Color while on.",
@@ -1396,7 +1402,7 @@ local function RenderBarsHealthColorsSection(sectionHost, ctx)
             description = "Fallback solid color for the health bar when neither class color nor hostility color applies.",
         })
         customCell = optionsAPI.BuildSettingRow(card.frame, "Custom Color", customColor)
-        customCell:SetAlpha(unit.unitDB.useHostilityColor and 0.4 or 1.0)
+        SetCompanionCellDim(customCell, unit.unitDB.useHostilityColor)
         card.AddRow(customCell)
     else
         local customColor = gui:CreateFormColorPicker(card.frame, nil, "customHealthColor", unit.unitDB, RefreshUnitFrames, nil, {
@@ -1530,7 +1536,7 @@ local function RenderBarsPowerSection(sectionHost, ctx)
     local usePowerTypeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "powerBarUsePowerColor", unit.unitDB, function()
         RefreshUnitFrames()
         if customColorCell then
-            customColorCell:SetAlpha(unit.unitDB.powerBarUsePowerColor and 0.4 or 1.0)
+            SetCompanionCellDim(customColorCell, unit.unitDB.powerBarUsePowerColor)
         end
     end, {
         description = "Color the power bar by power type. Disables the Custom Bar Color swatch below while on.",
@@ -1544,7 +1550,7 @@ local function RenderBarsPowerSection(sectionHost, ctx)
         description = "Solid color for the power bar when Use Power Type Color is off.",
     })
     customColorCell = optionsAPI.BuildSettingRow(card.frame, "Custom Bar Color", powerColorPicker)
-    customColorCell:SetAlpha(unit.unitDB.powerBarUsePowerColor and 0.4 or 1.0)
+    SetCompanionCellDim(customColorCell, unit.unitDB.powerBarUsePowerColor)
     card.AddRow(customColorCell)
 
     builder.CloseCard(card)
@@ -2314,7 +2320,7 @@ local function RenderTextTargetOfTargetSection(sectionHost, ctx)
     local classColorCheckbox = gui:CreateFormCheckbox(card.frame, nil, "totDividerUseClassColor", unit.unitDB, function()
         RefreshUnitFrames()
         if dividerCell then
-            dividerCell:SetAlpha(unit.unitDB.totDividerUseClassColor and 0.4 or 1.0)
+            SetCompanionCellDim(dividerCell, unit.unitDB.totDividerUseClassColor)
         end
     end, {
         description = "Color the separator between target and target-of-target by the target-of-target unit's class or reaction. Disables Custom Divider Color while on.",
@@ -2323,7 +2329,7 @@ local function RenderTextTargetOfTargetSection(sectionHost, ctx)
         description = "Fallback color for the separator when Color Divider By Class/React is off.",
     })
     dividerCell = optionsAPI.BuildSettingRow(card.frame, "Custom Divider Color", dividerColorPicker)
-    dividerCell:SetAlpha(unit.unitDB.totDividerUseClassColor and 0.4 or 1.0)
+    SetCompanionCellDim(dividerCell, unit.unitDB.totDividerUseClassColor)
     card.AddRow(
         optionsAPI.BuildSettingRow(card.frame, "Color Divider By Class/React", classColorCheckbox),
         dividerCell
@@ -2443,7 +2449,7 @@ local function RenderTextPowerSection(sectionHost, ctx)
     local usePowerTypeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "powerTextUsePowerColor", unit.unitDB, function()
         RefreshUnitFrames()
         if customColorCell then
-            customColorCell:SetAlpha(unit.unitDB.powerTextUsePowerColor and 0.4 or 1.0)
+            SetCompanionCellDim(customColorCell, unit.unitDB.powerTextUsePowerColor)
         end
     end, {
         description = "Color the power text by power type. Disables the Custom Power Text Color swatch below while on.",
@@ -2457,7 +2463,7 @@ local function RenderTextPowerSection(sectionHost, ctx)
         description = "Color for the power text when Use Power Type Color is off.",
     })
     customColorCell = optionsAPI.BuildSettingRow(card.frame, "Custom Power Text Color", colorPicker)
-    customColorCell:SetAlpha(unit.unitDB.powerTextUsePowerColor and 0.4 or 1.0)
+    SetCompanionCellDim(customColorCell, unit.unitDB.powerTextUsePowerColor)
     local sizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 24, 1, "powerTextFontSize", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = "Font size used for the power text.",
     })
@@ -2941,18 +2947,21 @@ local function BuildIconsTabFeature(unitKey)
     return feature
 end
 
-local function RenderPortraitUnavailableSection(sectionHost, ctx)
-    local gui = GetGUI()
-    local unitKey = ctx and ctx.options and ctx.options.unitKey or nil
-    if UnitSupportsPortrait(unitKey) then
+-- Shared "this feature isn't available on this unit" placeholder section.
+-- Returns nil when the unit DOES support the feature (caller renders the real
+-- section instead); otherwise paints the message and returns the section height.
+local function RenderUnavailableSection(sectionHost, ctx, supported, surfaceName, message)
+    if supported then
         return nil
     end
+    local gui = GetGUI()
+    local unitKey = ctx and ctx.options and ctx.options.unitKey or nil
 
-    SetSearchContext(CreateUnitSearchContext(unitKey, "Portrait"))
+    SetSearchContext(CreateUnitSearchContext(unitKey, surfaceName))
 
     local info = gui and gui.CreateLabel and gui:CreateLabel(
         sectionHost,
-        "Portrait is only supported on the Player, Target, and Focus frames.",
+        message,
         12,
         { 0.5, 0.5, 0.5, 1 }
     ) or nil
@@ -2961,10 +2970,16 @@ local function RenderPortraitUnavailableSection(sectionHost, ctx)
     else
         local label = sectionHost:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         label:SetPoint("TOPLEFT", 10, -10)
-        label:SetText("Portrait is only supported on the Player, Target, and Focus frames.")
+        label:SetText(message)
         label:SetTextColor(DESCRIPTION_TEXT_COLOR[1], DESCRIPTION_TEXT_COLOR[2], DESCRIPTION_TEXT_COLOR[3], DESCRIPTION_TEXT_COLOR[4])
     end
     return 60
+end
+
+local function RenderPortraitUnavailableSection(sectionHost, ctx)
+    local unitKey = ctx and ctx.options and ctx.options.unitKey or nil
+    return RenderUnavailableSection(sectionHost, ctx, UnitSupportsPortrait(unitKey),
+        "Portrait", "Portrait is only supported on the Player, Target, and Focus frames.")
 end
 
 local function RenderPortraitSettingsSection(sectionHost, ctx)
@@ -3366,29 +3381,9 @@ local function BuildIndicatorsTabFeature(unitKey)
 end
 
 local function RenderPrivateAurasUnavailableSection(sectionHost, ctx)
-    local gui = GetGUI()
     local unitKey = ctx and ctx.options and ctx.options.unitKey or nil
-    if UnitSupportsPrivateAuras(unitKey) then
-        return nil
-    end
-
-    SetSearchContext(CreateUnitSearchContext(unitKey, "Priv. Auras"))
-
-    local info = gui and gui.CreateLabel and gui:CreateLabel(
-        sectionHost,
-        "Private Auras are only supported on the Player, Target, and Focus frames.",
-        12,
-        { 0.5, 0.5, 0.5, 1 }
-    ) or nil
-    if info then
-        info:SetPoint("TOPLEFT", 10, -10)
-    else
-        local label = sectionHost:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        label:SetPoint("TOPLEFT", 10, -10)
-        label:SetText("Private Auras are only supported on the Player, Target, and Focus frames.")
-        label:SetTextColor(DESCRIPTION_TEXT_COLOR[1], DESCRIPTION_TEXT_COLOR[2], DESCRIPTION_TEXT_COLOR[3], DESCRIPTION_TEXT_COLOR[4])
-    end
-    return 60
+    return RenderUnavailableSection(sectionHost, ctx, UnitSupportsPrivateAuras(unitKey),
+        "Priv. Auras", "Private Auras are only supported on the Player, Target, and Focus frames.")
 end
 
 local function RenderPrivateAurasSection(sectionHost, ctx)

@@ -38,6 +38,16 @@ I.QUI_COLORS = I.QUI_COLORS or {
     textDim  = {0.72,  0.72,  0.76,  1},     -- inactive tab label
 }
 
+-- Whisper-family chatTypeKeys. Shared by the history storeWhispers gate and
+-- the message-capture whisper-popout routing so a new whisper type only has to
+-- be added here. Keyed by chatTypeKey for O(1) membership tests.
+I.WHISPER_TYPE_KEYS = I.WHISPER_TYPE_KEYS or {
+    WHISPER           = true,
+    WHISPER_INFORM    = true,
+    BN_WHISPER        = true,
+    BN_WHISPER_INFORM = true,
+}
+
 -- Live theme accent resolver. Reads QUI.GUI.Colors.accent (mutated in place
 -- by GUI:ApplyAccentColor on theme preset change) so a user switching from
 -- mint to a custom accent sees chat tabs follow on next repaint, instead of
@@ -332,7 +342,7 @@ end
 local function WrapChatText(text, prefix, suffix)
     if C_StringUtil and C_StringUtil.WrapString then
         local ok, wrapped = pcall(C_StringUtil.WrapString, text, prefix, suffix)
-        if ok and (IsSecret(wrapped) or wrapped ~= nil) then
+        if ok and wrapped ~= nil then
             return wrapped, true
         end
     end
@@ -344,6 +354,19 @@ local function WrapChatText(text, prefix, suffix)
     return (prefix or "") .. text .. (suffix or ""), true
 end
 
+-- Build the "[HH:MM] " timestamp prefix (optionally color-wrapped) from the
+-- current timestamp settings. Identical for the secret and non-secret paths.
+local function BuildTimestampPrefix(settings)
+    local fmt = settings.timestamps.format == "12h" and "%I:%M %p" or "%H:%M"
+    local timestamp = date(fmt)
+    local color = settings.timestamps.color
+    if color then
+        local hex = string.format("%02x%02x%02x", color[1]*255, color[2]*255, color[3]*255)
+        return string.format("|cff%s[%s]|r ", hex, timestamp)
+    end
+    return string.format("[%s] ", timestamp)
+end
+
 local function AddTimestamp(text)
     local settings = GetSettings()
     if not settings or not settings.timestamps or not settings.timestamps.enabled then
@@ -351,36 +374,14 @@ local function AddTimestamp(text)
     end
 
     if IsSecret(text) then
-        local fmt = settings.timestamps.format == "12h" and "%I:%M %p" or "%H:%M"
-        local timestamp = date(fmt)
-        local color = settings.timestamps.color
-        local prefix
-        if color then
-            local hex = string.format("%02x%02x%02x", color[1]*255, color[2]*255, color[3]*255)
-            prefix = string.format("|cff%s[%s]|r ", hex, timestamp)
-        else
-            prefix = string.format("[%s] ", timestamp)
-        end
-
-        return WrapChatText(text, prefix, nil)
+        return WrapChatText(text, BuildTimestampPrefix(settings), nil)
     end
 
     if not text or type(text) ~= "string" then
         return text, false
     end
 
-    local fmt = settings.timestamps.format == "12h" and "%I:%M %p" or "%H:%M"
-    local timestamp = date(fmt)
-    local color = settings.timestamps.color
-    local prefix
-    if color then
-        local hex = string.format("%02x%02x%02x", color[1]*255, color[2]*255, color[3]*255)
-        prefix = string.format("|cff%s[%s]|r ", hex, timestamp)
-    else
-        prefix = string.format("[%s] ", timestamp)
-    end
-
-    return WrapChatText(text, prefix, nil)
+    return WrapChatText(text, BuildTimestampPrefix(settings), nil)
 end
 
 ---------------------------------------------------------------------------

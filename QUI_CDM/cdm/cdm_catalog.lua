@@ -162,7 +162,7 @@ local function IsCooldownViewerReady()
 
     local ok, isAvailable = pcall(api.IsCooldownViewerAvailable)
     if not ok then return false end
-    if issecretvalue and issecretvalue(isAvailable) then return false end
+    if issecretvalue(isAvailable) then return false end
     return isAvailable == true
 end
 

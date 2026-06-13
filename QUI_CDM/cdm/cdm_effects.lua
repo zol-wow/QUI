@@ -487,6 +487,7 @@ local function ApplyLibCustomGlow(icon, viewerSettings)
     local thickness = viewerSettings.thickness
     local scale = viewerSettings.scale or 1
     local xOffset = viewerSettings.xOffset or 0
+    local yOffset = viewerSettings.yOffset or 0
 
     -- Stop any existing glow first
     StopGlow(icon)
@@ -496,8 +497,8 @@ local function ApplyLibCustomGlow(icon, viewerSettings)
         local glowFrame = icon["_PixelGlow_QUICustomGlow"]
         if glowFrame then
             glowFrame:ClearAllPoints()
-            glowFrame:SetPoint("TOPLEFT", icon, "TOPLEFT", -xOffset, xOffset)
-            glowFrame:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", xOffset, -xOffset)
+            glowFrame:SetPoint("TOPLEFT", icon, "TOPLEFT", -xOffset, yOffset)
+            glowFrame:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", xOffset, -yOffset)
             EnsureGlowAboveCooldown(icon, glowFrame)
         end
 
@@ -506,8 +507,8 @@ local function ApplyLibCustomGlow(icon, viewerSettings)
         local glowFrame = icon["_AutoCastGlow_QUICustomGlow"]
         if glowFrame then
             glowFrame:ClearAllPoints()
-            glowFrame:SetPoint("TOPLEFT", icon, "TOPLEFT", -xOffset, xOffset)
-            glowFrame:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", xOffset, -xOffset)
+            glowFrame:SetPoint("TOPLEFT", icon, "TOPLEFT", -xOffset, yOffset)
+            glowFrame:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", xOffset, -yOffset)
             EnsureGlowAboveCooldown(icon, glowFrame)
         end
 
@@ -1082,53 +1083,9 @@ end
 ---------------------------------------------------------------------------
 -- TEXTURE OVERLAY GLOW HELPER
 ---------------------------------------------------------------------------
-local function StartTextureGlow(icon, key, texturePath, color)
-    local frame = icon[key]
-    if not frame then
-        frame = CreateFrame("Frame", nil, icon)
-        frame:SetAllPoints(icon)
-        icon[key] = frame
-
-        local tex = frame:CreateTexture(nil, "OVERLAY")
-        tex:SetTexture(texturePath)
-        tex:SetTexCoord(0, 1, 0, 1)
-        tex:SetBlendMode("ADD")
-        tex:SetAllPoints(frame)
-        frame.texture = tex
-
-        local ag = frame:CreateAnimationGroup()
-        ag:SetLooping("REPEAT")
-
-        local fadeIn = ag:CreateAnimation("Alpha")
-        fadeIn:SetFromAlpha(0.3)
-        fadeIn:SetToAlpha(1)
-        fadeIn:SetDuration(0.4)
-        fadeIn:SetOrder(1)
-
-        local fadeOut = ag:CreateAnimation("Alpha")
-        fadeOut:SetFromAlpha(1)
-        fadeOut:SetToAlpha(0.3)
-        fadeOut:SetDuration(0.4)
-        fadeOut:SetOrder(2)
-
-        frame.animGroup = ag
-    end
-
-    local r, g, b, a = 1, 1, 1, 1
-    if color then r, g, b, a = color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1 end
-    frame.texture:SetVertexColor(r, g, b, a)
-    frame:Show()
-    frame.animGroup:Play()
-    return frame
-end
-
-local function StopTextureGlow(icon, key)
-    local frame = icon[key]
-    if frame then
-        frame.animGroup:Stop()
-        frame:Hide()
-    end
-end
+-- StartTextureGlow/StopTextureGlow are defined once in the effects chunk
+-- above (same file scope) and remain in scope here as upvalues; the calls
+-- below reuse those originals instead of redeclaring an identical copy.
 
 ---------------------------------------------------------------------------
 -- HIGHLIGHT APPLICATION
@@ -1178,10 +1135,10 @@ local function ApplyHighlight(icon)
 
     if glowType == "Pixel Glow" then
         LCG.PixelGlow_Start(icon, color, lines, frequency, nil, thickness, 0, 0, true, GLOW_KEY)
-        EnsureGlowAboveCooldown(icon, icon["_PixelGlow_" .. GLOW_KEY])
+        EnsureGlowAboveCooldown(icon, icon["_PixelGlow" .. GLOW_KEY])
     elseif glowType == "Autocast Shine" then
         LCG.AutoCastGlow_Start(icon, color, lines, frequency, scale, 0, 0, GLOW_KEY)
-        EnsureGlowAboveCooldown(icon, icon["_AutoCastGlow_" .. GLOW_KEY])
+        EnsureGlowAboveCooldown(icon, icon["_AutoCastGlow" .. GLOW_KEY])
     elseif glowType == "Button Glow" then
         LCG.ButtonGlow_Start(icon, color, frequency)
         EnsureGlowAboveCooldown(icon, icon["_ButtonGlow"])

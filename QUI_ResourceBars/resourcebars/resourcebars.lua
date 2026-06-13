@@ -1392,7 +1392,6 @@ function QUICore:GetSwapAwareBarFor(key)
     if not self then return nil end
     if key == "primaryPower" or key == "primary" then
         if not ShouldSwapBars() then return self.powerBar end
-        if ShouldHidePrimaryOnSwap() then return self.secondaryPowerBar end
         return self.secondaryPowerBar
     elseif key == "secondaryPower" or key == "secondary" then
         if not ShouldSwapBars() then return self.secondaryPowerBar end
@@ -1565,9 +1564,8 @@ local function GetPrimaryResource()
         local formID = GetShapeshiftFormID()
         -- In utility forms (travel/aquatic/flight), show spec's primary resource
         if druidUtilityForms[formID or 0] then
-            local druidSpec = GetSpecialization()
-            if druidSpec and druidSpecResource[druidSpec] then
-                return druidSpecResource[druidSpec]
+            if spec and druidSpecResource[spec] then
+                return druidSpecResource[spec]
             end
         end
         -- Combat forms and caster form: use form-based resource
@@ -1629,9 +1627,8 @@ local function GetSecondaryResource()
         local formID = GetShapeshiftFormID()
         -- In utility/caster forms, show Mana as secondary if spec primary isn't Mana
         if druidUtilityForms[formID] or formID == nil then
-            local druidSpec = GetSpecialization()
             -- Only show Mana secondary for non-Resto specs (Resto primary is already Mana)
-            if druidSpec and druidSpec ~= 4 then
+            if spec and spec ~= 4 then
                 return Enum.PowerType.Mana
             end
             return nil
@@ -1996,6 +1993,8 @@ ns.QUI_ResourceBars_Internal = {
     GetSecondaryResource    = GetSecondaryResource,
     GetResourceColor        = GetResourceColor,
     GetSecondaryTextConfig  = GetSecondaryTextConfig,
+    GetCurrentSpecID        = GetCurrentSpecID,
+    EnsureTextSpecOverrides = EnsureTextSpecOverrides,
 }
 
 local function SanitizeIndicatorValues(values, maxValue)
@@ -3087,7 +3086,6 @@ function QUICore:CreateFragmentedPowerBars(bar, resource, isVertical)
             local fragmentBar = CreateFrame("StatusBar", nil, bar)
             local tex = LSM:Fetch("statusbar", GetBarTexture(cfg))
             fragmentBar:SetStatusBarTexture(tex)
-            fragmentBar:GetStatusBarTexture()
             fragmentBar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
             fragmentBar:SetFrameLevel(bar.StatusBar:GetFrameLevel())
             bar.FragmentedPowerBars[i] = fragmentBar
@@ -3511,11 +3509,7 @@ local function EssenceTimerOnUpdate(bar, delta)
 
     -- Detect essence gain — reset timer for next tick
     if essenceLastCount and current > essenceLastCount then
-        if current < maxPower then
-            essenceNextTick = GetTime() + (essenceTickDuration or 5)
-        else
-            essenceNextTick = nil
-        end
+        essenceNextTick = GetTime() + (essenceTickDuration or 5)
     end
     essenceLastCount = current
 

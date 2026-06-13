@@ -18,7 +18,8 @@ Bags.AutoOpen = AutoOpen
 local typeToKey
 local function TypeToKey()
     if typeToKey then return typeToKey end
-    local T = Enum and Enum.PlayerInteractionType or {}
+    local T = Enum and Enum.PlayerInteractionType
+    if not T then return {} end -- Enum not loaded yet: don't cache sentinel-keyed table
     typeToKey = {
         [T.Merchant or -1] = "merchant",
         [T.MailInfo or -2] = "mail",

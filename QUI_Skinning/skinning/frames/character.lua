@@ -200,13 +200,13 @@ end
 ---------------------------------------------------------------------------
 local nineSliceHooked = {}
 
-local function HideNineSlice(ns)
-    if not ns then return end
-    ns:Hide()
-    ns:SetAlpha(0)
-    if not nineSliceHooked[ns] then
-        hooksecurefunc(ns, "Show", function(self) self:Hide(); self:SetAlpha(0) end)
-        nineSliceHooked[ns] = true
+local function HideNineSlice(nineSlice)
+    if not nineSlice then return end
+    nineSlice:Hide()
+    nineSlice:SetAlpha(0)
+    if not nineSliceHooked[nineSlice] then
+        hooksecurefunc(nineSlice, "Show", function(self) self:Hide(); self:SetAlpha(0) end)
+        nineSliceHooked[nineSlice] = true
     end
 end
 
@@ -352,6 +352,49 @@ local function SkinCharacterFrameTabs()
     UpdateCharacterFrameTabSelectedState()
 end
 
+-- Skin a top-level entry header: name font/color plus collapse-icon atlas hooks
+local function SkinEntryHeader(child, fontPath, sr, sg, sb)
+    if child.Name then
+        child.Name:SetFont(fontPath, 13, "")
+        child.Name:SetTextColor(sr, sg, sb, 1)
+    end
+
+    -- Replace collapse icons
+    local function UpdateCollapseIcon(texture, atlas)
+        if not atlas or atlas == "Options_ListExpand_Right" or atlas == "Options_ListExpand_Right_Expanded" then
+            if child.IsCollapsed and child:IsCollapsed() then
+                texture:SetAtlas("Soulbinds_Collection_CategoryHeader_Expand", true)
+            else
+                texture:SetAtlas("Soulbinds_Collection_CategoryHeader_Collapse", true)
+            end
+        end
+    end
+
+    UpdateCollapseIcon(child.Right)
+    UpdateCollapseIcon(child.HighlightRight)
+    hooksecurefunc(child.Right, "SetAtlas", UpdateCollapseIcon)
+    hooksecurefunc(child.HighlightRight, "SetAtlas", UpdateCollapseIcon)
+end
+
+-- Skin a collapse toggle button: swap its normal/pushed atlas with the header state
+local function SkinToggleCollapseButton(ToggleCollapseButton)
+    if ToggleCollapseButton and ToggleCollapseButton.RefreshIcon then
+        local function UpdateToggleButton(button)
+            local header = button.GetHeader and button:GetHeader()
+            if not header then return end
+            if header:IsCollapsed() then
+                button:GetNormalTexture():SetAtlas("Gamepad_Expand", true)
+                button:GetPushedTexture():SetAtlas("Gamepad_Expand", true)
+            else
+                button:GetNormalTexture():SetAtlas("Gamepad_Collapse", true)
+                button:GetPushedTexture():SetAtlas("Gamepad_Collapse", true)
+            end
+        end
+        hooksecurefunc(ToggleCollapseButton, "RefreshIcon", UpdateToggleButton)
+        UpdateToggleButton(ToggleCollapseButton)
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Skin individual reputation entry/header
 ---------------------------------------------------------------------------
@@ -363,26 +406,7 @@ local function SkinReputationEntry(child)
 
     -- Skin top-level headers (expansion names)
     if child.Right then
-        if child.Name then
-            child.Name:SetFont(fontPath, 13, "")
-            child.Name:SetTextColor(sr, sg, sb, 1)
-        end
-
-        -- Replace collapse icons
-        local function UpdateCollapseIcon(texture, atlas)
-            if not atlas or atlas == "Options_ListExpand_Right" or atlas == "Options_ListExpand_Right_Expanded" then
-                if child.IsCollapsed and child:IsCollapsed() then
-                    texture:SetAtlas("Soulbinds_Collection_CategoryHeader_Expand", true)
-                else
-                    texture:SetAtlas("Soulbinds_Collection_CategoryHeader_Collapse", true)
-                end
-            end
-        end
-
-        UpdateCollapseIcon(child.Right)
-        UpdateCollapseIcon(child.HighlightRight)
-        hooksecurefunc(child.Right, "SetAtlas", UpdateCollapseIcon)
-        hooksecurefunc(child.HighlightRight, "SetAtlas", UpdateCollapseIcon)
+        SkinEntryHeader(child, fontPath, sr, sg, sb)
     end
 
     -- Skin reputation bar
@@ -402,8 +426,6 @@ local function SkinReputationEntry(child)
             local dr, dg, db, da = SkinBase.GetDepthColor("ROW")
             SetExpandedPixelPoints(backdrop, ReputationBar, SkinBase.CHROME.BORDER_PX)
             ApplyPixelBackdrop(backdrop, SkinBase.CHROME.BORDER_PX, true, false, { sr, sg, sb, 1 }, { dr, dg, db, da })
-            backdrop:SetBackdropColor(dr, dg, db, da)
-            backdrop:SetBackdropBorderColor(sr, sg, sb, 1)
             backdrop:Show()
             SkinBase.SetFrameData(ReputationBar, "backdrop", backdrop)
         end
@@ -414,22 +436,7 @@ local function SkinReputationEntry(child)
     end
 
     -- Skin collapse button
-    local ToggleCollapseButton = child.ToggleCollapseButton
-    if ToggleCollapseButton and ToggleCollapseButton.RefreshIcon then
-        local function UpdateToggleButton(button)
-            local header = button.GetHeader and button:GetHeader()
-            if not header then return end
-            if header:IsCollapsed() then
-                button:GetNormalTexture():SetAtlas("Gamepad_Expand", true)
-                button:GetPushedTexture():SetAtlas("Gamepad_Expand", true)
-            else
-                button:GetNormalTexture():SetAtlas("Gamepad_Collapse", true)
-                button:GetPushedTexture():SetAtlas("Gamepad_Collapse", true)
-            end
-        end
-        hooksecurefunc(ToggleCollapseButton, "RefreshIcon", UpdateToggleButton)
-        UpdateToggleButton(ToggleCollapseButton)
-    end
+    SkinToggleCollapseButton(child.ToggleCollapseButton)
 
     skinnedEntries[child] = true
 end
@@ -445,26 +452,7 @@ local function SkinCurrencyEntry(child)
 
     -- Skin top-level headers
     if child.Right then
-        if child.Name then
-            child.Name:SetFont(fontPath, 13, "")
-            child.Name:SetTextColor(sr, sg, sb, 1)
-        end
-
-        -- Replace collapse icons
-        local function UpdateCollapseIcon(texture, atlas)
-            if not atlas or atlas == "Options_ListExpand_Right" or atlas == "Options_ListExpand_Right_Expanded" then
-                if child.IsCollapsed and child:IsCollapsed() then
-                    texture:SetAtlas("Soulbinds_Collection_CategoryHeader_Expand", true)
-                else
-                    texture:SetAtlas("Soulbinds_Collection_CategoryHeader_Collapse", true)
-                end
-            end
-        end
-
-        UpdateCollapseIcon(child.Right)
-        UpdateCollapseIcon(child.HighlightRight)
-        hooksecurefunc(child.Right, "SetAtlas", UpdateCollapseIcon)
-        hooksecurefunc(child.HighlightRight, "SetAtlas", UpdateCollapseIcon)
+        SkinEntryHeader(child, fontPath, sr, sg, sb)
     end
 
     -- Style currency icon
@@ -478,7 +466,6 @@ local function SkinCurrencyEntry(child)
             border:SetFrameLevel((drawLayer == "OVERLAY") and child:GetFrameLevel() + 2 or child:GetFrameLevel() + 1)
             SetExpandedPixelPoints(border, CurrencyIcon, 1)
             ApplyPixelBackdrop(border, 1, false, false, { sr, sg, sb, 1 })
-            border:SetBackdropBorderColor(sr, sg, sb, 1)
             iconBorders[CurrencyIcon] = border
         end
     end
@@ -494,22 +481,7 @@ local function SkinCurrencyEntry(child)
     end
 
     -- Skin collapse button
-    local ToggleCollapseButton = child.ToggleCollapseButton
-    if ToggleCollapseButton and ToggleCollapseButton.RefreshIcon then
-        local function UpdateToggleButton(button)
-            local header = button.GetHeader and button:GetHeader()
-            if not header then return end
-            if header:IsCollapsed() then
-                button:GetNormalTexture():SetAtlas("Gamepad_Expand", true)
-                button:GetPushedTexture():SetAtlas("Gamepad_Expand", true)
-            else
-                button:GetNormalTexture():SetAtlas("Gamepad_Collapse", true)
-                button:GetPushedTexture():SetAtlas("Gamepad_Collapse", true)
-            end
-        end
-        hooksecurefunc(ToggleCollapseButton, "RefreshIcon", UpdateToggleButton)
-        UpdateToggleButton(ToggleCollapseButton)
-    end
+    SkinToggleCollapseButton(child.ToggleCollapseButton)
 
     skinnedEntries[child] = true
 end
@@ -634,8 +606,6 @@ local function RefreshCharacterFrameColors()
     -- Update main background
     if customBg then
         ApplyPixelBackdrop(customBg, 1, true, true, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
-        customBg:SetBackdropColor(bgr, bgg, bgb, bga)
-        customBg:SetBackdropBorderColor(sr, sg, sb, sa)
     end
 
     SkinCharacterFrameTabs()

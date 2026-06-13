@@ -369,7 +369,7 @@ do
             if _batchChargeMayHaveCharges[action] == false then
                 if _abCooldownStats then _abCooldownStats.chargeInfoSkips = _abCooldownStats.chargeInfoSkips + 1 end
             end
-            return _batchChargeActive[action] or nil
+            return _batchChargeActive[action]
         end
 
         if actionCanBeCached
@@ -442,7 +442,7 @@ do
             -- non-secret charge capability/active fields. Never read
             -- currentCharges in combat; fetch the DurationObject only when
             -- isActive says a charge is recharging.
-            local cdInfo, cdDurationObject, cdActive = GetActionCooldownState(button, action)
+            local _, cdDurationObject, cdActive = GetActionCooldownState(button, action)
             local chActive = GetActionChargeActive(button, action)
             local chargeDurObj = chActive == true and GetActionChargeDurationObject(action) or nil
             if cdActive ~= true and chActive ~= true then

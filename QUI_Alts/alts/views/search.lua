@@ -20,6 +20,12 @@
 ---------------------------------------------------------------------------
 -- luacheck: read globals ITEM_QUALITY_COLORS RAID_CLASS_COLORS ColorManager
 local ADDON_NAME, ns = ...
+
+local Shared = ns.AltsViewShared
+local ClassColor = Shared.ClassColor
+local GeneralFont = Shared.GeneralFont
+local GeneralOutline = Shared.GeneralOutline
+local MakeFS = Shared.MakeFS
 local Alts = ns.Alts or {}; ns.Alts = Alts
 
 local Helpers = ns.Helpers
@@ -108,28 +114,9 @@ end
 -- Frame parts (no headless test).
 ---------------------------------------------------------------------------
 
-local function GeneralFont()
-    return (Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont())
-        or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"
-end
 
-local function GeneralOutline()
-    return (Helpers and Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline())
-        or ""
-end
 
-local function MakeFS(parent, size)
-    local fs = parent:CreateFontString(nil, "ARTWORK")
-    fs:SetFont(GeneralFont(), size or 11, GeneralOutline())
-    fs:SetWordWrap(false)
-    return fs
-end
 
-local function ClassColor(classToken)
-    local c = classToken and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classToken]
-    if c then return c.r, c.g, c.b end
-    return 1, 1, 1
-end
 
 --- Quality color for an item name. Prefers the 12.0 ColorManager path
 --- (honors quality-color accessibility overrides), then the legacy global,
@@ -233,7 +220,6 @@ local function Builder(parent)
         if not (Store and Summ and Summ.IterateOwnerItems) then return rows, 0 end
 
         local owners = {}
-        local labelCache = {}   -- ownerKey → { table, kind }
         local classCache = {}   -- ownerKey → classToken (chars only)
         for _, key in ipairs(Store.ListCharacters()) do
             owners[#owners + 1] = key
@@ -248,12 +234,8 @@ local function Builder(parent)
         end
 
         for _, ownerKey in ipairs(owners) do
-            local lc = labelCache[ownerKey]
-            if not lc then
-                local lbl, kind = SearchView.OwnerLabel(ownerKey)
-                lc = { lbl = lbl, kind = kind }
-                labelCache[ownerKey] = lc
-            end
+            local lbl, kind = SearchView.OwnerLabel(ownerKey)
+            local lc = { lbl = lbl, kind = kind }
             Summ.IterateOwnerItems(ownerKey, function(itemID, byLocation)
                 -- session memo: a resolved name never changes, and a cache
                 -- miss only requests the data load ONCE per session — without

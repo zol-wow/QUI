@@ -16,6 +16,7 @@ ns.Storage = { Store = {}, Bus = {} }
 -- reputations.lua reads Alts.Window.RegisterTab at file end; stub it.
 ns.Alts = { Window = { RegisterTab = function() end } }
 
+assert(loadfile("QUI_Alts/alts/views/shared.lua"))("QUI", ns)
 assert(loadfile("QUI_Alts/alts/views/reputations.lua"))("QUI", ns)
 
 local RV = ns.Alts.ReputationsView

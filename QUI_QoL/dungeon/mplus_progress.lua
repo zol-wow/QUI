@@ -26,6 +26,8 @@ local DEFAULTS = {
     nameplateOffsetX = 0,
     nameplateOffsetY = 0,
 }
+-- Exported so the settings provider reuses one source of truth (no drift).
+MPlusProgress.DEFAULTS = DEFAULTS
 
 local State = {
     activeNameplates = {},

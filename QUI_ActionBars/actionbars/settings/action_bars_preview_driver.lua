@@ -319,6 +319,33 @@ local function GetPreviewCountText(slot, sourceButton)
     end
 end
 
+-- Derive horizontal/vertical justification from the anchor point name and
+-- apply the (defaulted-to-white) text color. Shared by SetPreviewTextStyle and
+-- SetPreviewCooldownTextStyle, which applied this identical block.
+local function ApplyJustifyAndColor(fontString, point, color)
+    if point:find("LEFT") then
+        fontString:SetJustifyH("LEFT")
+    elseif point:find("RIGHT") then
+        fontString:SetJustifyH("RIGHT")
+    else
+        fontString:SetJustifyH("CENTER")
+    end
+
+    if point:find("TOP") then
+        fontString:SetJustifyV("TOP")
+    elseif point:find("BOTTOM") then
+        fontString:SetJustifyV("BOTTOM")
+    else
+        fontString:SetJustifyV("MIDDLE")
+    end
+
+    local r = color and color[1] or 1
+    local g = color and color[2] or 1
+    local b = color and color[3] or 1
+    local a = color and color[4] or 1
+    fontString:SetTextColor(r, g, b, a)
+end
+
 local function SetPreviewTextStyle(fontString, button, text, fontPath, outline, fontSize, color, anchor, offsetX, offsetY)
     if not fontString then return end
     local isSecretText = IsSecretValue(text)
@@ -345,27 +372,7 @@ local function SetPreviewTextStyle(fontString, button, text, fontPath, outline, 
     fontString:ClearAllPoints()
     fontString:SetPoint(point, button, point, offsetX or 0, offsetY or 0)
 
-    if point:find("LEFT") then
-        fontString:SetJustifyH("LEFT")
-    elseif point:find("RIGHT") then
-        fontString:SetJustifyH("RIGHT")
-    else
-        fontString:SetJustifyH("CENTER")
-    end
-
-    if point:find("TOP") then
-        fontString:SetJustifyV("TOP")
-    elseif point:find("BOTTOM") then
-        fontString:SetJustifyV("BOTTOM")
-    else
-        fontString:SetJustifyV("MIDDLE")
-    end
-
-    local r = color and color[1] or 1
-    local g = color and color[2] or 1
-    local b = color and color[3] or 1
-    local a = color and color[4] or 1
-    fontString:SetTextColor(r, g, b, a)
+    ApplyJustifyAndColor(fontString, point, color)
     fontString:SetAlpha(1)
     fontString:Show()
 end
@@ -399,27 +406,7 @@ local function SetPreviewCooldownTextStyle(cooldown, button, settings, fontPath,
     fontString:ClearAllPoints()
     fontString:SetPoint(point, button, point, settings.cooldownTextOffsetX or 0, settings.cooldownTextOffsetY or 0)
 
-    if point:find("LEFT") then
-        fontString:SetJustifyH("LEFT")
-    elseif point:find("RIGHT") then
-        fontString:SetJustifyH("RIGHT")
-    else
-        fontString:SetJustifyH("CENTER")
-    end
-
-    if point:find("TOP") then
-        fontString:SetJustifyV("TOP")
-    elseif point:find("BOTTOM") then
-        fontString:SetJustifyV("BOTTOM")
-    else
-        fontString:SetJustifyV("MIDDLE")
-    end
-
-    local r = color and color[1] or 1
-    local g = color and color[2] or 1
-    local b = color and color[3] or 1
-    local a = color and color[4] or 1
-    fontString:SetTextColor(r, g, b, a)
+    ApplyJustifyAndColor(fontString, point, color)
     fontString:SetAlpha(1)
     fontString:Show()
 end
@@ -772,7 +759,7 @@ function ActionBarsPreviewDriver.Refresh()
         previewSlots[1].hiddenEmpty = false
     end
 
-    local visibleCount = math.min(requestedVisible, MAX_PREVIEW_BUTTONS)
+    local visibleCount = requestedVisible
     local buttonSize = math.max(20, layout.buttonSize or 30)
     local buttonSpacing = layout.buttonSpacing or 0
     local columns = math.max(1, math.min(layout.columns or visibleCount, visibleCount))
@@ -986,6 +973,7 @@ function ActionBarsPreviewDriver.Teardown()
         if pb.cooldown then pb.cooldown:Clear(); pb.cooldown:Hide() end
     end
     if state.ticker then state.ticker:SetScript("OnUpdate", nil) end
+    state.ticker = nil  -- clear so Build's `if state.ticker then return end` guard lets it rebuild
     state.previewButtons = {}
     state.buttonState    = {}
     state.glowOwnerIdx   = 1

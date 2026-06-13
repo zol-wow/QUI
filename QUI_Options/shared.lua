@@ -565,6 +565,69 @@ end
 local COLLAPSIBLE_HEADER_HEIGHT = 24
 local COLLAPSIBLE_FORM_ROW = 32
 
+-- Shared section-registry wiring used by both CreateCollapsiblePage and
+-- CreateTilePage (formerly duplicated verbatim in each builder).
+local function GetSectionRegistryKey(tabIndex, subTabIndex)
+    return (tabIndex or 0) * 10000 + (subTabIndex or 0)
+end
+
+local function FindScrollParent(frame)
+    local current = frame
+    while current do
+        if current.GetVerticalScroll and current.SetVerticalScroll then
+            return current
+        end
+        current = current:GetParent()
+    end
+    return nil
+end
+
+local function RegisterCollapsibleSection(parent, section)
+    local title = section and section._sectionTitle
+    local context = section and section._searchContext
+    if not title or not context or not context.tabIndex then return end
+
+    local tabIndex = context.tabIndex
+    local subTabIndex = context.subTabIndex or 0
+    local numKey = GetSectionRegistryKey(tabIndex, subTabIndex)
+    local scrollParent = FindScrollParent(parent)
+
+    GUI.SectionRegistry[numKey] = GUI.SectionRegistry[numKey] or {}
+    GUI.SectionRegistryOrder[numKey] = GUI.SectionRegistryOrder[numKey] or {}
+    if not GUI.SectionRegistry[numKey][title] then
+        table.insert(GUI.SectionRegistryOrder[numKey], title)
+    end
+    GUI.SectionRegistry[numKey][title] = {
+        frame = section,
+        scrollParent = scrollParent,
+        contentParent = parent,
+    }
+end
+
+-- Shared body-content height measurement used by both CreateCollapsible
+-- (within CreateCollapsiblePage) and CreateInlineCollapsible.
+local function MeasureBodyContentHeight(body)
+    local bodyTop = body.GetTop and body:GetTop()
+    if not bodyTop then return nil end
+    local maxOffset = 0
+    local function Accumulate(region)
+        if not region or not region.GetBottom then return end
+        if region.IsShown and not region:IsShown() then return end
+        local bottom = region:GetBottom()
+        if bottom then
+            maxOffset = math.max(maxOffset, bodyTop - bottom)
+        end
+    end
+    for i = 1, (body.GetNumChildren and body:GetNumChildren() or 0) do
+        Accumulate(select(i, body:GetChildren()))
+    end
+    for i = 1, (body.GetNumRegions and body:GetNumRegions() or 0) do
+        Accumulate(select(i, body:GetRegions()))
+    end
+    if maxOffset <= 0 then return nil end
+    return math.ceil(maxOffset + 4)
+end
+
 local function CreateCollapsiblePage(parent, pad, topOffset)
     local PAD = pad or PADDING
     local startY = topOffset or -10
@@ -579,50 +642,13 @@ local function CreateCollapsiblePage(parent, pad, topOffset)
         GUI._optionsCollapsibleStates = GUI._optionsCollapsibleStates or {}
     end
 
-    local function GetSectionRegistryKey(tabIndex, subTabIndex)
-        return (tabIndex or 0) * 10000 + (subTabIndex or 0)
-    end
-
-    local function FindScrollParent(frame)
-        local current = frame
-        while current do
-            if current.GetVerticalScroll and current.SetVerticalScroll then
-                return current
-            end
-            current = current:GetParent()
-        end
-        return nil
-    end
-
-    local function RegisterCollapsibleSection(section)
-        local title = section and section._sectionTitle
-        local context = section and section._searchContext
-        if not title or not context or not context.tabIndex then return end
-
-        local tabIndex = context.tabIndex
-        local subTabIndex = context.subTabIndex or 0
-        local numKey = GetSectionRegistryKey(tabIndex, subTabIndex)
-        local scrollParent = FindScrollParent(parent)
-
-        GUI.SectionRegistry[numKey] = GUI.SectionRegistry[numKey] or {}
-        GUI.SectionRegistryOrder[numKey] = GUI.SectionRegistryOrder[numKey] or {}
-        if not GUI.SectionRegistry[numKey][title] then
-            table.insert(GUI.SectionRegistryOrder[numKey], title)
-        end
-        GUI.SectionRegistry[numKey][title] = {
-            frame = section,
-            scrollParent = scrollParent,
-            contentParent = parent,
-        }
-    end
-
     local function relayout()
         local cy = startY - controlsHeight - controlsGap
         for _, s in ipairs(sections) do
             s:ClearAllPoints()
             s:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, cy)
             s:SetPoint("RIGHT", parent, "RIGHT", -PAD, 0)
-            RegisterCollapsibleSection(s)
+            RegisterCollapsibleSection(parent, s)
             cy = cy - s:GetHeight() - 4
         end
         parent:SetHeight(math.abs(cy) + 20)
@@ -702,34 +728,12 @@ local function CreateCollapsiblePage(parent, pad, topOffset)
         section._contentHeight = contentHeight
         section._body = body
 
-        local function MeasureBodyContentHeight()
-            local bodyTop = body.GetTop and body:GetTop()
-            if not bodyTop then return nil end
-            local maxOffset = 0
-            local function Accumulate(region)
-                if not region or not region.GetBottom then return end
-                if region.IsShown and not region:IsShown() then return end
-                local bottom = region:GetBottom()
-                if bottom then
-                    maxOffset = math.max(maxOffset, bodyTop - bottom)
-                end
-            end
-            for i = 1, (body.GetNumChildren and body:GetNumChildren() or 0) do
-                Accumulate(select(i, body:GetChildren()))
-            end
-            for i = 1, (body.GetNumRegions and body:GetNumRegions() or 0) do
-                Accumulate(select(i, body:GetRegions()))
-            end
-            if maxOffset <= 0 then return nil end
-            return math.ceil(maxOffset + 4)
-        end
-
         local function RefreshContentHeight()
             if type(body._contentHeight) == "number" and body._contentHeight > 0 then
                 section._contentHeight = math.max(section._contentHeight or 0, body._contentHeight)
                 body._contentHeight = nil
             end
-            local measured = MeasureBodyContentHeight()
+            local measured = MeasureBodyContentHeight(body)
             if measured and measured > 0 then
                 section._contentHeight = math.max(section._contentHeight or 0, measured)
             end
@@ -778,50 +782,13 @@ local function CreateTilePage(parent, pad, topOffset)
         GUI._optionsCollapsibleStates = GUI._optionsCollapsibleStates or {}
     end
 
-    local function GetSectionRegistryKey(tabIndex, subTabIndex)
-        return (tabIndex or 0) * 10000 + (subTabIndex or 0)
-    end
-
-    local function FindScrollParent(frame)
-        local current = frame
-        while current do
-            if current.GetVerticalScroll and current.SetVerticalScroll then
-                return current
-            end
-            current = current:GetParent()
-        end
-        return nil
-    end
-
-    local function RegisterCollapsibleSection(section)
-        local title = section and section._sectionTitle
-        local context = section and section._searchContext
-        if not title or not context or not context.tabIndex then return end
-
-        local tabIndex = context.tabIndex
-        local subTabIndex = context.subTabIndex or 0
-        local numKey = GetSectionRegistryKey(tabIndex, subTabIndex)
-        local scrollParent = FindScrollParent(parent)
-
-        GUI.SectionRegistry[numKey] = GUI.SectionRegistry[numKey] or {}
-        GUI.SectionRegistryOrder[numKey] = GUI.SectionRegistryOrder[numKey] or {}
-        if not GUI.SectionRegistry[numKey][title] then
-            table.insert(GUI.SectionRegistryOrder[numKey], title)
-        end
-        GUI.SectionRegistry[numKey][title] = {
-            frame = section,
-            scrollParent = scrollParent,
-            contentParent = parent,
-        }
-    end
-
     local function relayout()
         local cy = startY
         for _, s in ipairs(sections) do
             s:ClearAllPoints()
             s:SetPoint("TOPLEFT", parent, "TOPLEFT", PAD, cy)
             s:SetPoint("RIGHT", parent, "RIGHT", -PAD, 0)
-            RegisterCollapsibleSection(s)
+            RegisterCollapsibleSection(parent, s)
             cy = cy - s:GetHeight() - 4
         end
         parent:SetHeight(math.abs(cy) + 20)
@@ -924,28 +891,6 @@ local function CreateInlineCollapsible(parent, title, contentHeight, onResize)
     section._contentHeight = contentHeight
     section._body = body
 
-    local function MeasureBodyContentHeight()
-        local bodyTop = body.GetTop and body:GetTop()
-        if not bodyTop then return nil end
-        local maxOffset = 0
-        local function Accumulate(region)
-            if not region or not region.GetBottom then return end
-            if region.IsShown and not region:IsShown() then return end
-            local bottom = region:GetBottom()
-            if bottom then
-                maxOffset = math.max(maxOffset, bodyTop - bottom)
-            end
-        end
-        for i = 1, (body.GetNumChildren and body:GetNumChildren() or 0) do
-            Accumulate(select(i, body:GetChildren()))
-        end
-        for i = 1, (body.GetNumRegions and body:GetNumRegions() or 0) do
-            Accumulate(select(i, body:GetRegions()))
-        end
-        if maxOffset <= 0 then return nil end
-        return math.ceil(maxOffset + 4)
-    end
-
     local function RefreshContentHeight()
         -- Inline variant allows the content height to shrink (import preview
         -- rebuilds with fewer rows on each analysis).
@@ -953,7 +898,7 @@ local function CreateInlineCollapsible(parent, title, contentHeight, onResize)
             section._contentHeight = body._contentHeight
             body._contentHeight = nil
         end
-        local measured = MeasureBodyContentHeight()
+        local measured = MeasureBodyContentHeight(body)
         if measured and measured > 0 then
             section._contentHeight = measured
         end
@@ -1742,7 +1687,6 @@ local function RegisterFeatureTile(frame, spec)
 
                 RegisterNavRoutes(GUI, spec.id, subPage.navRoutes, index)
 
-                local pageConfig = page
                 tileConfig.subPages[index] = {
                     id = page.id,
                     name = page.name,
@@ -1751,7 +1695,7 @@ local function RegisterFeatureTile(frame, spec)
                     noScroll = subPage.noScroll,
                     sectionNav = subPage.sectionNav,
                     buildFunc = function(body)
-                        BuildFeaturePageBody(body, pageConfig, BuildFeatureTabPage)
+                        BuildFeaturePageBody(body, page, BuildFeatureTabPage)
                     end,
                 }
             end

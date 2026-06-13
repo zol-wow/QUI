@@ -796,6 +796,14 @@ local function BuildQuiPanel(L, db)
     L.headerAt("QUI Panel Settings")
     local s = L.sectionAt()
 
+    local alphaW = GUI:CreateFormSlider(s.frame, nil, 0.3, 1.0, 0.01, "configPanelAlpha", db, function(val)
+        local mainFrame = GUI.MainFrame
+        if mainFrame then
+            local bgColor = GUI.Colors.bg
+            mainFrame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], val)
+        end
+    end, { description = "Background opacity of the QUI options panel itself." })
+
     local minimapBtnDB = db and db.minimapButton
     if minimapBtnDB then
         local hideW = GUI:CreateFormCheckbox(s.frame, nil, "hide", minimapBtnDB, function(dbVal)
@@ -805,22 +813,8 @@ local function BuildQuiPanel(L, db)
             end
             if _G.QUI_RefreshMinimapButtonDrawer then _G.QUI_RefreshMinimapButtonDrawer() end
         end, { description = "Hide the QUI minimap button. You can still open the options panel via /qui." })
-        local alphaW = GUI:CreateFormSlider(s.frame, nil, 0.3, 1.0, 0.01, "configPanelAlpha", db, function(val)
-            local mainFrame = GUI.MainFrame
-            if mainFrame then
-                local bgColor = GUI.Colors.bg
-                mainFrame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], val)
-            end
-        end, { description = "Background opacity of the QUI options panel itself." })
         s.AddRow(row(s.frame, "Hide QUI Minimap Icon", hideW), row(s.frame, "QUI Panel Transparency", alphaW))
     else
-        local alphaW = GUI:CreateFormSlider(s.frame, nil, 0.3, 1.0, 0.01, "configPanelAlpha", db, function(val)
-            local mainFrame = GUI.MainFrame
-            if mainFrame then
-                local bgColor = GUI.Colors.bg
-                mainFrame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], val)
-            end
-        end, { description = "Background opacity of the QUI options panel itself." })
         s.AddRow(row(s.frame, "QUI Panel Transparency", alphaW))
     end
     L.closeSection(s)

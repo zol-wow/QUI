@@ -1909,7 +1909,6 @@ if ns.Registry then
     })
 end
 
-local Helpers = ns.Helpers
 if Helpers and Helpers.BorderRegistry then
     Helpers.BorderRegistry.Register({
         key      = "tooltip",

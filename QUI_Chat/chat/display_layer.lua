@@ -39,6 +39,15 @@ local function IsLayoutModeActive()
     return _G.QUI_IsLayoutModeActive and _G.QUI_IsLayoutModeActive() and true or false
 end
 
+-- Editbox follows the active window: re-anchor via editbox_basics
+-- (self-gates on settings.editBox; idempotent).
+local function ReanchorEditBoxToActiveWindow()
+    local EditBox = ns.QUI.Chat.EditBoxBasics
+    if EditBox and EditBox.StyleEditBox and _G.ChatFrame1 then
+        EditBox.StyleEditBox(_G.ChatFrame1)
+    end
+end
+
 local function GetCustomDisplaySettings()
     local settings = I.GetSettings and I.GetSettings()
     return settings and settings.customDisplay, settings
@@ -371,12 +380,7 @@ function Display.SetActiveWindow(id)
     if not windows[id] then id = 1 end
     if activeWindowID == id then return end
     activeWindowID = id
-    -- Editbox follows the active window: re-anchor via editbox_basics
-    -- (self-gates on settings.editBox; idempotent).
-    local EditBox = ns.QUI.Chat.EditBoxBasics
-    if EditBox and EditBox.StyleEditBox and _G.ChatFrame1 then
-        EditBox.StyleEditBox(_G.ChatFrame1)
-    end
+    ReanchorEditBoxToActiveWindow()
 end
 
 function Display.GetActiveWindow()
@@ -637,10 +641,7 @@ function Display.DeleteWindow(id)
     end
     if activeWindowID == id then
         activeWindowID = 1
-        local EditBox = ns.QUI.Chat.EditBoxBasics
-        if EditBox and EditBox.StyleEditBox and _G.ChatFrame1 then
-            EditBox.StyleEditBox(_G.ChatFrame1)
-        end
+        ReanchorEditBoxToActiveWindow()
     elseif activeWindowID > id then
         activeWindowID = activeWindowID - 1
     end

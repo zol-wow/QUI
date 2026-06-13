@@ -56,6 +56,15 @@ local function HideDecorations(frame)
     SkinBase.StripTextures(frame)
 end
 
+-- Hide a subpanel's NineSlice/Background and apply the standard SUBPANEL backdrop
+local function SkinSubPanel(panel, sr, sg, sb, sa)
+    if not panel then return end
+    if panel.NineSlice then panel.NineSlice:Hide() end
+    if panel.Background then panel.Background:SetAlpha(0) end
+    local dr, dg, db, da = SkinBase.GetDepthColor("SUBPANEL")
+    SkinBase.CreateBackdrop(panel, sr, sg, sb, sa * 0.3, dr, dg, db, da)
+end
+
 ---------------------------------------------------------------------------
 -- SKIN TABS
 ---------------------------------------------------------------------------
@@ -192,20 +201,8 @@ local function SkinOrdersPage(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     local orderView = ordersPage.OrderView
     if orderView then
         -- The order view form uses similar structure to the customer orders form
-        if orderView.OrderDetails then
-            local od = orderView.OrderDetails
-            if od.NineSlice then od.NineSlice:Hide() end
-            if od.Background then od.Background:SetAlpha(0) end
-            local dr, dg, db, da = SkinBase.GetDepthColor("SUBPANEL")
-            SkinBase.CreateBackdrop(od, sr, sg, sb, sa * 0.3, dr, dg, db, da)
-        end
-        if orderView.OrderInfo then
-            local oi = orderView.OrderInfo
-            if oi.NineSlice then oi.NineSlice:Hide() end
-            if oi.Background then oi.Background:SetAlpha(0) end
-            local dr, dg, db, da = SkinBase.GetDepthColor("SUBPANEL")
-            SkinBase.CreateBackdrop(oi, sr, sg, sb, sa * 0.3, dr, dg, db, da)
-        end
+        SkinSubPanel(orderView.OrderDetails, sr, sg, sb, sa)
+        SkinSubPanel(orderView.OrderInfo, sr, sg, sb, sa)
         -- Buttons
         if orderView.CreateButton then
             SkinBase.SkinButton(orderView.CreateButton)
@@ -389,12 +386,8 @@ local function RefreshProfessionsColors()
         UpdateRecipeListColors(craftingPage.RecipeList)
         SkinBase.RefreshWidget(craftingPage.MinimizedSearchBox)
         UpdatePanelColors(craftingPage.SchematicForm, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-        if craftingPage.SchematicForm and craftingPage.SchematicForm.Details then
-            local detBd = SkinBase.GetBackdrop(craftingPage.SchematicForm.Details)
-            if detBd then
-                detBd:SetBackdropColor(SkinBase.GetDepthColor("SUBPANEL"))
-                detBd:SetBackdropBorderColor(sr, sg, sb, sa * 0.3)
-            end
+        if craftingPage.SchematicForm then
+            UpdatePanelColors(craftingPage.SchematicForm.Details, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         end
         SkinBase.RefreshWidget(craftingPage.CreateButton)
         SkinBase.RefreshWidget(craftingPage.CreateAllButton)

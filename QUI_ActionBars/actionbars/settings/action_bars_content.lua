@@ -50,6 +50,40 @@ local function Unavailable(parent, label)
     t:SetPoint("TOPLEFT", PADDING, -15)
 end
 
+-- Vertical section-layout cursor shared by the sub-tab builders. Returns the
+-- headerAt / sectionAt / closeSection trio that advance a shared `y` cursor as
+-- accent-dot headers and settings-card groups are stacked down the tab.
+local function MakeSectionLayout(tabContent)
+    local PAD = PADDING
+    local HEADER_GAP = 26
+    local SECTION_GAP = 14
+    local y = -10
+
+    local function headerAt(text)
+        local h = Opts.CreateAccentDotLabel(tabContent, text, y)
+        h:ClearAllPoints()
+        h:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
+        h:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", -PAD, y)
+        y = y - HEADER_GAP
+    end
+    local function sectionAt()
+        local c = Opts.CreateSettingsCardGroup(tabContent, y)
+        c.frame:ClearAllPoints()
+        c.frame:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
+        c.frame:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", -PAD, y)
+        return c
+    end
+    local function closeSection(c)
+        c.Finalize()
+        y = y - c.frame:GetHeight() - SECTION_GAP
+    end
+    local function getY()
+        return y
+    end
+
+    return headerAt, sectionAt, closeSection, getY
+end
+
 ---------------------------------------------------------------------------
 -- PERSISTENT PREVIEW (tile-level, shared across all sub-tabs)
 ---------------------------------------------------------------------------
@@ -148,7 +182,7 @@ local function BuildActionBarsPreview(pv)
     lbl:SetFont(fpath or select(1, lbl:GetFont()), 8, "")
     lbl:SetTextColor(accent[1], accent[2], accent[3], 0.7)
     lbl:SetPoint("TOPLEFT", pv, "TOPLEFT", 8, -6)
-    local spaced = ("PREVIEW"):gsub(".", "%0 "):sub(1, -2)
+    local spaced = "P R E V I E W"
     lbl:SetText(spaced)
 
     -- Driver owns the preview buttons, Cooldown children, ticker, and cycle.
@@ -219,11 +253,7 @@ end
 local function BuildMasterSettingsTab(tabContent)
     local ctx = ResolveContext()
     if not ctx then Unavailable(tabContent, "Action Bars"); return end
-    local actionBars, global = ctx.actionBars, ctx.global
-
-    local PAD = PADDING
-    local HEADER_GAP = 26
-    local SECTION_GAP = 14
+    local global = ctx.global
 
     GUI:SetSearchContext({
         tabIndex = 8,
@@ -236,26 +266,7 @@ local function BuildMasterSettingsTab(tabContent)
         category = "frames",
     })
 
-    local y = -10
-
-    local function headerAt(text)
-        local h = Opts.CreateAccentDotLabel(tabContent, text, y)
-        h:ClearAllPoints()
-        h:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
-        h:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", -PAD, y)
-        y = y - HEADER_GAP
-    end
-    local function sectionAt()
-        local c = Opts.CreateSettingsCardGroup(tabContent, y)
-        c.frame:ClearAllPoints()
-        c.frame:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
-        c.frame:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", -PAD, y)
-        return c
-    end
-    local function closeSection(c)
-        c.Finalize()
-        y = y - c.frame:GetHeight() - SECTION_GAP
-    end
+    local headerAt, sectionAt, closeSection, getY = MakeSectionLayout(tabContent)
 
     -- Button lock proxy (CVar-backed dropdown)
     local lockOptions = {
@@ -382,7 +393,7 @@ local function BuildMasterSettingsTab(tabContent)
 
     closeSection(s3)
 
-    tabContent:SetHeight(math.abs(y) + 40)
+    tabContent:SetHeight(math.abs(getY()) + 40)
 end
 
 ---------------------------------------------------------------------------
@@ -393,32 +404,9 @@ local function BuildMouseoverHideTab(tabContent)
     if not ctx then Unavailable(tabContent, "Mouseover Hide"); return end
     local fade, bars = ctx.fade, ctx.bars
 
-    local PAD = PADDING
-    local HEADER_GAP = 26
-    local SECTION_GAP = 14
-
     GUI:SetSearchContext({tabIndex = 8, tabName = "Action Bars", subTabIndex = 2, subTabName = "Mouseover Hide"})
 
-    local y = -10
-
-    local function headerAt(text)
-        local h = Opts.CreateAccentDotLabel(tabContent, text, y)
-        h:ClearAllPoints()
-        h:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
-        h:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", -PAD, y)
-        y = y - HEADER_GAP
-    end
-    local function sectionAt()
-        local c = Opts.CreateSettingsCardGroup(tabContent, y)
-        c.frame:ClearAllPoints()
-        c.frame:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
-        c.frame:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", -PAD, y)
-        return c
-    end
-    local function closeSection(c)
-        c.Finalize()
-        y = y - c.frame:GetHeight() - SECTION_GAP
-    end
+    local headerAt, sectionAt, closeSection, getY = MakeSectionLayout(tabContent)
 
     -- FADE SETTINGS (mixed pairing: toggle+slider, slider+slider, toggle+toggle)
     headerAt("Fade Settings")
@@ -504,7 +492,7 @@ local function BuildMouseoverHideTab(tabContent)
 
     closeSection(s2)
 
-    tabContent:SetHeight(math.abs(y) + 40)
+    tabContent:SetHeight(math.abs(getY()) + 40)
 end
 
 ---------------------------------------------------------------------------

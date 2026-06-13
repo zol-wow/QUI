@@ -405,7 +405,7 @@ local function BuildKeybindOverridesSection(tabContent, startY)
     specChangeCallback = function() RefreshOverrideList() end
 
     RefreshOverrideList()
-    return y - (entryListFrame and entryListFrame:GetHeight() or 0) - 16
+    return y - entryListFrame:GetHeight() - 16
 end
 
 ns.QUI_KeybindsOptions = {

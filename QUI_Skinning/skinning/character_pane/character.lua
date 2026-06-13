@@ -457,7 +457,6 @@ local function StyleSidebarTab(tab, index, uniformWidth, uniformHeight)
         border = CreateFrame("Frame", nil, tab, "BackdropTemplate")
         border:SetFrameLevel(tab:GetFrameLevel() + 15)
         border:EnableMouse(false)
-        ApplyOnePixelBorder(border, false)
         sidebarTabBorders[tab] = border
     end
     border:ClearAllPoints()
@@ -752,7 +751,7 @@ local function GetItemEquipLoc(itemLink)
     return nil
 end
 
-local function CanItemUsePermanentEnchant(itemLink, slotId)
+local function CanItemUsePermanentEnchant(itemLink)
     local equipLoc = GetItemEquipLoc(itemLink)
     if equipLoc then
         return PERMANENT_ENCHANT_EQUIP_LOCS[equipLoc] == true
@@ -1424,7 +1423,6 @@ end
 
 -- Track if layout has been applied
 local layoutApplied = false
-local repositionPending = false  -- Debounce for slot repositioning hook
 local customBg = nil
 local equipMgrPopup = nil  -- Floating Equipment Manager container
 local titlesPopup = nil      -- Floating Titles container
@@ -2614,7 +2612,7 @@ local function UpdateStatsPanel(panel, unit)
         statPolicy:ApplyTooltip(row, _G[powerToken] or powerName, _G["STAT_"..powerToken.."_TOOLTIP"], nil, function()
             local powerMaxRaw = GetStatOrNil(UnitPowerMax, unit, powerType)
             if powerMaxRaw then
-                row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, row.tooltip).." "..BreakUpLargeNumbers(powerMaxRaw)..FONT_COLOR_CODE_CLOSE
+                row.tooltip = HIGHLIGHT_FONT_COLOR_CODE..format(PAPERDOLLFRAME_TOOLTIP_FORMAT, powerName).." "..BreakUpLargeNumbers(powerMaxRaw)..FONT_COLOR_CODE_CLOSE
             end
         end)
         y = y - ROW_HEIGHT
@@ -3091,7 +3089,7 @@ local function UpdateStatsPanel(panel, unit)
     _, headerHeight = CreateSectionHeader(scrollChild, "Defense", y)
     y = y - headerHeight
 
-    local baselineArmor, effectiveArmor = SafeGetStatValues(UnitArmor, unit)
+    local _, effectiveArmor = SafeGetStatValues(UnitArmor, unit)
     local dodge = SafeGetStat(GetDodgeChance)
     local parry = SafeGetStat(GetParryChance)
     local block = SafeGetStat(GetBlockChance)
@@ -3158,8 +3156,7 @@ local function UpdateStatsPanel(panel, unit)
 
             -- Direct API → SetFormattedText. Different format per stat.
             if stat.statKey == "ARMOR" then
-                local _, eff = SafeGetStatValues(UnitArmor, unit)
-                local aOk, aBase, aEff = pcall(UnitArmor, unit)
+                local aOk, _, aEff = pcall(UnitArmor, unit)
                 if aOk and aEff then row.value:SetFormattedText("%s", aEff) end
             elseif stat.statKey == "STAGGER" then
                 if C_PaperDollInfo and C_PaperDollInfo.GetStaggerPercentage then
@@ -4479,6 +4476,13 @@ QUI.CharacterShared = {
     GetSlotItemLevel = GetSlotItemLevel,
     GetILvlColor = GetILvlColor,
     AbbreviateClassName = AbbreviateClassName,
+
+    -- Secret-safe tooltip/item parsers (shared with inspect.lua)
+    CleanTooltipText = CleanTooltipText,
+    ReadableNumber = ReadableNumber,
+    GetReadableInventoryItemLink = GetReadableInventoryItemLink,
+    GetInventoryTooltipData = GetInventoryTooltipData,
+    MatchItemLevelText = MatchItemLevelText,
 }
 
 if ns.Registry then

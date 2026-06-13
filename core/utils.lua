@@ -1445,8 +1445,11 @@ function Helpers.GetUnitClassColor(unit)
     end
 
     -- NPCs: use hostility-based colors
+    -- SafeToNumber returns 0 for nil/secret reactions, and 0 is truthy in Lua, so a
+    -- bare `if reaction` sent unknown-reaction NPCs down the hostile-red branch. Valid
+    -- UnitReaction values are 1-8; require >0 so unknowns fall through to grey.
     local reaction = Helpers.SafeToNumber(UnitReaction(unit, "player"), nil)
-    if reaction then
+    if reaction and reaction > 0 then
         if reaction >= 5 then
             return 0.2, 0.8, 0.2, 1  -- Friendly (green)
         elseif reaction == 4 then
@@ -1841,7 +1844,7 @@ end
 --- @return table|nil cooldownInfo Raw cooldown info table when available
 function Helpers.ReadSpellCooldown(spellID)
     if C_Spell and C_Spell.GetSpellCooldown then
-        local a, b, c, d = C_Spell.GetSpellCooldown(spellID)
+        local a, b, _, d = C_Spell.GetSpellCooldown(spellID)
         if type(a) == "table" then
             local info = a
             return info.startTime or info.start, info.duration, info.modRate, info.isActive, info

@@ -45,6 +45,15 @@ CDMShared.BUILTIN_CONTAINER_SHAPES = {
     trackedBar = "bar",
 }
 
+-- Layout/options element key -> builtin container key. Shared by
+-- cdm_layout_mode.lua and settings/containers_page.lua.
+CDMShared.ELEMENT_TO_CONTAINER_MAP = {
+    cdmEssential = "essential",
+    cdmUtility = "utility",
+    buffIcon = "buff",
+    buffBar = "trackedBar",
+}
+
 local BUILTIN_CONTAINER_SET = {
     essential = true,
     utility = true,
