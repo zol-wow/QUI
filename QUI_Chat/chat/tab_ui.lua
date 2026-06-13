@@ -806,6 +806,27 @@ local function MoveTabToWindow(inst, tabIndex, targetWindowID, replaceSeed)
 end
 TabUI._MoveTabToWindow = MoveTabToWindow -- for unit tests
 
+-- Deep-link the options UI to the Chat & Tooltips tile / sub-page.
+-- subPageIndex: 1 = Chat (tab settings), 2 = Filters
+-- (keep in sync with QUI_Options/tiles/chat_tooltips.lua subPages order).
+local function OpenChatSettings(subPageIndex)
+    local QUI = _G.QUI
+    if not (QUI and type(QUI.OpenOptions) == "function") then return end
+    QUI:OpenOptions()
+    -- A cold open LoadAddOns QUI_Options synchronously, but the shell builds
+    -- over the first frame; navigate next frame (the infobar deep-link pattern,
+    -- QUI_InfoBar/infobar/contextmenu.lua:155).
+    C_Timer.After(0, function()
+        local gui = _G.QUI and _G.QUI.GUI
+        local frame = gui and gui.MainFrame
+        if not (frame and gui.FindV2TileByID and gui.SelectFeatureTile) then return end
+        local _, idx = gui:FindV2TileByID(frame, "chat_tooltips")
+        if idx then
+            gui:SelectFeatureTile(frame, idx, { subPageIndex = subPageIndex })
+        end
+    end)
+end
+
 local function ShowTabContextMenu(inst, btn)
     if not (_G.MenuUtil and _G.MenuUtil.CreateContextMenu) then return end
     -- MenuUtil.CreateContextMenu(owner, generator) —
@@ -837,6 +858,13 @@ local function ShowTabContextMenu(inst, btn)
             end)
             return
         end
+        -- Saved-tab branch: QUI settings deep-links, then move/close actions.
+        rootDescription:CreateButton("Filter Settings", function()
+            OpenChatSettings(2) -- Filters sub-page
+        end)
+        rootDescription:CreateButton("Tab Settings", function()
+            OpenChatSettings(1) -- Chat sub-page (tab options live here)
+        end)
         -- Saved-tab branch: re-derive the tab index at click time so a
         -- Rebuild that reorders tabs while the menu is open doesn't act on
         -- a stale snapshot.
