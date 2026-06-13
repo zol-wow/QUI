@@ -232,6 +232,41 @@ local paAnchorIDs = {}
 ---------------------------------------------------------------------------
 -- ICON STYLING
 ---------------------------------------------------------------------------
+-- Countdown text formatter shared by every aura cooldown. Exact clone of
+-- Blizzard's SecondsToTimeAbbrev (Blizzard_SharedXML/TimeUtil.lua), which is
+-- what the stock buff frame's duration text and the aura tooltip's remaining
+-- line follow: ceil of the displayed unit, with each band starting at 1.5x the
+-- unit (>=90s -> minutes, >=90m -> hours, >=36h -> days). So 2h00m01s left
+-- renders "3h" and 3h00m01s renders "4h", in lockstep with the tooltip. The
+-- default C-side countdown format disagreed with the tooltip on long auras,
+-- which is the whole reason for a custom formatter; rendering stays fully
+-- C-side (secret-safe) via SetCountdownFormatter.
+local auraCountdownFormatter = false -- false = not yet built; nil = unsupported client
+local function GetAuraCountdownFormatter()
+    if auraCountdownFormatter == false then
+        auraCountdownFormatter = nil
+        local rounding = Enum.NumericRuleFormatRounding
+        if C_StringUtil and C_StringUtil.CreateNumericRuleFormatter and rounding then
+            local ok, formatter = pcall(C_StringUtil.CreateNumericRuleFormatter)
+            if ok and formatter then
+                local applied = pcall(formatter.SetBreakpoints, formatter, {
+                    { threshold = 0, step = 1, rounding = rounding.Up, format = "%ds" },
+                    { threshold = 90, format = "%dm",
+                        components = { { div = 60, step = 1, rounding = rounding.Up } } },
+                    { threshold = 5400, format = "%dh",
+                        components = { { div = 3600, step = 1, rounding = rounding.Up } } },
+                    { threshold = 129600, format = "%dd",
+                        components = { { div = 86400, step = 1, rounding = rounding.Up } } },
+                })
+                if applied then
+                    auraCountdownFormatter = formatter
+                end
+            end
+        end
+    end
+    return auraCountdownFormatter
+end
+
 local function ConfigureAuraCooldownFrame(cooldown)
     if not cooldown then return end
 
@@ -243,6 +278,12 @@ local function ConfigureAuraCooldownFrame(cooldown)
     -- numbers without surfacing them to Lua. No QUI Lua-side timer.
     if cooldown.SetHideCountdownNumbers then
         pcall(cooldown.SetHideCountdownNumbers, cooldown, false)
+    end
+    if cooldown.SetCountdownFormatter then
+        local formatter = GetAuraCountdownFormatter()
+        if formatter then
+            pcall(cooldown.SetCountdownFormatter, cooldown, formatter)
+        end
     end
 end
 

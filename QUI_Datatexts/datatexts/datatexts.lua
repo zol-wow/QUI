@@ -785,6 +785,246 @@ Datatexts:Register("system", {
     end,
 })
 
+---------------------------------------------------------------------------
+-- VOLUME: shared CVar helpers + slider popup
+-- Module scope so the single shared popup and every volume datatext
+-- instance use the same accessors.
+---------------------------------------------------------------------------
+local volumeCVars = {
+    master = "Sound_MasterVolume",
+    music = "Sound_MusicVolume",
+    sfx = "Sound_SFXVolume",
+    ambience = "Sound_AmbienceVolume",
+    dialog = "Sound_DialogVolume",
+}
+
+-- Get current volume (0-100)
+local function GetVolume(volumeType)
+    local cvar = volumeCVars[volumeType] or volumeCVars.master
+    local value = tonumber(C_CVar.GetCVar(cvar)) or 1
+    return floor(value * 100 + 0.5)
+end
+
+-- Set volume (0-100)
+local function SetVolume(volumeType, percent)
+    local cvar = volumeCVars[volumeType] or volumeCVars.master
+    percent = max(0, min(100, percent))
+    C_CVar.SetCVar(cvar, percent / 100)
+end
+
+-- Check if sound is muted
+local function IsMuted()
+    return C_CVar.GetCVar("Sound_EnableAllSound") == "0"
+end
+
+-- Toggle mute
+local function ToggleMute()
+    local muted = IsMuted()
+    C_CVar.SetCVar("Sound_EnableAllSound", muted and "1" or "0")
+end
+
+local VOLUME_POPUP_ROWS = {
+    { label = "Master",   key = "master" },
+    { label = "SFX",      key = "sfx" },
+    { label = "Music",    key = "music" },
+    { label = "Ambience", key = "ambience" },
+    { label = "Dialog",   key = "dialog" },
+}
+
+local volumePopup
+
+local function GetVolumePopup()
+    if volumePopup then return volumePopup end
+
+    local SkinBase = ns.SkinBase
+    local PAD = 10
+    local TITLE_H = 18
+    local ROW_H = 24
+    local LABEL_W = 58
+    local VALUE_W = 36
+
+    local popup = CreateFrame("Frame", nil, UIParent)
+    popup:SetFrameStrata("FULLSCREEN_DIALOG")
+    popup:SetClampedToScreen(true)
+    popup:EnableMouse(true)
+    -- title + 5 slider rows + mute row
+    popup:SetSize(250, PAD + TITLE_H + (#VOLUME_POPUP_ROWS + 1) * ROW_H + PAD)
+    popup:Hide()
+    SkinBase.CreateBackdrop(popup)
+
+    -- Fonts follow the profile's general font (same source datapanels use)
+    local general = QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+    local fontPath = LSM:Fetch("font", general and general.font or "Quazii") or "Fonts\\FRIZQT__.TTF"
+    local fontOutline = general and general.fontOutline or "OUTLINE"
+    local function MakeText(size)
+        local fs = popup:CreateFontString(nil, "OVERLAY")
+        QUICore:SafeSetFont(fs, fontPath, size, fontOutline)
+        return fs
+    end
+
+    local title = MakeText(12)
+    title:SetPoint("TOPLEFT", PAD, -PAD)
+    title:SetText("Volume")
+    popup.title = title
+
+    popup.rows = {}
+    for i, info in ipairs(VOLUME_POPUP_ROWS) do
+        local yOff = -(PAD + TITLE_H + (i - 1) * ROW_H)
+
+        local label = MakeText(11)
+        label:SetPoint("TOPLEFT", PAD, yOff - 6)
+        label:SetText(info.label)
+
+        local value = MakeText(11)
+        value:SetPoint("TOPRIGHT", -PAD, yOff - 6)
+        value:SetJustifyH("RIGHT")
+        value:SetWidth(VALUE_W)
+
+        -- Slider frame doubles as the track (options-framework slider language:
+        -- faint track + accent fill to the thumb + round white thumb)
+        local slider = CreateFrame("Slider", nil, popup)
+        slider:SetOrientation("HORIZONTAL")
+        slider:SetMinMaxValues(0, 100)
+        slider:SetValueStep(1)
+        slider:SetObeyStepOnDrag(true)
+        slider:SetHeight(6)
+        slider:SetPoint("TOPLEFT", PAD + LABEL_W, yOff - 9)
+        slider:SetPoint("TOPRIGHT", -(PAD + VALUE_W + 6), yOff - 9)
+        slider:SetHitRectInsets(0, 0, -9, -9)
+
+        local track = slider:CreateTexture(nil, "BACKGROUND")
+        track:SetAllPoints()
+        track:SetColorTexture(1, 1, 1, 0.12)
+        SkinBase.DisablePixelSnap(track)
+        SkinBase.ApplyPixelBackdrop(slider, 1, false, false)
+
+        local fill = slider:CreateTexture(nil, "ARTWORK")
+        fill:SetPoint("TOPLEFT")
+        fill:SetPoint("BOTTOMLEFT")
+        fill:SetWidth(1)
+        SkinBase.DisablePixelSnap(fill)
+
+        local thumb = slider:CreateTexture(nil, "OVERLAY")
+        thumb:SetSize(10, 10)
+        thumb:SetColorTexture(1, 1, 1, 1)
+        SkinBase.DisablePixelSnap(thumb)
+        local thumbMask = slider:CreateMaskTexture()
+        thumbMask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        thumbMask:SetAllPoints(thumb)
+        thumb:AddMaskTexture(thumbMask)
+
+        -- Native thumb kept invisible: it provides the drag mechanics while the
+        -- masked texture above renders the visual.
+        slider:SetThumbTexture("Interface\\Buttons\\WHITE8x8")
+        local nativeThumb = slider:GetThumbTexture()
+        nativeThumb:SetSize(10, 10)
+        nativeThumb:SetAlpha(0)
+
+        local function UpdateVisual()
+            local w = slider:GetWidth()
+            if not w or w <= 0 then return end
+            local frac = (slider:GetValue() or 0) / 100
+            fill:SetWidth(max(1, frac * w))
+            thumb:ClearAllPoints()
+            thumb:SetPoint("CENTER", slider, "LEFT", frac * w, 0)
+        end
+
+        slider:SetScript("OnValueChanged", function(_, val)
+            val = floor(val + 0.5)
+            value:SetFormattedText("%d%%", val)
+            UpdateVisual()
+            if popup.syncing then return end
+            SetVolume(info.key, val)
+            if popup.owner and popup.owner.Update then popup.owner.Update() end
+        end)
+        slider:SetScript("OnSizeChanged", UpdateVisual)
+
+        popup.rows[i] = { key = info.key, slider = slider, value = value, fill = fill, UpdateVisual = UpdateVisual }
+    end
+
+    -- Mute row
+    local muteY = -(PAD + TITLE_H + #VOLUME_POPUP_ROWS * ROW_H)
+    local mute = CreateFrame("Button", nil, popup)
+    mute:SetSize(14, 14)
+    mute:SetPoint("TOPLEFT", PAD, muteY - 4)
+    SkinBase.ApplyPixelBackdrop(mute, 1, true, true)
+
+    local check = mute:CreateTexture(nil, "OVERLAY")
+    check:SetPoint("TOPLEFT", 3, -3)
+    check:SetPoint("BOTTOMRIGHT", -3, 3)
+    check:Hide()
+    popup.muteCheck = check
+
+    local muteLabel = MakeText(11)
+    muteLabel:SetPoint("LEFT", mute, "RIGHT", 6, 0)
+    muteLabel:SetText("Mute all")
+
+    mute:SetScript("OnClick", function()
+        ToggleMute()
+        popup:Refresh()
+        if popup.owner and popup.owner.Update then popup.owner.Update() end
+    end)
+
+    function popup:Refresh()
+        -- QUI theme accent (theme preset / class color aware)
+        local ar, ag, ab = Helpers.GetSkinAccentColor()
+        self.title:SetTextColor(ar, ag, ab)
+        self.syncing = true
+        for _, row in ipairs(self.rows) do
+            local vol = GetVolume(row.key)
+            row.slider:SetValue(vol)
+            row.value:SetFormattedText("%d%%", vol)
+            row.fill:SetColorTexture(ar, ag, ab, 1)
+            ns.SkinBase.DisablePixelSnap(row.fill)
+            row.UpdateVisual()
+        end
+        self.syncing = false
+        self.muteCheck:SetColorTexture(ar, ag, ab, 1)
+        ns.SkinBase.DisablePixelSnap(self.muteCheck)
+        self.muteCheck:SetShown(IsMuted())
+    end
+
+    -- Grace-period auto-hide: hide ~0.5s after the cursor leaves both the
+    -- popup and the datatext slot that opened it.
+    popup:SetScript("OnUpdate", function(self, elapsed)
+        if self:IsMouseOver() or (self.owner and self.owner:IsMouseOver()) then
+            self.hideTimer = 0
+        else
+            self.hideTimer = (self.hideTimer or 0) + elapsed
+            if self.hideTimer > 0.5 then
+                self:Hide()
+            end
+        end
+    end)
+    popup:SetScript("OnHide", function(self)
+        self.hideTimer = 0
+    end)
+
+    volumePopup = popup
+    return popup
+end
+
+local function ToggleVolumePopup(anchorFrame)
+    local popup = GetVolumePopup()
+    if popup:IsShown() and popup.owner == anchorFrame then
+        popup:Hide()
+        return
+    end
+    popup.owner = anchorFrame
+    popup.hideTimer = 0
+    popup:ClearAllPoints()
+    -- Open away from the screen edge the bar sits on
+    local _, y = anchorFrame:GetCenter()
+    if y and y > UIParent:GetHeight() / 2 then
+        popup:SetPoint("TOP", anchorFrame, "BOTTOM", 0, -4)
+    else
+        popup:SetPoint("BOTTOM", anchorFrame, "TOP", 0, 4)
+    end
+    popup:Refresh()
+    popup:Show()
+    GameTooltip:Hide()
+end
+
 -- Volume datatext
 Datatexts:Register("volume", {
     displayName = "Volume",
@@ -818,40 +1058,6 @@ Datatexts:Register("volume", {
             return dt and dt.volume or defaultVolumeSettings
         end
 
-        -- CVar names for different volume types
-        local volumeCVars = {
-            master = "Sound_MasterVolume",
-            music = "Sound_MusicVolume",
-            sfx = "Sound_SFXVolume",
-            ambience = "Sound_AmbienceVolume",
-            dialog = "Sound_DialogVolume",
-        }
-
-        -- Get current volume (0-100)
-        local function GetVolume(volumeType)
-            local cvar = volumeCVars[volumeType] or volumeCVars.master
-            local value = tonumber(C_CVar.GetCVar(cvar)) or 1
-            return floor(value * 100 + 0.5)
-        end
-
-        -- Set volume (0-100)
-        local function SetVolume(volumeType, percent)
-            local cvar = volumeCVars[volumeType] or volumeCVars.master
-            percent = max(0, min(100, percent))
-            C_CVar.SetCVar(cvar, percent / 100)
-        end
-
-        -- Check if sound is muted
-        local function IsMuted()
-            return C_CVar.GetCVar("Sound_EnableAllSound") == "0"
-        end
-
-        -- Toggle mute
-        local function ToggleMute()
-            local muted = IsMuted()
-            C_CVar.SetCVar("Sound_EnableAllSound", muted and "1" or "0")
-        end
-
         local function Update()
             local volSettings = GetVolumeSettings()
             local vol = GetVolume(volSettings.controlType)
@@ -879,6 +1085,7 @@ Datatexts:Register("volume", {
 
         -- Tooltip on hover
         frame:SetScript("OnEnter", function(self)
+            if volumePopup and volumePopup:IsShown() then return end
             GameTooltip:SetOwner(self, "ANCHOR_TOP")
             GameTooltip:ClearLines()
             GameTooltip:AddLine("Volume", 1, 1, 1)
@@ -900,7 +1107,8 @@ Datatexts:Register("volume", {
             -- Footer hints
             GameTooltip:AddLine(" ")
             GameTooltip:AddLine("Scroll to adjust volume", 0.5, 0.5, 0.5)
-            GameTooltip:AddLine("Left-Click to open audio settings", 0.5, 0.5, 0.5)
+            GameTooltip:AddLine("Left-Click for volume sliders", 0.5, 0.5, 0.5)
+            GameTooltip:AddLine("Middle-Click to open audio settings", 0.5, 0.5, 0.5)
             GameTooltip:AddLine("Right-Click to toggle mute", 0.5, 0.5, 0.5)
 
             GameTooltip:Show()
@@ -918,22 +1126,30 @@ Datatexts:Register("volume", {
             local newVol = currentVol + (delta * step)
             SetVolume(volSettings.controlType, newVol)
             Update()
+            if volumePopup and volumePopup:IsShown() then
+                volumePopup:Refresh()
+            end
             -- Update tooltip if shown
             if GameTooltip:IsShown() then
                 frame:GetScript("OnEnter")(frame)
             end
         end)
 
-        -- Click handler: Left = audio settings, Right = mute toggle
+        -- Click handler: Left = volume popup, Middle = audio settings, Right = mute toggle
         frame:RegisterForClicks("AnyUp")
         frame:SetScript("OnClick", function(self, button)
             if button == "LeftButton" then
+                ToggleVolumePopup(self)
+            elseif button == "MiddleButton" then
                 if Settings and Settings.OpenToCategory and Settings.AUDIO_CATEGORY_ID then
                     Settings.OpenToCategory(Settings.AUDIO_CATEGORY_ID)
                 end
             elseif button == "RightButton" then
                 ToggleMute()
                 Update()
+                if volumePopup and volumePopup:IsShown() then
+                    volumePopup:Refresh()
+                end
                 -- Update tooltip if shown
                 if GameTooltip:IsShown() then
                     frame:GetScript("OnEnter")(frame)
@@ -950,7 +1166,12 @@ Datatexts:Register("volume", {
     end,
 
     OnDisable = function(frame)
-        -- No ticker to cancel
+        -- Slot frames are pooled: drop the popup's owner reference so a
+        -- reused slot can't be written to through a stale Update closure.
+        if volumePopup and volumePopup.owner == frame then
+            volumePopup.owner = nil
+            volumePopup:Hide()
+        end
     end,
 })
 
