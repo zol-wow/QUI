@@ -121,6 +121,7 @@ end
 function SortPlanner.Plan(containers, opts)
     local chain = CHAINS[opts and opts.key] or CHAINS.quality
     local reverse = (opts and opts.reverse) and true or false
+    local fillFromBottom = (opts and opts.fillFromBottom) and true or false
 
     -- Snapshot: wrap every occupied slot in a cell (unique identity even
     -- when itemIDs repeat) and index its virtual location on the cell.
@@ -288,10 +289,28 @@ function SortPlanner.Plan(containers, opts)
         local want = NextUnplaced(target.family)
         if want then Place(want, target) end
     end
-    for _, target in ipairs(regularTargets) do
-        local want = NextUnplaced(0)
-        if not want then break end -- everything placed; rest stays empty
-        Place(want, target)
+    -- Regular pass. Normally fills targets top-down (best item → first slot,
+    -- empties trail at the end). fillFromBottom flips the *empties*, not the
+    -- order: leave the leading (top) targets empty and pack the sorted run
+    -- into the trailing (bottom) targets, so the block grows from the bottom
+    -- of the grid up while reading order inside it stays best→worst. The skip
+    -- count is (#targets - #items-left); when bags overflow it clamps to 0
+    -- (degrades to top-fill rather than dropping items).
+    local regularSkip = 0
+    if fillFromBottom then
+        local remaining = 0
+        for i = cursor, #sorted do
+            if not sorted[i].placed then remaining = remaining + 1 end
+        end
+        regularSkip = #regularTargets - remaining
+        if regularSkip < 0 then regularSkip = 0 end
+    end
+    for idx, target in ipairs(regularTargets) do
+        if idx > regularSkip then
+            local want = NextUnplaced(0)
+            if not want then break end -- everything placed; rest stays empty
+            Place(want, target)
+        end
     end
 
     moves.combines = combines

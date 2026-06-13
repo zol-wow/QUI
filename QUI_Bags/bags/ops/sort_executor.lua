@@ -215,6 +215,7 @@ local function RunPass()
     local plan = Bags.SortPlanner.Plan(BuildContainers(state.scope), {
         key = behavior and behavior.sortKey or nil,
         reverse = behavior and behavior.sortReverse or false,
+        fillFromBottom = behavior and behavior.fillFromBottom or false,
     })
     if #plan == 0 then
         Finish(true) -- converged: nothing left to move (deferred moves were

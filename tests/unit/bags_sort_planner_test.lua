@@ -546,4 +546,69 @@ do
         "reverse: nil-quality entry must still sort last")
 end
 
+---------------------------------------------------------------------------
+-- Section 12: fillFromBottom — empties float to the top, the sorted run
+-- packs into the trailing (bottom) slots in normal best→worst order. The
+-- block grows from the bottom of the grid up.
+---------------------------------------------------------------------------
+-- 12a: single bag — 2 items in a 5-slot bag pack into slots 4,5
+do
+    local containers = {
+        bag(0, 5, {
+            [1] = item(10, { quality = 4 }),
+            [2] = item(20, { quality = 3 }),
+        }),
+    }
+    local moves = Planner.Plan(containers, { key = "quality", fillFromBottom = true })
+    local state = simulate(containers, moves)
+    assert(flatten(state, { 0 }) == "-,-,-,10x1,20x1",
+        "fillFromBottom single bag wrong: " .. flatten(state, { 0 }))
+end
+
+-- 12b: idempotent — an already bottom-packed sorted bag produces no churn
+do
+    local containers = {
+        bag(0, 5, {
+            [4] = item(10, { quality = 4 }),
+            [5] = item(20, { quality = 3 }),
+        }),
+    }
+    local moves = Planner.Plan(containers, { key = "quality", fillFromBottom = true })
+    assert(#moves == 0, "fillFromBottom idempotent: expected 0 moves, got " .. #moves)
+end
+
+-- 12c: cross-bag — empties land in the top bag, items pack into the last
+-- regular slots overall (one continuous bottom-packed run)
+do
+    local containers = {
+        bag(0, 2, {
+            [1] = item(10, { quality = 4 }),
+            [2] = item(20, { quality = 3 }),
+        }),
+        bag(1, 2, {
+            [1] = item(30, { quality = 2 }),
+        }),
+    }
+    -- 3 items, 4 regular slots → skip 1 leading (top) slot
+    local moves = Planner.Plan(containers, { key = "quality", fillFromBottom = true })
+    local state = simulate(containers, moves)
+    assert(flatten(state, { 0, 1 }) == "-,10x1,20x1,30x1",
+        "fillFromBottom cross-bag wrong: " .. flatten(state, { 0, 1 }))
+end
+
+-- 12d: full bag — no empty slots means it behaves exactly like top-fill
+do
+    local containers = {
+        bag(0, 3, {
+            [1] = item(10, { quality = 1 }),
+            [2] = item(20, { quality = 2 }),
+            [3] = item(30, { quality = 3 }),
+        }),
+    }
+    local moves = Planner.Plan(containers, { key = "quality", fillFromBottom = true })
+    local state = simulate(containers, moves)
+    assert(flatten(state, { 0 }) == "30x1,20x1,10x1",
+        "fillFromBottom full bag wrong: " .. flatten(state, { 0 }))
+end
+
 print("OK: bags_sort_planner_test")

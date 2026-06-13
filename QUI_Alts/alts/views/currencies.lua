@@ -283,8 +283,33 @@ local function Builder(parent)
         r._name  = MakeFS(r, 11)
         r._name:SetPoint("LEFT", r, "LEFT", CELL_PAD + ICON_SIZE + 6, 0)
         r._value = MakeFS(r, 11)
-        r:SetScript("OnEnter", function(self) self._bg:SetVertexColor(1, 1, 1, 0.08) end)
-        r:SetScript("OnLeave", function(self) self._bg:SetVertexColor(1, 1, 1, 0) end)
+        r:SetScript("OnEnter", function(self)
+            self._bg:SetVertexColor(1, 1, 1, 0.08)
+            local row = self._row
+            if not (row and row.currencyID) then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(row.label, 1, 1, 1)
+            GameTooltip:AddLine("Right-click to untrack", 0.6, 0.6, 0.6)
+            GameTooltip:Show()
+        end)
+        r:SetScript("OnLeave", function(self)
+            self._bg:SetVertexColor(1, 1, 1, 0)
+            GameTooltip:Hide()
+        end)
+        -- Right-click hides the currency (alts.currencyFilter[id] = false);
+        -- re-show via the Filter button. Matches the popup's setChecked.
+        r:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        r:SetScript("OnClick", function(self, button)
+            if button ~= "RightButton" then return end
+            local row = self._row
+            if not (row and row.currencyID) then return end
+            local s = Alts.GetSettings and Alts.GetSettings()
+            if not s then return end
+            if not s.currencyFilter then s.currencyFilter = {} end
+            s.currencyFilter[row.currencyID] = false
+            GameTooltip:Hide()
+            view.Refresh()
+        end)
         rowPool[i] = r
         return r
     end
@@ -308,8 +333,10 @@ local function Builder(parent)
             r:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, topY - (i - 1) * ROW_H)
 
             if not row then
+                r._row = nil
                 r:Hide()
             else
+                r._row = row
                 local info = ResolveInfo(row.currencyID)
                 if info and info.icon then
                     r._icon:SetTexture(info.icon)

@@ -411,6 +411,15 @@ function Chassis.ShowSortMenu(anchor, extra)
                 local s = GetBagsSettings()
                 if s and s.behavior then s.behavior.sortReverse = not s.behavior.sortReverse end
             end)
+        root:CreateCheckbox("Pack to bottom",
+            function()
+                local s = GetBagsSettings()
+                return s and s.behavior and s.behavior.fillFromBottom or false
+            end,
+            function()
+                local s = GetBagsSettings()
+                if s and s.behavior then s.behavior.fillFromBottom = not s.behavior.fillFromBottom end
+            end)
         if extra then extra(root) end
     end)
 end
