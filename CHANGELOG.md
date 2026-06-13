@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta46 - 2026-06-13
+
+> 🧪 **QUI 4 beta — Bag packing & Alts untrack.** Bag sorting gains a "Pack to bottom" option so your sorted items grow up from the bottom of the grid, and Alts currency/reputation rows can now be right-clicked to untrack them. Under the hood, a large dedup sweep consolidates shared helpers across modules — no behavior change intended. No profile schema migration — your beta45 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Bags: "Pack to bottom" sort option.** A new checkbox in the bag sort menu packs the sorted run into the bottom slots of the grid (empties float to the top) while keeping best→worst reading order. Degrades to top-fill when bags overflow.
+- **Alts: right-click to untrack.** Currency and reputation rows now show a hover tooltip and accept right-click to untrack that entry; re-show it from the Filter button.
+
+### Changed
+- **Internal: dedup sweep.** Consolidated duplicated logic into shared helpers across Action Bars, Bags, CDM, Chat, Group Frames, QoL, Skinning, Unit Frames and core (provider layout scaffold, integration helpers, shared settings layout). Net code reduction with no intended behavior change.
+
 ## v4.0.0-beta45 - 2026-06-12
 
 > 🧪 **QUI 4 beta — Chat tab menus & whisper pop-outs.** Saved chat tabs now have "Filter Settings" and "Tab Settings" right-click entries that jump straight to the matching options page, and Blizzard's whisper pop-out windows are now routed correctly into QUI chat tabs. No profile schema migration — your beta44 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
