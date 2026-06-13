@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta44 - 2026-06-12
+
+> 🧪 **QUI 4 beta — Volume datatext sliders.** The Volume datatext gets a proper control panel: left-click now opens a small skinned popup with sliders for Master, SFX, Music, Ambience and Dialog plus a Mute-all toggle, all themed to your skin accent. Opening the audio settings panel moves to middle-click; scroll-to-adjust and right-click-to-mute are unchanged. Also fixes long-duration buff border countdown text disagreeing with the in-game tooltip. No profile schema migration — your beta43 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Volume datatext: slider popup.** Left-clicking the Volume datatext now opens a compact popup with individual sliders for Master, SFX, Music, Ambience and Dialog volume, plus a Mute-all checkbox. The panel follows your skin accent color and font, and closes shortly after you move the cursor away. (Opening Blizzard's audio settings is now middle-click.)
+
+### Fixed
+- **Buff borders: long-duration countdown text matched the tooltip.** The duration number on aura icons could disagree with the aura tooltip's remaining-time line on long buffs (e.g. showing one hour band while the tooltip showed the next). The countdown now follows the same rounding the tooltip uses, so the two always agree. Rendering stays engine-side, so it's unaffected by combat-protected (secret) values.
+
 ## v4.0.0-beta43 - 2026-06-12
 
 > 🧪 **QUI 4 beta — Layout Mode anchored-window follow-ups.** This beta finishes the anchored-window work from beta42: chat windows anchored to another element now reliably keep their normal mover when Layout Mode opens, windows can no longer get stuck invisible after a mid-session element re-sync, and resizing an anchored window (chat or damage meter) keeps its anchor point pinned instead of shifting the window. No profile schema migration — your beta42 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
