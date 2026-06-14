@@ -243,6 +243,26 @@ end
 -- BackwardsCompat: facade that orchestrates both tiers
 ---------------------------------------------------------------------------
 
+-- Pre-3.5.11 floor reseed. Migrations backs up + wipes any profile older than
+-- the schema floor and flags it `_needsStarterReseed`. Seed the shipped
+-- new-profile defaults onto each flagged raw profile and clear the flag.
+--
+-- Runs here in BackwardsCompat (OnEnable, BEFORE modules build at
+-- PLAYER_LOGIN), so a floored ACTIVE profile is reseeded before its modules
+-- initialize -- no UI reload, and no Coco import (ns.ApplyNewProfileSeed lives
+-- in core). AceDB fills the remaining legacy defaults when each profile is next
+-- activated; the floor's `_migrationBackup` rollback snapshot is left intact.
+local function ReseedStarterFlaggedProfiles(db)
+    if not db or not db.sv or type(db.sv.profiles) ~= "table" then return end
+    if not ns.ApplyNewProfileSeed then return end
+    for _, rawProfile in pairs(db.sv.profiles) do
+        if type(rawProfile) == "table" and rawget(rawProfile, "_needsStarterReseed") then
+            ns.ApplyNewProfileSeed(rawProfile)
+            rawset(rawProfile, "_needsStarterReseed", nil)
+        end
+    end
+end
+
 function QUI:BackwardsCompat()
     -- Tier 0: Raw SV defaults stamp (must run before AceDB fills defaults)
     if self.db then
@@ -253,6 +273,10 @@ function QUI:BackwardsCompat()
     if ns.Migrations and ns.Migrations.Run then
         ns.Migrations.Run(self.db)
     end
+
+    -- Tier 2: reseed any profile the migration floor wiped (pre-3.5.11) with
+    -- the shipped new-profile defaults, before modules build.
+    ReseedStarterFlaggedProfiles(self.db)
 
     -- Global/char structure housekeeping (not profile-specific)
     if not self.db.global then

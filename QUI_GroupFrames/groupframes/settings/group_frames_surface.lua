@@ -72,6 +72,11 @@ end
 
 -- Install the composer resize observer exactly once. It reads State.previewPanel
 -- dynamically, so it keeps working across panel rebuilds (see EnsurePreviewPanel).
+-- Forward declaration: the observer below re-greys the control strip on every
+-- preview rebuild (incl. live setting changes, which ping the driver via
+-- RefreshGroupFrames), but CurrentPreviewVDB is defined further down.
+local CurrentPreviewVDB
+
 local previewObserverInstalled = false
 local function InstallPreviewObserver()
     if previewObserverInstalled or not _G.QUI_SetGroupFramePreviewObserver then
@@ -81,6 +86,12 @@ local function InstallPreviewObserver()
     _G.QUI_SetGroupFramePreviewObserver(function(_, wrapper)
         local p = State.previewPanel
         if not p then return end
+        -- Re-grey filter toggles against the latest config: a setting changed in
+        -- the options window (e.g. Dispel enabled) rebuilds the preview, so the
+        -- chip dither must follow even while the preview window stays open.
+        if p.RefreshControlStrip and CurrentPreviewVDB then
+            p.RefreshControlStrip(CurrentPreviewVDB())
+        end
         -- Generation guard: a later rebuild (e.g. rapid Party/Raid toggle)
         -- reparents this cell's children away, so a deferred measure of the
         -- now-stale cell would shrink the panel to a stub. Skip if superseded.
@@ -103,12 +114,15 @@ local function InstallPreviewObserver()
 end
 
 ---------------------------------------------------------------------------
--- CONTROL STRIP — on-panel preview filter chips + raid-size slider. The chips
--- drive a transient filter (State.previewFilter) forwarded to the preview
--- driver; chips whose underlying feature is disabled in config are greyed via
--- Driver._ChipEnabledInConfig. The raid slider only shows in raid context.
+-- CONTROL STRIP — on-panel preview filter toggles + raid-size slider, rendered
+-- with the STANDARD QUI settings design: a CreateSettingsCardGroup with
+-- dual-column BuildSettingRow cells (same row rhythm / center divider as the
+-- main settings pages). Bare-mode toggles drive a transient filter
+-- (State.previewFilter) forwarded to the preview driver; a toggle whose
+-- underlying feature is disabled in config is greyed (cell:SetEnabled false)
+-- via Driver._ChipEnabledInConfig. The raid slider only shows in raid context.
 ---------------------------------------------------------------------------
-local CHIP_DEFS = {
+local FILTER_DEFS = {
     { key = "threat",     label = "Threat" },
     { key = "dispel",     label = "Dispel" },
     { key = "auras",      label = "Auras" },
@@ -116,7 +130,11 @@ local CHIP_DEFS = {
     { key = "highlights", label = "Highlights" },
 }
 
-local function CurrentPreviewVDB()
+-- Strip height: 3 card rows (32 each) + gap + one slider row (28) + pad.
+local STRIP_CARD_ROW_H = 32
+local STRIP_HEIGHT = (3 * STRIP_CARD_ROW_H) + 8 + 28 + 6
+
+function CurrentPreviewVDB()
     local Driver = ns.QUI_GroupFramesPreview
     if not Driver or not Driver._GetGFDB or not Driver._GetContextDB then return nil end
     local gfdb = Driver._GetGFDB()
@@ -133,35 +151,33 @@ local function BuildControlStrip(panel)
     local strip = panel.controlStrip
     if not strip or strip._quiBuilt then return end
     strip._quiBuilt = true
-    local UIKit = ns.UIKit
     local Driver = ns.QUI_GroupFramesPreview
-    local chips = {}
-
-    local COLS, CHIP_W, ROW_H = 3, 64, 24
-    for i, def in ipairs(CHIP_DEFS) do
-        local col = (i - 1) % COLS
-        local row = math.floor((i - 1) / COLS)
-        local box = UIKit.CreateAccentCheckbox(strip, {
-            size = 14,
-            checked = State.previewFilter[def.key] ~= false,
-            onChange = function(val)
-                State.previewFilter[def.key] = val and true or false
-                ApplyFilterToDriver()
-            end,
-        })
-        box:ClearAllPoints()
-        box:SetPoint("TOPLEFT", strip, "TOPLEFT", col * CHIP_W, -(row * ROW_H))
-        local lbl = GUI:CreateLabel(strip, def.label, 11,
-            GUI.Colors and GUI.Colors.text or { 1, 1, 1, 1 }, "LEFT", 0, 0)
-        lbl:ClearAllPoints()
-        lbl:SetPoint("LEFT", box, "RIGHT", 3, 0)
-        chips[def.key] = { box = box, label = lbl }
+    local optionsAPI = ns.QUI_Options
+    if not optionsAPI or not optionsAPI.CreateSettingsCardGroup or not optionsAPI.BuildSettingRow then
+        return
     end
+    local cells = {}
+
+    -- Standard settings card: dual-column rows. Bare-mode toggles (label nil)
+    -- wrapped in BuildSettingRow cells which supply the label, tooltip + greying.
+    -- CreateFormToggle still binds State.previewFilter[def.key] and writes it on
+    -- click; onChange forwards the whole filter to the driver.
+    local card = optionsAPI.CreateSettingsCardGroup(strip, 0)
+    for _, def in ipairs(FILTER_DEFS) do
+        local toggle = GUI:CreateFormToggle(card.frame, nil, def.key, State.previewFilter, function()
+            ApplyFilterToDriver()
+        end)
+        cells[def.key] = optionsAPI.BuildSettingRow(card.frame, def.label, toggle)
+    end
+    card.AddRow(cells.threat, cells.dispel)
+    card.AddRow(cells.auras, cells.indicators)
+    card.AddRow(cells.highlights)
+    card.Finalize()
 
     -- gfdb captured once per build: testMode is mutated in place (never replaced)
     -- and the driver re-reads gfdb on each Refresh, so the reference stays live.
     local _, gfdb = CurrentPreviewVDB()
-    local raidRow = GUI:CreateFormSlider(strip, "Raid Size", 5, 40, 5, "raidCount",
+    local raidSlider = GUI:CreateFormSlider(strip, nil, 5, 40, 5, "raidCount",
         (gfdb and gfdb.testMode) or {}, function(value)
             local Drv = ns.QUI_GroupFramesPreview
             local snapped = (Drv and Drv._SnapRaidCount(value)) or value
@@ -170,21 +186,16 @@ local function BuildControlStrip(panel)
                 _G.QUI_RefreshGroupFramePreview("raid")
             end
         end)
+    local raidRow = optionsAPI.BuildSettingRow(strip, "Raid Size", raidSlider)
     raidRow:ClearAllPoints()
-    raidRow:SetPoint("TOPLEFT", strip, "TOPLEFT", 0, -(2 * ROW_H))
-    raidRow:SetPoint("TOPRIGHT", strip, "TOPRIGHT", 0, -(2 * ROW_H))
+    raidRow:SetPoint("TOPLEFT", card.frame, "BOTTOMLEFT", 12, -8)
+    raidRow:SetPoint("TOPRIGHT", card.frame, "BOTTOMRIGHT", -12, -8)
 
     panel.RefreshControlStrip = function(vdb)
-        for _, def in ipairs(CHIP_DEFS) do
-            local c = chips[def.key]
-            local enabled = Driver and Driver._ChipEnabledInConfig(vdb, def.key)
-            if c then
-                if enabled then
-                    c.box:SetAlpha(1); c.box:EnableMouse(true); c.label:SetAlpha(1)
-                else
-                    c.box:SetAlpha(0.35); c.box:EnableMouse(false); c.label:SetAlpha(0.35)
-                end
-            end
+        for _, def in ipairs(FILTER_DEFS) do
+            local c = cells[def.key]
+            local enabled = (Driver and Driver._ChipEnabledInConfig(vdb, def.key)) and true or false
+            if c and c.SetEnabled then c:SetEnabled(enabled) end
         end
         if State.contextMode == "raid" then raidRow:Show() else raidRow:Hide() end
     end
@@ -223,8 +234,8 @@ local function EnsurePreviewPanel()
         title = "Preview",
         idSuffix = "GroupFrames",
         window = win,
-        controlStripHeight = 78,
-        minWidth = 220,
+        controlStripHeight = STRIP_HEIGHT,
+        minWidth = 240,
     })
     if not panel then return nil end
 
@@ -389,6 +400,7 @@ local SECTION_NAV_TABS = {
     appearance = true,
     indicators = true,
     auras = true,
+    layout = true,
 }
 
 local function InstallSectionRegistry(host)
@@ -437,7 +449,12 @@ local function BuildTabSectionNav(host, cached)
     -- Tear down any strip from a prior render; its chips point at section
     -- frames that were just cleared/rebuilt, so they must not be reused.
     if cached._sectionNav then
-        cached._sectionNav:Hide()
+        -- RenderSectionNav returns { frame, setActive, refreshOffsets,
+        -- relayoutChips, destroy } — no :Hide. destroy() cancels its ticker,
+        -- restores the scroll anchors, and hides the strip.
+        if cached._sectionNav.destroy then
+            cached._sectionNav.destroy()
+        end
         cached._sectionNav = nil
     end
     ResetTabScrollAnchors(cached)

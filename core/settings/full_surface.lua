@@ -535,6 +535,38 @@ function FullSurface.CreateDockedPreviewPanel(opts)
         UIKit.RegisterScaleRefresh(panel, "dockedPreviewPanel" .. (opts.idSuffix or ""), ApplyBackdrop)
     end
 
+    -- Softer content-area look matching the main settings window's content pane:
+    -- a faint white wash + a horizontal accent-glow gradient layered over the
+    -- dark backdrop (inset 1px to stay inside the pixel border).
+    local contentBg = C.bgContent
+    if contentBg then
+        local wash = panel:CreateTexture(nil, "BACKGROUND", nil, 1)
+        wash:SetPoint("TOPLEFT", panel, "TOPLEFT", 1, -1)
+        wash:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -1, 1)
+        wash:SetColorTexture(contentBg[1], contentBg[2], contentBg[3], contentBg[4] or 0.02)
+        panel._contentWash = wash
+    end
+    local glowColor = C.accentGlow
+    if glowColor then
+        local glow = panel:CreateTexture(nil, "BACKGROUND", nil, 2)
+        glow:SetPoint("TOPLEFT", panel, "TOPLEFT", 1, -1)
+        glow:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -1, 1)
+        glow:SetTexture("Interface\\BUTTONS\\WHITE8x8")
+        if glow.SetGradient and CreateColor then
+            local ok = pcall(function()
+                glow:SetGradient("HORIZONTAL",
+                    CreateColor(glowColor[1], glowColor[2], glowColor[3], glowColor[4] or 0.06),
+                    CreateColor(glowColor[1], glowColor[2], glowColor[3], 0))
+            end)
+            if not ok then
+                glow:SetColorTexture(glowColor[1], glowColor[2], glowColor[3], glowColor[4] or 0.06)
+            end
+        else
+            glow:SetColorTexture(glowColor[1], glowColor[2], glowColor[3], glowColor[4] or 0.06)
+        end
+        panel._accentGlow = glow
+    end
+
     -- QUI settings font (Quazii) + standard white label color (C.text),
     -- matching the settings text/label convention, via CreateLabel.
     local titleColor = C.text or { 1, 1, 1, 1 }

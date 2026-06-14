@@ -2375,85 +2375,9 @@ function QUICore:ImportProfileFromValidatedPayload(payload, targetProfileName)
     return RunImportFullProfile(self, payload, targetProfileName)
 end
 
--- Reseed the bundled starter profile (Coco) into every profile the migration
--- floor flagged with `_needsStarterReseed` (profiles older than 3.5.11, which
--- were backed up + wiped because their incremental migrations were removed in
--- 4.0). Runs at login from QUI_Options, where the preset string and import
--- engine live. Decodes the preset once, then imports it into each flagged
--- profile by name (the import path heals it to the current schema), preserving
--- the floor's rollback backup, and restores the originally-active profile.
---
--- Returns: count reseeded, activeReseeded(boolean). The caller prompts a UI
--- reload only when the active profile was among them (its modules already
--- initialized on the wiped data and need a reload to pick up the reseed).
-function QUICore:ReseedStarterFlaggedProfiles(cocoStr)
-    local db = self.db
-    if not db or not db.sv or type(db.sv.profiles) ~= "table" then
-        return 0, false
-    end
-    if type(cocoStr) ~= "string" or cocoStr == "" then
-        return 0, false
-    end
-
-    -- Collect flagged profile names from the raw SV.
-    local flagged = {}
-    for name, raw in pairs(db.sv.profiles) do
-        if type(raw) == "table" and rawget(raw, "_needsStarterReseed") then
-            flagged[#flagged + 1] = name
-        end
-    end
-    if #flagged == 0 then
-        return 0, false
-    end
-
-    -- Decode the preset once (strict, then auto-sanitize fallback).
-    local ok, payloadOrErr = ParseProfileImportString(self, cocoStr)
-    if not ok then
-        local sok, sanitized = self:SanitizeProfileImportString(cocoStr)
-        if not sok then
-            -- Can't decode the bundled preset — clear the flags so we don't
-            -- retry every login; the floored profiles keep QUI defaults.
-            for _, name in ipairs(flagged) do
-                rawset(db.sv.profiles[name], "_needsStarterReseed", nil)
-            end
-            return 0, false
-        end
-        payloadOrErr = sanitized
-    end
-
-    local origName = (db.GetCurrentProfile and db:GetCurrentProfile())
-        or (db.keys and db.keys.profile)
-    local activeReseeded = false
-    local done = 0
-
-    for _, name in ipairs(flagged) do
-        local raw = db.sv.profiles[name]
-        -- The floor stored a rollback snapshot under "_migrationBackup"; the
-        -- import wipes the profile, so capture it and re-attach afterwards.
-        local backup = raw and rawget(raw, "_migrationBackup")
-        local importOK = self:ImportProfileFromValidatedPayload(CloneValue(payloadOrErr), name)
-        if importOK then
-            -- `name` is the active profile now; db.profile is its live table.
-            if backup ~= nil then
-                db.profile._migrationBackup = backup
-            end
-            db.profile._needsStarterReseed = nil
-            done = done + 1
-            if name == origName then
-                activeReseeded = true
-            end
-        else
-            rawset(raw, "_needsStarterReseed", nil)
-        end
-    end
-
-    -- Return to the profile that was active before reseeding.
-    if origName and db.SetProfile then
-        pcall(db.SetProfile, db, origName)
-    end
-
-    return done, activeReseeded
-end
+-- NOTE: the pre-3.5.11 floor reseed now lives in core/compatibility.lua
+-- (ReseedStarterFlaggedProfiles), seeding ns.NewProfileSeed onto floored
+-- profiles during BackwardsCompat -- no Coco import, no reload.
 
 function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs, targetProfileName)
     local ok, payloadOrErr = ParseProfileImportString(self, str)

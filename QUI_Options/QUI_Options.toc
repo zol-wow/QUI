@@ -48,7 +48,6 @@ shared.lua
 ..\QUI\core\profile_io.lua
 ..\QUI\importstrings\qui_editmode_base.lua
 ..\QUI\importstrings\coco_profile.lua
-first_run.lua
 ..\QUI\core\settings\full_surface.lua
 ..\QUI\core\settings\pins_ui.lua
 ..\QUI\core\settings\content\anchoring_shared_content.lua

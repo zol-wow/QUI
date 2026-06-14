@@ -1000,6 +1000,7 @@ local function RenderFrameAuras(f, auras, now)
     local Render = ns.QUI_GroupFrameAuraRender
     local Model  = ns.QUI_GroupFramesAuraModel
     if not Render or not Model or not Model.ActiveElementsForSpec then return end
+    if auras and Model.EnsureSeeded then Model.EnsureSeeded(auras) end
     if not auras or auras.enabled == false then
         if Render.ReleaseAll then Render:ReleaseAll(f) end
         f._previewAuraWork = nil

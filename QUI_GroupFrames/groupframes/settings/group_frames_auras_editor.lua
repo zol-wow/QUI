@@ -901,8 +901,12 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
         auras.elements = {}
     end
     bucketKey = bucketKey or "*"
-    if type(auras.elements[bucketKey]) ~= "table" then
-        auras.elements[bucketKey] = {}
+    -- Only the shared "*" bucket is auto-created. Spec buckets must NOT be
+    -- created merely by viewing/editing — their presence is the override flag
+    -- (see Model.EnableSpecOverride), so the schema only calls RenderAuras for a
+    -- spec once override is on (bucket already exists).
+    if bucketKey == "*" and type(auras.elements["*"]) ~= "table" then
+        auras.elements["*"] = {}
     end
 
     local C = GUI.Colors or {}

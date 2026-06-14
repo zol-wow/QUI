@@ -1115,7 +1115,17 @@ local function RenderSpotlightSection(sectionHost, ctx)
         return nil
     end
 
+    builder.Header("Spotlight")
     builder.Description("Creates a separate frame that pins raid members by role or name to a dedicated group.")
+
+    -- Dependent rows (everything below the Enable toggle) dither when Spotlight
+    -- is disabled. Tracked as they're built; refreshed on every enable change.
+    local spotlightRows = {}
+    local UpdateSpotlightRows
+    local function track(cell)
+        spotlightRows[#spotlightRows + 1] = cell
+        return cell
+    end
 
     local function onSpotlightChange(structural)
         if spotlight.enabled and not spotlight.filterTank and not spotlight.filterHealer and not spotlight.filterDamager then
@@ -1128,6 +1138,7 @@ local function RenderSpotlightSection(sectionHost, ctx)
         end
 
         RefreshSpotlight()
+        if UpdateSpotlightRows then UpdateSpotlightRows() end
         if structural then
             NotifyProvider("spotlightFrames", true)
             RequestTabRepaint(ctx)
@@ -1151,7 +1162,7 @@ local function RenderSpotlightSection(sectionHost, ctx)
     end, {
         description = "Pin members by role or by a manual character-name list.",
     })
-    filterCard.AddRow(optionsAPI.BuildSettingRow(filterCard.frame, "Filter By", filterModeDropdown))
+    filterCard.AddRow(track(optionsAPI.BuildSettingRow(filterCard.frame, "Filter By", filterModeDropdown)))
 
     if spotlight.filterMode == "ROLE" then
         local tankCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "filterTank", spotlight, onSpotlightChange, {
@@ -1161,8 +1172,8 @@ local function RenderSpotlightSection(sectionHost, ctx)
             description = "Include healers in the Spotlight group.",
         })
         filterCard.AddRow(
-            optionsAPI.BuildSettingRow(filterCard.frame, "Tanks", tankCheckbox),
-            optionsAPI.BuildSettingRow(filterCard.frame, "Healers", healerCheckbox)
+            track(optionsAPI.BuildSettingRow(filterCard.frame, "Tanks", tankCheckbox)),
+            track(optionsAPI.BuildSettingRow(filterCard.frame, "Healers", healerCheckbox))
         )
     else
         local nameListEdit = gui:CreateFormEditBox(filterCard.frame, nil, "nameList", spotlight, onSpotlightChange, {
@@ -1171,7 +1182,7 @@ local function RenderSpotlightSection(sectionHost, ctx)
         }, {
             description = "Comma-separated character names to pin in Spotlight.",
         })
-        filterCard.AddRow(optionsAPI.BuildSettingRow(filterCard.frame, "Player Names", nameListEdit))
+        filterCard.AddRow(track(optionsAPI.BuildSettingRow(filterCard.frame, "Player Names", nameListEdit)))
     end
     builder.CloseCard(filterCard)
     builder.Spacer(10)
@@ -1185,8 +1196,8 @@ local function RenderSpotlightSection(sectionHost, ctx)
         description = "Height of each Spotlight frame in pixels.",
     })
     dimsCard.AddRow(
-        optionsAPI.BuildSettingRow(dimsCard.frame, "Width", widthSlider),
-        optionsAPI.BuildSettingRow(dimsCard.frame, "Height", heightSlider)
+        track(optionsAPI.BuildSettingRow(dimsCard.frame, "Width", widthSlider)),
+        track(optionsAPI.BuildSettingRow(dimsCard.frame, "Height", heightSlider))
     )
     builder.CloseCard(dimsCard)
     builder.Spacer(10)
@@ -1207,10 +1218,18 @@ local function RenderSpotlightSection(sectionHost, ctx)
         description = "Pixel gap between adjacent Spotlight frames.",
     })
     layoutCard.AddRow(
-        optionsAPI.BuildSettingRow(layoutCard.frame, "Layout", orientationDropdown),
-        optionsAPI.BuildSettingRow(layoutCard.frame, "Spacing", spacingSlider)
+        track(optionsAPI.BuildSettingRow(layoutCard.frame, "Layout", orientationDropdown)),
+        track(optionsAPI.BuildSettingRow(layoutCard.frame, "Spacing", spacingSlider))
     )
     builder.CloseCard(layoutCard)
+
+    function UpdateSpotlightRows()
+        local on = spotlight.enabled and true or false
+        for _, cell in ipairs(spotlightRows) do
+            if cell.SetEnabled then cell:SetEnabled(on) end
+        end
+    end
+    UpdateSpotlightRows()
 
     return builder.Height()
 end
@@ -2169,7 +2188,34 @@ local function RenderIndicatorsSection(sectionHost, ctx)
     AddIndicatorCard("Raid Target Marker", "showTargetMarker", "targetMarkerSize", "targetMarkerAnchor", "targetMarkerOffsetX", "targetMarkerOffsetY")
     AddIndicatorCard("Phase Icon", "showPhaseIcon", "phaseSize", "phaseAnchor", "phaseOffsetX", "phaseOffsetY")
 
-    builder.Spacer(6)
+    return builder.Height()
+end
+
+-- Threat lives in the Appearance tab (moved out of Indicators). The data still
+-- lives under indicators.* dbkeys; only the UI location changed.
+local function RenderThreatSection(sectionHost, ctx)
+    local gui = GetGUI()
+    local optionsAPI = GetOptionsAPI()
+    local groupFrames = ResolveGroupFramesDB(ctx and ctx.options and ctx.options.contextMode)
+    if not gui or not optionsAPI or not groupFrames then
+        return nil
+    end
+
+    local indicators = EnsureSubTable(groupFrames.contextDB, "indicators")
+    if not indicators then
+        return nil
+    end
+
+    -- Search lands on the Appearance tab now that Threat lives there.
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("appearance"))
+    if not builder then
+        return nil
+    end
+
+    local refresh = function()
+        RefreshGroupFrames(groupFrames.contextMode)
+    end
+
     builder.Header("Threat")
     local threatCard = builder.Card()
     local threatRows = {}
@@ -2316,8 +2362,13 @@ local function RenderAurasSection(sectionHost, ctx)
     if not auras then
         return nil
     end
-    -- The v46 migration + defaults guarantee auras.elements; guard anyway so a
-    -- hand-edited or partial profile cannot nil-index the editor.
+    -- Seed the shipped default strips once (the strips are no longer an AceDB
+    -- default — see Model.EnsureSeeded). Also guarantees auras.elements is a
+    -- table so a hand-edited/partial profile cannot nil-index the editor.
+    local AuraModel = ns.QUI_GroupFramesAuraModel
+    if AuraModel and AuraModel.EnsureSeeded then
+        AuraModel.EnsureSeeded(auras)
+    end
     if type(auras.elements) ~= "table" then
         auras.elements = {}
     end
@@ -2346,7 +2397,7 @@ local function RenderAurasSection(sectionHost, ctx)
 
     builder.Header("Auras")
     builder.Description("Buff/debuff strips and tracked auras on " .. groupFrames.sourceLabel
-        .. " group frames. Each element is configured per spec; the All Specs bucket applies everywhere.")
+        .. " group frames. A spec either inherits the All Specs bucket or overrides it with its own — never both.")
 
     local specOptions = BuildSpecBucketOptions()
     -- Default the editing-spec dropdown to "All Specs" (the "*" bucket) instead
@@ -2366,6 +2417,12 @@ local function RenderAurasSection(sectionHost, ctx)
         SetSelectedBucket(ctx, groupFrames.contextMode, selectedBucket)
     end
 
+    local isSpecBucket = (selectedBucket ~= "*")
+    local overrideOn = false
+    if isSpecBucket and AuraModel and AuraModel.HasSpecOverride then
+        overrideOn = AuraModel.HasSpecOverride(auras.elements, selectedBucket) and true or false
+    end
+
     local card = builder.Card()
     local enableCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", auras, refresh, {
         description = "Master switch for all aura strips and tracked auras on these frames.",
@@ -2374,7 +2431,7 @@ local function RenderAurasSection(sectionHost, ctx)
         SetSelectedBucket(ctx, groupFrames.contextMode, value)
         ScheduleTabRepaint(ctx)
     end, nil, {
-        description = "Choose which spec bucket to edit. \"All Specs\" elements show on every spec; a specific spec adds elements only on that spec.",
+        description = "Choose which spec to view. \"All Specs\" is the shared bucket; a specific spec either inherits it or overrides it.",
     })
     if specDropdown.SetValue then
         specDropdown:SetValue(selectedBucket, true)
@@ -2383,10 +2440,42 @@ local function RenderAurasSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Enable Auras", enableCheckbox),
         optionsAPI.BuildSettingRow(card.frame, "Editing Spec", specDropdown)
     )
+
+    -- Per-spec override toggle: only meaningful for a specific spec. ON creates a
+    -- spec bucket (DeepCopy of All Specs to start); OFF deletes it (inherit).
+    if isSpecBucket then
+        local overrideToggle = gui:CreateFormCheckbox(card.frame, nil, nil, nil, function(val)
+            if val then
+                if AuraModel and AuraModel.EnableSpecOverride then
+                    AuraModel.EnableSpecOverride(auras, selectedBucket)
+                end
+            else
+                if AuraModel and AuraModel.DisableSpecOverride then
+                    AuraModel.DisableSpecOverride(auras, selectedBucket)
+                end
+            end
+            refresh()
+            ScheduleTabRepaint(ctx)
+        end, {
+            description = "On: this spec uses its own strips/tracked auras (seeded from All Specs). Off: it inherits the All Specs bucket.",
+        })
+        if overrideToggle.SetValue then
+            overrideToggle:SetValue(overrideOn, true)
+        end
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Override All Specs", overrideToggle))
+    end
     builder.CloseCard(card)
 
     builder.Spacer(6)
     builder.Header("Elements")
+
+    -- A specific spec that is NOT overriding inherits All Specs: show a hint
+    -- instead of an editor (editing here would have no bucket to write to, and
+    -- creating one would silently start an override).
+    if isSpecBucket and not overrideOn then
+        builder.Description("This spec inherits the All Specs settings. Turn on \"Override All Specs\" above to give it its own strips and tracked auras.")
+        return builder.Height()
+    end
 
     local forcedIndex = GetSelectedElementIndex(ctx, groupFrames.contextMode, selectedBucket)
 
@@ -2499,6 +2588,7 @@ local APPEARANCE_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesAppearan
     { id = "appearance", minHeight = 160, render = RenderAppearanceSection },
     { id = "name", minHeight = 140, render = RenderNameSection },
     { id = "power", minHeight = 140, render = RenderPowerSection },
+    { id = "threat", minHeight = 140, render = RenderThreatSection },
     { id = "dispelOverlay", minHeight = 140, render = RenderDispelOverlaySection },
 })
 
@@ -2512,8 +2602,8 @@ local LAYOUT_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesLayoutTab", 
 
 local LAYOUT_RAID_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesLayoutRaidTab", {
     { id = "layout", minHeight = 160, render = RenderLayoutSection },
-    { id = "dimensions", minHeight = 140, render = RenderDimensionsSection },
     { id = "spotlight", minHeight = 180, render = RenderSpotlightSection },
+    { id = "dimensions", minHeight = 140, render = RenderDimensionsSection },
 })
 
 local HEALTH_TAB_FEATURE = CreateSingleSectionTabFeature(

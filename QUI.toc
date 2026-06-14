@@ -74,7 +74,7 @@ core\debug_gate.lua
 core\utils.lua
 core\infobar_shared.lua
 core\settings_layout_shared.lua
-core\first_run.lua
+core\new_profile_defaults.lua
 core\border_registry.lua
 core\diagnostics_console.lua
 core\dumpspell.lua

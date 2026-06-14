@@ -2976,36 +2976,11 @@ local defaults = {
                 range = { enabled = true, outOfRangeAlpha = 0.4 },
                 auras = {
                     enabled = true,
-                    elements = {
-                        ["*"] = {
-                            {
-                                id = "debuffs", enabled = true, mode = "filterStrip", auraType = "HARMFUL",
-                                anchor = "BOTTOMRIGHT", growDirection = "LEFT", spacing = 2,
-                                offsetX = -2, offsetY = -18, iconSize = 16, maxIcons = 3,
-                                hideSwipe = false, reverseSwipe = false,
-                                showDurationText = true, durationFontSize = 9,
-                                durationAnchor = "BOTTOM", durationOffsetX = 0, durationOffsetY = -6,
-                                durationColor = { 1, 1, 1, 1 }, durationUseTimeColor = true,
-                                showDurationColor = true, showExpiringPulse = true,
-                                filterMode = "off",
-                                classifications = { raid = true, raidInCombat = false, crowdControl = true, important = true },
-                                whitelist = {}, blacklist = {},
-                            },
-                            {
-                                id = "buffs", enabled = false, mode = "filterStrip", auraType = "HELPFUL",
-                                anchor = "TOPLEFT", growDirection = "RIGHT", spacing = 2,
-                                offsetX = 2, offsetY = 16, iconSize = 14, maxIcons = 0,
-                                hideSwipe = false, reverseSwipe = false,
-                                showDurationText = true, durationFontSize = 9,
-                                durationAnchor = "BOTTOM", durationOffsetX = 0, durationOffsetY = -6,
-                                durationColor = { 1, 1, 1, 1 }, durationUseTimeColor = true,
-                                showDurationColor = true, showExpiringPulse = true,
-                                filterMode = "off", onlyMine = false, hidePermanent = false, dedupeDefensives = true,
-                                classifications = { raid = false, raidInCombat = false, cancelable = false, notCancelable = false, important = false, bigDefensive = false, externalDefensive = false },
-                                whitelist = {}, blacklist = {},
-                            },
-                        },
-                    },
+                    -- NOTE: the default filter strips are NOT shipped here. An
+                    -- AceDB array default (elements["*"] = {debuffs, buffs}) had
+                    -- copyDefaults re-fill deleted array indices on every reload,
+                    -- so deleting a strip never persisted. The strips are seeded
+                    -- once per profile context via Model.EnsureSeeded instead.
                 },
                 privateAuras = {
                     enabled = true,
@@ -3132,36 +3107,11 @@ local defaults = {
                 range = { enabled = true, outOfRangeAlpha = 0.4 },
                 auras = {
                     enabled = true,
-                    elements = {
-                        ["*"] = {
-                            {
-                                id = "debuffs", enabled = true, mode = "filterStrip", auraType = "HARMFUL",
-                                anchor = "BOTTOMRIGHT", growDirection = "LEFT", spacing = 2,
-                                offsetX = -2, offsetY = -18, iconSize = 16, maxIcons = 3,
-                                hideSwipe = false, reverseSwipe = false,
-                                showDurationText = true, durationFontSize = 9,
-                                durationAnchor = "BOTTOM", durationOffsetX = 0, durationOffsetY = -6,
-                                durationColor = { 1, 1, 1, 1 }, durationUseTimeColor = true,
-                                showDurationColor = true, showExpiringPulse = true,
-                                filterMode = "off",
-                                classifications = { raid = true, raidInCombat = false, crowdControl = true, important = true },
-                                whitelist = {}, blacklist = {},
-                            },
-                            {
-                                id = "buffs", enabled = false, mode = "filterStrip", auraType = "HELPFUL",
-                                anchor = "TOPLEFT", growDirection = "RIGHT", spacing = 2,
-                                offsetX = 2, offsetY = 16, iconSize = 14, maxIcons = 0,
-                                hideSwipe = false, reverseSwipe = false,
-                                showDurationText = true, durationFontSize = 9,
-                                durationAnchor = "BOTTOM", durationOffsetX = 0, durationOffsetY = -6,
-                                durationColor = { 1, 1, 1, 1 }, durationUseTimeColor = true,
-                                showDurationColor = true, showExpiringPulse = true,
-                                filterMode = "off", onlyMine = false, hidePermanent = false, dedupeDefensives = true,
-                                classifications = { raid = false, raidInCombat = false, cancelable = false, notCancelable = false, important = false, bigDefensive = false, externalDefensive = false },
-                                whitelist = {}, blacklist = {},
-                            },
-                        },
-                    },
+                    -- NOTE: the default filter strips are NOT shipped here. An
+                    -- AceDB array default (elements["*"] = {debuffs, buffs}) had
+                    -- copyDefaults re-fill deleted array indices on every reload,
+                    -- so deleting a strip never persisted. The strips are seeded
+                    -- once per profile context via Model.EnsureSeeded instead.
                 },
                 privateAuras = {
                     enabled = true,

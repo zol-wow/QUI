@@ -38,7 +38,9 @@ ns.QUI_GroupFrameAuras = QUI_GFA
 -- Returns a list of { element = <element>, matches = <table|nil> } for the renderer.
 local function BuildElementRenderList(auras, specID, cache)
     local work = {}
-    if not auras or auras.enabled == false then return work end
+    if not auras then return work end
+    if AuraModel.EnsureSeeded then AuraModel.EnsureSeeded(auras) end
+    if auras.enabled == false then return work end
     local elements = AuraModel.ActiveElementsForSpec(auras, specID)
     for _, element in ipairs(elements) do
         local matches

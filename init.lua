@@ -270,11 +270,6 @@ QUI.defaults = {
     global = {
         ---@type string
         toggleOptionsKey = "",
-        -- Account-wide seal for the first-launch starter-profile install
-        -- (see core/first_run.lua + QUI_Options/first_run.lua). Set true once
-        -- the flow has run so it never repeats.
-        ---@type boolean
-        firstRunComplete = false,
     },
     char = {
         ---@type table
@@ -294,14 +289,17 @@ QUI.defaults = {
     }
 }
 
-function QUI:OnInitialize()
-    -- Fresh-install detection MUST run before the QuaziiUI_DB alias and
-    -- AceDB:New below, both of which populate QUI_DB. Once QUI_DB exists this
-    -- can never be true again, so it cannot false-positive on an existing
-    -- user. Published on ns for QUI_Options' first-run hook (see
-    -- core/first_run.lua + QUI_Options/first_run.lua).
-    local freshInstall = ns.FirstRun and ns.FirstRun.IsFreshInstall(QUI_DB, QuaziiUI_DB) or false
+-- OnNewProfile handler: seed a freshly-created profile with the shipped
+-- new-profile defaults. db.profile here is the new profile, already filled with
+-- legacy defaults by AceDB; we overwrite the curated keys on top BEFORE the
+-- first reader sees it. See core/new_profile_defaults.lua.
+function QUI:SeedNewProfile(event, db, profileKey)
+    if ns.ApplyNewProfileSeed then
+        ns.ApplyNewProfileSeed(db.profile)
+    end
+end
 
+function QUI:OnInitialize()
     -- Migrate old QuaziiUI_DB to QUI_DB if needed
     if QuaziiUI_DB and not QUI_DB then
         QUI_DB = QuaziiUI_DB
@@ -310,7 +308,13 @@ function QUI:OnInitialize()
     ---@type AceDBObject-3.0
     self.db = LibStub("AceDB-3.0"):New("QUI_DB", self.defaults, "Default")
 
-    ns._freshInstall = freshInstall
+    -- Seed every newly-created profile (including a fresh install's Default)
+    -- with the shipped new-profile defaults. Registered synchronously here,
+    -- before the Default profile is first materialized, so the seed lands
+    -- before any reader sees it -- no reload required. Copies fire
+    -- OnProfileCopied (not OnNewProfile) so they keep their source; existing
+    -- profiles already exist and never fire this.
+    self.db.RegisterCallback(self, "OnNewProfile", "SeedNewProfile")
 
     self:RegisterChatCommand("qui", "SlashCommandOpen")
     self:RegisterChatCommand("quaziiui", "SlashCommandOpen")

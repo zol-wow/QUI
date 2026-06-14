@@ -107,6 +107,7 @@ end
 local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, px, texturePath)
     local Model = ns.QUI_GroupFramesAuraModel
     if not Model or not Model.ActiveElementsForSpec then return end
+    if Model.EnsureSeeded then Model.EnsureSeeded(auras) end
     local IconLayout = ns.QUI_GroupFrameIconLayout
     local elements = Model.ActiveElementsForSpec(auras, GetPreviewSpecID())
     if not elements or #elements == 0 then return end
