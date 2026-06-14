@@ -6533,46 +6533,14 @@ return {
         chat = {
           enabled = false
         },
-        cooldownSwipe = {
-          showBuffSwipe = true,
-          showGCDSwipe = true
-        },
         ncdm = {
           buff = {
-            borderSize = 1,
-            durationAnchor = "TOP",
-            durationOffsetY = 8,
-            durationSize = 14,
-            iconSize = 32,
             ownedSpells = {
               [1] = {
                 id = 5512,
                 kind = "aura",
                 type = "item"
               }
-            },
-            padding = 4,
-            stackOffsetY = -8,
-            stackSize = 14
-          },
-          containers = {
-            buff = {
-              borderSize = 1,
-              durationAnchor = "TOP",
-              durationOffsetY = 8,
-              durationSize = 14,
-              iconSize = 32,
-              ownedSpells = {
-                [1] = {
-                  id = 5512,
-                  kind = "aura",
-                  type = "item"
-                }
-              },
-              padding = 4,
-              shape = "icon",
-              stackOffsetY = -8,
-              stackSize = 14
             }
           }
         },

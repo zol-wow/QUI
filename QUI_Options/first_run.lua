@@ -27,6 +27,20 @@ StaticPopupDialogs["QUI_FIRSTRUN_RELOAD"] = {
     showAlert = 1,
 }
 
+-- Shown when the active profile was too old to migrate (pre-3.5.11) and was
+-- reset to the Coco starter profile. The old settings are kept as a rollback
+-- backup; a reload applies the reseeded profile.
+StaticPopupDialogs["QUI_STARTER_RESEED_RELOAD"] = {
+    text = "Your QUI profile predates 3.5.11 and could no longer be upgraded, so it was reset to the Coco starter profile.\n\nYour previous settings were backed up. A UI reload is required to apply the new profile.",
+    button1 = "Reload Now",
+    button2 = "Later",
+    OnAccept = function() ReloadUI() end,
+    timeout = 0,
+    whileDead = 1,
+    hideOnEscape = 1,
+    showAlert = 1,
+}
+
 ns.WhenLoggedIn(function()
     local FirstRun = ns.FirstRun
     local core = ns.Addon
@@ -51,4 +65,22 @@ ns.WhenLoggedIn(function()
         end,
         notify       = print,
     })
+
+    -- Pre-3.5.11 floor reseed. The migration floor (core/migrations.lua) backs
+    -- up + wipes any profile older than 3.5.11 and flags it _needsStarterReseed.
+    -- Reseed Coco into those profiles now — the preset string and import engine
+    -- only exist here in QUI_Options. Independent of the fresh-install path
+    -- above (a true fresh install has no flagged profiles; an upgrade isn't a
+    -- fresh install), so both can't fire for the same profile.
+    if type(core.ReseedStarterFlaggedProfiles) == "function" then
+        local data = preset and preset.data
+        local okReseed, doneOrErr, activeReseeded = pcall(core.ReseedStarterFlaggedProfiles, core, data)
+        if okReseed and type(doneOrErr) == "number" and doneOrErr > 0 then
+            print(("|cff60A5FAQUI:|r Reset %d profile%s that predated 3.5.11 to the Coco starter profile (previous settings backed up)."):format(
+                doneOrErr, doneOrErr == 1 and "" or "s"))
+            if activeReseeded and StaticPopup_Show then
+                StaticPopup_Show("QUI_STARTER_RESEED_RELOAD")
+            end
+        end
+    end
 end)

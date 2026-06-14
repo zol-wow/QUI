@@ -6533,10 +6533,6 @@ return {
         chat = {
           enabled = false
         },
-        cooldownSwipe = {
-          showBuffSwipe = true,
-          showGCDSwipe = true
-        },
         ncdm = {
           containers = {
             ["customBar:mybar"] = {

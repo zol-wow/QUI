@@ -1026,7 +1026,7 @@ local PROFILE_IMPORT_CATEGORIES = {
         label = "Layout / Positions",
                 description = "Mover positions, frame placement, and tracked element offsets.",
         recommended = false,
-        topLevelKeys = { "frameAnchoring", "dandersFrames", "abilityTimeline", "blizzardMover", "layoutMode" },
+        topLevelKeys = { "frameAnchoring", "bigWigs", "dandersFrames", "abilityTimeline", "blizzardMover", "layoutMode" },
         paths = PROFILE_LAYOUT_PATHS,
     },
     {
@@ -1606,6 +1606,18 @@ local function ParseProfileImportString(core, str)
         return false, payloadErr or "Import failed profile validation."
     end
 
+    -- Reject pre-3.5.11 exports. The incremental migrations that would upgrade
+    -- them (v2–v31) were removed in 4.0; if such an export reached the import
+    -- pipeline its RunOnProfile pass would hit the schema floor and wipe the
+    -- ACTIVE profile (it imports in place). A schemaless export (no version) is
+    -- left alone — it takes the normal fresh-data path, not the floor.
+    local floor = ns.Migrations and ns.Migrations.MIN_SUPPORTED_SCHEMA
+    local importedSchema = tonumber(payload._schemaVersion)
+    if floor and importedSchema and importedSchema > 0 and importedSchema < floor then
+        return false, ("This profile is too old to import (it predates 3.5.11). Minimum supported version is %d; this profile is %d.")
+            :format(floor, importedSchema)
+    end
+
     return true, payload, prefix
 end
 
@@ -1934,7 +1946,7 @@ local function ApplyFullProfilePayload(core, importedProfile)
         -- below if the imported data actually needs migrating.
         -- Also exclude the transient bundle key — it's a payload carrier,
         -- not a profile field.
-        if key ~= "_migrationBackup" and key ~= PROFILE_EXPORT_GLOBALS_KEY then
+        if key ~= "_migrationBackup" and key ~= "_needsStarterReseed" and key ~= PROFILE_EXPORT_GLOBALS_KEY then
             profile[key] = CloneValue(value)
         end
     end
@@ -2236,11 +2248,13 @@ function QUICore:ExportProfileToString()
         return "No profile loaded."
     end
 
-    -- Shallow-copy so we can strip `_migrationBackup` (per-profile rollback
-    -- buffer, not user data) without mutating the live profile.
+    -- Shallow-copy so we can strip transient bookkeeping keys (`_migrationBackup`
+    -- per-profile rollback buffer; `_needsStarterReseed` floor flag) without
+    -- mutating the live profile. Neither is user data and both are meaningless
+    -- in another account.
     local payload = {}
     for k, v in pairs(self.db.profile) do
-        if k ~= "_migrationBackup" then
+        if k ~= "_migrationBackup" and k ~= "_needsStarterReseed" then
             payload[k] = v
         end
     end
@@ -2359,6 +2373,86 @@ function QUICore:ImportProfileFromValidatedPayload(payload, targetProfileName)
     end
 
     return RunImportFullProfile(self, payload, targetProfileName)
+end
+
+-- Reseed the bundled starter profile (Coco) into every profile the migration
+-- floor flagged with `_needsStarterReseed` (profiles older than 3.5.11, which
+-- were backed up + wiped because their incremental migrations were removed in
+-- 4.0). Runs at login from QUI_Options, where the preset string and import
+-- engine live. Decodes the preset once, then imports it into each flagged
+-- profile by name (the import path heals it to the current schema), preserving
+-- the floor's rollback backup, and restores the originally-active profile.
+--
+-- Returns: count reseeded, activeReseeded(boolean). The caller prompts a UI
+-- reload only when the active profile was among them (its modules already
+-- initialized on the wiped data and need a reload to pick up the reseed).
+function QUICore:ReseedStarterFlaggedProfiles(cocoStr)
+    local db = self.db
+    if not db or not db.sv or type(db.sv.profiles) ~= "table" then
+        return 0, false
+    end
+    if type(cocoStr) ~= "string" or cocoStr == "" then
+        return 0, false
+    end
+
+    -- Collect flagged profile names from the raw SV.
+    local flagged = {}
+    for name, raw in pairs(db.sv.profiles) do
+        if type(raw) == "table" and rawget(raw, "_needsStarterReseed") then
+            flagged[#flagged + 1] = name
+        end
+    end
+    if #flagged == 0 then
+        return 0, false
+    end
+
+    -- Decode the preset once (strict, then auto-sanitize fallback).
+    local ok, payloadOrErr = ParseProfileImportString(self, cocoStr)
+    if not ok then
+        local sok, sanitized = self:SanitizeProfileImportString(cocoStr)
+        if not sok then
+            -- Can't decode the bundled preset — clear the flags so we don't
+            -- retry every login; the floored profiles keep QUI defaults.
+            for _, name in ipairs(flagged) do
+                rawset(db.sv.profiles[name], "_needsStarterReseed", nil)
+            end
+            return 0, false
+        end
+        payloadOrErr = sanitized
+    end
+
+    local origName = (db.GetCurrentProfile and db:GetCurrentProfile())
+        or (db.keys and db.keys.profile)
+    local activeReseeded = false
+    local done = 0
+
+    for _, name in ipairs(flagged) do
+        local raw = db.sv.profiles[name]
+        -- The floor stored a rollback snapshot under "_migrationBackup"; the
+        -- import wipes the profile, so capture it and re-attach afterwards.
+        local backup = raw and rawget(raw, "_migrationBackup")
+        local importOK = self:ImportProfileFromValidatedPayload(CloneValue(payloadOrErr), name)
+        if importOK then
+            -- `name` is the active profile now; db.profile is its live table.
+            if backup ~= nil then
+                db.profile._migrationBackup = backup
+            end
+            db.profile._needsStarterReseed = nil
+            done = done + 1
+            if name == origName then
+                activeReseeded = true
+            end
+        else
+            rawset(raw, "_needsStarterReseed", nil)
+        end
+    end
+
+    -- Return to the profile that was active before reseeding.
+    if origName and db.SetProfile then
+        pcall(db.SetProfile, db, origName)
+    end
+
+    return done, activeReseeded
 end
 
 function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs, targetProfileName)

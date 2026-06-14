@@ -7115,7 +7115,6 @@ return {
               [3] = 0.070000000000000007,
               [4] = 0.80000000000000004
             },
-            borderSize = 1,
             colorMode = "custom",
             customColor = {
               [1] = 0.90000000000000002,
@@ -7124,11 +7123,7 @@ return {
               [4] = 1
             },
             height = 18,
-            lockedToEssential = false,
             textSize = 15,
-            textX = 1,
-            textY = 3,
-            tickThickness = 2,
             width = 321
           },
           secondaryPowerBar = {
@@ -7140,12 +7135,7 @@ return {
               [4] = 1
             },
             height = 13,
-            lockedToEssential = false,
-            lockedToPrimary = true,
-            showText = true,
-            textSize = 14,
-            tickThickness = 2,
-            width = 326
+            showText = true
           }
         },
         powerBar = {
@@ -7155,7 +7145,6 @@ return {
             [3] = 0.070000000000000007,
             [4] = 0.80000000000000004
           },
-          borderSize = 1,
           colorMode = "custom",
           customColor = {
             [1] = 0.90000000000000002,
@@ -7163,11 +7152,7 @@ return {
             [3] = 0.25
           },
           height = 18,
-          lockedToEssential = false,
           textSize = 15,
-          textX = 1,
-          textY = 3,
-          tickThickness = 2,
           width = 321
         },
         quiGroupFrames = {
@@ -7270,12 +7255,7 @@ return {
             [3] = 0.40000000000000002
           },
           height = 13,
-          lockedToEssential = false,
-          lockedToPrimary = true,
-          showText = true,
-          textSize = 14,
-          tickThickness = 2,
-          width = 326
+          showText = true
         }
       }
     }
