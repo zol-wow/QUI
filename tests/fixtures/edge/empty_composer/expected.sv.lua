@@ -3980,6 +3980,8 @@ return {
             },
             healer = {
               defensiveIndicator = {
+                durationTextOverride = false,
+                durationTextSize = 12,
                 enabled = false,
                 growDirection = "RIGHT",
                 iconSize = 16,
@@ -4261,6 +4263,8 @@ return {
             },
             healer = {
               defensiveIndicator = {
+                durationTextOverride = false,
+                durationTextSize = 12,
                 enabled = false,
                 growDirection = "RIGHT",
                 iconSize = 16,

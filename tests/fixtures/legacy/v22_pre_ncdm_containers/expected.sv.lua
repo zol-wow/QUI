@@ -3980,6 +3980,8 @@ return {
             },
             healer = {
               defensiveIndicator = {
+                durationTextOverride = false,
+                durationTextSize = 12,
                 enabled = false,
                 growDirection = "RIGHT",
                 iconSize = 16,
@@ -4261,6 +4263,8 @@ return {
             },
             healer = {
               defensiveIndicator = {
+                durationTextOverride = false,
+                durationTextSize = 12,
                 enabled = false,
                 growDirection = "RIGHT",
                 iconSize = 16,
@@ -7124,7 +7128,8 @@ return {
               ["824"] = false
             },
             currencyOrder = {
-              [1] = "3347"
+              [1] = "3347",
+              [2] = "3345"
             }
           },
           enabled = true,
@@ -8096,7 +8101,7 @@ return {
           yOffset = -590
         },
         configPanelAlpha = 0.90000000000000002,
-        configPanelWidth = 1199.999877929688,
+        configPanelWidth = 1136.9384765625,
         cooldownEffects = {
           hideEssential = false
         },
@@ -13818,6 +13823,7 @@ return {
               [254] = {},
               [258] = {},
               [260] = {},
+              [263] = {},
               [268] = {},
               [577] = {},
               [581] = {},
@@ -13940,6 +13946,7 @@ return {
               opacity = 0.70000000000000007
             },
             auras = {
+              _specBucketsNormalized = true,
               buffOffsetX = 0,
               buffOffsetY = 0,
               debuffBlacklist = {
@@ -13958,112 +13965,55 @@ return {
               debuffOffsetY = 0,
               debuffSpacing = 0,
               elements = {
-                [263] = {
+                ["*"] = {
                   [1] = {
-                    anchor = "CENTER",
+                    anchor = "BOTTOMLEFT",
                     auraType = "HARMFUL",
-                    bar = {
-                      borderSize = 1,
-                      length = 40,
-                      lowTimeThreshold = 0,
-                      matchFrameSize = false,
-                      orientation = "HORIZONTAL",
-                      thickness = 10
+                    blacklist = {
+                      [26013] = true,
+                      [57723] = true,
+                      [57724] = true,
+                      [71041] = true,
+                      [80354] = true,
+                      [95809] = true,
+                      [160455] = true,
+                      [264689] = true,
+                      [390435] = true
                     },
-                    blacklist = {},
-                    classifications = {
-                      crowdControl = true,
-                      important = true,
-                      raid = true,
-                      raidInCombat = false
-                    },
-                    color = {
-                      [1] = 1,
-                      [2] = 1,
-                      [3] = 1
-                    },
-                    displayType = "bar",
-                    durationAnchor = "BOTTOM",
-                    durationColor = {
-                      [1] = 1,
-                      [2] = 1,
-                      [3] = 1,
-                      [4] = 1
-                    },
-                    durationFontSize = 9,
-                    durationOffsetX = 0,
-                    durationOffsetY = -6,
-                    durationUseTimeColor = true,
-                    enabled = true,
-                    filterMode = "off",
-                    growDirection = "CENTER",
-                    healthTint = {},
-                    hideSwipe = false,
-                    iconSize = 20,
-                    id = "e5",
-                    maxIcons = 0,
-                    mode = "tracked",
-                    offsetX = 0,
-                    offsetY = 0,
-                    onlyMine = false,
-                    onlyMineSpells = {},
-                    reverseSwipe = false,
-                    showDurationColor = true,
-                    showDurationText = false,
-                    showExpiringPulse = true,
-                    spacing = 2,
-                    spells = {
-                      [1] = 224127
-                    },
-                    whitelist = {}
-                  },
-                  [2] = {
-                    anchor = "TOPLEFT",
-                    auraType = "HELPFUL",
-                    blacklist = {},
                     classifications = {
                       bigDefensive = false,
                       cancelable = false,
+                      crowdControl = true,
                       externalDefensive = false,
-                      important = false,
+                      important = true,
                       notCancelable = false,
                       raid = false,
-                      raidInCombat = false
+                      raidInCombat = true
                     },
                     dedupeDefensives = true,
-                    durationAnchor = "BOTTOM",
-                    durationColor = {
-                      [1] = 1,
-                      [2] = 1,
-                      [3] = 1,
-                      [4] = 1
-                    },
-                    durationFontSize = 9,
-                    durationOffsetX = 0,
-                    durationOffsetY = -6,
-                    durationUseTimeColor = true,
-                    enabled = false,
-                    filterMode = "off",
+                    durationFontSize = 10,
+                    enabled = true,
+                    filterMode = "classification",
                     growDirection = "RIGHT",
-                    hidePermanent = false,
+                    hidePermanent = true,
                     hideSwipe = false,
                     iconSize = 14,
-                    id = "buffs",
-                    maxIcons = 0,
+                    id = "e5",
+                    maxIcons = 3,
                     mode = "filterStrip",
-                    offsetX = 2,
-                    offsetY = 16,
+                    offsetX = 0,
+                    offsetY = 0,
                     onlyMine = false,
                     reverseSwipe = false,
                     showDurationColor = true,
                     showDurationText = true,
-                    showExpiringPulse = true,
-                    spacing = 2,
+                    showExpiringPulse = false,
+                    spacing = 0,
                     whitelist = {}
                   }
-                },
-                ["*"] = {}
+                }
               },
+              elementsSeeded = true,
               filterMode = "classification",
               showBuffs = true
             },
@@ -14072,11 +14022,15 @@ return {
             },
             healer = {
               defensiveIndicator = {
+                enabled = true,
+                growDirection = "LEFT",
                 iconSize = 15,
                 offsetY = 4,
-                position = "BOTTOMLEFT"
+                position = "BOTTOMRIGHT",
+                spacing = 0
               },
               dispelOverlay = {
+                enabled = false,
                 fillOpacity = 0.20000000000000001
               },
               targetHighlight = {
@@ -14123,7 +14077,6 @@ return {
             privateAuras = {
               anchor = "CENTER",
               anchorOffsetX = 0,
-              enabled = false,
               iconSize = 25,
               spacing = 0,
               textScale = 0.5
@@ -14181,6 +14134,7 @@ return {
               maxIndicators = 3
             },
             auras = {
+              _specBucketsNormalized = true,
               buffBlacklist = {
                 [1126] = true,
                 [1459] = true,
@@ -14216,184 +14170,27 @@ return {
                 [250] = {
                   [1] = {
                     anchor = "TOP",
-                    auraType = "HARMFUL",
-                    blacklist = {},
-                    classifications = {
-                      crowdControl = true,
-                      important = true,
-                      raid = true,
-                      raidInCombat = false
-                    },
                     color = {
                       [1] = 1,
                       [2] = 1,
                       [3] = 1
                     },
                     displayType = "icon",
-                    durationAnchor = "BOTTOM",
-                    durationColor = {
-                      [1] = 1,
-                      [2] = 1,
-                      [3] = 1,
-                      [4] = 1
-                    },
-                    durationFontSize = 9,
-                    durationOffsetX = 0,
-                    durationOffsetY = -6,
-                    durationUseTimeColor = true,
-                    enabled = true,
-                    filterMode = "off",
-                    growDirection = "LEFT",
                     hideSwipe = true,
                     iconSize = 8,
-                    id = "debuffs",
-                    maxIcons = 3,
                     mode = "tracked",
                     offsetX = 0,
                     offsetY = 0,
                     onlyMine = false,
                     onlyMineSpells = {},
-                    reverseSwipe = false,
-                    showDurationColor = true,
-                    showDurationText = true,
-                    showExpiringPulse = true,
-                    spacing = 2,
                     spells = {
                       [1] = 31821
-                    },
-                    whitelist = {}
-                  },
-                  [2] = {
-                    anchor = "TOPLEFT",
-                    auraType = "HELPFUL",
-                    blacklist = {},
-                    classifications = {
-                      bigDefensive = false,
-                      cancelable = false,
-                      externalDefensive = false,
-                      important = false,
-                      notCancelable = false,
-                      raid = false,
-                      raidInCombat = false
-                    },
-                    dedupeDefensives = true,
-                    durationAnchor = "BOTTOM",
-                    durationColor = {
-                      [1] = 1,
-                      [2] = 1,
-                      [3] = 1,
-                      [4] = 1
-                    },
-                    durationFontSize = 9,
-                    durationOffsetX = 0,
-                    durationOffsetY = -6,
-                    durationUseTimeColor = true,
-                    enabled = false,
-                    filterMode = "off",
-                    growDirection = "RIGHT",
-                    hidePermanent = false,
-                    hideSwipe = false,
-                    iconSize = 14,
-                    id = "buffs",
-                    maxIcons = 0,
-                    mode = "filterStrip",
-                    offsetX = 2,
-                    offsetY = 16,
-                    onlyMine = false,
-                    reverseSwipe = false,
-                    showDurationColor = true,
-                    showDurationText = true,
-                    showExpiringPulse = true,
-                    spacing = 2,
-                    whitelist = {}
-                  }
-                },
-                [263] = {
-                  [1] = {
-                    anchor = "BOTTOMRIGHT",
-                    auraType = "HARMFUL",
-                    blacklist = {},
-                    classifications = {
-                      crowdControl = true,
-                      important = true,
-                      raid = true,
-                      raidInCombat = false
-                    },
-                    durationAnchor = "BOTTOM",
-                    durationColor = {
-                      [1] = 1,
-                      [2] = 1,
-                      [3] = 1,
-                      [4] = 1
-                    },
-                    durationFontSize = 9,
-                    durationOffsetX = 0,
-                    durationOffsetY = -6,
-                    durationUseTimeColor = true,
-                    enabled = true,
-                    filterMode = "off",
-                    growDirection = "LEFT",
-                    hideSwipe = false,
-                    iconSize = 16,
-                    id = "debuffs",
-                    maxIcons = 3,
-                    mode = "filterStrip",
-                    offsetX = -2,
-                    offsetY = -18,
-                    reverseSwipe = false,
-                    showDurationColor = true,
-                    showDurationText = true,
-                    showExpiringPulse = true,
-                    spacing = 2,
-                    whitelist = {}
-                  },
-                  [2] = {
-                    anchor = "TOPLEFT",
-                    auraType = "HELPFUL",
-                    blacklist = {},
-                    classifications = {
-                      bigDefensive = false,
-                      cancelable = false,
-                      externalDefensive = false,
-                      important = false,
-                      notCancelable = false,
-                      raid = false,
-                      raidInCombat = false
-                    },
-                    dedupeDefensives = true,
-                    durationAnchor = "BOTTOM",
-                    durationColor = {
-                      [1] = 1,
-                      [2] = 1,
-                      [3] = 1,
-                      [4] = 1
-                    },
-                    durationFontSize = 9,
-                    durationOffsetX = 0,
-                    durationOffsetY = -6,
-                    durationUseTimeColor = true,
-                    enabled = false,
-                    filterMode = "off",
-                    growDirection = "RIGHT",
-                    hidePermanent = false,
-                    hideSwipe = false,
-                    iconSize = 14,
-                    id = "buffs",
-                    maxIcons = 0,
-                    mode = "filterStrip",
-                    offsetX = 2,
-                    offsetY = 16,
-                    onlyMine = false,
-                    reverseSwipe = false,
-                    showDurationColor = true,
-                    showDurationText = true,
-                    showExpiringPulse = true,
-                    spacing = 2,
-                    whitelist = {}
+                    }
                   }
                 },
                 ["*"] = {}
               },
+              elementsSeeded = true,
               filterMode = "classification",
               maxBuffs = 2,
               maxDebuffs = 2,
@@ -15775,6 +15572,7 @@ return {
               [254] = {},
               [258] = {},
               [260] = {},
+              [263] = {},
               [268] = {},
               [577] = {},
               [581] = {},

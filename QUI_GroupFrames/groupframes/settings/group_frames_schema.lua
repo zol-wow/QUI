@@ -2038,6 +2038,21 @@ local function RenderDefensiveSection(sectionHost, ctx)
     controlledRows[#controlledRows + 1] = yOffsetRow
     card.AddRow(yOffsetRow)
 
+    -- Countdown text size. Off = Blizzard's native number that auto-scales with
+    -- the icon (unchanged on upgrade); on = a fixed pixel size applied to the
+    -- cooldown countdown font in UpdateDefensiveIndicator.
+    local durationOverrideCheckbox = gui:CreateFormCheckbox(card.frame, nil, "durationTextOverride", defensive, refresh, {
+        description = "Override the auto-scaled countdown number size with a fixed value. Off uses Blizzard's native size that scales with the icon.",
+    })
+    local durationOverrideRow = optionsAPI.BuildSettingRow(card.frame, "Custom Duration Size", durationOverrideCheckbox)
+    controlledRows[#controlledRows + 1] = durationOverrideRow
+    local durationSizeSlider = gui:CreateFormSlider(card.frame, nil, 6, 24, 1, "durationTextSize", defensive, refresh, { deferOnDrag = true }, {
+        description = "Pixel size of the countdown number when Custom Duration Size is on.",
+    })
+    local durationSizeRow = optionsAPI.BuildSettingRow(card.frame, "Duration Text Size", durationSizeSlider)
+    controlledRows[#controlledRows + 1] = durationSizeRow
+    card.AddRow(durationOverrideRow, durationSizeRow)
+
     UpdateDefensiveRows()
     builder.CloseCard(card)
     return builder.Height()

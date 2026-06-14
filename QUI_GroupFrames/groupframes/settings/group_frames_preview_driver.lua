@@ -854,7 +854,7 @@ local DEF_GROW = {
     UP     = function(s, sp) return 0, s + sp end,
     DOWN   = function(s, sp) return 0, -(s + sp) end,
 }
-local function ApplyDefensive(f, healer, allowed)
+local function ApplyDefensive(f, healer, allowed, font)
     if allowed == false then
         if f._defIcons then for _, ic in ipairs(f._defIcons) do ic:Hide() end end
         return
@@ -901,6 +901,25 @@ local function ApplyDefensive(f, healer, allowed)
             if ic._cd then
                 if ic._cd.SetReverse then ic._cd:SetReverse(reverseSwipe) end
                 if ic._cd.SetCooldown then ic._cd:SetCooldown(GetTime and GetTime() or 0, 12) end
+                -- Mirror the live frame's opt-in countdown-text size override so the
+                -- slider gives immediate preview feedback. nil = native auto-scale.
+                local defFontSize = (cfg.durationTextOverride and tonumber(cfg.durationTextSize)) or nil
+                if ic._cd._quiCdFontSize ~= defFontSize and ic._cd.GetCountdownFontString then
+                    local okT, cdText = pcall(ic._cd.GetCountdownFontString, ic._cd)
+                    if okT and cdText and cdText.SetFont then
+                        if defFontSize then
+                            if not ic._cd._quiOrigFont then
+                                local nm, sz, fl = cdText:GetFont()
+                                if nm then ic._cd._quiOrigFont = { nm, sz, fl } end
+                            end
+                            cdText:SetFont(font, defFontSize, "OUTLINE")
+                        elseif ic._cd._quiOrigFont and ic._cd._quiOrigFont[1] then
+                            local o = ic._cd._quiOrigFont
+                            cdText:SetFont(o[1], o[2] or 12, o[3] or "")
+                        end
+                        ic._cd._quiCdFontSize = defFontSize
+                    end
+                end
             end
             ic:ClearAllPoints()
             ic:SetPoint(position, f, position,
@@ -977,7 +996,7 @@ local function ApplyFrameSettings(f, member, vdb, gfdb, contextMode)
     ApplyTargetHighlight(f, vdb.healer, member._sampleTarget == true and F.highlights ~= false)
     ApplyDispelOverlay(f, vdb.healer, (F.dispel ~= false) and member._sampleDispel or nil)
     ApplyPrivateAuras(f, vdb.privateAuras, F.highlights ~= false)
-    ApplyDefensive(f, vdb.healer, F.highlights ~= false)
+    ApplyDefensive(f, vdb.healer, F.highlights ~= false, font)
     ApplyPets(f, vdb.pets, member._samplePet == true and F.highlights ~= false)
     ApplyRangeFade(f, vdb.range, member._sampleOOR == true)
 end

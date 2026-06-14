@@ -148,6 +148,47 @@ function Model.EnsureSeeded(auras)
         end
     end
 
+    -- One-time id backfill (own flag, runs even on already-seeded profiles).
+    -- Every element MUST carry a unique id: the render reconciliation keys its
+    -- "rendered last pass" set on element.id (groupframes_auras.lua + the preview
+    -- driver), so a nil id throws "table index is nil" and a duplicate id makes
+    -- one element release the other. Legacy/imported buckets can contain elements
+    -- that predate the id scheme (or lost it), so heal them here. Also advances
+    -- idCounter past any persisted "eN" ids so future nextId() calls never collide
+    -- with what's already on disk.
+    if not auras._elementIDsBackfilled and type(auras.elements) == "table" then
+        auras._elementIDsBackfilled = true
+        local used = {}
+        for _, bucket in pairs(auras.elements) do
+            if type(bucket) == "table" then
+                for _, e in ipairs(bucket) do
+                    local id = type(e) == "table" and e.id
+                    if id ~= nil then
+                        used[id] = (used[id] or 0) + 1
+                        local n = type(id) == "string" and tonumber(id:match("^e(%d+)$"))
+                        if n and n > idCounter then idCounter = n end
+                    end
+                end
+            end
+        end
+        for _, bucket in pairs(auras.elements) do
+            if type(bucket) == "table" then
+                for _, e in ipairs(bucket) do
+                    if type(e) == "table" then
+                        local id = e.id
+                        if id == nil or used[id] > 1 then
+                            if id ~= nil then used[id] = used[id] - 1 end
+                            local newId = nextId()
+                            while used[newId] do newId = nextId() end
+                            e.id = newId
+                            used[newId] = 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+
     if auras.elementsSeeded then return end
     auras.elementsSeeded = true
     auras.elements = auras.elements or {}

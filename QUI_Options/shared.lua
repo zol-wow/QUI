@@ -42,6 +42,27 @@ end
 
 function ns.ApplyScrollWheel(scrollFrame)
     scrollFrame:EnableMouseWheel(true)
+
+    -- Break the deprecated UIPanelScrollFrameTemplate feedback loop. SetVerticalScroll
+    -- fires ScrollFrame_OnVerticalScroll -> scrollbar:SetValue ->
+    -- UIPanelScrollBar_OnValueChanged -> GetParent():SetVerticalScroll. Float drift
+    -- between the frame's scroll offset and the bar's value can keep that bouncing
+    -- until the C stack overflows (SecureScrollTemplates SetValue recursion). Shadow
+    -- the method so a set to (effectively) the current offset short-circuits, letting
+    -- the bounce terminate. Installed once; these are non-secure options frames.
+    if not scrollFrame._quiScrollGuard then
+        scrollFrame._quiScrollGuard = true
+        local rawSet = scrollFrame.SetVerticalScroll
+        scrollFrame.SetVerticalScroll = function(self, value)
+            local okCur, cur = pcall(self.GetVerticalScroll, self)
+            if okCur and type(cur) == "number" and type(value) == "number"
+                and math.abs(value - cur) < 0.5 then
+                return
+            end
+            return rawSet(self, value)
+        end
+    end
+
     scrollFrame:SetScript("OnMouseWheel", function(self, delta)
         local currentScroll = GetSafeVerticalScroll(self)
         local maxScroll = GetSafeVerticalScrollRange(self)

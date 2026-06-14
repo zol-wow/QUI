@@ -1105,13 +1105,13 @@ local function ReleaseAllRenderedElements(frame, Render)
     local prev = frame._quiRenderedAuraElementIDs
     if prev then
         for id in pairs(prev) do
-            Render:Release(Render, frame, id)
+            Render:Release(frame, id)
             prev[id] = nil
         end
     end
     -- A health-tint element may own the tint without a tracked id snapshot.
     if frame._quiAuraRenderHealthTintOwner then
-        Render:Release(Render, frame, frame._quiAuraRenderHealthTintOwner)
+        Render:Release(frame, frame._quiAuraRenderHealthTintOwner)
     end
 end
 
@@ -1258,7 +1258,11 @@ local function RenderFrameElements(frame, cache, dirty)
     -- Release element ids that rendered last pass but are gone this pass.
     for id in pairs(rendered) do
         if not current[id] then
-            Render:Release(Render, frame, id)
+            -- `:` already passes Render as self; R.Release(self, frame, elementID).
+            -- The old `Render:Release(Render, frame, id)` shifted args (frame=Render,
+            -- elementID=frame), so removed elements never actually released and their
+            -- icons lingered on live frames until a /reload rebuilt them.
+            Render:Release(frame, id)
         end
     end
     -- Snapshot the current set for the next pass (reuse the table).
@@ -1268,7 +1272,7 @@ local function RenderFrameElements(frame, cache, dirty)
     -- removed) must be cleared too.
     local tintOwner = frame._quiAuraRenderHealthTintOwner
     if tintOwner and not current[tintOwner] then
-        Render:Release(Render, frame, tintOwner)
+        Render:Release(frame, tintOwner)
     end
 end
 QUI_GFA.RenderFrameElements = RenderFrameElements

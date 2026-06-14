@@ -179,4 +179,33 @@ test("EnsureSeeded: ignores non-table input", function()
     Model.EnsureSeeded(nil)  -- must not error
 end)
 
+test("EnsureSeeded: backfills nil element ids (render keys on element.id)", function()
+    -- Legacy/imported spec bucket with an id-less tracked element -> render
+    -- reconciliation did `current[element.id] = true` and threw "table index is nil".
+    local idless = { mode = "tracked", spells = { 31821 }, displayType = "icon" }
+    local auras = { enabled = true, elementsSeeded = true, elements = { [250] = { idless } } }
+    Model.EnsureSeeded(auras)
+    assert(type(idless.id) == "string" and idless.id ~= "", "nil id must be healed")
+end)
+
+test("EnsureSeeded: backfill is one-time (own flag) and assigns unique ids", function()
+    local a = { mode = "tracked", spells = { 1 } }
+    local b = { mode = "tracked", spells = { 2 } }
+    local auras = { enabled = true, elementsSeeded = true, elements = { ["*"] = { a, b } } }
+    Model.EnsureSeeded(auras)
+    assert(auras._elementIDsBackfilled == true)
+    assert(a.id ~= nil and b.id ~= nil and a.id ~= b.id, "ids must be unique")
+    local firstA = a.id
+    Model.EnsureSeeded(auras)  -- second call must not re-touch
+    assert(a.id == firstA, "backfill must not re-run")
+end)
+
+test("EnsureSeeded: duplicate ids are split", function()
+    local a = { id = "e1", mode = "tracked", spells = { 1 } }
+    local b = { id = "e1", mode = "tracked", spells = { 2 } }
+    local auras = { enabled = true, elementsSeeded = true, elements = { ["*"] = { a, b } } }
+    Model.EnsureSeeded(auras)
+    assert(a.id ~= b.id, "shared id must be split so render keys stay distinct")
+end)
+
 print("ALL PASS")
