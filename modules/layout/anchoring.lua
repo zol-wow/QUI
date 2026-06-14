@@ -3374,6 +3374,33 @@ C_Timer.After(0, function()
     HookRefreshGlobal("QUI_RefreshFocusCastAlert")
 end)
 
+-- Explicit post-update hooks — replaces the capture-and-rewrap pattern on
+-- _G.QUI_UpdateAnchoredFrames. Registration is idempotent by name (re-
+-- registering replaces the slot in place), hooks run in first-registration
+-- order, each isolated by pcall. Integrations register here instead of
+-- wrapping the global.
+local anchoredFramesPostHooks = {}   -- array of { name = string, fn = function }
+
+function QUI_Anchoring.RegisterAnchoredFramesPostHook(name, fn)
+    if type(name) ~= "string" or type(fn) ~= "function" then return end
+    for _, hook in ipairs(anchoredFramesPostHooks) do
+        if hook.name == name then
+            hook.fn = fn
+            return
+        end
+    end
+    anchoredFramesPostHooks[#anchoredFramesPostHooks + 1] = { name = name, fn = fn }
+end
+
+local function RunAnchoredFramesPostHooks(...)
+    for _, hook in ipairs(anchoredFramesPostHooks) do
+        local ok, err = pcall(hook.fn, ...)
+        if not ok then
+            print("|cFFFF6666QUI:|r anchored-frames hook error [" .. hook.name .. "]: " .. tostring(err))
+        end
+    end
+end
+
 -- Global callback for updating anchored frames (called by NCDM, resource bars, etc.)
 -- Preserve any existing unit-frame updater to avoid breaking legacy anchoring.
 local previousUpdateAnchoredFrames = _G.QUI_UpdateAnchoredFrames
@@ -3389,6 +3416,7 @@ _G.QUI_UpdateAnchoredFrames = function(...)
     end
     -- Reapply frame anchoring overrides after modules finish repositioning
     DebouncedReapplyOverrides()
+    RunAnchoredFramesPostHooks(...)
 end
 
 -- Backward compatibility aliases that also honor any pre-existing unit-frame updater

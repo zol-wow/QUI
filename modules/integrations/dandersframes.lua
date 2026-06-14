@@ -372,13 +372,12 @@ function QUI_DandersFrames:Initialize()
     self:ApplyAllPositions()
     RegisterLayoutModeElements()
 
-    -- Hook into CDM layout update callback
-    local previousUpdateAnchoredFrames = _G.QUI_UpdateAnchoredFrames
-    if previousUpdateAnchoredFrames then
-        _G.QUI_UpdateAnchoredFrames = function(...)
-            previousUpdateAnchoredFrames(...)
+    -- Hook into CDM layout update callback (idempotent — re-running this
+    -- method replaces the hook slot instead of double-wrapping)
+    if ns.QUI_Anchoring and ns.QUI_Anchoring.RegisterAnchoredFramesPostHook then
+        ns.QUI_Anchoring.RegisterAnchoredFramesPostHook("dandersframes", function()
             QUI_DandersFrames:ApplyAllPositions()
-        end
+        end)
     end
 
     -- Re-apply QUI anchors right after Danders test mode shows preview containers.

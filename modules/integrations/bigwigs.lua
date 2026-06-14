@@ -146,16 +146,12 @@ local function TryInstallAnchoredFramesHook()
     if anchoredFramesHookInstalled then
         return true
     end
-
-    local previousUpdateAnchoredFrames = _G.QUI_UpdateAnchoredFrames
-    if not previousUpdateAnchoredFrames then
+    if not (ns.QUI_Anchoring and ns.QUI_Anchoring.RegisterAnchoredFramesPostHook) then
         return false
     end
-
-    _G.QUI_UpdateAnchoredFrames = function(...)
-        previousUpdateAnchoredFrames(...)
+    ns.QUI_Anchoring.RegisterAnchoredFramesPostHook("bigwigs", function()
         QUI_BigWigs:ApplyAllPositions()
-    end
+    end)
     anchoredFramesHookInstalled = true
     return true
 end
