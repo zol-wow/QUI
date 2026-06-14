@@ -427,6 +427,177 @@ function FullSurface.BuildDropdownPreviewBlock(parent, options)
     }
 end
 
+-- Union bounding box (width, height) of a frame plus all its descendant
+-- frames/regions, in screen pixels. Used to size a preview panel to the
+-- cell's *actual* extent including icons that hang outside the cell rect.
+-- Returns 0,0 if nothing is laid out yet (caller should retry next frame).
+function FullSurface.MeasureRenderedExtent(root)
+    if not root then return 0, 0 end
+    local L, R, T, B
+    local function acc(region)
+        if not region or not region.GetLeft or not region.IsShown or not region:IsShown() then return end
+        local l, r, t, b = region:GetLeft(), region:GetRight(), region:GetTop(), region:GetBottom()
+        if not (l and r and t and b) then return end
+        if L == nil or l < L then L = l end
+        if R == nil or r > R then R = r end
+        if T == nil or t > T then T = t end
+        if B == nil or b < B then B = b end
+    end
+    acc(root)
+    local function walk(f)
+        if f.GetChildren then
+            for _, c in ipairs({ f:GetChildren() }) do acc(c); walk(c) end
+        end
+        if f.GetRegions then
+            for _, rg in ipairs({ f:GetRegions() }) do acc(rg) end
+        end
+    end
+    walk(root)
+    if L == nil then return 0, 0 end
+    return (R - L), (T - B)
+end
+
+-- Reusable preview panel docked to the right edge of the options window.
+-- opts: { gui, window?, title?, gap?, pad?, headerHeight?, minWidth?, idSuffix? }
+-- Returns: { frame, contentHost, Show, Hide, SetTitle, Resize }
+function FullSurface.CreateDockedPreviewPanel(opts)
+    opts = opts or {}
+    local gui = opts.gui or (_G.QUI and _G.QUI.GUI)
+    -- Prefer gui.MainFrame over the _G.QUI_Options global: the global can be left
+    -- stale (pointing at an old, torn-down window) after a theme-change rebuild.
+    local window = opts.window or (gui and gui.MainFrame) or _G.QUI_Options
+    if not gui or not window then return nil end
+
+    local Helpers = ns.Helpers
+    local UIKit = ns.UIKit
+    local C = gui.Colors or {}
+    local bg = C.bg or { 0.06, 0.06, 0.06 }
+    local border = C.border or { 0.22, 0.22, 0.22 }
+
+    local GAP = opts.gap or 6
+    local PAD = opts.pad or 8
+    local HEADER_H = opts.headerHeight or 22
+    local MIN_W = opts.minWidth or 140
+
+    -- Anonymous (no global name): the host window is torn down + recreated on
+    -- theme change, so this panel is rebuilt against the new window; a fixed
+    -- global name would collide across rebuilds.
+    local panel = CreateFrame("Frame", nil, window, "BackdropTemplate")
+    panel:SetFrameStrata("FULLSCREEN_DIALOG")
+    panel:SetFrameLevel((window:GetFrameLevel() or 500) + 5)
+    panel:SetClampedToScreen(true)
+    panel:SetSize(MIN_W + PAD * 2, HEADER_H + PAD * 2 + 40)
+    panel:Hide()
+    -- Themed pixel-perfect backdrop matching QUI settings panels (the
+    -- framework CreateBackdrop pattern: 1px edge via GetPixelSize, C.bg/C.border
+    -- with their own alpha). Persist via Helpers + re-apply on scale change so
+    -- the border stays a single physical pixel and colors survive a refresh.
+    local QUICore = ns.Addon
+    local function ApplyBackdrop()
+        -- If the host window was torn down (theme change), this panel is an
+        -- orphan pending rebuild; don't touch a dead frame on scale refresh.
+        if not panel:GetParent() then return end
+        local px = (QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(panel)) or 1
+        panel:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = px,
+        })
+        Helpers.SetFrameBackdropColor(panel, bg[1], bg[2], bg[3], bg[4] or 1)
+        Helpers.SetFrameBackdropBorderColor(panel, border[1], border[2], border[3], border[4] or 1)
+    end
+    ApplyBackdrop()
+    if UIKit and UIKit.RegisterScaleRefresh then
+        UIKit.RegisterScaleRefresh(panel, "dockedPreviewPanel" .. (opts.idSuffix or ""), ApplyBackdrop)
+    end
+
+    -- QUI settings font (Quazii) + standard white label color (C.text),
+    -- matching the settings text/label convention, via CreateLabel.
+    local titleColor = C.text or { 1, 1, 1, 1 }
+    local title = gui:CreateLabel(panel, opts.title or "Preview", 13, titleColor, "TOPLEFT", PAD, -PAD)
+    title:SetJustifyH("LEFT")
+
+    local content = CreateFrame("Frame", nil, panel)
+    content:SetPoint("TOPLEFT", PAD, -(PAD + HEADER_H))
+    content:SetPoint("BOTTOMRIGHT", -PAD, PAD)
+
+    local function Reflow()
+        -- Read width before clearing points; size is explicit (SetSize), so it
+        -- is anchor-independent, but read first to be robust regardless.
+        local panelW = panel:GetWidth() or 0
+        panel:ClearAllPoints()
+        local screenRight = UIParent:GetRight() or 0
+        local winRight = window:GetRight() or 0
+        -- Vertically centered on the window (LEFT/RIGHT midpoints align).
+        if winRight + GAP + panelW <= screenRight then
+            panel:SetPoint("LEFT", window, "RIGHT", GAP, 0)
+        else
+            panel:SetPoint("RIGHT", window, "LEFT", -GAP, 0)
+        end
+    end
+
+    panel:HookScript("OnShow", Reflow)
+    window:HookScript("OnSizeChanged", function() if panel:IsShown() then Reflow() end end)
+    if type(window.StopMovingOrSizing) == "function" then
+        hooksecurefunc(window, "StopMovingOrSizing", function() if panel:IsShown() then Reflow() end end)
+    end
+
+    local P = { frame = panel, contentHost = content }
+
+    function P.SetTitle(text) title:SetText(text or "Preview") end
+    function P.Show() panel:Show(); Reflow() end
+    function P.Hide() panel:Hide() end
+    function P.Resize(contentW, contentH)
+        local w = math.max(contentW or 0, MIN_W) + PAD * 2
+        local h = (contentH or 0) + HEADER_H + PAD * 2
+        local cap = (window:GetHeight() or 850)
+        if h > cap then h = cap end
+        panel:SetSize(w, h)
+        Reflow()
+    end
+
+    return P
+end
+
+-- Compact standalone context selector row (e.g. Party/Raid) for the top of
+-- a settings page. opts: { gui, parent (defaults to first arg), label,
+-- options, stateKey?, selectedValue, onChanged, meta?, config?, height?, pad? }
+-- Returns: { row, dropdown, dropdownDB }
+function FullSurface.BuildContextDropdownRow(parent, opts)
+    opts = opts or {}
+    local gui = opts.gui or (_G.QUI and _G.QUI.GUI)
+    if not gui or not parent then return nil end
+
+    local pad = opts.pad or 8
+    local height = opts.height or 30
+    local stateKey = opts.stateKey or "_selection"
+
+    local row = CreateFrame("Frame", nil, parent)
+    row:SetHeight(height)
+    row:SetPoint("TOPLEFT", parent, "TOPLEFT", pad, -4)
+    row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -pad, -4)
+
+    local db = { [stateKey] = opts.selectedValue }
+    local dropdown = gui:CreateFormDropdown(
+        row,
+        opts.label or "Selection",
+        opts.options or {},
+        stateKey,
+        db,
+        function()
+            if type(opts.onChanged) == "function" then
+                opts.onChanged(db[stateKey], db)
+            end
+        end,
+        opts.meta or {},
+        opts.config or { searchable = false, collapsible = false }
+    )
+    dropdown:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+    dropdown:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+
+    return { row = row, dropdown = dropdown, dropdownDB = db }
+end
+
 function FullSurface.CreateTabStrip(parent, options)
     options = options or {}
 

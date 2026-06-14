@@ -1785,13 +1785,10 @@ local GROUP_FRAMES_SEARCH_CAPTURE_TABS = {
     { key = "rangepet", label = "Range & Pet", method = "RenderRangePetTab", subTabIndex = 5 },
     { key = "spotlight", label = "Spotlight", method = "RenderSpotlightTab", subTabIndex = 6, raidOnly = true },
     { key = "health", label = "Health", method = "RenderHealthTab", subTabIndex = 7 },
-    { key = "power", label = "Power", method = "RenderPowerTab", subTabIndex = 8 },
     { key = "name", label = "Name", method = "RenderNameTab", subTabIndex = 9 },
     { key = "indicators", label = "Indicators", method = "RenderIndicatorsTab", subTabIndex = 10 },
     { key = "healer", label = "Healer", method = "RenderHealerTab", subTabIndex = 11 },
     { key = "auras", label = "Auras", method = "RenderAurasTab", subTabIndex = 12 },
-    { key = "privateAuras", label = "Priv. Auras", method = "RenderPrivateAurasTab", subTabIndex = 13 },
-    { key = "defensive", label = "Defensive", method = "RenderDefensiveTab", subTabIndex = 14 },
 }
 
 local function capture_group_frames_settings_tabs()

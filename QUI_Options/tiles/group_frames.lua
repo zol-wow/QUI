@@ -15,7 +15,6 @@ function V2.Register(frame)
         icon = "G",
         name = "Group Frames",
         primaryCTA = { label = "Edit in Layout Mode", moverKey = "partyFrames" },
-        previewHeight = 240,
         navRoutes = {
             { tabIndex = 6, subTabIndex = 0, subPageIndex = 1 },
             { tabIndex = 6, subTabIndex = 1, subPageIndex = 1 },

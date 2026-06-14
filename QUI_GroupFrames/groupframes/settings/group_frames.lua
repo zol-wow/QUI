@@ -7,7 +7,6 @@ if not SurfaceFeatures or type(SurfaceFeatures.Register) ~= "function" then
     return
 end
 
-local PREVIEW_HEIGHT = 240
 local LOOKUP_TO_CONTEXT = {
     partyFrames = "party",
     raidFrames = "raid",
@@ -93,7 +92,6 @@ SurfaceFeatures:Register({
     },
     surface = GetSurface,
     model = GetModel,
-    previewHeight = PREVIEW_HEIGHT,
     navigate = {
         resolve = ResolveContextMode,
         method = "SetContextMode",

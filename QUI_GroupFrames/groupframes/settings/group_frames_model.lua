@@ -42,35 +42,23 @@ end
 local RenderGeneral = BuildSchemaRender("RenderGeneralTab", "General")
 local RenderAppearance = BuildSchemaRender("RenderAppearanceTab", "Appearance")
 local RenderLayout = BuildSchemaRender("RenderLayoutTab", "Layout")
-local RenderDimensions = BuildSchemaRender("RenderDimensionsTab", "Dimensions")
-local RenderRangePet = BuildSchemaRender("RenderRangePetTab", "Range & Pet")
 local RenderSpotlight = BuildSchemaRender("RenderSpotlightTab", "Spotlight")
 local RenderHealth = BuildSchemaRender("RenderHealthTab", "Health")
-local RenderPower = BuildSchemaRender("RenderPowerTab", "Power")
-local RenderName = BuildSchemaRender("RenderNameTab", "Name")
 local RenderIndicators = BuildSchemaRender("RenderIndicatorsTab", "Indicators")
 local RenderAuras = BuildSchemaRender("RenderAurasTab", "Auras")
-local RenderPrivateAuras = BuildSchemaRender("RenderPrivateAurasTab", "Private Auras")
-local RenderHealer = BuildSchemaRender("RenderHealerTab", "Healer")
-local RenderDefensive = BuildSchemaRender("RenderDefensiveTab", "Defensives")
 local RenderDispelOverlay = BuildSchemaRender("RenderDispelOverlayTab", "Dispel Overlay")
 
+-- Order only; the tab strip wraps these across rows responsively by window
+-- width (group_frames_surface.lua uses wrapRows), so no explicit row field.
 local TAB_DEFINITIONS = {
-    { key = "general", label = "General", row = 1, render = RenderGeneral },
-    { key = "appearance", label = "Appearance", row = 1, render = RenderAppearance },
-    { key = "layout", label = "Layout", row = 1, render = RenderLayout },
-    { key = "dimensions", label = "Dimensions", row = 1, render = RenderDimensions },
-    { key = "rangepet", label = "Range & Pet", row = 1, render = RenderRangePet },
-    { key = "spotlight", label = "Spotlight", row = 1, visible = function(state) return state.contextMode == "raid" end, render = RenderSpotlight },
-    { key = "health", label = "Health", row = 1, render = RenderHealth },
-    { key = "power", label = "Power", row = 1, render = RenderPower },
-    { key = "name", label = "Name", row = 1, render = RenderName },
-    { key = "indicators", label = "Indicators", row = 1, render = RenderIndicators },
-    { key = "healer", label = "Healer", row = 1, render = RenderHealer },
-    { key = "auras", label = "Auras", row = 2, render = RenderAuras },
-    { key = "privateAuras", label = "Private Auras", row = 2, render = RenderPrivateAuras },
-    { key = "defensive", label = "Defensives", row = 2, render = RenderDefensive },
-    { key = "dispelOverlay", label = "Dispel Overlay", row = 2, render = RenderDispelOverlay },
+    { key = "general", label = "General", render = RenderGeneral },
+    { key = "appearance", label = "Appearance", render = RenderAppearance },
+    { key = "layout", label = "Layout", render = RenderLayout },
+    { key = "spotlight", label = "Spotlight", visible = function(state) return state.contextMode == "raid" end, render = RenderSpotlight },
+    { key = "health", label = "Health", render = RenderHealth },
+    { key = "indicators", label = "Indicators", render = RenderIndicators },
+    { key = "auras", label = "Auras", render = RenderAuras },
+    { key = "dispelOverlay", label = "Dispel Overlay", render = RenderDispelOverlay },
 }
 
 function Model.GetTabDefinitions()

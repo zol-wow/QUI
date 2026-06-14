@@ -88,18 +88,14 @@ local TAB_SEARCH_CONTEXTS = {
     general = { subTabIndex = 1, subTabName = "General" },
     appearance = { subTabIndex = 2, subTabName = "Appearance" },
     layout = { subTabIndex = 3, subTabName = "Layout" },
-    dimensions = { subTabIndex = 4, subTabName = "Dimensions" },
-    rangepet = { subTabIndex = 5, subTabName = "Range & Pet" },
-    spotlight = { subTabIndex = 6, subTabName = "Spotlight" },
-    health = { subTabIndex = 7, subTabName = "Health" },
-    power = { subTabIndex = 8, subTabName = "Power" },
-    name = { subTabIndex = 9, subTabName = "Name" },
-    indicators = { subTabIndex = 10, subTabName = "Indicators" },
-    healer = { subTabIndex = 11, subTabName = "Healer" },
-    auras = { subTabIndex = 12, subTabName = "Auras" },
-    privateAuras = { subTabIndex = 13, subTabName = "Private Auras" },
-    defensive = { subTabIndex = 14, subTabName = "Defensives" },
-    dispelOverlay = { subTabIndex = 15, subTabName = "Dispel Overlay" },
+    spotlight = { subTabIndex = 4, subTabName = "Spotlight" },
+    health = { subTabIndex = 5, subTabName = "Health" },
+    power = { subTabIndex = 6, subTabName = "Power" },
+    indicators = { subTabIndex = 7, subTabName = "Indicators" },
+    auras = { subTabIndex = 8, subTabName = "Auras" },
+    privateAuras = { subTabIndex = 9, subTabName = "Private Auras" },
+    defensive = { subTabIndex = 10, subTabName = "Defensives" },
+    dispelOverlay = { subTabIndex = 11, subTabName = "Dispel Overlay" },
 }
 local GROUP_FRAMES_SEARCH_TILE_ID = "group_frames"
 local GROUP_FRAMES_SEARCH_FEATURE_ID = "groupFramesPage"
@@ -916,7 +912,7 @@ local function RenderDimensionsSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("dimensions"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("layout"))
     if not builder then
         return nil
     end
@@ -988,7 +984,7 @@ local function RenderRangePetSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("rangepet"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("general"))
     if not builder then
         return nil
     end
@@ -1447,7 +1443,8 @@ local function RenderPowerSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("power"))
+    -- Power now lives under the Appearance tab — tag search nav accordingly.
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("appearance"))
     if not builder then
         return nil
     end
@@ -1530,7 +1527,7 @@ local function RenderNameSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("name"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("appearance"))
     if not builder then
         return nil
     end
@@ -1632,7 +1629,8 @@ local function RenderPrivateAurasSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("privateAuras"))
+    -- Private Auras now lives under the Auras tab — tag search nav accordingly.
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("auras"))
     if not builder then
         return nil
     end
@@ -1875,9 +1873,6 @@ local function RenderHealerSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Healer")
-    builder.Description("Target-highlighting helpers for " .. groupFrames.sourceLabel .. " group frames.")
-
     builder.Header("Target Highlight")
     local targetCard = builder.Card()
     local targetColorRow, targetFillRow
@@ -1930,7 +1925,8 @@ local function RenderDefensiveSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("defensive"))
+    -- Defensives now lives under the Auras tab — tag search nav accordingly.
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("auras"))
     if not builder then
         return nil
     end
@@ -2372,63 +2368,50 @@ local function CreateSingleSectionTabFeature(id, sectionId, minHeight, render)
     })
 end
 
-local GENERAL_TAB_FEATURE = Schema.Feature({
-    id = "groupFramesGeneralTab",
-    surfaces = {
-        groupFrameTab = {
-            sections = {
-                "enable",
-                "copySettings",
+local function CreateMultiSectionTabFeature(id, sectionDefs)
+    local sectionIds = {}
+    local sections = {}
+    for i, def in ipairs(sectionDefs) do
+        sectionIds[i] = def.id
+        sections[i] = Schema.Section({
+            id = def.id,
+            kind = "custom",
+            minHeight = def.minHeight,
+            render = def.render,
+        })
+    end
+    return Schema.Feature({
+        id = id,
+        surfaces = {
+            groupFrameTab = {
+                sections = sectionIds,
+                padding = 10,
+                sectionGap = 14,
+                topPadding = 10,
+                bottomPadding = 40,
             },
-            padding = 10,
-            sectionGap = 14,
-            topPadding = 10,
-            bottomPadding = 40,
         },
-    },
-    sections = {
-        Schema.Section({
-            id = "enable",
-            kind = "custom",
-            minHeight = 42,
-            render = RenderGeneralEnableSection,
-        }),
-        Schema.Section({
-            id = "copySettings",
-            kind = "custom",
-            minHeight = 88,
-            render = RenderGeneralCopySettingsSection,
-        }),
-    },
+        sections = sections,
+    })
+end
+
+local GENERAL_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesGeneralTab", {
+    { id = "enable", minHeight = 42, render = RenderGeneralEnableSection },
+    { id = "rangepet", minHeight = 140, render = RenderRangePetSection },
+    { id = "healer", minHeight = 140, render = RenderHealerSection },
+    { id = "copySettings", minHeight = 88, render = RenderGeneralCopySettingsSection },
 })
 
-local APPEARANCE_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesAppearanceTab",
-    "appearance",
-    160,
-    RenderAppearanceSection
-)
+local APPEARANCE_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesAppearanceTab", {
+    { id = "appearance", minHeight = 160, render = RenderAppearanceSection },
+    { id = "name", minHeight = 140, render = RenderNameSection },
+    { id = "power", minHeight = 140, render = RenderPowerSection },
+})
 
-local LAYOUT_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesLayoutTab",
-    "layout",
-    160,
-    RenderLayoutSection
-)
-
-local DIMENSIONS_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesDimensionsTab",
-    "dimensions",
-    140,
-    RenderDimensionsSection
-)
-
-local RANGEPET_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesRangePetTab",
-    "rangepet",
-    140,
-    RenderRangePetSection
-)
+local LAYOUT_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesLayoutTab", {
+    { id = "layout", minHeight = 160, render = RenderLayoutSection },
+    { id = "dimensions", minHeight = 140, render = RenderDimensionsSection },
+})
 
 local SPOTLIGHT_TAB_FEATURE = CreateSingleSectionTabFeature(
     "groupFramesSpotlightTab",
@@ -2444,20 +2427,6 @@ local HEALTH_TAB_FEATURE = CreateSingleSectionTabFeature(
     RenderHealthSection
 )
 
-local POWER_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesPowerTab",
-    "power",
-    140,
-    RenderPowerSection
-)
-
-local NAME_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesNameTab",
-    "name",
-    140,
-    RenderNameSection
-)
-
 local INDICATORS_TAB_FEATURE = CreateSingleSectionTabFeature(
     "groupFramesIndicatorsTab",
     "indicators",
@@ -2465,39 +2434,17 @@ local INDICATORS_TAB_FEATURE = CreateSingleSectionTabFeature(
     RenderIndicatorsSection
 )
 
-local AURAS_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesAurasTab",
-    "auras",
-    180,
-    RenderAurasSection
-)
-
-local PRIVATE_AURAS_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesPrivateAurasTab",
-    "privateAuras",
-    140,
-    RenderPrivateAurasSection
-)
-
-local HEALER_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesHealerTab",
-    "healer",
-    140,
-    RenderHealerSection
-)
+local AURAS_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesAurasTab", {
+    { id = "auras", minHeight = 180, render = RenderAurasSection },
+    { id = "privateAuras", minHeight = 140, render = RenderPrivateAurasSection },
+    { id = "defensive", minHeight = 140, render = RenderDefensiveSection },
+})
 
 local DISPEL_OVERLAY_TAB_FEATURE = CreateSingleSectionTabFeature(
     "groupFramesDispelOverlayTab",
     "dispelOverlay",
     140,
     RenderDispelOverlaySection
-)
-
-local DEFENSIVE_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesDefensiveTab",
-    "defensive",
-    140,
-    RenderDefensiveSection
 )
 
 local function RenderFeatureTab(feature, host, contextMode)
@@ -2534,28 +2481,12 @@ function GroupFramesSchema.RenderLayoutTab(host, contextMode)
     return RenderFeatureTab(LAYOUT_TAB_FEATURE, host, contextMode)
 end
 
-function GroupFramesSchema.RenderDimensionsTab(host, contextMode)
-    return RenderFeatureTab(DIMENSIONS_TAB_FEATURE, host, contextMode)
-end
-
-function GroupFramesSchema.RenderRangePetTab(host, contextMode)
-    return RenderFeatureTab(RANGEPET_TAB_FEATURE, host, contextMode)
-end
-
 function GroupFramesSchema.RenderSpotlightTab(host, contextMode)
     return RenderFeatureTab(SPOTLIGHT_TAB_FEATURE, host, contextMode)
 end
 
 function GroupFramesSchema.RenderHealthTab(host, contextMode)
     return RenderFeatureTab(HEALTH_TAB_FEATURE, host, contextMode)
-end
-
-function GroupFramesSchema.RenderPowerTab(host, contextMode)
-    return RenderFeatureTab(POWER_TAB_FEATURE, host, contextMode)
-end
-
-function GroupFramesSchema.RenderNameTab(host, contextMode)
-    return RenderFeatureTab(NAME_TAB_FEATURE, host, contextMode)
 end
 
 function GroupFramesSchema.RenderIndicatorsTab(host, contextMode)
@@ -2566,18 +2497,6 @@ function GroupFramesSchema.RenderAurasTab(host, contextMode)
     return RenderFeatureTab(AURAS_TAB_FEATURE, host, contextMode)
 end
 
-function GroupFramesSchema.RenderPrivateAurasTab(host, contextMode)
-    return RenderFeatureTab(PRIVATE_AURAS_TAB_FEATURE, host, contextMode)
-end
-
-function GroupFramesSchema.RenderHealerTab(host, contextMode)
-    return RenderFeatureTab(HEALER_TAB_FEATURE, host, contextMode)
-end
-
 function GroupFramesSchema.RenderDispelOverlayTab(host, contextMode)
     return RenderFeatureTab(DISPEL_OVERLAY_TAB_FEATURE, host, contextMode)
-end
-
-function GroupFramesSchema.RenderDefensiveTab(host, contextMode)
-    return RenderFeatureTab(DEFENSIVE_TAB_FEATURE, host, contextMode)
 end

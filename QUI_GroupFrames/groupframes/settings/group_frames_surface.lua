@@ -1,8 +1,9 @@
 --[[
     QUI Options V2 — Group Frames tile
-    Pattern mirrors options/tiles/cooldown_manager.lua:
-      - Preview block (Party/Raid dropdown + live composer preview)
-        persists across inner tabs.
+    Pattern mirrors options/tiles/cooldown_manager.lua, with the live
+    preview detached into a docked side panel (CreateDockedPreviewPanel,
+    anchored to the right edge of the options window) and a compact
+    Party/Raid dropdown row above the inner tabs.
       - Inner tab strip promotes the composer's widget-bar elements to
         top-level tabs alongside the frame-level sections. Frame-
         level tabs (Appearance, Layout, Dimensions, Range & Pet,
@@ -56,6 +57,107 @@ local TabModel
 local EnsureTabModel
 
 ---------------------------------------------------------------------------
+-- DOCKED PREVIEW PANEL — detached, anchored to the options window's right
+-- edge. Lazily created; re-measured/resized after every composer rebuild
+-- via the QUI_SetGroupFramePreviewObserver seam.
+---------------------------------------------------------------------------
+local function CurrentOptionsWindow()
+    -- Prefer GUI.MainFrame, NOT the _G.QUI_Options global. GUI:RefreshAccentColor
+    -- (theme change) recreates the options window and updates GUI.MainFrame, but
+    -- leaves _G.QUI_Options pointing at the old, torn-down, hidden window —
+    -- anchoring to the stale global parents the panel to a dead frame.
+    return (GUI and GUI.MainFrame) or _G.QUI_Options
+end
+
+-- Install the composer resize observer exactly once. It reads State.previewPanel
+-- dynamically, so it keeps working across panel rebuilds (see EnsurePreviewPanel).
+local previewObserverInstalled = false
+local function InstallPreviewObserver()
+    if previewObserverInstalled or not _G.QUI_SetGroupFramePreviewObserver then
+        return
+    end
+    previewObserverInstalled = true
+    _G.QUI_SetGroupFramePreviewObserver(function(_, wrapper)
+        local p = State.previewPanel
+        if not p then return end
+        -- Generation guard: a later rebuild (e.g. rapid Party/Raid toggle)
+        -- reparents this cell's children away, so a deferred measure of the
+        -- now-stale cell would shrink the panel to a stub. Skip if superseded.
+        State.previewGen = (State.previewGen or 0) + 1
+        local gen = State.previewGen
+        local cell = wrapper and wrapper.previewCell
+        local w, h = FullSurface.MeasureRenderedExtent(cell)
+        if w <= 0 or h <= 0 then
+            C_Timer.After(0, function()
+                if State.previewGen ~= gen or not State.previewPanel then return end
+                local w2, h2 = FullSurface.MeasureRenderedExtent(cell)
+                if w2 > 0 and h2 > 0 then
+                    State.previewPanel.Resize(w2, h2)
+                end
+            end)
+            return
+        end
+        p.Resize(w, h)
+    end)
+end
+
+local function EnsurePreviewPanel()
+    local win = CurrentOptionsWindow()
+    if not win then return nil end
+
+    -- QUI_Options is torn down and rebuilt wholesale on theme change
+    -- (GUI:RefreshAccentColor) — TeardownFrameTree does SetParent(nil) on this
+    -- panel, and the rebuilt QUI_Options frame may be REUSED or REPLACED, so
+    -- window identity is not a reliable signal. The robust check: the panel is
+    -- valid only while still parented to the live window. After a teardown its
+    -- parent is no longer the live window, so rebuild (and neutralize the orphan
+    -- so it stops participating in the framework's refresh passes).
+    local cached = State.previewPanel
+    if cached and cached.frame and cached.frame:GetParent() == win then
+        return cached
+    end
+
+    if cached then
+        State.previewPanel = nil
+        if cached.frame then
+            cached.frame:Hide()
+            cached.frame:ClearAllPoints()
+        end
+    end
+
+    if not FullSurface or type(FullSurface.CreateDockedPreviewPanel) ~= "function" then
+        return nil
+    end
+
+    local panel = FullSurface.CreateDockedPreviewPanel({
+        gui = GUI,
+        title = "Preview",
+        idSuffix = "GroupFrames",
+        window = win,
+    })
+    if not panel then return nil end
+
+    State.previewPanel = panel
+    InstallPreviewObserver()
+    return panel
+end
+
+local function UpdatePreviewTitle()
+    local p = State.previewPanel
+    if not p then return end
+    p.SetTitle(State.contextMode == "raid" and "Preview — Raid" or "Preview — Party")
+end
+
+local function RefreshPreviewPanel()
+    local panel = EnsurePreviewPanel()
+    if not panel then return end
+    UpdatePreviewTitle()
+    if _G.QUI_BuildGroupFramePreview then
+        _G.QUI_BuildGroupFramePreview(panel.contentHost, State.contextMode)
+    end
+end
+
+---------------------------------------------------------------------------
 -- Helpers
 ---------------------------------------------------------------------------
 local ContextSelection = FullSurface and FullSurface.CreateSelectionController
@@ -70,6 +172,9 @@ local ContextSelection = FullSurface and FullSurface.CreateSelectionController
 
             if _G.QUI_RefreshGroupFramePreview then
                 _G.QUI_RefreshGroupFramePreview(key)
+            end
+            if State.previewPanel then
+                State.previewPanel.SetTitle(key == "raid" and "Preview — Raid" or "Preview — Party")
             end
 
             if State.repaintTabs then
@@ -140,37 +245,6 @@ local function GetSearchRoot()
     return State.activeBody
 end
 
----------------------------------------------------------------------------
--- PREVIEW BLOCK — Party/Raid dropdown + hoisted composer preview.
----------------------------------------------------------------------------
-local function BuildPreviewBlock(pv)
-    local model = ResolveModel()
-    local getContextOptions = model and model.GetContextOptions
-
-    State.contextMode = NormalizeContextMode(State.contextMode)
-    FullSurface.BuildDropdownPreviewBlock(pv, {
-        gui = GUI,
-        state = State,
-        selectedValue = State.contextMode,
-        dropdownStateKey = "_contextMode",
-        dropdownLabel = "Unit Group",
-        dropdownOptions = type(getContextOptions) == "function" and getContextOptions() or {},
-        dropdownMeta = {
-            description = "Switch between Party and Raid frame settings. Spotlight is only available for Raid frames.",
-        },
-        clipPreviewChildren = true,
-        onDropdownChanged = function(value)
-            SetContextMode(value)
-        end,
-        onBuildPreviewHost = function(previewHost)
-            State.previewHost = previewHost
-            if _G.QUI_BuildGroupFramePreview then
-                _G.QUI_BuildGroupFramePreview(previewHost, State.contextMode)
-            end
-        end,
-    })
-end
-
 EnsureTabModel = function(feature)
     if TabModel then
         return TabModel
@@ -191,30 +265,54 @@ EnsureTabModel = function(feature)
 end
 
 ---------------------------------------------------------------------------
--- TAB STRIP — two-row layout so the wider tab set fits without clipping.
--- Matches cooldown_manager.lua styling (11pt labels, 2px accent bar under
--- the active tab).
+-- TAB STRIP — width-responsive wrapping: tabs pack onto one row when the
+-- window is wide enough and wrap to additional rows as it narrows. Repaints
+-- on size change (repaintOnSizeChanged below). Matches cooldown_manager.lua
+-- styling (11pt labels, 2px accent bar under the active tab).
 ---------------------------------------------------------------------------
 local function BuildTabStrip(parent)
     return FullSurface.CreateTabStrip(parent, {
-        fixedRows = true,
+        wrapRows = true,
         rowSpacing = 2,
         fallbackWidth = 780,
     })
 end
 
 ---------------------------------------------------------------------------
--- TILE BODY — tab strip + scroll-wrapped content host.
+-- TILE BODY — compact Party/Raid dropdown row (injected at body top via
+-- initialize + tabTopOffset) + tab strip + scroll-wrapped content host.
+-- Also docks the detached preview panel and ties its visibility to this
+-- page's show/hide (covers tile-switch and window-close).
 ---------------------------------------------------------------------------
 local function BuildTileBody(body, _, _, feature)
     local tabModel = EnsureTabModel(feature)
-    return FullSurface.BuildScrollTabBody(body, {
+    local DROPDOWN_ROW_H = 30
+
+    local result = FullSurface.BuildScrollTabBody(body, {
         cacheTabBodies = true,
         state = State,
         clearFrame = ClearFrame,
         createTabStrip = BuildTabStrip,
+        tabTopOffset = -(DROPDOWN_ROW_H + 8),
         initialize = function()
             State.activeTab = State.activeTab or "general"
+            local model = ResolveModel(feature)
+            local getContextOptions = model and model.GetContextOptions
+            State.contextMode = NormalizeContextMode(State.contextMode)
+            FullSurface.BuildContextDropdownRow(body, {
+                gui = GUI,
+                label = "Unit Group",
+                stateKey = "_contextMode",
+                selectedValue = State.contextMode,
+                options = type(getContextOptions) == "function" and getContextOptions() or {},
+                meta = {
+                    description = "Switch between Party and Raid frame settings. Spotlight is only available for Raid frames.",
+                },
+                height = DROPDOWN_ROW_H,
+                onChanged = function(value)
+                    SetContextMode(value)
+                end,
+            })
         end,
         getTabs = function()
             return tabModel:GetTabs()
@@ -232,13 +330,28 @@ local function BuildTileBody(body, _, _, feature)
         deferResizeRepaint = true,
         preventReentry = true,
     })
+
+    -- Dock + show the detached preview panel; tie its visibility to this page.
+    EnsurePreviewPanel()
+    if not body._gfPreviewHooked then
+        body._gfPreviewHooked = true
+        body:HookScript("OnShow", function()
+            if State.previewPanel then State.previewPanel.Show() end
+            RefreshPreviewPanel()
+        end)
+        body:HookScript("OnHide", function()
+            if State.previewPanel then State.previewPanel.Hide() end
+        end)
+    end
+    if State.previewPanel and body:IsShown() then
+        State.previewPanel.Show()
+        RefreshPreviewPanel()
+    end
+
+    return result
 end
 
 ns.QUI_GroupFramesSettingsSurface = {
-    preview = {
-        height = 240,
-        build = BuildPreviewBlock,
-    },
     SetContextMode = SetContextMode,
     SetActiveTab = SetActiveTab,
     NavigateSearchEntry = NavigateSearchEntry,

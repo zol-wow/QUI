@@ -18,7 +18,7 @@ local SUGGEST_CELL_SIZE = 36
 local SUGGEST_ICON_SIZE = 28
 local SUGGEST_CELL_GAP = 2
 local SUGGEST_CELL_STRIDE = SUGGEST_CELL_SIZE + SUGGEST_CELL_GAP
-local PREVIEW_SCALE = 2
+local PREVIEW_SCALE = 1
 local UIKit = ns.UIKit
 local AuraDefaults = ns.QUI_GroupFramesAuraDefaults
 -- QUI_GroupFrameIconLayout is populated by QUI_GroupFrames (login-class addon) after core
@@ -3243,6 +3243,7 @@ local function CreateDesignerPreview(container, previewType, childRefs)
     -- Main frame
     local frame = CreateFrame("Frame", nil, wrapper, "BackdropTemplate")
     frame:SetSize(w, h)
+    wrapper.previewCell = frame
     frame:SetPoint("CENTER", wrapper, "CENTER", 0, 0)
 
     local borderPixels = general.borderSize or 1
@@ -3999,6 +4000,7 @@ local function BuildHoistedPreview()
     if not ok or not preview then return end
     hoistedPreview.childRefs = childRefs
     hoistedPreview.preview = preview
+    hoistedPreview.cell = preview.previewCell
 
     -- CreateDesignerPreview anchors the wrapper TOPLEFT at (0,0); re-anchor
     -- vertically centered so elements that extend outside the mock's
@@ -4008,6 +4010,10 @@ local function BuildHoistedPreview()
     preview:SetPoint("CENTER", host, "CENTER", 0, 0)
     preview:SetPoint("LEFT", host, "LEFT", 0, 0)
     preview:SetPoint("RIGHT", host, "RIGHT", 0, 0)
+
+    if hoistedPreview.onBuilt then
+        pcall(hoistedPreview.onBuilt, host, preview)
+    end
 end
 
 _G.QUI_BuildGroupFramePreview = function(host, contextMode)
@@ -4020,6 +4026,13 @@ end
 _G.QUI_RefreshGroupFramePreview = function(contextMode)
     if contextMode then hoistedPreview.contextMode = contextMode end
     BuildHoistedPreview()
+end
+
+-- Lets the settings surface re-measure / re-size its docked panel after
+-- every rebuild (overflow extent changes as elements toggle). host+wrapper
+-- are passed through; wrapper.previewCell is the cell frame to measure.
+_G.QUI_SetGroupFramePreviewObserver = function(fn)
+    hoistedPreview.onBuilt = fn
 end
 
 -- Widget-bar element settings. Each element's builder uses the composer's

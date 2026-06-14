@@ -14,9 +14,8 @@ local AurasEditor = ns.QUI_GroupFramesAurasSettings or {}
 ns.QUI_GroupFramesAurasSettings = AurasEditor
 
 local FORM_ROW = 32
-local DROP_ROW = 52
-local SLIDER_HEIGHT = 65
 local PAD = 10
+local COL_GAP = 12
 local ROW_HEIGHT = 30
 local ROW_STEP = 32
 local SUGGEST_CELL_SIZE = 36
@@ -99,6 +98,12 @@ local function GetGUI()
     return QUI and QUI.GUI or nil
 end
 
+-- Shared options API (BuildSettingRow lives here). ns is the suite-wide
+-- namespace, so this resolves the same object the schema's GetOptionsAPI uses.
+local function GetOptionsAPI()
+    return ns.QUI_Options
+end
+
 local function GetSpellName(spellID)
     if C_Spell and C_Spell.GetSpellName then
         local ok, name = pcall(C_Spell.GetSpellName, spellID)
@@ -178,53 +183,53 @@ end
 
 local function AddPlacementWidgets(ctx, element, includeStrip)
     local GUI = ctx.GUI
-    local add = ctx.AddDetailWidget
+    local row = ctx.AddFormRow
     local onChange = ctx.onChange
 
     if includeStrip then
-        add(GUI:CreateFormSlider(ctx.detailArea, "Max Icons", 0, 10, 1, "maxIcons", element, onChange, nil, {
+        row("Max Icons", GUI:CreateFormSlider(ctx.detailArea, nil, 0, 10, 1, "maxIcons", element, onChange, nil, {
             description = "Hard cap on how many icons this element displays at once. 0 shows all matches.",
-        }), SLIDER_HEIGHT)
+        }))
     end
-    add(GUI:CreateFormSlider(ctx.detailArea, "Icon Size", 4, 40, 1, "iconSize", element, onChange, nil, {
+    row("Icon Size", GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, nil, {
         description = "Pixel size of each icon.",
-    }), SLIDER_HEIGHT)
-    add(GUI:CreateFormDropdown(ctx.detailArea, "Anchor", NINE_POINT_OPTIONS, "anchor", element, onChange, {
+    }))
+    row("Anchor", GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
         description = "Where on the frame this element is anchored. X/Y Offset below nudges it from this anchor point.",
-    }), DROP_ROW)
+    }))
     if includeStrip then
-        add(GUI:CreateFormDropdown(ctx.detailArea, "Grow Direction", AURA_GROW_OPTIONS, "growDirection", element, onChange, {
+        row("Grow Direction", GUI:CreateFormDropdown(ctx.detailArea, nil, AURA_GROW_OPTIONS, "growDirection", element, onChange, {
             description = "Direction additional icons are added in after the first.",
-        }), DROP_ROW)
-        add(GUI:CreateFormSlider(ctx.detailArea, "Spacing", 0, 8, 1, "spacing", element, onChange, nil, {
+        }))
+        row("Spacing", GUI:CreateFormSlider(ctx.detailArea, nil, 0, 8, 1, "spacing", element, onChange, nil, {
             description = "Pixel gap between adjacent icons.",
-        }), SLIDER_HEIGHT)
+        }))
     end
-    add(GUI:CreateFormSlider(ctx.detailArea, "X Offset", -100, 100, 1, "offsetX", element, onChange, nil, {
+    row("X Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, nil, {
         description = "Horizontal pixel offset from the anchor.",
-    }), SLIDER_HEIGHT)
-    add(GUI:CreateFormSlider(ctx.detailArea, "Y Offset", -100, 100, 1, "offsetY", element, onChange, nil, {
+    }))
+    row("Y Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, nil, {
         description = "Vertical pixel offset from the anchor.",
-    }), SLIDER_HEIGHT)
+    }))
 end
 
 local function AddDurationTextWidgets(ctx, element)
     local GUI = ctx.GUI
-    local add = ctx.AddDetailWidget
+    local row = ctx.AddFormRow
     local onChange = ctx.onChange
 
-    add(GUI:CreateFormCheckbox(ctx.detailArea, "Hide Duration Swipe", "hideSwipe", element, onChange, {
+    row("Hide Duration Swipe", GUI:CreateFormCheckbox(ctx.detailArea, nil, "hideSwipe", element, onChange, {
         description = "Hide the cooldown swipe animation drawn over icons.",
-    }), FORM_ROW)
-    add(GUI:CreateFormCheckbox(ctx.detailArea, "Reverse Swipe", "reverseSwipe", element, onChange, {
+    }))
+    row("Reverse Swipe", GUI:CreateFormCheckbox(ctx.detailArea, nil, "reverseSwipe", element, onChange, {
         description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as time passes.",
-    }), FORM_ROW)
-    add(GUI:CreateFormCheckbox(ctx.detailArea, "Show Duration Text", "showDurationText", element, onChange, {
+    }))
+    row("Show Duration Text", GUI:CreateFormCheckbox(ctx.detailArea, nil, "showDurationText", element, onChange, {
         description = "Show the remaining-time countdown text on each icon.",
-    }), FORM_ROW)
-    add(GUI:CreateFormSlider(ctx.detailArea, "Duration Font Size", 6, 24, 1, "durationFontSize", element, onChange, nil, {
+    }))
+    row("Duration Font Size", GUI:CreateFormSlider(ctx.detailArea, nil, 6, 24, 1, "durationFontSize", element, onChange, nil, {
         description = "Font size used for the remaining-time text.",
-    }), SLIDER_HEIGHT)
+    }))
 end
 
 -- Duration color-coding toggles. filterStrip-only (the model defines these
@@ -232,15 +237,15 @@ end
 -- countdown text by remaining time and pulse icons near expiry.
 local function AddDurationColorWidgets(ctx, element)
     local GUI = ctx.GUI
-    local add = ctx.AddDetailWidget
+    local row = ctx.AddFormRow
     local onChange = ctx.onChange
 
-    add(GUI:CreateFormCheckbox(ctx.detailArea, "Color Duration Text", "showDurationColor", element, onChange, {
+    row("Color Duration Text", GUI:CreateFormCheckbox(ctx.detailArea, nil, "showDurationColor", element, onChange, {
         description = "Tint the remaining-time text by how much duration is left (e.g. red when low).",
-    }), FORM_ROW)
-    add(GUI:CreateFormCheckbox(ctx.detailArea, "Pulse When Expiring", "showExpiringPulse", element, onChange, {
+    }))
+    row("Pulse When Expiring", GUI:CreateFormCheckbox(ctx.detailArea, nil, "showExpiringPulse", element, onChange, {
         description = "Pulse the icon as the aura nears expiry to draw attention.",
-    }), FORM_ROW)
+    }))
 end
 
 -- Curated suggestion presets for the whitelist/blacklist spell-list editors.
@@ -274,7 +279,7 @@ local function AddSpellListEditor(ctx, element, fieldName, title)
 
     local header = GUI:CreateLabel(ctx.detailArea, "|cFFAAAAAA" .. title .. "|r", 11, C.textMuted)
     header:SetJustifyH("LEFT")
-    add(header, 18)
+    add(header, 18, true)
 
     if not (SpellList and SpellList.CreateListFrame) then
         return
@@ -332,7 +337,7 @@ local function AddSpellListEditor(ctx, element, fieldName, title)
     end
     addManualButton:SetScript("OnClick", CommitManual)
     inputBox:SetScript("OnEnterPressed", CommitManual)
-    add(manualRow, 26)
+    add(manualRow, 26, true)
 
     -- Preset toggle rows + "Other" remove rows. The list frame sizes itself; we
     -- rebuild the detail area on layout change so the running Y reflows.
@@ -342,28 +347,28 @@ local function AddSpellListEditor(ctx, element, fieldName, title)
     end, function()
         ctx.rebuild()
     end)
-    add(listFrame, math.max(1, listFrame:GetHeight() or 1))
+    add(listFrame, math.max(1, listFrame:GetHeight() or 1), true)
 end
 
 local function AddFilterStripConfig(ctx, element)
     local GUI = ctx.GUI
-    local add = ctx.AddDetailWidget
+    local row = ctx.AddFormRow
     local onChange = ctx.onChange
     local rebuild = ctx.rebuild
 
-    add(GUI:CreateFormDropdown(ctx.detailArea, "Aura Type", AURA_TYPE_OPTIONS, "auraType", element, function()
+    row("Aura Type", GUI:CreateFormDropdown(ctx.detailArea, nil, AURA_TYPE_OPTIONS, "auraType", element, function()
         ctx.NotifyChanged()
         rebuild()
     end, {
         description = "Whether this strip shows helpful buffs or harmful debuffs.",
-    }), DROP_ROW)
+    }))
 
     AddPlacementWidgets(ctx, element, true)
     AddDurationTextWidgets(ctx, element)
     AddDurationColorWidgets(ctx, element)
 
     -- Filtering.
-    add(GUI:CreateFormDropdown(ctx.detailArea, "Filter Mode", FILTER_MODE_OPTIONS, "filterMode", element, function()
+    row("Filter Mode", GUI:CreateFormDropdown(ctx.detailArea, nil, FILTER_MODE_OPTIONS, "filterMode", element, function()
         ctx.NotifyChanged()
         rebuild()
     end, {
@@ -372,17 +377,17 @@ local function AddFilterStripConfig(ctx, element)
         -- labels, not searchable widgets); surface their names as keywords here so
         -- a search for "whitelist"/"blacklist" lands on this strip's filtering.
         keywords = { "Whitelist", "Blacklist", "filter", "exclude", "include", "spell list" },
-    }), DROP_ROW)
-    add(GUI:CreateFormCheckbox(ctx.detailArea, "Only My Auras", "onlyMine", element, onChange, {
+    }))
+    row("Only My Auras", GUI:CreateFormCheckbox(ctx.detailArea, nil, "onlyMine", element, onChange, {
         description = "Only show auras you applied.",
         keywords = { "Only Mine", "mine only" },
-    }), FORM_ROW)
-    add(GUI:CreateFormCheckbox(ctx.detailArea, "Hide Permanent", "hidePermanent", element, onChange, {
+    }))
+    row("Hide Permanent", GUI:CreateFormCheckbox(ctx.detailArea, nil, "hidePermanent", element, onChange, {
         description = "Hide auras with no remaining duration.",
-    }), FORM_ROW)
-    add(GUI:CreateFormCheckbox(ctx.detailArea, "Deduplicate Defensives", "dedupeDefensives", element, onChange, {
+    }))
+    row("Deduplicate Defensives", GUI:CreateFormCheckbox(ctx.detailArea, nil, "dedupeDefensives", element, onChange, {
         description = "Hide icons already shown by another tracked element.",
-    }), FORM_ROW)
+    }))
 
     local filterMode = element.filterMode or "off"
     if filterMode == "classification" then
@@ -391,9 +396,9 @@ local function AddFilterStripConfig(ctx, element)
         end
         local list = element.auraType == "HARMFUL" and HARMFUL_CLASSIFICATIONS or HELPFUL_CLASSIFICATIONS
         for _, entry in ipairs(list) do
-            add(GUI:CreateFormCheckbox(ctx.detailArea, entry.label, entry.key, element.classifications, onChange, {
+            row(entry.label, GUI:CreateFormCheckbox(ctx.detailArea, nil, entry.key, element.classifications, onChange, {
                 description = "Include auras Blizzard flags as " .. entry.label .. ".",
-            }), FORM_ROW)
+            }))
         end
     elseif filterMode == "whitelist" then
         AddSpellListEditor(ctx, element, "whitelist", "Whitelist (only these spells are shown):")
@@ -408,48 +413,48 @@ end
 
 local function AddTrackedBarConfig(ctx, element)
     local GUI = ctx.GUI
-    local add = ctx.AddDetailWidget
+    local row = ctx.AddFormRow
     local onChange = ctx.onChange
 
     if type(element.bar) ~= "table" then
         element.bar = {}
     end
     local bar = element.bar
-    add(GUI:CreateFormDropdown(ctx.detailArea, "Orientation", BAR_ORIENTATION_OPTIONS, "orientation", bar, onChange, {
+    row("Orientation", GUI:CreateFormDropdown(ctx.detailArea, nil, BAR_ORIENTATION_OPTIONS, "orientation", bar, onChange, {
         description = "Whether the bar drains horizontally or vertically as the aura ticks down.",
-    }), DROP_ROW)
-    add(GUI:CreateFormSlider(ctx.detailArea, "Thickness", 1, 20, 1, "thickness", bar, onChange, nil, {
+    }))
+    row("Thickness", GUI:CreateFormSlider(ctx.detailArea, nil, 1, 20, 1, "thickness", bar, onChange, nil, {
         description = "Pixel thickness of the bar.",
-    }), SLIDER_HEIGHT)
-    add(GUI:CreateFormSlider(ctx.detailArea, "Width / Height", 4, 200, 1, "length", bar, onChange, nil, {
+    }))
+    row("Width / Height", GUI:CreateFormSlider(ctx.detailArea, nil, 4, 200, 1, "length", bar, onChange, nil, {
         description = "Pixel length of the bar.",
-    }), SLIDER_HEIGHT)
-    add(GUI:CreateFormCheckbox(ctx.detailArea, "Match Frame Width / Height", "matchFrameSize", bar, onChange, {
+    }))
+    row("Match Frame Width / Height", GUI:CreateFormCheckbox(ctx.detailArea, nil, "matchFrameSize", bar, onChange, {
         description = "Stretch the bar to match the frame size.",
-    }), FORM_ROW)
-    add(GUI:CreateFormColorPicker(ctx.detailArea, "Bar Color", "color", bar, onChange, nil, {
+    }))
+    row("Bar Color", GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", bar, onChange, nil, {
         description = "Fill color of the bar while the aura is active.",
-    }), FORM_ROW)
-    add(GUI:CreateFormColorPicker(ctx.detailArea, "Background Color", "backgroundColor", bar, onChange, nil, {
+    }))
+    row("Background Color", GUI:CreateFormColorPicker(ctx.detailArea, nil, "backgroundColor", bar, onChange, nil, {
         description = "Color drawn behind the bar fill.",
-    }), FORM_ROW)
-    add(GUI:CreateFormCheckbox(ctx.detailArea, "Hide Border", "hideBorder", bar, onChange, {
+    }))
+    row("Hide Border", GUI:CreateFormCheckbox(ctx.detailArea, nil, "hideBorder", bar, onChange, {
         description = "Remove the border drawn around the bar.",
-    }), FORM_ROW)
-    add(GUI:CreateFormColorPicker(ctx.detailArea, "Border Color", "borderColor", bar, onChange, nil, {
+    }))
+    row("Border Color", GUI:CreateFormColorPicker(ctx.detailArea, nil, "borderColor", bar, onChange, nil, {
         description = "Color of the bar's border.",
-    }), FORM_ROW)
-    add(GUI:CreateFormSlider(ctx.detailArea, "Border Size", 1, 8, 1, "borderSize", bar, onChange, nil, {
+    }))
+    row("Border Size", GUI:CreateFormSlider(ctx.detailArea, nil, 1, 8, 1, "borderSize", bar, onChange, nil, {
         description = "Pixel thickness of the bar's border.",
-    }), SLIDER_HEIGHT)
-    add(GUI:CreateFormSlider(ctx.detailArea, "Low-Time Seconds", 0, 30, 0.5, "lowTimeThreshold", bar, onChange, {
+    }))
+    row("Low-Time Seconds", GUI:CreateFormSlider(ctx.detailArea, nil, 0, 30, 0.5, "lowTimeThreshold", bar, onChange, {
         precision = 1,
     }, {
         description = "When remaining duration drops below this, the bar switches to the Low-Time Color.",
-    }), SLIDER_HEIGHT)
-    add(GUI:CreateFormColorPicker(ctx.detailArea, "Low-Time Color", "lowTimeColor", bar, onChange, nil, {
+    }))
+    row("Low-Time Color", GUI:CreateFormColorPicker(ctx.detailArea, nil, "lowTimeColor", bar, onChange, nil, {
         description = "Bar color used once the remaining duration crosses the Low-Time threshold.",
-    }), FORM_ROW)
+    }))
 end
 
 -- Per-spell "Only Mine" overrides for a multi-spell tracked icon strip. Each
@@ -460,6 +465,7 @@ local function AddPerSpellOnlyMineWidgets(ctx, element)
     local GUI = ctx.GUI
     local C = ctx.C
     local add = ctx.AddDetailWidget
+    local row = ctx.AddFormRow
     local onChange = ctx.onChange
 
     local spells = element.spells or {}
@@ -473,24 +479,23 @@ local function AddPerSpellOnlyMineWidgets(ctx, element)
     local header = GUI:CreateLabel(ctx.detailArea,
         "|cFFAAAAAAPer-Spell Only Mine (overrides the element setting above):|r", 11, C.textMuted)
     header:SetJustifyH("LEFT")
-    add(header, 18)
+    add(header, 18, true)
 
     for _, spellID in ipairs(spells) do
         local label = GetSpellName(spellID) or ("Spell " .. tostring(spellID))
-        add(GUI:CreateFormCheckbox(ctx.detailArea, label, spellID, element.onlyMineSpells, onChange, {
+        row(label, GUI:CreateFormCheckbox(ctx.detailArea, nil, spellID, element.onlyMineSpells, onChange, {
             description = "Only show this spell when you applied it. Overrides the element-level Only My Cast for this spell.",
-        }), FORM_ROW)
+        }))
     end
 end
 
 local function AddTrackedConfig(ctx, element)
     local GUI = ctx.GUI
-    local C = ctx.C
-    local add = ctx.AddDetailWidget
+    local row = ctx.AddFormRow
     local onChange = ctx.onChange
     local rebuild = ctx.rebuild
 
-    add(GUI:CreateFormDropdown(ctx.detailArea, "Display Type", TRACKED_DISPLAY_OPTIONS, "displayType", element, function()
+    row("Display Type", GUI:CreateFormDropdown(ctx.detailArea, nil, TRACKED_DISPLAY_OPTIONS, "displayType", element, function()
         if element.displayType == "square" and type(element.color) ~= "table" then
             element.color = { 0.2, 0.8, 0.2, 1 }
         end
@@ -498,26 +503,26 @@ local function AddTrackedConfig(ctx, element)
         rebuild()
     end, {
         description = "How this tracked aura displays: an icon strip, a colored square, a duration bar, or a health-bar tint.",
-    }), DROP_ROW)
+    }))
 
-    add(GUI:CreateFormCheckbox(ctx.detailArea, "Only My Cast", "onlyMine", element, onChange, {
+    row("Only My Cast", GUI:CreateFormCheckbox(ctx.detailArea, nil, "onlyMine", element, onChange, {
         description = "Only track this aura when you applied it.",
         -- Per-spell Only Mine overrides (multi-spell strips) render as plain
         -- per-spell checkboxes below; keyword it here so the override is findable.
         keywords = { "Only Mine", "Per-Spell Only Mine", "mine only" },
-    }), FORM_ROW)
+    }))
 
     local displayType = element.displayType or "icon"
     if displayType == "bar" then
-        add(GUI:CreateFormDropdown(ctx.detailArea, "Anchor", NINE_POINT_OPTIONS, "anchor", element, onChange, {
+        row("Anchor", GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
             description = "Where on the frame the bar is anchored.",
-        }), DROP_ROW)
-        add(GUI:CreateFormSlider(ctx.detailArea, "X Offset", -100, 100, 1, "offsetX", element, onChange, nil, {
+        }))
+        row("X Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, nil, {
             description = "Horizontal pixel offset from the anchor.",
-        }), SLIDER_HEIGHT)
-        add(GUI:CreateFormSlider(ctx.detailArea, "Y Offset", -100, 100, 1, "offsetY", element, onChange, nil, {
+        }))
+        row("Y Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, nil, {
             description = "Vertical pixel offset from the anchor.",
-        }), SLIDER_HEIGHT)
+        }))
         AddTrackedBarConfig(ctx, element)
     elseif displayType == "healthTint" then
         if type(element.color) ~= "table" then
@@ -526,31 +531,31 @@ local function AddTrackedConfig(ctx, element)
         if type(element.healthTint) ~= "table" then
             element.healthTint = {}
         end
-        add(GUI:CreateFormColorPicker(ctx.detailArea, "Tint Color", "color", element, onChange, nil, {
+        row("Tint Color", GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
             description = "Color tint applied across the health bar while the aura is active.",
-        }), FORM_ROW)
-        add(GUI:CreateFormDropdown(ctx.detailArea, "Tint Animation", HEALTH_TINT_ANIMATION_OPTIONS, "animation", element.healthTint, onChange, {
+        }))
+        row("Tint Animation", GUI:CreateFormDropdown(ctx.detailArea, nil, HEALTH_TINT_ANIMATION_OPTIONS, "animation", element.healthTint, onChange, {
             description = "How the health-bar tint appears when the aura is detected.",
-        }), DROP_ROW)
+        }))
     elseif displayType == "square" then
         if type(element.color) ~= "table" then
             element.color = { 0.2, 0.8, 0.2, 1 }
         end
-        add(GUI:CreateFormSlider(ctx.detailArea, "Square Size", 4, 40, 1, "iconSize", element, onChange, nil, {
+        row("Square Size", GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, nil, {
             description = "Pixel size of the colored square.",
-        }), SLIDER_HEIGHT)
-        add(GUI:CreateFormDropdown(ctx.detailArea, "Anchor", NINE_POINT_OPTIONS, "anchor", element, onChange, {
+        }))
+        row("Anchor", GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
             description = "Where on the frame the square is anchored.",
-        }), DROP_ROW)
-        add(GUI:CreateFormSlider(ctx.detailArea, "X Offset", -100, 100, 1, "offsetX", element, onChange, nil, {
+        }))
+        row("X Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, nil, {
             description = "Horizontal pixel offset from the anchor.",
-        }), SLIDER_HEIGHT)
-        add(GUI:CreateFormSlider(ctx.detailArea, "Y Offset", -100, 100, 1, "offsetY", element, onChange, nil, {
+        }))
+        row("Y Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, nil, {
             description = "Vertical pixel offset from the anchor.",
-        }), SLIDER_HEIGHT)
-        add(GUI:CreateFormColorPicker(ctx.detailArea, "Square Color", "color", element, onChange, nil, {
+        }))
+        row("Square Color", GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
             description = "Fill color of the colored square.",
-        }), FORM_ROW)
+        }))
     else
         -- icon
         AddPlacementWidgets(ctx, element, true)
@@ -578,6 +583,10 @@ end
 -- DETAIL (per-element config) rendering. Builds widgets for the selected
 -- element below the list.
 ---------------------------------------------------------------------------
+-- Detail widgets lay out in the QUI two-column standard: consecutive form
+-- widgets pair left/right, advancing the running Y by the taller of the two.
+-- A widget added with span=true (headers, the manual-add row, the spell-list
+-- frame) flushes any half-filled row and takes the full width on its own.
 local function RenderDetail(ctx, element)
     ctx.ClearDetailWidgets()
     if not element then
@@ -585,28 +594,114 @@ local function RenderDetail(ctx, element)
         return 0
     end
 
-    local detailY = -2
-    ctx.detailY = detailY
-    ctx.AddDetailWidget = function(widget, height)
-        ctx.RegisterDetailWidget(widget)
-        widget:ClearAllPoints()
-        widget:SetPoint("TOPLEFT", PAD, ctx.detailY)
-        widget:SetPoint("TOPRIGHT", ctx.detailArea, "TOPRIGHT", -PAD, ctx.detailY)
-        ctx.detailY = ctx.detailY - height
+    local detailArea = ctx.detailArea
+    ctx.detailY = -2
+    ctx._pendingWidget = nil
+    ctx._pendingHeight = 0
+    -- Parity counter for the alternating row tint. Span rows (headers, the
+    -- spell-list frame) are visually distinct and do not stripe or count, so
+    -- the zebra rhythm stays continuous across the form rows around them.
+    local rowParity = 0
+
+    -- Emit one detail row: a frame stacked at the running Y holding either a
+    -- left/right form pair (with center divider) or a single full-width / lone
+    -- widget. Mirrors CreateSettingsCardGroup's row styling (3% white tint on
+    -- odd rows, 5% white center divider) so the auras editor matches the
+    -- standard two-column settings look.
+    local function EmitRow(left, leftH, right, rightH, span)
+        local rowH = span and leftH or (right and math.max(leftH, rightH) or leftH)
+        local rowFrame = CreateFrame("Frame", nil, detailArea)
+        ctx.RegisterDetailWidget(rowFrame)
+        rowFrame:ClearAllPoints()
+        rowFrame:SetPoint("TOPLEFT", detailArea, "TOPLEFT", 0, ctx.detailY)
+        rowFrame:SetPoint("TOPRIGHT", detailArea, "TOPRIGHT", 0, ctx.detailY)
+        rowFrame:SetHeight(rowH)
+
+        if not span then
+            if (rowParity % 2) == 1 then
+                local bg = rowFrame:CreateTexture(nil, "BACKGROUND")
+                bg:SetAllPoints(rowFrame)
+                bg:SetColorTexture(1, 1, 1, 0.02)
+            end
+            rowParity = rowParity + 1
+        end
+
+        left:SetParent(rowFrame)
+        left:ClearAllPoints()
+        if span then
+            left:SetPoint("TOPLEFT", rowFrame, "TOPLEFT", PAD, 0)
+            left:SetPoint("TOPRIGHT", rowFrame, "TOPRIGHT", -PAD, 0)
+        elseif right then
+            left:SetPoint("TOPLEFT", rowFrame, "TOPLEFT", PAD, 0)
+            left:SetPoint("TOPRIGHT", rowFrame, "TOP", -(COL_GAP / 2), 0)
+            right:SetParent(rowFrame)
+            right:ClearAllPoints()
+            right:SetPoint("TOPLEFT", rowFrame, "TOP", COL_GAP / 2, 0)
+            right:SetPoint("TOPRIGHT", rowFrame, "TOPRIGHT", -PAD, 0)
+
+            local cdiv = rowFrame:CreateTexture(nil, "ARTWORK")
+            cdiv:SetPoint("TOP", rowFrame, "TOP", 0, -6)
+            cdiv:SetPoint("BOTTOM", rowFrame, "BOTTOM", 0, 6)
+            cdiv:SetWidth(1)
+            cdiv:SetColorTexture(1, 1, 1, 0.05)
+        else
+            left:SetPoint("TOPLEFT", rowFrame, "TOPLEFT", PAD, 0)
+            left:SetPoint("TOPRIGHT", rowFrame, "TOP", -(COL_GAP / 2), 0)
+        end
+
+        ctx.detailY = ctx.detailY - rowH
     end
 
-    ctx.AddDetailWidget(ctx.GUI:CreateFormCheckbox(ctx.detailArea, "Element Enabled", "enabled", element, function()
+    local function FlushPending()
+        if ctx._pendingWidget then
+            EmitRow(ctx._pendingWidget, ctx._pendingHeight, nil, nil, false)
+            ctx._pendingWidget = nil
+            ctx._pendingHeight = 0
+        end
+    end
+
+    ctx.AddDetailWidget = function(widget, height, span)
+        if span then
+            FlushPending()
+            EmitRow(widget, height, nil, nil, true)
+            return
+        end
+        if ctx._pendingWidget then
+            EmitRow(ctx._pendingWidget, ctx._pendingHeight, widget, height, false)
+            ctx._pendingWidget = nil
+            ctx._pendingHeight = 0
+        else
+            ctx._pendingWidget = widget
+            ctx._pendingHeight = height
+        end
+    end
+
+    -- Wrap a bare (label=nil) form widget in the standard BuildSettingRow cell
+    -- so it renders on a single compact line (label left, control right) at the
+    -- uniform FORM_ROW height, instead of the tall label-on-top layout. Pass
+    -- span=true for a full-width row.
+    local optionsAPI = GetOptionsAPI()
+    ctx.AddFormRow = function(label, widget, span)
+        local cell = (optionsAPI and optionsAPI.BuildSettingRow)
+            and optionsAPI.BuildSettingRow(detailArea, label, widget)
+            or widget
+        ctx.AddDetailWidget(cell, FORM_ROW, span)
+    end
+
+    ctx.AddFormRow("Element Enabled", ctx.GUI:CreateFormCheckbox(ctx.detailArea, nil, "enabled", element, function()
         ctx.NotifyChanged()
         ctx.rebuild()
     end, {
         description = "Toggle this element. When off, it does not display.",
-    }), FORM_ROW)
+    }), true)
 
     if element.mode == "filterStrip" then
         AddFilterStripConfig(ctx, element)
     else
         AddTrackedConfig(ctx, element)
     end
+
+    FlushPending()
 
     local used = math.abs(ctx.detailY) + 8
     ctx.detailArea:SetHeight(used)
