@@ -2395,6 +2395,23 @@ local function RenderAurasSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
+    -- Aura edits never change tile geometry, only what the aura renderer draws.
+    -- Route the (frequent) editor data-change callback through a lightweight
+    -- refresh: live frames + layout-mode handle + an aura-ONLY preview rebuild,
+    -- skipping the full per-tile preview restyle. Falls back to the full preview
+    -- seam if the lightweight one isn't loaded yet.
+    local refreshAuras = function()
+        if _G.QUI_RefreshGroupFrames then
+            _G.QUI_RefreshGroupFrames()
+        end
+        if _G.QUI_LayoutModeSyncHandle then
+            _G.QUI_LayoutModeSyncHandle(NormalizeContextMode(groupFrames.contextMode) == "raid" and "raidFrames" or "partyFrames")
+        end
+        if _G.QUI_RefreshGroupFramePreview then
+            _G.QUI_RefreshGroupFramePreview(NormalizeContextMode(groupFrames.contextMode), true)
+        end
+    end
+
     builder.Header("Auras")
     builder.Description("Buff/debuff strips and tracked auras on " .. groupFrames.sourceLabel
         .. " group frames. A spec either inherits the All Specs bucket or overrides it with its own — never both.")
@@ -2481,9 +2498,10 @@ local function RenderAurasSection(sectionHost, ctx)
 
     RenderEmbeddedEditorSection(sectionHost, builder, function(editorHost)
         return AurasEditor.RenderAuras(editorHost, auras, selectedBucket, function()
-            -- Data changed (element added/removed/toggled): refresh the live
-            -- frames. The section reflow is driven by onLayoutChanged below.
-            refresh()
+            -- Data changed (element added/removed/toggled/edited): refresh the
+            -- live frames + an aura-only preview rebuild (skips the heavy full
+            -- per-tile restyle). The section reflow is driven by onLayoutChanged.
+            refreshAuras()
         end, {
             contentWidth = contentWidth,
             forceSelectedIndex = forcedIndex,

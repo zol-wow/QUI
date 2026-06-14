@@ -135,6 +135,27 @@ local function GetPixelSize(frame)
     return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
 end
 
+-- Apply the QUI settings font (Quazii) + standard text colors to the spell-ID
+-- input pieces, so they match the rest of the settings UI instead of Blizzard's
+-- GameFont + hardcoded greys. Any of box/label/addText may be nil.
+local function StyleSpellInputText(GUI, C, box, label, addText)
+    local fp = (GUI and GUI.FONT_PATH) or [[Interface\AddOns\QUI\assets\Quazii.ttf]]
+    local tc = (C and C.text) or { 1, 1, 1, 1 }
+    local mc = (C and C.textMuted) or { 1, 1, 1, 0.45 }
+    if box then
+        box:SetFont(fp, 12, "")
+        box:SetTextColor(tc[1], tc[2], tc[3], 1)
+    end
+    if label then
+        label:SetFont(fp, 11, "")
+        label:SetTextColor(mc[1], mc[2], mc[3], mc[4] or 0.45)
+    end
+    if addText then
+        addText:SetFont(fp, 11, "")
+        addText:SetTextColor(tc[1], tc[2], tc[3], 1)
+    end
+end
+
 -- Pretty label/icon for an element. filterStrip => "Buffs"/"Debuffs"; tracked =>
 -- the first spell's name (with a "+N" suffix when several spells share a strip).
 local function GetElementLabel(element)
@@ -187,11 +208,11 @@ local function AddPlacementWidgets(ctx, element, includeStrip)
     local onChange = ctx.onChange
 
     if includeStrip then
-        row("Max Icons", GUI:CreateFormSlider(ctx.detailArea, nil, 0, 10, 1, "maxIcons", element, onChange, nil, {
+        row("Max Icons", GUI:CreateFormSlider(ctx.detailArea, nil, 0, 10, 1, "maxIcons", element, onChange, { deferOnDrag = true }, {
             description = "Hard cap on how many icons this element displays at once. 0 shows all matches.",
         }))
     end
-    row("Icon Size", GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, nil, {
+    row("Icon Size", GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, { deferOnDrag = true }, {
         description = "Pixel size of each icon.",
     }))
     row("Anchor", GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
@@ -201,14 +222,14 @@ local function AddPlacementWidgets(ctx, element, includeStrip)
         row("Grow Direction", GUI:CreateFormDropdown(ctx.detailArea, nil, AURA_GROW_OPTIONS, "growDirection", element, onChange, {
             description = "Direction additional icons are added in after the first.",
         }))
-        row("Spacing", GUI:CreateFormSlider(ctx.detailArea, nil, 0, 8, 1, "spacing", element, onChange, nil, {
+        row("Spacing", GUI:CreateFormSlider(ctx.detailArea, nil, 0, 8, 1, "spacing", element, onChange, { deferOnDrag = true }, {
             description = "Pixel gap between adjacent icons.",
         }))
     end
-    row("X Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, nil, {
+    row("X Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, { deferOnDrag = true }, {
         description = "Horizontal pixel offset from the anchor.",
     }))
-    row("Y Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, nil, {
+    row("Y Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, { deferOnDrag = true }, {
         description = "Vertical pixel offset from the anchor.",
     }))
 end
@@ -227,7 +248,7 @@ local function AddDurationTextWidgets(ctx, element)
     row("Show Duration Text", GUI:CreateFormCheckbox(ctx.detailArea, nil, "showDurationText", element, onChange, {
         description = "Show the remaining-time countdown text on each icon.",
     }))
-    row("Duration Font Size", GUI:CreateFormSlider(ctx.detailArea, nil, 6, 24, 1, "durationFontSize", element, onChange, nil, {
+    row("Duration Font Size", GUI:CreateFormSlider(ctx.detailArea, nil, 6, 24, 1, "durationFontSize", element, onChange, { deferOnDrag = true }, {
         description = "Font size used for the remaining-time text.",
     }))
 end
@@ -325,6 +346,7 @@ local function AddSpellListEditor(ctx, element, fieldName, title)
     local addManualText = addManualButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     addManualText:SetPoint("CENTER")
     addManualText:SetText("Add")
+    StyleSpellInputText(GUI, C, inputBox, inputLabel, addManualText)
     local function CommitManual()
         local spellID = tonumber(inputBox:GetText())
         if spellID and spellID > 0 then
@@ -423,10 +445,10 @@ local function AddTrackedBarConfig(ctx, element)
     row("Orientation", GUI:CreateFormDropdown(ctx.detailArea, nil, BAR_ORIENTATION_OPTIONS, "orientation", bar, onChange, {
         description = "Whether the bar drains horizontally or vertically as the aura ticks down.",
     }))
-    row("Thickness", GUI:CreateFormSlider(ctx.detailArea, nil, 1, 20, 1, "thickness", bar, onChange, nil, {
+    row("Thickness", GUI:CreateFormSlider(ctx.detailArea, nil, 1, 20, 1, "thickness", bar, onChange, { deferOnDrag = true }, {
         description = "Pixel thickness of the bar.",
     }))
-    row("Width / Height", GUI:CreateFormSlider(ctx.detailArea, nil, 4, 200, 1, "length", bar, onChange, nil, {
+    row("Width / Height", GUI:CreateFormSlider(ctx.detailArea, nil, 4, 200, 1, "length", bar, onChange, { deferOnDrag = true }, {
         description = "Pixel length of the bar.",
     }))
     row("Match Frame Width / Height", GUI:CreateFormCheckbox(ctx.detailArea, nil, "matchFrameSize", bar, onChange, {
@@ -444,11 +466,12 @@ local function AddTrackedBarConfig(ctx, element)
     row("Border Color", GUI:CreateFormColorPicker(ctx.detailArea, nil, "borderColor", bar, onChange, nil, {
         description = "Color of the bar's border.",
     }))
-    row("Border Size", GUI:CreateFormSlider(ctx.detailArea, nil, 1, 8, 1, "borderSize", bar, onChange, nil, {
+    row("Border Size", GUI:CreateFormSlider(ctx.detailArea, nil, 1, 8, 1, "borderSize", bar, onChange, { deferOnDrag = true }, {
         description = "Pixel thickness of the bar's border.",
     }))
     row("Low-Time Seconds", GUI:CreateFormSlider(ctx.detailArea, nil, 0, 30, 0.5, "lowTimeThreshold", bar, onChange, {
         precision = 1,
+        deferOnDrag = true,
     }, {
         description = "When remaining duration drops below this, the bar switches to the Low-Time Color.",
     }))
@@ -495,6 +518,10 @@ local function AddTrackedConfig(ctx, element)
     local onChange = ctx.onChange
     local rebuild = ctx.rebuild
 
+    -- No embedded spell editor: a tracked element carries the single spell it
+    -- was created with (top-level Spell ID box / picker). Spells are added only
+    -- from there, one tracked element per spell.
+
     row("Display Type", GUI:CreateFormDropdown(ctx.detailArea, nil, TRACKED_DISPLAY_OPTIONS, "displayType", element, function()
         if element.displayType == "square" and type(element.color) ~= "table" then
             element.color = { 0.2, 0.8, 0.2, 1 }
@@ -517,10 +544,10 @@ local function AddTrackedConfig(ctx, element)
         row("Anchor", GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
             description = "Where on the frame the bar is anchored.",
         }))
-        row("X Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, nil, {
+        row("X Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, { deferOnDrag = true }, {
             description = "Horizontal pixel offset from the anchor.",
         }))
-        row("Y Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, nil, {
+        row("Y Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, { deferOnDrag = true }, {
             description = "Vertical pixel offset from the anchor.",
         }))
         AddTrackedBarConfig(ctx, element)
@@ -541,16 +568,16 @@ local function AddTrackedConfig(ctx, element)
         if type(element.color) ~= "table" then
             element.color = { 0.2, 0.8, 0.2, 1 }
         end
-        row("Square Size", GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, nil, {
+        row("Square Size", GUI:CreateFormSlider(ctx.detailArea, nil, 4, 40, 1, "iconSize", element, onChange, { deferOnDrag = true }, {
             description = "Pixel size of the colored square.",
         }))
         row("Anchor", GUI:CreateFormDropdown(ctx.detailArea, nil, NINE_POINT_OPTIONS, "anchor", element, onChange, {
             description = "Where on the frame the square is anchored.",
         }))
-        row("X Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, nil, {
+        row("X Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetX", element, onChange, { deferOnDrag = true }, {
             description = "Horizontal pixel offset from the anchor.",
         }))
-        row("Y Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, nil, {
+        row("Y Offset", GUI:CreateFormSlider(ctx.detailArea, nil, -100, 100, 1, "offsetY", element, onChange, { deferOnDrag = true }, {
             description = "Vertical pixel offset from the anchor.",
         }))
         row("Square Color", GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element, onChange, nil, {
@@ -571,9 +598,9 @@ local function ReleaseRows(activeRows, pool)
     for _, row in ipairs(activeRows) do
         row:Hide()
         row:ClearAllPoints()
-        row.enable:SetScript("OnClick", nil)
-        row.remove:SetScript("OnClick", nil)
-        row.expand:SetScript("OnClick", nil)
+        if row.enable then row.enable:SetScript("OnClick", nil) end
+        if row.delete then row.delete:SetScript("OnClick", nil) end
+        row:SetScript("OnClick", nil)
         table.insert(pool, row)
     end
     wipe(activeRows)
@@ -741,14 +768,8 @@ local function RebuildList(ctx)
         row:Show()
 
         local label, icon = GetElementLabel(element)
-        if icon then
-            row.icon:SetTexture(icon)
-            row.icon:Show()
-            row.name:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
-        else
-            row.icon:Hide()
-            row.name:SetPoint("LEFT", row.enable, "RIGHT", 8, 0)
-        end
+        row.icon:SetTexture(icon or FALLBACK_ICON)
+        row.icon:Show()
         local nameColor = element.enabled ~= false and "|cFFFFFFFF" or "|cFF808080"
         row.name:SetText(nameColor .. label .. "|r")
 
@@ -766,18 +787,22 @@ local function RebuildList(ctx)
         end)
 
         local expanded = index == ctx.selectedIndex
-        row.expand:SetText(expanded and "-" or "+")
-        row:SetBackdropColor(expanded and 0.16 or 0.08, expanded and 0.16 or 0.08, expanded and 0.2 or 0.08, 0.9)
-        row:SetBackdropBorderColor(
-            expanded and accent[1] or ((C.border and C.border[1]) or 0.2),
-            expanded and accent[2] or ((C.border and C.border[2]) or 0.2),
-            expanded and accent[3] or ((C.border and C.border[3]) or 0.2),
-            1
-        )
-        row.expand:SetScript("OnClick", function()
-            -- Toggle: collapse if already open, else open this row. Cannot use
-            -- `cond and nil or index` -- the nil branch makes `and/or` fall
-            -- through to `index`, so it would never collapse.
+        if ns.UIKit and ns.UIKit.SetChevronCaretExpanded and row.chevron then
+            ns.UIKit.SetChevronCaretExpanded(row.chevron, expanded)
+        end
+
+        -- Alternating zebra (like the standard settings toggle rows); the
+        -- expanded row gets a faint accent tint instead.
+        if expanded then
+            row.bg:SetColorTexture(accent[1], accent[2], accent[3], 0.10)
+        elseif (index % 2) == 0 then
+            row.bg:SetColorTexture(1, 1, 1, 0.02)
+        else
+            row.bg:SetColorTexture(1, 1, 1, 0)
+        end
+
+        -- Whole row toggles expand (collapse if already open, else open this one).
+        row:SetScript("OnClick", function()
             if ctx.selectedIndex == index then
                 ctx.selectedIndex = nil
             else
@@ -785,7 +810,7 @@ local function RebuildList(ctx)
             end
             ctx.rebuild()
         end)
-        row.remove:SetScript("OnClick", function()
+        row.delete:SetScript("OnClick", function()
             table.remove(bucket, index)
             if ctx.selectedIndex == index then
                 ctx.selectedIndex = nil
@@ -934,11 +959,6 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
     addRow:SetHeight(26)
     local addStripButton = GUI:CreateButton(addRow, "Add Filter Strip", 130, 22)
     addStripButton:SetPoint("LEFT", 0, 0)
-    local addTrackedButton = GUI:CreateButton(addRow, "Add Tracked Aura", 130, 22)
-    addTrackedButton:SetPoint("LEFT", addStripButton, "RIGHT", 8, 0)
-    GUI:AttachTooltip(addTrackedButton,
-        "Add a tracked aura. Pick a suggested spell or enter a Spell ID below, or click this to add an empty tracked element you can fill in.",
-        "Add Tracked Aura")
 
     -- Manual spellID input row.
     local inputRow = CreateFrame("Frame", nil, listArea)
@@ -980,6 +1000,7 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
     local addManualText = addManualButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     addManualText:SetPoint("CENTER")
     addManualText:SetText("Add")
+    StyleSpellInputText(GUI, C, inputBox, inputLabel, addManualText)
 
     local rowPool = {}
     local activeRows = {}
@@ -1069,13 +1090,28 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
             return row
         end
 
-        row = CreateFrame("Frame", nil, listArea, "BackdropTemplate")
+        -- Whole-row Button toggles expand; child buttons (enable, delete) consume
+        -- their own clicks. The chevron is a Frame, so clicking it falls through
+        -- to the row toggle.
+        row = CreateFrame("Button", nil, listArea)
         row:SetHeight(ROW_HEIGHT)
-        row:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = GetPixelSize(row),
-        })
+
+        row.bg = row:CreateTexture(nil, "BACKGROUND")
+        row.bg:SetAllPoints(row)
+        row.bg:SetColorTexture(1, 1, 1, 0)
+
+        local UIKit = ns.UIKit
+        if UIKit and UIKit.CreateChevronCaret then
+            row.chevron = UIKit.CreateChevronCaret(row, {
+                point = "LEFT", relativeTo = row, relativePoint = "LEFT",
+                xPixels = 8, sizePixels = 8, collapsedDirection = "right",
+                expanded = false,
+                r = (C.text and C.text[1]) or 1,
+                g = (C.text and C.text[2]) or 1,
+                b = (C.text and C.text[3]) or 1,
+                a = 0.85,
+            })
+        end
 
         row.enable = SpellList and SpellList.CreateMiniToggle and SpellList.CreateMiniToggle(row) or nil
         if not row.enable then
@@ -1084,7 +1120,7 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
             row.enable:SetSize(26, 14)
             row.enable.SetToggleState = function() end
         end
-        row.enable:SetPoint("LEFT", row, "LEFT", 6, 0)
+        row.enable:SetPoint("LEFT", row, "LEFT", 22, 0)
 
         row.icon = row:CreateTexture(nil, "ARTWORK")
         row.icon:SetSize(16, 16)
@@ -1092,39 +1128,17 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
         row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
         row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.name:SetFont((GUI.FONT_PATH) or [[Interface\AddOns\QUI\assets\Quazii.ttf]], 12, "")
         row.name:SetJustifyH("LEFT")
 
-        row.remove = CreateFrame("Button", nil, row)
-        row.remove:SetSize(18, 18)
-        row.remove:SetPoint("RIGHT", row, "RIGHT", -4, 0)
-        row.removeText = row.remove:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        row.removeText:SetPoint("CENTER")
-        row.removeText:SetText("x")
-        row.removeText:SetTextColor(0.8, 0.3, 0.3, 1)
-        row.remove:SetScript("OnEnter", function()
-            row.removeText:SetTextColor(1, 0.4, 0.4, 1)
-        end)
-        row.remove:SetScript("OnLeave", function()
-            row.removeText:SetTextColor(0.8, 0.3, 0.3, 1)
-        end)
-
-        row.expand = CreateFrame("Button", nil, row, "BackdropTemplate")
-        row.expand:SetSize(18, 18)
-        row.expand:SetPoint("RIGHT", row.remove, "LEFT", -4, 0)
-        row.expand:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = GetPixelSize(row.expand),
-        })
-        row.expand:SetBackdropColor(0.12, 0.12, 0.14, 1)
-        row.expand:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
-        row.expandText = row.expand:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        row.expandText:SetPoint("CENTER")
-        row.expand.SetText = function(_, t) row.expandText:SetText(t) end
+        -- Standard QUI ghost button (matches Alts row delete), not a raw red x.
+        row.delete = GUI:CreateButton(row, "Delete", 56, 18)
+        row.delete:SetPoint("RIGHT", row, "RIGHT", -6, 0)
 
         row.badge = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
         row.badge:SetJustifyH("RIGHT")
-        row.badge:SetPoint("RIGHT", row.expand, "LEFT", -8, 0)
+        row.badge:SetPoint("RIGHT", row.delete, "LEFT", -8, 0)
+        row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
         row.name:SetPoint("RIGHT", row.badge, "LEFT", -6, 0)
 
         return row
@@ -1221,9 +1235,6 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
 
     addStripButton:SetScript("OnClick", function()
         ctx.AddFilterStrip()
-    end)
-    addTrackedButton:SetScript("OnClick", function()
-        ctx.AddTracked(nil)
     end)
     addManualButton:SetScript("OnClick", function()
         local spellID = tonumber(inputBox:GetText())

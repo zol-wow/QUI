@@ -1264,6 +1264,28 @@ function Driver.Refresh(contextMode)
     end
 end
 
+-- Lightweight refresh used by the aura editor: re-dispatch ONLY the aura
+-- preview tiles, skipping the full per-tile restyle in Refresh (up to 40 tiles
+-- × ~15 Apply* subsystems). The aura editor only mutates aura element config --
+-- never tile geometry/health/etc -- so the heavy restyle is wasted work on
+-- every keystroke/slider tick. Falls back to a full Refresh when the preview
+-- has not been built yet (no aura tiles to reuse).
+function Driver.RefreshAuras()
+    if not state.host then return end
+    if not state.auraFrames or #state.auraFrames == 0 then
+        Driver.Refresh(state.contextMode)
+        return
+    end
+    local gfdb = Driver._GetGFDB()
+    local vdb = Driver._GetContextDB(gfdb, state.contextMode)
+    if not vdb then return end
+    local now = (GetTime and GetTime()) or 0
+    local auras = (state.filter and state.filter.auras == false) and nil or vdb.auras
+    for _, f in ipairs(state.auraFrames) do
+        RenderFrameAuras(f, auras, now)
+    end
+end
+
 function Driver.Build(host)
     state.host = host
     Driver._EnsureRoot()
@@ -1287,8 +1309,44 @@ _G.QUI_BuildGroupFramePreview = function(host, contextMode)
     Driver.Build(host)
     Driver.Refresh(contextMode)
 end
-_G.QUI_RefreshGroupFramePreview = function(contextMode)
-    Driver.Refresh(contextMode or state.contextMode)
+-- Refresh coalescer: a single discrete settings change can fan out into several
+-- onChange pings within one frame (editor rebuild + per-widget callbacks +
+-- section reflow). Collapse them into one rebuild on the next frame. A queued
+-- full refresh supersedes an aura-only one.
+local function FlushPreviewRefresh()
+    state._refreshScheduled = false
+    local kind = state._pendingRefresh
+    state._pendingRefresh = nil
+    local cm = state._pendingContext
+    state._pendingContext = nil
+    if kind == "full" then
+        Driver.Refresh(cm or state.contextMode)
+    elseif kind == "auras" then
+        Driver.RefreshAuras()
+    end
+end
+
+local function ScheduleRefresh(kind, contextMode)
+    if contextMode then state._pendingContext = contextMode end
+    if kind == "full" or state._pendingRefresh == "full" then
+        state._pendingRefresh = "full"
+    else
+        state._pendingRefresh = "auras"
+    end
+    if state._refreshScheduled then return end
+    state._refreshScheduled = true
+    if C_Timer and C_Timer.After then
+        C_Timer.After(0, FlushPreviewRefresh)
+    else
+        FlushPreviewRefresh()
+    end
+end
+
+-- aurasOnly=true requests the lightweight aura-tile-only rebuild (see
+-- Driver.RefreshAuras); omitted/false does the full per-tile restyle. Kept a
+-- single seam (no new _G global) for the assignment ratchet.
+_G.QUI_RefreshGroupFramePreview = function(contextMode, aurasOnly)
+    ScheduleRefresh(aurasOnly and "auras" or "full", contextMode or state.contextMode)
 end
 _G.QUI_SetGroupFramePreviewObserver = function(fn)
     state.onBuilt = fn
