@@ -128,7 +128,20 @@ local function ClonePosition(pos)
     }
 end
 
-local TryInstallAnchoredFramesHook = ns.QUI_IntegrationShared.MakeTryInstallAnchoredFramesHook("QUI_BigWigs")
+local anchoredFramesHookInstalled = false
+local function TryInstallAnchoredFramesHook()
+    if anchoredFramesHookInstalled then
+        return true
+    end
+    if not (ns.QUI_Anchoring and ns.QUI_Anchoring.RegisterAnchoredFramesPostHook) then
+        return false
+    end
+    ns.QUI_Anchoring.RegisterAnchoredFramesPostHook("bigwigs", function()
+        QUI_BigWigs:ApplyAllPositions()
+    end)
+    anchoredFramesHookInstalled = true
+    return true
+end
 
 ---------------------------------------------------------------------------
 -- ANCHOR FRAME RESOLUTION

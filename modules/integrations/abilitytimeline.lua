@@ -71,7 +71,20 @@ end
 ---------------------------------------------------------------------------
 local QueueRetry = ns.QUI_IntegrationShared.MakeQueueRetry("QUI_AbilityTimeline")
 
-local TryInstallAnchoredFramesHook = ns.QUI_IntegrationShared.MakeTryInstallAnchoredFramesHook("QUI_AbilityTimeline")
+local anchoredFramesHookInstalled = false
+local function TryInstallAnchoredFramesHook()
+    if anchoredFramesHookInstalled then
+        return true
+    end
+    if not (ns.QUI_Anchoring and ns.QUI_Anchoring.RegisterAnchoredFramesPostHook) then
+        return false
+    end
+    ns.QUI_Anchoring.RegisterAnchoredFramesPostHook("abilitytimeline", function()
+        QUI_AbilityTimeline:ApplyAllPositions()
+    end)
+    anchoredFramesHookInstalled = true
+    return true
+end
 
 local function RegisterAnchorTargets()
     if not (ns.QUI_Anchoring and ns.QUI_Anchoring.RegisterAnchorTarget) then

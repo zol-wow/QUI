@@ -70,31 +70,3 @@ function IntegrationShared.MakeQueueRetry(moduleName)
         end)
     end
 end
-
--- Returns a TryInstallAnchoredFramesHook function that registers
--- ns[moduleName]:ApplyAllPositions() as a post-update hook on the anchoring
--- module via ns.QUI_Anchoring.RegisterAnchoredFramesPostHook. Returns false
--- until that API is available so callers keep retrying. This routes through
--- QUI's explicit post-hook registry instead of re-wrapping the global
--- _G.QUI_UpdateAnchoredFrames (which the global-assignment ratchet forbids).
-function IntegrationShared.MakeTryInstallAnchoredFramesHook(moduleName)
-    local installed = false
-    return function()
-        if installed then
-            return true
-        end
-
-        if not (ns.QUI_Anchoring and ns.QUI_Anchoring.RegisterAnchoredFramesPostHook) then
-            return false
-        end
-
-        ns.QUI_Anchoring.RegisterAnchoredFramesPostHook(moduleName, function()
-            local module = ns[moduleName]
-            if module then
-                module:ApplyAllPositions()
-            end
-        end)
-        installed = true
-        return true
-    end
-end
