@@ -717,10 +717,13 @@ local function RebuildList(ctx)
     ctx.ReleaseSuggestRows()
     ctx.ClearDetailWidgets()
 
+    -- nil selectedIndex means "all collapsed" -- a valid state the expand/minus
+    -- toggle relies on, so DON'T coerce nil to 1 here (that made the minus button
+    -- never collapse). Only clamp a real index that ran past the list end.
     if #bucket == 0 then
         ctx.selectedIndex = nil
-    elseif not ctx.selectedIndex or ctx.selectedIndex > #bucket then
-        ctx.selectedIndex = math.min(ctx.selectedIndex or 1, #bucket)
+    elseif ctx.selectedIndex and ctx.selectedIndex > #bucket then
+        ctx.selectedIndex = #bucket
     end
 
     local C = ctx.C
@@ -772,7 +775,14 @@ local function RebuildList(ctx)
             1
         )
         row.expand:SetScript("OnClick", function()
-            ctx.selectedIndex = (ctx.selectedIndex == index) and nil or index
+            -- Toggle: collapse if already open, else open this row. Cannot use
+            -- `cond and nil or index` -- the nil branch makes `and/or` fall
+            -- through to `index`, so it would never collapse.
+            if ctx.selectedIndex == index then
+                ctx.selectedIndex = nil
+            else
+                ctx.selectedIndex = index
+            end
             ctx.rebuild()
         end)
         row.remove:SetScript("OnClick", function()
@@ -835,7 +845,10 @@ local function RebuildList(ctx)
 
     local suggestions = GetSuggestionSpells(bucket)
     if #suggestions > 0 then
-        local contentWidth = ctx.listArea:GetWidth()
+        -- Prefer the explicit width threaded from the host section; it is stable
+        -- across the synchronous render and the in-place rebuild. Fall back to
+        -- the live width, then a fixed default, only when none was supplied.
+        local contentWidth = ctx.contentWidth or ctx.listArea:GetWidth()
         if type(contentWidth) ~= "number" or contentWidth < SUGGEST_CELL_STRIDE then
             contentWidth = 480
         end
@@ -861,7 +874,18 @@ local function RebuildList(ctx)
 
     local contentHeight = math.max(1, math.abs(listY))
     ctx.listArea:SetHeight(contentHeight)
-    ctx.host:SetHeight(contentHeight + 8)
+    local hostHeight = contentHeight + 8
+    ctx.host:SetHeight(hostHeight)
+
+    -- Report selection + height so the host can persist the open row and
+    -- re-anchor the sections below this editor. Both are no-ops when the host
+    -- did not supply hooks (e.g. the headless search-cache harvest).
+    if ctx.onSelectionChanged then
+        ctx.onSelectionChanged(ctx.selectedIndex)
+    end
+    if ctx.onLayoutChanged then
+        ctx.onLayoutChanged(hostHeight)
+    end
 end
 
 -- opts is optional. opts.forceSelectedIndex seeds the initially-expanded element
@@ -975,6 +999,19 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
         activeRows = activeRows,
         activeSuggestRows = activeSuggestRows,
         selectedIndex = nil,
+        -- Explicit content width from the host section (see group_frames_schema
+        -- RenderAurasSection). Used for the suggestion-grid column math so the
+        -- list height is identical on the synchronous tab render and on the
+        -- in-place add/remove rebuild, regardless of when anchors settle.
+        contentWidth = (type(opts) == "table" and type(opts.contentWidth) == "number" and opts.contentWidth > 0)
+            and opts.contentWidth or nil,
+        -- Host hooks (optional): onSelectionChanged(index) persists which row is
+        -- expanded so a host-driven reflow can restore it; onLayoutChanged(height)
+        -- lets the host re-anchor the sections below when this editor resizes.
+        onSelectionChanged = (type(opts) == "table" and type(opts.onSelectionChanged) == "function")
+            and opts.onSelectionChanged or nil,
+        onLayoutChanged = (type(opts) == "table" and type(opts.onLayoutChanged) == "function")
+            and opts.onLayoutChanged or nil,
     }
 
     local function NotifyChanged()

@@ -438,6 +438,16 @@ function FullSurface.MeasureRenderedExtent(root)
         if not region or not region.GetLeft or not region.IsShown or not region:IsShown() then return end
         local l, r, t, b = region:GetLeft(), region:GetRight(), region:GetTop(), region:GetBottom()
         if not (l and r and t and b) then return end
+        -- Normalize to absolute screen pixels. GetLeft/Right/Top/Bottom are reported
+        -- in each region's OWN coordinate space (screen px / effective scale), so a
+        -- child with SetScale ~= 1 (e.g. a private-aura/aura count fontstring scaled
+        -- by its textScale) reports coordinates that are NOT comparable to its
+        -- unscaled siblings — a 0.5-scaled child reports 2x coordinates and looks a
+        -- screen away. Multiply by effective scale so every contributor is compared
+        -- in true screen pixels.
+        local s = (region.GetEffectiveScale and region:GetEffectiveScale()) or 1
+        if s <= 0 then s = 1 end
+        l, r, t, b = l * s, r * s, t * s, b * s
         if L == nil or l < L then L = l end
         if R == nil or r > R then R = r end
         if T == nil or t > T then T = t end
@@ -446,7 +456,16 @@ function FullSurface.MeasureRenderedExtent(root)
     acc(root)
     local function walk(f)
         if f.GetChildren then
-            for _, c in ipairs({ f:GetChildren() }) do acc(c); walk(c) end
+            for _, c in ipairs({ f:GetChildren() }) do
+                -- Skip hidden subtrees: a hidden frame's children keep their own
+                -- IsShown()==true (e.g. a hidden icon's cooldown/count), so
+                -- descending would keep the extent grown after the parent is
+                -- hidden (the panel would never shrink back on toggle-off).
+                if not (c.IsShown and not c:IsShown()) then
+                    acc(c)
+                    walk(c)
+                end
+            end
         end
         if f.GetRegions then
             for _, rg in ipairs({ f:GetRegions() }) do acc(rg) end
@@ -454,7 +473,11 @@ function FullSurface.MeasureRenderedExtent(root)
     end
     walk(root)
     if L == nil then return 0, 0 end
-    return (R - L), (T - B)
+    -- Convert the screen-pixel extent back into root's coordinate space (the units
+    -- the docked panel sizes in). For unscaled content this is identity.
+    local rootScale = (root.GetEffectiveScale and root:GetEffectiveScale()) or 1
+    if rootScale <= 0 then rootScale = 1 end
+    return (R - L) / rootScale, (T - B) / rootScale
 end
 
 -- Reusable preview panel docked to the right edge of the options window.
@@ -477,6 +500,7 @@ function FullSurface.CreateDockedPreviewPanel(opts)
     local GAP = opts.gap or 6
     local PAD = opts.pad or 8
     local HEADER_H = opts.headerHeight or 22
+    local STRIP_H = opts.controlStripHeight or 0
     local MIN_W = opts.minWidth or 140
 
     -- Anonymous (no global name): the host window is torn down + recreated on
@@ -517,23 +541,81 @@ function FullSurface.CreateDockedPreviewPanel(opts)
     local title = gui:CreateLabel(panel, opts.title or "Preview", 13, titleColor, "TOPLEFT", PAD, -PAD)
     title:SetJustifyH("LEFT")
 
+    -- Optional control strip (filter chips, raid-size slider) hosted by the
+    -- caller. Reserved as a fixed band so the auto-resize math (which measures
+    -- only the content host) never overlaps it.
+    local controlStrip
+    if STRIP_H > 0 then
+        controlStrip = CreateFrame("Frame", nil, panel)
+        controlStrip:SetPoint("TOPLEFT", PAD, -(PAD + HEADER_H))
+        controlStrip:SetPoint("TOPRIGHT", -PAD, -(PAD + HEADER_H))
+        controlStrip:SetHeight(STRIP_H)
+    end
+
     local content = CreateFrame("Frame", nil, panel)
-    content:SetPoint("TOPLEFT", PAD, -(PAD + HEADER_H))
+    content:SetPoint("TOPLEFT", PAD, -(PAD + HEADER_H + STRIP_H))
     content:SetPoint("BOTTOMRIGHT", -PAD, PAD)
 
+    -- Extra breathing room (screen px) kept between the panel and the screen
+    -- edge when we nudge the window left to make the right dock fit.
+    local EDGE_MARGIN = 8
+
     local function Reflow()
-        -- Read width before clearing points; size is explicit (SetSize), so it
-        -- is anchor-independent, but read first to be robust regardless.
+        -- All edge math is done in SCREEN pixels: the window carries its own
+        -- scale (configPanelScale) so its GetLeft/GetRight are in window units,
+        -- while UIParent's are in UIParent units -- multiply each by its
+        -- effective scale before comparing. The panel is a child of the window,
+        -- so it shares the window scale (GAP/width are window units).
+        local ws = window:GetEffectiveScale() or 1
+        local us = UIParent:GetEffectiveScale() or 1
+        if ws <= 0 then ws = 1 end
+
         local panelW = panel:GetWidth() or 0
+        local winRightPx = (window:GetRight() or 0) * ws
+        local winLeftPx = (window:GetLeft() or 0) * ws
+        local panelWpx = panelW * ws
+        local gapPx = GAP * ws
+        local screenRightPx = (UIParent:GetRight() or 0) * us
+        local screenLeftPx = (UIParent:GetLeft() or 0) * us
+
         panel:ClearAllPoints()
-        local screenRight = UIParent:GetRight() or 0
-        local winRight = window:GetRight() or 0
-        -- Vertically centered on the window (LEFT/RIGHT midpoints align).
-        if winRight + GAP + panelW <= screenRight then
-            panel:SetPoint("LEFT", window, "RIGHT", GAP, 0)
-        else
-            panel:SetPoint("RIGHT", window, "LEFT", -GAP, 0)
+
+        -- Top-aligned on the window's side edge: the preview can be tall, so dock
+        -- its top to the window's top rather than centering it vertically.
+        -- Priority: dock right if it fits -> flip to the left if THAT fits (so
+        -- dragging the window toward the right edge moves the preview to the left
+        -- instead of overlapping or shoving the window) -> only as a last resort,
+        -- when neither side fits, nudge the window left to make room on the right.
+        local neededRightPx = winRightPx + gapPx + panelWpx
+        if neededRightPx <= screenRightPx then
+            panel:SetPoint("TOPLEFT", window, "TOPRIGHT", GAP, 0)
+            return
         end
+
+        local leftDockEdgePx = winLeftPx - gapPx - panelWpx
+        if leftDockEdgePx >= screenLeftPx then
+            panel:SetPoint("TOPRIGHT", window, "TOPLEFT", -GAP, 0)
+            return
+        end
+
+        -- Neither side fits at the window's current position. Shift the window
+        -- left just enough (+ a small margin) for the right dock to fit, if the
+        -- window still clears the left edge afterwards.
+        local overflowPx = (neededRightPx - screenRightPx) + EDGE_MARGIN
+        if (winLeftPx - overflowPx) >= screenLeftPx then
+            local point, relTo, relPoint, x, y = window:GetPoint(1)
+            if point then
+                -- GetPoint offsets are in the window's own units; shift in the
+                -- same units (overflow is screen px -> divide by window scale).
+                window:SetPoint(point, relTo, relPoint, (x or 0) - (overflowPx / ws), y or 0)
+                panel:SetPoint("TOPLEFT", window, "TOPRIGHT", GAP, 0)
+                return
+            end
+        end
+
+        -- Truly no room either way (panel wider than the free space): dock left
+        -- and let SetClampedToScreen keep it on screen.
+        panel:SetPoint("TOPRIGHT", window, "TOPLEFT", -GAP, 0)
     end
 
     panel:HookScript("OnShow", Reflow)
@@ -542,14 +624,14 @@ function FullSurface.CreateDockedPreviewPanel(opts)
         hooksecurefunc(window, "StopMovingOrSizing", function() if panel:IsShown() then Reflow() end end)
     end
 
-    local P = { frame = panel, contentHost = content }
+    local P = { frame = panel, contentHost = content, controlStrip = controlStrip }
 
     function P.SetTitle(text) title:SetText(text or "Preview") end
     function P.Show() panel:Show(); Reflow() end
     function P.Hide() panel:Hide() end
     function P.Resize(contentW, contentH)
         local w = math.max(contentW or 0, MIN_W) + PAD * 2
-        local h = (contentH or 0) + HEADER_H + PAD * 2
+        local h = (contentH or 0) + HEADER_H + STRIP_H + PAD * 2
         local cap = (window:GetHeight() or 850)
         if h > cap then h = cap end
         panel:SetSize(w, h)
@@ -896,14 +978,17 @@ function FullSurface.BuildScrollTabBody(body, options)
         container:Hide()
 
         local content = container
+        local scrollFrame
         if ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
-            local _scrollFrame
-            _scrollFrame, content = ns.QUI_Options.CreateScrollableContent(container)
+            scrollFrame, content = ns.QUI_Options.CreateScrollableContent(container)
         end
 
         cached = {
             container = container,
             content = content or container,
+            -- Exposed so a caller's render() can wire an in-tab section-nav
+            -- chip strip (GUI:RenderSectionNav) onto this tab's scroll frame.
+            scrollFrame = scrollFrame,
             rendered = false,
         }
         tabBodyCache[cacheKey] = cached

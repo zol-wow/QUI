@@ -1777,18 +1777,17 @@ local GROUP_FRAMES_SEARCH_CAPTURE_CONTEXTS = {
     { key = "raid", providerKey = "raidFrames" },
 }
 
+-- Tab strip order after the beta restructure. Spotlight folded into Layout
+-- (rendered only in the raid context, where RenderLayoutTab appends it) and
+-- Dispel Overlay folded into Appearance, so neither needs a standalone capture
+-- entry -- their widgets are harvested through the host tab's render method.
 local GROUP_FRAMES_SEARCH_CAPTURE_TABS = {
     { key = "general", label = "General", method = "RenderGeneralTab", subTabIndex = 1 },
     { key = "appearance", label = "Appearance", method = "RenderAppearanceTab", subTabIndex = 2 },
     { key = "layout", label = "Layout", method = "RenderLayoutTab", subTabIndex = 3 },
-    { key = "dimensions", label = "Dimensions", method = "RenderDimensionsTab", subTabIndex = 4 },
-    { key = "rangepet", label = "Range & Pet", method = "RenderRangePetTab", subTabIndex = 5 },
-    { key = "spotlight", label = "Spotlight", method = "RenderSpotlightTab", subTabIndex = 6, raidOnly = true },
-    { key = "health", label = "Health", method = "RenderHealthTab", subTabIndex = 7 },
-    { key = "name", label = "Name", method = "RenderNameTab", subTabIndex = 9 },
-    { key = "indicators", label = "Indicators", method = "RenderIndicatorsTab", subTabIndex = 10 },
-    { key = "healer", label = "Healer", method = "RenderHealerTab", subTabIndex = 11 },
-    { key = "auras", label = "Auras", method = "RenderAurasTab", subTabIndex = 12 },
+    { key = "health", label = "Health", method = "RenderHealthTab", subTabIndex = 4 },
+    { key = "indicators", label = "Indicators", method = "RenderIndicatorsTab", subTabIndex = 5 },
+    { key = "auras", label = "Auras", method = "RenderAurasTab", subTabIndex = 6 },
 }
 
 local function capture_group_frames_settings_tabs()

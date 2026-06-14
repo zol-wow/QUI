@@ -941,6 +941,23 @@ function QUI_GFEM:EnableTestMode(previewType)
     end
     container:SetSize(totalW, totalH)
 
+    -- The initial SetPoint above anchored the container to UIParent, which is
+    -- correct ONLY for free / screen-positioned frames. When the frame is
+    -- ANCHORED to another element, its stored frameAnchoring offsets are relative
+    -- to that PARENT, so applying them against UIParent drops the preview at the
+    -- wrong spot (and the layout handle, a child overlay that syncs off this
+    -- container's rect, follows it there). Now that the container is the resolved
+    -- frame for its key (FRAME_RESOLVERS -> GetActiveFrame returns it in test
+    -- mode) AND has been sized to its content, re-run the anchoring system so it
+    -- positions relative to the real parent frame, matching the live gameplay
+    -- position. This MUST run after container:SetSize: ApplyFrameAnchor's
+    -- corner/edge math reads the container's current size, so anchoring it while
+    -- still unsized would offset it by ~one container height ("one level up the
+    -- chain"). Skip in legacy edit mode: there the container rides the mover.
+    if not isEditMode and _G.QUI_ApplyFrameAnchor then
+        _G.QUI_ApplyFrameAnchor(previewType == "raid" and "raidFrames" or "partyFrames")
+    end
+
     -- If edit mode is active, sync the mover size and re-anchor
     if isEditMode then
         self:SyncMoverToContent()

@@ -114,7 +114,6 @@ modules\layout\layoutmode.lua
 modules\layout\layoutmode_ui.lua
 modules\layout\layoutmode_settings.lua
 modules\layout\layoutmode_utils.lua
-modules\layout\layoutmode_composer.lua
 modules\layout\anchoring.lua
 
 

@@ -82,6 +82,7 @@ tiles\help_content.lua
 ..\QUI_GroupFrames\groupframes\settings\group_frames_schema.lua
 ..\QUI_GroupFrames\groupframes\settings\group_frames_model.lua
 ..\QUI_GroupFrames\groupframes\settings\group_frames.lua
+..\QUI_GroupFrames\groupframes\settings\group_frames_preview_driver.lua
 ..\QUI_GroupFrames\groupframes\settings\group_frames_surface.lua
 ..\QUI_GroupFrames\groupframes\settings\click_cast_content.lua
 ..\QUI_GroupFrames\groupframes\settings\raid_buffs.lua

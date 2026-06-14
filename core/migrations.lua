@@ -309,19 +309,6 @@ local _currentActiveProfile = nil  -- raw sv profile table for the active profil
 ---------------------------------------------------------------------------
 local CURRENT_SCHEMA_VERSION = 46
 
--- The oldest schema we still migrate incrementally. 3.5.11 (the last major
--- release before 4.0) shipped schema v31, and migrations v2–v31 were removed
--- in 4.0. A profile stored below this floor is too old to upgrade step-by-step;
--- RunOnProfile backs it up, wipes it, and flags it for a starter-profile
--- reseed at login (see profile._needsStarterReseed). Fresh profiles (stored==0)
--- are NOT floored — they take the normal fresh-init path.
-local MIN_SUPPORTED_SCHEMA = 31
-
--- Exposed so the profile-import path can reject pre-3.5.11 exports before they
--- reach RunOnProfile (where they would otherwise trip the floor and wipe the
--- active profile they import into).
-Migrations.MIN_SUPPORTED_SCHEMA = MIN_SUPPORTED_SCHEMA
-
 ---------------------------------------------------------------------------
 -- Shared helpers
 ---------------------------------------------------------------------------
@@ -1198,6 +1185,141 @@ end
 -- list. `elements["*"]` holds all-spec elements; `elements[specID]` holds
 -- per-spec (pinned) ones. Pure and idempotent.
 ---------------------------------------------------------------------------
+
+-- edgeInset → (offsetX, offsetY) by anchor sign
+local PINNED_INSET_SIGN = {
+    TOPLEFT = { 1, -1 }, TOP = { 0, -1 }, TOPRIGHT = { -1, -1 },
+    LEFT = { 1, 0 }, CENTER = { 0, 0 }, RIGHT = { -1, 0 },
+    BOTTOMLEFT = { 1, 1 }, BOTTOM = { 0, 1 }, BOTTOMRIGHT = { -1, 1 },
+}
+
+local function migrateStrips(auras, elements)
+    local function carryCommon(e, a, p)  -- p = "buff" | "debuff"
+        local Cap = (p == "buff") and "Buff" or "Debuff"
+        e.iconSize = a[p .. "IconSize"]; e.anchor = a[p .. "Anchor"]
+        e.growDirection = a[p .. "GrowDirection"]; e.spacing = a[p .. "Spacing"]
+        e.offsetX = a[p .. "OffsetX"]; e.offsetY = a[p .. "OffsetY"]
+        e.hideSwipe = a[p .. "HideSwipe"]; e.reverseSwipe = a[p .. "ReverseSwipe"]
+        e.showDurationText = a["show" .. Cap .. "DurationText"]
+        e.durationFont = a[p .. "DurationFont"]; e.durationFontSize = a[p .. "DurationFontSize"]
+        e.durationAnchor = a[p .. "DurationAnchor"]
+        e.durationOffsetX = a[p .. "DurationOffsetX"]; e.durationOffsetY = a[p .. "DurationOffsetY"]
+        e.durationColor = a[p .. "DurationColor"]; e.durationUseTimeColor = a[p .. "DurationUseTimeColor"]
+        e.showDurationColor = a.showDurationColor; e.showExpiringPulse = a.showExpiringPulse
+        e.filterMode = a.filterMode
+    end
+    local debuff = { id = "debuffs", enabled = auras.showDebuffs == true, mode = "filterStrip",
+        auraType = "HARMFUL", maxIcons = auras.maxDebuffs or 0,
+        classifications = auras.debuffClassifications or {}, whitelist = auras.debuffWhitelist or {},
+        blacklist = auras.debuffBlacklist or {} }
+    carryCommon(debuff, auras, "debuff")
+    local buff = { id = "buffs", enabled = auras.showBuffs == true, mode = "filterStrip",
+        auraType = "HELPFUL", maxIcons = auras.maxBuffs or 0,
+        onlyMine = auras.buffFilterOnlyMine == true, hidePermanent = auras.buffHidePermanent == true,
+        dedupeDefensives = auras.buffDeduplicateDefensives ~= false,
+        classifications = auras.buffClassifications or {}, whitelist = auras.buffWhitelist or {},
+        blacklist = auras.buffBlacklist or {} }
+    carryCommon(buff, auras, "buff")
+    elements["*"][#elements["*"] + 1] = debuff
+    elements["*"][#elements["*"] + 1] = buff
+end
+
+local function migratePinned(pinned, elements)
+    if type(pinned) ~= "table" or type(pinned.specSlots) ~= "table" then return end
+    local inset = pinned.edgeInset or 0
+    for specID, slots in pairs(pinned.specSlots) do
+        elements[specID] = elements[specID] or {}
+        for _, slot in ipairs(slots) do
+            local sign = PINNED_INSET_SIGN[slot.anchor] or { 0, 0 }
+            elements[specID][#elements[specID] + 1] = {
+                mode = "tracked", spells = { slot.spellID }, onlyMine = false, onlyMineSpells = {},
+                displayType = slot.displayType or "icon",
+                anchor = slot.anchor, offsetX = sign[1] * inset, offsetY = sign[2] * inset,
+                iconSize = pinned.slotSize or 8, color = slot.color or { 1, 1, 1 },
+                hideSwipe = pinned.showSwipe ~= true, reverseSwipe = pinned.reverseSwipe == true,
+                enabled = pinned.enabled == true,
+            }
+        end
+    end
+end
+
+local function migrateIndicators(ai, elements)
+    if type(ai) ~= "table" or type(ai.entries) ~= "table" then return end
+    local enabled = ai.enabled == true
+    local iconStrip = nil
+    for _, entry in ipairs(ai.entries) do
+        for _, ind in ipairs(entry.indicators or {}) do
+            if ind.enabled ~= false then
+                local on = enabled and entry.enabled ~= false
+                if ind.type == "icon" then
+                    -- Only enabled entries contribute their spell (a disabled tracked
+                    -- aura was never shown). The shared strip's own enabled flag is the
+                    -- container-level toggle, set once and order-independent -- deriving
+                    -- it from the first entry processed would wrongly disable a live
+                    -- strip when a disabled entry happens to come first.
+                    if entry.enabled ~= false then
+                        if not iconStrip then
+                            iconStrip = { mode = "tracked", displayType = "icon", spells = {}, onlyMine = false,
+                                onlyMineSpells = {}, enabled = enabled, anchor = ai.anchor, growDirection = ai.growDirection,
+                                spacing = ai.spacing, iconSize = ai.iconSize, maxIcons = ai.maxIndicators,
+                                offsetX = ai.anchorOffsetX or 0, offsetY = ai.anchorOffsetY or 0,
+                                hideSwipe = ai.hideSwipe == true, reverseSwipe = ai.reverseSwipe == true,
+                                color = { 1, 1, 1 } }
+                            elements["*"][#elements["*"] + 1] = iconStrip
+                        end
+                        iconStrip.spells[#iconStrip.spells + 1] = entry.spellID
+                        iconStrip.onlyMineSpells[entry.spellID] = entry.onlyMine == true
+                    end
+                elseif ind.type == "bar" then
+                    elements["*"][#elements["*"] + 1] = {
+                        mode = "tracked", displayType = "bar", spells = { entry.spellID }, enabled = on,
+                        onlyMine = entry.onlyMine == true, onlyMineSpells = {},
+                        anchor = ind.anchor, offsetX = ind.offsetX or 0, offsetY = ind.offsetY or 0,
+                        color = ind.color or { 1, 1, 1 },
+                        bar = { orientation = ind.orientation, thickness = ind.thickness, length = ind.length,
+                            matchFrameSize = ind.matchFrameSize, backgroundColor = ind.backgroundColor,
+                            hideBorder = ind.hideBorder, borderSize = ind.borderSize, borderColor = ind.borderColor,
+                            lowTimeThreshold = ind.lowTimeThreshold, lowTimeColor = ind.lowTimeColor },
+                    }
+                elseif ind.type == "healthBarColor" then
+                    elements["*"][#elements["*"] + 1] = {
+                        mode = "tracked", displayType = "healthTint", spells = { entry.spellID }, enabled = on,
+                        onlyMine = entry.onlyMine == true, onlyMineSpells = {},
+                        color = ind.color or { 1, 1, 1 }, healthTint = { animation = ind.animation or "fill" },
+                    }
+                end
+            end
+        end
+    end
+end
+
+-- Pure, idempotent per-context migration. Exposed for tests.
+function Migrations.MigrateUnifiedAuras_Context(ctx)
+    if type(ctx) ~= "table" then return end
+    if ctx.auras and ctx.auras.elements then return end  -- already migrated → no-op
+    ctx.auras = ctx.auras or {}
+    local elements = { ["*"] = {} }
+    migrateStrips(ctx.auras, elements)
+    migratePinned(ctx.pinnedAuras, elements)
+    migrateIndicators(ctx.auraIndicators, elements)
+    -- ADDITIVE: add the unified model alongside the legacy keys. The old
+    -- auras.buff*/debuff* fields, ctx.pinnedAuras and ctx.auraIndicators are KEPT
+    -- so the legacy runtime keeps rendering until the consumer flip (and they
+    -- double as the rollback source). The flip release removes them from defaults;
+    -- existing-profile copies then sit as harmless, ignored cruft.
+    ctx.auras.elements = elements
+    ctx.auras.enabled = true
+end
+
+-- v46 is wired directly into RunOnProfile's gate chain (inlined party/raid
+-- loop over Migrations.MigrateUnifiedAuras_Context) rather than via a
+-- dedicated file-scope wrapper: RunOnProfile already references every
+-- migration as an upvalue and sits at the Lua 5.1 60-upvalue ceiling, so a
+-- new wrapper upvalue would break compilation. Group-frame settings live
+-- under profile.quiGroupFrames.{party,raid} — confirmed against v15
+-- MigrateGroupFrameContainers / v16 NormalizeAuraIndicators.
+
+local DEFAULT_SKY_BLUE_ACCENT = { 0.376, 0.647, 0.980, 1 }
 
 -- edgeInset → (offsetX, offsetY) by anchor sign
 local PINNED_INSET_SIGN = {

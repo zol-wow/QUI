@@ -6529,6 +6529,61 @@ return {
       Default = {
         _defaultsVersion = 3,
         _schemaVersion = 46,
+        chat = {
+          enabled = false
+        },
+        ncdm = {
+          containers = {
+            buff = {
+              shape = "icon"
+            },
+            essential = {
+              row1 = {
+                borderColorTable = {
+                  [1] = 0,
+                  [2] = 0,
+                  [3] = 0,
+                  [4] = 1
+                }
+              },
+              shape = "icon"
+            },
+            trackedBar = {
+              shape = "bar"
+            },
+            utility = {
+              row1 = {
+                borderColorTable = {
+                  [1] = 0,
+                  [2] = 0,
+                  [3] = 0,
+                  [4] = 1
+                }
+              },
+              shape = "icon"
+            }
+          },
+          essential = {
+            row1 = {
+              borderColorTable = {
+                [1] = 0,
+                [2] = 0,
+                [3] = 0,
+                [4] = 1
+              }
+            }
+          },
+          utility = {
+            row1 = {
+              borderColorTable = {
+                [1] = 0,
+                [2] = 0,
+                [3] = 0,
+                [4] = 1
+              }
+            }
+          }
+        },
         quiUnitFrames = {
           focus = {
             castbar = {

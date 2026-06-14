@@ -42,23 +42,21 @@ end
 local RenderGeneral = BuildSchemaRender("RenderGeneralTab", "General")
 local RenderAppearance = BuildSchemaRender("RenderAppearanceTab", "Appearance")
 local RenderLayout = BuildSchemaRender("RenderLayoutTab", "Layout")
-local RenderSpotlight = BuildSchemaRender("RenderSpotlightTab", "Spotlight")
 local RenderHealth = BuildSchemaRender("RenderHealthTab", "Health")
 local RenderIndicators = BuildSchemaRender("RenderIndicatorsTab", "Indicators")
 local RenderAuras = BuildSchemaRender("RenderAurasTab", "Auras")
-local RenderDispelOverlay = BuildSchemaRender("RenderDispelOverlayTab", "Dispel Overlay")
 
 -- Order only; the tab strip wraps these across rows responsively by window
 -- width (group_frames_surface.lua uses wrapRows), so no explicit row field.
+-- Spotlight was folded into Layout (raid only) and Dispel Overlay into
+-- Appearance, so neither is a standalone tab any more.
 local TAB_DEFINITIONS = {
     { key = "general", label = "General", render = RenderGeneral },
     { key = "appearance", label = "Appearance", render = RenderAppearance },
     { key = "layout", label = "Layout", render = RenderLayout },
-    { key = "spotlight", label = "Spotlight", visible = function(state) return state.contextMode == "raid" end, render = RenderSpotlight },
     { key = "health", label = "Health", render = RenderHealth },
     { key = "indicators", label = "Indicators", render = RenderIndicators },
     { key = "auras", label = "Auras", render = RenderAuras },
-    { key = "dispelOverlay", label = "Dispel Overlay", render = RenderDispelOverlay },
 }
 
 function Model.GetTabDefinitions()

@@ -84,18 +84,17 @@ local FILTER_MODE_OPTIONS = {
     { value = "off", text = "Off (Show All)" },
     { value = "classification", text = "Classification" },
 }
+-- Tab strip order (after the beta restructure): Spotlight folded into Layout
+-- (raid only) and Dispel Overlay folded into Appearance, so neither is a
+-- standalone tab any more. The section render functions still exist; they just
+-- live inside another tab now and use that tab's search context.
 local TAB_SEARCH_CONTEXTS = {
     general = { subTabIndex = 1, subTabName = "General" },
     appearance = { subTabIndex = 2, subTabName = "Appearance" },
     layout = { subTabIndex = 3, subTabName = "Layout" },
-    spotlight = { subTabIndex = 4, subTabName = "Spotlight" },
-    health = { subTabIndex = 5, subTabName = "Health" },
-    power = { subTabIndex = 6, subTabName = "Power" },
-    indicators = { subTabIndex = 7, subTabName = "Indicators" },
-    auras = { subTabIndex = 8, subTabName = "Auras" },
-    privateAuras = { subTabIndex = 9, subTabName = "Private Auras" },
-    defensive = { subTabIndex = 10, subTabName = "Defensives" },
-    dispelOverlay = { subTabIndex = 11, subTabName = "Dispel Overlay" },
+    health = { subTabIndex = 4, subTabName = "Health" },
+    indicators = { subTabIndex = 5, subTabName = "Indicators" },
+    auras = { subTabIndex = 6, subTabName = "Auras" },
 }
 local GROUP_FRAMES_SEARCH_TILE_ID = "group_frames"
 local GROUP_FRAMES_SEARCH_FEATURE_ID = "groupFramesPage"
@@ -385,9 +384,20 @@ local function AddAuraDurationTextRows(card, gui, optionsAPI, auras, prefix, lab
 end
 
 local function RequestTabRepaint(ctx)
-    local repaint = ctx and ctx.state and ctx.state.repaintTabs or nil
+    if type(ctx) ~= "table" then
+        return
+    end
+    local repaint = ctx.state and ctx.state.repaintTabs or nil
     if type(repaint) == "function" then
         repaint()
+        return
+    end
+    -- The group frames surface drives its own tab strip, so the schema feature
+    -- state carries no repaintTabs hook. Fall back to the schema's own
+    -- in-place re-render, which re-runs all sections + LayoutSections and so
+    -- re-anchors the sections below an embedded editor when it changes height.
+    if type(ctx.RerenderFeature) == "function" then
+        ctx:RerenderFeature()
     end
 end
 
@@ -770,7 +780,11 @@ local function RenderLayoutSection(sectionHost, ctx)
         builder.Description("Controls how many placeholder raid members the preview renders.")
 
         local previewCard = builder.Card()
-        local previewSlider = gui:CreateFormSlider(previewCard.frame, nil, 10, 40, 5, "raidCount", groupFrames.gfdb.testMode, function()
+        local previewSlider = gui:CreateFormSlider(previewCard.frame, nil, 5, 40, 5, "raidCount", groupFrames.gfdb.testMode, function()
+            local Drv = ns.QUI_GroupFramesPreview
+            if Drv and Drv._SnapRaidCount and groupFrames.gfdb.testMode then
+                groupFrames.gfdb.testMode.raidCount = Drv._SnapRaidCount(groupFrames.gfdb.testMode.raidCount)
+            end
             local editMode = ns.QUI_GroupFrameEditMode
             if editMode and editMode.IsTestMode and editMode:IsTestMode() and editMode.RefreshTestMode then
                 editMode:RefreshTestMode()
@@ -1095,7 +1109,8 @@ local function RenderSpotlightSection(sectionHost, ctx)
         spotlight.filterMode = "ROLE"
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("spotlight"))
+    -- Spotlight now lives inside the Layout tab (raid only); search lands there.
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("layout"))
     if not builder then
         return nil
     end
@@ -1225,9 +1240,6 @@ local function RenderHealthSection(sectionHost, ctx)
     local refresh = function()
         RefreshGroupFrames(groupFrames.contextMode)
     end
-
-    builder.Header("Health")
-    builder.Description("Health fill, health text, and incoming-heal overlays for " .. groupFrames.sourceLabel .. " group frames.")
 
     builder.Header("Health Bar")
     local barCard = builder.Card()
@@ -1768,7 +1780,8 @@ local function RenderDispelOverlaySection(sectionHost, ctx)
     end
     EnsureDispelColors(dispel)
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("dispelOverlay"))
+    -- Dispel Overlay now lives inside the Appearance tab; search lands there.
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("appearance"))
     if not builder then
         return nil
     end
@@ -2033,9 +2046,6 @@ local function RenderIndicatorsSection(sectionHost, ctx)
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
-    builder.Header("Indicators")
-    builder.Description("Utility icons and threat highlights for " .. groupFrames.sourceLabel .. " group frames.")
-
     builder.Header("Role Icon")
     local roleCard = builder.Card()
     local roleRows = {}
@@ -2259,6 +2269,38 @@ local function SetSelectedBucket(ctx, contextMode, bucketKey)
     store[contextMode] = bucketKey
 end
 
+-- Persist which element is expanded across the in-place re-render the reflow
+-- triggers, so adding/expanding an element does not snap it shut. Keyed by
+-- context+bucket so each spec bucket remembers its own open row.
+local function ElementIndexKey(contextMode, bucketKey)
+    return tostring(contextMode) .. "\0" .. tostring(bucketKey)
+end
+
+local function GetSelectedElementIndex(ctx, contextMode, bucketKey)
+    local state = ctx and ctx.state
+    if type(state) ~= "table" then
+        return nil
+    end
+    local store = state._aurasSelectedElement
+    if type(store) ~= "table" then
+        return nil
+    end
+    return store[ElementIndexKey(contextMode, bucketKey)]
+end
+
+local function SetSelectedElementIndex(ctx, contextMode, bucketKey, index)
+    local state = ctx and ctx.state
+    if type(state) ~= "table" then
+        return
+    end
+    local store = state._aurasSelectedElement
+    if type(store) ~= "table" then
+        store = {}
+        state._aurasSelectedElement = store
+    end
+    store[ElementIndexKey(contextMode, bucketKey)] = (type(index) == "number" and index) or nil
+end
+
 local function RenderAurasSection(sectionHost, ctx)
     local gui = GetGUI()
     local optionsAPI = GetOptionsAPI()
@@ -2285,6 +2327,19 @@ local function RenderAurasSection(sectionHost, ctx)
         return nil
     end
 
+    -- CreateSectionBuilder -> PrepareSectionHost set an explicit width on
+    -- sectionHost, so reading it here is reliable and frame-independent. The
+    -- embedded editor's listArea inherits this width through anchors, but its
+    -- GetWidth() does not settle until the next frame -- so the suggestion-grid
+    -- column math read a fallback (480) on the synchronous tab render yet the
+    -- real width on the in-place add/remove rebuild, producing inconsistent
+    -- heights and the gap/overrun on the sections below. Thread the known width
+    -- down so every rebuild measures against the same value.
+    local contentWidth = sectionHost.GetWidth and sectionHost:GetWidth() or nil
+    if type(contentWidth) ~= "number" or contentWidth <= 0 then
+        contentWidth = nil
+    end
+
     local refresh = function()
         RefreshGroupFrames(groupFrames.contextMode)
     end
@@ -2293,8 +2348,10 @@ local function RenderAurasSection(sectionHost, ctx)
     builder.Description("Buff/debuff strips and tracked auras on " .. groupFrames.sourceLabel
         .. " group frames. Each element is configured per spec; the All Specs bucket applies everywhere.")
 
-    local specOptions, currentSpecID = BuildSpecBucketOptions()
-    local selectedBucket = GetSelectedBucket(ctx, groupFrames.contextMode, currentSpecID or "*")
+    local specOptions = BuildSpecBucketOptions()
+    -- Default the editing-spec dropdown to "All Specs" (the "*" bucket) instead
+    -- of the player's current spec, so the tile opens on the shared bucket.
+    local selectedBucket = GetSelectedBucket(ctx, groupFrames.contextMode, "*")
     -- If the persisted spec is no longer one of the player's specs (or there are
     -- no specs yet), fall back to All Specs so the editor always has a bucket.
     local validBucket = false
@@ -2331,11 +2388,45 @@ local function RenderAurasSection(sectionHost, ctx)
     builder.Spacer(6)
     builder.Header("Elements")
 
+    local forcedIndex = GetSelectedElementIndex(ctx, groupFrames.contextMode, selectedBucket)
+
     RenderEmbeddedEditorSection(sectionHost, builder, function(editorHost)
         return AurasEditor.RenderAuras(editorHost, auras, selectedBucket, function()
+            -- Data changed (element added/removed/toggled): refresh the live
+            -- frames. The section reflow is driven by onLayoutChanged below.
             refresh()
-            ScheduleTabRepaint(ctx)
-        end)
+        end, {
+            contentWidth = contentWidth,
+            forceSelectedIndex = forcedIndex,
+            onSelectionChanged = function(index)
+                SetSelectedElementIndex(ctx, groupFrames.contextMode, selectedBucket, index)
+            end,
+            onLayoutChanged = function(height)
+                -- Re-anchor the sections below the editor only when its height
+                -- actually changes. The first observation just seeds the store
+                -- (the synchronous render already laid everything out), so we
+                -- avoid a redundant repaint on open; later changes (add/remove/
+                -- expand) trigger one re-render that converges, because the
+                -- width-stable height is a fixed point.
+                if type(height) ~= "number" then
+                    return
+                end
+                local store = ctx.state and ctx.state._aurasEditorHeight
+                if type(store) ~= "table" then
+                    store = {}
+                    if ctx.state then
+                        ctx.state._aurasEditorHeight = store
+                    end
+                end
+                local key = ElementIndexKey(groupFrames.contextMode, selectedBucket)
+                if store[key] == nil then
+                    store[key] = height
+                elseif store[key] ~= height then
+                    store[key] = height
+                    ScheduleTabRepaint(ctx)
+                end
+            end,
+        })
     end, {
         minHeight = 1,
     })
@@ -2402,23 +2493,28 @@ local GENERAL_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesGeneralTab"
     { id = "copySettings", minHeight = 88, render = RenderGeneralCopySettingsSection },
 })
 
+-- Appearance now also hosts the Dispel Overlay section (folded in from its old
+-- standalone tab).
 local APPEARANCE_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesAppearanceTab", {
     { id = "appearance", minHeight = 160, render = RenderAppearanceSection },
     { id = "name", minHeight = 140, render = RenderNameSection },
     { id = "power", minHeight = 140, render = RenderPowerSection },
+    { id = "dispelOverlay", minHeight = 140, render = RenderDispelOverlaySection },
 })
 
+-- Layout has two variants: party omits Spotlight, raid appends it (folded in
+-- from the old raid-only Spotlight tab). RenderLayoutTab picks per context so
+-- the party Layout tab shows no empty/unavailable Spotlight section.
 local LAYOUT_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesLayoutTab", {
     { id = "layout", minHeight = 160, render = RenderLayoutSection },
     { id = "dimensions", minHeight = 140, render = RenderDimensionsSection },
 })
 
-local SPOTLIGHT_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesSpotlightTab",
-    "spotlight",
-    180,
-    RenderSpotlightSection
-)
+local LAYOUT_RAID_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesLayoutRaidTab", {
+    { id = "layout", minHeight = 160, render = RenderLayoutSection },
+    { id = "dimensions", minHeight = 140, render = RenderDimensionsSection },
+    { id = "spotlight", minHeight = 180, render = RenderSpotlightSection },
+})
 
 local HEALTH_TAB_FEATURE = CreateSingleSectionTabFeature(
     "groupFramesHealthTab",
@@ -2439,13 +2535,6 @@ local AURAS_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesAurasTab", {
     { id = "privateAuras", minHeight = 140, render = RenderPrivateAurasSection },
     { id = "defensive", minHeight = 140, render = RenderDefensiveSection },
 })
-
-local DISPEL_OVERLAY_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesDispelOverlayTab",
-    "dispelOverlay",
-    140,
-    RenderDispelOverlaySection
-)
 
 local function RenderFeatureTab(feature, host, contextMode)
     if not host then
@@ -2478,11 +2567,10 @@ function GroupFramesSchema.RenderAppearanceTab(host, contextMode)
 end
 
 function GroupFramesSchema.RenderLayoutTab(host, contextMode)
-    return RenderFeatureTab(LAYOUT_TAB_FEATURE, host, contextMode)
-end
-
-function GroupFramesSchema.RenderSpotlightTab(host, contextMode)
-    return RenderFeatureTab(SPOTLIGHT_TAB_FEATURE, host, contextMode)
+    -- Raid gets the Spotlight section appended; party does not.
+    local feature = NormalizeContextMode(contextMode) == "raid"
+        and LAYOUT_RAID_TAB_FEATURE or LAYOUT_TAB_FEATURE
+    return RenderFeatureTab(feature, host, contextMode)
 end
 
 function GroupFramesSchema.RenderHealthTab(host, contextMode)
@@ -2495,8 +2583,4 @@ end
 
 function GroupFramesSchema.RenderAurasTab(host, contextMode)
     return RenderFeatureTab(AURAS_TAB_FEATURE, host, contextMode)
-end
-
-function GroupFramesSchema.RenderDispelOverlayTab(host, contextMode)
-    return RenderFeatureTab(DISPEL_OVERLAY_TAB_FEATURE, host, contextMode)
 end

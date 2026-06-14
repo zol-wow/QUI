@@ -6529,6 +6529,18 @@ return {
       Default = {
         _defaultsVersion = 3,
         _schemaVersion = 46,
+        chat = {
+          enabled = false
+        },
+        frameAnchoring = {
+          debuffFrame = {
+            parent = "disabled",
+            point = "CENTER",
+            relative = "CENTER",
+            x = -150,
+            y = -200
+          }
+        },
         quiUnitFrames = {
           focus = {
             castbar = {

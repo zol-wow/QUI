@@ -42,10 +42,14 @@ function Model.NewTrackedElement(spells, displayType)
         spells = spells or {}, onlyMine = false, onlyMineSpells = {},
         displayType = displayType or "icon",
         anchor = "TOPLEFT", offsetX = 0, offsetY = 0,
-        growDirection = "RIGHT", spacing = 2, iconSize = 8,
+        growDirection = "RIGHT", spacing = 2, iconSize = 16,
         hideSwipe = false, reverseSwipe = false,
         showDurationText = false, durationFontSize = 9,
         color = { 1, 1, 1 },
+        -- Seed a visible bar config up front: the bar displayType otherwise
+        -- falls back to a ~4px-thin renderer default that's near-invisible the
+        -- moment a tracked bar is added.
+        bar = { thickness = 12, length = 48 },
     }
 end
 

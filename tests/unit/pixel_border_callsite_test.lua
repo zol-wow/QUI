@@ -54,7 +54,6 @@ local rawBackdropFiles = {
     "modules/layout/layoutmode_settings.lua",
     "QUI_CDM/cdm/settings/composer.lua",
     "QUI_QoL/qol/consumablecheck.lua",
-    "modules/layout/layoutmode_composer.lua",
 }
 
 for _, path in ipairs(rawBackdropFiles) do
