@@ -9,6 +9,12 @@
 -- new ones surface in warnings — keep the list minimal so real undefined-
 -- variable bugs (like use-before-define of locals) still show up.
 
+-- CI enforcement (lua-tests.yml `lint` job): ALL suites are warning-clean
+-- and enforced as of 2026-06-13 — QUI_Debug/ core/ modules/ init.lua plus
+-- all 16 QUI_* suite directories. Keep it that way: fix warnings or (for
+-- genuine WoW API names) add the global here; never exclude a directory
+-- to silence a finding.
+
 std = "lua51"
 max_line_length = false   -- WoW addons commonly run wider than 120 cols
 
@@ -198,7 +204,7 @@ ObjectiveTrackerFrame ObjectiveTracker_Update OpacitySliderFrame PAPERDOLLFRAME_
 PanelTemplates_GetSelectedTab PanelTemplates_SetTab PaperDollFormatStat PaperDollFrame PaperDollFrameEquipSet PaperDollFrameSaveSet PaperDollFrame_GetArmorReduction PaperDollFrame_GetArmorReductionAgainstTarget
 PaperDollSidebarTab1 PaperDollSidebarTab2 PaperDollSidebarTab3 PaperDollSidebarTabs PartyFrame PerksProgramFrame PetCastingBarFrame PetFrame
 PickupPetAction PlaySound PlaySoundFile PlayerCastingBarFrame PlayerChoiceFrame PlayerFrame PlayerHasToy PlayerSpellsFrame PlayerSpellsMicroButton
-PlayerSpellsUtil PlayerUtil ProfessionsCustomerOrdersFrame QueueStatusButton QuickJoinToastButton RANGE_INDICATOR RED_FONT_COLOR_CODE RafRewardDeliveredAlertSystem RegisterStateDriver
+PlayerSpellsUtil PlayerUtil ProfessionsCustomerOrdersFrame QueueStatusButton QuickJoinToastButton RANGE_INDICATOR RED_FONT_COLOR_CODE RafRewardDeliveredAlertSystem RegisterStateDriver RegisterUnitWatch
 ReloadUI RepairAllItems ReputationFrame RequestRaidInfo RollOnLoot Round SANCTUARY_TERRITORY SHAMAN_TOTEM_PRIORITIES
 SOUNDKIT SPECIALIZATION SPECIALIZATIONS SPELLBOOK SPELLBOOK_ABILITIES_BUTTON SPELL_FAILED_NEED_MORE_ITEMS STANDARD_TOTEM_PRIORITIES STATICPOPUP_NUMDIALOGS
 STAT_ARMOR_TARGET_TOOLTIP STAT_ARMOR_TOOLTIP STAT_ATTACK_SPEED_BASE_TOOLTIP STAT_BLOCK_TARGET_TOOLTIP STAT_CRITICAL_STRIKE STAT_CRITICAL_STRIKE_TOOLTIP STAT_HASTE STAT_HASTE_BASE_TOOLTIP
