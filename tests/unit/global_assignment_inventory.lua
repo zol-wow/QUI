@@ -194,6 +194,7 @@ return {
     "modules/layout/anchoring.lua::QUI_HasFrameAnchor",
     "modules/layout/anchoring.lua::QUI_IsFrameHiddenByAnchor",
     "modules/layout/anchoring.lua::QUI_ReanchorFramePositionOnly",
+    "modules/layout/anchoring.lua::QUI_ReassertAnchorAfterResize",
     "modules/layout/anchoring.lua::QUI_RegisterFrameResolver",
     "modules/layout/anchoring.lua::QUI_ResolveAnchorApplyFrame",
     "modules/layout/anchoring.lua::QUI_ResolveAnchorTargetFrame",
