@@ -127,6 +127,12 @@ local function SetupDebugInstrumentation()
         panelIconSkips = 0,
         noConsumerSkips = 0,
         framesRefreshed = 0,
+        -- Dirty-flag + storm-budget effectiveness (this rework).
+        heavyDeferred = 0,     -- units bumped to the drain queue (budget overflow)
+        drainProcessed = 0,    -- units processed by the drain ticker
+        frameSkips = 0,        -- whole frames skipped by DeltaTouchesFrame
+        elementSkips = 0,      -- elements skipped by the per-element dirty gate
+        elementsDispatched = 0,-- elements that actually re-dispatched (skip ratio denom)
     }
     local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "GF_unitAuraCache", tbl = unitAuraCache }
@@ -168,6 +174,11 @@ local function SetupDebugInstrumentation()
     mp[#mp + 1] = { name = "GF_auraPanelIconSkips", fn = function() return auraStats.panelIconSkips end, counter = true }
     mp[#mp + 1] = { name = "GF_auraNoConsumerSkips", fn = function() return auraStats.noConsumerSkips end, counter = true }
     mp[#mp + 1] = { name = "GF_auraFramesRefreshed", fn = function() return auraStats.framesRefreshed end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraHeavyDeferred", fn = function() return auraStats.heavyDeferred end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraDrainProcessed", fn = function() return auraStats.drainProcessed end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraFrameSkips", fn = function() return auraStats.frameSkips end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraElementSkips", fn = function() return auraStats.elementSkips end, counter = true }
+    mp[#mp + 1] = { name = "GF_auraElementsDispatched", fn = function() return auraStats.elementsDispatched end, counter = true }
     QUI_GFA.auraStats = auraStats -- debug export tracks the live table (nil until activation)
 end
 if ns.DebugRegister then -- gate contract: core/debug_gate.lua
@@ -644,12 +655,41 @@ local function ScanUnitAuras(unit)
     return cache
 end
 
+-- DELTA DIRTY SUMMARY ------------------------------------------------------
+-- ApplyAuraDelta publishes which aura BUCKETS changed (helpful/harmful), whether
+-- the defensive set moved, and the set of spellIDs added/removed/updated, into a
+-- single reusable table. The render fan-out reads it to dirty-flag frames and
+-- individual elements: a frame/element whose tracked auras the delta never
+-- touched skips re-dispatch entirely. Only valid when ApplyAuraDelta returns
+-- true (an incremental patch); a full scan / fallback sets dirty = nil (render
+-- everything). spellsUncertain = a changed aura's spellId was secret/unreadable,
+-- so tracked elements must be treated as dirty (conservative, never stale).
+local _deltaSummary = { helpful = false, harmful = false, defensive = false,
+                        spellsUncertain = false, spells = {} }
+local function ResetDeltaSummary()
+    _deltaSummary.helpful = false
+    _deltaSummary.harmful = false
+    _deltaSummary.defensive = false
+    _deltaSummary.spellsUncertain = false
+    wipe(_deltaSummary.spells)
+end
+local function SummaryAddSpell(auraData)
+    if not auraData then _deltaSummary.spellsUncertain = true; return end
+    local sid = SafeValue(auraData.spellId, nil)
+    if sid then
+        _deltaSummary.spells[sid] = true
+    else
+        _deltaSummary.spellsUncertain = true
+    end
+end
+
 local function ApplyAuraDelta(unit, updateInfo)
     local cache = unitAuraCache[unit]
     if not cache or not cache.hasFullScan or type(updateInfo) ~= "table" then
         return false
     end
 
+    ResetDeltaSummary()
     local buffsDirty = false
     local debuffsDirty = false
     local buffFreshUpdated = false
@@ -684,6 +724,7 @@ local function ApplyAuraDelta(unit, updateInfo)
                 return false
             end
             local defensiveChanged = AppendAuraToBucket(unit, cache, bucketName, auraData)
+            SummaryAddSpell(auraData)
             if bucketName == "buffs" then
                 buffsDirty = true
                 if defensiveChanged then
@@ -698,6 +739,10 @@ local function ApplyAuraDelta(unit, updateInfo)
     if updateInfo.updatedAuraInstanceIDs and #updateInfo.updatedAuraInstanceIDs > 0 then
         if skipUpdatedFetches then
             if auraStats then auraStats.deltaUpdatedSkipped = auraStats.deltaUpdatedSkipped + nUpdated end
+            -- Updated instances weren't re-fetched, so their spellIDs are unknown
+            -- this pass. Mark uncertain so tracked elements re-dispatch (a stack
+            -- change on a tracked aura must reach its icon).
+            _deltaSummary.spellsUncertain = true
         else
             if not GetAuraByInstanceID then
                 return false
@@ -721,6 +766,7 @@ local function ApplyAuraDelta(unit, updateInfo)
                     if not ReplaceAuraInBucket(cache, bucketName, instID, freshAura) then
                         return false
                     end
+                    SummaryAddSpell(freshAura)
                     if bucketName == "buffs" then
                         buffsDirty = true
                         buffFreshUpdated = true
@@ -737,17 +783,21 @@ local function ApplyAuraDelta(unit, updateInfo)
     if updateInfo.removedAuraInstanceIDs then
         for i = 1, #updateInfo.removedAuraInstanceIDs do
             local instID = updateInfo.removedAuraInstanceIDs[i]
-            if cache.buffsByID[instID] then
+            local rd = cache.buffsByID[instID]
+            if rd then
                 local removed, defensiveChanged = RemoveAuraFromBucket(cache, "buffs", instID)
                 if removed then
                     buffsDirty = true
+                    SummaryAddSpell(rd)
                     if defensiveChanged then
                         cache.defensiveSetChanged = true
                     end
                 end
-            elseif cache.debuffsByID[instID] then
-                if RemoveAuraFromBucket(cache, "debuffs", instID) then
+            else
+                rd = cache.debuffsByID[instID]
+                if rd and RemoveAuraFromBucket(cache, "debuffs", instID) then
                     debuffsDirty = true
+                    SummaryAddSpell(rd)
                 end
             end
         end
@@ -763,6 +813,11 @@ local function ApplyAuraDelta(unit, updateInfo)
         if auraStats then auraStats.defensiveSetChanges = auraStats.defensiveSetChanges + 1 end
     end
 
+    -- Publish the dirty summary for the render fan-out (valid only on this true
+    -- return; a false return falls back to a full scan + full render).
+    _deltaSummary.helpful = buffsDirty
+    _deltaSummary.harmful = debuffsDirty
+    _deltaSummary.defensive = cache.defensiveSetChanged
     return true
 end
 
@@ -924,8 +979,22 @@ local function StripPrioritySort(a, b)
     return (_stripPrioMap[a] or 0) > (_stripPrioMap[b] or 0)
 end
 
+-- Reusable scratch for the zero-alloc render path. Each is filled and fully
+-- consumed within a single RenderFrameElements pass (Render:Dispatch only reads
+-- the match tables synchronously and never retains them), so sharing across
+-- frames in the UNIT_AURA combat fan-out is safe and eliminates per-frame GC
+-- churn. _activeElementsScratch / _trackedMatchesScratch feed RenderFrameElements;
+-- the _strip* set feeds BuildFilterStripMatches.
+local _activeElementsScratch = {}
+local _trackedMatchesScratch = {}
+local _stripOutScratch = {}
+local _stripOrderedScratch = {}
+local _stripSeenScratch = {}
+local _stripClassFiltersScratch = {}
+
 local function BuildFilterStripMatches(unit, cache, element, dedupSet)
-    local out = {}
+    local out = _stripOutScratch
+    wipe(out)
     if not cache then return out end
     local harmful = element.auraType == "HARMFUL"
     local list = harmful and cache.debuffs or cache.buffs
@@ -944,7 +1013,8 @@ local function BuildFilterStripMatches(unit, cache, element, dedupSet)
     -- Build the classification filter-string list for this element (OR logic).
     local classFilters
     if filterMode == "classification" and classifications then
-        classFilters = {}
+        classFilters = _stripClassFiltersScratch
+        wipe(classFilters)
         local map = harmful and DEBUFF_CLASSIFICATION_MAP or BUFF_CLASSIFICATION_MAP
         for key, filterStr in pairs(map) do
             if classifications[key] then classFilters[#classFilters + 1] = filterStr end
@@ -954,7 +1024,8 @@ local function BuildFilterStripMatches(unit, cache, element, dedupSet)
     local useWhitelist = filterMode == "whitelist" and whitelist
 
     local onlyMineFilter = harmful and "HARMFUL|PLAYER" or "HELPFUL|PLAYER"
-    local ordered = {}
+    local ordered = _stripOrderedScratch
+    wipe(ordered)
     for i = 1, #list do
         local auraData = list[i]
         local instID = auraData and auraData.auraInstanceID
@@ -1008,12 +1079,12 @@ local function BuildFilterStripMatches(unit, cache, element, dedupSet)
     local maxIcons = SafeToNumber(element.maxIcons, 0)
     local n = #ordered
     if maxIcons > 0 and maxIcons < n then n = maxIcons end
-    local seen
+    local seen = _stripSeenScratch
+    wipe(seen)
     for i = 1, n do
         local auraData = ordered[i]
         local spellID = SafeValue(auraData.spellId, nil) or auraData.auraInstanceID
         if spellID then
-            seen = seen or {}
             if seen[spellID] == nil then
                 seen[spellID] = true
                 out[#out + 1] = auraData
@@ -1044,7 +1115,68 @@ local function ReleaseAllRenderedElements(frame, Render)
     end
 end
 
-local function RenderFrameElements(frame, cache)
+-- AURA RELEVANCE DESCRIPTOR (reverse lookup for the dirty fan-out) -----------
+-- Per aura-config: which buckets it shows a strip for, whether it has any tracked
+-- element, and the union of tracked spellIDs. Lets the render fan-out skip a
+-- whole frame whose elements the delta never touched, in O(changed spells)
+-- instead of rebuilding the element list. Cached per (config table, spec, gen);
+-- the generation bumps on any settings change (InvalidateLayout / RefreshAll).
+-- Held weak-keyed so it never lands in SavedVariables and GC'd configs don't leak.
+local _relGeneration = 0
+local _relCache = setmetatable({}, { __mode = "k" })
+local function GetAuraRelevance(auras, specID)
+    local rel = _relCache[auras]
+    if rel and rel.gen == _relGeneration and rel.specID == specID then
+        return rel
+    end
+    if not rel then
+        rel = { trackedSpells = {} }
+        _relCache[auras] = rel
+    end
+    rel.gen = _relGeneration
+    rel.specID = specID
+    rel.hasHelpfulStrip = false
+    rel.hasHarmfulStrip = false
+    rel.hasTracked = false
+    wipe(rel.trackedSpells)
+    -- Rare path (only on spec/settings change): a plain alloc here is fine.
+    local elements = AuraModel.ActiveElementsForSpec(auras, specID)
+    for i = 1, #elements do
+        local e = elements[i]
+        if e.mode == "filterStrip" then
+            if e.auraType == "HARMFUL" then
+                rel.hasHarmfulStrip = true
+            else
+                rel.hasHelpfulStrip = true
+            end
+        elseif e.mode == "tracked" then
+            rel.hasTracked = true
+            local spells = e.spells
+            if spells then
+                for j = 1, #spells do rel.trackedSpells[spells[j]] = true end
+            end
+        end
+    end
+    return rel
+end
+
+-- True if this delta could change anything the frame's elements render.
+local function DeltaTouchesFrame(rel, dirty)
+    if dirty.helpful and rel.hasHelpfulStrip then return true end
+    if dirty.harmful and rel.hasHarmfulStrip then return true end
+    if rel.hasTracked then
+        if dirty.spellsUncertain then return true end
+        for sid in pairs(dirty.spells) do
+            if rel.trackedSpells[sid] then return true end
+        end
+    end
+    return false
+end
+
+-- `dirty` (optional): the delta summary from ApplyAuraDelta. When present, frames
+-- and elements the delta never touched skip re-dispatch (their widgets stay as
+-- they are). nil = full render (settings refresh / full scan / cold) → all.
+local function RenderFrameElements(frame, cache, dirty)
     if not frame or not frame.unit then return end
     local Render = GetRender()
     if not Render then return end
@@ -1058,7 +1190,20 @@ local function RenderFrameElements(frame, cache)
     end
 
     local specID = GetPlayerSpecID()
-    local work = BuildElementRenderList(auras, specID, cache)
+    if AuraModel.EnsureSeeded then AuraModel.EnsureSeeded(auras) end
+
+    -- Frame-level dirty skip: if this delta can't touch any element this frame
+    -- shows, leave every widget exactly as-is (no element rebuild, no release).
+    local rel = GetAuraRelevance(auras, specID)
+    if dirty and not DeltaTouchesFrame(rel, dirty) then
+        if auraStats then auraStats.frameSkips = auraStats.frameSkips + 1 end
+        return
+    end
+
+    -- Zero-alloc render: iterate the active elements directly into reusable
+    -- scratch tables. Render:Dispatch only reads matches synchronously and never
+    -- retains them, so the scratch is safe to reuse across frames/events.
+    local elements = AuraModel.ActiveElementsForSpec(auras, specID, _activeElementsScratch)
 
     local rendered = frame._quiRenderedAuraElementIDs
     if not rendered then
@@ -1069,14 +1214,45 @@ local function RenderFrameElements(frame, cache)
     local current = _renderCurrentIDs
     wipe(current)
     local dedupSet = frame._defensiveAuraIDs
-    for i = 1, #work do
-        local element = work[i].element
-        local matches = work[i].matches
-        if element.mode == "filterStrip" then
-            matches = BuildFilterStripMatches(frame.unit, cache, element, dedupSet)
+    for i = 1, #elements do
+        local element = elements[i]
+        -- Per-element dirty gate: skip the (expensive) match build + Dispatch for
+        -- elements the delta didn't touch, but still record the id so the release
+        -- reconciliation below never drops a clean element.
+        local elementDirty = (dirty == nil)
+        if not elementDirty then
+            if element.mode == "filterStrip" then
+                if element.auraType == "HARMFUL" then
+                    elementDirty = dirty.harmful
+                else
+                    elementDirty = dirty.helpful
+                end
+            elseif element.mode == "tracked" then
+                if dirty.spellsUncertain then
+                    elementDirty = true
+                else
+                    local spells = element.spells
+                    if spells then
+                        for j = 1, #spells do
+                            if dirty.spells[spells[j]] then elementDirty = true; break end
+                        end
+                    end
+                end
+            end
         end
         current[element.id] = true
-        Render:Dispatch(frame, element, matches)
+        if elementDirty then
+            if auraStats then auraStats.elementsDispatched = auraStats.elementsDispatched + 1 end
+            local matches
+            if element.mode == "filterStrip" then
+                matches = BuildFilterStripMatches(frame.unit, cache, element, dedupSet)
+            elseif element.mode == "tracked" then
+                matches = AuraModel.PopulateElementMatches(element, cache, _trackedMatchesScratch)
+            end
+            Render:Dispatch(frame, element, matches)
+        elseif auraStats then
+            auraStats.elementSkips = auraStats.elementSkips + 1
+        end
     end
 
     -- Release element ids that rendered last pass but are gone this pass.
@@ -1225,6 +1401,119 @@ end
 -- icon cooldown swipes via DurationObject (zero Lua allocation).
 --
 -- Set changes try the shared delta path first; full updates still rescan.
+-- AURA-STORM BUDGET: M+ pulls / raid-wide debuffs fire UNIT_AURA on ~40 units in
+-- one frame. Even with per-frame dirty-skipping, full-update events bypass the
+-- delta path and cost a full scan + full render each, so a wall of them in one
+-- frame hitches. Cap the heavy path at AURA_HEAVY_BUDGET units/frame; overflow
+-- units are queued and drained ~budget/frame by a hidden OnUpdate ticker, each
+-- replayed with nil updateInfo (forced full scan — lossless, never a stale
+-- delta). The stack/duration fast path and the first budget units stay instant;
+-- steady state never exceeds budget, so normal play sees no added latency.
+local AURA_HEAVY_BUDGET = 10
+local _auraFrameStamp = 0
+local _auraBudgetUsed = 0
+local _auraDirtyUnits = {}
+local _auraDrainFrame
+
+local function HeavyBudgetAvailable()
+    local now = (GetTime and GetTime()) or 0
+    if now ~= _auraFrameStamp then
+        _auraFrameStamp = now
+        _auraBudgetUsed = 0
+    end
+    if _auraBudgetUsed >= AURA_HEAVY_BUDGET then return false end
+    _auraBudgetUsed = _auraBudgetUsed + 1
+    return true
+end
+
+-- Process one unit's set-change / full-update: update the shared cache, then run
+-- the dirty-gated render fan-out across its frames. updateInfo == nil forces a
+-- full scan + full render (used by the drain queue and any fallback path).
+local function ProcessUnitAuraSetChange(unit, updateInfo)
+    local GF = ns.QUI_GroupFrames
+    if not GF or not GF.initialized then return end
+    local frames = GF.unitFrameMap[unit]
+    if not frames then return end
+    local nFrames = #frames
+    if nFrames == 0 then return end
+
+    -- Keep the shared cache authoritative: full scan on full/fallback, else patch
+    -- from the UNIT_AURA delta (which also publishes the dirty summary).
+    local cacheUpdated = false
+    local triedDelta = false
+    if type(updateInfo) == "table" and not updateInfo.isFullUpdate then
+        triedDelta = true
+        cacheUpdated = ApplyAuraDelta(unit, updateInfo)
+    elseif type(updateInfo) == "table" and updateInfo.isFullUpdate then
+        if auraStats then auraStats.fullUpdateEvents = auraStats.fullUpdateEvents + 1 end
+    end
+    if cacheUpdated then
+        if auraStats then auraStats.deltaApplied = auraStats.deltaApplied + 1 end
+    else
+        if triedDelta then
+            if auraStats then auraStats.deltaFallback = auraStats.deltaFallback + 1 end
+        end
+        ScanUnitAuras(unit)
+    end
+
+    local cache = unitAuraCache[unit]
+    local Render = GetRender()
+    -- dirty == nil on a full scan / fallback → full render; else the gated path.
+    local dirty = cacheUpdated and _deltaSummary or nil
+    for f = 1, nFrames do
+        local frame = frames[f]
+        if frame:IsShown() then
+            if auraStats then auraStats.framesRefreshed = auraStats.framesRefreshed + 1 end
+            -- Healer overlays read the shared cache subsets; refresh only when the
+            -- relevant subset moved (a full render refreshes unconditionally).
+            if (dirty == nil or dirty.harmful) and GF.UpdateDispelOverlay then
+                GF:UpdateDispelOverlay(frame)
+            end
+            if (dirty == nil or dirty.defensive) and GF.UpdateDefensiveIndicator then
+                GF:UpdateDefensiveIndicator(frame)
+            end
+            -- Unified element pass. The defensive overlay above refreshed
+            -- frame._defensiveAuraIDs first so a filterStrip's dedupeDefensives
+            -- sees the current set.
+            RenderFrameElements(frame, cache, dirty)
+        end
+    end
+
+    -- Mixed delta (updated + added/removed): reseat C-side bar timers on the
+    -- updated instances so the fill drains from the live DurationObject.
+    if cacheUpdated and Render and type(updateInfo) == "table"
+        and updateInfo.updatedAuraInstanceIDs
+        and (updateInfo.addedAuras or updateInfo.removedAuraInstanceIDs)
+    then
+        local updated = updateInfo.updatedAuraInstanceIDs
+        if Render.RefreshUpdatedBars then
+            if Render:RefreshUpdatedBars(frames, nFrames, unit, updated) then
+                if auraStats then auraStats.mixedIconRefreshes = auraStats.mixedIconRefreshes + 1 end
+            end
+        end
+    end
+end
+
+local function EnsureAuraDrainFrame()
+    if _auraDrainFrame then return _auraDrainFrame end
+    _auraDrainFrame = CreateFrame("Frame")
+    _auraDrainFrame:Hide()
+    _auraDrainFrame:SetScript("OnUpdate", function(self)
+        for unit in pairs(_auraDirtyUnits) do
+            if HeavyBudgetAvailable() then
+                _auraDirtyUnits[unit] = nil
+                -- The queued delta is stale by now → full scan (nil updateInfo).
+                ProcessUnitAuraSetChange(unit, nil)
+                if auraStats then auraStats.drainProcessed = auraStats.drainProcessed + 1 end
+            else
+                break -- budget spent this frame; resume next frame
+            end
+        end
+        if not next(_auraDirtyUnits) then self:Hide() end
+    end)
+    return _auraDrainFrame
+end
+
 if ns.AuraEvents then
     ns.AuraEvents:Subscribe("roster", function(unit, updateInfo)
         local GF = ns.QUI_GroupFrames
@@ -1241,8 +1530,8 @@ if ns.AuraEvents then
 
         -- Fast path: pure stack/duration update (no auras added or removed).
         -- The display set is identical — skip full scan + all overlay updates.
-        -- Only refresh the specific icons whose aura actually updated.
-        -- All APIs are C-side, secret-safe — no pcall needed.
+        -- Only refresh the specific icons whose aura actually updated. Never
+        -- budgeted: it's zero-alloc and latency-critical. C-side, secret-safe.
         if type(updateInfo) == "table"
             and not updateInfo.isFullUpdate
             and not updateInfo.addedAuras
@@ -1270,54 +1559,16 @@ if ns.AuraEvents then
             return
         end
 
-        -- Set change or full update: keep the shared cache authoritative.
-        -- Full scan on cold/full/fallback; otherwise patch the cache from the
-        -- UNIT_AURA delta and let every consumer read that shared state.
-        local cacheUpdated = false
-        local triedDelta = false
-        if type(updateInfo) == "table" and not updateInfo.isFullUpdate then
-            triedDelta = true
-            cacheUpdated = ApplyAuraDelta(unit, updateInfo)
-        elseif type(updateInfo) == "table" and updateInfo.isFullUpdate then
-            if auraStats then auraStats.fullUpdateEvents = auraStats.fullUpdateEvents + 1 end
-        end
-        if cacheUpdated then
-            if auraStats then auraStats.deltaApplied = auraStats.deltaApplied + 1 end
+        -- Heavy path (set change / full update): budget to spread aura storms.
+        -- Under budget → process inline (instant). Over → queue + drain over the
+        -- next frames. Steady state never exceeds budget, so no added latency.
+        if HeavyBudgetAvailable() then
+            _auraDirtyUnits[unit] = nil
+            ProcessUnitAuraSetChange(unit, updateInfo)
         else
-            if triedDelta then
-                if auraStats then auraStats.deltaFallback = auraStats.deltaFallback + 1 end
-            end
-            ScanUnitAuras(unit)
-        end
-        local cache = unitAuraCache[unit]
-        local Render = GetRender()
-        for f = 1, nFrames do
-            local frame = frames[f]
-            if frame:IsShown() then
-                if auraStats then auraStats.framesRefreshed = auraStats.framesRefreshed + 1 end
-                -- Healer overlays read the shared cache's classification subsets.
-                if GF.UpdateDispelOverlay then GF:UpdateDispelOverlay(frame) end
-                if GF.UpdateDefensiveIndicator then GF:UpdateDefensiveIndicator(frame) end
-                -- Unified element pass: the sole aura render path. The defensive
-                -- overlay above refreshed frame._defensiveAuraIDs first so a
-                -- filterStrip's dedupeDefensives sees the current set.
-                RenderFrameElements(frame, cache)
-            end
-        end
-        -- Mixed delta (updated + added/removed): the element pass already re-
-        -- dispatched with fresh matches; reseat C-side bar timers on the
-        -- specific instances that updated so the fill drains from the live
-        -- DurationObject (matches the old RefreshUpdatedBars behavior).
-        if cacheUpdated and Render and type(updateInfo) == "table"
-            and updateInfo.updatedAuraInstanceIDs
-            and (updateInfo.addedAuras or updateInfo.removedAuraInstanceIDs)
-        then
-            local updated = updateInfo.updatedAuraInstanceIDs
-            if Render.RefreshUpdatedBars then
-                if Render:RefreshUpdatedBars(frames, nFrames, unit, updated) then
-                    if auraStats then auraStats.mixedIconRefreshes = auraStats.mixedIconRefreshes + 1 end
-                end
-            end
+            _auraDirtyUnits[unit] = true
+            if auraStats then auraStats.heavyDeferred = auraStats.heavyDeferred + 1 end
+            EnsureAuraDrainFrame():Show()
         end
     end)
 end
@@ -1327,8 +1578,11 @@ end
 ---------------------------------------------------------------------------
 -- The shared cache drives the dispel/defensive subsets and the unified renderer
 -- resolves filterStrip matches at render time, so settings changes need no cache
--- mutation here. Retained as a stable hook for the options/settings caller.
+-- mutation here. It MUST bump the relevance generation, though: a config edit
+-- (add/remove/retarget an element) changes which spells/buckets each frame cares
+-- about, invalidating the cached dirty-skip descriptors.
 function QUI_GFA:InvalidateLayout()
+    _relGeneration = _relGeneration + 1
 end
 
 ---------------------------------------------------------------------------
@@ -1338,6 +1592,9 @@ function QUI_GFA:RefreshAll()
     local GF = ns.QUI_GroupFrames
     if not GF or not GF.initialized then return end
 
+    -- Full refresh = settings may have changed; invalidate cached dirty-skip
+    -- descriptors so the next render rebuilds them from the current config.
+    _relGeneration = _relGeneration + 1
     for unit, list in pairs(GF.unitFrameMap) do
         local shouldScan = AnyVisibleFrameHasActiveAuraConsumers(list, #list)
         if shouldScan then

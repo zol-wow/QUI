@@ -161,8 +161,15 @@ end
 -- inherit "*". An empty spec bucket is a valid intentional "show nothing".
 -- Spec-bucket presence is controlled by the editor's per-spec override toggle
 -- (Model.EnableSpecOverride / DisableSpecOverride), not by merely viewing a spec.
-function Model.ActiveElementsForSpec(auras, specID)
-    local out = {}
+-- `out` (optional): a caller-supplied array to fill instead of allocating a
+-- fresh table -- the per-frame render path passes a reusable scratch to stay
+-- zero-alloc in the combat fan-out. Cleared here so callers needn't pre-wipe.
+function Model.ActiveElementsForSpec(auras, specID, out)
+    if out then
+        for i = #out, 1, -1 do out[i] = nil end
+    else
+        out = {}
+    end
     local elements = auras and auras.elements
     if not elements then return out end
     local bucket
@@ -210,8 +217,13 @@ function Model.DisableSpecOverride(auras, bucketKey)
     end
 end
 
-function Model.PopulateElementMatches(element, cache)
-    local matches = {}
+-- `out` (optional): reusable `{ [spellID] = auraData }` map to fill instead of
+-- allocating, for the zero-alloc render path. Cleared here.
+function Model.PopulateElementMatches(element, cache, out)
+    local matches = out or {}
+    if out then
+        for k in pairs(matches) do matches[k] = nil end
+    end
     if element.mode == "tracked" and cache then
         for _, sid in ipairs(element.spells or {}) do
             local data = (cache.buffsBySpellID and cache.buffsBySpellID[sid])

@@ -36,6 +36,7 @@ local function ShouldStripTopKey(k)
     if type(k) ~= "string" then return false end
     if k:sub(1, 1) == "_" then return true end   -- every meta/latch key is "_"-prefixed
     if k == "fpsBackup" then return true end       -- runtime CVar backup buffer (defaults.lua = nil)
+    if k == "powerBarAltPosition" then return true end -- dead legacy position store, no runtime consumer
     return false
 end
 
@@ -216,3 +217,18 @@ local kept = 0
 for _ in pairs(profile) do kept = kept + 1 end
 io.write(string.format("Wrote %s\n  kept %d top-level setting keys, stripped %d meta/runtime keys: %s\n",
     outPath, kept, #stripped, table.concat(stripped, ", ")))
+
+-- Keep the Profiles-tab "Starter Profile" preset in lock-step with the seed:
+-- when we wrote the canonical seed (no custom out path), regenerate
+-- importstrings/starter_profile.lua from it so the two never drift. Runs as a
+-- separate process so the freshly-written seed file is re-read cleanly.
+-- Guard: tests/unit/starter_preset_matches_seed_test.lua.
+if not arg[2] then
+    local interp = arg[-1] or "lua"
+    local presetGen = ScriptDir() .. "gen_starter_preset_from_seed.lua"
+    io.write("Regenerating Starter Profile preset from seed...\n")
+    local ok = os.execute(string.format('%q %q', interp, presetGen))
+    if ok ~= true and ok ~= 0 then
+        error("preset regen failed -- run manually: lua tools/gen_starter_preset_from_seed.lua")
+    end
+end

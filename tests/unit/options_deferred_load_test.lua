@@ -60,7 +60,7 @@ check(not quiToc:find("importstrings", 1, true),
     "QUI.toc must NOT load importstrings at login (preset strings are options-only)")
 for _, f in ipairs({
     "qui_editmode_base",
-    "coco_profile",
+    "starter_profile",
 }) do
     check(optionsXml:find(f, 1, true) ~= nil,
         "QUI_Options/options.xml must load importstrings\\" .. f .. ".lua")

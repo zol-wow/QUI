@@ -39,7 +39,7 @@ shared.lua
 # nothing in the gameplay/login path references these, so they load here.
 ..\QUI\core\profile_io.lua
 ..\QUI\importstrings\qui_editmode_base.lua
-..\QUI\importstrings\coco_profile.lua
+..\QUI\importstrings\starter_profile.lua
 ..\QUI\core\settings\full_surface.lua
 ..\QUI\core\settings\pins_ui.lua
 ..\QUI\core\settings\content\anchoring_shared_content.lua

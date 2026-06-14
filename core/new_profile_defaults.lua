@@ -10656,12 +10656,6 @@ ns.NewProfileSeed = {
         visibility = "always",
         width = 353,
     },
-    powerBarAltPosition = {
-        point = "TOP",
-        relPoint = "TOP",
-        x = 7.2222223836514718,
-        y = -103.8888912109866,
-    },
     powerColors = {
         arcaneCharges = {
             [1] = 0.10000000000000001,

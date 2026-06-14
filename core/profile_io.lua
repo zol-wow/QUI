@@ -2377,7 +2377,7 @@ end
 
 -- NOTE: the pre-3.5.11 floor reseed now lives in core/compatibility.lua
 -- (ReseedStarterFlaggedProfiles), seeding ns.NewProfileSeed onto floored
--- profiles during BackwardsCompat -- no Coco import, no reload.
+-- profiles during BackwardsCompat -- no Starter Profile import, no reload.
 
 function QUICore:ImportProfileSelectionFromString(str, selectedCategoryIDs, targetProfileName)
     local ok, payloadOrErr = ParseProfileImportString(self, str)

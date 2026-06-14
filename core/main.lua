@@ -155,9 +155,28 @@ end
 local defaults = ns.defaults
 
 
+-- OnNewProfile handler: seed a freshly-created profile with the shipped
+-- new-profile defaults. db.profile here is the new profile, already filled with
+-- legacy defaults by AceDB; we overwrite the curated keys on top BEFORE the
+-- first reader sees it. See core/new_profile_defaults.lua.
+function QUICore:SeedNewProfile(event, db, profileKey)
+    if ns.ApplyNewProfileSeed then
+        ns.ApplyNewProfileSeed(db.profile)
+    end
+end
+
 function QUICore:OnInitialize()
     self.db = LibStub("AceDB-3.0"):New("QUIDB", defaults, true)
     QUI.db = self.db  -- Make database accessible to other QUI modules
+
+    -- Seed every newly-created profile (including a fresh install's Default)
+    -- with the shipped new-profile defaults. Registered synchronously here,
+    -- on the live profile DB, BEFORE the profile is first materialized below
+    -- (RunShippedDefaultsMaintenance is the first reader), so the seed lands
+    -- before any reader sees it -- no reload required. Copies fire
+    -- OnProfileCopied (not OnNewProfile) so they keep their source; existing
+    -- profiles already exist and never fire this. See core/new_profile_defaults.lua.
+    self.db.RegisterCallback(self, "OnNewProfile", "SeedNewProfile")
 
     -- Consume legacy per-profile shipped-default snapshots before pruning
     -- them, so default flips stay pinned without carrying the large table

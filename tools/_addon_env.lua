@@ -127,6 +127,11 @@ end
 -- C_AddOns / similar tables — just empty so init.lua-style lookups don't error
 _G.C_AddOns = _G.C_AddOns or { GetAddOnMetadata = function() return nil end }
 
+-- CallbackHandler-1.0 wraps every callback dispatch in securecallfunction.
+-- WoW provides it; in the harness it's a plain forwarding call so AceDB
+-- callbacks (OnNewProfile etc.) actually fire when registered.
+_G.securecallfunction = _G.securecallfunction or function(fn, ...) return fn(...) end
+
 ----------------------------------------------------------------------------
 -- Library loading (AceDB needs LibStub + CallbackHandler in scope)
 ----------------------------------------------------------------------------
@@ -240,6 +245,18 @@ local function BuildHarness(opts)
     end
 
     local db = AceDB:New("QUI_DB", defaults, "Default")
+
+    -- Mirror core/main.lua QUICore:OnInitialize: register the new-profile seed
+    -- on OnNewProfile BEFORE the profile is first materialized, so a freshly
+    -- created profile (a seed.sv.lua with no profiles.Default entry) gets the
+    -- shipped Starter Profile seed exactly as a real fresh install does. Profiles that
+    -- already exist in the seed SV never fire OnNewProfile, so the 24 existing
+    -- fixtures are unaffected. opts.noSeed disables it for targeted tests.
+    if not opts.noSeed and type(ns.ApplyNewProfileSeed) == "function" then
+        db.RegisterCallback(ns.Addon, "OnNewProfile", function(_, newDB)
+            ns.ApplyNewProfileSeed(newDB.profile)
+        end)
+    end
 
     -- Make QUICore + QUI:BackwardsCompat() callable like in WoW.
     _G.QUI.db = db

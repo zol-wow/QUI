@@ -249,7 +249,7 @@ end
 --
 -- Runs here in BackwardsCompat (OnEnable, BEFORE modules build at
 -- PLAYER_LOGIN), so a floored ACTIVE profile is reseeded before its modules
--- initialize -- no UI reload, and no Coco import (ns.ApplyNewProfileSeed lives
+-- initialize -- no UI reload, and no Starter Profile import (ns.ApplyNewProfileSeed lives
 -- in core). AceDB fills the remaining legacy defaults when each profile is next
 -- activated; the floor's `_migrationBackup` rollback snapshot is left intact.
 local function ReseedStarterFlaggedProfiles(db)

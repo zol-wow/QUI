@@ -2799,7 +2799,7 @@ function Migrations.RunOnProfile(profile)
     -- A profile stored below MIN_SUPPORTED_SCHEMA predates 3.5.11 and the
     -- incremental migrations that would upgrade it (v2–v31) were removed in
     -- 4.0. Rather than leave it half-migrated, snapshot it, wipe it, and flag
-    -- it for a starter-profile (Coco) reseed at login — the reseed lives in
+    -- it for a Starter Profile reseed at login — the reseed lives in
     -- QUI_Options (where the preset string + import engine load) and prompts a
     -- reload. Fresh profiles (stored==0) are explicitly NOT floored: they take
     -- the normal fresh-init path through the gates below.

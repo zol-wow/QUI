@@ -1,14 +1,43 @@
-local ADDON_NAME, ns = ...
+local _, ns = ...
 local PRIMARY_ADDON_NAME = "QUI"
 local Helpers = ns.Helpers
 
 local QUI_PerfMonitor = {}
 ns.QUI_PerfMonitor = QUI_PerfMonitor
 
-local metricTargets = { PRIMARY_ADDON_NAME }
-if ADDON_NAME and ADDON_NAME ~= PRIMARY_ADDON_NAME then
-    metricTargets[#metricTargets + 1] = ADDON_NAME
+-- Metric targets = the WHOLE QUI suite (core + every QUI_* sub-addon).
+-- Pre-split, "QUI" was one monolithic addon so a single name captured all
+-- memory/CPU. After the addon split the suite is core + ~16 sub-addons, each
+-- with its own profiler/memory accounting; summing only "QUI" undercounts the
+-- real footprint badly. Enumerate every LOADED addon whose name is "QUI" or
+-- begins with "QUI_" (catches QUI_Debug itself too), rebuilt on ADDON_LOADED
+-- so LOD members (Options, Bags, ...) that load after login are picked up.
+local metricTargets = {}
+
+local function IsQUIAddon(name)
+    return name == PRIMARY_ADDON_NAME
+        or (type(name) == "string" and name:sub(1, 4) == "QUI_")
 end
+
+local function RebuildMetricTargets()
+    wipe(metricTargets)
+    local n = (C_AddOns and C_AddOns.GetNumAddOns and C_AddOns.GetNumAddOns()) or 0
+    for i = 1, n do
+        local okLoaded, loaded = pcall(C_AddOns.IsAddOnLoaded, i)
+        if okLoaded and loaded then
+            local okInfo, name = pcall(C_AddOns.GetAddOnInfo, i)
+            if okInfo and IsQUIAddon(name) then
+                metricTargets[#metricTargets + 1] = name
+            end
+        end
+    end
+    -- Never leave the list empty (enumeration unavailable, e.g. unit tests).
+    if #metricTargets == 0 then
+        metricTargets[1] = PRIMARY_ADDON_NAME
+    end
+end
+
+RebuildMetricTargets()
 
 function QUI_PerfMonitor.GetMetricTargetNames()
     local copy = {}
@@ -812,6 +841,7 @@ end
 
 local function StartTracking()
     DetectCPUAPI()
+    RebuildMetricTargets()
     if not monitorFrame then
         CreateMonitorFrame()
     end
@@ -863,8 +893,19 @@ _G.QUI_TogglePerfMonitor = Toggle
 
 local bootstrap = CreateFrame("Frame")
 bootstrap:RegisterEvent("PLAYER_LOGIN")
-bootstrap:SetScript("OnEvent", function(self)
+bootstrap:RegisterEvent("ADDON_LOADED")
+bootstrap:SetScript("OnEvent", function(self, event, addonName)
+    if event == "ADDON_LOADED" then
+        -- LOD suite members (Options, Bags, ...) load after login; refold them
+        -- into the metric target list so their memory/CPU is counted.
+        if IsQUIAddon(addonName) then
+            RebuildMetricTargets()
+        end
+        return
+    end
+    -- PLAYER_LOGIN
     DetectCPUAPI()
     DrainPerfRegistry()
-    self:UnregisterAllEvents()
+    RebuildMetricTargets()
+    self:UnregisterEvent("PLAYER_LOGIN")
 end)

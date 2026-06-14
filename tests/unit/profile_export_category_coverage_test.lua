@@ -19,7 +19,12 @@
 -- Run from repo root: lua tests/unit/profile_export_category_coverage_test.lua
 
 local env = dofile("tools/_addon_env.lua")
-local h = env.BuildHarness()
+-- noSeed: this test asserts every DEFAULTS key is export-covered. The
+-- new-profile seed (Starter Profile) is a separate artifact that may carry
+-- extra keys not in defaults.lua; it must not contaminate the defaults
+-- coverage check. Seed/preset parity is guarded by
+-- tests/unit/starter_preset_matches_seed_test.lua.
+local h = env.BuildHarness({ noSeed = true })
 
 local AceSerializer = LibStub("AceSerializer-3.0")
 local LibDeflate    = LibStub("LibDeflate")

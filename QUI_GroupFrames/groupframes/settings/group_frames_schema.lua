@@ -2391,31 +2391,9 @@ local function RenderAurasSection(sectionHost, ctx)
         contentWidth = nil
     end
 
-    local refresh = function()
-        RefreshGroupFrames(groupFrames.contextMode)
-    end
-
-    -- Aura edits never change tile geometry, only what the aura renderer draws.
-    -- Route the (frequent) editor data-change callback through a lightweight
-    -- refresh: live frames + layout-mode handle + an aura-ONLY preview rebuild,
-    -- skipping the full per-tile preview restyle. Falls back to the full preview
-    -- seam if the lightweight one isn't loaded yet.
-    local refreshAuras = function()
-        if _G.QUI_RefreshGroupFrames then
-            _G.QUI_RefreshGroupFrames()
-        end
-        if _G.QUI_LayoutModeSyncHandle then
-            _G.QUI_LayoutModeSyncHandle(NormalizeContextMode(groupFrames.contextMode) == "raid" and "raidFrames" or "partyFrames")
-        end
-        if _G.QUI_RefreshGroupFramePreview then
-            _G.QUI_RefreshGroupFramePreview(NormalizeContextMode(groupFrames.contextMode), true)
-        end
-    end
-
-    builder.Header("Auras")
-    builder.Description("Buff/debuff strips and tracked auras on " .. groupFrames.sourceLabel
-        .. " group frames. A spec either inherits the All Specs bucket or overrides it with its own — never both.")
-
+    -- Resolve the editing-spec bucket up front so the refresh closures below can
+    -- bind the live preview to it (computed here, not just where the dropdown is
+    -- built, because refreshAuras must capture it).
     local specOptions = BuildSpecBucketOptions()
     -- Default the editing-spec dropdown to "All Specs" (the "*" bucket) instead
     -- of the player's current spec, so the tile opens on the shared bucket.
@@ -2438,6 +2416,40 @@ local function RenderAurasSection(sectionHost, ctx)
     local overrideOn = false
     if isSpecBucket and AuraModel and AuraModel.HasSpecOverride then
         overrideOn = AuraModel.HasSpecOverride(auras.elements, selectedBucket) and true or false
+    end
+
+    local refresh = function()
+        RefreshGroupFrames(groupFrames.contextMode)
+    end
+
+    -- Aura edits never change tile geometry, only what the aura renderer draws.
+    -- Route the (frequent) editor data-change callback through a lightweight
+    -- refresh: live frames + layout-mode handle + an aura-ONLY preview rebuild,
+    -- skipping the full per-tile preview restyle. Falls back to the full preview
+    -- seam if the lightweight one isn't loaded yet.
+    local refreshAuras = function()
+        if _G.QUI_RefreshGroupFrames then
+            _G.QUI_RefreshGroupFrames()
+        end
+        if _G.QUI_LayoutModeSyncHandle then
+            _G.QUI_LayoutModeSyncHandle(NormalizeContextMode(groupFrames.contextMode) == "raid" and "raidFrames" or "partyFrames")
+        end
+        if _G.QUI_RefreshGroupFramePreview then
+            -- Pass the edited bucket so the preview tiles render THIS bucket, not
+            -- the player's live spec.
+            _G.QUI_RefreshGroupFramePreview(NormalizeContextMode(groupFrames.contextMode), true, selectedBucket)
+        end
+    end
+
+    builder.Header("Auras")
+    builder.Description("Buff/debuff strips and tracked auras on " .. groupFrames.sourceLabel
+        .. " group frames. A spec either inherits the All Specs bucket or overrides it with its own — never both.")
+
+    -- Bind the live preview tiles to the bucket being edited (recomputed on every
+    -- section render, so a spec-dropdown switch -> ScheduleTabRepaint -> re-render
+    -- repaints the preview for the newly selected bucket).
+    if _G.QUI_RefreshGroupFramePreview then
+        _G.QUI_RefreshGroupFramePreview(NormalizeContextMode(groupFrames.contextMode), true, selectedBucket)
     end
 
     local card = builder.Card()

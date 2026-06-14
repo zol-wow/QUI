@@ -1,5 +1,34 @@
 local ADDON_NAME, ns = ...
 local TARGET_ADDON_NAME = "QUI"
+
+-- Suite-wide resident memory (KB). Post addon-split, GetAddOnMemoryUsage("QUI")
+-- only sees core; CDM/GroupFrames/etc. each bill to their own QUI_* addon. Sum
+-- every loaded addon named "QUI" or beginning with "QUI_". Caller must run
+-- UpdateAddOnMemoryUsage() first. Falls back to the core figure if enumeration
+-- is unavailable (e.g. bare-ns unit tests).
+local function SumSuiteMemoryKB()
+    local total, found = 0, false
+    local n = (C_AddOns and C_AddOns.GetNumAddOns and C_AddOns.GetNumAddOns()) or 0
+    for i = 1, n do
+        local okL, loaded = pcall(C_AddOns.IsAddOnLoaded, i)
+        if okL and loaded then
+            local okN, name = pcall(C_AddOns.GetAddOnInfo, i)
+            if okN and (name == TARGET_ADDON_NAME
+                or (type(name) == "string" and name:sub(1, 4) == "QUI_")) then
+                local okM, mem = pcall(GetAddOnMemoryUsage, name)
+                if okM and mem then
+                    total = total + mem
+                    found = true
+                end
+            end
+        end
+    end
+    if not found then
+        local okM, mem = pcall(GetAddOnMemoryUsage, TARGET_ADDON_NAME)
+        return okM and mem or 0
+    end
+    return total
+end
 ----------------------------------------------------------------------------
 -- Memory Audit — runtime probe for cache/pool sizes
 --
@@ -178,8 +207,7 @@ local function TakeSnapshot()
     end
 
     pcall(UpdateAddOnMemoryUsage)
-    local ok, mem = pcall(GetAddOnMemoryUsage, TARGET_ADDON_NAME)
-    snap._totalKB = ok and mem or 0
+    snap._totalKB = SumSuiteMemoryKB()
     snap._time = GetTime()
     snap._combat = InCombatLockdown() and true or false
     return snap
@@ -1008,14 +1036,12 @@ end
 _G.QUI_MemAudit = function(subcmd, arg)
     if subcmd == "gc" then
         pcall(UpdateAddOnMemoryUsage)
-        local ok1, before = pcall(GetAddOnMemoryUsage, TARGET_ADDON_NAME)
+        local before = SumSuiteMemoryKB()
         collectgarbage("collect")
         pcall(UpdateAddOnMemoryUsage)
-        local ok2, after = pcall(GetAddOnMemoryUsage, TARGET_ADDON_NAME)
-        if ok1 and ok2 then
-            print(string.format("|cff60A5FAQUI GC:|r Before: %s  After: %s  Freed: |cff44FF44%s|r",
-                FormatKB(before), FormatKB(after), FormatKB(before - after)))
-        end
+        local after = SumSuiteMemoryKB()
+        print(string.format("|cff60A5FAQUI GC:|r Before: %s  After: %s  Freed: |cff44FF44%s|r",
+            FormatKB(before), FormatKB(after), FormatKB(before - after)))
         return
     end
 

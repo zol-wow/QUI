@@ -13837,12 +13837,6 @@ return {
           useCustomColor = false,
           width = 353
         },
-        powerBarAltPosition = {
-          point = "TOP",
-          relPoint = "TOP",
-          x = 7.2222223836514718,
-          y = -103.8888912109866
-        },
         powerColors = {
           chargedComboPoints = {
             [1] = 0,

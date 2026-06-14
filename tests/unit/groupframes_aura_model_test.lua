@@ -69,6 +69,36 @@ test("ActiveElementsForSpec: empty spec bucket = show nothing (override)", funct
     assert(#Model.ActiveElementsForSpec(auras, 256) == 1)
 end)
 
+test("ActiveElementsForSpec: reuses + clears caller-supplied out (zero-alloc path)", function()
+    local auras = { enabled = true, elements = {
+        ["*"] = { { id = "a", enabled = true, mode = "filterStrip", auraType = "HARMFUL" },
+                   { id = "b", enabled = true, mode = "filterStrip", auraType = "HELPFUL" } },
+        [105] = { { id = "p", enabled = true, mode = "tracked", spells = { 774 }, displayType = "icon" } },
+    } }
+    local scratch = {}
+    local r1 = Model.ActiveElementsForSpec(auras, 256, scratch) -- inherit "*" -> 2
+    assert(r1 == scratch, "must return the same table when out is supplied")
+    assert(#r1 == 2)
+    -- Reuse with a smaller result: the stale 2nd entry must be cleared.
+    local r2 = Model.ActiveElementsForSpec(auras, 105, scratch) -- spec 105 -> 1
+    assert(r2 == scratch)
+    assert(#r2 == 1 and r2[1].id == "p")
+    assert(r2[2] == nil, "stale second entry must be cleared on reuse")
+end)
+
+test("PopulateElementMatches: reuses + clears caller-supplied out", function()
+    local cache = { buffsBySpellID = { [100] = { auraInstanceID = 1 },
+                                       [200] = { auraInstanceID = 2 } } }
+    local scratch = {}
+    local m1 = Model.PopulateElementMatches({ mode = "tracked", spells = { 100, 200 } }, cache, scratch)
+    assert(m1 == scratch)
+    assert(m1[100] and m1[200])
+    -- Reuse with an element matching only one spell: stale key must clear.
+    local m2 = Model.PopulateElementMatches({ mode = "tracked", spells = { 100 } }, cache, scratch)
+    assert(m2 == scratch)
+    assert(m2[100] ~= nil and m2[200] == nil, "stale spell 200 must be cleared on reuse")
+end)
+
 test("HasSpecOverride: present non-'*' bucket only", function()
     local els = { ["*"] = {}, [105] = {} }
     assert(Model.HasSpecOverride(els, 105) == true)

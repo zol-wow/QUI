@@ -262,7 +262,7 @@ QUI.imports = setmetatable({}, {
 -- To add a new preset, just append an entry here and ship the matching
 -- importstring file — the UI picks it up automatically.
 QUI._presetProfiles = {
-    { key = "CocoProfile", profileName = "Coco",            description = "Coco's personal UI layout" },
+    { key = "StarterProfile", profileName = "Starter Profile", description = "QUI's shipped starter layout (same as a fresh install)" },
 }
 
 ---@type table
@@ -289,16 +289,6 @@ QUI.defaults = {
     }
 }
 
--- OnNewProfile handler: seed a freshly-created profile with the shipped
--- new-profile defaults. db.profile here is the new profile, already filled with
--- legacy defaults by AceDB; we overwrite the curated keys on top BEFORE the
--- first reader sees it. See core/new_profile_defaults.lua.
-function QUI:SeedNewProfile(event, db, profileKey)
-    if ns.ApplyNewProfileSeed then
-        ns.ApplyNewProfileSeed(db.profile)
-    end
-end
-
 function QUI:OnInitialize()
     -- Migrate old QuaziiUI_DB to QUI_DB if needed
     if QuaziiUI_DB and not QUI_DB then
@@ -308,13 +298,10 @@ function QUI:OnInitialize()
     ---@type AceDBObject-3.0
     self.db = LibStub("AceDB-3.0"):New("QUI_DB", self.defaults, "Default")
 
-    -- Seed every newly-created profile (including a fresh install's Default)
-    -- with the shipped new-profile defaults. Registered synchronously here,
-    -- before the Default profile is first materialized, so the seed lands
-    -- before any reader sees it -- no reload required. Copies fire
-    -- OnProfileCopied (not OnNewProfile) so they keep their source; existing
-    -- profiles already exist and never fire this.
-    self.db.RegisterCallback(self, "OnNewProfile", "SeedNewProfile")
+    -- NOTE: the new-profile seed is registered on the LIVE profile DB in
+    -- core/main.lua (QUICore:OnInitialize / "QUIDB"), not here. This QUI_DB
+    -- instance is overwritten by QUI.db = self.db there and is not the
+    -- profile store, so an OnNewProfile seed on it would never fire for users.
 
     self:RegisterChatCommand("qui", "SlashCommandOpen")
     self:RegisterChatCommand("quaziiui", "SlashCommandOpen")

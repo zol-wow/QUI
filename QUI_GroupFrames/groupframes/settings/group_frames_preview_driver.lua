@@ -1007,7 +1007,13 @@ local function RenderFrameAuras(f, auras, now)
         f._previewAuraIDs = nil
         return
     end
-    local elements = Model.ActiveElementsForSpec(auras, GetPreviewSpecID())
+    -- Preview the bucket the EDITOR is on (per-context), not the player's live
+    -- spec -- otherwise editing "All Specs" while your current spec has its own
+    -- bucket shows the wrong auras. nil (no editor push yet) falls back to live
+    -- spec so the preview is sensible before the auras tab is ever opened.
+    local bucketKey = state.previewBucket and state.previewBucket[state.contextMode]
+    if bucketKey == nil then bucketKey = GetPreviewSpecID() end
+    local elements = Model.ActiveElementsForSpec(auras, bucketKey)
     local work, current = {}, {}
     for _, element in ipairs(elements) do
         local matches
@@ -1345,7 +1351,15 @@ end
 -- aurasOnly=true requests the lightweight aura-tile-only rebuild (see
 -- Driver.RefreshAuras); omitted/false does the full per-tile restyle. Kept a
 -- single seam (no new _G global) for the assignment ratchet.
-_G.QUI_RefreshGroupFramePreview = function(contextMode, aurasOnly)
+-- bucketKey (optional): the spec bucket the auras editor currently has selected
+-- ("*" = All Specs, or a specID). Set synchronously here so the coalesced flush
+-- reads the latest; omitted/nil leaves the prior binding untouched.
+_G.QUI_RefreshGroupFramePreview = function(contextMode, aurasOnly, bucketKey)
+    if bucketKey ~= nil then
+        local cm = (contextMode == "raid") and "raid" or "party"
+        state.previewBucket = state.previewBucket or {}
+        state.previewBucket[cm] = bucketKey
+    end
     ScheduleRefresh(aurasOnly and "auras" or "full", contextMode or state.contextMode)
 end
 _G.QUI_SetGroupFramePreviewObserver = function(fn)

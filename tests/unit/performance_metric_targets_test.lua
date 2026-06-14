@@ -65,6 +65,7 @@ function GetFramerate() return 60 end
 function UpdateAddOnMemoryUsage() end
 function GetAddOnMemoryUsage(addonName)
     if addonName == "QUI" then return 100 end
+    if addonName == "QUI_CDM" then return 50 end
     if addonName == "QUI_Debug" then return 25 end
 end
 function wipe(tbl)
@@ -84,7 +85,29 @@ C_AddOnProfiler = {
         assert(metric == Enum.AddOnProfilerMetric.RecentAverageTime,
             "test should request the recent average metric")
         if addonName == "QUI" then return 1 end
+        if addonName == "QUI_CDM" then return 3 end
         if addonName == "QUI_Debug" then return 2 end
+    end,
+}
+
+-- The post-split metric targets are enumerated from the loaded addon list:
+-- every addon named "QUI" or beginning with "QUI_". Non-QUI and unloaded
+-- addons must be excluded.
+local addonList = {
+    { name = "QUI",            loaded = true },
+    { name = "QUI_CDM",        loaded = true },
+    { name = "SomeOtherAddon", loaded = true },  -- not a QUI addon → excluded
+    { name = "QUI_Bags",       loaded = false }, -- not loaded → excluded
+    { name = "QUI_Debug",      loaded = true },
+}
+C_AddOns = {
+    GetNumAddOns = function() return #addonList end,
+    IsAddOnLoaded = function(i)
+        local e = addonList[i]
+        return e.loaded, e.loaded
+    end,
+    GetAddOnInfo = function(i)
+        return addonList[i].name
     end,
 }
 
@@ -99,7 +122,14 @@ assert(type(perf.GetMetricTargetNames) == "function",
 local targets = perf.GetMetricTargetNames()
 assert(type(targets) == "table", "metric target names should be returned as a table")
 assert(targets[1] == "QUI", "main addon should be the first metric target")
-assert(targets[2] == "QUI_Debug", "debug addon should be included as a metric target")
+
+local has = {}
+for _, name in ipairs(targets) do has[name] = true end
+assert(has["QUI"], "core addon should be a metric target")
+assert(has["QUI_CDM"], "loaded QUI_* sub-addons should be metric targets (suite split)")
+assert(has["QUI_Debug"], "debug addon should be included as a metric target")
+assert(not has["SomeOtherAddon"], "non-QUI addons must be excluded")
+assert(not has["QUI_Bags"], "unloaded suite members must be excluded")
 
 assert(perf.GetCPUAPITier() == nil,
     "load-on-demand perf should not rely on a missed PLAYER_LOGIN bootstrap")
