@@ -73,11 +73,11 @@ end
 -- dynamically, so it keeps working across panel rebuilds (see EnsurePreviewPanel).
 local previewObserverInstalled = false
 local function InstallPreviewObserver()
-    if previewObserverInstalled or not _G.QUI_SetGroupFramePreviewObserver then
+    if previewObserverInstalled or not ns.QUI_SetGroupFramePreviewObserver then
         return
     end
     previewObserverInstalled = true
-    _G.QUI_SetGroupFramePreviewObserver(function(_, wrapper)
+    ns.QUI_SetGroupFramePreviewObserver(function(_, wrapper)
         local p = State.previewPanel
         if not p then return end
         -- Generation guard: a later rebuild (e.g. rapid Party/Raid toggle)

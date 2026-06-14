@@ -4031,7 +4031,7 @@ end
 -- Lets the settings surface re-measure / re-size its docked panel after
 -- every rebuild (overflow extent changes as elements toggle). host+wrapper
 -- are passed through; wrapper.previewCell is the cell frame to measure.
-_G.QUI_SetGroupFramePreviewObserver = function(fn)
+ns.QUI_SetGroupFramePreviewObserver = function(fn)
     hoistedPreview.onBuilt = fn
 end
 
