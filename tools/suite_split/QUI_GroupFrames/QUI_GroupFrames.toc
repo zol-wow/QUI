@@ -12,9 +12,9 @@ bootstrap.lua
 # == modules/groupframes/groupframes.xml ==
 groupframes\group_frames_icon_layout.lua
 groupframes\groupframes.lua
+groupframes\groupframes_aura_model.lua
 groupframes\groupframes_auras.lua
-groupframes\groupframes_indicators.lua
-groupframes\groupframes_pinned_auras.lua
+groupframes\groupframes_aura_render.lua
 groupframes\groupframes_private_auras.lua
 groupframes\groupframes_clickcast.lua
 groupframes\groupframes_blizzard.lua

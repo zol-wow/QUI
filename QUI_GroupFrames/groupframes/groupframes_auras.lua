@@ -6,28 +6,22 @@
 
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
-local LSM = ns.LSM
-local QUICore = ns.Addon
 local IsSecretValue = Helpers.IsSecretValue
 local SafeValue = Helpers.SafeValue
 local SafeToNumber = Helpers.SafeToNumber
-local ApplyCooldownFromAura = Helpers.ApplyCooldownFromAura
 local GetDB = Helpers.CreateDBGetter("quiGroupFrames")
+local AuraModel = ns.QUI_GroupFramesAuraModel
+-- Unified element renderer (groupframes_aura_render.lua). Resolved lazily at
+-- render time via GetRender() so file load order can't matter.
+local function GetRender() return ns.QUI_GroupFrameAuraRender end
 
 -- Upvalue hot-path globals
 local pairs = pairs
 local ipairs = ipairs
 local type = type
-local pcall = pcall
 local wipe = wipe
-local format = format
-local GetTime = GetTime
-local UnitExists = UnitExists
 local C_UnitAuras = C_UnitAuras
 local table_remove = table.remove
-local sub = string.sub
-local CreateFrame = CreateFrame
-local table_insert = table.insert
 
 ---------------------------------------------------------------------------
 -- MODULE TABLE
@@ -35,20 +29,27 @@ local table_insert = table.insert
 local QUI_GFA = {}
 ns.QUI_GroupFrameAuras = QUI_GFA
 
--- Weak-keyed state for aura icons (taint safety)
-local auraIconState = Helpers.CreateStateTable()
+---------------------------------------------------------------------------
+-- ELEMENT-MODEL GLUE (inert — wired in a later flip task)
+---------------------------------------------------------------------------
 
--- Layout versioning: only reposition icons when settings change
-local layoutVersion = 0
-local frameLayoutVersions = Helpers.CreateStateTable()
-
--- CENTER grow direction: track previous visible count per frame to skip
--- relayout when the count hasn't changed (avoids ClearAllPoints/SetPoint thrashing).
-local framePrevDebuffCount = Helpers.CreateStateTable()
-local framePrevBuffCount = Helpers.CreateStateTable()
-
--- (pendingAuraUnits removed: inline processing in dispatcher callback
--- eliminates the double-coalescing layer that added 1 frame of latency)
+-- Build render work for one unit frame from the unified element model.
+-- specID: the unit's active spec (or nil). cache: that unit's unitAuraCache entry.
+-- Returns a list of { element = <element>, matches = <table|nil> } for the renderer.
+local function BuildElementRenderList(auras, specID, cache)
+    local work = {}
+    if not auras or auras.enabled == false then return work end
+    local elements = AuraModel.ActiveElementsForSpec(auras, specID)
+    for _, element in ipairs(elements) do
+        local matches
+        if element.mode == "tracked" then
+            matches = AuraModel.PopulateElementMatches(element, cache)
+        end
+        work[#work + 1] = { element = element, matches = matches }
+    end
+    return work
+end
+QUI_GFA.BuildElementRenderList = BuildElementRenderList
 
 ---------------------------------------------------------------------------
 -- SHARED AURA CACHE: One authoritative per-unit aura state for group frames
@@ -76,17 +77,7 @@ local framePrevBuffCount = Helpers.CreateStateTable()
 --     allDispellable         = { [instID] = true },     -- anyone can dispel (any dispelName)
 --     defensives             = { [instID] = true },     -- matches defensive classifier
 --     defensiveOrder         = { instID, ... },
---     panelBuffs             = { [instID] = true },     -- passes user buff filter
---     panelDebuffs           = { [instID] = true },     -- passes user debuff filter
---     -- Curated-list matches keyed by entry index (per-spec)
---     indicatorMatches       = { [entryIdx] = auraData },
---     pinnedMatches          = { [slotIdx]  = auraData },
---     -- Pre-sorted display arrays — UpdateFrameAuras walks these directly
---     panelBuffsSorted       = { [i] = auraData },
---     panelDebuffsSorted     = { [i] = auraData },
 --     -- Bookkeeping
---     panelBuffsDirty        = boolean,
---     panelDebuffsDirty      = boolean,
 --     hasFullScan            = boolean,
 -- }
 --
@@ -210,15 +201,6 @@ local function ClassifyDefensive(unit, auraData)
     return GF.IsVerifiedDefensiveAura(unit, auraData) == true
 end
 
--- Forward declaration: defined later in the file, near the filter cache and
--- comparator helpers it depends on. Called from ScanUnitAuras and
--- ApplyAuraDelta to populate the Phase-1 panel-filter subsets and pre-sorted
--- display arrays. Kept as an upvalue so the cache-mutation path can call it
--- without taking on a load-order dependency on the filter infrastructure.
-local RebuildPanelSubsetsAndSort
-local RefreshCuratedCacheMatches
-local ApplyBuffPanelDelta
-
 local function CreateAuraCacheEntry()
     return {
         -- Raw aura arrays (single source of truth)
@@ -239,23 +221,8 @@ local function CreateAuraCacheEntry()
         allDispellable = {},
         defensives = {},
         defensiveOrder = {},
-        panelBuffs = {},
-        panelDebuffs = {},
-        -- Curated-list matches populated by sibling modules at delta time
-        indicatorMatches = {},
-        pinnedMatches = {},
-        -- Pre-sorted display arrays
-        panelBuffsSorted = {},
-        panelDebuffsSorted = {},
         -- Bookkeeping
-        panelBuffsDirty = false,
-        panelDebuffsDirty = false,
-        panelBuffsChanged = true,
-        panelDebuffsChanged = true,
         defensiveSetChanged = true,
-        indicatorMatchesChanged = true,
-        pinnedMatchesChanged = true,
-        curatedForceRefresh = true,
         hasFullScan = false,
     }
 end
@@ -286,20 +253,7 @@ local function ResetAuraCache(cache)
     wipe(cache.allDispellable)
     wipe(cache.defensives)
     wipe(cache.defensiveOrder)
-    wipe(cache.panelBuffs)
-    wipe(cache.panelDebuffs)
-    wipe(cache.indicatorMatches)
-    wipe(cache.pinnedMatches)
-    wipe(cache.panelBuffsSorted)
-    wipe(cache.panelDebuffsSorted)
-    cache.panelBuffsDirty = false
-    cache.panelDebuffsDirty = false
-    cache.panelBuffsChanged = true
-    cache.panelDebuffsChanged = true
     cache.defensiveSetChanged = true
-    cache.indicatorMatchesChanged = true
-    cache.pinnedMatchesChanged = true
-    cache.curatedForceRefresh = true
     cache.hasFullScan = false
 end
 
@@ -684,11 +638,6 @@ local function ScanUnitAuras(unit)
 
     RebuildDebuffMaps(unit, cache)
     RebuildBuffMaps(unit, cache)
-    cache.panelBuffsDirty = true
-    cache.panelDebuffsDirty = true
-    if RebuildPanelSubsetsAndSort then
-        RebuildPanelSubsetsAndSort(unit, cache)
-    end
     cache.hasFullScan = true
     return cache
 end
@@ -703,8 +652,6 @@ local function ApplyAuraDelta(unit, updateInfo)
     local debuffsDirty = false
     local buffFreshUpdated = false
     local debuffFreshUpdated = false
-    cache.panelBuffsChanged = false
-    cache.panelDebuffsChanged = false
     cache.defensiveSetChanged = false
     local GetAuraByInstanceID = C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID
     local nAdded = updateInfo.addedAuras and #updateInfo.addedAuras or 0
@@ -804,36 +751,14 @@ local function ApplyAuraDelta(unit, updateInfo)
         end
     end
 
-    local changed = buffsDirty or debuffsDirty
-    if buffsDirty then
-        if buffFreshUpdated then
-            RebuildBuffMaps(unit, cache)
-            cache.panelBuffsDirty = true
-            cache.panelBuffsChanged = true
-        elseif ApplyBuffPanelDelta then
-            if auraStats then auraStats.panelBuffIncrementalAttempts = auraStats.panelBuffIncrementalAttempts + 1 end
-            if not ApplyBuffPanelDelta(unit, cache, updateInfo) then
-                cache.panelBuffsDirty = true
-            end
-        else
-            cache.panelBuffsDirty = true
-        end
+    if buffsDirty and buffFreshUpdated then
+        RebuildBuffMaps(unit, cache)
     end
-    if debuffsDirty then
-        if debuffFreshUpdated then
-            RebuildDebuffMaps(unit, cache)
-        end
-        cache.panelDebuffsDirty = true
-        cache.panelDebuffsChanged = true
+    if debuffsDirty and debuffFreshUpdated then
+        RebuildDebuffMaps(unit, cache)
     end
     if cache.defensiveSetChanged then
         if auraStats then auraStats.defensiveSetChanges = auraStats.defensiveSetChanges + 1 end
-    end
-
-    if (cache.panelBuffsDirty or cache.panelDebuffsDirty) and RebuildPanelSubsetsAndSort then
-        RebuildPanelSubsetsAndSort(unit, cache)
-    elseif changed and RefreshCuratedCacheMatches then
-        RefreshCuratedCacheMatches(unit, cache)
     end
 
     return true
@@ -857,23 +782,9 @@ QUI_GFA.unitAuraCache = unitAuraCache
 QUI_GFA.ScanUnitAuras = ScanUnitAuras
 QUI_GFA.ApplyAuraDelta = ApplyAuraDelta
 QUI_GFA.PruneAuraCache = PruneAuraCache
--- Phase 1 redesign: callers can force a panel-subset rebuild (e.g. after
--- settings change before any UNIT_AURA delta arrives). Returns silently if
--- the assignment hasn't run yet (load order during early init).
-QUI_GFA.RebuildPanelSubsetsAndSort = function(unit, cache)
-    if RebuildPanelSubsetsAndSort then
-        cache = cache or unitAuraCache[unit]
-        if cache then
-            cache.panelBuffsDirty = true
-            cache.panelDebuffsDirty = true
-        end
-        RebuildPanelSubsetsAndSort(unit, cache)
-    end
-end
 
--- Phase 4 hook: spec-change handlers in indicator/pinned modules call this
--- before refreshing frames so cache.indicatorMatches / cache.pinnedMatches
--- repopulate with the new spec's entry/slot list. Does not re-render frames.
+-- Spec-change handlers call this before refreshing frames so every cached unit
+-- re-scans against the new spec's aura state. Does not re-render frames.
 function QUI_GFA:RescanCachedUnits()
     for unit in pairs(unitAuraCache) do
         ScanUnitAuras(unit)
@@ -884,556 +795,6 @@ end
 -- then mutated in place across full scans and deltas. Blizzard auraData tables
 -- are still C-side allocated, but the shared cache avoids rebuilding per-
 -- consumer lookup tables on every roster aura change.
-
----------------------------------------------------------------------------
--- SHARED AURA TIMER: Single animation drives all icon duration updates
----------------------------------------------------------------------------
-local timerIcons = {} -- Icons registered for duration updates
-local sharedTimerFrame = CreateFrame("Frame")
-local TIMER_INTERVAL = 0.2 -- Update duration text at 5 Hz (200ms)
-local floor = math.floor
-local timerIconCount = 0
-
--- Compute the bucket for a remaining duration WITHOUT allocating a string.
--- Only call FormatDuration when the bucket actually changed.
-local function ComputeBucket(remaining)
-    if remaining <= 0 then return -1 end
-    if remaining < 10 then return floor(remaining * 10) end
-    if remaining < 60 then return 1000 + floor(remaining) end
-    if remaining < 3600 then return 2000 + floor(remaining / 60) end
-    return 3000 + floor(remaining / 3600)
-end
-
--- Returns formatted text for a given remaining duration.
--- PERF: Only call this when ComputeBucket indicates the display changed.
-local function FormatDuration(remaining)
-    if remaining <= 0 then return "" end
-    if remaining < 10 then return format("%.1f", remaining) end
-    if remaining < 60 then return format("%d", floor(remaining)) end
-    if remaining < 3600 then return format("%dm", floor(remaining / 60)) end
-    return format("%dh", floor(remaining / 3600))
-end
-
--- Compute color band cheaply (no allocation).
-local function ComputeColorBand(remaining, duration)
-    if duration <= 0 or remaining <= 0 then return 0 end
-    local pct = remaining / duration
-    if pct > 0.5 then return 3 end
-    if pct > 0.25 then return 2 end
-    return 1
-end
-
--- Returns (r, g, b, colorBand) where colorBand changes only when the color
--- would actually differ, allowing callers to skip redundant SetTextColor.
-local function GetDurationColor(remaining, duration)
-    if duration <= 0 or remaining <= 0 then
-        return 1, 0, 0, 0
-    end
-    local pct = remaining / duration
-    if pct > 0.5 then
-        return 0.2, 1, 0.2, 3
-    elseif pct > 0.25 then
-        return 1, 1, 0, 2
-    else
-        return 1, 0.2, 0.2, 1
-    end
-end
-
-local timerElapsed = 0
-local cachedShowDurationColor = true
-local GetFontPath
-
-local function IsDurationTextEnabled(auraSettings, settingKey)
-    if not auraSettings then return true end
-    local specific = auraSettings[settingKey]
-    if specific ~= nil then
-        return specific ~= false
-    end
-    -- Backward compatibility for profiles that still only have the legacy shared key.
-    return auraSettings.showDurationText ~= false
-end
-
-local function IsDurationTimeColorEnabled(auraSettings, settingKey)
-    if not auraSettings then return true end
-    local specific = auraSettings[settingKey]
-    if specific ~= nil then
-        return specific ~= false
-    end
-    return auraSettings.showDurationColor ~= false
-end
-
-local function GetDurationTextColor(auraSettings, colorKey)
-    if auraSettings then
-        local c = auraSettings[colorKey]
-        if c then
-            return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1
-        end
-    end
-    return 1, 1, 1, 1
-end
-
-local function GetDurationFontPath(auraSettings, fontKey)
-    local fontName = auraSettings and auraSettings[fontKey]
-    if fontName and fontName ~= "" then
-        local fetched = LSM:Fetch("font", fontName)
-        if fetched then return fetched end
-    end
-    return GetFontPath()
-end
-
-local function ApplyDurationTextStyle(icon, auraSettings, prefix)
-    if not icon or not icon.durationText then return end
-
-    local durationText = icon.durationText
-    local fontPath = GetDurationFontPath(auraSettings, prefix .. "DurationFont")
-    local fontSize = auraSettings and (auraSettings[prefix .. "DurationFontSize"] or auraSettings.durationFontSize) or 9
-    local anchor = auraSettings and auraSettings[prefix .. "DurationAnchor"] or "BOTTOM"
-    local offsetX = auraSettings and auraSettings[prefix .. "DurationOffsetX"] or 0
-    local offsetY = auraSettings and auraSettings[prefix .. "DurationOffsetY"] or -6
-
-    durationText:SetFont(fontPath, fontSize or 9, "OUTLINE")
-    durationText:ClearAllPoints()
-    durationText:SetPoint(anchor or "BOTTOM", icon, anchor or "BOTTOM", offsetX or 0, offsetY or -6)
-
-    local state = icon._auraState
-    if state then
-        state._lastBucket = nil
-        state._lastColorBand = nil
-    end
-end
-
-local function SharedTimerOnUpdate(self, dt)
-    timerElapsed = timerElapsed + dt
-    if timerElapsed < TIMER_INTERVAL then return end
-    timerElapsed = 0
-
-    -- Skip when no group frames are active (solo play)
-    local GF = ns.QUI_GroupFrames
-    if not GF or not next(GF.unitFrameMap) then
-        wipe(timerIcons)
-        timerIconCount = 0
-        self:SetScript("OnUpdate", nil)
-        return
-    end
-
-    local now = GetTime()
-    local db = GetDB()
-    -- Pre-compute aura settings for both contexts (avoids per-icon table walks)
-    local raidAuras = db and db.raid and db.raid.auras
-    local partyAuras = db and db.party and db.party.auras
-    for icon, state in pairs(timerIcons) do
-        if not icon:IsShown() then
-            -- Hidden icons no longer need timer work; UpdateFrameAuras will
-            -- re-register them if they become visible again.
-            timerIcons[icon] = nil
-            timerIconCount = timerIconCount - 1
-        elseif state.expirationTime then
-            -- Values are guaranteed non-secret: UpdateAuraIcon only registers
-            -- icons into timerIcons when duration passes IsSecretValue check.
-            local expTime = state.expirationTime
-            local dur = state.duration or 0
-            local remaining = expTime - now
-
-            if remaining > 0 then
-                if icon.durationText then
-                    local isRaid = icon.unitFrame and icon.unitFrame._isRaid
-                    local auraSettings = isRaid and raidAuras or partyAuras
-                    local showDurationText = IsDurationTextEnabled(auraSettings, icon._durationTextSettingKey)
-                    if showDurationText then
-                        -- PERF: Compute bucket (zero allocation) BEFORE formatting.
-                        -- Only call FormatDuration (string.format) when display changes.
-                        local bucket = ComputeBucket(remaining)
-                        if bucket ~= state._lastBucket then
-                            icon.durationText:SetText(FormatDuration(remaining))
-                            state._lastBucket = bucket
-                        end
-                        -- Color: throttled to 1 Hz per icon for dynamic duration bands.
-                        local useTimeColor = IsDurationTimeColorEnabled(auraSettings, icon._durationUseTimeColorKey)
-                        if useTimeColor then
-                            local lastColorTime = state._lastColorTime or 0
-                            if (now - lastColorTime) >= 1.0 then
-                                state._lastColorTime = now
-                                local band = ComputeColorBand(remaining, dur)
-                                if band ~= state._lastColorBand then
-                                    local r, g, b = GetDurationColor(remaining, dur)
-                                    icon.durationText:SetTextColor(r, g, b, 1)
-                                    state._lastColorBand = band
-                                end
-                            end
-                        elseif state._lastColorBand ~= "static" then
-                            local r, g, b, a = GetDurationTextColor(auraSettings, icon._durationColorKey)
-                            icon.durationText:SetTextColor(r, g, b, a)
-                            state._lastColorBand = "static"
-                        end
-                    else
-                        icon.durationText:SetText("")
-                    end
-                end
-            else
-                -- Expired
-                if icon.durationText then icon.durationText:SetText("") end
-                timerIcons[icon] = nil
-                timerIconCount = timerIconCount - 1
-            end
-        else
-            timerIcons[icon] = nil
-            timerIconCount = timerIconCount - 1
-        end
-    end
-
-    -- Auto-disable when no icons remain
-    if timerIconCount <= 0 then
-        timerIconCount = 0
-        self:SetScript("OnUpdate", nil)
-    end
-end
-
--- Start disabled — no icons at init
-sharedTimerFrame:SetScript("OnUpdate", nil)
-
-local function RegisterIconTimer(icon, state)
-    local wasEmpty = timerIconCount == 0
-    if not timerIcons[icon] then
-        timerIconCount = timerIconCount + 1
-    end
-    timerIcons[icon] = state
-    if wasEmpty then
-        timerElapsed = 0
-        sharedTimerFrame:SetScript("OnUpdate", SharedTimerOnUpdate)
-    end
-end
-
-local function UnregisterIconTimer(icon)
-    if timerIcons[icon] then
-        timerIcons[icon] = nil
-        timerIconCount = timerIconCount - 1
-        if timerIconCount < 0 then timerIconCount = 0 end
-    end
-end
-
----------------------------------------------------------------------------
--- SLOT OFFSET: Calculate icon position for configurable grow direction
----------------------------------------------------------------------------
-local function CalculateSlotOffset(index, iconSize, spacing, direction, totalCount)
-    local step = (index - 1) * (iconSize + spacing)
-    if direction == "RIGHT" then
-        return step, 0
-    elseif direction == "LEFT" then
-        return -step, 0
-    elseif direction == "CENTER" then
-        local n = totalCount or 1
-        local totalSpan = n * iconSize + math.max(n - 1, 0) * spacing
-        return step - totalSpan / 2, 0
-    elseif direction == "UP" then
-        return 0, step
-    elseif direction == "DOWN" then
-        return 0, -step
-    end
-    return step, 0 -- fallback to RIGHT
-end
-
-local function ComposeAnchor(horizontal, vertical)
-    if vertical == "TOP" then
-        if horizontal == "LEFT" then return "TOPLEFT" end
-        if horizontal == "RIGHT" then return "TOPRIGHT" end
-        return "TOP"
-    elseif vertical == "BOTTOM" then
-        if horizontal == "LEFT" then return "BOTTOMLEFT" end
-        if horizontal == "RIGHT" then return "BOTTOMRIGHT" end
-        return "BOTTOM"
-    end
-
-    if horizontal == "LEFT" then return "LEFT" end
-    if horizontal == "RIGHT" then return "RIGHT" end
-    return "CENTER"
-end
-
-local function GetIconAnchorForGrow(frameAnchor, direction)
-    local horizontal = frameAnchor and frameAnchor:find("LEFT") and "LEFT"
-        or frameAnchor and frameAnchor:find("RIGHT") and "RIGHT"
-        or "CENTER"
-    local vertical = frameAnchor and frameAnchor:find("TOP") and "TOP"
-        or frameAnchor and frameAnchor:find("BOTTOM") and "BOTTOM"
-        or "CENTER"
-
-    if direction == "RIGHT" or direction == "CENTER" then
-        horizontal = "LEFT"
-    elseif direction == "LEFT" then
-        horizontal = "RIGHT"
-    elseif direction == "UP" then
-        vertical = "BOTTOM"
-    elseif direction == "DOWN" then
-        vertical = "TOP"
-    end
-
-    return ComposeAnchor(horizontal, vertical)
-end
-
--- Track icons that need mouse setup deferred from combat
-local pendingMouseFix = false
-
----------------------------------------------------------------------------
--- AURA ICON: Create/get icon for a frame
----------------------------------------------------------------------------
--- Cached font path: rebuilt on layout invalidation, avoids per-icon DB+LSM lookups.
-local _cachedFontPath = nil
-
-function GetFontPath()
-    if _cachedFontPath then return _cachedFontPath end
-    local db = GetDB()
-    local vdb = db and (db.party or db)
-    local general = vdb and vdb.general
-    local fontName = general and general.font or "Quazii"
-    _cachedFontPath = LSM:Fetch("font", fontName) or "Fonts\\FRIZQT__.TTF"
-    return _cachedFontPath
-end
-
-local function CreateAuraIcon(parent, size)
-    size = size or 16
-    local icon = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    icon:SetSize(size, size)
-
-    -- Render above healthBar (+0), healPrediction (+1), absorb (+2), dispel (+6)
-    local baseLevel = parent.healthBar and parent.healthBar:GetFrameLevel() or parent:GetFrameLevel()
-    icon:SetFrameLevel(baseLevel + 8)
-
-    -- Icon texture
-    local tex = icon:CreateTexture(nil, "ARTWORK")
-    tex:SetAllPoints()
-    tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    icon.icon = tex
-
-    -- Border
-    local px = QUICore.GetPixelSize and QUICore:GetPixelSize(icon) or 1
-    icon:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    })
-    local bdr, bdg, bdb, bda = 0, 0, 0, 1
-    if Helpers and Helpers.GetSkinBorderColor then bdr, bdg, bdb, bda = Helpers.GetSkinBorderColor() end
-    icon:SetBackdropBorderColor(bdr, bdg, bdb, bda)
-
-    -- Cooldown swipe
-    local cooldown = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
-    cooldown:SetAllPoints()
-    cooldown:SetDrawEdge(false)
-    cooldown:SetDrawBling(false)
-    cooldown:SetHideCountdownNumbers(true)
-    icon.cooldown = cooldown
-
-    -- Stack count text
-    local stackText = icon:CreateFontString(nil, "OVERLAY")
-    local fontPath = GetFontPath()
-    stackText:SetFont(fontPath, 10, "OUTLINE")
-    stackText:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
-    stackText:SetJustifyH("RIGHT")
-    icon.stackText = stackText
-
-    -- Duration text
-    local durationText = icon:CreateFontString(nil, "OVERLAY")
-    durationText:SetFont(fontPath, 9, "OUTLINE")
-    durationText:SetPoint("TOP", icon, "BOTTOM", 0, -1)
-    durationText:SetJustifyH("CENTER")
-    icon.durationText = durationText
-
-    -- Expiring pulse animation
-    local pulseGroup = icon:CreateAnimationGroup()
-    local pulseAlpha = pulseGroup:CreateAnimation("Alpha")
-    pulseAlpha:SetFromAlpha(1)
-    pulseAlpha:SetToAlpha(0.3)
-    pulseAlpha:SetDuration(0.4)
-    pulseGroup:SetLooping("BOUNCE")
-    icon.pulseGroup = pulseGroup
-
-    -- Mouse propagation so @mouseover targeting and click-casting keep
-    -- working when the cursor is over aura icons.
-    -- EnableMouse(true)                  → icon receives OnEnter/OnLeave (tooltips)
-    -- SetPropagateMouseMotion(true)      → parent frame also gets motion events (@mouseover)
-    -- SetPropagateMouseClicks(true)      → clicks pass through to parent (targeting/cast)
-    -- SetMouseClickEnabled(false)        → icon itself doesn't consume clicks
-    if not InCombatLockdown() then
-        icon:EnableMouse(true)
-        if icon.SetPropagateMouseMotion then icon:SetPropagateMouseMotion(true) end
-        if icon.SetPropagateMouseClicks then icon:SetPropagateMouseClicks(true) end
-        if icon.SetMouseClickEnabled then icon:SetMouseClickEnabled(false) end
-    else
-        pendingMouseFix = true
-    end
-
-    -- Store parent unit frame reference for tooltip lookups
-    icon.unitFrame = parent
-
-    -- Aura tooltip on hover
-    icon:SetScript("OnEnter", function(self)
-        if not self:IsShown() then return end
-        local state = auraIconState[self]
-        local uf = self.unitFrame
-        if not state or not uf or not uf.unit then return end
-        local auraID = state.auraInstanceID
-        if not auraID or IsSecretValue(auraID) then return end
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if GameTooltip.SetUnitAuraByAuraInstanceID then
-            pcall(GameTooltip.SetUnitAuraByAuraInstanceID, GameTooltip, uf.unit, auraID)
-        end
-        GameTooltip:Show()
-    end)
-
-    icon:SetScript("OnLeave", function(self)
-        GameTooltip:Hide()
-    end)
-
-    icon:Hide()
-    return icon
-end
-
-local function SafeSetReverse(cooldown, reverse)
-    if cooldown and cooldown.SetReverse then
-        pcall(cooldown.SetReverse, cooldown, reverse == true)
-    end
-end
-
-local function SafeSetDrawSwipe(cooldown, showSwipe)
-    if cooldown and cooldown.SetDrawSwipe then
-        pcall(cooldown.SetDrawSwipe, cooldown, showSwipe ~= false)
-    end
-end
-
-local function ClearAuraIcon(icon)
-    if not icon then return end
-    icon:Hide()
-    UnregisterIconTimer(icon)
-    local state = icon._auraState
-    if state then
-        wipe(state)
-    end
-    if icon.durationText then icon.durationText:SetText("") end
-    if icon.stackText then icon.stackText:SetText("") end
-    if icon.cooldown then icon.cooldown:Clear() end
-    if icon.pulseGroup and icon.pulseGroup:IsPlaying() then
-        icon.pulseGroup:Stop()
-    end
-end
-
--- Dispel border colors (file-level to avoid per-call allocation)
-local AURA_DISPEL_COLORS = {
-    Magic   = { 0.2, 0.6, 1.0, 1 },
-    Curse   = { 0.6, 0.0, 1.0, 1 },
-    Disease = { 0.6, 0.4, 0.0, 1 },
-    Poison  = { 0.0, 0.6, 0.0, 1 },
-    Bleed   = { 0.8, 0.0, 0.0, 1 },
-}
-
-local function UpdateAuraIcon(icon, auraData, unit)
-    if not icon or not auraData then
-        ClearAuraIcon(icon)
-        return
-    end
-
-    -- Reuse icon-level state table (created once, fields overwritten).
-    -- Avoids per-icon table creation and keeps state off Blizzard frames (taint safety).
-    local state = icon._auraState
-    if not state then
-        state = {}
-        icon._auraState = state
-        auraIconState[icon] = state  -- register for tooltip lookups
-    end
-
-    -- Cache owns the latest aura snapshot for set changes and full refreshes.
-    local auraID = auraData.auraInstanceID
-    local displayData = auraData
-
-    -- Overwrite state fields (zero allocation)
-    state.unit = unit
-    state.auraInstanceID = auraID
-    state.expirationTime = displayData.expirationTime
-    state.duration = displayData.duration
-    state.applications = displayData.applications
-
-    -- Icon texture (C-side SetTexture handles secret values natively)
-    if icon.icon then
-        pcall(icon.icon.SetTexture, icon.icon, displayData.icon)
-    end
-
-    -- Stack count: GetAuraApplicationDisplayCount returns a display-ready
-    -- string, fully secret-safe via C-side SetText.
-    if icon.stackText then
-        if auraID and not IsSecretValue(auraID) and C_UnitAuras.GetAuraApplicationDisplayCount then
-            local ok, countStr = pcall(C_UnitAuras.GetAuraApplicationDisplayCount, unit, auraID, 2, 99)
-            if ok and countStr then
-                pcall(icon.stackText.SetText, icon.stackText, countStr)
-            else
-                icon.stackText:SetText("")
-            end
-        else
-            local stacks = SafeToNumber(displayData.applications, 0)
-            if stacks > 1 then
-                icon.stackText:SetText(stacks)
-            else
-                icon.stackText:SetText("")
-            end
-        end
-    end
-
-    -- Cooldown swipe (prefer DurationObject → ExpirationTime → legacy)
-    if icon.cooldown then
-        local dur = displayData.duration
-        local expTime = displayData.expirationTime
-
-        ApplyCooldownFromAura(icon.cooldown, unit, auraID, expTime, dur, true, displayData.timeMod)
-    end
-
-    -- Duration text + timer registration
-    -- Skip entirely when values are secret (combat) — the cooldown swipe is
-    -- already driven by DurationObject via C-side; Lua text/pulse would just
-    -- SafeToNumber → 0 and do nothing useful.
-    local dur = displayData.duration
-    local expTime = displayData.expirationTime
-    if not IsSecretValue(dur) and dur and dur > 0 then
-        RegisterIconTimer(icon, state)
-
-        -- Expiring pulse: uses per-frame cached setting (set by UpdateFrameAuras)
-        -- to avoid calling GetDB() per icon (was ~120 DB lookups per aura batch)
-        local showPulse = icon._cachedShowPulse
-        if showPulse and not IsSecretValue(expTime) then
-            local remaining = expTime - GetTime()
-            if remaining > 0 and remaining < 5 then
-                if icon.pulseGroup and not icon.pulseGroup:IsPlaying() then
-                    icon.pulseGroup:Play()
-                end
-            else
-                if icon.pulseGroup and icon.pulseGroup:IsPlaying() then
-                    icon.pulseGroup:Stop()
-                end
-            end
-        elseif icon.pulseGroup and icon.pulseGroup:IsPlaying() then
-            icon.pulseGroup:Stop()
-        end
-    else
-        UnregisterIconTimer(icon)
-        if icon.durationText then icon.durationText:SetText("") end
-        if icon.pulseGroup and icon.pulseGroup:IsPlaying() then
-            icon.pulseGroup:Stop()
-        end
-    end
-
-    -- Dispellable debuff border color
-    if not IsSecretValue(displayData.dispelName) and displayData.dispelName then
-        local dispelType = SafeValue(displayData.dispelName, nil)
-        if dispelType and AURA_DISPEL_COLORS[dispelType] then
-            local c = AURA_DISPEL_COLORS[dispelType]
-            icon:SetBackdropBorderColor(c[1], c[2], c[3], c[4])
-        else
-            icon:SetBackdropBorderColor(0.8, 0, 0, 1) -- Default debuff red
-        end
-    else
-        -- Default chrome border (neutral, non-semantic) — sourced from skin theme
-        local bdr, bdg, bdb, bda = 0, 0, 0, 1
-        if Helpers and Helpers.GetSkinBorderColor then bdr, bdg, bdb, bda = Helpers.GetSkinBorderColor() end
-        icon:SetBackdropBorderColor(bdr, bdg, bdb, bda)
-    end
-
-    icon:Show()
-end
 
 ---------------------------------------------------------------------------
 -- CLASSIFICATION FILTER: Build filter strings and check auras
@@ -1455,97 +816,6 @@ local DEBUFF_CLASSIFICATION_MAP = {
     crowdControl = "HARMFUL|CROWD_CONTROL",
     important    = "HARMFUL|IMPORTANT",
 }
-
--- Per-context (party/raid) cached filter data
--- Structure: filterCaches[contextKey] = { buffFilters={}, debuffFilters={}, filterMode="off", ... }
-local filterCaches = { party = {}, raid = {} }
-local cachedFilterVersion = -1
-
--- (Per-auraInstanceID classification cache removed: it grew unboundedly during
--- long encounters. Classification now happens inline during each full scan.
--- Cost stays bounded because full scans are coalesced and the filter checks
--- are C-side.)
-
-local function InitFilterCache()
-    return {
-        buffFilters = {},
-        debuffFilters = {},
-        filterMode = "off",
-        onlyMine = false,
-        hidePermanent = false,
-        buffWhitelist = nil,
-        buffBlacklist = nil,
-        debuffWhitelist = nil,
-        debuffBlacklist = nil,
-    }
-end
-filterCaches.party = InitFilterCache()
-filterCaches.raid = InitFilterCache()
-
-local function RebuildFilterCacheForContext(cache, auraSettings)
-    if not auraSettings then return end
-
-    cache.filterMode = auraSettings.filterMode or "off"
-    cache.onlyMine = auraSettings.buffFilterOnlyMine or false
-    cache.hidePermanent = auraSettings.buffHidePermanent or false
-
-    wipe(cache.buffFilters)
-    wipe(cache.debuffFilters)
-    cache.buffWhitelist = nil
-    cache.buffBlacklist = nil
-    cache.debuffWhitelist = nil
-    cache.debuffBlacklist = nil
-
-    if cache.filterMode == "classification" then
-        local buffClass = auraSettings.buffClassifications
-        if buffClass then
-            for key, filterStr in pairs(BUFF_CLASSIFICATION_MAP) do
-                if buffClass[key] then
-                    table_insert(cache.buffFilters, filterStr)
-                end
-            end
-        end
-
-        local debuffClass = auraSettings.debuffClassifications
-        if debuffClass then
-            for key, filterStr in pairs(DEBUFF_CLASSIFICATION_MAP) do
-                if debuffClass[key] then
-                    table_insert(cache.debuffFilters, filterStr)
-                end
-            end
-        end
-    elseif cache.filterMode == "whitelist" then
-        local bwl = auraSettings.buffWhitelist
-        if bwl and next(bwl) then cache.buffWhitelist = bwl end
-        local dwl = auraSettings.debuffWhitelist
-        if dwl and next(dwl) then cache.debuffWhitelist = dwl end
-    end
-
-    -- Blacklist always applies regardless of filter mode (additive filter)
-    local bbl = auraSettings.buffBlacklist
-    if bbl and next(bbl) then cache.buffBlacklist = bbl end
-    local dbl = auraSettings.debuffBlacklist
-    if dbl and next(dbl) then cache.debuffBlacklist = dbl end
-end
-
-local function RebuildFilterCache()
-    local db = GetDB()
-    if not db then return end
-
-    -- Build party filter cache
-    local partyVdb = db.party or db
-    RebuildFilterCacheForContext(filterCaches.party, partyVdb.auras)
-
-    -- Build raid filter cache
-    local raidVdb = db.raid or db
-    RebuildFilterCacheForContext(filterCaches.raid, raidVdb.auras)
-
-    cachedFilterVersion = layoutVersion
-end
-
-local function GetFilterCache(isRaid)
-    return isRaid and filterCaches.raid or filterCaches.party
-end
 
 -- Check if an aura passes whitelist/blacklist filter by spellID.
 -- Returns true if aura should be shown.
@@ -1595,150 +865,12 @@ local function AuraPassesFilter(unit, auraInstanceID, filterStrings)
     return false
 end
 
-local function AuraPassesPanelBuffFilter(unit, auraData, fCache)
-    if not auraData then return false end
-
-    local instID = auraData.auraInstanceID
-    if not instID then return false end
-
-    if fCache.hidePermanent then
-        local dur = SafeToNumber(auraData.duration, -1)
-        if dur == 0 then
-            return false
-        end
-    end
-
-    if fCache.onlyMine and IsAuraFilteredOut and not IsSecretValue(instID) then
-        local fo = IsAuraFilteredOut(unit, instID, "HELPFUL|PLAYER")
-        if fo and not IsSecretValue(fo) then
-            return false
-        end
-    end
-
-    if fCache.filterMode == "classification" and #fCache.buffFilters > 0 then
-        if not AuraPassesFilter(unit, instID, fCache.buffFilters) then
-            return false
-        end
-    elseif fCache.filterMode == "whitelist" and fCache.buffWhitelist then
-        if not AuraPassesSpellFilter(auraData, fCache.buffWhitelist, nil) then
-            return false
-        end
-    end
-
-    if fCache.buffBlacklist and not AuraPassesSpellFilter(auraData, nil, fCache.buffBlacklist) then
-        return false
-    end
-
-    return true
-end
-
-local function RemovePanelAura(panelSet, sorted, instID)
-    if not instID or not panelSet or not panelSet[instID] then return false end
-    panelSet[instID] = nil
-    for i = 1, #sorted do
-        local auraData = sorted[i]
-        if auraData and auraData.auraInstanceID == instID then
-            table_remove(sorted, i)
-            return true
-        end
-    end
-    return true
-end
-
-RefreshCuratedCacheMatches = function(unit, cache)
-    if not cache then return end
-    if auraStats then auraStats.curatedMatchRefreshes = auraStats.curatedMatchRefreshes + 1 end
-    local forceRefresh = cache.curatedForceRefresh == true
-    cache.curatedForceRefresh = nil
-
-    local GFI = ns.QUI_GroupFrameIndicators
-    local indicatorChanged = false
-    if GFI and GFI.PopulateCacheMatches then
-        indicatorChanged = GFI:PopulateCacheMatches(unit, cache) == true
-        if indicatorChanged then
-            if auraStats then auraStats.indicatorMatchChanges = auraStats.indicatorMatchChanges + 1 end
-        end
-    end
-    cache.indicatorMatchesChanged = indicatorChanged or forceRefresh
-
-    local GFP = ns.QUI_GroupFramePinnedAuras
-    local pinnedChanged = false
-    if GFP and GFP.PopulateCacheMatches then
-        pinnedChanged = GFP:PopulateCacheMatches(unit, cache) == true
-        if pinnedChanged then
-            if auraStats then auraStats.pinnedMatchChanges = auraStats.pinnedMatchChanges + 1 end
-        end
-    end
-    cache.pinnedMatchesChanged = pinnedChanged or forceRefresh
-end
-
-ApplyBuffPanelDelta = function(unit, cache, updateInfo)
-    if not cache or not updateInfo then return false end
-    if cache.panelBuffsDirty then
-        if auraStats then auraStats.panelBuffIncrementalDirtySkip = auraStats.panelBuffIncrementalDirtySkip + 1 end
-        return false
-    end
-    if cachedFilterVersion ~= layoutVersion then
-        if auraStats then auraStats.panelBuffIncrementalFilterSkip = auraStats.panelBuffIncrementalFilterSkip + 1 end
-        return false
-    end
-
-    local fCache = IsInRaid() and filterCaches.raid or filterCaches.party
-    local panelBuffs = cache.panelBuffs
-    local panelBuffsSorted = cache.panelBuffsSorted
-    local changed = false
-
-    if updateInfo.removedAuraInstanceIDs then
-        for i = 1, #updateInfo.removedAuraInstanceIDs do
-            if RemovePanelAura(panelBuffs, panelBuffsSorted, updateInfo.removedAuraInstanceIDs[i]) then
-                changed = true
-            end
-        end
-    end
-
-    if updateInfo.addedAuras then
-        for i = 1, #updateInfo.addedAuras do
-            local auraData = updateInfo.addedAuras[i]
-            local instID = auraData and auraData.auraInstanceID
-            if instID and cache.buffsByID[instID] == auraData then
-                if AuraPassesPanelBuffFilter(unit, auraData, fCache) and not panelBuffs[instID] then
-                    panelBuffs[instID] = true
-                    panelBuffsSorted[#panelBuffsSorted + 1] = auraData
-                    changed = true
-                end
-            end
-        end
-    end
-
-    cache.panelBuffsDirty = false
-    cache.panelBuffsChanged = changed
-    if auraStats then
-        auraStats.panelBuffIncremental = auraStats.panelBuffIncremental + 1
-        if changed then
-            auraStats.panelBuffIncrementalChanged = auraStats.panelBuffIncrementalChanged + 1
-        else
-            auraStats.panelBuffIncrementalNoop = auraStats.panelBuffIncrementalNoop + 1
-        end
-    end
-    return true
-end
-
 ---------------------------------------------------------------------------
 -- AURA PRIORITY: Sort auras by importance
 ---------------------------------------------------------------------------
 local PRIORITY_DISPELLABLE = 3
 local PRIORITY_BOSS = 2
 local PRIORITY_NORMAL = 1
-
--- Priority lookup table for zero-allocation sorting: auraData → priority.
--- Populated inline during aura collection, used by the sort comparator,
--- then wiped.  Eliminates AcquireAuraTable/ReleaseAuraTable per visible aura.
-local _auraPrioMap = {}
-
--- Reusable sort comparator (avoids closure allocation per sort call)
-local function AuraPrioritySort(a, b)
-    return (_auraPrioMap[a] or 0) > (_auraPrioMap[b] or 0)
-end
 
 local function GetAuraPriority(auraData)
     if not auraData then return 0 end
@@ -1751,125 +883,223 @@ local function GetAuraPriority(auraData)
 end
 
 ---------------------------------------------------------------------------
--- PHASE 1: Pre-classified panel subsets + pre-sorted display arrays
+-- UNIFIED ELEMENT RENDER (groupframes_aura_render.lua is the sole consumer)
 ---------------------------------------------------------------------------
--- Populates cache.panelBuffs / panelDebuffs (instID-keyed sets passing the
--- user filter) and cache.panelBuffsSorted / panelDebuffsSorted (priority-
--- sorted auraData arrays). Render code does not yet read these — Phase 2
--- migrates UpdateFrameAuras over. Until then this is parallel work; the
--- spec accepts the cost (§6 R5) in exchange for landing the foundation.
---
--- Private prio map kept separate from render's _auraPrioMap so cache-time
--- and render-time sorts cannot clobber each other's state mid-frame.
-local _cacheAuraPrioMap = {}
+-- The v46 aura element model (groupframes_aura_model.lua) drives every group-
+-- frame aura visual. For each visible frame we resolve the unit's active spec,
+-- build the element work list (tracked matches pre-resolved by the model;
+-- filterStrip matches resolved here from the shared cache via the element's own
+-- filter config), dispatch each to the renderer, and release any element id
+-- whose frames linger from a prior pass (element removed/disabled/spec change).
 
-local function CachePrioritySort(a, b)
-    return (_cacheAuraPrioMap[a] or 0) > (_cacheAuraPrioMap[b] or 0)
+-- Forward declarations: GetFrameAuraSettings (and its GetVisualDB* helpers) are
+-- defined just below in the panel-render section; the unified render path runs
+-- only at runtime, so the upvalues are bound by the time it is called.
+local GetFrameAuraSettings
+local _renderCurrentIDs = {}
+
+-- Active player spec (mirrors the editor + the retired pinned-aura module).
+local function GetPlayerSpecID()
+    local specIndex = GetSpecialization and GetSpecialization()
+    if specIndex and GetSpecializationInfo then
+        return (GetSpecializationInfo(specIndex))
+    end
+    return nil
 end
 
-RebuildPanelSubsetsAndSort = function(unit, cache)
-    if not cache then return end
+-- Build the ordered, capped match set for a filterStrip element from the shared
+-- cache. Reuses the same filter primitives the legacy buff/debuff panels used:
+--   auraType HELPFUL/HARMFUL bucket, filterMode (off|classification|whitelist),
+--   onlyMine (HELPFUL|PLAYER / HARMFUL|PLAYER probe), hidePermanent,
+--   classification OR-match, whitelist/blacklist by spellID, priority sort
+--   (debuffs), dedupeDefensives, capped at maxIcons.
+-- Returns a fresh ORDERED array { auraData, ... } in the priority order the
+-- strip computed (debuffs: dispellable > boss > normal; helpful: scan order),
+-- already capped at maxIcons. RenderIcon iterates this verbatim — it does NOT
+-- re-sort by spellID — so the consumer's priority order reaches the screen.
+local _stripPrioMap = {}
+local function StripPrioritySort(a, b)
+    return (_stripPrioMap[a] or 0) > (_stripPrioMap[b] or 0)
+end
 
-    local rebuildBuffs = cache.panelBuffsDirty == true
-    local rebuildDebuffs = cache.panelDebuffsDirty == true
-    if not rebuildBuffs and not rebuildDebuffs then
+local function BuildFilterStripMatches(unit, cache, element, dedupSet)
+    local out = {}
+    if not cache then return out end
+    local harmful = element.auraType == "HARMFUL"
+    local list = harmful and cache.debuffs or cache.buffs
+    if not list or #list == 0 then return out end
+
+    local filterMode = element.filterMode or "off"
+    local classifications = element.classifications
+    local whitelist = element.whitelist
+    local blacklist = element.blacklist
+    if whitelist and not next(whitelist) then whitelist = nil end
+    if blacklist and not next(blacklist) then blacklist = nil end
+    local onlyMine = element.onlyMine == true
+    local hidePermanent = element.hidePermanent == true
+    local dedupeDefensives = element.dedupeDefensives ~= false
+
+    -- Build the classification filter-string list for this element (OR logic).
+    local classFilters
+    if filterMode == "classification" and classifications then
+        classFilters = {}
+        local map = harmful and DEBUFF_CLASSIFICATION_MAP or BUFF_CLASSIFICATION_MAP
+        for key, filterStr in pairs(map) do
+            if classifications[key] then classFilters[#classFilters + 1] = filterStr end
+        end
+        if #classFilters == 0 then classFilters = nil end
+    end
+    local useWhitelist = filterMode == "whitelist" and whitelist
+
+    local onlyMineFilter = harmful and "HARMFUL|PLAYER" or "HELPFUL|PLAYER"
+    local ordered = {}
+    for i = 1, #list do
+        local auraData = list[i]
+        local instID = auraData and auraData.auraInstanceID
+        if instID then
+            local passes = true
+
+            -- dedupeDefensives: skip auras already shown by the defensive
+            -- indicator (the only surviving external dedup source).
+            if passes and dedupeDefensives and dedupSet and dedupSet[instID] then
+                passes = false
+            end
+
+            if passes and hidePermanent then
+                local dur = SafeToNumber(auraData.duration, -1)
+                if dur == 0 then passes = false end
+            end
+
+            if passes and onlyMine and IsAuraFilteredOut and not IsSecretValue(instID) then
+                local fo = IsAuraFilteredOut(unit, instID, onlyMineFilter)
+                if fo and not IsSecretValue(fo) then passes = false end
+            end
+
+            if passes and classFilters then
+                if not AuraPassesFilter(unit, instID, classFilters) then passes = false end
+            elseif passes and useWhitelist then
+                if not AuraPassesSpellFilter(auraData, whitelist, nil) then passes = false end
+            end
+
+            if passes and blacklist then
+                if not AuraPassesSpellFilter(auraData, nil, blacklist) then passes = false end
+            end
+
+            if passes then ordered[#ordered + 1] = auraData end
+        end
+    end
+
+    -- Priority-sort harmful strips (matches legacy debuff panel ordering);
+    -- helpful strips kept in scan order (matches legacy buff panel behavior).
+    if harmful and #ordered > 1 then
+        wipe(_stripPrioMap)
+        for i = 1, #ordered do _stripPrioMap[ordered[i]] = GetAuraPriority(ordered[i]) end
+        table.sort(ordered, StripPrioritySort)
+    end
+
+    -- Cap at maxIcons (0 / nil = unlimited) and emit an ORDERED array in the
+    -- priority order computed above (RenderIcon iterates it verbatim — it no
+    -- longer re-sorts by spellID). The cap window enforces both the visible
+    -- count and (for debuffs) the priority selection. Per-spellID dedup is kept
+    -- so two instances of the same spell collapse to one icon, exactly as the
+    -- old { [spellID] = auraData } map did.
+    local maxIcons = SafeToNumber(element.maxIcons, 0)
+    local n = #ordered
+    if maxIcons > 0 and maxIcons < n then n = maxIcons end
+    local seen
+    for i = 1, n do
+        local auraData = ordered[i]
+        local spellID = SafeValue(auraData.spellId, nil) or auraData.auraInstanceID
+        if spellID then
+            seen = seen or {}
+            if seen[spellID] == nil then
+                seen[spellID] = true
+                out[#out + 1] = auraData
+            end
+        else
+            out[#out + 1] = auraData
+        end
+    end
+    return out
+end
+
+-- Per-frame element render: dispatch the work list and release stale element
+-- frames. `cache` is the unit's shared aura cache entry (may be nil → only
+-- empty/health-clear renders happen). The set of element ids rendered last pass
+-- is tracked on frame._quiRenderedAuraElementIDs so any id that drops out (an
+-- element removed/disabled, or a spec change) gets released this pass.
+local function ReleaseAllRenderedElements(frame, Render)
+    local prev = frame._quiRenderedAuraElementIDs
+    if prev then
+        for id in pairs(prev) do
+            Render:Release(Render, frame, id)
+            prev[id] = nil
+        end
+    end
+    -- A health-tint element may own the tint without a tracked id snapshot.
+    if frame._quiAuraRenderHealthTintOwner then
+        Render:Release(Render, frame, frame._quiAuraRenderHealthTintOwner)
+    end
+end
+
+local function RenderFrameElements(frame, cache)
+    if not frame or not frame.unit then return end
+    local Render = GetRender()
+    if not Render then return end
+
+    local auras = GetFrameAuraSettings(frame)
+
+    -- Auras disabled (or no config): tear down every element on this frame.
+    if not auras or auras.enabled == false then
+        ReleaseAllRenderedElements(frame, Render)
         return
     end
 
-    if cachedFilterVersion ~= layoutVersion then
-        RebuildFilterCache()
-        rebuildBuffs = true
-        rebuildDebuffs = true
+    local specID = GetPlayerSpecID()
+    local work = BuildElementRenderList(auras, specID, cache)
+
+    local rendered = frame._quiRenderedAuraElementIDs
+    if not rendered then
+        rendered = {}
+        frame._quiRenderedAuraElementIDs = rendered
     end
 
-    local fCache = IsInRaid() and filterCaches.raid or filterCaches.party
-    local useClassification = fCache.filterMode == "classification"
-    local useWhitelist = fCache.filterMode == "whitelist"
-
-    if rebuildBuffs then
-        cache.panelBuffsChanged = true
-        if auraStats then auraStats.panelBuffRebuilds = auraStats.panelBuffRebuilds + 1 end
-        local panelBuffs = cache.panelBuffs
-        local panelBuffsSorted = cache.panelBuffsSorted
-        wipe(panelBuffs)
-        wipe(panelBuffsSorted)
-
-        local buffs = cache.buffs
-        for i = 1, #buffs do
-            local auraData = buffs[i]
-            local instID = auraData and auraData.auraInstanceID
-            if instID then
-                if AuraPassesPanelBuffFilter(unit, auraData, fCache) then
-                    panelBuffs[instID] = true
-                    panelBuffsSorted[#panelBuffsSorted + 1] = auraData
-                end
-            end
+    local current = _renderCurrentIDs
+    wipe(current)
+    local dedupSet = frame._defensiveAuraIDs
+    for i = 1, #work do
+        local element = work[i].element
+        local matches = work[i].matches
+        if element.mode == "filterStrip" then
+            matches = BuildFilterStripMatches(frame.unit, cache, element, dedupSet)
         end
-
-        -- Buffs have equal priority — no sort needed (matches existing render
-        -- behavior where the buff path skips table.sort entirely).
-        cache.panelBuffsDirty = false
+        current[element.id] = true
+        Render:Dispatch(frame, element, matches)
     end
 
-    if rebuildDebuffs then
-        cache.panelDebuffsChanged = true
-        if auraStats then auraStats.panelDebuffRebuilds = auraStats.panelDebuffRebuilds + 1 end
-        local panelDebuffs = cache.panelDebuffs
-        local panelDebuffsSorted = cache.panelDebuffsSorted
-        wipe(panelDebuffs)
-        wipe(panelDebuffsSorted)
-
-        local debuffFilters = useClassification and #fCache.debuffFilters > 0 and fCache.debuffFilters or nil
-        local debuffs = cache.debuffs
-        for i = 1, #debuffs do
-            local auraData = debuffs[i]
-            local instID = auraData and auraData.auraInstanceID
-            if instID then
-                local passes = true
-                if debuffFilters and not AuraPassesFilter(unit, instID, debuffFilters) then
-                    passes = false
-                end
-                if passes and useWhitelist and fCache.debuffWhitelist then
-                    if not AuraPassesSpellFilter(auraData, fCache.debuffWhitelist, nil) then
-                        passes = false
-                    end
-                end
-                if passes and fCache.debuffBlacklist then
-                    if not AuraPassesSpellFilter(auraData, nil, fCache.debuffBlacklist) then
-                        passes = false
-                    end
-                end
-                if passes then
-                    panelDebuffs[instID] = true
-                    panelDebuffsSorted[#panelDebuffsSorted + 1] = auraData
-                end
-            end
+    -- Release element ids that rendered last pass but are gone this pass.
+    for id in pairs(rendered) do
+        if not current[id] then
+            Render:Release(Render, frame, id)
         end
-
-        if #panelDebuffsSorted > 1 then
-            wipe(_cacheAuraPrioMap)
-            for i = 1, #panelDebuffsSorted do
-                _cacheAuraPrioMap[panelDebuffsSorted[i]] = GetAuraPriority(panelDebuffsSorted[i])
-            end
-            table.sort(panelDebuffsSorted, CachePrioritySort)
-        end
-        cache.panelDebuffsDirty = false
     end
-
-    -- Phase 4: indicator + pinned modules populate cache.indicatorMatches /
-    -- cache.pinnedMatches keyed by entry index. Each module computes once
-    -- per delta; render walks its configured entry list and looks up.
-    RefreshCuratedCacheMatches(unit, cache)
+    -- Snapshot the current set for the next pass (reuse the table).
+    wipe(rendered)
+    for id in pairs(current) do rendered[id] = true end
+    -- Health-tint owner that no element rendered this pass (e.g. its element was
+    -- removed) must be cleared too.
+    local tintOwner = frame._quiAuraRenderHealthTintOwner
+    if tintOwner and not current[tintOwner] then
+        Render:Release(Render, frame, tintOwner)
+    end
 end
+QUI_GFA.RenderFrameElements = RenderFrameElements
 
 ---------------------------------------------------------------------------
 -- UPDATE: Auras for a single frame
 ---------------------------------------------------------------------------
 -- Pure duration/stack updates stay on the icon fast path below. Set changes
 -- flow through the shared cache first, then refresh consumers from that state.
-
-local EMPTY_AURA_LIST = {}  -- Sentinel for missing-cache reads (do not mutate)
-local _renderBuffs = {}     -- Reusable scratch: pre-sorted buffs after frame-local dedup
 
 local function GetVisualDBForContext(isRaid)
     local db = GetDB()
@@ -1882,22 +1112,32 @@ local function GetVisualDBForFrame(frame)
     return GetVisualDBForContext(frame and frame._isRaid)
 end
 
-local function GetFrameAuraSettings(frame)
+-- Assigns the forward-declared upvalue (declared in the unified-render block
+-- above) so RenderFrameElements can resolve a frame's auras config.
+function GetFrameAuraSettings(frame)
     local vdb = GetVisualDBForFrame(frame)
     return vdb and vdb.auras or nil
 end
 
-local function GetPanelDisplayFlags(auraSettings)
-    if not auraSettings then return false, false end
-
-    local buffsEnabled = auraSettings.showBuffs == true and (auraSettings.maxBuffs or 0) > 0
-    local debuffsEnabled = auraSettings.showDebuffs == true and (auraSettings.maxDebuffs or 3) > 0
-    return buffsEnabled, debuffsEnabled
-end
-
-local function HasPanelAuraDisplay(vdb)
-    local buffsEnabled, debuffsEnabled = GetPanelDisplayFlags(vdb and vdb.auras)
-    return buffsEnabled or debuffsEnabled
+-- True when the unit's context has at least one enabled aura element.
+local function HasActiveAuraElements(vdb)
+    local auras = vdb and vdb.auras
+    if not auras or auras.enabled == false then return false end
+    local elements = auras.elements
+    if type(elements) ~= "table" then return false end
+    -- The "*" bucket plus any per-spec bucket can carry enabled elements. We do
+    -- not resolve the live spec here (this is a cheap activity gate); any
+    -- enabled element in any bucket keeps the aura pipeline alive for the unit.
+    for _, bucket in pairs(elements) do
+        if type(bucket) == "table" then
+            for _, e in ipairs(bucket) do
+                if type(e) == "table" and e.enabled ~= false then
+                    return true
+                end
+            end
+        end
+    end
+    return false
 end
 
 local function HasDispelOverlay(vdb)
@@ -1912,61 +1152,16 @@ local function HasDefensiveIndicator(vdb)
     return defensive and defensive.enabled == true
 end
 
-local function HasConfiguredIndicatorEntries(vdb)
-    local ai = vdb and vdb.auraIndicators
-    if not ai or ai.enabled == false then return false end
-
-    local entries = ai.entries
-    if type(entries) ~= "table" or #entries == 0 then return false end
-
-    for _, entry in ipairs(entries) do
-        if entry and entry.enabled ~= false and entry.spellID then
-            return true
-        end
-    end
-    return false
-end
-
-local function HasConfiguredPinnedSlots(vdb)
-    local pa = vdb and vdb.pinnedAuras
-    if not pa or not pa.enabled then return false end
-
-    local specSlots = pa.specSlots
-    if type(specSlots) ~= "table" then return false end
-
-    for _, slots in pairs(specSlots) do
-        if type(slots) == "table" then
-            for _, slot in ipairs(slots) do
-                if slot and slot.spellID then
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
-
+-- A context has active aura consumers when it has any enabled aura element
+-- (the unified model — strips + tracked auras) OR a healer dispel/defensive
+-- overlay (those still consume the shared cache for classification subsets).
 local function HasActiveAuraConsumers(isRaid)
     local vdb = GetVisualDBForContext(isRaid)
     if not vdb then return false end
 
-    if HasPanelAuraDisplay(vdb) then return true end
+    if HasActiveAuraElements(vdb) then return true end
     if HasDispelOverlay(vdb) then return true end
     if HasDefensiveIndicator(vdb) then return true end
-
-    local GFI = ns.QUI_GroupFrameIndicators
-    if GFI and GFI.HasActiveConfig then
-        if GFI:HasActiveConfig(isRaid) then return true end
-    elseif HasConfiguredIndicatorEntries(vdb) then
-        return true
-    end
-
-    local GFP = ns.QUI_GroupFramePinnedAuras
-    if GFP and GFP.HasActiveConfig then
-        if GFP:HasActiveConfig(isRaid) then return true end
-    elseif HasConfiguredPinnedSlots(vdb) then
-        return true
-    end
 
     return false
 end
@@ -2005,357 +1200,19 @@ function QUI_GFA:HasActiveConsumersForFrame(frame)
     return FrameHasActiveAuraConsumers(frame)
 end
 
-local function PanelRefreshNeededForFrame(frame, cache)
-    if not cache then return true end
-
-    local auraSettings = GetFrameAuraSettings(frame)
-    local buffsEnabled, debuffsEnabled = GetPanelDisplayFlags(auraSettings)
-    if buffsEnabled and (cache.panelBuffsChanged == true or cache.defensiveSetChanged == true) then
-        return true
-    end
-    if debuffsEnabled and cache.panelDebuffsChanged == true then
-        return true
-    end
-    return false
-end
-
-local function UpdateFrameAuras(frame, forceIconRefresh)
-    if not frame or not frame.unit then return end
-
-    local auraSettings = GetFrameAuraSettings(frame)
-    if not auraSettings then return end
-    local panelBuffsEnabled, panelDebuffsEnabled = GetPanelDisplayFlags(auraSettings)
-
-    -- Cache pulse setting for this frame (read by UpdateAuraIcon, avoids per-icon GetDB)
-    local showPulse = auraSettings.showExpiringPulse ~= false
-    frame._cachedShowPulse = showPulse
-
-    -- Layout versioning: only reposition icons when settings have changed
-    local needsLayout = (frameLayoutVersions[frame] or 0) ~= layoutVersion
-
-    local unit = frame.unit
-    if not UnitExists(unit) then
-        -- Hide all icons
-        if frame.debuffIcons then
-            for _, icon in ipairs(frame.debuffIcons) do
-                ClearAuraIcon(icon)
-            end
-        end
-        if frame.buffIcons then
-            for _, icon in ipairs(frame.buffIcons) do
-                ClearAuraIcon(icon)
-            end
-        end
-        return
-    end
-
-    if not panelBuffsEnabled and not panelDebuffsEnabled then
-        if auraStats then auraStats.panelNoDisplay = auraStats.panelNoDisplay + 1 end
-        if frame.debuffIcons then
-            for _, icon in ipairs(frame.debuffIcons) do
-                ClearAuraIcon(icon)
-            end
-        end
-        if frame.buffIcons then
-            for _, icon in ipairs(frame.buffIcons) do
-                ClearAuraIcon(icon)
-            end
-        end
-        frameLayoutVersions[frame] = layoutVersion
-        return
-    end
-
-    -- Phase 2: cache rebuild owns classification + filter + sort. The render
-    -- path reads pre-classified, pre-sorted arrays. Lazy-rebuild covers the
-    -- case where layoutVersion bumped (settings changed) but no UNIT_AURA
-    -- delta has fired since to refresh the panel arrays.
-    local cache = unitAuraCache[unit]
-    if cache and (cache.panelBuffsDirty or cache.panelDebuffsDirty) then
-        RebuildPanelSubsetsAndSort(unit, cache)
-    end
-
-    -- Process debuffs
-    if panelDebuffsEnabled then
-        local maxDebuffs = auraSettings.maxDebuffs or 3
-        local iconSize = auraSettings.debuffIconSize or 16
-
-        -- Ensure icon pool exists
-        if not frame.debuffIcons then
-            frame.debuffIcons = {}
-        end
-
-        -- Read pre-sorted debuff array directly. Cache rebuild already ran
-        -- classification, whitelist, blacklist, and priority sort.
-        local sortedDebuffs = (cache and cache.panelDebuffsSorted) or EMPTY_AURA_LIST
-
-        -- Display up to maxDebuffs
-        local dAnchor = auraSettings.debuffAnchor or "BOTTOMRIGHT"
-        local dGrow = auraSettings.debuffGrowDirection or "LEFT"
-        local dSpacing = auraSettings.debuffSpacing or 2
-        local dOffX = auraSettings.debuffOffsetX or -2
-        local dOffY = auraSettings.debuffOffsetY or -18
-        if sub(dAnchor, 1, 6) == "BOTTOM" then dOffY = dOffY + (frame._bottomPad or 0) end
-        local dIconAnchor = GetIconAnchorForGrow(dAnchor, dGrow)
-        -- CENTER: only relayout when visible count actually changes (skip thrashing)
-        local dVisibleCount = nil
-        if dGrow == "CENTER" then
-            local vc = math.min(#sortedDebuffs, maxDebuffs)
-            if vc ~= (framePrevDebuffCount[frame] or -1) then
-                dVisibleCount = vc
-                framePrevDebuffCount[frame] = vc
-            end
-        end
-        for i = 1, maxDebuffs do
-            local auraData = sortedDebuffs[i]
-            if not frame.debuffIcons[i] then
-                frame.debuffIcons[i] = CreateAuraIcon(frame, iconSize)
-                needsLayout = true -- New icon always needs positioning
-            end
-            -- Only reposition when layout settings changed (version mismatch)
-            if needsLayout or dVisibleCount then
-                local offX, offY = CalculateSlotOffset(i, iconSize, dSpacing, dGrow, dVisibleCount)
-                frame.debuffIcons[i]:ClearAllPoints()
-                frame.debuffIcons[i]:SetPoint(dIconAnchor, frame, dAnchor, dOffX + offX, dOffY + offY)
-                frame.debuffIcons[i]:SetSize(iconSize, iconSize)
-            end
-            local icon = frame.debuffIcons[i]
-            if auraData then
-                local state = icon._auraState
-                if not forceIconRefresh and not needsLayout and icon:IsShown()
-                    and state and state.auraInstanceID == auraData.auraInstanceID
-                then
-                    if auraStats then auraStats.panelIconSkips = auraStats.panelIconSkips + 1 end
-                else
-                    if auraStats then auraStats.panelIconUpdates = auraStats.panelIconUpdates + 1 end
-                    icon._durationTextSettingKey = "showDebuffDurationText"
-                    icon._durationUseTimeColorKey = "debuffDurationUseTimeColor"
-                    icon._durationColorKey = "debuffDurationColor"
-                    ApplyDurationTextStyle(icon, auraSettings, "debuff")
-                    SafeSetDrawSwipe(icon and icon.cooldown, auraSettings.debuffHideSwipe ~= true)
-                    SafeSetReverse(icon and icon.cooldown, auraSettings.debuffReverseSwipe == true)
-                    icon._cachedShowPulse = showPulse
-                    UpdateAuraIcon(icon, auraData, unit)
-                end
-            else
-                ClearAuraIcon(icon)
-            end
-        end
-
-        -- Hide excess icons
-        for i = maxDebuffs + 1, #frame.debuffIcons do
-            ClearAuraIcon(frame.debuffIcons[i])
-        end
-    elseif frame.debuffIcons then
-        for _, icon in ipairs(frame.debuffIcons) do
-            ClearAuraIcon(icon)
-        end
-    end
-
-    -- Process buffs (if enabled)
-    if panelBuffsEnabled then
-        local maxBuffs = auraSettings.maxBuffs
-        local iconSize = auraSettings.buffIconSize or 14
-
-        if not frame.buffIcons then
-            frame.buffIcons = {}
-        end
-
-        -- Cache rebuild owns hidePermanent + onlyMine + classification +
-        -- whitelist + blacklist filters. Render only applies the dedup set,
-        -- which is per-frame state (defensive/indicator/pinned spell IDs
-        -- already shown elsewhere on this frame).
-        local dedup = auraSettings.buffDeduplicateDefensives ~= false
-        local dedupSet
-        if dedup then
-            local defIDs = frame._defensiveAuraIDs
-            local indIDs = frame._indicatorAuraIDs
-            local pinIDs = frame._pinnedAuraIDs
-            local hasDef = defIDs and next(defIDs)
-            local hasInd = indIDs and next(indIDs)
-            local hasPin = pinIDs and next(pinIDs)
-            local sourceCount = (hasDef and 1 or 0) + (hasInd and 1 or 0) + (hasPin and 1 or 0)
-            if sourceCount > 1 then
-                if not frame._buffDedupSet then frame._buffDedupSet = {} end
-                wipe(frame._buffDedupSet)
-                if hasDef then for id in pairs(defIDs) do frame._buffDedupSet[id] = true end end
-                if hasInd then for id in pairs(indIDs) do frame._buffDedupSet[id] = true end end
-                if hasPin then for id in pairs(pinIDs) do frame._buffDedupSet[id] = true end end
-                dedupSet = frame._buffDedupSet
-            elseif hasDef then
-                dedupSet = defIDs
-            elseif hasInd then
-                dedupSet = indIDs
-            elseif hasPin then
-                dedupSet = pinIDs
-            end
-        end
-
-        -- Pre-filtered, pre-sorted buff candidates from cache (already passed
-        -- onlyMine/hidePermanent/classification/whitelist/blacklist). Walk in
-        -- order, applying the per-frame dedup gate, capped at maxBuffs.
-        local sortedBuffs = (cache and cache.panelBuffsSorted) or EMPTY_AURA_LIST
-        wipe(_renderBuffs)
-        local nSrc = #sortedBuffs
-        for i = 1, nSrc do
-            if #_renderBuffs >= maxBuffs then break end
-            local ad = sortedBuffs[i]
-            local instID = ad and ad.auraInstanceID
-            if not (dedupSet and instID and dedupSet[instID]) then
-                _renderBuffs[#_renderBuffs + 1] = ad
-            end
-        end
-
-        local bAnchor = auraSettings.buffAnchor or "TOPLEFT"
-        local bGrow = auraSettings.buffGrowDirection or "RIGHT"
-        local bSpacing = auraSettings.buffSpacing or 2
-        local bOffX = auraSettings.buffOffsetX or 2
-        local bOffY = auraSettings.buffOffsetY or 16
-        if sub(bAnchor, 1, 6) == "BOTTOM" then bOffY = bOffY + (frame._bottomPad or 0) end
-        local bIconAnchor = GetIconAnchorForGrow(bAnchor, bGrow)
-        -- CENTER: only relayout when visible count actually changes
-        local bVisibleCount = nil
-        if bGrow == "CENTER" then
-            local vc = #_renderBuffs
-            if vc ~= (framePrevBuffCount[frame] or -1) then
-                bVisibleCount = vc
-                framePrevBuffCount[frame] = vc
-            end
-        end
-        for i = 1, maxBuffs do
-            local auraData = _renderBuffs[i]
-            if not frame.buffIcons[i] then
-                frame.buffIcons[i] = CreateAuraIcon(frame, iconSize)
-                needsLayout = true
-            end
-            -- Only reposition when layout settings changed
-            if needsLayout or bVisibleCount then
-                local offX, offY = CalculateSlotOffset(i, iconSize, bSpacing, bGrow, bVisibleCount)
-                frame.buffIcons[i]:ClearAllPoints()
-                frame.buffIcons[i]:SetPoint(bIconAnchor, frame, bAnchor, bOffX + offX, bOffY + offY)
-                frame.buffIcons[i]:SetSize(iconSize, iconSize)
-            end
-            local bIcon = frame.buffIcons[i]
-            if auraData then
-                local state = bIcon._auraState
-                if not forceIconRefresh and not needsLayout and bIcon:IsShown()
-                    and state and state.auraInstanceID == auraData.auraInstanceID
-                then
-                    if auraStats then auraStats.panelIconSkips = auraStats.panelIconSkips + 1 end
-                else
-                    if auraStats then auraStats.panelIconUpdates = auraStats.panelIconUpdates + 1 end
-                    bIcon._durationTextSettingKey = "showBuffDurationText"
-                    bIcon._durationUseTimeColorKey = "buffDurationUseTimeColor"
-                    bIcon._durationColorKey = "buffDurationColor"
-                    ApplyDurationTextStyle(bIcon, auraSettings, "buff")
-                    SafeSetDrawSwipe(bIcon and bIcon.cooldown, auraSettings.buffHideSwipe ~= true)
-                    SafeSetReverse(bIcon and bIcon.cooldown, auraSettings.buffReverseSwipe == true)
-                    bIcon._cachedShowPulse = showPulse
-                    UpdateAuraIcon(bIcon, auraData, unit)
-                end
-            else
-                ClearAuraIcon(bIcon)
-            end
-        end
-
-        for i = maxBuffs + 1, #frame.buffIcons do
-            ClearAuraIcon(frame.buffIcons[i])
-        end
-    elseif frame.buffIcons then
-        for _, icon in ipairs(frame.buffIcons) do
-            ClearAuraIcon(icon)
-        end
-    end
-
-    -- Stamp layout version so we skip repositioning until settings change
-    frameLayoutVersions[frame] = layoutVersion
-end
+-- The legacy buff/debuff panel renderer (UpdateFrameAuras) and its refresh gate
+-- (PanelRefreshNeededForFrame) were retired by the unified element renderer.
+-- RenderFrameElements (above) is now the sole per-frame aura render path; the
+-- shared cache still feeds it, plus the dispel/defensive overlays.
 
 ---------------------------------------------------------------------------
 -- EVENT HOOKUP: Listen to UNIT_AURA via the group frame event system
 ---------------------------------------------------------------------------
-local function FixIconMouse(icon, skipCombatCheck)
-    if not icon then return end
-    if not skipCombatCheck and InCombatLockdown() then return end
-    pcall(function()
-        icon:EnableMouse(true)
-        if icon.SetPropagateMouseMotion then icon:SetPropagateMouseMotion(true) end
-        if icon.SetPropagateMouseClicks then icon:SetPropagateMouseClicks(true) end
-        if icon.SetMouseClickEnabled then icon:SetMouseClickEnabled(false) end
-    end)
-end
-
-local function FixAllIconMouse()
-    if InCombatLockdown() then return end
-    local GF = ns.QUI_GroupFrames
-    if not GF then return end
-    for _, list in pairs(GF.unitFrameMap) do
-        for i = 1, #list do
-            local frame = list[i]
-            if frame.debuffIcons then
-                for _, icon in ipairs(frame.debuffIcons) do FixIconMouse(icon, true) end
-            end
-            if frame.buffIcons then
-                for _, icon in ipairs(frame.buffIcons) do FixIconMouse(icon, true) end
-            end
-        end
-    end
-    pendingMouseFix = false
-end
-
 -- Aura processing is inline in the dispatcher callback so all group-frame
--- consumers render from the same shared cache mutation.
-
--- PLAYER_REGEN_ENABLED handler (mouse fix deferred from combat)
-local regenFrame = CreateFrame("Frame")
-regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-regenFrame:SetScript("OnEvent", function(self, event)
-    if pendingMouseFix then FixAllIconMouse() end
-end)
-
-local function RefreshUpdatedAuraIcons(frames, nFrames, unit, updated)
-    if not updated then return false end
-    local nUpdated = #updated
-    if nUpdated == 0 then return true end
-
-    local GetDuration = C_UnitAuras and C_UnitAuras.GetAuraDuration
-    local GetDisplayCount = C_UnitAuras and C_UnitAuras.GetAuraApplicationDisplayCount
-    if not GetDuration then return false end
-
-    for f = 1, nFrames do
-        local frame = frames[f]
-        if frame:IsShown() then
-            for listIdx = 1, 2 do
-                local icons = listIdx == 1 and frame.debuffIcons or frame.buffIcons
-                if icons then
-                    for _, icon in ipairs(icons) do
-                        if not icon:IsShown() then break end
-                        local state = icon._auraState
-                        local instID = state and state.auraInstanceID
-                        if instID then
-                            local hit = false
-                            for i = 1, nUpdated do
-                                if updated[i] == instID then hit = true; break end
-                            end
-                            if hit then
-                                local cd = icon.cooldown
-                                if cd and cd.SetCooldownFromDurationObject then
-                                    local dObj = GetDuration(unit, instID)
-                                    if dObj then cd:SetCooldownFromDurationObject(dObj, true) end
-                                end
-                                if icon.stackText and GetDisplayCount then
-                                    local s = GetDisplayCount(unit, instID, 2, 99)
-                                    if s then icon.stackText:SetText(s) end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    return true
-end
+-- consumers render from the same shared cache mutation. The unified element
+-- renderer owns icon mouse-propagation, the duration timer, and per-instance
+-- swipe refresh (Render:RefreshUpdatedIcons / RefreshUpdatedBars) — the legacy
+-- panel mouse-fix + icon refresh helpers were retired with the panel renderer.
 
 -- Subscribe to centralized aura dispatcher for group frame aura updates.
 -- Stack/duration-only updates stay on the icon fast path. Add/remove/full
@@ -2397,10 +1254,16 @@ if ns.AuraEvents then
             if nUpdated == 0 then return end
             if auraStats then auraStats.fastUpdates = auraStats.fastUpdates + 1 end
 
-            RefreshUpdatedAuraIcons(frames, nFrames, unit, updated)
-            local GFI = ns.QUI_GroupFrameIndicators
-            if GFI and GFI.RefreshUpdatedBars then
-                GFI:RefreshUpdatedBars(frames, nFrames, unit, updated)
+            -- Reseat only the C-side swipes/bars on element visuals whose aura
+            -- instance updated (zero alloc) — no element-list rebuild.
+            local Render = GetRender()
+            if Render then
+                if Render.RefreshUpdatedIcons then
+                    Render:RefreshUpdatedIcons(frames, nFrames, unit, updated)
+                end
+                if Render.RefreshUpdatedBars then
+                    Render:RefreshUpdatedBars(frames, nFrames, unit, updated)
+                end
             end
             return
         end
@@ -2424,88 +1287,46 @@ if ns.AuraEvents then
             end
             ScanUnitAuras(unit)
         end
-        local GFI = ns.QUI_GroupFrameIndicators
-        local GFP = ns.QUI_GroupFramePinnedAuras
         local cache = unitAuraCache[unit]
-        local refreshIndicators = true
-        local refreshPinned = true
-        local refreshPanelAuras = true
-        if cacheUpdated and cache then
-            refreshIndicators = cache.indicatorMatchesChanged ~= false
-            refreshPinned = cache.pinnedMatchesChanged ~= false
-            refreshPanelAuras = cache.panelBuffsChanged == true
-                or cache.panelDebuffsChanged == true
-                or cache.defensiveSetChanged == true
-        end
+        local Render = GetRender()
         for f = 1, nFrames do
             local frame = frames[f]
             if frame:IsShown() then
                 if auraStats then auraStats.framesRefreshed = auraStats.framesRefreshed + 1 end
+                -- Healer overlays read the shared cache's classification subsets.
                 if GF.UpdateDispelOverlay then GF:UpdateDispelOverlay(frame) end
                 if GF.UpdateDefensiveIndicator then GF:UpdateDefensiveIndicator(frame) end
-                if GFI and GFI.RefreshFrame then
-                    if refreshIndicators then
-                        if auraStats then auraStats.indicatorFrameRefreshes = auraStats.indicatorFrameRefreshes + 1 end
-                        GFI:RefreshFrame(frame)
-                    else
-                        if auraStats then auraStats.indicatorFrameSkips = auraStats.indicatorFrameSkips + 1 end
-                    end
-                end
-                if GFP and GFP.RefreshFrame then
-                    if refreshPinned then
-                        if auraStats then auraStats.pinnedFrameRefreshes = auraStats.pinnedFrameRefreshes + 1 end
-                        GFP:RefreshFrame(frame)
-                    else
-                        if auraStats then auraStats.pinnedFrameSkips = auraStats.pinnedFrameSkips + 1 end
-                    end
-                end
-                if refreshPanelAuras then
-                    if PanelRefreshNeededForFrame(frame, cache) then
-                        if auraStats then auraStats.panelFrameRefreshes = auraStats.panelFrameRefreshes + 1 end
-                        UpdateFrameAuras(frame, not cacheUpdated)
-                    else
-                        if auraStats then
-                            auraStats.panelFrameSkips = auraStats.panelFrameSkips + 1
-                            auraStats.panelFrameDisplaySkips = auraStats.panelFrameDisplaySkips + 1
-                        end
-                    end
-                else
-                    if auraStats then auraStats.panelFrameSkips = auraStats.panelFrameSkips + 1 end
-                end
+                -- Unified element pass: the sole aura render path. The defensive
+                -- overlay above refreshed frame._defensiveAuraIDs first so a
+                -- filterStrip's dedupeDefensives sees the current set.
+                RenderFrameElements(frame, cache)
             end
         end
-        if cacheUpdated and type(updateInfo) == "table"
+        -- Mixed delta (updated + added/removed): the element pass already re-
+        -- dispatched with fresh matches; reseat C-side bar timers on the
+        -- specific instances that updated so the fill drains from the live
+        -- DurationObject (matches the old RefreshUpdatedBars behavior).
+        if cacheUpdated and Render and type(updateInfo) == "table"
             and updateInfo.updatedAuraInstanceIDs
             and (updateInfo.addedAuras or updateInfo.removedAuraInstanceIDs)
         then
             local updated = updateInfo.updatedAuraInstanceIDs
-            if RefreshUpdatedAuraIcons(frames, nFrames, unit, updateInfo.updatedAuraInstanceIDs) then
-                if auraStats then auraStats.mixedIconRefreshes = auraStats.mixedIconRefreshes + 1 end
-            end
-            if GFI and GFI.RefreshUpdatedBars then
-                GFI:RefreshUpdatedBars(frames, nFrames, unit, updated)
+            if Render.RefreshUpdatedBars then
+                if Render:RefreshUpdatedBars(frames, nFrames, unit, updated) then
+                    if auraStats then auraStats.mixedIconRefreshes = auraStats.mixedIconRefreshes + 1 end
+                end
             end
         end
     end)
 end
 
 ---------------------------------------------------------------------------
--- PUBLIC: Bump layout version (call when aura settings change in options)
+-- PUBLIC: Invalidate aura layout (call when aura settings change in options)
 ---------------------------------------------------------------------------
+-- The shared cache drives the dispel/defensive subsets and the unified renderer
+-- resolves filterStrip matches at render time, so settings changes need no cache
+-- mutation here. Retained as a stable hook for the options/settings caller.
 function QUI_GFA:InvalidateLayout()
-    layoutVersion = layoutVersion + 1
-    _cachedFontPath = nil  -- force re-fetch on next access
-    -- Refresh cached setting for shared timer
-    local db = GetDB()
-    cachedShowDurationColor = db and db.auras and db.auras.showDurationColor ~= false
-    -- Phase 2: panel subsets depend on filter settings that may have changed.
-    -- Mark every cached unit dirty so the next render or delta re-runs the
-    -- panel rebuild pass against the fresh filter cache.
-    for _, cache in pairs(unitAuraCache) do
-        cache.panelBuffsDirty = true
-        cache.panelDebuffsDirty = true
-        cache.curatedForceRefresh = true
-    end
 end
 
 ---------------------------------------------------------------------------
@@ -2515,22 +1336,16 @@ function QUI_GFA:RefreshAll()
     local GF = ns.QUI_GroupFrames
     if not GF or not GF.initialized then return end
 
-    -- Force layout recalculation on explicit refresh
-    layoutVersion = layoutVersion + 1
-    _cachedFontPath = nil  -- force re-fetch on next access
-    -- Sync cached setting from DB
-    local db = GetDB()
-    cachedShowDurationColor = db and db.auras and db.auras.showDurationColor ~= false
-
     for unit, list in pairs(GF.unitFrameMap) do
         local shouldScan = AnyVisibleFrameHasActiveAuraConsumers(list, #list)
         if shouldScan then
             ScanUnitAuras(unit)
         end
+        local cache = unitAuraCache[unit]
         for i = 1, #list do
             local frame = list[i]
             if frame and frame:IsShown() then
-                UpdateFrameAuras(frame, true)
+                RenderFrameElements(frame, cache)
             end
         end
     end
@@ -2540,9 +1355,9 @@ function QUI_GFA:RefreshFrame(frame)
     if frame and frame.unit and FrameHasActiveAuraConsumers(frame) then
         ScanUnitAuras(frame.unit)
     end
-    UpdateFrameAuras(frame, true)
+    RenderFrameElements(frame, frame and frame.unit and unitAuraCache[frame.unit] or nil)
 end
 
 function QUI_GFA:RenderFrame(frame)
-    UpdateFrameAuras(frame, true)
+    RenderFrameElements(frame, frame and frame.unit and unitAuraCache[frame.unit] or nil)
 end

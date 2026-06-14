@@ -332,38 +332,11 @@ end
 -- The secure SetBackdropFillColor / frame.Center forwarder and all semantic
 -- dispel/debuff colors must remain byte-for-byte.
 -- ===========================================================================
-do
-    -- groupframes_pinned_auras.lua: all four indicator chrome borders migrated
-    local src = readFile("QUI_GroupFrames/groupframes/groupframes_pinned_auras.lua")
-    assertAbsent(src, "SetBackdropBorderColor%(0, 0, 0, 1%)",
-        "groupframes_pinned_auras.lua: black chrome borders SetBackdropBorderColor(0,0,0,1) must use GetSkinBorderColor()")
-    assertContains(src, "GetSkinBorderColor",
-        "groupframes_pinned_auras.lua: must reference GetSkinBorderColor() for indicator chrome border")
-end
-
-do
-    -- groupframes_indicators.lua: indicator chrome border migrated
-    local src = readFile("QUI_GroupFrames/groupframes/groupframes_indicators.lua")
-    assertAbsent(src, "SetBackdropBorderColor%(0, 0, 0, 1%)",
-        "groupframes_indicators.lua: black chrome border SetBackdropBorderColor(0,0,0,1) must use GetSkinBorderColor()")
-    assertContains(src, "GetSkinBorderColor",
-        "groupframes_indicators.lua: must reference GetSkinBorderColor() for indicator chrome border")
-end
-
-do
-    -- groupframes_auras.lua: creation chrome border + non-semantic default border migrated
-    local src = readFile("QUI_GroupFrames/groupframes/groupframes_auras.lua")
-    assertAbsent(src, "SetBackdropBorderColor%(0, 0, 0, 1%)",
-        "groupframes_auras.lua: black chrome borders SetBackdropBorderColor(0,0,0,1) must use GetSkinBorderColor()")
-    assertContains(src, "GetSkinBorderColor",
-        "groupframes_auras.lua: must reference GetSkinBorderColor() for aura chrome border")
-
-    -- Semantic guards: dispel-color table + default debuff red must remain
-    assertContains(src, "AURA_DISPEL_COLORS",
-        "groupframes_auras.lua: semantic AURA_DISPEL_COLORS dispel coloring must not be removed")
-    assertContains(src, "0.8, 0, 0, 1",
-        "groupframes_auras.lua: semantic default debuff red 0.8,0,0,1 must not be removed")
-end
+-- NOTE: groupframes_indicators.lua and groupframes_pinned_auras.lua were
+-- deleted when the unified aura element renderer became the sole aura consumer,
+-- and groupframes_auras.lua's icon-creation/dispel-color code (which the chrome
+-- guard covered) moved to groupframes_aura_render.lua. Those file-specific
+-- chrome assertions were removed with the code they guarded.
 
 do
     -- groupframes_layout.lua: decorated-frame chrome border + portrait chrome border migrated

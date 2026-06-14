@@ -17,15 +17,10 @@ local QUICore = ns.Addon
 -- Local references
 local PADDING = Shared.PADDING
 local CreateScrollableContent = Shared.CreateScrollableContent
-local GetTextureList = Shared.GetTextureList
-local GetFontList = Shared.GetFontList
 
 -- Constants
 local FORM_ROW = 32
-local DROP_ROW = 52
-local SLIDER_HEIGHT = 65
 local PAD = 10
-local PREVIEW_SCALE = 2
 local UIKit = ns.UIKit
 
 ---------------------------------------------------------------------------
@@ -301,10 +296,6 @@ local SEARCH_TAB_INDEX = 7
 local SEARCH_TAB_NAME = "Click-Cast"
 local SEARCH_SUBTAB_GENERAL_INDEX = 1
 local SEARCH_SUBTAB_GENERAL_NAME = "Click-Cast"
-local SEARCH_SUBTAB_PARTY_INDEX = 2
-local SEARCH_SUBTAB_PARTY_NAME = "Party"
-local SEARCH_SUBTAB_RAID_INDEX = 3
-local SEARCH_SUBTAB_RAID_NAME = "Raid"
 
 local function SetGeneralSearchContext(sectionName)
     GUI:SetSearchContext({
@@ -1139,7 +1130,6 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         rowHl:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.15)
 
         row:SetScript("OnMouseDown", CommitAutocompleteSelection)
-        row:SetScript("OnClick", CommitAutocompleteSelection)
 
         row:Hide()
         acRows[ri] = row

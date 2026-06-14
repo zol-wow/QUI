@@ -14,7 +14,7 @@ return {
             local p = sv.QUI_DB.profiles.Default
             -- Match basic_fresh's pinned schema version. Bump in lockstep when
             -- CURRENT_SCHEMA_VERSION changes. See tests/fixtures/current/basic_fresh/invariants.lua line 10.
-            return p._schemaVersion == 45
+            return p._schemaVersion == 46
         end,
     },
 }

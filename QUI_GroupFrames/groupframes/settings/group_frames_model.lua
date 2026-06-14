@@ -32,11 +32,6 @@ local function RenderSchema(methodName, host, contextMode, label)
     return ModelKit.RenderSchema(ns.QUI_GroupFramesSettingsSchema, methodName, host, contextMode, label, " settings unavailable (module not loaded).")
 end
 
-local function RenderGeneral(host, state)
-    local contextMode = state and state.contextMode or nil
-    RenderSchema("RenderGeneralTab", host, contextMode, "General")
-end
-
 local function BuildSchemaRender(methodName, label)
     return function(host, state)
         local contextMode = state and state.contextMode or nil
@@ -44,6 +39,7 @@ local function BuildSchemaRender(methodName, label)
     end
 end
 
+local RenderGeneral = BuildSchemaRender("RenderGeneralTab", "General")
 local RenderAppearance = BuildSchemaRender("RenderAppearanceTab", "Appearance")
 local RenderLayout = BuildSchemaRender("RenderLayoutTab", "Layout")
 local RenderDimensions = BuildSchemaRender("RenderDimensionsTab", "Dimensions")
@@ -52,11 +48,8 @@ local RenderSpotlight = BuildSchemaRender("RenderSpotlightTab", "Spotlight")
 local RenderHealth = BuildSchemaRender("RenderHealthTab", "Health")
 local RenderPower = BuildSchemaRender("RenderPowerTab", "Power")
 local RenderName = BuildSchemaRender("RenderNameTab", "Name")
-local RenderBuffs = BuildSchemaRender("RenderBuffsTab", "Buffs")
-local RenderDebuffs = BuildSchemaRender("RenderDebuffsTab", "Debuffs")
 local RenderIndicators = BuildSchemaRender("RenderIndicatorsTab", "Indicators")
-local RenderAuraIndicators = BuildSchemaRender("RenderAuraIndicatorsTab", "Auras")
-local RenderPinnedAuras = BuildSchemaRender("RenderPinnedAurasTab", "Pinned Auras")
+local RenderAuras = BuildSchemaRender("RenderAurasTab", "Auras")
 local RenderPrivateAuras = BuildSchemaRender("RenderPrivateAurasTab", "Private Auras")
 local RenderHealer = BuildSchemaRender("RenderHealerTab", "Healer")
 local RenderDefensive = BuildSchemaRender("RenderDefensiveTab", "Defensives")
@@ -74,13 +67,10 @@ local TAB_DEFINITIONS = {
     { key = "name", label = "Name", row = 1, render = RenderName },
     { key = "indicators", label = "Indicators", row = 1, render = RenderIndicators },
     { key = "healer", label = "Healer", row = 1, render = RenderHealer },
-    { key = "auraIndicators", label = "Auras", row = 2, render = RenderAuraIndicators },
+    { key = "auras", label = "Auras", row = 2, render = RenderAuras },
     { key = "privateAuras", label = "Private Auras", row = 2, render = RenderPrivateAuras },
     { key = "defensive", label = "Defensives", row = 2, render = RenderDefensive },
     { key = "dispelOverlay", label = "Dispel Overlay", row = 2, render = RenderDispelOverlay },
-    { key = "debuffs", label = "Debuffs", row = 2, render = RenderDebuffs },
-    { key = "buffs", label = "Buffs", row = 2, render = RenderBuffs },
-    { key = "pinnedAuras", label = "Pinned Auras", row = 2, render = RenderPinnedAuras },
 }
 
 function Model.GetTabDefinitions()

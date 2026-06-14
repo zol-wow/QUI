@@ -78,8 +78,7 @@ tiles\help_content.lua
 ..\QUI_QoL\dungeon\settings\brez_counter.lua
 ..\QUI_GroupFrames\groupframes\settings\group_frames_aura_defaults.lua
 ..\QUI_GroupFrames\groupframes\settings\group_frames_spell_list.lua
-..\QUI_GroupFrames\groupframes\settings\group_frames_aura_indicators_editor.lua
-..\QUI_GroupFrames\groupframes\settings\group_frames_pinned_editor.lua
+..\QUI_GroupFrames\groupframes\settings\group_frames_auras_editor.lua
 ..\QUI_GroupFrames\groupframes\settings\group_frames_schema.lua
 ..\QUI_GroupFrames\groupframes\settings\group_frames_model.lua
 ..\QUI_GroupFrames\groupframes\settings\group_frames.lua

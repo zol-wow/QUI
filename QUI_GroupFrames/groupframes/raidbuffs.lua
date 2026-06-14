@@ -3,7 +3,6 @@ local QUICore = ns.Addon
 local LSM = ns.LSM
 local Helpers = ns.Helpers
 local IsSecretValue = Helpers.IsSecretValue
-local SafeValue = Helpers.SafeValue
 
 -- Performance: cache frequently-called globals as locals
 local CreateFrame = CreateFrame
@@ -40,9 +39,7 @@ ns.RaidBuffs = QUI_RaidBuffs
 
 local ICON_SIZE = 32
 local ICON_SPACING = 4
-local FRAME_PADDING = 6
 local UPDATE_THROTTLE = 0.5
-local MAX_AURA_INDEX = 40  -- WoW maximum buff slots
 
 -- Raid buffs configuration
 -- spellId: Primary spell ID for icon lookup and detection
@@ -404,7 +401,7 @@ local function UnitHasBuff(unit, spellId, spellName, buffIDs)
         end
     end
 
-    -- Method 2: Name-based point query (for non-player units when Method 1 didn't try it)
+    -- Method 2: Name-based point query for the player (Method 1 used spell-ID lookup for player)
     if spellName and C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName and unit == "player" then
         local ok, auraData = pcall(C_UnitAuras.GetAuraDataBySpellName, unit, spellName, "HELPFUL")
         if ok and auraData then return true end
@@ -551,6 +548,19 @@ local function PlayerCanCastBuff(buff)
     return false
 end
 
+-- Off-hand weapon-enchant gate shared by the requiresShield / requiresDualWield
+-- paths. Returns true to SKIP the enchant check (no OH item, or the OH item's
+-- classification field doesn't match), otherwise the actual enchant result.
+-- `fieldIndex` selects which GetItemInfoInstant return to test (6 = classID,
+-- 7 = subClassID) against `expected`.
+local function OffhandEnchantSatisfied(entry, hasOH, ohID, fieldIndex, expected)
+    local ohItemID = GetInventoryItemID("player", 17)
+    if not ohItemID then return true end  -- No OH item = skip this check
+    local field = select(fieldIndex, C_Item.GetItemInfoInstant(ohItemID))
+    if field ~= expected then return true end  -- Wrong item type = skip
+    return hasOH and entry.anyEnchantIDs[ohID] or false
+end
+
 -- Check if a self-buff requirement is satisfied
 local function PlayerHasSelfBuff(entry)
     if entry.checkType == "playerAura" then
@@ -564,18 +574,12 @@ local function PlayerHasSelfBuff(entry)
     elseif entry.checkType == "weaponEnchant" then
         local hasMH, _, _, mhID, hasOH, _, _, ohID = GetWeaponEnchantInfo()
         if entry.requiresShield then
-            local ohItemID = GetInventoryItemID("player", 17)
-            if not ohItemID then return true end  -- No OH item = skip this check
-            local _, _, _, _, _, _, itemSubClass = C_Item.GetItemInfoInstant(ohItemID)
-            if itemSubClass ~= 6 then return true end  -- Not a shield = skip
-            return hasOH and entry.anyEnchantIDs[ohID] or false
+            -- subClassID (7th return) == 6 means shield
+            return OffhandEnchantSatisfied(entry, hasOH, ohID, 7, 6)
         end
         if entry.requiresDualWield then
-            local ohItemID = GetInventoryItemID("player", 17)
-            if not ohItemID then return true end  -- No OH item = skip this check
-            local _, _, _, _, _, itemClass = C_Item.GetItemInfoInstant(ohItemID)
-            if itemClass ~= 2 then return true end  -- OH is not a weapon = skip
-            return hasOH and entry.anyEnchantIDs[ohID] or false
+            -- classID (6th return) == 2 means weapon
+            return OffhandEnchantSatisfied(entry, hasOH, ohID, 6, 2)
         end
         return hasMH and entry.anyEnchantIDs[mhID] or false
     end

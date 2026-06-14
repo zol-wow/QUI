@@ -10,9 +10,8 @@ if not Renderer or type(Renderer.RenderFeature) ~= "function"
 end
 
 local Helpers = ns.Helpers
-local SpellList = ns.QUI_GroupFramesSpellListSettings
-local AuraIndicatorsEditor = ns.QUI_GroupFramesAuraIndicatorsSettings
-local PinnedAurasEditor = ns.QUI_GroupFramesPinnedAurasSettings
+local AurasEditor = ns.QUI_GroupFramesAurasSettings
+local AuraModel = ns.QUI_GroupFramesAuraModel
 
 local GroupFramesSchema = ns.QUI_GroupFramesSettingsSchema or {}
 ns.QUI_GroupFramesSettingsSchema = GroupFramesSchema
@@ -97,13 +96,10 @@ local TAB_SEARCH_CONTEXTS = {
     name = { subTabIndex = 9, subTabName = "Name" },
     indicators = { subTabIndex = 10, subTabName = "Indicators" },
     healer = { subTabIndex = 11, subTabName = "Healer" },
-    auraIndicators = { subTabIndex = 12, subTabName = "Auras" },
+    auras = { subTabIndex = 12, subTabName = "Auras" },
     privateAuras = { subTabIndex = 13, subTabName = "Private Auras" },
     defensive = { subTabIndex = 14, subTabName = "Defensives" },
     dispelOverlay = { subTabIndex = 15, subTabName = "Dispel Overlay" },
-    debuffs = { subTabIndex = 16, subTabName = "Debuffs" },
-    buffs = { subTabIndex = 17, subTabName = "Buffs" },
-    pinnedAuras = { subTabIndex = 18, subTabName = "Pinned Auras" },
 }
 local GROUP_FRAMES_SEARCH_TILE_ID = "group_frames"
 local GROUP_FRAMES_SEARCH_FEATURE_ID = "groupFramesPage"
@@ -445,45 +441,6 @@ local function RenderEmbeddedEditorSection(sectionHost, builder, render, options
     height = math.max(1, height)
     editorHost:SetHeight(height)
     builder.Spacer(height)
-    return height
-end
-
-local function AppendSpellListBlock(sectionHost, builder, ctx, title, description, listTable, presets, onChange)
-    if not sectionHost or not builder or type(listTable) ~= "table"
-        or not SpellList or type(SpellList.CreateListFrame) ~= "function" then
-        return
-    end
-
-    builder.Spacer(6)
-    builder.Header(title)
-    builder.Description(description)
-
-    local height = RenderEmbeddedEditorSection(sectionHost, builder, function(panel)
-        local listFrame
-        local function UpdatePanelHeight(nextHeight)
-            if type(nextHeight) ~= "number" or nextHeight <= 0 then
-                nextHeight = listFrame and listFrame.GetHeight and listFrame:GetHeight() or 1
-            end
-            if panel.SetHeight then
-                panel:SetHeight(math.max(1, nextHeight))
-            end
-        end
-
-        listFrame = SpellList.CreateListFrame(panel, listTable, presets, function()
-            if type(onChange) == "function" then
-                onChange()
-            end
-            ScheduleTabRepaint(ctx)
-        end, UpdatePanelHeight)
-        listFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, 0)
-        listFrame:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, 0)
-        UpdatePanelHeight()
-        return panel.GetHeight and panel:GetHeight() or 1
-    end, {
-        minHeight = 1,
-    })
-
-    builder.Spacer(2)
     return height
 end
 
@@ -2250,631 +2207,136 @@ local function RenderIndicatorsSection(sectionHost, ctx)
     return builder.Height()
 end
 
-local function RenderBuffsSection(sectionHost, ctx)
-    local gui = GetGUI()
-    local optionsAPI = GetOptionsAPI()
-    local groupFrames = ResolveGroupFramesDB(ctx and ctx.options and ctx.options.contextMode)
-    if not gui or not optionsAPI or not groupFrames then
-        return nil
-    end
-
-    local auras = EnsureSubTable(groupFrames.contextDB, "auras")
-    if not auras then
-        return nil
-    end
-    local buffClassifications = EnsureSubTable(auras, "buffClassifications")
-    local buffBlacklist = EnsureSubTable(auras, "buffBlacklist")
-    if not buffClassifications or not buffBlacklist then
-        return nil
-    end
-
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("buffs"))
-    if not builder then
-        return nil
-    end
-
-    local refresh = function()
-        RefreshGroupFrames(groupFrames.contextMode)
-    end
-
-    builder.Header("Buffs")
-    builder.Description("Buff icon placement and filtering for " .. groupFrames.sourceLabel .. " group frames.")
-
-    local buffsCard = builder.Card()
-    local maxBuffsRow, iconSizeRow, hideSwipeRow, reverseSwipeRow, anchorRow, growDirectionRow, spacingRow, xOffsetRow, yOffsetRow
-    local updateBuffDurationRows
-    local UpdateFilterRows
-    local function UpdateBuffRows()
-        local showBuffs = auras.showBuffs == true
-        local showAlpha = showBuffs and 1.0 or 0.4
-        if maxBuffsRow then maxBuffsRow:SetAlpha(showAlpha) end
-        if iconSizeRow then iconSizeRow:SetAlpha(showAlpha) end
-        if hideSwipeRow then hideSwipeRow:SetAlpha(showAlpha) end
-        if reverseSwipeRow then
-            reverseSwipeRow:SetAlpha((showBuffs and not auras.buffHideSwipe) and 1.0 or 0.4)
+-- Build the spec-bucket dropdown options: "*" (All Specs) followed by each of
+-- the player's specs. Returns the option list plus the current player's specID
+-- (used as the default selection).
+local function BuildSpecBucketOptions()
+    local options = { { value = "*", text = "All Specs" } }
+    local currentSpecID
+    local numSpecs = GetNumSpecializations and GetNumSpecializations() or 0
+    local currentIndex = GetSpecialization and GetSpecialization() or nil
+    for index = 1, numSpecs do
+        if GetSpecializationInfo then
+            local specID, specName = GetSpecializationInfo(index)
+            if specID then
+                options[#options + 1] = {
+                    value = specID,
+                    text = specName or ("Spec " .. tostring(specID)),
+                }
+                if index == currentIndex then
+                    currentSpecID = specID
+                end
+            end
         end
-        if anchorRow then anchorRow:SetAlpha(showAlpha) end
-        if growDirectionRow then growDirectionRow:SetAlpha(showAlpha) end
-        if spacingRow then spacingRow:SetAlpha(showAlpha) end
-        if xOffsetRow then xOffsetRow:SetAlpha(showAlpha) end
-        if yOffsetRow then yOffsetRow:SetAlpha(showAlpha) end
-        if updateBuffDurationRows then updateBuffDurationRows() end
     end
-
-    local showBuffsCheckbox = gui:CreateFormCheckbox(buffsCard.frame, nil, "showBuffs", auras, function()
-        refresh()
-        UpdateBuffRows()
-        if UpdateFilterRows then
-            UpdateFilterRows()
-        end
-    end, {
-        description = "Show buff icons on this unit frame.",
-    })
-    local maxBuffsSlider = gui:CreateFormSlider(buffsCard.frame, nil, 0, 8, 1, "maxBuffs", auras, refresh, { deferOnDrag = true }, {
-        description = "Hard cap on how many buff icons this frame displays at once.",
-    })
-    maxBuffsRow = optionsAPI.BuildSettingRow(buffsCard.frame, "Max Buffs", maxBuffsSlider)
-    buffsCard.AddRow(
-        optionsAPI.BuildSettingRow(buffsCard.frame, "Show Buffs", showBuffsCheckbox),
-        maxBuffsRow
-    )
-
-    local iconSizeSlider = gui:CreateFormSlider(buffsCard.frame, nil, 8, 32, 1, "buffIconSize", auras, refresh, { deferOnDrag = true }, {
-        description = "Pixel size of each buff icon.",
-    })
-    iconSizeRow = optionsAPI.BuildSettingRow(buffsCard.frame, "Icon Size", iconSizeSlider)
-    local hideSwipeCheckbox = gui:CreateFormCheckbox(buffsCard.frame, nil, "buffHideSwipe", auras, function()
-        refresh()
-        UpdateBuffRows()
-    end, {
-        description = "Hide the cooldown swipe animation drawn over buff icons.",
-    })
-    hideSwipeRow = optionsAPI.BuildSettingRow(buffsCard.frame, "Hide Duration Swipe", hideSwipeCheckbox)
-    buffsCard.AddRow(iconSizeRow, hideSwipeRow)
-
-    updateBuffDurationRows = AddAuraDurationTextRows(
-        buffsCard,
-        gui,
-        optionsAPI,
-        auras,
-        "buff",
-        "Buff",
-        refresh,
-        function() return auras.showBuffs == true end
-    )
-
-    local reverseSwipeCheckbox = gui:CreateFormCheckbox(buffsCard.frame, nil, "buffReverseSwipe", auras, refresh, {
-        description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as time passes.",
-    })
-    reverseSwipeRow = optionsAPI.BuildSettingRow(buffsCard.frame, "Reverse Swipe", reverseSwipeCheckbox)
-    local anchorDropdown = gui:CreateFormDropdown(buffsCard.frame, nil, NINE_POINT_OPTIONS, "buffAnchor", auras, refresh, {
-        description = "Which corner of the frame the first buff icon is anchored to.",
-    })
-    anchorRow = optionsAPI.BuildSettingRow(buffsCard.frame, "Anchor", anchorDropdown)
-    buffsCard.AddRow(reverseSwipeRow, anchorRow)
-
-    local growDirectionDropdown = gui:CreateFormDropdown(buffsCard.frame, nil, AURA_GROW_OPTIONS, "buffGrowDirection", auras, refresh, {
-        description = "Direction additional buff icons are added in after the first.",
-    })
-    growDirectionRow = optionsAPI.BuildSettingRow(buffsCard.frame, "Grow Direction", growDirectionDropdown)
-    local spacingSlider = gui:CreateFormSlider(buffsCard.frame, nil, 0, 8, 1, "buffSpacing", auras, refresh, { deferOnDrag = true }, {
-        description = "Pixel gap between adjacent buff icons.",
-    })
-    spacingRow = optionsAPI.BuildSettingRow(buffsCard.frame, "Spacing", spacingSlider)
-    buffsCard.AddRow(growDirectionRow, spacingRow)
-
-    local xOffsetSlider = gui:CreateFormSlider(buffsCard.frame, nil, -100, 100, 1, "buffOffsetX", auras, refresh, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the buff block from its anchor corner.",
-    })
-    xOffsetRow = optionsAPI.BuildSettingRow(buffsCard.frame, "X Offset", xOffsetSlider)
-    local yOffsetSlider = gui:CreateFormSlider(buffsCard.frame, nil, -100, 100, 1, "buffOffsetY", auras, refresh, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the buff block from its anchor corner.",
-    })
-    yOffsetRow = optionsAPI.BuildSettingRow(buffsCard.frame, "Y Offset", yOffsetSlider)
-    buffsCard.AddRow(xOffsetRow, yOffsetRow)
-
-    UpdateBuffRows()
-    builder.CloseCard(buffsCard)
-
-    builder.Spacer(6)
-    builder.Header("Buff Filtering")
-    local filterCard = builder.Card()
-    local filterModeRow, onlyMineRow, hidePermanentRow, dedupeRow, raidRow, raidInCombatRow, cancelableRow, notCancelableRow, importantRow, bigDefensiveRow, externalDefensiveRow
-    UpdateFilterRows = function()
-        local showBuffs = auras.showBuffs == true
-        local showAlpha = showBuffs and 1.0 or 0.4
-        local classificationAlpha = (showBuffs and (auras.filterMode or "off") == "classification") and 1.0 or 0.4
-        if filterModeRow then filterModeRow:SetAlpha(showAlpha) end
-        if onlyMineRow then onlyMineRow:SetAlpha(showAlpha) end
-        if hidePermanentRow then hidePermanentRow:SetAlpha(showAlpha) end
-        if dedupeRow then dedupeRow:SetAlpha(showAlpha) end
-        if raidRow then raidRow:SetAlpha(classificationAlpha) end
-        if raidInCombatRow then raidInCombatRow:SetAlpha(classificationAlpha) end
-        if cancelableRow then cancelableRow:SetAlpha(classificationAlpha) end
-        if notCancelableRow then notCancelableRow:SetAlpha(classificationAlpha) end
-        if importantRow then importantRow:SetAlpha(classificationAlpha) end
-        if bigDefensiveRow then bigDefensiveRow:SetAlpha(classificationAlpha) end
-        if externalDefensiveRow then externalDefensiveRow:SetAlpha(classificationAlpha) end
-    end
-
-    local filterModeDropdown = gui:CreateFormDropdown(filterCard.frame, nil, FILTER_MODE_OPTIONS, "filterMode", auras, function()
-        refresh()
-        UpdateFilterRows()
-    end, {
-        description = "Choose how buffs are filtered: off shows everything and classification only shows the categories selected below.",
-    })
-    filterModeRow = optionsAPI.BuildSettingRow(filterCard.frame, "Filter Mode", filterModeDropdown)
-    local onlyMineCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "buffFilterOnlyMine", auras, refresh, {
-        description = "Only show buffs cast by you.",
-    })
-    onlyMineRow = optionsAPI.BuildSettingRow(filterCard.frame, "Only My Buffs", onlyMineCheckbox)
-    filterCard.AddRow(filterModeRow, onlyMineRow)
-
-    local hidePermanentCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "buffHidePermanent", auras, refresh, {
-        description = "Hide buffs with no remaining duration.",
-    })
-    hidePermanentRow = optionsAPI.BuildSettingRow(filterCard.frame, "Hide Permanent Buffs", hidePermanentCheckbox)
-    local dedupeCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "buffDeduplicateDefensives", auras, refresh, {
-        description = "Hide buff icons that are already shown by the defensive indicator or an aura indicator.",
-    })
-    dedupeRow = optionsAPI.BuildSettingRow(filterCard.frame, "Deduplicate Defensives/Indicators", dedupeCheckbox)
-    filterCard.AddRow(hidePermanentRow, dedupeRow)
-
-    local raidCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "raid", buffClassifications, refresh, {
-        description = "Include buffs flagged by Blizzard as raid-relevant.",
-    })
-    raidRow = optionsAPI.BuildSettingRow(filterCard.frame, "Raid", raidCheckbox)
-    local raidInCombatCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "raidInCombat", buffClassifications, refresh, {
-        description = "Include buffs flagged as raid-relevant only while in combat.",
-    })
-    raidInCombatRow = optionsAPI.BuildSettingRow(filterCard.frame, "Raid (In Combat)", raidInCombatCheckbox)
-    filterCard.AddRow(raidRow, raidInCombatRow)
-
-    local cancelableCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "cancelable", buffClassifications, refresh, {
-        description = "Include buffs you can right-click to cancel.",
-    })
-    cancelableRow = optionsAPI.BuildSettingRow(filterCard.frame, "Cancelable", cancelableCheckbox)
-    local notCancelableCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "notCancelable", buffClassifications, refresh, {
-        description = "Include buffs you cannot right-click to cancel, such as many external or NPC-applied buffs.",
-    })
-    notCancelableRow = optionsAPI.BuildSettingRow(filterCard.frame, "Not Cancelable", notCancelableCheckbox)
-    filterCard.AddRow(cancelableRow, notCancelableRow)
-
-    local importantCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "important", buffClassifications, refresh, {
-        description = "Include buffs flagged by Blizzard as important.",
-    })
-    importantRow = optionsAPI.BuildSettingRow(filterCard.frame, "Important", importantCheckbox)
-    local bigDefensiveCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "bigDefensive", buffClassifications, refresh, {
-        description = "Include major personal defensive buffs such as immunities and high-impact mitigation.",
-    })
-    bigDefensiveRow = optionsAPI.BuildSettingRow(filterCard.frame, "Big Defensive", bigDefensiveCheckbox)
-    filterCard.AddRow(importantRow, bigDefensiveRow)
-
-    local externalDefensiveCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "externalDefensive", buffClassifications, refresh, {
-        description = "Include externally-applied defensive buffs such as Pain Suppression or Ironbark.",
-    })
-    externalDefensiveRow = optionsAPI.BuildSettingRow(filterCard.frame, "External Defensive", externalDefensiveCheckbox)
-    filterCard.AddRow(externalDefensiveRow)
-
-    UpdateFilterRows()
-    builder.CloseCard(filterCard)
-
-    AppendSpellListBlock(
-        sectionHost,
-        builder,
-        ctx,
-        "Buff Blacklist",
-        "Blacklisted buffs are always hidden regardless of filter mode.",
-        buffBlacklist,
-        SpellList.GetBuffBlacklistPresets and SpellList.GetBuffBlacklistPresets() or nil,
-        refresh
-    )
-
-    return builder.Height()
+    return options, currentSpecID
 end
 
-local function RenderDebuffsSection(sectionHost, ctx)
-    local gui = GetGUI()
-    local optionsAPI = GetOptionsAPI()
-    local groupFrames = ResolveGroupFramesDB(ctx and ctx.options and ctx.options.contextMode)
-    if not gui or not optionsAPI or not groupFrames then
-        return nil
+-- Persist the selected spec bucket across tab repaints (the embedded editor only
+-- rebuilds on a full section repaint, so spec switches go through ScheduleTabRepaint).
+local function GetSelectedBucket(ctx, contextMode, defaultBucket)
+    local state = ctx and ctx.state
+    if type(state) ~= "table" then
+        return defaultBucket
     end
-
-    local auras = EnsureSubTable(groupFrames.contextDB, "auras")
-    if not auras then
-        return nil
+    local store = state._aurasSelectedBucket
+    if type(store) ~= "table" then
+        store = {}
+        state._aurasSelectedBucket = store
     end
-    local debuffClassifications = EnsureSubTable(auras, "debuffClassifications")
-    local debuffBlacklist = EnsureSubTable(auras, "debuffBlacklist")
-    if not debuffClassifications or not debuffBlacklist then
-        return nil
+    if store[contextMode] == nil then
+        store[contextMode] = defaultBucket
     end
-
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("debuffs"))
-    if not builder then
-        return nil
-    end
-
-    local refresh = function()
-        RefreshGroupFrames(groupFrames.contextMode)
-    end
-
-    builder.Header("Debuffs")
-    builder.Description("Debuff icon placement and filtering for " .. groupFrames.sourceLabel .. " group frames.")
-
-    local debuffsCard = builder.Card()
-    local maxDebuffsRow, iconSizeRow, hideSwipeRow, reverseSwipeRow, anchorRow, growDirectionRow, spacingRow, xOffsetRow, yOffsetRow
-    local updateDebuffDurationRows
-    local UpdateFilterRows
-    local function UpdateDebuffRows()
-        local showDebuffs = auras.showDebuffs == true
-        local showAlpha = showDebuffs and 1.0 or 0.4
-        if maxDebuffsRow then maxDebuffsRow:SetAlpha(showAlpha) end
-        if iconSizeRow then iconSizeRow:SetAlpha(showAlpha) end
-        if hideSwipeRow then hideSwipeRow:SetAlpha(showAlpha) end
-        if reverseSwipeRow then
-            reverseSwipeRow:SetAlpha((showDebuffs and not auras.debuffHideSwipe) and 1.0 or 0.4)
-        end
-        if anchorRow then anchorRow:SetAlpha(showAlpha) end
-        if growDirectionRow then growDirectionRow:SetAlpha(showAlpha) end
-        if spacingRow then spacingRow:SetAlpha(showAlpha) end
-        if xOffsetRow then xOffsetRow:SetAlpha(showAlpha) end
-        if yOffsetRow then yOffsetRow:SetAlpha(showAlpha) end
-        if updateDebuffDurationRows then updateDebuffDurationRows() end
-    end
-
-    local showDebuffsCheckbox = gui:CreateFormCheckbox(debuffsCard.frame, nil, "showDebuffs", auras, function()
-        refresh()
-        UpdateDebuffRows()
-        if UpdateFilterRows then
-            UpdateFilterRows()
-        end
-    end, {
-        description = "Show debuff icons on this unit frame.",
-    })
-    local maxDebuffsSlider = gui:CreateFormSlider(debuffsCard.frame, nil, 0, 8, 1, "maxDebuffs", auras, refresh, { deferOnDrag = true }, {
-        description = "Hard cap on how many debuff icons this frame displays at once.",
-    })
-    maxDebuffsRow = optionsAPI.BuildSettingRow(debuffsCard.frame, "Max Debuffs", maxDebuffsSlider)
-    debuffsCard.AddRow(
-        optionsAPI.BuildSettingRow(debuffsCard.frame, "Show Debuffs", showDebuffsCheckbox),
-        maxDebuffsRow
-    )
-
-    local iconSizeSlider = gui:CreateFormSlider(debuffsCard.frame, nil, 8, 32, 1, "debuffIconSize", auras, refresh, { deferOnDrag = true }, {
-        description = "Pixel size of each debuff icon.",
-    })
-    iconSizeRow = optionsAPI.BuildSettingRow(debuffsCard.frame, "Icon Size", iconSizeSlider)
-    local hideSwipeCheckbox = gui:CreateFormCheckbox(debuffsCard.frame, nil, "debuffHideSwipe", auras, function()
-        refresh()
-        UpdateDebuffRows()
-    end, {
-        description = "Hide the cooldown swipe animation drawn over debuff icons.",
-    })
-    hideSwipeRow = optionsAPI.BuildSettingRow(debuffsCard.frame, "Hide Duration Swipe", hideSwipeCheckbox)
-    debuffsCard.AddRow(iconSizeRow, hideSwipeRow)
-
-    updateDebuffDurationRows = AddAuraDurationTextRows(
-        debuffsCard,
-        gui,
-        optionsAPI,
-        auras,
-        "debuff",
-        "Debuff",
-        refresh,
-        function() return auras.showDebuffs == true end
-    )
-
-    local reverseSwipeCheckbox = gui:CreateFormCheckbox(debuffsCard.frame, nil, "debuffReverseSwipe", auras, refresh, {
-        description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as time passes.",
-    })
-    reverseSwipeRow = optionsAPI.BuildSettingRow(debuffsCard.frame, "Reverse Swipe", reverseSwipeCheckbox)
-    local anchorDropdown = gui:CreateFormDropdown(debuffsCard.frame, nil, NINE_POINT_OPTIONS, "debuffAnchor", auras, refresh, {
-        description = "Which corner of the frame the first debuff icon is anchored to.",
-    })
-    anchorRow = optionsAPI.BuildSettingRow(debuffsCard.frame, "Anchor", anchorDropdown)
-    debuffsCard.AddRow(reverseSwipeRow, anchorRow)
-
-    local growDirectionDropdown = gui:CreateFormDropdown(debuffsCard.frame, nil, AURA_GROW_OPTIONS, "debuffGrowDirection", auras, refresh, {
-        description = "Direction additional debuff icons are added in after the first.",
-    })
-    growDirectionRow = optionsAPI.BuildSettingRow(debuffsCard.frame, "Grow Direction", growDirectionDropdown)
-    local spacingSlider = gui:CreateFormSlider(debuffsCard.frame, nil, 0, 8, 1, "debuffSpacing", auras, refresh, { deferOnDrag = true }, {
-        description = "Pixel gap between adjacent debuff icons.",
-    })
-    spacingRow = optionsAPI.BuildSettingRow(debuffsCard.frame, "Spacing", spacingSlider)
-    debuffsCard.AddRow(growDirectionRow, spacingRow)
-
-    local xOffsetSlider = gui:CreateFormSlider(debuffsCard.frame, nil, -100, 100, 1, "debuffOffsetX", auras, refresh, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the debuff block from its anchor corner.",
-    })
-    xOffsetRow = optionsAPI.BuildSettingRow(debuffsCard.frame, "X Offset", xOffsetSlider)
-    local yOffsetSlider = gui:CreateFormSlider(debuffsCard.frame, nil, -100, 100, 1, "debuffOffsetY", auras, refresh, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the debuff block from its anchor corner.",
-    })
-    yOffsetRow = optionsAPI.BuildSettingRow(debuffsCard.frame, "Y Offset", yOffsetSlider)
-    debuffsCard.AddRow(xOffsetRow, yOffsetRow)
-
-    UpdateDebuffRows()
-    builder.CloseCard(debuffsCard)
-
-    builder.Spacer(6)
-    builder.Header("Debuff Filtering")
-    local filterCard = builder.Card()
-    local filterModeRow, raidRow, raidInCombatRow, crowdControlRow, importantRow
-    UpdateFilterRows = function()
-        local showDebuffs = auras.showDebuffs == true
-        local showAlpha = showDebuffs and 1.0 or 0.4
-        local classificationAlpha = (showDebuffs and (auras.filterMode or "off") == "classification") and 1.0 or 0.4
-        if filterModeRow then filterModeRow:SetAlpha(showAlpha) end
-        if raidRow then raidRow:SetAlpha(classificationAlpha) end
-        if raidInCombatRow then raidInCombatRow:SetAlpha(classificationAlpha) end
-        if crowdControlRow then crowdControlRow:SetAlpha(classificationAlpha) end
-        if importantRow then importantRow:SetAlpha(classificationAlpha) end
-    end
-
-    local filterModeDropdown = gui:CreateFormDropdown(filterCard.frame, nil, FILTER_MODE_OPTIONS, "filterMode", auras, function()
-        refresh()
-        UpdateFilterRows()
-    end, {
-        description = "Choose how debuffs are filtered: off shows everything and classification only shows the categories selected below.",
-    })
-    filterModeRow = optionsAPI.BuildSettingRow(filterCard.frame, "Filter Mode", filterModeDropdown)
-    filterCard.AddRow(filterModeRow)
-
-    local raidCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "raid", debuffClassifications, refresh, {
-        description = "Include debuffs flagged by Blizzard as raid-relevant.",
-    })
-    raidRow = optionsAPI.BuildSettingRow(filterCard.frame, "Raid", raidCheckbox)
-    local raidInCombatCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "raidInCombat", debuffClassifications, refresh, {
-        description = "Include debuffs flagged as raid-relevant only while in combat.",
-    })
-    raidInCombatRow = optionsAPI.BuildSettingRow(filterCard.frame, "Raid (In Combat)", raidInCombatCheckbox)
-    filterCard.AddRow(raidRow, raidInCombatRow)
-
-    local crowdControlCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "crowdControl", debuffClassifications, refresh, {
-        description = "Include crowd-control debuffs (stuns, fears, roots, silences, etc.).",
-    })
-    crowdControlRow = optionsAPI.BuildSettingRow(filterCard.frame, "Crowd Control", crowdControlCheckbox)
-    local importantCheckbox = gui:CreateFormCheckbox(filterCard.frame, nil, "important", debuffClassifications, refresh, {
-        description = "Include debuffs flagged by Blizzard as important.",
-    })
-    importantRow = optionsAPI.BuildSettingRow(filterCard.frame, "Important", importantCheckbox)
-    filterCard.AddRow(crowdControlRow, importantRow)
-
-    UpdateFilterRows()
-    builder.CloseCard(filterCard)
-
-    AppendSpellListBlock(
-        sectionHost,
-        builder,
-        ctx,
-        "Debuff Blacklist",
-        "Blacklisted debuffs are always hidden regardless of filter mode.",
-        debuffBlacklist,
-        SpellList.GetDebuffBlacklistPresets and SpellList.GetDebuffBlacklistPresets() or nil,
-        refresh
-    )
-
-    return builder.Height()
+    return store[contextMode]
 end
 
-local function RenderPinnedAurasSection(sectionHost, ctx)
-    local gui = GetGUI()
-    local optionsAPI = GetOptionsAPI()
-    local groupFrames = ResolveGroupFramesDB(ctx and ctx.options and ctx.options.contextMode)
-    if not gui or not optionsAPI or not groupFrames then
-        return nil
+local function SetSelectedBucket(ctx, contextMode, bucketKey)
+    local state = ctx and ctx.state
+    if type(state) ~= "table" then
+        return
     end
-    if not PinnedAurasEditor or type(PinnedAurasEditor.RenderSpellSlots) ~= "function" then
-        return RenderUnavailableLabel(sectionHost, "Pinned aura settings unavailable.")
+    local store = state._aurasSelectedBucket
+    if type(store) ~= "table" then
+        store = {}
+        state._aurasSelectedBucket = store
     end
-
-    local pinnedAuras = EnsureSubTable(groupFrames.contextDB, "pinnedAuras")
-    if not pinnedAuras then
-        return nil
-    end
-    if type(pinnedAuras.specSlots) ~= "table" then
-        pinnedAuras.specSlots = {}
-    end
-
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("pinnedAuras"))
-    if not builder then
-        return nil
-    end
-
-    local refresh = function()
-        RefreshGroupFrames(groupFrames.contextMode)
-    end
-
-    builder.Header("Pinned Auras")
-    builder.Description("Per-spec aura indicators anchored to positions on " .. groupFrames.sourceLabel .. " group frames.")
-
-    local card = builder.Card()
-    local slotSizeRow, edgeInsetRow, showSwipeRow, reverseSwipeRow
-    local function UpdatePinnedRows()
-        local enabled = pinnedAuras.enabled == true
-        if slotSizeRow then slotSizeRow:SetAlpha(enabled and 1.0 or 0.4) end
-        if edgeInsetRow then edgeInsetRow:SetAlpha(enabled and 1.0 or 0.4) end
-        if showSwipeRow then showSwipeRow:SetAlpha(enabled and 1.0 or 0.4) end
-        if reverseSwipeRow then
-            reverseSwipeRow:SetAlpha((enabled and pinnedAuras.showSwipe) and 1.0 or 0.4)
-        end
-    end
-
-    local enableCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", pinnedAuras, function()
-        refresh()
-        UpdatePinnedRows()
-    end, {
-        description = "Enable per-spec pinned aura slots on group frames.",
-    })
-    local slotSizeSlider = gui:CreateFormSlider(card.frame, nil, 4, 20, 1, "slotSize", pinnedAuras, refresh, { deferOnDrag = true }, {
-        description = "Pixel size of each pinned aura slot.",
-    })
-    slotSizeRow = optionsAPI.BuildSettingRow(card.frame, "Slot Size", slotSizeSlider)
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, "Enable Pinned Auras", enableCheckbox),
-        slotSizeRow
-    )
-
-    local edgeInsetSlider = gui:CreateFormSlider(card.frame, nil, 0, 10, 1, "edgeInset", pinnedAuras, refresh, { deferOnDrag = true }, {
-        description = "Pixel inset from the frame edge when placing pinned aura slots.",
-    })
-    edgeInsetRow = optionsAPI.BuildSettingRow(card.frame, "Edge Inset", edgeInsetSlider)
-    local showSwipeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showSwipe", pinnedAuras, function()
-        refresh()
-        UpdatePinnedRows()
-    end, {
-        description = "Show the cooldown swipe animation over pinned aura slots.",
-    })
-    showSwipeRow = optionsAPI.BuildSettingRow(card.frame, "Show Cooldown Swipe", showSwipeCheckbox)
-    card.AddRow(edgeInsetRow, showSwipeRow)
-
-    local reverseSwipeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "reverseSwipe", pinnedAuras, refresh, {
-        description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as the aura ticks down.",
-    })
-    reverseSwipeRow = optionsAPI.BuildSettingRow(card.frame, "Reverse Swipe", reverseSwipeCheckbox)
-    card.AddRow(reverseSwipeRow)
-
-    UpdatePinnedRows()
-    builder.CloseCard(card)
-
-    builder.Spacer(6)
-    builder.Header("Spell Slots")
-    builder.Description("Add spec-specific pinned spells and assign each one a dedicated anchor.")
-
-    RenderEmbeddedEditorSection(sectionHost, builder, function(editorHost)
-        return PinnedAurasEditor.RenderSpellSlots(editorHost, pinnedAuras, function()
-            refresh()
-            ScheduleTabRepaint(ctx)
-        end)
-    end, {
-        minHeight = 1,
-    })
-
-    return builder.Height()
+    store[contextMode] = bucketKey
 end
 
-local function RenderAuraIndicatorsSection(sectionHost, ctx)
+local function RenderAurasSection(sectionHost, ctx)
     local gui = GetGUI()
     local optionsAPI = GetOptionsAPI()
     local groupFrames = ResolveGroupFramesDB(ctx and ctx.options and ctx.options.contextMode)
     if not gui or not optionsAPI or not groupFrames then
         return nil
     end
-    if not AuraIndicatorsEditor or type(AuraIndicatorsEditor.RenderTrackedAuras) ~= "function" then
+    if not AurasEditor or type(AurasEditor.RenderAuras) ~= "function" then
         return RenderUnavailableLabel(sectionHost, "Aura settings unavailable.")
     end
 
-    local auraIndicators = EnsureSubTable(groupFrames.contextDB, "auraIndicators")
-    if not auraIndicators then
+    local auras = EnsureSubTable(groupFrames.contextDB, "auras")
+    if not auras then
         return nil
     end
-    local normalizeAuraIndicators = ns.Helpers and ns.Helpers.NormalizeAuraIndicatorConfig
-    if normalizeAuraIndicators then
-        normalizeAuraIndicators(auraIndicators)
+    -- The v46 migration + defaults guarantee auras.elements; guard anyway so a
+    -- hand-edited or partial profile cannot nil-index the editor.
+    if type(auras.elements) ~= "table" then
+        auras.elements = {}
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("auraIndicators"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("auras"))
     if not builder then
         return nil
     end
 
     local refresh = function()
-        if normalizeAuraIndicators then
-            normalizeAuraIndicators(auraIndicators)
-        end
         RefreshGroupFrames(groupFrames.contextMode)
     end
 
     builder.Header("Auras")
-    builder.Description("Track specific buffs and debuffs on " .. groupFrames.sourceLabel .. " group frames as icons, bars, or health-bar tints.")
+    builder.Description("Buff/debuff strips and tracked auras on " .. groupFrames.sourceLabel
+        .. " group frames. Each element is configured per spec; the All Specs bucket applies everywhere.")
 
-    local defaultsCard = builder.Card()
-    local iconSizeRow, maxIndicatorsRow, hideSwipeRow, reverseSwipeRow, anchorRow, growDirectionRow, spacingRow, xOffsetRow, yOffsetRow
-    local function UpdateDefaultRows()
-        local enabled = auraIndicators.enabled == true
-        local alpha = enabled and 1.0 or 0.4
-        if iconSizeRow then iconSizeRow:SetAlpha(alpha) end
-        if maxIndicatorsRow then maxIndicatorsRow:SetAlpha(alpha) end
-        if hideSwipeRow then hideSwipeRow:SetAlpha(alpha) end
-        if reverseSwipeRow then
-            reverseSwipeRow:SetAlpha((enabled and not auraIndicators.hideSwipe) and 1.0 or 0.4)
+    local specOptions, currentSpecID = BuildSpecBucketOptions()
+    local selectedBucket = GetSelectedBucket(ctx, groupFrames.contextMode, currentSpecID or "*")
+    -- If the persisted spec is no longer one of the player's specs (or there are
+    -- no specs yet), fall back to All Specs so the editor always has a bucket.
+    local validBucket = false
+    for _, option in ipairs(specOptions) do
+        if option.value == selectedBucket then
+            validBucket = true
+            break
         end
-        if anchorRow then anchorRow:SetAlpha(alpha) end
-        if growDirectionRow then growDirectionRow:SetAlpha(alpha) end
-        if spacingRow then spacingRow:SetAlpha(alpha) end
-        if xOffsetRow then xOffsetRow:SetAlpha(alpha) end
-        if yOffsetRow then yOffsetRow:SetAlpha(alpha) end
+    end
+    if not validBucket then
+        selectedBucket = "*"
+        SetSelectedBucket(ctx, groupFrames.contextMode, selectedBucket)
     end
 
-    local enableCheckbox = gui:CreateFormCheckbox(defaultsCard.frame, nil, "enabled", auraIndicators, function()
-        refresh()
-        UpdateDefaultRows()
-    end, {
-        description = "Track specific buffs/debuffs and display them as icons, bars, or health-bar tints on this frame.",
+    local card = builder.Card()
+    local enableCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", auras, refresh, {
+        description = "Master switch for all aura strips and tracked auras on these frames.",
     })
-    local iconSizeSlider = gui:CreateFormSlider(defaultsCard.frame, nil, 8, 32, 1, "iconSize", auraIndicators, refresh, { deferOnDrag = true }, {
-        description = "Pixel size of each aura-indicator icon in the shared icon strip.",
+    local specDropdown = gui:CreateFormDropdown(card.frame, nil, specOptions, nil, nil, function(value)
+        SetSelectedBucket(ctx, groupFrames.contextMode, value)
+        ScheduleTabRepaint(ctx)
+    end, nil, {
+        description = "Choose which spec bucket to edit. \"All Specs\" elements show on every spec; a specific spec adds elements only on that spec.",
     })
-    iconSizeRow = optionsAPI.BuildSettingRow(defaultsCard.frame, "Icon Size", iconSizeSlider)
-    defaultsCard.AddRow(
-        optionsAPI.BuildSettingRow(defaultsCard.frame, "Enable Aura Indicators", enableCheckbox),
-        iconSizeRow
+    if specDropdown.SetValue then
+        specDropdown:SetValue(selectedBucket, true)
+    end
+    card.AddRow(
+        optionsAPI.BuildSettingRow(card.frame, "Enable Auras", enableCheckbox),
+        optionsAPI.BuildSettingRow(card.frame, "Editing Spec", specDropdown)
     )
-
-    local maxIndicatorsSlider = gui:CreateFormSlider(defaultsCard.frame, nil, 1, 10, 1, "maxIndicators", auraIndicators, refresh, { deferOnDrag = true }, {
-        description = "Hard cap on how many aura-indicator icons this frame displays in the shared icon strip.",
-    })
-    maxIndicatorsRow = optionsAPI.BuildSettingRow(defaultsCard.frame, "Max Indicators", maxIndicatorsSlider)
-    local hideSwipeCheckbox = gui:CreateFormCheckbox(defaultsCard.frame, nil, "hideSwipe", auraIndicators, function()
-        refresh()
-        UpdateDefaultRows()
-    end, {
-        description = "Hide the clockwise cooldown swipe animation drawn over aura-indicator icons.",
-    })
-    hideSwipeRow = optionsAPI.BuildSettingRow(defaultsCard.frame, "Hide Duration Swipe", hideSwipeCheckbox)
-    defaultsCard.AddRow(maxIndicatorsRow, hideSwipeRow)
-
-    local reverseSwipeCheckbox = gui:CreateFormCheckbox(defaultsCard.frame, nil, "reverseSwipe", auraIndicators, refresh, {
-        description = "Reverse the swipe direction so the shaded portion grows instead of shrinks as the aura ticks down.",
-    })
-    reverseSwipeRow = optionsAPI.BuildSettingRow(defaultsCard.frame, "Reverse Swipe", reverseSwipeCheckbox)
-    local anchorDropdown = gui:CreateFormDropdown(defaultsCard.frame, nil, NINE_POINT_OPTIONS, "anchor", auraIndicators, refresh, {
-        description = "Where on the frame the aura-indicator icon strip is anchored.",
-    })
-    anchorRow = optionsAPI.BuildSettingRow(defaultsCard.frame, "Anchor", anchorDropdown)
-    defaultsCard.AddRow(reverseSwipeRow, anchorRow)
-
-    local growDirectionDropdown = gui:CreateFormDropdown(defaultsCard.frame, nil, AURA_GROW_OPTIONS, "growDirection", auraIndicators, refresh, {
-        description = "Direction additional aura-indicator icons are added in after the first.",
-    })
-    growDirectionRow = optionsAPI.BuildSettingRow(defaultsCard.frame, "Grow Direction", growDirectionDropdown)
-    local spacingSlider = gui:CreateFormSlider(defaultsCard.frame, nil, 0, 8, 1, "spacing", auraIndicators, refresh, { deferOnDrag = true }, {
-        description = "Pixel gap between adjacent aura-indicator icons.",
-    })
-    spacingRow = optionsAPI.BuildSettingRow(defaultsCard.frame, "Spacing", spacingSlider)
-    defaultsCard.AddRow(growDirectionRow, spacingRow)
-
-    local xOffsetSlider = gui:CreateFormSlider(defaultsCard.frame, nil, -100, 100, 1, "anchorOffsetX", auraIndicators, refresh, { deferOnDrag = true }, {
-        description = "Horizontal pixel offset for the aura-indicator icon strip from its anchor.",
-    })
-    xOffsetRow = optionsAPI.BuildSettingRow(defaultsCard.frame, "X Offset", xOffsetSlider)
-    local yOffsetSlider = gui:CreateFormSlider(defaultsCard.frame, nil, -100, 100, 1, "anchorOffsetY", auraIndicators, refresh, { deferOnDrag = true }, {
-        description = "Vertical pixel offset for the aura-indicator icon strip from its anchor.",
-    })
-    yOffsetRow = optionsAPI.BuildSettingRow(defaultsCard.frame, "Y Offset", yOffsetSlider)
-    defaultsCard.AddRow(xOffsetRow, yOffsetRow)
-
-    UpdateDefaultRows()
-    builder.CloseCard(defaultsCard)
+    builder.CloseCard(card)
 
     builder.Spacer(6)
-    builder.Header("Tracked Auras")
+    builder.Header("Elements")
 
     RenderEmbeddedEditorSection(sectionHost, builder, function(editorHost)
-        return AuraIndicatorsEditor.RenderTrackedAuras(editorHost, auraIndicators, function()
+        return AurasEditor.RenderAuras(editorHost, auras, selectedBucket, function()
             refresh()
             ScheduleTabRepaint(ctx)
         end)
@@ -2996,20 +2458,6 @@ local NAME_TAB_FEATURE = CreateSingleSectionTabFeature(
     RenderNameSection
 )
 
-local BUFFS_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesBuffsTab",
-    "buffs",
-    140,
-    RenderBuffsSection
-)
-
-local DEBUFFS_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesDebuffsTab",
-    "debuffs",
-    140,
-    RenderDebuffsSection
-)
-
 local INDICATORS_TAB_FEATURE = CreateSingleSectionTabFeature(
     "groupFramesIndicatorsTab",
     "indicators",
@@ -3017,18 +2465,11 @@ local INDICATORS_TAB_FEATURE = CreateSingleSectionTabFeature(
     RenderIndicatorsSection
 )
 
-local AURA_INDICATORS_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesAuraIndicatorsTab",
-    "auraIndicators",
-    140,
-    RenderAuraIndicatorsSection
-)
-
-local PINNED_AURAS_TAB_FEATURE = CreateSingleSectionTabFeature(
-    "groupFramesPinnedAurasTab",
-    "pinnedAuras",
-    140,
-    RenderPinnedAurasSection
+local AURAS_TAB_FEATURE = CreateSingleSectionTabFeature(
+    "groupFramesAurasTab",
+    "auras",
+    180,
+    RenderAurasSection
 )
 
 local PRIVATE_AURAS_TAB_FEATURE = CreateSingleSectionTabFeature(
@@ -3117,24 +2558,12 @@ function GroupFramesSchema.RenderNameTab(host, contextMode)
     return RenderFeatureTab(NAME_TAB_FEATURE, host, contextMode)
 end
 
-function GroupFramesSchema.RenderBuffsTab(host, contextMode)
-    return RenderFeatureTab(BUFFS_TAB_FEATURE, host, contextMode)
-end
-
-function GroupFramesSchema.RenderDebuffsTab(host, contextMode)
-    return RenderFeatureTab(DEBUFFS_TAB_FEATURE, host, contextMode)
-end
-
 function GroupFramesSchema.RenderIndicatorsTab(host, contextMode)
     return RenderFeatureTab(INDICATORS_TAB_FEATURE, host, contextMode)
 end
 
-function GroupFramesSchema.RenderAuraIndicatorsTab(host, contextMode)
-    return RenderFeatureTab(AURA_INDICATORS_TAB_FEATURE, host, contextMode)
-end
-
-function GroupFramesSchema.RenderPinnedAurasTab(host, contextMode)
-    return RenderFeatureTab(PINNED_AURAS_TAB_FEATURE, host, contextMode)
+function GroupFramesSchema.RenderAurasTab(host, contextMode)
+    return RenderFeatureTab(AURAS_TAB_FEATURE, host, contextMode)
 end
 
 function GroupFramesSchema.RenderPrivateAurasTab(host, contextMode)

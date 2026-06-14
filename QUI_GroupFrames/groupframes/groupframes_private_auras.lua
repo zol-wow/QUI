@@ -188,29 +188,9 @@ local function ReleaseContainer(container)
     end
 end
 
---- Calculate position offset for a slot index
---- @param index number 1-based slot index
---- @param iconSize number icon pixel size
---- @param spacing number pixel spacing between icons
---- @param direction string "LEFT", "RIGHT", "UP", or "DOWN"
---- @return number offsetX, number offsetY
-local function CalculateSlotOffset(index, iconSize, spacing, direction, totalCount)
-    local step = (index - 1) * (iconSize + spacing)
-    if direction == "RIGHT" then
-        return step, 0
-    elseif direction == "LEFT" then
-        return -step, 0
-    elseif direction == "CENTER" then
-        local n = totalCount or 1
-        local totalSpan = n * iconSize + math.max(n - 1, 0) * spacing
-        return step - totalSpan / 2, 0
-    elseif direction == "UP" then
-        return 0, step
-    elseif direction == "DOWN" then
-        return 0, -step
-    end
-    return step, 0 -- fallback to RIGHT
-end
+-- Shared with groupframes_auras/indicators via the IconLayout module
+-- (group_frames_icon_layout.lua, loaded first in the .toc).
+local CalculateSlotOffset = ns.QUI_GroupFrameIconLayout.CalculateSlotOffset
 
 --- Register the private-aura anchor for a single aura slot.
 --- The client renders the icon, cooldown spiral, stack count and duration into
@@ -316,6 +296,22 @@ local function SchedulePrivateAuraSwipeReverse(frame, state, reverse)
     end)
 end
 
+-- Shared slot-layout derivation: pulls maxSlots/iconSize/spacing/direction/
+-- anchor/offsets from settings and applies the BOTTOM-anchor bottom-pad bump.
+-- Used by both the live setup path and the test/preview path so their slot
+-- placement can never drift.
+local function GetPrivateAuraLayout(settings, frame)
+    local maxSlots = settings.maxPerFrame or 2
+    local iconSize = settings.iconSize or 20
+    local spacingVal = settings.spacing or 2
+    local direction = settings.growDirection or "RIGHT"
+    local anchor = settings.anchor or "RIGHT"
+    local offsetX = settings.anchorOffsetX or -2
+    local offsetY = settings.anchorOffsetY or 0
+    if anchor:find("BOTTOM") then offsetY = offsetY + (frame._bottomPad or 0) end
+    return maxSlots, iconSize, spacingVal, direction, anchor, offsetX, offsetY
+end
+
 ---------------------------------------------------------------------------
 -- CORE: Setup private auras on a single frame
 ---------------------------------------------------------------------------
@@ -338,15 +334,9 @@ local function SetupPrivateAuras(frame)
     -- Clear any stale anchors first
     RemoveAllAnchors(state)
 
-    local maxSlots = settings.maxPerFrame or 2
-    local iconSize = settings.iconSize or 20
-    local spacingVal = settings.spacing or 2
-    local direction = settings.growDirection or "RIGHT"
-    local anchor = settings.anchor or "RIGHT"
-    local offsetX = settings.anchorOffsetX or -2
-    local offsetY = settings.anchorOffsetY or 0
+    local maxSlots, iconSize, spacingVal, direction, anchor, offsetX, offsetY =
+        GetPrivateAuraLayout(settings, frame)
     local reverseSwipe = settings.reverseSwipe == true
-    if anchor:find("BOTTOM") then offsetY = offsetY + (frame._bottomPad or 0) end
 
     -- textScale shrinks the (un-sizable) Blizzard Count/Duration text by scaling
     -- the whole container; RegisterAnchor divides the icon/border by it so they
@@ -571,14 +561,8 @@ function QUI_GFPA:SetupTestFrame(frame)
         testPlaceholders[frame] = {}
     end
 
-    local maxSlots = settings.maxPerFrame or 2
-    local iconSize = settings.iconSize or 20
-    local spacingVal = settings.spacing or 2
-    local direction = settings.growDirection or "RIGHT"
-    local anchor = settings.anchor or "RIGHT"
-    local offsetX = settings.anchorOffsetX or -2
-    local offsetY = settings.anchorOffsetY or 0
-    if anchor:find("BOTTOM") then offsetY = offsetY + (frame._bottomPad or 0) end
+    local maxSlots, iconSize, spacingVal, direction, anchor, offsetX, offsetY =
+        GetPrivateAuraLayout(settings, frame)
 
     for i = 1, maxSlots do
         local icon = CreatePlaceholderIcon(frame, iconSize)

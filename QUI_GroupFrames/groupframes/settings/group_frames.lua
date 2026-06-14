@@ -29,25 +29,6 @@ local function ResolveContextMode(lookupKey)
     return LOOKUP_TO_CONTEXT[lookupKey]
 end
 
-local function AppendDrawerSection(host, topOffset, render)
-    if not host or type(render) ~= "function" then
-        return 0
-    end
-
-    local sectionHost = CreateFrame("Frame", nil, host)
-    sectionHost:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -topOffset)
-    sectionHost:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -topOffset)
-    sectionHost:SetHeight(1)
-
-    local height = render(sectionHost)
-    if type(height) ~= "number" or height <= 0 then
-        height = sectionHost.GetHeight and sectionHost:GetHeight() or 1
-    end
-    height = math.max(1, height)
-    sectionHost:SetHeight(height)
-    return height
-end
-
 local function AppendLayoutRouteControls(host, topOffset, routeKey)
     local U = ns.QUI_LayoutMode_Utils
     if not host or not U or type(U.BuildPositionCollapsible) ~= "function"

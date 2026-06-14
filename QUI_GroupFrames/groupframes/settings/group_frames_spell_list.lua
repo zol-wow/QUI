@@ -93,6 +93,10 @@ local function CreateMiniToggle(parent)
     return toggle
 end
 
+-- Exported so other group-frame editors (the unified Auras editor) can reuse the
+-- same pill toggle widget for per-row enable switches.
+GroupFrameSpellList.CreateMiniToggle = CreateMiniToggle
+
 local BUFF_BLACKLIST_PRESETS = {
     {
         name = "Raid Buffs",

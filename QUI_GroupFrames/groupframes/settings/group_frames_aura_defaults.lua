@@ -5,12 +5,12 @@ ns.QUI_GroupFramesAuraDefaults = AuraDefaults
 
 local FALLBACK_ICON = 134400
 
-local DANDERS_PRESETS = {
+local SPEC_AURA_PRESETS = {
     {
         name = "Restoration Druid",
         specID = 105,
         classFile = "DRUID",
-        source = "DandersFrames",
+        source = "Spec Defaults",
         spells = {
             { id = 774, name = "Rejuvenation", icon = 136081 },
             { id = 8936, name = "Regrowth", icon = 136085 },
@@ -26,7 +26,7 @@ local DANDERS_PRESETS = {
         name = "Restoration Shaman",
         specID = 264,
         classFile = "SHAMAN",
-        source = "DandersFrames",
+        source = "Spec Defaults",
         spells = {
             { id = 61295, name = "Riptide", icon = 252995 },
             { id = 383648, name = "Earth Shield", icon = 136089 },
@@ -40,7 +40,7 @@ local DANDERS_PRESETS = {
         name = "Holy Paladin",
         specID = 65,
         classFile = "PALADIN",
-        source = "DandersFrames",
+        source = "Spec Defaults",
         spells = {
             { id = 156910, name = "Beacon of Faith", icon = 1030095 },
             { id = 156322, name = "Eternal Flame", icon = 135433 },
@@ -58,7 +58,7 @@ local DANDERS_PRESETS = {
         name = "Discipline Priest",
         specID = 256,
         classFile = "PRIEST",
-        source = "DandersFrames",
+        source = "Spec Defaults",
         spells = {
             { id = 17, name = "Power Word: Shield", icon = 135940 },
             { id = 194384, name = "Atonement", icon = 458720 },
@@ -72,7 +72,7 @@ local DANDERS_PRESETS = {
         name = "Holy Priest",
         specID = 257,
         classFile = "PRIEST",
-        source = "DandersFrames",
+        source = "Spec Defaults",
         spells = {
             { id = 139, name = "Renew", icon = 135953 },
             { id = 77489, name = "Echo of Light", icon = 237537 },
@@ -85,7 +85,7 @@ local DANDERS_PRESETS = {
         name = "Mistweaver Monk",
         specID = 270,
         classFile = "MONK",
-        source = "DandersFrames",
+        source = "Spec Defaults",
         spells = {
             { id = 119611, name = "Renewing Mist", icon = 627487 },
             { id = 124682, name = "Enveloping Mist", icon = 775461 },
@@ -99,7 +99,7 @@ local DANDERS_PRESETS = {
         name = "Preservation Evoker",
         specID = 1468,
         classFile = "EVOKER",
-        source = "DandersFrames",
+        source = "Spec Defaults",
         spells = {
             { id = 364343, name = "Echo", icon = 4622456 },
             { id = 366155, name = "Reversion", icon = 4630467 },
@@ -117,7 +117,7 @@ local DANDERS_PRESETS = {
         name = "Augmentation Evoker",
         specID = 1473,
         classFile = "EVOKER",
-        source = "DandersFrames",
+        source = "Spec Defaults",
         spells = {
             { id = 410089, name = "Prescience", icon = 5199639 },
             { id = 413984, name = "Shifting Sands", icon = 5199633 },
@@ -132,7 +132,7 @@ local DANDERS_PRESETS = {
 }
 
 local SPEC_TO_PRESET = {}
-for _, preset in ipairs(DANDERS_PRESETS) do
+for _, preset in ipairs(SPEC_AURA_PRESETS) do
     SPEC_TO_PRESET[preset.specID] = preset
 end
 

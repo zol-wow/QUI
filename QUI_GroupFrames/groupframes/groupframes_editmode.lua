@@ -87,6 +87,145 @@ local function GetFakeHealthPct(index)
     return patterns[((index - 1) % #patterns) + 1]
 end
 
+-- Sample textures used to populate the unified aura element preview.
+local PREVIEW_ELEMENT_BUFF_ICONS = { 136034, 135940, 136081, 135932, 136063 }
+local PREVIEW_ELEMENT_DEBUFF_ICONS = { 136207, 136130, 136067, 135813, 136118 }
+
+-- Player active spec (mirrors the editor / the live render path) so the preview
+-- shows the same spec bucket the player is editing.
+local function GetPreviewSpecID()
+    local specIndex = GetSpecialization and GetSpecialization()
+    if specIndex and GetSpecializationInfo then
+        return (GetSpecializationInfo(specIndex))
+    end
+    return nil
+end
+
+-- Standalone preview of the unified aura element model: one representative
+-- visual per enabled element in the "*" + active-spec buckets, placed via the
+-- shared icon-layout helpers so it matches the live renderer's geometry.
+local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, px, texturePath)
+    local Model = ns.QUI_GroupFramesAuraModel
+    if not Model or not Model.ActiveElementsForSpec then return end
+    local IconLayout = ns.QUI_GroupFrameIconLayout
+    local elements = Model.ActiveElementsForSpec(auras, GetPreviewSpecID())
+    if not elements or #elements == 0 then return end
+
+    for _, element in ipairs(elements) do
+        local mode = element.mode
+        local displayType = element.displayType or "icon"
+
+        if mode == "filterStrip" or (mode == "tracked" and displayType == "icon") then
+            local harmful = (mode == "filterStrip") and element.auraType == "HARMFUL"
+            local sampleIcons = harmful and PREVIEW_ELEMENT_DEBUFF_ICONS or PREVIEW_ELEMENT_BUFF_ICONS
+            local borderR, borderG, borderB = (harmful and 0.8 or 0), (harmful and 0 or 0.6), 0
+            local iconSize = element.iconSize or 14
+            local growDir = element.growDirection or "RIGHT"
+            local spacing = element.spacing or 2
+            local anchor = element.anchor or "TOPLEFT"
+            local offX = element.offsetX or 0
+            local offY = element.offsetY or 0
+            if anchor:find("BOTTOM") then offY = offY + powerHeight end
+            -- Strip count: maxIcons (capped to the sample pool); tracked-icon
+            -- count: number of configured spells (capped). 0/nil = full sample.
+            local count
+            if mode == "filterStrip" then
+                count = element.maxIcons or 0
+                if count <= 0 then count = #sampleIcons end
+            else
+                count = element.spells and #element.spells or 1
+            end
+            count = math.min(count, #sampleIcons)
+            if count < 1 then count = 1 end
+
+            local iconAnchor = (IconLayout and IconLayout.GetIconAnchorForGrow
+                and IconLayout.GetIconAnchorForGrow(anchor, growDir)) or anchor
+            for i = 1, count do
+                local iconFrame = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+                iconFrame:SetSize(iconSize, iconSize)
+                iconFrame:SetFrameLevel(auraLevel)
+                local slotX, slotY = 0, 0
+                if IconLayout and IconLayout.CalculateSlotOffset then
+                    slotX, slotY = IconLayout.CalculateSlotOffset(i, iconSize, spacing, growDir, count)
+                else
+                    slotX = (i - 1) * (iconSize + spacing)
+                end
+                iconFrame:ClearAllPoints()
+                iconFrame:SetPoint(iconAnchor, frame, anchor, offX + slotX, offY + slotY)
+                local iconPx = QUICore.GetPixelSize and QUICore:GetPixelSize(iconFrame) or px
+                iconFrame:SetBackdrop({
+                    bgFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeFile = "Interface\\Buttons\\WHITE8x8",
+                    edgeSize = iconPx,
+                })
+                iconFrame:SetBackdropBorderColor(borderR, borderG, borderB, 1)
+                iconFrame:SetBackdropColor(0, 0, 0, 1)
+                local tex = iconFrame:CreateTexture(nil, "ARTWORK")
+                tex:SetPoint("TOPLEFT", iconPx, -iconPx)
+                tex:SetPoint("BOTTOMRIGHT", -iconPx, iconPx)
+                tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                tex:SetTexture(sampleIcons[((i - 1) % #sampleIcons) + 1])
+            end
+
+        elseif mode == "tracked" and displayType == "square" then
+            local size = element.iconSize or 8
+            local anchor = element.anchor or "TOPLEFT"
+            local offX = element.offsetX or 0
+            local offY = element.offsetY or 0
+            if anchor:find("BOTTOM") then offY = offY + powerHeight end
+            local color = element.color or { 0.5, 0.5, 0.5, 1 }
+            local sq = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+            sq:SetSize(size, size)
+            sq:SetFrameLevel(auraLevel)
+            sq:ClearAllPoints()
+            sq:SetPoint(anchor, frame, anchor, offX, offY)
+            local sqPx = QUICore.GetPixelSize and QUICore:GetPixelSize(sq) or px
+            sq:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = sqPx })
+            sq:SetBackdropBorderColor(0, 0, 0, 1)
+            local fill = sq:CreateTexture(nil, "ARTWORK")
+            fill:SetAllPoints()
+            fill:SetColorTexture(color[1] or 0.5, color[2] or 0.5, color[3] or 0.5, color[4] or 1)
+
+        elseif mode == "tracked" and displayType == "bar" then
+            local barCfg = element.bar or {}
+            local orientation = barCfg.orientation == "VERTICAL" and "VERTICAL" or "HORIZONTAL"
+            local thickness = math.max(1, barCfg.thickness or 4)
+            local length = math.max(1, barCfg.length or 40)
+            local width = orientation == "HORIZONTAL" and length or thickness
+            local height = orientation == "VERTICAL" and length or thickness
+            local anchor = barCfg.anchor or element.anchor or "BOTTOM"
+            local offX = barCfg.offsetX or element.offsetX or 0
+            local offY = barCfg.offsetY or element.offsetY or 0
+            if anchor:find("BOTTOM") then offY = offY + powerHeight end
+            local color = (barCfg.color) or element.color or { 0.2, 0.8, 0.2, 1 }
+            local bar = CreateFrame("StatusBar", nil, frame)
+            bar:SetSize(width, height)
+            bar:SetFrameLevel(auraLevel + 1)
+            bar:ClearAllPoints()
+            bar:SetPoint(anchor, frame, anchor, offX, offY)
+            bar:SetOrientation(orientation)
+            bar:SetStatusBarTexture(texturePath)
+            bar:SetMinMaxValues(0, 1)
+            bar:SetValue(0.66)
+            bar:SetStatusBarColor(color[1] or 0.2, color[2] or 0.8, color[3] or 0.2, color[4] or 1)
+            local bg = bar:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints()
+            bg:SetColorTexture(0, 0, 0, 0.28)
+
+        elseif mode == "tracked" and displayType == "healthTint" then
+            -- Health-tint preview: a translucent colored overlay across the
+            -- health bar (the live renderer animates this on the real bar).
+            local hb = frame.healthBar
+            if hb then
+                local color = element.color or { 0.2, 0.8, 0.2, 1 }
+                local tint = hb:CreateTexture(nil, "OVERLAY")
+                tint:SetAllPoints(hb)
+                tint:SetColorTexture(color[1] or 0.2, color[2] or 0.8, color[3] or 0.2, (color[4] or 1) * 0.4)
+            end
+        end
+    end
+end
+
 ---------------------------------------------------------------------------
 -- TEST MODE: Create fake frames for solo testing
 ---------------------------------------------------------------------------
@@ -220,18 +359,10 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
     local fontPath = LSM:Fetch("font", fontName) or "Fonts\\FRIZQT__.TTF"
     local fontOutline = general and general.fontOutline or "OUTLINE"
 
-    -- Anchor map for text positioning (two-point horizontal anchoring for proper justify)
-    local ANCHOR_MAP = {
-        LEFT       = { leftPoint = "LEFT",       rightPoint = "RIGHT",        justify = "LEFT",   justifyV = "MIDDLE" },
-        RIGHT      = { leftPoint = "LEFT",       rightPoint = "RIGHT",        justify = "RIGHT",  justifyV = "MIDDLE" },
-        CENTER     = { leftPoint = "LEFT",       rightPoint = "RIGHT",        justify = "CENTER", justifyV = "MIDDLE" },
-        TOPLEFT    = { leftPoint = "TOPLEFT",    rightPoint = "TOPRIGHT",     justify = "LEFT",   justifyV = "TOP" },
-        TOPRIGHT   = { leftPoint = "TOPLEFT",    rightPoint = "TOPRIGHT",     justify = "RIGHT",  justifyV = "TOP" },
-        TOP        = { leftPoint = "TOPLEFT",    rightPoint = "TOPRIGHT",     justify = "CENTER", justifyV = "TOP" },
-        BOTTOMLEFT = { leftPoint = "BOTTOMLEFT", rightPoint = "BOTTOMRIGHT",  justify = "LEFT",   justifyV = "BOTTOM" },
-        BOTTOMRIGHT= { leftPoint = "BOTTOMLEFT", rightPoint = "BOTTOMRIGHT",  justify = "RIGHT",  justifyV = "BOTTOM" },
-        BOTTOM     = { leftPoint = "BOTTOMLEFT", rightPoint = "BOTTOMRIGHT",  justify = "CENTER", justifyV = "BOTTOM" },
-    }
+    -- Anchor map for text positioning (two-point horizontal anchoring for proper
+    -- justify). Shared with the live frames via groupframes.lua so preview text
+    -- placement can't drift from real frames.
+    local ANCHOR_MAP = ns.QUI_GroupFrameTextAnchorMap
 
     -- Name text
     local nameSettings = vdb.name
@@ -327,14 +458,14 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
     -- Role icon
     local indSettings = vdb.indicators
     if indSettings and indSettings.showRoleIcon ~= false then
-        local ROLE_TOGGLE_KEY = { TANK = "showRoleTank", HEALER = "showRoleHealer", DAMAGER = "showRoleDPS" }
+        local ROLE_TOGGLE_KEY = ns.QUI_GroupFrameRoleToggleKey
         local toggleKey = ROLE_TOGGLE_KEY[role]
         if not toggleKey or indSettings[toggleKey] ~= false then
             local roleIcon = textFrame:CreateTexture(nil, "OVERLAY")
             roleIcon:SetSize(indSettings.roleIconSize or 12, indSettings.roleIconSize or 12)
             local roleAnchor = indSettings.roleIconAnchor or "TOPLEFT"
             roleIcon:SetPoint(roleAnchor, frame, roleAnchor, indSettings.roleIconOffsetX or 2, indSettings.roleIconOffsetY or -2)
-            local ROLE_ATLAS = { TANK = "roleicon-tiny-tank", HEALER = "roleicon-tiny-healer", DAMAGER = "roleicon-tiny-dps" }
+            local ROLE_ATLAS = ns.QUI_GroupFrameRoleAtlas
             local atlas = ROLE_ATLAS[role]
             if atlas then
                 roleIcon:SetAtlas(atlas)
@@ -523,181 +654,14 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
     end
 
-    -- Aura icons (buffs & debuffs; matches runtime: frame + 8)
+    -- Unified aura elements preview (v46 model). One loop over the active spec
+    -- bucket + the "*" bucket draws a representative strip / icon / square / bar
+    -- per element, honoring its anchor / grow / spacing / size, so Edit Mode
+    -- shows the same elements the live unified renderer draws. Fake textures
+    -- only; this is a standalone preview (no live renderer / no real unit).
     local auraSettings = vdb.auras
-    if prev and auraSettings then
-        local auraLevel = baseLevel + 8
-
-        -- Debuff icons
-        if prev.debuffs and auraSettings.showDebuffs ~= false then
-            local count = math.min(prev.debuffs, auraSettings.maxDebuffs or 3)
-            local size = auraSettings.debuffIconSize or 16
-            local debuffAnchor = auraSettings.debuffAnchor or "BOTTOMRIGHT"
-            local debuffGrow = auraSettings.debuffGrowDirection or "LEFT"
-            local debuffSpacing = auraSettings.debuffSpacing or 2
-            local debuffOffX = auraSettings.debuffOffsetX or -2
-            local debuffOffY = auraSettings.debuffOffsetY or -18
-            if debuffAnchor:find("BOTTOM") then debuffOffY = debuffOffY + powerHeight end
-
-            local prevDebuff
-            -- CENTER: centering offset for debuffs
-            local debuffCenterOff = 0
-            if debuffGrow == "CENTER" then
-                local totalSpan = count * size + math.max(count - 1, 0) * debuffSpacing
-                debuffCenterOff = -totalSpan / 2
-            end
-            for i = 1, count do
-                local iconFrame = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-                iconFrame:SetSize(size, size)
-                iconFrame:SetFrameLevel(auraLevel)
-
-                if debuffGrow == "CENTER" then
-                    iconFrame:SetPoint("LEFT", frame, debuffAnchor, debuffOffX + debuffCenterOff + (i - 1) * (size + debuffSpacing), debuffOffY)
-                elseif i == 1 then
-                    iconFrame:SetPoint(debuffAnchor, frame, debuffAnchor, debuffOffX, debuffOffY)
-                elseif prevDebuff then
-                    if debuffGrow == "LEFT" then
-                        iconFrame:SetPoint("RIGHT", prevDebuff, "LEFT", -debuffSpacing, 0)
-                    elseif debuffGrow == "RIGHT" then
-                        iconFrame:SetPoint("LEFT", prevDebuff, "RIGHT", debuffSpacing, 0)
-                    end
-                end
-                prevDebuff = iconFrame
-
-                local iconPx = QUICore:GetPixelSize(iconFrame)
-                iconFrame:SetBackdrop({
-                    bgFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeSize = iconPx,
-                })
-                iconFrame:SetBackdropBorderColor(0.8, 0, 0, 1) -- red debuff border
-                iconFrame:SetBackdropColor(0, 0, 0, 1)
-
-                local icon = iconFrame:CreateTexture(nil, "ARTWORK")
-                icon:SetPoint("TOPLEFT", iconPx, -iconPx)
-                icon:SetPoint("BOTTOMRIGHT", -iconPx, iconPx)
-                icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                icon:SetTexture(FAKE_DEBUFF_ICONS[((i - 1) % #FAKE_DEBUFF_ICONS) + 1])
-
-                -- Stack count on second icon
-                if i == 2 then
-                    local stack = iconFrame:CreateFontString(nil, "OVERLAY")
-                    stack:SetFont(fontPath, math.max(size * 0.55, 8), "OUTLINE")
-                    stack:SetPoint("BOTTOMRIGHT", iconFrame, "BOTTOMRIGHT", 0, 0)
-                    stack:SetText("3")
-                end
-            end
-        end
-
-        -- Buff icons
-        if prev.buffs and auraSettings.showBuffs then
-            local count = math.min(prev.buffs, auraSettings.maxBuffs or 3)
-            local size = auraSettings.buffIconSize or 14
-            local buffAnchor = auraSettings.buffAnchor or "TOPLEFT"
-            local buffGrow = auraSettings.buffGrowDirection or "RIGHT"
-            local buffSpacing = auraSettings.buffSpacing or 2
-            local buffOffX = auraSettings.buffOffsetX or 2
-            local buffOffY = auraSettings.buffOffsetY or 16
-            if buffAnchor:find("BOTTOM") then buffOffY = buffOffY + powerHeight end
-
-            local prevBuff
-            -- CENTER: centering offset for buffs
-            local buffCenterOff = 0
-            if buffGrow == "CENTER" then
-                local totalSpan = count * size + math.max(count - 1, 0) * buffSpacing
-                buffCenterOff = -totalSpan / 2
-            end
-            for i = 1, count do
-                local iconFrame = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-                iconFrame:SetSize(size, size)
-                iconFrame:SetFrameLevel(auraLevel)
-
-                if buffGrow == "CENTER" then
-                    iconFrame:SetPoint("LEFT", frame, buffAnchor, buffOffX + buffCenterOff + (i - 1) * (size + buffSpacing), buffOffY)
-                elseif i == 1 then
-                    iconFrame:SetPoint(buffAnchor, frame, buffAnchor, buffOffX, buffOffY)
-                elseif prevBuff then
-                    if buffGrow == "LEFT" then
-                        iconFrame:SetPoint("RIGHT", prevBuff, "LEFT", -buffSpacing, 0)
-                    elseif buffGrow == "RIGHT" then
-                        iconFrame:SetPoint("LEFT", prevBuff, "RIGHT", buffSpacing, 0)
-                    end
-                end
-                prevBuff = iconFrame
-
-                local iconPx = QUICore:GetPixelSize(iconFrame)
-                iconFrame:SetBackdrop({
-                    bgFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeSize = iconPx,
-                })
-                iconFrame:SetBackdropBorderColor(0, 0.6, 0, 1) -- green buff border
-                iconFrame:SetBackdropColor(0, 0, 0, 1)
-
-                local icon = iconFrame:CreateTexture(nil, "ARTWORK")
-                icon:SetPoint("TOPLEFT", iconPx, -iconPx)
-                icon:SetPoint("BOTTOMRIGHT", -iconPx, iconPx)
-                icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-                icon:SetTexture(FAKE_BUFF_ICONS[((i - 1) % #FAKE_BUFF_ICONS) + 1])
-            end
-        end
-    end
-
-    -- Aura indicators (tracked spell icons)
-    local aiSettings = vdb.auraIndicators
-    if aiSettings and aiSettings.enabled then
-        local aiIconSize = aiSettings.iconSize or 14
-        local aiAnchor = aiSettings.anchor or "TOPLEFT"
-        local aiGrow = aiSettings.growDirection or "RIGHT"
-        local aiSpacing = aiSettings.spacing or 2
-        local aiMax = aiSettings.maxIndicators or 5
-        local aiOffX = aiSettings.anchorOffsetX or 0
-        local aiOffY = aiSettings.anchorOffsetY or 0
-
-        local aiContainer = CreateFrame("Frame", nil, frame)
-        aiContainer:SetSize(1, 1)
-        aiContainer:SetFrameLevel(baseLevel + 8)
-        if aiAnchor:find("BOTTOM") then aiOffY = aiOffY + powerHeight end
-        aiContainer:SetPoint(aiAnchor, frame, aiAnchor, aiOffX, aiOffY)
-
-        local aiSampleIcons = { 136034, 135940, 136081, 135932, 136063 }
-        local vertPart = aiAnchor:find("TOP") and "TOP" or (aiAnchor:find("BOTTOM") and "BOTTOM" or "")
-        local aiCount = math.min(aiMax, #aiSampleIcons)
-
-        local prevAiIcon
-        for i = 1, aiCount do
-            local aiFrame = CreateFrame("Frame", nil, aiContainer, "BackdropTemplate")
-            aiFrame:SetSize(aiIconSize, aiIconSize)
-            aiFrame:SetFrameLevel(baseLevel + 8)
-            aiFrame:SetBackdrop({
-                edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = px,
-            })
-            aiFrame:SetBackdropBorderColor(0, 0, 0, 1)
-
-            if aiGrow == "CENTER" then
-                local totalSpan = aiCount * aiIconSize + math.max(aiCount - 1, 0) * aiSpacing
-                local startX = -totalSpan / 2
-                local iconPoint = vertPart == "" and "LEFT" or (vertPart .. "LEFT")
-                aiFrame:SetPoint(iconPoint, aiContainer, aiAnchor, startX + (i - 1) * (aiIconSize + aiSpacing), 0)
-            elseif i == 1 then
-                local firstHoriz = aiGrow == "LEFT" and "RIGHT" or "LEFT"
-                local firstAnchor = vertPart .. firstHoriz
-                aiFrame:SetPoint(firstAnchor, aiContainer, firstAnchor, 0, 0)
-            elseif prevAiIcon then
-                if aiGrow == "LEFT" then
-                    aiFrame:SetPoint("RIGHT", prevAiIcon, "LEFT", -aiSpacing, 0)
-                else
-                    aiFrame:SetPoint("LEFT", prevAiIcon, "RIGHT", aiSpacing, 0)
-                end
-            end
-            prevAiIcon = aiFrame
-
-            local aiTex = aiFrame:CreateTexture(nil, "ARTWORK")
-            aiTex:SetAllPoints()
-            aiTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-            aiTex:SetTexture(aiSampleIcons[i])
-        end
+    if prev and auraSettings and auraSettings.enabled ~= false then
+        RenderAuraElementsPreview(frame, auraSettings, baseLevel + 8, powerHeight, px, texturePath)
     end
 
     -- Absorb + Heal prediction overlays (clamped to remaining health bar space)
@@ -782,11 +746,11 @@ local function DestroyTestFrames(onlyType)
         -- Destroy all test frames (keep containers for reuse)
         for _, frame in ipairs(testFrames) do frame:Hide(); frame:SetParent(nil) end
         wipe(testFrames)
-        for tType, frames in pairs(testFramesByType) do
+        for _, frames in pairs(testFramesByType) do
             for _, frame in ipairs(frames) do frame:Hide(); frame:SetParent(nil) end
         end
         wipe(testFramesByType)
-        for tType, container in pairs(testContainers) do
+        for _, container in pairs(testContainers) do
             container._reuseContainer = true
         end
         wipe(testContainers)
@@ -1717,10 +1681,6 @@ end
 
 function QUI_GFEM:IsEditMode()
     return isEditMode
-end
-
-function QUI_GFEM:IsTestMode()
-    return isTestMode
 end
 
 -- Returns the currently visible frame for anchoring purposes.

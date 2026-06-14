@@ -76,6 +76,14 @@ local PING_MACROS = {
     ping_onmyway = "/ping [@mouseover] onmyway",
 }
 
+-- Three-clause @mouseover cast macro shared by every spell-cast binding path
+-- (keyboard attrs, caster macro, per-frame clickcast, smart-res restore).
+local function BuildMouseoverCastMacro(spell)
+    return "/cast [@mouseover,help,nodead] " .. spell
+        .. "; [@mouseover,harm,nodead] " .. spell
+        .. "; [@mouseover] " .. spell
+end
+
 local PING_LABELS = {
     ping         = "Ping",
     ping_assist  = "Ping: Assist",
@@ -392,10 +400,7 @@ local function SetFrameKeyAttributes(frame)
 
         if actionType == "spell" then
             frame:SetAttribute("type-" .. vBtn, "macro")
-            frame:SetAttribute("macrotext-" .. vBtn,
-                "/cast [@mouseover,help,nodead] " .. binding.spell
-                .. "; [@mouseover,harm,nodead] " .. binding.spell
-                .. "; [@mouseover] " .. binding.spell)
+            frame:SetAttribute("macrotext-" .. vBtn, BuildMouseoverCastMacro(binding.spell))
         elseif actionType == "macro" then
             frame:SetAttribute("type-" .. vBtn, "macro")
             frame:SetAttribute("macrotext-" .. vBtn, binding.macro)
@@ -606,10 +611,7 @@ end
 local function BuildCasterMacro(binding)
     local actionType = binding.actionType or "spell"
     if actionType == "spell" then
-        local s = binding.spell
-        return "/cast [@mouseover,help,nodead] " .. s
-            .. "; [@mouseover,harm,nodead] " .. s
-            .. "; [@mouseover] " .. s
+        return BuildMouseoverCastMacro(binding.spell)
     elseif actionType == "macro" then
         return binding.macro or ""
     elseif actionType == "target" then
@@ -718,7 +720,7 @@ local BUTTON_NUMBERS = {
 -- FRAME SETUP: Apply click-cast attributes to a frame
 ---------------------------------------------------------------------------
 local function SetupFrameClickCast(frame)
-    if not frame then return end
+    if not frame or registeredFrames[frame] then return end
     if InCombatLockdown() then return end
 
     local db = GetDB()
@@ -734,10 +736,7 @@ local function SetupFrameClickCast(frame)
         if actionType == "spell" then
             -- Use macro with @mouseover conditional for reliable targeting
             frame:SetAttribute(prefix .. "type" .. btnNum, "macro")
-            frame:SetAttribute(prefix .. "macrotext" .. btnNum,
-                "/cast [@mouseover,help,nodead] " .. binding.spell
-                .. "; [@mouseover,harm,nodead] " .. binding.spell
-                .. "; [@mouseover] " .. binding.spell)
+            frame:SetAttribute(prefix .. "macrotext" .. btnNum, BuildMouseoverCastMacro(binding.spell))
         elseif actionType == "macro" then
             frame:SetAttribute(prefix .. "type" .. btnNum, "macro")
             frame:SetAttribute(prefix .. "macrotext" .. btnNum, binding.macro)
@@ -864,10 +863,7 @@ local function SetupFrameClickCast(frame)
                     local actionType = normalBinding.actionType or "spell"
                     if actionType == "spell" then
                         self:SetAttribute("type1", "macro")
-                        self:SetAttribute("macrotext1",
-                            "/cast [@mouseover,help,nodead] " .. normalBinding.spell
-                            .. "; [@mouseover,harm,nodead] " .. normalBinding.spell
-                            .. "; [@mouseover] " .. normalBinding.spell)
+                        self:SetAttribute("macrotext1", BuildMouseoverCastMacro(normalBinding.spell))
                     elseif actionType == "macro" then
                         self:SetAttribute("type1", "macro")
                         self:SetAttribute("macrotext1", normalBinding.macro)
@@ -1037,15 +1033,6 @@ function QUI_GFCC:RegisterAllFrames()
         end
     end
 
-    -- Fallback for split/deferred layout paths. The decorated frame list is
-    -- maintained by groupframes_layout.lua and can contain buttons even when a
-    -- SecureGroupHeader child walk is temporarily incomplete.
-    if GF.allFrames then
-        for _, frame in ipairs(GF.allFrames) do
-            SetupFrameClickCast(frame)
-        end
-    end
-
     -- Spotlight header children
     RegisterHeaderChildren(GF.spotlightHeader)
 end
@@ -1123,7 +1110,7 @@ function QUI_GFCC:GetEditableBindings()
     local cc = db.clickCast
 
     if cc.perSpec then
-        local specID = GetSpecializationInfo(GetSpecialization() or 1)
+        local specID = GetCurrentSpecID()
         if specID then
             if cc.perLoadout then
                 local configID = GetStableLoadoutID()

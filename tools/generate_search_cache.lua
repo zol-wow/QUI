@@ -754,23 +754,15 @@ profile_db.quiGroupFrames = {
     testMode = {},
     party = {
         auras = {
-            buffClassifications = {},
-            buffBlacklist = {},
-            debuffClassifications = {},
-            debuffBlacklist = {},
+            enabled = true,
+            elements = {},
         },
-        auraIndicators = { entries = {} },
-        pinnedAuras = { specSlots = {} },
     },
     raid = {
         auras = {
-            buffClassifications = {},
-            buffBlacklist = {},
-            debuffClassifications = {},
-            debuffBlacklist = {},
+            enabled = true,
+            elements = {},
         },
-        auraIndicators = { entries = {} },
-        pinnedAuras = { specSlots = {} },
     },
 }
 
@@ -1014,6 +1006,24 @@ collect_qui_options_scripts(scripts, script_xml_seen)
 
 local failures = {}
 local loaded_count = 0
+
+-- The unified-auras editor captures `local Model = ns.QUI_GroupFramesAuraModel`
+-- at file scope, and the auras element-list capture below needs the model's
+-- element constructors. That model lives in the QUI_GroupFrames runtime TOC, not
+-- the options TOC the harvest walks, so pre-load it into ns before the editor
+-- file runs (otherwise its Model upvalue is nil and RenderAuras early-returns).
+do
+    local model_path = "QUI_GroupFrames/groupframes/groupframes_aura_model.lua"
+    local probe = io.open(model_path, "r")
+    if probe then
+        probe:close()
+        local ok, err = load_script(model_path)
+        if not ok then
+            failures[#failures + 1] = { path = model_path, error = err }
+        end
+    end
+end
+
 for _, path in ipairs(scripts) do
     path = normalize_path(path)
     if should_load_script(path) then
@@ -1777,14 +1787,11 @@ local GROUP_FRAMES_SEARCH_CAPTURE_TABS = {
     { key = "health", label = "Health", method = "RenderHealthTab", subTabIndex = 7 },
     { key = "power", label = "Power", method = "RenderPowerTab", subTabIndex = 8 },
     { key = "name", label = "Name", method = "RenderNameTab", subTabIndex = 9 },
-    { key = "buffs", label = "Buffs", method = "RenderBuffsTab", subTabIndex = 10 },
-    { key = "debuffs", label = "Debuffs", method = "RenderDebuffsTab", subTabIndex = 11 },
-    { key = "indicators", label = "Indicators", method = "RenderIndicatorsTab", subTabIndex = 12 },
-    { key = "auraIndicators", label = "Aura Ind.", method = "RenderAuraIndicatorsTab", subTabIndex = 13 },
-    { key = "pinnedAuras", label = "Pinned", method = "RenderPinnedAurasTab", subTabIndex = 14 },
-    { key = "privateAuras", label = "Priv. Auras", method = "RenderPrivateAurasTab", subTabIndex = 15 },
-    { key = "healer", label = "Healer", method = "RenderHealerTab", subTabIndex = 16 },
-    { key = "defensive", label = "Defensive", method = "RenderDefensiveTab", subTabIndex = 17 },
+    { key = "indicators", label = "Indicators", method = "RenderIndicatorsTab", subTabIndex = 10 },
+    { key = "healer", label = "Healer", method = "RenderHealerTab", subTabIndex = 11 },
+    { key = "auras", label = "Auras", method = "RenderAurasTab", subTabIndex = 12 },
+    { key = "privateAuras", label = "Priv. Auras", method = "RenderPrivateAurasTab", subTabIndex = 13 },
+    { key = "defensive", label = "Defensive", method = "RenderDefensiveTab", subTabIndex = 14 },
 }
 
 local function capture_group_frames_settings_tabs()
@@ -1827,6 +1834,90 @@ local function capture_group_frames_settings_tabs()
                     }
                 end
             end
+        end
+    end
+
+    return #capture_errors == 0
+end
+
+-- The per-element aura config controls (Aura Type, Filter Mode, classifications,
+-- whitelist, blacklist, duration text, Display Type, the bar.* fields, per-spell
+-- Only Mine, etc.) render inside the unified-auras editor only for the element
+-- that is currently EXPANDED, and the editor opens collapsed by default -- so the
+-- normal RenderAurasTab harvest (which renders once with no selection) never sees
+-- those labels. Here we drive AurasEditor.RenderAuras directly, once per element
+-- variant, each time with a single-element bucket and forceSelectedIndex = 1 so
+-- the element renders expanded. The variant matrix covers every conditional
+-- branch (each filterMode, each tracked displayType, multi-spell per-spell rows).
+local function capture_group_frames_auras_elements()
+    local AurasEditor = ns.QUI_GroupFramesAurasSettings
+    local Model = ns.QUI_GroupFramesAuraModel
+    if type(AurasEditor) ~= "table"
+        or type(AurasEditor.RenderAuras) ~= "function"
+        or type(Model) ~= "table"
+        or type(Model.NewFilterStripElement) ~= "function"
+        or type(Model.NewTrackedElement) ~= "function" then
+        return true
+    end
+
+    -- Builders return a single element configured to exercise one branch. Two
+    -- example spell IDs on tracked icon strips so the per-spell Only Mine rows
+    -- render (they only appear when a strip tracks more than one spell).
+    local function strip(filterMode)
+        local element = Model.NewFilterStripElement("HARMFUL")
+        element.filterMode = filterMode
+        return element
+    end
+    local function tracked(displayType)
+        local element = Model.NewTrackedElement({ 12345, 67890 }, displayType)
+        return element
+    end
+
+    -- One entry per expanded-element render. label is diagnostic only.
+    local variants = {
+        { label = "filterStrip:off", element = strip("off") },
+        { label = "filterStrip:classification", element = strip("classification") },
+        { label = "filterStrip:whitelist", element = strip("whitelist") },
+        { label = "tracked:icon", element = tracked("icon") },
+        { label = "tracked:bar", element = tracked("bar") },
+        { label = "tracked:square", element = tracked("square") },
+        { label = "tracked:healthTint", element = tracked("healthTint") },
+    }
+
+    for _, variant in ipairs(variants) do
+        local host = create_stub_node("Frame", nil, false)
+        host:SetSize(760, 1)
+
+        -- Fresh auras container holding exactly this one element in the "*" bucket.
+        local auras = { enabled = true, elements = { ["*"] = { variant.element } } }
+
+        GUI:ClearSearchContext()
+        local ok, err = xpcall(function()
+            GUI:SetSearchContext({
+                tabIndex = 6,
+                tabName = "Group Frames",
+                subTabIndex = 12,
+                subTabName = "Auras",
+                tileId = "group_frames",
+                subPageIndex = 2,
+                featureId = "groupFramesPage",
+                providerKey = "partyFrames",
+                category = "frames",
+                surfaceTabKey = "auras",
+            })
+            AurasEditor.RenderAuras(host, auras, "*", function() end, {
+                forceSelectedIndex = 1,
+            })
+            GUI:ClearSearchContext()
+        end, debug.traceback)
+        GUI:ClearSearchContext()
+
+        if not ok then
+            capture_errors[#capture_errors + 1] = {
+                featureId = "groupFramesPage",
+                providerKey = "auras:" .. variant.label,
+                error = err,
+            }
         end
     end
 
@@ -2269,6 +2360,7 @@ install_search_capture_overrides()
 capture_all_search_features()
 capture_cdm_settings_tabs()
 capture_group_frames_settings_tabs()
+capture_group_frames_auras_elements()
 capture_unit_frames_settings_tabs()
 capture_action_bar_per_bar_settings()
 capture_minimap_datatext_settings()

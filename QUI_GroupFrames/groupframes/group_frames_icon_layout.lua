@@ -3,6 +3,18 @@ local ADDON_NAME, ns = ...
 local IconLayout = ns.QUI_GroupFrameIconLayout or {}
 ns.QUI_GroupFrameIconLayout = IconLayout
 
+-- Canonical dispel-type default color palette. Shared by groupframes.lua
+-- (_dispel.defaultColors) and groupframes_auras.lua (AURA_DISPEL_COLORS) so a
+-- palette change lands in exactly one place. NOTE: the settings UI keeps its
+-- own 4-color seed (no Bleed) by design — do not point it here.
+IconLayout.DISPEL_DEFAULT_COLORS = {
+    Magic   = { 0.2, 0.6, 1.0, 1 },  -- Blue
+    Curse   = { 0.6, 0.0, 1.0, 1 },  -- Purple
+    Disease = { 0.6, 0.4, 0.0, 1 },  -- Brown
+    Poison  = { 0.0, 0.6, 0.0, 1 },  -- Green
+    Bleed   = { 0.8, 0.0, 0.0, 1 },  -- Red
+}
+
 function IconLayout.CalculateSlotOffset(index, iconSize, spacing, direction, totalCount)
     local step = ((index or 1) - 1) * ((iconSize or 0) + (spacing or 0))
     if direction == "LEFT" then
