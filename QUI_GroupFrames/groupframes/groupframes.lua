@@ -1838,13 +1838,24 @@ local function UpdateDispelOverlay(frame)
     local fromPrivateSlots = false
 
     if cache and cache.playerDispellableOrder then
-        local instID = cache.playerDispellableOrder[1]
-        if instID then
-            hasDispellable = true
-            firstDispellableInstID = instID
-            local dispelAura = cache.debuffsByID and cache.debuffsByID[instID]
-            if dispelAura and dispelAura.dispelName and not IsSecretValue(dispelAura.dispelName) then
-                firstDispellableType = SafeValue(dispelAura.dispelName, nil)
+        -- The playerDispellable SET is the authoritative membership (cleared
+        -- unconditionally on removal); playerDispellableOrder is only a stable
+        -- type-picker. A phantom order entry (one whose set membership was
+        -- already cleared) must NOT relight the overlay, so walk the order and
+        -- accept the first entry still present in the set. Matches the defensive
+        -- indicator (which gates on buffsByID) and the reference's next(set).
+        local order = cache.playerDispellableOrder
+        local set = cache.playerDispellable
+        for i = 1, #order do
+            local instID = order[i]
+            if instID and (not set or set[instID]) then
+                hasDispellable = true
+                firstDispellableInstID = instID
+                local dispelAura = cache.debuffsByID and cache.debuffsByID[instID]
+                if dispelAura and dispelAura.dispelName and not IsSecretValue(dispelAura.dispelName) then
+                    firstDispellableType = SafeValue(dispelAura.dispelName, nil)
+                end
+                break
             end
         end
     end

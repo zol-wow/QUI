@@ -439,8 +439,14 @@ local function AddBuffDerivedData(unit, cache, auraData)
     end
 
     if ClassifyDefensive(unit, auraData) then
+        -- Append to the order array only when the set didn't already hold the
+        -- instID, so defensiveOrder stays a faithful dedup mirror of defensives.
+        -- An unconditional append could push a second copy whose single
+        -- RemoveIDFromOrder on removal leaves a phantom (see UpdateDispelOverlay).
+        if not cache.defensives[instID] then
+            cache.defensiveOrder[#cache.defensiveOrder + 1] = instID
+        end
         cache.defensives[instID] = true
-        cache.defensiveOrder[#cache.defensiveOrder + 1] = instID
         return true
     end
     return false
@@ -477,8 +483,14 @@ local function AddDebuffDerivedData(unit, cache, auraData)
 
     local classified = ClassifyDispellable(unit, instID)
     if classified == true or (classified == nil and hasDispelType) then
+        -- Dedup-guard the order append against the set so playerDispellableOrder
+        -- stays a faithful mirror of playerDispellable; an unconditional append
+        -- can leave a phantom that RemoveIDFromOrder (first-match) won't fully
+        -- clear, keeping the dispel overlay lit after the debuff is gone.
+        if not cache.playerDispellable[instID] then
+            cache.playerDispellableOrder[#cache.playerDispellableOrder + 1] = instID
+        end
         cache.playerDispellable[instID] = true
-        cache.playerDispellableOrder[#cache.playerDispellableOrder + 1] = instID
     end
 
     local spellID = SafeValue(auraData.spellId, nil)
