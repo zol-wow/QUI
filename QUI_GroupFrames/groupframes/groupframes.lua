@@ -1030,6 +1030,12 @@ end
 local function ShouldShowPowerForUnit(unit, isRaid)
     local ps = GetPowerSettings(isRaid)
     if not ps then return true end
+    -- Master gate: showPowerBar off => no power bar for ANY unit, regardless of
+    -- the role filter. This is the single runtime show/hide authority (UpdatePower
+    -- + the health-pad reclaim both route through here), so a power bar persisted
+    -- from a prior on-state gets hidden and its gap reclaimed instead of leaking
+    -- through for role-filter-passing tanks/healers.
+    if ps.showPowerBar == false then return false end
     local onlyHealers = ps.powerBarOnlyHealers
     local onlyTanks = ps.powerBarOnlyTanks
     if not onlyHealers and not onlyTanks then return true end
@@ -2542,6 +2548,19 @@ local function DecorateGroupFrame(frame)
     -- Bottom-anchor offset: push elements above power bar + separator
     local bottomPad = powerHeight + separatorHeight + borderSize
     frame._bottomPad = bottomPad
+
+    -- Sync the ResizeHealthForPower dirty-check to the geometry written above.
+    -- This build path (re-run on every settings change via the _quiDecorated
+    -- reset in RefreshSettings) reseeds the gap from the GLOBAL showPowerBar,
+    -- ignoring the per-unit role filter. Without syncing state, a later
+    -- ResizeHealthForPower whose per-unit show value is UNCHANGED (e.g. a damager
+    -- staying hidden when the second of Only-Healers/Only-Tanks is enabled) would
+    -- dirty-check-match the stale state and refuse to reclaim this gap — making
+    -- showPowerBar behave as an override of the role filter.
+    local hpState = GetFrameState(frame)
+    hpState.healthPowerShow = showPower
+    hpState.healthPowerBorder = borderSize
+    hpState.healthPowerBottom = bottomPad
 
     -- Name text
     local fontPath = GetFontPath()
@@ -4616,19 +4635,22 @@ ApplyChildFrameLayout = function()
                 local powerSettings = GetPowerSettings(isRaidChild)
                 local powerHeight = powerSettings and powerSettings.showPowerBar ~= false and
                     (QUICore.PixelRound and QUICore:PixelRound(powerSettings.powerBarHeight or 4, child) or 4) or 0
-                local px = QUICore.GetPixelSize and QUICore:GetPixelSize(child) or 1
-                local sepH = powerHeight > 0 and px or 0
 
-                -- Keep the bottom-anchor pad in sync with this re-layout. Without
-                -- this, changing power-bar height/visibility moves the bar but
-                -- leaves _bottomPad stale (set only at creation / ResizeHealthForPower),
-                -- so every BOTTOM* aura/defensive strip drifts over the power bar.
-                -- Mirrors the creation formula (powerHeight + separator + border).
-                child._bottomPad = powerHeight + sepH + borderSize
-
-                child.healthBar:ClearAllPoints()
-                child.healthBar:SetPoint("TOPLEFT", child, "TOPLEFT", borderSize, -borderSize)
-                child.healthBar:SetPoint("BOTTOMRIGHT", child, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + sepH)
+                -- Health bottom-pad + geometry are role-filter aware and owned by
+                -- ResizeHealthForPower (the single, dirty-checked, state-synced writer).
+                -- Computing the pad here from the global showPowerBar reserved a
+                -- power-sized gap on EVERY frame; on role-filtered (non-tank/healer)
+                -- frames UpdatePower hid the bar but ResizeHealthForPower then refused
+                -- to reclaim the gap because this path wrote geometry + _bottomPad
+                -- directly and left its dirty-check state stale. Delegate instead so
+                -- the pad tracks the actual per-unit power visibility.
+                local showForUnit
+                if child.unit then
+                    showForUnit = ShouldShowPowerForUnit(child.unit, isRaidChild) and true or false
+                else
+                    showForUnit = powerHeight > 0
+                end
+                ResizeHealthForPower(child, showForUnit)
                 ApplyStatusBarTexture(child.healthBar)
 
                 local vertFill = (GetHealthFillDirection(isRaidChild) == "VERTICAL")
