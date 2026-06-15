@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta51 - 2026-06-15
+
+> 🧪 **QUI 4 beta — Info Bar travel widget polish & a Group Frames dispel-overlay fix.** This release adds a label and tooltip to the travel/hearth Info Bar widget plus a new per-widget "Hide Text" (icon-only) toggle, and fixes a Group Frames bug where a dispel or defensive indicator could stay lit after the aura was gone. No profile schema migration — your beta50 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Info Bar: travel widget label & tooltip.** The travel/hearth widget now shows a "Travel" label next to its icon and a "Left click to hearth" tooltip line. The label honors No Label and the new Hide Text toggle.
+- **Info Bar: per-widget "Hide Text" (icon-only) override.** A new Hide Text toggle (alongside No Label / Hide Icon) blanks a widget's text and keeps only its icon, reclaiming the freed width. Available in both the right-click Configure Widget menu and the Info Bar settings panel.
+
+### Fixed
+- **Group Frames: dispel & defensive indicators no longer stay lit after the aura ends.** A duplicate aura-cache update could leave a phantom entry that kept the dispel overlay (and defensive indicator) showing with no debuffs present until the next full scan. Cache updates are now idempotent.
+
 ## v4.0.0-beta50 - 2026-06-15
 
 > 🧪 **QUI 4 beta — Character pane skinning fixes & shared-renderer consolidation.** This release cleans up the Character window's reputation and currency panes (crisp pixel-snapped borders, themed tab labels, no leftover Blizzard art) and routes several modules' backdrops, close buttons and fonts through shared skinning helpers for consistency — almost all of it is internal refactor with no behavior change. No profile schema migration — your beta49 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
