@@ -2065,31 +2065,21 @@ _state.EnsureDefensiveIcons = function(frame, reverseSwipe)
     return icons
 end
 
--- Countdown number font for defensive icons. Override OFF leaves Blizzard's
--- native auto-scaled count untouched (so appearance is unchanged on upgrade);
--- ON applies a fixed pixel size to the cooldown countdown FontString. The native
--- font is captured once so toggling back to OFF restores it WITHOUT a /reload.
--- Cached per cooldown (_quiCountdownFontSize) to avoid re-SetFont every refresh.
--- Assigned onto _state (not a new file-level local) to stay under Lua 5.1's
--- 200-active-locals cap for this chunk.
+-- Size the defensive cooldown countdown number. The count is the NATIVE C-side
+-- countdown (armed via SetCooldownFromDurationObject in ApplyCooldownFromAura)
+-- because the aura duration is a SECRET value -- Lua must never read/format/compare
+-- it, so the native count is the only secret-safe ticking display. We restyle only
+-- the count FontString's FONT, never the value. Mirrors the proven reference raid
+-- frames: show the count (SetHideCountdownNumbers false), then on the FontString
+-- returned by GetCountdownFontString set the font + center it, EVERY render (the
+-- call site runs this after defIcon:SetSize). Assigned onto _state (not a new
+-- file-level local) to stay under Lua 5.1's 200-active-locals cap.
 _state.ApplyDefensiveCountdownFont = function(cd, fontSize, isRaid)
-    if not cd or cd._quiCountdownFontSize == fontSize then return end
-    if not cd.GetCountdownFontString then return end
+    if not cd or not cd.GetCountdownFontString then return end
+    if cd.SetHideCountdownNumbers then pcall(cd.SetHideCountdownNumbers, cd, false) end
     local ok, cdText = pcall(cd.GetCountdownFontString, cd)
     if not ok or not cdText or not cdText.SetFont then return end
-    if fontSize then
-        if not cd._quiOrigCountdownFont then
-            local f, s, fl = cdText:GetFont()
-            if f then cd._quiOrigCountdownFont = { f, s, fl } end
-        end
-        cdText:SetFont(GetFontPath(isRaid), fontSize, GetFontOutline(isRaid))
-    else
-        local orig = cd._quiOrigCountdownFont
-        if orig and orig[1] then
-            cdText:SetFont(orig[1], orig[2] or 12, orig[3] or "")
-        end
-    end
-    cd._quiCountdownFontSize = fontSize
+    cdText:SetFont(GetFontPath(isRaid), fontSize or 12, GetFontOutline(isRaid) or "OUTLINE")
 end
 
 local function UpdateDefensiveIndicator(frame)
@@ -2150,7 +2140,7 @@ local function UpdateDefensiveIndicator(frame)
     local offsetX = defSettings.offsetX or 0
     local offsetY = defSettings.offsetY or 0
     local spacing = defSettings.spacing or 2
-    local durationFontSize = (defSettings.durationTextOverride and tonumber(defSettings.durationTextSize)) or nil
+    local durationFontSize = tonumber(defSettings.durationTextSize) or 12
     local growDir = defSettings.growDirection or "RIGHT"
     local growFn = DEFENSIVE_GROWTH_OFFSETS[growDir] or DEFENSIVE_GROWTH_OFFSETS.RIGHT
     local stepX, stepY = growFn(iconSize, spacing)
@@ -2213,7 +2203,6 @@ local function UpdateDefensiveIndicator(frame)
             elseif cd then
                 cd:Clear()
             end
-            _state.ApplyDefensiveCountdownFont(cd, durationFontSize, isRaid)
 
             -- Position: first icon at anchor, subsequent offset by growth direction
             if layoutChanged then
@@ -2222,6 +2211,10 @@ local function UpdateDefensiveIndicator(frame)
                 defIcon:SetPoint(position, frame, position, offsetX + centerOffX + stepX * (i - 1), offsetY + stepY * (i - 1))
                 defIcon:SetFrameLevel(frame:GetFrameLevel() + 10)
             end
+            -- AFTER any resize: the cooldown auto-scales its count text to the new
+            -- region size, so the font override must be re-asserted here or it gets
+            -- clobbered and never reapplied.
+            _state.ApplyDefensiveCountdownFont(cd, durationFontSize, isRaid)
             defIcon:Show()
         else
             defIcon:Hide()

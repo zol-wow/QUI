@@ -809,16 +809,22 @@ local function ApplyPrivateAuras(f, pa, allowed)
                 f._paIcons[i] = ic
             end
             ic:SetFrameLevel(f:GetFrameLevel() + 10)
-            ic:SetSize(iconSize, iconSize)
+            -- Mirror the live RegisterAnchor: textScale scales the WHOLE container
+            -- (so BOTH the stack count and the duration countdown number shrink,
+            -- since Blizzard's private-aura text has no sizing API), and the icon +
+            -- border are divided by textScale so they stay at their configured pixel
+            -- size. Previously only ic._count was scaled, so the duration number
+            -- never tracked Text Scale in the preview.
+            ic:SetScale(textScale)
+            ic:SetSize(iconSize / textScale, iconSize / textScale)
             ic._tex:SetColorTexture(0.8, 0.2, 0.2, 0.6)
             ic._border:ClearAllPoints()
-            local bpad = math.max(borderScale, 0)
+            local bpad = math.max(borderScale, 0) / textScale
             ic._border:SetPoint("TOPLEFT", -bpad, bpad)
             ic._border:SetPoint("BOTTOMRIGHT", bpad, -bpad)
             ic._border:SetColorTexture(0, 0, 0, 1)
             ic._count:ClearAllPoints()
             ic._count:SetPoint("BOTTOMRIGHT", 0, 0)
-            ic._count:SetScale(textScale)
             ic._count:SetText((pa.showCountdownNumbers ~= false) and "3" or "")
             -- showCountdown gates the swipe spiral; reverseSwipe flips its sweep.
             if ic._cd then
@@ -837,7 +843,9 @@ local function ApplyPrivateAuras(f, pa, allowed)
             ic:ClearAllPoints()
             local sx, sy = 0, 0
             if slotFn then sx, sy = slotFn(i, iconSize, spacing, direction, maxSlots) end
-            ic:SetPoint(anchor, f, anchor, offX + sx, offY + sy)
+            -- Offsets are screen px, divided into the container's scaled space (live
+            -- SetupPrivateAuras does the same) so position is unchanged by textScale.
+            ic:SetPoint(anchor, f, anchor, (offX + sx) / textScale, (offY + sy) / textScale)
             ic:Show()
         elseif ic then
             ic:Hide()
@@ -901,23 +909,19 @@ local function ApplyDefensive(f, healer, allowed, font)
             if ic._cd then
                 if ic._cd.SetReverse then ic._cd:SetReverse(reverseSwipe) end
                 if ic._cd.SetCooldown then ic._cd:SetCooldown(GetTime and GetTime() or 0, 12) end
-                -- Mirror the live frame's opt-in countdown-text size override so the
-                -- slider gives immediate preview feedback. nil = native auto-scale.
-                local defFontSize = (cfg.durationTextOverride and tonumber(cfg.durationTextSize)) or nil
-                if ic._cd._quiCdFontSize ~= defFontSize and ic._cd.GetCountdownFontString then
+                -- Mirror the live frame's countdown-text sizing so the slider gives
+                -- immediate preview feedback. Same secret-safe reference pattern: show
+                -- the native count, then set the font on GetCountdownFontString(),
+                -- every pass. (Preview value isn't secret, but we keep the path
+                -- identical to live.)
+                local defFontSize = tonumber(cfg.durationTextSize) or 12
+                if ic._cd.GetCountdownFontString then
+                    if ic._cd.SetHideCountdownNumbers then
+                        pcall(ic._cd.SetHideCountdownNumbers, ic._cd, false)
+                    end
                     local okT, cdText = pcall(ic._cd.GetCountdownFontString, ic._cd)
                     if okT and cdText and cdText.SetFont then
-                        if defFontSize then
-                            if not ic._cd._quiOrigFont then
-                                local nm, sz, fl = cdText:GetFont()
-                                if nm then ic._cd._quiOrigFont = { nm, sz, fl } end
-                            end
-                            cdText:SetFont(font, defFontSize, "OUTLINE")
-                        elseif ic._cd._quiOrigFont and ic._cd._quiOrigFont[1] then
-                            local o = ic._cd._quiOrigFont
-                            cdText:SetFont(o[1], o[2] or 12, o[3] or "")
-                        end
-                        ic._cd._quiCdFontSize = defFontSize
+                        cdText:SetFont(font, defFontSize, "OUTLINE")
                     end
                 end
             end
