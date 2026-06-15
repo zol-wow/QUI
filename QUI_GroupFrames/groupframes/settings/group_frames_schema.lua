@@ -2506,7 +2506,7 @@ local function RenderAurasSection(sectionHost, ctx)
     builder.CloseCard(card)
 
     builder.Spacer(6)
-    builder.Header("Elements")
+    builder.Header("Tracked Auras")
 
     -- A specific spec that is NOT overriding inherits All Specs: show a hint
     -- instead of an editor (editing here would have no bucket to write to, and
