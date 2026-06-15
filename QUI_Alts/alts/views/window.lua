@@ -249,38 +249,12 @@ local function Build()
     win._title:SetText("Alts")
 
     -- Close button: line-drawn X with accent hover (settings-window style).
-    local close = CreateFrame("Button", nil, header)
-    close:SetSize(22, 22)
-    close:SetPoint("RIGHT", -8, 0)
-    close._bg = UIKit.CreateBackground(close, 0.08, 0.08, 0.08, 0.6)
-    UIKit.CreateBorderLines(close)
-    UIKit.UpdateBorderLines(close, 1, Col("border"))
-    local LINE_LEN, LINE_W = 10, 1.5
-    local xLine1 = close:CreateTexture(nil, "OVERLAY")
-    xLine1:SetSize(LINE_LEN, LINE_W)
-    xLine1:SetPoint("CENTER")
-    xLine1:SetColorTexture(1, 1, 1, 0.8)
-    xLine1:SetRotation(math.rad(45))
-    local xLine2 = close:CreateTexture(nil, "OVERLAY")
-    xLine2:SetSize(LINE_LEN, LINE_W)
-    xLine2:SetPoint("CENTER")
-    xLine2:SetColorTexture(1, 1, 1, 0.8)
-    xLine2:SetRotation(math.rad(-45))
-    close:SetScript("OnClick", function() win:Hide() end)
-    close:SetScript("OnEnter", function(self)
-        local ar, ag, ab = Accent()
-        UIKit.UpdateBorderLines(self, 1, ar, ag, ab, 1)
-        self._bg:SetVertexColor(ar, ag, ab, 0.15)
-        xLine1:SetColorTexture(ar, ag, ab, 1)
-        xLine2:SetColorTexture(ar, ag, ab, 1)
-    end)
-    close:SetScript("OnLeave", function(self)
-        UIKit.UpdateBorderLines(self, 1, Col("border"))
-        self._bg:SetVertexColor(0.08, 0.08, 0.08, 0.6)
-        xLine1:SetColorTexture(1, 1, 1, 0.8)
-        xLine2:SetColorTexture(1, 1, 1, 0.8)
-    end)
-    win._close = close
+    -- Uses the central UIKit.CreateCloseButton factory (extracted from this exact
+    -- impl); accent resolves via UIKit.GetAccentColor (== the old local Accent()).
+    win._close = UIKit.CreateCloseButton(header, {
+        point = "RIGHT", x = -8, y = 0,
+        onClick = function() win:Hide() end,
+    })
 
     -- Separator line below the title bar
     win._titleSep = win:CreateTexture(nil, "ARTWORK")

@@ -531,14 +531,7 @@ local function CreateLinkItem(parent, label, url, iconR, iconG, iconB, iconTextu
     btn:SetSize(56, 18)
     btn:SetPoint("LEFT", text, "RIGHT", 8, 0)
 
-    local px = SafeGetPixelSize(btn)
-    btn:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    })
-    btn:SetBackdropColor(0.15, 0.15, 0.15, 1)
-    btn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+    UIKit.ApplyPixelBackdrop(btn, 1, true, false, { C.border[1], C.border[2], C.border[3], 1 }, { 0.15, 0.15, 0.15, 1 })
 
     local btnText = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     btnText:SetFont(fontPath, 9, "")

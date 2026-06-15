@@ -243,17 +243,11 @@ local function CreateLootWindow()
     end)
 
     -- Close button
-    frame.closeBtn = CreateFrame("Button", nil, frame)
-    frame.closeBtn:SetSize(16, 16)
-    frame.closeBtn:SetPoint("TOPRIGHT", -4, -4)
-    frame.closeBtn.text = frame.closeBtn:CreateFontString(nil, "OVERLAY")
-    frame.closeBtn.text:SetFont(LSM:Fetch("font", GetGeneralFont()), 14, "OUTLINE")
-    frame.closeBtn.text:SetAllPoints()
-    frame.closeBtn.text:SetText("x")
-    frame.closeBtn.text:SetTextColor(0.8, 0.8, 0.8)
-    frame.closeBtn:SetScript("OnClick", function() CloseLoot() end)
-    frame.closeBtn:SetScript("OnEnter", function(self) self.text:SetTextColor(1, 0.3, 0.3) end)
-    frame.closeBtn:SetScript("OnLeave", function(self) self.text:SetTextColor(0.8, 0.8, 0.8) end)
+    frame.closeBtn = SkinBase.CreateCloseButton(frame, {
+        size = 16, lineLen = 8,
+        point = "TOPRIGHT", x = -4, y = -4,
+        onClick = function() CloseLoot() end,
+    })
 
     -- Loot slots
     frame.slots = {}
@@ -1284,7 +1278,6 @@ function Loot:ApplyLootTheme()
     Helpers.SetFrameBackdropBorderColor(lootFrame, unpack(borderColor))
     lootFrame.header:SetFont(fontPath, 12, "OUTLINE")
     lootFrame.header:SetTextColor(unpack(textColor))
-    lootFrame.closeBtn.text:SetFont(fontPath, 14, "OUTLINE")
 
     -- Update slot fonts and highlight colors
     for i = 1, MAX_LOOT_SLOTS do

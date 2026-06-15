@@ -162,51 +162,20 @@ local function SafeGetVerticalScroll(scrollFrame)
     return ok2 and safeCurrent or 0
 end
 
+-- Delegates to the central UIKit.CreateCloseButton (line-X close chip, accent
+-- hover). The body historically anchored "RIGHT"/"RIGHT" regardless of the
+-- relativePoint arg, so that anchor is preserved here. ~1px edge difference vs
+-- the old SetBackdrop chrome (kit uses manual textures); colors are identical
+-- (GUI.Colors border/white lines, live accent hover).
 local function CreateQUIStyleCloseButton(parent, relativeTo, relativePoint, xOffset, yOffset, onClick)
-    local GUI = _G.QUI and _G.QUI.GUI
-    local C = GUI and GUI.Colors or {}
-    local border = C.border or {0.24, 0.28, 0.34, 1}
-    local text = C.text or {0.85, 0.88, 0.92, 1}
-
-    local close = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    close:SetSize(22, 22)
-    close:SetPoint("RIGHT", relativeTo, "RIGHT", xOffset or 0, yOffset or 0)
-    close:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GetPixelSize(close),
+    return UIKit.CreateCloseButton(parent, {
+        point = "RIGHT",
+        relativeTo = relativeTo,
+        relativePoint = "RIGHT",
+        x = xOffset or 0,
+        y = yOffset or 0,
+        onClick = onClick,
     })
-    close:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
-    close:SetBackdropBorderColor(border[1], border[2], border[3], border[4] or 1)
-
-    local lineLen, lineWidth = 10, 1.5
-    local xLine1 = close:CreateTexture(nil, "OVERLAY")
-    xLine1:SetSize(lineLen, lineWidth)
-    xLine1:SetPoint("CENTER")
-    xLine1:SetColorTexture(text[1], text[2], text[3], 0.8)
-    xLine1:SetRotation(math.rad(45))
-
-    local xLine2 = close:CreateTexture(nil, "OVERLAY")
-    xLine2:SetSize(lineLen, lineWidth)
-    xLine2:SetPoint("CENTER")
-    xLine2:SetColorTexture(text[1], text[2], text[3], 0.8)
-    xLine2:SetRotation(math.rad(-45))
-
-    close:SetScript("OnClick", onClick)
-    close:SetScript("OnEnter", function(self)
-        pcall(self.SetBackdropBorderColor, self, ACCENT_R, ACCENT_G, ACCENT_B, 1)
-        self:SetBackdropColor(ACCENT_R, ACCENT_G, ACCENT_B, 0.15)
-        xLine1:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-        xLine2:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-    end)
-    close:SetScript("OnLeave", function(self)
-        pcall(self.SetBackdropBorderColor, self, border[1], border[2], border[3], border[4] or 1)
-        self:SetBackdropColor(0.08, 0.08, 0.08, 0.6)
-        xLine1:SetColorTexture(text[1], text[2], text[3], 0.8)
-        xLine2:SetColorTexture(text[1], text[2], text[3], 0.8)
-    end)
-
-    return close
 end
 
 local function CreatePanel()

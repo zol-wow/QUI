@@ -73,6 +73,8 @@ local function GetPixelSize(frame)
     return 1
 end
 
+local function SkinBase() return ns.SkinBase end
+
 local function GetFontPath(size)
     local sm = ns.LSM
     -- General group-frame font; falls back to the stock font. Element font
@@ -342,10 +344,8 @@ local function CreateIconFrame(parent)
     tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     frame.icon = tex
 
-    local px = GetPixelSize(frame)
-    frame:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = px })
     local br, bg, bb, ba = GetSkinBorderColor()
-    frame:SetBackdropBorderColor(br, bg, bb, ba)
+    SkinBase().ApplyPixelBackdrop(frame, 1, false, false, { br, bg, bb, ba })
 
     local cd = CreateFrame("Cooldown", nil, frame, "CooldownFrameTemplate")
     cd:SetAllPoints()
@@ -923,7 +923,6 @@ function R.RenderBar(self, frame, element, matches)
 
     local borderSize = math_max(1, SafeToNumber(barCfg.borderSize, 1))
     local borderColor = barCfg.borderColor or DEFAULT_BORDER_COLOR
-    local px = GetPixelSize(bar)
     local texturePath = GetStatusBarTexturePath()
     local bottomPad = frame._bottomPad or 0
     local hideBorder = barCfg.hideBorder == true
@@ -968,8 +967,7 @@ function R.RenderBar(self, frame, element, matches)
         if hideBorder then
             bar:SetBackdrop(nil)
         else
-            bar:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = borderSize * px })
-            bar:SetBackdropBorderColor(bcr, bcg, bcb, bca)
+            SkinBase().ApplyPixelBackdrop(bar, borderSize, false, false, { bcr, bcg, bcb, bca })
         end
     end
 

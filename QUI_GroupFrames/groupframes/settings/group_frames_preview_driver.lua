@@ -328,8 +328,6 @@ Driver._CreateMockFrame = CreateMockFrame
 ---------------------------------------------------------------------------
 -- SETTINGS STYLING
 ---------------------------------------------------------------------------
-local WHITE8X8 = "Interface\\Buttons\\WHITE8x8"
-
 -- Dispel-type seed mirrors the settings UI's 4-color palette (no Bleed) so the
 -- preview border colors match what the dispel-overlay tab pickers default to.
 local DISPEL_SEED = {
@@ -396,11 +394,6 @@ end
 local function ApplyAppearance(f, general)
     local borderPx = tonumber(general.borderSize) or 1
     local hasBorder = borderPx > 0
-    f:SetBackdrop({
-        bgFile = WHITE8X8,
-        edgeFile = hasBorder and WHITE8X8 or nil,
-        edgeSize = hasBorder and borderPx or nil,
-    })
     local bg, bgOpacity
     if general.darkMode then
         bg = general.darkModeBgColor or { 0.25, 0.25, 0.25, 1 }
@@ -409,10 +402,9 @@ local function ApplyAppearance(f, general)
         bg = general.defaultBgColor or { 0.1, 0.1, 0.1, 0.9 }
         bgOpacity = tonumber(general.defaultBgOpacity) or 1
     end
-    f:SetBackdropColor(bg[1] or 0.1, bg[2] or 0.1, bg[3] or 0.1, (bg[4] or 1) * bgOpacity)
-    if hasBorder then
-        f:SetBackdropBorderColor(0, 0, 0, 1)
-    end
+    ns.SkinBase.ApplyPixelBackdrop(f, hasBorder and borderPx or 0, true, false,
+        hasBorder and { 0, 0, 0, 1 } or nil,
+        { bg[1] or 0.1, bg[2] or 0.1, bg[3] or 0.1, (bg[4] or 1) * bgOpacity })
     f._borderPx = hasBorder and borderPx or 0
 end
 
@@ -603,8 +595,7 @@ local function ApplyPortrait(f, portrait)
     else
         p:SetPoint("LEFT", f, "RIGHT", 0, 0)
     end
-    p:SetBackdrop({ edgeFile = WHITE8X8, edgeSize = 1 })
-    p:SetBackdropBorderColor(0, 0, 0, 1)
+    ns.SkinBase.ApplyPixelBackdrop(p, 1, false, false, { 0, 0, 0, 1 })
     f._portraitTex = f._portraitTex or p:CreateTexture(nil, "ARTWORK")
     f._portraitTex:ClearAllPoints()
     f._portraitTex:SetPoint("TOPLEFT", 1, -1)
@@ -726,9 +717,9 @@ local function ApplyThreat(f, ind, isSample)
     tb:SetPoint("BOTTOMRIGHT", 1, -1)
     tb:SetFrameLevel(f:GetFrameLevel() + 3)
     local c = ind.threatColor or { 1, 0, 0, 0.8 }
-    tb:SetBackdrop({ bgFile = WHITE8X8, edgeFile = WHITE8X8, edgeSize = sz })
-    tb:SetBackdropColor(c[1] or 1, c[2] or 0, c[3] or 0, tonumber(ind.threatFillOpacity) or 0)
-    tb:SetBackdropBorderColor(c[1] or 1, c[2] or 0, c[3] or 0, c[4] or 0.8)
+    ns.SkinBase.ApplyPixelBackdrop(tb, sz, true, false,
+        { c[1] or 1, c[2] or 0, c[3] or 0, c[4] or 0.8 },
+        { c[1] or 1, c[2] or 0, c[3] or 0, tonumber(ind.threatFillOpacity) or 0 })
     tb:Show()
 end
 
@@ -744,9 +735,9 @@ local function ApplyTargetHighlight(f, healer, isTarget)
     th:SetPoint("BOTTOMRIGHT", 1, -1)
     th:SetFrameLevel(f:GetFrameLevel() + 4)
     local c = cfg.color or { 1, 1, 1, 0.6 }
-    th:SetBackdrop({ bgFile = WHITE8X8, edgeFile = WHITE8X8, edgeSize = 2 })
-    th:SetBackdropColor(c[1] or 1, c[2] or 1, c[3] or 1, tonumber(cfg.fillOpacity) or 0)
-    th:SetBackdropBorderColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 0.6)
+    ns.SkinBase.ApplyPixelBackdrop(th, 2, true, false,
+        { c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 0.6 },
+        { c[1] or 1, c[2] or 1, c[3] or 1, tonumber(cfg.fillOpacity) or 0 })
     th:Show()
 end
 
@@ -763,9 +754,9 @@ local function ApplyDispelOverlay(f, healer, dispelType)
     ov:ClearAllPoints()
     ov:SetAllPoints(f)
     ov:SetFrameLevel(f:GetFrameLevel() + 6)
-    ov:SetBackdrop({ bgFile = WHITE8X8, edgeFile = WHITE8X8, edgeSize = sz })
-    ov:SetBackdropColor(c[1] or 0.2, c[2] or 0.6, c[3] or 1, tonumber(cfg.fillOpacity) or 0)
-    ov:SetBackdropBorderColor(c[1] or 0.2, c[2] or 0.6, c[3] or 1, tonumber(cfg.opacity) or 1)
+    ns.SkinBase.ApplyPixelBackdrop(ov, sz, true, false,
+        { c[1] or 0.2, c[2] or 0.6, c[3] or 1, tonumber(cfg.opacity) or 1 },
+        { c[1] or 0.2, c[2] or 0.6, c[3] or 1, tonumber(cfg.fillOpacity) or 0 })
     ov:Show()
 end
 
@@ -966,9 +957,7 @@ local function ApplyPets(f, pets, hasPet)
     else
         pet:SetPoint("TOP", f, "BOTTOM", 0, -2)
     end
-    pet:SetBackdrop({ bgFile = WHITE8X8, edgeFile = WHITE8X8, edgeSize = 1 })
-    pet:SetBackdropColor(0.15, 0.3, 0.15, 0.9)
-    pet:SetBackdropBorderColor(0, 0, 0, 1)
+    ns.SkinBase.ApplyPixelBackdrop(pet, 1, true, false, { 0, 0, 0, 1 }, { 0.15, 0.3, 0.15, 0.9 })
     pet._bar = pet._bar or pet:CreateTexture(nil, "ARTWORK")
     pet._bar:ClearAllPoints()
     pet._bar:SetPoint("TOPLEFT", 1, -1)

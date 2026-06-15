@@ -759,16 +759,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
     end
 
     local function ApplyDatatextPreviewBackdrop(frame, bgR, bgG, bgB, bgA, borderR, borderG, borderB, borderA)
-        if not frame or not frame.SetBackdrop then return end
-        local core = ns.Addon
-        local px = (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
-        frame:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        frame:SetBackdropColor(bgR or 0, bgG or 0, bgB or 0, bgA or 1)
-        frame:SetBackdropBorderColor(borderR or 0, borderG or 0, borderB or 0, borderA or 1)
+        if ns.SkinBase and ns.SkinBase.ApplyPixelBackdrop then
+            ns.SkinBase.ApplyPixelBackdrop(frame, 1, true, false, { borderR, borderG, borderB, borderA }, { bgR, bgG, bgB, bgA })
+        end
     end
 
     local function CreateDatatextPreview(parent, stageHeight)

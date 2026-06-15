@@ -720,15 +720,9 @@ local function CreateBuffIcon(parent, index)
 
     -- Background/border using backdrop (border settings applied in ApplyIconBorderSettings)
     local px = (QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(button)) or 1
-    button:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-        insets = { left = px, right = px, top = px, bottom = px }
-    })
     local bgr, bgg, bgb = 0, 0, 0
     if Helpers and Helpers.GetSkinBgColor then bgr, bgg, bgb = Helpers.GetSkinBgColor() end
-    button:SetBackdropColor(bgr, bgg, bgb, 0.8)
+    ns.SkinBase.ApplyPixelBackdrop(button, 1, true, true, nil, { bgr, bgg, bgb, 0.8 }, nil, nil, 1)
 
     -- Icon texture (inset dynamically based on border width)
     button.icon = button:CreateTexture(nil, "ARTWORK")
@@ -817,17 +811,7 @@ local function ApplyIconBorderSettings()
     for _, icon in ipairs(buffIcons) do
         -- Update backdrop with new border width (pixel-perfect)
         local bpx = QUICore:Pixels(borderWidth, icon)
-        icon:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = borderSettings.show and "Interface\\Buttons\\WHITE8x8" or nil,
-            edgeSize = bpx,
-            insets = { left = bpx, right = bpx, top = bpx, bottom = bpx }
-        })
-        icon:SetBackdropColor(iconBgR, iconBgG, iconBgB, 0.8)
-
-        if borderSettings.show then
-            icon:SetBackdropBorderColor(br, bg, bb, ba)
-        end
+        ns.SkinBase.ApplyPixelBackdrop(icon, borderWidth, true, true, { br, bg, bb, ba }, { iconBgR, iconBgG, iconBgB, 0.8 }, nil, nil, borderWidth)
 
         -- Update icon inset based on border width
         icon.icon:ClearAllPoints()
@@ -938,16 +922,9 @@ local function CreateMainFrame()
     mainFrame.labelBar = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
     mainFrame.labelBar:SetPoint("TOP", mainFrame.iconContainer, "BOTTOM", 0, -2)
     mainFrame.labelBar:SetSize(100, 18)
-    local labelPx = QUICore:GetPixelSize(mainFrame.labelBar)
-    mainFrame.labelBar:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = labelPx,
-        insets = { left = labelPx, right = labelPx, top = labelPx, bottom = labelPx }
-    })
     local lblBgR, lblBgG, lblBgB = 0.05, 0.05, 0.05
     if Helpers and Helpers.GetSkinBgColor then lblBgR, lblBgG, lblBgB = Helpers.GetSkinBgColor() end
-    mainFrame.labelBar:SetBackdropColor(lblBgR, lblBgG, lblBgB, 0.95)
+    ns.SkinBase.ApplyPixelBackdrop(mainFrame.labelBar, 1, true, true, nil, { lblBgR, lblBgG, lblBgB, 0.95 }, nil, nil, 1)
 
     -- Label text
     mainFrame.labelBar.text = mainFrame.labelBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")

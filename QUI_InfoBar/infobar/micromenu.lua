@@ -83,37 +83,30 @@ local function IconWidthFor(def, size)
 end
 
 local function CreateIconButton(parent, def, size)
-    local btn = CreateFrame("Button", nil, parent)
-    btn:SetSize(IconWidthFor(def, size), size)
-
+    -- Blizzard micro-button parity (LoadMicroButtonTextures) via the shared
+    -- icon-button factory. Two entries use special art instead of a micro
+    -- atlas: character (player portrait) and spellbook (classic book icon).
+    local opts = {
+        size = size,
+        tooltip = def.label,
+        tooltipAnchor = "ANCHOR_BOTTOM",
+        onClick = def.onClick,
+        combatGuard = true,
+        registerClicks = "AnyUp",
+    }
     if def.portrait then
-        local tex = btn:CreateTexture(nil, "ARTWORK")
-        tex:SetAllPoints()
-        SetPortraitTexture(tex, "player")
-        btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        opts.portrait = true
+        opts.squareHighlight = true
     elseif def.icon then
-        btn:SetNormalTexture(def.icon)
-        btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        opts.icon = def.icon
+        opts.squareHighlight = true
     else
-        -- Blizzard micro-button parity (LoadMicroButtonTextures)
-        btn:SetNormalAtlas(ATLAS_PREFIX .. def.atlas .. "-Up")
-        btn:SetPushedAtlas(ATLAS_PREFIX .. def.atlas .. "-Down")
-        btn:SetHighlightAtlas(ATLAS_PREFIX .. def.atlas .. "-Mouseover")
+        opts.atlasTriplet = ATLAS_PREFIX .. def.atlas
     end
 
-    btn:RegisterForClicks("AnyUp")
-    btn:SetScript("OnClick", function()
-        if InCombatLockdown() then return end
-        def.onClick()
-    end)
-    btn:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:ClearLines()
-        GameTooltip:AddLine(def.label, 1, 1, 1)
-        GameTooltip:Show()
-    end)
-    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
+    local btn = ns.UIKit.CreateIconButton(parent, opts)
+    -- Factory makes the button square; restore the aspect-correct width.
+    btn:SetSize(IconWidthFor(def, size), size)
     return btn
 end
 

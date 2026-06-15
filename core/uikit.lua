@@ -998,6 +998,370 @@ function UIKit.CreateIcon(parent, size, borderSizePixels, r, g, b, a)
 end
 
 ---------------------------------------------------------------------------
+-- BUTTONS
+---------------------------------------------------------------------------
+
+-- Shared fallback palette for buttons (only used if QUI.GUI.Colors is somehow
+-- unavailable; in practice core/gui_shell.lua always defines it before any
+-- button is created). Mirrors the gui_shell defaults.
+local BUTTON_FALLBACK_COLORS = {
+    accent = { 0.204, 0.827, 0.6, 1 },
+    text = { 1, 1, 1, 1 },
+    textDim = { 1, 1, 1, 0.6 },
+}
+
+--- Canonical themed push/ghost button. Reads the LIVE central palette
+--- (QUI.GUI.Colors, defined in core/gui_shell.lua and mutated in place by
+--- GUI:ApplyAccentColor — so a theme change recolors on the next hover) and the
+--- central font path (GUI:GetFontPath). QUI_Options' GUI:CreateButton delegates
+--- here; new call sites should use this directly.
+--- @param parent Frame
+--- @param opts table { text, width, height, onClick, variant="ghost"|"primary", fontSize }
+--- @return Button
+function UIKit.CreateButton(parent, opts)
+    opts = opts or {}
+    local gui = QUI and QUI.GUI
+    local C = (gui and gui.Colors) or BUTTON_FALLBACK_COLORS
+    -- Optional palette override (opts.colors = { text, textDim, accent }) lets callers
+    -- with a distinct palette (e.g. the chat module, which intentionally diverges from
+    -- the options palette) route through this central factory instead of re-rolling.
+    local override = opts.colors
+    -- Text colors: override > live palette > fallback. Accent resolves at use-time via
+    -- accentRGB() (override accent, else UIKit.GetAccentColor — correct before Options
+    -- seeds GUI.Colors.accent, e.g. login-time windows).
+    local textColor = (override and override.text) or C.text or BUTTON_FALLBACK_COLORS.text
+    local textDim = (override and override.textDim) or C.textDim or BUTTON_FALLBACK_COLORS.textDim
+    local function accentRGB()
+        local a = override and override.accent
+        if type(a) == "function" then
+            local r, g, b = a()
+            if type(r) == "table" then return r[1], r[2], r[3] end
+            return r, g, b
+        elseif type(a) == "table" then
+            return a[1], a[2], a[3]
+        end
+        return UIKit.GetAccentColor()
+    end
+    local variant = opts.variant or "ghost"
+
+    local button = CreateFrame("Button", nil, parent)
+    button:SetSize(opts.width or 120, opts.height or 22)
+
+    if not button._pixelBorderReady then
+        UIKit.CreateBorderLines(button)
+        button._pixelBorderReady = true
+    end
+
+    local hoverBg = button:CreateTexture(nil, "BACKGROUND")
+    hoverBg:SetAllPoints(button)
+    hoverBg:SetColorTexture(1, 1, 1, 0.06)
+    hoverBg:Hide()
+    button._hoverBg = hoverBg
+
+    local btnText = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    btnText:SetPoint("CENTER", 0, 0)
+    btnText:SetText(opts.text or "Button")
+    button.text = btnText
+
+    local function ApplyButtonVariant(btn, variantName)
+        if variantName == "primary" then
+            local ar, ag, ab = accentRGB()
+            UIKit.UpdateBorderLines(btn, 1, ar, ag, ab, 0.5)
+            if btn.text then btn.text:SetTextColor(ar, ag, ab, 1) end
+        else
+            UIKit.UpdateBorderLines(btn, 1, 1, 1, 1, 0.2)
+            if btn.text then btn.text:SetTextColor(textDim[1], textDim[2], textDim[3], 1) end
+        end
+    end
+    ApplyButtonVariant(button, variant)
+
+    local f, _, flags = button.text:GetFont()
+    local fontPath = f
+    if not fontPath then
+        fontPath = (UIKit.ResolveFontPath and gui and gui.GetFontPath and UIKit.ResolveFontPath(gui:GetFontPath()))
+            or (gui and gui.GetFontPath and gui:GetFontPath())
+            or DEFAULT_FONT
+    end
+    button.text:SetFont(fontPath, opts.fontSize or 10, flags or "")
+    button:SetHeight(opts.height or 22)
+    if not opts.width or opts.width <= 0 then
+        button:SetWidth((button.text:GetStringWidth() or 0) + 24)
+    end
+
+    button:SetScript("OnEnter", function(self)
+        if variant == "primary" then
+            local ar, ag, ab = accentRGB()
+            UIKit.UpdateBorderLines(self, 1, ar, ag, ab, 1)
+            self._hoverBg:SetColorTexture(ar, ag, ab, 0.08)
+        else
+            if self.text then self.text:SetTextColor(textColor[1], textColor[2], textColor[3], 1) end
+            self._hoverBg:SetColorTexture(1, 1, 1, 0.06)
+        end
+        self._hoverBg:Show()
+    end)
+    button:SetScript("OnLeave", function(self)
+        if variant == "primary" then
+            local ar, ag, ab = accentRGB()
+            UIKit.UpdateBorderLines(self, 1, ar, ag, ab, 0.5)
+        else
+            if self.text then self.text:SetTextColor(textDim[1], textDim[2], textDim[3], 1) end
+        end
+        self._hoverBg:Hide()
+    end)
+    button:SetScript("OnMouseDown", function(self)
+        if self.text then self.text:SetPoint("CENTER", 0, -1) end
+        self._hoverBg:SetAlpha(1.4)
+    end)
+    button:SetScript("OnMouseUp", function(self)
+        if self.text then self.text:SetPoint("CENTER", 0, 0) end
+        self._hoverBg:SetAlpha(1)
+    end)
+
+    if opts.onClick then
+        button:SetScript("OnClick", opts.onClick)
+    end
+
+    function button:SetText(newText)
+        btnText:SetText(newText)
+    end
+
+    -- Public method for callers that need custom border colors.
+    function button:SetBorderColor(r, g, b, a)
+        UIKit.UpdateBorderLines(self, 1, r, g, b, a or 1, false)
+    end
+
+    -- Backward-compatible alias used by some option tabs.
+    button.SetFieldBorderColor = button.SetBorderColor
+
+    return button
+end
+
+--- Resolve the user's theme accent (r, g, b). GUI.Colors.accent is only seeded
+--- with the user's preset once the Options panel first opens, so resolve the
+--- saved preset directly when possible (this is what window.lua / full_surface /
+--- pins_ui each hand-roll). Falls back to the live palette, then a sane default.
+--- @return number, number, number
+function UIKit.GetAccentColor()
+    local gui = QUI and QUI.GUI
+    local core = Helpers.GetCore and Helpers.GetCore()
+    local general = core and core.db and core.db.profile and core.db.profile.general
+    if gui and gui.ResolveThemePreset and general and general.themePreset then
+        return gui:ResolveThemePreset(general.themePreset)
+    end
+    local custom = general and general.addonAccentColor
+    if custom and custom[1] then return custom[1], custom[2], custom[3] end
+    local accent = (gui and gui.Colors and gui.Colors.accent) or BUTTON_FALLBACK_COLORS.accent
+    return accent[1], accent[2], accent[3]
+end
+
+--- Themed close ("X") button: line-drawn X over a pixel-bordered chip, accent on
+--- hover. Reads the central border palette + central accent resolver. Replaces the
+--- line-drawn-X close buttons hand-rolled across the suite (settings-window style).
+--- @param parent Frame
+--- @param opts table { size=22, onClick, lineLen=10, lineWidth=1.5, point, relativeTo, relativePoint, x, y }
+--- @return Button
+function UIKit.CreateCloseButton(parent, opts)
+    opts = opts or {}
+    local gui = QUI and QUI.GUI
+    local C = (gui and gui.Colors) or BUTTON_FALLBACK_COLORS
+    local size = opts.size or 22
+    local lineLen = opts.lineLen or 10
+    local lineWidth = opts.lineWidth or 1.5
+
+    local function borderRGBA()
+        local b = C.border or { 1, 1, 1, 0.06 }
+        return b[1], b[2], b[3], b[4] or 1
+    end
+
+    local close = CreateFrame("Button", nil, parent)
+    close:SetSize(size, size)
+    if opts.point then
+        close:SetPoint(opts.point, opts.relativeTo or parent, opts.relativePoint or opts.point, opts.x or 0, opts.y or 0)
+    end
+
+    close._bg = UIKit.CreateBackground(close, 0.08, 0.08, 0.08, 0.6)
+    UIKit.CreateBorderLines(close)
+    UIKit.UpdateBorderLines(close, 1, borderRGBA())
+
+    local xLine1 = close:CreateTexture(nil, "OVERLAY")
+    xLine1:SetSize(lineLen, lineWidth)
+    xLine1:SetPoint("CENTER")
+    xLine1:SetColorTexture(1, 1, 1, 0.8)
+    xLine1:SetRotation(math.rad(45))
+    local xLine2 = close:CreateTexture(nil, "OVERLAY")
+    xLine2:SetSize(lineLen, lineWidth)
+    xLine2:SetPoint("CENTER")
+    xLine2:SetColorTexture(1, 1, 1, 0.8)
+    xLine2:SetRotation(math.rad(-45))
+    close._xLine1, close._xLine2 = xLine1, xLine2
+
+    if opts.onClick then close:SetScript("OnClick", opts.onClick) end
+    close:SetScript("OnEnter", function(self)
+        local ar, ag, ab = UIKit.GetAccentColor()
+        UIKit.UpdateBorderLines(self, 1, ar, ag, ab, 1)
+        self._bg:SetVertexColor(ar, ag, ab, 0.15)
+        xLine1:SetColorTexture(ar, ag, ab, 1)
+        xLine2:SetColorTexture(ar, ag, ab, 1)
+    end)
+    close:SetScript("OnLeave", function(self)
+        UIKit.UpdateBorderLines(self, 1, borderRGBA())
+        self._bg:SetVertexColor(0.08, 0.08, 0.08, 0.6)
+        xLine1:SetColorTexture(1, 1, 1, 0.8)
+        xLine2:SetColorTexture(1, 1, 1, 0.8)
+    end)
+
+    return close
+end
+
+--- Clickable icon button: a child icon (texture / atlas / player portrait) with hover
+--- feedback + GameTooltip + onClick. Covers the minimap icon-button idiom (vertex-color
+--- brighten: idle 0.85 → hover 1 → mousedown 0.72) and the micro-menu idiom (a square
+--- highlight texture, or a -Up/-Down/-Mouseover atlas triplet on the button itself).
+--- @param parent Frame
+--- @param opts table {
+---   size, name,
+---   icon | atlas | portrait,        -- icon source
+---   atlasTriplet,                   -- atlas base; sets Normal/Pushed/Highlight "-Up"/"-Down"/"-Mouseover"
+---   squareHighlight,                -- bool: ButtonHilight-Square (ADD) instead of vertex brighten
+---   idleAlpha = 0.85,
+---   tooltip,                        -- string OR function(self) building GameTooltip lines
+---   tooltipAnchor = "ANCHOR_RIGHT",
+---   onClick, combatGuard,           -- combatGuard skips onClick in lockdown
+---   onEnter, onLeave,               -- extra hooks run AFTER the built-in handlers
+---   registerClicks = "LeftButtonUp" }
+--- @return Button
+function UIKit.CreateIconButton(parent, opts)
+    opts = opts or {}
+    local btn = CreateFrame("Button", opts.name, parent)
+    btn:SetSize(opts.size or 18, opts.size or 18)
+    btn:RegisterForClicks(opts.registerClicks or "LeftButtonUp")
+
+    local idle = opts.idleAlpha or 0.85
+    -- brighten applies only to a child icon texture we own (not to button-template art)
+    local brighten = false
+
+    if opts.atlasTriplet then
+        btn:SetNormalAtlas(opts.atlasTriplet .. "-Up")
+        btn:SetPushedAtlas(opts.atlasTriplet .. "-Down")
+        btn:SetHighlightAtlas(opts.atlasTriplet .. "-Mouseover")
+    elseif opts.portrait then
+        local icon = btn:CreateTexture(nil, "ARTWORK")
+        icon:SetAllPoints()
+        SetPortraitTexture(icon, "player")
+        btn.icon = icon
+        if opts.squareHighlight then btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD") end
+    elseif opts.atlas or opts.icon then
+        local icon = btn:CreateTexture(nil, "ARTWORK")
+        icon:SetAllPoints()
+        if opts.atlas then icon:SetAtlas(opts.atlas) else icon:SetTexture(opts.icon) end
+        btn.icon = icon
+        if opts.squareHighlight then
+            btn:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        else
+            icon:SetVertexColor(idle, idle, idle, 1)
+            brighten = true
+        end
+    end
+
+    local function showTooltip(self)
+        local tip = opts.tooltip
+        if not tip then return end
+        GameTooltip:SetOwner(self, opts.tooltipAnchor or "ANCHOR_RIGHT")
+        if type(tip) == "function" then tip(self) else GameTooltip:SetText(tip) end
+        GameTooltip:Show()
+    end
+
+    btn:SetScript("OnEnter", function(self)
+        if brighten and self.icon then self.icon:SetVertexColor(1, 1, 1, 1) end
+        showTooltip(self)
+        if opts.onEnter then opts.onEnter(self) end
+    end)
+    btn:SetScript("OnLeave", function(self)
+        if brighten and self.icon then self.icon:SetVertexColor(idle, idle, idle, 1) end
+        GameTooltip:Hide()
+        if opts.onLeave then opts.onLeave(self) end
+    end)
+    if brighten then
+        btn:SetScript("OnMouseDown", function(self) self.icon:SetVertexColor(0.72, 0.72, 0.72, 1) end)
+        btn:SetScript("OnMouseUp", function(self)
+            local v = self:IsMouseOver() and 1 or idle
+            self.icon:SetVertexColor(v, v, v, 1)
+        end)
+    end
+    if opts.onClick then
+        local guard, click = opts.combatGuard, opts.onClick
+        btn:SetScript("OnClick", function(self, ...)
+            if guard and InCombatLockdown() then return end
+            click(self, ...)
+        end)
+    end
+
+    return btn
+end
+
+--- Themed tab button: a pixel-backdrop chip with an auto-sized label, an accent active
+--- state and a dim inactive state, plus a faint-accent hover border. Uses the kit's
+--- manual-texture backdrop (crash-safe inside UIPanelScrollFrameTemplate children, where
+--- native SetBackdrop can stack-overflow). Call btn:SetActive(bool) to switch state.
+--- @param parent Frame
+--- @param opts table { label, minWidth=80, height=20, fontPath, fontSize, fontFlags, onClick, isActive }
+--- @return Button  (with :SetActive(active) and ._label)
+function UIKit.CreateTabButton(parent, opts)
+    opts = opts or {}
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetHeight(opts.height or 20)
+
+    btn._label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    btn._label:SetPoint("CENTER")
+    if opts.fontPath then btn._label:SetFont(opts.fontPath, opts.fontSize or 12, opts.fontFlags or "") end
+    btn._label:SetText(opts.label or "")
+    btn:SetWidth(max(opts.minWidth or 80, (btn._label:GetStringWidth() or 0) + 24))
+
+    -- Manual-texture backdrop so SetBackdropColor/SetBackdropBorderColor below route to
+    -- the kit's manual setters (crash-safe; never calls native SetBackdrop).
+    UIKit.ApplyPixelBackdrop(btn, 1, true, false)
+
+    local function chrome(field, fallback)
+        local C = (QUI and QUI.GUI and QUI.GUI.Colors) or nil
+        local c = (C and C[field]) or fallback
+        return c[1], c[2], c[3]
+    end
+
+    function btn:SetActive(active)
+        self._active = active and true or false
+        local ar, ag, ab = UIKit.GetAccentColor()
+        if self._active then
+            self:SetBackdropColor(ar * 0.15, ag * 0.15, ab * 0.15, 1)
+            self:SetBackdropBorderColor(ar, ag, ab, 0.8)
+            self._label:SetTextColor(ar, ag, ab, 1)
+        else
+            local br, bgc, bb = chrome("bg", { 0.1, 0.1, 0.1, 1 })
+            local dr, dg, db = chrome("border", { 1, 1, 1, 0.1 })
+            self:SetBackdropColor(br, bgc, bb, 1)
+            self:SetBackdropBorderColor(dr, dg, db, 1)
+            self._label:SetTextColor(0.6, 0.6, 0.6, 1)
+        end
+    end
+
+    btn:SetScript("OnEnter", function(self)
+        if not self._active then
+            local ar, ag, ab = UIKit.GetAccentColor()
+            self:SetBackdropBorderColor(ar * 0.7, ag * 0.7, ab * 0.7, 1)
+        end
+    end)
+    btn:SetScript("OnLeave", function(self)
+        if not self._active then
+            local dr, dg, db = chrome("border", { 1, 1, 1, 0.1 })
+            self:SetBackdropBorderColor(dr, dg, db, 1)
+        end
+    end)
+    if opts.onClick then btn:SetScript("OnClick", opts.onClick) end
+
+    btn:SetActive(opts.isActive)
+    return btn
+end
+
+---------------------------------------------------------------------------
 -- OBJECT POOL
 ---------------------------------------------------------------------------
 

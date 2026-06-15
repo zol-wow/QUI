@@ -11,16 +11,7 @@ env.SetChunkEnv(1, env)
 function CreateEditOverlay(container, barKey)
     local overlay = CreateFrame("Frame", nil, container, "BackdropTemplate")
     overlay:SetAllPoints(container)
-    local core = GetCore()
-    local px = (core and core.GetPixelSize and core:GetPixelSize(overlay)) or 1
-    local edge2 = 2 * px
-    overlay:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = edge2,
-    })
-    overlay:SetBackdropColor(0.2, 0.8, 0.6, 0.3)
-    overlay:SetBackdropBorderColor(0.376, 0.647, 0.980, 1)
+    ns.SkinBase.ApplyPixelBackdrop(overlay, 2, true, false, {0.376, 0.647, 0.980, 1}, {0.2, 0.8, 0.6, 0.3})
     overlay:EnableMouse(true)
     overlay:SetMovable(true)
     overlay:RegisterForDrag("LeftButton")

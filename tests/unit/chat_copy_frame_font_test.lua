@@ -82,7 +82,11 @@ local internals = {
 
 local ns = {
     Helpers = { IsSecretValue = function() return false end },
-    UIKit = setmetatable({}, { __index = function() return function() end end }),
+    -- CreateThemedButton now delegates to the central factory, so UIKit.CreateButton
+    -- must return a real mock frame; other UIKit.* stay generated no-ops.
+    UIKit = setmetatable({
+        CreateButton = function() return recFrame() end,
+    }, { __index = function() return function() end end }),
     QUI = { Chat = {
         _internals = internals,
         DisplayLayer = {

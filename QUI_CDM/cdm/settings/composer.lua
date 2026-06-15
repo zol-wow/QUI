@@ -83,11 +83,6 @@ local function GetChromeFontOutline()
     return ""
 end
 
-local function GetPixelSize(frame)
-    local core = ns.Addon
-    return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
-end
-
 local FRAME_WIDTH = 640
 local FRAME_HEIGHT = 700
 local NAV_WIDTH = 120
@@ -1333,25 +1328,13 @@ local function BuildOverridePanel(parent)
     panel:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
 
     -- Close button (X) in upper-right — raised above the panel's drag layer
-    local closeBtn = CreateFrame("Button", nil, panel)
-    closeBtn:SetSize(20, 20)
-    closeBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -2, -2)
+    local closeBtn = SkinBase.CreateCloseButton(panel, {
+        size = 20,
+        point = "TOPRIGHT", x = -2, y = -2,
+        onClick = function() HideOverridePanel(true) end,
+    })
     closeBtn:SetFrameLevel(panel:GetFrameLevel() + 10)
     closeBtn:RegisterForClicks("AnyUp")
-    local closeText = closeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(closeText, { fontOnly = true }) end
-    closeText:SetPoint("CENTER")
-    closeText:SetText("X")
-    closeText:SetTextColor(0.6, 0.6, 0.6, 1)
-    closeBtn:SetScript("OnClick", function()
-        HideOverridePanel(true)
-    end)
-    closeBtn:SetScript("OnEnter", function()
-        closeText:SetTextColor(0.9, 0.3, 0.3, 1)
-    end)
-    closeBtn:SetScript("OnLeave", function()
-        closeText:SetTextColor(0.6, 0.6, 0.6, 1)
-    end)
     panel._closeBtn = closeBtn
 
     -- ESC to close
@@ -2388,15 +2371,9 @@ local function ShowEntryContextMenu(anchorCell, entry, entryIndex)
     menu:SetSize(menuWidth, menuHeight)
     menu:SetFrameStrata("TOOLTIP")
     menu:SetFrameLevel(300)
-    menu:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GetPixelSize(menu),
-    })
     local _ecmBR, _ecmBG, _ecmBB = GetChromeBgMain()
     local _ecmBdR, _ecmBdG, _ecmBdB = GetChromeBorder()
-    menu:SetBackdropColor(_ecmBR, _ecmBG, _ecmBB, 0.98)
-    menu:SetBackdropBorderColor(_ecmBdR, _ecmBdG, _ecmBdB, 1)
+    SkinBase.ApplyPixelBackdrop(menu, 1, true, false, { _ecmBdR, _ecmBdG, _ecmBdB, 1 }, { _ecmBR, _ecmBG, _ecmBB, 0.98 })
     menu:EnableMouse(true)
     menu:SetPoint("TOPLEFT", anchorCell, "BOTTOMLEFT", 0, -2)
     menu:SetClampedToScreen(true)
@@ -3654,50 +3631,27 @@ local function BuildAddTabs()
     for i, tabInfo in ipairs(tabs) do
         local btn = addTabButtons[i]
         if not btn then
-            btn = CreateFrame("Button", nil, tabBar, "BackdropTemplate")
+            btn = ns.UIKit.CreateTabButton(tabBar, { minWidth = 80 })
+            btn:SetParent(tabBar)
             btn:SetHeight(TAB_HEIGHT - 2)
             addTabButtons[i] = btn
-            btn._label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(btn._label, { fontOnly = true }) end
-            btn._label:SetPoint("CENTER")
         end
 
-        local tabWidth = math_max(80, btn._label:GetStringWidth() + 24)
         btn:SetParent(tabBar)
         btn._label:SetText(tabInfo.label)
-        tabWidth = math_max(80, btn._label:GetStringWidth() + 24)
+        local tabWidth = math_max(80, btn._label:GetStringWidth() + 24)
         btn:SetSize(tabWidth, TAB_HEIGHT - 2)
         btn:ClearAllPoints()
         btn:SetPoint("LEFT", tabBar, "LEFT", xOff, 0)
 
-        local isActive = (tabInfo.key == activeAddTab)
-        if isActive then
-            SetSimpleBackdrop(btn, ACCENT_R * 0.15, ACCENT_G * 0.15, ACCENT_B * 0.15, 1,
-                ACCENT_R, ACCENT_G, ACCENT_B, 0.8)
-            btn._label:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-        else
-            local _atBR, _atBG, _atBB = GetChromeBgMain()
-            local _atBdR, _atBdG, _atBdB = GetChromeBorder()
-            SetSimpleBackdrop(btn, _atBR, _atBG, _atBB, 1, _atBdR, _atBdG, _atBdB, 1)
-            btn._label:SetTextColor(0.6, 0.6, 0.6, 1)
-        end
+        btn:SetActive(tabInfo.key == activeAddTab)
 
         local tabKey = tabInfo.key
         btn:SetScript("OnClick", function()
             activeAddTab = tabKey
             BuildAddTabs()
             RefreshAddList()
-        end)
-        btn:SetScript("OnEnter", function(self)
-            if tabKey ~= activeAddTab then
-                self:SetBackdropBorderColor(ACCENT_R * 0.7, ACCENT_G * 0.7, ACCENT_B * 0.7, 1)
-            end
-        end)
-        btn:SetScript("OnLeave", function(self)
-            if tabKey ~= activeAddTab then
-                local _r, _g, _b = GetChromeBorder()
-                self:SetBackdropBorderColor(_r, _g, _b, 1)
-            end
         end)
 
         btn:Show()
@@ -3726,14 +3680,8 @@ local function ShowNewContainerPopup(onCreated)
     popup:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     popup:SetFrameStrata("TOOLTIP")
     popup:SetFrameLevel(250)
-    popup:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GetPixelSize(popup),
-    })
     local _ncpBR, _ncpBG, _ncpBB = GetChromeBgMain()
-    popup:SetBackdropColor(_ncpBR, _ncpBG, _ncpBB, 0.98)
-    popup:SetBackdropBorderColor(ACCENT_R, ACCENT_G, ACCENT_B, 0.8)
+    SkinBase.ApplyPixelBackdrop(popup, 1, true, false, { ACCENT_R, ACCENT_G, ACCENT_B, 0.8 }, { _ncpBR, _ncpBG, _ncpBB, 0.98 })
     popup:EnableMouse(true)
     popup:SetMovable(true)
     popup:RegisterForDrag("LeftButton")
@@ -3757,15 +3705,9 @@ local function ShowNewContainerPopup(onCreated)
     local nameBox = CreateFrame("EditBox", nil, popup, "BackdropTemplate")
     nameBox:SetSize(260, 22)
     nameBox:SetPoint("TOPLEFT", 12, -52)
-    nameBox:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GetPixelSize(nameBox),
-    })
     local _nbBR, _nbBG, _nbBB = GetChromeBgPanel()
     local _nbBdR, _nbBdG, _nbBdB = GetChromeBorder()
-    nameBox:SetBackdropColor(_nbBR, _nbBG, _nbBB, 1)
-    nameBox:SetBackdropBorderColor(_nbBdR, _nbBdG, _nbBdB, 1)
+    SkinBase.ApplyPixelBackdrop(nameBox, 1, true, false, { _nbBdR, _nbBdG, _nbBdB, 1 }, { _nbBR, _nbBG, _nbBB, 1 })
     nameBox:SetFont(GetChromeFont(), 11, GetChromeFontOutline())
     nameBox:SetTextInsets(6, 6, 0, 0)
     nameBox:SetAutoFocus(false)
@@ -3811,13 +3753,8 @@ local function ShowNewContainerPopup(onCreated)
         local btn = CreateFrame("Button", nil, popup, "BackdropTemplate")
         btn:SetSize(88, 22)
         btn:SetPoint("TOPLEFT", btnX, -98)
-        btn:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = GetPixelSize(btn),
-        })
         local _tbBR, _tbBG, _tbBB = GetChromeBgPanel()
-        btn:SetBackdropColor(_tbBR, _tbBG, _tbBB, 1)
+        SkinBase.ApplyPixelBackdrop(btn, 1, true, false, nil, { _tbBR, _tbBG, _tbBB, 1 })
         local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(label, { fontOnly = true }) end
         label:SetPoint("CENTER")
@@ -3884,17 +3821,11 @@ local function ShowNewContainerPopup(onCreated)
     end)
 
     -- Close button
-    local closeBtn = CreateFrame("Button", nil, popup)
-    closeBtn:SetSize(16, 16)
-    closeBtn:SetPoint("TOPRIGHT", -4, -4)
-    local closeText = closeBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    if SkinBase and SkinBase.SkinFontString then SkinBase.SkinFontString(closeText, { fontOnly = true }) end
-    closeText:SetPoint("CENTER")
-    closeText:SetText("X")
-    closeText:SetTextColor(0.5, 0.5, 0.5, 1)
-    closeBtn:SetScript("OnClick", function() popup:Hide() end)
-    closeBtn:SetScript("OnEnter", function() closeText:SetTextColor(0.9, 0.3, 0.3, 1) end)
-    closeBtn:SetScript("OnLeave", function() closeText:SetTextColor(0.5, 0.5, 0.5, 1) end)
+    SkinBase.CreateCloseButton(popup, {
+        size = 16, lineLen = 8,
+        point = "TOPRIGHT", x = -4, y = -4,
+        onClick = function() popup:Hide() end,
+    })
 
     newContainerPopup = popup
     popup:Show()
@@ -3911,15 +3842,9 @@ local function ShowContainerContextMenu(containerKey, anchorFrame)
     menu:SetSize(140, 60)
     menu:SetFrameStrata("TOOLTIP")
     menu:SetFrameLevel(300)
-    menu:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GetPixelSize(menu),
-    })
     local _ccmBR, _ccmBG, _ccmBB = GetChromeBgMain()
     local _ccmBdR, _ccmBdG, _ccmBdB = GetChromeBorder()
-    menu:SetBackdropColor(_ccmBR, _ccmBG, _ccmBB, 0.98)
-    menu:SetBackdropBorderColor(_ccmBdR, _ccmBdG, _ccmBdB, 1)
+    SkinBase.ApplyPixelBackdrop(menu, 1, true, false, { _ccmBdR, _ccmBdG, _ccmBdB, 1 }, { _ccmBR, _ccmBG, _ccmBB, 0.98 })
     menu:EnableMouse(true)
     menu:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", 0, -2)
 

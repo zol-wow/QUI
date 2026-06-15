@@ -111,9 +111,27 @@ local ns = {
             frame._quiBorderR, frame._quiBorderG, frame._quiBorderB, frame._quiBorderA = r, g, b, a
         end,
     },
-    -- Popup-only path does not touch SkinBase; a bare table surfaces any
-    -- unexpected SkinBase call as a hard error during the RED phase.
-    SkinBase = {},
+    -- The local ApplyPixelBackdrop now delegates its RENDER to the shared snapped
+    -- 4-texture path (SkinBase.ApplyTextureBackdrop) — crisp at fractional UI
+    -- scale, unlike SetBackdrop edge files. Colour PERSISTENCE stays local
+    -- (state.bgColor/borderColor drive every re-apply). The stub mirrors
+    -- ApplyTextureBackdrop's colour application (uikit.lua:2057-2067): use the
+    -- passed colour, else the _quiBg*/_quiBorder* fallback fields.
+    SkinBase = {
+        ApplyTextureBackdrop = function(frame, _bgFile, _edgeFile, _edgeSize, borderColor, bgColor)
+            if bgColor then
+                frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgColor[4])
+            else
+                frame:SetBackdropColor(frame._quiBgR or 1, frame._quiBgG or 1, frame._quiBgB or 1, frame._quiBgA)
+            end
+            if borderColor then
+                frame:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+            else
+                frame:SetBackdropBorderColor(frame._quiBorderR or 1, frame._quiBorderG or 1, frame._quiBorderB or 1, frame._quiBorderA)
+            end
+            return true
+        end,
+    },
     UIKit = {
         RegisterScaleRefresh = function(owner, _, fn)
             scaleRefreshers[#scaleRefreshers + 1] = { owner = owner, fn = fn }

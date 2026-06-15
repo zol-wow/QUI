@@ -47,6 +47,24 @@ GUI.Colors = GUI.Colors or {
 
 local C = GUI.Colors
 
+---------------------------------------------------------------------------
+-- FONT PATH (central) — bundled Quazii font, resolved lazily so LSM / AssetPath
+-- are ready regardless of core file load order. QUI_Options/framework.lua mirrors
+-- this; defining it on the core GUI shell makes the path reachable suite-wide at
+-- login (UIKit.CreateButton and other early factories resolve through it before
+-- the Options addon loads).
+---------------------------------------------------------------------------
+function GUI:GetFontPath()
+    if not self.FONT_PATH then
+        local lsm = ns.LSM
+        local helpers = ns.Helpers
+        self.FONT_PATH = (lsm and type(lsm.Fetch) == "function" and lsm:Fetch("font", "Quazii"))
+            or (helpers and helpers.AssetPath and (helpers.AssetPath .. "Quazii.ttf"))
+            or [[Interface\AddOns\QUI\assets\Quazii.ttf]]
+    end
+    return self.FONT_PATH
+end
+
 ns.QUI_Options = ns.QUI_Options or {}
 local Options = ns.QUI_Options
 Options.PADDING = Options.PADDING or 15

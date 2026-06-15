@@ -154,13 +154,7 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
                 iconFrame:ClearAllPoints()
                 iconFrame:SetPoint(iconAnchor, frame, anchor, offX + slotX, offY + slotY)
                 local iconPx = QUICore.GetPixelSize and QUICore:GetPixelSize(iconFrame) or px
-                iconFrame:SetBackdrop({
-                    bgFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeSize = iconPx,
-                })
-                iconFrame:SetBackdropBorderColor(borderR, borderG, borderB, 1)
-                iconFrame:SetBackdropColor(0, 0, 0, 1)
+                ns.SkinBase.ApplyPixelBackdrop(iconFrame, 1, true, false, { borderR, borderG, borderB, 1 }, { 0, 0, 0, 1 })
                 local tex = iconFrame:CreateTexture(nil, "ARTWORK")
                 tex:SetPoint("TOPLEFT", iconPx, -iconPx)
                 tex:SetPoint("BOTTOMRIGHT", -iconPx, iconPx)
@@ -180,9 +174,7 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
             sq:SetFrameLevel(auraLevel)
             sq:ClearAllPoints()
             sq:SetPoint(anchor, frame, anchor, offX, offY)
-            local sqPx = QUICore.GetPixelSize and QUICore:GetPixelSize(sq) or px
-            sq:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = sqPx })
-            sq:SetBackdropBorderColor(0, 0, 0, 1)
+            ns.SkinBase.ApplyPixelBackdrop(sq, 1, false, false, { 0, 0, 0, 1 })
             local fill = sq:CreateTexture(nil, "ARTWORK")
             fill:SetAllPoints()
             fill:SetColorTexture(color[1] or 0.5, color[2] or 0.5, color[3] or 0.5, color[4] or 1)
@@ -264,11 +256,6 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
     local borderSize = borderPx > 0 and (QUICore.Pixels and QUICore:Pixels(borderPx, frame) or borderPx) or 0
     local px = QUICore.GetPixelSize and QUICore:GetPixelSize(frame) or 1
 
-    frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = borderSize > 0 and "Interface\\Buttons\\WHITE8x8" or nil,
-        edgeSize = borderSize > 0 and borderSize or nil,
-    })
     -- Background color matching groupframes.lua behavior
     local bgColor, healthOpacity, bgOpacity
     if general and general.darkMode then
@@ -281,12 +268,13 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         bgOpacity = general and general.defaultBgOpacity or 1.0
     end
     local bgAlpha = (bgColor[4] or 1) * bgOpacity
-    frame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgAlpha)
+    local frameBorderColor
     if borderSize > 0 then
         local bdr, bdg, bdb, bda = 0.15, 0.15, 0.15, 1
         if Helpers and Helpers.GetSkinBorderColor then bdr, bdg, bdb, bda = Helpers.GetSkinBorderColor() end
-        frame:SetBackdropBorderColor(bdr, bdg, bdb, bda)
+        frameBorderColor = { bdr, bdg, bdb, bda }
     end
+    ns.SkinBase.ApplyPixelBackdrop(frame, borderSize > 0 and borderPx or 0, true, false, frameBorderColor, { bgColor[1], bgColor[2], bgColor[3], bgAlpha })
 
     -- Power bar
     local powerSettings = vdb.power
@@ -550,14 +538,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
             threatOverlay:SetAllPoints()
             threatOverlay:SetFrameLevel(baseLevel + 3)
             local tc = indSettings.threatColor or { 1, 0, 0, 0.8 }
-            local threatBorderPx = px * (indSettings.threatBorderSize or 3)
-            threatOverlay:SetBackdrop({
-                bgFile = "Interface\\Buttons\\WHITE8x8",
-                edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = threatBorderPx > 0 and threatBorderPx or px * 2,
-            })
-            threatOverlay:SetBackdropColor(tc[1], tc[2], tc[3], indSettings.threatFillOpacity or 0.15)
-            threatOverlay:SetBackdropBorderColor(tc[1], tc[2], tc[3], tc[4] or 0.8)
+            ns.SkinBase.ApplyPixelBackdrop(threatOverlay, indSettings.threatBorderSize or 3, true, false, { tc[1], tc[2], tc[3], tc[4] or 0.8 }, { tc[1], tc[2], tc[3], indSettings.threatFillOpacity or 0.15 })
         end
     end
 
@@ -573,13 +554,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
                 highlight:SetPoint("BOTTOMRIGHT", px, -px)
                 highlight:SetFrameLevel(baseLevel + 4)
                 local hc = th.color or { 1, 1, 1, 0.6 }
-                highlight:SetBackdrop({
-                    bgFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeSize = px * 2,
-                })
-                highlight:SetBackdropColor(hc[1], hc[2], hc[3], th.fillOpacity or 0.12)
-                highlight:SetBackdropBorderColor(hc[1], hc[2], hc[3], hc[4] or 0.6)
+                ns.SkinBase.ApplyPixelBackdrop(highlight, 2, true, false, { hc[1], hc[2], hc[3], hc[4] or 0.6 }, { hc[1], hc[2], hc[3], th.fillOpacity or 0.12 })
             end
         end
 
@@ -593,14 +568,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
                 dispel:SetFrameLevel(baseLevel + 6)
                 local dc = dsp.color or { 0.26, 0.54, 1, 0.8 }
                 local opacity = dsp.opacity or 0.8
-                local dispelBorderPx = px * (dsp.borderSize or 3)
-                dispel:SetBackdrop({
-                    bgFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeSize = dispelBorderPx > 0 and dispelBorderPx or px * 3,
-                })
-                dispel:SetBackdropColor(dc[1], dc[2], dc[3], dsp.fillOpacity or 0.18)
-                dispel:SetBackdropBorderColor(dc[1], dc[2], dc[3], opacity)
+                ns.SkinBase.ApplyPixelBackdrop(dispel, dsp.borderSize or 3, true, false, { dc[1], dc[2], dc[3], opacity }, { dc[1], dc[2], dc[3], dsp.fillOpacity or 0.18 })
             end
         end
     end
@@ -647,11 +615,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
                 defIcon:SetSize(iconSize, iconSize)
                 defIcon:SetPoint(position, frame, position, offsetX + defCenterOff + stepX * (i - 1), offsetY + stepY * (i - 1))
                 defIcon:SetFrameLevel(baseLevel + 10)
-                defIcon:SetBackdrop({
-                    edgeFile = "Interface\\Buttons\\WHITE8x8",
-                    edgeSize = px,
-                })
-                defIcon:SetBackdropBorderColor(0, 0.8, 0, 1)
+                ns.SkinBase.ApplyPixelBackdrop(defIcon, 1, false, false, { 0, 0.8, 0, 1 })
 
                 local icon = defIcon:CreateTexture(nil, "ARTWORK")
                 icon:SetAllPoints()
@@ -1373,21 +1337,13 @@ local function CreateGroupMover(moverType)
     mover._nudgeKey = nudgeKey
     mover._moverType = moverType
 
-    local px = QUICore.GetPixelSize and QUICore:GetPixelSize(mover) or 1
-
     -- Border overlay: a separate frame at a high frame level so it renders
     -- on top of child content (test frames, headers) that gets re-parented
     -- to the mover during edit mode.
     local border = CreateFrame("Frame", nil, mover, "BackdropTemplate")
     border:SetAllPoints()
     border:SetFrameLevel(mover:GetFrameLevel() + 100)
-    border:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px * 2,
-    })
-    border:SetBackdropColor(0.2, 0.8, 1, 0.08)
-    border:SetBackdropBorderColor(0.2, 0.8, 1, 1)
+    ns.SkinBase.ApplyPixelBackdrop(border, 2, true, false, { 0.2, 0.8, 1, 1 }, { 0.2, 0.8, 1, 0.08 })
     border:EnableMouse(false)  -- clicks pass through to the mover
     mover.border = border
 

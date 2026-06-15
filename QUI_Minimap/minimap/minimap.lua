@@ -1406,42 +1406,29 @@ end
 local function CreateGreatVaultButton()
     if greatVaultButton then return end
 
-    greatVaultButton = CreateFrame("Button", "QUI_GreatVaultButton", UIParent)
-    greatVaultButton:SetSize(GREAT_VAULT_BUTTON_SIZE, GREAT_VAULT_BUTTON_SIZE)
+    greatVaultButton = ns.UIKit.CreateIconButton(UIParent, {
+        name = "QUI_GreatVaultButton",
+        size = GREAT_VAULT_BUTTON_SIZE,
+        icon = GREAT_VAULT_ICON_PATH,
+        registerClicks = "LeftButtonUp",
+        tooltipAnchor = "ANCHOR_LEFT",
+        tooltip = function(self)
+            GameTooltip:AddLine("Great Vault", 1, 1, 1)
+            GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Great Vault", 0.2, 1, 0.2)
+        end,
+        onClick = function()
+            ToggleGreatVault()
+        end,
+        onEnter = function()
+            UpdateGreatVaultButtonAlpha()
+        end,
+        onLeave = function()
+            ScheduleGreatVaultButtonAlphaUpdate()
+        end,
+    })
     greatVaultButton:SetFrameStrata("MEDIUM")
     greatVaultButton:SetFrameLevel((Minimap:GetFrameLevel() or 0) + 10)
     greatVaultButton:EnableMouse(true)
-    greatVaultButton:RegisterForClicks("LeftButtonUp")
-
-    local icon = greatVaultButton:CreateTexture(nil, "ARTWORK")
-    icon:SetAllPoints()
-    icon:SetTexture(GREAT_VAULT_ICON_PATH)
-    icon:SetVertexColor(0.85, 0.85, 0.85, 1)
-    greatVaultButton.icon = icon
-
-    greatVaultButton:SetScript("OnEnter", function(self)
-        self.icon:SetVertexColor(1, 1, 1, 1)
-        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("Great Vault", 1, 1, 1)
-        GameTooltip:AddLine("|cffFFFFFFLeft Click:|r Open Great Vault", 0.2, 1, 0.2)
-        GameTooltip:Show()
-        UpdateGreatVaultButtonAlpha()
-    end)
-    greatVaultButton:SetScript("OnLeave", function(self)
-        self.icon:SetVertexColor(0.85, 0.85, 0.85, 1)
-        GameTooltip:Hide()
-        ScheduleGreatVaultButtonAlphaUpdate()
-    end)
-    greatVaultButton:SetScript("OnMouseDown", function(self)
-        self.icon:SetVertexColor(0.72, 0.72, 0.72, 1)
-    end)
-    greatVaultButton:SetScript("OnMouseUp", function(self)
-        local v = self:IsMouseOver() and 1 or 0.85
-        self.icon:SetVertexColor(v, v, v, 1)
-    end)
-    greatVaultButton:SetScript("OnClick", function()
-        ToggleGreatVault()
-    end)
 
     if not greatVaultHoverHooksInstalled and Minimap then
         greatVaultHoverHooksInstalled = true
@@ -1963,15 +1950,7 @@ local function ShowMiddleClickMenu(keepPosition)
         end
     end
 
-    local px = (QUI and QUI.GetPixelSize and QUI:GetPixelSize(middleClickMenuFrame)) or 1
-    middleClickMenuFrame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-        insets = { left = px, right = px, top = px, bottom = px },
-    })
-    Helpers.SetFrameBackdropColor(middleClickMenuFrame, bgR, bgG, bgB, bgA)
-    Helpers.SetFrameBackdropBorderColor(middleClickMenuFrame, borderR, borderG, borderB, borderA)
+    SkinBase.ApplyPixelBackdrop(middleClickMenuFrame, 1, true, true, { borderR, borderG, borderB, borderA }, { bgR, bgG, bgB, bgA }, nil, nil, 1)
 
     for i = 1, #middleClickMenuRows do
         middleClickMenuRows[i]:Hide()
@@ -2858,23 +2837,14 @@ local function StyleDrawerFrame()
         bgA = pct / 100
     end
 
-    local px = (_G.QUI and _G.QUI.GetPixelSize and _G.QUI:GetPixelSize(drawerFrame)) or 1
     local borderSize = 1
     if drawerSettings and drawerSettings.borderSize ~= nil then
         borderSize = drawerSettings.borderSize
     end
     borderSize = math.max(0, borderSize)
-    local edgeSize = px * borderSize
     local hasBorder = borderSize > 0
 
-    drawerFrame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = hasBorder and "Interface\\Buttons\\WHITE8x8" or nil,
-        edgeSize = hasBorder and edgeSize or 0,
-        insets = hasBorder and { left = edgeSize, right = edgeSize, top = edgeSize, bottom = edgeSize } or { left = 0, right = 0, top = 0, bottom = 0 },
-    })
-    Helpers.SetFrameBackdropColor(drawerFrame, bgR, bgG, bgB, bgA)
-    Helpers.SetFrameBackdropBorderColor(drawerFrame, borderR, borderG, borderB, hasBorder and borderA or 0)
+    SkinBase.ApplyPixelBackdrop(drawerFrame, hasBorder and borderSize or 0, true, hasBorder, { borderR, borderG, borderB, hasBorder and borderA or 0 }, { bgR, bgG, bgB, bgA }, nil, nil, borderSize)
 end
 
 local function CreateDrawerFrame()

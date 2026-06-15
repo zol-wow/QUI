@@ -246,16 +246,7 @@ function CreateExtraButtonHolder(buttonType, displayName)
 
     local mover = CreateFrame("Frame", "QUI_" .. buttonType .. "Mover", holder, "BackdropTemplate")
     mover:SetAllPoints(holder)
-    local core = GetCore()
-    local px = (core and core.GetPixelSize and core:GetPixelSize(mover)) or 1
-    local edge2 = 2 * px
-    mover:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = edge2,
-    })
-    mover:SetBackdropColor(0.2, 0.8, 0.6, 0.5)
-    mover:SetBackdropBorderColor(0.376, 0.647, 0.980, 1)
+    ns.SkinBase.ApplyPixelBackdrop(mover, 2, true, false, {0.376, 0.647, 0.980, 1}, {0.2, 0.8, 0.6, 0.5})
     mover:EnableMouse(true)
     mover:SetMovable(true)
     mover:RegisterForDrag("LeftButton")

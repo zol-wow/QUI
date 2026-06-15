@@ -70,8 +70,8 @@ end
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
 -- Texture assets for overlay glow types
-local FLASH_TEXTURE = [[Interface\AddOns\QUI\assets\iconskin\Flash]]
-local HAMMER_TEXTURE = [[Interface\AddOns\QUI\assets\quazii_hammer]]
+local FLASH_TEXTURE = (Helpers and Helpers.AssetPath or [[Interface\AddOns\QUI\assets\]]) .. [[iconskin\Flash]]
+local HAMMER_TEXTURE = (Helpers and Helpers.AssetPath or [[Interface\AddOns\QUI\assets\]]) .. [[quazii_hammer]]
 
 -- Get IsSpellOverlayed API: try C_ namespace (12.0+), fall back to deprecated global
 local IsSpellOverlayed = (C_SpellActivationOverlay and C_SpellActivationOverlay.IsSpellOverlayed)
@@ -1035,8 +1035,8 @@ end
 
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
-local FLASH_TEXTURE = [[Interface\AddOns\QUI\assets\iconskin\Flash]]
-local HAMMER_TEXTURE = [[Interface\AddOns\QUI\assets\quazii_hammer]]
+local FLASH_TEXTURE = (Helpers and Helpers.AssetPath or [[Interface\AddOns\QUI\assets\]]) .. [[iconskin\Flash]]
+local HAMMER_TEXTURE = (Helpers and Helpers.AssetPath or [[Interface\AddOns\QUI\assets\]]) .. [[quazii_hammer]]
 
 ---------------------------------------------------------------------------
 -- SETTINGS

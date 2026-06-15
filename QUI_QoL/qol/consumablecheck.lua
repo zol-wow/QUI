@@ -21,14 +21,6 @@ local RUNE_ICON_FALLBACK = "Interface\\Icons\\inv_10_enchanting_crystal_color2"
 local PICKER_ROW_HEIGHT = 24
 local PICKER_MIN_WIDTH = 200
 
-local function GetPixelSize(frame)
-    if UIKit and UIKit.GetPixelSize then
-        return UIKit.GetPixelSize(frame)
-    end
-    local core = ns.Addon
-    return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
-end
-
 ---------------------------------------------------------------------------
 -- BUFF / ITEM DATA
 ---------------------------------------------------------------------------
@@ -1063,14 +1055,8 @@ local function EnsurePickerFrame()
         end
         if SkinBase and SkinBase.CreateBackdrop then
             SkinBase.CreateBackdrop(pickerFrame, sr, sg, sb, 1, bgr, bgg, bgb, 0.95)
-        else
-            pickerFrame:SetBackdrop({
-                bgFile = "Interface\\Buttons\\WHITE8x8",
-                edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = GetPixelSize(pickerFrame),
-            })
-            pickerFrame:SetBackdropColor(bgr, bgg, bgb, 0.95)
-            pickerFrame:SetBackdropBorderColor(sr, sg, sb, 1)
+        elseif SkinBase and SkinBase.ApplyPixelBackdrop then
+            SkinBase.ApplyPixelBackdrop(pickerFrame, 1, true, false, { sr, sg, sb, 1 }, { bgr, bgg, bgb, 0.95 })
         end
     end
     if UIKit and UIKit.CreateObjectPool then

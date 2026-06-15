@@ -491,7 +491,6 @@ function FullSurface.CreateDockedPreviewPanel(opts)
     local window = opts.window or (gui and gui.MainFrame) or _G.QUI_Options
     if not gui or not window then return nil end
 
-    local Helpers = ns.Helpers
     local UIKit = ns.UIKit
     local C = gui.Colors or {}
     local bg = C.bg or { 0.06, 0.06, 0.06 }
@@ -512,23 +511,19 @@ function FullSurface.CreateDockedPreviewPanel(opts)
     panel:SetClampedToScreen(true)
     panel:SetSize(MIN_W + PAD * 2, HEADER_H + PAD * 2 + 40)
     panel:Hide()
-    -- Themed pixel-perfect backdrop matching QUI settings panels (the
-    -- framework CreateBackdrop pattern: 1px edge via GetPixelSize, C.bg/C.border
-    -- with their own alpha). Persist via Helpers + re-apply on scale change so
-    -- the border stays a single physical pixel and colors survive a refresh.
-    local QUICore = ns.Addon
+    -- Themed pixel-perfect backdrop matching QUI settings panels (the central
+    -- kit's 1px-edge pattern, C.bg/C.border with their own alpha). The kit
+    -- persists colors + re-applies on scale change so the border stays a single
+    -- physical pixel and colors survive a refresh.
     local function ApplyBackdrop()
         -- If the host window was torn down (theme change), this panel is an
         -- orphan pending rebuild; don't touch a dead frame on scale refresh.
         if not panel:GetParent() then return end
-        local px = (QUICore and QUICore.GetPixelSize and QUICore:GetPixelSize(panel)) or 1
-        panel:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        Helpers.SetFrameBackdropColor(panel, bg[1], bg[2], bg[3], bg[4] or 1)
-        Helpers.SetFrameBackdropBorderColor(panel, border[1], border[2], border[3], border[4] or 1)
+        if ns.SkinBase and ns.SkinBase.ApplyPixelBackdrop then
+            ns.SkinBase.ApplyPixelBackdrop(panel, 1, true, false,
+                { border[1], border[2], border[3], border[4] or 1 },
+                { bg[1], bg[2], bg[3], bg[4] or 1 })
+        end
     end
     ApplyBackdrop()
     if UIKit and UIKit.RegisterScaleRefresh then

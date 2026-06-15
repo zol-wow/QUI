@@ -52,7 +52,7 @@ local BAR_BINDING_PREFIXES = {
     bar7 = "MULTIACTIONBAR6BUTTON",
     bar8 = "MULTIACTIONBAR7BUTTON",
 }
-local PREVIEW_TEXTURE_PATH = [[Interface\AddOns\QUI\assets\iconskin\]]
+local PREVIEW_TEXTURE_PATH = (Helpers and Helpers.AssetPath or [[Interface\AddOns\QUI\assets\]]) .. [[iconskin\]]
 local PREVIEW_TEXTURES = {
     normal = PREVIEW_TEXTURE_PATH .. "Normal",
     gloss  = PREVIEW_TEXTURE_PATH .. "Gloss",

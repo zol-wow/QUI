@@ -45,27 +45,19 @@ local GetFontPath = Helpers.GetGeneralFont
 local function RefreshPixelBackdrop(frame)
     local state = pixelBackdropState[frame]
     if not state then return end
-    if not frame or not frame.SetBackdrop then return end
+    if not frame then return end
     local edgeSize = (state.borderPixels or 1) * QUICore:GetPixelSize(frame)
-    local backdrop = {
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = edgeSize,
-    }
-    if state.withBackground then
-        backdrop.bgFile = "Interface\\Buttons\\WHITE8x8"
-        if state.withInsets then
-            backdrop.insets = { left = edgeSize, right = edgeSize, top = edgeSize, bottom = edgeSize }
-        end
-    end
-    frame:SetBackdrop(backdrop)
-    if state.bgColor then
-        local c = state.bgColor
-        frame:SetBackdropColor(c[1], c[2], c[3], c[4])
-    end
-    if state.borderColor then
-        local c = state.borderColor
-        frame:SetBackdropBorderColor(c[1], c[2], c[3], c[4])
-    end
+    local bgFile = state.withBackground and "Interface\\Buttons\\WHITE8x8" or false
+    local edgeFile = edgeSize > 0 and "Interface\\Buttons\\WHITE8x8" or false
+    -- Match the old SetBackdrop behaviour: with insets, push the bg in by one
+    -- border width so it doesn't paint under the edge.
+    local bgInset = (state.withBackground and state.withInsets) and edgeSize or 0
+    -- Render through the shared snapped 4-texture backdrop (SkinBase render path
+    -- #3) instead of frame:SetBackdrop edge files, which render sub-pixel and
+    -- fail to hug the bar/icon at fractional UI scale. Colour persistence stays
+    -- LOCAL: this runs on every scale refresh and re-applies state.borderColor/
+    -- state.bgColor, so the deliberate local state system is preserved.
+    SkinBase.ApplyTextureBackdrop(frame, bgFile, edgeFile, edgeSize, state.borderColor, state.bgColor, bgInset)
 end
 
 local function ApplyPixelBackdrop(frame, borderPixels, withBackground, withInsets, borderColor, bgColor)
@@ -106,12 +98,15 @@ local function SetPixelBackdropColors(frame, borderColor, bgColor)
     end
 end
 
-local function SetExpandedPixelPoints(frame, relativeTo, pixels)
-    local offset = (pixels or 1) * QUICore:GetPixelSize(frame)
-    frame:ClearAllPoints()
-    frame:SetPoint("TOPLEFT", relativeTo, "TOPLEFT", -offset, offset)
-    frame:SetPoint("BOTTOMRIGHT", relativeTo, "BOTTOMRIGHT", offset, -offset)
-end
+-- Expand a frame `pixels` beyond `relativeTo` on every side. Delegates to the
+-- shared SkinBase helper, which registers a scale refresh so the offset tracks
+-- effective scale. Scroll-row elements (rep-bar backdrops, currency/equip icon
+-- borders) are created during ScrollBox acquire before the row's effective
+-- scale resolves; the local ApplyPixelBackdrop re-derives its edgeSize on every
+-- scale-refresh, so the expansion MUST refresh on the same broadcast (and from
+-- the same core:GetPixelSize basis SkinBase.GetPixelSize wraps) or edge size and
+-- expansion diverge and the border bleeds inside the bar/icon.
+local SetExpandedPixelPoints = SkinBase.SetExpandedPixelPoints
 
 ---------------------------------------------------------------------------
 -- Helper: Style a thin QUI scrollbar
@@ -288,6 +283,15 @@ local function StyleCharacterFrameTab(tab, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         SkinBase.MarkStyled(tab)
     end
 
+    -- Theme the tab label. PanelTemplates re-asserts Blizzard's yellow tab text
+    -- on select/deselect, but the PanelTemplates_SetTab hook re-runs this +
+    -- UpdateCharacterFrameTabSelectedState (which sets the color) afterward, so
+    -- the QUI color sticks. Font is stable, set here once per call.
+    local tabText = tab.Text or (tab.GetFontString and tab:GetFontString())
+    if tabText then
+        tabText:SetFont(GetFontPath(), 12, "")
+    end
+
     SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(tab, "bgColor", { bgr, bgg, bgb })
 end
@@ -326,6 +330,18 @@ local function UpdateCharacterFrameTabSelectedState()
             -- reverting to the base color. A bare SetBackdrop*Color updates only
             -- the live color, which RefreshPixelBackdrop discards on rebuild.
             SkinBase.ApplyPixelBackdrop(bd, 1, true, true, borderColor, bgColor)
+
+            -- Recolor the tab label to match selection state (full skin color
+            -- when active, dimmed when not). Runs after PanelTemplates re-asserts
+            -- Blizzard's yellow, via the PanelTemplates_SetTab hook, so it sticks.
+            local tabText = tab.Text or (tab.GetFontString and tab:GetFontString())
+            if tabText then
+                if isSelected then
+                    tabText:SetTextColor(sc[1], sc[2], sc[3], 1)
+                else
+                    tabText:SetTextColor(sc[1] * 0.7, sc[2] * 0.7, sc[3] * 0.7, 1)
+                end
+            end
         end
     end
 end
@@ -357,6 +373,29 @@ local function SkinEntryHeader(child, fontPath, sr, sg, sb)
     if child.Name then
         child.Name:SetFont(fontPath, 13, "")
         child.Name:SetTextColor(sr, sg, sb, 1)
+    end
+
+    -- Suppress Blizzard's category-header art. ReputationHeaderTemplate
+    -- (ReputationFrame.xml) draws Options_ListExpand Left/Middle in BACKGROUND
+    -- and HighlightLeft/HighlightMiddle in HIGHLIGHT — the bar behind the
+    -- category name + its hover fill. SetAlpha(0) keeps them invisible even when
+    -- the HIGHLIGHT layer auto-shows on mouseover. Right/HighlightRight are
+    -- repurposed below as the collapse arrow, so they stay.
+    if child.Left then child.Left:SetAlpha(0) end
+    if child.Middle then child.Middle:SetAlpha(0) end
+    if child.HighlightLeft then child.HighlightLeft:SetAlpha(0) end
+    if child.HighlightMiddle then child.HighlightMiddle:SetAlpha(0) end
+
+    -- Currency headers (ListHeaderThreeSliceMixin) re-assert Blizzard's title
+    -- color via CheckHighlightTitle on every SetHeaderText (expand/collapse) and
+    -- on mouseover, clobbering a one-shot Name:SetTextColor. Feed QUI color into
+    -- that mechanism so Blizzard's own re-color uses it. (Reputation headers use
+    -- a plain SetText with no re-color, so the SetTextColor above sticks there.)
+    if child.SetTitleColor and CreateColor then
+        local titleColor = CreateColor(sr, sg, sb, 1)
+        child:SetTitleColor(false, titleColor)
+        child:SetTitleColor(true, titleColor)
+        if child.CheckHighlightTitle then child:CheckHighlightTitle() end
     end
 
     -- Replace collapse icons
@@ -414,6 +453,22 @@ local function SkinReputationEntry(child)
     if ReputationBar then
         ReputationBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
 
+        -- Suppress Blizzard's ornate end-cap art + black fill backing.
+        -- ReputationBarTemplate (ReputationFrame.xml) draws LeftTexture/RightTexture
+        -- (UI-Character-ReputationBar) and a Background (BLACK_FONT_COLOR); the mixin
+        -- never re-shows them, so hiding once is durable. Our backdrop replaces both.
+        if ReputationBar.LeftTexture then
+            ReputationBar.LeftTexture:SetTexture(nil)
+            ReputationBar.LeftTexture:Hide()
+        end
+        if ReputationBar.RightTexture then
+            ReputationBar.RightTexture:SetTexture(nil)
+            ReputationBar.RightTexture:Hide()
+        end
+        if ReputationBar.Background then
+            ReputationBar.Background:Hide()
+        end
+
         if ReputationBar.BarText then
             ReputationBar.BarText:SetFont(fontPath, 10, "")
             ReputationBar.BarText:SetTextColor(COLORS.text[1], COLORS.text[2], COLORS.text[3], 1)
@@ -422,7 +477,12 @@ local function SkinReputationEntry(child)
         -- Create backdrop for rep bar
         if not SkinBase.GetFrameData(ReputationBar, "backdrop") then
             local backdrop = CreateFrame("Frame", nil, ReputationBar:GetParent(), "BackdropTemplate")
-            backdrop:SetFrameLevel(ReputationBar:GetFrameLevel())
+            -- Sit one level BELOW the bar: the bar's WHITE8x8 fill (filled portion)
+            -- draws over the backdrop's dark fill (which now backs the empty portion,
+            -- since we hide the native Background), and the expanded border ring sits
+            -- outside the bar rect so it renders on all four sides without the
+            -- same-level draw-order race that occluded it before.
+            backdrop:SetFrameLevel(math.max(0, ReputationBar:GetFrameLevel() - 1))
             local dr, dg, db, da = SkinBase.GetDepthColor("ROW")
             SetExpandedPixelPoints(backdrop, ReputationBar, SkinBase.CHROME.BORDER_PX)
             ApplyPixelBackdrop(backdrop, SkinBase.CHROME.BORDER_PX, true, false, { sr, sg, sb, 1 }, { dr, dg, db, da })

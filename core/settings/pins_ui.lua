@@ -124,14 +124,9 @@ local function StyleSurface(frame, backgroundAlpha, borderColor, borderAlpha, ba
         return
     end
 
-    local px = (ns.Addon and ns.Addon.GetPixelSize and ns.Addon:GetPixelSize(frame)) or 1
-    frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    })
-    frame:SetBackdropColor(bg[1], bg[2], bg[3], backgroundAlpha or 0.1)
-    frame:SetBackdropBorderColor(borderColor[1] or 1, borderColor[2] or 1, borderColor[3] or 1, borderAlpha)
+    if ns.SkinBase and ns.SkinBase.ApplyPixelBackdrop then
+        ns.SkinBase.ApplyPixelBackdrop(frame, 1, true, false, { borderColor[1] or 1, borderColor[2] or 1, borderColor[3] or 1, borderAlpha }, { bg[1], bg[2], bg[3], backgroundAlpha or 0.1 })
+    end
 end
 
 local function CleanupChildren(frame)

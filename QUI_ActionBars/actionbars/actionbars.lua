@@ -50,7 +50,7 @@ end
 ---------------------------------------------------------------------------
 
 -- In-housed textures (self-contained, no external dependencies)
-TEXTURE_PATH = [[Interface\AddOns\QUI\assets\iconskin\]]
+TEXTURE_PATH = (ns.Helpers and ns.Helpers.AssetPath or [[Interface\AddOns\QUI\assets\]]) .. [[iconskin\]]
 TEXTURES = {
     normal = TEXTURE_PATH .. "Normal",       -- Black border frame
     gloss = TEXTURE_PATH .. "Gloss",         -- ADD blend shine

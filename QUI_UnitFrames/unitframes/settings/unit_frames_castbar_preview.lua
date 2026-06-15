@@ -32,8 +32,9 @@ local ANCHOR_MAP = Shared.ANCHOR_MAP
 local ResolveStatusBarTexture = Shared.ResolveStatusBarTexture
 local ResolveUnitFrameFont = Shared.ResolveUnitFrameFont
 
--- Hairline border layout shared with unit_frames_surface.lua (loads first).
+-- Hairline border helpers shared with unit_frames_surface.lua (loads first).
 local ApplyHairlineBorder = Shared.ApplyHairlineBorder
+local CreateHairlineBorder = Shared.CreateHairlineBorder
 
 local ApplyTextAnchor = Shared.ApplyTextAnchor
 
@@ -211,12 +212,7 @@ function Module.Build(host)
     mock.fill:SetVertexColor(1, 0.7, 0, 1)
 
     -- Border (4 hairline strips, like the unit-frame mock)
-    mock._border = {}
-    for i = 1, 4 do
-        local t = mock:CreateTexture(nil, "OVERLAY")
-        t:SetColorTexture(0, 0, 0, 1)
-        mock._border[i] = t
-    end
+    mock._border = CreateHairlineBorder(mock, { 0, 0, 0, 1 })
 
     -- Icon (separate frame so it has its own border)
     local icon = CreateFrame("Frame", nil, mock)
@@ -226,12 +222,7 @@ function Module.Build(host)
     icon._art:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", -1, 1)
     icon._art:SetTexture("Interface\\Icons\\Spell_Frost_FrostBolt02")
     icon._art:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    icon._border = {}
-    for i = 1, 4 do
-        local t = icon:CreateTexture(nil, "OVERLAY")
-        t:SetColorTexture(0, 0, 0, 1)
-        icon._border[i] = t
-    end
+    icon._border = CreateHairlineBorder(icon, { 0, 0, 0, 1 })
     mock.icon = icon
 
     -- Spell name + time text + empowered stage text

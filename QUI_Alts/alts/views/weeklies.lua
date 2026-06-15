@@ -257,13 +257,7 @@ local function Builder(parent)
     local function GetRow(i)
         local r = rowPool[i]
         if r then return r end
-        r = CreateFrame("Button", nil, frame)
-        r:SetHeight(ROW_H)
-        local bg = r:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-        bg:SetVertexColor(1, 1, 1, 0)
-        r._bg = bg
+        r = Shared.CreateRow(frame, { height = ROW_H })
         -- Character row cells
         r._name    = MakeFS(r, 11)
         r._rating  = MakeFS(r, 11)
@@ -271,8 +265,6 @@ local function Builder(parent)
         r._vault   = MakeFS(r, 11)
         -- Lockout row: single text
         r._lockout = MakeFS(r, 11)
-        r:SetScript("OnEnter", function(self) self._bg:SetVertexColor(1, 1, 1, 0.08) end)
-        r:SetScript("OnLeave", function(self) self._bg:SetVertexColor(1, 1, 1, 0) end)
         rowPool[i] = r
         return r
     end

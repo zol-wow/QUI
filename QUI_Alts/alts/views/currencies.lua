@@ -270,32 +270,24 @@ local function Builder(parent)
     local function GetRow(i)
         local r = rowPool[i]
         if r then return r end
-        r = CreateFrame("Button", nil, frame)
-        r:SetHeight(ROW_H)
-        local bg = r:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-        bg:SetVertexColor(1, 1, 1, 0)
-        r._bg = bg
+        r = Shared.CreateRow(frame, {
+            height = ROW_H,
+            onEnter = function(self)
+                local row = self._row
+                if not (row and row.currencyID) then return end
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(row.label, 1, 1, 1)
+                GameTooltip:AddLine("Right-click to untrack", 0.6, 0.6, 0.6)
+                GameTooltip:Show()
+            end,
+            onLeave = function() GameTooltip:Hide() end,
+        })
         r._icon = r:CreateTexture(nil, "ARTWORK")
         r._icon:SetSize(ICON_SIZE, ICON_SIZE)
         r._icon:SetPoint("LEFT", r, "LEFT", CELL_PAD, 0)
         r._name  = MakeFS(r, 11)
         r._name:SetPoint("LEFT", r, "LEFT", CELL_PAD + ICON_SIZE + 6, 0)
         r._value = MakeFS(r, 11)
-        r:SetScript("OnEnter", function(self)
-            self._bg:SetVertexColor(1, 1, 1, 0.08)
-            local row = self._row
-            if not (row and row.currencyID) then return end
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText(row.label, 1, 1, 1)
-            GameTooltip:AddLine("Right-click to untrack", 0.6, 0.6, 0.6)
-            GameTooltip:Show()
-        end)
-        r:SetScript("OnLeave", function(self)
-            self._bg:SetVertexColor(1, 1, 1, 0)
-            GameTooltip:Hide()
-        end)
         -- Right-click hides the currency (alts.currencyFilter[id] = false);
         -- re-show via the Filter button. Matches the popup's setChecked.
         r:RegisterForClicks("LeftButtonUp", "RightButtonUp")

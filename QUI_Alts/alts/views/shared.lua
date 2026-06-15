@@ -34,3 +34,41 @@ function Shared.MakeFS(parent, size)
     fs:SetWordWrap(false)
     return fs
 end
+
+--- Pooled list-row button shared by the alts views: a WHITE8x8 background that
+--- flips to 8% white on hover. Every view built this same Button + _bg + hover
+--- flip by hand; this is the one copy. The caller adds the cells / OnClick /
+--- RegisterForClicks on the returned button and positions it in its render pass.
+---
+---   opts.height     row height (SetHeight); omit to leave it unset
+---   opts.hoverAlpha hover background alpha (default 0.08)
+---   opts.hoverGuard optional predicate(self); when present the hover flip (and
+---                   the onEnter hook) only run while it returns truthy — covers
+---                   reputations' group rows and the filter popup's header rows
+---   opts.onEnter    optional extra run after the flip (e.g. a tooltip)
+---   opts.onLeave    optional extra run after the flip-back (e.g. tooltip hide)
+---
+--- Returns the Button with `._bg` assigned.
+function Shared.CreateRow(parent, opts)
+    opts = opts or {}
+    local r = CreateFrame("Button", nil, parent)
+    if opts.height then r:SetHeight(opts.height) end
+    local bg = r:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    bg:SetVertexColor(1, 1, 1, 0)
+    r._bg = bg
+    local alpha = opts.hoverAlpha or 0.08
+    local guard = opts.hoverGuard
+    local onEnter, onLeave = opts.onEnter, opts.onLeave
+    r:SetScript("OnEnter", function(self)
+        if guard and not guard(self) then return end
+        self._bg:SetVertexColor(1, 1, 1, alpha)
+        if onEnter then onEnter(self) end
+    end)
+    r:SetScript("OnLeave", function(self)
+        self._bg:SetVertexColor(1, 1, 1, 0)
+        if onLeave then onLeave(self) end
+    end)
+    return r
+end

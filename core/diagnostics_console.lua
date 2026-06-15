@@ -44,11 +44,6 @@ local livePanel = setmetatable({}, { __mode = "v" })
 
 local KIND_DEFAULT = "captured"
 
-local function GetPixelSize(frame)
-    local core = ns.Addon
-    return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
-end
-
 local function appendInternal(line, kind)
     kind = kind or KIND_DEFAULT
     buffer[#buffer + 1] = { text = tostring(line or ""), kind = kind }
@@ -126,13 +121,7 @@ local function showCopyPopup(text)
         popup:SetFrameStrata("FULLSCREEN_DIALOG")
         popup:SetFrameLevel(500)
         popup:SetToplevel(true)
-        popup:SetBackdrop({
-            bgFile   = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = GetPixelSize(popup),
-        })
-        popup:SetBackdropColor(0, 0, 0, 0.92)
-        popup:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+        ns.SkinBase.ApplyPixelBackdrop(popup, 1, true, false, {0.4, 0.4, 0.4, 1}, {0, 0, 0, 0.92})
         popup:EnableMouse(true)
         popup:SetMovable(true)
         popup:RegisterForDrag("LeftButton")
@@ -216,13 +205,7 @@ function Console.CreateOutputPanel(parent)
     local body = CreateFrame("Frame", nil, container, "BackdropTemplate")
     body:SetPoint("TOPLEFT", 0, -26)
     body:SetPoint("BOTTOMRIGHT", 0, 0)
-    body:SetBackdrop({
-        bgFile   = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = GetPixelSize(body),
-    })
-    body:SetBackdropColor(0, 0, 0, 0.5)
-    body:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    ns.SkinBase.ApplyPixelBackdrop(body, 1, true, false, {0.3, 0.3, 0.3, 1}, {0, 0, 0, 0.5})
 
     -- ── scrolling message frame ───────────────────────────────
     local smf = CreateFrame("ScrollingMessageFrame", nil, body)

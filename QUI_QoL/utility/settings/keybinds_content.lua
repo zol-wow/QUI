@@ -159,13 +159,7 @@ local function BuildKeybindOverridesSection(tabContent, startY)
     dropZone:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
     dropZone:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     dropZone:SetHeight(56)
-    dropZone:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GetPixelSize(dropZone),
-    })
-    dropZone:SetBackdropColor(0.05, 0.05, 0.05, 0.4)
-    dropZone:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
+    UIKit.ApplyPixelBackdrop(dropZone, 1, true, false, { C.accent[1], C.accent[2], C.accent[3], 0.5 }, { 0.05, 0.05, 0.05, 0.4 })
 
     local dropLabel = GUI:CreateLabel(dropZone, "Drop Spell or Item Here", 12, C.text)
     dropLabel:SetPoint("TOP", 0, -12)

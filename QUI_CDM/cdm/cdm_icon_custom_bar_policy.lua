@@ -341,7 +341,7 @@ function CDMIconCustomBarPolicy.Create(callbacks)
             if icon.Icon and icon.CreateMaskTexture then
                 if not icon._customBarProcGlowMask then
                     icon._customBarProcGlowMask = icon:CreateMaskTexture()
-                    icon._customBarProcGlowMask:SetTexture("Interface\\AddOns\\QUI\\assets\\iconskin\\ProcGlowMask")
+                    icon._customBarProcGlowMask:SetTexture((ns.Helpers and ns.Helpers.AssetPath or "Interface\\AddOns\\QUI\\assets\\") .. "iconskin\\ProcGlowMask")
                     icon._customBarProcGlowMask:SetAllPoints(icon.Icon)
                 end
                 icon.Icon.AddMaskTexture(icon.Icon, icon._customBarProcGlowMask)

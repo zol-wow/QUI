@@ -69,14 +69,8 @@ do
     local sr, sg, sb = 1, 0.3, 0.3              -- semantic warning border: keep as-is
     if SkinBase and SkinBase.CreateBackdrop then
         SkinBase.CreateBackdrop(PetWarningFrame, sr, sg, sb, 1, bgr, bgg, bgb, 0.9)
-    else
-        PetWarningFrame:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 2,
-        })
-        PetWarningFrame:SetBackdropColor(bgr, bgg, bgb, 0.9)
-        PetWarningFrame:SetBackdropBorderColor(sr, sg, sb, 1)
+    elseif SkinBase and SkinBase.ApplyPixelBackdrop then
+        SkinBase.ApplyPixelBackdrop(PetWarningFrame, 2, true, false, { sr, sg, sb, 1 }, { bgr, bgg, bgb, 0.9 })
     end
 end
 

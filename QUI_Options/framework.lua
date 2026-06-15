@@ -8,6 +8,7 @@ local ADDON_NAME, ns = ...
 local QUI = QUI
 local QUICore = ns.Addon
 local UIKit = ns.UIKit
+local SkinBase = ns.SkinBase
 local LSM = LibStub("LibSharedMedia-3.0")
 
 -- Create GUI namespace
@@ -1245,14 +1246,9 @@ end
 -- UTILITY FUNCTIONS
 ---------------------------------------------------------------------------
 local function CreateBackdrop(frame, bgColor, borderColor)
-    local px = QUICore:GetPixelSize(frame)
-    frame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    })
-    frame:SetBackdropColor(unpack(bgColor or C.bg))
-    frame:SetBackdropBorderColor(unpack(borderColor or C.border))
+    if SkinBase and SkinBase.ApplyPixelBackdrop then
+        SkinBase.ApplyPixelBackdrop(frame, 1, true, false, borderColor or C.border, bgColor or C.bg)
+    end
 end
 
 local function BindWidgetMethod(container, fn)
@@ -1320,100 +1316,17 @@ end
 -- WIDGET: THEMED BUTTON (ghost/primary variants, transparent background)
 ---------------------------------------------------------------------------
 function GUI:CreateButton(parent, text, width, height, onClick, variant)
-    variant = variant or "ghost"
-    local UIKit = ns.UIKit
-
-    local button = CreateFrame("Button", nil, parent)
-    button:SetSize(width or 120, height or 22)
-
-    if UIKit and UIKit.CreateBorderLines and not button._pixelBorderReady then
-        UIKit.CreateBorderLines(button)
-        button._pixelBorderReady = true
-    end
-
-    local hoverBg = button:CreateTexture(nil, "BACKGROUND")
-    hoverBg:SetAllPoints(button)
-    hoverBg:SetColorTexture(1, 1, 1, 0.06)
-    hoverBg:Hide()
-    button._hoverBg = hoverBg
-
-    local btnText = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    btnText:SetPoint("CENTER", 0, 0)
-    btnText:SetText(text or "Button")
-    button.text = btnText
-
-    local function ApplyButtonVariant(btn, variantName)
-        if variantName == "primary" then
-            if UIKit and UIKit.UpdateBorderLines then
-                UIKit.UpdateBorderLines(btn, 1, C.accent[1], C.accent[2], C.accent[3], 0.5)
-            end
-            if btn.text then btn.text:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1) end
-        else
-            if UIKit and UIKit.UpdateBorderLines then
-                UIKit.UpdateBorderLines(btn, 1, 1, 1, 1, 0.2)
-            end
-            if btn.text then btn.text:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 1) end
-        end
-    end
-    ApplyButtonVariant(button, variant)
-
-    local f, _, flags = button.text:GetFont()
-    button.text:SetFont(f or (UIKit and UIKit.ResolveFontPath and UIKit.ResolveFontPath(GUI:GetFontPath())) or GetFontPath(), 10, flags or "")
-    button:SetHeight(height or 22)
-    if not width or width <= 0 then
-        button:SetWidth((button.text:GetStringWidth() or 0) + 24)
-    end
-
-    button:SetScript("OnEnter", function(self)
-        if variant == "primary" then
-            if UIKit and UIKit.UpdateBorderLines then
-                UIKit.UpdateBorderLines(self, 1, C.accent[1], C.accent[2], C.accent[3], 1)
-            end
-            self._hoverBg:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.08)
-        else
-            if self.text then self.text:SetTextColor(C.text[1], C.text[2], C.text[3], 1) end
-            self._hoverBg:SetColorTexture(1, 1, 1, 0.06)
-        end
-        self._hoverBg:Show()
-    end)
-    button:SetScript("OnLeave", function(self)
-        if variant == "primary" then
-            if UIKit and UIKit.UpdateBorderLines then
-                UIKit.UpdateBorderLines(self, 1, C.accent[1], C.accent[2], C.accent[3], 0.5)
-            end
-        else
-            if self.text then self.text:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 1) end
-        end
-        self._hoverBg:Hide()
-    end)
-    button:SetScript("OnMouseDown", function(self)
-        if self.text then self.text:SetPoint("CENTER", 0, -1) end
-        self._hoverBg:SetAlpha(1.4)
-    end)
-    button:SetScript("OnMouseUp", function(self)
-        if self.text then self.text:SetPoint("CENTER", 0, 0) end
-        self._hoverBg:SetAlpha(1)
-    end)
-
-    if onClick then
-        button:SetScript("OnClick", onClick)
-    end
-
-    function button:SetText(newText)
-        btnText:SetText(newText)
-    end
-
-    -- Public method for callers that need custom border colors.
-    function button:SetBorderColor(r, g, b, a)
-        if UIKit and UIKit.UpdateBorderLines then
-            UIKit.UpdateBorderLines(self, 1, r, g, b, a or 1, false)
-        end
-    end
-
-    -- Backward-compatible alias used by some option tabs.
-    button.SetFieldBorderColor = button.SetBorderColor
-
-    return button
+    -- Delegates to the canonical core factory (core/uikit.lua). The button's
+    -- palette + font are sourced centrally there; this preserves the positional
+    -- signature and the returned button API (SetText / SetBorderColor /
+    -- SetFieldBorderColor) for the ~148 existing call sites.
+    return ns.UIKit.CreateButton(parent, {
+        text = text,
+        width = width,
+        height = height,
+        onClick = onClick,
+        variant = variant,
+    })
 end
 
 ---------------------------------------------------------------------------
@@ -1616,14 +1529,9 @@ function GUI:ShowConfirmation(options)
         confirmDialog:Hide()
 
         -- Backdrop
-        local px = QUICore:GetPixelSize(confirmDialog)
-        confirmDialog:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        confirmDialog:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], 0.98)
-        confirmDialog:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+        if SkinBase and SkinBase.ApplyPixelBackdrop then
+            SkinBase.ApplyPixelBackdrop(confirmDialog, 1, true, false, { C.border[1], C.border[2], C.border[3], 1 }, { C.bg[1], C.bg[2], C.bg[3], 0.98 })
+        end
 
         -- Title
         confirmDialog.title = confirmDialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1648,13 +1556,9 @@ function GUI:ShowConfirmation(options)
         confirmDialog.acceptBtn = CreateFrame("Button", nil, confirmDialog, "BackdropTemplate")
         confirmDialog.acceptBtn:SetSize(100, 28)
         confirmDialog.acceptBtn:SetPoint("BOTTOMLEFT", 40, 20)
-        confirmDialog.acceptBtn:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        confirmDialog.acceptBtn:SetBackdropColor(GUI.DIALOG_BUTTON_BG[1], GUI.DIALOG_BUTTON_BG[2], GUI.DIALOG_BUTTON_BG[3], GUI.DIALOG_BUTTON_BG[4])
-        confirmDialog.acceptBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+        if SkinBase and SkinBase.ApplyPixelBackdrop then
+            SkinBase.ApplyPixelBackdrop(confirmDialog.acceptBtn, 1, true, false, { C.border[1], C.border[2], C.border[3], 1 }, GUI.DIALOG_BUTTON_BG)
+        end
 
         confirmDialog.acceptBtn.text = confirmDialog.acceptBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         confirmDialog.acceptBtn.text:SetFont(GetFontPath(), 12, "")
@@ -1671,13 +1575,9 @@ function GUI:ShowConfirmation(options)
         confirmDialog.cancelBtn = CreateFrame("Button", nil, confirmDialog, "BackdropTemplate")
         confirmDialog.cancelBtn:SetSize(100, 28)
         confirmDialog.cancelBtn:SetPoint("BOTTOMRIGHT", -40, 20)
-        confirmDialog.cancelBtn:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        confirmDialog.cancelBtn:SetBackdropColor(GUI.DIALOG_BUTTON_BG[1], GUI.DIALOG_BUTTON_BG[2], GUI.DIALOG_BUTTON_BG[3], GUI.DIALOG_BUTTON_BG[4])
-        confirmDialog.cancelBtn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], 1)
+        if SkinBase and SkinBase.ApplyPixelBackdrop then
+            SkinBase.ApplyPixelBackdrop(confirmDialog.cancelBtn, 1, true, false, { C.border[1], C.border[2], C.border[3], 1 }, GUI.DIALOG_BUTTON_BG)
+        end
 
         confirmDialog.cancelBtn.text = confirmDialog.cancelBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         confirmDialog.cancelBtn.text:SetFont(GetFontPath(), 12, "")
@@ -2033,7 +1933,14 @@ end
 -- OFF: C.toggleOff track, knob anchored LEFT +2.
 -- ON:  C.accent track, knob anchored RIGHT -2.
 ---------------------------------------------------------------------------
-function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryInfo)
+-- Shared builder for the V3 pill toggle. invert=false → the pill mirrors the
+-- stored DB value (CreateFormToggle). invert=true → the pill shows the negation
+-- of the DB value, for "Hide X" options (CreateFormToggleInverted). GetValue /
+-- SetValue both work in DISPLAY units (is the pill ON?); only the DB read/write
+-- flips. Folding the two former copies also brings the inverted variant up to
+-- parity: it now gets a BindWidgetMethod-wrapped SetValue and a Refresh hook
+-- (the non-inverted copy always had them; the inverted copy had drifted without).
+local function BuildPillToggle(parent, label, dbKey, dbTable, onChange, registryInfo, invert)
     if parent._hasContent ~= nil then parent._hasContent = true end
     local container = CreateFrame("Frame", nil, parent)
     container._widgetLabel = label  -- For search jump-to-setting (V2)
@@ -2093,8 +2000,16 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
     container.thumb = toggle
     container.label = text
 
+    -- GetValue returns the DISPLAY state (pill ON?). For the inverted variant
+    -- that is the negation of the stored DB value; the no-DB fallback matches
+    -- each legacy default (inverted defaulted to "not true" = OFF).
     local function GetValue()
-        if dbTable and dbKey then return dbTable[dbKey] end
+        if dbTable and dbKey then
+            local db = dbTable[dbKey]
+            if invert then return not db end
+            return db
+        end
+        if invert then return false end
         return container.checked
     end
 
@@ -2104,19 +2019,23 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
         ApplyToggleVisual(t, isOn, isHovered)
     end
 
-    local function UpdateVisual(val)
-        SetToggleVisual(toggle, val and true or false)
+    local function UpdateVisual(isOn)
+        SetToggleVisual(toggle, isOn and true or false)
     end
 
-    local function SetValue(val, skipCallback)
-        container.checked = val
-        UpdateVisual(val)
-        if dbTable and dbKey then dbTable[dbKey] = val end
+    -- isOn is the display state; dbVal is what we persist (flipped when inverted).
+    local function SetValue(isOn, skipCallback)
+        isOn = isOn and true or false
+        local dbVal
+        if invert then dbVal = not isOn else dbVal = isOn end
+        container.checked = isOn
+        UpdateVisual(isOn)
+        if dbTable and dbKey then dbTable[dbKey] = dbVal end
         if not skipCallback then
-            MaybeUpdatePinnedWidgetValue(container, val)
+            MaybeUpdatePinnedWidgetValue(container, dbVal)
         end
-        BroadcastToSiblings(container, val)
-        if onChange and not skipCallback then onChange(val) end
+        BroadcastToSiblings(container, isOn)
+        if onChange and not skipCallback then onChange(dbVal) end
         if not skipCallback then
             MaybeAutoNotifyProviderSync(container)
         end
@@ -2139,7 +2058,8 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
     SetValue(GetValue(), true)  -- Skip callback on init
 
     if ns.UIKit and ns.UIKit.RegisterScaleRefresh then
-        ns.UIKit.RegisterScaleRefresh(toggle, "formToggleScale", function()
+        local scaleKey = invert and "formToggleInvertedScale" or "formToggleScale"
+        ns.UIKit.RegisterScaleRefresh(toggle, scaleKey, function()
             toggle:SetSize(26, 14)
             toggle:ClearAllPoints()
             toggle:SetPoint("LEFT", container, "LEFT", toggleLeftOffset, 0)
@@ -2171,13 +2091,17 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
     -- allocation waste -- and it runs for every widget on every options page
     -- (re)build (i.e. every settings tab switch). Skip it entirely.
     if not GUI:HasGeneratedSearchCache() then
+        local descriptorType = invert and "toggle_inverted" or "toggle"
         RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
             label = label,
             widgetType = "toggle",
             widgetBuilder = function(p)
-                return GUI:CreateFormToggle(p, label, dbKey, dbTable, onChange)
+                if invert then
+                    return GUI:CreateFormToggleInverted(p, label, dbKey, dbTable, onChange, registryInfo)
+                end
+                return GUI:CreateFormToggle(p, label, dbKey, dbTable, onChange, registryInfo)
             end,
-            widgetDescriptor = GUI:BuildSearchWidgetDescriptor("toggle", dbKey, dbTable),
+            widgetDescriptor = GUI:BuildSearchWidgetDescriptor(descriptorType, dbKey, dbTable),
             keywords = registryInfo and registryInfo.keywords or nil,
             description = registryInfo and registryInfo.description or nil,
             relatedTo = registryInfo and registryInfo.relatedTo or nil,
@@ -2189,148 +2113,14 @@ function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryI
     return container
 end
 
--- Inverted toggle: checked = DB false, unchecked = DB true (for "Hide X" options)
+function GUI:CreateFormToggle(parent, label, dbKey, dbTable, onChange, registryInfo)
+    return BuildPillToggle(parent, label, dbKey, dbTable, onChange, registryInfo, false)
+end
+
+-- Inverted toggle: checked = DB false, unchecked = DB true (for "Hide X"
+-- options). Shares BuildPillToggle; the invert flag flips display vs stored DB.
 function GUI:CreateFormToggleInverted(parent, label, dbKey, dbTable, onChange, registryInfo)
-    if parent._hasContent ~= nil then parent._hasContent = true end
-    local container = CreateFrame("Frame", nil, parent)
-    container:SetHeight(FORM_ROW_HEIGHT)
-    container._widgetLabel = label
-    ApplyWidgetSyncContext(container, dbTable, dbKey)
-
-    -- Label on left (off-white text, constrained to not overlap toggle)
-    local text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    SetFont(text, 12, "", C.text)
-    text:SetText(label or "Option")
-    text:SetPoint("LEFT", 0, 0)
-    text:SetWidth(170)
-    text:SetWordWrap(true)
-    text:SetNonSpaceWrap(true)
-    text:SetJustifyH("LEFT")
-
-    local toggle = CreateFrame("Button", nil, container)
-    toggle:SetSize(26, 14)
-    toggle:SetPoint("LEFT", container, "LEFT", 180, 0)
-
-    local track = toggle:CreateTexture(nil, "ARTWORK")
-    track:SetAllPoints(toggle)
-    track:SetColorTexture(C.toggleOff[1], C.toggleOff[2], C.toggleOff[3], C.toggleOff[4])
-    toggle.track = track
-
-    local trackMask = toggle:CreateMaskTexture()
-    trackMask:SetTexture(ns.Helpers.AssetPath .. "pill_mask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    trackMask:SetAllPoints(track)
-    track:AddMaskTexture(trackMask)
-    toggle._trackMask = trackMask
-
-    local knob = toggle:CreateTexture(nil, "OVERLAY")
-    knob:SetSize(10, 10)
-    knob:SetColorTexture(C.toggleThumb[1], C.toggleThumb[2], C.toggleThumb[3], C.toggleThumb[4])
-    knob:ClearAllPoints()
-    knob:SetPoint("LEFT", toggle, "LEFT", 2, 0)
-    toggle.knob = knob
-
-    -- Knob mask (circular at 10x10)
-    local knobMask = toggle:CreateMaskTexture()
-    knobMask:SetTexture("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
-    knobMask:SetAllPoints(knob)
-    knob:AddMaskTexture(knobMask)
-    toggle._knobMask = knobMask
-
-    container.track = toggle
-    container.thumb = toggle
-    container.label = text
-
-    -- INVERTED: DB true = toggle OFF, DB false = toggle ON
-    local function GetDBValue()
-        if dbTable and dbKey then return dbTable[dbKey] end
-        return true
-    end
-
-    local function IsOn()
-        return not GetDBValue()  -- Invert for display
-    end
-
-    local isHovered = false
-
-    local function SetToggleVisual(t, isOn)
-        ApplyToggleVisual(t, isOn, isHovered)
-    end
-
-    local function UpdateVisual(isOn)
-        SetToggleVisual(toggle, isOn and true or false)
-    end
-
-    local function SetOn(isOn, skipCallback)
-        container.checked = isOn
-        local dbVal = not isOn  -- Invert for storage
-        UpdateVisual(isOn)
-        if dbTable and dbKey then dbTable[dbKey] = dbVal end
-        if not skipCallback then
-            MaybeUpdatePinnedWidgetValue(container, dbVal)
-        end
-        BroadcastToSiblings(container, isOn)
-        if onChange and not skipCallback then onChange(dbVal) end
-        if not skipCallback then
-            MaybeAutoNotifyProviderSync(container)
-        end
-    end
-
-    container.GetValue = IsOn
-    container.SetValue = SetOn
-    container.UpdateVisual = UpdateVisual
-
-    -- Register for cross-widget sync
-    RegisterWidgetInstance(container, dbTable, dbKey)
-    MaybeBindPinnedWidget(container, "checkbox", label, dbKey, dbTable, toggle, registryInfo)
-
-    SetOn(IsOn(), true)  -- Skip callback on init
-
-    if ns.UIKit and ns.UIKit.RegisterScaleRefresh then
-        ns.UIKit.RegisterScaleRefresh(toggle, "formToggleInvertedScale", function()
-            toggle:SetSize(26, 14)
-            toggle:ClearAllPoints()
-            toggle:SetPoint("LEFT", container, "LEFT", 180, 0)
-            knob:SetSize(10, 10)
-            UpdateVisual(IsOn())
-        end)
-    end
-
-    toggle:SetScript("OnClick", function() SetOn(not IsOn()) end)
-
-    toggle:SetScript("OnEnter", function()
-        isHovered = true
-        SetToggleVisual(toggle, IsOn() and true or false)
-    end)
-    toggle:SetScript("OnLeave", function()
-        isHovered = false
-        SetToggleVisual(toggle, IsOn() and true or false)
-    end)
-
-    -- Enable/disable the toggle (for conditional UI)
-    container.SetEnabled = function(self, enabled)
-        toggle:EnableMouse(enabled)
-        container:SetAlpha(enabled and 1 or 0.4)
-    end
-
-    -- Skip search registration when the generated cache is present (avoids
-    -- per-widget allocation on every page rebuild; see CreateFormToggle).
-    if not GUI:HasGeneratedSearchCache() then
-        RegisterSearchSettingWidgetForBinding(dbTable, registryInfo, {
-            label = label,
-            widgetType = "toggle",
-            widgetBuilder = function(p)
-                return GUI:CreateFormToggleInverted(p, label, dbKey, dbTable, onChange, registryInfo)
-            end,
-            widgetDescriptor = GUI:BuildSearchWidgetDescriptor("toggle_inverted", dbKey, dbTable),
-            keywords = registryInfo and registryInfo.keywords or nil,
-            description = registryInfo and registryInfo.description or nil,
-            relatedTo = registryInfo and registryInfo.relatedTo or nil,
-        })
-    end
-
-    local tooltipDescription = registryInfo and registryInfo.description or nil
-    AttachFormWidgetTooltip(container, toggle, tooltipDescription, label)
-    return container
+    return BuildPillToggle(parent, label, dbKey, dbTable, onChange, registryInfo, true)
 end
 
 ---------------------------------------------------------------------------
@@ -2786,7 +2576,6 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     -- Aliases for legacy identifiers consumed elsewhere in this file
     local thumbFrame = thumb
     local trackContainer = slider
-    local px = QUICore:GetPixelSize(slider)
 
     -- Nudge button (decrement) — left of editbox
     local nudgeMinus = CreateFrame("Button", nil, container, useUIKitBorders and nil or "BackdropTemplate")
@@ -2806,14 +2595,8 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         nudgeMinus.bg = UIKit.CreateBackground(nudgeMinus, 0.08, 0.08, 0.08, 1)
         UIKit.CreateBorderLines(nudgeMinus)
         UIKit.UpdateBorderLines(nudgeMinus, 1, 0.25, 0.25, 0.25, 1, false)
-    else
-        nudgeMinus:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        nudgeMinus:SetBackdropColor(0.08, 0.08, 0.08, 1)
-        nudgeMinus:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+    elseif SkinBase and SkinBase.ApplyPixelBackdrop then
+        SkinBase.ApplyPixelBackdrop(nudgeMinus, 1, true, false, { 0.25, 0.25, 0.25, 1 }, { 0.08, 0.08, 0.08, 1 })
     end
     local nudgeMinusText = nudgeMinus:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(nudgeMinusText, 11, "", C.text)
@@ -2828,14 +2611,8 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         editBox.bg = UIKit.CreateBackground(editBox, C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
         UIKit.CreateBorderLines(editBox)
         UIKit.UpdateBorderLines(editBox, 1, C.border[1], C.border[2], C.border[3], C.border[4], false)
-    else
-        editBox:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        editBox:SetBackdropColor(C.bgContent[1], C.bgContent[2], C.bgContent[3], 1)
-        editBox:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], C.border[4])
+    elseif SkinBase and SkinBase.ApplyPixelBackdrop then
+        SkinBase.ApplyPixelBackdrop(editBox, 1, true, false, { C.border[1], C.border[2], C.border[3], C.border[4] }, { C.bgContent[1], C.bgContent[2], C.bgContent[3], 1 })
     end
     editBox:SetFont(GetFontPath(), 10, "")
     editBox:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
@@ -2851,14 +2628,8 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         nudgePlus.bg = UIKit.CreateBackground(nudgePlus, 0.08, 0.08, 0.08, 1)
         UIKit.CreateBorderLines(nudgePlus)
         UIKit.UpdateBorderLines(nudgePlus, 1, 0.25, 0.25, 0.25, 1, false)
-    else
-        nudgePlus:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        nudgePlus:SetBackdropColor(0.08, 0.08, 0.08, 1)
-        nudgePlus:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+    elseif SkinBase and SkinBase.ApplyPixelBackdrop then
+        SkinBase.ApplyPixelBackdrop(nudgePlus, 1, true, false, { 0.25, 0.25, 0.25, 1 }, { 0.08, 0.08, 0.08, 1 })
     end
     local nudgePlusText = nudgePlus:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(nudgePlusText, 11, "", C.text)
@@ -3149,19 +2920,12 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     dropdown:SetHeight(22)
     dropdown:SetPoint("LEFT", container, "LEFT", dropdownLeftOffset, 0)
     dropdown:SetPoint("RIGHT", container, "RIGHT", 0, 0)
-    local px = QUICore:GetPixelSize(dropdown)
     if useUIKitBorders then
         dropdown.bg = UIKit.CreateBackground(dropdown, C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
         UIKit.CreateBorderLines(dropdown)
         UIKit.UpdateBorderLines(dropdown, 1, 1, 1, 1, 0.2, false)
-    else
-        dropdown:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        dropdown:SetBackdropColor(C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
-        dropdown:SetBackdropBorderColor(1, 1, 1, 0.2)
+    elseif SkinBase and SkinBase.ApplyPixelBackdrop then
+        SkinBase.ApplyPixelBackdrop(dropdown, 1, true, false, { 1, 1, 1, 0.2 }, { C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06 })
     end
 
     local function SetDropdownBorderColor(r, g, b, a)
@@ -3200,14 +2964,8 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         menuFrame.bg = UIKit.CreateBackground(menuFrame, C.bg[1], C.bg[2], C.bg[3], 1)
         UIKit.CreateBorderLines(menuFrame)
         UIKit.UpdateBorderLines(menuFrame, 1, 1, 1, 1, 0.2, false)
-    else
-        menuFrame:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        menuFrame:SetBackdropColor(C.bg[1], C.bg[2], C.bg[3], 1)
-        menuFrame:SetBackdropBorderColor(1, 1, 1, 0.2)
+    elseif SkinBase and SkinBase.ApplyPixelBackdrop then
+        SkinBase.ApplyPixelBackdrop(menuFrame, 1, true, false, { 1, 1, 1, 0.2 }, { C.bg[1], C.bg[2], C.bg[3], 1 })
     end
     menuFrame:SetFrameStrata("TOOLTIP")
     menuFrame:SetClipsChildren(true)
@@ -3762,18 +3520,12 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
     local swatch = CreateFrame("Button", nil, container, useUIKitBorders and nil or "BackdropTemplate")
     swatch:SetSize(18, 18)
     swatch:SetPoint("LEFT", container, "LEFT", swatchLeftOffset, 0)
-    local px = QUICore:GetPixelSize(swatch)
     if useUIKitBorders then
         swatch.bg = UIKit.CreateBackground(swatch, 1, 1, 1, 1)
         UIKit.CreateBorderLines(swatch)
         UIKit.UpdateBorderLines(swatch, 1, 1, 1, 1, 0.35, false)
-    else
-        swatch:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = px,
-        })
-        swatch:SetBackdropBorderColor(1, 1, 1, 0.35)
+    elseif SkinBase and SkinBase.ApplyPixelBackdrop then
+        SkinBase.ApplyPixelBackdrop(swatch, 1, true, false, { 1, 1, 1, 0.35 }, nil)
     end
 
     container.swatch = swatch
@@ -3942,14 +3694,9 @@ function GUI:CreateScrollableTextBox(parent, height, text, options)
     local container = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     container:SetHeight(height)
 
-    local px = QUICore.GetPixelSize and QUICore:GetPixelSize(container) or 1
-    container:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = px,
-    })
-    container:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 1)
-    container:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
+    if SkinBase and SkinBase.ApplyPixelBackdrop then
+        SkinBase.ApplyPixelBackdrop(container, 1, true, false, { borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1 }, { bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 1 })
+    end
 
     -- ScrollFrame to hold the EditBox
     local scrollFrame = CreateFrame("ScrollFrame", nil, container)
@@ -4729,14 +4476,9 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
             local navRow = CreateFrame("Button", nil, content, "BackdropTemplate")
             navRow:SetSize(content:GetWidth() - (PADDING * 2), 26)
             navRow:SetPoint("TOPLEFT", PADDING, y)
-            local navPx = QUICore:GetPixelSize(navRow)
-            navRow:SetBackdrop({
-                bgFile = "Interface\\BUTTONS\\WHITE8X8",
-                edgeFile = "Interface\\BUTTONS\\WHITE8X8",
-                edgeSize = navPx,
-            })
-            navRow:SetBackdropColor(0.12, 0.14, 0.17, 0.8)
-            navRow:SetBackdropBorderColor(0.2, 0.22, 0.25, 0.6)
+            if SkinBase and SkinBase.ApplyPixelBackdrop then
+                SkinBase.ApplyPixelBackdrop(navRow, 1, true, false, { 0.2, 0.22, 0.25, 0.6 }, { 0.12, 0.14, 0.17, 0.8 })
+            end
 
             -- Type icon/badge
             local typeBadge = navRow:CreateFontString(nil, "OVERLAY")
@@ -4885,14 +4627,9 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
             local goBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
             goBtn:SetSize(36, 16)
             goBtn:SetPoint("LEFT", header, "RIGHT", 8, 0)
-            local goPx = QUICore:GetPixelSize(goBtn)
-            goBtn:SetBackdrop({
-                bgFile = "Interface\\BUTTONS\\WHITE8X8",
-                edgeFile = "Interface\\BUTTONS\\WHITE8X8",
-                edgeSize = goPx,
-            })
-            goBtn:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 0.15)
-            goBtn:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.5)
+            if SkinBase and SkinBase.ApplyPixelBackdrop then
+                SkinBase.ApplyPixelBackdrop(goBtn, 1, true, false, { C.accent[1], C.accent[2], C.accent[3], 0.5 }, { C.accent[1], C.accent[2], C.accent[3], 0.15 })
+            end
 
             local btnText = goBtn:CreateFontString(nil, "OVERLAY")
             SetFont(btnText, 9, "", C.accent)
@@ -5012,14 +4749,9 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                     local fallbackRow = CreateFrame("Button", nil, content, "BackdropTemplate")
                     fallbackRow:SetSize(content:GetWidth() - (PADDING * 2), 24)
                     fallbackRow:SetPoint("TOPLEFT", PADDING, y)
-                    local rowPx = QUICore:GetPixelSize(fallbackRow)
-                    fallbackRow:SetBackdrop({
-                        bgFile = "Interface\\BUTTONS\\WHITE8X8",
-                        edgeFile = "Interface\\BUTTONS\\WHITE8X8",
-                        edgeSize = rowPx,
-                    })
-                    fallbackRow:SetBackdropColor(0.12, 0.14, 0.17, 0.55)
-                    fallbackRow:SetBackdropBorderColor(0.2, 0.22, 0.25, 0.45)
+                    if SkinBase and SkinBase.ApplyPixelBackdrop then
+                        SkinBase.ApplyPixelBackdrop(fallbackRow, 1, true, false, { 0.2, 0.22, 0.25, 0.45 }, { 0.12, 0.14, 0.17, 0.55 })
+                    end
 
                     local fallbackLabel = fallbackRow:CreateFontString(nil, "OVERLAY")
                     SetFont(fallbackLabel, 11, "", C.textMuted)
@@ -5070,14 +4802,9 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
         local errorRow = CreateFrame("Frame", nil, content, "BackdropTemplate")
         errorRow:SetSize(content:GetWidth() - (PADDING * 2), 28)
         errorRow:SetPoint("TOPLEFT", PADDING, y)
-        local rowPx = QUICore:GetPixelSize(errorRow)
-        errorRow:SetBackdrop({
-            bgFile = "Interface\\BUTTONS\\WHITE8X8",
-            edgeFile = "Interface\\BUTTONS\\WHITE8X8",
-            edgeSize = rowPx,
-        })
-        errorRow:SetBackdropColor(0.25, 0.05, 0.05, 0.75)
-        errorRow:SetBackdropBorderColor(1, 0.25, 0.25, 0.65)
+        if SkinBase and SkinBase.ApplyPixelBackdrop then
+            SkinBase.ApplyPixelBackdrop(errorRow, 1, true, false, { 1, 0.25, 0.25, 0.65 }, { 0.25, 0.05, 0.05, 0.75 })
+        end
 
         local label = errorRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         SetFont(label, 11, "", {1, 0.45, 0.45, 1})
@@ -5571,40 +5298,11 @@ function GUI:CreateMainFrame()
     end)
 
     -- Close button [x]
-    local close = CreateFrame("Button", nil, titleBar)
-    close:SetSize(22, 22)
-    close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -10, -5)
-    close._bg = UIKit.CreateBackground(close, 0.08, 0.08, 0.08, 0.6)
-    UIKit.CreateBorderLines(close)
-    UIKit.UpdateBorderLines(close, 1, C.border[1], C.border[2], C.border[3], 1)
-
-    -- X drawn with two rotated lines
-    local LINE_LEN, LINE_W = 10, 1.5
-    local xLine1 = close:CreateTexture(nil, "OVERLAY")
-    xLine1:SetSize(LINE_LEN, LINE_W)
-    xLine1:SetPoint("CENTER")
-    xLine1:SetColorTexture(C.text[1], C.text[2], C.text[3], 0.8)
-    xLine1:SetRotation(math.rad(45))
-
-    local xLine2 = close:CreateTexture(nil, "OVERLAY")
-    xLine2:SetSize(LINE_LEN, LINE_W)
-    xLine2:SetPoint("CENTER")
-    xLine2:SetColorTexture(C.text[1], C.text[2], C.text[3], 0.8)
-    xLine2:SetRotation(math.rad(-45))
-
-    close:SetScript("OnClick", function() frame:Hide() end)
-    close:SetScript("OnEnter", function(self)
-        UIKit.UpdateBorderLines(self, 1, C.accent[1], C.accent[2], C.accent[3], 1)
-        self._bg:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 0.15)
-        xLine1:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
-        xLine2:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 1)
-    end)
-    close:SetScript("OnLeave", function(self)
-        UIKit.UpdateBorderLines(self, 1, C.border[1], C.border[2], C.border[3], 1)
-        self._bg:SetVertexColor(0.08, 0.08, 0.08, 0.6)
-        xLine1:SetColorTexture(C.text[1], C.text[2], C.text[3], 0.8)
-        xLine2:SetColorTexture(C.text[1], C.text[2], C.text[3], 0.8)
-    end)
+    UIKit.CreateCloseButton(titleBar, {
+        size = 22,
+        point = "TOPRIGHT", relativeTo = frame, x = -10, y = -5,
+        onClick = function() frame:Hide() end,
+    })
 
     -- Separator line below title
     local titleSep = frame:CreateTexture(nil, "ARTWORK")
@@ -6026,23 +5724,11 @@ function GUI:ShowExportPopup(title, exportString)
         closeBtn:SetPoint("BOTTOMRIGHT", -12, 10)
 
         -- X button in corner
-        local xBtn = CreateFrame("Button", nil, popup, "BackdropTemplate")
-        xBtn:SetSize(22, 22)
-        xBtn:SetPoint("TOPRIGHT", -6, -6)
-        CreateBackdrop(xBtn, {0.12, 0.12, 0.12, 1}, nil)
-        local xText = xBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        xText:SetPoint("CENTER", 0, 0)
-        xText:SetText("x")
-        xText:SetTextColor(0.6, 0.6, 0.6, 1)
-        xBtn:SetScript("OnEnter", function(self)
-            pcall(self.SetBackdropBorderColor, self, 1, 0.3, 0.3, 1)
-            xText:SetTextColor(1, 0.3, 0.3, 1)
-        end)
-        xBtn:SetScript("OnLeave", function(self)
-            pcall(self.SetBackdropBorderColor, self, C.border[1], C.border[2], C.border[3], 1)
-            xText:SetTextColor(0.6, 0.6, 0.6, 1)
-        end)
-        xBtn:SetScript("OnClick", function() popup:Hide() end)
+        UIKit.CreateCloseButton(popup, {
+            size = 22,
+            point = "TOPRIGHT", x = -6, y = -6,
+            onClick = function() popup:Hide() end,
+        })
 
         popup:Hide()
         ExportPopup = popup
@@ -6128,23 +5814,11 @@ function GUI:ShowImportPopup(config)
         popup.buttons = {}
 
         -- X button in corner
-        local xBtn = CreateFrame("Button", nil, popup, "BackdropTemplate")
-        xBtn:SetSize(22, 22)
-        xBtn:SetPoint("TOPRIGHT", -6, -6)
-        CreateBackdrop(xBtn, {0.12, 0.12, 0.12, 1}, nil)
-        local xText = xBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        xText:SetPoint("CENTER", 0, 0)
-        xText:SetText("x")
-        xText:SetTextColor(0.6, 0.6, 0.6, 1)
-        xBtn:SetScript("OnEnter", function(self)
-            pcall(self.SetBackdropBorderColor, self, 1, 0.3, 0.3, 1)
-            xText:SetTextColor(1, 0.3, 0.3, 1)
-        end)
-        xBtn:SetScript("OnLeave", function(self)
-            pcall(self.SetBackdropBorderColor, self, C.border[1], C.border[2], C.border[3], 1)
-            xText:SetTextColor(0.6, 0.6, 0.6, 1)
-        end)
-        xBtn:SetScript("OnClick", function() popup:Hide() end)
+        UIKit.CreateCloseButton(popup, {
+            size = 22,
+            point = "TOPRIGHT", x = -6, y = -6,
+            onClick = function() popup:Hide() end,
+        })
 
         popup:Hide()
         ImportPopup = popup

@@ -95,60 +95,19 @@ local function ColorTexture(texture, color)
 end
 
 local function CreateThemedButton(parent, text, width, height, onClick, variant)
-    local gui = _G.QUI and _G.QUI.GUI
-    if gui and gui.CreateButton then
-        return gui:CreateButton(parent, text, width, height, onClick, variant)
-    end
-
-    local button = CreateFrame("Button", nil, parent)
-    button:SetSize(width or 100, height or 22)
-    if UIKit and UIKit.CreateBorderLines then
-        UIKit.CreateBorderLines(button)
-    end
-
-    button._hoverBg = button:CreateTexture(nil, "BACKGROUND")
-    button._hoverBg:SetAllPoints(button)
-    button._hoverBg:Hide()
-
-    button.text = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    button.text:SetPoint("CENTER", 0, 0)
-    button.text:SetText(text or "")
-
-    button:SetScript("OnEnter", function(self)
-        local theme = ResolveTheme()
-        if UIKit and UIKit.UpdateBorderLines then
-            UIKit.UpdateBorderLines(self, 1, theme.accent[1], theme.accent[2], theme.accent[3], 1)
-        end
-        if self.text then
-            self.text:SetTextColor(theme.text[1], theme.text[2], theme.text[3], theme.text[4] or 1)
-        end
-        if self._hoverBg then
-            self._hoverBg:SetColorTexture(theme.accent[1], theme.accent[2], theme.accent[3], 0.08)
-            self._hoverBg:Show()
-        end
-    end)
-    button:SetScript("OnLeave", function(self)
-        local theme = ResolveTheme()
-        if UIKit and UIKit.UpdateBorderLines then
-            UIKit.UpdateBorderLines(self, 1, 1, 1, 1, 0.2)
-        end
-        if self.text then
-            self.text:SetTextColor(theme.textDim[1], theme.textDim[2], theme.textDim[3], theme.textDim[4] or 1)
-        end
-        if self._hoverBg then
-            self._hoverBg:Hide()
-        end
-    end)
-    button:SetScript("OnMouseDown", function(self)
-        if self.text then self.text:SetPoint("CENTER", 0, -1) end
-    end)
-    button:SetScript("OnMouseUp", function(self)
-        if self.text then self.text:SetPoint("CENTER", 0, 0) end
-    end)
-    if onClick then
-        button:SetScript("OnClick", onClick)
-    end
-    return button
+    -- Route through the central core factory (UIKit.CreateButton lives in core and is
+    -- always available at login, unlike GUI:CreateButton which is in the LOD Options
+    -- addon). Pass the chat module's palette so the button keeps chat chrome — chat
+    -- intentionally diverges from the options palette (see QUI_COLORS above).
+    local theme = ResolveTheme()
+    return UIKit.CreateButton(parent, {
+        text = text,
+        width = width,
+        height = height,
+        onClick = onClick,
+        variant = variant,
+        colors = { text = theme.text, textDim = theme.textDim, accent = theme.accent },
+    })
 end
 
 local function StyleThemedButton(button, variant)

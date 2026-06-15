@@ -9,6 +9,7 @@ local ADDON_NAME, ns = ...
 local Model = ns.QUI_GroupFramesAuraModel
 local AuraDefaults = ns.QUI_GroupFramesAuraDefaults
 local SpellList = ns.QUI_GroupFramesSpellListSettings
+local SkinBase = ns.SkinBase
 
 local AurasEditor = ns.QUI_GroupFramesAurasSettings or {}
 ns.QUI_GroupFramesAurasSettings = AurasEditor
@@ -128,11 +129,6 @@ local function GetSpellTexture(spellID)
         end
     end
     return FALLBACK_ICON
-end
-
-local function GetPixelSize(frame)
-    local core = ns.Addon
-    return (core and core.GetPixelSize and core:GetPixelSize(frame)) or 1
 end
 
 -- Apply the QUI settings font (Quazii) + standard text colors to the spell-ID
@@ -313,13 +309,7 @@ local function AddSpellListEditor(ctx, element, fieldName, title)
     local inputBox = CreateFrame("EditBox", nil, manualRow, "BackdropTemplate")
     inputBox:SetSize(80, 20)
     inputBox:SetPoint("LEFT", 0, 0)
-    inputBox:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GetPixelSize(inputBox),
-    })
-    inputBox:SetBackdropColor(0.06, 0.06, 0.08, 1)
-    inputBox:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+    SkinBase.ApplyPixelBackdrop(inputBox, 1, true, false, { 0.25, 0.25, 0.25, 1 }, { 0.06, 0.06, 0.08, 1 })
     inputBox:SetFontObject("GameFontNormalSmall")
     inputBox:SetAutoFocus(false)
     inputBox:SetMaxLetters(10)
@@ -336,13 +326,7 @@ local function AddSpellListEditor(ctx, element, fieldName, title)
     local addManualButton = CreateFrame("Button", nil, manualRow, "BackdropTemplate")
     addManualButton:SetSize(40, 20)
     addManualButton:SetPoint("LEFT", inputLabel, "RIGHT", 8, 0)
-    addManualButton:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GetPixelSize(addManualButton),
-    })
-    addManualButton:SetBackdropColor(0.15, 0.15, 0.15, 1)
-    addManualButton:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    SkinBase.ApplyPixelBackdrop(addManualButton, 1, true, false, { 0.3, 0.3, 0.3, 1 }, { 0.15, 0.15, 0.15, 1 })
     local addManualText = addManualButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     addManualText:SetPoint("CENTER")
     addManualText:SetText("Add")
@@ -967,13 +951,7 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
     local inputBox = CreateFrame("EditBox", nil, inputRow, "BackdropTemplate")
     inputBox:SetSize(80, 20)
     inputBox:SetPoint("LEFT", 0, 0)
-    inputBox:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GetPixelSize(inputBox),
-    })
-    inputBox:SetBackdropColor(0.06, 0.06, 0.08, 1)
-    inputBox:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+    SkinBase.ApplyPixelBackdrop(inputBox, 1, true, false, { 0.25, 0.25, 0.25, 1 }, { 0.06, 0.06, 0.08, 1 })
     inputBox:SetFontObject("GameFontNormalSmall")
     inputBox:SetAutoFocus(false)
     inputBox:SetMaxLetters(10)
@@ -990,13 +968,7 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
     local addManualButton = CreateFrame("Button", nil, inputRow, "BackdropTemplate")
     addManualButton:SetSize(40, 20)
     addManualButton:SetPoint("LEFT", inputLabel, "RIGHT", 8, 0)
-    addManualButton:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = GetPixelSize(addManualButton),
-    })
-    addManualButton:SetBackdropColor(0.15, 0.15, 0.15, 1)
-    addManualButton:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+    SkinBase.ApplyPixelBackdrop(addManualButton, 1, true, false, { 0.3, 0.3, 0.3, 1 }, { 0.15, 0.15, 0.15, 1 })
     local addManualText = addManualButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     addManualText:SetPoint("CENTER")
     addManualText:SetText("Add")
@@ -1157,13 +1129,7 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
         cell = CreateFrame("Button", nil, listArea, "BackdropTemplate")
         cell:SetSize(SUGGEST_CELL_SIZE, SUGGEST_CELL_SIZE)
         cell:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        cell:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = GetPixelSize(cell),
-        })
-        cell:SetBackdropColor(0, 0, 0, 0)
-        cell:SetBackdropBorderColor(0.2, 0.2, 0.2, 0.5)
+        SkinBase.ApplyPixelBackdrop(cell, 1, true, false, { 0.2, 0.2, 0.2, 0.5 }, { 0, 0, 0, 0 })
 
         cell.icon = cell:CreateTexture(nil, "ARTWORK")
         cell.icon:SetSize(SUGGEST_ICON_SIZE, SUGGEST_ICON_SIZE)

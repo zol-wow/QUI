@@ -2023,12 +2023,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local swatch = CreateFrame("Button", nil, swatchRow, "BackdropTemplate")
             swatch:SetSize(16, 16)
             swatch:SetPoint("LEFT", swatchRow, "LEFT", 180, 0)
-            swatch:SetBackdrop({
-                bgFile = "Interface\\Buttons\\WHITE8x8",
-                edgeFile = "Interface\\Buttons\\WHITE8x8",
-                edgeSize = GetPixelSize(swatch),
-            })
-            swatch:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+            ns.SkinBase.ApplyPixelBackdrop(swatch, 1, true, false, { 0.4, 0.4, 0.4, 1 })
             swatch:SetScript("OnEnter", function(self)
                 pcall(self.SetBackdropBorderColor, self, 0.2, 0.83, 0.6, 1)
             end)

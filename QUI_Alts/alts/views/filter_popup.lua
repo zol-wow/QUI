@@ -118,15 +118,12 @@ function FilterPopup.Attach(opts)
     local function GetRow(i)
         local r = rowPool[i]
         if r then return r end
-        r = CreateFrame("Button", nil, popup)
-        r:SetHeight(ROW_H)
+        r = Shared.CreateRow(popup, {
+            height = ROW_H,
+            hoverGuard = function(self) return self._id ~= nil end,
+        })
         r:SetPoint("TOPLEFT", popup, "TOPLEFT", 6, -HEADER_H - (i - 1) * ROW_H)
         r:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -6, -HEADER_H - (i - 1) * ROW_H)
-        local bg = r:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-        bg:SetVertexColor(1, 1, 1, 0)
-        r._bg = bg
         r._cb = UIKit.CreateAccentCheckbox(r, {
             size = 14,
             onChange = function(checked)

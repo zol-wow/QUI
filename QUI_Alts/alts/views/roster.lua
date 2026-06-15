@@ -180,20 +180,12 @@ local function Builder(parent)
     local function GetRow(i)
         local r = rowPool[i]
         if r then return r end
-        r = CreateFrame("Button", nil, frame)
-        r:SetHeight(ROW_H)
+        r = Shared.CreateRow(frame, { height = ROW_H })
         r:RegisterForClicks("RightButtonUp")
-        local bg = r:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-        bg:SetVertexColor(1, 1, 1, 0)
-        r._bg = bg
         r._cells = {}
         for c = 1, #COLUMNS do
             r._cells[c] = MakeFS(r, 11)
         end
-        r:SetScript("OnEnter", function(self) self._bg:SetVertexColor(1, 1, 1, 0.08) end)
-        r:SetScript("OnLeave", function(self) self._bg:SetVertexColor(1, 1, 1, 0) end)
         r:SetScript("OnClick", function(self, button)
             if button ~= "RightButton" then return end
             -- snapshot at click time: the menu's title AND its delete

@@ -285,6 +285,20 @@ local function ApplyHairlineBorder(textures, frame, size)
     b[4]:ClearAllPoints(); b[4]:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0); b[4]:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0); b[4]:SetWidth(size)
 end
 
+-- Create the 4 hairline edge textures for a frame's border, returned as
+-- { top, bottom, left, right } for ApplyHairlineBorder to lay out. Pass `color`
+-- ({r,g,b,a}) to tint them at creation (the bar mocks use solid black); omit it
+-- for borders recolored later (the portrait + aura icons).
+local function CreateHairlineBorder(frame, color)
+    local b = {}
+    for i = 1, 4 do
+        local t = frame:CreateTexture(nil, "OVERLAY")
+        if color then t:SetColorTexture(color[1], color[2], color[3], color[4]) end
+        b[i] = t
+    end
+    return b
+end
+
 -- Publish the preview helper set so sibling preview files (castbar preview,
 -- which loads after this file in QUI_Options.toc) reuse one implementation
 -- instead of maintaining byte-identical copies.
@@ -296,6 +310,7 @@ ns.QUI_UnitFramesPreviewShared.ResolveUnitFrameFont = ResolveUnitFrameFont
 ns.QUI_UnitFramesPreviewShared.ApplyTextAnchor = ApplyTextAnchor
 ns.QUI_UnitFramesPreviewShared.GetPlayerClassColorOr = GetPlayerClassColorOr
 ns.QUI_UnitFramesPreviewShared.ApplyHairlineBorder = ApplyHairlineBorder
+ns.QUI_UnitFramesPreviewShared.CreateHairlineBorder = CreateHairlineBorder
 
 local function BuildMockFrame(host)
     local mock = CreateFrame("Frame", nil, host)
@@ -309,10 +324,7 @@ local function BuildMockFrame(host)
     -- Stand-in for the unit's 3D portrait: use the player's portrait so the
     -- preview shows real art, not a placeholder. Set at refresh time so it
     -- stays current if the player changes zones / transforms.
-    portrait._border = {}
-    for i = 1, 4 do
-        portrait._border[i] = portrait:CreateTexture(nil, "OVERLAY")
-    end
+    portrait._border = CreateHairlineBorder(portrait)
     portrait:Hide()
     mock._portrait = portrait
 
@@ -321,12 +333,7 @@ local function BuildMockFrame(host)
     mock._bg:SetAllPoints(mock)
 
     -- Border — 4 hairline textures (cheaper than SetBackdrop, no Blizzard recursion)
-    mock._border = {}
-    for i = 1, 4 do
-        local t = mock:CreateTexture(nil, "OVERLAY")
-        t:SetColorTexture(0, 0, 0, 1)
-        mock._border[i] = t
-    end
+    mock._border = CreateHairlineBorder(mock, { 0, 0, 0, 1 })
 
     -- Health bar
     mock._healthBar = mock:CreateTexture(nil, "ARTWORK")
@@ -396,10 +403,7 @@ local function BuildMockFrame(host)
         icon._art = icon:CreateTexture(nil, "ARTWORK")
         icon._art:SetTexture(iconTexPath)
         icon._art:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-        icon._border = {}
-        for i = 1, 4 do
-            icon._border[i] = icon:CreateTexture(nil, "OVERLAY")
-        end
+        icon._border = CreateHairlineBorder(icon)
         icon._stack = icon:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         icon._dur   = icon:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         icon:Hide()
