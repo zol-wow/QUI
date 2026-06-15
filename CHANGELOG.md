@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta49 - 2026-06-15
+
+> 🧪 **QUI 4 beta — combat-stability hardening & power-bar gap fix.** This release is mostly under-the-hood robustness for the 12.0 secret-value system: health text, absorb overlays, chat timestamps, damage-meter spell lookups and CDM aura tracking now handle combat-protected values without erroring. On the visible side, Group Frames power bars reclaim their space correctly when turned off or hidden by role filters. No profile schema migration — your beta48 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Group Frames: power-bar space is reclaimed when power bars are off.** Turning off Show Power Bar (globally or via role filters) now collapses the reserved power-bar gap instead of leaving a stale slot, and the health bar's bottom padding stays in sync with the power bar's actual height and visibility.
+- **Combat stability: secret-value hardening.** Several spots that read combat-protected (secret) values are reworked so they never error mid-combat — group-frame health text and heal-absorb/absorb overlays forward secret values straight to the display, the damage meter skips secret spell IDs before any lookup, chat timestamps no longer compare wrapped secret strings, and CDM wakes aura entries whose payload carries no readable spell ID.
+
+### Removed
+- Dead code: unused minimap button-background and button-cache helpers removed (no behavior change).
+
 ## v4.0.0-beta48 - 2026-06-14
 
 > 🧪 **QUI 4 beta — Group Frames defensive-indicator placement fix.** A small follow-up to beta47's aura overhaul: defensive-cooldown indicators anchored to a bottom edge no longer overlap the power bar. No profile schema migration — your beta47 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.

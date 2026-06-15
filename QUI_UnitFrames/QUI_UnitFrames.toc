@@ -2,7 +2,7 @@
 ## Title: |cFF30D1FFQUI|r Unit Frames
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol
-## Version: 4.0.0-beta48
+## Version: 4.0.0-beta49
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI
