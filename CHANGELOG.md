@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta53 - 2026-06-15
+
+> 🧪 **QUI 4 beta — Group Frames dispel/defensive overlay fix.** This release hardens the fix for a Group Frames bug where a dispel or defensive indicator could stay lit after the aura was already gone. The overlay now re-probes the live unit authoritatively, so a desynced aura cache can no longer strand an indicator on. No profile schema migration — your beta52 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Group Frames: stuck dispel/defensive overlay.** The healer dispel and defensive overlays now re-evaluate on every aura set-change and re-probe each aura against the live unit, instead of trusting derived cache sets that could desync across in-combat aura events. A removed aura is also purged from both internal buckets, so a stale copy can no longer keep an indicator lit after the debuff/buff is gone.
+
 ## v4.0.0-beta52 - 2026-06-15
 
 > 🧪 **QUI 4 beta — per-frame Unit Frame border color.** This release lets each unit frame (player, target, pet, focus, target-of-target, boss) pick its own border color independently — Inherit (global skin border), Theme accent, Class color, or Custom — instead of all frames sharing one skin border color. No profile schema migration — your beta51 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
