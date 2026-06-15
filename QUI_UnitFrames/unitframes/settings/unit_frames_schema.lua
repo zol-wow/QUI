@@ -1270,6 +1270,24 @@ local function RenderFrameAppearanceSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, "Bar Texture", textureDropdown)
     )
 
+    -- Per-frame border color (prefix "" -> unit.unitDB.borderColorSource/borderColor).
+    -- Same keys exposed in Appearance > Border Coloring > Unit Frames > "Frame".
+    if ns.QUI_BorderControl then
+        local borderSrcW, borderColorW = ns.QUI_BorderControl.Attach(
+            gui, card.frame, unit.unitDB, "", RefreshUnitFrames,
+            {
+                label             = "Border Color Source",
+                colorLabel        = "Border Color",
+                sourceDescription = "Where the frame border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom.",
+                colorDescription  = "Custom frame border color, used when Border Color Source is set to Custom.",
+            }
+        )
+        card.AddRow(
+            optionsAPI.BuildSettingRow(card.frame, "Border Color Source", borderSrcW),
+            optionsAPI.BuildSettingRow(card.frame, "Border Color", borderColorW)
+        )
+    end
+
     if unitKey == "boss" then
         -- Seed the directional spacing keys from the legacy single spacing so
         -- existing profiles keep their customized boss spacing.

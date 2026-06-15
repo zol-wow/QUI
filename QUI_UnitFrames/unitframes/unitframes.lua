@@ -1805,7 +1805,7 @@ local function CreateBossFrame(unit, frameKey, bossIndex)
     Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 1)
     if borderSize > 0 then
         local skinBorderR, skinBorderG, skinBorderB, skinBorderA = 0, 0, 0, 1
-        if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB, skinBorderA = Helpers.GetSkinBorderColor() end
+        if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB, skinBorderA = Helpers.GetSkinBorderColor(settings, "") end
         Helpers.SetFrameBackdropBorderColor(frame, skinBorderR, skinBorderG, skinBorderB, skinBorderA)
     end
 
@@ -2526,7 +2526,7 @@ local function CreateUnitFrame(unit, unitKey)
     Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 1)
     if borderSize > 0 then
         local skinBorderR, skinBorderG, skinBorderB, skinBorderA = 0, 0, 0, 1
-        if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB, skinBorderA = Helpers.GetSkinBorderColor() end
+        if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB, skinBorderA = Helpers.GetSkinBorderColor(settings, "") end
         Helpers.SetFrameBackdropBorderColor(frame, skinBorderR, skinBorderG, skinBorderB, skinBorderA)
     end
 
@@ -3459,7 +3459,7 @@ function QUI_UF:RefreshFrame(unitKey)
                 Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], bgAlpha)
                 if borderSize > 0 then
                     local skinBorderR, skinBorderG, skinBorderB, skinBorderA = 0, 0, 0, 1
-                    if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB, skinBorderA = Helpers.GetSkinBorderColor() end
+                    if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB, skinBorderA = Helpers.GetSkinBorderColor(settings, "") end
                     Helpers.SetFrameBackdropBorderColor(frame, skinBorderR, skinBorderG, skinBorderB, skinBorderA)
                 end
 
@@ -3755,7 +3755,7 @@ function QUI_UF:RefreshFrame(unitKey)
     Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], bgAlpha)
     if borderSize > 0 then
         local skinBorderR, skinBorderG, skinBorderB, skinBorderA = 0, 0, 0, 1
-        if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB, skinBorderA = Helpers.GetSkinBorderColor() end
+        if Helpers and Helpers.GetSkinBorderColor then skinBorderR, skinBorderG, skinBorderB, skinBorderA = Helpers.GetSkinBorderColor(settings, "") end
         Helpers.SetFrameBackdropBorderColor(frame, skinBorderR, skinBorderG, skinBorderB, skinBorderA)
     end
 
@@ -4807,6 +4807,19 @@ if Helpers and Helpers.BorderRegistry then
         return out
     end
 
+    -- Units that draw a main frame border (all of them).
+    local FRAME_UNITS = { "player", "target", "targettarget", "pet", "focus", "boss" }
+    local function CollectFrameUnits(profile)
+        local out = {}
+        local uf = profile and profile.quiUnitFrames
+        if type(uf) ~= "table" then return out end
+        for _, unit in ipairs(FRAME_UNITS) do
+            local u = uf[unit]
+            if type(u) == "table" then out[#out + 1] = u end
+        end
+        return out
+    end
+
     Helpers.BorderRegistry.Register({
         key       = "castbar",
         label     = "Castbar",
@@ -4841,6 +4854,18 @@ if Helpers and Helpers.BorderRegistry then
         instances = CollectPortraitUnits,
         refresh   = _G.QUI_RefreshUnitFrames,
         legacy    = { useClass = "portraitBorderUseClassColor" },
+    })
+
+    Helpers.BorderRegistry.Register({
+        key       = "unitFrame",
+        label     = "Frame",
+        category  = "Unit Frames",
+        prefix    = "",
+        multi     = true,
+        db        = function(p) local i = CollectFrameUnits(p); return i and i[1] end,
+        instances = CollectFrameUnits,
+        refresh   = _G.QUI_RefreshUnitFrames,
+        legacy    = { defaultSource = "inherit" },
     })
 end
 
