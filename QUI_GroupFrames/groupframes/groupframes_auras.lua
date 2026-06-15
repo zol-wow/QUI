@@ -512,9 +512,25 @@ end
 
 local function AppendAuraToBucket(unit, cache, bucketName, auraData)
     local bucket = bucketName == "buffs" and cache.buffs or cache.debuffs
-    bucket[#bucket + 1] = auraData
-
+    local byID = bucketName == "buffs" and cache.buffsByID or cache.debuffsByID
+    local indexByID = bucketName == "buffs" and cache.buffsIndexByID or cache.debuffsIndexByID
     local instID = auraData and auraData.auraInstanceID
+
+    -- Idempotent re-add: a duplicate addedAuras entry (or an add for an
+    -- already-cached instance with no intervening remove) must overwrite in
+    -- place, NOT append. Re-appending would push a second copy of instID into
+    -- the dedup ORDER arrays (playerDispellableOrder / defensiveOrder) whose
+    -- set guards already hold it; a single RemoveIDFromOrder on removal then
+    -- strips only one, leaving a phantom that keeps the dispel overlay /
+    -- defensive indicator lit after the aura is gone.
+    if instID and byID[instID] then
+        local idx = indexByID[instID]
+        if idx then bucket[idx] = auraData end
+        byID[instID] = auraData
+        return
+    end
+
+    bucket[#bucket + 1] = auraData
     if not instID then
         return
     end
