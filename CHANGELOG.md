@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta50 - 2026-06-15
+
+> 🧪 **QUI 4 beta — Character pane skinning fixes & shared-renderer consolidation.** This release cleans up the Character window's reputation and currency panes (crisp pixel-snapped borders, themed tab labels, no leftover Blizzard art) and routes several modules' backdrops, close buttons and fonts through shared skinning helpers for consistency — almost all of it is internal refactor with no behavior change. No profile schema migration — your beta49 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Character pane: reputation & currency borders render crisply at any UI scale.** Reputation and currency bar/icon borders now use the shared pixel-snapped 4-texture renderer instead of edge files that rendered sub-pixel at fractional UI scale, so borders hug the bar and icon. Blizzard's reputation end-cap art and category-header art are suppressed on both tabs.
+- **Character pane: currency header keeps its QUI color.** The currency section header no longer reverts to yellow when you expand or collapse it.
+- **Character pane: bottom tab labels themed.** The Character / Reputation / Currency tab labels now use the QUI font and a selection-aware color.
+
+### Changed
+- **Shared-renderer consolidation (no behavior change).** Pet-warning, consumable-check, loot-toast and other module backdrops, close buttons and fonts now route through the shared skinning helpers instead of duplicated local code, and the consumable-check warning text uses the QUI general font.
+
 ## v4.0.0-beta49 - 2026-06-15
 
 > 🧪 **QUI 4 beta — combat-stability hardening & power-bar gap fix.** This release is mostly under-the-hood robustness for the 12.0 secret-value system: health text, absorb overlays, chat timestamps, damage-meter spell lookups and CDM aura tracking now handle combat-protected values without erroring. On the visible side, Group Frames power bars reclaim their space correctly when turned off or hidden by role filters. No profile schema migration — your beta48 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.

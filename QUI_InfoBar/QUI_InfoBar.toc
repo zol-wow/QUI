@@ -2,7 +2,7 @@
 ## Title: |cFF30D1FFQUI|r Info Bar
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol
-## Version: 4.0.0-beta49
+## Version: 4.0.0-beta50
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI, QUI_Datatexts
