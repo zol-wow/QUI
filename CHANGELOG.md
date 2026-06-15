@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta47 - 2026-06-14
+
+> 🧪 **QUI 4 beta — Group Frames aura overhaul & cleaner profile setup.** Group-frame buff/debuff auras, pinned auras and indicators are now unified under a single auras model with a reworked live preview and a faster in-combat render path. Fresh profiles are now seeded directly from QUI's shipped defaults (the old first-run welcome popup is gone), and very old (pre-3.5.11) profiles are safely backed up and reseeded instead of step-migrated. **Schema migration v45 → v46 — QUI auto-backs-up your saved variables before migrating.** As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Info Bar: Shift-drag to reorder datatexts.** Hold Shift and drag a datatext slot to reorder it live within its zone.
+
+### Changed
+- **Group Frames: unified aura model + reworked preview.** Buff/debuff auras, pinned auras and indicators now share one auras model with a rebuilt settings preview that mirrors the bucket you're editing, plus a zero-allocation in-combat render path for lower frame-time cost. Existing aura settings carry over — if anything looks off, re-check the Auras section of the Group Frames options.
+- **New profiles seed from shipped defaults.** Creating a new profile now stamps it with QUI's curated defaults automatically (via AceDB's new-profile hook) instead of a first-run welcome popup and import prompt. Existing profiles are never touched.
+- **Defensive indicator: countdown size always on.** The "Custom Duration Size" toggle is gone; the countdown number size slider now always applies (range widened to 2–24px). Rendering stays engine-side, so it's unaffected by combat-protected (secret) values.
+- **Bags: reagent-bag sorting.** Sorting now packs crafting reagents into the universal reagent bag (Blizzard parity), and item-level corner text no longer leaks onto consumables/reagents.
+
+### Removed
+- **First-run welcome popup.** Replaced by the silent new-profile seed above; nothing you need to action.
+- **Pre-3.5.11 incremental migrations.** ~1900 lines of legacy migration steps removed. Profiles older than schema v31 (pre-3.5.11) are now backed up, reset, and reseeded from the starter preset at login; profiles from 3.5.11 onward migrate unchanged, and fresh installs are unaffected.
+
 ## v4.0.0-beta46 - 2026-06-13
 
 > 🧪 **QUI 4 beta — Bag packing & Alts untrack.** Bag sorting gains a "Pack to bottom" option so your sorted items grow up from the bottom of the grid, and Alts currency/reputation rows can now be right-clicked to untrack them. Under the hood, a large dedup sweep consolidates shared helpers across modules — no behavior change intended. No profile schema migration — your beta45 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
