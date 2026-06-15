@@ -555,6 +555,9 @@ local defaults = {
             _snapshotVersion = 0,   -- Incremented each time ownedSpells are snapshotted
             _specProfiles = nil,    -- Legacy shared spec profiles; runtime storage is character-scoped
             perLoadoutSpec = false,     -- Enable per-loadout CDM entries (Phase 1 storage; Phase 2 UI surface)
+            externalSkinning = false,   -- hand CDM cooldown icons to an external skin library when present + enabled
+            iconSkin = "Default",   -- in-house skin preset (Default/Flat/Minimal/Gloss) for CDM icons
+            glowSource = "QUI",   -- CDM proc/cooldown glow source: QUI (native) | Skin (defer to external skin) | Off
             essential = {
                 enabled = true,
                 pos = nil,  -- { ox = number, oy = number } saved container position (nil = first-time, seed from Blizzard)
@@ -1698,6 +1701,19 @@ local defaults = {
                 showTooltips = true,        -- Show tooltips when hovering action buttons
                 useOnKeyDown = false,       -- Cast on key press (true) vs key release (false)
                 assistedHighlight = false,  -- Marching-ants glow on Blizzard's next-cast rotation button
+                -- Icon skin + proc-glow customization (per-surface)
+                externalSkinning = false,   -- hand button skinning to an external skin library when present + enabled
+                iconSkin = "Default",       -- in-house skin preset: Default | Flat | Minimal | Gloss
+                glowSource = "QUI",          -- proc glow source: QUI | Skin | Off
+                glowStyle = "Button",        -- QUI glow style: Button | Pixel | AutoCast
+                glowColorSource = "theme",   -- proc glow color: theme (accent) | custom
+                glowColor = {0.2, 0.82, 0.6, 1}, -- proc glow tint (mint accent)
+                glowLength = 0,              -- Pixel glow line length (0 = auto)
+                glowLines = 8,               -- Pixel glow: line count
+                glowFrequency = 0.25,        -- Pixel glow: animation speed
+                glowThickness = 2,           -- Pixel glow: line thickness
+                glowParticles = 4,           -- AutoCast glow: particle count
+                glowScale = 1,               -- AutoCast glow: particle scale
             },
             -- Mouseover fade settings
             fade = {
@@ -2883,6 +2899,8 @@ local defaults = {
             -- raid uses its own ordering path and should never render a duplicate lead block.
             partySelfFirst = false,
             raidSelfFirst = false,
+            externalSkinning = false,   -- hand group-frame aura icons to an external skin library when present + enabled
+            iconSkin = "Default",       -- in-house skin preset (gloss + backdrop) for aura icons; "Default" keeps QUI's original look
 
             -------------------------------------------------------------------
             -- Party visual settings
@@ -3416,6 +3434,8 @@ local defaults = {
             fadeBuffFrame = false,
             fadeDebuffFrame = false,
             fadeOutAlpha = 0,
+            externalSkinning = false,   -- hand buff/debuff icons to an external skin library when present + enabled
+            iconSkin = "Default",       -- in-house gloss/backdrop skin preset (Default = QUI's original look)
             borderSize = 1,
             fontSize = 12,
             fontOutline = true,

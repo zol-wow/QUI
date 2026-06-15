@@ -703,6 +703,23 @@ local function EvaluateGlowForIcon(icon)
         return false, nil
     end
 
+    -- Glow source gate: Off suppresses QUI glow; Skin defers to the external
+    -- skin's own glow when present. QUI (default) = native CDM glow below.
+    do
+        local profile = ns.Helpers and ns.Helpers.GetProfile and ns.Helpers.GetProfile()
+        local source = profile and profile.ncdm and profile.ncdm.glowSource or "QUI"
+        if source == "Off" then
+            StopGlow(icon)
+            return false, nil
+        elseif source == "Skin" then
+            local b = ns.ExternalSkinBridge
+            if b and b.IsAvailable() and b.SkinProvidesGlow() then
+                StopGlow(icon)
+                return false, nil
+            end
+        end
+    end
+
     local entry = icon._spellEntry
     local viewerType = entry.viewerType
     local baseID = entry.spellID
@@ -1118,6 +1135,22 @@ local function ApplyHighlight(icon)
 
     local settings = GetSettings()
     if not settings or not settings.enabled then return end
+
+    -- Glow source gate (consistent with the proc/cooldown glow in this file):
+    -- "Off" suppresses QUI highlights; "Skin" defers to the external skin's
+    -- own glow when present. "QUI" (default) runs the native highlight below.
+    do
+        local profile = ns.Helpers and ns.Helpers.GetProfile and ns.Helpers.GetProfile()
+        local source = profile and profile.ncdm and profile.ncdm.glowSource or "QUI"
+        if source == "Off" then
+            return
+        elseif source == "Skin" then
+            local b = ns.ExternalSkinBridge
+            if b and b.IsAvailable() and b.SkinProvidesGlow() then
+                return
+            end
+        end
+    end
 
     -- Remove existing highlight if any
     if activeHighlights[icon] then

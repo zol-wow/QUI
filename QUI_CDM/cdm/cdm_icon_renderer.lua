@@ -2536,6 +2536,69 @@ local function ConfigureIcon(icon, rowConfig)
         end
     end
 
+    -- External skin library ownership (opt-in per CDM). When enabled and the
+    -- library is present, hand the icon to it and hide QUI's own border so the
+    -- external skin shows. When disabled, remove it if previously added (the
+    -- border block above has already restored QUI's border).
+    do
+        -- Lazily create backdrop + gloss overlays (once per icon). backdrop sits
+        -- below the icon texture; gloss is an ADD-blend overlay above it.
+        if not icon._quiBackdrop then
+            local bd = icon:CreateTexture(nil, "BACKGROUND", nil, -8)
+            bd:SetColorTexture(0, 0, 0, 1)
+            bd:SetAllPoints(icon)
+            icon._quiBackdrop = bd
+        end
+        if not icon._quiGloss then
+            local gl = icon:CreateTexture(nil, "OVERLAY")
+            gl:SetTexture(ns.IconSkin and ns.IconSkin.GlossTexture)
+            gl:SetBlendMode("ADD")
+            gl:SetAllPoints(icon)
+            icon._quiGloss = gl
+        end
+
+        local db = GetDB()
+        local extOn = db and db.externalSkinning
+        local Bridge = ns.ExternalSkinBridge
+        if extOn and Bridge and Bridge.IsAvailable() then
+            -- Normalized region table for the bridge. CDM icons expose
+            -- Icon/Border/Cooldown; gloss/backdrop don't exist on CDM icons.
+            local r = icon._quiRegions
+            if not r then
+                r = {}
+                icon._quiRegions = r
+            end
+            r.Icon     = icon.Icon
+            r.Border   = icon.Border
+            r.Cooldown = icon.Cooldown
+            Bridge.AddButton("cdm", icon, r)
+            icon._quiBridged = true
+            if icon.Border then icon.Border:Hide() end
+            icon._quiBackdrop:Hide()
+            icon._quiGloss:Hide()
+        else
+            if icon._quiBridged and Bridge then
+                Bridge.RemoveButton("cdm", icon)
+                icon._quiBridged = nil
+            end
+            local skinName = db and db.iconSkin or "Default"
+            if ns.IconSkin and skinName ~= "Default" then
+                local r = icon._quiRegions
+                if not r then
+                    r = {}
+                    icon._quiRegions = r
+                end
+                r.Backdrop = icon._quiBackdrop
+                r.Gloss    = icon._quiGloss
+                ns.IconSkin.ApplySkin(icon, r, skinName)
+            else
+                -- Default preset = QUI's original CDM look (no gloss/backdrop overlay).
+                icon._quiBackdrop:Hide()
+                icon._quiGloss:Hide()
+            end
+        end
+    end
+
     -- TexCoord (zoom + aspect ratio crop)
     ApplyTexCoord(icon, rowConfig.zoom or 0, aspectRatio)
 

@@ -100,6 +100,25 @@ local function BuildSharedSection(tabContent, headerAt, sectionAt, closeSection,
         Opts.BuildSettingRow(card.frame, ns.L["Hide Duration Swipe"], hideSwipe)
     )
 
+    local externalSkin = GUI:CreateFormToggle(card.frame, nil, "externalSkinning", settings, RefreshBuffBorders,
+        { description = "When an external button-skinning addon is installed, let it skin buff/debuff icons instead of QUI's own border." })
+    card.AddRow(
+        Opts.BuildSettingRow(card.frame, "External Skinning", externalSkin)
+    )
+
+    local skinOptions = {}
+    if ns.IconSkin and ns.IconSkin.GetSkinList then
+        for _, name in ipairs(ns.IconSkin.GetSkinList()) do
+            skinOptions[#skinOptions + 1] = { value = name, text = name }
+        end
+    end
+    if #skinOptions == 0 then skinOptions = { { value = "Default", text = "Default" } } end
+    local iconSkin = GUI:CreateFormDropdown(card.frame, nil, skinOptions, "iconSkin", settings, RefreshBuffBorders, nil,
+        { description = "In-house skin preset (gloss + backdrop) for buff/debuff icons. Default keeps QUI's original look." })
+    card.AddRow(
+        Opts.BuildSettingRow(card.frame, "Button Skin", iconSkin)
+    )
+
     local borderSize = GUI:CreateFormSlider(card.frame, nil, 1, 6, 1, "borderSize", settings, RefreshBuffBorders, nil,
         { description = ns.L["Thickness of the border drawn around buff and debuff icons."] })
     local fontSize = GUI:CreateFormSlider(card.frame, nil, 8, 24, 1, "fontSize", settings, RefreshBuffBorders, nil,

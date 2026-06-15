@@ -54,6 +54,8 @@ local DEFAULTS = {
     fadeBuffFrame = false,
     fadeDebuffFrame = false,
     fadeOutAlpha = 0,
+    externalSkinning = false,
+    iconSkin = "Default",
     borderSize = 2,
     fontSize = 12,
     fontOutline = true,
@@ -397,6 +399,44 @@ local function StyleIcon(icon, settings, isBuff, debuffType)
     icon.BorderLeft:SetShown(showBorders)
     icon.BorderRight:SetShown(showBorders)
 
+    -- External skin library ownership (opt-in). When enabled + the library is
+    -- present, hand the icon to it and hide QUI's own border edges so the
+    -- external skin shows. When disabled, remove it if previously added (the
+    -- SetShown calls above already restored QUI's borders).
+    do
+        local Bridge = ns.ExternalSkinBridge
+        if settings.externalSkinning and Bridge and Bridge.IsAvailable() then
+            local r2 = icon._quiRegions
+            if not r2 then r2 = {}; icon._quiRegions = r2 end
+            r2.Icon     = icon.Icon
+            r2.Cooldown = icon.Cooldown
+            Bridge.AddButton("buffborders", icon, r2)
+            icon._quiBridged = true
+            icon.BorderTop:SetShown(false)
+            icon.BorderBottom:SetShown(false)
+            icon.BorderLeft:SetShown(false)
+            icon.BorderRight:SetShown(false)
+            if icon._quiBackdrop then icon._quiBackdrop:Hide() end
+            if icon._quiGloss then icon._quiGloss:Hide() end
+        else
+            if icon._quiBridged and Bridge then
+                Bridge.RemoveButton("buffborders", icon)
+                icon._quiBridged = nil
+            end
+            local skinName = settings.iconSkin or "Default"
+            if ns.IconSkin and skinName ~= "Default" then
+                local rr = icon._quiRegions
+                if not rr then rr = {}; icon._quiRegions = rr end
+                rr.Backdrop = icon._quiBackdrop
+                rr.Gloss    = icon._quiGloss
+                ns.IconSkin.ApplySkin(icon, rr, skinName)
+            else
+                if icon._quiBackdrop then icon._quiBackdrop:Hide() end
+                if icon._quiGloss then icon._quiGloss:Hide() end
+            end
+        end
+    end
+
     -- Swipe visibility (swipe = dark fill, edge = bright leading line)
     if icon.Cooldown then
         local showSwipe = not settings.hideSwipe
@@ -465,6 +505,17 @@ local function EnsureIconRegions(child)
         iconTexture:SetAllPoints(child)
         iconTexture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         child.Icon = iconTexture
+
+        local backdrop = child:CreateTexture(nil, "BACKGROUND", nil, -8)
+        backdrop:SetColorTexture(0, 0, 0, 1)
+        backdrop:SetAllPoints(child)
+        child._quiBackdrop = backdrop
+
+        local gloss = child:CreateTexture(nil, "OVERLAY")
+        gloss:SetTexture(ns.IconSkin and ns.IconSkin.GlossTexture)
+        gloss:SetBlendMode("ADD")
+        gloss:SetAllPoints(child)
+        child._quiGloss = gloss
 
         local function CreateEdge()
             local edge = child:CreateTexture(nil, "OVERLAY")
