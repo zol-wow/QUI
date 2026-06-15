@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta52 - 2026-06-15
+
+> 🧪 **QUI 4 beta — per-frame Unit Frame border color.** This release lets each unit frame (player, target, pet, focus, target-of-target, boss) pick its own border color independently — Inherit (global skin border), Theme accent, Class color, or Custom — instead of all frames sharing one skin border color. No profile schema migration — your beta51 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Unit Frames: per-frame border color.** Each unit frame's Appearance panel gains a Border Color Source (Inherit / Theme / Class / Custom) and a Custom Border Color picker, so you can tint a frame's border independently of the global skin border. The same controls are mirrored under Appearance > Border Coloring > Unit Frames > "Frame". Frames left on Inherit keep the global skin border color as before.
+
 ## v4.0.0-beta51 - 2026-06-15
 
 > 🧪 **QUI 4 beta — Info Bar travel widget polish & a Group Frames dispel-overlay fix.** This release adds a label and tooltip to the travel/hearth Info Bar widget plus a new per-widget "Hide Text" (icon-only) toggle, and fixes a Group Frames bug where a dispel or defensive indicator could stay lit after the aura was gone. No profile schema migration — your beta50 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
