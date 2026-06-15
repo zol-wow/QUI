@@ -633,6 +633,12 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
                 defCenterOff = -totalSpan / 2
             end
 
+            -- Lift above the power bar on BOTTOM* positions, mirroring the aura
+            -- element preview above and the live UpdateDefensiveIndicator fix.
+            if type(position) == "string" and position:find("BOTTOM") then
+                offsetY = offsetY + powerHeight
+            end
+
             -- Sample defensive textures for preview
             local previewTextures = { 135936, 135987, 136120, 135874, 236220 }
 

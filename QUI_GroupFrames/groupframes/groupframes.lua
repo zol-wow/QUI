@@ -2153,6 +2153,14 @@ local function UpdateDefensiveIndicator(frame)
         centerOffX = -totalSpan / 2
     end
     local bottomPad = frame._bottomPad or 0
+    -- Lift above the power bar + separator when anchored to any BOTTOM* point,
+    -- matching the aura-strip renderers (groupframes_aura_render.lua). bottomPad
+    -- was tracked in the dirty-gate below but never applied to the SetPoint, so
+    -- a BOTTOM/BOTTOMLEFT/BOTTOMRIGHT defensive strip collided with the power bar.
+    local anchorOffsetY = offsetY
+    if type(position) == "string" and position:find("BOTTOM") then
+        anchorOffsetY = anchorOffsetY + bottomPad
+    end
     local layoutChanged = frame._defensiveIndicatorCount ~= visibleCount
         or frame._defensiveIndicatorIconSize ~= iconSize
         or frame._defensiveIndicatorPosition ~= position
@@ -2208,7 +2216,7 @@ local function UpdateDefensiveIndicator(frame)
             if layoutChanged then
                 defIcon:SetSize(iconSize, iconSize)
                 defIcon:ClearAllPoints()
-                defIcon:SetPoint(position, frame, position, offsetX + centerOffX + stepX * (i - 1), offsetY + stepY * (i - 1))
+                defIcon:SetPoint(position, frame, position, offsetX + centerOffX + stepX * (i - 1), anchorOffsetY + stepY * (i - 1))
                 defIcon:SetFrameLevel(frame:GetFrameLevel() + 10)
             end
             -- AFTER any resize: the cooldown auto-scales its count text to the new
@@ -4603,6 +4611,13 @@ ApplyChildFrameLayout = function()
                     (QUICore.PixelRound and QUICore:PixelRound(powerSettings.powerBarHeight or 4, child) or 4) or 0
                 local px = QUICore.GetPixelSize and QUICore:GetPixelSize(child) or 1
                 local sepH = powerHeight > 0 and px or 0
+
+                -- Keep the bottom-anchor pad in sync with this re-layout. Without
+                -- this, changing power-bar height/visibility moves the bar but
+                -- leaves _bottomPad stale (set only at creation / ResizeHealthForPower),
+                -- so every BOTTOM* aura/defensive strip drifts over the power bar.
+                -- Mirrors the creation formula (powerHeight + separator + border).
+                child._bottomPad = powerHeight + sepH + borderSize
 
                 child.healthBar:ClearAllPoints()
                 child.healthBar:SetPoint("TOPLEFT", child, "TOPLEFT", borderSize, -borderSize)

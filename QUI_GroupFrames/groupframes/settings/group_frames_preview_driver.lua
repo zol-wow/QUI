@@ -926,8 +926,12 @@ local function ApplyDefensive(f, healer, allowed, font)
                 end
             end
             ic:ClearAllPoints()
+            -- Lift above the power bar on BOTTOM* positions, mirroring the live
+            -- UpdateDefensiveIndicator fix (groupframes.lua) and every other
+            -- preview element that routes its Y through BottomPadY.
             ic:SetPoint(position, f, position,
-                offX + centerOffX + stepX * (i - 1), offY + stepY * (i - 1))
+                offX + centerOffX + stepX * (i - 1),
+                BottomPadY(position, offY, f._bottomPad) + stepY * (i - 1))
             ic:Show()
         elseif ic then
             ic:Hide()
