@@ -257,6 +257,7 @@ local function BuildSecureWidgets(frame, slotFrame, size)
         end
         GameTooltip:ClearLines()
         GameTooltip:AddLine(displayName, 1, 1, 1)
+        GameTooltip:AddLine("Left click to hearth", 0.6, 0.6, 0.6)
         GameTooltip:AddLine("Hover for dungeon teleports", 0.6, 0.6, 0.6)
         GameTooltip:Show()
     end)
@@ -277,11 +278,38 @@ Datatexts:Register("travel", {
         frame._slot = slotFrame
         frame._flyoutRows = 0
 
-        -- Compound widget: no text payload (clear any placeholder text)
+        -- The shared slot.text payload stays empty (it anchors hard-left, over
+        -- the icon); this widget draws its own "Travel" label to the icon's
+        -- right instead.
         if slotFrame.text then slotFrame.text:SetText("") end
 
         local size = max((slotFrame:GetHeight() or 0) - 6, 12)
-        slotFrame._quiFixedWidth = size + 4
+
+        -- "Travel" label, honoring the per-slot No Label toggle. Built insecure
+        -- in OnEnable (not the deferred secure path) so the slot width is right
+        -- immediately. Inherits the slot's current font/size/outline.
+        local gap = 4
+        local label = frame:CreateFontString(nil, "OVERLAY")
+        if slotFrame.text then
+            -- Keep the multi-return intact: an `and` short-circuit would
+            -- truncate GetFont to one value and pass nil height/flags to SetFont.
+            local fp, fs, fl = slotFrame.text:GetFont()
+            if fp then label:SetFont(fp, fs, fl) end
+        end
+        -- travel draws its own label (not the shared slot.text the central
+        -- Hide Text wrapper strips), so honor both toggles here: No Label and
+        -- the icon-only Hide Text both blank the word and reclaim its width.
+        local labelHidden = slotFrame.noLabel or slotFrame.hideText
+        label:SetTextColor(1, 1, 1, 1)
+        label:SetText(labelHidden and "" or "Travel")
+        label:SetPoint("LEFT", frame, "LEFT", 2 + size + gap, 0)
+        frame._label = label
+
+        if labelHidden then
+            slotFrame._quiFixedWidth = size + 4
+        else
+            slotFrame._quiFixedWidth = 2 + size + gap + (label:GetStringWidth() or 0) + 4
+        end
         if slotFrame._quiOnWidthDirty then slotFrame._quiOnWidthDirty() end
 
         -- LEARNED_SPELL_IN_SKILL_LINE is the precise "player learned a spell"

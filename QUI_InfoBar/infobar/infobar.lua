@@ -193,6 +193,8 @@ local function ReleaseSlots(zf)
         slot.shortLabel = nil
         slot.noLabel = nil
         slot.hideIcon = nil
+        slot.hideText = nil
+        slot.text._quiHideText = nil
         slot.clickThrough = nil
         slot.text:SetText("")
         -- Drag-reorder dims the slot to 0.4 alpha mid-drag; a release-during-
@@ -226,6 +228,37 @@ local function CreateSlot(zf, widgetId)
         slot.text:SetPoint("LEFT", slot, "LEFT", 4, 0)
         slot.text:SetJustifyH("LEFT")
         slot.text:SetWordWrap(false)
+        -- "Hide Text" (icon-only) override: strip everything but texture
+        -- escapes (|T..|t) from whatever a provider renders. LDB/spec widgets
+        -- embed their icon inside the text string, so this keeps the icon and
+        -- drops the label+value; text-only widgets blank out. Wrapped once per
+        -- fontstring (pooled frames keep theirs); the live flag is read off the
+        -- fontstring. pcall-guarded — a secret-valued string cannot be pattern-
+        -- scanned, so it falls back to rendering unchanged.
+        local origSetText = slot.text.SetText
+        local origSetFormatted = slot.text.SetFormattedText
+        local function IconsOnly(s)
+            local icons = ""
+            for esc in string.gmatch(s, "|T.-|t") do icons = icons .. esc end
+            return icons
+        end
+        slot.text.SetText = function(self, s, ...)
+            if self._quiHideText and type(s) == "string" then
+                local ok, stripped = pcall(IconsOnly, s)
+                if ok then return origSetText(self, stripped) end
+            end
+            return origSetText(self, s, ...)
+        end
+        slot.text.SetFormattedText = function(self, fmt, ...)
+            if self._quiHideText then
+                local ok, s = pcall(string.format, fmt, ...)
+                if ok then
+                    local ok2, stripped = pcall(IconsOnly, s)
+                    if ok2 then return origSetText(self, stripped) end
+                end
+            end
+            return origSetFormatted(self, fmt, ...)
+        end
     end
     slot:SetHeight(db.height or 22)
     slot:EnableMouse(true)
@@ -244,6 +277,10 @@ local function CreateSlot(zf, widgetId)
     -- professions). Micromenu/travel are icon-only compound widgets and
     -- deliberately ignore it (hiding their icon would blank them).
     slot.hideIcon = ws and ws.hideIcon or false
+    -- Icon-only override; consumed centrally by the slot.text SetText wrapper
+    -- (live flag lives on the fontstring) and by travel's own label.
+    slot.hideText = ws and ws.hideText or false
+    slot.text._quiHideText = slot.hideText
     -- Click-through disables clicks AND tooltips for this widget (both ride
     -- on slot mouse input). Applied after AttachToSlot in ApplyAll because
     -- providers re-EnableMouse(true) in OnEnable; the flag here is the record.

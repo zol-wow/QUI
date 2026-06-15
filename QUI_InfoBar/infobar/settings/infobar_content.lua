@@ -523,9 +523,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
             local hideIconW = GUI:CreateFormCheckbox(ov.frame, nil, "hideIcon", ws, RefreshInfoBar,
                 { description = "Hide this widget's inline icon and keep the text. Not applied to icon-only widgets (Micro Menu, Travel) — hiding their icon would blank them." })
+            local hideTextW = GUI:CreateFormCheckbox(ov.frame, nil, "hideText", ws, RefreshInfoBar,
+                { description = "Hide this widget's text and keep only its icon. Text-only widgets (FPS, Gold, …) become blank." })
+            ov.AddRow(row(ov.frame, "Hide Icon", hideIconW), row(ov.frame, "Hide Text (icon only)", hideTextW))
             local clickThroughW = GUI:CreateFormCheckbox(ov.frame, nil, "clickThrough", ws, RefreshInfoBar,
                 { description = "Disable clicks and tooltips for this widget. Targets text datatexts; Micro Menu and Travel buttons keep their own mouse input." })
-            ov.AddRow(row(ov.frame, "Hide Icon", hideIconW), row(ov.frame, "Click-Through (no clicks or tooltip)", clickThroughW))
+            ov.AddRow(row(ov.frame, "Click-Through (no clicks or tooltip)", clickThroughW))
             L.closeSection(ov)
         else
             local noteRow = CreateFrame("Frame", nil, content)

@@ -152,6 +152,7 @@ local OVERRIDE_TOGGLES = {
     { key = "shortLabel",   label = "Short Label" },
     { key = "noLabel",      label = "No Label" },
     { key = "hideIcon",     label = "Hide Icon" },
+    { key = "hideText",     label = "Hide Text" },
     { key = "clickThrough", label = "Click-Through" },
 }
 
