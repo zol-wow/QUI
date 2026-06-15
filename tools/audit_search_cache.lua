@@ -31,9 +31,9 @@ local function collect_lua_files()
     local is_windows = package.config:sub(1, 1) == "\\"
     local command
     if is_windows then
-        command = 'powershell -NoProfile -Command "Get-ChildItem -Path modules,QUI_Options -Recurse -File -Filter *.lua | ForEach-Object { $_.FullName }"'
+        command = 'powershell -NoProfile -Command "Get-ChildItem -Path core/settings/content,modules,QUI_Options -Recurse -File -Filter *.lua | ForEach-Object { $_.FullName }"'
     else
-        command = 'find modules QUI_Options -type f -name "*.lua"'
+        command = 'find core/settings/content modules QUI_Options -type f -name "*.lua"'
     end
 
     local pipe, err = io.popen(command)
@@ -117,10 +117,29 @@ local function feature_is_imperative_only(feature_block)
     return section_count > 0 and section_count == imperative_count
 end
 
+local function feature_has_no_search(feature_block)
+    return feature_block:match("noSearch%s*=%s*true") ~= nil
+end
+
+local function extract_static_feature_id(feature_prefix)
+    local search_pos = 1
+    while true do
+        local start_pos, end_pos, id = feature_prefix:find("id%s*=%s*\"([^\"]+)\"", search_pos)
+        if not start_pos then
+            return nil
+        end
+        if not feature_prefix:sub(end_pos + 1):match("^%s*%.%.") then
+            return id
+        end
+        search_pos = end_pos + 1
+    end
+end
+
 local function scan_source_features(files)
     local registered = {}
     local tile_refs = {}
     local imperative_features = {}
+    local no_search_features = {}
     local scan_errors = {}
 
     for _, path in ipairs(files) do
@@ -149,11 +168,14 @@ local function scan_source_features(files)
                     -- when the feature's own id is a dynamic expression
                     -- (e.g. `id = featureSpec.id`).
                     local prefix = feature_block:match("^(.-)sections%s*=") or feature_block
-                    local id = prefix:match("id%s*=%s*\"([^\"]+)\"")
+                    local id = extract_static_feature_id(prefix)
                     if id then
                         add_ref(registered, id, path, "Registry")
                         if feature_is_imperative_only(feature_block) then
                             imperative_features[id] = true
+                        end
+                        if feature_has_no_search(feature_block) then
+                            no_search_features[id] = true
                         end
                     end
                     search_pos = end_pos + 1
@@ -168,7 +190,7 @@ local function scan_source_features(files)
         end
     end
 
-    return registered, tile_refs, imperative_features, scan_errors
+    return registered, tile_refs, imperative_features, no_search_features, scan_errors
 end
 
 local function load_cache()
@@ -320,7 +342,7 @@ if not files then
     os.exit(2)
 end
 
-local registered, tile_refs, imperative_features, scan_errors = scan_source_features(files)
+local registered, tile_refs, imperative_features, no_search_features, scan_errors = scan_source_features(files)
 if #scan_errors > 0 then
     io.stderr:write("source scan reported " .. tostring(#scan_errors) .. " error(s):\n")
     for _, err in ipairs(scan_errors) do
@@ -337,7 +359,9 @@ local warnings = {}
 for _, id in ipairs(sorted_ids(registered)) do
     if (setting_counts[id] or 0) == 0 then
         local ref_suffix = format_ref(registered[id])
-        if imperative_features[id] then
+        if no_search_features[id] then
+            warnings[#warnings + 1] = "registered feature is search-disabled (noSearch=true): " .. id .. ref_suffix
+        elseif imperative_features[id] then
             warnings[#warnings + 1] = "registered feature is imperative-only (all sections kind=page/custom): " .. id .. ref_suffix
         elseif KNOWN_ZERO_SETTING_FEATURES[id] then
             warnings[#warnings + 1] = "registered feature has zero settings: " .. id .. ref_suffix .. " [known]"
@@ -352,7 +376,11 @@ end
 for _, id in ipairs(sorted_ids(tile_refs)) do
     if (setting_counts[id] or 0) == 0 then
         local message = "tile feature ref has zero settings: " .. id .. format_ref(tile_refs[id])
-        if strict_tiles then
+        if no_search_features[id] then
+            warnings[#warnings + 1] = "tile feature ref is search-disabled (noSearch=true): " .. id .. format_ref(tile_refs[id])
+        elseif imperative_features[id] then
+            warnings[#warnings + 1] = "tile feature ref is imperative-only (all sections kind=page/custom): " .. id .. format_ref(tile_refs[id])
+        elseif strict_tiles then
             errors[#errors + 1] = message
         else
             warnings[#warnings + 1] = message

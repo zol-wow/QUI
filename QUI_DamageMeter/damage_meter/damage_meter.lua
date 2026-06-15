@@ -542,8 +542,16 @@ end
 -- icon must be resolved via C_Spell. Cached per spellID (spell metadata is
 -- immutable for the session, so a process-lifetime cache is safe).
 local _spellInfoCache = {}
+local function IsSecretValue(value)
+    return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value)
+end
+
+local function IsIndexableSpellID(spellID)
+    return spellID ~= nil and not IsSecretValue(spellID)
+end
+
 local function ResolveSpellInfo(spellID)
-    if not spellID then return nil end
+    if not IsIndexableSpellID(spellID) then return nil end
     local cached = _spellInfoCache[spellID]
     if cached then return cached end
     if not (C_Spell and C_Spell.GetSpellInfo) then return nil end
@@ -820,10 +828,10 @@ function Data:GetCombinedHealingBreakdown(sessionType, sourceGUID, sourceCreatur
         local copy = {}
         for k, v in pairs(sp) do copy[k] = v end
         merged[i] = copy
-        if sp.spellID then bySpell[sp.spellID] = copy end
+        if IsIndexableSpellID(sp.spellID) then bySpell[sp.spellID] = copy end
     end
     for _, sp in ipairs(aView.spells) do
-        local existing = sp.spellID and bySpell[sp.spellID]
+        local existing = IsIndexableSpellID(sp.spellID) and bySpell[sp.spellID] or nil
         if existing then
             if existing.totalAmount and sp.totalAmount
                 and not (IsSecret and (IsSecret(existing.totalAmount) or IsSecret(sp.totalAmount))) then
@@ -833,7 +841,7 @@ function Data:GetCombinedHealingBreakdown(sessionType, sourceGUID, sourceCreatur
             local copy = {}
             for k, v in pairs(sp) do copy[k] = v end
             table.insert(merged, copy)
-            if sp.spellID then bySpell[sp.spellID] = copy end
+            if IsIndexableSpellID(sp.spellID) then bySpell[sp.spellID] = copy end
         end
     end
     SortByDescSafe(merged, function(s) return s.totalAmount end, IsSecret)

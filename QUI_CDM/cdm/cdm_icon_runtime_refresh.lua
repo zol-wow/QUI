@@ -581,6 +581,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         local spellIDs = controller.auraDeltaSpellIDs
         wipe(spellIDs)
         local hasSpellIDs = false
+        local hasAddedAuraWithoutReadableSpellID = false
 
         local wakeAuraEntries = auraDeltaShouldWakeAuraEntries(unit, updateInfo)
 
@@ -592,8 +593,12 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                     hasIDs = true
                 end
                 if auraData then
-                    hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, auraData.spellId) or hasSpellIDs
-                    hasSpellIDs = addSpellIdentifierToSet(callbacks, spellIDs, auraData.spellID) or hasSpellIDs
+                    local addedSpellID = addSpellIdentifierToSet(callbacks, spellIDs, auraData.spellId)
+                    addedSpellID = addSpellIdentifierToSet(callbacks, spellIDs, auraData.spellID) or addedSpellID
+                    hasSpellIDs = addedSpellID or hasSpellIDs
+                    if not addedSpellID then
+                        hasAddedAuraWithoutReadableSpellID = true
+                    end
                 end
             end
         end
@@ -652,6 +657,12 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                     matches = true
                 end
                 if not matches and wakeAuraEntries and isAuraEntry(callbacks, entry) then
+                    matches = true
+                end
+                if not matches
+                    and wakeAuraEntries
+                    and hasAddedAuraWithoutReadableSpellID
+                    and isItemEntry(entry) then
                     matches = true
                 end
                 if matches and entry then

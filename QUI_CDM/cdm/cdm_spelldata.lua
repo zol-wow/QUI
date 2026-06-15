@@ -200,14 +200,14 @@ local AURA_CAPTURE_LOOKUP_UNITS = { "player", "pet", "target" }
 -- of truth for duration resolution while restricted-scope lookups are
 -- active.
 --
--- The auraInstanceID is documented NeverSecret even though the surrounding
--- AuraData payload is ConditionalSecretContents. It can be stored, keyed, and
--- compared safely, and it is forwarded to C-side sinks
--- (C_UnitAuras.GetAuraDuration, C_UnitAuras.GetAuraDataByAuraInstanceID).
+-- addedAuras itself is documented ConditionalSecretContents, so only cleaned
+-- spell/name identity is keyed. The instance ID is forwarded to C-side sinks
+-- (C_UnitAuras.GetAuraDuration, C_UnitAuras.GetAuraDataByAuraInstanceID);
+-- removed/updated instance-ID arrays are the fields documented
+-- NeverSecretContents.
 --
 -- Eviction strategy is event-driven. The `removedAuraInstanceIDs` payload
--- field is documented `NeverSecretContents = true`, and auraInstanceID itself
--- is NeverSecret. Any non-empty
+-- field is documented `NeverSecretContents = true`. Any non-empty
 -- `removedAuraInstanceIDs` for a unit is treated as a "something on this unit
 -- just died" trigger: walk the unit's cache and validate each entry by
 -- forwarding its stored instID to GetAuraDataByAuraInstanceID — nil response
@@ -292,9 +292,10 @@ local function GetCleanAuraInstanceID(auraData)
     return auraData.auraInstanceID
 end
 
--- Returns the raw auraInstanceID. This field is NeverSecret; callers can
--- compare it, key by it, or forward it to C-side sinks.
--- Returns nil only when the field doesn't exist.
+-- Returns the raw auraInstanceID. removed/updated UNIT_AURA instance-ID
+-- arrays are documented NeverSecretContents; addedAuras is not, so callers
+-- must keep any added-payload identity handling to cleaned fields or C-side
+-- forwarding.
 local function GetRawAuraInstanceID(auraData)
     if not auraData then return nil end
     return auraData.auraInstanceID
@@ -493,7 +494,8 @@ end
 
 local function CaptureAuraFromPayload(unit, ad, allowCastCorrelation, explicitFilter)
     if not ad then return end
-    -- auraInstanceID is NeverSecret, so it can be compared and keyed safely.
+    -- addedAuras is ConditionalSecretContents; spell/name identity is keyed
+    -- only after the cleanup helpers below accept it.
     local instID = GetRawAuraInstanceID(ad)
     if not instID then return end
 
@@ -665,8 +667,8 @@ end
 -- Full rescan via AuraUtil.ForEachAura. Used only on UNIT_AURA isFullUpdate
 -- (which carries no addedAuras list — it's a "rescan everything" signal).
 --
--- In combat, some packed payload fields can be secret; auraInstanceID is
--- NeverSecret and is captured directly.
+-- In combat, some packed payload fields can be secret; spell/name identity
+-- is captured only after the cleanup helpers below accept it.
 --
 -- usePackedAura=true (5th arg) is required: without it, Blizzard's helper
 -- calls AuraUtil.UnpackAuraData on each aura, whose final expression is
@@ -1017,8 +1019,8 @@ local function QueryUnitAuraBySpellID(unit, spellID, filter)
 
     -- C_UnitAuras.GetUnitAuraBySpellID(unit, spellID) is the canonical entry
     -- point. It takes no filter; spellID unambiguously identifies the aura.
-    -- SecretWhenUnitAuraRestricted = true: returns AuraData (possibly with
-    -- secret fields like spellId; auraInstanceID is NeverSecret) in combat — never nil for
+    -- SecretWhenUnitAuraRestricted = true: returns AuraData, possibly with
+    -- secret fields like spellId, in combat — never nil for
     -- combat-restriction reasons. AuraDataMatchesFilter validates the
     -- HARMFUL / HELPFUL classification via the (non-secret) isHarmful /
     -- isHelpful fields and PLAYER ownership via isFromPlayerOrPlayerPet.

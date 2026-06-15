@@ -342,7 +342,7 @@ end
 local function WrapChatText(text, prefix, suffix)
     if C_StringUtil and C_StringUtil.WrapString then
         local ok, wrapped = pcall(C_StringUtil.WrapString, text, prefix, suffix)
-        if ok and wrapped ~= nil then
+        if ok then
             return wrapped, true
         end
     end

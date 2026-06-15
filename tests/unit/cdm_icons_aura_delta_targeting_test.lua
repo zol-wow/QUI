@@ -477,9 +477,19 @@ assert(layoutRequests > 0,
     "target aura wake-up should request buff icon layout after visibility flips")
 assert(buffContainerShows > 0,
     "target aura wake-up should wake the owning buff container")
+assert(resolveCounts.itemAura == 1,
+    "target added aura payloads without a readable spell ID should wake item aura icons")
 
 buffAuraResolutionUnit = "player"
 buffAuraResolutionInstanceID = 621
+resolveCounts.itemAura = 0
+itemAuraIcon._auraActive = false
+itemAuraIcon._auraUnit = nil
+itemAuraIcon._auraInstanceID = nil
+itemAuraIcon._lastAuraDurObj = nil
+itemAuraAppliedDuration = nil
+itemAuraReverse = nil
+itemAuraApplyCount = 0
 
 icons.HandleRuntimeRefresh("UNIT_AURA", "player", {
     isFullUpdate = false,

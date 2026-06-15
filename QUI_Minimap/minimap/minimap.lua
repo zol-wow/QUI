@@ -1342,23 +1342,6 @@ local function HasUnreadMailSafe()
     return raw and true or false
 end
 
-local function ApplyMinimapButtonBackground(button)
-    local bg = CreateFrame("Frame", nil, button, "BackdropTemplate")
-    local bgR, bgG, bgB = 0, 0, 0
-    if Helpers and Helpers.GetSkinBgColor then
-        bgR, bgG, bgB = Helpers.GetSkinBgColor()
-    end
-    if SkinBase and SkinBase.ApplyFullBackdrop then
-        SkinBase.ApplyFullBackdrop(bg, nil, nil, nil, nil, bgR or 0, bgG or 0, bgB or 0, 0.8)
-    else
-        bg:SetBackdrop({ bgFile = "Interface\\ChatFrame\\ChatFrameBackground" })
-        bg:SetBackdropColor(bgR or 0, bgG or 0, bgB or 0, 0.8)
-    end
-    bg:SetAllPoints(button)
-    bg:SetFrameLevel(button:GetFrameLevel() - 1)
-    return bg
-end
-
 local function GetGreatVaultTargetAlpha()
     local settings = GetSettings()
     local vaultSettings = settings and settings.greatVault

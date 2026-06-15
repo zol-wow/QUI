@@ -918,13 +918,6 @@ local function BuildActionButtonCache()
     actionButtonsCached = true
 end
 
--- Force rebuild the button cache (useful if bars were loaded late)
-local function ForceRebuildButtonCache()
-    actionButtonsCached = false
-    wipe(cachedActionButtons)
-    BuildActionButtonCache()
-end
-
 -- Scan cached action buttons and build spell-to-keybind cache (fast)
 local function RebuildCache()
     -- PERFORMANCE: Skip entirely if no keybind features are enabled

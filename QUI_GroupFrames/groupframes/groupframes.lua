@@ -77,6 +77,7 @@ local _state = {
     raidRosterSortCache = {},
     unitEventRegistrationEnabled = false,
     unitEventFrames = {},
+    healAbsorbThrottle = {},
     unitEventActive = {
         UNIT_HEALTH = true,
         UNIT_MAXHEALTH = true,
@@ -977,7 +978,9 @@ local function UpdateHealth(frame)
                 ok = pcall(frame.healthText.SetFormattedText, frame.healthText, pctFmt, pct)
             elseif style == "absolute" then
                 local hp = UnitHealth(unit, true)
-                if abbr then
+                if IsSecretValue(hp) then
+                    ok = pcall(frame.healthText.SetFormattedText, frame.healthText, "%s", hp)
+                elseif abbr then
                     ok = pcall(frame.healthText.SetText, frame.healthText, abbr(hp))
                 else
                     ok = pcall(frame.healthText.SetFormattedText, frame.healthText, "%s", hp)
@@ -986,14 +989,18 @@ local function UpdateHealth(frame)
                 local hp = UnitHealth(unit, true)
                 local pct = GetHealthPct(unit)
                 local bothFmt = healthSettings.hideHealthPercentSymbol and "%s | %.0f" or "%s | %.0f%%"
-                if abbr then
+                if IsSecretValue(hp) then
+                    ok = pcall(frame.healthText.SetFormattedText, frame.healthText, bothFmt, hp, pct)
+                elseif abbr then
                     ok = pcall(frame.healthText.SetFormattedText, frame.healthText, bothFmt, abbr(hp), pct)
                 else
                     ok = pcall(frame.healthText.SetFormattedText, frame.healthText, bothFmt, hp, pct)
                 end
             elseif style == "deficit" then
                 local miss = UnitHealthMissing(unit, true)
-                if C_StringUtil and C_StringUtil.TruncateWhenZero and C_StringUtil.WrapString then
+                if IsSecretValue(miss) then
+                    ok = pcall(frame.healthText.SetFormattedText, frame.healthText, "-%s", miss)
+                elseif C_StringUtil and C_StringUtil.TruncateWhenZero and C_StringUtil.WrapString then
                     local truncated = C_StringUtil.TruncateWhenZero(miss)
                     local result = C_StringUtil.WrapString(truncated, "-")
                     ok = pcall(frame.healthText.SetText, frame.healthText, result)
@@ -5008,6 +5015,7 @@ local function GRU_DeferredWork()
     wipe(_state.cachedMarkers)
     wipe(powerThrottle)
     wipe(absorbThrottle)
+    wipe(_state.healAbsorbThrottle)
     wipe(healPredThrottle)
     -- Evict stale aura cache entries for units no longer in the group
     local GFA = ns.QUI_GroupFrameAuras
@@ -5125,7 +5133,12 @@ local function OnEvent(self, event, arg1, ...)
             -- Throttle: these events fire 50-100×/sec during raid damage.
             -- 100ms coalesce per unit matches the power throttle pattern.
             local now = GetTime()
-            local tbl = (event == "UNIT_HEAL_PREDICTION") and healPredThrottle or absorbThrottle
+            local tbl = absorbThrottle
+            if event == "UNIT_HEAL_PREDICTION" then
+                tbl = healPredThrottle
+            elseif event == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED" then
+                tbl = _state.healAbsorbThrottle
+            end
             local last = tbl[arg1] or 0
             if (now - last) < THROTTLE_INTERVAL then return end
             tbl[arg1] = now
@@ -5441,6 +5454,7 @@ local function SetupDebugInstrumentation()
     local mp = ns._memprobes or {}; ns._memprobes = mp
     mp[#mp + 1] = { name = "GF_powerThrottle",    tbl = powerThrottle }
     mp[#mp + 1] = { name = "GF_absorbThrottle",   tbl = absorbThrottle }
+    mp[#mp + 1] = { name = "GF_healAbsorbThrottle", tbl = _state.healAbsorbThrottle }
     mp[#mp + 1] = { name = "GF_healPredThrottle", tbl = healPredThrottle }
     -- Unit-keyed caches that grow as new units are observed across encounters.
     mp[#mp + 1] = { name = "GF_unitGuidCache",  fn = function()

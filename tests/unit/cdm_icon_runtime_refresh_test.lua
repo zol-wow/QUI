@@ -402,6 +402,22 @@ controller:Handle("UNIT_AURA", "player", {
 assert(auraApplied.item == 1, "aura delta should match item entries through item-use aura mapping")
 
 reset(auraApplied)
+controller:Handle("UNIT_AURA", "player", {
+    addedAuras = {
+        { auraInstanceID = 9003, spellId = secretSpellID },
+    },
+})
+assert(auraApplied.item == 1, "secret player added aura identity should still wake item aura entries")
+
+reset(auraApplied)
+controller:Handle("UNIT_AURA", "target", {
+    addedAuras = {
+        { auraInstanceID = 9004, spellId = secretSpellID },
+    },
+})
+assert(auraApplied.item == 1, "secret target added aura identity should still wake item aura entries")
+
+reset(auraApplied)
 reset(applied)
 reset(runtimeUpdated)
 reset(visibilityUpdated)
