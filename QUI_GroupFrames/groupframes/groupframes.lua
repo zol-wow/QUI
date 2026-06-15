@@ -1844,18 +1844,35 @@ local function UpdateDispelOverlay(frame)
         -- already cleared) must NOT relight the overlay, so walk the order and
         -- accept the first entry still present in the set. Matches the defensive
         -- indicator (which gates on buffsByID) and the reference's next(set).
+        -- Authoritative re-probe: accept an order entry only when it is still in
+        -- the SET *and* still live on the unit. GetAuraDataByAuraInstanceID is the
+        -- cache-independent authority — if the shared cache ever desyncs (a removal
+        -- that failed to clear the derived set), a gone aura returns nil here and
+        -- the overlay clears instead of sticking. IsSecretValue guards the nil
+        -- compare: in restricted combat the return is a secret (aura present), so
+        -- we keep it lit; only a genuine nil means the aura is gone.
         local order = cache.playerDispellableOrder
         local set = cache.playerDispellable
+        local GetAuraByInstanceID = C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID
         for i = 1, #order do
             local instID = order[i]
             if instID and (not set or set[instID]) then
-                hasDispellable = true
-                firstDispellableInstID = instID
-                local dispelAura = cache.debuffsByID and cache.debuffsByID[instID]
-                if dispelAura and dispelAura.dispelName and not IsSecretValue(dispelAura.dispelName) then
-                    firstDispellableType = SafeValue(dispelAura.dispelName, nil)
+                local stillLive = true
+                if GetAuraByInstanceID and not IsSecretValue(instID) then
+                    local live = GetAuraByInstanceID(unit, instID)
+                    if not IsSecretValue(live) and live == nil then
+                        stillLive = false
+                    end
                 end
-                break
+                if stillLive then
+                    hasDispellable = true
+                    firstDispellableInstID = instID
+                    local dispelAura = cache.debuffsByID and cache.debuffsByID[instID]
+                    if dispelAura and dispelAura.dispelName and not IsSecretValue(dispelAura.dispelName) then
+                        firstDispellableType = SafeValue(dispelAura.dispelName, nil)
+                    end
+                    break
+                end
             end
         end
     end

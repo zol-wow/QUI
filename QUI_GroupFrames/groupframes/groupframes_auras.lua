@@ -811,22 +811,27 @@ local function ApplyAuraDelta(unit, updateInfo)
     if updateInfo.removedAuraInstanceIDs then
         for i = 1, #updateInfo.removedAuraInstanceIDs do
             local instID = updateInfo.removedAuraInstanceIDs[i]
-            local rd = cache.buffsByID[instID]
-            if rd then
+            -- A removed instID should live in exactly ONE bucket, but a
+            -- ResolveAuraBucket flip across events (secret isHelpful/isHarmful in
+            -- combat) can leave a stale copy in the other bucket. Clean BOTH so
+            -- derived data (playerDispellable / defensives) can never linger and
+            -- strand the dispel / defensive overlay lit after the aura is gone.
+            -- Separate `if`s (not else): an instID present in both is fully purged.
+            local rb = cache.buffsByID[instID]
+            if rb then
                 local removed, defensiveChanged = RemoveAuraFromBucket(cache, "buffs", instID)
                 if removed then
                     buffsDirty = true
-                    SummaryAddSpell(rd)
+                    SummaryAddSpell(rb)
                     if defensiveChanged then
                         cache.defensiveSetChanged = true
                     end
                 end
-            else
-                rd = cache.debuffsByID[instID]
-                if rd and RemoveAuraFromBucket(cache, "debuffs", instID) then
-                    debuffsDirty = true
-                    SummaryAddSpell(rd)
-                end
+            end
+            local rd = cache.debuffsByID[instID]
+            if rd and RemoveAuraFromBucket(cache, "debuffs", instID) then
+                debuffsDirty = true
+                SummaryAddSpell(rd)
             end
         end
     end
@@ -1496,12 +1501,22 @@ local function ProcessUnitAuraSetChange(unit, updateInfo)
         local frame = frames[f]
         if frame:IsShown() then
             if auraStats then auraStats.framesRefreshed = auraStats.framesRefreshed + 1 end
-            -- Healer overlays read the shared cache subsets; refresh only when the
-            -- relevant subset moved (a full render refreshes unconditionally).
-            if (dirty == nil or dirty.harmful) and GF.UpdateDispelOverlay then
+            -- Healer overlays re-evaluate on EVERY aura set-change (and every full
+            -- scan), never gated by the delta's per-bucket dirty flags. This path
+            -- only runs for add/remove/full events — pure stack/duration updates
+            -- return on the fast path in the subscriber and never reach here — so
+            -- the unconditional re-check matches the set-change cadence without
+            -- re-running on refresh ticks. The previous `dirty.harmful` /
+            -- `dirty.defensive` gate could SKIP the clear: the flag reports which
+            -- bucket the delta mutated, but a lingering dispel/defensive set entry
+            -- can survive a delta whose summary flags the OTHER bucket (or whose
+            -- shape the summary under-reports), leaving the overlay lit after the
+            -- debuff is gone. The overlay readers are a cheap pre-classified set
+            -- walk, so re-checking each set-change is effectively free.
+            if GF.UpdateDispelOverlay then
                 GF:UpdateDispelOverlay(frame)
             end
-            if (dirty == nil or dirty.defensive) and GF.UpdateDefensiveIndicator then
+            if GF.UpdateDefensiveIndicator then
                 GF:UpdateDefensiveIndicator(frame)
             end
             -- Unified element pass. The defensive overlay above refreshed
