@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta48 - 2026-06-14
+
+> 🧪 **QUI 4 beta — Group Frames defensive-indicator placement fix.** A small follow-up to beta47's aura overhaul: defensive-cooldown indicators anchored to a bottom edge no longer overlap the power bar. No profile schema migration — your beta47 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Group Frames: defensive indicators no longer overlap the power bar.** When a defensive-cooldown indicator strip was anchored to a bottom position (Bottom / Bottom-Left / Bottom-Right), it could draw on top of the power bar. It's now lifted clear of the bar and its separator across the live frames, Edit Mode preview, and settings preview. The bottom spacing also stays in sync when you change power-bar height or visibility, so bottom-anchored auras/indicators no longer drift over the bar.
+
 ## v4.0.0-beta47 - 2026-06-14
 
 > 🧪 **QUI 4 beta — Group Frames aura overhaul & cleaner profile setup.** Group-frame buff/debuff auras, pinned auras and indicators are now unified under a single auras model with a reworked live preview and a faster in-combat render path. Fresh profiles are now seeded directly from QUI's shipped defaults (the old first-run welcome popup is gone), and very old (pre-3.5.11) profiles are safely backed up and reseeded instead of step-migrated. **Schema migration v45 → v46 — QUI auto-backs-up your saved variables before migrating.** As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
