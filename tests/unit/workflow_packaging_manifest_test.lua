@@ -1,6 +1,6 @@
 -- Packaging guard: every sub-addon in core/addon_manifest.lua must be
--- packaged by BOTH GitHub workflows (release + dev-build), i.e. listed in
--- their suite_folders array AND covered by required_paths (TOC + bootstrap).
+-- packaged by the release workflow, i.e. listed in its suite_folders array AND
+-- covered by required_paths (TOC + bootstrap).
 -- A manifest entry missing from packaging ships a core that points at an
 -- absent sibling folder — the module silently never exists for users.
 
@@ -8,7 +8,6 @@ local manifest = assert(loadfile("core/addon_manifest.lua"))()
 
 local WORKFLOWS = {
     ".github/workflows/release.yml",
-    ".github/workflows/dev-build.yml",
 }
 
 local function readFile(p)
