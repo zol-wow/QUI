@@ -6,8 +6,13 @@ local function check(name, cond)
 end
 
 -- Build a fake core namespace with locale data, then load locale.lua against it.
-local function buildL(activeTbl, baseTbl)
+local function buildL(activeTbl, baseTbl, localizationEnabled)
     local ns = { LocaleData = { enUS = baseTbl, active = activeTbl } }
+    if localizationEnabled ~= nil then
+        function ns.IsLocalizationEnabled()
+            return localizationEnabled == true
+        end
+    end
     local chunk = assert(loadfile("core/locale/locale.lua"))
     chunk("QUI", ns)            -- mimic WoW's (ADDON_NAME, ns) vararg
     return ns.L
@@ -25,5 +30,8 @@ local L2 = buildL(nil, base)     -- enUS client: no active table
 check("enUS client uses base",    L2["Active Profile"] == "Active Profile")
 check("enUS unknown returns key", L2["Whatever"] == "Whatever")
 
+local L3 = buildL(active, base, false)
+check("disabled localization uses base", L3["Cancel"] == "Cancel")
+
 if failures > 0 then os.exit(1) end
-print(("\n%d checks passed"):format(5))
+print(("\n%d checks passed"):format(6))

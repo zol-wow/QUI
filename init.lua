@@ -63,6 +63,28 @@ function ns.WhenLoggedIn(callback)
     end)
 end
 
+ns.FeatureFlags = ns.FeatureFlags or {}
+-- Release gate: keep the beta localization payloads in-tree, but force the UI
+-- to English until translated copy is ready for a wider release.
+ns.FeatureFlags.localization = false
+
+function ns.IsLocalizationEnabled()
+    return ns.FeatureFlags and ns.FeatureFlags.localization == true
+end
+
+function ns.GetLocalizationLocale()
+    if not ns.IsLocalizationEnabled() then
+        return "enUS"
+    end
+
+    local selected = QUIDB and QUIDB.global and QUIDB.global.selectedLocale
+    if type(selected) == "string" and selected ~= "" then
+        return selected
+    end
+
+    return (GetLocale and GetLocale()) or "enUS"
+end
+
 -- Flush the after-first-frame queue once the first frame renders.
 if CreateFrame then
     local firstFrameFrame = CreateFrame("Frame")
