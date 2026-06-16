@@ -388,9 +388,6 @@ local function BuildPrimaryPowerSettings(content, _key)
     -- BREAKPOINT INDICATORS
     BuildIndicatorCard(L, primary)
 
-    -- SEGMENT DIVIDERS
-    BuildSegmentCard(L, primary)
-
     -- TEXT
     L.headerAt(ns.L["Text"])
     local s4 = L.sectionAt()

@@ -241,7 +241,12 @@ local function ApplyPreviewTicks(section, cfg, resource)
     if not cfg or not cfg.showTicks then return end
     local Internal = GetInternal()
     local tickedPowerTypes = Internal and Internal.tickedPowerTypes
+    local fragmentedPowerTypes = Internal and Internal.fragmentedPowerTypes
     if type(resource) ~= "number" or not tickedPowerTypes or not tickedPowerTypes[resource] then return end
+    -- Parity with the live bar (resourcebars.lua UpdateSecondaryPowerBarTicks):
+    -- fragmented power types (Runes, Essence) render as separate segments, not
+    -- divider ticks, so the live bar suppresses ticks for them. Match that here.
+    if fragmentedPowerTypes and fragmentedPowerTypes[resource] then return end
 
     local max = GetPreviewPowerMax(resource)
     if max < 2 then return end
