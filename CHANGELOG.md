@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta54 - 2026-06-15
+
+> 🧪 **QUI 4 beta — flash-free game menu skin & Layout Mode castbar fixes.** This release reworks the game menu (ESC menu) skin so it is styled the instant it opens — no more brief unstyled flash — and fixes several Layout Mode issues: anchored castbars now position correctly in Layout Mode, Skyriding/Cooldown Manager containers hide instantly on exit instead of lingering through a fade, and Layout Mode now opens with its toolbar and frames panels collapsed. No profile schema migration — your beta53 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Changed
+- **Game menu skin is now flash-free.** The game menu (ESC) skin is applied synchronously as the menu builds, before it paints, instead of via an overlay that styled it a frame late. The menu now appears fully styled the instant it opens, with no brief unstyled flash.
+- **Layout Mode opens collapsed.** Layout Mode now opens with its toolbar panel and frames drawer collapsed for a cleaner start.
+
+### Fixed
+- **Layout Mode: anchored castbars render in the right place.** Castbar layout handles now position from the frame-anchoring chain instead of riding a module-owned frame, so a castbar anchored to a unit frame (for example a target-of-target castbar) shows at its real anchored position in Layout Mode instead of jumping to screen center. Preview frames also attach to their handle on creation, so they no longer flash at center before snapping into place.
+- **Layout Mode: Skyriding & Cooldown Manager hide instantly on exit.** These containers now snap hidden the moment you leave Layout Mode instead of lingering through a fade; normal gameplay fades are unchanged.
+
 ## v4.0.0-beta53 - 2026-06-15
 
 > 🧪 **QUI 4 beta — Group Frames dispel/defensive overlay fix.** This release hardens the fix for a Group Frames bug where a dispel or defensive indicator could stay lit after the aura was already gone. The overlay now re-probes the live unit authoritatively, so a desynced aura cache can no longer strand an indicator on. No profile schema migration — your beta52 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
