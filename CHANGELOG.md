@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta56 - 2026-06-16
+
+> 🌐 **QUI 4 beta — full interface localization (i18n).** QUI's interface is now translated into 10 additional languages — German, Spanish (Spain & Mexico), French, Italian, Korean, Portuguese (Brazil), Russian, and Simplified & Traditional Chinese — with CJK font rendering so Korean and Chinese glyphs display correctly. QUI follows your WoW client language automatically; English clients see no change. Plus a game-menu font fix and an Info Bar drag fix. No profile schema migration — your beta55 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Full interface localization (10 languages).** QUI now translates its interface text — movers, datatexts, tooltips, alerts, Layout Mode, chat, damage meter, and Info Bar widget names and context menus — into German, Spanish (Spain & Mexico), French, Italian, Korean, Portuguese (Brazil), Russian, and Simplified & Traditional Chinese. The language follows your WoW client automatically. (Options search remains in English for now.)
+- **CJK font rendering.** Korean and Chinese text now renders with a proper font fallback — QUI's display font lacks CJK glyphs — selected automatically from your client locale rather than a manual toggle.
+
+### Fixed
+- **Game menu label font stays stable on hover.** The game menu (ESC) button labels no longer revert to Blizzard's font when you mouse over them — QUI's font now holds across the normal, hover, and disabled button states.
+- **Info Bar volume widget Shift-drag reorder.** The volume datatext no longer swallows the Info Bar's Shift-drag reorder; you can drag it to reorder the bar or move a detached panel again.
+
 ## v4.0.0-beta55 - 2026-06-16
 
 > 🧪 **QUI 4 beta — chat class-color stability fix.** This release stops chat sender names from flickering between class-colored and plain mid-conversation, and switches the chat session separators to plain ASCII dashes. No profile schema migration — your beta54 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.

@@ -2,7 +2,7 @@
 ## Title: |cFF30D1FFQUI|r Resource Bars
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol
-## Version: 4.0.0-beta55
+## Version: 4.0.0-beta56
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI
