@@ -632,6 +632,18 @@ if ns.AuraEvents then
         -- changes; Blizzard handles per-aura updates internally once an
         -- anchor is registered.
         RefreshPrivateDispelState(unit)
+
+        -- The normal aura subscriber refreshes the dispel overlay before this
+        -- private-aura subscriber runs (TOC order). If it observed stale private
+        -- dispel state, re-check visible frames now that the cache is current.
+        if GF.UpdateDispelOverlay then
+            for i = 1, nFrames do
+                local frame = frames[i]
+                if frame and frame:IsShown() then
+                    GF:UpdateDispelOverlay(frame)
+                end
+            end
+        end
     end)
 end
 
