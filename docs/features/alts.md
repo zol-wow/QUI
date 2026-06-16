@@ -39,6 +39,8 @@ The Currencies and Reputations tabs include **Filter** buttons. Use them to hide
 
 Newly discovered currencies and reputations start visible, so fresh content is not hidden by an old filter.
 
+On the Currencies and Reputations tabs, hovering a row shows a tooltip, and **right-clicking** a row untracks that entry immediately. To bring an untracked entry back, re-enable it from the **Filter** button.
+
 ## Alts Datatext
 
 The Alts datatext can show total account gold or tracked alt count. It works on data panels and the Info Bar, and clicking it opens the Alts window.

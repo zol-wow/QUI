@@ -10,7 +10,7 @@ nav_order: 1
 A modular World of Warcraft UI suite for Midnight 12.0+ that you can install, understand, and tune from one settings experience.
 {: .fs-6 .fw-300 }
 
-**Current Beta: 4.0.0-beta43**
+**Current Beta: 4.0.0-beta56**
 {: .label .label-purple }
 
 [Get Started](getting-started/){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
@@ -25,6 +25,8 @@ _Actual QUI settings screen showing the main navigation areas._
 ## What is QUI?
 
 QUI is a full UI package for players who want combat information, layout controls, utility tools, inventory helpers, account tracking, and visual polish to live in one place. It brings together a custom combat HUD, modular feature addons, layout editing, minimap and action bar styling, group tools, chat, bags, data panels, quality-of-life automation, and profile management under one settings experience.
+
+QUI's interface is also localized into 11 languages and follows your WoW client language automatically. See [Localization](features/localization).
 
 If you are new to QUI, the easiest way to think about it is this: install all `QUI*` folders, open `/qui`, choose which optional modules you want, then fine-tune the pieces you care about.
 
@@ -102,6 +104,7 @@ QUI 4 beta is a multi-folder addon suite. Addon-manager installs handle this aut
 | [**Layout Mode**](features/frame-layout) | Gives you a visual editor for positioning and tuning major HUD elements without guesswork. |
 | [**Frame Anchoring**](features/frame-layout) | Helps related elements move together so your HUD stays organized. |
 | [**Keybinds & Integrations**](features/keybinds-integrations) | Makes keybinding faster and improves how QUI works with compatible systems. |
+| [**Localization**](features/localization) | Translates QUI's interface into 11 languages with CJK font rendering, following your WoW client language automatically. |
 | [**Profiles**](getting-started/profiles) | Lets you keep one setup, per-character setups, or per-spec setups without rebuilding from scratch. |
 | [**Performance Monitor**](features/performance-monitor) | Exposes memory and event information when you need to troubleshoot. |
 

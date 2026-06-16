@@ -62,6 +62,7 @@ QUI can handle as much or as little of your UI as you want. Some players come fo
 | [Blizzard Frame Mover](blizzard-frame-mover) | Repositioning supported default frames more freely |
 | [Performance Monitor](performance-monitor) | Diagnosing addon load or event noise |
 | [Quality of Life](quality-of-life) | Everyday convenience toggles, reminders, and automation |
+| [Localization](localization) | Playing in one of QUI's 11 supported client languages |
 
 ## Recommended Upgrade Path
 

@@ -31,13 +31,14 @@ To use QUI Chat:
 ### QUI Chat
 
 - **Multiple windows** -- configure more than one QUI chat window and position them in Layout Mode.
-- **Saved tabs** -- create custom tabs with their own channel filters.
-- **Whisper conversation tabs** -- show direct conversations as extra tabs without removing whispers from your normal tabs.
+- **Saved tabs** -- create custom tabs with their own channel filters. Right-click a saved tab for **Filter Settings** and **Tab Settings**, which jump the options window straight to that tab's Chat sub-page. Combat Log and whisper conversation tabs keep their own right-click menus.
+- **Whisper conversation tabs** -- show direct conversations as extra tabs without removing whispers from your normal tabs. Whisper windows you pop out from Blizzard chat are routed into the matching QUI tab.
 - **Tab overflow menu** -- extra tabs fold into a `>>` menu when the tab bar runs out of room.
 - **Combat Log tab** -- embed the Combat Log as a pinned tab in the first chat window.
 - **Copy window** -- copy visible chat lines with readable link text and preserved colors.
 - **Reply support** -- incoming whispers register as reply targets for the normal reply keybind.
 - **Cross-realm names** -- optional setting to show `Name-Realm` sender names.
+- **Stable class colors** -- sender names keep their class color for the whole session instead of flickering between colored and plain.
 
 ### Shared Chat Polish
 

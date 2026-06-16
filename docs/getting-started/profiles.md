@@ -20,6 +20,8 @@ Manage your profiles in `/qui` under **General > Profiles**.
 {: .note }
 Module Addons are not the same thing as profiles. Enabling or disabling a `QUI_*` feature addon is account-wide, while most styling, layout, and behavior choices remain profile-based.
 
+New profiles are seeded from QUI's curated defaults automatically, so a fresh profile starts from a sensible setup rather than an empty one. Existing profiles are never touched. (Profiles older than schema v31, from before 3.5.11, are backed up and reseeded from the starter preset at login.)
+
 ## When To Use Each Option
 
 - **Shared profile**: best for players who want one consistent UI everywhere.

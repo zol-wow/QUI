@@ -46,11 +46,30 @@ Most widgets support compact display controls:
 - Hide icon
 - Short label
 - No label
+- Hide text (icon-only)
 - Minimum width
 - X offset
 - Click-through for text-only widgets
 
+**Hide text** blanks a widget's label and keeps only its icon, reclaiming the freed width so the rest of the zone tightens up. It sits alongside **No label** and **Hide icon**, and is available both in the right-click **Configure Widget** menu and in the Info Bar settings panel.
+
 The bar also has shared height, font size, background opacity, border size, and border color settings.
+
+## Reordering Widgets
+
+Hold **Shift** and drag a datatext slot to reorder it live within its zone. The slot moves as you drag, so you can fine-tune order without opening a menu. This works for every widget, including the volume widget.
+
+## Volume Widget
+
+The volume datatext gives quick control over game audio:
+
+- **Left-click** opens a compact themed popup with sliders for **Master**, **SFX**, **Music**, **Ambience**, and **Dialog** volume, plus a **Mute all** checkbox. The popup follows your skin accent and font.
+- **Middle-click** opens Blizzard's audio settings.
+- **Scroll** over the widget to adjust volume, and **right-click** to mute.
+
+## Travel / Hearth Widget
+
+The travel widget shows a **Travel** label and a **Left click to hearth** tooltip line. The label honors both **No label** and the new **Hide text** toggle, so you can run it as text, icon-only, or hidden-label to taste.
 
 ## Shared Currency Settings
 

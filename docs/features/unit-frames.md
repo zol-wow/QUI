@@ -43,6 +43,7 @@ QUI's Unit Frames replace the default combat frames with cleaner, more readable 
 - Aura placement, icon count, growth direction, duration text, stack text, and Blizzard-style Helpful/Harmful classification filters
 - Heal prediction, absorb shields, indicators, and class resources
 - Inline target-of-target text, classification icons, reverse target health fill, and show-below-100% health behavior
+- Per-frame border color independent of the global skin border
 - Resource bar breakpoints, charged combo points, secondary resource swaps, and class utility bars
 - Optional standalone player castbar mode
 
@@ -59,6 +60,21 @@ QUI's Unit Frames replace the default combat frames with cleaner, more readable 
 | Castbar | Show castbar per unit | Enabled |
 | Aura max icons | Maximum buffs/debuffs shown | Varies by unit |
 | Absorb overlay | Show absorb shield on health bar | Enabled |
+
+## Per-Frame Border Color
+
+Each unit frame can pick its own border color instead of sharing one skin border with every other frame.
+
+- Open the frame's **Appearance** panel and set **Border Color Source** to one of:
+  - **Inherit** — use the global skin border color (the original shared behavior).
+  - **Theme accent** — use your current theme's accent color.
+  - **Class color** — color the border by class.
+  - **Custom** — use the **Custom Border Color** picker right below it.
+- The same controls are mirrored under **Appearance > Border Coloring > Unit Frames > "Frame"** if you prefer to set them all from one place.
+- This applies to the player, target, pet, focus, target-of-target, and boss frames.
+
+{: .note }
+Frames left on **Inherit** keep following the global skin border color exactly as before, so you only need to touch the frames you want to stand out.
 
 ## Good To Know
 

@@ -24,7 +24,7 @@ _Layout Mode is the visual editing layer for frame movers, anchors, group handle
 
 Frame layout settings are spread across several locations:
 
-- **Layout Mode** (`/qui layout`) for drag-and-drop positioning and layout-side settings
+- **Layout Mode** (`/qui layout`) for drag-and-drop positioning and layout-side settings. It opens with the toolbar panel and frames drawer collapsed for a cleaner start -- expand them as you need them.
 - **Appearance > HUD Visibility** in `/qui` for when elements appear or fade
 - **Appearance > Frame Levels** in `/qui` for which elements render above others
 - **Edit in Layout Mode** buttons inside feature pages when you want to jump straight from a settings panel to placement
@@ -41,7 +41,9 @@ Frame layout settings are spread across several locations:
 
 QUI's anchoring system lets one element follow another. In current QUI 4 builds, anchored children update live while you drag or nudge the parent. This applies to direct children, deeper chains, and frames anchored through a mover handle.
 
-Anchored chat and damage meter windows keep their saved anchor pinned when resized. The window grows away from the anchored edge or corner instead of drifting from the center.
+Anchored windows and castbars stay put in Layout Mode. A castbar anchored to a unit frame -- such as the target-of-target castbar -- shows at its real anchored position instead of jumping to screen center. Anchored chat windows keep their normal mover.
+
+Anchored chat and damage meter windows also keep their saved anchor pinned when resized. The window grows away from the anchored edge or corner instead of drifting from the center.
 
 ## Shift To Detach
 

@@ -97,3 +97,6 @@ The **Entries** page is the fastest way to make CDM feel personal. Use it before
 
 {: .note }
 If you are unsure whether to track something as an icon or a bar, start with icons. Move to aura bars when duration readability matters more than button-like recognition.
+
+{: .note }
+The countdown number size slider is always available (2-24px). There is no longer a separate "Custom Duration Size" toggle to enable first. The countdown is drawn engine-side, so the size you pick still applies even when combat-protected values are in play.

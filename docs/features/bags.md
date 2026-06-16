@@ -35,6 +35,7 @@ Bags is off by default. Enable it under `/qui` > **Module Addons** when you want
 - **Corner badges** -- show item level, quality, stack count, binding, expansion, equipment set, and other item states.
 - **Search** -- filter the current window or open Search Everywhere.
 - **Sorting** -- sort by quality, type, name, item level, or expansion.
+- **Pack to bottom** -- a sort-menu checkbox that packs the sorted run into the bottom slots of the grid so empty slots float to the top, while keeping best-to-worst reading order. If your bags overflow, it falls back to filling from the top.
 - **Junk tools** -- dim junk and sell junk at merchants.
 - **New item glow** -- mark newly acquired items until you clear them.
 
@@ -64,3 +65,5 @@ With the auction house open, right-clicking an auctionable item in QUI Bags stag
 - Bag-modifying operations cancel when combat starts.
 - Offline character inventory fills in as characters log in and the shared storage cache learns their current state.
 - Currency visibility and order are shared with the Currencies datatext, minimap panel, and Info Bar.
+- Sorting packs crafting reagents into the universal reagent bag, matching Blizzard's own sort behavior.
+- Item-level corner text stays on gear and no longer shows on consumables or reagents.

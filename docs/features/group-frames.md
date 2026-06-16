@@ -66,6 +66,20 @@ Most group frame behavior is configured directly from the main `/qui` page. Clic
 - Spotlight rules and sorting controls for keeping important players visible
 - Range fading, aura handling, and optional power or cast information
 
+## Auras
+
+Buff/debuff auras, pinned auras, and indicators all share a single unified **Auras** model. Configure them under the **Auras** section of the Group Frames page. The settings preview mirrors the exact bucket you are editing, so what you see while configuring matches what shows in-game, and the in-combat render path is faster and lighter.
+
+Your existing aura settings carry over automatically. If anything looks off after updating, re-check the **Auras** section of the Group Frames options.
+
+### Dispel & Defensive Indicators
+
+Dispel and defensive indicators clear as soon as the aura ends, so they will not stay lit on a frame after the effect is gone. Bottom-anchored defensive indicators sit clear of the power bar instead of overlapping it.
+
+## Power Bars
+
+When **Show Power Bar** is off — either globally or for a specific role via role filters — the space it would have used is reclaimed, so frames no longer show a stale gap. The health bar's bottom padding stays in sync with the power bar's actual height and visibility.
+
 ## Good To Know
 
 {: .important }
