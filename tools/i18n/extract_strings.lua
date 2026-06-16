@@ -2,13 +2,14 @@
 --   lua5.1 tools/i18n/extract_strings.lua   -> regenerate core/locale/enUS.lua
 --   loadfile(...)() returns a module table for unit tests.
 local M = {}
+local loadString = loadstring or load
 
 -- Find OUR locale keys in a source string: explicit `ns.L["..."]` ONLY.
 -- The bareword name `L` is heavily overloaded in this codebase (`local L = MakeLayout(...)`,
 -- `local L = {}`, etc.), so localization deliberately uses the fully-qualified `ns.L[...]`.
 -- Ignores `ns.L[var]` (dynamic) and any foreign `Foo.L["..."]` / bareword `L["..."]`.
 local function decodeLiteral(quote, body)
-    local chunk, err = loadstring("return " .. quote .. body .. quote)
+    local chunk, err = loadString("return " .. quote .. body .. quote)
     if not chunk then
         error("invalid ns.L string literal: " .. tostring(err))
     end

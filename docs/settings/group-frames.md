@@ -198,6 +198,48 @@ Buff and debuff icon display on group frames.
 | `auras.debuffDurationUseTimeColor` | boolean | `true` | Use remaining-time color bands for debuff durations |
 | `auras.showExpiringPulse` | boolean | `true` | Pulse animation when an aura is about to expire |
 
+### Targeted Spells
+
+Targeted spell icons are configured separately for party and raid contexts at `party.targetedSpells.*` and `raid.targetedSpells.*`.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `targetedSpells.enabled` | boolean | `true` | Show enemy nameplate cast icons on group members targeted by those casts |
+| `targetedSpells.iconSize` | number | `24` | Pixel size of each targeted spell icon |
+| `targetedSpells.maxIcons` | number | `3` | Maximum targeted spell icons shown per frame |
+| `targetedSpells.spacing` | number | `2` | Pixel gap between adjacent icons |
+| `targetedSpells.growDirection` | string | `"CENTER"` | Direction additional icons grow from the anchor |
+| `targetedSpells.position` | string | `"CENTER"` | Anchor point on the group frame |
+| `targetedSpells.offsetX` | number | `0` | Horizontal offset from the anchor |
+| `targetedSpells.offsetY` | number | `0` | Vertical offset from the anchor |
+| `targetedSpells.reverseSwipe` | boolean | `true` | Reverse cooldown swipe fill while the cast progresses |
+
+### Missing Raid Buff Aura Element
+
+Missing raid buff icons are added from the unified Auras element list. Element settings live under the chosen spec bucket, such as `party.auras.elements["*"][n]` or `raid.auras.elements["*"][n]`.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `mode` | string | `"missingRaidBuff"` | Aura element type for missing raid buff icons |
+| `classDetection` | boolean | `true` | Only check the raid buff provided by the current class |
+| `buffChecks.intellect` | boolean | `true` | Check Arcane Intellect when manual buff selection is enabled |
+| `buffChecks.stamina` | boolean | `true` | Check Power Word: Fortitude when manual buff selection is enabled |
+| `buffChecks.attackPower` | boolean | `true` | Check Battle Shout when manual buff selection is enabled |
+| `buffChecks.versatility` | boolean | `true` | Check Mark of the Wild when manual buff selection is enabled |
+| `buffChecks.skyfury` | boolean | `true` | Check Skyfury when manual buff selection is enabled |
+| `buffChecks.bronze` | boolean | `true` | Check Blessing of the Bronze when manual buff selection is enabled |
+| `anchor` | string | `"CENTER"` | Anchor point on the group frame |
+| `offsetX` | number | `0` | Horizontal offset from the anchor |
+| `offsetY` | number | `0` | Vertical offset from the anchor |
+| `growDirection` | string | `"RIGHT"` | Direction additional missing-buff icons grow |
+| `spacing` | number | `2` | Pixel gap between adjacent missing-buff icons |
+| `iconSize` | number | `16` | Pixel size of each missing-buff icon |
+| `maxIcons` | number | `1` | Maximum missing-buff icons shown per frame |
+| `hideSwipe` | boolean | `true` | Hide cooldown swipe overlay for missing-buff icons |
+| `reverseSwipe` | boolean | `false` | Reverse cooldown swipe fill if shown |
+| `showDurationText` | boolean | `false` | Show duration text on missing-buff icons |
+| `durationFontSize` | number | `9` | Duration text font size |
+
 ---
 
 ## Aura Indicators

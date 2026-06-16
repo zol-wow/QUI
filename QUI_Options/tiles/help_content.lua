@@ -50,6 +50,16 @@ QUI_HelpContent.FeatureGuides = {
         },
     },
     {
+        title = ns.L["Group Frames"],
+        description = ns.L["QUI Group Frames provide separate party and raid layouts with class colors, role icons, heal prediction, range fading, aura elements, click-casting, castbars, pet frames, and targeted spell warnings."],
+        tips = {
+            ns.L["Use Group Frames > Auras > Targeted Spells to show enemy nameplate casts on the group members being targeted."],
+            ns.L["Use Add Missing Raid Buff in the Auras element list to show icons only when a player is missing Arcane Intellect, Fortitude, Battle Shout, Mark of the Wild, Skyfury, or Blessing of the Bronze."],
+            ns.L["Leave Auto-Detect My Buff enabled to track the raid buff your current class can provide; turn it off to choose individual buffs manually."],
+            ns.L["Party and raid frames have separate settings, so verify both contexts when tuning alerts."],
+        },
+    },
+    {
         title = ns.L["Cooldown Manager (CDM)"],
         description = ns.L["The Cooldown Manager displays your ability cooldowns as icon bars near your character. It integrates with Blizzard's CooldownViewer system and adds custom tracking, glow effects, and swipe overlays."],
         tips = {

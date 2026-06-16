@@ -110,7 +110,12 @@ local function collect_qui_options_scripts(out, seen)
             if repo_path then
                 repo_path = normalize_path(repo_path)
             else
-                repo_path = normalize_path(join_path(toc_path, normalized))
+                repo_path = normalized:match("^%.%./(.+)$")
+                if repo_path then
+                    repo_path = normalize_path(repo_path)
+                else
+                    repo_path = normalize_path(join_path(toc_path, normalized))
+                end
             end
             if repo_path ~= "QUI_Options/bootstrap.lua" and not emitted[repo_path] then
                 emitted[repo_path] = true
@@ -154,6 +159,55 @@ local function should_load_script(path)
         return true
     end
 
+    if path:match("^QUI_.+/settings/") then
+        if path:match("^QUI_GroupFrames/groupframes/settings/") then
+            return true
+        end
+        if path:match("^QUI_UnitFrames/unitframes/settings/") then
+            return true
+        end
+        if path:match("^QUI_Chat/chat/settings/") then
+            return true
+        end
+        if path:match("^QUI_Bags/bags/settings/") then
+            return true
+        end
+        if path:match("^QUI_Alts/alts/settings/") then
+            return true
+        end
+        if path:match("^QUI_InfoBar/infobar/settings/") then
+            return true
+        end
+        if path == "QUI_Minimap/minimap/settings/minimap.lua" then
+            return true
+        end
+        if path == "QUI_Datatexts/datatexts/settings/datatexts_features.lua" then
+            return true
+        end
+        if path:match("^QUI_ResourceBars/resourcebars/settings/") then
+            return true
+        end
+        if path:match("^QUI_Skinning/skinning/.+/settings/")
+            or path:match("^QUI_Skinning/skinning/settings/") then
+            return true
+        end
+        if path:match("^QUI_QoL/.+/settings/") then
+            return true
+        end
+        if path == "QUI_DamageMeter/damage_meter/settings/damage_meter_content.lua" then
+            return true
+        end
+        if path == "QUI_CDM/cdm/settings/containers_page.lua"
+            or path == "QUI_CDM/cdm/settings/composer_preview_driver.lua"
+            or path == "QUI_CDM/cdm/settings/composer.lua" then
+            return true
+        end
+        if path:match("^QUI_ActionBars/actionbars/settings/") then
+            return true
+        end
+        return false
+    end
+
     if path:match("^QUI_Options/") then
         return true
     end
@@ -164,6 +218,9 @@ end
 local function make_auto_table()
     return setmetatable({}, {
         __index = function(t, k)
+            if type(k) == "number" then
+                return nil
+            end
             local value = make_auto_table()
             rawset(t, k, value)
             return value
@@ -1903,7 +1960,9 @@ local function capture_group_frames_auras_elements()
 
     -- Builders return a single element configured to exercise one branch. Two
     -- example spell IDs on tracked icon strips so the per-spell Only Mine rows
-    -- render (they only appear when a strip tracks more than one spell).
+    -- render (they only appear when a strip tracks more than one spell). Missing
+    -- raid buff renders twice so both auto-detect and manual buff rows enter the
+    -- generated search cache.
     local function strip(filterMode)
         local element = Model.NewFilterStripElement("HARMFUL")
         element.filterMode = filterMode
@@ -1911,6 +1970,14 @@ local function capture_group_frames_auras_elements()
     end
     local function tracked(displayType)
         local element = Model.NewTrackedElement({ 12345, 67890 }, displayType)
+        return element
+    end
+    local function missing_raid_buff(class_detection)
+        if type(Model.NewMissingRaidBuffElement) ~= "function" then
+            return nil
+        end
+        local element = Model.NewMissingRaidBuffElement()
+        element.classDetection = class_detection ~= false
         return element
     end
 
@@ -1923,42 +1990,48 @@ local function capture_group_frames_auras_elements()
         { label = "tracked:bar", element = tracked("bar") },
         { label = "tracked:square", element = tracked("square") },
         { label = "tracked:healthTint", element = tracked("healthTint") },
+        { label = "missingRaidBuff:auto", element = missing_raid_buff(true) },
+        { label = "missingRaidBuff:manual", element = missing_raid_buff(false) },
     }
 
     for _, variant in ipairs(variants) do
-        local host = create_stub_node("Frame", nil, false)
-        host:SetSize(760, 1)
+        if not variant.element then
+            -- Older branches may not have the missing-raid-buff element model.
+        else
+            local host = create_stub_node("Frame", nil, false)
+            host:SetSize(760, 1)
 
-        -- Fresh auras container holding exactly this one element in the "*" bucket.
-        local auras = { enabled = true, elements = { ["*"] = { variant.element } } }
+            -- Fresh auras container holding exactly this one element in the "*" bucket.
+            local auras = { enabled = true, elements = { ["*"] = { variant.element } } }
 
-        GUI:ClearSearchContext()
-        local ok, err = xpcall(function()
-            GUI:SetSearchContext({
-                tabIndex = 6,
-                tabName = "Group Frames",
-                subTabIndex = 12,
-                subTabName = "Auras",
-                tileId = "group_frames",
-                subPageIndex = 2,
-                featureId = "groupFramesPage",
-                providerKey = "partyFrames",
-                category = "frames",
-                surfaceTabKey = "auras",
-            })
-            AurasEditor.RenderAuras(host, auras, "*", function() end, {
-                forceSelectedIndex = 1,
-            })
             GUI:ClearSearchContext()
-        end, debug.traceback)
-        GUI:ClearSearchContext()
+            local ok, err = xpcall(function()
+                GUI:SetSearchContext({
+                    tabIndex = 6,
+                    tabName = "Group Frames",
+                    subTabIndex = 12,
+                    subTabName = "Auras",
+                    tileId = "group_frames",
+                    subPageIndex = 2,
+                    featureId = "groupFramesPage",
+                    providerKey = "partyFrames",
+                    category = "frames",
+                    surfaceTabKey = "auras",
+                })
+                AurasEditor.RenderAuras(host, auras, "*", function() end, {
+                    forceSelectedIndex = 1,
+                })
+                GUI:ClearSearchContext()
+            end, debug.traceback)
+            GUI:ClearSearchContext()
 
-        if not ok then
-            capture_errors[#capture_errors + 1] = {
-                featureId = "groupFramesPage",
-                providerKey = "auras:" .. variant.label,
-                error = err,
-            }
+            if not ok then
+                capture_errors[#capture_errors + 1] = {
+                    featureId = "groupFramesPage",
+                    providerKey = "auras:" .. variant.label,
+                    error = err,
+                }
+            end
         end
     end
 

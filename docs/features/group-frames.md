@@ -48,6 +48,8 @@ Most group frame behavior is configured directly from the main `/qui` page. Clic
 | Spotlight | Pin members by role/name | Disabled |
 | Castbar | Show castbars on group frames | Disabled |
 | Pet frames | Show pet frames | Disabled |
+| Targeted Spells | Show enemy cast icons on targeted group members | Enabled |
+| Missing Raid Buff element | Show icons when raid buffs are missing | User-added |
 
 ## Best First Tweaks
 
@@ -71,6 +73,14 @@ Most group frame behavior is configured directly from the main `/qui` page. Clic
 Buff/debuff auras, pinned auras, and indicators all share a single unified **Auras** model. Configure them under the **Auras** section of the Group Frames page. The settings preview mirrors the exact bucket you are editing, so what you see while configuring matches what shows in-game, and the in-combat render path is faster and lighter.
 
 Your existing aura settings carry over automatically. If anything looks off after updating, re-check the **Auras** section of the Group Frames options.
+
+### Targeted Spells
+
+Targeted Spells show enemy nameplate cast icons on the group member being targeted by that cast. Configure them under **Group Frames > Auras > Targeted Spells** for both party and raid contexts.
+
+### Missing Raid Buff Element
+
+Use **Add Missing Raid Buff** in the Auras element list when you want group frames to show missing Arcane Intellect, Power Word: Fortitude, Battle Shout, Mark of the Wild, Skyfury, or Blessing of the Bronze. Leave **Auto-Detect My Buff** enabled to show only the raid buff your current class can provide, or turn it off to choose individual buffs manually.
 
 ### Dispel & Defensive Indicators
 
