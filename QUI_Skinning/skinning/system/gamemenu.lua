@@ -1,520 +1,371 @@
-local addonName, ns = ...
+local _, ns = ...
 
 local Helpers = ns.Helpers
 local GetCore = Helpers.GetCore
 local SkinBase = ns.SkinBase
 
 ---------------------------------------------------------------------------
--- GAME MENU (ESC MENU) SKINNING + QUAZII UI BUTTON
+-- GAME MENU (ESC MENU) SKINNING + QUI BUTTONS
 --
--- TAINT SAFETY: GameMenuFrame is a secure frame. In Midnight (12.0+),
--- writing ANY addon property to it or its pool buttons (layoutIndex,
--- quiBackdrop, etc.), creating child frames on it from addon context,
--- or calling AddButton/MarkDirty from addon context taints the secure
--- execution chain. When the user clicks "Edit Mode", the tainted
--- context propagates through SetAttribute → ShowUIPanel → EnterEditMode
--- → TargetUnit() → ADDON_ACTION_FORBIDDEN.
+-- Flash-free design: the skin is baked into GameMenuFrame itself.  A
+-- hooksecurefunc on InitButtons runs synchronously inside OnShow, BEFORE the
+-- frame paints, so the menu is styled the instant it appears.  No OnUpdate
+-- poll, no UIParent overlays, no show/hide hooks.
 --
--- Solution: ALL visual work uses an overlay container parented to
--- UIParent. ALL state is tracked in local tables. ALL modifications
--- are deferred via C_Timer.After(0) to break the taint chain from
--- InitButtons secure context.
+-- Hook surface (matches the proven retail pattern):
+--   * hooksecurefunc(GameMenuFrame, "InitButtons")  -- the only frame hook
+--   * hooksecurefunc(<slice>, "SetAlpha")           -- clamp button art to 0
+-- Dim + custom buttons are parented to GameMenuFrame so they auto-hide with
+-- it; no OnHide hook is needed.
+--
+-- TAINT: never call AddButton/MarkDirty from addon context (the custom
+-- buttons are our own frames, not pool buttons) and never hook the global
+-- ShowUIPanel/HideUIPanel.  All per-button skin state lives in a weak-keyed
+-- Lua table, never as a property written onto a secure button.  The prior
+-- ADDON_ACTION_FORBIDDEN on Edit Mode was a different root cause (red herring).
 ---------------------------------------------------------------------------
 
--- Static colors
-local COLORS = {
-    text = { 0.9, 0.9, 0.9, 1 },
-}
-
+local COLORS = { text = { 0.9, 0.9, 0.9, 1 } }
 local FONT_FLAGS = "OUTLINE"
-local OVERLAY_LEVEL_OFFSET = 50
-local BUTTON_OVERLAY_LEVEL_OFFSET = OVERLAY_LEVEL_OFFSET + 5
-local BUTTON_OVERLAY_PADDING = 1
-local BUTTON_OVERLAY_STRATA = "TOOLTIP"
-local BUTTON_OVERLAY_BASE_LEVEL = 9000
-local MAX_FRAME_LEVEL = 10000
-local SOLID_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 
--- Local state (NEVER write to GameMenuFrame or its buttons)
-local skinState = { skinned = false }
-local buttonOverlays = Helpers.CreateStateTable() -- weak-keyed: overlay info per button
-local overlayContainer = nil   -- UIParent-child container for all overlays
-local menuBackdrop = nil       -- backdrop overlay for GameMenuFrame itself
-local quiStandaloneButton = nil -- standalone QUI button (parented to UIParent)
-local editModeButton = nil      -- standalone Edit Mode button (parented to UIParent)
+-- weak-keyed: per-button skin state { inset=, highlight=, clamped=bool }
+local buttonState = Helpers.CreateStateTable()
 
-local function IsLockedDown()
-    return type(InCombatLockdown) == "function" and InCombatLockdown()
-end
+local installed = false
+local staticDone = false
+local menuBg = nil          -- themed bg/border, child of GameMenuFrame
+local dimFrame = nil        -- screen dim, child of GameMenuFrame
+local quiButton = nil       -- standalone QUI button (child of GameMenuFrame)
+local editModeButton = nil  -- standalone Edit Mode button (child of GameMenuFrame)
 
--- Get game menu font size from settings
-local function GetGameMenuFontSize()
+---------------------------------------------------------------------------
+-- settings helpers
+---------------------------------------------------------------------------
+local function GetGeneralSettings()
     local core = GetCore()
-    local settings = core and core.db and core.db.profile and core.db.profile.general
-    return settings and settings.gameMenuFontSize or 12
+    return core and core.db and core.db.profile and core.db.profile.general
+end
+
+local function GetGameMenuFontSize()
+    local s = GetGeneralSettings()
+    return s and s.gameMenuFontSize or 12
+end
+
+local function GetGameMenuColors()
+    return SkinBase.GetSkinColors(GetGeneralSettings(), "gameMenu")
 end
 
 ---------------------------------------------------------------------------
--- OVERLAY CONTAINER (parented to UIParent, NOT GameMenuFrame)
+-- chrome strip
 ---------------------------------------------------------------------------
-local function GetOverlayContainer()
-    if overlayContainer then return overlayContainer end
-    overlayContainer = CreateFrame("Frame", "QUIGameMenuOverlay", UIParent)
-    overlayContainer:SetFrameStrata("DIALOG")
-    overlayContainer:EnableMouse(false)
-    overlayContainer:Hide()
-    return overlayContainer
-end
-
-local function GetFrameLevel(frame, fallback)
-    if frame and frame.GetFrameLevel then
-        local level = frame:GetFrameLevel()
-        if type(level) == "number" then
-            return level
+local function StripChromeOnce()
+    -- GameMenuFrame draws its panel via region textures (NineSlice etc.).
+    for i = 1, select("#", GameMenuFrame:GetRegions()) do
+        local r = select(i, GameMenuFrame:GetRegions())
+        if r and r.IsObjectType and r:IsObjectType("Texture") then
+            r:SetAlpha(0)
         end
     end
-    return fallback or 0
 end
 
-local function SyncOverlayContainerLevel()
-    local oc = GetOverlayContainer()
-    if not GameMenuFrame then return oc end
-
-    if GameMenuFrame.GetFrameStrata and oc.SetFrameStrata then
-        local strata = GameMenuFrame:GetFrameStrata()
-        if type(strata) == "string" and strata ~= "" then
-            oc:SetFrameStrata(strata)
-        end
-    end
-
-    if oc.SetFrameLevel then
-        oc:SetFrameLevel(GetFrameLevel(GameMenuFrame, 0) + OVERLAY_LEVEL_OFFSET)
-    end
-
-    return oc
-end
-
-local function GetOverlayFrameLevel(button)
-    local buttonLevel = GetFrameLevel(button, 0)
-    return math.min(MAX_FRAME_LEVEL, math.max(BUTTON_OVERLAY_BASE_LEVEL, buttonLevel + BUTTON_OVERLAY_LEVEL_OFFSET))
-end
-
-local function SyncButtonOverlayLayering(overlay, button)
-    if not overlay then return end
-    if overlay.SetFrameStrata then
-        overlay:SetFrameStrata(BUTTON_OVERLAY_STRATA)
-    end
-    if overlay.SetFrameLevel then
-        overlay:SetFrameLevel(GetOverlayFrameLevel(button))
-    end
-end
-
-local function AnchorButtonOverlay(overlay, button)
-    if not overlay or not button then return end
-    overlay:ClearAllPoints()
-    overlay:SetPoint("TOPLEFT", button, "TOPLEFT", -BUTTON_OVERLAY_PADDING, BUTTON_OVERLAY_PADDING)
-    overlay:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", BUTTON_OVERLAY_PADDING, -BUTTON_OVERLAY_PADDING)
+local function ReassertChrome()
+    -- Blizzard's InitButtons -> Reset re-shows these decorations every open.
+    if GameMenuFrame.NineSlice then GameMenuFrame.NineSlice:SetAlpha(0) end
+    if GameMenuFrame.Border then GameMenuFrame.Border:SetAlpha(0) end
+    if GameMenuFrame.Header then GameMenuFrame.Header:SetAlpha(0) end
 end
 
 ---------------------------------------------------------------------------
--- BUTTON OVERLAY (child of overlay container, positioned over button)
+-- frame-level layering
+--
+-- Drawn back-to-front: dim -> menuBg -> per-button inset bg -> the button's
+-- own fontstring + HIGHLIGHT texture.  The inset sits one level BELOW its
+-- button so the button's text/highlight draw over it.  menuBg/dim sit below
+-- the lowest pool button so buttons always draw on top.
 ---------------------------------------------------------------------------
-local function GetOrCreateButtonOverlay(button, sr, sg, sb, sa, bgr, bgg, bgb)
-    local oc = SyncOverlayContainerLevel()
-    local info = buttonOverlays[button]
-    if info then
-        if info.overlay then
-            AnchorButtonOverlay(info.overlay, button)
-            SyncButtonOverlayLayering(info.overlay, button)
-            info.overlay:Show()
-        end
-        return info
-    end
-
-    local overlay = CreateFrame("Frame", nil, oc, "BackdropTemplate")
-    AnchorButtonOverlay(overlay, button)
-    SyncButtonOverlayLayering(overlay, button)
-    overlay:EnableMouse(false)
-
-    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
-
-    info = {
-        overlay = overlay,
-        skinColor = { sr, sg, sb, sa },
-        bgColor = { btnBgR, btnBgG, btnBgB, 1 },
-    }
-    buttonOverlays[button] = info
-    return info
-end
-
-local function GetPixelSize(frame)
-    if SkinBase and SkinBase.GetPixelSize then
-        return SkinBase.GetPixelSize(frame, 1)
-    end
-    return 1
-end
-
-local function EnsureButtonOverlayTextures(info)
-    local overlay = info and info.overlay
-    if not overlay then return end
-
-    if not overlay.coverTexture then
-        overlay.coverTexture = overlay:CreateTexture(nil, "OVERLAY")
-        overlay.coverTexture:SetTexture(SOLID_TEXTURE)
-    end
-    if overlay.coverTexture.SetDrawLayer then
-        overlay.coverTexture:SetDrawLayer("OVERLAY", 0)
-    end
-    overlay.coverTexture:ClearAllPoints()
-    overlay.coverTexture:SetAllPoints(overlay)
-
-    if not overlay.borderTop then
-        overlay.borderTop = overlay:CreateTexture(nil, "OVERLAY")
-        overlay.borderBottom = overlay:CreateTexture(nil, "OVERLAY")
-        overlay.borderLeft = overlay:CreateTexture(nil, "OVERLAY")
-        overlay.borderRight = overlay:CreateTexture(nil, "OVERLAY")
-        overlay.borderTop:SetTexture(SOLID_TEXTURE)
-        overlay.borderBottom:SetTexture(SOLID_TEXTURE)
-        overlay.borderLeft:SetTexture(SOLID_TEXTURE)
-        overlay.borderRight:SetTexture(SOLID_TEXTURE)
-    end
-    if overlay.borderTop.SetDrawLayer then
-        overlay.borderTop:SetDrawLayer("OVERLAY", 1)
-        overlay.borderBottom:SetDrawLayer("OVERLAY", 1)
-        overlay.borderLeft:SetDrawLayer("OVERLAY", 1)
-        overlay.borderRight:SetDrawLayer("OVERLAY", 1)
-    end
-
-    local px = GetPixelSize(overlay)
-
-    overlay.borderTop:ClearAllPoints()
-    overlay.borderTop:SetPoint("TOPLEFT", overlay, "TOPLEFT", 0, 0)
-    overlay.borderTop:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", 0, 0)
-    overlay.borderTop:SetHeight(px)
-
-    overlay.borderBottom:ClearAllPoints()
-    overlay.borderBottom:SetPoint("BOTTOMLEFT", overlay, "BOTTOMLEFT", 0, 0)
-    overlay.borderBottom:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", 0, 0)
-    overlay.borderBottom:SetHeight(px)
-
-    overlay.borderLeft:ClearAllPoints()
-    overlay.borderLeft:SetPoint("TOPLEFT", overlay, "TOPLEFT", 0, -px)
-    overlay.borderLeft:SetPoint("BOTTOMLEFT", overlay, "BOTTOMLEFT", 0, px)
-    overlay.borderLeft:SetWidth(px)
-
-    overlay.borderRight:ClearAllPoints()
-    overlay.borderRight:SetPoint("TOPRIGHT", overlay, "TOPRIGHT", 0, -px)
-    overlay.borderRight:SetPoint("BOTTOMRIGHT", overlay, "BOTTOMRIGHT", 0, px)
-    overlay.borderRight:SetWidth(px)
-end
-
-local function SetButtonOverlayColors(info, bgR, bgG, bgB, bgA, borderR, borderG, borderB, borderA)
-    local overlay = info and info.overlay
-    if not overlay then return end
-    EnsureButtonOverlayTextures(info)
-
-    overlay.coverTexture:SetColorTexture(bgR, bgG, bgB, bgA)
-    overlay.borderTop:SetColorTexture(borderR, borderG, borderB, borderA)
-    overlay.borderBottom:SetColorTexture(borderR, borderG, borderB, borderA)
-    overlay.borderLeft:SetColorTexture(borderR, borderG, borderB, borderA)
-    overlay.borderRight:SetColorTexture(borderR, borderG, borderB, borderA)
-end
-
-local function RefreshButtonOverlayVisuals(info)
-    if not info then return end
-    local r, g, b, a = unpack(info.bgColor)
-    local sr, sg, sb, sa = unpack(info.skinColor)
-
-    if info.hovered then
-        SetButtonOverlayColors(
-            info,
-            math.min(r + 0.30, 1), math.min(g + 0.30, 1), math.min(b + 0.30, 1), a,
-            math.min(sr * 1.6, 1), math.min(sg * 1.6, 1), math.min(sb * 1.6, 1), sa
-        )
-        if info.overlayText then info.overlayText:SetTextColor(1, 1, 1, 1) end
-    else
-        SetButtonOverlayColors(info, r, g, b, a, sr, sg, sb, sa)
-        if info.overlayText then info.overlayText:SetTextColor(unpack(COLORS.text)) end
-    end
-end
-
-local function GetButtonText(button, fallback)
-    if fallback then return fallback end
-    if button and button.GetText then
-        local text = button:GetText()
-        if type(text) == "string" and text ~= "" then
-            return text
-        end
-    end
-    local fontString = button and button.GetFontString and button:GetFontString()
-    if fontString and fontString.GetText then
-        local text = fontString:GetText()
-        if type(text) == "string" and text ~= "" then
-            return text
-        end
-    end
-    return ""
-end
-
-local function UpdateOverlayText(info, label)
-    if not info or not info.overlay then return end
-    if not info.overlayText then
-        local text = info.overlay:CreateFontString(nil, "OVERLAY")
-        text:SetPoint("CENTER")
-        text:SetJustifyH("CENTER")
-        text:SetJustifyV("MIDDLE")
-        info.overlayText = text
-    end
-    if info.overlayText.SetDrawLayer then
-        info.overlayText:SetDrawLayer("OVERLAY", 2)
-    end
-
-    local fontPath = Helpers.GetGeneralFont()
-    local fontSize = GetGameMenuFontSize()
-    info.overlayText:SetFont(fontPath, fontSize, FONT_FLAGS)
-    info.overlayText:SetText(label or "")
-    info.overlayText:SetTextColor(unpack(COLORS.text))
-end
-
-local function ApplyOverlayHover(info, hovered)
-    if not info or not info.overlay or info.hovered == hovered then return end
-    info.hovered = hovered
-    RefreshButtonOverlayVisuals(info)
-end
-
-local function UpdateButtonHover(button)
-    local info = buttonOverlays[button]
-    if not info then return end
-    local hovered = button and button.IsMouseOver and button:IsMouseOver() or false
-    ApplyOverlayHover(info, hovered)
-end
-
-local function UpdateVisibleButtonHovers()
-    if GameMenuFrame and GameMenuFrame.buttonPool then
-        for button in GameMenuFrame.buttonPool:EnumerateActive() do
-            UpdateButtonHover(button)
-        end
-    end
-    if quiStandaloneButton and quiStandaloneButton:IsShown() then
-        UpdateButtonHover(quiStandaloneButton)
-    end
-    if editModeButton and editModeButton:IsShown() then
-        UpdateButtonHover(editModeButton)
-    end
+local function ReassertLevels(refLevel)
+    local base = refLevel or GameMenuFrame:GetFrameLevel() or 1
+    if menuBg then menuBg:SetFrameLevel(math.max(0, base - 2)) end
+    if dimFrame then dimFrame:SetFrameLevel(math.max(0, base - 3)) end
 end
 
 ---------------------------------------------------------------------------
--- STYLE A BUTTON (overlay approach — zero writes to the button itself)
+-- dim + menu background (children of GameMenuFrame -> auto-hide on close)
 ---------------------------------------------------------------------------
-local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga, label)
-    if not button then return end
-
-    local info = GetOrCreateButtonOverlay(button, sr, sg, sb, sa, bgr, bgg, bgb)
-    local overlay = info.overlay
-
-    local btnBgR, btnBgG, btnBgB = info.bgColor[1], info.bgColor[2], info.bgColor[3]
-    SetButtonOverlayColors(info, btnBgR, btnBgG, btnBgB, 1, sr, sg, sb, sa)
-    UpdateOverlayText(info, GetButtonText(button, label))
-    UpdateButtonHover(button)
-end
-
--- Update button overlay colors (for live refresh)
-local function UpdateButtonColors(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    local info = buttonOverlays[button]
-    if not info or not info.overlay then return end
-
-    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
-    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
-    info.skinColor = { sr, sg, sb, sa }
-    info.bgColor = { btnBgR, btnBgG, btnBgB, 1 }
-    RefreshButtonOverlayVisuals(info)
-end
-
--- Hide Blizzard decorative elements (method calls, not property writes)
-local function HideBlizzardDecorations()
-    if IsLockedDown() then return end
-    if GameMenuFrame.Border then GameMenuFrame.Border:Hide() end
-    if GameMenuFrame.Header then GameMenuFrame.Header:Hide() end
-end
-
----------------------------------------------------------------------------
--- DIM BACKGROUND FRAME
----------------------------------------------------------------------------
-local dimFrame = nil
-
-local function CreateDimFrame()
+local function EnsureDim()
     if dimFrame then return dimFrame end
-
-    dimFrame = CreateFrame("Frame", "QUIGameMenuDim", UIParent)
+    dimFrame = CreateFrame("Frame", "QUIGameMenuDim", GameMenuFrame)
     dimFrame:SetAllPoints(UIParent)
-    dimFrame:SetFrameStrata("DIALOG")
-    dimFrame:SetFrameLevel(0)
     dimFrame:EnableMouse(false)
-    dimFrame:Hide()
-
-    dimFrame.overlay = dimFrame:CreateTexture(nil, "BACKGROUND")
-    dimFrame.overlay:SetAllPoints()
-    dimFrame.overlay:SetColorTexture(0, 0, 0, 0.5)
-
+    local tex = dimFrame:CreateTexture(nil, "BACKGROUND")
+    tex:SetAllPoints()
+    tex:SetColorTexture(0, 0, 0, 0.5)
+    dimFrame.tex = tex
     return dimFrame
 end
 
-local function ShowDimBehindGameMenu()
-    local core = GetCore()
-    local settings = core and core.db and core.db.profile and core.db.profile.general
-    if not settings or not settings.skinGameMenu or not settings.gameMenuDim then return end
-
-    local dim = CreateDimFrame()
-    dim:SetFrameStrata("DIALOG")
-    dim:SetFrameLevel(GameMenuFrame:GetFrameLevel() - 1)
-    dim:Show()
+local function AssertDim(settings)
+    local dim = EnsureDim()
+    if settings and settings.gameMenuDim then dim:Show() else dim:Hide() end
 end
 
-local function HideDimBehindGameMenu()
-    if dimFrame then
-        dimFrame:Hide()
+local function EnsureMenuBg()
+    if menuBg then return menuBg end
+    menuBg = CreateFrame("Frame", "QUIGameMenuBg", GameMenuFrame)
+    menuBg:SetAllPoints(GameMenuFrame)
+    menuBg:EnableMouse(false)
+    return menuBg
+end
+
+---------------------------------------------------------------------------
+-- button skinning
+---------------------------------------------------------------------------
+local function StripButtonArt(button, isPool, info)
+    local fs = button.GetFontString and button:GetFontString()
+    for i = 1, select("#", button:GetRegions()) do
+        local r = select(i, button:GetRegions())
+        if r and r.IsObjectType and r:IsObjectType("Texture")
+           and r ~= fs and r ~= info.highlight then
+            r:SetAlpha(0)
+        end
+    end
+    if isPool and not info.clamped then
+        -- ThreeSliceButton re-sets these atlases on every mouse state change,
+        -- so clamp their alpha to 0 once via a durable hook.
+        for _, key in ipairs({ "Left", "Center", "Right" }) do
+            local tex = button[key]
+            if tex and tex.SetAlpha then
+                tex:SetAlpha(0)
+                hooksecurefunc(tex, "SetAlpha", function(self, a)
+                    if a and a > 0 then self:SetAlpha(0) end
+                end)
+            end
+        end
+        info.clamped = true
     end
 end
 
--- Expose for settings toggle
-_G.QUI_RefreshGameMenuDim = function()
-    local core = GetCore()
-    local settings = core and core.db and core.db.profile and core.db.profile.general
+local function SkinButton(button, isPool, sr, sg, sb, sa, bgr, bgg, bgb, fontSize)
+    if not button then return end
+    local info = buttonState[button]
+    if not info then
+        info = {}
+        buttonState[button] = info
+    end
 
-    if settings and settings.gameMenuDim and GameMenuFrame:IsShown() then
-        ShowDimBehindGameMenu()
+    StripButtonArt(button, isPool, info)
+
+    if not info.inset then
+        local inset = CreateFrame("Frame", nil, button)
+        inset:SetPoint("TOPLEFT", 1, -1)
+        inset:SetPoint("BOTTOMRIGHT", -1, 1)
+        inset:EnableMouse(false)
+        info.inset = inset
+
+        -- Flat hover highlight, on the button (auto-shown on mouseover).
+        local hl = button:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints(inset)
+        hl:SetColorTexture(1, 1, 1, 0.10)
+        info.highlight = hl
+    end
+
+    -- Inset draws one level below the button so text/highlight sit on top.
+    info.inset:SetFrameLevel(math.max(0, (button:GetFrameLevel() or 1) - 1))
+
+    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
+    SkinBase.ApplyFullBackdrop(info.inset, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
+
+    local fs = button.GetFontString and button:GetFontString()
+    if fs then
+        SkinBase.SkinFontString(fs, { size = fontSize, outline = FONT_FLAGS, color = COLORS.text })
+    end
+end
+
+---------------------------------------------------------------------------
+-- custom buttons (our own frames, parented to GameMenuFrame)
+---------------------------------------------------------------------------
+local function GetOrCreateQUIButton()
+    if quiButton then return quiButton end
+    quiButton = CreateFrame("Button", "QUIGameMenuButton", GameMenuFrame, "UIPanelButtonTemplate")
+    quiButton:SetText("QUI")
+    quiButton:SetSize(160, 30)
+    quiButton:SetScript("OnClick", function()
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION)
+        HideUIPanel(GameMenuFrame)
+        local QUI = _G.QUI
+        if QUI and QUI.ShowOptions then QUI:ShowOptions() end
+    end)
+    quiButton:Hide()
+    return quiButton
+end
+
+local function GetOrCreateEditModeButton()
+    if editModeButton then return editModeButton end
+    editModeButton = CreateFrame("Button", "QUIGameMenuEditModeButton", GameMenuFrame, "UIPanelButtonTemplate")
+    editModeButton:SetText("QUI Edit Mode")
+    editModeButton:SetSize(160, 30)
+    editModeButton:SetScript("OnClick", function()
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION)
+        HideUIPanel(GameMenuFrame)
+        if _G.QUI_ToggleLayoutMode then _G.QUI_ToggleLayoutMode() end
+    end)
+    editModeButton:Hide()
+    return editModeButton
+end
+
+local function PositionCustomButtons(settings, refButton, sr, sg, sb, sa, bgr, bgg, bgb, fontSize)
+    -- QUI button: anchored to GameMenuFrame's BOTTOM edge (entirely outside
+    -- the frame rect so the secure frame never eats its clicks).
+    if settings.addQUIButton == false then
+        if quiButton then quiButton:Hide() end
     else
-        HideDimBehindGameMenu()
+        local b = GetOrCreateQUIButton()
+        b:ClearAllPoints()
+        b:SetPoint("TOP", GameMenuFrame, "BOTTOM", 0, -2)
+        if refButton then b:SetSize(refButton:GetWidth(), refButton:GetHeight()) end
+        b:Show()
+        SkinButton(b, false, sr, sg, sb, sa, bgr, bgg, bgb, fontSize)
+    end
+
+    -- Edit Mode button: below the QUI button when shown, else below the menu.
+    if settings.addEditModeButton == false then
+        if editModeButton then editModeButton:Hide() end
+    else
+        local b = GetOrCreateEditModeButton()
+        local anchor = (quiButton and quiButton:IsShown()) and quiButton or GameMenuFrame
+        b:ClearAllPoints()
+        b:SetPoint("TOP", anchor, "BOTTOM", 0, -2)
+        if refButton then b:SetSize(refButton:GetWidth(), refButton:GetHeight()) end
+        b:Show()
+        SkinButton(b, false, sr, sg, sb, sa, bgr, bgg, bgb, fontSize)
     end
 end
 
----------------------------------------------------------------------------
--- MENU BACKDROP (child of overlay container, NOT GameMenuFrame)
----------------------------------------------------------------------------
-local function CreateMenuBackdrop(sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    if menuBackdrop then return menuBackdrop end
+-- Extend menuBg downward to cover whichever custom buttons are visible.
+-- Deferred one frame so GetBottom() is resolved.
+local function ExtendMenuBg()
+    if not menuBg then return end
+    C_Timer.After(0, function()
+        if not menuBg or not GameMenuFrame then return end
+        local lowest
+        if quiButton and quiButton:IsShown() then
+            local v = quiButton:GetBottom()
+            if v then lowest = v end
+        end
+        if editModeButton and editModeButton:IsShown() then
+            local v = editModeButton:GetBottom()
+            if v and (not lowest or v < lowest) then lowest = v end
+        end
 
-    local oc = SyncOverlayContainerLevel()
-    menuBackdrop = CreateFrame("Frame", nil, oc, "BackdropTemplate")
-    menuBackdrop:SetAllPoints(GameMenuFrame)
-    menuBackdrop:SetFrameLevel(math.max(GetFrameLevel(oc, 0) + 1, GetFrameLevel(GameMenuFrame, 0) + 1))
-    menuBackdrop:EnableMouse(false)
-
-    return menuBackdrop
+        menuBg:ClearAllPoints()
+        if not lowest then
+            menuBg:SetAllPoints(GameMenuFrame)
+            return
+        end
+        local gmBottom = GameMenuFrame:GetBottom()
+        if gmBottom and lowest < gmBottom then
+            local extend = gmBottom - lowest + 12
+            menuBg:SetPoint("TOPLEFT", GameMenuFrame, "TOPLEFT")
+            menuBg:SetPoint("TOPRIGHT", GameMenuFrame, "TOPRIGHT")
+            menuBg:SetPoint("BOTTOMLEFT", GameMenuFrame, "BOTTOMLEFT", 0, -extend)
+            menuBg:SetPoint("BOTTOMRIGHT", GameMenuFrame, "BOTTOMRIGHT", 0, -extend)
+        else
+            menuBg:SetAllPoints(GameMenuFrame)
+        end
+    end)
 end
 
-local function UpdateMenuBackdrop(sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    if not menuBackdrop then
-        CreateMenuBackdrop(sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    end
-
-    SkinBase.ApplyFullBackdrop(menuBackdrop, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+---------------------------------------------------------------------------
+-- static skin (once)
+---------------------------------------------------------------------------
+local function ApplyStaticSkin()
+    if staticDone then return end
+    local bg = EnsureMenuBg()
+    EnsureDim()
+    StripChromeOnce()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetGameMenuColors()
+    SkinBase.ApplyFullBackdrop(bg, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    staticDone = true
 end
 
 ---------------------------------------------------------------------------
--- MAIN SKINNING (deferred — runs in clean execution context)
+-- the only frame hook: skin everything synchronously on each open
 ---------------------------------------------------------------------------
-local function SkinGameMenu()
-    local core = GetCore()
-    local settings = core and core.db and core.db.profile and core.db.profile.general
+local function OnInitButtons(menu)
+    local settings = GetGeneralSettings()
     if not settings or not settings.skinGameMenu then return end
-    if not GameMenuFrame then return end
-    if skinState.skinned then return end
+    if not menu or not menu.buttonPool then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "gameMenu")
+    ApplyStaticSkin()
+    ReassertChrome()
 
-    HideBlizzardDecorations()
-    UpdateMenuBackdrop(sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    local sr, sg, sb, sa, bgr, bgg, bgb = GetGameMenuColors()
+    local fontSize = GetGameMenuFontSize()
 
-    -- Style all buttons via overlays
-    if GameMenuFrame.buttonPool then
-        for button in GameMenuFrame.buttonPool:EnumerateActive() do
-            StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-        end
+    local refButton, minLevel
+    for button in menu.buttonPool:EnumerateActive() do
+        SkinButton(button, true, sr, sg, sb, sa, bgr, bgg, bgb, fontSize)
+        local lvl = button:GetFrameLevel() or 0
+        if not minLevel or lvl < minLevel then minLevel = lvl end
+        refButton = refButton or button
     end
 
-    SkinBase.SkinFrameText(GameMenuFrame, { recurse = true })
-    skinState.skinned = true
+    ReassertLevels(minLevel)
+    PositionCustomButtons(settings, refButton, sr, sg, sb, sa, bgr, bgg, bgb, fontSize)
+    AssertDim(settings)
+    ExtendMenuBg()
 end
 
--- Refresh colors on already-skinned game menu (for live preview)
+---------------------------------------------------------------------------
+-- live refresh (settings preview) — names/signatures unchanged
+---------------------------------------------------------------------------
 local function RefreshGameMenuColors()
-    if not GameMenuFrame or not skinState.skinned then return end
-
-    local core = GetCore()
-    local settings = core and core.db and core.db.profile and core.db.profile.general
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "gameMenu")
-
-    if menuBackdrop then
-        menuBackdrop:SetBackdropColor(bgr, bgg, bgb, bga)
-        menuBackdrop:SetBackdropBorderColor(sr, sg, sb, sa)
+    if not staticDone then return end
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetGameMenuColors()
+    if menuBg then
+        SkinBase.ApplyFullBackdrop(menuBg, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     end
-
-    if GameMenuFrame.buttonPool then
-        for button in GameMenuFrame.buttonPool:EnumerateActive() do
-            UpdateButtonColors(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
+    local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
+    for _, info in pairs(buttonState) do
+        if info.inset then
+            SkinBase.ApplyFullBackdrop(info.inset, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
         end
-    end
-
-    -- Also refresh the QUI standalone button overlay
-    if quiStandaloneButton then
-        UpdateButtonColors(quiStandaloneButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    end
-
-    -- Also refresh the Edit Mode button overlay
-    if editModeButton then
-        UpdateButtonColors(editModeButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     end
 end
 
--- Refresh font size on game menu buttons
 local function RefreshGameMenuFontSize()
-    if not GameMenuFrame then return end
-
-    local core = GetCore()
-    local settings = core and core.db and core.db.profile and core.db.profile.general
+    local settings = GetGeneralSettings()
     if not settings or not settings.skinGameMenu then
+        local core = GetCore()
         if core and core.ApplyGlobalFontToGameMenu then
             core:ApplyGlobalFontToGameMenu()
         end
         return
     end
-
     local fontSize = GetGameMenuFontSize()
-    local fontPath = Helpers.GetGeneralFont()
-
-    if GameMenuFrame.buttonPool then
-        for button in GameMenuFrame.buttonPool:EnumerateActive() do
-            local info = buttonOverlays[button]
-            if info and info.overlayText then
-                info.overlayText:SetFont(fontPath, fontSize, FONT_FLAGS)
-            end
-        end
-    end
-
-    -- Also refresh the QUI standalone button overlay text
-    if quiStandaloneButton then
-        local info = buttonOverlays[quiStandaloneButton]
-        if info and info.overlayText then
-            info.overlayText:SetFont(fontPath, fontSize, FONT_FLAGS)
-        end
-    end
-
-    -- Also refresh the Edit Mode button overlay text
-    if editModeButton then
-        local info = buttonOverlays[editModeButton]
-        if info and info.overlayText then
-            info.overlayText:SetFont(fontPath, fontSize, FONT_FLAGS)
+    for button in pairs(buttonState) do
+        local fs = button.GetFontString and button:GetFontString()
+        if fs then
+            SkinBase.SkinFontString(fs, { size = fontSize, outline = FONT_FLAGS, fontOnly = true })
         end
     end
 end
 
--- Expose refresh functions globally
 _G.QUI_RefreshGameMenuColors = RefreshGameMenuColors
 _G.QUI_RefreshGameMenuFontSize = RefreshGameMenuFontSize
+_G.QUI_RefreshGameMenuDim = function()
+    local settings = GetGeneralSettings()
+    if not dimFrame then return end
+    if settings and settings.gameMenuDim and GameMenuFrame and GameMenuFrame:IsShown() then
+        dimFrame:Show()
+    else
+        dimFrame:Hide()
+    end
+end
 
 if ns.Registry then
     ns.Registry:Register("skinGameMenu", {
@@ -532,333 +383,23 @@ if ns.Registry then
 end
 
 ---------------------------------------------------------------------------
--- QUAZII UI STANDALONE BUTTON (parented to UIParent, NOT GameMenuFrame)
+-- install the hook (GameMenuFrame may not exist yet if its addon is LoD)
 ---------------------------------------------------------------------------
-local function GetOrCreateStandaloneButton()
-    if quiStandaloneButton then return quiStandaloneButton end
-
-    quiStandaloneButton = CreateFrame("Button", "QUIGameMenuButton", UIParent, "UIPanelButtonTemplate")
-    quiStandaloneButton:SetText("QUI")
-    quiStandaloneButton:SetSize(160, 30)
-    quiStandaloneButton:SetFrameStrata("DIALOG")
-    quiStandaloneButton:SetScript("OnClick", function()
-        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION)
-        HideUIPanel(GameMenuFrame)
-        local QUI = _G.QUI
-        if QUI and QUI.ShowOptions then
-            QUI:ShowOptions()
-        end
-    end)
-    quiStandaloneButton:Hide()
-
-    return quiStandaloneButton
+local function Install()
+    if installed or not GameMenuFrame then return end
+    installed = true
+    hooksecurefunc(GameMenuFrame, "InitButtons", OnInitButtons)
 end
 
--- Position the standalone QUI button below the bottom-most GameMenuFrame button.
--- We cannot insert into Blizzard's layout (taint), so we place our button below
--- the last pool button and extend the menu backdrop to cover it.
-local function PositionStandaloneButton()
-    local core = GetCore()
-    local settings = core and core.db and core.db.profile and core.db.profile.general
-    if not settings or settings.addQUIButton == false then
-        if quiStandaloneButton then
-            quiStandaloneButton:Hide()
-            local info = buttonOverlays[quiStandaloneButton]
-            if info and info.overlay then info.overlay:Hide() end
-        end
-        return
-    end
-
-    if not GameMenuFrame or not GameMenuFrame.buttonPool then return end
-
-    local btn = GetOrCreateStandaloneButton()
-
-    -- Anchor to GameMenuFrame's BOTTOM edge so the QUI button is entirely
-    -- outside the secure frame's rectangle.  GameMenuFrame has padding below
-    -- its last pool button; if we anchor to the pool button, the top portion
-    -- of our button lands inside GameMenuFrame's bounds and the secure frame
-    -- eats the mouse events (only the bottom half would be clickable).
-    -- We still read a pool button for width/height reference.
-    local refButton = nil
-    for button in GameMenuFrame.buttonPool:EnumerateActive() do
-        refButton = button
-        break
-    end
-
-    btn:ClearAllPoints()
-    btn:SetPoint("TOP", GameMenuFrame, "BOTTOM", 0, -2)
-    if refButton then
-        btn:SetWidth(refButton:GetWidth())
-        btn:SetHeight(refButton:GetHeight())
-    end
-    btn:SetFrameLevel(GameMenuFrame:GetFrameLevel() + 10)
-    btn:Show()
-
-    -- Style the QUI button when game menu skinning is enabled.
-    -- Check settings directly (not skinState.skinned) so this works
-    -- regardless of whether SkinGameMenu() has run yet.
-    local core2 = GetCore()
-    local stg2 = core2 and core2.db and core2.db.profile and core2.db.profile.general
-    if stg2 and stg2.skinGameMenu then
-        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(stg2, "gameMenu")
-        StyleButton(btn, sr, sg, sb, sa, bgr, bgg, bgb, bga, "QUI")
-    end
-
-end
-
----------------------------------------------------------------------------
--- EDIT MODE STANDALONE BUTTON (parented to UIParent, NOT GameMenuFrame)
----------------------------------------------------------------------------
-local function GetOrCreateEditModeButton()
-    if editModeButton then return editModeButton end
-
-    editModeButton = CreateFrame("Button", "QUIGameMenuEditModeButton", UIParent, "UIPanelButtonTemplate")
-    editModeButton:SetText("QUI Edit Mode")
-    editModeButton:SetSize(160, 30)
-    editModeButton:SetFrameStrata("DIALOG")
-    editModeButton:SetScript("OnClick", function()
-        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION)
-        HideUIPanel(GameMenuFrame)
-        if _G.QUI_ToggleLayoutMode then
-            _G.QUI_ToggleLayoutMode()
-        end
-    end)
-    editModeButton:Hide()
-
-    return editModeButton
-end
-
--- Position the Edit Mode button below the QUI button (if visible) or below GameMenuFrame.
-local function PositionEditModeButton()
-    local core = GetCore()
-    local settings = core and core.db and core.db.profile and core.db.profile.general
-    if not settings or settings.addEditModeButton == false then
-        if editModeButton then
-            editModeButton:Hide()
-            local info = buttonOverlays[editModeButton]
-            if info and info.overlay then info.overlay:Hide() end
-        end
-        return
-    end
-
-    if not GameMenuFrame or not GameMenuFrame.buttonPool then return end
-
-    local btn = GetOrCreateEditModeButton()
-
-    -- Anchor below the QUI button if it's visible, otherwise below GameMenuFrame
-    local anchor = (quiStandaloneButton and quiStandaloneButton:IsShown()) and quiStandaloneButton or GameMenuFrame
-
-    btn:ClearAllPoints()
-    btn:SetPoint("TOP", anchor, "BOTTOM", 0, -2)
-
-    -- Match button size to pool buttons
-    local refButton = nil
-    for button in GameMenuFrame.buttonPool:EnumerateActive() do
-        refButton = button
-        break
-    end
-    if refButton then
-        btn:SetWidth(refButton:GetWidth())
-        btn:SetHeight(refButton:GetHeight())
-    end
-    btn:SetFrameLevel(GameMenuFrame:GetFrameLevel() + 10)
-    btn:Show()
-
-    -- Style the Edit Mode button when game menu skinning is enabled
-    local core2 = GetCore()
-    local stg2 = core2 and core2.db and core2.db.profile and core2.db.profile.general
-    if stg2 and stg2.skinGameMenu then
-        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(stg2, "gameMenu")
-        StyleButton(btn, sr, sg, sb, sa, bgr, bgg, bgb, bga, "QUI Edit Mode")
-    end
-end
-
--- Extend the menu backdrop to cover all standalone buttons (QUI + Edit Mode).
--- Called after both buttons are positioned. Deferred by one frame so
--- GetBottom() returns the resolved position.
-local function ExtendMenuBackdrop()
-    if not menuBackdrop then return end
-
-    C_Timer.After(0, function()
-        -- Find the lowest visible standalone button
-        local lowestBottom = nil
-        if quiStandaloneButton and quiStandaloneButton:IsShown() then
-            local b = quiStandaloneButton:GetBottom()
-            if b then lowestBottom = b end
-        end
-        if editModeButton and editModeButton:IsShown() then
-            local b = editModeButton:GetBottom()
-            if b and (not lowestBottom or b < lowestBottom) then
-                lowestBottom = b
-            end
-        end
-
-        if not lowestBottom then
-            menuBackdrop:ClearAllPoints()
-            menuBackdrop:SetAllPoints(GameMenuFrame)
-            return
-        end
-
-        local gmBottom = GameMenuFrame:GetBottom()
-        if gmBottom and lowestBottom < gmBottom then
-            local extend = gmBottom - lowestBottom + 12
-            menuBackdrop:ClearAllPoints()
-            menuBackdrop:SetPoint("TOPLEFT", GameMenuFrame, "TOPLEFT")
-            menuBackdrop:SetPoint("TOPRIGHT", GameMenuFrame, "TOPRIGHT")
-            menuBackdrop:SetPoint("BOTTOMLEFT", GameMenuFrame, "BOTTOMLEFT", 0, -extend)
-            menuBackdrop:SetPoint("BOTTOMRIGHT", GameMenuFrame, "BOTTOMRIGHT", 0, -extend)
-        else
-            menuBackdrop:ClearAllPoints()
-            menuBackdrop:SetAllPoints(GameMenuFrame)
-        end
-    end)
-end
-
----------------------------------------------------------------------------
--- INITIALIZATION
----------------------------------------------------------------------------
-
--- TAINT SAFETY: NEVER hook GameMenuFrame directly (HookScript, hooksecurefunc).
--- Even deferred callbacks (C_Timer.After(0) inside the hook) still execute addon
--- code in GameMenuFrame's secure context, tainting the execution chain. When the
--- user then clicks "Edit Mode", the tainted context propagates through:
---   SetAttribute → ShowUIPanel → EnterEditMode → TargetUnit() → ADDON_ACTION_FORBIDDEN
---
--- Instead, use a visibility watcher frame that polls GameMenuFrame:IsShown()
--- without any hooks on the secure frame itself.
---
--- LIFECYCLE: The watcher OnUpdate runs permanently with a 0.05s throttle.
--- We intentionally do NOT hook ShowUIPanel/HideUIPanel — those hooks insert
--- addon code into the secure call chain for every panel open (world map, etc.),
--- causing ADDON_ACTION_BLOCKED taint errors during combat.  The cost of one
--- IsShown() C-call per tick when the menu is hidden is negligible.
 if GameMenuFrame then
-    local gameMenuWatcher = CreateFrame("Frame", nil, UIParent)
-    local wasShown = false
-    local lastButtonCount = 0
-    -- Poll while the menu is visible only; use a short interval so ESC feels instant
-    -- even when Blizzard asynchronously adds/reflows buttons.
-    local WATCHER_INTERVAL = 0.05
-    local watcherElapsed = 0
-
-    -- The OnUpdate handler — only set when the game menu might be visible
-    local function WatcherOnUpdate(self, delta)
-        watcherElapsed = watcherElapsed + (delta or 0)
-        if watcherElapsed < WATCHER_INTERVAL then return end
-        watcherElapsed = 0
-
-        local isShown = GameMenuFrame:IsShown()
-
-        if isShown and not wasShown then
-            -- GameMenuFrame just became visible
-            wasShown = true
-
-            ShowDimBehindGameMenu()
-
-            local oc = SyncOverlayContainerLevel()
-            oc:Show()
-
-            -- Skin pool buttons first so skinState.skinned is true when
-            -- PositionStandaloneButton styles the QUI button.
-            SkinGameMenu()
-
-            -- Blizzard's InitButtons re-shows Border/Header every open.
-            -- SkinGameMenu() only runs once (skinState.skinned gate), so
-            -- hide decorations on every show to prevent frame height growth.
-            if skinState.skinned then
-                HideBlizzardDecorations()
-            end
-
-            PositionStandaloneButton()
-            PositionEditModeButton()
-            ExtendMenuBackdrop()
-
-            if skinState.skinned and GameMenuFrame.buttonPool then
-                local count = 0
-                local core = GetCore()
-                local stg = core and core.db and core.db.profile and core.db.profile.general
-                local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(stg, "gameMenu")
-                for button in GameMenuFrame.buttonPool:EnumerateActive() do
-                    count = count + 1
-                    -- Re-style ALL buttons each show (not just new ones).
-                    -- Pool re-acquisition can replace button internals, so
-                    -- overlay anchors and mirrored labels are refreshed.
-                    StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-                end
-                lastButtonCount = count
-            end
-            RefreshGameMenuFontSize()
-            UpdateVisibleButtonHovers()
-        elseif isShown then
-            -- Already showing — check if buttons changed (InitButtons was called)
-            local count = 0
-            if GameMenuFrame.buttonPool then
-                for _ in GameMenuFrame.buttonPool:EnumerateActive() do
-                    count = count + 1
-                end
-            end
-            if count ~= lastButtonCount then
-                lastButtonCount = count
-                SkinGameMenu()
-                if skinState.skinned then
-                    HideBlizzardDecorations()
-                end
-                PositionStandaloneButton()
-                PositionEditModeButton()
-                ExtendMenuBackdrop()
-                if skinState.skinned and GameMenuFrame.buttonPool then
-                    local core3 = GetCore()
-                    local stg3 = core3 and core3.db and core3.db.profile and core3.db.profile.general
-                    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(stg3, "gameMenu")
-                    for button in GameMenuFrame.buttonPool:EnumerateActive() do
-                        StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-                    end
-                end
-                RefreshGameMenuFontSize()
-            end
-            UpdateVisibleButtonHovers()
-        elseif wasShown then
-            -- GameMenuFrame just became hidden — stop the polling loop
-            wasShown = false
-            lastButtonCount = 0
-
-            HideDimBehindGameMenu()
-
-            local oc = SyncOverlayContainerLevel()
-            oc:Hide()
-
-            for button, info in pairs(buttonOverlays) do
-                if info and info.overlay then
-                    info.hovered = false
-                end
-            end
-
-            if quiStandaloneButton then
-                quiStandaloneButton:Hide()
-            end
-
-            if editModeButton then
-                editModeButton:Hide()
-            end
-
-            -- Reset backdrop to default size (no standalone button extension)
-            if menuBackdrop then
-                menuBackdrop:ClearAllPoints()
-                menuBackdrop:SetAllPoints(GameMenuFrame)
-            end
-
+    Install()
+else
+    local loader = CreateFrame("Frame")
+    loader:RegisterEvent("ADDON_LOADED")
+    loader:SetScript("OnEvent", function(self)
+        if GameMenuFrame then
+            Install()
+            self:UnregisterAllEvents()
         end
-    end
-
-    -- TAINT SAFETY: We intentionally keep the watcher running permanently
-    -- instead of using hooksecurefunc("ShowUIPanel"/\"HideUIPanel") to
-    -- start/stop it.  Hooking ShowUIPanel inserts addon code into the
-    -- secure call chain for EVERY panel (world map, character sheet, etc.),
-    -- which taints the secureexecuterange batch and causes
-    -- ADDON_ACTION_BLOCKED errors on protected functions like
-    -- SetPropagateMouseClicks when opening the world map during combat.
-    --
-    -- Cost: one GameMenuFrame:IsShown() C-call per throttle tick (0.05s)
-    -- when the menu is hidden — negligible compared to event dispatch.
-    gameMenuWatcher:SetScript("OnUpdate", WatcherOnUpdate)
+    end)
 end
