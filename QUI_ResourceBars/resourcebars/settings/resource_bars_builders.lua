@@ -322,6 +322,23 @@ local function BuildPrimaryPowerSettings(content, _key)
         row(s3.frame, ns.L["Bar Texture"], texW),
         row(s3.frame, ns.L["Border Size"], borderW)
     )
+
+    -- Per-bar border color (prefix "" -> primary.borderColorSource/borderColor).
+    if ns.QUI_BorderControl then
+        local borderSrcW, borderColorW = ns.QUI_BorderControl.Attach(
+            GUI, s3.frame, primary, "", RefreshPowerBars,
+            {
+                label             = ns.L["Border Color Source"],
+                colorLabel        = ns.L["Border Color"],
+                sourceDescription = ns.L["Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom."],
+                colorDescription  = ns.L["Custom bar border color, used when Border Color Source is set to Custom."],
+            }
+        )
+        s3.AddRow(
+            row(s3.frame, ns.L["Border Color Source"], borderSrcW),
+            row(s3.frame, ns.L["Border Color"], borderColorW)
+        )
+    end
     L.closeSection(s3)
 
     -- BREAKPOINT INDICATORS
@@ -491,6 +508,23 @@ local function BuildSecondaryPowerSettings(content, _key)
         row(s3.frame, ns.L["Bar Texture"], texW),
         row(s3.frame, ns.L["Border Size"], borderW)
     )
+
+    -- Per-bar border color (prefix "" -> secondary.borderColorSource/borderColor).
+    if ns.QUI_BorderControl then
+        local borderSrcW, borderColorW = ns.QUI_BorderControl.Attach(
+            GUI, s3.frame, secondary, "", RefreshPowerBars,
+            {
+                label             = ns.L["Border Color Source"],
+                colorLabel        = ns.L["Border Color"],
+                sourceDescription = ns.L["Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom."],
+                colorDescription  = ns.L["Custom bar border color, used when Border Color Source is set to Custom."],
+            }
+        )
+        s3.AddRow(
+            row(s3.frame, ns.L["Border Color Source"], borderSrcW),
+            row(s3.frame, ns.L["Border Color"], borderColorW)
+        )
+    end
     L.closeSection(s3)
 
     -- BREAKPOINT INDICATORS

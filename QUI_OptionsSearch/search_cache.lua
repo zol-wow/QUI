@@ -59022,6 +59022,64 @@ ns.QUI_SearchCache = {
         },
         {
             ["category"] = "frames",
+            ["description"] = "Custom bar border color, used when Border Color Source is set to Custom.",
+            ["featureId"] = "primaryPower",
+            ["label"] = "Border Color",
+            ["subPageIndex"] = 1,
+            ["subTabName"] = "Primary Resource",
+            ["tabName"] = "Resource Bars",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColor",
+                ["dbPath"] = "profile.powerBar",
+                ["featureId"] = "primaryPower",
+                ["kind"] = "colorpicker",
+                ["options"] = {
+                },
+            },
+            ["widgetType"] = "colorpicker",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom.",
+            ["featureId"] = "primaryPower",
+            ["label"] = "Border Color Source",
+            ["subPageIndex"] = 1,
+            ["subTabName"] = "Primary Resource",
+            ["tabName"] = "Resource Bars",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColorSource",
+                ["dbPath"] = "profile.powerBar",
+                ["dropdownOptions"] = {
+                },
+                ["featureId"] = "primaryPower",
+                ["kind"] = "dropdown",
+                ["options"] = {
+                    {
+                        ["text"] = "Inherit (global)",
+                        ["value"] = "inherit",
+                    },
+                    {
+                        ["text"] = "Theme accent",
+                        ["value"] = "theme",
+                    },
+                    {
+                        ["text"] = "Class color",
+                        ["value"] = "class",
+                    },
+                    {
+                        ["text"] = "Custom",
+                        ["value"] = "custom",
+                    },
+                },
+            },
+            ["widgetType"] = "dropdown",
+        },
+        {
+            ["category"] = "frames",
             ["featureId"] = "primaryPower",
             ["label"] = "Border Size",
             ["subPageIndex"] = 1,
@@ -59658,6 +59716,64 @@ ns.QUI_SearchCache = {
                     {
                         ["text"] = "Solid",
                         ["value"] = "Solid",
+                    },
+                },
+            },
+            ["widgetType"] = "dropdown",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Custom bar border color, used when Border Color Source is set to Custom.",
+            ["featureId"] = "secondaryPower",
+            ["label"] = "Border Color",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "Secondary Resource",
+            ["tabName"] = "Resource Bars",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColor",
+                ["dbPath"] = "profile.secondaryPowerBar",
+                ["featureId"] = "secondaryPower",
+                ["kind"] = "colorpicker",
+                ["options"] = {
+                },
+            },
+            ["widgetType"] = "colorpicker",
+        },
+        {
+            ["category"] = "frames",
+            ["description"] = "Where the bar border gets its color: Inherit (global skin border), Theme accent, Class color, or Custom.",
+            ["featureId"] = "secondaryPower",
+            ["label"] = "Border Color Source",
+            ["subPageIndex"] = 2,
+            ["subTabName"] = "Secondary Resource",
+            ["tabName"] = "Resource Bars",
+            ["tileId"] = "resource_bars",
+            ["widgetDescriptor"] = {
+                ["category"] = "frames",
+                ["dbKey"] = "borderColorSource",
+                ["dbPath"] = "profile.secondaryPowerBar",
+                ["dropdownOptions"] = {
+                },
+                ["featureId"] = "secondaryPower",
+                ["kind"] = "dropdown",
+                ["options"] = {
+                    {
+                        ["text"] = "Inherit (global)",
+                        ["value"] = "inherit",
+                    },
+                    {
+                        ["text"] = "Theme accent",
+                        ["value"] = "theme",
+                    },
+                    {
+                        ["text"] = "Class color",
+                        ["value"] = "class",
+                    },
+                    {
+                        ["text"] = "Custom",
+                        ["value"] = "custom",
                     },
                 },
             },

@@ -1181,6 +1181,8 @@ local defaults = {
             offsetX           = 0,
             width             = 236,       -- Matches Essential CDM width
             useRawPixels      = true,
+            borderColorSource = "inherit", -- "inherit"|"theme"|"class"|"custom"
+            borderColor       = { 0, 0, 0, 1 },  -- Used when borderColorSource == "custom"
             texture           = "Quazii v5",
             colorMode         = "power",  -- "power" = power type color, "class" = class color
             usePowerColor     = true,     -- Use power type color (customizable in Power Colors section)
@@ -1222,6 +1224,8 @@ local defaults = {
             offsetX       = 0,
             width         = 234,      -- Matches Primary bar width
             useRawPixels  = true,
+            borderColorSource = "inherit", -- "inherit"|"theme"|"class"|"custom"
+            borderColor       = { 0, 0, 0, 1 },  -- Used when borderColorSource == "custom"
             texture       = "Quazii v5",
             colorMode     = "power",  -- "power" = power type color, "class" = class color
             usePowerColor = true,     -- Use power type color (customizable in Power Colors section)

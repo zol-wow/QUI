@@ -3637,6 +3637,13 @@ return {
             [3] = 0.078,
             [4] = 1
           },
+          borderColor = {
+            [1] = 0,
+            [2] = 0,
+            [3] = 0,
+            [4] = 1
+          },
+          borderColorSource = "inherit",
           borderSize = 0,
           colorMode = "power",
           customColor = {
@@ -5959,6 +5966,13 @@ return {
             [3] = 0.078,
             [4] = 0.82999999999999996
           },
+          borderColor = {
+            [1] = 0,
+            [2] = 0,
+            [3] = 0,
+            [4] = 1
+          },
+          borderColorSource = "inherit",
           borderSize = 1,
           colorMode = "power",
           customColor = {

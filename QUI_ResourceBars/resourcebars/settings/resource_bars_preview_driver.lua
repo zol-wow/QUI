@@ -371,7 +371,11 @@ local function ApplyPreviewSectionLayout(section, cfg, pv, visibleCount)
     local borderSize = cfg and cfg.borderSize or 0
     local UIKit = ns.UIKit
     if UIKit and UIKit.UpdateBorderLines then
-        UIKit.UpdateBorderLines(section.barFrame, borderSize, 0, 0, 0, 1, borderSize <= 0)
+        local br, bg, bb, ba = 0, 0, 0, 1
+        if ns.Helpers and ns.Helpers.GetSkinBorderColor then
+            br, bg, bb, ba = ns.Helpers.GetSkinBorderColor(cfg, "")
+        end
+        UIKit.UpdateBorderLines(section.barFrame, borderSize, br, bg, bb, ba, borderSize <= 0)
     end
 end
 
