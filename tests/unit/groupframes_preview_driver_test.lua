@@ -152,6 +152,7 @@ end)
 test("chip enabled: highlights true if ANY extra on", function()
     assert(D._ChipEnabledInConfig({ pets = { enabled = true } }, "highlights") == true)
     assert(D._ChipEnabledInConfig({ healer = { targetHighlight = { enabled = true } } }, "highlights") == true)
+    assert(D._ChipEnabledInConfig({ targetedSpells = { enabled = true } }, "highlights") == true)
     assert(D._ChipEnabledInConfig({}, "highlights") == false)
 end)
 

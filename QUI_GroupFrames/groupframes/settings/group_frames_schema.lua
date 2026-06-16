@@ -104,6 +104,7 @@ local VISUAL_DB_KEYS = {
     absorbs = true, healAbsorbs = true, healPrediction = true, indicators = true,
     healer = true, classPower = true, range = true, auras = true,
     privateAuras = true, auraIndicators = true, castbar = true,
+    targetedSpells = true,
     portrait = true, pets = true, dimensions = true, spotlight = true,
 }
 
@@ -2053,6 +2054,108 @@ local function RenderDefensiveSection(sectionHost, ctx)
     return builder.Height()
 end
 
+local function RenderTargetedSpellsSection(sectionHost, ctx)
+    local gui = GetGUI()
+    local optionsAPI = GetOptionsAPI()
+    local groupFrames = ResolveGroupFramesDB(ctx and ctx.options and ctx.options.contextMode)
+    if not gui or not optionsAPI or not groupFrames then
+        return nil
+    end
+
+    local targeted = EnsureSubTable(groupFrames.contextDB, "targetedSpells")
+    if not targeted then
+        return nil
+    end
+
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("auras"))
+    if not builder then
+        return nil
+    end
+
+    local refresh = function()
+        RefreshGroupFrames(groupFrames.contextMode)
+        local TS = ns.QUI_GroupFrameTargetedSpells
+        if TS and type(TS.ApplySettings) == "function" then
+            TS:ApplySettings()
+        end
+    end
+
+    builder.Header(ns.L["Targeted Spells"])
+    builder.Description(string.format(ns.L["Enemy cast icons shown on %1$s group frames when a nameplate spell is targeting that player."], groupFrames.sourceLabel))
+
+    local card = builder.Card()
+    local controlledRows = {}
+    local function UpdateTargetedRows()
+        local alpha = targeted.enabled ~= false and 1.0 or 0.4
+        for _, row in ipairs(controlledRows) do
+            row:SetAlpha(alpha)
+        end
+    end
+
+    local enableCheckbox = gui:CreateFormCheckbox(card.frame, nil, "enabled", targeted, function()
+        refresh()
+        UpdateTargetedRows()
+    end, {
+        description = ns.L["Show spell icons on group members when enemy nameplate casts report a displayable player target."],
+    })
+    local maxIconsSlider = gui:CreateFormSlider(card.frame, nil, 1, 5, 1, "maxIcons", targeted, refresh, { deferOnDrag = true }, {
+        description = ns.L["Hard cap on how many targeted spell icons this frame displays at once."],
+    })
+    local maxIconsRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Max Icons"], maxIconsSlider)
+    controlledRows[#controlledRows + 1] = maxIconsRow
+    card.AddRow(
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Enable Targeted Spells"], enableCheckbox),
+        maxIconsRow
+    )
+
+    local iconSizeSlider = gui:CreateFormSlider(card.frame, nil, 8, 48, 1, "iconSize", targeted, refresh, { deferOnDrag = true }, {
+        description = ns.L["Pixel size of each targeted spell icon."],
+    })
+    local iconSizeRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Icon Size"], iconSizeSlider)
+    controlledRows[#controlledRows + 1] = iconSizeRow
+    local reverseSwipeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "reverseSwipe", targeted, refresh, {
+        description = ns.L["Reverse the swipe direction so the shaded portion grows instead of shrinks as the cast progresses."],
+    })
+    local reverseSwipeRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Reverse Swipe"], reverseSwipeCheckbox)
+    controlledRows[#controlledRows + 1] = reverseSwipeRow
+    card.AddRow(iconSizeRow, reverseSwipeRow)
+
+    local growDirectionDropdown = gui:CreateFormDropdown(card.frame, nil, AURA_GROW_OPTIONS, "growDirection", targeted, refresh, {
+        description = ns.L["Direction additional targeted spell icons are added in after the first."],
+    })
+    local growDirectionRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Grow Direction"], growDirectionDropdown)
+    controlledRows[#controlledRows + 1] = growDirectionRow
+    local spacingSlider = gui:CreateFormSlider(card.frame, nil, 0, 8, 1, "spacing", targeted, refresh, { deferOnDrag = true }, {
+        description = ns.L["Pixel gap between adjacent targeted spell icons."],
+    })
+    local spacingRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Spacing"], spacingSlider)
+    controlledRows[#controlledRows + 1] = spacingRow
+    card.AddRow(growDirectionRow, spacingRow)
+
+    local positionDropdown = gui:CreateFormDropdown(card.frame, nil, NINE_POINT_OPTIONS, "position", targeted, refresh, {
+        description = ns.L["Where on the frame the targeted spell icon strip is anchored. X/Y Offset below nudges it from this anchor point."],
+    })
+    local positionRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Position"], positionDropdown)
+    controlledRows[#controlledRows + 1] = positionRow
+    local xOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "offsetX", targeted, refresh, { deferOnDrag = true }, {
+        description = ns.L["Horizontal pixel offset for the targeted spell icons from their anchor."],
+    })
+    local xOffsetRow = optionsAPI.BuildSettingRow(card.frame, ns.L["X Offset"], xOffsetSlider)
+    controlledRows[#controlledRows + 1] = xOffsetRow
+    card.AddRow(positionRow, xOffsetRow)
+
+    local yOffsetSlider = gui:CreateFormSlider(card.frame, nil, -100, 100, 1, "offsetY", targeted, refresh, { deferOnDrag = true }, {
+        description = ns.L["Vertical pixel offset for the targeted spell icons from their anchor."],
+    })
+    local yOffsetRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider)
+    controlledRows[#controlledRows + 1] = yOffsetRow
+    card.AddRow(yOffsetRow)
+
+    UpdateTargetedRows()
+    builder.CloseCard(card)
+    return builder.Height()
+end
+
 local function RenderIndicatorsSection(sectionHost, ctx)
     local gui = GetGUI()
     local optionsAPI = GetOptionsAPI()
@@ -2663,6 +2766,7 @@ local AURAS_TAB_FEATURE = CreateMultiSectionTabFeature("groupFramesAurasTab", {
     { id = "auras", minHeight = 180, render = RenderAurasSection },
     { id = "privateAuras", minHeight = 140, render = RenderPrivateAurasSection },
     { id = "defensive", minHeight = 140, render = RenderDefensiveSection },
+    { id = "targetedSpells", minHeight = 160, render = RenderTargetedSpellsSection },
 })
 
 local function RenderFeatureTab(feature, host, contextMode)

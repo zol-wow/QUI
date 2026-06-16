@@ -146,6 +146,7 @@ function Driver._ChipEnabledInConfig(vdb, chipKey)
         if healer.targetHighlight and healer.targetHighlight.enabled then return true end
         if vdb.privateAuras and vdb.privateAuras.enabled then return true end
         if healer.defensiveIndicator and healer.defensiveIndicator.enabled then return true end
+        if vdb.targetedSpells and vdb.targetedSpells.enabled ~= false then return true end
         if vdb.pets and vdb.pets.enabled then return true end
         if vdb.name and vdb.name.showName then return true end
         if vdb.health and vdb.health.showHealthText then return true end
@@ -937,6 +938,77 @@ local function ApplyDefensive(f, healer, allowed, font)
     end
 end
 
+-- targetedSpells (enabled/maxIcons/iconSize/reverseSwipe/growDirection/spacing/
+--   position/offsetX/Y) — representative enemy-cast markers on sampled frames.
+local TARGETED_SPELL_SAMPLES = { 135807, 136197, 136201, 135826, 135818 }
+local function ApplyTargetedSpells(f, targeted, sampleCount, allowed)
+    f._targetedSpellIcons = f._targetedSpellIcons or {}
+    if allowed == false or not targeted or targeted.enabled == false or not sampleCount then
+        for _, ic in ipairs(f._targetedSpellIcons) do ic:Hide() end
+        return
+    end
+
+    local count = math.min(tonumber(targeted.maxIcons) or 3, tonumber(sampleCount) or 1)
+    if count < 1 then
+        for _, ic in ipairs(f._targetedSpellIcons) do ic:Hide() end
+        return
+    end
+
+    local iconSize = tonumber(targeted.iconSize) or 24
+    local spacing = tonumber(targeted.spacing) or 2
+    local growDir = targeted.growDirection or "CENTER"
+    local position = targeted.position or "CENTER"
+    local offX = tonumber(targeted.offsetX) or 0
+    local offY = BottomPadY(position, tonumber(targeted.offsetY) or 0, f._bottomPad)
+    local reverseSwipe = targeted.reverseSwipe ~= false
+    local step = iconSize + spacing
+    local centerOffset = (growDir == "CENTER") and -((count - 1) * step) / 2 or 0
+
+    for i = 1, math.max(count, #f._targetedSpellIcons) do
+        local ic = f._targetedSpellIcons[i]
+        if i <= count then
+            if not ic then
+                ic = CreateFrame("Frame", nil, f, "BackdropTemplate")
+                ic._icon = ic:CreateTexture(nil, "ARTWORK")
+                ic._icon:SetAllPoints()
+                ic._icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                ic._cd = CreateFrame("Cooldown", nil, ic, "CooldownFrameTemplate")
+                ic._cd:SetAllPoints()
+                f._targetedSpellIcons[i] = ic
+            end
+
+            ic:SetFrameLevel(f:GetFrameLevel() + 11)
+            ic:SetSize(iconSize, iconSize)
+            ic._icon:SetTexture(TARGETED_SPELL_SAMPLES[((i - 1) % #TARGETED_SPELL_SAMPLES) + 1])
+
+            if ic._cd then
+                if ic._cd.SetReverse then ic._cd:SetReverse(reverseSwipe) end
+                if ic._cd.SetDrawSwipe then ic._cd:SetDrawSwipe(true) end
+                if ic._cd.SetSwipeColor then ic._cd:SetSwipeColor(0, 0, 0, 0.6) end
+                if ic._cd.SetHideCountdownNumbers then ic._cd:SetHideCountdownNumbers(true) end
+                if ic._cd.SetCooldown then ic._cd:SetCooldown(GetTime and GetTime() or 0, 4 + i * 2) end
+                ic._cd:Show()
+            end
+
+            local sx, sy = centerOffset, 0
+            if growDir == "LEFT" then
+                sx = -(i - 1) * step
+            elseif growDir == "UP" then
+                sx, sy = 0, (i - 1) * step
+            elseif growDir == "DOWN" then
+                sx, sy = 0, -(i - 1) * step
+            else
+                sx = sx + (i - 1) * step
+            end
+            ic:ClearAllPoints()
+            ic:SetPoint(position, f, position, offX + sx, offY + sy)
+            ic:Show()
+        elseif ic then
+            ic:Hide()
+        end
+    end
+end
+
 -- range fade (range.enabled/outOfRangeAlpha) — apply reduced alpha to demo frames.
 local function ApplyRangeFade(f, range, outOfRange)
     if range and range.enabled and outOfRange then
@@ -1001,6 +1073,7 @@ local function ApplyFrameSettings(f, member, vdb, gfdb, contextMode)
     ApplyDispelOverlay(f, vdb.healer, (F.dispel ~= false) and member._sampleDispel or nil)
     ApplyPrivateAuras(f, vdb.privateAuras, F.highlights ~= false)
     ApplyDefensive(f, vdb.healer, F.highlights ~= false, font)
+    ApplyTargetedSpells(f, vdb.targetedSpells, member._sampleTargetedSpells, F.highlights ~= false)
     ApplyPets(f, vdb.pets, member._samplePet == true and F.highlights ~= false)
     ApplyRangeFade(f, vdb.range, member._sampleOOR == true)
 end
@@ -1092,6 +1165,8 @@ local function AssignSampleFlags(roster, count)
     if count >= 2 then roster[2]._sampleThreat = true end
     if count >= 3 then roster[3]._sampleDispel = "Magic" end
     if count >= 4 then roster[4]._sampleOOR = true end
+    if count >= 2 then roster[2]._sampleTargetedSpells = 1 end
+    if count >= 4 then roster[4]._sampleTargetedSpells = 2 end
 end
 
 -- ANIMATION TICKER ---------------------------------------------------------

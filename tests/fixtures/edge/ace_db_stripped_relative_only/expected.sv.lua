@@ -4170,6 +4170,17 @@ return {
             range = {
               enabled = true,
               outOfRangeAlpha = 0.40000000000000002
+            },
+            targetedSpells = {
+              enabled = true,
+              growDirection = "CENTER",
+              iconSize = 24,
+              maxIcons = 3,
+              offsetX = 0,
+              offsetY = 0,
+              position = "CENTER",
+              reverseSwipe = true,
+              spacing = 2
             }
           },
           partySelfFirst = false,
@@ -4466,6 +4477,17 @@ return {
               },
               spacing = 2,
               useMainFrameStyle = true
+            },
+            targetedSpells = {
+              enabled = true,
+              growDirection = "CENTER",
+              iconSize = 24,
+              maxIcons = 3,
+              offsetX = 0,
+              offsetY = 0,
+              position = "CENTER",
+              reverseSwipe = true,
+              spacing = 2
             }
           },
           raidPosition = {
