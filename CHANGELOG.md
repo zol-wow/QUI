@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta55 - 2026-06-16
+
+> 🧪 **QUI 4 beta — chat class-color stability fix.** This release stops chat sender names from flickering between class-colored and plain mid-conversation, and switches the chat session separators to plain ASCII dashes. No profile schema migration — your beta54 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Fixed
+- **Chat: stable sender class colors.** A sender's class is now cached by GUID the first time it resolves, so names stay class-colored even as Blizzard's player-info cache warms and evicts over a session — no more flickering between colored and plain mid-conversation.
+
+### Changed
+- **Chat: ASCII session separators.** The "new session" separators in chat history now use plain ASCII dashes (`----`) instead of unicode box-drawing characters.
+
 ## v4.0.0-beta54 - 2026-06-15
 
 > 🧪 **QUI 4 beta — flash-free game menu skin & Layout Mode castbar fixes.** This release reworks the game menu (ESC menu) skin so it is styled the instant it opens — no more brief unstyled flash — and fixes several Layout Mode issues: anchored castbars now position correctly in Layout Mode, Skyriding/Cooldown Manager containers hide instantly on exit instead of lingering through a fade, and Layout Mode now opens with its toolbar and frames panels collapsed. No profile schema migration — your beta53 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.

@@ -2,7 +2,7 @@
 ## Title: |cFF30D1FFQUI|r Alts
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol
-## Version: 4.0.0-beta54
+## Version: 4.0.0-beta55
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI
