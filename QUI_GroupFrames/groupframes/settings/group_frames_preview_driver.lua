@@ -189,6 +189,25 @@ function Driver._BuildTrackedMatches(element, now)
     return out
 end
 
+function Driver._BuildMissingRaidBuffMatches(element, now)
+    local out = {}
+    local MRB = ns.QUI_GroupFrameMissingRaidBuffs
+    local buffs = MRB and MRB.RaidBuffs
+    local maxIcons = tonumber(element and element.maxIcons) or 1
+    if maxIcons <= 0 then maxIcons = buffs and #buffs or 1 end
+    if buffs and #buffs > 0 then
+        for i = 1, math.min(maxIcons, #buffs) do
+            local buff = buffs[i]
+            local spellID = buff.iconSpellID or (buff.ids and buff.ids[1])
+            local icon = ResolveSpellIcon(spellID) or PREVIEW_BUFF_ICONS[((i - 1) % #PREVIEW_BUFF_ICONS) + 1]
+            out[i] = MakeFakeAura(icon, i, false, now, spellID)
+        end
+    else
+        out[1] = MakeFakeAura(PREVIEW_BUFF_ICONS[1], 1, false, now)
+    end
+    return out
+end
+
 ---------------------------------------------------------------------------
 -- GRID MATH — replicate the secure-header anchor layout (offsets from the
 -- roster root's TOP-LEFT; +x right, +y up; y negative = downward).
@@ -1115,6 +1134,8 @@ local function RenderFrameAuras(f, auras, now)
         local matches
         if element.mode == "filterStrip" then
             matches = Driver._BuildFilterStripMatches(element, now)
+        elseif element.mode == "missingRaidBuff" then
+            matches = Driver._BuildMissingRaidBuffMatches(element, now)
         else
             matches = Driver._BuildTrackedMatches(element, now)
         end

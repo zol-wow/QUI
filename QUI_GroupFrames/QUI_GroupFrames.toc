@@ -13,6 +13,7 @@ bootstrap.lua
 groupframes\group_frames_icon_layout.lua
 groupframes\groupframes.lua
 groupframes\groupframes_targeted_spells.lua
+groupframes\groupframes_missing_raid_buffs.lua
 groupframes\groupframes_aura_model.lua
 groupframes\groupframes_auras.lua
 groupframes\groupframes_aura_render.lua

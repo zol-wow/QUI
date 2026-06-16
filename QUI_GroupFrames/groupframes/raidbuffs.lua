@@ -10,6 +10,7 @@ local QUICore = ns.Addon
 local LSM = ns.LSM
 local Helpers = ns.Helpers
 local IsSecretValue = Helpers.IsSecretValue
+local MissingRaidBuffs = ns.QUI_GroupFrameMissingRaidBuffs
 
 -- Performance: cache frequently-called globals as locals
 local CreateFrame = CreateFrame
@@ -96,7 +97,7 @@ local RAID_BUFFS = {
     {
         -- 381748 is the buff that appears on players, 364342 is the ability
         spellId = 381748,
-        buffIDs = { 381748 },
+        buffIDs = { 381732, 381741, 381746, 381748, 381749, 381750, 381751, 381752, 381753, 381754, 381756, 381757, 381758 },
         castSpellId = 364342,
         name = "Blessing of the Bronze",
         stat = "Movement Speed",
@@ -123,6 +124,12 @@ local RAID_BUFFS = {
         isToggleAura = true,  -- Toggle aura: caster doesn't get a HELPFUL buff when solo
     },
 }
+
+if MissingRaidBuffs and MissingRaidBuffs.RegisterSnapshotBuffIDs then
+    for _, buff in ipairs(RAID_BUFFS) do
+        MissingRaidBuffs:RegisterSnapshotBuffIDs(buff.buffIDs or buff.spellId)
+    end
+end
 
 -- Self-buff configuration (class-specific maintenance buffs)
 -- checkType: "playerAura" checks player buff IDs, "weaponEnchant" checks GetWeaponEnchantInfo
@@ -250,6 +257,13 @@ local function GetSettings()
     return Helpers.GetModuleSettings("raidBuffs", DEFAULTS)
 end
 
+if MissingRaidBuffs and MissingRaidBuffs.RegisterActivePredicate then
+    MissingRaidBuffs:RegisterActivePredicate(function()
+        local settings = GetSettings()
+        return settings and settings.enabled
+    end)
+end
+
 ---------------------------------------------------------------------------
 -- HELPER FUNCTIONS
 ---------------------------------------------------------------------------
@@ -335,18 +349,6 @@ local function SafeUnitClass(unit)
     return nil
 end
 
--- Safe aura field access for Midnight Beta
--- In 12.x Beta, aura data fields can be "secret values" that error on access
--- BUG-006: Also validate the value can be used in comparisons
-local function SafeGetAuraField(auraData, fieldName)
-    local success, value = pcall(function() return auraData[fieldName] end)
-    if not success then return nil end
-    -- Validate the value can be used in comparisons (secret values fail == operations)
-    local compareOk = pcall(function() return value == value end)
-    if not compareOk then return nil end
-    return value
-end
-
 local function ScanGroupClasses()
     wipe(groupClasses)
 
@@ -384,65 +386,11 @@ local function ScanGroupClasses()
     end
 end
 
--- Check if a unit has a buff by spell ID, with name-based fallback.
--- Uses point queries first (O(1)), falls back to iteration only as last resort.
--- buffIDs: optional table of variant spell IDs to check (e.g., {1459, 432778} for Arcane Intellect)
+-- Shared raid buff detection (direct spell-ID lookup, pre-combat snapshot,
+-- name lookup, guarded iteration).
 local function UnitHasBuff(unit, spellId, spellName, buffIDs)
-    if not unit then return false end
-    local exists = SafeBooleanCheck(UnitExists(unit))
-    if not exists then return false end
-
-    -- Method 1: Point query by spell ID (O(1) engine lookup)
-    if C_UnitAuras then
-        local idsToCheck = buffIDs or (spellId and { spellId })
-        if idsToCheck then
-            if unit == "player" and C_UnitAuras.GetPlayerAuraBySpellID then
-                for _, id in ipairs(idsToCheck) do
-                    local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, id)
-                    if ok and auraData then return true end
-                end
-            elseif C_UnitAuras.GetAuraDataBySpellName and spellName then
-                local ok, auraData = pcall(C_UnitAuras.GetAuraDataBySpellName, unit, spellName, "HELPFUL")
-                if ok and auraData then return true end
-            end
-        end
-    end
-
-    -- Method 2: Name-based point query for the player (Method 1 used spell-ID lookup for player)
-    if spellName and C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName and unit == "player" then
-        local ok, auraData = pcall(C_UnitAuras.GetAuraDataBySpellName, unit, spellName, "HELPFUL")
-        if ok and auraData then return true end
-    end
-
-    -- Method 3: ForEachAura iteration (last resort — handles talent variants, spell ID mismatches)
-    if AuraUtil and AuraUtil.ForEachAura then
-        local idSet
-        if buffIDs then
-            idSet = {}
-            for _, id in ipairs(buffIDs) do idSet[id] = true end
-        end
-        local found = false
-        AuraUtil.ForEachAura(unit, "HELPFUL", nil, function(auraData)
-            if auraData then
-                local auraSpellId = SafeGetAuraField(auraData, "spellId")
-                local auraName = SafeGetAuraField(auraData, "name")
-                if auraSpellId then
-                    if idSet and idSet[auraSpellId] then
-                        found = true
-                    elseif auraSpellId == spellId then
-                        found = true
-                    end
-                end
-                if not found and spellName and auraName and auraName == spellName then
-                    found = true
-                end
-            end
-            if found then return true end
-        end, true)
-        if found then return true end
-    end
-
-    return false
+    if not MissingRaidBuffs or not MissingRaidBuffs.UnitHasBuff then return false end
+    return MissingRaidBuffs:UnitHasBuff(unit, buffIDs or spellId, spellName)
 end
 
 -- Check if player has a buff (convenience wrapper)

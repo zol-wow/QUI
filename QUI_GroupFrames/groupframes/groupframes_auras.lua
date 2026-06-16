@@ -1020,6 +1020,7 @@ end
 -- the _strip* set feeds BuildFilterStripMatches.
 local _activeElementsScratch = {}
 local _trackedMatchesScratch = {}
+local _missingRaidBuffMatchesScratch = {}
 local _stripOutScratch = {}
 local _stripOrderedScratch = {}
 local _stripSeenScratch = {}
@@ -1170,6 +1171,7 @@ local function GetAuraRelevance(auras, specID)
     rel.specID = specID
     rel.hasHelpfulStrip = false
     rel.hasHarmfulStrip = false
+    rel.hasMissingRaidBuff = false
     rel.hasTracked = false
     wipe(rel.trackedSpells)
     -- Rare path (only on spec/settings change): a plain alloc here is fine.
@@ -1182,6 +1184,8 @@ local function GetAuraRelevance(auras, specID)
             else
                 rel.hasHelpfulStrip = true
             end
+        elseif e.mode == "missingRaidBuff" then
+            rel.hasMissingRaidBuff = true
         elseif e.mode == "tracked" then
             rel.hasTracked = true
             local spells = e.spells
@@ -1196,6 +1200,7 @@ end
 -- True if this delta could change anything the frame's elements render.
 local function DeltaTouchesFrame(rel, dirty)
     if dirty.helpful and rel.hasHelpfulStrip then return true end
+    if dirty.helpful and rel.hasMissingRaidBuff then return true end
     if dirty.harmful and rel.hasHarmfulStrip then return true end
     if rel.hasTracked then
         if dirty.spellsUncertain then return true end
@@ -1260,6 +1265,8 @@ local function RenderFrameElements(frame, cache, dirty)
                 else
                     elementDirty = dirty.helpful
                 end
+            elseif element.mode == "missingRaidBuff" then
+                elementDirty = dirty.helpful
             elseif element.mode == "tracked" then
                 if dirty.spellsUncertain then
                     elementDirty = true
@@ -1279,6 +1286,11 @@ local function RenderFrameElements(frame, cache, dirty)
             local matches
             if element.mode == "filterStrip" then
                 matches = BuildFilterStripMatches(frame.unit, cache, element, dedupSet)
+            elseif element.mode == "missingRaidBuff" then
+                local MRB = ns.QUI_GroupFrameMissingRaidBuffs
+                if MRB and MRB.BuildMatches then
+                    matches = MRB:BuildMatches(frame.unit, element, _missingRaidBuffMatchesScratch)
+                end
             elseif element.mode == "tracked" then
                 matches = AuraModel.PopulateElementMatches(element, cache, _trackedMatchesScratch)
             end

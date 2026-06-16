@@ -123,7 +123,7 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
         local mode = element.mode
         local displayType = element.displayType or "icon"
 
-        if mode == "filterStrip" or (mode == "tracked" and displayType == "icon") then
+        if mode == "filterStrip" or mode == "missingRaidBuff" or (mode == "tracked" and displayType == "icon") then
             local harmful = (mode == "filterStrip") and element.auraType == "HARMFUL"
             local sampleIcons = harmful and PREVIEW_ELEMENT_DEBUFF_ICONS or PREVIEW_ELEMENT_BUFF_ICONS
             local borderR, borderG, borderB = (harmful and 0.8 or 0), (harmful and 0 or 0.6), 0
@@ -137,7 +137,7 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
             -- Strip count: maxIcons (capped to the sample pool); tracked-icon
             -- count: number of configured spells (capped). 0/nil = full sample.
             local count
-            if mode == "filterStrip" then
+            if mode == "filterStrip" or mode == "missingRaidBuff" then
                 count = element.maxIcons or 0
                 if count <= 0 then count = #sampleIcons end
             else

@@ -1275,7 +1275,7 @@ end
 
 ---------------------------------------------------------------------------
 -- DISPATCH: route an element to its renderer.
--- filterStrip => icon strip; tracked => element.displayType.
+-- filterStrip / missingRaidBuff => icon strip; tracked => element.displayType.
 ---------------------------------------------------------------------------
 local DISPLAY_RENDERER = {
     icon = "RenderIcon",
@@ -1286,7 +1286,7 @@ local DISPLAY_RENDERER = {
 
 function R.Dispatch(self, frame, element, matches)
     if not element then return end
-    if element.mode == "filterStrip" then
+    if element.mode == "filterStrip" or element.mode == "missingRaidBuff" then
         return self.RenderIcon(self, frame, element, matches)
     end
     local method = DISPLAY_RENDERER[element.displayType]

@@ -17,6 +17,7 @@ local Model = ns.QUI_GroupFramesAuraModel
 local AuraDefaults = ns.QUI_GroupFramesAuraDefaults
 local SpellList = ns.QUI_GroupFramesSpellListSettings
 local SkinBase = ns.SkinBase
+local MissingRaidBuffs = ns.QUI_GroupFrameMissingRaidBuffs
 
 local AurasEditor = ns.QUI_GroupFramesAurasSettings or {}
 ns.QUI_GroupFramesAurasSettings = AurasEditor
@@ -81,6 +82,15 @@ local HEALTH_TINT_ANIMATION_OPTIONS = {
     { value = "fillFade", text = ns.L["Fill + Fade"] },
     { value = "pulse", text = ns.L["Subtle Pulse"] },
     { value = "instant", text = ns.L["Instant"] },
+}
+
+local MISSING_RAID_BUFF_OPTIONS = {
+    { key = "intellect", label = ns.L["Arcane Intellect (Mage)"] },
+    { key = "stamina", label = ns.L["Power Word: Fortitude (Priest)"] },
+    { key = "attackPower", label = ns.L["Battle Shout (Warrior)"] },
+    { key = "versatility", label = ns.L["Mark of the Wild (Druid)"] },
+    { key = "skyfury", label = ns.L["Skyfury (Shaman)"] },
+    { key = "bronze", label = ns.L["Blessing of the Bronze (Evoker)"] },
 }
 
 -- Buff/debuff classification options, keyed by aura type (mirrors the old
@@ -167,6 +177,17 @@ local function GetElementLabel(element)
             return ns.L["Debuffs"], nil
         end
         return ns.L["Buffs"], nil
+    elseif element.mode == "missingRaidBuff" then
+        local icon = 134400
+        local buffs = MissingRaidBuffs and MissingRaidBuffs.RaidBuffs
+        if buffs and buffs[1] then
+            local spellID = buffs[1].iconSpellID or (buffs[1].ids and buffs[1].ids[1])
+            if spellID and C_Spell and C_Spell.GetSpellTexture then
+                local ok, texture = pcall(C_Spell.GetSpellTexture, spellID)
+                if ok and texture then icon = texture end
+            end
+        end
+        return ns.L["Missing Raid Buff"], icon
     end
 
     local spells = element.spells or {}
@@ -582,6 +603,33 @@ local function AddTrackedConfig(ctx, element)
     end
 end
 
+local function AddMissingRaidBuffConfig(ctx, element)
+    local GUI = ctx.GUI
+    local row = ctx.AddFormRow
+    local onChange = ctx.onChange
+    local rebuild = ctx.rebuild
+
+    row(ns.L["Auto-Detect My Buff"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "classDetection", element, function()
+        ctx.NotifyChanged()
+        rebuild()
+    end, {
+        description = ns.L["Only show the raid buff provided by your current class. Turn this off to choose buffs manually."],
+    }), true)
+
+    if element.classDetection == false then
+        if type(element.buffChecks) ~= "table" then
+            element.buffChecks = {}
+        end
+        for _, entry in ipairs(MISSING_RAID_BUFF_OPTIONS) do
+            row(entry.label, GUI:CreateFormCheckbox(ctx.detailArea, nil, entry.key, element.buffChecks, onChange, {
+                description = ns.L["Show this icon when the unit is missing this raid buff."],
+            }))
+        end
+    end
+
+    AddPlacementWidgets(ctx, element, true)
+end
+
 ---------------------------------------------------------------------------
 -- ROW POOL
 ---------------------------------------------------------------------------
@@ -715,6 +763,8 @@ local function RenderDetail(ctx, element)
 
     if element.mode == "filterStrip" then
         AddFilterStripConfig(ctx, element)
+    elseif element.mode == "missingRaidBuff" then
+        AddMissingRaidBuffConfig(ctx, element)
     else
         AddTrackedConfig(ctx, element)
     end
@@ -766,6 +816,8 @@ local function RebuildList(ctx)
 
         if element.mode == "filterStrip" then
             row.badge:SetText("|cFF56D1FF" .. ns.L["STRIP"] .. "|r")
+        elseif element.mode == "missingRaidBuff" then
+            row.badge:SetText("|cFFFFD166" .. ns.L["RAID BUFF"] .. "|r")
         else
             row.badge:SetText("|cFFC8A2FF" .. ns.L["TRACKED"] .. "|r")
         end
@@ -945,11 +997,13 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
     pickerHeader:SetJustifyH("LEFT")
     pickerHeader:SetText("|cFFAAAAAA" .. ns.L["Add Tracked Aura (click a suggestion or enter a Spell ID):"] .. "|r")
 
-    -- Add buttons row (Filter strip / Tracked aura).
+    -- Add buttons row (Filter strip / Missing raid buff).
     local addRow = CreateFrame("Frame", nil, listArea)
     addRow:SetHeight(26)
     local addStripButton = GUI:CreateButton(addRow, ns.L["Add Filter Strip"], 130, 22)
     addStripButton:SetPoint("LEFT", 0, 0)
+    local addMissingBuffButton = GUI:CreateButton(addRow, ns.L["Add Missing Raid Buff"], 170, 22)
+    addMissingBuffButton:SetPoint("LEFT", addStripButton, "RIGHT", 8, 0)
 
     -- Manual spellID input row.
     local inputRow = CreateFrame("Frame", nil, listArea)
@@ -1206,8 +1260,20 @@ function AurasEditor.RenderAuras(host, auras, bucketKey, onChange, opts)
         rebuild()
     end
 
+    ctx.AddMissingRaidBuff = function()
+        if not Model.NewMissingRaidBuffElement then return end
+        local element = Model.NewMissingRaidBuffElement()
+        ctx.bucket[#ctx.bucket + 1] = element
+        ctx.selectedIndex = #ctx.bucket
+        NotifyChanged()
+        rebuild()
+    end
+
     addStripButton:SetScript("OnClick", function()
         ctx.AddFilterStrip()
+    end)
+    addMissingBuffButton:SetScript("OnClick", function()
+        ctx.AddMissingRaidBuff()
     end)
     addManualButton:SetScript("OnClick", function()
         local spellID = tonumber(inputBox:GetText())

@@ -17,6 +17,14 @@ local function deepCopyTable(v)
 end
 
 local DISPLAY_TYPES = { icon = true, square = true, bar = true, healthTint = true }
+local DEFAULT_MISSING_RAID_BUFF_CHECKS = {
+    intellect = true,
+    stamina = true,
+    attackPower = true,
+    versatility = true,
+    skyfury = true,
+    bronze = true,
+}
 
 local function defaultClassifications(auraType)
     if auraType == "HARMFUL" then
@@ -60,6 +68,21 @@ function Model.NewTrackedElement(spells, displayType)
     }
 end
 
+function Model.NewMissingRaidBuffElement()
+    local checks = {}
+    for key, value in pairs(DEFAULT_MISSING_RAID_BUFF_CHECKS) do
+        checks[key] = value
+    end
+    return {
+        id = nextId(), enabled = true, mode = "missingRaidBuff",
+        classDetection = true, buffChecks = checks,
+        anchor = "CENTER", offsetX = 0, offsetY = 0,
+        growDirection = "RIGHT", spacing = 2, iconSize = 16, maxIcons = 1,
+        hideSwipe = true, reverseSwipe = false,
+        showDurationText = false, durationFontSize = 9,
+    }
+end
+
 function Model.Validate(e)
     if type(e) ~= "table" then return false end
     if e.mode == "filterStrip" then
@@ -67,6 +90,8 @@ function Model.Validate(e)
     elseif e.mode == "tracked" then
         if not DISPLAY_TYPES[e.displayType] then return false end
         return type(e.spells) == "table" and #e.spells > 0
+    elseif e.mode == "missingRaidBuff" then
+        return true
     end
     return false
 end
