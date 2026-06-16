@@ -100,9 +100,17 @@ for _, path in ipairs(WORKFLOWS) do
         path .. ": workflow should require search_cache.lua for search suites")
     assertContains(body, 'zip -r ../QUI-${{ steps.version.outputs.version }}.zip QUI "${suite_folders[@]}"',
         path .. ": workflow should zip every discovered suite folder")
+    assertContains(body, "METADATA=$(jq -cn",
+        path .. ": workflow should build compact CurseForge metadata JSON")
+    assertContains(body, "printf '%s\\n' \"$METADATA\" | jq -e . >/dev/null",
+        path .. ": workflow should validate CurseForge metadata JSON before upload")
+    assertContains(body, '--form-string "metadata=${METADATA}"',
+        path .. ": workflow should upload CurseForge metadata as literal form data")
 
     assert(not body:find("QUI_ActionBars QUI_CDM", 1, true),
         path .. ": workflow should not carry a static suite_folders list")
+    assert(not body:find('-F "metadata=${METADATA}"', 1, true),
+        path .. ": workflow should not let curl parse metadata as form syntax")
 end
 
 print("workflow_packaging_manifest_test OK")

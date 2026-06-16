@@ -257,7 +257,7 @@ jobs:
           CHANGELOG=$(cat release_notes.txt)
           # CurseForge WoW Retail game version IDs:
           # 12.0.0 = 13924, 12.0.1 = 14422, 12.0.5 = 15855
-          METADATA=$(jq -n \
+          METADATA=$(jq -cn \
             --arg changelog "$CHANGELOG" \
             --arg name "QUI-${{ steps.version.outputs.version }}" \
             --arg reltype "${{ steps.version.outputs.release_type }}" \
@@ -268,11 +268,13 @@ jobs:
               gameVersions: [13924,14422,15855],
               releaseType: $reltype
             }')
+
+          printf '%s\n' "$METADATA" | jq -e . >/dev/null
           
           curl --fail-with-body -X POST \
             "https://wow.curseforge.com/api/projects/${{ secrets.CF_PROJECT_ID }}/upload-file" \
             -H "X-Api-Token: ${CF_API_TOKEN}" \
-            -F "metadata=${METADATA}" \
+            --form-string "metadata=${METADATA}" \
             -F "file=@QUI-${{ steps.version.outputs.version }}.zip"
 
       - name: Notify Discord
