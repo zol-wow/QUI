@@ -222,18 +222,66 @@ jobs:
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
+          set -euo pipefail
+
           CHANGELOG=$(cat release_notes.txt)
-          # CurseForge WoW Retail game version IDs:
-          # 12.0.0 = 13924, 12.0.1 = 14422, 12.0.5 = 15855
+
+          # Resolve CurseForge WoW Retail game version IDs at upload time.
+          # CurseForge's upload API wants numeric IDs, while the public site
+          # primarily exposes names like 12.0.7.
+          retail_versions=(12.0.0 12.0.1 12.0.5 12.0.7)
+          requested_versions_json=$(printf '%s\n' "${retail_versions[@]}" | jq -R . | jq -s .)
+          curseforge_versions=$(curl --fail-with-body -sS \
+            "https://wow.curseforge.com/api/game/versions" \
+            -H "X-Api-Token: ${CF_API_TOKEN}")
+          game_versions_json=$(printf '%s' "$curseforge_versions" | jq -c \
+            --argjson requested "$requested_versions_json" '
+            def rows:
+              (
+                if type == "array" then .
+                elif (.data | type) == "array" then .data
+                elif (.gameVersions | type) == "array" then .gameVersions
+                else [] end
+              )
+              | [
+                  .[]
+                  | if (.versions | type) == "array" then
+                      . as $group
+                      | $group.versions[]
+                      | if type == "object" then
+                          . + {gameVersionTypeId: ($group.type // $group.id // $group.gameVersionTypeId // $group.gameVersionTypeID)}
+                        else
+                          {name: ., gameVersionTypeId: ($group.type // $group.id // $group.gameVersionTypeId // $group.gameVersionTypeID)}
+                        end
+                    else
+                      .
+                    end
+                ];
+            def version_type: .gameVersionTypeID // .gameVersionTypeId // .type;
+            def version_name: .name // .Name;
+            rows as $rows
+            | [
+                $requested[] as $version
+                | (
+                    [
+                      $rows[]
+                      | select((version_name == $version) and ((version_type | tostring) == "517"))
+                      | (.id | tonumber)
+                    ][0] // error("Missing CurseForge Retail game version ID for " + $version)
+                  )
+              ]')
+          echo "CurseForge Retail game version IDs: ${game_versions_json}"
+
           METADATA=$(jq -n \
             --arg changelog "$CHANGELOG" \
             --arg name "QUI-${{ steps.version.outputs.version }}" \
             --arg reltype "${{ steps.version.outputs.release_type }}" \
+            --argjson gameVersions "$game_versions_json" \
             '{
               changelog: $changelog,
               changelogType: "markdown",
               displayName: $name,
-              gameVersions: [13924,14422,15855],
+              gameVersions: $gameVersions,
               releaseType: $reltype
             }')
           
