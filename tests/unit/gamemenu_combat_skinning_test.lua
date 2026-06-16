@@ -19,6 +19,19 @@ C_Timer = {
     After = function(_, callback) callback() end,
 }
 
+-- Stub font OBJECT returned by CreateFont. The direct skin drives the button's
+-- per-state font objects (Normal/Highlight/Disabled) so the label keeps our
+-- font across hover; record the calls so the test can assert it happened.
+local FAMILY_SENTINEL = { __isFontFamily = true }
+local labelFontObjectStub = {
+    setFontObjectCalls = 0,
+    setFontCalls = 0,
+    SetFontObject = function(s) s.setFontObjectCalls = s.setFontObjectCalls + 1 end,
+    SetFont = function(s) s.setFontCalls = s.setFontCalls + 1 end,
+    SetTextColor = function() end,
+}
+function CreateFont() return labelFontObjectStub end
+
 local createdByName = {}
 local unnamedFrames = {}
 local backdropApplications = 0
@@ -66,6 +79,12 @@ widgetMeta.__index = function(_, key)
         return function() return 30 end
     elseif key == "GetFontString" then
         return function(s) return s.fontString end
+    elseif key == "SetNormalFontObject" then
+        return function(s, fo) s.normalFontObject = fo end
+    elseif key == "SetHighlightFontObject" then
+        return function(s, fo) s.highlightFontObject = fo end
+    elseif key == "SetDisabledFontObject" then
+        return function(s, fo) s.disabledFontObject = fo end
     elseif key == "CreateTexture" then
         return function(s, _, drawLayer)
             local tex = setmetatable(
@@ -217,9 +236,15 @@ GameMenuFrame:InitButtons()
 
 -- ---- 2) The skin is applied during combat (no deferral) -------------------
 assert(backdropApplications > 0, "combat menu open must apply addon-owned backdrops (menu bg + button inset)")
-local skinnedLabel = false
-for _, fs in ipairs(fontStringSkins) do if fs == fontString then skinnedLabel = true end end
-assert(skinnedLabel, "combat skin must route the button label through SkinBase.SkinFontString")
+-- The label font must be driven through the button's per-state font OBJECTS,
+-- not a one-shot fs:SetFont (which the button clobbers on hover by re-applying
+-- its state font object). All three states get the same shared QUI font object.
+assert(poolButton.normalFontObject == labelFontObjectStub,
+    "button NormalFontObject must be the shared QUI label font object")
+assert(poolButton.highlightFontObject == labelFontObjectStub,
+    "button HighlightFontObject must be the shared QUI label font object (stable across hover)")
+assert(poolButton.disabledFontObject == labelFontObjectStub,
+    "button DisabledFontObject must be the shared QUI label font object")
 
 -- ---- 3) Direct skin intentionally mutates Blizzard cosmetics in combat -----
 assert((rawget(poolButton.Left, "setAlphaCalls") or 0) > 0, "direct skin must zero the Blizzard slice art")

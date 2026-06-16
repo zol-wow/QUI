@@ -31,6 +31,39 @@ local FONT_FLAGS = "OUTLINE"
 -- weak-keyed: per-button skin state { inset=, highlight=, clamped=bool }
 local buttonState = Helpers.CreateStateTable()
 
+-- Shared label font OBJECT for the pool buttons.
+--
+-- GameMenuButtonTemplate (UIPanelButtonTemplate) carries per-state font objects
+-- (Normal/Highlight/Disabled = GameFontHighlight/GameFontDisable). On every
+-- mouse state change the button re-applies its state font object to the label
+-- fontstring, which clobbers a direct fs:SetFont — so a one-shot SkinFontString
+-- reverts to Blizzard's font the instant you hover. Driving the button's font
+-- OBJECTS instead keeps our font across every state. A single shared object
+-- means a font-size change live-updates every button that references it.
+local labelFontObject = nil
+local function GetLabelFontObject(fontSize)
+    if not labelFontObject then
+        labelFontObject = _G.CreateFont("QUIGameMenuButtonFontObject")
+    end
+    local font = (Helpers.GetGeneralFont and Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
+    local family = Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(font, fontSize, FONT_FLAGS)
+    if family then
+        labelFontObject:SetFontObject(family)   -- inherits per-script CJK fallback
+    else
+        labelFontObject:SetFont(font, fontSize, FONT_FLAGS)
+    end
+    labelFontObject:SetTextColor(COLORS.text[1], COLORS.text[2], COLORS.text[3], COLORS.text[4])
+    return labelFontObject
+end
+
+local function ApplyLabelFont(button, fontSize)
+    if not button then return end
+    local fontObj = GetLabelFontObject(fontSize)
+    if button.SetNormalFontObject then button:SetNormalFontObject(fontObj) end
+    if button.SetHighlightFontObject then button:SetHighlightFontObject(fontObj) end
+    if button.SetDisabledFontObject then button:SetDisabledFontObject(fontObj) end
+end
+
 local installed = false
 local staticDone = false
 local menuBg = nil          -- themed bg/border, child of GameMenuFrame
@@ -177,10 +210,10 @@ local function SkinButton(button, isPool, sr, sg, sb, sa, bgr, bgg, bgb, fontSiz
     local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
     SkinBase.ApplyFullBackdrop(info.inset, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
 
-    local fs = button.GetFontString and button:GetFontString()
-    if fs then
-        SkinBase.SkinFontString(fs, { size = fontSize, outline = FONT_FLAGS, color = COLORS.text })
-    end
+    -- Drive the button's per-state font OBJECTS so the label keeps our font
+    -- across hover/disable. A direct fs:SetFont would be clobbered the instant
+    -- the button re-applies its state font object on mouseover.
+    ApplyLabelFont(button, fontSize)
 end
 
 ---------------------------------------------------------------------------
@@ -347,11 +380,12 @@ local function RefreshGameMenuFontSize()
         return
     end
     local fontSize = GetGameMenuFontSize()
+    -- Mutating the shared label font object live-updates every button that
+    -- already references it; re-assert on each button too so a button skinned
+    -- before the object existed picks it up.
+    GetLabelFontObject(fontSize)
     for button in pairs(buttonState) do
-        local fs = button.GetFontString and button:GetFontString()
-        if fs then
-            SkinBase.SkinFontString(fs, { size = fontSize, outline = FONT_FLAGS, fontOnly = true })
-        end
+        ApplyLabelFont(button, fontSize)
     end
 end
 
