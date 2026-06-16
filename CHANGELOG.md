@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta57 - 2026-06-16
+
+> 🎨 **QUI 4 beta — skinning durability + Resource Bars border color.** This build stops skinned tabs and buttons from snapping back to Blizzard's art and font when you hover, select, or disable them; adds per-bar border color to the primary and secondary power bars; and brings new Group Frames options for targeted spells and missing raid buffs. The interface localization shipped in beta56 is temporarily parked behind the scenes while it gets more work — every client now runs in English again, and the language picker is disabled. No profile schema migration — your beta56 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Resource Bars: per-bar border color.** The primary and secondary power bars each get a Border Color Source (Inherit / Theme / Class / Custom) plus a custom Border Color picker, under a new "Resource Bars" category on the Border Coloring tab.
+- **Group Frames: targeted spells display.** A new targeted-spells element shows spells currently being cast at a group member, with the usual size / count / spacing / grow / position controls.
+- **Group Frames: missing raid buff tracking.** An "Add Missing Raid Buff" entry on the Group Frames Auras tab surfaces buffs a unit is missing.
+
+### Fixed
+- **Skinned tabs and buttons stop reverting to Blizzard art/font.** Tabs no longer flash their stock active/inactive slice textures back over the QUI backdrop on selection, and tabs and buttons keep the QUI font across their normal, hover, and disabled states instead of swapping back to Blizzard's font object on hover or rebind (character/inspect bottom tabs, keystone start button, static-popup and equipment-manager buttons, profession/crafting list rows).
+- **Private dispel overlays refresh after aura cache updates.** Group-frame dispel overlays now re-evaluate when the aura cache changes, so they no longer linger or miss state.
+
+### Changed
+- **Interface localization temporarily disabled.** The 10-language localization from beta56 is parked while it gets further work — QUI forces the English fallback on all clients and the language picker in the options titlebar is greyed out. No translated text ships in this build.
+- **CurseForge upload resolves game-version IDs at upload time** (release tooling only; no in-game effect).
+
 ## v4.0.0-beta56 - 2026-06-16
 
 > 🌐 **QUI 4 beta — full interface localization (i18n).** QUI's interface is now translated into 10 additional languages — German, Spanish (Spain & Mexico), French, Italian, Korean, Portuguese (Brazil), Russian, and Simplified & Traditional Chinese — with CJK font rendering so Korean and Chinese glyphs display correctly. QUI follows your WoW client language automatically; English clients see no change. Plus a game-menu font fix and an Info Bar drag fix. No profile schema migration — your beta55 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
