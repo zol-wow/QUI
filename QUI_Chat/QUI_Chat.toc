@@ -2,7 +2,7 @@
 ## Title: |cFF30D1FFQUI|r Chat
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol
-## Version: 4.0.0-beta57
+## Version: 4.0.0-beta58
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI

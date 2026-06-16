@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 
 
+## v4.0.0-beta58 - 2026-06-16
+
+> 📖 **QUI 4 beta — in-game Group Frames help guide.** This build adds a Group Frames section to the in-game Help panel — covering the party/raid layouts, targeted-spells display, and missing raid-buff tracking — and reverts a CurseForge upload-tooling change from beta57. No in-game behavior changes and no profile schema migration — your beta57 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
+
+### Added
+- **Group Frames help guide.** The in-game Help panel now includes a Group Frames feature guide with tips for Targeted Spells, Add Missing Raid Buff, Auto-Detect My Buff, and the separate party/raid settings.
+
+### Changed
+- **CurseForge upload reverts to fixed game-version IDs** (release tooling only; no in-game effect). Reverses the upload-time ID resolution added in beta57.
+
 ## v4.0.0-beta57 - 2026-06-16
 
 > 🎨 **QUI 4 beta — skinning durability + Resource Bars border color.** This build stops skinned tabs and buttons from snapping back to Blizzard's art and font when you hover, select, or disable them; adds per-bar border color to the primary and secondary power bars; and brings new Group Frames options for targeted spells and missing raid buffs. The interface localization shipped in beta56 is temporarily parked behind the scenes while it gets more work — every client now runs in English again, and the language picker is disabled. No profile schema migration — your beta56 profiles carry over unchanged. As always, **back up your `WTF` folder before installing** and report anything you hit on GitHub.
