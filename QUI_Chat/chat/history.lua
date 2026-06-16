@@ -171,8 +171,8 @@ local function repump()
         local entries = Storage.GetRecentEntries and Storage.GetRecentEntries(replayLimit) or {}
         if #entries == 0 then return end
 
-        local sepBefore = "──── Previous session ────"
-        local sepAfter  = "──── Resumed ────"
+        local sepBefore = "---- Previous session ----"
+        local sepAfter  = "---- Resumed ----"
         local sepR, sepG, sepB = 0.5, 0.5, 0.5
 
         -- Chat enabled = the QUI display owns rendering; repump goes to the

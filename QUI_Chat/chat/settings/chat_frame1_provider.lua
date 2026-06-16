@@ -1711,7 +1711,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local storeWhispersCheckbox = TrackPersistentHistoryControl(GUI:CreateFormCheckbox(mainCard.frame, nil, "storeWhispers", hist, Refresh, { description = "Include whispers in the persistent history. Default OFF: Blizzard's built-in HistoryKeeper already restores recent whispers, so enabling this can produce duplicate restored whispers." }))
             mainCard.AddRow(row(mainCard.frame, "Max stored messages", maxEntriesSlider), row(mainCard.frame, "Store whispers", storeWhispersCheckbox))
 
-            local separatorsCheckbox = TrackPersistentHistoryControl(GUI:CreateFormCheckbox(mainCard.frame, nil, "showSeparators", hist, Refresh, { description = "Insert '──── Previous session ────' and '──── Resumed ────' markers around the restored block on login." }))
+            local separatorsCheckbox = TrackPersistentHistoryControl(GUI:CreateFormCheckbox(mainCard.frame, nil, "showSeparators", hist, Refresh, { description = "Insert '---- Previous session ----' and '---- Resumed ----' markers around the restored block on login." }))
             mainCard.AddRow(row(mainCard.frame, "Show session separators", separatorsCheckbox))
             mainCard.Finalize()
             sy = sy - mainCard.frame:GetHeight() - GAP

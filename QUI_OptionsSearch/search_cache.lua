@@ -30559,7 +30559,7 @@ ns.QUI_SearchCache = {
         },
         {
             ["category"] = "chat",
-            ["description"] = "Insert '──── Previous session ────' and '──── Resumed ────' markers around the restored block on login.",
+            ["description"] = "Insert '---- Previous session ----' and '---- Resumed ----' markers around the restored block on login.",
             ["featureId"] = "chatFrame1History",
             ["label"] = "Show session separators",
             ["providerKey"] = "chatFrame1",

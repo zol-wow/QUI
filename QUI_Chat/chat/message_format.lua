@@ -59,6 +59,31 @@ local function ShowRealmNames()
     return (settings and settings.modifiers and settings.modifiers.showRealmNames) == true
 end
 
+-- GUID -> englishClass memo. GetPlayerInfoByGUID is backed by Blizzard's
+-- internal player-info cache, which WARMS and EVICTS over a session: the same
+-- sender resolves a class one moment and returns nil the next (cold GUID, cross
+-- realm not recently seen, post-login race). Decoration runs per-message, so an
+-- eviction left names flickering between class-colored and plain across a
+-- conversation. A GUID's class never changes, so memoizing the first successful
+-- resolve makes the color stable for the rest of the session regardless of
+-- later cache state. (Plain string keys/values — cheap even at thousands of
+-- distinct senders; never invalidated because class is immutable per GUID.)
+local guidClassCache = {}
+
+local function ResolveSenderClass(guid)
+    local cached = guidClassCache[guid]
+    if cached then return cached end
+    if not _G.GetPlayerInfoByGUID then return nil end
+    -- GetPlayerInfoByGUID: returns localizedClass, englishClass, ... (7 values)
+    -- MayReturnNothing=true when GUID is unknown; pcall ok=true, englishClass=nil.
+    local ok, _, englishClass = pcall(_G.GetPlayerInfoByGUID, guid)
+    if ok and type(englishClass) == "string" and englishClass ~= "" then
+        guidClassCache[guid] = englishClass
+        return englishClass
+    end
+    return nil
+end
+
 -- Class color for a sender GUID, gated on the existing classColors setting.
 -- Reads RAID_CLASS_COLORS directly (NOT any custom-color-aware helper — the
 -- chat sender recolor must track Blizzard's class palette).
@@ -67,11 +92,8 @@ local function SenderClassColorStr(guid)
     local settings = I.GetSettings and I.GetSettings()
     local mods = settings and settings.modifiers
     if not (mods and mods.classColors and mods.classColors.enabled) then return nil end
-    if not _G.GetPlayerInfoByGUID then return nil end
-    -- GetPlayerInfoByGUID: returns localizedClass, englishClass, ... (7 values)
-    -- MayReturnNothing=true when GUID is unknown; pcall ok=true, englishClass=nil.
-    local ok, _, englishClass = pcall(_G.GetPlayerInfoByGUID, guid)
-    if not ok or type(englishClass) ~= "string" then return nil end
+    local englishClass = ResolveSenderClass(guid)
+    if not englishClass then return nil end
     local cc = _G.RAID_CLASS_COLORS and _G.RAID_CLASS_COLORS[englishClass]
     local colorStr = cc and cc.colorStr
     return type(colorStr) == "string" and colorStr or nil
